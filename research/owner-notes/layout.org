@@ -1,0 +1,118 @@
+* Layouts and State
+
+* State
+
+** Previous plan: state stored in sqlite, highly normalized (~editor~, ~sessions~, ~frames~, ~panes~, etc)
+
+*** Issue with this plan
+
+- relational databases do not work well with tree-like data, are too rigid for evolving schema
+
+** New idea, inspired by emacs
+
+- all editor state is stored in memory (yes, even buffers)
+- write editor state to backup files, periodically
+- editor state is now stored in Racket code that can be
+
+** Open questions
+
+- how often to write these files?
+- where do we store these?
+- how does racket dynamically reload them if they are racket code?
+
+* Layout
+
+** Previous plan: highly normmalized
+
+A primary goal of this editor is to have a highly flexible window management system. User should be able to use tab, tiling window manager, scrolling (Niri-style) window manager, or mixture. 
+
+** New plan: fully tree based. We will call this the layout tree
+
+A view of the editor can be boiled down to:
+
+~<base-url>/session/<session-id>/~
+
+A ~session~ consists of one or more ~layout trees~. A layout tree is a tree with the following anatomy:
+
+~layout-node~:
+- ~children~: a single ~layout-leaf~ OR a list of children ~layout-nodes~
+- ~active-child-id~: the id of the active child
+- ~direction~: ~horizontal~ or ~vertical~
+- ~tiling~: ~scroll~ or ~fit~
+- ~measure~: the percent width or height /relative to its parent container/. A child cannot exceed the width or height of its parent container, even for scrolling, so ~0 <= measure <= 1~ (yes it can be ~0~)
+
+Then when rendering a given parent node and its children:
+- If the parent node is ~scrollable~, then the measure is taken at face value and the child is given that exact width or height (relative to the parent, of course)
+- If the parent node is ~fit~, then we calculate ratios of the measures of each child and render based on that. So e.g if there are three children with measure 50%, then they would each be rendered at approximately 33% of the parent size.
+
+It might at first seem that for a ~layout-node~ with just a single ~layout-leaf~ child, the ~direction~ and ~tiling~ attributes are unecessary. But this is not true: it allows the tiling settings to be preserved even if the node goes down to a single child.
+
+Additionally, it might seem odd for a ~layout-node~ to specify its own size (~measure~) relative to its parent. But this is intentional --- it makes the sizing of a ~layout-node~ portable, in the sense that its size (relative to its parent container) will be preserved if it is moved to a different parent. 
+
+~layout-leaf~:
+- eventually we will populate this with content, potentially implement tabs inside the leaf, etc. but for now, it's basically just an empty placeholder.
+
+In this design, a ~frame~ is just a pointer to a node on a specific tree:
+
+~frame~:
+- ~layout-tree-id~: the id of the layout tree
+- ~layout-node-id~: the id of the node being pointed to
+
+The client will render the tree from that point downward. 
+
+~session~:
+- ~layout-trees~: collection of all ~layout-tree~ for the session
+- ~frames~: a list of ~frame~ objects (pointer to a specific node on a tree)
+- ~active-frame-id~: the id of the active frame
+
+
+
+* V2 after AI's thoughts
+
+** Layout
+
+*** Previous plan: highly normmalized
+
+A primary goal of this editor is to have a highly flexible window management system. User should be able to use tab, tiling window manager, scrolling (Niri-style) window manager, or mixture. 
+
+*** New plan: fully tree based. We will call this the layout tree
+
+A view of the editor can be boiled down to:
+
+~<base-url>/session/<session-id>/~
+
+A ~session~ consists of one or more ~layout trees~. A layout tree is a tree with the following anatomy:
+
+~layout-node~:
+- ~children~: a list of ~layout-child~ values
+- ~active-child-id~: the id of the active child
+- ~direction~: ~horizontal~ or ~vertical~
+- ~tiling~: ~scroll~ or ~fit~
+
+~layout-child~:
+- ~child~: a ~layout-leaf~ OR a ~layout-node~
+- ~measure~: the percent width or height /relative to its parent container/. A child cannot exceed the width or height of its parent container, even for scrolling, so ~0 <= measure <= 1~ (yes it can be ~0~)
+
+Then when rendering a given parent node and its children:
+- If the parent node is ~scrollable~, then the measure is taken at face value and the child is given that exact width or height (relative to the parent, of course)
+- If the parent node is ~fit~, then we calculate ratios of the measures of each child and render based on that. So e.g if there are three children with measure 50%, then they would each be rendered at approximately 33% of the parent size.
+
+It might at first seem that for a ~layout-node~ with just a single ~layout-child~, the ~direction~ and ~tiling~ attributes are unecessary. But this is not true: it allows the tiling settings to be preserved even if the node goes down to a single child.
+
+Additionally, it might seem odd for a ~layout-child~ to specify the size (~measure~) of its child relative to its parent. But this is intentional --- it makes the sizing of a child portable, in the sense that its size (relative to its parent container) will be preserved if it is moved to a different parent. 
+
+~layout-leaf~:
+- eventually we will populate this with content, potentially implement tabs inside the leaf, etc. but for now, it's basically just an empty placeholder.
+
+In this design, a ~frame~ is just a pointer to a node on a specific tree:
+
+~frame~:
+- ~layout-tree-id~: the id of the layout tree
+- ~layout-node-id~: the id of the node being pointed to
+
+The client will render the tree from that point downward. 
+
+~session~:
+- ~layout-trees~: collection of all ~layout-tree~ for the session
+- ~frames~: a list of ~frame~ objects (pointer to a specific node on a tree)
+- ~active-frame-id~: the id of the active frame

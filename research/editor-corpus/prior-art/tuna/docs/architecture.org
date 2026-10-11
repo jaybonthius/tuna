@@ -1,0 +1,101 @@
+* Tuna: A highly extensible integrated development environment
+
+** State
+
+Tuna keeps one immutable editor-state snapshot in memory. A configured state
+file receives versioned, Racket-readable snapshots asynchronously; an editor
+without a state file is ephemeral.
+
+Buffers and views are global ID-keyed collections. Sessions own their layout
+trees and frames. Frame, tree, and layout-item allocation counters remain global
+so their identities are unambiguous across sessions.
+
+*** Public API
+
+The public API lives under ~tuna/api~. It operates on the current editor runtime
+and takes explicit IDs for sessions, frames, views, buffers, trees, and layout
+items. Commands, queries, composition, layout inspection, and editor-change
+events are public; state records, locking, render projections, and persistence
+are private implementation details.
+
+*** Sessions
+
+A session owns one or more layout trees and frames and tracks one active frame.
+Frames never cross session boundaries.
+
+- ~id~
+- ~layout-trees~: immutable ID-keyed layout trees
+- ~frames~: immutable ID-keyed frames
+- ~active-frame-id~
+
+A newly created session atomically creates one fresh unnamed buffer, one
+point-zero view, one horizontal fitted tree whose leaf displays that view, and
+one active frame.
+
+*** Layout trees and frames
+
+A layout tree is a recursive, ordered topology. Nodes have a direction
+(~horizontal~ or ~vertical~), a tiling mode (~fit~ or ~scroll~), an optional
+local scroll anchor, and nonempty children. A child owns its measure and points
+to a node or leaf. Nodes and leaves share a global layout-item ID namespace.
+Every leaf references one valid view. A view may be attached to zero or one leaf
+across the editor.
+
+A scroll node's anchor names one of its direct children; a fit node's anchor is
+~#f~. Anchors are declarative shared tree state. The active frame aligns every
+scroll node on its path to its active leaf. Other branches retain valid anchors,
+and topology edits repair invalid anchors to the first remaining direct child.
+
+A frame points to a tree node and keeps a frame-local active leaf beneath that
+node. Multiple frames in one session may show the same or overlapping subtrees;
+the topology, leaf-to-view binding, and scroll anchors are shared while the
+active leaf is not.
+
+*** Session rendering
+
+The canonical session resource renders every item in the active frame subtree.
+One private query gathers that subtree, its view and buffer metadata, and
+immutable full-text snapshots under the editor lock. The public session value
+remains layout-only.
+
+Fit nodes normalize measures, with equal allocation when every measure is zero.
+Scroll nodes size children as viewport fractions and derive a clamped transform
+that centers their stored anchor. The DOM uses hidden overflow and an inner flex
+track rather than browser scrolling. Only the frame's active leaf receives the
+green active border. Each leaf renders its leaf, view, and buffer IDs plus the
+buffer's literal complete text.
+
+*** Views
+
+A view is one reusable stateful perspective on a buffer.
+
+- ~id~
+- ~buffer-id~: permanent buffer association
+- ~point~: exact logical UTF-8 byte offset on a scalar boundary
+
+Views may remain detached and later be attached to another leaf. Splitting a
+leaf creates a distinct view of the same buffer at the source point. Buffer
+edits map every view point in the same editor update with left bias; an insertion
+at point leaves point before the inserted text.
+
+*** Buffers
+
+A buffer owns optional file association and live editable text logically.
+
+- ~id~
+- ~file~: a string path or ~#f~
+
+Live text resides in a runtime-owned map keyed by buffer ID. The editor lock
+guards the map and its opaque mutable UTF-8 gap buffers. The public API accepts
+and returns Racket strings. Edit and range positions are exact logical UTF-8
+byte offsets. Location queries report zero-based LF lines, Unicode scalar
+columns, and UTF-16 columns.
+
+Text mutations use the existing nested editor update boundary. A private,
+update-local reversal journal cancels completed mutations when an outer update
+fails. The journal is discarded at commit and is not undo history.
+
+State-file format version 2 persists buffer metadata, views, detached views, and
+leaf-to-view references. Live buffer text and view point are not persisted; a
+restored buffer starts empty and a restored view starts at point zero. Version 1
+is unsupported.

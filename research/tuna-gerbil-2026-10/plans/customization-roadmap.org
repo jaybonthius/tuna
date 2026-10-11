@@ -1,0 +1,680 @@
+#+title: Tuna roadmap
+#+TODO: TODO | DONE
+#+PROPERTY: header-args :eval never
+
+DONE sections are implemented in the working tree and functionally verified. TODO interfaces remain proposed. See [[file:ISSUES.org][ISSUES.org]] for open findings and the [[file:docs/customization.md][customization guide]] for current behavior and limits.
+
+Design for Gerbil: preserve native definitions, lexical binding identity, first-class procedures, and keyword arguments. Emacs examples illustrate corresponding behavior, not a requirement to copy its interfaces.
+
+Tuna examples use =prelude: :tuna/prelude= and standard macro-authoring bindings; TODO examples assume the proposed interfaces have been implemented. Each top-level section starts independently; its examples otherwise run in order. Native structs, classes, and methods remain native. Prefer hooks for designed extension points; use advice when no suitable hook exists.
+
+* DONE Live definitions and callback references
+** Definitions, replacement, and capture
+Ordinary definitions remain replaceable through compiled callers. A procedure value captures the current implementation; =(function-ref identifier)= resolves a lexical binding and returns a first-class, callable live reference. Imported aliases identify the same binding, not another global name.
+
+Tuna:
+#+begin_src scheme
+(def (step (n : :fixnum)) => :fixnum (fx+ n 1))
+(def saved step)
+(def live (function-ref step))
+(set! step (lambda ((n : :fixnum)) => :fixnum (fx+ n 2)))
+(list (step 1) (saved 1) (live 1)) ; => (3 2 3)
+(function-ref-set! live
+  (lambda ((n : :fixnum)) => :fixnum (fx+ n 3)))
+(live 1) ; => 4
+(def count 0)
+(set! count 1)
+#+end_src
+
+Emacs Lisp:
+#+begin_src emacs-lisp
+(defun demo-step (n) (1+ n))
+(setq demo-saved (symbol-function 'demo-step) demo-live 'demo-step)
+(defun demo-step (n) (+ n 2))
+(list (demo-step 1) (funcall demo-saved 1) (funcall demo-live 1)) ; => (3 2 3)
+(fset demo-live (lambda (n) (+ n 3)))
+(funcall demo-live 1) ; => 4
+(setq demo-count 0)
+(setq demo-count 1)
+#+end_src
+
+** Other native definition forms
+Keep native grammar for =def*=, =define=, =defvalues=, and =define-values=; none requires a separate opt-in declaration for live bindings.
+
+Tuna:
+#+begin_src scheme
+(def* add
+  (((n : :fixnum)) => :fixnum (fx+ n 1))
+  (((n : :fixnum) (m : :fixnum)) => :fixnum (fx+ n m)))
+(define saved-add add)
+(defvalues (width height) (values 80 24))
+(define-values (rows columns) (values 24 80))
+(list (add 3) (saved-add 3 4) width height rows columns) ; => (4 7 80 24 24 80)
+#+end_src
+
+Emacs Lisp (optional arguments and list-based multiple values):
+#+begin_src emacs-lisp
+(require 'cl-lib)
+(defun demo-add (n &optional m) (+ n (or m 1)))
+(setq demo-saved-add (symbol-function 'demo-add))
+(cl-multiple-value-setq (demo-width demo-height) (cl-values 80 24))
+(cl-multiple-value-setq (demo-rows demo-columns) (cl-values 24 80))
+(list (demo-add 3) (funcall demo-saved-add 3 4)
+      demo-width demo-height demo-rows demo-columns) ; => (4 7 80 24 24 80)
+#+end_src
+
+* TODO Runtime advice
+** DONE Positional advice
+=(advice-add! live 'name kind callback)= accepts ='before= (observe arguments), ='after= (observe return values), and ='around= (receive =next= and arguments). =(advice-remove! live 'name)= removes advice. Re-registering a name preserves its position; replacing the function preserves its advice.
+
+** TODO Keyword interface: observe arguments or results; wrap a call
+Runtime advice operates on live reference values, so registration remains an ordinary, composable procedure call. =before-call:= and =after-call:= receive call arguments; =after-return:= receives returned values. Observers do not replace results. =around:= receives =next= followed by the arguments and controls delegation. After observers run only on normal return; exceptions propagate.
+
+Tuna:
+#+begin_src scheme
+(def (step (n : :fixnum)) => :fixnum (fx+ n 1))
+(def live (function-ref step))
+(advice-add! live 'input before-call: displayln)
+(step 3) ; prints 3, returns 4
+(advice-remove! live 'input)
+(advice-add! live 'finished after-call: displayln)
+(step 3) ; prints 3, returns 4
+(advice-remove! live 'finished)
+(advice-add! live 'result after-return: displayln)
+(step 3) ; prints 4, returns 4
+(advice-remove! live 'result)
+(advice-add! live 'twice around:
+  (lambda ((next : :procedure) (n : :fixnum)) => :fixnum
+    (fx* 2 (:- (next n) :fixnum))))
+(step 3) ; => 8
+(advice-remove! live 'twice)
+#+end_src
+
+Emacs Lisp (a result observer returns its input through =:filter-return=):
+#+begin_src emacs-lisp
+(defun demo-step (n) (1+ n))
+(advice-add 'demo-step :before #'print '((name . input)))
+(demo-step 3) ; prints 3, returns 4
+(advice-remove 'demo-step 'input)
+(advice-add 'demo-step :after #'print '((name . finished)))
+(demo-step 3) ; prints 3, returns 4
+(advice-remove 'demo-step 'finished)
+(advice-add 'demo-step :filter-return
+            (lambda (result) (print result) result) '((name . result)))
+(demo-step 3) ; prints 4, returns 4
+(advice-remove 'demo-step 'result)
+(advice-add 'demo-step :around
+            (lambda (next n) (* 2 (funcall next n))) '((name . twice)))
+(demo-step 3) ; => 8
+(advice-remove 'demo-step 'twice)
+#+end_src
+
+** TODO Names, ordering, and inspection
+Each registration supplies exactly one advice-kind keyword. Smaller =depth:= is outermost; equal depths retain registration order. Re-registering a name replaces that advice without duplicating it, preserving position and depth unless explicitly changed. Definition replacement preserves advice. Inspection returns ordered =(name kind depth)= entries.
+
+Tuna:
+#+begin_src scheme
+(advice-add! live 'audit before-call: displayln depth: -10)
+(advice-add! live 'audit after-return: displayln)
+(advice-list live) ; => ((audit after-return: -10))
+(advice-remove! live 'audit)
+#+end_src
+
+Emacs Lisp:
+#+begin_src emacs-lisp
+(advice-add 'demo-step :before #'print '((name . audit) (depth . -10)))
+(advice-add 'demo-step :after #'print '((name . audit) (depth . -10)))
+(advice-member-p 'audit 'demo-step) ; non-nil
+(advice-mapc (lambda (_function properties) (print properties)) 'demo-step)
+(advice-remove 'demo-step 'audit)
+#+end_src
+
+* TODO Named hooks
+** DONE Hook objects and named callbacks
+=make-hook= creates an independently owned hook; =hook?= recognizes it. =hook-add!= and =hook-remove!= manage named callbacks; replacing a name keeps its position. =hook-run!= invokes callbacks synchronously over a snapshot, so mutations affect later invocations. Exceptions stop the run and propagate; ordinary hook results are discarded.
+
+** TODO Reload-stable declarations
+=defhook= declares a reload-stable hook: repeating the declaration preserves registrations.
+
+Tuna:
+#+begin_src scheme
+(defhook changed "After a change; callbacks receive its text.")
+(def (report (text : :string)) => :void (displayln text))
+(hook-add! changed 'report (function-ref report))
+(hook-run! changed "Changed")
+(hook-add! changed 'report
+  (lambda ((text : :string)) => :void (displayln "Updated: " text)))
+(hook-run! changed "Changed") ; prints Updated: Changed, once
+(hook-remove! changed 'report)
+(def temporary (make-hook))
+(hook? temporary) ; => #t
+#+end_src
+
+Emacs Lisp (hook entries are identified by function, not a separate name):
+#+begin_src emacs-lisp
+(defvar demo-changed-hook nil "After a change; callbacks receive its text.")
+(defun demo-report (text) (message "%s" text))
+(add-hook 'demo-changed-hook #'demo-report)
+(run-hook-with-args 'demo-changed-hook "Changed")
+(defun demo-report (text) (message "Updated: %s" text))
+(run-hook-with-args 'demo-changed-hook "Changed")
+(remove-hook 'demo-changed-hook #'demo-report)
+(let ((temporary-hook nil)) (run-hooks 'temporary-hook))
+#+end_src
+
+* DONE Expansion-time macro customization
+** Define with native syntax
+Use =defrule= for one pattern, =defrules= for several patterns or guards, and =defsyntax= for a procedural transformer. Templates retain Gerbil hygiene. Native macro-authoring grammar remains intact; procedural transformers may use the shorthand header or an explicit transformer expression.
+
+Tuna provider, =:example/macros=:
+#+begin_src scheme
+(export bump total scale)
+(defrule (bump x) (+ x 1))
+(defrules total (list)
+  ((_ (list x ...)) (+ x ...))
+  ((_ x y) (+ x y))
+  ((_ x) (number? (syntax->datum #'x)) x))
+(defsyntax (scale stx)
+  (syntax-case stx ()
+    ((_ x) #'(let (value x) (* 2 value)))))
+(list (bump 3) (total 3) (total 3 4) (total (list 3 4 5)) (scale 3)) ; => (4 3 7 12 6)
+#+end_src
+
+Emacs Lisp (argument lists and explicit construction instead of hygienic patterns):
+#+begin_src emacs-lisp
+(require 'cl-lib)
+(defmacro demo-bump (x) `(+ ,x 1))
+(defmacro demo-total (x &optional y)
+  (cond (y `(+ ,x ,y))
+        ((and (consp x) (eq (car x) 'list)) `(+ ,@(cdr x)))
+        ((numberp x) x)
+        (t (error "Expected a numeric literal"))))
+(defmacro demo-scale (x)
+  (let ((value (cl-gensym "value")))
+    `(let ((,value ,x)) (* 2 ,value))))
+(list (demo-bump 3) (demo-total 3) (demo-total 3 4)
+      (demo-total (list 3 4 5)) (demo-scale 3)) ; => (4 3 7 12 6)
+#+end_src
+
+** Replace imported definitions
+=redefrule=, =redefrules=, and =redefsyntax= accept their native counterparts' grammar but replace an existing Tuna macro binding. They reject missing or unsupported targets, preserve advice, and work through renamed imports. Ordinary definitions do not silently patch another module. Changes apply to subsequent expansions in the compiler process and selected use phase, never already-expanded code; load customization before expanding consumers.
+
+Tuna consumer:
+#+begin_src scheme
+(import :example/macros)
+(redefrule (bump x) (+ x 10))
+(redefrules total ()
+  ((_ x) (+ x 10))
+  ((_ x y) (+ x y 10)))
+(redefsyntax (scale stx)
+  (syntax-case stx ()
+    ((_ x) #'(let (value x) (* 3 value)))))
+(list (bump 3) (total 3 4) (scale 3)) ; => (13 17 9)
+#+end_src
+
+Emacs Lisp:
+#+begin_src emacs-lisp
+(defmacro demo-bump (x) `(+ ,x 10))
+(defmacro demo-total (x &optional y) (if y `(+ ,x ,y 10) `(+ ,x 10)))
+(defmacro demo-scale (x)
+  (let ((value (cl-gensym "value")))
+    `(let ((,value ,x)) (* 3 ,value))))
+(list (demo-bump 3) (demo-total 3 4) (demo-scale 3)) ; => (13 17 9)
+#+end_src
+
+Tuna, another consumer showing a renamed target and an explicit transformer:
+#+begin_src scheme
+(import (rename-in :example/macros (scale imported-scale)))
+(redefsyntax imported-scale
+  (lambda ((stx : :t)) => :t
+    (syntax-case stx ()
+      ((_ x) #'(let (value x) (* 4 value))))))
+(imported-scale 3) ; => 12; subsequent uses of the provider's scale also change
+#+end_src
+
+Emacs Lisp (redefine the underlying name; a symbol alias follows it):
+#+begin_src emacs-lisp
+(defalias 'demo-imported-scale 'demo-scale)
+(defmacro demo-scale (x) `(* 4 ,x))
+(demo-imported-scale 3) ; => 12
+#+end_src
+
+** Snapshot a transformer
+=defsyntax-snapshot= defines a macro with the target's current effective transformer, including advice. Later target changes do not replace that captured transformer.
+
+Tuna consumer, continuing after =bump= returns 13:
+#+begin_src scheme
+(defsyntax-snapshot saved-bump bump)
+(redefrule (bump x) (+ x 20))
+(list (saved-bump 3) (bump 3)) ; => (13 23)
+#+end_src
+
+Emacs Lisp:
+#+begin_src emacs-lisp
+(defalias 'demo-saved-bump (symbol-function 'demo-bump))
+(defmacro demo-bump (x) `(+ ,x 20))
+(list (demo-saved-bump 3) (demo-bump 3)) ; => (13 23)
+#+end_src
+
+** Advise expansion without compiler bookkeeping
+=macro-advice-add!=, =macro-advice-remove!=, and =macro-advice-list= take a lexical macro identifier and execute during expansion. Basic keywords and ordering follow the planned runtime-advice interface; the additional expansion filters below remain TODO. Callbacks receive a whole syntax object: =before-call:= and =after-call:= see input, =after-return:= sees output, and =around:= receives =next= and input. Bodies execute as transformer code, not runtime application code. Inspection captures metadata at that expansion point.
+
+Tuna consumer:
+#+begin_src scheme
+(macro-advice-add! bump 'trace before-call:
+  (lambda ((stx : :t)) => :void (displayln (syntax->datum stx))))
+(bump 3) ; logs (bump 3) during expansion; evaluates to 23
+(macro-advice-add! bump 'trace after-call:
+  (lambda ((stx : :t)) => :void (displayln (syntax->datum stx))))
+(macro-advice-add! bump 'trace after-return:
+  (lambda ((stx : :t)) => :void (displayln (syntax->datum stx))))
+(bump 3) ; logs (+ 3 20) during expansion; evaluates to 23
+(macro-advice-remove! bump 'trace)
+(macro-advice-add! bump 'offset around:
+  (lambda ((next : :procedure) (stx : :t)) => :t
+    (with-syntax ((result (next stx))) #'(+ result 100))))
+(bump 3) ; => 123
+(macro-advice-list bump) ; => ((offset around: 0))
+(macro-advice-remove! bump 'offset)
+#+end_src
+
+Emacs Lisp (macro advice receives operands, not the whole invocation):
+#+begin_src emacs-lisp
+(advice-add 'demo-bump :before #'print '((name . trace)))
+(demo-bump 3) ; logs 3 during expansion; evaluates to 23
+(advice-remove 'demo-bump 'trace)
+(advice-add 'demo-bump :after #'print '((name . trace)))
+(advice-remove 'demo-bump 'trace)
+(advice-add 'demo-bump :filter-return
+            (lambda (form) (print form) form) '((name . trace)))
+(demo-bump 3) ; logs (+ 3 20) during expansion; evaluates to 23
+(advice-remove 'demo-bump 'trace)
+(advice-add 'demo-bump :around
+            (lambda (next x) `(+ ,(funcall next x) 100)) '((name . offset)))
+(demo-bump 3) ; => 123
+(advice-mapc (lambda (_function properties) (print properties)) 'demo-bump)
+(advice-remove 'demo-bump 'offset)
+#+end_src
+
+* TODO Scoped settings and hooks
+** Defaults, local overrides, and reloads
+=defsetting= initializes an absent setting and preserves values on redeclaration. Contexts represent application scopes such as panes or sessions, not necessarily editor buffers. A context inherits from its parent, ultimately the global context; =make-context= defaults to the current context as parent. =parameterize= selects the current context. Reading a setting finds its nearest override; =set!= writes to the selected context. Explicit default access addresses the global value.
+
+Tuna:
+#+begin_src scheme
+(defsetting (fill-column : :fixnum) 80 "Preferred wrap column.")
+(def workspace (make-context))
+(def preview (make-context parent: workspace mode: 'text-mode))
+(setting-set-default! fill-column 100)
+(parameterize ((current-context workspace)) (set! fill-column 90))
+(parameterize ((current-context preview))
+  fill-column ; => 90, inherited
+  (set! fill-column 72)
+  (setting-local? fill-column) ; => #t
+  (setting-default fill-column) ; => 100
+  (setting-clear-local! fill-column)
+  fill-column) ; => 90
+(setting-default fill-column) ; => 100
+#+end_src
+
+Emacs Lisp (one buffer-local layer, not arbitrary parent contexts):
+#+begin_src emacs-lisp
+(defcustom demo-fill-column 80 "Preferred wrap column." :type 'integer)
+(setq-default demo-fill-column 100)
+(with-temp-buffer
+  (setq-local demo-fill-column 72)
+  (local-variable-p 'demo-fill-column) ; => t
+  (default-value 'demo-fill-column) ; => 100
+  (kill-local-variable 'demo-fill-column)
+  demo-fill-column) ; => 100
+#+end_src
+
+** Scoped registration, ordering, and early exit
+=local: #t= selects the current context's hook registrations; otherwise registration is global. A local name shadows the same inherited name, and removing it reveals the inherited registration. Smaller =depth:= runs first; ties preserve registration order. Successful short-circuit runs return the first non-=#f= value; failure runs stop at =#f= and otherwise return =#t=. These runners require one result per callback; only =#f= is false in Gerbil.
+
+Tuna:
+#+begin_src scheme
+(defhook validate "Validators receive a proposed number.")
+(def (positive (n : :fixnum)) => :boolean (fx> n 0))
+(hook-add! validate 'positive (function-ref positive) depth: -10)
+(parameterize ((current-context preview))
+  (hook-add! validate 'small
+    (lambda ((n : :fixnum)) => :boolean (fx< n 10)) local: #t)
+  (hook-run-until-failure! validate 20) ; => #f
+  (hook-run-until-success! validate 20) ; => #t
+  (hook-list validate) ; effective (name depth) entries, in execution order
+  (hook-remove! validate 'small local: #t))
+(hook-remove! validate 'positive)
+#+end_src
+
+Emacs Lisp:
+#+begin_src emacs-lisp
+(defvar demo-validate-hook nil)
+(defun demo-positive (n) (> n 0))
+(defun demo-small (n) (< n 10))
+(add-hook 'demo-validate-hook #'demo-positive -10)
+(with-temp-buffer
+  (add-hook 'demo-validate-hook #'demo-small 0 t)
+  (run-hook-with-args-until-failure 'demo-validate-hook 20) ; => nil
+  (run-hook-with-args-until-success 'demo-validate-hook 20) ; => t
+  demo-validate-hook ; local entries, including the marker for global entries
+  (remove-hook 'demo-validate-hook #'demo-small t))
+(remove-hook 'demo-validate-hook #'demo-positive)
+#+end_src
+
+* DONE Browser input and initial dispatch
+** DONE Datastar keyboard plugin and asset build
+A small Datastar action forwards every browser-delivered keydown, including modifier-only keys, repeats, and composition metadata. Posts are serialized without coalescing or automatic retries. Standalone esbuild compiles the TypeScript source outside =web/= into a committed JavaScript asset; =make= rebuilds it before Gerbil embeds the assets. The plugin shares the existing Datastar runtime.
+
+** DONE Acknowledgement and ordered command execution
+=POST /commands= validates the keydown envelope, sends a bodyless =204=, then queues the event. One worker resolves and invokes commands in order; resolver and command exceptions do not stop subsequent input. =204= acknowledges receipt, not successful execution. Queues are in-memory only; process shutdown interrupts the worker.
+
+=resolve-keydown= is an ordinary replaceable procedure returning a live command reference or =#f=. For this first slice, unmodified Enter logs =Hello from Tuna= with INFO logging enabled; other keys are unbound. Focused tests verify acknowledgement ordering, continued admission during a blocked command, live replacement, error recovery, and the browser transport. No general state model, command registry, or keymap interface is implemented by this slice.
+
+* TODO Text input beyond keydown
+Add composed-text insertion and paste as explicit inputs rather than pretending raw key events are committed text. Decide whether key-release events are needed when a concrete command requires them. Browser and operating-system shortcuts that are not delivered to the page remain outside browser capture.
+
+* TODO Server-owned state and streamed UI
+** TODO State ownership and change notification
+Choose the state representation, its ownership and lifetime, and how changes notify the existing stream. Do not infer a state architecture from the transient input queue.
+
+** TODO State-derived fat morphs
+Render the UI from current server state and send broad element patches through the separate GET stream after state changes. Initial connections and reconnects must receive the current view. Command POST responses remain empty acknowledgements, never UI patches.
+
+* TODO Commands and keymaps
+** TODO State-aware resolution and modes
+Replace the initial resolver's single binding with state-aware lookup once state ownership is defined. Add mode/context selection and prefix sequences with cancellation without moving command selection into the browser.
+
+** Declare, register, discover, and invoke
+=defcommand= combines an ordinary typed function definition with documentation and an =interactive= argument-list expression. That expression runs only for interactive invocation, in the current context; ordinary calls supply arguments directly. It is Gerbil code, not a string-based argument language. Registration of an existing function is also supported. Discovery returns descriptions; command operations take live references.
+
+Tuna:
+#+begin_src scheme
+(def default-name "world")
+(defcommand (hello (name : :string)) => :void
+  "Greet somebody."
+  (interactive (list default-name))
+  (displayln "Hello, " name))
+(hello "Ada")
+(command-run! (function-ref hello)) ; prints Hello, world
+(command-info (function-ref hello)) ; name, documentation, argument specification
+(command-list) ; registered command descriptions
+(def (goodbye) => :void (displayln "Goodbye"))
+(command-register! (function-ref goodbye) doc: "Say goodbye."
+  interactive: (lambda () => :list []))
+(command-run! (function-ref goodbye))
+(command-unregister! (function-ref goodbye)) ; leaves the ordinary function intact
+#+end_src
+
+Emacs Lisp:
+#+begin_src emacs-lisp
+(defvar demo-default-name "world")
+(defun demo-hello (name)
+  "Greet somebody."
+  (interactive (list demo-default-name))
+  (message "Hello, %s" name))
+(demo-hello "Ada")
+(call-interactively #'demo-hello)
+(list (documentation 'demo-hello) (interactive-form 'demo-hello))
+(all-completions "demo-" obarray #'commandp)
+(defun demo-goodbye () (message "Goodbye"))
+(put 'demo-goodbye 'interactive-form '(interactive))
+(call-interactively #'demo-goodbye)
+(put 'demo-goodbye 'interactive-form nil)
+#+end_src
+
+** Inheritance, remapping, and replacement
+Keymaps store live command references. A context can select a keymap; absent a context map, use the inherited or global map. Lookup searches the selected map and its parents, then follows command remapping; remapping cycles are errors. Removing a local binding or remap reveals the inherited entry. Definition replacement does not require rebinding keys.
+
+Tuna:
+#+begin_src scheme
+(defcommand (hello-again (name : :string)) => :void
+  "Offer another greeting."
+  (interactive (list default-name))
+  (displayln "Welcome, " name))
+(def local-map (make-keymap parent: global-keymap))
+(keymap-bind! global-keymap "C-c h" (function-ref hello))
+(keymap-bind! local-map "C-c !" (function-ref hello-again))
+(keymap-remap! local-map (function-ref hello) (function-ref hello-again))
+(def pane (make-context keymap: local-map))
+(parameterize ((current-context pane))
+  (command-run! (keymap-lookup local-map "C-c h"))) ; prints Welcome, world
+(set! hello-again
+  (lambda ((name : :string)) => :void (displayln "Hi, " name)))
+(command-run! (keymap-lookup local-map "C-c h")) ; prints Hi, world
+(keymap-unbind! local-map "C-c !")
+(keymap-unmap! local-map (function-ref hello))
+(keymap-unbind! global-keymap "C-c h")
+#+end_src
+
+Emacs Lisp:
+#+begin_src emacs-lisp
+(defun demo-hello-again (name)
+  "Offer another greeting."
+  (interactive (list demo-default-name))
+  (message "Welcome, %s" name))
+(setq demo-local-map (make-sparse-keymap))
+(set-keymap-parent demo-local-map global-map)
+(keymap-global-set "C-c h" #'demo-hello)
+(define-key demo-local-map (kbd "C-c !") #'demo-hello-again)
+(define-key demo-local-map [remap demo-hello] #'demo-hello-again)
+(with-temp-buffer
+  (use-local-map demo-local-map)
+  (call-interactively (key-binding (kbd "C-c h"))))
+(defun demo-hello-again (name)
+  (interactive (list demo-default-name))
+  (message "Hi, %s" name))
+(with-temp-buffer
+  (use-local-map demo-local-map)
+  (call-interactively (key-binding (kbd "C-c h"))))
+(define-key demo-local-map (kbd "C-c !") nil)
+(define-key demo-local-map [remap demo-hello] nil)
+(keymap-global-unset "C-c h")
+#+end_src
+
+* TODO Contextual definitions
+** Conditional implementations and delegation
+=defspecialization= gives a stable name and selection options to one enclosed native definition. The target must already exist. A =when:= expression sees the definition's arguments and current context. Higher =priority:= wins; equal priorities retain registration order. The ordinary definition is the final fallback. Optional =next:= binds an explicit delegation procedure; pass it the desired arguments. Reloading a named specialization replaces that entry, not its siblings.
+
+Tuna:
+#+begin_src scheme
+(def (indent-width (level : :fixnum)) => :fixnum (fx* 4 level))
+(def text-context (make-context mode: 'text-mode))
+(defspecialization text-indent
+  when: (eq? (context-mode (current-context)) 'text-mode)
+  priority: 10
+  next: next
+  (def (indent-width (level : :fixnum)) => :fixnum
+    (fxquotient (:- (next level) :fixnum) 2)))
+(defspecialization zero-indent
+  when: (fx= level 0)
+  priority: 20
+  (def (indent-width (level : :fixnum)) => :fixnum 0))
+(defspecialization preview-indent
+  when: (eq? (current-context) text-context)
+  priority: 30
+  next: next
+  (def (indent-width (level : :fixnum)) => :fixnum
+    (fx+ 1 (:- (next level) :fixnum))))
+(parameterize ((current-context text-context)) (indent-width 2)) ; => 5
+(indent-width 2) ; => 8
+(specialization-list (function-ref indent-width)) ; names, priorities, guards, source locations
+(specialization-remove! (function-ref indent-width) 'preview-indent)
+#+end_src
+
+Emacs Lisp (generic-method precedence, not Tuna's named priority rules):
+#+begin_src emacs-lisp
+(require 'cl-generic)
+(defvar demo-preview nil)
+(cl-defgeneric demo-indent-width (level) "Choose an indent width.")
+(cl-defmethod demo-indent-width (level) (* 4 level))
+(cl-defmethod demo-indent-width
+  (level &context (major-mode (eql text-mode)))
+  (/ (cl-call-next-method) 2))
+(cl-defmethod demo-indent-width ((level (eql 0))) 0)
+(cl-defmethod demo-indent-width :around
+  (level &context (demo-preview (eql t)))
+  (1+ (cl-call-next-method)))
+(with-temp-buffer
+  (text-mode)
+  (let ((demo-preview t)) (demo-indent-width 2))) ; => 5
+#+end_src
+
+** The same declaration around macro definitions
+=defspecialization= also encloses =defrule=, =defrules=, or =defsyntax=. Rule patterns and guards must match for that specialization to apply; procedural guards see the syntax parameter. =with-expansion-context= evaluates its context expression during expansion and selects it while expanding its body. It does not read runtime context changes. Macro specialization inspection and removal likewise run during expansion.
+
+Tuna:
+#+begin_src scheme
+(defrule (emit x) x)
+(defspecialization debug-emit
+  when: (eq? (context-mode (current-context)) 'debug)
+  priority: 10
+  (defrule (emit x) (let (value x) (displayln value) value)))
+(defspecialization pair-emit
+  priority: 20
+  (defrules emit ()
+    ((_ (x y)) (list x y))))
+(defspecialization literal-emit
+  when: (syntax-case stx () ((_ x) (number? (syntax->datum #'x))) (_ #f))
+  priority: 30
+  (defsyntax (emit stx)
+    (syntax-case stx () ((_ x) #'x))))
+(emit (1 2)) ; => (1 2)
+(with-expansion-context (make-context mode: 'debug)
+  (emit (+ 1 2))) ; prints 3 at runtime, returns 3
+(macro-specialization-list emit)
+(macro-specialization-remove! emit 'literal-emit)
+#+end_src
+
+Emacs Lisp (an expansion helper implements the selection explicitly):
+#+begin_src emacs-lisp
+(defvar demo-expansion-mode nil)
+(defun demo-emit-expansion (x)
+  (cond ((numberp x) x)
+        ((and (listp x) (= (length x) 2)) `(list ,@x))
+        ((eq demo-expansion-mode 'debug)
+         (let ((value (cl-gensym "value")))
+           `(let ((,value ,x)) (print ,value) ,value)))
+        (t x)))
+(defmacro demo-emit (x) (demo-emit-expansion x))
+(demo-emit (1 2)) ; => (1 2)
+(eval (let ((demo-expansion-mode 'debug))
+        (macroexpand '(demo-emit (+ 1 2))))) ; prints 3, returns 3
+#+end_src
+
+* TODO Complete advice operations
+** Override and filters
+Complete runtime advice registration with these keywords. =override:= replaces the remainder of the chain until removed. =filter-args:= transforms the argument list. =filter-return:= transforms returned values, including multiple values; observers preserve them instead.
+
+Tuna:
+#+begin_src scheme
+(def (step (n : :fixnum)) => :fixnum (fx+ n 1))
+(def live (function-ref step))
+(advice-add! live 'fixed override: (lambda ((n : :fixnum)) => :fixnum 42))
+(step 3) ; => 42
+(advice-remove! live 'fixed)
+(advice-add! live 'offset filter-args:
+  (lambda ((args : :list)) => :list [(fx+ 10 (:- (car args) :fixnum))]))
+(step 3) ; => 14
+(advice-remove! live 'offset)
+(advice-add! live 'twice filter-return:
+  (lambda ((result : :fixnum)) => :fixnum (fx* 2 result)))
+(step 3) ; => 8
+(advice-remove! live 'twice)
+#+end_src
+
+Emacs Lisp:
+#+begin_src emacs-lisp
+(defun demo-step (n) (1+ n))
+(advice-add 'demo-step :override (lambda (_n) 42) '((name . fixed)))
+(demo-step 3) ; => 42
+(advice-remove 'demo-step 'fixed)
+(advice-add 'demo-step :filter-args
+            (lambda (args) (list (+ 10 (car args)))) '((name . offset)))
+(demo-step 3) ; => 14
+(advice-remove 'demo-step 'offset)
+(advice-add 'demo-step :filter-return (lambda (result) (* 2 result)) '((name . twice)))
+(demo-step 3) ; => 8
+(advice-remove 'demo-step 'twice)
+#+end_src
+
+** Transform macro input and output
+Macro advice also supports =override:=, =filter-input:=, and =filter-output:=. Each takes and returns one syntax object; there is no argument-list wrapping for a macro's single input. Use native pattern guards or =around:= for conditional expansion, rather than treating syntax as a runtime truth value.
+
+Tuna:
+#+begin_src scheme
+(defrule (emit x) x)
+(macro-advice-add! emit 'constant override:
+  (lambda ((stx : :t)) => :t #'10))
+(emit 3) ; => 10
+(macro-advice-remove! emit 'constant)
+(macro-advice-add! emit 'offset filter-input:
+  (lambda ((stx : :t)) => :t
+    (syntax-case stx () ((head x) #'(head (+ x 10))))))
+(emit 3) ; => 13
+(macro-advice-remove! emit 'offset)
+(macro-advice-add! emit 'twice filter-output:
+  (lambda ((stx : :t)) => :t
+    (with-syntax ((result stx)) #'(* 2 result))))
+(emit 3) ; => 6
+(macro-advice-remove! emit 'twice)
+#+end_src
+
+Emacs Lisp:
+#+begin_src emacs-lisp
+(defmacro demo-emit (x) x)
+(advice-add 'demo-emit :override (lambda (_x) 10) '((name . constant)))
+(demo-emit 3) ; => 10
+(advice-remove 'demo-emit 'constant)
+(advice-add 'demo-emit :filter-args
+            (lambda (args) (list `(+ ,(car args) 10))) '((name . offset)))
+(demo-emit 3) ; => 13
+(advice-remove 'demo-emit 'offset)
+(advice-add 'demo-emit :filter-return
+            (lambda (form) `(* 2 ,form)) '((name . twice)))
+(demo-emit 3) ; => 6
+(advice-remove 'demo-emit 'twice)
+#+end_src
+
+** Conditional composition
+These runtime callbacks receive original call arguments and return one value. Write =A= for the advice call and =N= for the next call: =before-while:= means =(and A N)=, =before-until:= means =(or A N)=, =after-while:= means =(and N A)=, and =after-until:= means =(or N A)=. Gerbil treats only =#f= as false. Use =around:= for conditional handling of multiple values.
+
+Tuna:
+#+begin_src scheme
+(def (echo (value : :t)) => :t value)
+(def live-echo (function-ref echo))
+(advice-add! live-echo 'guard before-while:
+  (lambda ((value : :t)) => :boolean (number? value)))
+(echo 'no) ; => #f
+(advice-remove! live-echo 'guard)
+(advice-add! live-echo 'cache before-until:
+  (lambda ((value : :t)) => :t (and (eq? value 'cached) 'hit)))
+(echo 'cached) ; => hit
+(advice-remove! live-echo 'cache)
+(advice-add! live-echo 'success after-while:
+  (lambda ((value : :t)) => :symbol 'accepted))
+(echo 0) ; => accepted; zero is true
+(advice-remove! live-echo 'success)
+(advice-add! live-echo 'fallback after-until:
+  (lambda ((value : :t)) => :symbol 'missing))
+(echo #f) ; => missing
+(advice-remove! live-echo 'fallback)
+#+end_src
+
+Emacs Lisp:
+#+begin_src emacs-lisp
+(defun demo-echo (value) value)
+(advice-add 'demo-echo :before-while #'numberp '((name . guard)))
+(demo-echo 'no) ; => nil
+(advice-remove 'demo-echo 'guard)
+(advice-add 'demo-echo :before-until
+            (lambda (value) (and (eq value 'cached) 'hit)) '((name . cache)))
+(demo-echo 'cached) ; => hit
+(advice-remove 'demo-echo 'cache)
+(advice-add 'demo-echo :after-while (lambda (_value) 'accepted) '((name . success)))
+(demo-echo 0) ; => accepted
+(advice-remove 'demo-echo 'success)
+(advice-add 'demo-echo :after-until (lambda (_value) 'missing) '((name . fallback)))
+(demo-echo nil) ; => missing
+(advice-remove 'demo-echo 'fallback)
+#+end_src

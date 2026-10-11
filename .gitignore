@@ -1,0 +1,5 @@
+/.gerbil/
+build-deps
+manifest.ss
+__pycache__/
+*.pyc

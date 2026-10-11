@@ -1,0 +1,120 @@
+#+title: Tuna roadmap
+
+* Direction
+
+Tuna is a local, personal Emacs-like editor written in Racket. The Lisp core is
+the priority: terminals, Git, syntax highlighting, LSP, and projects must use
+the same public APIs available to user configuration.
+
+Actionable feature headings carry stable Org IDs. See
+[[file:agents/backlog.md][the feature backlog convention]].
+
+* DONE Editor host
+** DONE Immutable editor runtime — CQRS updates and asynchronous state snapshots. (2d5bc7b)
+:PROPERTIES:
+:ID: TUNA-F-0001
+:END:
+** DONE Recursive layout — Frames plus fit/scroll layout trees. (2822d2c)
+:PROPERTIES:
+:ID: TUNA-F-0002
+:END:
+** DONE Basic browser UI — CQRS session pages and SSE/Datastar rendering. (6570477, a32f46f)
+:PROPERTIES:
+:ID: TUNA-F-0003
+:END:
+** DONE Command loop and initial keybindings — Backend-owned input, commands, and bindings. (adeee0a)
+:PROPERTIES:
+:ID: TUNA-F-0004
+:END:
+** DONE Native Racket REPL — Local Racket frontend connected to the live editor. (ae91a67)
+:PROPERTIES:
+:ID: TUNA-F-0005
+:END:
+
+* TODO 1. Lisp core — A user can define editor behavior in Racket through a small public API.
+** DONE Editable buffer API — Give buffers private mutable UTF-8 gap-buffer text with stable read, position, insertion, deletion, and replacement operations.
+:PROPERTIES:
+:ID: TUNA-F-0006
+:END:
+** DONE View and leaf API — Attach per-view state to views and make leaves display views without conflating either with buffer content.
+:PROPERTIES:
+:ID: TUNA-F-0007
+:END:
+** TODO User-extensible commands and keymaps — Let configuration define, invoke, and bind commands through the APIs used by default bindings.
+:PROPERTIES:
+:ID: TUNA-F-0008
+:END:
+*** TODO Keymap unsetting — Remove exact bindings without damaging siblings or retained prefixes.
+:PROPERTIES:
+:ID: TUNA-F-0024
+:END:
+*** TODO Registered-command enumeration — Expose deterministic command names for future command completion.
+:PROPERTIES:
+:ID: TUNA-F-0025
+:END:
+** TODO Major and minor mode API — Select a major mode per buffer and compose enabled minor-mode behavior and keymaps.
+:PROPERTIES:
+:ID: TUNA-F-0009
+:END:
+** TODO Reloadable personal configuration — Load a user Racket configuration and replace its commands, keymaps, and mode setup without restarting Tuna.
+:PROPERTIES:
+:ID: TUNA-F-0010
+:END:
+
+* TODO 2. Daily text and file editing — The core APIs support an interactive local editing loop.
+** TODO Interactive buffer editing — Display a buffer view and support text input, movement, selection, and edit commands.
+:PROPERTIES:
+:ID: TUNA-F-0011
+:END:
+** TODO Visit and save local files — Open a local file in a buffer, save its edits, and report file errors through editor interaction.
+:PROPERTIES:
+:ID: TUNA-F-0012
+:END:
+** TODO Prompt and minibuffer interaction — Run commands that collect arguments and show command feedback in the editor.
+:PROPERTIES:
+:ID: TUNA-F-0013
+:END:
+** TODO Undo and buffer switching — Undo or redo buffer edits and select among open buffers through the core API.
+:PROPERTIES:
+:ID: TUNA-F-0014
+:END:
+** TODO Search and completion — Search buffer text and provide reusable completion interaction to commands and modes.
+:PROPERTIES:
+:ID: TUNA-F-0015
+:END:
+** TODO Markers and overlays — Create durable positions and display annotations that track buffer edits.
+:PROPERTIES:
+:ID: TUNA-F-0016
+:END:
+
+* TODO 3. Usable presentation — Interactive editing has clear text, state, and layout feedback.
+** TODO Text-view UI — Render cursor, selection, scrolling, minibuffer feedback, and buffer/view identity from Racket-owned state.
+:PROPERTIES:
+:ID: TUNA-F-0017
+:END:
+** TODO Measured rendering improvement — Remove a demonstrated editing or rendering bottleneck without moving semantics into JavaScript.
+:PROPERTIES:
+:ID: TUNA-F-0018
+:END:
+
+* TODO 4. Language and workflow features — Facilities consume the completed Lisp-core APIs.
+** TODO Syntax-aware major modes — Deliver language modes with syntax highlighting through buffer, mode, and text-view APIs.
+:PROPERTIES:
+:ID: TUNA-F-0019
+:END:
+** TODO LSP client integration — Show diagnostics and language navigation or completion in file-backed buffers through core commands, modes, markers, and overlays.
+:PROPERTIES:
+:ID: TUNA-F-0020
+:END:
+** TODO Project workspaces — Discover local project roots and expose project buffers and commands through the core APIs.
+:PROPERTIES:
+:ID: TUNA-F-0021
+:END:
+** TODO Terminal buffers — Run and interact with local terminals as buffers and views using commands, keymaps, and text presentation APIs.
+:PROPERTIES:
+:ID: TUNA-F-0022
+:END:
+** TODO Git status and actions — Show local repository state and run Git actions through project, buffer, command, and presentation APIs.
+:PROPERTIES:
+:ID: TUNA-F-0023
+:END:

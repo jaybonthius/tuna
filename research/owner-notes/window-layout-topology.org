@@ -1,0 +1,201 @@
+* Window Layout Topology
+
+This document describes only the topology and rendering semantics of Tuna's
+window management. Persistence and leaf content are separate concerns.
+
+* Overview
+
+A session may contain multiple layout trees. A frame does not own a tree; it
+points to a node in a tree and renders that node and its descendants.
+
+A layout tree consists of three values:
+
+- A ~layout-node~ arranges children.
+- A ~layout-child~ connects a node to one child and describes the child's size.
+- A ~layout-leaf~ is where content will eventually live.
+
+This supports fitted tiling, scrolling tiling, arbitrary nesting, and mixtures
+of those arrangements using one recursive topology.
+
+* Structs
+
+The following is a Racket-shaped description, not a final interface:
+
+#+begin_src racket
+(struct layout-tree
+  (id root))
+
+(struct layout-node
+  (id direction tiling children))
+
+(struct layout-child
+  (measure child))
+
+(struct layout-leaf
+  (id))
+
+(struct frame
+  (id layout-tree-id layout-node-id active-leaf-id))
+#+end_src
+
+Their fields have these meanings:
+
+~layout-tree~
+- ~id~: stable tree identity.
+- ~root~: the tree's root ~layout-node~.
+
+~layout-node~
+- ~id~: stable node identity.
+- ~direction~: ~horizontal~ or ~vertical~.
+- ~tiling~: ~fit~ or ~scroll~.
+- ~children~: a nonempty ordered list of ~layout-child~ values.
+
+~layout-child~
+- ~measure~: a real number where ~0 <= measure <= 1~.
+- ~child~: a ~layout-node~ or ~layout-leaf~.
+
+~layout-leaf~
+- ~id~: stable leaf identity.
+- Its content is intentionally unspecified for now.
+
+~frame~
+- ~id~: stable frame identity.
+- ~layout-tree-id~: the tree containing the frame's visible subtree.
+- ~layout-node-id~: the root node of the subtree rendered by the frame.
+- ~active-leaf-id~: the focused leaf, which must be a descendant of the frame's
+  layout node.
+
+* Tree invariants
+
+- Every node and leaf has a stable, unique identity.
+- Every node and leaf has at most one parent.
+- The graph is acyclic.
+- Children are ordered.
+- A node has at least one child. Empty content is represented by a leaf, not by
+  a childless node.
+- A frame's layout node belongs to its layout tree.
+- A frame's active leaf is a descendant of its layout node.
+
+There is no ~active-child-id~ on layout nodes. Focus belongs to a frame, not to
+the topology. Because each item has at most one parent, the focused path can be
+derived by walking from the active leaf toward the frame's layout node.
+
+* Measure
+
+A measure belongs to the parent-child relationship rather than to the child
+itself. Its meaning depends on the parent node's tiling mode.
+
+** Fit
+
+Under ~fit~, sibling measures act as weights. They are normalized when the node
+is rendered.
+
+For children with measures ~0.5~, ~0.5~, and ~0.5~, each child receives one
+third of the available extent:
+
+#+begin_example
+child extent = parent extent * child measure / sum of sibling measures
+#+end_example
+
+A horizontal node allocates width. A vertical node allocates height.
+
+** Scroll
+
+Under ~scroll~, a measure is used directly as a fraction of the parent's extent
+along the node's direction.
+
+For a horizontal scrolling node, a child with measure ~0.5~ receives half of
+the parent's width. For a vertical scrolling node, it receives half of the
+parent's height.
+
+Each individual child is no larger than its parent along that direction, but
+the sum of all child extents may exceed the parent's extent. That overflow is
+what makes the node scrollable.
+
+** Moving children
+
+Moving a subtree means detaching and reinserting its ~layout-child~. The measure
+therefore travels with the subtree by default. A command may choose to assign a
+new measure when inserting it elsewhere.
+
+* Rendering
+
+To render a frame:
+
+1. Find the frame's layout tree.
+2. Find the frame's layout node in that tree.
+3. Give that node the frame's available rectangle.
+4. Recursively allocate rectangles to its ordered children according to its
+   direction, tiling mode, and child measures.
+5. Render leaves into their allocated rectangles.
+
+~fit~ and ~scroll~ are node-local. A fitted node may contain a scrolling node,
+and a scrolling node may contain a fitted node. This is intentional: the model
+supports mixed layouts rather than imposing one layout style on an entire
+frame.
+
+* Examples
+
+** Fitted tiling
+
+#+begin_example
+horizontal fit
+├── leaf A          measure 0.5
+└── vertical fit    measure 0.5
+    ├── leaf B      measure 0.5
+    └── leaf C      measure 0.5
+#+end_example
+
+#+begin_example
+┌──────────┬──────────┐
+│          │    B     │
+│    A     ├──────────┤
+│          │    C     │
+└──────────┴──────────┘
+#+end_example
+
+** Horizontal scrolling
+
+#+begin_example
+horizontal scroll
+├── leaf A          measure 0.6
+├── vertical fit    measure 0.6
+│   ├── leaf B      measure 0.5
+│   └── leaf C      measure 0.5
+└── leaf D          measure 0.6
+#+end_example
+
+The children require ~1.8~ times the frame's width, so the horizontal node
+scrolls. The nested vertical node still fits B and C within its own rectangle.
+
+** Mixed tiling
+
+#+begin_example
+vertical fit
+├── horizontal scroll
+│   ├── leaf A
+│   ├── leaf B
+│   └── leaf C
+└── horizontal fit
+    ├── leaf D
+    └── leaf E
+#+end_example
+
+The upper region scrolls horizontally while the lower region remains fitted.
+
+* Frames and sharing
+
+Multiple frames may point to the same node or to overlapping subtrees in one
+layout tree. They see the same topology and therefore observe the same tree
+edits.
+
+Focus remains frame-local: each frame stores its own active leaf. Two frames
+showing the same subtree may focus different leaves.
+
+If an operation removes a frame's active leaf or moves it outside the frame's
+subtree, that operation must select another descendant leaf for the frame.
+
+* Zero fitted measures
+
+If every child of a fitted node has measure zero, the renderer divides the
+available extent equally among its children. Stored measures remain unchanged.

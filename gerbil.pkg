@@ -1,0 +1,2 @@
+;; The tuna/ directory supplies the module prefix, as in :tuna/main.
+(depend: ("git.cons.io/jay/gerbil-datastar"))

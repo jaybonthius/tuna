@@ -1,0 +1,53 @@
+
+
+
+* Keybindings
+** priorities
+
+in Emacs, some keybindings seem to be global, not per mode e.g. ~C-x p f~, ~M-x~, etc.
+
+** compound keybindings / prefix behavior
+
+Basic prefix sequences work (for example ~C-x o~, ~C-x b~, ~C-x C-f~). Remaining work is deciding priority rules for global/prefix maps versus mode maps, e.g. Emacs-like global prefixes such as ~C-x p f~ and ~M-x~.
+
+** keybinding indicator
+
+even default emacs shows when you are typing in a command
+
+
+
+* UI
+** cursor
+
+we should decide how we wanna handle cursor. in emacs, cursor is only ever positioned ON a character
+
+i think it might be nice to have something more flexible.
+
+like in block mode, then yes it is only ever on a specific char (or multiple chars when we have multiple cursors). same thing with underline and hollow styles. 
+
+but in bar mode, maybe we specify the two chars it is BETWEEN! or something like that. or maybe we only have to specify the char after it and then it's rendered just before it or something. not sure. we will have to think about it i guess.
+
+* Robustness
+** DONE event loop has no error handling around command dispatch
+
+Resolved: ~event-loop.rkt~ wraps command dispatch in ~with-handlers ([exn:fail?
+handle-loop-error!])~; ~handle-loop-error!~ reports the error to the echo line
+and keeps the loop alive, deliberately letting ~exn:break~ / custodian shutdown
+through. (Originally surfaced when a malformed ~~user~ made ~expand-file-name~
+raise on the loop thread.)
+
+* Dired / directories in find-file
+** TODO selecting a directory in find-file
+
+Right now ~C-x C-f~ on a directory refuses it with a message ("X is a
+directory") and does not open it. It also cannot overwrite a directory — the OS
+rejects renaming a file over a dir, so there is no data-loss path. Emacs opens
+dired on a directory. When we have a directory editor (or a "navigate into"
+affordance), make selecting a directory open/enter it instead of erroring.
+
+* Features for a MVE
+
+(Minimally Viable Editor)
+
+
+

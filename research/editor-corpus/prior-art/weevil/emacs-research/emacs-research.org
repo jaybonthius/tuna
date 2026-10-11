@@ -1,0 +1,103 @@
+#+TITLE: Emacs Architecture and Internals Research
+#+AUTHOR: Jay Bonthius
+#+DATE: 2026-06-11
+#+STARTUP: overview
+
+* Local PDFs
+- [[file:pdfs/EMACS-Conceptual-Architecture.pdf][EMACS Conceptual Architecture]]
+- [[file:pdfs/emacs-architecture.pdf][Emacs Architecture]]
+- [[file:pdfs/elisp.pdf][GNU Emacs Lisp Reference Manual PDF]]
+  - Original: https://www.gnu.org/software/emacs/manual/pdf/elisp.pdf
+  - Downloaded mirror used: https://newblankets.org/worth_a_look/elisp.pdf
+- [[file:pdfs/pdumperpres.pdf][Portable Dumper / pdumper slides]]
+  - Original: https://dancol.org/pdumperpres.pdf
+- [[file:pdfs/bringing-gnu-emacs-to-native-code.pdf][Bringing GNU Emacs to Native Code]]
+  - Original: https://arxiv.org/pdf/2004.02504
+
+* Must-reads
+** ★ Finseth, /The Craft of Text Editing/
+- URL: http://www.finseth.com/craft/
+- Topic: text and buffer data structures; editor implementation fundamentals.
+
+** ★ GNU Emacs Internals chapter
+- URL: https://www.gnu.org/software/emacs/manual/html_node/elisp/GNU-Emacs-Internals.html
+- Whole Elisp manual PDF: [[file:pdfs/elisp.pdf][local PDF]] / https://www.gnu.org/software/emacs/manual/pdf/elisp.pdf
+- Key sub-nodes:
+  - Object Internals: https://www.gnu.org/software/emacs/manual/html_node/elisp/Object-Internals.html
+  - Buffer Internals: https://www.gnu.org/software/emacs/manual/html_node/elisp/Buffer-Internals.html
+  - Garbage Collection: https://www.gnu.org/software/emacs/manual/html_node/elisp/Garbage-Collection.html
+  - Building Emacs: https://www.gnu.org/software/emacs/manual/html_node/elisp/Building-Emacs.html
+  - Writing Dynamic Modules: https://www.gnu.org/software/emacs/manual/html_node/elisp/Writing-Dynamic-Modules.html
+
+** ★ Redisplay engine: =xdisp.c=
+- Source: https://github.com/emacs-mirror/emacs/blob/master/src/xdisp.c
+- Note: top commentary is effectively the design document for redisplay.
+- Explainer blog: https://kyo.iroiro.party/en/posts/this-year-a-shitty-gui/
+
+** ★ Corallo et al., /Bringing GNU Emacs to Native Code/
+- Local PDF: [[file:pdfs/bringing-gnu-emacs-to-native-code.pdf]]
+- URL: https://arxiv.org/pdf/2004.02504
+- Topic: native compilation of Emacs Lisp.
+
+* Design philosophy
+** Stallman, /EMACS/ (1981)
+- URL: https://www.gnu.org/software/emacs/emacs-paper.html
+- Topic: original design philosophy and historical framing.
+
+* Text and buffer data structures
+** Finseth, /The Craft of Text Editing/
+- URL: http://www.finseth.com/craft/
+- See also: [[*★ Finseth, /The Craft of Text Editing/][must-read entry]].
+
+* Official internals specification
+** GNU Emacs Internals
+- URL: https://www.gnu.org/software/emacs/manual/html_node/elisp/GNU-Emacs-Internals.html
+- Local manual PDF: [[file:pdfs/elisp.pdf]]
+- Web manual PDF: https://www.gnu.org/software/emacs/manual/pdf/elisp.pdf
+
+* Redisplay engine
+** =xdisp.c=
+- URL: https://github.com/emacs-mirror/emacs/blob/master/src/xdisp.c
+- Note: read the initial file commentary carefully.
+
+** Explainer blog
+- URL: https://kyo.iroiro.party/en/posts/this-year-a-shitty-gui/
+
+* Build and dump system
+** Colascione pdumper slides
+- Local PDF: [[file:pdfs/pdumperpres.pdf]]
+- URL: https://dancol.org/pdumperpres.pdf
+
+** LWN, /The Emacs dumper dispute/
+- URL: https://lwn.net/Articles/707615/
+
+** Original emacs-devel thread
+- URL: https://lists.gnu.org/archive/html/emacs-devel/2016-11/msg00625.html
+
+* Native compilation
+** Corallo et al., /Bringing GNU Emacs to Native Code/
+- Local PDF: [[file:pdfs/bringing-gnu-emacs-to-native-code.pdf]]
+- URL: https://arxiv.org/pdf/2004.02504
+
+** Mastering Emacs overview
+- URL: https://www.masteringemacs.org/article/speed-up-emacs-libjansson-native-elisp-compilation
+
+* Object model and garbage collection
+** nullprogram deep dives
+- https://nullprogram.com/blog/2016/11/05/
+- https://nullprogram.com/blog/2018/05/31/
+- https://nullprogram.com/blog/2014/01/27/
+
+* Catch-all primary source
+** Emacs source tree
+- URL: https://github.com/emacs-mirror/emacs
+- Important source files with in-file commentary:
+  - =src/alloc.c=
+  - =src/eval.c=
+  - =src/lread.c=
+  - =src/lisp.h=
+  - =src/bytecode.c=
+
+* Notes
+- Four must-reads are marked with ★ above.
+- Prefer primary sources first: official manuals, source-code commentary, papers, and mailing list threads.

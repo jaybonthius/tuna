@@ -1,0 +1,27 @@
+---
+name: gerbil-reference
+description: Find authoritative Gerbil v0.19 and Gambit behavior, idioms, and APIs for Tuna code. Use before relying on a Gerbil API, macro behavior, compiler declaration, concurrency primitive, or package/test convention.
+---
+
+# Gerbil reference
+
+Tuna targets the Gerbil v0.19 development branch. The installed toolchain is `/opt/gerbil` (`gxi --version`). Do not guess APIs.
+
+## Sources, in order
+
+1. The Gerbil MCP tools (`gerbil_check_syntax`, `gerbil_check_balance`, `gerbil_eval`, documentation and module-export lookups). Use them to confirm a form expands and an API exists.
+2. Gerbil documentation in `/home/jay/Code/workbench-gerbil/gerbil/doc/` (`reference/std/`, `reference/gerbil/`, `guide/`).
+3. Gerbil source in `/home/jay/Code/workbench-gerbil/gerbil/src/` (codebase-memory project `home-jay-Code-workbench-gerbil-gerbil`). Its branch may differ from the installed build; check `gxi --version` against `git -C /home/jay/Code/workbench-gerbil/gerbil describe`.
+4. Gambit manual: `/home/jay/Code/workbench-gerbil/gerbil/src/gambit/doc/gambit.txi` for threads, declarations (`block`, `separate`), and runtime primitives.
+5. Prior Tuna research in `research/workbench-gerbil/` and `research/editor-corpus/prior-art/workbench-gerbil/research/`. Re-verify version-sensitive claims.
+
+## Editing protocol
+
+Follow `/home/jay/Code/workbench-gerbil/gerbil/AGENTS.md`: balance-check a file before the first edit and after every edit, then syntax-check, before compiling or moving on. Fix only the edit that broke balance.
+
+## Facts Tuna relies on
+
+- Modules compile with `(declare (block))`; use `(declare (separate))` where external `set!` must reach intra-module calls ([ADR 1](../../../docs/adr/0001-language-and-extension-surface.md)).
+- Gambit threads are preemptive green threads; the installed runtime is not SMP (`gerbil-runtime-smp?` is `#f`). Do not share mutable state across threads ([ADR 3](../../../docs/adr/0003-command-loop-and-jobs.md)).
+- Replaceable services use `:std/interface`.
+- Tests are `*-test.ss` files exporting `*-test` suites (`:std/test`), run with `make test`.

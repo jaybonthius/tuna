@@ -1,0 +1,184 @@
+#+title: Window layout topology
+
+* Status
+
+Implemented.
+
+* Model
+
+A session owns one or more immutable recursive layout trees and one or more
+frames. A frame points to a node in one session-owned tree. Frames may share a
+tree or show overlapping subtrees.
+
+#+begin_src racket
+(struct layout-tree (id root))
+(struct layout-node (id direction tiling scroll-anchor-id children))
+(struct layout-child (measure child))
+(struct layout-leaf (id))
+(struct frame (id layout-tree-id layout-node-id active-leaf-id))
+(struct session (id layout-trees frames active-frame-id))
+#+end_src
+
+A tree root is a node. A node has a ~horizontal~ or ~vertical~ direction, a
+~fit~ or ~scroll~ tiling mode, and a nonempty ordered list of children. A child
+contains a measure and either a node or leaf.
+
+Nodes and leaves share a global layout-item ID namespace. Frames, trees, and
+layout items use editor-global monotonic counters. Sessions own their frame and
+tree collections, which are immutable hashes keyed by ID.
+
+The public layout module exports predicates and read accessors, including
+~layout-node-scroll-anchor-id~, but no constructors. Commands are the mutation
+interface.
+
+* Scroll anchors
+
+Scroll position is declarative tree state. Each node stores
+~scroll-anchor-id~:
+
+- a scroll node stores the ID of one of its direct child items
+- a fit node stores ~#f~
+
+The value is an item identity, not a pixel offset or browser scroll position.
+Frames sharing a tree therefore share its anchors. A frame's
+~active-leaf-id~ remains frame-local and controls only which leaf is active.
+
+The session's active frame drives shared anchors:
+
+- selecting a leaf in the active frame aligns each scroll node on the path from
+  that frame's layout node to the leaf
+- selecting a leaf in an inactive frame changes only that frame's active leaf
+- selecting a frame aligns the selected frame's scroll-ancestor path to its
+  stored active leaf
+- changing the active frame by deletion applies the same alignment
+
+Scroll nodes outside the active path keep their valid anchors. After a topology
+edit, every valid anchor is retained. An invalid anchor is repaired to the
+first remaining direct child in stored order, after which the active frame's
+path is aligned. A new scroll node starts on its first child. Changing a fit
+node to scroll chooses its first child before active-path alignment; changing a
+scroll node to fit clears the anchor.
+
+* Measures and rendering
+
+A measure is a finite real from 0 through 1 and belongs to the parent-child
+relationship. It moves with the child unless a move supplies a replacement.
+Zero is valid.
+
+The canonical session page renders the active frame's complete subtree:
+
+- fit nodes normalize child measures to the available extent
+- when all fit measures are zero, children receive equal allocation
+- scroll nodes use each direct measure as a fraction of the node viewport
+- every child remains in the DOM
+- an inner flex track is translated to center the stored anchor child
+- translation is clamped between the strip ends so it introduces no blank
+  space
+- horizontal nodes use ~translateX~ and vertical nodes use ~translateY~
+
+The numeric transform is derived from child order and measures during
+rendering. It is never persisted. Scroll nodes use ~overflow: hidden~ rather
+than browser scrolling. CSS applies an ordinary transform transition. Only the
+active frame's leaf receives the green active border.
+
+* Invariants
+
+Validation enforces:
+
+- collections are immutable hashes whose keys match record IDs
+- all IDs are positive exact integers
+- next-ID counters exceed all allocated IDs in their namespaces
+- tree IDs and frame IDs are globally unique
+- node and leaf IDs are globally unique in their shared namespace
+- every tree root is a node
+- directions and tiling modes use their exact supported symbols
+- every measure is finite and between 0 and 1 inclusive
+- every node has at least one child
+- child order is preserved
+- trees are acyclic and no item occurs more than once
+- a fit node's scroll anchor is ~#f~
+- a scroll node's anchor names one of its direct children
+- every frame references a tree and node in its session
+- every frame active leaf descends from its layout node
+- every session has at least one tree and frame
+- every session active frame belongs to that session
+
+Parent pointers, child indexes, flattened node maps, rectangles, and numeric
+scroll positions are derived rather than stored.
+
+* Creation and topology commands
+
+A new session creates one tree with a root node, one child leaf of measure 1,
+and one active frame. A new tree has the same minimal topology. If its tiling is
+scroll, the root anchors its leaf.
+
+The public topology commands are:
+
+#+begin_src racket
+(create-session #:direction direction #:tiling tiling)
+(delete-session session-id)
+
+(create-layout-tree session-id #:direction direction #:tiling tiling)
+(delete-layout-tree session-id tree-id)
+
+(create-frame session-id tree-id
+  #:layout-node-id node-id
+  #:active-leaf-id leaf-id)
+(delete-frame session-id frame-id)
+(select-frame session-id frame-id)
+(select-leaf session-id frame-id leaf-id)
+(set-frame-root session-id frame-id tree-id node-id
+  #:active-leaf-id leaf-id)
+
+(insert-layout-leaf session-id tree-id parent-node-id
+  #:at index #:measure measure)
+(wrap-layout-item session-id tree-id item-id direction
+  #:tiling tiling #:measure measure)
+(move-layout-child session-id tree-id child-id destination-node-id
+  #:at index #:measure measure)
+(remove-layout-leaf session-id tree-id leaf-id)
+(unwrap-layout-node session-id tree-id node-id)
+(set-layout-node-direction session-id tree-id node-id direction)
+(set-layout-node-tiling session-id tree-id node-id tiling)
+(set-layout-child-measure session-id tree-id parent-node-id child-id measure)
+#+end_src
+
+~#:at #f~ appends. An integer inserts before that zero-based position. Wrapping
+keeps the old item's outer measure and stores the supplied inner measure.
+Moving carries the existing measure unless a replacement is supplied. Moving
+or removing a last child prunes empty non-root ancestors. Commands reject any
+edit that would delete the tree root or a frame's layout node. Unary nodes are
+retained unless explicitly unwrapped.
+
+~split-layout-leaf~ atomically wraps a leaf, inserts a sibling on the requested
+side, and focuses the new leaf in the invoking frame. Its anchor behavior is the
+same as other topology edits and leaf selection.
+
+* Frame focus repair
+
+After an edited tree is installed, each frame that references it keeps its
+active leaf when that leaf still descends from its layout node. Otherwise the
+frame selects the first descendant leaf in depth-first child order. The active
+frame's repaired path then drives the tree's scroll anchors.
+
+* Persistence
+
+State files store the recursive topology directly. Node records include the
+anchor between tiling and children:
+
+#+begin_src racket
+(layout-node 1 horizontal scroll 2
+  (layout-child 1 (layout-leaf 2)))
+#+end_src
+
+Fit nodes store ~#f~ in that position. Session, tree, and frame records are
+sorted by ID; child order is stored order. Decoding constructs the complete
+value and runs full editor-state validation. The reader remains strict and the
+writer remains atomic.
+
+* Live resources
+
+The canonical live layout remains at ~/session/<id>~ with
+~/session/<id>/events~. The independently live debug representation remains at
+~/session/<id>/debug~ with ~/session/<id>/debug/events~. All four paths are
+slashless.

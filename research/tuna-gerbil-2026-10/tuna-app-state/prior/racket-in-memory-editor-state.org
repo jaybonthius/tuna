@@ -1,0 +1,78 @@
+#+title: In-memory editor state and snapshots
+
+* Goal
+
+Keep one immutable editor-state value in memory. A configured state file receives
+asynchronous, versioned Racket-readable snapshots; an editor without a state file is
+ephemeral.
+
+* State
+
+Subjects and views are global immutable ID-keyed hashes. Sessions own immutable
+ID-keyed layout trees and frames. Frame, tree, and layout-item IDs use
+global counters so they remain unambiguous across sessions.
+
+The recursive layout model, topology operations, and their invariants are
+defined in ~window-layout-topology.org~. State transformations are pure: they
+accept an editor state and return its replacement plus the command result.
+Failed commands discard their candidate state, including any tentative ID
+allocation.
+
+* Commands, queries, and lifecycle
+
+The outermost command holds the editor lock, creates a candidate state, runs
+nested work against that candidate, validates and commits it, requests one
+snapshot, and enqueues one editor-change event. A failure commits neither state
+nor event. Queries made by a command observe its candidate; external commands
+and queries wait for the lock.
+
+~start-editor~ synchronously loads a configured state file before exposing the
+editor. ~stop-editor~ prevents new work, flushes the final state, waits for the
+snapshot worker, and clears the current editor.
+
+* State file
+
+The state file contains one tagged datum:
+
+#+begin_src racket
+(tuna-state
+  (version 1)
+  (state
+    (next-ids
+      (subject 2)
+      (view 2)
+      (session 2)
+      (frame 2)
+      (layout-tree 2)
+      (layout-item 3))
+    (subjects ...)
+    (views ...)
+    (sessions ...)))
+#+end_src
+
+The reader disables reader extensions and compiled input, accepts exactly one
+datum, requires version 1 and the documented shape, decodes immutable values,
+and runs full state validation. Invalid input leaves the source file unchanged. Missing
+files are initialized atomically with an empty editor state.
+
+* Snapshot worker
+
+One worker owns one pending-state slot. A command replaces the pending value and
+wakes the worker. After one second without a newer request, the worker atomically
+writes the latest value. Failed asynchronous writes retain the latest value and
+retry after five seconds. Shutdown bypasses the delay and returns a final write
+failure to ~stop-editor~.
+
+* Acceptance
+
+Tests cover immutable state validation, rollback, locking, event ordering,
+strict state-file loading, deterministic snapshots, retry behavior, final
+flushing, and ephemeral editors.
+
+Run from the Tuna repository root:
+
+#+begin_src shell
+make format
+make test
+make review
+#+end_src
