@@ -4,7 +4,7 @@ Each milestone is a working program that can be shown in the browser. Write a sh
 
 ## Next: architecture skeleton
 
-Starts with a brief in `briefs/` for the owner's approval. Goal: prove every seam in [the ADRs](../agents/adr/README.md) with the least feature code:
+Brief: [briefs/2026-10-architecture-skeleton.md](briefs/2026-10-architecture-skeleton.md). Goal: prove every seam in [the ADRs](../agents/adr/README.md) with the least feature code:
 
 - the editor loop accepts browser keys, runs commands under the baton, and redisplays to every connected tab;
 - clients authenticate with the launch token; events carry a client id and sequence number;
