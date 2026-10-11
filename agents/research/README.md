@@ -1,6 +1,6 @@
 # Research corpus
 
-Prior research collected from earlier Tuna, Weevil, and workbench efforts. Everything here is **historical evidence, not a decision**. Current decisions live in [`../docs/adr/`](../docs/adr/). When a document conflicts with an ADR, the ADR wins; when it conflicts with current Gerbil source, the source wins.
+Prior research collected from earlier Tuna, Weevil, and workbench efforts. Everything here is **historical evidence, not a decision**. Current decisions live in [`../adr/`](../adr/). When a document conflicts with an ADR, the ADR wins; when it conflicts with current Gerbil source, the source wins.
 
 Most documents were written by agents against earlier Gerbil (v0.18/early v0.19) or Racket toolchains. Re-check version-sensitive claims and never transfer benchmark numbers across languages, machines, or architectures.
 
@@ -8,6 +8,7 @@ Most documents were written by agents against earlier Gerbil (v0.18/early v0.19)
 
 | Topic | Read first |
 |---|---|
+| What Tuna must eventually support, and which decisions changed because of it | [`capability-audit/README.md`](capability-audit/README.md) |
 | What earlier attempts tried and why they stalled | [`editor-corpus/prior-attempts-audit.md`](editor-corpus/prior-attempts-audit.md) |
 | Open editor-model questions | [`editor-corpus/research-gaps.md`](editor-corpus/research-gaps.md) |
 | How Emacs extensibility actually works | [`live-extensibility-racket/research/emacs-extension-architecture.md`](live-extensibility-racket/research/emacs-extension-architecture.md) |
@@ -20,6 +21,14 @@ Most documents were written by agents against earlier Gerbil (v0.18/early v0.19)
 | Datastar protocol | [`workbench-gerbil/12-current-datastar-release-and-protocol.md`](workbench-gerbil/12-current-datastar-release-and-protocol.md) |
 
 ## Directory map
+
+| Directory | Contents |
+|---|---|
+| [`capability-audit/`](capability-audit/) | The 2026-10-11 audit of the ADRs against Emacs and post-Emacs needs: five lane reports and a synthesis of what changed. **Read before designing any subsystem.** |
+| [`window-management/`](window-management/) | Layout-tree, Niri, and Emacs-style window research, the owner's layout notes, and reference code from Racket Tuna and Weevil. |
+| [`../reference/datastar/`](../reference/datastar/) | Vendored Datastar documentation (v1.0.4, including Rocket). |
+
+Prior-attempt material:
 
 | Directory | Origin | Contents |
 |---|---|---|

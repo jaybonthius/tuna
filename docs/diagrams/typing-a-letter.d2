@@ -1,0 +1,38 @@
+# What happens when you type the letter "a" in a code file?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: You
+browser: Browser
+web: Web server
+editor: Editor thread
+job: Highlighting job
+
+fast: Fast path: the letter appears right away {
+  you -> browser: 1. press "a"
+  browser -> web: 2. send the key
+  web -> browser: 3. "got it" (no content) {
+    style.stroke-dash: 3
+  }
+  web -> editor: 4. queue the key
+  editor -> editor: 5. run the insert command:\nbuffer now says "a",\nversion 41 → 42
+  editor -> job: 6. start highlighting\nwith a snapshot of version 42
+  editor -> web: 7. new screen (plain "a")
+  web -> browser: 8. show it {
+    style.stroke-dash: 3
+  }
+}
+
+slow: Slow path: colors arrive a moment later {
+  job -> editor: 9. colors for version 42
+  editor -> editor: "10. shift the colors past anything\nyou typed since version 42,\nthen apply them"
+  editor -> web: 11. new screen (colored "a")
+  web -> browser: 12. show it {
+    style.stroke-dash: 3
+  }
+}

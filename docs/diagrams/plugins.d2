@@ -1,0 +1,40 @@
+# How does a plugin add things, and how does turning it off remove them?
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 0
+  }
+}
+direction: right
+
+classes: {
+  part: {
+    style: {
+      fill: "#eef3fb"
+      stroke: "#355c96"
+      font-color: "#172b4d"
+      border-radius: 8
+    }
+  }
+}
+
+legend: |md
+  **Status:** all planned.
+|
+
+plugin: Plugin: basic editing {class: part}
+receipt: Its receipt\na list of everything it added,\nand how to undo each {shape: page}
+
+editor: Editor {
+  commands: Commands\nforward-char, … {class: part}
+  keys: Key bindings\nC-f → forward-char, … {class: part}
+  hooks: Hooks\nafter-change, … {class: part}
+}
+
+plugin -> receipt: turning on: every addition\nis written down
+receipt -> editor.commands: adds
+receipt -> editor.keys: adds
+receipt -> editor.hooks: adds
+receipt -> editor: turning off: undoes every\nline, newest first {
+  style.stroke-dash: 4
+}

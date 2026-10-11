@@ -7,7 +7,7 @@ description: Investigate how GNU Emacs behaves or implements an editor feature, 
 
 Tuna is Emacs-inspired, not an Emacs clone. Establish what Emacs does and why, then state where Tuna deliberately differs.
 
-1. Search `research/` (start at `research/README.md`) and `docs/adr/` for an answer already recorded.
+1. Search `agents/research/` (start at `agents/research/README.md`) and `agents/adr/` for an answer already recorded.
 2. Resolve `/home/jay/Code/emacs` and record `git rev-parse HEAD`. Installed Emacs may differ from that checkout; say which one the claim targets.
 3. Classify the question: documented API, Elisp implementation, C primitive, command/UI behavior, or package convention.
 4. Read the GNU Emacs Lisp Reference Manual section first (`doc/lispref/` in the checkout or <https://www.gnu.org/software/emacs/manual/html_node/elisp/>).
@@ -18,4 +18,4 @@ Useful starting points: Command Loop, Recursive Editing, Active Keymaps, Buffers
 
 For behavior reference in Gerbil, `/home/jay/Code/workbench-gerbil/gerbil-emacs` (codebase-memory project `home-jay-Code-workbench-gerbil-gerbil-emacs`) reimplements many Emacs commands; treat it as a behavior sketch, not as authority.
 
-Answer standalone questions without editing files. Write a research note under `research/` only when the conclusion shapes a Tuna decision or will recur.
+Answer standalone questions without editing files. Write a research note under `agents/research/` only when the conclusion shapes a Tuna decision or will recur.

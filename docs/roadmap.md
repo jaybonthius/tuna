@@ -4,25 +4,32 @@ Each milestone is a working program that can be shown in the browser. Write a sh
 
 ## Next: architecture skeleton
 
-Prove every seam in [the ADRs](adr/README.md) with the least feature code:
+Starts with a brief in `briefs/` for the owner's approval. Goal: prove every seam in [the ADRs](../agents/adr/README.md) with the least feature code:
 
 - the editor loop accepts browser keys, runs commands under the baton, and redisplays to every connected tab;
-- a scratch buffer is one text node backed by the default persistent `TextStore`; typing, deleting, and basic motion work;
-- basic editing is a plugin: deactivating it removes its commands and keys, and reactivating restores them;
+- clients authenticate with the launch token; events carry a client id and sequence number;
+- a scratch buffer is one text node backed by the default persistent `TextStore`, shown through a view; positions are 1-based; typing, deleting, and basic motion work;
+- basic editing is a plugin: deactivating it removes its commands and keys, and reactivating restores them; two plugins binding the same key survive either deactivation order;
+- `C-g` interrupts a deliberately endless command;
+- a `with-settings` binding is visible only to the command that made it, even while another command waits at a prompt;
 - a second `TextStore` implementation can replace the default through the service registry;
 - a command prompts in direct style through a minimal minibuffer and resumes with the answer;
-- a deliberately slow fake highlighter runs as a job: edits render first, decorations arrive later, and stale results are discarded during fast typing;
+- a deliberately slow fake highlighter runs as a job: edits render first, and its decorations arrive later, shifted past any typing that happened meanwhile;
 - a session slot and autosave survive a restart;
-- keydown-to-patched-frame latency is measured.
+- keydown-to-patched-screen latency is measured.
 
 Out of scope: windows and splits, files, modes, completion UI, real highlighting.
+
+## Research before windows and scrolling
+
+How the server learns layout facts from the browser (event-attached facts, measurement requests, Rocket components for local-only behavior). See [the capability-audit brief](briefs/2026-10-capability-audit.md).
 
 ## Later, roughly in order
 
 1. Commands, prefix keymaps, `M-x`, minibuffer completion, echo area.
 2. Files: find-file, save, revert, autosave; many buffers; buffer switching; large-file viewport.
-3. Windows, splits, mode line; major and minor modes as plugins.
+3. Windows: the window contract and the default layout-tree window manager ([desired design](ideas/window-management.md)), starting with a brief; `display-buffer`-style rules, window configurations, mode line; major and minor modes as plugins.
 4. Real syntax highlighting and language-server integration as jobs and subprocesses.
 5. First rich (non-text) buffer kind and navigation across nodes.
 6. Attached REPL, `init.ss` reload, package reload.
-7. Per-tab frames; client-side reactivity where it pays off.
+7. Per-tab frames and input sessions; client-side reactivity where it pays off.

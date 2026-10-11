@@ -2,10 +2,23 @@
 
 ## Orientation
 
-- Architecture decisions are in `docs/adr/`; read the relevant ones before designing or changing a subsystem. They override everything in `research/`.
-- `docs/roadmap.md` names the current milestone.
-- `research/README.md` indexes prior research from earlier attempts. Treat it as evidence, not as decisions, and re-verify version-sensitive Gerbil claims.
+- `docs/` is for the owner (Jay); `agents/` is for agents. If the owner is expected to read it, it belongs in `docs/`; if it exists so an agent gets things right, it belongs in `agents/`.
+- Architecture decisions are in `agents/adr/`; read the relevant ones before designing or changing a subsystem. They override everything in `agents/research/`.
+- `docs/overview.md` explains the architecture in plain language; `docs/roadmap.md` names the current milestone; `docs/ideas/` describes desired features that are not yet scheduled in detail.
+- `docs/emacs-equivalents.md` maps Tuna concepts to Emacs. Divergence from Emacs is welcome when it is an improvement, but every divergence must be recorded both there and in an ADR. When you introduce a concept with an Emacs counterpart, add it to the equivalents table.
+- Before designing a subsystem, check `agents/research/capability-audit/` for the Emacs capabilities and packages it must eventually support.
+- Datastar documentation is vendored in `agents/reference/datastar/`.
+- `agents/research/README.md` indexes prior research from earlier attempts. Treat it as evidence, not as decisions, and re-verify version-sensitive Gerbil claims.
 - The previous attempt is preserved at `/home/jay/Code/workbench-gerbil/tuna-old-2026-10` (including `stash@{0}`). Do not copy its customization macros, application-state framework, or buffer spec back in.
+
+## Documents for the owner
+
+The owner must understand the architecture and every plan. Earlier attempts failed partly because he did not.
+
+- **Before any effort that touches architecture**, write a brief in `docs/briefs/YYYY-MM-name.md` and get the owner's approval before writing ADRs or code. A brief is one or two screens: (1) what we're building and why, with no jargon; (2) one or two diagrams; (3) a walkthrough of one concrete scenario through the diagram; (4) a small code sample from a package author's point of view; (5) decisions for the owner, each with context, options, a recommendation, and why (ideally none); (6) definitions of new terms only.
+- **After the work lands**, update `docs/overview.md` and its diagrams to match what was actually built. Briefs are historical; the overview is current.
+- **Diagrams** are D2 (use the `d2-diagrams` skill), stored as `.d2` source plus rendered `.svg` in `docs/diagrams/`. One question per diagram; at most about ten boxes, otherwise split into an overview and zoom-ins; plain-English labels, not identifiers; flows follow a concrete numbered example; every diagram, or its caption in the document, marks what exists today versus what is planned, in text, not by color alone. Use the same terms as `docs/overview.md`'s glossary. Render, then look at the result before linking it.
+- Write plainly: short sentences, define acronyms, name concrete things, and explain why before how.
 
 ## How to work
 
@@ -34,7 +47,7 @@ make run           # build, then run .gerbil/bin/tuna
 
 ## HTML and CSS
 
-Follow `docs/agents/html-css.md`. Stellar is not used; design values come from CSS custom properties.
+Follow `agents/guides/html-css.md`. Stellar is not used; design values come from CSS custom properties.
 
 ## README scope
 

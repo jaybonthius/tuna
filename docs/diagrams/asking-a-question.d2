@@ -1,0 +1,28 @@
+# How can a command stop and ask you something, without freezing the editor?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: You
+editor: Editor thread
+command: The rename-buffer command
+
+you -> editor: 1. M-x rename-buffer
+editor -> command: 2. start the command
+command -> editor: 3. ask "New name:"\nand wait {
+  style.stroke-dash: 3
+}
+waiting: While the command waits, the editor keeps working {
+  editor -> you: 4. show the question in the minibuffer
+  you -> editor: 5. type "notes"\n(keys go to the minibuffer)
+  you -> editor: 6. press Enter
+}
+editor -> command: 7. here is the answer: "notes"
+command -> editor: 8. rename the buffer, finish {
+  style.stroke-dash: 3
+}
+editor -> you: 9. new screen

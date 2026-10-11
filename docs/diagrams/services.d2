@@ -1,0 +1,43 @@
+# How can you swap out a part of Tuna, such as the text data structure?
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 0
+  }
+}
+direction: right
+
+classes: {
+  part: {
+    style: {
+      fill: "#eef3fb"
+      stroke: "#355c96"
+      font-color: "#172b4d"
+      border-radius: 8
+    }
+  }
+  option: {
+    style: {
+      fill: "#fff8e1"
+      stroke: "#8d6e00"
+      font-color: "#3e2f00"
+      border-radius: 8
+    }
+  }
+}
+
+legend: |md
+  **Status:** all planned.
+|
+
+buffers: Buffers\nstore their text through\nwhatever fills the slot {class: part}
+slot: Service slot: "text store"\na promise of what it can do:\ninsert, delete, read a line, … {shape: hexagon}
+
+rope: Rope\nTuna's default {class: option}
+gap: Gap buffer\nfrom your plugin {class: option}
+
+buffers -> slot: use
+rope -> slot: fills the slot (default)
+gap -> slot: or fills it instead {
+  style.stroke-dash: 4
+}

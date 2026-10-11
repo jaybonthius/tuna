@@ -1,0 +1,55 @@
+# How one layout tree mixes a Niri-style strip with i3-style splits
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+direction: down
+
+classes: {
+  box: {
+    style: {
+      fill: "#eef3fb"
+      stroke: "#355c96"
+      font-color: "#172b4d"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+  win: {
+    style: {
+      fill: "#fff8e1"
+      stroke: "#8d6e00"
+      font-color: "#3e2f00"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+}
+
+legend: |md
+  **Status:** all planned.
+  Containers arrange their children; windows (marked "window") show buffers.
+|
+
+root: Fit, top to bottom\n(the whole frame) {class: box}
+strip: Scroll, left to right\na Niri strip, 70% of the height {class: box}
+bottom: Fit, left to right\n30% of the height {class: box}
+col: Fit, top to bottom\na column, 50% of the screen width {class: box}
+a: window: main.ss {class: win}
+b: window: *shell* {class: win}
+c: window: notes.org\n50% of the screen width {class: win}
+d: window: *magit*\n50%, off screen until you scroll {class: win}
+e: window: *compilation* {class: win}
+f: window: *help* {class: win}
+
+root -> strip
+root -> bottom
+strip -> col
+strip -> c
+strip -> d
+col -> a
+col -> b
+bottom -> e
+bottom -> f

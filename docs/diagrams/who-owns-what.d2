@@ -1,0 +1,53 @@
+# Two windows showing the same file: what is shared and what is separate?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+direction: down
+
+classes: {
+  part: {
+    style: {
+      fill: "#eef3fb"
+      stroke: "#355c96"
+      font-color: "#172b4d"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+  shared: {
+    style: {
+      fill: "#fff8e1"
+      stroke: "#8d6e00"
+      font-color: "#3e2f00"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+}
+
+legend: |md
+  **Status:** all planned.
+  Boxes marked (shared) serve both windows.
+|
+
+frame: Frame\none Emacs-style top-level window,\nshown in your browser tab {class: part}
+
+lwin: Left window {class: part}
+rwin: Right window {class: part}
+
+lview: View\ncursor on line 10,\nscrolled to the top {class: part}
+rview: View\ncursor on line 400,\nscrolled halfway {class: part}
+
+buffer: Buffer "main.ss" (shared)\nname, mode, local settings,\nmarkers, overlays {class: shared}
+text: Text (shared)\nthe characters, their properties,\nundo history {class: shared}
+
+frame -> lwin: contains
+frame -> rwin: contains
+lwin -> lview: shows
+rwin -> rview: shows
+lview -> buffer: of
+rview -> buffer: of
+buffer -> text: holds

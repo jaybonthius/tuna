@@ -13,7 +13,7 @@ Tuna targets the Gerbil v0.19 development branch. The installed toolchain is `/o
 2. Gerbil documentation in `/home/jay/Code/workbench-gerbil/gerbil/doc/` (`reference/std/`, `reference/gerbil/`, `guide/`).
 3. Gerbil source in `/home/jay/Code/workbench-gerbil/gerbil/src/` (codebase-memory project `home-jay-Code-workbench-gerbil-gerbil`). Its branch may differ from the installed build; check `gxi --version` against `git -C /home/jay/Code/workbench-gerbil/gerbil describe`.
 4. Gambit manual: `/home/jay/Code/workbench-gerbil/gerbil/src/gambit/doc/gambit.txi` for threads, declarations (`block`, `separate`), and runtime primitives.
-5. Prior Tuna research in `research/workbench-gerbil/` and `research/editor-corpus/prior-art/workbench-gerbil/research/`. Re-verify version-sensitive claims.
+5. Prior Tuna research in `agents/research/workbench-gerbil/` and `agents/research/editor-corpus/prior-art/workbench-gerbil/research/`. Re-verify version-sensitive claims.
 
 ## Editing protocol
 
@@ -21,7 +21,10 @@ Follow `/home/jay/Code/workbench-gerbil/gerbil/AGENTS.md`: balance-check a file 
 
 ## Facts Tuna relies on
 
-- Modules compile with `(declare (block))`; use `(declare (separate))` where external `set!` must reach intra-module calls ([ADR 1](../../../docs/adr/0001-language-and-extension-surface.md)).
-- Gambit threads are preemptive green threads; the installed runtime is not SMP (`gerbil-runtime-smp?` is `#f`). Do not share mutable state across threads ([ADR 3](../../../docs/adr/0003-command-loop-and-jobs.md)).
+- Modules compile with `(declare (block))`; use `(declare (separate))` where external `set!` must reach intra-module calls ([ADR 1](../../../agents/adr/0001-language-and-extension-surface.md)).
+- Gambit threads are preemptive green threads; the installed runtime is not SMP (`gerbil-runtime-smp?` is `#f`). Do not share mutable state across threads ([ADR 3](../../../agents/adr/0003-command-loop-and-jobs.md)).
+- `thread-interrupt!` runs a thunk in the target thread; raising from it unwinds the target with cleanups, even when blocked. The caller then receives an `abandoned-mutex-exception` to swallow. `thread-terminate!` skips cleanups; never use it for quit ([ADR 3](../../../agents/adr/0003-command-loop-and-jobs.md)).
+- Parameters (`parameterize`) are thread-scoped and inherited by child threads; Tuna's dynamic settings layer uses them ([ADR 9](../../../agents/adr/0009-settings-and-scoped-values.md)).
+- Gambit rejects surrogate code points and invalid UTF-8; built-in codecs are ASCII, ISO-8859-1, UTF-8, UTF-16.
 - Replaceable services use `:std/interface`.
 - Tests are `*-test.ss` files exporting `*-test` suites (`:std/test`), run with `make test`.

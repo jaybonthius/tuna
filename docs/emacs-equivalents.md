@@ -1,0 +1,85 @@
+# Tuna and Emacs: equivalents and divergences
+
+Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Emacs's and lists every place Tuna deliberately does something differently, with the reason. It is kept current: any new divergence must be added here and in a decision record. Status: everything below is planned unless marked built.
+
+## Equivalents
+
+| Tuna | Emacs | Same or different? |
+|---|---|---|
+| Buffer | Buffer | Same idea, but a Tuna buffer holds a tree of nodes; a one-text-node buffer behaves like an Emacs buffer. |
+| Text | Buffer text (shared by indirect buffers) | Same. |
+| View | The window's own point and scroll position (`window-point`, `window-start`) | Same idea, made a named object. |
+| Window | Live window (a leaf of the window tree) | Same. |
+| Window manager | Emacs's built-in C window tree plus `display-buffer` | Tuna's is a replaceable plugin. |
+| Layout container (fit, scroll, tabbed) | Internal "combination" window (horizontal or vertical split only) | Tuna adds scrolling strips, tabs, and plugin-defined kinds. |
+| `display-buffer` and display rules | `display-buffer`, `display-buffer-alist` | Same role, part of the window contract. |
+| Window configuration | `window-configuration`, `window-state` | Same role. |
+| Frame | Frame (a top-level window holding windows) | Same. Initially every browser tab shows the same frame. |
+| Screen | What redisplay draws | Tuna sends each screen to the browser as HTML. |
+| Client (a browser tab) | A terminal connected with `emacsclient` | Similar. |
+| Text node | The buffer's text with its properties | Same. |
+| Rich node | Nothing; Emacs fakes structure with text, properties and overlays (Magit sections, Dired lines, widgets) | New in Tuna. |
+| Point, mark, region | Point, mark, region | Same. Positions count from 1. |
+| Selections | Point and mark, plus packages such as multiple-cursors | A view can hold several selections, one primary. |
+| Styled text | Propertized string | Same. |
+| Text property, overlay | Text property, overlay | Same; Tuna overlays can be limited to one view. |
+| Marker | Marker | Same. |
+| Character and content revisions | `buffer-chars-modified-tick`, `buffer-modified-tick` | Same, plus a separate revision for decorations. |
+| Command | `defun` with `(interactive …)` | Same; Tuna commands declare how each argument is obtained. |
+| Input session | Per-terminal command-loop state (`last-command`, prefix argument, keyboard macro) | Same idea, named. |
+| Keymap stack | `current-active-maps` precedence | Same order, made explicit; adds keymaps on nodes. |
+| `keymap-set` | `keymap-set` | Same syntax (`"C-x C-f"`). |
+| Hook | Hook | Same; callbacks are named. |
+| Advice | `advice-add` (nadvice) | Same combinators. See divergences for what can be advised. |
+| Setting | `defcustom` / variable | Same idea, with a typed schema. |
+| `with-settings` | `let` on a special variable | Same effect. |
+| Buffer-, mode-, project-, connection-local values | Buffer-local, directory-local, connection-local variables | Same idea, one extensible chain. |
+| Plugin | Package, feature, minor mode | A plugin can be turned off and undone completely. |
+| Receipt | `unload-feature` (best-effort) | Tuna's is exact. |
+| Manifest and stub commands | Autoloads (`;;;###autoload`, `loaddefs`) | Same purpose. |
+| Service | Nothing direct; closest are generic functions and backend lists (`xref`, `project`) | New in Tuna. |
+| Editor loop, baton | Command loop, global Lisp lock | Same role. |
+| Task | Command, timer, or process callback | Same, except a task may wait in the middle (see divergences). |
+| Job | Async subprocess or thread | New: works on a snapshot and never touches live buffers. |
+| Prompt (`read-string`, `completing-read`) | Same names, via recursive minibuffer | Same style. |
+| `quit` and the quit key | `quit` signal, `C-g`, `inhibit-quit` | Same names; stronger guarantee (see divergences). |
+| Session slots | `savehist`, `desktop`, `saveplace` | Same purpose, stored as data. |
+| `init.ss`, `custom.ss` | `init.el`, `custom-file` | Same roles; `custom.ss` is data, not code. |
+| File-system service providers | `file-name-handler-alist` (TRAMP, compressed files) | Same purpose. |
+
+## Divergences
+
+| What Emacs does | What Tuna does | Why | Cost when porting | Decision |
+|---|---|---|---|---|
+| Renders in its own window or terminal | Renders HTML in a browser tab | Rich UI, remote use | Display code is rewritten | [ADR 7](../agents/adr/0007-rendering-and-transport.md) |
+| Buffers are flat text | Buffers are node trees | Real structure instead of text hacks | Magit-, Dired-, agenda-style buffers are rewritten as rich nodes | [ADR 6](../agents/adr/0006-buffers-nodes-and-text-store.md) |
+| Keys the window system delivers | Keys the browser delivers; some (`C-w`, `C-n`, `C-t`) never arrive in an ordinary tab | Ordinary tabs must work for remote development | Users rebind those keys | [ADR 7](../agents/adr/0007-rendering-and-transport.md) |
+| Fixed C layout engine | Layout belongs to the browser; monospace and proportional text can mix | Anything should be possible visually | Screen-based commands need layout facts from the browser (still being designed) | [ADR 7](../agents/adr/0007-rendering-and-transport.md) |
+| Windows are a fixed tree of splits built into C | Window management is a replaceable plugin; the default is a recursive tree of splits, scrolling strips (Niri), and tabs (i3) | Far more flexible layouts; users can swap the whole manager | Packages that walk the window tree with `window-tree` or `window-child` need the window contract instead | [ADR 11](../agents/adr/0011-window-management-is-a-plugin.md) |
+| `unload-feature` is best-effort | Turning a plugin off undoes everything it added, in any order | Reliable reload and disable | Packages must register through their context | [ADR 2](../agents/adr/0002-plugins-contexts-and-services.md) |
+| `define-key` overwrites one shared keymap | Bindings are entries tagged with their owner | Exact undo; help shows who bound a key | Code that treats keymaps as raw lists changes | [ADR 2](../agents/adr/0002-plugins-contexts-and-services.md), [ADR 8](../agents/adr/0008-input-keymaps-and-command-composition.md) |
+| Any function can be advised | Package functions can be advised; Tuna's core cannot, only its services and hooks | Core stays fully optimized | Advice on primitives like `insert` becomes a hook or service | [ADR 1](../agents/adr/0001-language-and-extension-surface.md) |
+| `with-eval-after-load` runs once and stays | Configuration attaches to a plugin and is undone with it | Correct under reload | Bodies may run more than once | [ADR 2](../agents/adr/0002-plugins-contexts-and-services.md) |
+| An erroring hook function can disable the whole hook | Only the failing callback is disabled, with a notice | One broken plugin doesn't break editing | None | [ADR 2](../agents/adr/0002-plugins-contexts-and-services.md) |
+| `C-g` works only when Lisp checks for it | `C-g` interrupts any running code | No more frozen editor | None | [ADR 3](../agents/adr/0003-command-loop-and-jobs.md) |
+| Long computations freeze the editor | Slow work runs as jobs on snapshots | Typing never waits | Async code is restructured | [ADR 3](../agents/adr/0003-command-loop-and-jobs.md) |
+| `call-process` blocks everything | Blocking calls let other work run while they wait | Responsive during `git status` | Rare code that assumes nothing changes during a call uses `with-baton-held` | [ADR 3](../agents/adr/0003-command-loop-and-jobs.md) |
+| `this-command` is a global that prompts can clobber | Each running command has its own context | Correct composition | `(setq this-command …)` becomes a setter | [ADR 8](../agents/adr/0008-input-keymaps-and-command-composition.md) |
+| which-key polls on a timer | The pending prefix is built-in, observable state | Simpler, instant | None | [ADR 8](../agents/adr/0008-input-keymaps-and-command-composition.md) |
+| `let` binds globally for the one Lisp thread | `with-settings` binds per running command | Commands waiting at prompts can't see each other's bindings | `let` on special variables becomes `with-settings` | [ADR 9](../agents/adr/0009-settings-and-scoped-values.md) |
+| `safe-local-variable` predicates per variable | Typed schemas decide what file and directory values are safe | Uniform safety, fewer prompts | Settings need schemas | [ADR 9](../agents/adr/0009-settings-and-scoped-values.md) |
+| Saved session (`desktop`) is Lisp code | Saved state is plain data, never executed | Safety | None | [ADR 5](../agents/adr/0005-persistence.md) |
+| Plain `emacs --daemon` socket with optional server key | Every client needs a per-launch token | The server can run any command | Launch through the `tuna` command or its URL | [ADR 10](../agents/adr/0010-security-clients-and-trust.md) |
+
+### Under consideration
+
+Not decided; recorded so they are not forgotten.
+
+- **Undo tree built in**, from persistent text versions (Emacs needs undo-tree or vundo).
+- **Highlighting kept as a cache** that survives edits instead of being written into buffer text properties.
+- **Folding as per-view state**, so the same file can be folded differently in two windows.
+- **Mode line, header line and tab bar as rich nodes** instead of the `mode-line-format` mini-language.
+- **Typed completion candidates** instead of strings carrying hidden properties, and completion filtering as jobs.
+- **Resumable debugger**: a failing command waits so you can fix it and continue.
+- **Action resolver** in the style of Plan 9's plumber, unifying `ffap`, `browse-url`, buttons, and Embark actions.
+- **Several views per node kind** that you can switch between (summary, table, raw), as in Glamorous Toolkit.

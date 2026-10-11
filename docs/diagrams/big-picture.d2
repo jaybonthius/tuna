@@ -1,0 +1,60 @@
+# What are the big parts of Tuna, and how do they talk?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+direction: down
+
+classes: {
+  part: {
+    style: {
+      fill: "#eef3fb"
+      stroke: "#355c96"
+      font-color: "#172b4d"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+  built: {
+    style: {
+      fill: "#e6f4ea"
+      stroke: "#2e7d32"
+      font-color: "#1b3d1f"
+      border-radius: 8
+      stroke-width: 3
+      font-size: 18
+    }
+  }
+}
+
+legend: |md
+  **Status:** only the box marked **(built)** exists today.
+  Everything else is planned.
+|
+
+browser: Your browser tab {
+  keys: Keyboard plugin (built)\nsends every key press {class: built}
+  page: Page\nshows the newest screen {class: part}
+}
+
+plugins: Plugins\nbasic editing, files, modes,\nyour init.ss {class: part}
+web: Web server\nreceives keys, sends screens {class: part}
+editor: Editor thread\nthe only thing allowed\nto change editor state {class: part}
+state: Editor state\nbuffers, windows, minibuffer {class: part}
+services: Replaceable services\ntext store, renderer {class: part}
+jobs: Background jobs\nhighlighting, search {class: part}
+disk: Disk\nyour files, autosave,\nsession, settings {shape: cylinder}
+
+browser.keys -> web: 1. key press
+web -> editor: 2. queued in order
+editor -> state: 3. runs a command,\nwhich changes state
+editor -> web: 4. new screen (HTML)
+web -> browser.page: 5. sends it
+
+editor -> plugins: turns on
+editor -> services: uses
+editor -> jobs: snapshot
+jobs -> editor: result, if still valid
+state -> disk: save and back up
