@@ -12,7 +12,8 @@ Starts with a brief in `briefs/` for the owner's approval. Goal: prove every sea
 - basic editing is a plugin: deactivating it removes its commands and keys, and reactivating restores them; two plugins binding the same key survive either deactivation order;
 - `C-g` interrupts a deliberately endless command;
 - a `with-settings` binding is visible only to the command that made it, even while another command waits at a prompt;
-- a second `TextStore` implementation can replace the default through the service registry;
+- the kernel (plugin runtime, execution rules, shared vocabulary) is separate from every default plugin, and defaults use only public contracts;
+- a second `TextStore` implementation, a second renderer, and a second (single-window) window manager can each replace the default; `describe-services` shows who fills each slot;
 - a command prompts in direct style through a minimal minibuffer and resumes with the answer;
 - a deliberately slow fake highlighter runs as a job: edits render first, and its decorations arrive later, shifted past any typing that happened meanwhile;
 - a session slot and autosave survive a restart;

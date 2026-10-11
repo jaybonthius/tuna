@@ -15,3 +15,4 @@ Each record covers one hard-to-reverse choice. Change a decision by amending its
 | [9](0009-settings-and-scoped-values.md) | Settings with schemas, an extensible scope chain, combiners, and a thread-scoped dynamic layer |
 | [10](0010-security-clients-and-trust.md) | Token-authenticated clients, client identity, and the trust boundary |
 | [11](0011-window-management-is-a-plugin.md) | Window management is a replaceable plugin over a small window contract; the default is a recursive layout tree with pluggable container kinds |
+| [12](0012-kernel-boundary-and-replaceability.md) | A small fixed kernel (plugin runtime, execution rules, shared vocabulary); every editor feature is a plugin, replaceable at startup or live |

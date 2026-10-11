@@ -10,6 +10,12 @@ Tuna is Emacs-inspired, not an Emacs clone. [Tuna and Emacs](emacs-equivalents.m
 
 Almost everything in Tuna is a plugin, including basic editing. You can turn plugins off, reload them, or swap out core parts (even the data structure that holds text) while Tuna is running.
 
+## A small engine and a lot of plugins
+
+Tuna itself is a small, fixed engine. It loads plugins, keeps track of what each one added so it can be undone, connects plugins to the services they need, and enforces the rules for who may change editor state and when. Everything that makes Tuna an editor (buffers, the text store, key handling, the minibuffer, windows, how screens are drawn, saving your session) is a plugin. Tuna's own versions of those get no special treatment, so anything they can do, a replacement can do too.
+
+Some plugins can be swapped while Tuna runs: the text store, the window manager, the renderer, and nearly everything else. A few are chosen at startup and need a restart to change, such as how keys are resolved and how settings are looked up, because swapping them mid-session would pull the rug out from under running commands. If a plugin combination breaks things, a safe mode starts Tuna with only its standard plugins, and `describe-services` shows which plugin is filling each slot.
+
 ## The big parts
 
 ![The big parts of Tuna](diagrams/big-picture.svg)
