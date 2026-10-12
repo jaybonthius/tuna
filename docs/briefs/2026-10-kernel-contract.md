@@ -1,12 +1,12 @@
 # Brief: the kernel contract
 
-**Date:** 2026-10-12. **Status:** awaiting your approval. Nothing in the code changes until you approve. Research: `agents/research/kernel-contract/` and `agents/research/kernel-audit-2026-10-12.md`.
+**Date:** 2026-10-12. **Status:** approved 2026-10-12 (both decisions as recommended; no size limit). Research: `agents/research/kernel-contract/` and `agents/research/kernel-audit-2026-10-12.md`.
 
 ## What this is and why
 
 Tuna's kernel was meant to be almost nothing: the scaffolding that lets plugins exist. Over the four skeleton stages it grew from about 1,050 to 1,800 lines, picking up a piece of each feature we built: hooks, timers, saved-session slots, a browser keyboard event, and text ranges for the demo highlighter. Your three earlier attempts failed the same way: a feature needs somewhere to keep its data, the central piece is handy, and nobody asks whether a plugin could own it.
 
-This brief fixes that by writing down exactly what the kernel may contain, what it must never know about, and how big it may be. Drift then shows up in a review, or in a failing test, instead of a week later.
+This brief fixes that by writing down exactly what the kernel may contain and what it must never know about. Drift then shows up in a review, or in a failing test, instead of a week later.
 
 ## The picture
 
@@ -72,7 +72,7 @@ Illustrative; names may change when built.
 | The kernel itself as a public object | Hidden; the browser plugin gets a narrow "submit input" function instead |
 | Unused functions (built for decision records, never called) | Deleted until something needs them |
 
-**Target: about 1,250 lines, never more than 1,400** (today 1,800). New kernel functions or data need an amendment to the decision record, and every merge review reports how many lines the kernel gained or lost.
+There is no size limit: we can't know in advance everything the kernel will genuinely need. What matters is that every addition is deliberate. A new kernel function or piece of data needs an amendment to the decision record saying why no plugin could own it, and every merge review says whether the kernel changed and why. (The moves above should remove roughly a third of today's 1,800 lines, but that's a side effect, not a goal.)
 
 Two cleanups that aren't kernel work come right after this, each with its own short brief:
 - **Making buffers really replaceable.** Today the buffers "contract" contains the whole implementation.
