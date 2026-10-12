@@ -20,12 +20,22 @@ class KeyboardEvent extends Event {
   }
 }
 
-async function harness() {
+class MemoryStorage {
+  #items = new Map();
+  getItem(key) { return this.#items.has(key) ? this.#items.get(key) : null; }
+  setItem(key, value) { this.#items.set(key, String(value)); }
+}
+
+// Each harness is one page load; tabs share a storage across reloads.
+async function harness(sessionStorage = new MemoryStorage()) {
   const posts = [];
   const errors = [];
   let plugin;
   const context = createContext({
     KeyboardEvent,
+    sessionStorage,
+    crypto: globalThis.crypto,
+    Uint8Array,
     fetch(url, options) {
       return new Promise((resolve, reject) => {
         posts.push({ url, options, body: JSON.parse(options.body), resolve, reject });
@@ -75,7 +85,8 @@ test("every keydown is posted in order, including modifiers and composition", as
     assert.equal(post.options.headers["Content-Type"], "application/json");
     assert.equal(post.options.headers["Datastar-Request"], "true");
     assert.deepEqual(post.body, {
-      version: 1, type: "keydown", key: event.key, code: event.code,
+      version: 1, type: "keydown", clientId: h.posts[0].body.clientId, sequence: index + 1,
+      key: event.key, code: event.code,
       location: event.location, repeat: event.repeat, isComposing: event.isComposing,
       altKey: true, ctrlKey: true, metaKey: true, shiftKey: true,
     });
@@ -118,5 +129,33 @@ test("reports rejected and failed requests without replaying them or stopping in
   h.send(new KeyboardEvent("d"));
   assert.equal(h.posts[3].body.key, "d");
   h.posts[3].resolve({ status: 204 });
+  await setImmediate();
+});
+
+test("each tab has its own client id and an increasing sequence across reloads", async () => {
+  const tab = new MemoryStorage();
+  const first = await harness(tab);
+  first.send(new KeyboardEvent("a"));
+  first.posts[0].resolve({ status: 204 });
+  await setImmediate();
+  first.send(new KeyboardEvent("b"));
+  const id = first.posts[0].body.clientId;
+  assert.match(id, /^[0-9a-f]{32}$/);
+  assert.deepEqual(first.posts.map((post) => [post.body.clientId, post.body.sequence]),
+                   [[id, 1], [id, 2]]);
+  first.posts[1].resolve({ status: 204 });
+  await setImmediate();
+
+  const reloaded = await harness(tab);
+  reloaded.send(new KeyboardEvent("c"));
+  assert.deepEqual([reloaded.posts[0].body.clientId, reloaded.posts[0].body.sequence], [id, 3]);
+  reloaded.posts[0].resolve({ status: 204 });
+  await setImmediate();
+
+  const other = await harness();
+  other.send(new KeyboardEvent("d"));
+  assert.notEqual(other.posts[0].body.clientId, id);
+  assert.equal(other.posts[0].body.sequence, 1);
+  other.posts[0].resolve({ status: 204 });
   await setImmediate();
 });

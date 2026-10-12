@@ -3,6 +3,8 @@ import { action } from "datastar";
 type Keydown = Readonly<{
   version: 1;
   type: "keydown";
+  clientId: string;
+  sequence: number;
   key: string;
   code: string;
   location: number;
@@ -14,6 +16,27 @@ type Keydown = Readonly<{
   shiftKey: boolean;
 }>;
 
+// One id per browser tab: sessionStorage is per tab and survives reloads.
+const clientIdKey = "tunaClientId";
+const sequenceKey = "tunaSequence";
+
+function loadClientId(): string {
+  const stored = sessionStorage.getItem(clientIdKey);
+  if (stored !== null) return stored;
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  const id = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  sessionStorage.setItem(clientIdKey, id);
+  return id;
+}
+
+// Sequence numbers keep increasing across reloads of the same tab.
+function nextSequence(): number {
+  const sequence = Number(sessionStorage.getItem(sequenceKey) ?? "0") + 1;
+  sessionStorage.setItem(sequenceKey, String(sequence));
+  return sequence;
+}
+
+const client = loadClientId();
 const queue: Keydown[] = [];
 let draining = false;
 
@@ -55,6 +78,8 @@ action({
     queue.push(Object.freeze({
       version: 1,
       type: "keydown",
+      clientId: client,
+      sequence: nextSequence(),
       key: evt.key,
       code: evt.code,
       location: evt.location,
