@@ -1,6 +1,6 @@
 # Brief: the architecture skeleton
 
-**Date:** 2026-10-11. **Status:** approved 2026-10-11. Agent plan: `agents/plans/architecture-skeleton.md`.
+**Date:** 2026-10-11. **Status:** done 2026-10-12 (all four stages merged). Approved 2026-10-11. Agent plan: `agents/plans/architecture-skeleton.md`.
 
 ## What we're building and why
 

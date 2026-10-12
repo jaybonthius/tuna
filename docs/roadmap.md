@@ -2,7 +2,7 @@
 
 Each milestone is a working program that can be shown in the browser. Write a short plan (one page or less) when a milestone starts; record hard-to-reverse choices as ADRs.
 
-## Next: architecture skeleton
+## Done: architecture skeleton (2026-10-12)
 
 Brief: [briefs/2026-10-architecture-skeleton.md](briefs/2026-10-architecture-skeleton.md). Goal: prove every seam in [the ADRs](../agents/adr/README.md) with the least feature code:
 

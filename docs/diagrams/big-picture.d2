@@ -36,16 +36,16 @@ legend: |md
 
 browser: Your browser tab {
   keys: Keyboard plugin (built)\nsends every key press {class: built}
-  page: Page\nshows the newest screen {class: part}
+  page: Page (built)\nshows the newest screen {class: built}
 }
 
 plugins: Plugins (started)\nbasic editing, files, modes,\nyour init.ss {class: part}
 web: Web server (built)\nreceives keys, sends screens {class: built}
 editor: Editor thread (built)\nthe only thing allowed\nto change editor state {class: built}
-state: Editor state\nbuffers, windows, minibuffer {class: part}
-services: Replaceable services (started)\ntext store, renderer {class: part}
-jobs: Background jobs\nhighlighting, search {class: part}
-disk: Disk\nyour files, autosave,\nsession, settings {shape: cylinder}
+state: Editor state (built)\nbuffers, windows, minibuffer {class: built}
+services: Replaceable services (built)\ntext store, renderer,\nwindow manager {class: built}
+jobs: Background jobs (built)\nhighlighting, search {class: built}
+disk: "Disk (started)\nautosave and session built,\nfiles and settings not yet" {shape: cylinder}
 
 browser.keys -> web: 1. key press
 web -> editor: 2. queued in order

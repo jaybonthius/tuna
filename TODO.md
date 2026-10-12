@@ -12,3 +12,6 @@
 - [ ] **`displayln` with a port argument.** Gerbil's `displayln` displays all its arguments to the current output port, so `(displayln text (current-error-port))` prints the port object to standard output. Stage 1–3 code does this in `report-failure!` (`tuna/kernel/plugins.ss`), the redisplay failure report (`tuna/kernel/loop.ss`), and `usage` (`tuna/main.ss`); stage 4 code writes to the error port directly.
 - [ ] **Autosave runs on the baton.** Each changed text is written synchronously while idle. Texts are persistent, so a large text could be written from a job over a snapshot instead.
 - [ ] **No `fsync` before the atomic rename** of session and autosave files: a crash of the machine (not of Tuna) shortly after a save could leave an empty file on some file systems. Gambit has no portable `fsync`.
+
+- [ ] **Session restore order is implicit.** Slots restore in the order plugins registered them; `main.ss` activates autosave before the window manager so buffers exist before windows refer to them. Make restore order explicit (dependencies between slots) before more stateful plugins arrive.
+- [ ] **Window contract is partial.** ADR 11's split, delete, neighbor, swap, `display-buffer`, window configurations, parameters and dedicated windows are not built; due with the real window manager.

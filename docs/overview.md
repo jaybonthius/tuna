@@ -1,6 +1,6 @@
 # How Tuna works
 
-**Status (2026-10-11):** stages 1 and 2 of the architecture skeleton are built: the small engine (plugins with receipts, services, the editor thread with `C-g`), the token-protected browser connection, key handling, the HTML renderer, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area, the minibuffer with `read-string`, temporary settings (`with-settings`), timers, hooks, and background jobs whose results follow your later edits. There is one window, no files, and no saving yet. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
+**Status (2026-10-12):** the architecture skeleton is complete. Built: the small engine (plugins with receipts, services that can be swapped at startup or live, the editor thread with `C-g`), the token-protected browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, hooks, background jobs, a swappable renderer (HTML, or plain text as a toy), a swappable window manager (one window, or two side by side as a toy), and saving your session and unsaved text across restarts. Not built yet: files, `M-x`, completion, modes, real window layouts, and your `init.ss`. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
 
 ## The idea
 
@@ -37,7 +37,7 @@ Around that loop:
 
 ## What happens when you type a letter
 
-**Status:** planned.
+**Status:** built.
 
 ![Typing a letter](diagrams/typing-a-letter.svg)
 
@@ -49,7 +49,7 @@ And if a command itself gets stuck, say in an endless loop, pressing `C-g` stops
 
 ## How a command can ask you a question
 
-**Status:** planned.
+**Status:** built.
 
 ![A command asking a question](diagrams/asking-a-question.svg)
 
@@ -120,6 +120,8 @@ What you see in a window is a **view** of a buffer. Two windows can show the sam
 | Open buffers, cursor positions, window layout, history | `~/.local/state/tuna/session.ss` | When idle, and on exit |
 | Settings changed through Tuna's UI | `~/.config/tuna/custom.ss` | When changed |
 | Your configuration code | `~/.config/tuna/init.ss` | You edit it |
+
+Autosave and the session file are built; `custom.ss` and `init.ss` are not yet.
 
 The saved files are plain Scheme data, readable in any editor, and Tuna never runs them as code. Only `init.ss` is code. Each plugin decides what of its own state is worth saving.
 

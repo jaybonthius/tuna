@@ -56,7 +56,7 @@ The buffer is a node tree from the start; the text node is one node kind among s
 - **Demo.** `C-c r` renames the current buffer through `read-string`. A slow highlighter job colors digits about 0.3 s after each change, using the `rebase` policy.
 - **Done when:** `make test` passes, including the `adapt` swap, undo grouping, prompt suspension with the editor still dispatching keys, `C-g` abandoning a prompt, nested prompts answered innermost-first, timer tasks cancelled with their plugin, `with-settings` isolation across a waiting command, job replacement by key, each validity policy, and rebased highlights landing on the right characters after edits made while the job ran; in a browser, `C-c r` renames, digits color shortly after typing even while typing continues, `C-g` abandons a prompt, and `C-h s` shows buffers depending on the text store.
 
-### Stage 4: swaps and saving
+### Stage 4: swaps and saving (merged 2026-10-12)
 
 - **Carry-over from stage 3.** The demo highlighter skips the minibuffer's text. Jobs posting several results: build only if cheap, otherwise add it to `TODO.md`.
 - **Toy plain-text renderer** (live tier). Renders the same screen as preformatted plain text, using each node kind's plain-text render procedure or its text projection; `C-c v` swaps between it and the HTML renderer without losing state.
