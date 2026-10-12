@@ -9,7 +9,7 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | Buffer | Buffer | Same idea, but a Tuna buffer holds a tree of nodes; a one-text-node buffer behaves like an Emacs buffer. |
 | Text | Buffer text (shared by indirect buffers) | Same. |
 | Text store | The gap buffer inside Emacs's C code | Tuna's is a replaceable service; the default is a persistent rope, so old versions stay valid. Built. |
-| Undo by command, undo chains | `undo`, `undo-boundary`, `pending-undo-list` | Same: one group per command; undoing after another command redoes. Built. |
+| Undo by command, undo chains | `undo`, `undo-boundary`, `pending-undo-list` | Same: one group per command, consecutive self-inserts grouped up to 20, point restored to where the command left it; undoing after another command redoes. Built. |
 | View | The window's own point and scroll position (`window-point`, `window-start`) | Same idea, made a named object. |
 | Window | Live window (a leaf of the window tree) | Same. |
 | Window manager | Emacs's built-in C window tree plus `display-buffer` | Tuna's is a replaceable plugin. |
@@ -25,6 +25,7 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | Selections | Point and mark, plus packages such as multiple-cursors | A view can hold several selections, one primary. |
 | Styled text | Propertized string | Same. |
 | Text property, overlay | Text property, overlay | Same; Tuna overlays can be limited to one view. |
+| Highlight layer (`set-highlights!`) | Overlays or `font-lock-face` properties set by a highlighter | A text holds named layers of ranges with faces; changing one bumps the decoration revision, not the content revision, and ranges move with edits. Built (minimal). |
 | Marker | Marker | Same. |
 | Character and content revisions | `buffer-chars-modified-tick`, `buffer-modified-tick` | Same, plus a separate revision for decorations. |
 | Command | `defun` with `(interactive …)` | Same; Tuna commands declare how each argument is obtained. |
@@ -33,20 +34,24 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | `keymap-set` | `keymap-set` | Same syntax (`"C-x C-f"`). |
 | The `<printing-char>` binding | Printing characters bound to `self-insert-command` in `global-map` | Same effect through one pseudo-key. Built. |
 | `last-command`, `last-command-event` | Same names | Same. Built. |
+| `input-pending?`, `discard-input` | `input-pending-p`, `discard-input` | Same. Built. |
 | Echo area | Echo area | Same; it is a plugin. Built. |
-| Hook | Hook | Same; callbacks are named. |
+| Hook | Hook | Same; callbacks are named, ordered by depth, and a failing one is removed with a notice. Built. |
+| `after-change-hook` | `after-change-functions` | Same role; callbacks receive the text and its change record. Built. |
 | Advice | `advice-add` (nadvice) | Same combinators. See divergences for what can be advised. |
-| Setting | `defcustom` / variable | Same idea, with a typed schema. |
-| `with-settings` | `let` on a special variable | Same effect. |
-| Buffer-, mode-, project-, connection-local values | Buffer-local, directory-local, connection-local variables | Same idea, one extensible chain. |
+| Setting (`defsetting`) | `defcustom` / variable | Same idea, with a typed schema. Built with a default and documentation; schemas come later. |
+| `with-settings` | `let` on a special variable | Same effect, but per running command (see divergences). Built. |
+| Buffer-, mode-, project-, connection-local values | Buffer-local, directory-local, connection-local variables | Same idea, one extensible chain. The buffer scope is built. |
 | Plugin | Package, feature, minor mode | A plugin can be turned off and undone completely. |
 | Receipt | `unload-feature` (best-effort) | Tuna's is exact. |
 | Manifest and stub commands | Autoloads (`;;;###autoload`, `loaddefs`) | Same purpose. |
 | Service | Nothing direct; closest are generic functions and backend lists (`xref`, `project`) | New in Tuna. |
 | Editor loop, baton | Command loop, global Lisp lock | Same role. |
-| Task | Command, timer, or process callback | Same, except a task may wait in the middle (see divergences). |
-| Job | Async subprocess or thread | New: works on a snapshot and never touches live buffers. |
-| Prompt (`read-string`, `completing-read`) | Same names, via recursive minibuffer | Same style. |
+| Task | Command, timer, or process callback | Same, except a task may wait in the middle (see divergences). Built for commands and timers. |
+| `context-run-with-timer!` | `run-with-timer` | Same; the timer and its callbacks stop when its plugin is turned off. Built. |
+| Job (`start-job`) | Async subprocess or thread | New: works on a snapshot and never touches live buffers; a newer job with the same key replaces the waiting one. Built (threads). |
+| Prompt (`read-string`, `completing-read`) | Same names, via recursive minibuffer | Same style. `read-string` is built. |
+| Minibuffer | Minibuffer, recursive minibuffers | Same: each waiting prompt has its own internal buffer; only the innermost receives keys. `RET` runs `exit-minibuffer`, `C-g` runs `abort-minibuffers`. Built. |
 | `quit` and the quit key | `quit` signal, `C-g`, `inhibit-quit` | Same names; stronger guarantee (see divergences). |
 | Session slots | `savehist`, `desktop`, `saveplace` | Same purpose, stored as data. |
 | `init.ss`, `custom.ss` | `init.el`, `custom-file` | Same roles; `custom.ss` is data, not code. |
