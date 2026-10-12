@@ -40,6 +40,7 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | Hook | Hook | Same; callbacks are named, ordered by depth, and a failing one is removed with a notice. Built. |
 | `kill-buffer-hook` | `kill-buffer-hook`, `replace-buffer-in-windows` | Same hook; window managers use it to show another buffer in the windows that showed the killed one, which Emacs does inside `kill-buffer`. Built. |
 | `after-change-hook` | `after-change-functions` | Same role; callbacks receive the text and its change record. Built. |
+| `plugin-activated-hook`, `plugin-deactivated-hook`, `service-changed-hook`, `task-started-hook`, `task-finished-hook` | `after-load-functions`, for activation only | The engine announces its own events. Emacs has no general hook for unloading, services, or tasks; `pre-command-hook` and `post-command-hook` are per command and will belong to the input plugin ([ADR 8](../agents/adr/0008-input-keymaps-and-command-composition.md)). Built. |
 | Advice | `advice-add` (nadvice) | Same combinators. See divergences for what can be advised. |
 | Setting (`defsetting`) | `defcustom` / variable | Same idea, with a typed schema. Built with a default and documentation; schemas come later. |
 | `with-settings` | `let` on a special variable | Same effect, but per running command (see divergences). Built. |

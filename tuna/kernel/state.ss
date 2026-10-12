@@ -15,7 +15,6 @@ prelude: :gerbil/core
         kernel-providers
         kernel-adapters
         kernel-slots
-        kernel-hooks
         kernel-jobs
         kernel-live?
         kernel-loop
@@ -27,7 +26,6 @@ prelude: :gerbil/core
    (providers : entry-table)     ; service name -> provider entries
    (adapters  : entry-table)     ; service name -> adapter entries
    (slots     : entry-table)     ; session slot name -> slot entries
-   (hooks     : HashTable)       ; hook name -> callbacks, in calling order
    (jobs      : :t)              ; the job registry, owned by ./jobs
    (live?     : :boolean)        ; the editor loop is running
    (loop      : :t))             ; the editor loop object, owned by ./loop
@@ -39,7 +37,6 @@ prelude: :gerbil/core
           providers: (new-entry-table)
           adapters: (new-entry-table)
           slots: (new-entry-table)
-          hooks: (make-hash-table-eq)
           jobs: #f
           live?: #f
           loop: #f))

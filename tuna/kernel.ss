@@ -24,8 +24,13 @@ prelude: :gerbil/core
         new-kernel
         current-kernel
         exception-summary
-        (import: ./kernel/plugins)
-        (import: ./kernel/hooks)
+        (except-out (import: ./kernel/plugins) run-lifecycle-hook)
+        hook
+        hook?
+        hook-name
+        hook-doc
+        new-hook
+        hook-callback-names
         (import: ./kernel/loop)
         (import: ./kernel/jobs)
         (import: ./kernel/timers)

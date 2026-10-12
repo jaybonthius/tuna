@@ -15,7 +15,8 @@ prelude: :gerbil/core
         :std/sync/completion
         ./ids
         ./state
-        ./plugins)
+        ./plugins
+        (only-in ./hooks new-hook))
 (export (interface-out Input Display)
         input-service
         display-service
@@ -43,7 +44,9 @@ prelude: :gerbil/core
         quit-condition-forced?
         redisplay
         current-task-name
-        current-task-id)
+        current-task-id
+        task-started-hook
+        task-finished-hook)
 
 ;;; Services the loop consumes
 
@@ -69,6 +72,32 @@ prelude: :gerbil/core
 (def display-service
   (new-service 'display is-Display? tier: 'startup
                doc: "Shows the current screen to clients."))
+
+;;; Task lifecycle hooks (ADR 12)
+;;;
+;;; Callbacks run on the loop thread while it holds the baton (no task is
+;;; running), under the rules for lifecycle hooks in ./plugins: they must not
+;;; activate or deactivate plugins or wait for the loop, and a failing
+;;; callback is removed without affecting the task or the loop. They block
+;;; the loop while they run, so they should be quick.
+
+;; Arguments: the task's id and name. Runs once per task, when the loop has
+;; made it the running task (current-task-name returns its name) and before
+;; its code runs. Resuming a suspended task is not announced.
+(def task-started-hook
+  (new-hook 'task-started
+            doc: "Runs with a task's id and name just before the task first runs."))
+
+;; Arguments: the task's id, its name, and how it finished: returned,
+;; raised (an exception other than quit), or quit (including a forced quit,
+;; a started task cancelled with cancel-task!, and a task forced out when
+;; the loop stops). Runs exactly once for each task announced by
+;; task-started, and for no other: after the loop has stopped running it
+;; and after its caller has its result. A task cancelled before it started,
+;; or still queued when the loop stops, is announced by neither hook.
+(def task-finished-hook
+  (new-hook 'task-finished
+            doc: "Runs with a task's id, name, and how it finished, after it finished."))
 
 ;;; Quitting
 
@@ -193,6 +222,7 @@ prelude: :gerbil/core
                        (results        : :list)         ; job-result tasks, oldest first
                        (waiting        : :list)         ; suspended tasks
                        (running        :? task)
+                       (finished       : :list)         ; (task . how) not yet announced, oldest first
                        (dirty?         : :boolean)
                        (last-redisplay : :real)
                        (quit-grace     : :real)         ; seconds before a quit is forced
@@ -234,7 +264,7 @@ prelude: :gerbil/core
         (error "No plugin provides the input service"))
       (using (loop (editor-loop thread: #f input: (Input input) pending: [] pending-tail: []
                                 resumes: [] results: [] waiting: []
-                                running: #f dirty?: #t last-redisplay: 0. quit-grace: quit-grace
+                                running: #f finished: [] dirty?: #t last-redisplay: 0. quit-grace: quit-grace
                                 force-at: #f stopping: #f)
                    : editor-loop)
         (set! k.loop loop)
@@ -428,6 +458,7 @@ prelude: :gerbil/core
 (def (run-ready! (loop : editor-loop)) => :void
   (let lp ()
     (unless loop.running
+      (announce-finished! loop)
       (cond
        ((pair? loop.resumes)
         (resume-next! loop))
@@ -472,6 +503,7 @@ prelude: :gerbil/core
   (let (loop-thread (: loop.thread :thread))
     (set! next.state 'running)
     (set! loop.running next)
+    (run-lifecycle-hook task-started-hook next.id next.name)
     (set! next.thread (spawn-thread (lambda () (baton-task-thread loop-thread next)) next.name))))
 
 (def (baton-task-thread (loop-thread : :thread) (running : task)) => :void
@@ -495,6 +527,7 @@ prelude: :gerbil/core
     (set! loop.running #f)
     (set! loop.force-at #f)
     (set! loop.dirty? #t)
+    (task-finished! loop ended (how-task-ended raised? value))
     (cond
      (ended.reply => (lambda ((reply : :procedure)) (reply raised? value)))
      ((not raised?) (void))
@@ -506,9 +539,30 @@ prelude: :gerbil/core
       (message (exception-summary value)))))
    ;; A forced quit that landed just as the task suspended ended it there.
    ((memq ended loop.waiting)
-    (set! loop.waiting (remq ended loop.waiting)))
+    (set! loop.waiting (remq ended loop.waiting))
+    (task-finished! loop ended (how-task-ended raised? value)))
    ;; A second report for the same task is ignored.
    (else (void))))
+
+(def (how-task-ended (raised? : :boolean) (value : :t)) => :symbol
+  (cond
+   ((not raised?) 'returned)
+   ((quit-condition? value) 'quit)
+   (else 'raised)))
+
+;; Record that ENDED finished HOW, for announce-finished!.
+(def (task-finished! (loop : editor-loop) (ended : task) (how : :symbol)) => :void
+  (set! loop.finished (append loop.finished [(cons ended how)])))
+
+;; Announce finished tasks. Only call it while the loop holds the baton.
+(def (announce-finished! (loop : editor-loop)) => :void
+  (let (finished loop.finished)
+    (unless (null? finished)
+      (set! loop.finished [])
+      (for-each (lambda ((entry : :pair))
+                  (using (ended (car entry) : task)
+                    (run-lifecycle-hook task-finished-hook ended.id ended.name (cdr entry))))
+                finished))))
 
 ;;; Suspension
 
@@ -592,14 +646,14 @@ prelude: :gerbil/core
         (set! running.interrupts 3)
         (set! running.quit-requested? #t)
         (interrupt-task! (: loop.thread :thread) running)
-        (await-task-end! running))))
+        (await-task-end! loop running))))
   (for-each
     (lambda ((waiting : task))
       (using (s waiting.suspension : suspension)
         (set! s.outcome (cons #t (quit-condition forced?: #f)))
         (set! loop.resumes [s])
         (resume-next! loop)
-        (await-task-end! waiting)))
+        (await-task-end! loop waiting)))
     (reverse loop.waiting))
   (let lp ()
     (unless (queue-empty? loop)
@@ -610,15 +664,19 @@ prelude: :gerbil/core
               (when (and reply (eq? item.state 'queued))
                 (reply #t (loop-stopped-error)))))))
       (lp)))
+  (announce-finished! loop)
   ((: loop.stopping :procedure)))
 
-;; Wait briefly for ENDING to report its end, dropping other messages.
-(def (await-task-end! (ending : task)) => :void
-  (let wait ()
-    (match (thread-receive 2 #f)
-      ([task-ended: (? (cut eq? <> ending)) . _] (void))
-      (#f (void))
-      (_ (wait)))))
+;; Wait briefly for ENDING to report its end, dropping other messages, and
+;; record how it ended; one that does not report in time counts as quit.
+(def (await-task-end! (loop : editor-loop) (ending : task)) => :void
+  (let (how (let wait ()
+              (match (thread-receive 2 #f)
+                ([task-ended: (? (cut eq? <> ending)) raised? value] (how-task-ended raised? value))
+                (#f 'quit)
+                (_ (wait)))))
+    (set! loop.running #f)
+    (task-finished! loop ending how)))
 
 (def (loop-stopped-error) => :t
   (with-catch values (lambda () (error "The editor loop stopped"))))
