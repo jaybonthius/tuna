@@ -1,0 +1,45 @@
+# What is in the kernel, and what sits on top of it?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+direction: down
+
+classes: {
+  kernel: {
+    style: {
+      fill: "#e8eaf6"
+      stroke: "#283593"
+      font-color: "#1a237e"
+      border-radius: 8
+      stroke-width: 3
+      font-size: 18
+    }
+  }
+  layer: {
+    style: {
+      fill: "#eef3fb"
+      stroke: "#355c96"
+      font-color: "#172b4d"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+}
+
+legend: |md
+  **Status:** proposed. Arrows mean "is built on".
+  Only the bottom box is fixed; everything above it can be replaced.
+|
+
+plugins: "Plugins (Tuna's own and yours)\nkeys and commands, buffers, minibuffer,\nwindows, renderer, browser connection,\nsession saving, profiler, ..." {class: layer}
+contracts: "Contracts\nwhat a slot promises:\ntext store, buffers, input, renderer, windows" {class: layer}
+libraries: "Shared libraries\ntimers, background jobs" {class: layer}
+kernel: "Kernel (fixed, about 1,250 lines)\n1. plugins: turn on, turn off, undo, swap\n2. the editor thread, C-g, the input queue\n3. hooks and IDs" {class: kernel}
+
+plugins -> contracts
+plugins -> libraries
+contracts -> kernel
+libraries -> kernel

@@ -1,0 +1,22 @@
+# What happens when you click a "Stage" button (or press RET on it)?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: You
+browser: Browser
+web: Browser connection plugin
+kernel: Kernel
+input: Input plugin
+
+you -> browser: 1. click "Stage" on main.ss
+browser -> web: 2. "activate node 42"\n(names a node, never a command)
+web -> kernel: 3. put an item in the queue\n(the kernel never looks inside)
+kernel -> input: 4. what does this item mean?
+input -> input: 5. node 42 is still on screen, and its keymap\nbinds activate to (stage-file "main.ss")
+input -> kernel: 6. run that command
+kernel -> kernel: 7. runs it like any command:\nhooks, undo, C-g, macros all apply
