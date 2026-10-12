@@ -17,7 +17,7 @@ Brief: [briefs/2026-10-architecture-skeleton.md](briefs/2026-10-architecture-ske
 - a command prompts in direct style through a minimal minibuffer and resumes with the answer;
 - a deliberately slow fake highlighter runs as a job: edits render first, and its decorations arrive later, shifted past any typing that happened meanwhile;
 - a session slot and autosave survive a restart;
-- keydown-to-patched-screen latency is measured.
+- keydown-to-patched-screen latency is measured (about 3–4 ms; the in-app instrumentation was later removed because it leaked into the kernel, and measurement moves to a separate profiler plugin).
 
 Out of scope: windows and splits, files, modes, completion UI, real highlighting.
 
