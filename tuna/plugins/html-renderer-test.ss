@@ -37,6 +37,18 @@
            (check (and (offset "a<span class=\"cursor\">&lt;</span>b" html) #t) => #t)
            (check (and (offset "line 1, column 1" html) #t) => #t)))))
 
+    (test-case "highlights render as face classes, around and under the cursor"
+      (with-editor
+       (lambda ()
+         (insert "a12b\n34")
+         (set-highlights! (current-text) 'digits
+                          [(make-span 2 4 'digit) (make-span 6 8 'digit)])
+         (goto-char 3)
+         (let (html (screen))
+           (check (and (offset "a<span class=\"face-digit\">1</span><span class=\"cursor face-digit\">2</span>b" html) #t)
+                  => #t)
+           (check (and (offset "<span class=\"face-digit\">34</span>" html) #t) => #t)))))
+
     (test-case "*welcome* renders as a column: the heading, then the editable text"
       (with-editor
        (lambda ()

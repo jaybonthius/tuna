@@ -5,6 +5,7 @@
   --tuna-muted: #59636e;
   --tuna-rule: #d1d9e0;
   --tuna-bar: #eff2f5;
+  --tuna-digit: #0550ae;
   --tuna-font: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --tuna-prose-font: system-ui, sans-serif;
 }
@@ -16,6 +17,7 @@
     --tuna-muted: #9198a1;
     --tuna-rule: #3d444d;
     --tuna-bar: #151b23;
+    --tuna-digit: #79c0ff;
   }
 }
 
@@ -77,15 +79,33 @@ body {
   min-block-size: 1lh;
 }
 
+.face-digit {
+  color: var(--tuna-digit);
+}
+
 .cursor {
   background: var(--tuna-foreground);
   color: var(--tuna-background);
 }
 
 .status-line,
+.minibuffer,
 .echo-area {
   margin: 0;
   padding: 0.25rem 0.5rem;
+}
+
+.minibuffer {
+  display: flex;
+  gap: 0.5ch;
+}
+
+.minibuffer .text {
+  flex: 1;
+}
+
+.prompt {
+  color: var(--tuna-muted);
 }
 
 .status-line {
