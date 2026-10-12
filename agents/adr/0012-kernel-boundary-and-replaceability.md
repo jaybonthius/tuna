@@ -13,8 +13,8 @@ The two differ in one respect that matters: whether Tuna's default implementatio
 - **Defaults are plugins.** Every editor feature is a plugin, and Tuna's own defaults (text store, buffers and views, command-loop policy, minibuffer, window manager, renderer, persistence, transport) use only public contracts, with no privileged access. Tuna ships a standard plugin set so it works out of the box.
 - **The kernel** is the only part that is not a plugin. It contains:
   1. the plugin runtime: contexts, receipts, the service registry, manifests, and dependency activation ([ADR 2](0002-plugins-contexts-and-services.md));
-  2. the execution rules: the baton, tasks and yield points, jobs, and the quit lane ([ADR 3](0003-command-loop-and-jobs.md));
-  3. shared vocabulary that contracts depend on: identities, revisions, and change records ([ADR 4](0004-state-ownership.md)).
+  2. the execution rules: the baton, tasks and yield points, jobs, and the quit lane ([ADR 3](0003-command-loop-and-jobs.md)) (the kernel contract below keeps only posting results; jobs are a shared library);
+  3. shared vocabulary that contracts depend on: identities, revisions, and change records ([ADR 4](0004-state-ownership.md)) (the kernel contract below moves change records to the buffers contract).
 
   It contains no editor features.
 - **Three tiers of replaceability.**
@@ -35,7 +35,7 @@ The two differ in one respect that matters: whether Tuna's default implementatio
 
 The skeleton let the kernel drift from about 1,050 to 1,800 non-test lines by absorbing pieces of features (hooks table, timers, session slots, a command registry, a browser keyboard event type, text ranges for one job policy, latency data). This section is the authoritative statement of what the kernel is.
 
-**Four layers**, each using only the layers below it: plugins (Tuna's own and users'), contracts (`tuna/services/`: interfaces, service values, vocabulary types, thin dispatchers only), shared libraries (`tuna/lib/`: conveniences built only on the public kernel API, with no special access), and the kernel (`tuna/kernel/`, facade `tuna/kernel.ss`).
+**Four layers**, each using only the layers below it: plugins (Tuna's own and users'), contracts (`tuna/services/`: interfaces, service values, vocabulary types, thin dispatchers only), shared libraries (`tuna/lib/`: conveniences built only on the public kernel API, with no special access; today timers and jobs), and the kernel (`tuna/kernel/`, facade `tuna/kernel.ss`).
 
 **The kernel contains exactly:**
 1. **Plugin runtime:** plugins, `defplugin`, contexts and receipts (`context-defer!` is the one primitive every registration is built from), owner-tagged entries, activation and deactivation, services with providers, tiers, dependents that restart or adapt, and swap handover.
@@ -47,7 +47,7 @@ The skeleton let the kernel drift from about 1,050 to 1,800 non-test lines by ab
 
 **Input:** the kernel queues opaque input items and never looks inside them. The `Input` service has two duties: classify an arriving item as "queue" or "interrupt" (on the arriving thread, without touching editor state; this is how the quit key works), and resolve a queued item to the task it starts, as a name and a thunk (on the baton; for keys, the command registry in the keys plugin supplies both). Key presses are resolved through keymaps by context and mode. Clickable UI (buttons, menu items, mouse clicks) sends "activate node N with gesture G"; the input plugin checks that node N is still current and resolves the gesture through the node's keymap, which the server bound when it rendered the node (for example `activate` to a command with captured arguments). The client never names a command. This follows Emacs, where buttons and menus are events resolved through keymaps. Purely presentational interaction (scrolling, disclosure) may stay in the browser.
 
-**Changes to the kernel:** there is no size limit. Every new kernel export, data field, or interface method requires an amendment to this ADR saying why no plugin or library could own it, and every merge review states whether the kernel changed and why. `make test` includes mechanical checks: a search of `tuna/kernel/` for the forbidden nouns above, and a check that the kernel imports no service or plugin module.
+**Changes to the kernel:** there is no size limit. Every new kernel export, data field, or interface method requires an amendment to this ADR saying why no plugin or library could own it, and every merge review states whether the kernel changed and why. `make test` includes mechanical checks: a search of `tuna/kernel/` for the forbidden nouns above, a check that the kernel imports no service or plugin module, and a check that libraries import only `:gerbil`, `:std`, the kernel facade `:tuna/kernel`, and other libraries.
 
 ## Consequences
 

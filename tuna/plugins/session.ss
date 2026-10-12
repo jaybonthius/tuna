@@ -12,6 +12,7 @@ prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
+        :tuna/lib/timers
         :tuna/services/session)
 (export session-plugin
         session-state-directory)

@@ -61,19 +61,8 @@
           ["note-a" "note-b" "fail" "block" "cooperative-loop" "stubborn-loop" "inhibited-loop"
            "wait" "discard"])
 
-(def ticks 0)
-(def timer-quit? #f)
-
-(defplugin (ticking ctx)
-  "Counts timer ticks."
-  (context-run-with-timer! ctx 0.01 0.01 (lambda () (set! ticks (fx1+ ticks))) name: 'tick))
-
-(defplugin (waiting-timer ctx)
-  "A timer whose callback waits until it is cancelled."
-  (context-run-with-timer! ctx 0.01 #f
-                           (lambda ()
-                             (with-catch (lambda (e) (set! timer-quit? (quit-condition? e)) (raise e))
-                                         (lambda () (suspend (lambda (s) (set! waiting s))))))))
+(defplugin (idle ctx)
+  "Registers nothing.")
 
 ;; Notes each task start, with whether the task is then the running one,
 ;; and each task end, with the running task's name, which is #f by then.
@@ -91,7 +80,7 @@
 
 (defplugin (meddling-task-watcher ctx)
   "Tries to activate a plugin when a task starts."
-  (context-add-hook! ctx task-started-hook 'meddle (lambda (id name) (activate-plugin! ticking))))
+  (context-add-hook! ctx task-started-hook 'meddle (lambda (id name) (activate-plugin! idle))))
 
 ;; Start a fresh loop with the test tasks and PLUGINS, run THUNK, and stop.
 (def (with-loop thunk quit-grace: (quit-grace 0.5) plugins: (plugins []))
@@ -289,27 +278,6 @@
          (check (wait-until (lambda () (and (memq 'task log) (memq 'result log) #t))) => #t)
          (check saw-pending? => #f))))
 
-    (test-case "timers run as tasks and stop with their plugin"
-      (with-loop
-       (lambda ()
-         (set! ticks 0)
-         (call-on-editor-loop (lambda () (activate-plugin! ticking)))
-         (check (wait-until (lambda () (>= ticks 3))) => #t)
-         (call-on-editor-loop (lambda () (deactivate-plugin! ticking)))
-         (let (stopped ticks)
-           (thread-sleep! 0.1)
-           (check ticks => stopped)))))
-
-    (test-case "deactivating a timer's plugin quits its waiting callback"
-      (with-loop
-       (lambda ()
-         (set! timer-quit? #f)
-         (call-on-editor-loop (lambda () (activate-plugin! waiting-timer)))
-         (check (wait-until (lambda () waiting)) => #t)
-         (call-on-editor-loop (lambda () (deactivate-plugin! waiting-timer)))
-         (check (wait-until (lambda () timer-quit?)) => #t)
-         (check (settled-message) => "Quit"))))
-
     (test-case "inhibit-quit holds off two interrupts; the third overrides it"
       (with-loop
        (lambda ()
@@ -390,6 +358,6 @@
                                  "Lifecycle hook callbacks must not activate or deactivate plugins")
                 ? values)
          (check log => '(a))
-         (check (call-on-editor-loop (lambda () (plugin-active? ticking))) => #f))
+         (check (call-on-editor-loop (lambda () (plugin-active? idle))) => #f))
        plugins: [meddling-task-watcher]))))
 

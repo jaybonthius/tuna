@@ -1,4 +1,5 @@
-;;; Mechanical checks of the kernel boundary (ADR 12, "Kernel contract").
+;;; Mechanical checks of the kernel and library boundaries (ADR 12, "Kernel
+;;; contract").
 ;;;
 ;;; tuna/kernel/ may hold only Gerbil source and the baseline. Kernel source
 ;;; may import only :gerbil, :std, and kernel modules, may include only
@@ -7,6 +8,10 @@
 ;;; hit beyond that list and on any entry larger than what remains, so the
 ;;; list can only shrink as the kernel cleanup
 ;;; (agents/plans/kernel-cleanup.md) lands.
+;;;
+;;; tuna/lib/ may hold only Gerbil source. Library source may import only
+;;; :gerbil, :std, the kernel facade :tuna/kernel, and library modules, and
+;;; may include only checked library files. Libraries may use the nouns.
 (import (only-in :gerbil/runtime/hash HashTable)
         :std/misc/ports
         :std/source
@@ -71,12 +76,41 @@
 (def (source-path (name : :string)) => :string
   (path-expand name root-directory))
 
-;;; The kernel tree
+;;; Checked layers
 
-;; Every non-directory entry under tuna/kernel/, hidden ones included, as
+;; A layer whose imports are checked (ADR 12, "Kernel contract"): the
+;; directory holding its modules (:tuna/<dir>/x), its facade file if any
+;; (:tuna/<dir>), the other files the directory may hold, the test support
+;; excluded from the checks, and the modules it may import besides
+;; :gerbil/..., :std/..., and its own checked modules.
+(defstruct layer ((name         : :string)
+                  (directory    : :string)
+                  (facade       :? :string)
+                  (extra-files  : :list)
+                  (test-support : :list)
+                  (also-imports : :list))
+  final: #t)
+
+;; The kernel: its facade tuna/kernel.ss and tuna/kernel/.
+(def kernel-layer
+  (make-layer "kernel" "tuna/kernel" "tuna/kernel.ss" [baseline-name] kernel-test-support-files []))
+
+;; Shared libraries, built only on the public kernel API: no kernel
+;; module other than the facade, no contract, no plugin, no prelude.
+(def library-layer
+  (make-layer "library" "tuna/lib" #f [] [] [":tuna/kernel"]))
+
+(def (layer-allowed (l : layer)) => :string
+  (string-append ":gerbil/..., :std/..., "
+                 (apply string-append (map (cut string-append <> ", ") (layer-also-imports l)))
+                 "and checked " (layer-name l) " modules (ADR 12)"))
+
+;;; The layer trees
+
+;; Every non-directory entry under DIRECTORY, hidden ones included, as
 ;; (name . type) with NAME relative to the repository root.
-(def (kernel-tree-entries) => :list
-  (let walk ((dir "tuna/kernel"))
+(def (tree-entries (directory : :string)) => :list
+  (let walk ((dir directory))
     (apply append
            (map (lambda ((name : :string))
                   (let* ((relative (string-append dir "/" name))
@@ -88,10 +122,14 @@
                            (directory-files (list path: (source-path dir)
                                                   ignore-hidden: 'dot-and-dot-dot)))))))
 
-;; Entries other than regular .ss files and the baseline, so no other kind
-;; of source can hide in the kernel, and exclusions naming no file.
-(def (tree-problems) => :list
-  (let (entries (kernel-tree-entries))
+;; Entries other than regular .ss files and the layer's extra files, so no
+;; other kind of source can hide in the layer, and test-support exclusions
+;; naming no file.
+(def (tree-problems (l : layer)) => :list
+  (let* ((entries (tree-entries (layer-directory l)))
+         (allowed (string-append (layer-directory l) "/ may hold only .ss files"
+                                 (apply string-append
+                                        (map (cut string-append " and " <>) (layer-extra-files l))))))
     (append
      (filter-map
       (lambda ((entry : :pair))
@@ -99,29 +137,30 @@
               (type (cdr entry)))
           (cond
            ((not (eq? type 'regular))
-            (string-append name ": is a " (symbol->string type)
-                           "; tuna/kernel/ may hold only .ss files and " baseline-name))
-           ((or (string-suffix? ".ss" name) (equal? name baseline-name)) #f)
-           (else
-            (string-append name ": tuna/kernel/ may hold only .ss files and " baseline-name)))))
+            (string-append name ": is a " (symbol->string type) "; " allowed))
+           ((or (string-suffix? ".ss" name) (member name (layer-extra-files l))) #f)
+           (else (string-append name ": " allowed)))))
       entries)
      (filter-map
       (lambda ((name : :string))
         (and (not (assoc name entries))
-             (string-append name ": listed in kernel-test-support-files but does not exist;"
+             (string-append name ": listed as test support but does not exist;"
                             " remove it from tuna/kernel/boundary-test.ss")))
-      kernel-test-support-files))))
+      (layer-test-support l)))))
 
-;; The checked files, relative to the repository root: the facade and every
-;; non-test .ss file under tuna/kernel/.
+;; The checked files of L, relative to the repository root: its facade and
+;; every non-test .ss file under its directory.
+(def (layer-source-names (l : layer)) => :list
+  (let (files (filter (lambda ((name : :string))
+                        (and (string-suffix? ".ss" name)
+                             (not (string-suffix? "-test.ss" name))
+                             (not (member name (layer-test-support l)))))
+                      (map car (filter (lambda ((entry : :pair)) (eq? (cdr entry) 'regular))
+                                       (tree-entries (layer-directory l))))))
+    (if (layer-facade l) (cons (layer-facade l) files) files)))
+
 (def (kernel-source-names) => :list
-  (cons "tuna/kernel.ss"
-        (filter (lambda ((name : :string))
-                  (and (string-suffix? ".ss" name)
-                       (not (string-suffix? "-test.ss" name))
-                       (not (member name kernel-test-support-files))))
-                (map car (filter (lambda ((entry : :pair)) (eq? (cdr entry) 'regular))
-                                 (kernel-tree-entries))))))
+  (layer-source-names kernel-layer))
 
 ;; Plugin names, from the module files in tuna/plugins/.
 (def (plugin-names) => :list
@@ -206,31 +245,35 @@
 (def (parent-segment? (name : :string)) => :boolean
   (and (member ".." (string-split name #\/)) #t))
 
-;; The root-relative source file of the kernel-local module NAME
-;; (:tuna/kernel, :tuna/kernel/x, or ./x relative to FILE), or #f.
-(def (kernel-module-file (file : :string) (name : :string)) => (Maybe :string)
-  (cond
-   ((equal? name ":tuna/kernel") "tuna/kernel.ss")
-   ((string-prefix? ":tuna/kernel/" name)
-    (string-append (substring name 1 (string-length name)) ".ss"))
-   ((string-prefix? "./" name)
-    (let (path (path-expand (string-append (substring name 2 (string-length name)) ".ss")
-                            (path-directory (source-path file))))
-      (and (string-prefix? root-directory path)
-           (substring path (string-length root-directory) (string-length path)))))
-   (else #f)))
+;; The root-relative source file of NAME if it names a module of L (its
+;; facade :tuna/<dir>, :tuna/<dir>/x, or ./x relative to FILE), or #f.
+(def (layer-module-file (l : layer) (file : :string) (name : :string)) => (Maybe :string)
+  (let ((facade (layer-facade l))
+        (prefix (string-append ":" (layer-directory l) "/")))
+    (cond
+     ((and facade (equal? name (string-append ":" (path-strip-extension facade)))) facade)
+     ((string-prefix? prefix name)
+      (string-append (substring name 1 (string-length name)) ".ss"))
+     ((string-prefix? "./" name)
+      (let (path (path-expand (string-append (substring name 2 (string-length name)) ".ss")
+                              (path-directory (source-path file))))
+        (and (string-prefix? root-directory path)
+             (substring path (string-length root-directory) (string-length path)))))
+     (else #f))))
 
-;; Whether NAME, imported by the file named FILE, is :gerbil, :std, or a
-;; checked kernel module; test files and test support are not.
-(def (allowed-import? (file : :string) (name : :string) (checked : :list)) => :boolean
+;; Whether NAME, imported by FILE of L, is :gerbil, :std, one of L's other
+;; allowed modules, or a checked module of L; test files and test support
+;; are not.
+(def (allowed-import? (l : layer) (file : :string) (name : :string) (checked : :list)) => :boolean
   (cond
    ((parent-segment? name) #f)
    ((or (string-prefix? ":gerbil/" name) (string-prefix? ":std/" name)) #t)
+   ((member name (layer-also-imports l)) #t)
    (else
-    (let (target (kernel-module-file file name))
+    (let (target (layer-module-file l file name))
       (and target (member target checked) #t)))))
 
-;; Whether TARGET, included by the file named FILE, is a checked kernel file.
+;; Whether TARGET, included by the file named FILE, is a checked file.
 (def (allowed-include? (file : :string) (target : :string) (checked : :list)) => :boolean
   (and (not (parent-segment? target))
        (member (path-expand target (path-directory (source-path file)))
@@ -246,8 +289,8 @@
        (lp more (fx1+ number)
            (if (string-contains line needle) (cons number found) found))))))
 
-(def (import-problems) => :list
-  (let (checked (kernel-source-names))
+(def (import-problems (l : layer)) => :list
+  (let (checked (layer-source-names l))
     (apply append
            (map (lambda ((file : :string))
                   (let* ((path (source-path file))
@@ -260,17 +303,18 @@
                     (append
                      (filter-map
                       (lambda ((name : :string))
-                        (and (not (allowed-import? file name checked))
+                        (and (not (allowed-import? l file name checked))
                              (string-append file ": imports " name (where name)
-                                            "; the kernel may import only :gerbil/..., :std/...,"
-                                            " and checked kernel modules (ADR 12)")))
+                                            "; the " (layer-name l) " may import only "
+                                            (layer-allowed l))))
                       (unique (append (imported-module-names forms)
                                       (module-like-symbols forms))))
                      (filter-map
                       (lambda ((target : :string))
                         (and (not (allowed-include? file target checked))
                              (string-append file ": includes " target (where target)
-                                            "; the kernel may include only checked kernel files")))
+                                            "; the " (layer-name l)
+                                            " may include only its checked files")))
                       (included-paths forms)))))
                 checked))))
 
@@ -385,7 +429,7 @@
   final: #t)
 
 ;; The kernel-cleanup plan steps that remove baseline entries.
-(def baseline-steps '("step 5" "step 6" "step 7" "step 8"))
+(def baseline-steps '("step 6" "step 7" "step 8"))
 
 (def (valid-reason? (reason : :string)) => :boolean
   (or (and (member reason baseline-steps) #t)
@@ -399,7 +443,7 @@
             (unless (fx> count 0)
               (error "Baseline count must be positive" baseline-name form))
             (unless (valid-reason? reason)
-              (error "Baseline reason must be \"step N\" (N from 5 to 8) or \"permanent: <why>\""
+              (error "Baseline reason must be \"step N\" (N from 6 to 8) or \"permanent: <why>\""
                      baseline-name form))
             (make-baseline-entry file label count reason))
            (else (error "Malformed baseline entry; expected (file term count reason)"
@@ -456,14 +500,19 @@
   (length problems))
 
 (def boundary-test
-  (test-suite "kernel boundary (ADR 12)"
+  (test-suite "kernel and library boundary (ADR 12)"
     (test-case "tuna/kernel/ holds only .ss files and the baseline"
-      (check (problem-count (tree-problems)) => 0))
+      (check (problem-count (tree-problems kernel-layer)) => 0))
     (test-case "kernel imports only :gerbil, :std, and kernel modules"
-      (check (problem-count (import-problems)) => 0))
+      (check (problem-count (import-problems kernel-layer)) => 0))
     (test-case "kernel forbidden nouns do not exceed the baseline"
       (displayln "  kernel boundary: " (length (kernel-source-names)) " files checked; "
                  baseline-name " allows "
                  (foldl fx+ 0 (hash-values (baseline-limits (read-baseline))))
                  " known forbidden-noun hits")
-      (check (problem-count (noun-problems)) => 0))))
+      (check (problem-count (noun-problems)) => 0))
+    (test-case "tuna/lib/ holds only .ss files"
+      (check (problem-count (tree-problems library-layer)) => 0))
+    (test-case "libraries import only :gerbil, :std, :tuna/kernel, and library modules"
+      (displayln "  library boundary: " (length (layer-source-names library-layer)) " files checked")
+      (check (problem-count (import-problems library-layer)) => 0))))

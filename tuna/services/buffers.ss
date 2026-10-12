@@ -1,8 +1,8 @@
 ;;; Texts, buffers, views, and nodes (ADR 6), and the buffers service that
 ;;; holds them.
 ;;;
-;;; A text holds content: a text-store version, revisions, a change journal,
-;;; and undo history. A buffer is a named tree of nodes; text nodes refer to
+;;; A text holds content: a text-store version, revisions, a journal of
+;;; change records, and undo history. A buffer is a named tree of nodes; text nodes refer to
 ;;; texts, and any other node kind is defined by a plugin. A view is a buffer
 ;;; as one window (or prompt) shows it: the focused text node, point, and the
 ;;; goal column, so two windows on one buffer have their own points.
@@ -13,11 +13,13 @@ prelude: :gerbil/core
 (import (only-in :std/list/list append-map)
         :std/interface
         :tuna/kernel
+        :tuna/lib/jobs
         :tuna/services/text-store
         :tuna/services/settings)
 (export (interface-out Buffers)
         buffers-service
         ;; texts
+        (struct-out change) (struct-out span) rebase-spans
         text text? new-text text-id
         text-chars-revision text-content-revision text-decoration-revision
         text-journal text-changes-since text-move-to-store!
@@ -54,6 +56,23 @@ prelude: :gerbil/core
 
 ;;; Texts
 
+;; One edit of a text: at START, REMOVED was replaced by INSERTED, producing
+;; character revision REVISION. Positions are 1-based. Texts produce these
+;; records; markers, undo, and rebased job results consume them.
+(defstruct change ((revision : :fixnum)
+                   (start    : :fixnum)
+                   (removed  : :string)
+                   (inserted : :string))
+  final: #t)
+
+;; A range START..END of a text, 1-based and end-exclusive, carrying VALUE
+;; (such as a face). Highlights, and job results that rebase, are lists of
+;; spans.
+(defstruct span ((start : :fixnum)
+                 (end   : :fixnum)
+                 (value : :t))
+  final: #t)
+
 (defclass text ((id               : :fixnum)
                 (store            : :t)       ; the TextStore that made VERSION
                 (version          : :t)
@@ -83,11 +102,15 @@ prelude: :gerbil/core
 (def after-change-hook
   (new-hook 'after-change doc: "Runs after each change to a text, with the text and the change."))
 
-;; Jobs over a text depend on its characters.
+;; Jobs over a text depend on its characters. A result that rebases is a
+;; list of spans, moved past the text's changes since the job started; it
+;; is dropped once the journal no longer reaches back that far.
 (implement JobTarget text
   (job-revision (lambda (self) self.chars-revision))
   (job-target-alive? (lambda (self) self.live?))
-  (job-changes-since (lambda (self revision) (text-changes-since self revision))))
+  (job-rebase (lambda (self result revision)
+                (let (changes (text-changes-since self revision))
+                  (and changes [(rebase-spans result changes)])))))
 
 ;; The store that made T's version. A text keeps using it until it is
 ;; moved, so a text the buffers plugin has not moved yet still works.
@@ -319,6 +342,28 @@ prelude: :gerbil/core
                                           (make-span start end (span-value s)))))
                                  (cdr layer))))
              t.decorations)))))
+
+;; SPANS moved through CHANGES (oldest first). A span a change touched is
+;; dropped: one overlapping a replaced range, or with an insertion strictly
+;; inside it. Insertions at a span's edge leave it intact.
+(def (rebase-spans (spans : :list) (changes : :list)) => :list
+  (filter-map
+   (lambda ((s : span))
+     (let lp ((rest changes) (start s.start) (end s.end))
+       (match rest
+         ([] (make-span start end s.value))
+         ([c . more]
+          (using (c : change)
+            (let* ((removed (string-length c.removed))
+                   (shift (fx- (string-length c.inserted) removed))
+                   (edit-end (fx+ c.start removed)))
+              (cond
+               ((if (fx= removed 0) (fx<= c.start start) (fx<= edit-end start))
+                (lp more (fx+ start shift) (fx+ end shift)))
+               ((fx>= c.start end)
+                (lp more start end))
+               (else #f))))))))
+   spans))
 
 ;; Where POSITION, valid at T's character revision REVISION, is now.
 ;; Positions inside a deleted range move to its start; insertions at a
