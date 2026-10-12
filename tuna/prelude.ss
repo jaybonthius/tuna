@@ -7,11 +7,14 @@ prelude: :gerbil/core
 
 (import :gerbil/core
         :tuna/kernel
-        :tuna/services/keys)
+        :tuna/services/keys
+        :tuna/services/settings)
 (export (import: :gerbil/core)
         defplugin
         defcommand
         keymap-set
+        defsetting
+        with-settings
         (phi: +1 read-module-body))
 
 (begin-syntax

@@ -11,6 +11,7 @@
         :tuna/plugins/echo-area
         :tuna/plugins/help-panel
         :tuna/plugins/rope
+        :tuna/plugins/settings
         :tuna/plugins/buffers
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
@@ -133,7 +134,7 @@
 
 (def standard-plugins
   [keys-plugin web-transport-plugin echo-area-plugin help-panel-plugin
-   rope-text-store-plugin buffers-plugin html-renderer-plugin basic-editing-plugin
+   rope-text-store-plugin settings-plugin buffers-plugin html-renderer-plugin basic-editing-plugin
    demo-plugin])
 
 (def (with-tuna thunk)

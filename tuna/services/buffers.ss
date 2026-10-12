@@ -12,7 +12,8 @@ prelude: :gerbil/core
 (import (only-in :std/list/list append-map)
         :std/interface
         :tuna/kernel
-        :tuna/services/text-store)
+        :tuna/services/text-store
+        :tuna/services/settings)
 (export (interface-out Buffers)
         buffers-service
         ;; texts
@@ -37,10 +38,11 @@ prelude: :gerbil/core
         context-define-node-kind! context-define-node-renderer!
         node-kind-ref node-renderer node-text-projection
         ;; buffers and the view
-        buffer buffer? buffer-name buffer-root new-buffer
+        buffer buffer? buffer-name buffer-root new-buffer rename-buffer!
+        buffer-setting set-buffer-setting!
         view view? view-showing view-node new-view
-        buffer-list get-buffer context-add-buffer! kill-buffer buffer-texts
-        current-view current-buffer switch-to-buffer
+        buffer-list get-buffer add-buffer! context-add-buffer! kill-buffer buffer-texts
+        current-view window-view select-view! current-buffer switch-to-buffer
         current-text-node current-text
         point point-min point-max goto-char
         insert delete-region
@@ -385,7 +387,8 @@ prelude: :gerbil/core
                   (root           : node)
                   (point-node     :? text-node)   ; point while not displayed
                   (point-position : :fixnum)
-                  (point-revision : :fixnum))
+                  (point-revision : :fixnum)
+                  (settings       : :list))       ; buffer-local (setting . value) pairs
   final: #t)
 
 (defclass view ((showing     : buffer)
@@ -400,8 +403,12 @@ prelude: :gerbil/core
   (buffer-list) => :list
   (add-buffer! (b : buffer)) => :void
   (remove-buffer! (b : buffer)) => :void
-  ;; The view of the one window.
+  ;; The selected view, which receives editing: the window's view, or a
+  ;; prompt's while one is active.
   (current-view) => :t
+  (select-view! (v : view)) => :void
+  ;; The view of the one window.
+  (window-view) => :t
   ;; Entry tables of node kinds (by name) and node renderers (by kind and
   ;; render target).
   (node-kinds) => :t
@@ -460,7 +467,23 @@ prelude: :gerbil/core
 (def (new-buffer (name : :string) (root : node)) => buffer
   (let (focus (first-text-node root))
     (buffer name: name root: root point-node: focus point-position: 1
-            point-revision: (if focus (text-chars-revision (text-node-content focus)) 0))))
+            point-revision: (if focus (text-chars-revision (text-node-content focus)) 0)
+            settings: [])))
+
+;; Give B a new NAME, which no other buffer may have.
+(def (rename-buffer! (b : buffer) (name : :string)) => :void
+  (let (other (get-buffer name))
+    (when (and other (not (eq? other b)))
+      (error "A buffer with this name exists" name))
+    (set! b.name name)))
+
+;; B's own value for S, as a (setting . value) pair, or #f.
+(def (buffer-setting (b : buffer) (s : setting)) => (Maybe :pair)
+  (assq s b.settings))
+
+(def (set-buffer-setting! (b : buffer) (s : setting) (value : :t)) => :void
+  (set! b.settings (cons (cons s value)
+                         (filter (lambda ((pair : :pair)) (not (eq? (car pair) s))) b.settings))))
 
 (def (new-view (b : buffer)) => view
   (view showing: b node: b.point-node position: b.point-position
@@ -472,18 +495,26 @@ prelude: :gerbil/core
 (def (get-buffer (name : :string)) => (Maybe buffer)
   (find (lambda ((b : buffer)) (string=? b.name name)) (buffer-list)))
 
-;; Add B for CTX's plugin; it is killed when the plugin is deactivated.
-(def (context-add-buffer! (ctx : context) (b : buffer)) => :void
+;; Add B, whose name must be new.
+(def (add-buffer! (b : buffer)) => :void
   (when (get-buffer b.name)
     (error "A buffer with this name exists" b.name))
-  (Buffers-add-buffer! (current-buffers) b)
+  (Buffers-add-buffer! (current-buffers) b))
+
+;; Add B for CTX's plugin; it is killed when the plugin is deactivated.
+(def (context-add-buffer! (ctx : context) (b : buffer)) => :void
+  (add-buffer! b)
   (context-defer! ctx (lambda () (kill-buffer b))))
 
-;; Remove B. If the view shows it, show another buffer first.
+;; Remove B. If the window shows it, show another buffer there first;
+;; buffers whose names start with a space (internal ones) are not chosen.
 (def (kill-buffer (b : buffer)) => :void
-  (when (eq? b (view-showing (current-view)))
-    (let (other (find (lambda (other) (not (eq? other b))) (buffer-list)))
-      (when other (switch-to-buffer other))))
+  (let (window (window-view))
+    (when (eq? b (view-showing window))
+      (let (other (find (lambda ((other : buffer))
+                          (not (or (eq? other b) (string-prefix? " " other.name))))
+                        (buffer-list)))
+        (when other (view-switch! window other)))))
   (Buffers-remove-buffer! (current-buffers) b)
   (for-each (lambda ((t : text)) (set! t.live? #f)) (buffer-texts b)))
 
@@ -497,22 +528,31 @@ prelude: :gerbil/core
 (def (current-view) => view
   (: (Buffers-current-view (current-buffers)) view))
 
+(def (window-view) => view
+  (: (Buffers-window-view (current-buffers)) view))
+
+;; Make V the view that receives editing.
+(def (select-view! (v : view)) => :void
+  (Buffers-select-view! (current-buffers) v))
+
 (def (current-buffer) => buffer
   (using (v (current-view) : view)
     v.showing))
 
 (def (switch-to-buffer (b : buffer)) => :void
-  (using (v (current-view) : view)
-    (unless (eq? b v.showing)
-      (using (old v.showing : buffer)
-        (set! old.point-node v.node)
-        (set! old.point-position v.position)
-        (set! old.point-revision v.revision))
-      (set! v.showing b)
-      (set! v.node b.point-node)
-      (set! v.position b.point-position)
-      (set! v.revision b.point-revision)
-      (set! v.goal-column #f))))
+  (view-switch! (current-view) b))
+
+(def (view-switch! (v : view) (b : buffer)) => :void
+  (unless (eq? b v.showing)
+    (using (old v.showing : buffer)
+      (set! old.point-node v.node)
+      (set! old.point-position v.position)
+      (set! old.point-revision v.revision))
+    (set! v.showing b)
+    (set! v.node b.point-node)
+    (set! v.position b.point-position)
+    (set! v.revision b.point-revision)
+    (set! v.goal-column #f)))
 
 (def (current-text-node) => (Maybe text-node)
   (using (v (current-view) : view)

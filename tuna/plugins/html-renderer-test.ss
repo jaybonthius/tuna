@@ -5,6 +5,7 @@
         :tuna/plugins/keys
         :tuna/plugins/echo-area
         :tuna/plugins/rope
+        :tuna/plugins/settings
         :tuna/plugins/buffers
         :tuna/plugins/html-renderer
         :tuna/plugins/demo)
@@ -13,7 +14,7 @@
 (def (with-editor thunk)
   (parameterize ((current-kernel (new-kernel)))
     (for-each activate-plugin!
-              [keys-plugin echo-area-plugin rope-text-store-plugin buffers-plugin
+              [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin buffers-plugin
                html-renderer-plugin demo-plugin])
     (thunk)))
 

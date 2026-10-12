@@ -7,6 +7,7 @@
         :tuna/plugins/keys
         :tuna/plugins/echo-area
         :tuna/plugins/rope
+        :tuna/plugins/settings
         :tuna/plugins/buffers
         :tuna/plugins/basic-editing)
 (export basic-editing-test)
@@ -23,7 +24,7 @@
   (parameterize ((current-kernel (new-kernel)))
     (try
      (for-each activate-plugin!
-               [keys-plugin echo-area-plugin rope-text-store-plugin buffers-plugin
+               [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin buffers-plugin
                 basic-editing-plugin])
      (start-editor-loop!)
      (thunk)

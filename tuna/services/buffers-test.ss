@@ -4,6 +4,7 @@
         :tuna/services/text-store
         :tuna/services/buffers
         :tuna/plugins/rope
+        :tuna/plugins/settings
         :tuna/plugins/string-text-store
         :tuna/plugins/buffers)
 (export buffers-test)
@@ -11,6 +12,7 @@
 (def (with-buffers thunk)
   (parameterize ((current-kernel (new-kernel)))
     (activate-plugin! rope-text-store-plugin)
+    (activate-plugin! settings-plugin)
     (activate-plugin! buffers-plugin)
     (thunk)))
 
