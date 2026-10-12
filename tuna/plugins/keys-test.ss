@@ -85,6 +85,36 @@
          (check (resolve (keydown "x")) => #f)
          (check (current-message) => "x is undefined"))))
 
+    (test-case "the innermost input target's keymap comes first, including for C-g"
+      (with-keys
+       (lambda ()
+         (defplugin (targets ctx)
+           "Commands for the global keymap and two input targets."
+           (for-each (lambda (name) (context-define-command! ctx name void))
+                     '(global-x outer-x inner-x inner-quit))
+           (keymap-set ctx "C-c x" 'global-x))
+         (activate-plugin! targets)
+         (let ((outer (make-input-target 'outer (new-keymap)))
+               (inner (make-input-target 'inner (new-keymap))))
+           (defplugin (target-keys ctx)
+             "Binds keys in the two targets' keymaps."
+             (keymap-set-in ctx (input-target-keymap outer) "C-c x" 'outer-x)
+             (keymap-set-in ctx (input-target-keymap inner) "C-c x" 'inner-x)
+             (keymap-set-in ctx (input-target-keymap inner) "C-g" 'inner-quit))
+           (activate-plugin! target-keys)
+           (push-input-target! outer)
+           (push-input-target! inner)
+           (resolve (keydown "c" ctrl?: #t))
+           (check (resolve (keydown "x")) => 'inner-x)
+           (check (resolve (keydown "g" ctrl?: #t)) => 'inner-quit)
+           (remove-input-target! inner)
+           (resolve (keydown "c" ctrl?: #t))
+           (check (resolve (keydown "x")) => 'outer-x)
+           (check (resolve (keydown "g" ctrl?: #t)) => 'keyboard-quit)
+           (remove-input-target! outer)
+           (resolve (keydown "c" ctrl?: #t))
+           (check (resolve (keydown "x")) => 'global-x)))))
+
     (test-case "only C-g is the quit key"
       (with-keys
        (lambda ()

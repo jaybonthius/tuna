@@ -24,6 +24,7 @@
     "tuna/services/echo-area"
     "tuna/services/help"
     "tuna/services/buffers"
+    "tuna/services/minibuffer"
     "tuna/plugins/keys"
     "tuna/plugins/rope"
     "tuna/plugins/string-text-store"
@@ -34,6 +35,7 @@
     "tuna/plugins/html-renderer"
     "tuna/prelude"
     "tuna/plugins/basic-editing"
+    "tuna/plugins/minibuffer"
     "tuna/plugins/demo"
     "tuna/plugins/web/embed"
     (gxc: "tuna/plugins/web" (extra-inputs: ,web-assets))

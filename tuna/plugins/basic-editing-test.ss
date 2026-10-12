@@ -20,37 +20,12 @@
   ["<printing-char>" "SPC" "RET" "DEL" "C-d" "C-f" "C-b" "C-n" "C-p" "C-a" "C-e"
    "<left>" "<right>" "<up>" "<down>" "C-/" "C-_"])
 
+(include "test-keys.ss")
+
 (def (with-editor thunk)
-  (parameterize ((current-kernel (new-kernel)))
-    (try
-     (for-each activate-plugin!
-               [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin buffers-plugin
-                basic-editing-plugin])
-     (start-editor-loop!)
-     (thunk)
-     (finally
-      (stop-editor-loop!)
-      (deactivate-all-plugins!)))))
-
-(def sequence 0)
-
-(def browser-keys
-  '(("RET" . "Enter") ("DEL" . "Backspace") ("SPC" . " ")
-    ("<up>" . "ArrowUp") ("<down>" . "ArrowDown")
-    ("<left>" . "ArrowLeft") ("<right>" . "ArrowRight")))
-
-;; Send one key: "a", "RET", "C-f", "<up>".
-(def (press key)
-  (set! sequence (+ sequence 1))
-  (let* ((ctrl? (string-prefix? "C-" key))
-         (name (if ctrl? (substring key 2 (string-length key)) key))
-         (browser-key (cond
-                       ((assoc name browser-keys) => cdr)
-                       (else name))))
-    (submit-event! (make-key-event "test-client" sequence browser-key "" 0 #f #f #f ctrl? #f #f))))
-
-(def (type! . keys)
-  (for-each press keys))
+  (call-with-editor [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
+                     buffers-plugin basic-editing-plugin]
+                    thunk))
 
 ;; The focused text and point once every key sent so far has run.
 (def (state)
