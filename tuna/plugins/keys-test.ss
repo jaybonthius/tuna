@@ -192,6 +192,22 @@
            (resolve (keydown "c" ctrl?: #t))
            (check (resolve (keydown "x")) => 'global-x)))))
 
+    (test-case "restarting the keys plugin re-registers a dependent's commands"
+      (with-keys
+       (lambda ()
+         (activate-plugin! defines-a)
+         (check (shared-result) => 'a)
+         (deactivate-plugin! keys-plugin)
+         (check (plugin-active? defines-a) => #f)
+         (activate-plugin! keys-plugin)
+         (check (plugin-active? defines-a) => #t)
+         (check (shared-result) => 'a)
+         (let (quit (command-entry 'keyboard-quit))
+           (check (entry-owner quit) => 'keys-plugin)
+           (check (and (string? (entry-source quit))
+                       (string-contains (entry-source quit) "plugins/keys.ss"))
+                  ? values)))))
+
     (test-case "only C-g arrives as an interrupt"
       (with-keys
        (lambda ()

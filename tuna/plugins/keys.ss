@@ -83,6 +83,10 @@ prelude: :gerbil/core
        (char>? (string-ref key 0) #\space)
        (not (char=? (string-ref key 0) #\delete))))
 
+;; This form's source location, as "path:line".
+(defsyntax (this-source stx)
+  (with-syntax ((source (stx-source-string stx))) #'source))
+
 ;; Add the command NAME to SELF's table, owned by CTX's plugin.
 (def (add-command! (self : global-keys) (ctx : context) (name : :symbol) (procedure : :procedure)
                    (doc : :string) (source :? :string))
@@ -199,5 +203,5 @@ prelude: :gerbil/core
     ;; Straight into this table: while this plugin activates, the input
     ;; service need not resolve to it yet.
     (add-command! self ctx 'keyboard-quit signal-quit
-                  "Cancel the current key sequence or command." #f)
+                  "Cancel the current key sequence or command." (this-source))
     (context-provide! ctx input-service (Keys self))))

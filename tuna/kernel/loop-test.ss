@@ -119,6 +119,18 @@
          (settled-message)
          (check log => '(a)))))
 
+    (test-case "a resolve! result that is not a task is reported and the loop continues"
+      (with-loop
+       (lambda ()
+         (hash-put! test-bindings "malformed" 'not-a-pair)
+         (try
+          (press "malformed")
+          (check (string-empty? (settled-message)) => #f)
+          (press "note-a")
+          (settled-message)
+          (check log => '(a))
+          (finally (hash-remove! test-bindings "malformed"))))))
+
     (test-case "redisplay waits until queued input is processed"
       (with-loop
        (lambda ()

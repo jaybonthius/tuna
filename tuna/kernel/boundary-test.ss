@@ -48,9 +48,9 @@
     "measure" "measures" "measured" "measuring" "measurement" "measurements"
     "demo" "demos"))
 
-;; ADR 12: the kernel has no command registry. The bare word "command"
-;; stays allowed because the kernel announces commands starting and
-;; finishing.
+;; ADR 12: the kernel has no command registry; it announces tasks, not
+;; commands, starting and finishing. The bare word "command" stays allowed
+;; for generic phrases such as "command loop".
 (def forbidden-registry-names
   '("defcommand" "define-command" "command-ref" "command-entry" "command-registry"
     "kernel-commands"))
