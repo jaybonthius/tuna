@@ -9,8 +9,11 @@ prelude: :gerbil/core
 
 (def quit-key "C-g")
 
-(defclass global-keys ((keymap  : entry-table)   ; key sequence -> command name
-                       (pending : :list))        ; keys typed so far of a prefix
+(defclass global-keys ((keymap        : entry-table)    ; key sequence -> command name
+                       (pending       : :list)          ; keys typed so far of a prefix
+                       (this-command  :? :symbol)       ; the input session (ADR 8)
+                       (last-command  :? :symbol)
+                       (command-event :? key-event))
   final: #t)
 
 ;; Browser key names with Emacs spellings.
@@ -59,22 +62,38 @@ prelude: :gerbil/core
     (ormap (lambda ((bound : :string)) (string-prefix? prefix bound))
            (entry-table-keys self.keymap))))
 
+(def (printing-char? (key : :string)) => :boolean
+  (and (fx= (string-length key) 1)
+       (char>? (string-ref key 0) #\space)
+       (not (char=? (string-ref key 0) #\delete))))
+
+;; A key sequence ended with EVENT and selected the command named NAME, or
+;; #f for none.
+(def (complete-keys! (self : global-keys) (event : key-event) (name :? :symbol)) => :void
+  (set! self.pending [])
+  (set! self.last-command self.this-command)
+  (set! self.this-command name)
+  (set! self.command-event event))
+
 (def (resolve-key! (self : global-keys) (event : key-event)) => :t
   (let (key (key-description event))
     (cond
      ((not key) #f)
      ((equal? key quit-key)
-      (set! self.pending [])
+      (complete-keys! self event 'keyboard-quit)
       (command-ref 'keyboard-quit))
      (else
       (message "")
       (let* ((typed (append self.pending [key]))
              (keys (string-join typed " "))
-             (binding (entry-table-ref self.keymap keys)))
+             (binding (or (entry-table-ref self.keymap keys)
+                          (and (null? self.pending)
+                               (printing-char? key)
+                               (entry-table-ref self.keymap printing-char-key)))))
         (cond
          (binding
-          (set! self.pending [])
           (let (name (entry-value binding))
+            (complete-keys! self event name)
             (or (command-ref name)
                 (begin
                   (message (string-append keys " runs " (symbol->string name) ", which is not defined"))
@@ -84,7 +103,7 @@ prelude: :gerbil/core
           (message (string-append keys "-"))
           #f)
          (else
-          (set! self.pending [])
+          (complete-keys! self event #f)
           (message (string-append keys " is undefined"))
           #f)))))))
 
@@ -95,9 +114,9 @@ prelude: :gerbil/core
   (lambda (self event) (equal? (key-description event) quit-key)))
 
 (defmethod {keymap-set! global-keys}
-  (lambda (self ctx keys command)
+  (lambda (self ctx keys command source)
     (using (self : global-keys)
-      (context-add-entry! ctx self.keymap (normalize-keys keys) command)
+      (context-add-entry! ctx self.keymap (normalize-keys keys) command source: source)
       (void))))
 
 (defmethod {key-binding global-keys}
@@ -105,9 +124,16 @@ prelude: :gerbil/core
     (using (self : global-keys)
       (entry-table-ref self.keymap (normalize-keys keys)))))
 
+(defmethod {last-command global-keys}
+  (lambda (self) (global-keys-last-command self)))
+
+(defmethod {last-command-event global-keys}
+  (lambda (self) (global-keys-command-event self)))
+
 (defplugin (keys-plugin ctx)
   "Resolves keys through the global keymap. C-g quits."
   (define-command ctx (keyboard-quit) "Cancel the current key sequence or command."
     (signal-quit))
   (context-provide! ctx input-service
-                    (Keys (global-keys keymap: (new-entry-table) pending: []))))
+                    (Keys (global-keys keymap: (new-entry-table) pending: []
+                                       this-command: #f last-command: #f command-event: #f))))

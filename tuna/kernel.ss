@@ -19,11 +19,6 @@ prelude: :gerbil/core
         kernel?
         new-kernel
         current-kernel
-        message
-        current-message
-        (struct-out help-output)
-        show-help
-        current-help
         exception-summary
         (import: ./kernel/plugins)
         (import: ./kernel/loop))

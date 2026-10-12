@@ -16,8 +16,19 @@
 
 (def test-bindings (make-hash-table))
 
+(defstruct test-messages ((text : :string))
+  final: #t)
+
+(defmethod {message! test-messages}
+  (lambda (self text) (set! (test-messages-text self) text)))
+
+(def (current-message)
+  (let (provider (service-provider messages-service))
+    (if provider (test-messages-text provider) "")))
+
 (defplugin (test-input-plugin ctx)
-  "Resolves test events through test-bindings."
+  "Resolves test events through test-bindings and keeps the last message."
+  (context-provide! ctx messages-service (make-test-messages ""))
   (context-provide! ctx input-service (make-test-input test-bindings)))
 
 (def test-sequence 0)

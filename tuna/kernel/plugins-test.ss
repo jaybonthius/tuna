@@ -151,7 +151,8 @@
                         (service-info-provider info) (service-info-dependents info)])
                      (describe-services))
                 => [['greeter 'live 'greeter-a ['greeting-user]]
-                    ['input 'startup 'test-input-plugin []]]))))
+                    ['input 'startup 'test-input-plugin []]
+                    ['messages 'live 'test-input-plugin []]]))))
 
     (test-case "startup-tier services refuse live replacement"
       (call-with-test-kernel

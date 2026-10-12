@@ -1,4 +1,4 @@
-;;; The kernel's state and its output to the user.
+;;; The kernel's state.
 ;;; Everything here is confined to the editor baton (ADR 3, ADR 4).
 prelude: :gerbil/core
 
@@ -16,17 +16,7 @@ prelude: :gerbil/core
         kernel-commands
         kernel-live?
         kernel-loop
-        message
-        current-message
-        (struct-out help-output)
-        show-help
-        current-help
         exception-summary)
-
-;; Help output shown in a panel until buffers exist (stage 2).
-(defstruct help-output ((title : :string)
-                        (lines : :list))
-  final: #t)
 
 (defclass kernel
   ((plugins   : HashTable)       ; plugin name -> plugin record
@@ -34,8 +24,6 @@ prelude: :gerbil/core
    (providers : entry-table)     ; service name -> provider entries
    (commands  : entry-table)     ; command name -> command entries
    (live?     : :boolean)        ; the editor loop is running
-   (echo      : :string)         ; the echo area
-   (help      :? help-output)
    (loop      : :t))             ; the editor loop object, owned by ./loop
   final: #t)
 
@@ -45,8 +33,6 @@ prelude: :gerbil/core
           providers: (new-entry-table)
           commands: (new-entry-table)
           live?: #f
-          echo: ""
-          help: #f
           loop: #f))
 
 ;; Tests run each scenario in a fresh kernel by parameterizing this.
@@ -54,23 +40,6 @@ prelude: :gerbil/core
 
 (def (the-kernel) => kernel
   (: (current-kernel) kernel))
-
-;; Show TEXT in the echo area.
-(def (message (text : :string)) => :void
-  (using (k (the-kernel) : kernel)
-    (set! k.echo text)))
-
-(def (current-message) => :string
-  (using (k (the-kernel) : kernel)
-    k.echo))
-
-(def (show-help (title : :string) (lines : :list)) => :void
-  (using (k (the-kernel) : kernel)
-    (set! k.help (make-help-output title lines))))
-
-(def (current-help) => (Maybe help-output)
-  (using (k (the-kernel) : kernel)
-    k.help))
 
 ;; One line describing an exception, for the echo area.
 (def (exception-summary (e : :t)) => :string
