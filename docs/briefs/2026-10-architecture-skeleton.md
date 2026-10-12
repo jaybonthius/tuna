@@ -1,6 +1,6 @@
 # Brief: the architecture skeleton
 
-**Date:** 2026-10-11. **Status:** awaiting your approval. Nothing is built yet.
+**Date:** 2026-10-11. **Status:** approved 2026-10-11. Agent plan: `agents/plans/architecture-skeleton.md`.
 
 ## What we're building and why
 

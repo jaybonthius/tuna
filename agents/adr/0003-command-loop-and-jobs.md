@@ -1,18 +1,18 @@
 # 3. One editor loop, interruptible direct-style commands, tasks, and jobs
 
-Status: accepted (2026-10-11); amended after the [capability audit](../research/capability-audit/README.md) (quit lane, tasks, yield points, input-target stack, job validity policies, macros).
+Status: accepted (2026-10-11); amended after the [capability audit](../research/capability-audit/README.md) (quit lane, tasks, yield points, input-target stack, job validity policies, macros), and again the same day to make quitting cooperative first.
 
 ## Context
 
 Typing must reach the screen without waiting for syntax highlighting, language servers, search, or other follow-up work. Emacs serializes Lisp with a global lock and redisplays only when no input is pending; its commands can block in direct style (`read-string`, `y-or-n-p`) through recursive edits; and `C-g` sets `quit-flag` when the key arrives, not when it is read, so it can interrupt running Lisp. Emacs freezes when a command or process filter computes for a long time without checking for quit.
 
-Gambit threads are preemptive green threads. Today Gerbil runs them on one OS thread; the Gerbil developers are enabling SMP, after which threads may run in parallel. Gerbil's MOP still marks some paths as not SMP-safe, so Tuna must not rely on shared mutable state between threads. On Gerbil `v0.19-dev-63`, `thread-interrupt!` runs a thunk in the target thread: raising from it unwinds that thread, running `dynamic-wind` cleanups, even when it is blocked on a channel; `thread-terminate!` skips cleanups. When the thunk escapes, the caller of `thread-interrupt!` receives an `abandoned-mutex-exception` that must be caught ([lane 1](../research/capability-audit/01-command-loop-and-input.md)).
+Gambit threads are preemptive green threads. Today Gerbil runs them on one OS thread; the Gerbil developers are enabling SMP, after which threads may run in parallel. Gerbil's MOP still marks some paths as not SMP-safe, so Tuna must not rely on shared mutable state between threads. On Gerbil `v0.19-dev-63`, `thread-interrupt!` runs a thunk in the target thread: raising from it unwinds that thread, running `dynamic-wind` cleanups, even when it is blocked on a channel; `thread-terminate!` skips cleanups. When the thunk escapes, the caller of `thread-interrupt!` receives an `abandoned-mutex-exception` that must be caught ([lane 1](../research/capability-audit/01-command-loop-and-input.md)). The Gerbil maintainers treat cancellation in the standard library as cooperative and deliberately avoid injecting exceptions into threads (`src/std/AGENTS.md` in the Gerbil checkout), so interrupting code that is inside the standard library, for example holding one of its locks, can leave that state inconsistent.
 
 ## Decision
 
 - **Editor baton.** Exactly one thread at a time holds the editor baton and may touch live editor objects ([ADR 4](0004-state-ownership.md)). The editor loop owns the baton and lends it to one command or task at a time.
 - **Input.** Browser events are acknowledged with `204` on receipt and enqueued per input session ([ADR 8](0008-input-keymaps-and-command-composition.md)). The loop dequeues events, resolves keys, and runs the resulting command.
-- **Quit lane.** The web layer recognizes the session's quit key when the event *arrives*, before queuing, and requests a quit: the current baton holder is interrupted with a `quit` condition, which unwinds it with cleanups. A thread-scoped `inhibit-quit` defers the quit to the end of the inhibited region; pressing the quit key three times overrides it, as in Emacs. Running code can test `input-pending?` and call `discard-input`. A watchdog may report commands that hold the baton too long. Calls into foreign code cannot be interrupted.
+- **Quit lane.** The web layer recognizes the session's quit key when the event *arrives*, before queuing, and requests a quit. A quit request is cooperative first: it sets the baton holder's quit flag, which every yield point checks and which long-running loops check with `check-quit` (as Emacs checks `quit-flag`); the task then raises `quit` and unwinds with cleanups. If the task does not stop within a short grace period, or the quit key is pressed again, the loop interrupts the thread with `thread-interrupt!` to raise `quit` immediately, and reports that a forced quit may have left plugin or library state inconsistent. A thread-scoped `inhibit-quit` defers quitting to the end of the inhibited region; pressing the quit key three times overrides it, as in Emacs. Running code can test `input-pending?` and call `discard-input`. A watchdog may report commands that hold the baton too long. Calls into foreign code cannot be interrupted.
 - **Commands and tasks.** A command is a task started by input. A **task** is any code that holds the baton in its own Gambit thread: commands, timer and idle-timer callbacks, process callbacks, completion functions, and hook work that must wait. Tasks are registered through a plugin context and cancelled when it deactivates.
 - **Suspension.** A task may suspend only at documented **yield points**: prompts (`read-string`, `completing-read`, `read-key`, `y-or-n-p`), waits on job results, process output, or timers (`sit-for`, `sleep-for`, `accept-process-output`), explicit `(redisplay)`, and blocking I/O such as `call-process`, which releases the baton while waiting by default (`with-baton-held` keeps it). Suspending returns the baton to the loop; resuming takes it back. An `atomic` region makes any yield an error. Code that suspends must re-read state afterwards, as with Emacs recursive edits.
 - **Input-target stack.** Prompts push input targets. Only the innermost waiting prompt receives input and answers are delivered innermost-first, matching Emacs's nested recursive minibuffers. `let`-style state is thread-scoped ([ADR 9](0009-settings-and-scoped-values.md)), never saved and restored in shared slots.
@@ -27,7 +27,7 @@ Gambit threads are preemptive green threads. Today Gerbil runs them on one OS th
 ## Consequences
 
 - A keystroke's latency is the command plus one render. Highlighting and diagnostics arrive later as separate, cheap renders and survive continuous typing through rebasing.
-- Runaway Scheme code is interruptible anywhere, not only at polling points.
+- Runaway Scheme code can always be stopped: cooperatively at polling points, and forcibly anywhere else as a last resort.
 - When SMP lands, jobs gain real parallelism with no API change, because they share only plain data.
 - Persistent text ([ADR 6](0006-buffers-nodes-and-text-store.md)) makes job snapshots free.
 - The loop must be careful around `thread-interrupt!`: core data-structure updates run with quit inhibited, and the abandoned-mutex quirk is swallowed in one helper.
@@ -35,6 +35,7 @@ Gambit threads are preemptive green threads. Today Gerbil runs them on one OS th
 ## Alternatives considered
 
 - **Callback- or promise-style prompts.** Rejected: hostile to porting Emacs code, and needless in a language with cheap threads and continuations.
-- **Polling a quit flag (Emacs).** Rejected as the only mechanism: loops that never poll cannot be stopped. `input-pending?` remains available for cooperative checks.
+- **Polling a quit flag only (Emacs).** Rejected as the only mechanism: loops that never poll cannot be stopped.
+- **Interrupting immediately on every quit.** Rejected: injecting exceptions into code that is not prepared for them is unsafe, which is why the Gerbil standard library avoids it.
 - **One actor per buffer.** Rejected for now: cross-buffer commands are common and would need distributed coordination.
 - **Shared mutable state with locks.** Rejected: fragile under SMP and with arbitrary extension code.

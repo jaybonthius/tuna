@@ -1,0 +1,64 @@
+# Writing Gerbil for Tuna
+
+Distilled 2026-10-11 from the Gerbil maintainers' agent guidance (`/home/jay/Code/workbench-gerbil/gerbil/AGENTS.md`, `src/std/AGENTS.md`, `CONTRIBUTING.md`), `doc/reference/dev/optimizing.md` in that checkout, and the workbench's earlier research. When this guide and the Gerbil sources disagree, the sources win; re-read them when in doubt. Tuna decisions live in [`../adr/`](../adr/README.md).
+
+## Toolchain
+
+- Tuna targets Gerbil v0.19-dev, installed at `/opt/gerbil`. The Gerbil MCP server runs against the same build (`gerbil_version` reports it). The checkout at `/home/jay/Code/workbench-gerbil/gerbil` is for reading; never modify it or `/opt/gerbil`.
+- `gerbil build` (via `make`) compiles modules with the optimizer (`-O`) by default. Do not use full-program optimization (`--optimized`); runtime `eval` and module reload depend on separate compilation ([ADR 1](../adr/0001-language-and-extension-surface.md)).
+
+## Editing protocol (required)
+
+From the Gerbil maintainers. For every Gerbil source file you edit:
+
+1. Before the first edit, run `gerbil_check_balance` on the file to establish a passing baseline. If it fails, stop and report; do not repair inherited code as a side task.
+2. Make the smallest edit that does the job.
+3. Immediately run `gerbil_check_balance` again. If it fails, the last edit caused it: re-read exactly that region and fix only that edit. Never hunt for parentheses elsewhere.
+4. Then run `gerbil_check_syntax` (with `loadpath` set to the project's `.gerbil/lib` when importing Tuna modules). Distinguish a real syntax error from an MCP or environment failure; if MCP cannot check, expand the forms with `gxi` in their module context instead.
+5. Only after both pass: continue editing, compile, or run tests.
+
+Prefer `gerbil_balanced_replace`, `gerbil_balanced_insert`, and `gerbil_wrap_form` for structural edits.
+
+## Gerbil MCP: which tool when
+
+| Need | Tools |
+|---|---|
+| Does this API exist; what does it do? | `gerbil_module_exports`, `gerbil_doc`, `gerbil_describe`, `gerbil_function_signature`, `gerbil_apropos`, `gerbil_stdlib_source`, `gerbil_find_definition` |
+| Known recipes and pitfalls | `gerbil_howto`, `gerbil_anti_pattern_lookup`, `gerbil_error_fix_lookup`, `gerbil_explain_error` |
+| Try code | `gerbil_eval`, `gerbil_repl_session`, `gerbil_expand_macro`, `gerbil_trace_macro` |
+| Check code | `gerbil_check_balance`, `gerbil_check_syntax`, `gerbil_batch_syntax_check`, `gerbil_compile_check`, `gerbil_verify`, `gerbil_lint`, `gerbil_check_arity`, `gerbil_check_exports`, `gerbil_check_import_conflicts` |
+| Build and test | `gerbil_build_and_report`, `gerbil_run_tests`; or `make` and `make test` |
+| Performance | `gerbil_profile`, `gerbil_benchmark`, `gerbil_benchmark_compare`, `gerbil_heap_profile` |
+
+MCP results are evidence, not authority: confirm surprising answers against source or a quick `gxi` run.
+
+## Conventions
+
+From the stdlib guidance, adapted to Tuna:
+
+- **Types.** Give every top-level procedure parameter and return type signatures, not only exported ones, as precisely as known. Annotate every struct and class. Use `:? Type` for nullable values. Let contracts enforce declared types; don't add manual checks the types already guarantee. Use dotted access on typed values; use `using` for a typed binding reused in a body and `(:- expression Type)` for a one-off assertion. Validate what types cannot express (ranges, formats, external data).
+- **Structure.** Use interfaces (`:std/interface`) and concrete classes for specialized behavior, not procedure slots in a struct or long predicate dispatch. For a single implementing class, use `implement`. Name procedures that construct interface instances `new-…`. Export public APIs explicitly; internal helpers must not leak through a public facade. Use descriptive internal names, not a `~` prefix.
+- **Threads.** Use `spawn-thread` (or `spawn/name` for actors), never raw `make-thread`/`thread-start!`. Name worker procedures with a `-thread` suffix. Hold the mutex when signaling a condition variable; prefer `do-with-lock` for simple critical sections. The stdlib treats cancellation as cooperative and avoids injecting exceptions with `thread-interrupt!`; Tuna's quit lane uses interruption only as a last resort ([ADR 3](../adr/0003-command-loop-and-jobs.md)).
+- **Cleanup.** `unwind-protect!` is cheaper but only for audited bodies that never escape through continuations; otherwise use `unwind-protect`.
+- **Reuse.** Use existing stdlib operations before writing helpers; avoid intermediate collections, repeated scans, and whole-input copies. Don't wrap a simple expression in a one-use helper. Don't defensively copy values callers treat as immutable; document the ownership convention instead.
+- **Errors.** Let underlying exceptions propagate unless translating them serves a purpose. Give errors that share handling a common base class.
+- **Style.** Two-space indentation and the style of surrounding code. Multiline `import`/`export` forms put the first operand on the head line and align the rest under it.
+
+## Performance
+
+From `optimizing.md`, in order:
+
+1. Profile first; optimize only measured hot spots.
+2. Use `fx`/`fl` operations for fixnums and flonums in hot code (or `(declare (fixnum))`).
+3. Use `(declare (not safe))` only surgically in proven hot spots; bugs there become memory corruption.
+4. Avoid `apply` in hot paths; prefer `case-lambda` and optional lambdas.
+5. Prefer direct calls to known procedures. Keep optional, keyword, and case lambdas at module interfaces, not as internal first-class procedures.
+6. Use `unchecked: #t` accessors internally once types are checked at the boundary; in production `implement` blocks, use the generated unchecked `__` bindings of typed procedures.
+7. Interface dispatch is much faster than generic method dispatch; Tuna's services use interfaces for this reason.
+
+Measure proposed optimizations with reproducible benchmarks before keeping them.
+
+## Tests
+
+- Co-located `foo-test.ss` files exporting `foo-test` suites from `:std/test`; run with `make test` (`gerbil test ./tuna/...`). Test-support modules must not end in `-test.ss`.
+- Gate expensive or browser-dependent tests behind a feature (`gerbil test -D feature`) rather than running them by default.

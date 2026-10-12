@@ -23,16 +23,25 @@ The owner must understand the architecture and every plan. Earlier attempts fail
 ## How to work
 
 - Build working vertical slices. Every milestone must run in the browser; specify interfaces and invariants, not the internals behind them.
-- Keep plans to a page. Write an ADR only for a hard-to-reverse choice with real alternatives.
+- Keep plans to a page, in `agents/plans/`. Write an ADR only for a hard-to-reverse choice with real alternatives.
 - Do not add review, oracle, or acceptance-report loops unless the owner asks. Validate with tests and by running the program.
 - Prefer deleting an abstraction to defending it. Add a framework only when a second concrete user needs it.
 
+## Delegation and worktrees
+
+The owner talks to one primary agent in this checkout (`/home/jay/Code/workbench-gerbil/tuna`, branch `main`).
+
+- **Delegate substantial implementation.** When a stage or task is large enough to be worth handing off, the primary agent writes a bounded task (scope, relevant ADRs and plan, acceptance checks) and gives it to an implementing agent, then reviews the result and reports to the owner.
+- **Implementers work in their own worktree, never in the primary checkout.** Create one per task with `git worktree add /home/jay/Code/workbench-gerbil/tuna__<task> -b <task>` from a clean `main`, and run the implementer with that directory as its working directory. Each worktree has exactly one writer. The implementer runs `make deps` there, commits its work on the task branch with the repository's commit-message rules, and reports what it validated.
+- **Merge when complete.** The primary agent reviews the branch, runs the tests in the worktree, merges it into `main` locally (`git merge --no-ff <task>` from the primary checkout), then removes the worktree and branch. Never push.
+- Read-only research or review agents may run in parallel anywhere; they write only to the output path they are given.
+- Small changes, documentation, and planning are done directly in the primary checkout.
+
 ## Gerbil
 
+- Read `agents/guides/gerbil.md` before writing Gerbil. It covers the required editing protocol (Gerbil MCP balance and syntax checks around every edit), which MCP tools to use when, coding conventions, performance rules, and tests.
 - Core modules use `prelude: :gerbil/core`, typed signatures, and `:std/interface` for replaceable services.
-- Follow the editing protocol in `/home/jay/Code/workbench-gerbil/gerbil/AGENTS.md`: Gerbil MCP balance check before the first edit and after every edit, then syntax check, before compiling.
 - Use the `gerbil-reference` skill before relying on an unfamiliar API, the `emacs-reference` skill for Emacs behavior, and the `datastar-guidance` skill for browser transport.
-- Tests are co-located `*-test.ss` files exporting `*-test` suites.
 
 ## Commands
 

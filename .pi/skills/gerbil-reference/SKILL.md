@@ -15,9 +15,9 @@ Tuna targets the Gerbil v0.19 development branch. The installed toolchain is `/o
 4. Gambit manual: `/home/jay/Code/workbench-gerbil/gerbil/src/gambit/doc/gambit.txi` for threads, declarations (`block`, `separate`), and runtime primitives.
 5. Prior Tuna research in `agents/research/workbench-gerbil/` and `agents/research/editor-corpus/prior-art/workbench-gerbil/research/`. Re-verify version-sensitive claims.
 
-## Editing protocol
+## Editing protocol and conventions
 
-Follow `/home/jay/Code/workbench-gerbil/gerbil/AGENTS.md`: balance-check a file before the first edit and after every edit, then syntax-check, before compiling or moving on. Fix only the edit that broke balance.
+Follow [`agents/guides/gerbil.md`](../../../agents/guides/gerbil.md): balance-check before the first edit and after every edit, syntax-check before compiling, and apply its conventions and performance rules.
 
 ## Facts Tuna relies on
 
