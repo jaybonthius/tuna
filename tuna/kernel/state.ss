@@ -14,7 +14,6 @@ prelude: :gerbil/core
         kernel-services
         kernel-providers
         kernel-adapters
-        kernel-slots
         kernel-live?
         kernel-loop
         exception-summary)
@@ -24,7 +23,6 @@ prelude: :gerbil/core
    (services  : HashTable)       ; service name -> service
    (providers : entry-table)     ; service name -> provider entries
    (adapters  : entry-table)     ; service name -> adapter entries
-   (slots     : entry-table)     ; session slot name -> slot entries
    (live?     : :boolean)        ; the editor loop is running
    (loop      : :t))             ; the editor loop object, owned by ./loop
   final: #t)
@@ -34,7 +32,6 @@ prelude: :gerbil/core
           services: (make-hash-table)
           providers: (new-entry-table)
           adapters: (new-entry-table)
-          slots: (new-entry-table)
           live?: #f
           loop: #f))
 

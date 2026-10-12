@@ -6,6 +6,7 @@ prelude: :gerbil/core
 (import :std/interface
         :tuna/kernel
         :tuna/services/buffers
+        :tuna/services/session
         :tuna/services/windows)
 (export single-window-plugin)
 
@@ -39,7 +40,7 @@ prelude: :gerbil/core
 
 (defplugin (single-window-plugin ctx)
   "Manages windows: one window fills the frame."
-  requires: [buffers-service]
+  requires: [buffers-service session-service]
   (using (self (single-window only: (new-window (selected-view))) : single-window)
     (context-add-hook! ctx kill-buffer-hook 'replace-buffer-in-windows
                        (lambda (b) (replace-buffer-in-windows [self.only] b)))

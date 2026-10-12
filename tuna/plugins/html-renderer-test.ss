@@ -12,11 +12,13 @@
         :tuna/plugins/demo)
 (export html-renderer-test)
 
+(include "test-session.ss")
+
 (def (with-editor thunk)
   (parameterize ((current-kernel (new-kernel)))
     (for-each activate-plugin!
-              [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin buffers-plugin
-               single-window-plugin html-renderer-plugin demo-plugin])
+              [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin no-session-plugin
+               buffers-plugin single-window-plugin html-renderer-plugin demo-plugin])
     (thunk)))
 
 (def (screen)

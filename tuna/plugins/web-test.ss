@@ -19,6 +19,8 @@
         :tuna/plugins/demo)
 (export web-test)
 
+(include "test-session.ss")
+
 ;;; A minimal HTTP client that controls every header.
 
 (defstruct reply (status headers body) final: #t)
@@ -135,8 +137,8 @@
 
 (def standard-plugins
   [keys-plugin web-transport-plugin echo-area-plugin help-panel-plugin
-   rope-text-store-plugin settings-plugin buffers-plugin single-window-plugin html-renderer-plugin basic-editing-plugin
-   demo-plugin])
+   rope-text-store-plugin settings-plugin no-session-plugin buffers-plugin single-window-plugin
+   html-renderer-plugin basic-editing-plugin demo-plugin])
 
 (def (with-tuna thunk)
   (parameterize ((current-kernel (new-kernel)))

@@ -23,10 +23,12 @@
 (export demo-test)
 
 (include "test-keys.ss")
+(include "test-session.ss")
 
 (def (with-demo thunk)
   (call-with-editor [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
-                     settings-plugin buffers-plugin single-window-plugin html-renderer-plugin basic-editing-plugin
+                     settings-plugin no-session-plugin buffers-plugin single-window-plugin html-renderer-plugin
+                     basic-editing-plugin
                      minibuffer-plugin demo-plugin]
                     thunk))
 

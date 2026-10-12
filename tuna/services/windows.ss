@@ -14,7 +14,8 @@ prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
-        :tuna/services/buffers)
+        :tuna/services/buffers
+        :tuna/services/session)
 (export (interface-out WindowManager)
         window-manager-service
         window window? new-window window-id window-view
@@ -152,7 +153,7 @@ prelude: :gerbil/core
 
 ;; Save and restore WM's windows in the session slot `windows`. Alternative
 ;; window managers share the slot and its neutral format, so a session saved
-;; under one restores under another.
+;; under one restores under another. CTX's plugin requires `session-service`.
 (def (context-add-windows-session-slot! (ctx : context) (wm : WindowManager)
                                         priority: (priority : :fixnum := 0))
   => :void

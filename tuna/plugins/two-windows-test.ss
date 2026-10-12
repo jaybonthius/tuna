@@ -20,10 +20,12 @@
 (export two-windows-test)
 
 (include "test-keys.ss")
+(include "test-session.ss")
 
 (def (with-windows thunk)
   (call-with-editor [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
-                     settings-plugin buffers-plugin single-window-plugin window-commands-plugin
+                     settings-plugin no-session-plugin buffers-plugin single-window-plugin
+                     window-commands-plugin
                      html-renderer-plugin basic-editing-plugin minibuffer-plugin demo-plugin]
                     thunk))
 

@@ -141,16 +141,6 @@
 (def (counter-value)
   (Counter-count (Counter (service-provider counter-service))))
 
-(defplugin (slots-early ctx)
-  "Registers the session slot alpha."
-  (context-add-session-slot! ctx 'alpha version: 1 save: (lambda () 'a) restore: void))
-
-(defplugin (slots-late ctx)
-  "Registers the session slots beta, and alpha at a higher priority."
-  (context-add-session-slot! ctx 'beta version: 2 save: (lambda () 'b) restore: void)
-  (context-add-session-slot! ctx 'alpha version: 3 save: (lambda () 'a2) restore: void
-                             priority: 10))
-
 (defplugin (second-input ctx)
   "Tries to replace the input service."
   (context-provide! ctx input-service (make-test-input (make-hash-table))))
@@ -388,21 +378,6 @@
          ;; With no provider left, there is no one to hand over to.
          (deactivate-plugin! counter-a)
          (check (take-log!) => []))))
-
-    (test-case "session slots follow their plugins; the oldest name comes first"
-      (call-with-test-kernel
-       (lambda ()
-         (let (slots (lambda ()
-                       (map (lambda (slot) [(session-slot-name slot) (session-slot-version slot)
-                                            ((session-slot-save slot))])
-                            (session-slots))))
-           (activate-plugin! slots-early)
-           (activate-plugin! slots-late)
-           (check (slots) => [['alpha 3 'a2] ['beta 2 'b]])
-           (deactivate-plugin! slots-late)
-           (check (slots) => [['alpha 1 'a]])
-           (deactivate-plugin! slots-early)
-           (check (slots) => [])))))
 
     (test-case "startup-tier services refuse live replacement"
       (call-with-test-kernel

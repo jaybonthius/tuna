@@ -1,20 +1,42 @@
-;;; The session service (startup tier; ADR 5, ADR 12): where and when the
-;;; session slots plugins register (`context-add-session-slot!`) are saved
-;;; and restored. Saved state is plain data, written with `write` and read
-;;; with `read`, never evaluated. Files are replaced atomically.
+;;; The session service (startup tier; ADR 5, ADR 12): the session slots
+;;; plugins register (`context-add-session-slot!`), and where and when they
+;;; are saved and restored. The provider keeps the slots. Saved state is
+;;; plain data, written with `write` and read with `read`, never evaluated.
+;;; Files are replaced atomically. Plugins that register slots require
+;;; `session-service`; a configuration that keeps no session provides one
+;;; that saves nothing.
 prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel)
 (export (interface-out Session)
+        (struct-out session-slot)
         session-service
+        context-add-session-slot!
+        session-slots
         save-session
         restore-session
         state-directory
         plain-data?
         write-file-atomically!)
 
+;; State a plugin keeps across restarts (ADR 2, ADR 5). SAVE returns the
+;; plugin's state as plain data; RESTORE receives data that SAVE returned
+;; for the same VERSION, possibly in an earlier run.
+(defstruct session-slot ((name    : :symbol)
+                         (version : :fixnum)
+                         (save    : :procedure)    ; -> plain data
+                         (restore : :procedure))   ; plain data -> void
+  final: #t)
+
 (interface Session
+  ;; Register SLOT for CTX's plugin until it is deactivated. Several plugins
+  ;; may register the same name (alternative providers of one service); the
+  ;; highest PRIORITY is effective.
+  (add-session-slot! (ctx : context) (slot : session-slot) (priority : :fixnum)) => :void
+  ;; The effective slot of each name, in the order the names were first
+  ;; registered, so a slot restores after the slots registered before it.
+  (session-slots) => :list
   ;; Save every slot's data now.
   (save-session!) => :void
   ;; Give each slot the data saved for it, in slot order. Call once, after
@@ -32,6 +54,19 @@ prelude: :gerbil/core
     (unless provider
       (error "No plugin keeps the session"))
     (Session provider)))
+
+(def (context-add-session-slot! (ctx : context)
+                                (name : :symbol)
+                                version:  (version  : :fixnum)
+                                save:     (save     : :procedure)
+                                restore:  (restore  : :procedure)
+                                priority: (priority : :fixnum := 0))
+  => :void
+  (Session-add-session-slot! (current-session) ctx
+                             (make-session-slot name version save restore) priority))
+
+(def (session-slots) => :list
+  (Session-session-slots (current-session)))
 
 (def (save-session) => :void
   (Session-save-session! (current-session)))

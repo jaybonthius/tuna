@@ -429,7 +429,7 @@
   final: #t)
 
 ;; The kernel-cleanup plan steps that remove baseline entries.
-(def baseline-steps '("step 6" "step 7" "step 8"))
+(def baseline-steps '("step 7" "step 8"))
 
 (def (valid-reason? (reason : :string)) => :boolean
   (or (and (member reason baseline-steps) #t)
@@ -443,7 +443,7 @@
             (unless (fx> count 0)
               (error "Baseline count must be positive" baseline-name form))
             (unless (valid-reason? reason)
-              (error "Baseline reason must be \"step N\" (N from 6 to 8) or \"permanent: <why>\""
+              (error "Baseline reason must be \"step N\" (N from 7 to 8) or \"permanent: <why>\""
                      baseline-name form))
             (make-baseline-entry file label count reason))
            (else (error "Malformed baseline entry; expected (file term count reason)"
