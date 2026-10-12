@@ -68,10 +68,16 @@ prelude: :gerbil/core
           chunk)))
     (reverse (if run-start (cons (make-span run-start position 'digit) spans) spans))))
 
+;; Whether T belongs to an internal buffer, such as a prompt's.
+(def (internal-text? (t : text)) => :boolean
+  (let (b (find (lambda ((b : buffer)) (memq t (buffer-texts b))) (buffer-list)))
+    (and b (internal-buffer? b))))
+
 ;; After each change, recolor the text's digits from a job. Typing goes on
-;; meanwhile; the rebase policy moves the colors past what was typed.
+;; meanwhile; the rebase policy moves the colors past what was typed. The
+;; minibuffer's answers are left alone.
 (def (highlight-digits-later! (ctx : context) (t : text)) => :void
-  (when (editor-loop-running?)
+  (when (and (editor-loop-running?) (not (internal-text? t)))
     (start-job ['highlight-digits (text-id t)]
                input: [(text-snapshot t) (setting-value digit-highlight-delay)]
                run: (lambda (input)

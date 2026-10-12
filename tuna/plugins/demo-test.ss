@@ -7,6 +7,7 @@
         :tuna/services/buffers
         :tuna/services/echo-area
         :tuna/services/help
+        :tuna/services/settings
         :tuna/plugins/keys
         :tuna/plugins/echo-area
         :tuna/plugins/help-panel
@@ -95,6 +96,16 @@
          ;; Typing continues: the colors follow.
          (type! "C-a" "x" "4")
          (check (wait-until (lambda () (equal? (highlighted) ["4" "12" "3"]))) => #t))))
+
+    (test-case "the slow highlighter leaves the minibuffer's text alone"
+      (with-demo
+       (lambda ()
+         (type! "C-c" "r" "1" "2")
+         (thread-sleep! (* 2 (on-baton (lambda () (setting-value digit-highlight-delay)))))
+         (check (on-baton (lambda () (text-string (current-text)))) => "12")
+         (check (highlighted) => [])
+         (type! "C-g" "3")
+         (check (wait-until (lambda () (equal? (highlighted) ["3"]))) => #t))))
 
     (test-case "rebased digit highlights land on the right characters after edits made while the job ran"
       (with-editing
