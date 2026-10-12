@@ -75,8 +75,26 @@
                              (with-catch (lambda (e) (set! timer-quit? (quit-condition? e)) (raise e))
                                          (lambda () (suspend (lambda (s) (set! waiting s))))))))
 
-;; Start a fresh loop with the test tasks, run THUNK, and stop.
-(def (with-loop thunk quit-grace: (quit-grace 0.5))
+;; Notes each task start, with whether the task is then the running one,
+;; and each task end, with the running task's name, which is #f by then.
+(defplugin (task-watcher ctx)
+  "Notes task starts and ends."
+  (context-add-hook! ctx task-started-hook 'note-started
+                     (lambda (id name) (note! ['started name (eq? (current-task-name) name)])))
+  (context-add-hook! ctx task-finished-hook 'note-finished
+                     (lambda (id name how) (note! ['finished name how (current-task-name)]))))
+
+(defplugin (broken-task-watcher ctx)
+  "Adds task callbacks that fail."
+  (context-add-hook! ctx task-started-hook 'broken (lambda (id name) (error "broken start")))
+  (context-add-hook! ctx task-finished-hook 'broken (lambda (id name how) (error "broken end"))))
+
+(defplugin (meddling-task-watcher ctx)
+  "Tries to activate a plugin when a task starts."
+  (context-add-hook! ctx task-started-hook 'meddle (lambda (id name) (activate-plugin! ticking))))
+
+;; Start a fresh loop with the test tasks and PLUGINS, run THUNK, and stop.
+(def (with-loop thunk quit-grace: (quit-grace 0.5) plugins: (plugins []))
   (call-with-test-kernel
    (lambda ()
      (set! log [])
@@ -86,6 +104,7 @@
      (set! waiting #f)
      (activate-plugin! test-input-plugin)
      (activate-plugin! test-display)
+     (for-each activate-plugin! plugins)
      (start-editor-loop! quit-grace: quit-grace)
      (thunk))))
 
@@ -304,5 +323,74 @@
          (press "quit")
          (check (settled-message)
                 => "Quit (forced: plugin or library state may be inconsistent)"))
-       quit-grace: 0.1))))
+       quit-grace: 0.1))
+
+    (test-case "task hooks announce each start and how each task finished, once"
+      (with-loop
+       (lambda ()
+         (press "note-a")
+         (press "fail")
+         ;; Read and clear the log on the baton, so the reading task's own
+         ;; end lands in the cleared log.
+         (check (call-on-editor-loop (lambda () (let (seen (reverse log)) (set! log []) seen)))
+                => [['started 'note-a #t] 'a ['finished 'note-a 'returned #f]
+                    ['started 'fail #t] ['finished 'fail 'raised #f]
+                    ['started 'call #t]])
+         (press "block")
+         (check (wait-until (lambda () started?)) => #t)
+         (cancel-task! (spawn-task! 'never-runs (lambda () (note! 'ran))))
+         (set! released? #t)
+         (settled-message)
+         (set! started? #f)
+         (press "cooperative-loop")
+         (check (wait-until (lambda () started?)) => #t)
+         (press "quit")
+         (check (settled-message) => "Quit")
+         (check (call-on-editor-loop (lambda () (reverse log)))
+                => [['finished 'call 'returned #f]
+                    ['started 'block #t]
+                    ['finished 'never-runs 'cancelled #f]
+                    ['finished 'block 'returned #f]
+                    ['started 'call #t] ['finished 'call 'returned #f]
+                    ['started 'cooperative-loop #t] ['finished 'cooperative-loop 'quit #f]
+                    ['started 'call #t] ['finished 'call 'returned #f]
+                    ['started 'call #t]]))
+       plugins: [task-watcher]))
+
+    (test-case "stopping the loop announces its waiting tasks as quit"
+      (with-loop
+       (lambda ()
+         (press "wait")
+         (settled-message)
+         (stop-editor-loop!)
+         (check (member ['finished 'wait 'quit #f] log) ? values))
+       plugins: [task-watcher]))
+
+    (test-case "failing task callbacks are removed; the task and the loop carry on"
+      (with-loop
+       (lambda ()
+         (press "note-a")
+         (check (string-prefix? "Hook task-finished callback broken (from broken-task-watcher)"
+                                (settled-message))
+                => #t)
+         (check log => '(a))
+         (check (call-on-editor-loop
+                 (lambda () [(hook-callback-names task-started-hook)
+                             (hook-callback-names task-finished-hook)]))
+                => [[] []])
+         (press "note-b")
+         (settled-message)
+         (check log => '(b a)))
+       plugins: [broken-task-watcher]))
+
+    (test-case "task callbacks must not activate plugins"
+      (with-loop
+       (lambda ()
+         (press "note-a")
+         (check (string-contains (settled-message)
+                                 "Lifecycle hook callbacks must not activate or deactivate plugins")
+                ? values)
+         (check log => '(a))
+         (check (call-on-editor-loop (lambda () (plugin-active? ticking))) => #f))
+       plugins: [meddling-task-watcher]))))
 

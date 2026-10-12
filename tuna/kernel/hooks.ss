@@ -1,78 +1,85 @@
-;;; Hooks: named, ordered lists of named callbacks, registered through
-;;; plugin contexts (ADR 2). Callbacks run in depth order, then in the order
-;;; they were added. A callback that fails is removed and reported; the
-;;; others still run.
+;;; Hooks: named, ordered lists of named callbacks (ADR 2, ADR 12). Each
+;;; hook object holds its own callbacks; the kernel keeps no table of hooks.
+;;; Callbacks run in depth order, then in the order they were added.
+;;; Plugins add callbacks with context-add-hook! and call them with run-hook,
+;;; both in ./plugins, which reports failing callbacks.
+;;;
+;;; A hook is usually a module-level value, so every kernel in the process
+;;; shares it. Each callback therefore records the kernel whose plugin added
+;;; it, and only the current kernel's callbacks are called or listed: a
+;;; kernel dropped without deactivating its plugins cannot reach another.
+;;;
+;;; The callback list is replaced, never changed in place, under the hook's
+;;; mutex. Callers iterate the list they read, so adding or removing a
+;;; callback while the hook runs, or from another thread, affects only later
+;;; runs.
 prelude: :gerbil/core
 
 (import ./ids
-        ./state
-        ./plugins)
-(export (struct-out hook)
+        ./state)
+(export hook
+        hook?
+        hook-name
+        hook-doc
         new-hook
-        context-add-hook!
         hook-callback-names
-        run-hook)
+        hook-callback
+        hook-callback-name
+        hook-callback-owner
+        hook-callback-procedure
+        add-hook-callback!
+        remove-hook-callback!
+        current-hook-callbacks)
 
-(defstruct hook ((name : :symbol)
-                 (doc  : :string))
+(defclass hook ((name      : :symbol)
+                (doc       : :string)
+                (lock      : :mutex)
+                (callbacks : :list))       ; every kernel's, in calling order
   final: #t)
 
 (defclass hook-callback ((name      : :symbol)
                          (owner     : :symbol)       ; plugin name
+                         (home      : kernel)        ; the kernel whose plugin added it
                          (depth     : :fixnum)
                          (serial    : :fixnum)
                          (procedure : :procedure))
   final: #t)
 
 (def (new-hook (name : :symbol) doc: (doc : :string := "")) => hook
-  (make-hook name doc))
-
-(def (callbacks (h : hook)) => :list
-  (hash-ref (kernel-hooks (the-kernel)) (hook-name h) []))
-
-(def (set-callbacks! (h : hook) (new : :list)) => :void
-  (let (table (kernel-hooks (the-kernel)))
-    (if (null? new)
-      (hash-remove! table (hook-name h))
-      (hash-put! table (hook-name h) new))))
+  (hook name: name doc: doc lock: (make-mutex name) callbacks: []))
 
 (def (runs-before? (a : hook-callback) (b : hook-callback)) => :boolean
   (or (fx< a.depth b.depth)
       (and (fx= a.depth b.depth) (fx< a.serial b.serial))))
 
-;; Add PROCEDURE to H under NAME for CTX's plugin; it is removed when the
-;; plugin is deactivated.
-(def (context-add-hook! (ctx : context)
-                        (h : hook)
-                        (name : :symbol)
-                        (procedure : :procedure)
-                        depth: (depth : :fixnum := 0))
-  => :void
-  (let (new (hook-callback name: name owner: (context-plugin-name ctx) depth: depth
+;; Add PROCEDURE to H under NAME for the current kernel's plugin OWNER, and
+;; return the new callback.
+(def (add-hook-callback! (h : hook) (name : :symbol) (owner : :symbol) (depth : :fixnum)
+                         (procedure : :procedure))
+  => hook-callback
+  (let (new (hook-callback name: name owner: owner home: (the-kernel) depth: depth
                            serial: (next-id!) procedure: procedure))
-    (set-callbacks! h (let insert ((rest (callbacks h)))
-                        (match rest
-                          ([] [new])
-                          ([first . more]
-                           (if (runs-before? new first)
-                             (cons new rest)
-                             (cons first (insert more)))))))
-    (context-defer! ctx (lambda () (set-callbacks! h (remq new (callbacks h)))))))
+    (with-lock h.lock
+      (lambda ()
+        (set! h.callbacks (let insert ((rest h.callbacks))
+                            (match rest
+                              ([] [new])
+                              ([first . more]
+                               (if (runs-before? new first)
+                                 (cons new rest)
+                                 (cons first (insert more)))))))))
+    new))
 
-;; The names of H's callbacks, in calling order.
+(def (remove-hook-callback! (h : hook) (old : hook-callback)) => :void
+  (with-lock h.lock
+    (lambda () (set! h.callbacks (remq old h.callbacks)))))
+
+;; The current kernel's callbacks of H, in calling order.
+(def (current-hook-callbacks (h : hook)) => :list
+  (let (k (the-kernel))
+    (filter (lambda ((callback : hook-callback)) (eq? callback.home k))
+            h.callbacks)))
+
+;; The names of H's callbacks in the current kernel, in calling order.
 (def (hook-callback-names (h : hook)) => :list
-  (map hook-callback-name (callbacks h)))
-
-;; Call each of H's callbacks with ARGS.
-(def (run-hook (h : hook) . args) => :void
-  (for-each
-    (lambda ((callback : hook-callback))
-      (with-catch
-       (lambda (e)
-         (set-callbacks! h (remq callback (callbacks h)))
-         (message (string-append "Hook " (symbol->string (hook-name h)) " callback "
-                                 (symbol->string callback.name) " (from "
-                                 (symbol->string callback.owner) ") failed and was removed: "
-                                 (exception-summary e))))
-       (lambda () (apply callback.procedure args))))
-    (callbacks h)))
+  (map hook-callback-name (current-hook-callbacks h)))

@@ -7,7 +7,7 @@
 ;;; Merge review confirms that a change to this file only removes or lowers
 ;;; entries.
 ;;;
-;;; Reasons: "step N" (N from 4 to 8) names the step of
+;;; Reasons: "step N" (N from 5 to 8) names the step of
 ;;; agents/plans/kernel-cleanup.md that removes the hits; "permanent: ..."
 ;;; says why a word cannot go.
 

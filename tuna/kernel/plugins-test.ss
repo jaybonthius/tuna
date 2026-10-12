@@ -54,6 +54,34 @@
   (context-add-hook! ctx test-hook 'broken (lambda (x) (error "broken callback")))
   (context-add-hook! ctx test-hook 'early (lambda (x) (note! ['early x])) depth: -10))
 
+;; A greeter's greeting, or #f.
+(def (greeting provider)
+  (and provider (Greeter-greet (Greeter provider))))
+
+(defplugin (lifecycle-watcher ctx)
+  "Notes plugin events, whether the plugin is then active, and greeter changes."
+  (context-add-hook! ctx plugin-activated-hook 'note-activated
+                     (lambda (p) (note! ['activated (plugin-name p) (plugin-active? p)])))
+  (context-add-hook! ctx plugin-deactivated-hook 'note-deactivated
+                     (lambda (p) (note! ['deactivated (plugin-name p) (plugin-active? p)])))
+  (context-add-hook! ctx service-changed-hook 'note-greeter
+                     (lambda (svc old new)
+                       (when (eq? svc greeter-service)
+                         (note! ['greeter (greeting old) (greeting new)
+                                 (eq? new (service-provider greeter-service))])))))
+
+(defplugin (lifecycle-breaker ctx)
+  "Adds a plugin-activated callback that fails."
+  (context-add-hook! ctx plugin-activated-hook 'broken
+                     (lambda (p) (error "broken lifecycle callback"))))
+
+(defplugin (lifecycle-meddler ctx)
+  "Tries to activate greeter-a when greeter-b activates."
+  (context-add-hook! ctx plugin-activated-hook 'meddle
+                     (lambda (p)
+                       (when (eq? (plugin-name p) 'greeter-b)
+                         (activate-plugin! greeter-a)))))
+
 (def table (new-entry-table))
 
 (defplugin (slot-a ctx)
@@ -233,6 +261,80 @@
          (check (string-prefix? "Hook test callback broken" (current-message)) => #t)
          (deactivate-plugin! hooked)
          (check (hook-callback-names test-hook) => '()))))
+
+    (test-case "lifecycle hooks announce each change once, after the whole operation"
+      (call-with-test-kernel
+       (lambda ()
+         (take-log!)
+         (activate-plugin! lifecycle-watcher)
+         (check (take-log!) => [['activated 'lifecycle-watcher #t]])
+         (activate-plugin! greeter-a)
+         (check (take-log!) => [['greeter #f "a" #t] ['activated 'greeter-a #t]])
+         (activate-plugin! greeting-user)
+         (check (take-log!) => ["a" ['activated 'greeting-user #t]])
+         ;; Replacing the greeter restarts its user. The announcements wait
+         ;; until the user has restarted, so the user is active again by the
+         ;; time its deactivation is announced.
+         (activate-plugin! greeter-b)
+         (check (take-log!) => ['off "b"
+                                ['deactivated 'greeting-user #t]
+                                ['greeter "a" "b" #t]
+                                ['activated 'greeter-b #t]
+                                ['activated 'greeting-user #t]])
+         (deactivate-plugin! greeter-b)
+         (check (take-log!) => ['off "a"
+                                ['deactivated 'greeting-user #t]
+                                ['greeter "b" "a" #t]
+                                ['deactivated 'greeter-b #f]
+                                ['activated 'greeting-user #t]])
+         (deactivate-plugin! greeter-a)
+         (check (take-log!) => ['off
+                                ['deactivated 'greeting-user #f]
+                                ['greeter "a" #f #t]
+                                ['deactivated 'greeter-a #f]]))))
+
+    (test-case "a failing lifecycle callback is removed and activation carries on"
+      (call-with-test-kernel
+       (lambda ()
+         (activate-plugin! test-input-plugin)
+         (activate-plugin! lifecycle-breaker)
+         (check (plugin-active? lifecycle-breaker) => #t)
+         (check (string-prefix? "Hook plugin-activated callback broken (from lifecycle-breaker)"
+                                (current-message))
+                => #t)
+         (check (hook-callback-names plugin-activated-hook) => '())
+         (activate-plugin! greeter-a)
+         (check (plugin-active? greeter-a) => #t))))
+
+    (test-case "lifecycle callbacks must not activate or deactivate plugins"
+      (call-with-test-kernel
+       (lambda ()
+         (activate-plugin! test-input-plugin)
+         (activate-plugin! lifecycle-meddler)
+         (activate-plugin! greeter-b)
+         (check (plugin-active? greeter-b) => #t)
+         (check (plugin-active? greeter-a) => #f)
+         (check (string-contains (current-message)
+                                 "Lifecycle hook callbacks must not activate or deactivate plugins")
+                ? values)
+         (check (hook-callback-names plugin-activated-hook) => '()))))
+
+    (test-case "a kernel dropped without deactivating its plugins leaves no callbacks behind"
+      (take-log!)
+      (parameterize ((current-kernel (new-kernel)))
+        (activate-plugin! hooked)
+        (activate-plugin! lifecycle-watcher)
+        (check (hook-callback-names test-hook) => '(early broken late)))
+      (take-log!)
+      (call-with-test-kernel
+       (lambda ()
+         (check (hook-callback-names test-hook) => '())
+         (check (hook-callback-names plugin-activated-hook) => '())
+         (run-hook test-hook 2)
+         (activate-plugin! greeter-a)
+         (check (take-log!) => [])
+         (activate-plugin! hooked)
+         (check (hook-callback-names test-hook) => '(early broken late)))))
 
     (test-case "describe-services lists tier, provider, and dependents"
       (call-with-test-kernel

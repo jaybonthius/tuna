@@ -7,7 +7,8 @@ prelude: :gerbil/core
         :std/list/list
         ./ids
         ./entries
-        ./state)
+        ./state
+        ./hooks)
 (export (struct-out plugin)
         defplugin
         context
@@ -18,6 +19,12 @@ prelude: :gerbil/core
         context-add-entry!
         context-provide!
         context-adapt!
+        context-add-hook!
+        run-hook
+        plugin-activated-hook
+        plugin-deactivated-hook
+        service-changed-hook
+        run-lifecycle-hook
         (struct-out service)
         new-service
         service-provider
@@ -137,6 +144,102 @@ prelude: :gerbil/core
                         (lambda ((ctx : context)) => :void body ... (void))
                         source))))))
 
+;;; Hooks
+
+;; Add PROCEDURE to H under NAME for CTX's plugin; it is removed when the
+;; plugin is deactivated.
+(def (context-add-hook! (ctx : context)
+                        (h : hook)
+                        (name : :symbol)
+                        (procedure : :procedure)
+                        depth: (depth : :fixnum := 0))
+  => :void
+  (let (callback (add-hook-callback! h name (context-plugin-name ctx) depth procedure))
+    (context-defer! ctx (lambda () (remove-hook-callback! h callback)))))
+
+;; Call each of H's callbacks with ARGS. A callback that fails is removed
+;; and reported; the others still run.
+(def (run-hook (h : hook) . args) => :void
+  (for-each
+    (lambda ((callback : hook-callback))
+      (with-catch
+       (lambda (e)
+         (remove-hook-callback! h callback)
+         (message (string-append "Hook " (symbol->string (hook-name h)) " callback "
+                                 (symbol->string (hook-callback-name callback)) " (from "
+                                 (symbol->string (hook-callback-owner callback))
+                                 ") failed and was removed: " (exception-summary e))))
+       (lambda () (apply (hook-callback-procedure callback) args))))
+    (current-hook-callbacks h)))
+
+;;; Lifecycle hooks (ADR 12)
+;;;
+;;; The kernel announces its own events on these hooks. A callback runs
+;;; after the event's state change is complete, on the thread that holds the
+;;; baton: the thread that activated or deactivated the plugin, or the loop
+;;; thread for tasks. A failing callback is removed and reported like any
+;;; other; the operation, the loop, and the task carry on. Callbacks may read
+;;; kernel state, but must not activate or deactivate plugins: those calls
+;;; raise, which removes the callback. To react with such a change, queue a
+;;; task with spawn-task!. Callbacks must not wait for the loop either
+;;; (call-on-editor-loop, suspend).
+;;;
+;;; Plugin and service events are recorded while an activation or
+;;; deactivation runs, including everything it cascades into (dependents
+;;; restarting, providers handing over), and announced in order once the
+;;; outermost operation has finished, even if it raised. Callbacks therefore
+;;; see the kernel as the whole operation left it: a dependent that restarted
+;;; is already active again when its deactivation is announced. A plugin's
+;;; own callbacks are gone by the time its deactivation is announced.
+
+(def plugin-activated-hook
+  (new-hook 'plugin-activated
+            doc: "Runs with a plugin after it has activated."))
+
+(def plugin-deactivated-hook
+  (new-hook 'plugin-deactivated
+            doc: "Runs with a plugin after it has deactivated and its receipt has run."))
+
+;; Arguments: the service, its old provider or #f, and its new provider or
+;; #f. Runs only when the effective provider becomes a different object: one
+;; is provided where there was none, a provider replaces another (after the
+;; handover), or the last provider is withdrawn.
+(def service-changed-hook
+  (new-hook 'service-changed
+            doc: "Runs with a service, its old provider or #f, and its new provider or #f."))
+
+;; Lifecycle events of the plugin operation in progress, newest first, as
+;; (hook . arguments); #f outside one.
+(def pending-events (make-parameter #f))
+
+;; True while lifecycle callbacks run.
+(def announcing? (make-parameter #f))
+
+;; Run the lifecycle hook H with ARGS, refusing plugin operations meanwhile.
+(def (run-lifecycle-hook (h : hook) . args) => :void
+  (parameterize ((announcing? #t))
+    (apply run-hook h args)))
+
+(def (record-event! (h : hook) . args) => :void
+  (let (events (pending-events))
+    (if events
+      (set-box! events (cons (cons h args) (unbox events)))
+      (apply run-lifecycle-hook h args))))
+
+;; Run THUNK as a plugin operation, then announce the lifecycle events it
+;; recorded. A nested operation records into the outermost one.
+(def (call-as-plugin-operation (thunk : :procedure)) => :void
+  (when (announcing?)
+    (error "Lifecycle hook callbacks must not activate or deactivate plugins"))
+  (if (pending-events)
+    (thunk)
+    (let (events (box []))
+      (unwind-protect
+        (parameterize ((pending-events events))
+          (thunk))
+        (for-each (lambda ((event : :pair)) (apply run-lifecycle-hook (car event) (cdr event)))
+                  (reverse (unbox events)))))))
+
 ;;; Services
 
 ;; A named slot for one implementation of an interface at a time.
@@ -194,8 +297,13 @@ prelude: :gerbil/core
         (deactivate-records! k closure)))
     (entry-table-add! (kernel-providers k) name new)
     (context-defer! ctx (lambda () (withdraw-provider! k svc new)))
-    (when (and current (entry-outranks? new current))
-      (hand-over! svc (entry-value current) impl))))
+    (cond
+     ((not current)
+      (record-event! service-changed-hook svc #f impl))
+     ((entry-outranks? new current)
+      (hand-over! svc (entry-value current) impl)
+      (unless (eq? (entry-value current) impl)
+        (record-event! service-changed-hook svc (entry-value current) impl))))))
 
 ;; Remove the provider entry OLD of SVC; if it was effective, hand over to
 ;; the provider that takes its place.
@@ -204,9 +312,12 @@ prelude: :gerbil/core
          (effective? (eq? (entry-table-ref (kernel-providers k) name) old)))
     (entry-table-remove! (kernel-providers k) name old)
     (when effective?
-      (let (next (entry-table-ref (kernel-providers k) name))
+      (let* ((next (entry-table-ref (kernel-providers k) name))
+             (incoming (and next (entry-value next))))
         (when next
-          (hand-over! svc (entry-value old) (entry-value next)))))))
+          (hand-over! svc (entry-value old) incoming))
+        (unless (eq? (entry-value old) incoming)
+          (record-event! service-changed-hook svc (entry-value old) incoming))))))
 
 ;; Run SVC's handover from OUTGOING to INCOMING; a failure is reported.
 (def (hand-over! (svc : service) (outgoing : :t) (incoming : :t)) => :void
@@ -336,7 +447,8 @@ prelude: :gerbil/core
         (when ctx
           (set! (plugin-record-active rec) #f)
           (for-each (cut report-failure! (plugin-name (plugin-record-definition rec)) "deactivating" <>)
-                    (run-receipt! ctx)))))
+                    (run-receipt! ctx))
+          (record-event! plugin-deactivated-hook (plugin-record-definition rec)))))
     (reverse (by-activation records))))
 
 (def (by-activation (records : :list)) => :list
@@ -383,7 +495,8 @@ prelude: :gerbil/core
        (parameterize ((current-context ctx))
          ((plugin-activate (plugin-record-definition rec)) ctx))))
     (set! (plugin-record-active rec) ctx)
-    (set! (plugin-record-activated rec) (next-id!))))
+    (set! (plugin-record-activated rec) (next-id!))
+    (record-event! plugin-activated-hook (plugin-record-definition rec))))
 
 ;; Activate wanted plugins whose services are all provided, until nothing
 ;; changes. Returns failures as (record . exception) pairs.
@@ -422,26 +535,30 @@ prelude: :gerbil/core
 ;; Turn P on. It activates now if its services are provided, otherwise as
 ;; soon as they are.
 (def (activate-plugin! (p : plugin)) => :void
-  (let* ((k (the-kernel))
-         (rec (plugin-record! k p)))
-    (for-each (cut remember-service! k <>) (plugin-requires p))
-    (unless (plugin-record-active rec)
-      (set! (plugin-record-wanted? rec) #t)
-      (settle! k rec))))
+  (call-as-plugin-operation
+   (lambda ()
+     (let* ((k (the-kernel))
+            (rec (plugin-record! k p)))
+       (for-each (cut remember-service! k <>) (plugin-requires p))
+       (unless (plugin-record-active rec)
+         (set! (plugin-record-wanted? rec) #t)
+         (settle! k rec))))))
 
 ;; Turn P off, with everything that depends on what it provides. Dependents
 ;; stay wanted and come back when their services are provided again.
 (def (deactivate-plugin! (p : plugin)) => :void
-  (let* ((k (the-kernel))
-         (rec (hash-get (kernel-plugins k) (plugin-name p))))
-    (when rec
-      (when (plugin-record-active rec)
-        (let (closure (deactivation-closure k [rec]))
-          (check-removable! k closure)
-          (set! (plugin-record-wanted? rec) #f)
-          (deactivate-records! k closure)))
-      (set! (plugin-record-wanted? rec) #f)
-      (settle! k #f))))
+  (call-as-plugin-operation
+   (lambda ()
+     (let* ((k (the-kernel))
+            (rec (hash-get (kernel-plugins k) (plugin-name p))))
+       (when rec
+         (when (plugin-record-active rec)
+           (let (closure (deactivation-closure k [rec]))
+             (check-removable! k closure)
+             (set! (plugin-record-wanted? rec) #f)
+             (deactivate-records! k closure)))
+         (set! (plugin-record-wanted? rec) #f)
+         (settle! k #f))))))
 
 (def (plugin-active? (p : plugin)) => :boolean
   (let (rec (hash-get (kernel-plugins (the-kernel)) (plugin-name p)))
@@ -455,12 +572,14 @@ prelude: :gerbil/core
 ;; Shutdown: deactivate everything, newest first. Only allowed once the
 ;; editor loop has stopped.
 (def (deactivate-all-plugins!) => :void
-  (let (k (the-kernel))
-    (when (kernel-live? k)
-      (error "Stop the editor loop before deactivating every plugin"))
-    (for-each (lambda ((rec : plugin-record)) (set! (plugin-record-wanted? rec) #f))
-              (hash-values (kernel-plugins k)))
-    (deactivate-records! k (filter plugin-record-active (hash-values (kernel-plugins k))))))
+  (call-as-plugin-operation
+   (lambda ()
+     (let (k (the-kernel))
+       (when (kernel-live? k)
+         (error "Stop the editor loop before deactivating every plugin"))
+       (for-each (lambda ((rec : plugin-record)) (set! (plugin-record-wanted? rec) #f))
+                 (hash-values (kernel-plugins k)))
+       (deactivate-records! k (filter plugin-record-active (hash-values (kernel-plugins k))))))))
 
 ;;; describe-services
 
