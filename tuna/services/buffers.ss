@@ -3,9 +3,10 @@
 ;;;
 ;;; A text holds content: a text-store version, revisions, a change journal,
 ;;; and undo history. A buffer is a named tree of nodes; text nodes refer to
-;;; texts, and any other node kind is defined by a plugin. The view is the
-;;; buffer as the one window shows it: the focused text node, point, and the
-;;; goal column. Editing primitives act on the view's focused text node.
+;;; texts, and any other node kind is defined by a plugin. A view is a buffer
+;;; as one window (or prompt) shows it: the focused text node, point, and the
+;;; goal column, so two windows on one buffer have their own points.
+;;; Editing primitives act on the current view's focused text node.
 ;;; Positions are 1-based character positions within that node's text.
 prelude: :gerbil/core
 
@@ -23,7 +24,7 @@ prelude: :gerbil/core
         text-size text-substring text-string
         text-line-count text-line-at text-line-start text-line-end
         text-column text-position-at
-        text-replace! undo-boundary! undo-amalgamate! text-undo!
+        text-replace! undo-boundary! undo-amalgamate! text-undo! text-clear-undo!
         relocate-position
         after-change-hook
         ;; snapshots
@@ -39,10 +40,13 @@ prelude: :gerbil/core
         node-kind-ref node-renderer node-text-projection
         ;; buffers and the view
         buffer buffer? buffer-name buffer-root new-buffer rename-buffer!
-        buffer-setting set-buffer-setting!
-        view view? view-showing view-node new-view
-        buffer-list get-buffer add-buffer! context-add-buffer! kill-buffer buffer-texts
-        current-view window-view select-view! current-buffer switch-to-buffer
+        buffer-setting set-buffer-setting! buffer-point set-buffer-point! internal-buffer?
+        view view? view-showing view-node new-view copy-view
+        view-point set-view-point! set-view-buffer!
+        buffer-list get-buffer add-buffer! context-add-buffer! kill-buffer kill-buffer-hook
+        other-buffer buffer-texts
+        current-view selected-view select-view! push-focus-view! remove-focus-view!
+        current-buffer switch-to-buffer
         current-text-node current-text
         point point-min point-max goto-char
         insert delete-region
@@ -226,6 +230,12 @@ prelude: :gerbil/core
        (when (fx< n limit)
          (set! t.last-undo-task (current-task-id)))))))
 
+;; Forget T's undo history, as after restoring its content from a file.
+(def (text-clear-undo! (t : text)) => :void
+  (set! t.undo-list [])
+  (set! t.undo-pending [])
+  (set! t.last-undo-task #f))
+
 ;; End the current undo group of T.
 (def (undo-boundary! (t : text)) => :void
   (match t.undo-list
@@ -403,12 +413,15 @@ prelude: :gerbil/core
   (buffer-list) => :list
   (add-buffer! (b : buffer)) => :void
   (remove-buffer! (b : buffer)) => :void
-  ;; The selected view, which receives editing: the window's view, or a
-  ;; prompt's while one is active.
+  ;; The view that receives editing: the innermost focus view (a waiting
+  ;; prompt's), or else the selected view.
   (current-view) => :t
+  ;; The selected view: the selected window's, set by the window manager.
+  (selected-view) => :t
   (select-view! (v : view)) => :void
-  ;; The view of the one window.
-  (window-view) => :t
+  ;; Give V the focus over the selected view until it is removed.
+  (push-focus-view! (v : view)) => :void
+  (remove-focus-view! (v : view)) => :void
   ;; Entry tables of node kinds (by name) and node renderers (by kind and
   ;; render target).
   (node-kinds) => :t
@@ -416,7 +429,7 @@ prelude: :gerbil/core
 
 (def buffers-service
   (new-service 'buffers is-Buffers? tier: 'live
-               doc: "Keeps buffers, the view, and node kinds."))
+               doc: "Keeps buffers, their views, and node kinds."))
 
 (def (current-buffers) => Buffers
   (let (provider (service-provider buffers-service))
@@ -477,6 +490,26 @@ prelude: :gerbil/core
       (error "A buffer with this name exists" name))
     (set! b.name name)))
 
+;; Buffers whose names start with a space are internal (as in Emacs):
+;; prompts' buffers, for example. Commands that pick a buffer skip them.
+(def (internal-buffer? (b : buffer)) => :boolean
+  (string-prefix? " " b.name))
+
+;; B's point while no view shows it.
+(def (buffer-point (b : buffer)) => :fixnum
+  (let (n b.point-node)
+    (if n
+      (let (t (text-node-content n))
+        (relocate-position t b.point-position b.point-revision))
+      b.point-position)))
+
+(def (set-buffer-point! (b : buffer) (position : :fixnum)) => :void
+  (let (n b.point-node)
+    (when n
+      (let (t (text-node-content n))
+        (set! b.point-position (fxmax 1 (fxmin position (fx1+ (text-size t)))))
+        (set! b.point-revision (text-chars-revision t))))))
+
 ;; B's own value for S, as a (setting . value) pair, or #f.
 (def (buffer-setting (b : buffer) (s : setting)) => (Maybe :pair)
   (assq s b.settings))
@@ -488,6 +521,31 @@ prelude: :gerbil/core
 (def (new-view (b : buffer)) => view
   (view showing: b node: b.point-node position: b.point-position
         revision: b.point-revision goal-column: #f))
+
+;; A new view of V's buffer at V's point, as when a window is split.
+(def (copy-view (v : view)) => view
+  (view showing: v.showing node: v.node position: (view-point v)
+        revision: (if v.node (text-chars-revision (text-node-content v.node)) 0)
+        goal-column: #f))
+
+;; V's point, relocated through the changes made since V last looked.
+(def (view-point (v : view)) => :fixnum
+  (let (n v.node)
+    (when n
+      (let* ((t (text-node-content n))
+             (revision (text-chars-revision t)))
+        (unless (fx= v.revision revision)
+          (set! v.position (relocate-position t v.position v.revision))
+          (set! v.revision revision))))
+    v.position))
+
+;; Move V's point to POSITION, limited to its text.
+(def (set-view-point! (v : view) (position : :fixnum)) => :void
+  (let (n v.node)
+    (when n
+      (let (t (text-node-content n))
+        (set! v.position (fxmax 1 (fxmin position (fx1+ (text-size t)))))
+        (set! v.revision (text-chars-revision t))))))
 
 (def (buffer-list) => :list
   (Buffers-buffer-list (current-buffers)))
@@ -506,15 +564,24 @@ prelude: :gerbil/core
   (add-buffer! b)
   (context-defer! ctx (lambda () (kill-buffer b))))
 
-;; Remove B. If the window shows it, show another buffer there first;
-;; buffers whose names start with a space (internal ones) are not chosen.
+;; Runs with a buffer about to be killed, so whatever shows it (windows)
+;; can show another buffer instead.
+(def kill-buffer-hook
+  (new-hook 'kill-buffer doc: "Runs with a buffer about to be killed."))
+
+;; The buffer to show instead of B: the oldest other buffer that is not
+;; internal, or #f.
+(def (other-buffer (b : buffer)) => (Maybe buffer)
+  (find (lambda ((other : buffer)) (not (or (eq? other b) (internal-buffer? other))))
+        (buffer-list)))
+
+;; Remove B. Views showing it show another buffer instead.
 (def (kill-buffer (b : buffer)) => :void
-  (let (window (window-view))
-    (when (eq? b (view-showing window))
-      (let (other (find (lambda ((other : buffer))
-                          (not (or (eq? other b) (string-prefix? " " other.name))))
-                        (buffer-list)))
-        (when other (view-switch! window other)))))
+  (run-hook kill-buffer-hook b)
+  (let (selected (selected-view))
+    (when (eq? b (view-showing selected))
+      (let (other (other-buffer b))
+        (when other (set-view-buffer! selected other)))))
   (Buffers-remove-buffer! (current-buffers) b)
   (for-each (lambda ((t : text)) (set! t.live? #f)) (buffer-texts b)))
 
@@ -528,25 +595,34 @@ prelude: :gerbil/core
 (def (current-view) => view
   (: (Buffers-current-view (current-buffers)) view))
 
-(def (window-view) => view
-  (: (Buffers-window-view (current-buffers)) view))
+(def (selected-view) => view
+  (: (Buffers-selected-view (current-buffers)) view))
 
-;; Make V the view that receives editing.
+;; Make V the selected view, which receives editing while no focus view is
+;; pushed. The window manager calls this when it selects a window.
 (def (select-view! (v : view)) => :void
   (Buffers-select-view! (current-buffers) v))
+
+;; Make V receive editing until it is removed; prompts push their views.
+(def (push-focus-view! (v : view)) => :void
+  (Buffers-push-focus-view! (current-buffers) v))
+
+(def (remove-focus-view! (v : view)) => :void
+  (Buffers-remove-focus-view! (current-buffers) v))
 
 (def (current-buffer) => buffer
   (using (v (current-view) : view)
     v.showing))
 
 (def (switch-to-buffer (b : buffer)) => :void
-  (view-switch! (current-view) b))
+  (set-view-buffer! (current-view) b))
 
-(def (view-switch! (v : view) (b : buffer)) => :void
+;; Show B in V. The buffer V showed keeps V's point as its own.
+(def (set-view-buffer! (v : view) (b : buffer)) => :void
   (unless (eq? b v.showing)
     (using (old v.showing : buffer)
       (set! old.point-node v.node)
-      (set! old.point-position v.position)
+      (set! old.point-position (view-point v))
       (set! old.point-revision v.revision))
     (set! v.showing b)
     (set! v.node b.point-node)
@@ -567,13 +643,8 @@ prelude: :gerbil/core
       n.content)))
 
 (def (point) => :fixnum
-  (using ((v (current-view) : view)
-          (t (current-text) : text))
-    (let (revision t.chars-revision)
-      (unless (fx= v.revision revision)
-        (set! v.position (relocate-position t v.position v.revision))
-        (set! v.revision revision))
-      v.position)))
+  (current-text)                        ; signals when there is no text here
+  (view-point (current-view)))
 
 (def (point-min) => :fixnum
   1)
@@ -583,10 +654,8 @@ prelude: :gerbil/core
 
 ;; Move point to POSITION, limited to the text.
 (def (goto-char (position : :fixnum)) => :void
-  (using ((v (current-view) : view)
-          (t (current-text) : text))
-    (set! v.position (fxmax 1 (fxmin position (fx1+ (text-size t)))))
-    (set! v.revision t.chars-revision)))
+  (current-text)
+  (set-view-point! (current-view) position))
 
 ;; Insert INSERTION at point, leaving point after it.
 (def (insert (insertion : :string)) => :void

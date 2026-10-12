@@ -46,13 +46,13 @@
                      buffers-plugin basic-editing-plugin minibuffer-plugin asking]
                     thunk))
 
-;; Once every key sent so far has run: the window's buffer text, the
+;; Once every key sent so far has run: the selected window's buffer text, the
 ;; innermost prompt's question and answer so far (or #f), and the message.
 (def (state)
   (call-on-editor-loop
    (lambda ()
      (let (prompt (active-prompt))
-       [(text-string (text-node-content (first-text-node (buffer-root (view-showing (window-view))))))
+       [(text-string (text-node-content (first-text-node (buffer-root (view-showing (selected-view))))))
         (and prompt [(prompt-display-question prompt)
                      (text-string (text-node-content (prompt-display-node prompt)))])
         (current-message)]))))

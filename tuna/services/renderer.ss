@@ -2,9 +2,11 @@
 prelude: :gerbil/core
 
 (import :std/interface
-        :tuna/kernel)
+        :tuna/kernel
+        :tuna/services/buffers)
 (export (interface-out Renderer)
-        renderer-service)
+        renderer-service
+        status-line-text)
 
 (interface Renderer
   ;; Render the current editor state as an HTML fragment whose root element
@@ -14,3 +16,21 @@ prelude: :gerbil/core
 (def renderer-service
   (new-service 'renderer is-Renderer? tier: 'live
                doc: "Turns editor state into a screen."))
+
+;; The text of the status line (Emacs's mode line) of a window showing V:
+;; the buffer, the line and column of V's point, and, for the selected
+;; window, the running command.
+(def (status-line-text (v : view) (selected? : :boolean)) => :string
+  (let ((command (and selected? (current-command-name)))
+        (n (view-node v)))
+    (string-append
+     "Tuna · " (buffer-name (view-showing v))
+     (if n
+       (let* ((t (text-node-content n))
+              (p (view-point v)))
+         (string-append " · line " (number->string (text-line-at t p))
+                        ", column " (number->string (text-column t p))))
+       "")
+     (if command
+       (string-append " · running " (symbol->string command))
+       ""))))

@@ -14,6 +14,8 @@ prelude: :gerbil/core
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
+        :tuna/plugins/single-window
+        :tuna/plugins/window-commands
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
@@ -22,8 +24,8 @@ prelude: :gerbil/core
 
 (def standard-plugins
   [keys-plugin web-transport-plugin settings-plugin echo-area-plugin help-panel-plugin
-   rope-text-store-plugin buffers-plugin html-renderer-plugin basic-editing-plugin
-   minibuffer-plugin demo-plugin])
+   rope-text-store-plugin buffers-plugin single-window-plugin window-commands-plugin
+   html-renderer-plugin basic-editing-plugin minibuffer-plugin demo-plugin])
 
 (def (main . args)
   (match args

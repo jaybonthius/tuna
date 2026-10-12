@@ -1,6 +1,6 @@
 #lang :tuna/prelude
 ;;; The minibuffer (live tier). Each prompt gets its own internal buffer
-;;; holding one text node, a view that becomes the selected one, so basic
+;;; holding one text node, a view pushed as the focus view, so basic
 ;;; editing types into the answer, and an input target whose keymap binds
 ;;; RET and C-g. Prompts nest: only the innermost receives keys, and
 ;;; answers are delivered innermost first.
@@ -14,7 +14,7 @@
 (defclass prompt ((question : :string)
                   (node     : text-node)
                   (holder   : buffer)          ; its internal buffer
-                  (focus    : view)            ; the view selected while it waits
+                  (focus    : view)            ; its focus view while it waits
                   (target   : input-target)
                   (waiting  :? :t))             ; its suspension, once suspended
   final: #t)
@@ -31,20 +31,19 @@
               : prompt)
       (add-buffer! b)
       (set! self.prompts (cons p self.prompts))
-      (select-view! p.focus)
+      (push-focus-view! p.focus)
       (goto-char (point-max))
       (push-input-target! p.target)
       (unwind-protect
         (suspend (lambda (s) (set! p.waiting s)))
         (end-prompt! self p)))))
 
-;; Undo what ask! set up, and select the next prompt out, or the window.
+;; Undo what ask! set up; the focus returns to the next prompt out, or to
+;; the selected window.
 (def (end-prompt! (self : minibuffer) (p : prompt)) => :void
   (set! self.prompts (remq p self.prompts))
   (remove-input-target! p.target)
-  (select-view! (match self.prompts
-                  ([inner . _] (prompt-focus inner))
-                  ([] (window-view))))
+  (remove-focus-view! p.focus)
   (kill-buffer p.holder))
 
 (def (innermost (self : minibuffer)) => prompt

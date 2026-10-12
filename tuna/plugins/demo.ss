@@ -1,8 +1,9 @@
 ;;; Demo commands for the architecture skeleton: endless commands to quit,
 ;;; describe-services, a *welcome* buffer built as a tree, swapping the text
-;;; store and basic editing while Tuna runs, renaming a buffer through the
-;;; minibuffer, and a deliberately slow highlighter that colors digits from
-;;; a job. The demo turns other plugins on and off, so it imports them;
+;;; store, the renderer, the window manager, and basic editing while Tuna
+;;; runs, renaming a buffer through the minibuffer, and a deliberately slow
+;;; highlighter that colors digits from a job. The demo turns other plugins
+;;; on and off, so it imports them;
 ;;; ordinary plugins do not.
 prelude: :gerbil/core
 
@@ -13,7 +14,8 @@ prelude: :gerbil/core
         :tuna/services/settings
         :tuna/services/minibuffer
         :tuna/plugins/string-text-store
-        :tuna/plugins/basic-editing)
+        :tuna/plugins/basic-editing
+        :tuna/plugins/two-windows)
 (export demo-plugin
         services-description
         welcome-buffer
@@ -102,6 +104,7 @@ prelude: :gerbil/core
 (defplugin (demo-plugin ctx)
   "Demo commands: endless loops to quit with C-g, describe-services, a tree buffer, and swaps."
   requires: [input-service buffers-service]
+  (def previous-buffer #f)              ; where C-c b returns from *welcome*
   (context-define-node-kind! ctx 'column doc: "Children stacked vertically.")
   (context-define-node-kind! ctx 'heading doc: "A heading."
                              project: (lambda (n) (node-attribute n 'content)))
@@ -119,9 +122,14 @@ prelude: :gerbil/core
     (let lp ((n 0)) (lp (fxand (fx1+ n) #xffff))))
   (define-command ctx (describe-services) "Show each service's tier, provider, and dependents."
     (show-help "Services" (services-description)))
-  (define-command ctx (switch-demo-buffer) "Switch between *scratch* and *welcome*."
-    (let (name (if (equal? (buffer-name (current-buffer)) "*welcome*") "*scratch*" "*welcome*"))
-      (switch-to-buffer (or (get-buffer name) (error "No buffer named" name)))))
+  (define-command ctx (switch-demo-buffer) "Switch to *welcome*, and from it back to the buffer before."
+    (let (welcome (or (get-buffer "*welcome*") (error "No buffer named" "*welcome*")))
+      (if (eq? (current-buffer) welcome)
+        (let (back (if (memq previous-buffer (buffer-list)) previous-buffer (other-buffer welcome)))
+          (when back (switch-to-buffer back)))
+        (begin
+          (set! previous-buffer (current-buffer))
+          (switch-to-buffer welcome)))))
   (define-command ctx (swap-text-store) "Switch between the rope and the plain-string text store."
     (toggle-plugin! string-text-store-plugin)
     (message (if (plugin-active? string-text-store-plugin)
@@ -138,10 +146,16 @@ prelude: :gerbil/core
   (define-command ctx (toggle-basic-editing) "Turn the basic-editing plugin off or on."
     (toggle-plugin! basic-editing-plugin)
     (message (if (plugin-active? basic-editing-plugin) "Basic editing on" "Basic editing off")))
+  (define-command ctx (swap-window-manager) "Switch between one window and two side by side."
+    (toggle-plugin! two-windows-plugin)
+    (message (if (plugin-active? two-windows-plugin)
+               "Window manager: two windows"
+               "Window manager: one window")))
   (keymap-set ctx "C-c l" 'loop-forever)
   (keymap-set ctx "C-c L" 'loop-forever-ignoring-quit)
   (keymap-set ctx "C-h s" 'describe-services)
   (keymap-set ctx "C-c b" 'switch-demo-buffer)
   (keymap-set ctx "C-c s" 'swap-text-store)
   (keymap-set ctx "C-c p" 'toggle-basic-editing)
-  (keymap-set ctx "C-c r" 'rename-buffer))
+  (keymap-set ctx "C-c r" 'rename-buffer)
+  (keymap-set ctx "C-c w" 'swap-window-manager))

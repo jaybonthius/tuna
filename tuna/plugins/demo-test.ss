@@ -13,6 +13,7 @@
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
+        :tuna/plugins/single-window
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
@@ -23,7 +24,7 @@
 
 (def (with-demo thunk)
   (call-with-editor [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
-                     settings-plugin buffers-plugin html-renderer-plugin basic-editing-plugin
+                     settings-plugin buffers-plugin single-window-plugin html-renderer-plugin basic-editing-plugin
                      minibuffer-plugin demo-plugin]
                     thunk))
 
