@@ -56,7 +56,7 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | Prompt (`read-string`, `completing-read`) | Same names, via recursive minibuffer | Same style. `read-string` is built. |
 | Minibuffer | Minibuffer, recursive minibuffers | Same: each waiting prompt has its own internal buffer; only the innermost receives keys. `RET` runs `exit-minibuffer`, `C-g` runs `abort-minibuffers`. Built. |
 | `quit` and the quit key | `quit` signal, `C-g`, `inhibit-quit` | Same names; stronger guarantee (see divergences). |
-| Session slots | `savehist`, `desktop`, `saveplace` | Same purpose, stored as plain data in `$XDG_STATE_HOME/tuna/session.ss`, saved while idle and on exit, restored on start. Built: buffers (names, points) and windows. |
+| Session slots (`context-add-session-slot!`) | `savehist`, `desktop`, `saveplace` | Same purpose, kept by the session plugin and stored as plain data in `$XDG_STATE_HOME/tuna/session.ss`, saved while idle and on exit, restored on start. Built: buffers (names, points) and windows. |
 | Autosave | `auto-save-mode`, `recover-session` | Same purpose: unsaved buffer text goes to `$XDG_STATE_HOME/tuna/autosave/`. Unlike Emacs, it comes back by itself on start, with the session, for buffers that visit no file (Emacs's `desktop` does not keep their text). Built. |
 | `init.ss`, `custom.ss` | `init.el`, `custom-file` | Same roles; `custom.ss` is data, not code. |
 | File-system service providers | `file-name-handler-alist` (TRAMP, compressed files) | Same purpose. |

@@ -123,7 +123,7 @@ What you see in a window is a **view** of a buffer. Two windows can show the sam
 
 Autosave and the session file are built; `custom.ss` and `init.ss` are not yet.
 
-The saved files are plain Scheme data, readable in any editor, and Tuna never runs them as code. Only `init.ss` is code. Each plugin decides what of its own state is worth saving.
+The saved files are plain Scheme data, readable in any editor, and Tuna never runs them as code. Only `init.ss` is code. Each plugin decides what of its own state is worth saving, and hands it to the session plugin as a named *session slot*; the engine knows nothing about saving.
 
 ## How this differs from Emacs
 
