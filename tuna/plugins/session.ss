@@ -1,7 +1,8 @@
 ;;; The session plugin (startup tier; ADR 5): keeps the session slots
-;;; plugins register, and saves them in $XDG_STATE_HOME/tuna/session.ss. It saves while the editor is idle, when
-;;; anything changed, and when the program saves it on exit; the program
-;;; restores it once the standard plugins are active.
+;;; plugins register, and saves them in $XDG_STATE_HOME/tuna/session.ss. It
+;;; saves while the editor is idle, when anything changed, and when the
+;;; program saves it on exit; the program restores it once the standard
+;;; plugins are active.
 ;;;
 ;;; The file holds one datum, (tuna-session 1 (SLOT VERSION DATA) ...),
 ;;; written with `write`. It is read with `read` and validated as plain
@@ -165,7 +166,6 @@ prelude: :gerbil/core
                        (context-add-entry! ctx self.slots (session-slot-name slot) slot
                                            priority: priority)
                        (void)))
-  (session-slots (lambda (self) (effective-slots self)))
   (save-session! (lambda (self) (save! self)))
   (restore-session! (lambda (self) (restore! self)))
   (state-directory (lambda (self) self.directory)))

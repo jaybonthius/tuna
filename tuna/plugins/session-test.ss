@@ -90,6 +90,7 @@
 
 (defplugin (unplain-slot ctx)
   "Registers a session slot whose data is not plain."
+  requires: [session-service]
   (context-add-session-slot! ctx 'unplain version: 1
                              save: (lambda () [(lambda () 'code)])
                              restore: void))
@@ -125,11 +126,6 @@
      (thunk)
      (finally
       (deactivate-all-plugins!)))))
-
-(def (effective-slots)
-  (map (lambda (slot) [(session-slot-name slot) (session-slot-version slot)
-                       ((session-slot-save slot))])
-       (session-slots)))
 
 (def session-test
   (test-suite "tuna/plugins/session"
@@ -203,15 +199,26 @@
     (test-case "session slots follow their plugins; the oldest name comes first"
       (call-with-state-directory
        (lambda (directory)
+         (write-session! directory "(tuna-session 1 (beta 2 \"B\") (alpha 3 \"A\"))")
          (with-session-only directory
            (lambda ()
-             (activate-plugin! slots-early)
-             (activate-plugin! slots-late)
-             (check (effective-slots) => [['alpha 3 "late"] ['beta 2 "late beta"]])
-             (deactivate-plugin! slots-late)
-             (check (effective-slots) => [['alpha 1 "early"]])
-             (deactivate-plugin! slots-early)
-             (check (effective-slots) => []))))))
+             (let (restore! (lambda ()
+                              (set! restored [])
+                              (restore-session)
+                              (reverse restored)))
+               (activate-plugin! slots-early)
+               (activate-plugin! slots-late)
+               ;; alpha was registered first; the effective alpha is version 3.
+               (check (restore!) => [['alpha 3 "A"] ['beta 2 "B"]])
+               ;; Only early's alpha, version 1, remains: the saved version 3
+               ;; is skipped.
+               (deactivate-plugin! slots-late)
+               (check (restore!) => [])
+               (deactivate-plugin! slots-early)
+               (activate-plugin! slots-late)
+               (check (restore!) => [['beta 2 "B"] ['alpha 3 "A"]])
+               (deactivate-plugin! slots-late)
+               (check (restore!) => [])))))))
 
     (test-case "deactivating a slot's plugin makes a same-named lower-priority slot effective"
       (call-with-state-directory

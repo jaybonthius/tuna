@@ -2,9 +2,10 @@
 ;;; plugins register (`context-add-session-slot!`), and where and when they
 ;;; are saved and restored. The provider keeps the slots. Saved state is
 ;;; plain data, written with `write` and read with `read`, never evaluated.
-;;; Files are replaced atomically. Plugins that register slots require
-;;; `session-service`; a configuration that keeps no session provides one
-;;; that saves nothing.
+;;; Files are replaced atomically. A plugin that registers slots must
+;;; require session-service and restart with it (not adapt), so its slots
+;;; move to a new provider; a configuration that keeps no session provides
+;;; one that saves nothing.
 prelude: :gerbil/core
 
 (import :std/interface
@@ -13,7 +14,6 @@ prelude: :gerbil/core
         (struct-out session-slot)
         session-service
         context-add-session-slot!
-        session-slots
         save-session
         restore-session
         state-directory
@@ -32,15 +32,15 @@ prelude: :gerbil/core
 (interface Session
   ;; Register SLOT for CTX's plugin until it is deactivated. Several plugins
   ;; may register the same name (alternative providers of one service); the
-  ;; highest PRIORITY is effective.
+  ;; highest PRIORITY is effective. CTX's plugin must require session-service
+  ;; and restart with it (not adapt), so its slots move to a new provider.
   (add-session-slot! (ctx : context) (slot : session-slot) (priority : :fixnum)) => :void
-  ;; The effective slot of each name, in the order the names were first
-  ;; registered, so a slot restores after the slots registered before it.
-  (session-slots) => :list
   ;; Save every slot's data now.
   (save-session!) => :void
-  ;; Give each slot the data saved for it, in slot order. Call once, after
-  ;; the plugins that own slots are active.
+  ;; Give the effective slot of each name the data saved for it, in the
+  ;; order the names were first registered, so a slot restores after the
+  ;; slots registered before it. Call once, after the plugins that own
+  ;; slots are active.
   (restore-session!) => :void
   ;; The directory holding Tuna's state ($XDG_STATE_HOME/tuna).
   (state-directory) => :string)
@@ -64,9 +64,6 @@ prelude: :gerbil/core
   => :void
   (Session-add-session-slot! (current-session) ctx
                              (make-session-slot name version save restore) priority))
-
-(def (session-slots) => :list
-  (Session-session-slots (current-session)))
 
 (def (save-session) => :void
   (Session-save-session! (current-session)))

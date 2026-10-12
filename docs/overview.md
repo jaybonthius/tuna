@@ -147,3 +147,4 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 - **Plugin**: a bundle of commands, keys, hooks, and services that can be turned on and off.
 - **Receipt**: a plugin's record of everything it added, used to undo it.
 - **Service**: a swappable part of Tuna, defined by what it promises to do.
+- **Session slot**: a named piece of one plugin's state that the session plugin saves while Tuna is idle and on exit, and hands back on the next start.

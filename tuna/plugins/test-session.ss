@@ -10,9 +10,6 @@
 (defmethod {add-session-slot! no-session}
   (lambda (self ctx slot priority) (void)))
 
-(defmethod {session-slots no-session}
-  (lambda (self) []))
-
 (defmethod {save-session! no-session}
   (lambda (self) (void)))
 
