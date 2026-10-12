@@ -11,6 +11,7 @@ prelude: :gerbil/core
         :std/error
         :std/interface
         :std/sync/completion
+        ./ids
         ./state
         ./plugins)
 (export (interface-out Input Display)
@@ -29,7 +30,8 @@ prelude: :gerbil/core
         quit-condition?
         quit-condition-forced?
         redisplay
-        current-command-name)
+        current-command-name
+        current-task-id)
 
 ;;; Services the loop consumes
 
@@ -77,7 +79,8 @@ prelude: :gerbil/core
 
 ;; A task: code holding the baton in its own thread. The loop thread sets
 ;; the quit fields; the task's thread reads them at its quit checks.
-(defclass task ((name            : :symbol)
+(defclass task ((id              : :fixnum)
+                (name            : :symbol)
                 (procedure       : :procedure)
                 (reply           :? :procedure)    ; receives (values raised? value)
                 (thread          :? :thread)
@@ -88,6 +91,12 @@ prelude: :gerbil/core
   final: #t)
 
 (def current-task (make-parameter #f))
+
+;; The identity of the running task, or #f outside tasks. Undo uses it to
+;; group the changes one command makes.
+(def (current-task-id) => (Maybe :fixnum)
+  (let (running (current-task))
+    (and running (task-id running))))
 
 (def (raise-quit! (running : task) (forced? : :boolean)) => :void
   (set! running.state 'quitting)
@@ -337,7 +346,7 @@ prelude: :gerbil/core
                   (procedure : :procedure)
                   (reply     :? :procedure))
   => :void
-  (using ((running (task name: name procedure: procedure reply: reply thread: #f state: 'running
+  (using ((running (task id: (next-id!) name: name procedure: procedure reply: reply thread: #f state: 'running
                          quit-requested?: #f quit-presses: 0 inhibit-depth: 0)
                    : task)
            (loop-thread loop.thread : :thread))

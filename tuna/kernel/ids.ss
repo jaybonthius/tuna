@@ -1,10 +1,12 @@
-;;; Shared vocabulary: identities and revision counters (ADR 4, ADR 12).
+;;; Shared vocabulary: identities, revision counters, and change records
+;;; (ADR 4, ADR 12).
 prelude: :gerbil/core
 
 (export next-id!
         (struct-out revision-counter)
         new-revision-counter
-        revision-bump!)
+        revision-bump!
+        (struct-out change))
 
 (def id-mutex (make-mutex 'tuna-ids))
 (def last-id 0)
@@ -29,3 +31,12 @@ prelude: :gerbil/core
   (let (next (fx1+ (revision-counter-value counter)))
     (set! (revision-counter-value counter) next)
     next))
+
+;; One edit of a text: at START, REMOVED was replaced by INSERTED, producing
+;; character revision REVISION. Positions are 1-based. Markers, undo, and
+;; jobs consume these records.
+(defstruct change ((revision : :fixnum)
+                   (start    : :fixnum)
+                   (removed  : :string)
+                   (inserted : :string))
+  final: #t)

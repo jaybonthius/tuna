@@ -3,6 +3,7 @@
 prelude: :gerbil/core
 
 (import :std/error
+        :std/interface
         :std/list/list
         ./ids
         ./entries
@@ -11,6 +12,7 @@ prelude: :gerbil/core
         defplugin
         context
         context?
+        current-context
         context-plugin-name
         context-defer!
         context-add-entry!
@@ -30,8 +32,13 @@ prelude: :gerbil/core
         (struct-out command)
         define-command
         context-define-command!
+        defcommand
         command-ref
-        command-entry)
+        command-entry
+        (interface-out Messages)
+        messages-service
+        message
+        (phi: +1 stx-source-string))
 
 ;;; Plugins and contexts
 
@@ -54,6 +61,10 @@ prelude: :gerbil/core
                          (registered : :fixnum)
                          (activated  : :fixnum))
   final: #t)
+
+;; The context of the plugin being activated, for the declarative forms
+;; (defcommand, keymap-set) that register into it implicitly.
+(def current-context (make-parameter #f))
 
 (def (context-plugin-name (ctx : context)) => :symbol
   (plugin-name (context-owner ctx)))
@@ -98,8 +109,24 @@ prelude: :gerbil/core
                             ":" (number->string line)))))))
 
 ;; (defplugin (name ctx) "doc" [requires: services] body ...)
+;; (defplugin name "doc" [requires: services] body ...), whose body
+;; registers through (current-context).
 (defsyntax (defplugin stx)
   (syntax-case stx ()
+    ((_ name doc clause ...)
+     (and (identifier? #'name) (stx-string? #'doc))
+     (with-syntax ((source (stx-source-string stx)))
+       (syntax-case #'(clause ...) ()
+         ((requires: services body ...)
+          #'(def name
+              (make-plugin 'name doc services
+                           (lambda ((ctx : context)) => :void body ... (void))
+                           source)))
+         ((body ...)
+          #'(def name
+              (make-plugin 'name doc []
+                           (lambda ((ctx : context)) => :void body ... (void))
+                           source))))))
     ((_ (name ctx) doc requires: services body ...)
      (and (identifier? #'name) (identifier? #'ctx) (stx-string? #'doc))
      (with-syntax ((source (stx-source-string stx)))
@@ -263,7 +290,8 @@ prelude: :gerbil/core
        (run-receipt! ctx)
        (raise e))
      (lambda ()
-       ((plugin-activate (plugin-record-definition rec)) ctx)))
+       (parameterize ((current-context ctx))
+         ((plugin-activate (plugin-record-definition rec)) ctx))))
     (set! (plugin-record-active rec) ctx)
     (set! (plugin-record-activated rec) (next-id!))))
 
@@ -394,6 +422,16 @@ prelude: :gerbil/core
        #'(context-define-command! ctx 'name (lambda () body ...)
                                   doc: doc source: source)))))
 
+;; (defcommand (name) "doc" body ...) in a plugin body defines a command
+;; through (current-context).
+(defsyntax (defcommand stx)
+  (syntax-case stx ()
+    ((_ (name) doc body ...)
+     (and (identifier? #'name) (stx-string? #'doc))
+     (with-syntax ((source (stx-source-string stx)))
+       #'(context-define-command! (current-context) 'name (lambda () body ...)
+                                  doc: doc source: source)))))
+
 ;; The effective command named NAME, or #f.
 (def (command-ref (name : :symbol)) => (Maybe command)
   (let (best (command-entry name))
@@ -402,3 +440,22 @@ prelude: :gerbil/core
 ;; NAME's effective entry, with provenance.
 (def (command-entry (name : :symbol)) => (Maybe entry)
   (entry-table-ref (kernel-commands (the-kernel)) name))
+
+;;; Messages
+
+;; Where the kernel and plugins report to the user (ADR 12: the echo area is
+;; a plugin).
+(interface Messages
+  ;; Show TEXT to the user; "" clears the message.
+  (message! (text : :string)) => :void)
+
+(def messages-service
+  (new-service 'messages is-Messages? tier: 'live
+               doc: "Shows messages to the user."))
+
+;; Show TEXT in the echo area, or on stderr while no plugin shows messages.
+(def (message (text : :string)) => :void
+  (let (provider (service-provider messages-service))
+    (cond
+     (provider (Messages-message! (Messages provider) text))
+     ((not (string-empty? text)) (displayln text (current-error-port))))))
