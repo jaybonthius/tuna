@@ -15,6 +15,7 @@ prelude: :gerbil/core
         :tuna/services/minibuffer
         :tuna/plugins/string-text-store
         :tuna/plugins/basic-editing
+        :tuna/plugins/plain-text-renderer
         :tuna/plugins/two-windows)
 (export demo-plugin
         services-description
@@ -96,6 +97,11 @@ prelude: :gerbil/core
 (def (render-heading (n : node) (children : :list)) => :list
   `(h1 (@ (class "heading")) ,(node-attribute n 'content)))
 
+;; For the plain-text renderer: the heading underlined.
+(def (heading-runs (n : node) (children : :list)) => :list
+  (let (content (node-attribute n 'content))
+    [content "\n" (make-string (string-length content) #\=)]))
+
 (def (toggle-plugin! (p : plugin)) => :void
   (if (plugin-active? p)
     (deactivate-plugin! p)
@@ -110,6 +116,8 @@ prelude: :gerbil/core
                              project: (lambda (n) (node-attribute n 'content)))
   (context-define-node-renderer! ctx 'column 'html render-column)
   (context-define-node-renderer! ctx 'heading 'html render-heading)
+  (context-define-node-renderer! ctx 'column 'plain-text (lambda (n children) (join-runs children)))
+  (context-define-node-renderer! ctx 'heading 'plain-text heading-runs)
   (context-add-buffer! ctx (welcome-buffer))
   (define-command ctx (loop-forever) "Loop until quit, checking for quit."
     (message "Looping forever, checking for quit. Press C-g.")
@@ -146,6 +154,11 @@ prelude: :gerbil/core
   (define-command ctx (toggle-basic-editing) "Turn the basic-editing plugin off or on."
     (toggle-plugin! basic-editing-plugin)
     (message (if (plugin-active? basic-editing-plugin) "Basic editing on" "Basic editing off")))
+  (define-command ctx (swap-renderer) "Switch between the HTML and the plain-text renderer."
+    (toggle-plugin! plain-text-renderer-plugin)
+    (message (if (plugin-active? plain-text-renderer-plugin)
+               "Renderer: plain text"
+               "Renderer: HTML")))
   (define-command ctx (swap-window-manager) "Switch between one window and two side by side."
     (toggle-plugin! two-windows-plugin)
     (message (if (plugin-active? two-windows-plugin)
@@ -158,4 +171,5 @@ prelude: :gerbil/core
   (keymap-set ctx "C-c s" 'swap-text-store)
   (keymap-set ctx "C-c p" 'toggle-basic-editing)
   (keymap-set ctx "C-c r" 'rename-buffer)
+  (keymap-set ctx "C-c v" 'swap-renderer)
   (keymap-set ctx "C-c w" 'swap-window-manager))

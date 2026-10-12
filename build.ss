@@ -37,6 +37,7 @@
     "tuna/plugins/single-window"
     "tuna/plugins/two-windows"
     "tuna/plugins/html-renderer"
+    "tuna/plugins/plain-text-renderer"
     "tuna/prelude"
     "tuna/plugins/basic-editing"
     "tuna/plugins/minibuffer"
