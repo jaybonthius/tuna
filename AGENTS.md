@@ -27,6 +27,15 @@ The owner must understand the architecture and every plan. Earlier attempts fail
 - Do not add review, oracle, or acceptance-report loops unless the owner asks. Validate with tests and by running the program.
 - Prefer deleting an abstraction to defending it. Add a framework only when a second concrete user needs it.
 
+## Keep the kernel small
+
+This is the project's central rule (ADR 12). The kernel is only the plugin runtime, the execution rules, and shared vocabulary; it contains no features. Every feature, policy, measurement, demo, and test aid lives in a plugin, and each plugin does one job.
+
+- Before adding anything to `tuna/kernel/` or changing a kernel interface, ask: could a plugin own this, given a general-purpose hook or service? If yes, it goes in a plugin. A kernel interface must never be shaped around one consumer (for example, passing data to the display "so it can measure latency").
+- Default plugins do one job. Diagnostics, profiling, logging, and demos never live inside the transport, renderer, buffers, or other default plugins; they observe them through hooks, advice, or services.
+- Before designing a subsystem, search `agents/research/` for earlier attempts; several mistakes have already been made once (the Racket attempt entangled its profiler in the core; see `agents/research/profiling/racket-profiler-extraction-research.md`).
+- **Every merge review checks placement, not only tests:** for each new or changed module, which layer owns it (kernel, service contract, which plugin), whether the kernel grew, and whether any contract serves a single consumer. Task briefs for implementers name the plugin that owns each piece of work.
+
 ## Delegation and worktrees
 
 The owner talks to one primary agent in this checkout (`/home/jay/Code/workbench-gerbil/tuna`, branch `main`).

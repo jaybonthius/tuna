@@ -1,0 +1,53 @@
+# Where does the profiler get its measurements, without being built into anything?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+direction: right
+
+classes: {
+  part: {
+    style: {
+      fill: "#eef3fb"
+      stroke: "#355c96"
+      font-color: "#172b4d"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+  prof: {
+    style: {
+      fill: "#fff8e1"
+      stroke: "#8d6e00"
+      font-color: "#3e2f00"
+      border-radius: 8
+      stroke-width: 3
+      font-size: 18
+    }
+  }
+}
+
+legend: |md
+  **Status:** proposed. Nothing on the left knows the profiler exists;
+  it only offers general-purpose hooks that any plugin can use.
+|
+
+loop: Editor loop (kernel)\nlifecycle events: task started/finished,\njob started/finished, redraw {class: part}
+keys: Key handling plugin\npre-command and post-command hooks {class: part}
+web: Browser connection plugin\nkey arrived, screen delivered {class: part}
+services: Any service\nits methods can be advised {class: part}
+yours: Any package function\ninstrumented by name, no code change {class: part}
+sampler: Clock tick\nsampled call stacks {class: part}
+
+profiler: Profiler plugin (optional)\nturn on with M-x profiler-mode {class: prof}
+report: "*profile* buffer\na tree per key press" {class: prof}
+
+loop -> profiler: events
+keys -> profiler: hooks
+web -> profiler: hooks
+services -> profiler: advice
+yours -> profiler: advice
+sampler -> profiler: samples
+profiler -> report: shows
