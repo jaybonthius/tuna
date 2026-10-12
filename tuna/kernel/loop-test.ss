@@ -27,6 +27,7 @@
   (context-provide! ctx display-service (make-counting-display))
   (define-command ctx (note-a) "Note a." (note! 'a))
   (define-command ctx (note-b) "Note b." (note! 'b))
+  (define-command ctx (note-quit) "Note quit." (note! 'quit))
   (define-command ctx (fail) "Fail." (error "deliberate failure"))
   (define-command ctx (block) "Wait for the test to release it."
     (set! started? #t)
@@ -78,8 +79,8 @@
      (start-editor-loop! quit-grace: quit-grace)
      (thunk))))
 
-;; Submit the input item ITEM, a plain string the test Input provider
-;; resolves.
+;; Submit the input item ITEM, usually a plain string, which the test Input
+;; provider resolves.
 (def (press item) (submit-input! item))
 
 ;; Wait for every earlier item and its command, then read the last message.
@@ -131,6 +132,31 @@
          (settled-message)
          (check log => '(a)))
        quit-grace: 10.))
+
+    (test-case "an interrupt with no task running is queued and resolved as input"
+      (with-loop
+       (lambda ()
+         (hash-put! test-bindings "quit" 'note-quit)
+         (try
+          (press "quit")
+          (press "note-a")
+          (settled-message)
+          (check (reverse log) => '(quit a))
+          (finally (hash-remove! test-bindings "quit"))))))
+
+    (test-case "input items of any shape are queued and resolved untouched"
+      (with-loop
+       (lambda ()
+         (hash-put! test-bindings '(note a) 'note-a)
+         (hash-put! test-bindings #f 'note-b)
+         (try
+          (press '(note a))
+          (press #f)
+          (settled-message)
+          (check (reverse log) => '(a b))
+          (finally
+           (hash-remove! test-bindings '(note a))
+           (hash-remove! test-bindings #f))))))
 
     (test-case "a command that ignores quit is interrupted after the grace period"
       (with-loop

@@ -87,13 +87,13 @@ prelude: :gerbil/core
                 (state           : :symbol)
                 (suspension      :? :t)            ; its wait, while suspended
                 (quit-requested? : :boolean)
-                (quit-presses    : :fixnum)
+                (interrupts      : :fixnum)
                 (inhibit-depth   : :fixnum))
   final: #t)
 
 (def (new-task (name : :symbol) (procedure : :procedure) (reply :? :procedure)) => task
   (task id: (next-id!) name: name procedure: procedure reply: reply thread: #f
-        state: 'queued suspension: #f quit-requested?: #f quit-presses: 0 inhibit-depth: 0))
+        state: 'queued suspension: #f quit-requested?: #f interrupts: 0 inhibit-depth: 0))
 
 ;; One wait of a suspended task. The loop thread records the outcome, a
 ;; pair of raised? and value, and hands it over with the baton.
@@ -153,7 +153,7 @@ prelude: :gerbil/core
   (lambda ()
     (when (and (eq? running.state 'running)
                (or (fxzero? running.inhibit-depth)
-                   (fx>= running.quit-presses 3)))
+                   (fx>= running.interrupts 3)))
       (raise-quit! running #t))))
 
 ;; thread-interrupt! waits until the target runs the thunk, and raises
@@ -564,9 +564,9 @@ prelude: :gerbil/core
   (let (running loop.running)
     (if running
       (using (running : task)
-        (set! running.quit-presses (fx1+ running.quit-presses))
+        (set! running.interrupts (fx1+ running.interrupts))
         (set! running.quit-requested? #t)
-        (if (fx= running.quit-presses 1)
+        (if (fx= running.interrupts 1)
           (set! loop.force-at (+ (now) loop.quit-grace))
           (force-quit! loop running)))
       (enqueue! loop (make-queued-input item)))))
@@ -589,7 +589,7 @@ prelude: :gerbil/core
   (let (running loop.running)
     (when running
       (using (running : task)
-        (set! running.quit-presses 3)
+        (set! running.interrupts 3)
         (set! running.quit-requested? #t)
         (interrupt-task! (: loop.thread :thread) running)
         (await-task-end! running))))

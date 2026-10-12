@@ -1,6 +1,7 @@
 ;;; Test fixtures for driving plugins with key events through the real
-;;; editor loop; included by test files (not a module), which import
-;;; make-key-event from :tuna/services/keys.
+;;; editor loop; included by test files (not a module).
+
+(import (only-in :tuna/services/keys make-key-event))
 
 ;; Activate PLUGINS in a fresh kernel, start the loop, run THUNK, and stop.
 (def (call-with-editor plugins thunk)

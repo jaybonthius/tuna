@@ -39,7 +39,7 @@ The skeleton let the kernel drift from about 1,050 to 1,800 non-test lines by ab
 
 **The kernel contains exactly:**
 1. **Plugin runtime:** plugins, `defplugin`, contexts and receipts (`context-defer!` is the one primitive every registration is built from), owner-tagged entries, activation and deactivation, services with providers, tiers, dependents that restart or adapt, and swap handover.
-2. **Execution rules:** the baton, tasks, suspension at yield points, the quit lane, the input queue, `input-pending?`, and posting a result to the editor thread from another thread (`result-poster`).
+2. **Execution rules:** the baton, tasks, suspension at yield points, the quit lane, the input queue, `input-pending?`, `discard-input`, and posting a result to the editor thread from another thread (`result-poster`).
 3. **Hooks and identities:** one generic hook mechanism (each hook object owns its callbacks; no kernel table), which the kernel also uses to announce its own lifecycle events (plugin activated or deactivated, service changed, task or command started and finished); and `next-id!`.
 4. **Consumed seams:** the `Input`, `Display`, and `Messages` services the kernel calls.
 

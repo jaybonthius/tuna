@@ -2,7 +2,6 @@
 ;;; through the real editor loop.
 (import :std/test
         :tuna/kernel
-        (only-in :tuna/services/keys make-key-event)
         :tuna/services/renderer
         :tuna/services/buffers
         :tuna/plugins/keys
