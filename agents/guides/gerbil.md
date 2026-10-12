@@ -60,7 +60,7 @@ Measure proposed optimizations with reproducible benchmarks before keeping them.
 
 ## Known toolchain issues
 
-- `gxc -O` loops forever compiling an empty self-loop such as `(let lp () (lp))` (Gerbil v0.19-dev-63; confirmed with a one-line module). Give such loops a body, for example a counter. Not yet reported upstream.
+- `gxc -O` loops forever compiling an empty self-loop such as `(let lp () (lp))` (Gerbil v0.19-dev-63; confirmed with a one-line module). Give such loops a body, for example a counter. Tracked in `TODO.md`.
 - `thread-interrupt!` blocks its caller until the target thread runs the interrupt; call it from a helper thread when the target may be stuck in foreign code.
 
 ## Tests
