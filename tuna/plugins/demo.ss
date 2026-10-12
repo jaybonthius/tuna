@@ -1,8 +1,9 @@
 ;;; Demo commands for the architecture skeleton: endless commands to quit,
 ;;; describe-services, a *welcome* buffer built as a tree, swapping the text
-;;; store and basic editing while Tuna runs, renaming a buffer through the
-;;; minibuffer, and a deliberately slow highlighter that colors digits from
-;;; a job. The demo turns other plugins on and off, so it imports them;
+;;; store, the renderer, the window manager, and basic editing while Tuna
+;;; runs, renaming a buffer through the minibuffer, a deliberately slow
+;;; highlighter that colors digits from a job, and recent keydown-to-screen
+;;; latencies. The demo turns other plugins on and off, so it imports them;
 ;;; ordinary plugins do not.
 prelude: :gerbil/core
 
@@ -13,9 +14,13 @@ prelude: :gerbil/core
         :tuna/services/settings
         :tuna/services/minibuffer
         :tuna/plugins/string-text-store
-        :tuna/plugins/basic-editing)
+        :tuna/plugins/basic-editing
+        :tuna/plugins/plain-text-renderer
+        :tuna/plugins/two-windows
+        :tuna/plugins/web)
 (export demo-plugin
         services-description
+        latency-description
         welcome-buffer
         digit-spans
         digit-highlight-delay)
@@ -63,10 +68,16 @@ prelude: :gerbil/core
           chunk)))
     (reverse (if run-start (cons (make-span run-start position 'digit) spans) spans))))
 
+;; Whether T belongs to an internal buffer, such as a prompt's.
+(def (internal-text? (t : text)) => :boolean
+  (let (b (find (lambda ((b : buffer)) (memq t (buffer-texts b))) (buffer-list)))
+    (and b (internal-buffer? b))))
+
 ;; After each change, recolor the text's digits from a job. Typing goes on
-;; meanwhile; the rebase policy moves the colors past what was typed.
+;; meanwhile; the rebase policy moves the colors past what was typed. The
+;; minibuffer's answers are left alone.
 (def (highlight-digits-later! (ctx : context) (t : text)) => :void
-  (when (editor-loop-running?)
+  (when (and (editor-loop-running?) (not (internal-text? t)))
     (start-job ['highlight-digits (text-id t)]
                input: [(text-snapshot t) (setting-value digit-highlight-delay)]
                run: (lambda (input)
@@ -94,6 +105,38 @@ prelude: :gerbil/core
 (def (render-heading (n : node) (children : :list)) => :list
   `(h1 (@ (class "heading")) ,(node-attribute n 'content)))
 
+;; For the plain-text renderer: the heading underlined.
+(def (heading-runs (n : node) (children : :list)) => :list
+  (let (content (node-attribute n 'content))
+    [content "\n" (make-string (string-length content) #\=)]))
+
+;; The value at FRACTION (0 to 1) of SORTED, a sorted non-empty list.
+(def (percentile (sorted : :list) (fraction : :real)) => :real
+  (list-ref sorted (min (fx1- (length sorted))
+                        (inexact->exact (floor (* fraction (length sorted)))))))
+
+(def (milliseconds (seconds : :real)) => :string
+  (let (tenths (inexact->exact (round (* seconds 10000.))))
+    (string-append (number->string (quotient tenths 10)) "." (number->string (remainder tenths 10)))))
+
+;; Recent keydown-to-screen latencies, summarized.
+(def (latency-description) => :list
+  (let (samples (keydown-latencies))
+    (cond
+     ((not samples) ["No web transport is active."])
+     ((null? samples) ["No keys measured yet."])
+     (else
+      (let (sorted (list-sort < samples))
+        ["From a key event's arrival to the first screen showing its effect being written to a client's stream."
+         (string-append "Last " (number->string (length samples)) " keys:"
+                        " median " (milliseconds (percentile sorted 0.5)) " ms,"
+                        " 95th percentile " (milliseconds (percentile sorted 0.95)) " ms,"
+                        " max " (milliseconds (percentile sorted 1)) " ms.")
+         (string-append "Newest: "
+                        (string-join (map (lambda (s) (string-append (milliseconds s) " ms"))
+                                          (take samples (min 10 (length samples))))
+                                     ", "))])))))
+
 (def (toggle-plugin! (p : plugin)) => :void
   (if (plugin-active? p)
     (deactivate-plugin! p)
@@ -102,11 +145,14 @@ prelude: :gerbil/core
 (defplugin (demo-plugin ctx)
   "Demo commands: endless loops to quit with C-g, describe-services, a tree buffer, and swaps."
   requires: [input-service buffers-service]
+  (def previous-buffer #f)              ; where C-c b returns from *welcome*
   (context-define-node-kind! ctx 'column doc: "Children stacked vertically.")
   (context-define-node-kind! ctx 'heading doc: "A heading."
                              project: (lambda (n) (node-attribute n 'content)))
   (context-define-node-renderer! ctx 'column 'html render-column)
   (context-define-node-renderer! ctx 'heading 'html render-heading)
+  (context-define-node-renderer! ctx 'column 'plain-text (lambda (n children) (join-runs children)))
+  (context-define-node-renderer! ctx 'heading 'plain-text heading-runs)
   (context-add-buffer! ctx (welcome-buffer))
   (define-command ctx (loop-forever) "Loop until quit, checking for quit."
     (message "Looping forever, checking for quit. Press C-g.")
@@ -119,9 +165,14 @@ prelude: :gerbil/core
     (let lp ((n 0)) (lp (fxand (fx1+ n) #xffff))))
   (define-command ctx (describe-services) "Show each service's tier, provider, and dependents."
     (show-help "Services" (services-description)))
-  (define-command ctx (switch-demo-buffer) "Switch between *scratch* and *welcome*."
-    (let (name (if (equal? (buffer-name (current-buffer)) "*welcome*") "*scratch*" "*welcome*"))
-      (switch-to-buffer (or (get-buffer name) (error "No buffer named" name)))))
+  (define-command ctx (switch-demo-buffer) "Switch to *welcome*, and from it back to the buffer before."
+    (let (welcome (or (get-buffer "*welcome*") (error "No buffer named" "*welcome*")))
+      (if (eq? (current-buffer) welcome)
+        (let (back (if (memq previous-buffer (buffer-list)) previous-buffer (other-buffer welcome)))
+          (when back (switch-to-buffer back)))
+        (begin
+          (set! previous-buffer (current-buffer))
+          (switch-to-buffer welcome)))))
   (define-command ctx (swap-text-store) "Switch between the rope and the plain-string text store."
     (toggle-plugin! string-text-store-plugin)
     (message (if (plugin-active? string-text-store-plugin)
@@ -138,10 +189,25 @@ prelude: :gerbil/core
   (define-command ctx (toggle-basic-editing) "Turn the basic-editing plugin off or on."
     (toggle-plugin! basic-editing-plugin)
     (message (if (plugin-active? basic-editing-plugin) "Basic editing on" "Basic editing off")))
+  (define-command ctx (swap-renderer) "Switch between the HTML and the plain-text renderer."
+    (toggle-plugin! plain-text-renderer-plugin)
+    (message (if (plugin-active? plain-text-renderer-plugin)
+               "Renderer: plain text"
+               "Renderer: HTML")))
+  (define-command ctx (swap-window-manager) "Switch between one window and two side by side."
+    (toggle-plugin! two-windows-plugin)
+    (message (if (plugin-active? two-windows-plugin)
+               "Window manager: two windows"
+               "Window manager: one window")))
+  (define-command ctx (describe-latency) "Show recent keydown-to-screen latencies."
+    (show-help "Latency" (latency-description)))
   (keymap-set ctx "C-c l" 'loop-forever)
   (keymap-set ctx "C-c L" 'loop-forever-ignoring-quit)
   (keymap-set ctx "C-h s" 'describe-services)
   (keymap-set ctx "C-c b" 'switch-demo-buffer)
   (keymap-set ctx "C-c s" 'swap-text-store)
   (keymap-set ctx "C-c p" 'toggle-basic-editing)
-  (keymap-set ctx "C-c r" 'rename-buffer))
+  (keymap-set ctx "C-c r" 'rename-buffer)
+  (keymap-set ctx "C-c v" 'swap-renderer)
+  (keymap-set ctx "C-c w" 'swap-window-manager)
+  (keymap-set ctx "C-h l" 'describe-latency))

@@ -13,6 +13,7 @@
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
+        :tuna/plugins/single-window
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/demo)
@@ -134,7 +135,7 @@
 
 (def standard-plugins
   [keys-plugin web-transport-plugin echo-area-plugin help-panel-plugin
-   rope-text-store-plugin settings-plugin buffers-plugin html-renderer-plugin basic-editing-plugin
+   rope-text-store-plugin settings-plugin buffers-plugin single-window-plugin html-renderer-plugin basic-editing-plugin
    demo-plugin])
 
 (def (with-tuna thunk)
@@ -241,6 +242,25 @@
              [first second])
            (Socket-close first)
            (Socket-close second)))))
+
+    (test-case "keydown-to-screen latency is measured on the stream; C-h l shows it"
+      (with-tuna
+       (lambda ()
+         (let (stream (open-screen-stream))
+           (read-until stream (cut string-search "id=\"screen\"" <>))
+           (check (keydown-latencies) => [])
+           (post-key "x")
+           (post-key "y")
+           (read-until stream (cut string-search "xy<span class=\"cursor\">" <>))
+           (check (wait-until (lambda () (= (length (keydown-latencies)) 2))) => #t)
+           (check (andmap (lambda (seconds) (< 0 seconds 1)) (keydown-latencies)) => #t)
+           (post-key "h" ctrl?: #t)
+           (post-key "l")
+           (check (and (string-search "keys: median"
+                                      (read-until stream (cut string-search "keys: median" <>)))
+                       #t)
+                  => #t)
+           (Socket-close stream)))))
 
     (test-case "C-c l then C-g recovers; so does C-c L, by force"
       (with-tuna

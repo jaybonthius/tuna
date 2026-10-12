@@ -1,9 +1,11 @@
 ;;; HTML renderer (live tier): editor state -> SXML -> HTML (ADR 7).
-;;; It walks the window's buffer tree and renders each node through the
-;;; procedure registered for its kind and the `html` target. A kind without
-;;; one is shown as its text projection. Text nodes show their highlights
-;;; as face classes, and the cursor where the selected view's point is. The
-;;; innermost waiting prompt shows above the echo area.
+;;; The window manager arranges the windows; for each, the renderer walks
+;;; its view's buffer tree and renders each node through the procedure
+;;; registered for its kind and the `html` target. A kind without one is
+;;; shown as its text projection. Text nodes show their highlights as face
+;;; classes and each view's point as a cursor: solid where typing goes,
+;;; hollow in other windows. The innermost waiting prompt shows above the
+;;; echo area.
 prelude: :gerbil/core
 
 (import :std/text/markup/sxml/print
@@ -12,12 +14,16 @@ prelude: :gerbil/core
         :tuna/services/buffers
         :tuna/services/echo-area
         :tuna/services/help
-        :tuna/services/minibuffer)
+        :tuna/services/minibuffer
+        :tuna/services/windows)
 (export html-renderer-plugin
         screen-sxml)
 
 (defstruct html-renderer ()
   final: #t)
+
+;; The view whose buffer is being rendered: where its text nodes show point.
+(def rendering-view (make-parameter #f))
 
 ;; ELEMENT with a data-node attribute identifying N (ADR 7).
 (def (with-node-id (n : node) (element : :t)) => :t
@@ -37,10 +43,12 @@ prelude: :gerbil/core
               ,@(if (null? children) [(node-text-projection n)] children))))))
 
 ;; A text node: one element per line, with the cursor when the node has
-;; the selected view's focus.
+;; the rendered view's focus.
 (def (render-text-node (n : text-node) (children : :list)) => :list
   (let* ((t (text-node-content n))
-         (position (and (eq? n (current-text-node)) (point)))
+         (v (rendering-view))
+         (position (and v (eq? n (view-node v)) (view-point v)))
+         (cursor-class (if (eq? v (current-view)) "cursor" "inactive-cursor"))
          (cursor-line (and position (text-line-at t position)))
          (cursor-column (and position (text-column t position)))
          (spans (text-all-highlights t)))
@@ -56,12 +64,16 @@ prelude: :gerbil/core
                                                    (and (fx< (span-start s) end)
                                                         (fx> (span-end s) start)))
                                                  spans)
-                                         (and (eqv? line cursor-line) cursor-column))
+                                         (and (eqv? line cursor-line) cursor-column)
+                                         cursor-class)
                             out))))))))
 
 ;; One line starting at text position START: runs of characters with the
-;; same face, and the cursor character alone at column CURSOR.
-(def (render-line (content : :string) (start : :fixnum) (spans : :list) (cursor :? :fixnum)) => :list
+;; same face, and the cursor character alone at column CURSOR, with the
+;; class CURSOR-CLASS.
+(def (render-line (content : :string) (start : :fixnum) (spans : :list) (cursor :? :fixnum)
+                  (cursor-class : :string))
+  => :list
   (let* ((size (string-length content))
          (faces (make-vector size #f)))
     (for-each (lambda ((s : span))
@@ -74,9 +86,10 @@ prelude: :gerbil/core
           ,@(let lp ((i 0) (out []))
               (cond
                ((fx>= i size)
-                (reverse (if (eqv? cursor size) (cons (cursor-span " " #f) out) out)))
+                (reverse (if (eqv? cursor size) (cons (cursor-span cursor-class " " #f) out) out)))
                ((eqv? i cursor)
-                (lp (fx1+ i) (cons (cursor-span (substring content i (fx1+ i)) (vector-ref faces i))
+                (lp (fx1+ i) (cons (cursor-span cursor-class (substring content i (fx1+ i))
+                                                (vector-ref faces i))
                                    out)))
                (else
                 (let* ((face (vector-ref faces i))
@@ -94,26 +107,21 @@ prelude: :gerbil/core
 (def (face-class (face : :symbol)) => :string
   (string-append "face-" (symbol->string face)))
 
-(def (cursor-span (character : :string) (face :? :symbol)) => :list
-  `(span (@ (class ,(if face (string-append "cursor " (face-class face)) "cursor")))
+(def (cursor-span (cursor-class : :string) (character : :string) (face :? :symbol)) => :list
+  `(span (@ (class ,(if face (string-append cursor-class " " (face-class face)) cursor-class)))
          ,character))
 
-(def (status-line) => :string
-  (let* ((command (current-command-name))
-         (window (window-view))
-         (b (view-showing window))
-         (n (and (eq? window (current-view)) (current-text-node))))
-    (string-append
-     "Tuna · " (buffer-name b)
-     (if n
-       (let* ((t (text-node-content n))
-              (p (point)))
-         (string-append " · line " (number->string (text-line-at t p))
-                        ", column " (number->string (text-column t p))))
-       "")
-     (if command
-       (string-append " · running " (symbol->string command))
-       ""))))
+;; W: its view's buffer, then its status line.
+(def (render-window (w : window) (selected? : :boolean)) => :list
+  (let* ((v (window-view w))
+         (b (view-showing v)))
+    (parameterize ((rendering-view v))
+      `(section (@ (class "window")
+                   (data-window ,(number->string (window-id w)))
+                   ,@(if selected? '((data-selected "true")) '()))
+         (article (@ (class "buffer") (aria-label ,(buffer-name b)))
+                  ,(render-node (buffer-root b)))
+         (p (@ (class "status-line")) ,(status-line-text v selected?))))))
 
 ;; The innermost waiting prompt: its question, then the answer being typed.
 (def (minibuffer-sxml) => :list
@@ -122,14 +130,14 @@ prelude: :gerbil/core
       (using (prompt : prompt-display)
         `((div (@ (class "minibuffer"))
                (span (@ (class "prompt")) ,prompt.question)
-               ,(render-node prompt.node))))
+               ,(parameterize ((rendering-view (current-view)))
+                  (render-node prompt.node)))))
       [])))
 
-;; The screen: help output when there is some, the window's buffer, the
-;; status line, the minibuffer while a prompt waits, and the echo area.
+;; The screen: help output when there is some, the window area, the
+;; minibuffer while a prompt waits, and the echo area.
 (def (screen-sxml) => :list
-  (let ((help (current-help))
-        (b (view-showing (window-view))))
+  (let (help (current-help))
     `(main (@ (id "screen") (class "screen"))
        ,@(if help
            (using (help : help-output)
@@ -137,10 +145,8 @@ prelude: :gerbil/core
                  (h1 ,help.title)
                  (pre ,(string-join help.lines "\n")))))
            [])
-       (article (@ (class "buffer") (aria-label ,(buffer-name b)))
-                ,(render-node (buffer-root b)))
+       ,(render-window-area 'html render-window)
        (footer
-        (p (@ (class "status-line")) ,(status-line))
         ,@(minibuffer-sxml)
         (p (@ (class "echo-area") (role "status")) ,(current-message))))))
 
@@ -153,6 +159,6 @@ prelude: :gerbil/core
 
 (defplugin (html-renderer-plugin ctx)
   "Renders the screen as HTML."
-  requires: [buffers-service]
+  requires: [buffers-service window-manager-service]
   (context-define-node-renderer! ctx 'text 'html render-text-node)
   (context-provide! ctx renderer-service (Renderer (make-html-renderer))))

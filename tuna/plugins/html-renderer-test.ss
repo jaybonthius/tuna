@@ -7,6 +7,7 @@
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
+        :tuna/plugins/single-window
         :tuna/plugins/html-renderer
         :tuna/plugins/demo)
 (export html-renderer-test)
@@ -15,7 +16,7 @@
   (parameterize ((current-kernel (new-kernel)))
     (for-each activate-plugin!
               [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin buffers-plugin
-               html-renderer-plugin demo-plugin])
+               single-window-plugin html-renderer-plugin demo-plugin])
     (thunk)))
 
 (def (screen)
