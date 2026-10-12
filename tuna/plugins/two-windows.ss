@@ -9,6 +9,7 @@ prelude: :gerbil/core
 (import :std/interface
         :tuna/kernel
         :tuna/services/buffers
+        :tuna/services/session
         :tuna/services/windows)
 (export two-windows-plugin)
 
@@ -64,7 +65,7 @@ prelude: :gerbil/core
 
 (defplugin (two-windows-plugin ctx)
   "Manages windows: two side by side (a toy). Outranks the default window manager while active."
-  requires: [buffers-service]
+  requires: [buffers-service session-service]
   (let* ((left (new-window (selected-view)))
          (right (new-window (copy-view (selected-view)))))
     (using (self (two-windows left: left right: right selected: left) : two-windows)

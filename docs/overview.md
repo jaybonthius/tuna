@@ -123,7 +123,7 @@ What you see in a window is a **view** of a buffer. Two windows can show the sam
 
 Autosave and the session file are built; `custom.ss` and `init.ss` are not yet.
 
-The saved files are plain Scheme data, readable in any editor, and Tuna never runs them as code. Only `init.ss` is code. Each plugin decides what of its own state is worth saving.
+The saved files are plain Scheme data, readable in any editor, and Tuna never runs them as code. Only `init.ss` is code. Each plugin decides what of its own state is worth saving, and hands it to the session plugin as a named *session slot*; the engine knows nothing about saving.
 
 ## How this differs from Emacs
 
@@ -147,3 +147,4 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 - **Plugin**: a bundle of commands, keys, hooks, and services that can be turned on and off.
 - **Receipt**: a plugin's record of everything it added, used to undo it.
 - **Service**: a swappable part of Tuna, defined by what it promises to do.
+- **Session slot**: a named piece of one plugin's state that the session plugin saves while Tuna is idle and on exit, and hands back on the next start.

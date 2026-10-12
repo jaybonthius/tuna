@@ -1,7 +1,8 @@
-;;; The session plugin (startup tier; ADR 5): keeps the session slots in
-;;; $XDG_STATE_HOME/tuna/session.ss. It saves while the editor is idle, when
-;;; anything changed, and when the program saves it on exit; the program
-;;; restores it once the standard plugins are active.
+;;; The session plugin (startup tier; ADR 5): keeps the session slots
+;;; plugins register, and saves them in $XDG_STATE_HOME/tuna/session.ss. It
+;;; saves while the editor is idle, when anything changed, and when the
+;;; program saves it on exit; the program restores it once the standard
+;;; plugins are active.
 ;;;
 ;;; The file holds one datum, (tuna-session 1 (SLOT VERSION DATA) ...),
 ;;; written with `write`. It is read with `read` and validated as plain
@@ -33,10 +34,26 @@ prelude: :gerbil/core
                    xdg
                    (path-expand ".local/state" (getenv "HOME" "/"))))))
 
-(defclass session-store ((directory : :string)
+(defclass session-store ((slots     : entry-table)  ; slot name -> session-slot entries
+                         (directory : :string)
                          (entries   : :list)     ; (slot version data), as last read or written
                          (written   :? :t))      ; the datum the file holds, if known
   final: #t)
+
+;; The effective slot of each name, in the order the names were first
+;; registered.
+(def (effective-slots (self : session-store)) => :list
+  (let (table self.slots)
+    (map cdr
+         (list-sort (lambda ((a : :pair) (b : :pair)) (fx< (car a) (car b)))
+                    (map (lambda (name)
+                           (let (entries (entry-table-entries table name))
+                             (cons (foldl (lambda ((e : entry) (oldest : :fixnum))
+                                            (fxmin (entry-serial e) oldest))
+                                          (entry-serial (car entries))
+                                          entries)
+                                   (entry-value (car entries)))))
+                         (entry-table-keys table))))))
 
 (def (session-file (self : session-store)) => :string
   (path-expand "session.ss" self.directory))
@@ -108,7 +125,7 @@ prelude: :gerbil/core
 ;; Save every slot. Entries of slots that are not registered, or failed to
 ;; save, are kept as they were. The file is rewritten only if it changes.
 (def (save! (self : session-store)) => :void
-  (let* ((saved (filter-map save-slot (session-slots)))
+  (let* ((saved (filter-map save-slot (effective-slots self)))
          (names (map car saved))
          (entries (append saved
                           (filter (lambda ((entry : :pair)) (not (memq (car entry) names)))
@@ -142,9 +159,13 @@ prelude: :gerbil/core
              (report! (string-append "Session slot " name " was saved as version "
                                      (number->string version) "; skipped it"))))
           (else (void)))))
-    (session-slots)))
+    (effective-slots self)))
 
 (implement Session session-store
+  (add-session-slot! (lambda (self ctx slot priority)
+                       (context-add-entry! ctx self.slots (session-slot-name slot) slot
+                                           priority: priority)
+                       (void)))
   (save-session! (lambda (self) (save! self)))
   (restore-session! (lambda (self) (restore! self)))
   (state-directory (lambda (self) self.directory)))
@@ -154,7 +175,7 @@ prelude: :gerbil/core
   (let* ((directory (or (session-state-directory) (default-state-directory)))
          (entries (read-session (path-expand "session.ss" directory))))
     ;; What the file holds, as far as saving needs to know.
-    (using (self (session-store directory: directory entries: entries
+    (using (self (session-store slots: (new-entry-table) directory: directory entries: entries
                                 written: (session-datum entries))
                  : session-store)
       (context-run-with-timer! ctx save-interval save-interval

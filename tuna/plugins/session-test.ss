@@ -90,9 +90,42 @@
 
 (defplugin (unplain-slot ctx)
   "Registers a session slot whose data is not plain."
+  requires: [session-service]
   (context-add-session-slot! ctx 'unplain version: 1
                              save: (lambda () [(lambda () 'code)])
                              restore: void))
+
+;; Restored slot data, newest first, as (slot version data).
+(def restored [])
+
+(def (restore-into name version)
+  (lambda (data) (set! restored (cons [name version data] restored))))
+
+(defplugin (slots-early ctx)
+  "Registers the session slot alpha."
+  requires: [session-service]
+  (context-add-session-slot! ctx 'alpha version: 1 save: (lambda () "early")
+                             restore: (restore-into 'alpha 1)))
+
+(defplugin (slots-late ctx)
+  "Registers the session slots beta, and alpha at a higher priority."
+  requires: [session-service]
+  (context-add-session-slot! ctx 'beta version: 2 save: (lambda () "late beta")
+                             restore: (restore-into 'beta 2))
+  (context-add-session-slot! ctx 'alpha version: 3 save: (lambda () "late")
+                             restore: (restore-into 'alpha 3)
+                             priority: 10))
+
+;; A fresh kernel with only the session plugin on DIRECTORY, without the
+;; editor loop.
+(def (with-session-only directory thunk)
+  (parameterize ((current-kernel (new-kernel)))
+    (try
+     (parameterize ((session-state-directory directory))
+       (activate-plugin! session-plugin))
+     (thunk)
+     (finally
+      (deactivate-all-plugins!)))))
 
 (def session-test
   (test-suite "tuna/plugins/session"
@@ -162,6 +195,57 @@
                (check (time->seconds (file-info-last-modification-time
                                       (file-info (session-file directory))))
                       => (time->seconds stamp))))))))
+
+    (test-case "session slots follow their plugins; the oldest name comes first"
+      (call-with-state-directory
+       (lambda (directory)
+         (write-session! directory "(tuna-session 1 (beta 2 \"B\") (alpha 3 \"A\"))")
+         (with-session-only directory
+           (lambda ()
+             (let (restore! (lambda ()
+                              (set! restored [])
+                              (restore-session)
+                              (reverse restored)))
+               (activate-plugin! slots-early)
+               (activate-plugin! slots-late)
+               ;; alpha was registered first; the effective alpha is version 3.
+               (check (restore!) => [['alpha 3 "A"] ['beta 2 "B"]])
+               ;; Only early's alpha, version 1, remains: the saved version 3
+               ;; is skipped.
+               (deactivate-plugin! slots-late)
+               (check (restore!) => [])
+               (deactivate-plugin! slots-early)
+               (activate-plugin! slots-late)
+               (check (restore!) => [['beta 2 "B"] ['alpha 3 "A"]])
+               (deactivate-plugin! slots-late)
+               (check (restore!) => [])))))))
+
+    (test-case "deactivating a slot's plugin makes a same-named lower-priority slot effective"
+      (call-with-state-directory
+       (lambda (directory)
+         (with-session-only directory
+           (lambda ()
+             (activate-plugin! slots-early)
+             (activate-plugin! slots-late)
+             (save-session)
+             (check (cddr (read-session-datum directory))
+                    => [['alpha 3 "late"] ['beta 2 "late beta"]])
+             (deactivate-plugin! slots-late)
+             (save-session)
+             (check (cddr (read-session-datum directory))
+                    => [['alpha 1 "early"] ['beta 2 "late beta"]])))
+         (set! restored [])
+         (with-session-only directory
+           (lambda ()
+             (activate-plugin! slots-early)
+             (activate-plugin! slots-late)
+             ;; alpha was saved by the lower-priority slot, version 1, so the
+             ;; effective alpha (version 3) skips it; beta restores.
+             (restore-session)
+             (check (reverse restored) => [['beta 2 "late beta"]])
+             (deactivate-plugin! slots-late)
+             (restore-session)
+             (check (reverse restored) => [['beta 2 "late beta"] ['alpha 1 "early"]]))))))
 
     (test-case "a corrupt session file is moved aside and reported, never evaluated"
       (call-with-state-directory

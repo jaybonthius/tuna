@@ -7,16 +7,9 @@
 ;;; Merge review confirms that a change to this file only removes or lowers
 ;;; entries.
 ;;;
-;;; Reasons: "step N" (N from 6 to 8) names the step of
+;;; Reasons: "step N" (N from 7 to 8) names the step of
 ;;; agents/plans/kernel-cleanup.md that removes the hits; "permanent: ..."
 ;;; says why a word cannot go.
-
-;; Step 6: session slots move next to the session contract.
-("tuna/kernel/slots.ss" "session" 9 "step 6")
-("tuna/kernel/slots.ss" "save" 6 "step 6")
-("tuna/kernel/slots.ss" "saved" 1 "step 6")
-("tuna/kernel/slots.ss" "keys" 1 "step 6")
-("tuna/kernel/state.ss" "session" 1 "step 6")
 
 ;; Step 7: dictionary-sense key/keys (entry tables, entry-table-keys, the
 ;; context-add-entry! parameter) are renamed to name/names.
