@@ -1,6 +1,7 @@
 (import :std/error
         :std/test
         :tuna/kernel
+        :tuna/lib/jobs
         :tuna/services/text-store
         :tuna/services/buffers
         :tuna/plugins/rope
@@ -18,6 +19,8 @@
 
 (def (raises? thunk)
   (with-catch (lambda (e) #t) (lambda () (thunk) #f)))
+
+(def (spans-of spans) (map (lambda (s) [(span-start s) (span-end s)]) spans))
 
 (def buffers-test
   (test-suite "tuna/services/buffers"
@@ -188,6 +191,28 @@
              (check (text-changes-since t (text-chars-revision t)) => [])
              (for-each (lambda (_) (insert "x")) (iota 1100))
              (check (text-changes-since t revision) => #f))))))
+
+    (test-case "rebase-spans shifts, keeps edges, and drops touched spans"
+      (let (spans [(make-span 3 5 'a) (make-span 7 9 'b)])
+        (check (spans-of (rebase-spans spans [(make-change 1 3 "" "xy")])) => [[5 7] [9 11]])
+        (check (spans-of (rebase-spans spans [(make-change 1 5 "" "xy")])) => [[3 5] [9 11]])
+        (check (spans-of (rebase-spans spans [(make-change 1 4 "" "x")])) => [[8 10]])
+        (check (spans-of (rebase-spans spans [(make-change 1 1 "ab" "")])) => [[1 3] [5 7]])
+        (check (spans-of (rebase-spans spans [(make-change 1 4 "abc" "")])) => [[4 6]])))
+
+    (test-case "a text rebases job spans past its changes, until its journal no longer reaches back"
+      (with-buffers
+       (lambda ()
+         (let (t (current-text))
+           (insert "a12b34")
+           (let ((target (JobTarget t))
+                 (revision (text-chars-revision t))
+                 (spans [(make-span 2 4 'digit) (make-span 5 7 'digit)]))
+             (text-replace! t 1 1 "xx")     ; "xxa12b34": both shift by 2
+             (text-replace! t 8 8 "!")      ; inside 34: that span is dropped
+             (check (map spans-of (JobTarget-job-rebase target spans revision)) => [[[4 6]]])
+             (for-each (lambda (_) (insert "x")) (iota 1100))
+             (check (JobTarget-job-rebase target spans revision) => #f))))))
 
     (test-case "node kinds come and go with their plugin; projections need no renderer"
       (with-buffers

@@ -1,11 +1,11 @@
 ;;; Timers: tasks that run after a delay, and optionally repeat, owned by a
 ;;; plugin context (ADR 2, ADR 3; Emacs `run-with-timer`). A timer thread
-;;; only waits and queues; each callback runs as a task on the baton.
+;;; only waits and queues; each callback runs as a task on the baton. A
+;;; library (ADR 12): it uses only the public kernel API.
 prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/thread spawn-thread)
-        ./plugins
-        ./loop)
+        :tuna/kernel)
 (export context-run-with-timer!
         timer?
         cancel-timer)

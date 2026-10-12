@@ -8,8 +8,6 @@ prelude: :gerbil/core
         ./kernel/plugins
         ./kernel/hooks
         ./kernel/loop
-        ./kernel/jobs
-        ./kernel/timers
         ./kernel/slots)
 (export (import: ./kernel/ids)
         (struct-out entry)
@@ -32,6 +30,4 @@ prelude: :gerbil/core
         new-hook
         hook-callback-names
         (import: ./kernel/loop)
-        (import: ./kernel/jobs)
-        (import: ./kernel/timers)
         (import: ./kernel/slots))

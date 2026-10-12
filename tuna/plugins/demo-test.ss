@@ -3,6 +3,7 @@
 (import :std/sync/completion
         :std/test
         :tuna/kernel
+        :tuna/lib/jobs
         :tuna/services/renderer
         :tuna/services/buffers
         :tuna/services/echo-area
@@ -29,9 +30,15 @@
                      minibuffer-plugin demo-plugin]
                     thunk))
 
+(def job-host #f)
+
+(defplugin (job-host-plugin ctx)
+  "Lends its context to the tests to start jobs in."
+  (set! job-host ctx))
+
 (def (with-editing thunk)
   (call-with-editor [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
-                     buffers-plugin basic-editing-plugin]
+                     buffers-plugin basic-editing-plugin job-host-plugin]
                     thunk))
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
@@ -115,12 +122,12 @@
            (on-baton
             (lambda ()
               (let (t (current-text))
-                (start-job 'gated-digits
-                           input: (text-snapshot t)
-                           run: (lambda (snapshot) (completion-wait! gate) (digit-spans snapshot))
-                           apply: (lambda (spans) (set-highlights! t 'digits spans))
-                           target: t
-                           validity: 'rebase))))
+                (context-start-job! job-host 'gated-digits
+                                    input: (text-snapshot t)
+                                    run: (lambda (snapshot) (completion-wait! gate) (digit-spans snapshot))
+                                    apply: (lambda (spans) (set-highlights! t 'digits spans))
+                                    target: t
+                                    validity: 'rebase))))
            ;; While the job runs: type before everything, and delete the b.
            (type! "C-a" "Z" "C-f" "C-f" "C-f" "C-d")
            (check (on-baton (lambda () (text-string (current-text)))) => "Za1234")

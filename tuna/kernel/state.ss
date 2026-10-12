@@ -15,7 +15,6 @@ prelude: :gerbil/core
         kernel-providers
         kernel-adapters
         kernel-slots
-        kernel-jobs
         kernel-live?
         kernel-loop
         exception-summary)
@@ -26,7 +25,6 @@ prelude: :gerbil/core
    (providers : entry-table)     ; service name -> provider entries
    (adapters  : entry-table)     ; service name -> adapter entries
    (slots     : entry-table)     ; session slot name -> slot entries
-   (jobs      : :t)              ; the job registry, owned by ./jobs
    (live?     : :boolean)        ; the editor loop is running
    (loop      : :t))             ; the editor loop object, owned by ./loop
   final: #t)
@@ -37,7 +35,6 @@ prelude: :gerbil/core
           providers: (new-entry-table)
           adapters: (new-entry-table)
           slots: (new-entry-table)
-          jobs: #f
           live?: #f
           loop: #f))
 

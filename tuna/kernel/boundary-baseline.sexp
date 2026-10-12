@@ -7,27 +7,9 @@
 ;;; Merge review confirms that a change to this file only removes or lowers
 ;;; entries.
 ;;;
-;;; Reasons: "step N" (N from 5 to 8) names the step of
+;;; Reasons: "step N" (N from 6 to 8) names the step of
 ;;; agents/plans/kernel-cleanup.md that removes the hits; "permanent: ..."
 ;;; says why a word cannot go.
-
-;; Step 5: timers and jobs move to tuna/lib/; spans, rebase-spans, and text
-;; change records move to the buffers contract.
-("tuna/kernel.ss" "timers" 2 "step 5")
-("tuna/kernel/timers.ss" "timer" 20 "step 5")
-("tuna/kernel/timers.ss" "timers" 1 "step 5")
-("tuna/kernel/jobs.ss" "key" 14 "step 5")
-("tuna/kernel/jobs.ss" "keyed" 1 "step 5")
-("tuna/kernel/jobs.ss" "span" 4 "step 5")
-("tuna/kernel/jobs.ss" "spans" 8 "step 5")
-("tuna/kernel/jobs.ss" "range" 1 "step 5")
-("tuna/kernel/jobs.ss" "text" 1 "step 5")
-("tuna/kernel/ids.ss" "span" 2 "step 5")
-("tuna/kernel/ids.ss" "spans" 2 "step 5")
-("tuna/kernel/ids.ss" "range" 1 "step 5")
-("tuna/kernel/ids.ss" "text" 2 "step 5")
-("tuna/kernel/ids.ss" "character" 1 "step 5")
-("tuna/kernel/ids.ss" "positions" 1 "step 5")
 
 ;; Step 6: session slots move next to the session contract.
 ("tuna/kernel/slots.ss" "session" 9 "step 6")

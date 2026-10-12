@@ -8,6 +8,7 @@
 prelude: :gerbil/core
 
 (import :tuna/kernel
+        :tuna/lib/jobs
         :tuna/services/keys
         :tuna/services/buffers
         :tuna/services/help
@@ -76,17 +77,16 @@ prelude: :gerbil/core
 ;; minibuffer's answers are left alone.
 (def (highlight-digits-later! (ctx : context) (t : text)) => :void
   (when (and (editor-loop-running?) (not (internal-text? t)))
-    (start-job ['highlight-digits (text-id t)]
-               input: [(text-snapshot t) (setting-value digit-highlight-delay)]
-               run: (lambda (input)
-                      (match input
-                        ([snapshot delay]
-                         (thread-sleep! delay)
-                         (digit-spans snapshot))))
-               apply: (lambda (spans) (set-highlights! t 'digits spans))
-               target: t
-               validity: 'rebase
-               context: ctx)
+    (context-start-job! ctx ['highlight-digits (text-id t)]
+                        input: [(text-snapshot t) (setting-value digit-highlight-delay)]
+                        run: (lambda (input)
+                               (match input
+                                 ([snapshot delay]
+                                  (thread-sleep! delay)
+                                  (digit-spans snapshot))))
+                        apply: (lambda (spans) (set-highlights! t 'digits spans))
+                        target: t
+                        validity: 'rebase)
     (void)))
 
 ;; (column (heading "Welcome to Tuna") (text "…"))
