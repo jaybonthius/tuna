@@ -25,6 +25,7 @@ Most documents were written by agents against earlier Gerbil (v0.18/early v0.19)
 | Directory | Contents |
 |---|---|
 | [`capability-audit/`](capability-audit/) | The 2026-10-11 audit of the ADRs against Emacs and post-Emacs needs: five lane reports and a synthesis of what changed. **Read before designing any subsystem.** |
+| [`kernel-audit-2026-10-12.md`](kernel-audit-2026-10-12.md) | Independent audit of the kernel and default plugins against ADR 12 after the skeleton. |
 | [`profiling/`](profiling/) | Profiler research: Koyo, `gxprof`, Emacs `elp`/`profiler.el`, and earlier Tuna profiler attempts, including how the Racket one got entangled in the core. |
 | [`window-management/`](window-management/) | Layout-tree, Niri, and Emacs-style window research, the owner's layout notes, and reference code from Racket Tuna and Weevil. |
 | [`../reference/datastar/`](../reference/datastar/) | Vendored Datastar documentation (v1.0.4, including Rocket). |
