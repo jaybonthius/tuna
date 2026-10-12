@@ -16,6 +16,7 @@
     "tuna/kernel/loop"
     "tuna/kernel/jobs"
     "tuna/kernel/timers"
+    "tuna/kernel/slots"
     "tuna/kernel"
     "tuna/services/keys"
     "tuna/services/renderer"

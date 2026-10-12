@@ -9,7 +9,8 @@ prelude: :gerbil/core
         ./kernel/hooks
         ./kernel/loop
         ./kernel/jobs
-        ./kernel/timers)
+        ./kernel/timers
+        ./kernel/slots)
 (export (import: ./kernel/ids)
         (struct-out entry)
         entry-table
@@ -27,4 +28,5 @@ prelude: :gerbil/core
         (import: ./kernel/hooks)
         (import: ./kernel/loop)
         (import: ./kernel/jobs)
-        (import: ./kernel/timers))
+        (import: ./kernel/timers)
+        (import: ./kernel/slots))

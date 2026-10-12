@@ -149,17 +149,23 @@ prelude: :gerbil/core
 (defstruct service ((name        : :symbol)
                     (tier        : :symbol)      ; startup or live
                     (implements? : :procedure)
-                    (doc         : :string))
+                    (doc         : :string)
+                    (handover    :? :procedure)) ; outgoing, incoming provider -> void
   final: #t)
 
+;; With HANDOVER, whenever the effective provider changes from one provider
+;; to another, HANDOVER receives both and moves the outgoing provider's
+;; state into the incoming one through the service's interface (ADR 11,
+;; ADR 12). It runs before the service's dependents restart.
 (def (new-service (name : :symbol)
                   (implements? : :procedure)
-                  tier: (tier : :symbol)
-                  doc:  (doc  : :string))
+                  tier:     (tier     : :symbol)
+                  doc:      (doc      : :string)
+                  handover: (handover :? :procedure := #f))
   => service
   (unless (memq tier '(startup live))
     (raise-bad-argument new-service "tier startup or live" tier))
-  (make-service name tier implements? doc))
+  (make-service name tier implements? doc handover))
 
 (deferror-class StartupServiceError () startup-service-error?)
 
@@ -193,7 +199,35 @@ prelude: :gerbil/core
         (check-removable! k closure)
         (deactivate-records! k closure)))
     (entry-table-add! (kernel-providers k) name new)
-    (context-defer! ctx (lambda () (entry-table-remove! (kernel-providers k) name new)))))
+    (context-defer! ctx (lambda () (withdraw-provider! k svc new)))
+    (when (and current (entry-outranks? new current))
+      (hand-over! svc (entry-value current) impl))))
+
+;; Remove the provider entry OLD of SVC; if it was effective, hand over to
+;; the provider that takes its place.
+(def (withdraw-provider! (k : kernel) (svc : service) (old : entry)) => :void
+  (let* ((name (service-name svc))
+         (effective? (eq? (entry-table-ref (kernel-providers k) name) old)))
+    (entry-table-remove! (kernel-providers k) name old)
+    (when effective?
+      (let (next (entry-table-ref (kernel-providers k) name))
+        (when next
+          (hand-over! svc (entry-value old) (entry-value next)))))))
+
+;; Run SVC's handover from OUTGOING to INCOMING; a failure is reported.
+(def (hand-over! (svc : service) (outgoing : :t) (incoming : :t)) => :void
+  (let (handover (service-handover svc))
+    (when (and handover (not (eq? outgoing incoming)))
+      (with-catch
+       (lambda (e)
+         (let (text (string-append "Service " (symbol->string (service-name svc))
+                                   " failed to hand over to its new provider: "
+                                   (exception-summary e)))
+           (message text)
+           (let (port (current-error-port))
+             (display text port)
+             (newline port))))
+       (lambda () (handover outgoing incoming))))))
 
 (def (check-live-change! (k : kernel) (svc : service)) => :void
   (when (and (kernel-live? k) (eq? (service-tier svc) 'startup))
