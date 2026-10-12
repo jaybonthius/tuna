@@ -15,12 +15,13 @@
 
 ;; ADR 12, "Kernel contract": the nouns the kernel must never know about.
 ;; Source text (code and comments) is split into lowercase words at every
-;; non-alphanumeric character and at CamelCase boundaries; each term below
-;; matches as that sequence of words, so "define-command" also matches
+;; non-alphanumeric character, at CamelCase boundaries, and between letters
+;; and digits; each term below matches as that sequence of words, even
+;; across a line break, so "define-command" also matches
 ;; context-define-command! and "define command". Amend these lists
 ;; together with the ADR.
 (def forbidden-words
-  '("key" "keys" "keymap" "keymaps" "keyboard"
+  '("key" "keys" "keyed" "keying" "keymap" "keymaps" "keyboard"
     "keydown" "keyup" "keypress" "keystroke" "keystrokes"
     "mouse"
     "browser" "browsers"
@@ -36,7 +37,7 @@
     "window" "windows"
     "frame" "frames"
     "screen" "screens"
-    "render" "renders" "rendered" "renderer" "rendering"
+    "render" "renders" "rendered" "renderer" "rendering" "renderable"
     "setting" "settings"
     "file" "files"
     "save" "saves" "saved" "saving" "autosave"
@@ -174,6 +175,26 @@
         ([x . more] (lp more (append found (imported-module-names x))))
         (_ found))))))
 
+;; Every symbol in FORM, at any depth, quoted data and macro bodies
+;; included, that is spelled like a module name: ":a/b", "./x", or "../x".
+;; A macro can build an import from any of them.
+(def (module-like-symbols (form : :t)) => :list
+  (cond
+   ((pair? form) (append (module-like-symbols (car form)) (module-like-symbols (cdr form))))
+   ((vector? form) (module-like-symbols (vector->list form)))
+   ((symbol? form)
+    (let (name (symbol->string form))
+      (if (or (and (string-prefix? ":" name) (string-index name #\/))
+              (string-prefix? "./" name)
+              (string-prefix? "../" name))
+        [name]
+        [])))
+   (else [])))
+
+(def (unique (items : :list)) => :list
+  (reverse (foldl (lambda (item (found : :list)) (if (member item found) found (cons item found)))
+                  [] items)))
+
 ;; Every path FORM includes, at any depth.
 (def (included-paths (form : :t)) => :list
   (if (pair? form)
@@ -185,18 +206,29 @@
 (def (parent-segment? (name : :string)) => :boolean
   (and (member ".." (string-split name #\/)) #t))
 
+;; The root-relative source file of the kernel-local module NAME
+;; (:tuna/kernel, :tuna/kernel/x, or ./x relative to FILE), or #f.
+(def (kernel-module-file (file : :string) (name : :string)) => (Maybe :string)
+  (cond
+   ((equal? name ":tuna/kernel") "tuna/kernel.ss")
+   ((string-prefix? ":tuna/kernel/" name)
+    (string-append (substring name 1 (string-length name)) ".ss"))
+   ((string-prefix? "./" name)
+    (let (path (path-expand (string-append (substring name 2 (string-length name)) ".ss")
+                            (path-directory (source-path file))))
+      (and (string-prefix? root-directory path)
+           (substring path (string-length root-directory) (string-length path)))))
+   (else #f)))
+
 ;; Whether NAME, imported by the file named FILE, is :gerbil, :std, or a
-;; kernel module.
-(def (allowed-import? (file : :string) (name : :string)) => :boolean
+;; checked kernel module; test files and test support are not.
+(def (allowed-import? (file : :string) (name : :string) (checked : :list)) => :boolean
   (cond
    ((parent-segment? name) #f)
    ((or (string-prefix? ":gerbil/" name) (string-prefix? ":std/" name)) #t)
-   ((or (equal? name ":tuna/kernel") (string-prefix? ":tuna/kernel/" name)) #t)
-   ((string-prefix? "./" name)
-    (string-prefix? kernel-directory
-                    (path-expand (substring name 2 (string-length name))
-                                 (path-directory (source-path file)))))
-   (else #f)))
+   (else
+    (let (target (kernel-module-file file name))
+      (and target (member target checked) #t)))))
 
 ;; Whether TARGET, included by the file named FILE, is a checked kernel file.
 (def (allowed-include? (file : :string) (target : :string) (checked : :list)) => :boolean
@@ -228,11 +260,12 @@
                     (append
                      (filter-map
                       (lambda ((name : :string))
-                        (and (not (allowed-import? file name))
+                        (and (not (allowed-import? file name checked))
                              (string-append file ": imports " name (where name)
                                             "; the kernel may import only :gerbil/..., :std/...,"
-                                            " and kernel modules (ADR 12)")))
-                      (imported-module-names forms))
+                                            " and checked kernel modules (ADR 12)")))
+                      (unique (append (imported-module-names forms)
+                                      (module-like-symbols forms))))
                      (filter-map
                       (lambda ((target : :string))
                         (and (not (allowed-include? file target checked))
@@ -251,10 +284,23 @@
     (cons (string-downcase (substring line start end)) found)
     found))
 
-;; LINE's words, lowercased: runs of letters and digits, split again where
-;; a lowercase letter meets a capital ("KeyEvent" gives "key" "event") and
-;; before the last capital of an acronym ("HTTPServer" gives "http"
-;; "server").
+;; Whether a word starts at I inside a run of letters and digits: a
+;; capital after a lowercase letter ("KeyEvent"), the last capital of an
+;; acronym ("HTTPServer"), or a change between letters and digits
+;; ("utf8Key", "key2").
+(def (word-boundary? (line : :string) (i : :fixnum) (end : :fixnum)) => :boolean
+  (let ((c (string-ref line i))
+        (previous (string-ref line (fx1- i))))
+    (or (and (char-upper-case? c)
+             (or (char-lower-case? previous)
+                 (and (char-upper-case? previous)
+                      (fx< (fx1+ i) end)
+                      (char-lower-case? (string-ref line (fx1+ i))))))
+        (and (char-numeric? c) (char-alphabetic? previous))
+        (and (char-alphabetic? c) (char-numeric? previous)))))
+
+;; LINE's words, lowercased: runs of letters and digits, split again at
+;; each word-boundary?.
 (def (line-segments (line : :string)) => :list
   (let (end (string-length line))
     (let lp ((i 0) (start 0) (found []))
@@ -264,24 +310,14 @@
           (cond
            ((not (word-char? c))
             (lp (fx1+ i) (fx1+ i) (segment-cons line start i found)))
-           ((and (fx> i start)
-                 (char-upper-case? c)
-                 (let (previous (string-ref line (fx1- i)))
-                   (or (char-lower-case? previous)
-                       (and (char-upper-case? previous)
-                            (fx< (fx1+ i) end)
-                            (char-lower-case? (string-ref line (fx1+ i)))))))
+           ((and (fx> i start) (word-boundary? line i end))
             (lp (fx1+ i) i (segment-cons line start i found)))
            (else (lp (fx1+ i) start found))))))))
 
 ;; Every forbidden term's label, once: words, registry names, then plugin
 ;; names that are not already words.
 (def (forbidden-labels) => :list
-  (reverse
-   (foldl (lambda ((label : :string) (found : :list))
-            (if (member label found) found (cons label found)))
-          []
-          (append forbidden-words forbidden-registry-names (plugin-names)))))
+  (unique (append forbidden-words forbidden-registry-names (plugin-names))))
 
 ;; First word -> the terms starting with it, each (label . words).
 (def (term-index (labels : :list)) => HashTable
@@ -292,11 +328,21 @@
               labels)
     index))
 
-(def (phrase-at? (words : :list) (segments : :list)) => :boolean
+;; FILE's words in order, each (word . line number).
+(def (file-words (file : :string)) => :list
+  (let lp ((lines (read-file-lines (source-path file))) (number 1) (found []))
+    (if (pair? lines)
+      (lp (cdr lines) (fx1+ number)
+          (foldl (lambda ((word : :string) (found : :list)) (cons (cons word number) found))
+                 found (line-segments (car lines))))
+      (reverse found))))
+
+;; Whether WORDS start the sequence of (word . line) TOKENS.
+(def (phrase-at? (words : :list) (tokens : :list)) => :boolean
   (or (null? words)
-      (and (pair? segments)
-           (equal? (car words) (car segments))
-           (phrase-at? (cdr words) (cdr segments)))))
+      (and (pair? tokens)
+           (equal? (car words) (caar tokens))
+           (phrase-at? (cdr words) (cdr tokens)))))
 
 ;; One (file, term) hit count, with the numbers of the lines it occurs on.
 (defstruct hits ((file  : :string)
@@ -305,25 +351,24 @@
                  (lines : :list))
   final: #t)
 
-;; FILE's hits of the terms in INDEX, by label.
+;; FILE's hits of the terms in INDEX, by label. A hit is reported on the
+;; line of its first word.
 (def (file-hits (file : :string) (index : HashTable)) => :list
   (let (table (make-hash-table))            ; label -> (count . line numbers, newest first)
-    (let lp ((lines (read-file-lines (source-path file))) (number 1))
-      (when (pair? lines)
-        (let scan ((segments (line-segments (car lines))))
-          (when (pair? segments)
-            (for-each (lambda ((term : :pair))
-                        (when (phrase-at? (cdr term) segments)
-                          (hash-update! table (car term)
-                                        (lambda ((seen : :pair))
-                                          (cons (fx1+ (car seen))
-                                                (if (and (pair? (cdr seen)) (eqv? (cadr seen) number))
-                                                  (cdr seen)
-                                                  (cons number (cdr seen)))))
-                                        (cons 0 []))))
-                      (hash-ref index (car segments) []))
-            (scan (cdr segments))))
-        (lp (cdr lines) (fx1+ number))))
+    (let scan ((tokens (file-words file)))
+      (when (pair? tokens)
+        (let (number (cdar tokens))
+          (for-each (lambda ((term : :pair))
+                      (when (phrase-at? (cdr term) tokens)
+                        (hash-update! table (car term)
+                                      (lambda ((seen : :pair))
+                                        (cons (fx1+ (car seen))
+                                              (if (and (pair? (cdr seen)) (eqv? (cadr seen) number))
+                                                (cdr seen)
+                                                (cons number (cdr seen)))))
+                                      (cons 0 []))))
+                    (hash-ref index (caar tokens) [])))
+        (scan (cdr tokens))))
     (map (lambda ((label : :string))
            (let (seen (hash-ref table label))
              (make-hits file label (car seen) (reverse (cdr seen)))))

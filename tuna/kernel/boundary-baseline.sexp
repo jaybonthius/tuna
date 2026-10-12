@@ -32,6 +32,7 @@
 ("tuna/kernel/timers.ss" "timer" 20 "step 5")
 ("tuna/kernel/timers.ss" "timers" 1 "step 5")
 ("tuna/kernel/jobs.ss" "key" 14 "step 5")
+("tuna/kernel/jobs.ss" "keyed" 1 "step 5")
 ("tuna/kernel/jobs.ss" "span" 4 "step 5")
 ("tuna/kernel/jobs.ss" "spans" 8 "step 5")
 ("tuna/kernel/jobs.ss" "range" 1 "step 5")
@@ -57,6 +58,7 @@
 ("tuna/kernel/entries.ss" "keys" 2 "step 7")
 ("tuna/kernel/plugins.ss" "key" 3 "step 7")
 ("tuna/kernel/plugins.ss" "keys" 1 "step 7")
+("tuna/kernel/ids.ss" "renderable" 1 "step 7")   ; revision-counter, a dead export
 
 ;; Step 8: failure reporting and consumed-seam wording.
 ("tuna/kernel/plugins.ss" "text" 6 "step 8")   ; hand-over! and report-failure!
