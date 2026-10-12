@@ -89,13 +89,12 @@ prelude: :gerbil/core
             doc: "Runs with a task's id and name just before the task first runs."))
 
 ;; Arguments: the task's id, its name, and how it finished: returned,
-;; raised (an exception other than quit), quit (including a forced quit, a
-;; started task cancelled with cancel-task!, and a task forced out when the
-;; loop stops), or cancelled (cancelled with cancel-task! before it started,
-;; so task-started never ran for it). Every task announced by task-started
-;; is announced here exactly once, after the loop has stopped running it
-;; and after its caller has its result; tasks still queued when the loop
-;; stops are not announced.
+;; raised (an exception other than quit), or quit (including a forced quit,
+;; a started task cancelled with cancel-task!, and a task forced out when
+;; the loop stops). Runs exactly once for each task announced by
+;; task-started, and for no other: after the loop has stopped running it
+;; and after its caller has its result. A task cancelled before it started,
+;; or still queued when the loop stops, is announced by neither hook.
 (def task-finished-hook
   (new-hook 'task-finished
             doc: "Runs with a task's id, name, and how it finished, after it finished."))
@@ -601,7 +600,6 @@ prelude: :gerbil/core
   (case target.state
     ((queued)
      (set! target.state 'cancelled)
-     (task-finished! loop target 'cancelled)
      (let (reply target.reply)
        (when reply
          (reply #t (quit-condition forced?: #f)))))

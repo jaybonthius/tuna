@@ -70,6 +70,11 @@
                          (note! ['greeter (greeting old) (greeting new)
                                  (eq? new (service-provider greeter-service))])))))
 
+(defplugin (greeter-then-fails ctx)
+  "Provides a greeter that outranks A, then fails to activate."
+  (context-provide! ctx greeter-service (make-greeter "bad") priority: 5)
+  (error "activation failed"))
+
 (defplugin (lifecycle-breaker ctx)
   "Adds a plugin-activated callback that fails."
   (context-add-hook! ctx plugin-activated-hook 'broken
@@ -292,6 +297,23 @@
                                 ['deactivated 'greeting-user #f]
                                 ['greeter "a" #f #t]
                                 ['deactivated 'greeter-a #f]]))))
+
+    (test-case "an operation that raises still announces what it changed, in order"
+      (call-with-test-kernel
+       (lambda ()
+         (activate-plugin! lifecycle-watcher)
+         (activate-plugin! greeter-a)
+         (activate-plugin! greeting-user)
+         (take-log!)
+         ;; The failing provider restarts the user and is rolled back, so the
+         ;; greeter flips to bad and back to a before the user returns.
+         (check-exception (activate-plugin! greeter-then-fails) Error?)
+         (check (take-log!) => ['off "a"
+                                ['deactivated 'greeting-user #t]
+                                ['greeter "a" "bad" #f]
+                                ['greeter "bad" "a" #t]
+                                ['activated 'greeting-user #t]])
+         (check (plugin-active? greeter-then-fails) => #f))))
 
     (test-case "a failing lifecycle callback is removed and activation carries on"
       (call-with-test-kernel

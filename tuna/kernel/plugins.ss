@@ -180,9 +180,11 @@ prelude: :gerbil/core
 ;;; thread for tasks. A failing callback is removed and reported like any
 ;;; other; the operation, the loop, and the task carry on. Callbacks may read
 ;;; kernel state, but must not activate or deactivate plugins: those calls
-;;; raise, which removes the callback. To react with such a change, queue a
-;;; task with spawn-task!. Callbacks must not wait for the loop either
-;;; (call-on-editor-loop, suspend).
+;;; raise, which removes the callback. To react with such a change while
+;;; the editor loop runs (editor-loop-running?), queue a task with
+;;; spawn-task!; while it is stopped, as during startup and shutdown, a
+;;; callback cannot cause a plugin change. Callbacks must not wait for the
+;;; loop either (call-on-editor-loop, suspend).
 ;;;
 ;;; Plugin and service events are recorded while an activation or
 ;;; deactivation runs, including everything it cascades into (dependents

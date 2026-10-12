@@ -349,7 +349,6 @@
          (check (call-on-editor-loop (lambda () (reverse log)))
                 => [['finished 'call 'returned #f]
                     ['started 'block #t]
-                    ['finished 'never-runs 'cancelled #f]
                     ['finished 'block 'returned #f]
                     ['started 'call #t] ['finished 'call 'returned #f]
                     ['started 'cooperative-loop #t] ['finished 'cooperative-loop 'quit #f]
