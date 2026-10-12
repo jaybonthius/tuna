@@ -126,11 +126,12 @@ prelude: :gerbil/core
           (message (string-append keys " is undefined"))
           #f)))))))
 
-(defmethod {resolve-event! global-keys}
+(defmethod {resolve! global-keys}
   (lambda (self event) (resolve-key! self event)))
 
-(defmethod {quit-event? global-keys}
-  (lambda (self event) (equal? (key-description event) quit-key)))
+;; The quit key interrupts; every other key event is queued.
+(defmethod {arrival global-keys}
+  (lambda (self event) (if (equal? (key-description event) quit-key) 'interrupt 'queue)))
 
 (defmethod {keymap-set! global-keys}
   (lambda (self ctx keys command source)

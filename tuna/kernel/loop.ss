@@ -1,9 +1,9 @@
 ;;; The editor loop: the baton, tasks and their suspension, input order,
 ;;; job results, redisplay, and the quit lane (ADR 3).
 ;;;
-;;; The loop thread owns the baton. It resolves each input event on the baton
+;;; The loop thread owns the baton. It resolves each input item on the baton
 ;;; and lends the baton to the resulting command, which runs as a task in its
-;;; own thread; later events wait until the task finishes or suspends. A task
+;;; own thread; later items wait until the task finishes or suspends. A task
 ;;; suspends only at a yield point (`suspend`), which returns the baton to the
 ;;; loop; once resumed, it takes the baton back before any further input.
 ;;; Quit requests arrive out of band, so they reach a running task at once.
@@ -19,11 +19,10 @@ prelude: :gerbil/core
 (export (interface-out Input Display)
         input-service
         display-service
-        (struct-out key-event)
         start-editor-loop!
         stop-editor-loop!
         editor-loop-running?
-        submit-event!
+        submit-input!
         call-on-editor-loop
         task?
         running-task
@@ -48,28 +47,15 @@ prelude: :gerbil/core
 
 ;;; Services the loop consumes
 
-;; One keydown from a client, with the client's id and sequence number
-;; (ADR 7, ADR 10).
-(defstruct key-event ((client     : :string)
-                      (sequence   : :fixnum)
-                      (key        : :string)
-                      (code       : :string)
-                      (location   : :fixnum)
-                      (repeat?    : :boolean)
-                      (composing? : :boolean)
-                      (alt?       : :boolean)
-                      (ctrl?      : :boolean)
-                      (meta?      : :boolean)
-                      (shift?     : :boolean))
-  final: #t)
-
-;; Command-loop policy (ADR 8).
+;; Command-loop policy (ADR 8, ADR 12). Input items are opaque to the
+;; kernel: only the provider and whoever submits items know their shape.
 (interface Input
-  ;; Resolve EVENT on the baton to the command it completes, or #f.
-  (resolve-event! (event : key-event)) => :t
-  ;; Whether EVENT is the quit key. Called on the arriving request's thread,
+  ;; How ITEM is handled on arrival: 'queue to resolve it in order, or
+  ;; 'interrupt to request a quit (ADR 3). Called on the submitting thread,
   ;; before queuing, so it must not touch editor state.
-  (quit-event? (event : key-event)) => :boolean)
+  (arrival (item : :t)) => :symbol
+  ;; Resolve ITEM on the baton to the command it completes, or #f.
+  (resolve! (item : :t)) => :t)
 
 (interface Display
   ;; Render the current editor state for every client. Runs on the baton.
@@ -77,7 +63,7 @@ prelude: :gerbil/core
 
 (def input-service
   (new-service 'input is-Input? tier: 'startup
-               doc: "Resolves input events to commands."))
+               doc: "Resolves input items to commands."))
 
 (def display-service
   (new-service 'display is-Display? tier: 'startup
@@ -141,12 +127,12 @@ prelude: :gerbil/core
         (when (and running.quit-requested? (fxzero? running.inhibit-depth))
           (raise-quit! running #f))))))
 
-;; Quit the running task, as `keyboard-quit` does.
+;; Quit the running task, as Emacs's quit command does.
 (def (signal-quit) => :void
   (raise (quit-condition forced?: #f)))
 
-;; Run THUNK with quitting deferred to its end. Pressing the quit key three
-;; times overrides this.
+;; Run THUNK with quitting deferred to its end. A third interrupt while it
+;; runs overrides this.
 (def (call-with-inhibit-quit (thunk : :procedure)) => :t
   (let (running (current-task))
     (if running
@@ -193,9 +179,14 @@ prelude: :gerbil/core
 
 ;;; The loop
 
+;; A submitted input item in the queue, which tells it apart from queued
+;; tasks. The kernel never looks inside ITEM.
+(defstruct queued-input ((item : :t))
+  final: #t)
+
 (defclass editor-loop ((thread         :? :thread)
                        (input          : :t)            ; the Input provider, fixed while running
-                       (pending        : :list)         ; queued events and tasks, oldest first
+                       (pending        : :list)         ; queued inputs and tasks, oldest first
                        (pending-tail   : :list)         ; newest first, appended lazily
                        (resumes        : :list)         ; suspensions ready to resume, oldest first
                        (results        : :list)         ; job-result tasks, oldest first
@@ -266,21 +257,23 @@ prelude: :gerbil/core
             (set! k.loop #f)
             (set! k.live? #f)))))))
 
-;; Queue EVENT from a client. A quit key bypasses the queue (ADR 3).
-;; Callable from any thread.
-(def (submit-event! (event : key-event)) => :void
+;; Queue the input ITEM for the Input provider to resolve, unless the
+;; provider classifies it as an interrupt, which bypasses the queue
+;; (ADR 3). Callable from any thread.
+(def (submit-input! (item : :t)) => :void
   (using (loop (running-loop) : editor-loop)
     (thread-send (: loop.thread :thread)
-                 (if (Input-quit-event? loop.input event)
-                   [quit: event]
-                   [event: event]))))
+                 (case (Input-arrival loop.input item)
+                   ((queue) [enqueue: (make-queued-input item)])
+                   ((interrupt) [interrupt: item])
+                   (else (error "Input arrival must return queue or interrupt" item))))))
 
 ;; Run PROCEDURE as a task on the baton, after the input queued before it,
 ;; and return its value or raise its exception. Callable from any thread
 ;; except a task's.
 (def (call-on-editor-loop (procedure : :procedure)) => :t
   (let (done (make-completion))
-    (send-to-loop! [event: (new-task 'call procedure
+    (send-to-loop! [enqueue: (new-task 'call procedure
                                      (lambda (raised? value)
                                        (completion-post! done (cons raised? value))))])
     (let (result (: (completion-wait! done) :pair))
@@ -292,7 +285,7 @@ prelude: :gerbil/core
 ;; return the task. Callable from any thread.
 (def (spawn-task! (name : :symbol) (procedure : :procedure)) => task
   (let (queued (new-task name procedure #f))
-    (send-to-loop! [event: queued])
+    (send-to-loop! [enqueue: queued])
     queued))
 
 ;; Cancel QUEUED-OR-RUNNING: a queued task never runs, a suspended one
@@ -356,7 +349,7 @@ prelude: :gerbil/core
 (def (resume-quit! (s : suspension)) => :void
   (send-to-loop! [resume: s #t (quit-condition forced?: #f)]))
 
-;; Whether input events are queued (Emacs `input-pending-p`). Call it from
+;; Whether input items are queued (Emacs `input-pending-p`). Call it from
 ;; a task.
 (def (input-pending?) => :boolean
   (using (loop (running-loop) : editor-loop)
@@ -367,7 +360,7 @@ prelude: :gerbil/core
                      [input-pending?: (lambda (answer) (completion-post! done answer))])
         (:- (completion-wait! done) :boolean)))))
 
-;; Drop every queued input event (Emacs `discard-input`).
+;; Drop every queued input item, but no queued task (Emacs `discard-input`).
 (def (discard-input) => :void
   (send-to-loop! [discard-input:]))
 
@@ -379,9 +372,9 @@ prelude: :gerbil/core
       (match msg
         (#f (on-timeout! loop))
         ([wake:] (void))
-        ([event: item] (enqueue! loop item))
+        ([enqueue: item] (enqueue! loop item))
         ([result: result-task] (set! loop.results (append loop.results [result-task])))
-        ([quit: event] (on-quit! loop event))
+        ([interrupt: item] (on-interrupt! loop item))
         ([suspended: s] (on-suspended! loop s))
         ([resume: s raised? value] (on-resume! loop s raised? value))
         ([cancel: target] (on-cancel! loop target))
@@ -417,11 +410,11 @@ prelude: :gerbil/core
   (and (null? loop.pending) (null? loop.pending-tail)))
 
 (def (input-queued? (loop : editor-loop)) => :boolean
-  (or (ormap key-event? loop.pending)
-      (ormap key-event? loop.pending-tail)))
+  (or (ormap queued-input? loop.pending)
+      (ormap queued-input? loop.pending-tail)))
 
 (def (discard-input! (loop : editor-loop)) => :void
-  (let (keep? (lambda (item) (not (key-event? item))))
+  (let (keep? (lambda (item) (not (queued-input? item))))
     (set! loop.pending (filter keep? loop.pending))
     (set! loop.pending-tail (filter keep? loop.pending-tail))))
 
@@ -450,19 +443,19 @@ prelude: :gerbil/core
         (lp))
        (else (void))))))
 
-(def (dispatch! (loop : editor-loop) (item : :t)) => :void
+(def (dispatch! (loop : editor-loop) (next : :t)) => :void
   (cond
-   ((task? item)
-    (using (item : task)
-      (when (eq? item.state 'queued)
+   ((task? next)
+    (using (next : task)
+      (when (eq? next.state 'queued)
         (set! loop.dirty? #t)
-        (start-task! loop item))))
+        (start-task! loop next))))
    (else
     (set! loop.dirty? #t)
     (with-catch
      (lambda (e) (message (exception-summary e)))
      (lambda ()
-       (let (resolved (Input-resolve-event! loop.input item))
+       (let (resolved (Input-resolve! loop.input (queued-input-item next)))
          (when resolved
            (using (resolved : command)
              (start-task! loop (new-task resolved.name resolved.procedure #f))))))))))
@@ -564,10 +557,10 @@ prelude: :gerbil/core
 
 ;;; Quitting
 
-;; The first quit asks the task to stop; the second, or the grace period
-;; running out, interrupts it. With no task running, the quit key is an
-;; ordinary event, which a waiting prompt may bind.
-(def (on-quit! (loop : editor-loop) (event : key-event)) => :void
+;; The first interrupt asks the task to stop; the second, or the grace
+;; period running out, interrupts its thread. With no task running, the
+;; item is queued as ordinary input, which a waiting prompt may bind.
+(def (on-interrupt! (loop : editor-loop) (item : :t)) => :void
   (let (running loop.running)
     (if running
       (using (running : task)
@@ -576,7 +569,7 @@ prelude: :gerbil/core
         (if (fx= running.quit-presses 1)
           (set! loop.force-at (+ (now) loop.quit-grace))
           (force-quit! loop running)))
-      (enqueue! loop event))))
+      (enqueue! loop (make-queued-input item)))))
 
 (def (on-timeout! (loop : editor-loop)) => :void
   (let ((running loop.running)

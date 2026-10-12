@@ -1,18 +1,19 @@
 ;;; Test fixtures for the kernel, included by test files (not a module).
 
-;; Input provider that resolves an event's key string through BINDINGS
-;; (key -> command name) and treats the key "quit" as the quit key.
+;; Input provider over plain strings, which shows that the kernel never
+;; looks inside an input item: it resolves an item through BINDINGS (item
+;; -> command name) and classifies the item "quit" as an interrupt.
 (defstruct test-input ((bindings : HashTable))
   final: #t)
 
-(defmethod {resolve-event! test-input}
-  (lambda (self event)
-    (let (name (hash-get (test-input-bindings self) (key-event-key event)))
+(defmethod {resolve! test-input}
+  (lambda (self item)
+    (let (name (hash-get (test-input-bindings self) item))
       (and name (command-ref name)))))
 
-(defmethod {quit-event? test-input}
-  (lambda (self event)
-    (equal? (key-event-key event) "quit")))
+(defmethod {arrival test-input}
+  (lambda (self item)
+    (if (equal? item "quit") 'interrupt 'queue)))
 
 (def test-bindings (make-hash-table))
 
@@ -27,15 +28,9 @@
     (if provider (test-messages-text provider) "")))
 
 (defplugin (test-input-plugin ctx)
-  "Resolves test events through test-bindings and keeps the last message."
+  "Resolves test input items through test-bindings and keeps the last message."
   (context-provide! ctx messages-service (make-test-messages ""))
   (context-provide! ctx input-service (make-test-input test-bindings)))
-
-(def test-sequence 0)
-
-(def (test-event key)
-  (set! test-sequence (fx1+ test-sequence))
-  (make-key-event "test-client" test-sequence key "" 0 #f #f #f #f #f #f))
 
 ;; Run THUNK in a fresh kernel, then stop its loop and plugins.
 (def (call-with-test-kernel thunk)

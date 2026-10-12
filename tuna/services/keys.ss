@@ -1,11 +1,13 @@
-;;; Key bindings: the part of the input service that plugins bind keys
-;;; through, and the input-target stack prompts push (ADR 3, ADR 8).
-;;; Plugins that bind keys require `input-service`.
+;;; Key bindings: the key events a transport submits as input items, the
+;;; part of the input service that plugins bind keys through, and the
+;;; input-target stack prompts push (ADR 3, ADR 8). Plugins that bind keys
+;;; require `input-service`.
 prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel)
-(export (interface-out Keys)
+(export (struct-out key-event)
+        (interface-out Keys)
         keymap-set
         keymap-set!
         keymap-set-in
@@ -18,6 +20,22 @@ prelude: :gerbil/core
         printing-char-key
         last-command
         last-command-event)
+
+;; One keydown from a client, with the client's id and sequence number
+;; (ADR 7, ADR 10). The web transport submits it as an input item; the
+;; input service resolves it.
+(defstruct key-event ((client     : :string)
+                      (sequence   : :fixnum)
+                      (key        : :string)
+                      (code       : :string)
+                      (location   : :fixnum)
+                      (repeat?    : :boolean)
+                      (composing? : :boolean)
+                      (alt?       : :boolean)
+                      (ctrl?      : :boolean)
+                      (meta?      : :boolean)
+                      (shift?     : :boolean))
+  final: #t)
 
 ;; Binds every printing character that has no binding of its own.
 (def printing-char-key "<printing-char>")

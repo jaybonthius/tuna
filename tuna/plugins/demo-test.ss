@@ -3,6 +3,7 @@
 (import :std/sync/completion
         :std/test
         :tuna/kernel
+        (only-in :tuna/services/keys make-key-event)
         :tuna/services/renderer
         :tuna/services/buffers
         :tuna/services/echo-area

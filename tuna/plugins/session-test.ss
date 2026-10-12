@@ -3,6 +3,7 @@
 ;;; uses its own temporary state directory.
 (import :std/test
         :tuna/kernel
+        (only-in :tuna/services/keys make-key-event)
         :tuna/services/buffers
         :tuna/services/echo-area
         :tuna/services/session
