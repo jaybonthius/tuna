@@ -1,0 +1,67 @@
+:root {
+  color-scheme: light dark;
+  --tuna-background: #fdfdfb;
+  --tuna-foreground: #1f2328;
+  --tuna-muted: #59636e;
+  --tuna-rule: #d1d9e0;
+  --tuna-bar: #eff2f5;
+  --tuna-font: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tuna-background: #0d1117;
+    --tuna-foreground: #e6edf3;
+    --tuna-muted: #9198a1;
+    --tuna-rule: #3d444d;
+    --tuna-bar: #151b23;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--tuna-background);
+  color: var(--tuna-foreground);
+  font-family: var(--tuna-font);
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100vh;
+}
+
+.screen > footer {
+  margin-block-start: auto;
+}
+
+.help {
+  padding: 1rem;
+  overflow: auto;
+}
+
+.help h1 {
+  margin-block: 0 0.5rem;
+  font-size: 1rem;
+}
+
+.help pre {
+  margin: 0;
+  font-family: inherit;
+}
+
+.status-line,
+.echo-area {
+  margin: 0;
+  padding: 0.25rem 0.5rem;
+}
+
+.status-line {
+  border-block: 1px solid var(--tuna-rule);
+  background: var(--tuna-bar);
+  color: var(--tuna-muted);
+}
+
+.echo-area {
+  min-block-size: 1.5em;
+}
