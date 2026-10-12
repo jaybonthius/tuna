@@ -1,9 +1,9 @@
 ;;; Demo commands for the architecture skeleton: endless commands to quit,
 ;;; describe-services, a *welcome* buffer built as a tree, swapping the text
 ;;; store, the renderer, the window manager, and basic editing while Tuna
-;;; runs, renaming a buffer through the minibuffer, and a deliberately slow
-;;; highlighter that colors digits from a job. The demo turns other plugins
-;;; on and off, so it imports them;
+;;; runs, renaming a buffer through the minibuffer, a deliberately slow
+;;; highlighter that colors digits from a job, and recent keydown-to-screen
+;;; latencies. The demo turns other plugins on and off, so it imports them;
 ;;; ordinary plugins do not.
 prelude: :gerbil/core
 
@@ -16,9 +16,11 @@ prelude: :gerbil/core
         :tuna/plugins/string-text-store
         :tuna/plugins/basic-editing
         :tuna/plugins/plain-text-renderer
-        :tuna/plugins/two-windows)
+        :tuna/plugins/two-windows
+        :tuna/plugins/web)
 (export demo-plugin
         services-description
+        latency-description
         welcome-buffer
         digit-spans
         digit-highlight-delay)
@@ -102,6 +104,33 @@ prelude: :gerbil/core
   (let (content (node-attribute n 'content))
     [content "\n" (make-string (string-length content) #\=)]))
 
+;; The value at FRACTION (0 to 1) of SORTED, a sorted non-empty list.
+(def (percentile (sorted : :list) (fraction : :real)) => :real
+  (list-ref sorted (min (fx1- (length sorted))
+                        (inexact->exact (floor (* fraction (length sorted)))))))
+
+(def (milliseconds (seconds : :real)) => :string
+  (let (tenths (inexact->exact (round (* seconds 10000.))))
+    (string-append (number->string (quotient tenths 10)) "." (number->string (remainder tenths 10)))))
+
+;; Recent keydown-to-screen latencies, summarized.
+(def (latency-description) => :list
+  (let (samples (keydown-latencies))
+    (cond
+     ((not samples) ["No web transport is active."])
+     ((null? samples) ["No keys measured yet."])
+     (else
+      (let (sorted (list-sort < samples))
+        ["From a key event's arrival to the first screen showing its effect being written to a client's stream."
+         (string-append "Last " (number->string (length samples)) " keys:"
+                        " median " (milliseconds (percentile sorted 0.5)) " ms,"
+                        " 95th percentile " (milliseconds (percentile sorted 0.95)) " ms,"
+                        " max " (milliseconds (percentile sorted 1)) " ms.")
+         (string-append "Newest: "
+                        (string-join (map (lambda (s) (string-append (milliseconds s) " ms"))
+                                          (take samples (min 10 (length samples))))
+                                     ", "))])))))
+
 (def (toggle-plugin! (p : plugin)) => :void
   (if (plugin-active? p)
     (deactivate-plugin! p)
@@ -164,6 +193,8 @@ prelude: :gerbil/core
     (message (if (plugin-active? two-windows-plugin)
                "Window manager: two windows"
                "Window manager: one window")))
+  (define-command ctx (describe-latency) "Show recent keydown-to-screen latencies."
+    (show-help "Latency" (latency-description)))
   (keymap-set ctx "C-c l" 'loop-forever)
   (keymap-set ctx "C-c L" 'loop-forever-ignoring-quit)
   (keymap-set ctx "C-h s" 'describe-services)
@@ -172,4 +203,5 @@ prelude: :gerbil/core
   (keymap-set ctx "C-c p" 'toggle-basic-editing)
   (keymap-set ctx "C-c r" 'rename-buffer)
   (keymap-set ctx "C-c v" 'swap-renderer)
-  (keymap-set ctx "C-c w" 'swap-window-manager))
+  (keymap-set ctx "C-c w" 'swap-window-manager)
+  (keymap-set ctx "C-h l" 'describe-latency))

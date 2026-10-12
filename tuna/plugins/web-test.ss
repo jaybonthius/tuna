@@ -243,6 +243,25 @@
            (Socket-close first)
            (Socket-close second)))))
 
+    (test-case "keydown-to-screen latency is measured on the stream; C-h l shows it"
+      (with-tuna
+       (lambda ()
+         (let (stream (open-screen-stream))
+           (read-until stream (cut string-search "id=\"screen\"" <>))
+           (check (keydown-latencies) => [])
+           (post-key "x")
+           (post-key "y")
+           (read-until stream (cut string-search "xy<span class=\"cursor\">" <>))
+           (check (wait-until (lambda () (= (length (keydown-latencies)) 2))) => #t)
+           (check (andmap (lambda (seconds) (< 0 seconds 1)) (keydown-latencies)) => #t)
+           (post-key "h" ctrl?: #t)
+           (post-key "l")
+           (check (and (string-search "keys: median"
+                                      (read-until stream (cut string-search "keys: median" <>)))
+                       #t)
+                  => #t)
+           (Socket-close stream)))))
+
     (test-case "C-c l then C-g recovers; so does C-c L, by force"
       (with-tuna
        (lambda ()
