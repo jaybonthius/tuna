@@ -21,6 +21,16 @@ Brief: [briefs/2026-10-architecture-skeleton.md](briefs/2026-10-architecture-ske
 
 Out of scope: windows and splits, files, modes, completion UI, real highlighting.
 
+## Now: getting the core back to its intended shape
+
+The skeleton let pieces of features creep into the kernel. The approved plan ([kernel contract](briefs/2026-10-kernel-contract.md)) fixes that first, in this order:
+
+1. Clean up the kernel to match the contract (no new features).
+2. Make buffers really replaceable (a short brief first).
+3. Take the demo out of the default startup (a short brief first).
+4. General-purpose hooks and advice, including redefining functions while Tuna runs (a brief first).
+5. The optional [profiler plugin](briefs/2026-10-profiler.md).
+
 ## Research before windows and scrolling
 
 How the server learns layout facts from the browser (event-attached facts, measurement requests, Rocket components for local-only behavior). See [the capability-audit brief](briefs/2026-10-capability-audit.md).

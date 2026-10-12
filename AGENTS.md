@@ -2,6 +2,7 @@
 
 ## Orientation
 
+- **Start with `agents/STATUS.md`**: current state, owner decisions, and the ordered next steps.
 - `docs/` is for the owner (Jay); `agents/` is for agents. If the owner is expected to read it, it belongs in `docs/`; if it exists so an agent gets things right, it belongs in `agents/`.
 - Architecture decisions are in `agents/adr/`; read the relevant ones before designing or changing a subsystem. They override everything in `agents/research/`.
 - `docs/overview.md` explains the architecture in plain language; `docs/roadmap.md` names the current milestone; `docs/ideas/` describes desired features that are not yet scheduled in detail.
