@@ -45,7 +45,7 @@ The buffer is a node tree from the start; the text node is one node kind among s
 - **Tree demo.** The demo plugin registers `column` and `heading` node kinds and a `*welcome*` buffer `(column (heading "Welcome to Tuna") (text "…"))`; `C-c b` switches between `*scratch*` and `*welcome*`; `C-c s` swaps the text store; `C-c p` turns basic editing off and on.
 - **Done when:** `make test` passes, including randomized rope-versus-string differential tests (with non-ASCII and emoji), 1-based position conversions, undo, a live text-store swap that keeps text and point, editing off and on leaving no stray bindings or commands, and rendering of the `*welcome*` tree; in a browser, typing, deleting, motion, undo, buffer switching, both swaps, and `C-h s` work. Cross-node cursor motion is out of scope.
 
-### Stage 3: questions, settings, and slow work
+### Stage 3: questions, settings, and slow work (merged 2026-10-11)
 
 - **Carry-over from stage 2.** Add the `adapt` dependency kind (ADR 2) and declare the buffers plugin's text-store dependency with it, replacing the lazy per-text conversion; `C-h s` then lists buffers as a dependent. Group consecutive self-inserts into one undo group (Emacs groups up to 20). Restore point when undoing a forward delete.
 - **Suspension and prompts** (ADR 3). Tasks suspend only at documented yield points and return the baton while waiting. Prompts push input targets; only the innermost waiting prompt receives input, answers are delivered innermost-first. A minimal minibuffer plugin shows the prompt and the answer being typed (reusing the text node and basic editing), with `read-string` as the first prompt. `C-g` in a prompt abandons it: the waiting command receives `quit`.
@@ -57,5 +57,7 @@ The buffer is a node tree from the start; the text node is one node kind among s
 - **Done when:** `make test` passes, including the `adapt` swap, undo grouping, prompt suspension with the editor still dispatching keys, `C-g` abandoning a prompt, nested prompts answered innermost-first, timer tasks cancelled with their plugin, `with-settings` isolation across a waiting command, job replacement by key, each validity policy, and rebased highlights landing on the right characters after edits made while the job ran; in a browser, `C-c r` renames, digits color shortly after typing even while typing continues, `C-g` abandons a prompt, and `C-h s` shows buffers depending on the text store.
 
 ### Stage 4: swaps and saving
+
+Carry-over from stage 3 (only if cheap; otherwise record in `TODO.md`): jobs posting several results; the demo highlighter should skip the minibuffer's text.
 
 Toy plain-text renderer and toy two-window window manager with independent views, swapped live; autosave and a session slot restored on restart; keydown-to-screen latency measurement; overview and diagrams updated to what was built.

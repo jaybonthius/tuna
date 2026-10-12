@@ -1,6 +1,6 @@
 # How Tuna works
 
-**Status (2026-10-11):** stages 1 and 2 of the architecture skeleton are built: the small engine (plugins with receipts, services, the editor thread with `C-g`), the token-protected browser connection, key handling, the HTML renderer, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, and the echo area. There is one window, no prompts, no files, and no saving yet. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
+**Status (2026-10-11):** stages 1 and 2 of the architecture skeleton are built: the small engine (plugins with receipts, services, the editor thread with `C-g`), the token-protected browser connection, key handling, the HTML renderer, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area, the minibuffer with `read-string`, temporary settings (`with-settings`), timers, hooks, and background jobs whose results follow your later edits. There is one window, no files, and no saving yet. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
 
 ## The idea
 
