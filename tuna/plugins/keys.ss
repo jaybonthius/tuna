@@ -2,9 +2,7 @@
 ;;; quit key (ADR 8).
 prelude: :gerbil/core
 
-(import :std/interface
-        :std/string/misc
-        :tuna/kernel
+(import :tuna/kernel
         :tuna/services/keys)
 (export keys-plugin
         key-description)
