@@ -13,6 +13,8 @@
 (def cleaned-up? #f)
 (def released? #f)
 (def redisplays 0)
+(def waiting #f)          ; the suspension of the `wait` command
+(def saw-pending? #f)
 
 (defstruct counting-display ()
   final: #t)
@@ -37,10 +39,30 @@
     (dynamic-wind void (lambda () (let lp () (lp))) (lambda () (set! cleaned-up? #t))))
   (define-command ctx (inhibited-loop) "Loop without checking, with quit inhibited."
     (set! started? #t)
-    (with-inhibit-quit (let lp () (lp)))))
+    (with-inhibit-quit (let lp () (lp))))
+  (define-command ctx (wait) "Wait to be resumed, then note the value."
+    (note! [(suspend (lambda (s) (set! waiting s)))]))
+  (define-command ctx (discard) "Note whether input is pending, then discard it."
+    (set! saw-pending? (input-pending?))
+    (discard-input)))
 
 (for-each (lambda (key) (hash-put! test-bindings key (string->symbol key)))
-          ["note-a" "note-b" "fail" "block" "cooperative-loop" "stubborn-loop" "inhibited-loop"])
+          ["note-a" "note-b" "fail" "block" "cooperative-loop" "stubborn-loop" "inhibited-loop"
+           "wait" "discard"])
+
+(def ticks 0)
+(def timer-quit? #f)
+
+(defplugin (ticking ctx)
+  "Counts timer ticks."
+  (context-run-with-timer! ctx 0.01 0.01 (lambda () (set! ticks (fx1+ ticks))) name: 'tick))
+
+(defplugin (waiting-timer ctx)
+  "A timer whose callback waits until it is cancelled."
+  (context-run-with-timer! ctx 0.01 #f
+                           (lambda ()
+                             (with-catch (lambda (e) (set! timer-quit? (quit-condition? e)) (raise e))
+                                         (lambda () (suspend (lambda (s) (set! waiting s))))))))
 
 ;; Start a fresh loop with the test commands, run THUNK, and stop.
 (def (with-loop thunk quit-grace: (quit-grace 0.5))
@@ -50,6 +72,7 @@
      (set! started? #f)
      (set! cleaned-up? #f)
      (set! released? #f)
+     (set! waiting #f)
      (activate-plugin! test-input-plugin)
      (activate-plugin! test-commands)
      (start-editor-loop! quit-grace: quit-grace)
@@ -133,6 +156,71 @@
            (check (< seconds 5) ? values))
          (check cleaned-up? => #t))
        quit-grace: 30.))
+
+    (test-case "a waiting task returns the baton, and resumes before queued input"
+      (with-loop
+       (lambda ()
+         (press "wait")
+         (press "note-a")
+         (settled-message)
+         (check log => '(a))
+         (check (current-command-name) => #f)
+         (call-on-editor-loop
+          (lambda ()
+            (submit-event! (test-event "note-b"))
+            (resume! waiting 'answer)))
+         (settled-message)
+         (check (reverse log) => '(a (answer) b)))))
+
+    (test-case "a waiting task resumed with quit unwinds and reports Quit"
+      (with-loop
+       (lambda ()
+         (press "wait")
+         (settled-message)
+         (call-on-editor-loop (lambda () (resume-quit! waiting)))
+         (check (settled-message) => "Quit")
+         (check log => '()))))
+
+    (test-case "stopping the loop quits waiting tasks"
+      (with-loop
+       (lambda ()
+         (press "wait")
+         (settled-message)
+         (stop-editor-loop!)
+         (check (editor-loop-running?) => #f))))
+
+    (test-case "input-pending? sees queued keys; discard-input drops them"
+      (with-loop
+       (lambda ()
+         (set! saw-pending? #f)
+         (press "block")
+         (check (wait-until (lambda () started?)) => #t)
+         (for-each press ["discard" "note-a" "note-b"])
+         (set! released? #t)
+         (settled-message)
+         (check saw-pending? => #t)
+         (check log => '()))))
+
+    (test-case "timers run as tasks and stop with their plugin"
+      (with-loop
+       (lambda ()
+         (set! ticks 0)
+         (call-on-editor-loop (lambda () (activate-plugin! ticking)))
+         (check (wait-until (lambda () (>= ticks 3))) => #t)
+         (call-on-editor-loop (lambda () (deactivate-plugin! ticking)))
+         (let (stopped ticks)
+           (thread-sleep! 0.1)
+           (check ticks => stopped)))))
+
+    (test-case "deactivating a timer's plugin quits its waiting callback"
+      (with-loop
+       (lambda ()
+         (set! timer-quit? #f)
+         (call-on-editor-loop (lambda () (activate-plugin! waiting-timer)))
+         (check (wait-until (lambda () waiting)) => #t)
+         (call-on-editor-loop (lambda () (deactivate-plugin! waiting-timer)))
+         (check (wait-until (lambda () timer-quit?)) => #t)
+         (check (settled-message) => "Quit"))))
 
     (test-case "inhibit-quit holds off two quits; the third overrides it"
       (with-loop

@@ -6,7 +6,10 @@ prelude: :gerbil/core
         ./kernel/entries
         ./kernel/state
         ./kernel/plugins
-        ./kernel/loop)
+        ./kernel/hooks
+        ./kernel/loop
+        ./kernel/jobs
+        ./kernel/timers)
 (export (import: ./kernel/ids)
         (struct-out entry)
         entry-table
@@ -21,4 +24,7 @@ prelude: :gerbil/core
         current-kernel
         exception-summary
         (import: ./kernel/plugins)
-        (import: ./kernel/loop))
+        (import: ./kernel/hooks)
+        (import: ./kernel/loop)
+        (import: ./kernel/jobs)
+        (import: ./kernel/timers))

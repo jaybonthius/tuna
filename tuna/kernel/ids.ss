@@ -1,12 +1,13 @@
-;;; Shared vocabulary: identities, revision counters, and change records
-;;; (ADR 4, ADR 12).
+;;; Shared vocabulary: identities, revision counters, change records, and
+;;; spans (ADR 4, ADR 12).
 prelude: :gerbil/core
 
 (export next-id!
         (struct-out revision-counter)
         new-revision-counter
         revision-bump!
-        (struct-out change))
+        (struct-out change)
+        (struct-out span))
 
 (def id-mutex (make-mutex 'tuna-ids))
 (def last-id 0)
@@ -39,4 +40,11 @@ prelude: :gerbil/core
                    (start    : :fixnum)
                    (removed  : :string)
                    (inserted : :string))
+  final: #t)
+
+;; A range START..END of a text, 1-based and end-exclusive, carrying VALUE
+;; (such as a face). Job results that rebase are lists of spans.
+(defstruct span ((start : :fixnum)
+                 (end   : :fixnum)
+                 (value : :t))
   final: #t)

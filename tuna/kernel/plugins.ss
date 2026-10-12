@@ -17,6 +17,7 @@ prelude: :gerbil/core
         context-defer!
         context-add-entry!
         context-provide!
+        context-adapt!
         (struct-out service)
         new-service
         service-provider
@@ -188,7 +189,7 @@ prelude: :gerbil/core
     (remember-service! k svc)
     (when (and current (entry-outranks? new current))
       (check-live-change! k svc)
-      (let (closure (deactivation-closure k (service-dependents k name)))
+      (let (closure (deactivation-closure k (restarting-dependents k name)))
         (check-removable! k closure)
         (deactivate-records! k closure)))
     (entry-table-add! (kernel-providers k) name new)
@@ -215,19 +216,80 @@ prelude: :gerbil/core
                         (plugin-requires (plugin-record-definition rec)))))
           (hash-values (kernel-plugins k))))
 
+;; Whether REC's plugin adapts to a new provider of the service named NAME
+;; instead of restarting.
+(def (adapting? (k : kernel) (name : :symbol) (rec : plugin-record)) => :boolean
+  (let (owner (plugin-name (plugin-record-definition rec)))
+    (ormap (lambda ((e : entry)) (eq? (entry-owner e) owner))
+           (entry-table-entries (kernel-adapters k) name))))
+
+(def (restarting-dependents (k : kernel) (name : :symbol)) => :list
+  (filter (lambda ((rec : plugin-record)) (not (adapting? k name rec)))
+          (service-dependents k name)))
+
 ;; ROOTS plus every active plugin that transitively depends on a service
-;; they provide.
+;; they provide. Adapting dependents stay unless no provider would remain.
 (def (deactivation-closure (k : kernel) (roots : :list)) => :list
   (let loop ((pending roots) (seen []))
     (match pending
-      ([] seen)
+      ([]
+       (let (stranded (stranded-adapters k seen))
+         (if (null? stranded)
+           seen
+           (loop stranded seen))))
       ([rec . rest]
        (if (memq rec seen)
          (loop rest seen)
-         (loop (append (append-map (cut service-dependents k <>)
+         (loop (append (append-map (cut restarting-dependents k <>)
                                    (provided-service-names k rec))
                        rest)
                (cons rec seen)))))))
+
+;; Adapting dependents, outside GOING, of services GOING provides that no
+;; plugin outside GOING also provides.
+(def (stranded-adapters (k : kernel) (going : :list)) => :list
+  (let (owners (map (lambda ((rec : plugin-record)) (plugin-name (plugin-record-definition rec)))
+                    going))
+    (append-map
+     (lambda ((name : :symbol))
+       (if (ormap (lambda ((e : entry)) (not (memq (entry-owner e) owners)))
+                  (entry-table-entries (kernel-providers k) name))
+         []
+         (filter (lambda ((rec : plugin-record)) (not (memq rec going)))
+                 (service-dependents k name))))
+     (append-map (cut provided-service-names k <>) going))))
+
+;; A dependent's handler for a new provider, and the provider it last saw.
+(defclass adapter ((handler : :procedure)       ; old provider, new provider -> void
+                   (seen    : :t))
+  final: #t)
+
+;; Declare that CTX's plugin adapts to a new provider of SVC, which it
+;; requires, instead of restarting: HANDLER receives the old and new
+;; providers and migrates the plugin's state in place (ADR 2).
+(def (context-adapt! (ctx : context) (svc : service) (handler : :procedure)) => :void
+  (context-add-entry! ctx (kernel-adapters (the-kernel)) (service-name svc)
+                      (adapter handler: handler seen: (service-provider svc)))
+  (void))
+
+;; Tell each adapter whose service changed provider since it last looked.
+(def (reconcile-adapters! (k : kernel)) => :void
+  (let (adapters (kernel-adapters k))
+    (for-each
+      (lambda ((name : :symbol))
+        (let (best (entry-table-ref (kernel-providers k) name))
+          (when best
+            (for-each
+              (lambda ((e : entry))
+                (using (a (entry-value e) : adapter)
+                  (let ((old a.seen)
+                        (new (entry-value best)))
+                    (unless (eq? old new)
+                      (set! a.seen new)
+                      (with-catch (cut report-failure! (entry-owner e) "adapting" <>)
+                                  (lambda () (a.handler old new)))))))
+              (entry-table-entries adapters name)))))
+      (entry-table-keys adapters))))
 
 (def (check-removable! (k : kernel) (records : :list)) => :void
   (for-each
@@ -245,7 +307,7 @@ prelude: :gerbil/core
       (let (ctx (plugin-record-active rec))
         (when ctx
           (set! (plugin-record-active rec) #f)
-          (for-each (cut report-failure! (plugin-record-definition rec) "deactivating" <>)
+          (for-each (cut report-failure! (plugin-name (plugin-record-definition rec)) "deactivating" <>)
                     (run-receipt! ctx)))))
     (reverse (by-activation records))))
 
@@ -254,8 +316,8 @@ prelude: :gerbil/core
                (fx< (plugin-record-activated a) (plugin-record-activated b)))
              records))
 
-(def (report-failure! (p : plugin) (what : :string) (e : :t)) => :void
-  (let (text (string-append "Plugin " (symbol->string (plugin-name p)) " failed while "
+(def (report-failure! (name : :symbol) (what : :string) (e : :t)) => :void
+  (let (text (string-append "Plugin " (symbol->string name) " failed while "
                             what ": " (exception-summary e)))
     (message text)
     (displayln text (current-error-port))))
@@ -322,8 +384,10 @@ prelude: :gerbil/core
   (let (failures (activate-wanted! k))
     (for-each (lambda ((failure : :pair))
                 (unless (eq? (car failure) target)
-                  (report-failure! (plugin-record-definition (car failure)) "activating" (cdr failure))))
+                  (report-failure! (plugin-name (plugin-record-definition (car failure)))
+                                   "activating" (cdr failure))))
               failures)
+    (reconcile-adapters! k)
     (cond
      ((assq target failures) => (lambda ((failure : :pair)) (raise (cdr failure)))))))
 
@@ -376,19 +440,25 @@ prelude: :gerbil/core
                          (tier       : :symbol)
                          (provider   :? :symbol)
                          (dependents : :list)          ; plugin names
+                         (adapting   : :list)          ; the dependents that adapt
                          (doc        : :string))
   final: #t)
 
 (def (describe-services) => :list
   (let (k (the-kernel))
     (map (lambda ((svc : service))
-           (let (best (entry-table-ref (kernel-providers k) (service-name svc)))
-             (make-service-info (service-name svc)
+           (let* ((name (service-name svc))
+                  (best (entry-table-ref (kernel-providers k) name))
+                  (dependents (service-dependents k name))
+                  (names (lambda (records)
+                           (map (lambda ((rec : plugin-record))
+                                  (plugin-name (plugin-record-definition rec)))
+                                records))))
+             (make-service-info name
                                 (service-tier svc)
                                 (and best (entry-owner best))
-                                (map (lambda ((rec : plugin-record))
-                                       (plugin-name (plugin-record-definition rec)))
-                                     (service-dependents k (service-name svc)))
+                                (names dependents)
+                                (names (filter (cut adapting? k name <>) dependents))
                                 (service-doc svc))))
          (list-sort (lambda ((a : service) (b : service))
                       (string<? (symbol->string (service-name a))
