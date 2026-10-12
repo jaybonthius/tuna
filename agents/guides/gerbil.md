@@ -58,6 +58,11 @@ From `optimizing.md`, in order:
 
 Measure proposed optimizations with reproducible benchmarks before keeping them.
 
+## Known toolchain issues
+
+- `gxc -O` loops forever compiling an empty self-loop such as `(let lp () (lp))` (Gerbil v0.19-dev-63; confirmed with a one-line module). Give such loops a body, for example a counter. Not yet reported upstream.
+- `thread-interrupt!` blocks its caller until the target thread runs the interrupt; call it from a helper thread when the target may be stuck in foreign code.
+
 ## Tests
 
 - Co-located `foo-test.ss` files exporting `foo-test` suites from `:std/test`; run with `make test` (`gerbil test ./tuna/...`). Test-support modules must not end in `-test.ss`.

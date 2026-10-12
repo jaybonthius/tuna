@@ -20,7 +20,7 @@ tuna/main.ss       boot: start the kernel, activate the standard plugin set
 
 Each stage is one implementer task in its own worktree (see AGENTS.md), merged after review, then demoed to the owner before the next starts.
 
-### Stage 1: kernel and connection
+### Stage 1: kernel and connection (merged 2026-10-11, `5ed19f9`)
 
 - **Plugin runtime.** Define, activate, deactivate plugins; contexts; receipts that undo in reverse order; owner-tagged entries with priorities for slot-like effects; dependency declaration on services; provenance (plugin, source location, documentation) on registrations.
 - **Service registry.** Named services with an interface, a tier (`startup` or `live`), one provider at a time, dependents deactivated and reactivated on replacement, refusal to replace startup-tier services live, and data for `describe-services`.
@@ -34,11 +34,11 @@ Each stage is one implementer task in its own worktree (see AGENTS.md), merged a
 
 ### Stage 2: text and editing
 
-Text store contract with the default persistent rope and the toy plain-string store (also the rope's test oracle); texts, buffers, views; 1-based positions; scratch buffer; basic-editing plugin (insert, delete, motion); keymap layers needed so far; live text-store swap preserving content; basic editing off and on.
+Carry-over from stage 1: move the echo area and help panel out of the kernel (`tuna/kernel/state.ss`) into buffers or plugins; make `keymap-set` record source locations. Text store contract with the default persistent rope and the toy plain-string store (also the rope's test oracle); texts, buffers, views; 1-based positions; scratch buffer; basic-editing plugin (insert, delete, motion); keymap layers needed so far; live text-store swap preserving content; basic editing off and on.
 
 ### Stage 3: questions, settings, and slow work
 
-Suspension at yield points and the input-target stack; minibuffer and `read-string`; `C-c r` rename; `with-settings` on parameters with the scope chain stub; jobs with keys and the `rebase` validity policy over the change journal; the slow digit highlighter.
+Suspension at yield points and the input-target stack; tasks registered through contexts and cancelled on deactivation; `input-pending?` and `discard-input`; minibuffer and `read-string`; `C-c r` rename; `with-settings` on parameters with the scope chain stub; jobs with keys and the `rebase` validity policy over the change journal; the slow digit highlighter.
 
 ### Stage 4: swaps and saving
 

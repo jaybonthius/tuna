@@ -1,6 +1,6 @@
 # How Tuna works
 
-**Status (2026-10-11):** only the browser keyboard plugin exists. Everything below is the planned design. This page will be updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
+**Status (2026-10-11):** stage 1 of the architecture skeleton is built: the small engine (plugins with receipts, services, the editor thread with `C-g`), the token-protected browser connection, key handling, and the HTML renderer. There is no text editing yet. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
 
 ## The idea
 

@@ -30,7 +30,7 @@ classes: {
 }
 
 legend: |md
-  **Status:** only the box marked **(built)** exists today.
+  **Status:** boxes marked **(built)** exist today; **(started)** exist in a first form.
   Everything else is planned.
 |
 
@@ -39,11 +39,11 @@ browser: Your browser tab {
   page: Page\nshows the newest screen {class: part}
 }
 
-plugins: Plugins\nbasic editing, files, modes,\nyour init.ss {class: part}
-web: Web server\nreceives keys, sends screens {class: part}
-editor: Editor thread\nthe only thing allowed\nto change editor state {class: part}
+plugins: Plugins (started)\nbasic editing, files, modes,\nyour init.ss {class: part}
+web: Web server (built)\nreceives keys, sends screens {class: built}
+editor: Editor thread (built)\nthe only thing allowed\nto change editor state {class: built}
 state: Editor state\nbuffers, windows, minibuffer {class: part}
-services: Replaceable services\ntext store, renderer {class: part}
+services: Replaceable services (started)\ntext store, renderer {class: part}
 jobs: Background jobs\nhighlighting, search {class: part}
 disk: Disk\nyour files, autosave,\nsession, settings {shape: cylinder}
 
