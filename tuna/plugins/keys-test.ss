@@ -4,7 +4,8 @@
         :tuna/services/keys
         :tuna/services/echo-area
         :tuna/plugins/keys
-        :tuna/plugins/echo-area)
+        :tuna/plugins/echo-area
+        "../test-support/kernel")
 (export keys-test)
 
 (def (keydown key ctrl?: (ctrl? #f) alt?: (alt? #f) shift?: (shift? #f)
@@ -23,11 +24,8 @@
   (let (e (key-binding keys))
     (and e (entry-value e))))
 
-(def (with-keys thunk)
-  (parameterize ((current-kernel (new-kernel)))
-    (activate-plugin! echo-area-plugin)
-    (activate-plugin! keys-plugin)
-    (thunk)))
+(def keys-plugins
+  [echo-area-plugin keys-plugin])
 
 ;; The name of the task EVENT resolves to, or #f.
 (def (resolve event)
@@ -65,7 +63,7 @@
       (check (key-description (keydown "Process" composing?: #t)) => #f))
 
     (test-case "two plugins binding the same key survive deactivation in either order"
-      (with-keys
+      (call-with-fresh-kernel keys-plugins
        (lambda ()
          (activate-plugin! binds-a)
          (activate-plugin! binds-b)
@@ -83,7 +81,7 @@
          (check (binding "C-c x") => #f))))
 
     (test-case "two plugins defining the same command survive deactivation in either order"
-      (with-keys
+      (call-with-fresh-kernel keys-plugins
        (lambda ()
          (activate-plugin! defines-a)
          (activate-plugin! defines-b)
@@ -98,7 +96,7 @@
          (check (command-ref 'command-shared) => #f))))
 
     (test-case "a failed activation leaves no command behind"
-      (with-keys
+      (call-with-fresh-kernel keys-plugins
        (lambda ()
          (defplugin (half-done ctx)
            "Defines a command, then fails."
@@ -110,7 +108,7 @@
          (check (plugin-active? half-done) => #f))))
 
     (test-case "commands record their plugin, source, and documentation"
-      (with-keys
+      (call-with-fresh-kernel keys-plugins
        (lambda ()
          (defplugin (documented ctx)
            "Defines one command."
@@ -126,7 +124,7 @@
          (check (command-doc (command-ref 'documented-command)) => "Does nothing."))))
 
     (test-case "a key resolves to its command's name and thunk"
-      (with-keys
+      (call-with-fresh-kernel keys-plugins
        (lambda ()
          (defplugin (binds-shared ctx)
            "Binds C-c a to command-shared."
@@ -141,7 +139,7 @@
              (check ((cdr resolved)) => 'a))))))
 
     (test-case "prefix keys wait for the rest of the sequence; C-g cancels"
-      (with-keys
+      (call-with-fresh-kernel keys-plugins
        (lambda ()
          (defplugin (commands ctx)
            "A command bound under C-c."
@@ -162,7 +160,7 @@
          (check (current-message) => "x is undefined"))))
 
     (test-case "the innermost input target's keymap comes first, including for C-g"
-      (with-keys
+      (call-with-fresh-kernel keys-plugins
        (lambda ()
          (defplugin (targets ctx)
            "Commands for the global keymap and two input targets."
@@ -193,7 +191,7 @@
            (check (resolve (keydown "x")) => 'global-x)))))
 
     (test-case "restarting the keys plugin re-registers a dependent's commands"
-      (with-keys
+      (call-with-fresh-kernel keys-plugins
        (lambda ()
          (activate-plugin! defines-a)
          (check (shared-result) => 'a)
@@ -209,7 +207,7 @@
                   ? values)))))
 
     (test-case "only C-g arrives as an interrupt"
-      (with-keys
+      (call-with-fresh-kernel keys-plugins
        (lambda ()
          (let (input (Input (service-provider input-service)))
            (check (Input-arrival input (keydown "g" ctrl?: #t)) => 'interrupt)

@@ -7,15 +7,12 @@
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/string-text-store
-        :tuna/plugins/buffers)
+        :tuna/plugins/buffers
+        "../test-support/kernel")
 (export buffers-test)
 
-(def (with-buffers thunk)
-  (parameterize ((current-kernel (new-kernel)))
-    (activate-plugin! rope-text-store-plugin)
-    (activate-plugin! settings-plugin)
-    (activate-plugin! buffers-plugin)
-    (thunk)))
+(def buffer-plugins
+  [rope-text-store-plugin settings-plugin buffers-plugin])
 
 (def (raises? thunk)
   (with-catch (lambda (e) #t) (lambda () (thunk) #f)))
@@ -25,7 +22,7 @@
 (def buffers-test
   (test-suite "tuna/services/buffers"
     (test-case "*scratch* is a tree holding one empty text node"
-      (with-buffers
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (check (buffer-name (current-buffer)) => "*scratch*")
          (check (text-node? (buffer-root (current-buffer))) => #t)
@@ -34,7 +31,7 @@
          (check (point-max) => 1))))
 
     (test-case "positions count characters from 1; lines from 1, columns from 0"
-      (with-buffers
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (let (t (current-text))
            ;; h é l l o _ 😀 | \n | w ö r l d
@@ -61,7 +58,7 @@
            (check (point) => 1)))))
 
     (test-case "undo removes one group at a time; undoing after a break redoes"
-      (with-buffers
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (let (t (current-text))
            (insert "a")
@@ -77,7 +74,7 @@
            (check (text-string t) => "ab")))))
 
     (test-case "points relocate through changes made elsewhere"
-      (with-buffers
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (let (t (current-text))
            (insert "hello world")
@@ -91,7 +88,7 @@
            (check (text-string t) => "hellrld")))))
 
     (test-case "the buffers plugin adapts to a new text store: every text, point, and undo survive"
-      (with-buffers
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (defplugin (adds-other ctx)
            "Adds a second buffer."
@@ -126,7 +123,7 @@
            (check (text-string t) => "hello\nwörld 😀")))))
 
     (test-case "describe-services lists buffers as an adapting dependent of the text store"
-      (with-buffers
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (let (info (find (lambda (info) (eq? (service-info-name info) 'text-store))
                           (describe-services)))
@@ -134,7 +131,7 @@
            (check (service-info-adapting info) => '(buffers-plugin))))))
 
     (test-case "without any text store, the buffers plugin goes too"
-      (with-buffers
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (activate-plugin! string-text-store-plugin)
          (deactivate-plugin! rope-text-store-plugin)
@@ -145,7 +142,7 @@
          (check (plugin-active? buffers-plugin) => #t))))
 
     (test-case "undo puts point back where the command left it"
-      (with-buffers
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (let (t (current-text))
            (insert "abc")
@@ -161,7 +158,7 @@
            (check (text-string t) => "abc")))))
 
     (test-case "highlights relocate with edits and change only the decoration revision"
-      (with-buffers
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (let (t (current-text))
            (insert "ab12cd345")
@@ -180,7 +177,7 @@
            (check (length (text-highlights t 'digits)) => 1)))))
 
     (test-case "a text's changes since a revision come oldest first, while the journal reaches back"
-      (with-buffers
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (let (t (current-text))
            (insert "a")
@@ -201,7 +198,7 @@
         (check (spans-of (rebase-spans spans [(make-change 1 4 "abc" "")])) => [[4 6]])))
 
     (test-case "a text rebases job spans past its changes, until its journal no longer reaches back"
-      (with-buffers
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (let (t (current-text))
            (insert "a12b34")
@@ -215,7 +212,7 @@
              (check (JobTarget-job-rebase target spans revision) => #f))))))
 
     (test-case "node kinds come and go with their plugin; projections need no renderer"
-      (with-buffers
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (defplugin (box-kind ctx)
            "Defines the box node kind."

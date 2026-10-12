@@ -7,18 +7,8 @@
 ;;; Merge review confirms that a change to this file only removes or lowers
 ;;; entries.
 ;;;
-;;; Reasons: "step N" (N from 7 to 8) names the step of
-;;; agents/plans/kernel-cleanup.md that removes the hits; "permanent: ..."
-;;; says why a word cannot go.
-
-;; Step 7: dictionary-sense key/keys (entry tables, entry-table-keys, the
-;; context-add-entry! parameter) are renamed to name/names.
-("tuna/kernel.ss" "keys" 1 "step 7")
-("tuna/kernel/entries.ss" "key" 13 "step 7")
-("tuna/kernel/entries.ss" "keys" 2 "step 7")
-("tuna/kernel/plugins.ss" "key" 3 "step 7")
-("tuna/kernel/plugins.ss" "keys" 1 "step 7")
-("tuna/kernel/ids.ss" "renderable" 1 "step 7")   ; revision-counter, a dead export
+;;; Reasons: "step 8" names the step of agents/plans/kernel-cleanup.md that
+;;; removes the hits; "permanent: ..." says why a word cannot go.
 
 ;; Step 8: failure reporting and consumed-seam wording.
 ("tuna/kernel/plugins.ss" "text" 6 "step 8")   ; hand-over! and report-failure!

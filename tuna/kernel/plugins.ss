@@ -12,9 +12,7 @@ prelude: :gerbil/core
 (export (struct-out plugin)
         defplugin
         context
-        context?
         current-context
-        context-plugin-name
         context-defer!
         context-add-entry!
         context-provide!
@@ -28,12 +26,10 @@ prelude: :gerbil/core
         (struct-out service)
         new-service
         service-provider
-        StartupServiceError
         startup-service-error?
         activate-plugin!
         deactivate-plugin!
         plugin-active?
-        active-plugin-names
         deactivate-all-plugins!
         (struct-out service-info)
         describe-services
@@ -87,18 +83,18 @@ prelude: :gerbil/core
                (with-catch (lambda (e) (cons e failures))
                            (lambda () (undo) failures))))))))
 
-;; Add an owner-tagged entry to TABLE and undo it on deactivation.
+;; Add an owner-tagged entry for NAME to TABLE and undo it on deactivation.
 (def (context-add-entry! (ctx      : context)
                          (table    : entry-table)
-                         (key      : :t)
+                         (name     : :t)
                          (value    : :t)
                          priority: (priority : :fixnum := 0)
                          doc:      (doc      :? :string := #f)
                          source:   (source   :? :string := #f))
   => entry
   (let (new (make-entry (context-plugin-name ctx) priority (next-id!) value doc source))
-    (entry-table-add! table key new)
-    (context-defer! ctx (lambda () (entry-table-remove! table key new)))
+    (entry-table-add! table name new)
+    (context-defer! ctx (lambda () (entry-table-remove! table name new)))
     new))
 
 (begin-syntax
@@ -430,7 +426,7 @@ prelude: :gerbil/core
                       (with-catch (cut report-failure! (entry-owner e) "adapting" <>)
                                   (lambda () (a.handler old new)))))))
               (entry-table-entries adapters name)))))
-      (entry-table-keys adapters))))
+      (entry-table-names adapters))))
 
 (def (check-removable! (k : kernel) (records : :list)) => :void
   (for-each
@@ -566,11 +562,6 @@ prelude: :gerbil/core
   (let (rec (hash-get (kernel-plugins (the-kernel)) (plugin-name p)))
     (and rec (plugin-record-active rec) #t)))
 
-;; Active plugin names, in activation order.
-(def (active-plugin-names) => :list
-  (map (lambda ((rec : plugin-record)) (plugin-name (plugin-record-definition rec)))
-       (by-activation (filter plugin-record-active (hash-values (kernel-plugins (the-kernel)))))))
-
 ;; Shutdown: deactivate everything, newest first. Only allowed once the
 ;; editor loop has stopped.
 (def (deactivate-all-plugins!) => :void
@@ -589,8 +580,7 @@ prelude: :gerbil/core
                          (tier       : :symbol)
                          (provider   :? :symbol)
                          (dependents : :list)          ; plugin names
-                         (adapting   : :list)          ; the dependents that adapt
-                         (doc        : :string))
+                         (adapting   : :list))         ; the dependents that adapt
   final: #t)
 
 (def (describe-services) => :list
@@ -607,8 +597,7 @@ prelude: :gerbil/core
                                 (service-tier svc)
                                 (and best (entry-owner best))
                                 (names dependents)
-                                (names (filter (cut adapting? k name <>) dependents))
-                                (service-doc svc))))
+                                (names (filter (cut adapting? k name <>) dependents)))))
          (list-sort (lambda ((a : service) (b : service))
                       (string<? (symbol->string (service-name a))
                                 (symbol->string (service-name b))))

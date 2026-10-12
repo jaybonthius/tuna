@@ -16,10 +16,10 @@
         :tuna/plugins/single-window
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
-        :tuna/plugins/demo)
+        :tuna/plugins/demo
+        "../test-support/kernel"
+        "../test-support/session")
 (export web-test)
-
-(include "test-session.ss")
 
 ;;; A minimal HTTP client that controls every header.
 
@@ -141,21 +141,17 @@
    html-renderer-plugin basic-editing-plugin demo-plugin])
 
 (def (with-tuna thunk)
-  (parameterize ((current-kernel (new-kernel)))
-    (try
-     (for-each activate-plugin! standard-plugins)
-     (start-editor-loop! quit-grace: 0.3)
-     (let* ((url (web-transport-url))
-            (colon (string-index url #\: 7))
-            (slash (string-index url #\/ colon)))
-       (set! port (string->number (substring url (+ colon 1) slash)))
-       (set! token (substring url (+ (string-search "token=" url) 6) (string-length url))))
-     (let (exchange (http "GET" (string-append "/?token=" token) cookie: #f))
-       (set! session-cookie (car (string-split (reply-header exchange "Set-Cookie") #\;))))
-     (thunk)
-     (finally
-      (stop-editor-loop!)
-      (deactivate-all-plugins!)))))
+  (call-with-fresh-kernel standard-plugins
+    (lambda ()
+      (start-editor-loop! quit-grace: 0.3)
+      (let* ((url (web-transport-url))
+             (colon (string-index url #\: 7))
+             (slash (string-index url #\/ colon)))
+        (set! port (string->number (substring url (+ colon 1) slash)))
+        (set! token (substring url (+ (string-search "token=" url) 6) (string-length url))))
+      (let (exchange (http "GET" (string-append "/?token=" token) cookie: #f))
+        (set! session-cookie (car (string-split (reply-header exchange "Set-Cookie") #\;))))
+      (thunk))))
 
 (def (settled-message) (call-on-editor-loop current-message))
 

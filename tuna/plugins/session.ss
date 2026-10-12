@@ -53,7 +53,7 @@ prelude: :gerbil/core
                                           (entry-serial (car entries))
                                           entries)
                                    (entry-value (car entries)))))
-                         (entry-table-keys table))))))
+                         (entry-table-names table))))))
 
 (def (session-file (self : session-store)) => :string
   (path-expand "session.ss" self.directory))

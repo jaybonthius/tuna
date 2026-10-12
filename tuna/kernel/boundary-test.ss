@@ -12,6 +12,9 @@
 ;;; tuna/lib/ may hold only Gerbil source. Library source may import only
 ;;; :gerbil, :std, the kernel facade :tuna/kernel, and library modules, and
 ;;; may include only checked library files. Libraries may use the nouns.
+;;;
+;;; Test support (tuna/test-support/) is for tests only: no other non-test
+;;; source under tuna/ may import or include it.
 (import (only-in :gerbil/runtime/hash HashTable)
         :std/misc/ports
         :std/source
@@ -60,10 +63,6 @@
   '("defcommand" "define-command" "command-ref" "command-entry" "command-registry"
     "kernel-commands"))
 
-;; Kernel test support, excluded from the checks. It moves out of the
-;; kernel in kernel-cleanup step 7; each name must exist.
-(def kernel-test-support-files '("tuna/kernel/test-fixtures.ss"))
-
 ;; The source location may be relative to the directory gerbil test runs
 ;; in; expanding it at load time resolves it against that same directory.
 (def kernel-directory (path-expand (this-source-directory)))   ; .../tuna/kernel/
@@ -80,25 +79,23 @@
 
 ;; A layer whose imports are checked (ADR 12, "Kernel contract"): the
 ;; directory holding its modules (:tuna/<dir>/x), its facade file if any
-;; (:tuna/<dir>), the other files the directory may hold, the test support
-;; excluded from the checks, and the modules it may import besides
-;; :gerbil/..., :std/..., and its own checked modules.
+;; (:tuna/<dir>), the other files the directory may hold, and the modules
+;; it may import besides :gerbil/..., :std/..., and its own checked modules.
 (defstruct layer ((name         : :string)
                   (directory    : :string)
                   (facade       :? :string)
                   (extra-files  : :list)
-                  (test-support : :list)
                   (also-imports : :list))
   final: #t)
 
 ;; The kernel: its facade tuna/kernel.ss and tuna/kernel/.
 (def kernel-layer
-  (make-layer "kernel" "tuna/kernel" "tuna/kernel.ss" [baseline-name] kernel-test-support-files []))
+  (make-layer "kernel" "tuna/kernel" "tuna/kernel.ss" [baseline-name] []))
 
 ;; Shared libraries, built only on the public kernel API: no kernel
 ;; module other than the facade, no contract, no plugin, no prelude.
 (def library-layer
-  (make-layer "library" "tuna/lib" #f [] [] [":tuna/kernel"]))
+  (make-layer "library" "tuna/lib" #f [] [":tuna/kernel"]))
 
 (def (layer-allowed (l : layer)) => :string
   (string-append ":gerbil/..., :std/..., "
@@ -123,38 +120,28 @@
                                                   ignore-hidden: 'dot-and-dot-dot)))))))
 
 ;; Entries other than regular .ss files and the layer's extra files, so no
-;; other kind of source can hide in the layer, and test-support exclusions
-;; naming no file.
+;; other kind of source can hide in the layer.
 (def (tree-problems (l : layer)) => :list
-  (let* ((entries (tree-entries (layer-directory l)))
-         (allowed (string-append (layer-directory l) "/ may hold only .ss files"
-                                 (apply string-append
-                                        (map (cut string-append " and " <>) (layer-extra-files l))))))
-    (append
-     (filter-map
-      (lambda ((entry : :pair))
-        (let ((name (car entry))
-              (type (cdr entry)))
-          (cond
-           ((not (eq? type 'regular))
-            (string-append name ": is a " (symbol->string type) "; " allowed))
-           ((or (string-suffix? ".ss" name) (member name (layer-extra-files l))) #f)
-           (else (string-append name ": " allowed)))))
-      entries)
-     (filter-map
-      (lambda ((name : :string))
-        (and (not (assoc name entries))
-             (string-append name ": listed as test support but does not exist;"
-                            " remove it from tuna/kernel/boundary-test.ss")))
-      (layer-test-support l)))))
+  (let (allowed (string-append (layer-directory l) "/ may hold only .ss files"
+                               (apply string-append
+                                      (map (cut string-append " and " <>) (layer-extra-files l)))))
+    (filter-map
+     (lambda ((entry : :pair))
+       (let ((name (car entry))
+             (type (cdr entry)))
+         (cond
+          ((not (eq? type 'regular))
+           (string-append name ": is a " (symbol->string type) "; " allowed))
+          ((or (string-suffix? ".ss" name) (member name (layer-extra-files l))) #f)
+          (else (string-append name ": " allowed)))))
+     (tree-entries (layer-directory l)))))
 
 ;; The checked files of L, relative to the repository root: its facade and
 ;; every non-test .ss file under its directory.
 (def (layer-source-names (l : layer)) => :list
   (let (files (filter (lambda ((name : :string))
                         (and (string-suffix? ".ss" name)
-                             (not (string-suffix? "-test.ss" name))
-                             (not (member name (layer-test-support l)))))
+                             (not (string-suffix? "-test.ss" name))))
                       (map car (filter (lambda ((entry : :pair)) (eq? (cdr entry) 'regular))
                                        (tree-entries (layer-directory l))))))
     (if (layer-facade l) (cons (layer-facade l) files) files)))
@@ -173,14 +160,22 @@
 
 ;;; Imports and includes
 
+;; The top-level forms of the file at PATH. A first line "#lang MODULE",
+;; which the reader cannot read, becomes the form (import MODULE).
 (def (read-forms (path : :string)) => :list
-  (call-with-input-file path
-    (lambda (port)
-      (let lp ((forms []))
-        (let (form (read port))
-          (if (eof-object? form)
-            (reverse forms)
-            (lp (cons form forms))))))))
+  (let* ((source (read-file-string path))
+         (lang? (string-prefix? "#lang " source))
+         (end (if lang? (or (string-index source #\newline) (string-length source)) 0))
+         (port (open-input-string (substring source end (string-length source)))))
+    (let lp ((forms (if lang?
+                      [['import (string->symbol
+                                 (car (filter (lambda ((word : :string)) (not (string-empty? word)))
+                                              (string-split (substring source 6 end) #\space))))]]
+                      [])))
+      (let (form (read port))
+        (if (eof-object? form)
+          (reverse forms)
+          (lp (cons form forms)))))))
 
 ;; The elements of FORM, ignoring an improper tail.
 (def (elements (form : :t)) => :list
@@ -262,8 +257,7 @@
      (else #f))))
 
 ;; Whether NAME, imported by FILE of L, is :gerbil, :std, one of L's other
-;; allowed modules, or a checked module of L; test files and test support
-;; are not.
+;; allowed modules, or a checked module of L; test files are not.
 (def (allowed-import? (l : layer) (file : :string) (name : :string) (checked : :list)) => :boolean
   (cond
    ((parent-segment? name) #f)
@@ -317,6 +311,52 @@
                                             " may include only its checked files")))
                       (included-paths forms)))))
                 checked))))
+
+;;; Test support
+
+(def test-support-directory "tuna/test-support")
+
+;; PATH with "." and ".." segments resolved without touching the file
+;; system, as path-expand leaves them in.
+(def (lexical-path (path : :string)) => :string
+  (let lp ((segments (string-split path #\/)) (kept []))
+    (match segments
+      ([] (string-join (reverse kept) "/"))
+      (["." . more] (lp more kept))
+      ([".." . more] (lp more (if (and (pair? kept) (not (equal? (car kept) ""))) (cdr kept) kept)))
+      ([segment . more] (lp more (cons segment kept))))))
+
+;; Whether NAME, imported or included by FILE, is in tuna/test-support/: a
+;; module :tuna/test-support/x, or a path relative to FILE.
+(def (test-support-name? (file : :string) (name : :string)) => :boolean
+  (let* ((target (if (string-prefix? ":" name)
+                   (source-path (substring name 1 (string-length name)))
+                   (lexical-path (path-expand name (path-directory (source-path file))))))
+         (directory (source-path test-support-directory)))
+    (or (equal? target directory)
+        (string-prefix? (string-append directory "/") target))))
+
+;; Every .ss file under tuna/ other than tests and test support itself.
+(def (non-test-source-names) => :list
+  (filter (lambda ((name : :string))
+            (and (string-suffix? ".ss" name)
+                 (not (string-suffix? "-test.ss" name))
+                 (not (string-prefix? (string-append test-support-directory "/") name))))
+          (map car (tree-entries "tuna"))))
+
+(def (test-support-problems) => :list
+  (apply append
+         (map (lambda ((file : :string))
+                (let (forms (read-forms (source-path file)))
+                  (filter-map
+                   (lambda ((name : :string))
+                     (and (test-support-name? file name)
+                          (string-append file ": imports or includes " name
+                                         "; only tests may use " test-support-directory "/")))
+                   (unique (append (imported-module-names forms)
+                                   (module-like-symbols forms)
+                                   (included-paths forms))))))
+              (non-test-source-names))))
 
 ;;; Forbidden nouns
 
@@ -429,7 +469,7 @@
   final: #t)
 
 ;; The kernel-cleanup plan steps that remove baseline entries.
-(def baseline-steps '("step 7" "step 8"))
+(def baseline-steps '("step 8"))
 
 (def (valid-reason? (reason : :string)) => :boolean
   (or (and (member reason baseline-steps) #t)
@@ -443,8 +483,8 @@
             (unless (fx> count 0)
               (error "Baseline count must be positive" baseline-name form))
             (unless (valid-reason? reason)
-              (error "Baseline reason must be \"step N\" (N from 7 to 8) or \"permanent: <why>\""
-                     baseline-name form))
+              (error "Baseline reason must be a remaining step of baseline-steps or \"permanent: <why>\""
+                     baseline-name form baseline-steps))
             (make-baseline-entry file label count reason))
            (else (error "Malformed baseline entry; expected (file term count reason)"
                         baseline-name form))))
@@ -515,4 +555,7 @@
       (check (problem-count (tree-problems library-layer)) => 0))
     (test-case "libraries import only :gerbil, :std, :tuna/kernel, and library modules"
       (displayln "  library boundary: " (length (layer-source-names library-layer)) " files checked")
-      (check (problem-count (import-problems library-layer)) => 0))))
+      (check (problem-count (import-problems library-layer)) => 0))
+    (test-case "only tests import or include test support"
+      (displayln "  test-support boundary: " (length (non-test-source-names)) " non-test files checked")
+      (check (problem-count (test-support-problems)) => 0))))

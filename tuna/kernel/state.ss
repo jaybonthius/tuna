@@ -6,7 +6,6 @@ prelude: :gerbil/core
         :std/error
         ./entries)
 (export kernel
-        kernel?
         new-kernel
         current-kernel
         the-kernel
@@ -35,7 +34,8 @@ prelude: :gerbil/core
           live?: #f
           loop: #f))
 
-;; Tests run each scenario in a fresh kernel by parameterizing this.
+;; The kernel facade does not export this; tests select a fresh kernel
+;; through call-with-fresh-kernel in tuna/test-support/kernel.ss.
 (def current-kernel (make-parameter (new-kernel)))
 
 (def (the-kernel) => kernel

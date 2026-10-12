@@ -1,10 +1,7 @@
-;;; Shared vocabulary: identities and revision counters (ADR 4, ADR 12).
+;;; Shared vocabulary: identities (ADR 4, ADR 12).
 prelude: :gerbil/core
 
-(export next-id!
-        (struct-out revision-counter)
-        new-revision-counter
-        revision-bump!)
+(export next-id!)
 
 (def id-mutex (make-mutex 'tuna-ids))
 (def last-id 0)
@@ -16,16 +13,3 @@ prelude: :gerbil/core
         (set! last-id (fx1+ last-id))
         last-id)
       :fixnum))
-
-;; A monotonically increasing revision of one renderable object. Its owner
-;; bumps it on the baton, so it needs no lock.
-(defstruct revision-counter ((value : :fixnum))
-  final: #t)
-
-(def (new-revision-counter) => revision-counter
-  (make-revision-counter 0))
-
-(def (revision-bump! (counter : revision-counter)) => :fixnum
-  (let (next (fx1+ (revision-counter-value counter)))
-    (set! (revision-counter-value counter) next)
-    next))
