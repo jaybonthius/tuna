@@ -51,8 +51,8 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | Service | Nothing direct; closest are generic functions and backend lists (`xref`, `project`) | New in Tuna. |
 | Editor loop, baton | Command loop, global Lisp lock | Same role. |
 | Task | Command, timer, or process callback | Same, except a task may wait in the middle (see divergences). Built for commands and timers. |
-| `context-run-with-timer!` | `run-with-timer` | Same; the timer and its callbacks stop when its plugin is turned off. Built. |
-| Job (`start-job`) | Async subprocess or thread | New: works on a snapshot and never touches live buffers; a newer job with the same key replaces the waiting one. Built (threads). |
+| `context-run-with-timer!` | `run-with-timer` | Same; the timer and its callbacks stop when its plugin is turned off. A shared library, not part of the kernel. Built. |
+| Job (`context-start-job!`) | Async subprocess or thread | New: works on a snapshot and never touches live buffers; a newer job of the same plugin with the same key replaces the waiting one. A shared library, not part of the kernel. Built (threads). |
 | Prompt (`read-string`, `completing-read`) | Same names, via recursive minibuffer | Same style. `read-string` is built. |
 | Minibuffer | Minibuffer, recursive minibuffers | Same: each waiting prompt has its own internal buffer; only the innermost receives keys. `RET` runs `exit-minibuffer`, `C-g` runs `abort-minibuffers`. Built. |
 | `quit` and the quit key | `quit` signal, `C-g`, `inhibit-quit` | Same names; stronger guarantee (see divergences). |
