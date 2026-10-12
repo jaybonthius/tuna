@@ -90,7 +90,7 @@
          (type! "C-p")
          (check (state) => ["abcde\nx\nabcde" 5 ""]))))
 
-    (test-case "undo undoes one command at a time; after another command it redoes"
+    (test-case "undo undoes typing as one group, other commands one at a time; after another command it redoes"
       (with-editor
        (lambda ()
          (type! "a" "b" "c" "DEL")
@@ -98,11 +98,26 @@
          (type! "C-/")
          (check (state) => ["abc" 4 "Undo"])
          (type! "C-_")
-         (check (state) => ["ab" 3 "Undo"])
-         (type! "C-/" "C-/" "C-/")
+         (check (state) => ["" 1 "Undo"])
+         (type! "C-/")
          (check (state) => ["" 1 "No further undo information"])
          (type! "C-f" "C-/")
-         (check (state) => ["a" 2 "Undo"]))))
+         (check (state) => ["abc" 4 "Undo"]))))
+
+    (test-case "consecutive self-inserts group in twenties"
+      (with-editor
+       (lambda ()
+         (for-each (lambda (_) (type! "x")) (iota 25))
+         (type! "C-/")
+         (check (state) => [(make-string 20 #\x) 21 "Undo"]))))
+
+    (test-case "undoing a forward delete puts point back before the restored text"
+      (with-editor
+       (lambda ()
+         (type! "a" "b" "C-a" "C-d")
+         (check (state) => ["b" 1 ""])
+         (type! "C-/")
+         (check (state) => ["ab" 1 "Undo"]))))
 
     (test-case "turning basic editing off and on leaves no stray commands or keys"
       (with-editor
