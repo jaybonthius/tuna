@@ -7,12 +7,13 @@
 ;;; the loop as a task, which checks the job's validity policy against the
 ;;; job's target and only then applies the result on the baton.
 ;;;
-;;; Every job belongs to a plugin context. Within that context, each key
-;;; runs at most one job at a time and keeps at most one pending: starting
-;;; a job while one with the same key runs makes it the pending job,
-;;; cancelling the previously pending one. Results therefore keep arriving
-;;; while new jobs keep being started. Deactivating the context's plugin
-;;; cancels its jobs.
+;;; Every job belongs to a job group, which a plugin creates from its
+;;; context and holds. Within a group, each key runs at most one job at a
+;;; time and keeps at most one pending: starting a job while one with the
+;;; same key runs makes it the pending job, cancelling the previously
+;;; pending one. Results therefore keep arriving while new jobs keep being
+;;; started. Deactivating the plugin closes its groups and cancels their
+;;; jobs.
 prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable)
@@ -20,7 +21,10 @@ prelude: :gerbil/core
         :std/interface
         :tuna/kernel)
 (export (interface-out JobTarget)
-        context-start-job!
+        job-group
+        new-job-group
+        job-group?
+        job-group-start!
         job?
         job-cancel!)
 
@@ -51,52 +55,51 @@ prelude: :gerbil/core
 
 (def validity-policies '(exact-revision target-alive rebase))
 
-;; Owning context -> its slots (key -> job-slot). A context is created by
-;; one activation in one kernel, so each kernel reaches only the slots of
-;; its own contexts. Only that kernel's baton touches a context's slots;
-;; the lock guards this table against batons of other kernels. A context's
-;; deactivation removes its entry, and weak keys let the entries of a
-;; dropped kernel's never-deactivated contexts go with them.
-(def context-slots
-  (make-hash-table-eq weak-keys: #t lock: (make-mutex 'tuna-job-slots)))
+;; One plugin's jobs: key -> job-slot. Confined to the baton, like the
+;; plugin's other state.
+(defclass job-group ((slots   : HashTable)
+                     (closed? : :boolean))
+  final: #t)
 
-;; CTX's slots, created on first use; deactivating CTX's plugin drops them
-;; and cancels their jobs.
-(def (context-job-slots! (ctx : context)) => HashTable
-  (or (hash-get context-slots ctx)
-      (let (slots (make-hash-table))
-        (hash-put! context-slots ctx slots)
-        (context-defer! ctx
-                        (lambda ()
-                          (hash-remove! context-slots ctx)
-                          (hash-for-each
-                           (lambda (key (slot : job-slot))
-                             (for-each (lambda (j) (when j (job-cancel! j)))
-                                       [slot.running slot.pending]))
-                           slots)))
-        slots)))
+;; A job group of CTX's plugin. Deactivating the plugin closes the group
+;; and cancels its jobs; a closed group refuses new jobs.
+(def (new-job-group (ctx : context)) => job-group
+  (using (group (job-group slots: (make-hash-table) closed?: #f) : job-group)
+    (context-defer! ctx
+                    (lambda ()
+                      (set! group.closed? #t)
+                      (hash-for-each
+                       (lambda (key (slot : job-slot))
+                         (for-each (lambda (j) (when j (job-cancel! j)))
+                                   [slot.running slot.pending]))
+                       group.slots)
+                      (hash-clear! group.slots)))
+    group))
 
-;; Start a job of CTX keyed KEY that applies (RUN INPUT) to TARGET with
+;; Start a job of GROUP keyed KEY that applies (RUN INPUT) to TARGET with
 ;; APPLY, on the baton, if its result is still valid under VALIDITY:
 ;;   exact-revision  TARGET's revision is unchanged;
 ;;   target-alive    TARGET still exists;
 ;;   rebase          TARGET still exists and adjusts the result for its
 ;;                   changes since the job started (JobTarget job-rebase).
-;; Deactivating CTX's plugin cancels the job. Call on the baton.
-(def (context-start-job! (ctx      : context)
-                         (key      : :t)
-                         input:    (input    : :t)
-                         run:      (run      : :procedure)
-                         apply:    (apply    : :procedure)
-                         target:   (target   : JobTarget)
-                         validity: (validity : :symbol := 'exact-revision))
+;; Deactivating the group's plugin cancels the job. Raises an error if the
+;; group is closed: its plugin was deactivated. Call on the baton.
+(def (job-group-start! (group    : job-group)
+                       (key      : :t)
+                       input:    (input    : :t)
+                       run:      (run      : :procedure)
+                       apply:    (apply    : :procedure)
+                       target:   (target   : JobTarget)
+                       validity: (validity : :symbol := 'exact-revision))
   => job
+  (when (job-group-closed? group)
+    (error "Job group is closed; its plugin was deactivated" key))
   (unless (memq validity validity-policies)
     (error "Unknown job validity policy" validity))
   (let* ((new (job key: key input: input run: run apply: apply validity: validity
                    target: target revision: (JobTarget-job-revision target)
                    state: 'pending))
-         (slots (context-job-slots! ctx))
+         (slots (job-group-slots group))
          (slot (or (hash-get slots key)
                    (let (slot (job-slot running: #f pending: #f))
                      (hash-put! slots key slot)

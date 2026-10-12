@@ -30,11 +30,11 @@
                      minibuffer-plugin demo-plugin]
                     thunk))
 
-(def job-host #f)
+(def jobs #f)
 
 (defplugin (job-host-plugin ctx)
-  "Lends its context to the tests to start jobs in."
-  (set! job-host ctx))
+  "Lends a job group to the tests."
+  (set! jobs (new-job-group ctx)))
 
 (def (with-editing thunk)
   (call-with-editor [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
@@ -122,12 +122,12 @@
            (on-baton
             (lambda ()
               (let (t (current-text))
-                (context-start-job! job-host 'gated-digits
-                                    input: (text-snapshot t)
-                                    run: (lambda (snapshot) (completion-wait! gate) (digit-spans snapshot))
-                                    apply: (lambda (spans) (set-highlights! t 'digits spans))
-                                    target: t
-                                    validity: 'rebase))))
+                (job-group-start! jobs 'gated-digits
+                                  input: (text-snapshot t)
+                                  run: (lambda (snapshot) (completion-wait! gate) (digit-spans snapshot))
+                                  apply: (lambda (spans) (set-highlights! t 'digits spans))
+                                  target: t
+                                  validity: 'rebase))))
            ;; While the job runs: type before everything, and delete the b.
            (type! "C-a" "Z" "C-f" "C-f" "C-f" "C-d")
            (check (on-baton (lambda () (text-string (current-text)))) => "Za1234")

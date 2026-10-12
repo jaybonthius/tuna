@@ -30,17 +30,23 @@
 
 (def applied [])
 
-;; The contexts of two plugins that start jobs.
+;; The job groups of plugins that start jobs, set when each activates.
 (def starter #f)
 (def other-starter #f)
+(def owner-jobs #f)
 
 (defplugin (job-starter ctx)
-  "Lends its context to the tests to start jobs in."
-  (set! starter ctx))
+  "Lends a job group to the tests."
+  (set! starter (new-job-group ctx)))
 
 (defplugin (other-job-starter ctx)
-  "Lends a second context to the tests."
-  (set! other-starter ctx))
+  "Lends a second job group to the tests."
+  (set! other-starter (new-job-group ctx)))
+
+;; Turned off and on by the tests; each activation makes a new group.
+(defplugin (job-owner ctx)
+  "Lends a job group that the tests deactivate."
+  (set! owner-jobs (new-job-group ctx)))
 
 (def (with-jobs thunk)
   (call-with-test-kernel
@@ -52,14 +58,14 @@
      (start-editor-loop!)
      (thunk))))
 
-;; Start a job of CTX (by default the job-starter plugin's) on the baton
+;; Start a job of GROUP (by default the job-starter plugin's) on the baton
 ;; whose run waits for GATE and returns its input.
-(def (start-gated-job! key input gate target validity: (validity 'exact-revision) context: (ctx #f))
+(def (start-gated-job! key input gate target validity: (validity 'exact-revision) group: (group #f))
   (call-on-editor-loop
    (lambda ()
-     (context-start-job! (or ctx starter) key input: input target: target validity: validity
-                         run: (lambda (input) (completion-wait! gate) input)
-                         apply: (lambda (result) (set! applied (cons result applied)))))))
+     (job-group-start! (or group starter) key input: input target: target validity: validity
+                       run: (lambda (input) (completion-wait! gate) input)
+                       apply: (lambda (result) (set! applied (cons result applied)))))))
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
@@ -71,13 +77,6 @@
 
 (def setting (make-parameter 'outside))
 
-(def owner-gate (make-completion))
-
-(defplugin (job-owner ctx)
-  "Starts a job that it owns."
-  (context-start-job! ctx 'owned input: 'owned target: (new-target)
-                      run: (lambda (input) (completion-wait! owner-gate) input)
-                      apply: (lambda (result) (set! applied (cons result applied)))))
 
 (def jobs-test
   (test-suite "tuna/lib/jobs"
@@ -87,10 +86,10 @@
          (on-baton
           (lambda ()
             (parameterize ((setting 'inside))
-              (context-start-job! starter 'probe input: 'input target: (new-target)
-                                  run: (lambda (input) [input (setting) (running-task)])
-                                  apply: (lambda (result)
-                                           (set! applied [(append result [(and (running-task) #t)])]))))))
+              (job-group-start! starter 'probe input: 'input target: (new-target)
+                                run: (lambda (input) [input (setting) (running-task)])
+                                apply: (lambda (result)
+                                         (set! applied [(append result [(and (running-task) #t)])]))))))
          (check (applied-after 1) => '((input outside #f #t))))))
 
     (test-case "a newer job with the same key replaces the pending one; the running one finishes"
@@ -103,13 +102,13 @@
            (completion-post! gate #t)
            (check (list-sort < (applied-after 3)) => [1 3 4])))))
 
-    (test-case "jobs of two contexts with the same key do not coalesce"
+    (test-case "jobs of two groups with the same key do not coalesce"
       (with-jobs
        (lambda ()
          (let ((gate (make-completion))
                (target (new-target)))
            (for-each (lambda (n) (start-gated-job! 'same n gate target)) [1 2])
-           (for-each (lambda (n) (start-gated-job! 'same n gate target context: other-starter))
+           (for-each (lambda (n) (start-gated-job! 'same n gate target group: other-starter))
                      [3 4])
            (completion-post! gate #t)
            (check (list-sort < (applied-after 4)) => [1 2 3 4])))))
@@ -158,11 +157,46 @@
            (completion-post! gate #t)
            (check (applied-after 1) => '((r 1 3)))))))
 
-    (test-case "deactivating a job's plugin cancels it"
+    (test-case "deactivating a job's plugin cancels its running and pending jobs"
+      (with-jobs
+       (lambda ()
+         (let ((gate (make-completion))
+               (target (new-target)))
+           (on-baton (lambda () (activate-plugin! job-owner)))
+           (start-gated-job! 'k 'running gate target group: owner-jobs)
+           (start-gated-job! 'k 'pending gate target group: owner-jobs)
+           (start-gated-job! 'free 'free gate target)
+           (on-baton (lambda () (deactivate-plugin! job-owner)))
+           (completion-post! gate #t)
+           (check (applied-after 1) => '(free))))))
+
+    (test-case "after reactivation, a job of the new group does not wait for the old group's"
+      (with-jobs
+       (lambda ()
+         (let ((old-gate (make-completion))
+               (open-gate (make-completion))
+               (target (new-target)))
+           (completion-post! open-gate #t)
+           (on-baton (lambda () (activate-plugin! job-owner)))
+           (start-gated-job! 'k 'old old-gate target group: owner-jobs)
+           (on-baton (lambda ()
+                       (deactivate-plugin! job-owner)
+                       (activate-plugin! job-owner)))
+           (start-gated-job! 'k 'new open-gate target group: owner-jobs)
+           (check (applied-after 1) => '(new))
+           (completion-post! old-gate #t)
+           (thread-sleep! 0.05)
+           (check (applied-after 1) => '(new))))))
+
+    (test-case "a closed group refuses new jobs"
       (with-jobs
        (lambda ()
          (on-baton (lambda () (activate-plugin! job-owner)))
-         (start-gated-job! 'free 'free owner-gate (new-target))
-         (on-baton (lambda () (deactivate-plugin! job-owner)))
-         (completion-post! owner-gate #t)
-         (check (applied-after 1) => '(free)))))))
+         (let (closed owner-jobs)
+           (on-baton (lambda () (deactivate-plugin! job-owner)))
+           (check (job-group? closed) => #t)
+           (check (with-catch (lambda (e) (and (Error? e) (Error-message e)))
+                              (lambda () (start-gated-job! 'k 'late (make-completion) (new-target)
+                                                           group: closed)))
+                  => "Job group is closed; its plugin was deactivated")
+           (check applied => [])))))))

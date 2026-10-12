@@ -75,18 +75,18 @@ prelude: :gerbil/core
 ;; After each change, recolor the text's digits from a job. Typing goes on
 ;; meanwhile; the rebase policy moves the colors past what was typed. The
 ;; minibuffer's answers are left alone.
-(def (highlight-digits-later! (ctx : context) (t : text)) => :void
+(def (highlight-digits-later! (jobs : job-group) (t : text)) => :void
   (when (and (editor-loop-running?) (not (internal-text? t)))
-    (context-start-job! ctx ['highlight-digits (text-id t)]
-                        input: [(text-snapshot t) (setting-value digit-highlight-delay)]
-                        run: (lambda (input)
-                               (match input
-                                 ([snapshot delay]
-                                  (thread-sleep! delay)
-                                  (digit-spans snapshot))))
-                        apply: (lambda (spans) (set-highlights! t 'digits spans))
-                        target: t
-                        validity: 'rebase)
+    (job-group-start! jobs ['highlight-digits (text-id t)]
+                      input: [(text-snapshot t) (setting-value digit-highlight-delay)]
+                      run: (lambda (input)
+                             (match input
+                               ([snapshot delay]
+                                (thread-sleep! delay)
+                                (digit-spans snapshot))))
+                      apply: (lambda (spans) (set-highlights! t 'digits spans))
+                      target: t
+                      validity: 'rebase)
     (void)))
 
 ;; (column (heading "Welcome to Tuna") (text "…"))
@@ -155,8 +155,9 @@ prelude: :gerbil/core
         (error "Empty string is invalid as a buffer name"))
       (rename-buffer! (current-buffer) name)
       (message (string-append "Renamed to " name))))
-  (context-add-hook! ctx after-change-hook 'slow-digit-highlighter
-                     (lambda (t c) (highlight-digits-later! ctx t)))
+  (let (jobs (new-job-group ctx))
+    (context-add-hook! ctx after-change-hook 'slow-digit-highlighter
+                       (lambda (t c) (highlight-digits-later! jobs t))))
   (define-command ctx (toggle-basic-editing) "Turn the basic-editing plugin off or on."
     (toggle-plugin! basic-editing-plugin)
     (message (if (plugin-active? basic-editing-plugin) "Basic editing on" "Basic editing off")))
