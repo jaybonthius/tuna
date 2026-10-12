@@ -1,6 +1,8 @@
 ;;; Test fixtures for driving plugins with key events through the real
 ;;; editor loop; included by test files (not a module).
 
+(import (only-in :tuna/services/keys make-key-event))
+
 ;; Activate PLUGINS in a fresh kernel, start the loop, run THUNK, and stop.
 (def (call-with-editor plugins thunk)
   (parameterize ((current-kernel (new-kernel)))
@@ -27,7 +29,7 @@
          (browser-key (cond
                        ((assoc name browser-keys) => cdr)
                        (else name))))
-    (submit-event! (make-key-event "test-client" sequence browser-key "" 0 #f #f #f ctrl? #f #f))))
+    (submit-input! (make-key-event "test-client" sequence browser-key "" 0 #f #f #f ctrl? #f #f))))
 
 (def (type! . keys)
   (for-each press keys))

@@ -7,15 +7,9 @@
 ;;; Merge review confirms that a change to this file only removes or lowers
 ;;; entries.
 ;;;
-;;; Reasons: "step N" (N from 2 to 8) names the step of
+;;; Reasons: "step N" (N from 3 to 8) names the step of
 ;;; agents/plans/kernel-cleanup.md that removes the hits; "permanent: ..."
 ;;; says why a word cannot go.
-
-;; Step 2: opaque input (key-event, the quit key, and its client fields).
-("tuna/kernel/loop.ss" "key" 14 "step 2")
-("tuna/kernel/loop.ss" "keydown" 1 "step 2")
-("tuna/kernel/loop.ss" "client" 4 "step 2")
-("tuna/kernel/loop.ss" "keyboard" 1 "step 2")   ; the signal-quit comment cites keyboard-quit
 
 ;; Step 3: commands out (the command registry and its declarative forms).
 ("tuna/kernel/plugins.ss" "defcommand" 4 "step 3")

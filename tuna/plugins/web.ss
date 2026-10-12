@@ -14,6 +14,7 @@ prelude: :gerbil/core
         :std/time/timeout
         :gerbil-datastar/http
         :tuna/kernel
+        (only-in :tuna/services/keys key-event make-key-event)
         :tuna/services/renderer
         ./web/embed)
 (export web-transport-plugin
@@ -273,7 +274,7 @@ prelude: :gerbil/core
           ;; Acknowledge, then enqueue, in arrival order across request threads.
           (ResponseHandler-write! response No-Content [] #u8())
           (parameterize ((current-kernel self.editor))
-            (submit-event! event)))
+            (submit-input! event)))
         (respond-text response Bad-Request "Invalid event."))))))
 
 (def (short-string? (value : :t)) => :boolean

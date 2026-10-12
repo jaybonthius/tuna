@@ -27,6 +27,7 @@
   (context-provide! ctx display-service (make-counting-display))
   (define-command ctx (note-a) "Note a." (note! 'a))
   (define-command ctx (note-b) "Note b." (note! 'b))
+  (define-command ctx (note-quit) "Note quit." (note! 'quit))
   (define-command ctx (fail) "Fail." (error "deliberate failure"))
   (define-command ctx (block) "Wait for the test to release it."
     (set! started? #t)
@@ -78,9 +79,11 @@
      (start-editor-loop! quit-grace: quit-grace)
      (thunk))))
 
-(def (press key) (submit-event! (test-event key)))
+;; Submit the input item ITEM, usually a plain string, which the test Input
+;; provider resolves.
+(def (press item) (submit-input! item))
 
-;; Wait for every earlier event and its command, then read the echo area.
+;; Wait for every earlier item and its command, then read the last message.
 (def (settled-message) (call-on-editor-loop current-message))
 
 (def (elapsed thunk)
@@ -90,7 +93,7 @@
 
 (def loop-test
   (test-suite "tuna/kernel/loop"
-    (test-case "events run in order, one command at a time"
+    (test-case "queued input items resolve in order, one command at a time"
       (with-loop
        (lambda ()
          (for-each press ["note-a" "note-b" "unbound" "note-a"])
@@ -118,7 +121,7 @@
            ;; Six commands ran (block, five notes) plus the settling call.
            (check (<= (- redisplays before) 3) ? values)))))
 
-    (test-case "the quit key stops a cooperative command without forcing"
+    (test-case "an interrupt arrival stops a cooperative command without forcing"
       (with-loop
        (lambda ()
          (press "cooperative-loop")
@@ -129,6 +132,31 @@
          (settled-message)
          (check log => '(a)))
        quit-grace: 10.))
+
+    (test-case "an interrupt with no task running is queued and resolved as input"
+      (with-loop
+       (lambda ()
+         (hash-put! test-bindings "quit" 'note-quit)
+         (try
+          (press "quit")
+          (press "note-a")
+          (settled-message)
+          (check (reverse log) => '(quit a))
+          (finally (hash-remove! test-bindings "quit"))))))
+
+    (test-case "input items of any shape are queued and resolved untouched"
+      (with-loop
+       (lambda ()
+         (hash-put! test-bindings '(note a) 'note-a)
+         (hash-put! test-bindings #f 'note-b)
+         (try
+          (press '(note a))
+          (press #f)
+          (settled-message)
+          (check (reverse log) => '(a b))
+          (finally
+           (hash-remove! test-bindings '(note a))
+           (hash-remove! test-bindings #f))))))
 
     (test-case "a command that ignores quit is interrupted after the grace period"
       (with-loop
@@ -167,7 +195,7 @@
          (check (current-command-name) => #f)
          (call-on-editor-loop
           (lambda ()
-            (submit-event! (test-event "note-b"))
+            (submit-input! "note-b")
             (resume! waiting 'answer)))
          (settled-message)
          (check (reverse log) => '(a (answer) b)))))
@@ -189,17 +217,36 @@
          (stop-editor-loop!)
          (check (editor-loop-running?) => #f))))
 
-    (test-case "input-pending? sees queued keys; discard-input drops them"
+    (test-case "input-pending? sees queued input; discard-input drops only input"
       (with-loop
        (lambda ()
          (set! saw-pending? #f)
          (press "block")
          (check (wait-until (lambda () started?)) => #t)
-         (for-each press ["discard" "note-a" "note-b"])
+         (press "discard")
+         (spawn-task! 'queued-task (lambda () (note! 'task)))
+         (press "note-a")
+         ((result-poster) 'job-result (lambda () (note! 'result)))
+         (press "note-b")
          (set! released? #t)
+         (check (wait-until (lambda () (and (memq 'task log) (memq 'result log) #t))) => #t)
          (settled-message)
          (check saw-pending? => #t)
-         (check log => '()))))
+         (check (memq 'a log) => #f)
+         (check (memq 'b log) => #f))))
+
+    (test-case "input-pending? ignores queued tasks and job results"
+      (with-loop
+       (lambda ()
+         (set! saw-pending? #t)
+         (press "block")
+         (check (wait-until (lambda () started?)) => #t)
+         (press "discard")
+         (spawn-task! 'queued-task (lambda () (note! 'task)))
+         ((result-poster) 'job-result (lambda () (note! 'result)))
+         (set! released? #t)
+         (check (wait-until (lambda () (and (memq 'task log) (memq 'result log) #t))) => #t)
+         (check saw-pending? => #f))))
 
     (test-case "timers run as tasks and stop with their plugin"
       (with-loop
@@ -222,7 +269,7 @@
          (check (wait-until (lambda () timer-quit?)) => #t)
          (check (settled-message) => "Quit"))))
 
-    (test-case "inhibit-quit holds off two quits; the third overrides it"
+    (test-case "inhibit-quit holds off two interrupts; the third overrides it"
       (with-loop
        (lambda ()
          (press "inhibited-loop")

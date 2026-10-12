@@ -29,7 +29,7 @@
     (thunk)))
 
 (def (resolve event)
-  (let (resolved (Input-resolve-event! (Input (service-provider input-service)) event))
+  (let (resolved (Input-resolve! (Input (service-provider input-service)) event))
     (and resolved (command-name resolved))))
 
 (def keys-test
@@ -115,10 +115,10 @@
            (resolve (keydown "c" ctrl?: #t))
            (check (resolve (keydown "x")) => 'global-x)))))
 
-    (test-case "only C-g is the quit key"
+    (test-case "only C-g arrives as an interrupt"
       (with-keys
        (lambda ()
          (let (input (Input (service-provider input-service)))
-           (check (Input-quit-event? input (keydown "g" ctrl?: #t)) => #t)
-           (check (Input-quit-event? input (keydown "g")) => #f)
-           (check (Input-quit-event? input (keydown "g" ctrl?: #t alt?: #t)) => #f)))))))
+           (check (Input-arrival input (keydown "g" ctrl?: #t)) => 'interrupt)
+           (check (Input-arrival input (keydown "g")) => 'queue)
+           (check (Input-arrival input (keydown "g" ctrl?: #t alt?: #t)) => 'queue)))))))
