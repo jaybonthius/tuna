@@ -32,7 +32,7 @@ Each stage is one implementer task in its own worktree (see AGENTS.md), merged a
 - **Demo plugin.** `C-c l` runs a command that loops forever (calling `check-quit`), a second command that loops without checking (to exercise forced quit); `C-h s` shows `describe-services` (each service, tier, provider, dependents).
 - **Done when:** `make test` passes, including tests that two plugins binding the same key survive deactivation in either order, startup-tier services refuse live replacement, a cooperative and a non-cooperative endless command are both stopped by the quit key, and requests without the cookie or with a foreign `Origin` or `Host` are rejected; `make run` prints the URL, two tabs mirror the screen, `C-c l` then `C-g` recovers, and `C-h s` lists the services.
 
-### Stage 2: text and editing
+### Stage 2: text and editing (merged 2026-10-11)
 
 The buffer is a node tree from the start; the text node is one node kind among several (ADR 6). Nothing may assume one text node per buffer.
 
@@ -47,7 +47,7 @@ The buffer is a node tree from the start; the text node is one node kind among s
 
 ### Stage 3: questions, settings, and slow work
 
-Suspension at yield points and the input-target stack; tasks registered through contexts and cancelled on deactivation; `input-pending?` and `discard-input`; minibuffer and `read-string`; `C-c r` rename; `with-settings` on parameters with the scope chain stub; jobs with keys and the `rebase` validity policy over the change journal; the slow digit highlighter.
+Carry-over from stage 2: add the `adapt` dependency kind (ADR 2) and declare the buffers plugin's text-store dependency with it, replacing the lazy per-text conversion; group consecutive self-inserts into one undo group (Emacs groups up to 20); restore point when undoing a forward delete. Suspension at yield points and the input-target stack; tasks registered through contexts and cancelled on deactivation; `input-pending?` and `discard-input`; minibuffer and `read-string`; `C-c r` rename; `with-settings` on parameters with the scope chain stub; jobs with keys and the `rebase` validity policy over the change journal; the slow digit highlighter.
 
 ### Stage 4: swaps and saving
 
