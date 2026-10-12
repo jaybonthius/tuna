@@ -1,7 +1,9 @@
 (import :std/test
         :tuna/kernel
         :tuna/services/keys
-        :tuna/plugins/keys)
+        :tuna/services/echo-area
+        :tuna/plugins/keys
+        :tuna/plugins/echo-area)
 (export keys-test)
 
 (def (keydown key ctrl?: (ctrl? #f) alt?: (alt? #f) shift?: (shift? #f)
@@ -22,6 +24,7 @@
 
 (def (with-keys thunk)
   (parameterize ((current-kernel (new-kernel)))
+    (activate-plugin! echo-area-plugin)
     (activate-plugin! keys-plugin)
     (thunk)))
 
