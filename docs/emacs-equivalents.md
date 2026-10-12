@@ -10,9 +10,10 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | Text | Buffer text (shared by indirect buffers) | Same. |
 | Text store | The gap buffer inside Emacs's C code | Tuna's is a replaceable service; the default is a persistent rope, so old versions stay valid. Built. |
 | Undo by command, undo chains | `undo`, `undo-boundary`, `pending-undo-list` | Same: one group per command, consecutive self-inserts grouped up to 20, point restored to where the command left it; undoing after another command redoes. Built. |
-| View | The window's own point and scroll position (`window-point`, `window-start`) | Same idea, made a named object. |
-| Window | Live window (a leaf of the window tree) | Same. |
-| Window manager | Emacs's built-in C window tree plus `display-buffer` | Tuna's is a replaceable plugin. |
+| View | The window's own point and scroll position (`window-point`, `window-start`) | Same idea, made a named object. Built: each window has its own view, so two windows on one buffer have independent points. |
+| Window | Live window (a leaf of the window tree) | Same. Built (the default shows one; the toy window manager shows two side by side). |
+| Window manager | Emacs's built-in C window tree plus `display-buffer` | Tuna's is a replaceable plugin behind a small contract: the windows in order, the selected window, selecting, the next window, showing a buffer in a window, and rendering the window area. Swapping it while Tuna runs hands the windows over as a neutral description (like `window-state-get`). Built (one-window default, two-window toy; no splits yet). |
+| `other-window` (`C-x o`) | `other-window` | Same; it uses only the window contract, so it works under any window manager. Built. |
 | Layout container (fit, scroll, tabbed) | Internal "combination" window (horizontal or vertical split only) | Tuna adds scrolling strips, tabs, and plugin-defined kinds. |
 | `display-buffer` and display rules | `display-buffer`, `display-buffer-alist` | Same role, part of the window contract. |
 | Window configuration | `window-configuration`, `window-state` | Same role. |
@@ -37,6 +38,7 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | `input-pending?`, `discard-input` | `input-pending-p`, `discard-input` | Same. Built. |
 | Echo area | Echo area | Same; it is a plugin. Built. |
 | Hook | Hook | Same; callbacks are named, ordered by depth, and a failing one is removed with a notice. Built. |
+| `kill-buffer-hook` | `kill-buffer-hook`, `replace-buffer-in-windows` | Same hook; window managers use it to show another buffer in the windows that showed the killed one, which Emacs does inside `kill-buffer`. Built. |
 | `after-change-hook` | `after-change-functions` | Same role; callbacks receive the text and its change record. Built. |
 | Advice | `advice-add` (nadvice) | Same combinators. See divergences for what can be advised. |
 | Setting (`defsetting`) | `defcustom` / variable | Same idea, with a typed schema. Built with a default and documentation; schemas come later. |
@@ -53,7 +55,8 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | Prompt (`read-string`, `completing-read`) | Same names, via recursive minibuffer | Same style. `read-string` is built. |
 | Minibuffer | Minibuffer, recursive minibuffers | Same: each waiting prompt has its own internal buffer; only the innermost receives keys. `RET` runs `exit-minibuffer`, `C-g` runs `abort-minibuffers`. Built. |
 | `quit` and the quit key | `quit` signal, `C-g`, `inhibit-quit` | Same names; stronger guarantee (see divergences). |
-| Session slots | `savehist`, `desktop`, `saveplace` | Same purpose, stored as data. |
+| Session slots | `savehist`, `desktop`, `saveplace` | Same purpose, stored as plain data in `$XDG_STATE_HOME/tuna/session.ss`, saved while idle and on exit, restored on start. Built: buffers (names, points) and windows. |
+| Autosave | `auto-save-mode`, `recover-session` | Same purpose: unsaved buffer text goes to `$XDG_STATE_HOME/tuna/autosave/`. Unlike Emacs, it comes back by itself on start, with the session, for buffers that visit no file (Emacs's `desktop` does not keep their text). Built. |
 | `init.ss`, `custom.ss` | `init.el`, `custom-file` | Same roles; `custom.ss` is data, not code. |
 | File-system service providers | `file-name-handler-alist` (TRAMP, compressed files) | Same purpose. |
 
