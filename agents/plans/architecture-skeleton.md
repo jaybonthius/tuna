@@ -34,7 +34,16 @@ Each stage is one implementer task in its own worktree (see AGENTS.md), merged a
 
 ### Stage 2: text and editing
 
-Carry-over from stage 1: move the echo area and help panel out of the kernel (`tuna/kernel/state.ss`) into buffers or plugins; make `keymap-set` record source locations. Text store contract with the default persistent rope and the toy plain-string store (also the rope's test oracle); texts, buffers, views; 1-based positions; scratch buffer; basic-editing plugin (insert, delete, motion); keymap layers needed so far; live text-store swap preserving content; basic editing off and on.
+The buffer is a node tree from the start; the text node is one node kind among several (ADR 6). Nothing may assume one text node per buffer.
+
+- **Carry-over from stage 1.** Move the echo area and help panel out of the kernel (`tuna/kernel/state.ss`) into plugins. Make `keymap-set` record source locations.
+- **Prelude.** A thin `:tuna/prelude` (usable as `#lang :tuna` if Gerbil supports it cleanly; otherwise the `prelude:` header) re-exporting `:gerbil/core` plus `defcommand`, `keymap-set`, and `defplugin` forms that lower to ordinary context registrations (ADR 1). Basic editing is written with it.
+- **Text store service** (live tier). An interface for length, slicing, line/position conversion, chunk iteration, and edits returning a new persistent version. Default: a persistent rope of string chunks caching character and newline counts (see Weevil's design in `agents/research/editor-corpus/prior-art/weevil/`). Toy: an immutable plain-string store, also used as the rope's test oracle. Swapping the provider live migrates every text's current content.
+- **Texts, buffers, views, nodes.** A text holds the current store version, character and content revisions, a bounded change journal, and undo history with a boundary per command. A buffer has a name, a node tree, and a default point. A node has an identity, a kind, attributes, and children; node kinds are registered through plugin contexts and supply render procedures. A text node refers to a text. A view (the single window's) holds the focused text node, point, and goal column; points relocate through change records. Buffer positions are 1-based character (code point) positions.
+- **Basic editing plugin.** Self-insert for printable keys, newline, delete backward and forward, character and line motion with goal column, line start and end, and undo (`C-/`, `C-_`) by command boundary. It edits the focused text node only.
+- **Rendering.** The HTML renderer walks the current view's buffer tree and dispatches on node kind; the text node renders its lines with the cursor. Whole-buffer rendering is fine; no scrolling yet.
+- **Tree demo.** The demo plugin registers `column` and `heading` node kinds and a `*welcome*` buffer `(column (heading "Welcome to Tuna") (text "…"))`; `C-c b` switches between `*scratch*` and `*welcome*`; `C-c s` swaps the text store; `C-c p` turns basic editing off and on.
+- **Done when:** `make test` passes, including randomized rope-versus-string differential tests (with non-ASCII and emoji), 1-based position conversions, undo, a live text-store swap that keeps text and point, editing off and on leaving no stray bindings or commands, and rendering of the `*welcome*` tree; in a browser, typing, deleting, motion, undo, buffer switching, both swaps, and `C-h s` work. Cross-node cursor motion is out of scope.
 
 ### Stage 3: questions, settings, and slow work
 

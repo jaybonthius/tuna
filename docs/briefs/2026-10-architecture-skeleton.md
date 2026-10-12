@@ -22,6 +22,8 @@ The existing diagrams show how [typing a letter](../diagrams/typing-a-letter.svg
 
 1. Run `make run`. Tuna prints a link with a secret token. Open it in an ordinary browser tab. Opening the page without the token is refused.
 2. You see a `*scratch*` buffer with a cursor and an echo area. Type, delete, and move with the arrow keys, `C-f`, `C-b`, `C-p`, `C-a`, and `C-e`. (`C-n` is also bound, but an ordinary browser tab keeps it for itself; the down arrow does the same.) Positions count from 1.
+   - Undo with `C-/` (added to the approved scope on 2026-10-11).
+   - `C-c b` switches to a small `*welcome*` buffer built as a tree, a heading above an editable text element, to prove buffers are trees with text as just one element (also added 2026-10-11).
 3. Type some digits. They appear immediately; a deliberately slow fake highlighter colors them about a third of a second later. Keep typing fast and the colors still land on the right characters.
 4. Press `C-c r`. The minibuffer asks "New name:". Type `notes` and press Enter; the buffer is renamed. The editor kept handling your keys while the command waited.
 5. Press `C-c l`, which starts a command that loops forever. Press `C-g`. It stops, and Tuna keeps working.
