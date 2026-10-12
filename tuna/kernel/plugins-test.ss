@@ -141,27 +141,28 @@
       (call-with-test-kernel
        (lambda ()
          (defplugin (half-done ctx)
-           "Registers a command, then fails."
-           (define-command ctx (half-done-command) "Never usable." (void))
+           "Registers an entry, then fails."
+           (context-add-entry! ctx table 'half-done 'never-usable)
            (error "activation failed"))
          (check-exception (activate-plugin! half-done) Error?)
-         (check (command-ref 'half-done-command) => #f)
+         (check (entry-table-ref table 'half-done) => #f)
          (check (plugin-active? half-done) => #f))))
 
     (test-case "registrations record their plugin, source, and documentation"
       (call-with-test-kernel
        (lambda ()
          (defplugin (documented ctx)
-           "Defines one command."
-           (define-command ctx (documented-command) "Does nothing." (void)))
+           "Adds one entry."
+           (context-add-entry! ctx table 'documented 'value doc: "Does nothing." source: "here:1"))
          (activate-plugin! documented)
-         (let (e (command-entry 'documented-command))
+         (let (e (entry-table-ref table 'documented))
            (check (entry-owner e) => 'documented)
            (check (entry-doc e) => "Does nothing.")
-           (check (and (string? (entry-source e))
-                       (string-contains (entry-source e) "plugins-test.ss"))
-                  ? values))
-         (check (plugin-doc documented) => "Defines one command."))))
+           (check (entry-source e) => "here:1"))
+         (check (plugin-doc documented) => "Adds one entry.")
+         (check (and (string? (plugin-source documented))
+                     (string-contains (plugin-source documented) "plugins-test.ss"))
+                ? values))))
 
     (test-case "owner-tagged entries survive deactivation in either order"
       (call-with-test-kernel

@@ -2,8 +2,8 @@
 ;;; job results, redisplay, and the quit lane (ADR 3).
 ;;;
 ;;; The loop thread owns the baton. It resolves each input item on the baton
-;;; and lends the baton to the resulting command, which runs as a task in its
-;;; own thread; later items wait until the task finishes or suspends. A task
+;;; and lends the baton to the resulting task, which runs in its own
+;;; thread; later items wait until the task finishes or suspends. A task
 ;;; suspends only at a yield point (`suspend`), which returns the baton to the
 ;;; loop; once resumed, it takes the baton back before any further input.
 ;;; Quit requests arrive out of band, so they reach a running task at once.
@@ -42,7 +42,7 @@ prelude: :gerbil/core
         quit-condition?
         quit-condition-forced?
         redisplay
-        current-command-name
+        current-task-name
         current-task-id)
 
 ;;; Services the loop consumes
@@ -54,8 +54,9 @@ prelude: :gerbil/core
   ;; 'interrupt to request a quit (ADR 3). Called on the submitting thread,
   ;; before queuing, so it must not touch editor state.
   (arrival (item : :t)) => :symbol
-  ;; Resolve ITEM on the baton to the command it completes, or #f.
-  (resolve! (item : :t)) => :t)
+  ;; Resolve ITEM on the baton to the task it starts, as a pair of the
+  ;; task's name and its thunk, or to #f when it starts none.
+  (resolve! (item : :t)) => (Maybe :pair))
 
 (interface Display
   ;; Render the current editor state for every client. Runs on the baton.
@@ -63,7 +64,7 @@ prelude: :gerbil/core
 
 (def input-service
   (new-service 'input is-Input? tier: 'startup
-               doc: "Resolves input items to commands."))
+               doc: "Resolves input items to tasks."))
 
 (def display-service
   (new-service 'display is-Display? tier: 'startup
@@ -311,8 +312,8 @@ prelude: :gerbil/core
     (when display
       (Display-redisplay! (Display display)))))
 
-;; The name of the running task's command, or #f.
-(def (current-command-name) => (Maybe :symbol)
+;; The name of the running task, or #f.
+(def (current-task-name) => (Maybe :symbol)
   (let (loop (kernel-editor-loop))
     (and loop
          (using (loop : editor-loop)
@@ -457,8 +458,7 @@ prelude: :gerbil/core
      (lambda ()
        (let (resolved (Input-resolve! loop.input (queued-input-item next)))
          (when resolved
-           (using (resolved : command)
-             (start-task! loop (new-task resolved.name resolved.procedure #f))))))))))
+           (start-task! loop (new-task (car resolved) (cdr resolved) #f)))))))))
 
 (def (redisplay-now! (loop : editor-loop)) => :void
   (set! loop.dirty? #f)

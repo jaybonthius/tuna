@@ -13,7 +13,7 @@
 (def cleaned-up? #f)
 (def released? #f)
 (def redisplays 0)
-(def waiting #f)          ; the suspension of the `wait` command
+(def waiting #f)          ; the suspension of the `wait` task
 (def saw-pending? #f)
 
 (defstruct counting-display ()
@@ -22,32 +22,42 @@
 (defmethod {redisplay! counting-display}
   (lambda (self) (set! redisplays (fx1+ redisplays))))
 
-(defplugin (test-commands ctx)
-  "Commands exercised by the loop tests."
-  (context-provide! ctx display-service (make-counting-display))
-  (define-command ctx (note-a) "Note a." (note! 'a))
-  (define-command ctx (note-b) "Note b." (note! 'b))
-  (define-command ctx (note-quit) "Note quit." (note! 'quit))
-  (define-command ctx (fail) "Fail." (error "deliberate failure"))
-  (define-command ctx (block) "Wait for the test to release it."
-    (set! started? #t)
-    (let lp () (unless released? (thread-sleep! 0.01) (lp))))
-  (define-command ctx (cooperative-loop) "Loop, checking for quit."
-    (set! started? #t)
-    (let lp () (check-quit) (lp)))
-  (define-command ctx (stubborn-loop) "Loop without checking for quit."
-    (set! started? #t)
-    (dynamic-wind void (lambda () (let lp () (lp))) (lambda () (set! cleaned-up? #t))))
-  (define-command ctx (inhibited-loop) "Loop without checking, with quit inhibited."
-    (set! started? #t)
-    (with-inhibit-quit (let lp () (lp))))
-  (define-command ctx (wait) "Wait to be resumed, then note the value."
-    (note! [(suspend (lambda (s) (set! waiting s)))]))
-  (define-command ctx (discard) "Note whether input is pending, then discard it."
-    (set! saw-pending? (input-pending?))
-    (discard-input)))
+(defplugin (test-display ctx)
+  "Counts redisplays."
+  (context-provide! ctx display-service (make-counting-display)))
 
-(for-each (lambda (key) (hash-put! test-bindings key (string->symbol key)))
+;; The tasks input items resolve to, each (name . thunk).
+(def test-tasks
+  [(cons 'note-a (lambda () (note! 'a)))
+   (cons 'note-b (lambda () (note! 'b)))
+   (cons 'note-quit (lambda () (note! 'quit)))
+   (cons 'fail (lambda () (error "deliberate failure")))
+   (cons 'block                         ; wait for the test to release it
+         (lambda ()
+           (set! started? #t)
+           (let lp () (unless released? (thread-sleep! 0.01) (lp)))))
+   (cons 'cooperative-loop              ; loop, checking for quit
+         (lambda ()
+           (set! started? #t)
+           (let lp () (check-quit) (lp))))
+   (cons 'stubborn-loop                 ; loop without checking for quit
+         (lambda ()
+           (set! started? #t)
+           (dynamic-wind void (lambda () (let lp () (lp))) (lambda () (set! cleaned-up? #t)))))
+   (cons 'inhibited-loop                ; loop without checking, with quit inhibited
+         (lambda ()
+           (set! started? #t)
+           (with-inhibit-quit (let lp () (lp)))))
+   (cons 'wait                          ; wait to be resumed, then note the value
+         (lambda () (note! [(suspend (lambda (s) (set! waiting s)))])))
+   (cons 'discard                       ; note whether input is pending, then discard it
+         (lambda ()
+           (set! saw-pending? (input-pending?))
+           (discard-input)))])
+
+(def (task-named name) (assq name test-tasks))
+
+(for-each (lambda (key) (hash-put! test-bindings key (task-named (string->symbol key))))
           ["note-a" "note-b" "fail" "block" "cooperative-loop" "stubborn-loop" "inhibited-loop"
            "wait" "discard"])
 
@@ -65,7 +75,7 @@
                              (with-catch (lambda (e) (set! timer-quit? (quit-condition? e)) (raise e))
                                          (lambda () (suspend (lambda (s) (set! waiting s))))))))
 
-;; Start a fresh loop with the test commands, run THUNK, and stop.
+;; Start a fresh loop with the test tasks, run THUNK, and stop.
 (def (with-loop thunk quit-grace: (quit-grace 0.5))
   (call-with-test-kernel
    (lambda ()
@@ -75,7 +85,7 @@
      (set! released? #f)
      (set! waiting #f)
      (activate-plugin! test-input-plugin)
-     (activate-plugin! test-commands)
+     (activate-plugin! test-display)
      (start-editor-loop! quit-grace: quit-grace)
      (thunk))))
 
@@ -83,7 +93,7 @@
 ;; provider resolves.
 (def (press item) (submit-input! item))
 
-;; Wait for every earlier item and its command, then read the last message.
+;; Wait for every earlier item and its task, then read the last message.
 (def (settled-message) (call-on-editor-loop current-message))
 
 (def (elapsed thunk)
@@ -93,14 +103,14 @@
 
 (def loop-test
   (test-suite "tuna/kernel/loop"
-    (test-case "queued input items resolve in order, one command at a time"
+    (test-case "queued input items resolve in order, one task at a time"
       (with-loop
        (lambda ()
          (for-each press ["note-a" "note-b" "unbound" "note-a"])
          (settled-message)
          (check (reverse log) => '(a b a)))))
 
-    (test-case "a failing command is reported and the loop continues"
+    (test-case "a failing task is reported and the loop continues"
       (with-loop
        (lambda ()
          (press "fail")
@@ -108,6 +118,18 @@
          (press "note-a")
          (settled-message)
          (check log => '(a)))))
+
+    (test-case "a resolve! result that is not a task is reported and the loop continues"
+      (with-loop
+       (lambda ()
+         (hash-put! test-bindings "malformed" 'not-a-pair)
+         (try
+          (press "malformed")
+          (check (string-empty? (settled-message)) => #f)
+          (press "note-a")
+          (settled-message)
+          (check log => '(a))
+          (finally (hash-remove! test-bindings "malformed"))))))
 
     (test-case "redisplay waits until queued input is processed"
       (with-loop
@@ -118,10 +140,10 @@
            (for-each press ["note-a" "note-b" "note-a" "note-b" "note-a"])
            (set! released? #t)
            (settled-message)
-           ;; Six commands ran (block, five notes) plus the settling call.
+           ;; Six tasks ran (block, five notes) plus the settling call.
            (check (<= (- redisplays before) 3) ? values)))))
 
-    (test-case "an interrupt arrival stops a cooperative command without forcing"
+    (test-case "an interrupt arrival stops a cooperative task without forcing"
       (with-loop
        (lambda ()
          (press "cooperative-loop")
@@ -136,7 +158,7 @@
     (test-case "an interrupt with no task running is queued and resolved as input"
       (with-loop
        (lambda ()
-         (hash-put! test-bindings "quit" 'note-quit)
+         (hash-put! test-bindings "quit" (task-named 'note-quit))
          (try
           (press "quit")
           (press "note-a")
@@ -147,8 +169,8 @@
     (test-case "input items of any shape are queued and resolved untouched"
       (with-loop
        (lambda ()
-         (hash-put! test-bindings '(note a) 'note-a)
-         (hash-put! test-bindings #f 'note-b)
+         (hash-put! test-bindings '(note a) (task-named 'note-a))
+         (hash-put! test-bindings #f (task-named 'note-b))
          (try
           (press '(note a))
           (press #f)
@@ -158,7 +180,7 @@
            (hash-remove! test-bindings '(note a))
            (hash-remove! test-bindings #f))))))
 
-    (test-case "a command that ignores quit is interrupted after the grace period"
+    (test-case "a task that ignores quit is interrupted after the grace period"
       (with-loop
        (lambda ()
          (press "stubborn-loop")
@@ -192,7 +214,7 @@
          (press "note-a")
          (settled-message)
          (check log => '(a))
-         (check (current-command-name) => #f)
+         (check (current-task-name) => #f)
          (call-on-editor-loop
           (lambda ()
             (submit-input! "note-b")
@@ -277,8 +299,8 @@
          (press "quit")
          (press "quit")
          (thread-sleep! 0.3)
-         ;; Read without queuing behind the running command.
-         (check (current-command-name) => 'inhibited-loop)
+         ;; Read without queuing behind the running task.
+         (check (current-task-name) => 'inhibited-loop)
          (press "quit")
          (check (settled-message)
                 => "Quit (forced: plugin or library state may be inconsistent)"))

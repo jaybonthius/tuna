@@ -48,9 +48,9 @@
     "measure" "measures" "measured" "measuring" "measurement" "measurements"
     "demo" "demos"))
 
-;; ADR 12: the kernel has no command registry. The bare word "command"
-;; stays allowed because the kernel announces commands starting and
-;; finishing.
+;; ADR 12: the kernel has no command registry; it announces tasks, not
+;; commands, starting and finishing. The bare word "command" stays allowed
+;; for generic phrases such as "command loop".
 (def forbidden-registry-names
   '("defcommand" "define-command" "command-ref" "command-entry" "command-registry"
     "kernel-commands"))
@@ -385,7 +385,7 @@
   final: #t)
 
 ;; The kernel-cleanup plan steps that remove baseline entries.
-(def baseline-steps '("step 3" "step 4" "step 5" "step 6" "step 7" "step 8"))
+(def baseline-steps '("step 4" "step 5" "step 6" "step 7" "step 8"))
 
 (def (valid-reason? (reason : :string)) => :boolean
   (or (and (member reason baseline-steps) #t)
@@ -399,7 +399,7 @@
             (unless (fx> count 0)
               (error "Baseline count must be positive" baseline-name form))
             (unless (valid-reason? reason)
-              (error "Baseline reason must be \"step N\" (N from 3 to 8) or \"permanent: <why>\""
+              (error "Baseline reason must be \"step N\" (N from 4 to 8) or \"permanent: <why>\""
                      baseline-name form))
             (make-baseline-entry file label count reason))
            (else (error "Malformed baseline entry; expected (file term count reason)"

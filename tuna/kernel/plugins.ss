@@ -1,5 +1,5 @@
-;;; Plugin runtime: plugins, contexts and receipts, services, commands
-;;; (ADR 2, ADR 12). Runs on the editor baton.
+;;; Plugin runtime: plugins, contexts and receipts, services (ADR 2,
+;;; ADR 12). Runs on the editor baton.
 prelude: :gerbil/core
 
 (import :std/error
@@ -30,12 +30,6 @@ prelude: :gerbil/core
         deactivate-all-plugins!
         (struct-out service-info)
         describe-services
-        (struct-out command)
-        define-command
-        context-define-command!
-        defcommand
-        command-ref
-        command-entry
         (interface-out Messages)
         messages-service
         message
@@ -64,7 +58,7 @@ prelude: :gerbil/core
   final: #t)
 
 ;; The context of the plugin being activated, for the declarative forms
-;; (defcommand, keymap-set) that register into it implicitly.
+;; that register into it implicitly.
 (def current-context (make-parameter #f))
 
 (def (context-plugin-name (ctx : context)) => :symbol
@@ -498,52 +492,6 @@ prelude: :gerbil/core
                       (string<? (symbol->string (service-name a))
                                 (symbol->string (service-name b))))
                     (hash-values (kernel-services k))))))
-
-;;; Commands
-
-(defstruct command ((name      : :symbol)
-                    (procedure : :procedure)          ; thunk, run as a task
-                    (doc       : :string))
-  final: #t)
-
-(def (context-define-command! (ctx       : context)
-                              (name      : :symbol)
-                              (procedure : :procedure)
-                              doc:    (doc    : :string := "")
-                              source: (source :? :string := #f))
-  => :void
-  (context-add-entry! ctx (kernel-commands (the-kernel)) name
-                      (make-command name procedure doc)
-                      doc: doc source: source)
-  (void))
-
-;; (define-command ctx (name) "doc" body ...)
-(defsyntax (define-command stx)
-  (syntax-case stx ()
-    ((_ ctx (name) doc body ...)
-     (and (identifier? #'name) (stx-string? #'doc))
-     (with-syntax ((source (stx-source-string stx)))
-       #'(context-define-command! ctx 'name (lambda () body ...)
-                                  doc: doc source: source)))))
-
-;; (defcommand (name) "doc" body ...) in a plugin body defines a command
-;; through (current-context).
-(defsyntax (defcommand stx)
-  (syntax-case stx ()
-    ((_ (name) doc body ...)
-     (and (identifier? #'name) (stx-string? #'doc))
-     (with-syntax ((source (stx-source-string stx)))
-       #'(context-define-command! (current-context) 'name (lambda () body ...)
-                                  doc: doc source: source)))))
-
-;; The effective command named NAME, or #f.
-(def (command-ref (name : :symbol)) => (Maybe command)
-  (let (best (command-entry name))
-    (and best (entry-value best))))
-
-;; NAME's effective entry, with provenance.
-(def (command-entry (name : :symbol)) => (Maybe entry)
-  (entry-table-ref (kernel-commands (the-kernel)) name))
 
 ;;; Messages
 

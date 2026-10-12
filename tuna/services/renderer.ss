@@ -21,7 +21,7 @@ prelude: :gerbil/core
 ;; the buffer, the line and column of V's point, and, for the selected
 ;; window, the running command.
 (def (status-line-text (v : view) (selected? : :boolean)) => :string
-  (let ((command (and selected? (current-command-name)))
+  (let ((command (and selected? (current-task-name)))
         (n (view-node v)))
     (string-append
      "Tuna · " (buffer-name (view-showing v))

@@ -13,7 +13,6 @@ prelude: :gerbil/core
         kernel-plugins
         kernel-services
         kernel-providers
-        kernel-commands
         kernel-adapters
         kernel-slots
         kernel-hooks
@@ -26,7 +25,6 @@ prelude: :gerbil/core
   ((plugins   : HashTable)       ; plugin name -> plugin record
    (services  : HashTable)       ; service name -> service
    (providers : entry-table)     ; service name -> provider entries
-   (commands  : entry-table)     ; command name -> command entries
    (adapters  : entry-table)     ; service name -> adapter entries
    (slots     : entry-table)     ; session slot name -> slot entries
    (hooks     : HashTable)       ; hook name -> callbacks, in calling order
@@ -39,7 +37,6 @@ prelude: :gerbil/core
   (kernel plugins: (make-hash-table)
           services: (make-hash-table)
           providers: (new-entry-table)
-          commands: (new-entry-table)
           adapters: (new-entry-table)
           slots: (new-entry-table)
           hooks: (make-hash-table-eq)

@@ -2,14 +2,13 @@
 
 ;; Input provider over plain strings, which shows that the kernel never
 ;; looks inside an input item: it resolves an item through BINDINGS (item
-;; -> command name) and classifies the item "quit" as an interrupt.
+;; -> (task name . thunk)) and classifies the item "quit" as an interrupt.
 (defstruct test-input ((bindings : HashTable))
   final: #t)
 
 (defmethod {resolve! test-input}
   (lambda (self item)
-    (let (name (hash-get (test-input-bindings self) item))
-      (and name (command-ref name)))))
+    (hash-get (test-input-bindings self) item)))
 
 (defmethod {arrival test-input}
   (lambda (self item)
