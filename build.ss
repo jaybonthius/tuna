@@ -44,8 +44,8 @@
     "tuna/prelude"
     "tuna/plugins/basic-editing"
     "tuna/plugins/minibuffer"
+    "tuna/plugins/demo"
     "tuna/plugins/window-commands"
     "tuna/plugins/web/embed"
     (gxc: "tuna/plugins/web" (extra-inputs: ,web-assets))
-    "tuna/plugins/demo"
     (exe: "tuna/main" bin: "tuna")))

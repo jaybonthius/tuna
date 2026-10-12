@@ -72,11 +72,8 @@ prelude: :gerbil/core
   (quit-event? (event : key-event)) => :boolean)
 
 (interface Display
-  ;; Render the current editor state for every client. EVENTS are the
-  ;; input events, oldest first, whose effects this screen is the first to
-  ;; show, so a display can measure keydown-to-screen latency. Runs on the
-  ;; baton.
-  (redisplay! (events : :list)) => :void)
+  ;; Render the current editor state for every client. Runs on the baton.
+  (redisplay!) => :void)
 
 (def input-service
   (new-service 'input is-Input? tier: 'startup
@@ -205,7 +202,6 @@ prelude: :gerbil/core
                        (waiting        : :list)         ; suspended tasks
                        (running        :? task)
                        (dirty?         : :boolean)
-                       (unshown        : :list)         ; key events dispatched since the last render, newest first
                        (last-redisplay : :real)
                        (quit-grace     : :real)         ; seconds before a quit is forced
                        (force-at       :? :real)
@@ -246,7 +242,7 @@ prelude: :gerbil/core
         (error "No plugin provides the input service"))
       (using (loop (editor-loop thread: #f input: (Input input) pending: [] pending-tail: []
                                 resumes: [] results: [] waiting: []
-                                running: #f dirty?: #t unshown: [] last-redisplay: 0. quit-grace: quit-grace
+                                running: #f dirty?: #t last-redisplay: 0. quit-grace: quit-grace
                                 force-at: #f stopping: #f)
                    : editor-loop)
         (set! k.loop loop)
@@ -318,12 +314,9 @@ prelude: :gerbil/core
 
 ;; Render now. Only the baton holder may call this: the loop, or a task.
 (def (redisplay) => :void
-  (show-screen! []))
-
-(def (show-screen! (events : :list)) => :void
   (let (display (service-provider display-service))
     (when display
-      (Display-redisplay! (Display display) events))))
+      (Display-redisplay! (Display display)))))
 
 ;; The name of the running task's command, or #f.
 (def (current-command-name) => (Maybe :symbol)
@@ -466,7 +459,6 @@ prelude: :gerbil/core
         (start-task! loop item))))
    (else
     (set! loop.dirty? #t)
-    (set! loop.unshown (cons item loop.unshown))
     (with-catch
      (lambda (e) (message (exception-summary e)))
      (lambda ()
@@ -476,14 +468,12 @@ prelude: :gerbil/core
              (start-task! loop (new-task resolved.name resolved.procedure #f))))))))))
 
 (def (redisplay-now! (loop : editor-loop)) => :void
-  (let (events (reverse loop.unshown))
-    (set! loop.unshown [])
-    (set! loop.dirty? #f)
-    (set! loop.last-redisplay (now))
-    (with-catch
-     (lambda (e)
-       (displayln "Redisplay failed: " (exception-summary e) (current-error-port)))
-     (lambda () (show-screen! events)))))
+  (set! loop.dirty? #f)
+  (set! loop.last-redisplay (now))
+  (with-catch
+   (lambda (e)
+     (displayln "Redisplay failed: " (exception-summary e) (current-error-port)))
+   redisplay))
 
 (def (start-task! (loop : editor-loop) (next : task)) => :void
   (let (loop-thread (: loop.thread :thread))

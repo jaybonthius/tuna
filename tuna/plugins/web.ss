@@ -1,12 +1,9 @@
 ;;; Web transport (startup tier): the loopback HTTP server, client
 ;;; authentication, the page shell, POST /commands, and one SSE stream per
-;;; client (ADR 7, ADR 10). It measures keydown-to-screen latency: from a
-;;; key event's arrival to the first screen showing its effect being
-;;; written to each client's stream.
+;;; client (ADR 7, ADR 10).
 prelude: :gerbil/core
 
-(import (only-in :gerbil/runtime/hash HashTable)
-        :std/crypto/random
+(import :std/crypto/random
         :std/encoding/hex
         :std/io
         :std/log
@@ -21,18 +18,13 @@ prelude: :gerbil/core
         ./web/embed)
 (export web-transport-plugin
         web-transport-listen-port
-        web-transport-url
-        keydown-latencies)
+        web-transport-url)
 
 ;; The loopback port to listen on; 0 picks a free one.
 (def web-transport-listen-port (make-parameter 0))
 
 ;; Seconds between keep-alive events, which also detect closed tabs.
 (def heartbeat-seconds 15.)
-
-;; How many recent latency samples, and screens awaiting them, to keep.
-(def latency-limit 1000)
-(def shown-limit 256)
 
 (def static-assets (embed-directory "../../web" "/static"))
 
@@ -50,14 +42,8 @@ prelude: :gerbil/core
    (screen      : :string)      ; the newest screen
    (revision    : :fixnum)
    (stopped?    : :boolean)
-   (arrivals    : HashTable)    ; key event -> arrival time, until shown
-   (shown       : :list)        ; (revision . arrival times), newest first
-   (latencies   : :list)        ; seconds, newest first
    (server      : :t))
   final: #t)
-
-(def (now) => :real
-  (time->seconds (current-time)))
 
 (def (new-secret) => :string
   (hex-encode (random-bytes 32)))
@@ -76,14 +62,6 @@ prelude: :gerbil/core
          (using (self display : web-transport)
            (string-append "http://" self.host "/?token=" self.token)))))
 
-;; Recent keydown-to-screen latencies of the active web transport, in
-;; seconds, newest first; #f when no web transport is active.
-(def (keydown-latencies) => (Maybe :list)
-  (let (display (service-provider display-service))
-    (and (web-transport? display)
-         (using (self display : web-transport)
-           (do-with-lock self.mutex self.latencies)))))
-
 ;;; Screens
 
 (def (render-screen) => :string
@@ -93,41 +71,13 @@ prelude: :gerbil/core
       "<main id=\"screen\"><p>No renderer is active.</p></main>")))
 
 (defmethod {redisplay! web-transport}
-  (lambda (self events)
+  (lambda (self)
     (using (self : web-transport)
       (let (screen (render-screen))
         (do-with-lock self.mutex
-          (let (arrived (filter-map (lambda (event)
-                                      (let (time (hash-get self.arrivals event))
-                                        (hash-remove! self.arrivals event)
-                                        time))
-                                    events))
-            (set! self.screen screen)
-            (set! self.revision (fx1+ self.revision))
-            (unless (null? arrived)
-              (set! self.shown (take-at-most (cons (cons self.revision arrived) self.shown)
-                                             shown-limit)))
-            ;; Events that never reach a screen (discarded input) must not
-            ;; pile up.
-            (when (fx> (hash-length self.arrivals) latency-limit)
-              (hash-clear! self.arrivals))
-            (condition-variable-broadcast! self.changed)))))))
-
-(def (take-at-most (items : :list) (limit : :fixnum)) => :list
-  (if (fx> (length items) limit) (take items limit) items))
-
-;; A client's stream now holds screen REVISION; it held SENT before. Record
-;; the latency of each event first shown by a screen in between.
-(def (record-latencies! (self : web-transport) (sent : :fixnum) (revision : :fixnum)) => :void
-  (let (written (now))
-    (do-with-lock self.mutex
-      (for-each (lambda ((screen : :pair))
-                  (when (fx< sent (car screen) (fx1+ revision))
-                    (for-each (lambda ((arrival : :real))
-                                (set! self.latencies (cons (- written arrival) self.latencies)))
-                              (cdr screen))))
-                self.shown)
-      (set! self.latencies (take-at-most self.latencies latency-limit)))))
+          (set! self.screen screen)
+          (set! self.revision (fx1+ self.revision))
+          (condition-variable-broadcast! self.changed))))))
 
 ;; The newest screen as (revision . html) once it is newer than SENT;
 ;; 'heartbeat after TIMEOUT seconds; #f once stopped. Never touches editor
@@ -299,10 +249,6 @@ prelude: :gerbil/core
              (cond
               ((pair? next)
                (patch-elements session (cdr next))
-               ;; The first screen a client receives is not a response to
-               ;; its keys.
-               (unless (fx< sent 0)
-                 (record-latencies! self sent (car next)))
                (lp (car next)))
               ((eq? next 'heartbeat)
                (patch-signals session "{}")
@@ -321,11 +267,9 @@ prelude: :gerbil/core
    ((not (json-content-type? request))
     (respond-text response Unsupported-Media-Type "Expected JSON."))
    (else
-    (let* ((arrived (now))
-           (event (with-catch (lambda (e) #f) (lambda () (parse-key-event (read-signals request))))))
+    (let (event (with-catch (lambda (e) #f) (lambda () (parse-key-event (read-signals request)))))
       (if event
         (do-with-lock self.admission
-          (do-with-lock self.mutex (hash-put! self.arrivals event arrived))
           ;; Acknowledge, then enqueue, in arrival order across request threads.
           (ResponseHandler-write! response No-Content [] #u8())
           (parameterize ((current-kernel self.editor))
@@ -388,9 +332,6 @@ prelude: :gerbil/core
                               screen: "<main id=\"screen\"></main>"
                               revision: 0
                               stopped?: #f
-                              arrivals: (make-hash-table-eq)
-                              shown: []
-                              latencies: []
                               server: #f))
          (server (new-http-server
                   (ServerConfig

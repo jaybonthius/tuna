@@ -20,7 +20,7 @@
   final: #t)
 
 (defmethod {redisplay! counting-display}
-  (lambda (self events) (set! redisplays (fx1+ redisplays))))
+  (lambda (self) (set! redisplays (fx1+ redisplays))))
 
 (defplugin (test-commands ctx)
   "Commands exercised by the loop tests."
