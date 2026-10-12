@@ -5,9 +5,15 @@
         :std/test
         :std/time/timeout
         :tuna/kernel
+        :tuna/services/echo-area
         :tuna/plugins/keys
         :tuna/plugins/web
+        :tuna/plugins/echo-area
+        :tuna/plugins/help-panel
+        :tuna/plugins/rope
+        :tuna/plugins/buffers
         :tuna/plugins/html-renderer
+        :tuna/plugins/basic-editing
         :tuna/plugins/demo)
 (export web-test)
 
@@ -126,7 +132,9 @@
      (else (thread-sleep! 0.01) (lp (- tries 1))))))
 
 (def standard-plugins
-  [keys-plugin web-transport-plugin html-renderer-plugin demo-plugin])
+  [keys-plugin web-transport-plugin echo-area-plugin help-panel-plugin
+   rope-text-store-plugin buffers-plugin html-renderer-plugin basic-editing-plugin
+   demo-plugin])
 
 (def (with-tuna thunk)
   (parameterize ((current-kernel (new-kernel)))
@@ -220,10 +228,12 @@
            (post-key "s")
            (for-each
              (lambda (stream)
-               (let (text (read-until stream (cut string-search "dependents: demo-plugin" <>)))
-                 (check (and (string-search "input (startup)  provider: keys-plugin  dependents: demo-plugin" text) #t)
+               (let (text (read-until stream (cut string-search "text-store (live)" <>)))
+                 (check (and (string-search "input (startup)  provider: keys-plugin  dependents: " text) #t)
                         => #t)
                  (check (and (string-search "renderer (live)  provider: html-renderer-plugin" text) #t)
+                        => #t)
+                 (check (and (string-search "text-store (live)  provider: rope-text-store-plugin" text) #t)
                         => #t)
                  (check (and (string-search "display (startup)  provider: web-transport-plugin" text) #t)
                         => #t)))

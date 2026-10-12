@@ -6,6 +6,7 @@
   --tuna-rule: #d1d9e0;
   --tuna-bar: #eff2f5;
   --tuna-font: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --tuna-prose-font: system-ui, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -48,6 +49,37 @@ body {
 .help pre {
   margin: 0;
   font-family: inherit;
+}
+
+.buffer {
+  padding: 0.5rem;
+  overflow: auto;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--tuna-prose-font);
+  font-size: 1.25rem;
+}
+
+.text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.line {
+  min-block-size: 1lh;
+}
+
+.cursor {
+  background: var(--tuna-foreground);
+  color: var(--tuna-background);
 }
 
 .status-line,

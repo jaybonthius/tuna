@@ -9,12 +9,19 @@ prelude: :gerbil/core
         :tuna/kernel
         :tuna/plugins/keys
         :tuna/plugins/web
+        :tuna/plugins/echo-area
+        :tuna/plugins/help-panel
+        :tuna/plugins/rope
+        :tuna/plugins/buffers
         :tuna/plugins/html-renderer
+        :tuna/plugins/basic-editing
         :tuna/plugins/demo)
 (export main)
 
 (def standard-plugins
-  [keys-plugin web-transport-plugin html-renderer-plugin demo-plugin])
+  [keys-plugin web-transport-plugin echo-area-plugin help-panel-plugin
+   rope-text-store-plugin buffers-plugin html-renderer-plugin basic-editing-plugin
+   demo-plugin])
 
 (def (main . args)
   (match args

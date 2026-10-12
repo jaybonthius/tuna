@@ -8,6 +8,8 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 |---|---|---|
 | Buffer | Buffer | Same idea, but a Tuna buffer holds a tree of nodes; a one-text-node buffer behaves like an Emacs buffer. |
 | Text | Buffer text (shared by indirect buffers) | Same. |
+| Text store | The gap buffer inside Emacs's C code | Tuna's is a replaceable service; the default is a persistent rope, so old versions stay valid. Built. |
+| Undo by command, undo chains | `undo`, `undo-boundary`, `pending-undo-list` | Same: one group per command; undoing after another command redoes. Built. |
 | View | The window's own point and scroll position (`window-point`, `window-start`) | Same idea, made a named object. |
 | Window | Live window (a leaf of the window tree) | Same. |
 | Window manager | Emacs's built-in C window tree plus `display-buffer` | Tuna's is a replaceable plugin. |
@@ -29,6 +31,9 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | Input session | Per-terminal command-loop state (`last-command`, prefix argument, keyboard macro) | Same idea, named. |
 | Keymap stack | `current-active-maps` precedence | Same order, made explicit; adds keymaps on nodes. |
 | `keymap-set` | `keymap-set` | Same syntax (`"C-x C-f"`). |
+| The `<printing-char>` binding | Printing characters bound to `self-insert-command` in `global-map` | Same effect through one pseudo-key. Built. |
+| `last-command`, `last-command-event` | Same names | Same. Built. |
+| Echo area | Echo area | Same; it is a plugin. Built. |
 | Hook | Hook | Same; callbacks are named. |
 | Advice | `advice-add` (nadvice) | Same combinators. See divergences for what can be advised. |
 | Setting | `defcustom` / variable | Same idea, with a typed schema. |
