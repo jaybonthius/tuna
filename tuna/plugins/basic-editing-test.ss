@@ -7,6 +7,7 @@
         :tuna/plugins/keys
         :tuna/plugins/echo-area
         :tuna/plugins/rope
+        :tuna/plugins/settings
         :tuna/plugins/buffers
         :tuna/plugins/basic-editing)
 (export basic-editing-test)
@@ -19,37 +20,12 @@
   ["<printing-char>" "SPC" "RET" "DEL" "C-d" "C-f" "C-b" "C-n" "C-p" "C-a" "C-e"
    "<left>" "<right>" "<up>" "<down>" "C-/" "C-_"])
 
+(include "test-keys.ss")
+
 (def (with-editor thunk)
-  (parameterize ((current-kernel (new-kernel)))
-    (try
-     (for-each activate-plugin!
-               [keys-plugin echo-area-plugin rope-text-store-plugin buffers-plugin
-                basic-editing-plugin])
-     (start-editor-loop!)
-     (thunk)
-     (finally
-      (stop-editor-loop!)
-      (deactivate-all-plugins!)))))
-
-(def sequence 0)
-
-(def browser-keys
-  '(("RET" . "Enter") ("DEL" . "Backspace") ("SPC" . " ")
-    ("<up>" . "ArrowUp") ("<down>" . "ArrowDown")
-    ("<left>" . "ArrowLeft") ("<right>" . "ArrowRight")))
-
-;; Send one key: "a", "RET", "C-f", "<up>".
-(def (press key)
-  (set! sequence (+ sequence 1))
-  (let* ((ctrl? (string-prefix? "C-" key))
-         (name (if ctrl? (substring key 2 (string-length key)) key))
-         (browser-key (cond
-                       ((assoc name browser-keys) => cdr)
-                       (else name))))
-    (submit-event! (make-key-event "test-client" sequence browser-key "" 0 #f #f #f ctrl? #f #f))))
-
-(def (type! . keys)
-  (for-each press keys))
+  (call-with-editor [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
+                     buffers-plugin basic-editing-plugin]
+                    thunk))
 
 ;; The focused text and point once every key sent so far has run.
 (def (state)
@@ -90,7 +66,7 @@
          (type! "C-p")
          (check (state) => ["abcde\nx\nabcde" 5 ""]))))
 
-    (test-case "undo undoes one command at a time; after another command it redoes"
+    (test-case "undo undoes typing as one group, other commands one at a time; after another command it redoes"
       (with-editor
        (lambda ()
          (type! "a" "b" "c" "DEL")
@@ -98,11 +74,26 @@
          (type! "C-/")
          (check (state) => ["abc" 4 "Undo"])
          (type! "C-_")
-         (check (state) => ["ab" 3 "Undo"])
-         (type! "C-/" "C-/" "C-/")
+         (check (state) => ["" 1 "Undo"])
+         (type! "C-/")
          (check (state) => ["" 1 "No further undo information"])
          (type! "C-f" "C-/")
-         (check (state) => ["a" 2 "Undo"]))))
+         (check (state) => ["abc" 4 "Undo"]))))
+
+    (test-case "consecutive self-inserts group in twenties"
+      (with-editor
+       (lambda ()
+         (for-each (lambda (_) (type! "x")) (iota 25))
+         (type! "C-/")
+         (check (state) => [(make-string 20 #\x) 21 "Undo"]))))
+
+    (test-case "undoing a forward delete puts point back before the restored text"
+      (with-editor
+       (lambda ()
+         (type! "a" "b" "C-a" "C-d")
+         (check (state) => ["b" 1 ""])
+         (type! "C-/")
+         (check (state) => ["ab" 1 "Undo"]))))
 
     (test-case "turning basic editing off and on leaves no stray commands or keys"
       (with-editor

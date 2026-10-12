@@ -1,18 +1,27 @@
 ;;; Demo commands for the architecture skeleton: endless commands to quit,
-;;; describe-services, a *welcome* buffer built as a tree, and swapping the
-;;; text store and basic editing while Tuna runs. The demo turns other
-;;; plugins on and off, so it imports them; ordinary plugins do not.
+;;; describe-services, a *welcome* buffer built as a tree, swapping the text
+;;; store and basic editing while Tuna runs, renaming a buffer through the
+;;; minibuffer, and a deliberately slow highlighter that colors digits from
+;;; a job. The demo turns other plugins on and off, so it imports them;
+;;; ordinary plugins do not.
 prelude: :gerbil/core
 
 (import :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers
         :tuna/services/help
+        :tuna/services/settings
+        :tuna/services/minibuffer
         :tuna/plugins/string-text-store
         :tuna/plugins/basic-editing)
 (export demo-plugin
         services-description
-        welcome-buffer)
+        welcome-buffer
+        digit-spans
+        digit-highlight-delay)
+
+(defsetting digit-highlight-delay 0.3
+  "Seconds the demo's slow highlighter takes to color digits.")
 
 ;; One line per service: name, tier, provider, dependents.
 (def (services-description) => :list
@@ -23,11 +32,53 @@ prelude: :gerbil/core
                         (let (provider (service-info-provider info))
                           (if provider (symbol->string provider) "none"))
                         "  dependents: "
-                        (let (dependents (service-info-dependents info))
+                        (let ((dependents (service-info-dependents info))
+                              (adapting (service-info-adapting info)))
                           (if (null? dependents)
                             "none"
-                            (string-join (map symbol->string dependents) ", ")))))
+                            (string-join (map (lambda ((name : :symbol))
+                                                (string-append (symbol->string name)
+                                                               (if (memq name adapting) " (adapts)" "")))
+                                              dependents)
+                                         ", ")))))
        (describe-services)))
+
+;; Spans of S's digit runs, with the face `digit`. A job runs this off the
+;; baton: it reads only the snapshot.
+(def (digit-spans (s : snapshot)) => :list
+  (let ((spans [])
+        (position 1)
+        (run-start #f))
+    (snapshot-for-each-chunk
+     s (lambda ((chunk : :string))
+         (string-for-each
+          (lambda (c)
+            (cond
+             ((char-numeric? c)
+              (unless run-start (set! run-start position)))
+             (run-start
+              (set! spans (cons (make-span run-start position 'digit) spans))
+              (set! run-start #f)))
+            (set! position (fx1+ position)))
+          chunk)))
+    (reverse (if run-start (cons (make-span run-start position 'digit) spans) spans))))
+
+;; After each change, recolor the text's digits from a job. Typing goes on
+;; meanwhile; the rebase policy moves the colors past what was typed.
+(def (highlight-digits-later! (ctx : context) (t : text)) => :void
+  (when (editor-loop-running?)
+    (start-job ['highlight-digits (text-id t)]
+               input: [(text-snapshot t) (setting-value digit-highlight-delay)]
+               run: (lambda (input)
+                      (match input
+                        ([snapshot delay]
+                         (thread-sleep! delay)
+                         (digit-spans snapshot))))
+               apply: (lambda (spans) (set-highlights! t 'digits spans))
+               target: t
+               validity: 'rebase
+               context: ctx)
+    (void)))
 
 ;; (column (heading "Welcome to Tuna") (text "…"))
 (def (welcome-buffer) => buffer
@@ -76,6 +127,14 @@ prelude: :gerbil/core
     (message (if (plugin-active? string-text-store-plugin)
                "Text store: plain strings"
                "Text store: rope")))
+  (define-command ctx (rename-buffer) "Give the current buffer a new name, asked in the minibuffer."
+    (let (name (read-string "New name: "))
+      (when (string-empty? name)
+        (error "Empty string is invalid as a buffer name"))
+      (rename-buffer! (current-buffer) name)
+      (message (string-append "Renamed to " name))))
+  (context-add-hook! ctx after-change-hook 'slow-digit-highlighter
+                     (lambda (t c) (highlight-digits-later! ctx t)))
   (define-command ctx (toggle-basic-editing) "Turn the basic-editing plugin off or on."
     (toggle-plugin! basic-editing-plugin)
     (message (if (plugin-active? basic-editing-plugin) "Basic editing on" "Basic editing off")))
@@ -84,4 +143,5 @@ prelude: :gerbil/core
   (keymap-set ctx "C-h s" 'describe-services)
   (keymap-set ctx "C-c b" 'switch-demo-buffer)
   (keymap-set ctx "C-c s" 'swap-text-store)
-  (keymap-set ctx "C-c p" 'toggle-basic-editing))
+  (keymap-set ctx "C-c p" 'toggle-basic-editing)
+  (keymap-set ctx "C-c r" 'rename-buffer))

@@ -4,6 +4,7 @@
         :tuna/services/text-store
         :tuna/services/buffers
         :tuna/plugins/rope
+        :tuna/plugins/settings
         :tuna/plugins/string-text-store
         :tuna/plugins/buffers)
 (export buffers-test)
@@ -11,6 +12,7 @@
 (def (with-buffers thunk)
   (parameterize ((current-kernel (new-kernel)))
     (activate-plugin! rope-text-store-plugin)
+    (activate-plugin! settings-plugin)
     (activate-plugin! buffers-plugin)
     (thunk)))
 
@@ -85,33 +87,107 @@
            (check (point) => 5)
            (check (text-string t) => "hellrld")))))
 
-    (test-case "swapping the text store live keeps every text and point"
+    (test-case "the buffers plugin adapts to a new text store: every text, point, and undo survive"
       (with-buffers
        (lambda ()
          (defplugin (adds-other ctx)
            "Adds a second buffer."
            (context-add-buffer! ctx (new-buffer "other" (new-text-node (new-text "second ☃ buffer")))))
          (activate-plugin! adds-other)
-         (let ((other (get-buffer "other"))
-               (t (current-text)))
+         (let ((other-text (text-node-content (buffer-root (get-buffer "other"))))
+               (t (current-text))
+               (registry (service-provider buffers-service))
+               (stored-as-string? (lambda (t) (string? (snapshot-version (text-snapshot t))))))
            (insert "hello\nwörld 😀")
            (goto-char 4)
-           (check (string? (text-snapshot t)) => #f)
+           (check (stored-as-string? t) => #f)
            (activate-plugin! string-text-store-plugin)
            (check (eq? (service-provider text-store-service) string-text-store) => #t)
+           ;; Adapting, not restarting: the same provider object, texts moved.
+           (check (eq? (service-provider buffers-service) registry) => #t)
+           (check (stored-as-string? t) => #t)
+           (check (stored-as-string? other-text) => #t)
            (check (text-string t) => "hello\nwörld 😀")
-           (check (string? (text-snapshot t)) => #t)
            (check (point) => 4)
            (undo-boundary! t)
            (insert "p")
            (check (text-string t) => "helplo\nwörld 😀")
-           (check (text-string (text-node-content (buffer-root other))) => "second ☃ buffer")
+           (check (text-string other-text) => "second ☃ buffer")
            (deactivate-plugin! string-text-store-plugin)
-           (check (string? (text-snapshot t)) => #f)
+           (check (eq? (service-provider buffers-service) registry) => #t)
+           (check (stored-as-string? t) => #f)
+           (check (stored-as-string? other-text) => #f)
            (check (text-string t) => "helplo\nwörld 😀")
            (check (point) => 5)
            (text-undo! t #f)
            (check (text-string t) => "hello\nwörld 😀")))))
+
+    (test-case "describe-services lists buffers as an adapting dependent of the text store"
+      (with-buffers
+       (lambda ()
+         (let (info (find (lambda (info) (eq? (service-info-name info) 'text-store))
+                          (describe-services)))
+           (check (service-info-dependents info) => '(buffers-plugin))
+           (check (service-info-adapting info) => '(buffers-plugin))))))
+
+    (test-case "without any text store, the buffers plugin goes too"
+      (with-buffers
+       (lambda ()
+         (activate-plugin! string-text-store-plugin)
+         (deactivate-plugin! rope-text-store-plugin)
+         (check (plugin-active? buffers-plugin) => #t)
+         (deactivate-plugin! string-text-store-plugin)
+         (check (plugin-active? buffers-plugin) => #f)
+         (activate-plugin! rope-text-store-plugin)
+         (check (plugin-active? buffers-plugin) => #t))))
+
+    (test-case "undo puts point back where the command left it"
+      (with-buffers
+       (lambda ()
+         (let (t (current-text))
+           (insert "abc")
+           (goto-char 2)
+           (undo-boundary! t)
+           (delete-region 2 3)            ; a forward delete, point before it
+           (check (text-undo! t #f) => 2)
+           (check (text-string t) => "abc")
+           (goto-char 3)
+           (undo-boundary! t)
+           (delete-region 2 3)            ; a backward delete, point after it
+           (check (text-undo! t #f) => 3)
+           (check (text-string t) => "abc")))))
+
+    (test-case "highlights relocate with edits and change only the decoration revision"
+      (with-buffers
+       (lambda ()
+         (let (t (current-text))
+           (insert "ab12cd345")
+           (let ((content (text-content-revision t))
+                 (decoration (text-decoration-revision t)))
+             (set-highlights! t 'digits [(make-span 3 5 'digit) (make-span 7 10 'digit)])
+             (check (text-content-revision t) => content)
+             (check (> (text-decoration-revision t) decoration) => #t))
+           (text-replace! t 1 1 "XY")       ; before both: both shift
+           (text-replace! t 5 5 "<")        ; at the first's start: stays outside
+           (text-replace! t 11 12 "")       ; inside the second: it shrinks
+           (check (text-string t) => "XYab<12cd35")
+           (check (map (lambda (s) [(span-start s) (span-end s)]) (text-highlights t 'digits))
+                  => [[6 8] [10 12]])
+           (text-replace! t 6 8 "")         ; all of the first: it goes
+           (check (length (text-highlights t 'digits)) => 1)))))
+
+    (test-case "a text's changes since a revision come oldest first, while the journal reaches back"
+      (with-buffers
+       (lambda ()
+         (let (t (current-text))
+           (insert "a")
+           (let (revision (text-chars-revision t))
+             (insert "b")
+             (insert "c")
+             (check (map change-inserted (text-changes-since t revision)) => ["b" "c"])
+             (check (text-changes-since t (text-chars-revision t)) => [])
+             (for-each (lambda (_) (insert "x")) (iota 1100))
+             (check (text-changes-since t revision) => #f))))))
 
     (test-case "node kinds come and go with their plugin; projections need no renderer"
       (with-buffers

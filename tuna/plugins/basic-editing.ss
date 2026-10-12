@@ -44,6 +44,9 @@
   "Typing, deleting, moving by characters and lines, and undo."
   requires: [input-service buffers-service]
   (defcommand (self-insert-command) "Insert the character typed."
+    ;; Consecutive self-inserts undo together, up to 20 (as in Emacs).
+    (when (eq? (last-command) 'self-insert-command)
+      (undo-amalgamate! (current-text) 20))
     (insert (key-event-key (last-command-event))))
   (defcommand (newline) "Insert a line break."
     (insert "\n"))

@@ -37,6 +37,23 @@
   (note! (Greeter-greet (Greeter (service-provider greeter-service))))
   (context-defer! ctx (lambda () (note! 'off))))
 
+(defplugin (greeting-adapter ctx)
+  "Uses the greeter and adapts to a new one."
+  requires: [greeter-service]
+  (note! (Greeter-greet (Greeter (service-provider greeter-service))))
+  (context-adapt! ctx greeter-service
+                  (lambda (old new)
+                    (note! [(Greeter-greet (Greeter old)) '-> (Greeter-greet (Greeter new))])))
+  (context-defer! ctx (lambda () (note! 'adapter-off))))
+
+(def test-hook (new-hook 'test doc: "A hook for the tests."))
+
+(defplugin (hooked ctx)
+  "Adds three callbacks to the test hook; one fails."
+  (context-add-hook! ctx test-hook 'late (lambda (x) (note! ['late x])) depth: 10)
+  (context-add-hook! ctx test-hook 'broken (lambda (x) (error "broken callback")))
+  (context-add-hook! ctx test-hook 'early (lambda (x) (note! ['early x])) depth: -10))
+
 (def table (new-entry-table))
 
 (defplugin (slot-a ctx)
@@ -139,6 +156,36 @@
          (activate-plugin! greeter-b)
          (check (plugin-active? greeting-user) => #t)
          (check (take-log!) => ['off "b"]))))
+
+    (test-case "adapting dependents migrate in place, until no provider is left"
+      (call-with-test-kernel
+       (lambda ()
+         (take-log!)
+         (activate-plugin! greeter-a)
+         (activate-plugin! greeting-adapter)
+         (activate-plugin! greeter-b)
+         (deactivate-plugin! greeter-b)
+         (check (take-log!) => ["a" ["a" '-> "b"] ["b" '-> "a"]])
+         (check (plugin-active? greeting-adapter) => #t)
+         (deactivate-plugin! greeter-a)
+         (check (plugin-active? greeting-adapter) => #f)
+         (check (take-log!) => ['adapter-off])
+         (activate-plugin! greeter-b)
+         (check (take-log!) => ["b"]))))
+
+    (test-case "hooks run by depth, drop a failing callback, and go with their plugin"
+      (call-with-test-kernel
+       (lambda ()
+         (take-log!)
+         (activate-plugin! test-input-plugin)
+         (activate-plugin! hooked)
+         (check (hook-callback-names test-hook) => '(early broken late))
+         (run-hook test-hook 1)
+         (check (take-log!) => [['early 1] ['late 1]])
+         (check (hook-callback-names test-hook) => '(early late))
+         (check (string-prefix? "Hook test callback broken" (current-message)) => #t)
+         (deactivate-plugin! hooked)
+         (check (hook-callback-names test-hook) => '()))))
 
     (test-case "describe-services lists tier, provider, and dependents"
       (call-with-test-kernel

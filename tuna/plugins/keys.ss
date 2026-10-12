@@ -1,5 +1,6 @@
-;;; Key handling (startup tier): the global keymap, key resolution, and the
-;;; quit key (ADR 8).
+;;; Key handling (startup tier): the global keymap, the input-target stack,
+;;; key resolution, and the quit key (ADR 3, ADR 8). Keys resolve in the
+;;; innermost input target's keymap, then in the global keymap.
 prelude: :gerbil/core
 
 (import :tuna/kernel
@@ -10,6 +11,7 @@ prelude: :gerbil/core
 (def quit-key "C-g")
 
 (defclass global-keys ((keymap        : entry-table)    ; key sequence -> command name
+                       (targets       : :list)          ; input targets, innermost first
                        (pending       : :list)          ; keys typed so far of a prefix
                        (this-command  :? :symbol)       ; the input session (ADR 8)
                        (last-command  :? :symbol)
@@ -57,10 +59,22 @@ prelude: :gerbil/core
       (error "Empty key sequence" keys))
     (string-join parts " ")))
 
-(def (prefix-of-binding? (self : global-keys) (keys : :string)) => :boolean
+;; The keymaps keys resolve in, first to last.
+(def (active-keymaps (self : global-keys)) => :list
+  (match self.targets
+    ([innermost . _] [(input-target-keymap innermost) self.keymap])
+    ([] [self.keymap])))
+
+;; The first binding of KEYS in KEYMAPS, or #f.
+(def (lookup (keymaps : :list) (keys : :string)) => (Maybe entry)
+  (ormap (cut entry-table-ref <> keys) keymaps))
+
+(def (prefix-of-binding? (keymaps : :list) (keys : :string)) => :boolean
   (let (prefix (string-append keys " "))
-    (ormap (lambda ((bound : :string)) (string-prefix? prefix bound))
-           (entry-table-keys self.keymap))))
+    (ormap (lambda ((keymap : entry-table))
+             (ormap (lambda ((bound : :string)) (string-prefix? prefix bound))
+                    (entry-table-keys keymap)))
+           keymaps)))
 
 (def (printing-char? (key : :string)) => :boolean
   (and (fx= (string-length key) 1)
@@ -76,20 +90,25 @@ prelude: :gerbil/core
   (set! self.command-event event))
 
 (def (resolve-key! (self : global-keys) (event : key-event)) => :t
-  (let (key (key-description event))
+  (let ((key (key-description event))
+        (keymaps (active-keymaps self)))
     (cond
      ((not key) #f)
      ((equal? key quit-key)
-      (complete-keys! self event 'keyboard-quit)
-      (command-ref 'keyboard-quit))
+      ;; The quit key cancels a pending prefix; a waiting prompt may bind it.
+      (let (name (cond
+                  ((lookup keymaps quit-key) => entry-value)
+                  (else 'keyboard-quit)))
+        (complete-keys! self event name)
+        (command-ref name)))
      (else
       (message "")
       (let* ((typed (append self.pending [key]))
              (keys (string-join typed " "))
-             (binding (or (entry-table-ref self.keymap keys)
+             (binding (or (lookup keymaps keys)
                           (and (null? self.pending)
                                (printing-char? key)
-                               (entry-table-ref self.keymap printing-char-key)))))
+                               (lookup keymaps printing-char-key)))))
         (cond
          (binding
           (let (name (entry-value binding))
@@ -98,7 +117,7 @@ prelude: :gerbil/core
                 (begin
                   (message (string-append keys " runs " (symbol->string name) ", which is not defined"))
                   #f))))
-         ((prefix-of-binding? self keys)
+         ((prefix-of-binding? keymaps keys)
           (set! self.pending typed)
           (message (string-append keys "-"))
           #f)
@@ -119,6 +138,21 @@ prelude: :gerbil/core
       (context-add-entry! ctx self.keymap (normalize-keys keys) command source: source)
       (void))))
 
+(defmethod {keymap-set-in! global-keys}
+  (lambda (self ctx keymap keys command source)
+    (context-add-entry! ctx keymap (normalize-keys keys) command source: source)
+    (void)))
+
+(defmethod {push-input-target! global-keys}
+  (lambda (self target)
+    (using (self : global-keys)
+      (set! self.targets (cons target self.targets)))))
+
+(defmethod {remove-input-target! global-keys}
+  (lambda (self target)
+    (using (self : global-keys)
+      (set! self.targets (remq target self.targets)))))
+
 (defmethod {key-binding global-keys}
   (lambda (self keys)
     (using (self : global-keys)
@@ -135,5 +169,5 @@ prelude: :gerbil/core
   (define-command ctx (keyboard-quit) "Cancel the current key sequence or command."
     (signal-quit))
   (context-provide! ctx input-service
-                    (Keys (global-keys keymap: (new-entry-table) pending: []
+                    (Keys (global-keys keymap: (new-entry-table) targets: [] pending: []
                                        this-command: #f last-command: #f command-event: #f))))
