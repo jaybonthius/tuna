@@ -1,4 +1,5 @@
-(import :std/test
+(import :std/error
+        :std/test
         :tuna/kernel
         :tuna/services/keys
         :tuna/services/echo-area
@@ -28,9 +29,25 @@
     (activate-plugin! keys-plugin)
     (thunk)))
 
+;; The name of the task EVENT resolves to, or #f.
 (def (resolve event)
   (let (resolved (Input-resolve! (Input (service-provider input-service)) event))
-    (and resolved (command-name resolved))))
+    (and resolved (car resolved))))
+
+(defplugin (defines-a ctx)
+  "Defines command-shared as a."
+  requires: [input-service]
+  (define-command ctx (command-shared) "Runs a." 'a))
+
+(defplugin (defines-b ctx)
+  "Defines command-shared as b."
+  requires: [input-service]
+  (define-command ctx (command-shared) "Runs b." 'b))
+
+;; What the effective command-shared returns when run, or #f.
+(def (shared-result)
+  (let (c (command-ref 'command-shared))
+    (and c ((command-procedure c)))))
 
 (def keys-test
   (test-suite "tuna/plugins/keys"
@@ -65,11 +82,70 @@
          (deactivate-plugin! binds-a)
          (check (binding "C-c x") => #f))))
 
+    (test-case "two plugins defining the same command survive deactivation in either order"
+      (with-keys
+       (lambda ()
+         (activate-plugin! defines-a)
+         (activate-plugin! defines-b)
+         (check (shared-result) => 'b)
+         (deactivate-plugin! defines-a)
+         (check (shared-result) => 'b)
+         (activate-plugin! defines-a)
+         (check (shared-result) => 'a)
+         (deactivate-plugin! defines-b)
+         (check (shared-result) => 'a)
+         (deactivate-plugin! defines-a)
+         (check (command-ref 'command-shared) => #f))))
+
+    (test-case "a failed activation leaves no command behind"
+      (with-keys
+       (lambda ()
+         (defplugin (half-done ctx)
+           "Defines a command, then fails."
+           requires: [input-service]
+           (define-command ctx (half-done-command) "Never usable." (void))
+           (error "activation failed"))
+         (check-exception (activate-plugin! half-done) Error?)
+         (check (command-ref 'half-done-command) => #f)
+         (check (plugin-active? half-done) => #f))))
+
+    (test-case "commands record their plugin, source, and documentation"
+      (with-keys
+       (lambda ()
+         (defplugin (documented ctx)
+           "Defines one command."
+           requires: [input-service]
+           (define-command ctx (documented-command) "Does nothing." (void)))
+         (activate-plugin! documented)
+         (let (e (command-entry 'documented-command))
+           (check (entry-owner e) => 'documented)
+           (check (entry-doc e) => "Does nothing.")
+           (check (and (string? (entry-source e))
+                       (string-contains (entry-source e) "keys-test.ss"))
+                  ? values))
+         (check (command-doc (command-ref 'documented-command)) => "Does nothing."))))
+
+    (test-case "a key resolves to its command's name and thunk"
+      (with-keys
+       (lambda ()
+         (defplugin (binds-shared ctx)
+           "Binds C-c a to command-shared."
+           requires: [input-service]
+           (keymap-set ctx "C-c a" 'command-shared))
+         (activate-plugin! defines-a)
+         (activate-plugin! binds-shared)
+         (let (input (Input (service-provider input-service)))
+           (Input-resolve! input (keydown "c" ctrl?: #t))
+           (let (resolved (Input-resolve! input (keydown "a")))
+             (check (car resolved) => 'command-shared)
+             (check ((cdr resolved)) => 'a))))))
+
     (test-case "prefix keys wait for the rest of the sequence; C-g cancels"
       (with-keys
        (lambda ()
          (defplugin (commands ctx)
            "A command bound under C-c."
+           requires: [input-service]
            (define-command ctx (command-a) "A." (void))
            (keymap-set ctx "C-c x" 'command-a))
          (activate-plugin! commands)
@@ -90,6 +166,7 @@
        (lambda ()
          (defplugin (targets ctx)
            "Commands for the global keymap and two input targets."
+           requires: [input-service]
            (for-each (lambda (name) (context-define-command! ctx name void))
                      '(global-x outer-x inner-x inner-quit))
            (keymap-set ctx "C-c x" 'global-x))

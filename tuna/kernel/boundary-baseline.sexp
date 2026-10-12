@@ -7,18 +7,9 @@
 ;;; Merge review confirms that a change to this file only removes or lowers
 ;;; entries.
 ;;;
-;;; Reasons: "step N" (N from 3 to 8) names the step of
+;;; Reasons: "step N" (N from 4 to 8) names the step of
 ;;; agents/plans/kernel-cleanup.md that removes the hits; "permanent: ..."
 ;;; says why a word cannot go.
-
-;; Step 3: commands out (the command registry and its declarative forms).
-("tuna/kernel/plugins.ss" "defcommand" 4 "step 3")
-("tuna/kernel/plugins.ss" "define-command" 7 "step 3")
-("tuna/kernel/plugins.ss" "command-ref" 2 "step 3")
-("tuna/kernel/plugins.ss" "command-entry" 3 "step 3")
-("tuna/kernel/plugins.ss" "kernel-commands" 2 "step 3")
-("tuna/kernel/plugins.ss" "keymap" 1 "step 3")
-("tuna/kernel/state.ss" "kernel-commands" 1 "step 3")
 
 ;; Step 5: timers and jobs move to tuna/lib/; spans, rebase-spans, and text
 ;; change records move to the buffers contract.

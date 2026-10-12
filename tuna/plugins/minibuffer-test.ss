@@ -26,6 +26,7 @@
 
 (defplugin (asking ctx)
   "Commands that ask questions."
+  requires: [input-service]
   (define-command ctx (ask) "Ask a name."
     (with-catch (lambda (e) (set! quit? (quit-condition? e)) (raise e))
                 (lambda () (set! answers (cons (read-string "Name: ") answers)))))
@@ -69,7 +70,7 @@
        (lambda ()
          (type! "x" "C-c" "a" "n" "o" "DEL" "e" "w")
          (check (state) => ["x" ["Name: " "new"] ""])
-         (check (current-command-name) => #f)
+         (check (current-task-name) => #f)
          (check answers => [])
          (type! "RET")
          (check (state) => ["x" #f ""])
