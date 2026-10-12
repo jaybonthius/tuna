@@ -1,6 +1,6 @@
 # Brief: a profiler that lives entirely outside the core
 
-**Date:** 2026-10-12. **Status:** proposal, awaiting your decisions below. Research: `agents/research/profiling/`.
+**Date:** 2026-10-12. **Status:** decided 2026-10-12: reports in a `*profile*` buffer (1a), sampling may use Gambit internals (2), built after the hooks-and-advice milestone (3). Measuring and reporting are two plugins: the profiler needs only hooks, advice and sampling; the report needs the buffers contract. Research: `agents/research/profiling/`.
 
 ## What we're building and why
 
