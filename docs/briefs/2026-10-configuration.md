@@ -1,6 +1,6 @@
 # Brief: your configuration, reloading it, and recovering from mistakes
 
-**Status:** decided 2026-10-12 (see "Decisions" below). Nothing is built yet.
+**Status:** decided 2026-10-12 (see "Decisions" below). Built: starting from `init.ss` (stage 1, 2026-10-12) and reloading it (stage 2, 2026-10-13: the `reload-config` command from the `reload-config-plugin`, bound to `C-c R` in the starter, and `tuna reload`, which talks to the running Tuna over a private Unix-domain socket from Tuna's start-up code, so it needs no plugin). Options and the report inside Tuna (stage 3) are not built yet; see [the plan](../../agents/plans/configuration.md).
 
 ## What this is and why
 
