@@ -5,7 +5,7 @@
 ;;; on, so receipts undo every effect. The language users write this in is
 ;;; :tuna/config; the start-up code that loads and activates it is
 ;;; tuna/boot.ss, and the plugin that keeps config: blocks with their
-;;; plugins is tuna/plugins/config-blocks.ss.
+;;; plugins is tuna/config-blocks.ss.
 prelude: :gerbil/core
 
 (import :tuna/kernel

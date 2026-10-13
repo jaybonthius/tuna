@@ -6,7 +6,7 @@
         :tuna/services/buffers
         :tuna/plugins/rope
         :tuna/plugins/settings
-        :tuna/plugins/string-text-store
+        "../test-support/string-text-store"
         :tuna/plugins/buffers
         "../test-support/kernel")
 (export buffers-test)

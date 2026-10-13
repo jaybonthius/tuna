@@ -1,7 +1,7 @@
 (import :std/test
         :tuna/services/text-store
         :tuna/plugins/rope
-        :tuna/plugins/string-text-store)
+        "../test-support/string-text-store")
 (export rope-test)
 
 (def rope rope-text-store)

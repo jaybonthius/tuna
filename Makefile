@@ -1,4 +1,4 @@
-.PHONY: all assets build deps test test-frontend run
+.PHONY: all assets build deps test test-frontend run demo
 
 ESBUILD ?= esbuild
 
@@ -28,3 +28,7 @@ test-frontend: assets
 
 run: all
 	gerbil env tuna --config starter/init.ss
+
+# The demo (demo/): the starter's plugins plus demo commands. Development only.
+demo: all
+	gerbil env tuna --config demo/init.ss

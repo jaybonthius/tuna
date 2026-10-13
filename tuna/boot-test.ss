@@ -423,7 +423,7 @@
                    => '(keys-plugin web-transport-plugin settings-plugin echo-area-plugin
                         help-panel-plugin session-plugin rope-text-store-plugin buffers-plugin
                         autosave-plugin single-window-plugin window-commands-plugin
-                        html-renderer-plugin basic-editing-plugin minibuffer-plugin demo-plugin
+                        html-renderer-plugin basic-editing-plugin minibuffer-plugin
                         reload-config-plugin))
             (check (declaration-options (cadr (configuration-declarations loaded)))
                    => '((port . 0)))
