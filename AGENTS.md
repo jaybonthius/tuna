@@ -23,6 +23,7 @@ The owner must understand the architecture and every plan. Earlier attempts fail
 
 ## How to work
 
+- `tuna/plugins/` holds only real plugins; demos live in `demo/`, test doubles in `tuna/test-support/`; `starter/init.ss` declares only real plugins.
 - Build working vertical slices. Every milestone must run in the browser; specify interfaces and invariants, not the internals behind them.
 - Keep plans to a page, in `agents/plans/`. Write an ADR only for a hard-to-reverse choice with real alternatives.
 - Do not add review, oracle, or acceptance-report loops unless the owner asks. Validate with tests and by running the program.
