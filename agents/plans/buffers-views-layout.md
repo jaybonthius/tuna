@@ -29,6 +29,13 @@ Owner-approved brief: [`docs/briefs/2026-10-buffers-views-layout.md`](../../docs
    - HTML reuse: a part's HTML is reused when its revision, its view state, and the display-wide inputs are unchanged. A test proves an unchanged buffer's node renderers are not called on the next redraw, and that a face or setting change redraws everything.
    - After merge: update `docs/overview.md` (text, glossary, diagrams) to what was built.
 
+## Keep in-view drawing possible (every stage)
+
+- A tree's children can be counted and read as a range (`children 200 to 260`) through the contracts, even if the default walks a list today.
+- Scroll position is view state the server may hold, not only browser state; nothing assumes otherwise.
+- Every view, container and node element carries a stable id, so a fat morph keeps the browser's native scroll position and a component can later take an element over.
+- The server computes no geometry; sizes stay CSS (fractions on parent links).
+
 ## Not in this plan
 
-Scroll containers and drawing only what is in view (their own brief, with the layout-facts research); mouse input and node keymaps; files and the file link on texts; several browser tabs with their own frames; layout undo; narrowing a text node to an arbitrary region by frame.
+Scroll containers and drawing only what is in view (owner, 2026-10-13: deferred to keep this simple; later, with Datastar in the style of hyperlith's virtual scroll, or with a Rocket component); mouse input and node keymaps; files and the file link on texts; several browser tabs with their own frames; layout undo; narrowing a text node to an arbitrary region by frame.
