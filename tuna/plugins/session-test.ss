@@ -1,21 +1,20 @@
-;;; The session and autosave plugins: saving, restoring across a simulated
-;;; restart, corrupt files, unknown slots, and atomic writes. Every test
-;;; uses its own temporary state directory.
+;;; The session plugin and its slot clients autosave and single-window:
+;;; saving, restoring across a simulated restart, corrupt files, unknown
+;;; slots, and atomic writes. Every test uses its own temporary state
+;;; directory.
 (import :std/test
         :tuna/kernel
         :tuna/services/buffers
-        :tuna/services/echo-area
         :tuna/services/session
         :tuna/services/windows
-        :tuna/plugins/keys
-        :tuna/plugins/echo-area
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/session
         :tuna/plugins/buffers
         :tuna/plugins/autosave
         :tuna/plugins/single-window
-        "../test-support/kernel")
+        "../test-support/kernel"
+        (only-in "../test-support/string-input" test-input-plugin current-message))
 (export session-test)
 
 (def (call-with-state-directory proc)
@@ -29,10 +28,10 @@
       (delete-file-or-directory directory #t)))))
 
 ;; The session and autosave plugins, the plugins that fill the slots they
-;; and the window manager require, keys for the editor loop's input, and
-;; the echo area for messages.
+;; and the window manager require, and a stand-in for the editor loop's
+;; input and for messages.
 (def session-plugins
-  [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
+  [test-input-plugin rope-text-store-plugin settings-plugin
    session-plugin buffers-plugin autosave-plugin single-window-plugin])
 
 ;; One run of Tuna on DIRECTORY, booted as main does: activate, restore,

@@ -3,15 +3,14 @@
         :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers
-        :tuna/services/echo-area
         :tuna/plugins/keys
-        :tuna/plugins/echo-area
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
         :tuna/plugins/basic-editing
         "../test-support/kernel"
-        "../test-support/keys")
+        "../test-support/keys"
+        (only-in "../test-support/string-input" test-messages-plugin current-message))
 (export basic-editing-test)
 
 (def editing-commands
@@ -23,7 +22,7 @@
    "<left>" "<right>" "<up>" "<down>" "C-/" "C-_"])
 
 (def editing-plugins
-  [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
+  [keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin
    buffers-plugin basic-editing-plugin])
 
 ;; The focused text and point once every key sent so far has run.

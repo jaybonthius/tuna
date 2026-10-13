@@ -1,14 +1,14 @@
 ;;; The web transport over real loopback HTTP on an ephemeral port: the
 ;;; launch token, the session cookie, Host and Origin checks, and event
-;;; requests. Keys provides the input the editor loop needs.
+;;; requests. A stand-in provides the input the editor loop needs.
 (import :std/test
-        :tuna/plugins/keys
         :tuna/plugins/web
-        "../test-support/web-client")
+        "../test-support/web-client"
+        (only-in "../test-support/string-input" test-input-plugin))
 (export web-test)
 
 (def web-plugins
-  [keys-plugin web-transport-plugin])
+  [test-input-plugin web-transport-plugin])
 
 (def (with-tuna thunk)
   (with-web-tuna web-plugins thunk))
