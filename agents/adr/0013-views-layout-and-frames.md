@@ -1,6 +1,6 @@
 # 13. Buffers as UI, views in a layout, and movable frames
 
-Status: accepted (2026-10-13). Owner-approved brief: [`docs/briefs/2026-10-buffers-views-layout.md`](../../docs/briefs/2026-10-buffers-views-layout.md). Research: [`agents/research/layout-state/`](../research/layout-state/README.md), [`agents/research/window-management/`](../research/window-management/README.md); owner notes `agents/research/owner-notes/window-layout-topology.org`. Amended 2026-10-13 after stage 2 (see "Stage 2 additions"). Amends [ADR 6](0006-buffers-nodes-and-text-store.md) (views, the buffers contract, files), [ADR 7](0007-rendering-and-transport.md) (what a redraw walks), and [ADR 11](0011-window-management-is-a-plugin.md) (vocabulary, frames, focus memory, container directions).
+Status: accepted (2026-10-13). Owner-approved brief: [`docs/briefs/2026-10-buffers-views-layout.md`](../../docs/briefs/2026-10-buffers-views-layout.md). Research: [`agents/research/layout-state/`](../research/layout-state/README.md), [`agents/research/window-management/`](../research/window-management/README.md); owner notes `agents/research/owner-notes/window-layout-topology.org`. Amended 2026-10-13 after stage 2 (see "Stage 2 additions") and with pinning (see "Pinning"). Amends [ADR 6](0006-buffers-nodes-and-text-store.md) (views, the buffers contract, files), [ADR 7](0007-rendering-and-transport.md) (what a redraw walks), and [ADR 11](0011-window-management-is-a-plugin.md) (vocabulary, frames, focus memory, container directions).
 
 ## Context
 
@@ -20,6 +20,19 @@ The layout-state research measured the options in Gerbil: the layout is small (a
 - **Everything on screen is in the layout.** The minibuffer, echo area and help are buffers shown by ordinary views (a divergence from Emacs's minibuffer window). A view made only for one buffer (dedicated) closes when that buffer goes.
 - **Drawing** stays immediate mode (owner decision 2026-10-13): each redraw sends the whole visible screen as one fat morph, never patches of single parts. A part's HTML is reused when its revision, its view state, and the display-wide inputs (faces, settings) are unchanged. So that drawing only what is in view can come later without changing contracts, any tree can hand the renderer a range of children.
 - **Persistence.** The layout and frame marks are saved as plain data in a session slot. Buffers are never saved as trees: each plugin saves its own state and rebuilds its buffers on restart; file content belongs to texts and files.
+
+## Pinning (owner decision, 2026-10-13)
+
+Zooming must not hide things like the minibuffer, a VS Code-style button bar, or a persistent terminal. One rule covers them, with no special regions:
+
+- **A pin is a flag on the link between a container and a child,** beside the child's size. It means "do not hide me when the frame zooms past me". It never moves anything: a pinned part stays exactly where it is in the tree, and unpinning just clears the flag. A part's position (move, split) and its pin are independent; the pin travels with the part when it moves, as its size does.
+- **Drawing under zoom.** Walk from the frame's target up to the root. Each container on that path is given only the child the path runs through plus its pinned children, and draws them the way its kind always draws children: fit splits the space, tabbed shows a strip of just those tabs with the path child active, scroll (later) lays out a strip. The path child gets all the space the pinned children do not use; pinned children keep their sizes. With no zoom, pins make no difference. The same rule applies when the frame's target lies inside a pinned part.
+- **Order** is tree order. Several pinned parts at the bottom are ordered by their position in the tree; rearrange them with the ordinary move commands. No priorities.
+- **Locks.** A second flag marks a part owned by a plugin (the minibuffer, an explorer configured to always show): it cannot be unpinned or deleted by the user and goes away when its plugin is turned off. Pin and unpin are ordinary commands.
+- **Sizes** on links may also be "as big as the content" (a one-line minibuffer), not only a share of the space.
+- **Nearest minibuffer and echo area.** A question appears in the minibuffer view nearest the selected view (walking up from it, the first one reached); messages go to the nearest echo area the same way. One bar at the root serves everything; a pinned minibuffer inside one split serves that split. Several layout trees can show the same minibuffer buffer in their own views.
+- **The selected view must be visible:** under the frame's target or in a visible pinned part. View-to-view movement visits only visible views.
+- Sticky columns (staying in view while a strip scrolls) are a different feature, not pinning, and are not planned.
 
 ## Stage 2 additions (2026-10-13)
 
