@@ -42,7 +42,7 @@
         :tuna/plugins/rope
         :tuna/plugins/buffers
         :tuna/plugins/autosave
-        :tuna/plugins/single-view
+        :tuna/plugins/layout
         :tuna/plugins/view-commands
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
@@ -56,12 +56,12 @@
 (use-plugin echo-area-plugin)
 (use-plugin help-panel-plugin)
 ;; Session slots restore in activation order: buffers (autosave) before
-;; the views that show them (single-view).
+;; the views that show them (layout).
 (use-plugin session-plugin)
 (use-plugin rope-text-store-plugin)
 (use-plugin buffers-plugin)
 (use-plugin autosave-plugin)
-(use-plugin single-view-plugin)
+(use-plugin layout-plugin)
 (use-plugin view-commands-plugin)
 (use-plugin html-renderer-plugin)
 (use-plugin basic-editing-plugin)

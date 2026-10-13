@@ -14,7 +14,7 @@
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
-        :tuna/plugins/single-view
+        :tuna/plugins/layout
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         "../test-support/session"
@@ -25,7 +25,7 @@
 
 (def browser-editor-plugins
   [keys-plugin web-transport-plugin echo-area-plugin help-panel-plugin
-   rope-text-store-plugin settings-plugin no-session-plugin buffers-plugin single-view-plugin
+   rope-text-store-plugin settings-plugin no-session-plugin buffers-plugin layout-plugin
    html-renderer-plugin basic-editing-plugin endless-commands-plugin services-help-plugin])
 
 (def (with-tuna thunk)

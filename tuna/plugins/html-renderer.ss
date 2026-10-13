@@ -1,6 +1,6 @@
 ;;; HTML renderer (live tier): editor state -> SXML -> HTML (ADR 7).
-;;; The layout arranges the views; for each, the renderer walks its
-;;; buffer's tree and renders each node through the procedure registered
+;;; The layout arranges the views under the frame; for each, the renderer
+;;; walks its buffer's tree, from where the frame points, and renders each node through the procedure registered
 ;;; for its kind and the `html` target. A kind without one is shown as its
 ;;; text projection. Text nodes show their highlights as face classes and
 ;;; each view's point as a cursor: solid where typing goes, hollow in other
@@ -123,8 +123,9 @@ prelude: :gerbil/core
   `(span (@ (class ,(if face (string-append cursor-class " " (face-class face)) cursor-class)))
          ,character))
 
-;; V: its buffer, then its status line.
-(def (render-view (v : view) (selected? : :boolean)) => :list
+;; V: its buffer from node START (the root, or where the frame points),
+;; then its status line.
+(def (render-view (v : view) (selected? : :boolean) (start : node)) => :list
   (let (b (view-showing v))
     (parameterize ((rendering-view v))
       `(section (@ (class "view")
@@ -132,7 +133,7 @@ prelude: :gerbil/core
                    (data-view ,(number->string (view-id v)))
                    ,@(if selected? '((data-selected "true")) '()))
          (article (@ (class "buffer") (aria-label ,(buffer-name b)))
-                  ,(render-node (buffer-root b)))
+                  ,(render-node start))
          (p (@ (class "status-line")) ,(status-line-text v selected?))))))
 
 ;; The innermost waiting prompt: its question, then the answer being typed.

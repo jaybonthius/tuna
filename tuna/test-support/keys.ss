@@ -11,16 +11,18 @@
     ("<up>" . "ArrowUp") ("<down>" . "ArrowDown")
     ("<left>" . "ArrowLeft") ("<right>" . "ArrowRight")))
 
-;; Submit one key to the running editor loop: "a", "RET", "C-f", "<up>".
+;; Submit one key to the running editor loop: "a", "RET", "C-f", "<up>",
+;; "S-<left>".
 (def (press (key : :string)) => :void
   (set! sequence (+ sequence 1))
   (let* ((ctrl? (string-prefix? "C-" key))
-         (name (if ctrl? (substring key 2 (string-length key)) key))
+         (shift? (string-prefix? "S-" key))
+         (name (if (or ctrl? shift?) (substring key 2 (string-length key)) key))
          (browser-key (cond
                        ((assoc name browser-keys) => cdr)
                        (else name))))
     ((input-submitter)
-     (make-key-event "test-client" sequence browser-key "" 0 #f #f #f ctrl? #f #f))))
+     (make-key-event "test-client" sequence browser-key "" 0 #f #f #f ctrl? #f shift?))))
 
 (def (type! . keys)
   (for-each press keys))

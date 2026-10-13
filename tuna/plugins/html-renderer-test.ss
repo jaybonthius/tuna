@@ -2,18 +2,19 @@
         :tuna/kernel
         :tuna/services/renderer
         :tuna/services/buffers
+        :tuna/plugins/keys
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
-        :tuna/plugins/single-view
+        :tuna/plugins/layout
         :tuna/plugins/html-renderer
         "../test-support/kernel"
         "../test-support/session")
 (export html-renderer-test)
 
 (def renderer-plugins
-  [rope-text-store-plugin settings-plugin no-session-plugin
-   buffers-plugin single-view-plugin html-renderer-plugin])
+  [keys-plugin rope-text-store-plugin settings-plugin no-session-plugin
+   buffers-plugin layout-plugin html-renderer-plugin])
 
 ;; A *welcome* buffer built as a tree: (column (heading "Welcome to Tuna")
 ;; (text "…")), with HTML renderers for both kinds.

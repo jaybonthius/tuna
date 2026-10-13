@@ -1,7 +1,7 @@
 #lang :tuna/config
 ;;; The demo configuration, for development only: `make demo` runs
 ;;; `tuna --config demo/init.ss`. It declares the starter's plugins
-;;; (starter/init.ss) plus the demo: the demo plugin (demo.ss) and the
+;;; (starter/init.ss) plus the demo: the demo plugins (demo.ss, sidebar.ss) and the
 ;;; command fixtures from tuna/test-support/ that it builds on. Tuna's
 ;;; executable does not link any of them; they load from source.
 
@@ -14,7 +14,7 @@
         :tuna/plugins/rope
         :tuna/plugins/buffers
         :tuna/plugins/autosave
-        :tuna/plugins/single-view
+        :tuna/plugins/layout
         :tuna/plugins/view-commands
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
@@ -26,7 +26,8 @@
         "../tuna/test-support/swap-commands"
         "../tuna/test-support/digit-highlighter"
         "../tuna/test-support/tree-buffer"
-        "demo")
+        "demo"
+        "sidebar")
 
 (use-plugin keys-plugin)
 (use-plugin web-transport-plugin        ; the browser page; `tuna --port N` overrides port:
@@ -35,12 +36,12 @@
 (use-plugin echo-area-plugin)
 (use-plugin help-panel-plugin)
 ;; Session slots restore in activation order: buffers (autosave) before
-;; the views that show them (single-view).
+;; the views that show them (layout).
 (use-plugin session-plugin)
 (use-plugin rope-text-store-plugin)
 (use-plugin buffers-plugin)
 (use-plugin autosave-plugin)
-(use-plugin single-view-plugin)
+(use-plugin layout-plugin)
 (use-plugin view-commands-plugin)
 (use-plugin html-renderer-plugin)
 (use-plugin basic-editing-plugin)
@@ -52,6 +53,7 @@
 (use-plugin digit-highlighter-plugin)   ; colors digits from a slow job
 (use-plugin tree-buffer-plugin)         ; C-c b: the *welcome* buffer, built as a tree
 (use-plugin demo-plugin)                ; C-c s text store, C-c p basic editing
+(use-plugin sidebar-demo-plugin)        ; C-c d: *sidebar* pinned to the left, or killed
 (use-plugin reload-config-plugin        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)
           (keymap-set "C-c C-r" 'show-config-report))

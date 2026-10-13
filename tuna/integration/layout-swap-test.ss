@@ -13,11 +13,13 @@
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
-        :tuna/plugins/single-view
+        :tuna/plugins/layout
         :tuna/plugins/view-commands
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
+        :tuna/plugins/session
+        (only-in :tuna/services/session save-session restore-session)
         "../test-support/kernel"
         "../test-support/keys"
         "../test-support/session"
@@ -29,12 +31,33 @@
 
 (def layout-plugins
   [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
-   settings-plugin no-session-plugin buffers-plugin single-view-plugin
+   settings-plugin no-session-plugin buffers-plugin layout-plugin
    view-commands-plugin
    html-renderer-plugin basic-editing-plugin minibuffer-plugin
    swap-commands-plugin rename-command-plugin tree-buffer-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
+
+;; The same plugins with the real session plugin, saving in DIRECTORY.
+(def (call-with-session directory thunk)
+  (call-with-fresh-kernel []
+    (lambda ()
+      (parameterize ((session-state-directory directory))
+        (for-each activate-plugin!
+                  (map (lambda (p) (if (eq? p no-session-plugin) session-plugin p)) layout-plugins)))
+      (restore-session)
+      (start-editor-loop!)
+      (thunk))))
+
+(def (call-with-state-directory proc)
+  (let (directory (path-expand (string-append "tuna-layout-swap-test-"
+                                              (number->string (random-integer 1000000000)))
+                               (getenv "TMPDIR" "/tmp")))
+    (create-directory* directory)
+    (try
+     (proc directory)
+     (finally
+      (delete-file-or-directory directory #t)))))
 
 ;; Each view's buffer name and point, in order, and the selected one's
 ;; index.
@@ -58,7 +81,7 @@
 
 (def layout-swap-test
   (test-suite "integration: swapping the layout live"
-    (test-case "C-c w hands the view over to two views and back, keeping points"
+    (test-case "C-c w hands the views over to two views and back, keeping views and points"
       (call-with-fresh-kernel layout-plugins
        (lambda ()
          (start-editor-loop!)
@@ -70,10 +93,39 @@
          (check (on-baton (lambda () (plugin-active? view-commands-plugin))) => #t)
          (type! "C-x" "o" "C-e")
          (check (views-state) => [[["*scratch*" 3] ["*scratch*" 6]] 1])
+         ;; Back under the default layout, the toy's second view is split in.
          (type! "C-c" "w")
-         (check (views-state) => [[["*scratch*" 6]] 0])
+         (check (views-state) => [[["*scratch*" 3] ["*scratch*" 6]] 1])
          (type! "C-c" "w")
-         (check (views-state) => [[["*scratch*" 6] ["*scratch*" 6]] 0]))))
+         (check (views-state) => [[["*scratch*" 3] ["*scratch*" 6]] 1]))))
+
+    (test-case "a saved layout slot never overwrites views handed over live"
+      (call-with-state-directory
+       (lambda (directory)
+         (call-with-session directory
+           (lambda ()
+             (type! "h" "e" "l" "l" "o" "C-a" "C-f")
+             (on-baton save-session)
+             (type! "C-e")
+             (type! "C-c" "w")
+             (check (views-state) => [[["*scratch*" 6] ["*scratch*" 6]] 0])
+             (type! "C-a" "C-c" "w")
+             (check (views-state) => [[["*scratch*" 1] ["*scratch*" 6]] 0]))))))
+
+    (test-case "the default layout keeps its arrangement for views the toy hands back"
+      (call-with-fresh-kernel layout-plugins
+       (lambda ()
+         (start-editor-loop!)
+         (type! "a" "b" "c" "C-x" "2" "C-x" "3" "C-b")
+         (check (views-state) => [[["*scratch*" 3] ["*scratch*" 4] ["*scratch*" 4]] 0])
+         (type! "C-c" "w")
+         ;; The toy keeps the selected view and its neighbor.
+         (check (views-state) => [[["*scratch*" 3] ["*scratch*" 4]] 0])
+         (type! "C-c" "w")
+         (check (views-state) => [[["*scratch*" 3] ["*scratch*" 4]] 0])
+         (let (html (screen))
+           (check (count-of "class=\"container fit horizontal\"" html) => 1)
+           (check (count-of "class=\"container fit vertical\"" html) => 0)))))
 
     (test-case "C-x o moves between two views of one buffer with independent points"
       (call-with-fresh-kernel layout-plugins
