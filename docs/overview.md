@@ -39,7 +39,7 @@ Where the parts that once crept into the kernel live now:
 
 `make test` checks these boundaries mechanically. Kernel code may import only Gerbil's standard library and other kernel files, and may not use the words the [kernel decision record](../agents/adr/0012-kernel-boundary-and-replaceability.md) forbids (keys, buffers, windows, settings, timers, and so on). Libraries may import only the standard library, the kernel's public face, and other libraries. Everything else imports only the kernel's public face, and only tests may use the test helpers in `tuna/test-support/`.
 
-Some plugins can be swapped while Tuna runs: the text store, the window manager, the renderer, and nearly everything else. A few are chosen at startup and need a restart to change, such as how keys are resolved and how settings are looked up, because swapping them mid-session would pull the rug out from under running commands. If a plugin combination breaks things, a safe mode starts Tuna with only its standard plugins, and `describe-services` shows which plugin is filling each slot.
+Some plugins can be swapped while Tuna runs: the text store, the window manager, the renderer, and nearly everything else. A few are chosen at startup and need a restart to change, such as how keys are resolved and how settings are looked up, because swapping them mid-session would pull the rug out from under running commands. If a plugin combination breaks things, Tuna recovers from your own configuration, by skipping what failed or going back to your last working configuration, rather than switching to some built-in default; how exactly is still being designed, and `describe-services` shows which plugin is filling each slot.
 
 ## The big parts
 

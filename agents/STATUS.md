@@ -29,6 +29,7 @@ Read this first when resuming work. Last updated 2026-10-12. It records where th
 - Owner-facing documents follow AGENTS.md "Documents for the owner": briefs before architecture work, plain language, rendered and checked D2 diagrams, a walkthrough, a code sample, decisions with recommendations, new terms.
 - Delegate substantial implementation to agents in their own worktrees (`tuna__<task>`), merge locally with `--no-ff`, never push. The owner talks only to the primary agent.
 - Commit work as it lands; the owner wants things committed.
+- Tuna has no "standard" setup (2026-10-12). The plugins in this repository are ordinary plugins; users need not use any of them and may use completely different keybindings and input models. Recovery from a broken configuration comes from the user's own configuration (skip only what fails, or return to the last known-good one), never from a built-in default plugin set; the exact design is being researched for the configuration brief.
 
 ## Lessons recorded from this attempt
 

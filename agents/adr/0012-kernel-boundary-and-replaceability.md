@@ -29,7 +29,7 @@ The two differ in one respect that matters: whether Tuna's default implementatio
 - **Few, coarse contracts.** Contracts sit at subsystem boundaries (text store, buffers, window manager, renderer, input), not around individual functions, and contracts between coupled subsystems are designed together.
 - **Proving contracts.** Each contract is designed while its default is built and proven by swapping in a deliberately small second implementation.
 - **Versioning.** Contracts carry versions; plugin manifests declare which versions they support.
-- **Recovery and visibility.** A safe mode starts Tuna with only the standard plugins. A `describe-services` command shows which provider fills each service, its tier, and its dependents.
+- **Recovery and visibility.** Recovery from a broken configuration comes from the user's own configuration (skipping what fails, or returning to the user's last known-good configuration), not from a built-in default plugin set; the design is pending the configuration brief (owner decision, 2026-10-12). A `describe-services` command shows which provider fills each service, its tier, and its dependents.
 
 ## Kernel contract (amendment, 2026-10-12)
 
