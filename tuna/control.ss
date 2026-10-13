@@ -6,8 +6,11 @@
 ;;; user's input or display plugins are broken.
 ;;;
 ;;; Why a socket: it carries the report back to the terminal that asked,
-;;; needs no network port, and only the user can reach it (the directory
-;;; is private to them). The file is named after the process id, so
+;;; needs no network port, and only the user can reach it: the directory
+;;; must be the user's own with mode 700, or neither side uses it, and
+;;; each socket has mode 600. Every Tuna sharing the directory reloads,
+;;; including test or development Tunas run with the same
+;;; XDG_RUNTIME_DIR. The file is named after the process id, so
 ;;; several Tunas never share one. A file that nothing listens on is
 ;;; stale (its Tuna ended without deleting it, or its id was reused), and
 ;;; `tuna reload` deletes it. A signal and a pid file could neither answer
@@ -23,9 +26,11 @@ prelude: :gerbil/core
         :std/net/address
         (only-in :std/os/pid getpid)
         (only-in :std/time/timeout timeout->deadline)
+        :std/ffi
         (only-in :tuna/kernel exception-summary)
         :tuna/boot)
-(export control-directory
+(export reply-time-limit
+        control-directory
         control-socket-path
         control-server
         control-server-path
@@ -44,6 +49,25 @@ prelude: :gerbil/core
 (def (control-socket-path (pid : :fixnum)) => :string
   (path-expand (string-append (number->string pid) ".sock") (control-directory)))
 
+;; chmod(2) and getuid(2); Gerbil's libraries have neither.
+(C-ffi-macrology)
+(C-include "<sys/stat.h>" "<unistd.h>")
+(def-C-lambda chmod-file (char-string int) int "chmod")
+(def-C-lambda user-id () int "getuid")
+
+;; Seconds `tuna reload` waits for each Tuna's answer.
+(def reply-time-limit (make-parameter 30.))
+
+;; Why DIRECTORY must not be used for control sockets, or #f: it must be
+;; a directory owned by the user, with mode 700.
+(def (directory-problem (directory : :string)) => (Maybe :string)
+  (let (info (file-info directory #f))
+    (and (not (and (eq? (file-info-type info) 'directory)
+                   (eqv? (file-info-owner info) (user-id))
+                   (fx= (fxand (file-info-mode info) #o777) #o700)))
+         (string-append directory " is not a directory private to you (yours, mode 700), so "
+                        "`tuna reload` does not use it."))))
+
 ;; A listening socket and the thread serving it.
 (defstruct control-server ((listener : ServerSocket)
                            (path     : :string)
@@ -57,10 +81,12 @@ prelude: :gerbil/core
   (let ((directory (control-directory))
         (path (control-socket-path (getpid))))
     (create-private-directory! directory)
+    (cond ((directory-problem directory) => error))
     ;; Left by an earlier process with this id, which has ended.
     (when (file-exists? path)
       (delete-file path))
     (let (listener (unix-listen (UnixAddress path)))
+      (chmod-file path #o600)
       (make-control-server listener path
                            (spawn-thread (lambda () (control-thread listener reload!))
                                          'tuna-control)))))
@@ -137,11 +163,15 @@ prelude: :gerbil/core
 ;; failed, otherwise 1.
 (def (request-reloads (port : :port)) => :fixnum
   (let* ((directory (control-directory))
-         (pids (if (file-exists? directory)
+         (problem (and (file-exists? directory) (directory-problem directory)))
+         (pids (if (and (file-exists? directory) (not problem))
                  (filter-map socket-file-pid (directory-files directory))
                  []))
          (answers (filter-map (lambda ((pid : :fixnum)) (request-reload pid)) (list-sort < pids))))
     (cond
+     (problem
+      (display (string-append problem "\n") port)
+      1)
      ((null? answers)
       (display "No running Tuna was found, so nothing was reloaded.\n" port)
       1)
@@ -173,15 +203,23 @@ prelude: :gerbil/core
       (client
        (using (client : StreamSocket)
          (try
-          (using (writer (client.writer) : Writer)
-            (writer.write (string->utf8 "reload\n"))
-            (writer.close))
-          (let (answer (read-answer client))
-            (match (string-index answer #\newline)
-              (#f (cons* pid #f (string-append "Tuna process " (number->string pid)
-                                               " ended its answer early.\n")))
-              (end (cons* pid (equal? (substring answer 0 end) "ok")
-                          (substring answer (fx1+ end) (string-length answer))))))
+          (with-catch
+           (lambda (e)
+             (cons* pid #f (string-append "Tuna process " (number->string pid)
+                                          " did not answer within " (seconds-text (reply-time-limit))
+                                          "; it may be busy. " (exception-summary e) "\n")))
+           (lambda ()
+             (client.set-input-timeout! (timeout->deadline (reply-time-limit)))
+             (client.set-output-timeout! (timeout->deadline (reply-time-limit)))
+             (using (writer (client.writer) : Writer)
+               (writer.write (string->utf8 "reload\n"))
+               (writer.close))
+             (let (answer (read-answer client))
+               (match (string-index answer #\newline)
+                 (#f (cons* pid #f (string-append "Tuna process " (number->string pid)
+                                                  " ended its answer early.\n")))
+                 (end (cons* pid (equal? (substring answer 0 end) "ok")
+                             (substring answer (fx1+ end) (string-length answer))))))))
           (finally (client.close))))))))
 
 ;; Everything CLIENT sends until it closes, as text.

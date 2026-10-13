@@ -98,9 +98,9 @@ prelude: :gerbil/core
 ;; thread, the only one changing plugins then, reloads, and starts the
 ;; loop if input is now provided (brief, walkthrough step 4).
 (def (run (port : :fixnum) (config :? :string)) => :void
-  (report-start-up
-   (parameterize ((web-transport-listen-port port))
-     (start-from-configuration (find-configuration config))))
+  ;; Set for good, so a web transport a reload turns on uses it too.
+  (web-transport-listen-port port)
+  (report-start-up (start-from-configuration (find-configuration config)))
   (call-reporting-session-failure "Restoring the session" restore-session)
   (let* ((events (make-channel))           ; 'stop, or [reload: completion]
          (control (start-control-server-reporting
@@ -110,18 +110,32 @@ prelude: :gerbil/core
                        (let (done (make-completion))
                          (channel-put events [reload: done])
                          (completion-wait! done)))))))
-    (add-signal-handler! SIGINT (lambda () (channel-put events 'stop)))
+    ;; A second Ctrl-C quits at once, without saving the session, for
+    ;; when the first cannot be acted on (a reload waiting for a plugin).
+    (add-signal-handler! SIGINT
+                         (let (interrupts 0)
+                           (lambda ()
+                             (set! interrupts (fx1+ interrupts))
+                             (if (fx= interrupts 1)
+                               (channel-put events 'stop)
+                               (begin
+                                 (display "Ctrl-C again: quitting without saving the session.\n"
+                                          (current-error-port))
+                                 (exit 130))))))
     (add-signal-handler! SIGTERM (lambda () (channel-put events 'stop)))
     (start-editor-loop-when-input! #t)
     (let loop ()
       (match (channel-get events)
         ('stop (void))
         ([reload: done]
-         (completion-post! done (with-catch (lambda (e)
-                                              (cons #f (string-append "The reload failed: "
-                                                                      (exception-summary e) "\n")))
-                                            reload-outcome))
-         (start-editor-loop-when-input! #f)
+         ;; The loop starts before the answer goes out, so the next
+         ;; request already finds it running and reloads on its baton.
+         (let (outcome (with-catch (lambda (e)
+                                     (cons #f (string-append "The reload failed: "
+                                                             (exception-summary e) "\n")))
+                                   reload-outcome))
+           (start-editor-loop-when-input! #f)
+           (completion-post! done outcome))
          (loop))))
     (when control
       (stop-control-server! control
