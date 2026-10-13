@@ -493,6 +493,7 @@ prelude: :gerbil/core
          (user-code (running-configuration-user-code old))
          (user-forms (running-configuration-user-forms old))
          (kept-units [])                ; units left alone, to check at the end
+         (restored [])                  ; names whose failed new version was undone
          (entries []))                  ; newest first
     ;; Add ENTRY, replacing an earlier entry for the same plugin.
     (def (record! (entry : report-entry))
@@ -596,6 +597,7 @@ prelude: :gerbil/core
                      (drain! #f))
                    (begin
                      (set-working! (declaration-name o) o)
+                     (set! restored (cons (plugin-name running) restored))
                      (record! (with-status entry (report-entry-status entry)
                                            (string-append (report-entry-detail entry)
                                                           (restored-text running what source))))
@@ -626,10 +628,11 @@ prelude: :gerbil/core
                          (with-status entry 'replaced "")
                          entry)))
              ((and (declaration-block o) (eq? (change-kind c) 'block))
-              (let (restored (make-declaration (declaration-target o) (declaration-block o)
-                                               (declaration-block-forms o) (declaration-source d)))
-                (set-working! (declaration-name d) restored)
-                (let (back (sync-block-entry restored))
+              (let (running (make-declaration (declaration-target o) (declaration-block o)
+                                              (declaration-block-forms o) (declaration-source d)))
+                (set-working! (declaration-name d) running)
+                (set! restored (cons (plugin-name block) restored))
+                (let (back (sync-block-entry running))
                   (record! (with-status entry 'failed
                                         (string-append (report-entry-detail entry)
                                                        (if (eq? (report-entry-status back) 'on)
@@ -647,9 +650,11 @@ prelude: :gerbil/core
          ((not (eq? (declaration-target o) (declaration-target d)))
           (make-change (if (plugin-active? (declaration-target o)) 'replace 'retry) d o))
          (else
-          (let* ((same-block? (and (not modules-reloaded?)
-                                   (eq? (not (declaration-block d)) (not (declaration-block o)))
-                                   (equal? (declaration-block-forms d) (declaration-block-forms o))))
+          (let* ((same-block? (if (declaration-block d)
+                                (and (declaration-block o)
+                                     (not modules-reloaded?)
+                                     (equal? (declaration-block-forms d) (declaration-block-forms o)))
+                                (not (declaration-block o))))
                  (kept (if same-block?
                          (make-declaration (declaration-target d) (declaration-block o)
                                            (declaration-block-forms d) (declaration-source d))
@@ -720,6 +725,7 @@ prelude: :gerbil/core
                   (set! user-forms new-forms)
                   (record! (if was-on? (with-status entry 'replaced "") entry)))
                  (was-on?
+                  (set! restored (cons 'init restored))
                   (record! (with-status entry 'failed
                                         (string-append (report-entry-detail entry)
                                                        (restored-text user-code what #f)))))
@@ -755,7 +761,13 @@ prelude: :gerbil/core
                      (record! (make-report-entry unit "your own code (plugin init)" #f 'off
                                                  (turned-off-text unit)))))))
               kept-units)
-    (let* ((final (map final-entry (reverse entries)))
+    ;; A unit whose failed new version was undone is on again under the
+    ;; same name, which is all the kernel knows it by.
+    (let* ((final (map (lambda ((e : report-entry))
+                         (if (memq (plugin-name (report-entry-subject e)) restored)
+                           e
+                           (final-entry e)))
+                       (reverse entries)))
            (units (append (map declaration-name new-declarations)
                           (filter-map (lambda ((d : declaration))
                                         (let (block (declaration-block d))

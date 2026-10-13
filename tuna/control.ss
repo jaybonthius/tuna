@@ -8,9 +8,10 @@
 ;;; Why a socket: it carries the report back to the terminal that asked,
 ;;; needs no network port, and only the user can reach it (the directory
 ;;; is private to them). The file is named after the process id, so
-;;; several Tunas never share one; a file whose process is gone is stale,
-;;; and `tuna reload` deletes it. A signal and a pid file could neither
-;;; answer the terminal nor tell a stale file from a reused process id.
+;;; several Tunas never share one. A file that nothing listens on is
+;;; stale (its Tuna ended without deleting it, or its id was reused), and
+;;; `tuna reload` deletes it. A signal and a pid file could neither answer
+;;; the terminal nor tell a stale file from a reused process id.
 ;;;
 ;;; The protocol is one exchange per connection: the client sends
 ;;; "reload\n" and closes its side; Tuna answers "ok\n" or "failed\n"
@@ -21,13 +22,13 @@ prelude: :gerbil/core
         :std/io
         :std/net/address
         (only-in :std/os/pid getpid)
-        (only-in :std/os/signal kill)
         (only-in :std/time/timeout timeout->deadline)
         (only-in :tuna/kernel exception-summary)
         :tuna/boot)
 (export control-directory
         control-socket-path
         control-server
+        control-server-path
         start-control-server!
         stop-control-server!
         request-reloads)
@@ -159,18 +160,16 @@ prelude: :gerbil/core
          (and (fixnum? pid) (fxpositive? pid) pid))))
 
 ;; Ask the Tuna with process id PID to reload: (pid succeeded? . text), or
-;; #f when no such process runs, in which case its socket file is deleted.
+;; #f when nothing listens on its socket, which is then deleted.
 (def (request-reload (pid : :fixnum)) => (Maybe :pair)
   (let (path (control-socket-path pid))
     (match (with-catch (lambda (e) (cons 'error e))
                        (lambda () (unix-connect (UnixAddress path))))
-      (['error . e]
-       (if (process-exists? pid)
-         (cons* pid #f (string-append "Tuna process " (number->string pid) " did not answer: "
-                                      (exception-summary e) "\n"))
-         (begin
-           (with-catch void (lambda () (delete-file path)))
-           #f)))
+      (['error . _]
+       ;; A running Tuna accepts even while busy, so nothing listens:
+       ;; the process ended, or its id now belongs to another process.
+       (with-catch void (lambda () (delete-file path)))
+       #f)
       (client
        (using (client : StreamSocket)
          (try
@@ -194,6 +193,3 @@ prelude: :gerbil/core
         (if (fxzero? n)
           (utf8->string (apply u8vector-append (reverse chunks)))
           (loop (cons (subu8vector buffer 0 n) chunks)))))))
-
-(def (process-exists? (pid : :fixnum)) => :boolean
-  (with-catch (lambda (_) #f) (lambda () (kill pid 0) #t)))

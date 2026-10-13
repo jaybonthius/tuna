@@ -15,7 +15,11 @@
         failing-provider-plugin
         dependent-plugin
         hanging-plugin
-        plugin-named-init)
+        plugin-named-init
+        counted-plugin
+        fixed-service
+        fixed-provider-plugin
+        better-fixed-provider-plugin)
 
 ;; Probe name -> live registrations.
 (def probes (make-hash-table))
@@ -86,3 +90,22 @@
   (probe-on! 'hanging)
   (let spin ((n 0))
     (spin (if (fx< n 1000) (fx1+ n) 0))))
+
+;; Counts its activations under its own name.
+(defplugin counted-plugin "Counts its activations."
+  (note-activation! 'counted-plugin)
+  (probe-on! 'counted))
+
+;; A startup-tier service: while the editor loop runs, the kernel refuses
+;; to take it from its provider.
+(def fixed-service
+  (new-service 'fixed (lambda (x) (eq? x 'fixed)) tier: 'startup
+               doc: "A startup-tier service for configuration tests."))
+
+(defplugin fixed-provider-plugin "Provides the startup-tier service fixed."
+  (context-provide! (current-context) fixed-service 'fixed)
+  (probe-on! 'fixed))
+
+(defplugin better-fixed-provider-plugin "Provides fixed with a higher priority."
+  (context-provide! (current-context) fixed-service 'fixed priority: 10)
+  (probe-on! 'better-fixed))
