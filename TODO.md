@@ -16,3 +16,7 @@
 
 - [ ] **Session restore order is implicit.** Slots restore in the order plugins registered them; the configuration activates autosave before the layout so buffers exist before views refer to them. Make restore order explicit (dependencies between slots) before more stateful plugins arrive.
 - [ ] **Layout contract is partial.** ADR 13's split, delete, neighbor, `display-buffer`, frames, frame marks and dedicated views are not built; due with the layout plugin (stage 2 of `agents/plans/buffers-views-layout.md`).
+- [ ] **Swapping a provider live loses view points** (seen on `main` before stage 1 too). Turning on the toy layout or re-activating a layout after a buffers swap restores the session's saved `layout` slot over the handover, so views jump to their last saved points. Session restore on activation must not override a handover; fix with the stage 2 layout plugin.
+- [ ] **Swapping the buffers provider restarts the layout.** Only the selected view survives; plugin-made buffers are rebuilt and waiting prompts are cancelled. The stage 2 layout plugin should adapt to a buffers change (`context-adapt!`) and re-point its views by buffer name and node id, which the buffers handover keeps.
+- [ ] **A text's list of text nodes never shrinks** (stage 1). Detached nodes stay referenced; make it weak or prune it when a node leaves its tree.
+- [ ] **Text reads allocate through the provider** (stage 1): each size, substring, or line read goes through one snapshot method. Unmeasured on the render path; measure before the in-view drawing work.

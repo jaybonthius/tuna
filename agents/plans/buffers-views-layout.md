@@ -11,7 +11,7 @@ Owner-approved brief: [`docs/briefs/2026-10-buffers-views-layout.md`](../../docs
 
 ## Stages
 
-1. **Names and the buffers contract.** The screen looks the same as today.
+1. **Names and the buffers contract.** The screen looks the same as today. **Done 2026-10-13** (`d781efb`). Choices beyond ADR 13: `set-selected-view!` and `set-view-showing!` (buffers-level setters), view field `focus` and prompt field `answer` (Gerbil cannot type a field named like its type), text reads through one snapshot method, revisions from the kernel id counter, child ranges count from 0, `set-node-attribute!` and `set-node-children!` stamp revisions; element ids `view-V` and `view-V-node-N`. The buffers handover keeps buffers, texts, highlights, node ids and the selected view, not undo or the journal.
    - Merge `window` into `view`: a view gains an identity and the layout's role; `WindowManager` becomes the layout contract (`tuna/services/layout.ss`, `layout-service`); `window-commands` becomes `view-commands`; rename throughout code, tests, the starter and the demo.
    - Split `tuna/services/buffers.ss` (audit P1-1): the contract keeps vocabulary and thin dispatchers; editing, undo, the journal, highlights, positions and relocation, and node creation move behind `Buffers` methods into `tuna/plugins/buffers.ss`. Nodes gain `parent` and `revision` (stamped up the parent path on each change), exposed through the contract.
    - Text links to files are not built here (no files yet); nothing may assume the link is on the buffer.
