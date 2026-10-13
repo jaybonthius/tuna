@@ -29,7 +29,7 @@ The two differ in one respect that matters: whether Tuna's default implementatio
 - **Few, coarse contracts.** Contracts sit at subsystem boundaries (text store, buffers, window manager, renderer, input), not around individual functions, and contracts between coupled subsystems are designed together.
 - **Proving contracts.** Each contract is designed while its default is built and proven by swapping in a deliberately small second implementation.
 - **Versioning.** Contracts carry versions; plugin manifests declare which versions they support.
-- **Recovery and visibility.** Recovery from a broken configuration comes from the user's own configuration (skipping what fails, or returning to the user's last known-good configuration), not from a built-in default plugin set; the design is pending the configuration brief (owner decision, 2026-10-12). A `describe-services` command shows which provider fills each service, its tier, and its dependents.
+- **Recovery and visibility.** Recovery from a broken configuration comes from the user's own configuration, not from a built-in default plugin set, and Tuna keeps no stored history of it (configuration brief, 2026-10-12). Built (configuration stage 1): start-up turns each declared plugin on separately, so a failure is undone and reported, plugins that need it are skipped, and the rest come up; a start-up report on the terminal and in `$XDG_STATE_HOME/tuna/startup.log` lists what came up, failed, or was skipped; `tuna check` loads and validates a configuration without starting anything. Reloading a fixed configuration into the running editor comes in stage 2. A `describe-services` command shows which provider fills each service, its tier, and its dependents.
 
 ## Kernel contract (amendment, 2026-10-12)
 

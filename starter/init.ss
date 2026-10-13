@@ -7,7 +7,15 @@
 ;;; this order once the whole file has loaded, each as soon as the services
 ;;; it needs are provided. A plugin that fails is turned off and reported;
 ;;; the others still come up. Code attached with `config:` runs while its
-;;; plugin is on. Any other code in this file runs last, as your own plugin.
+;;; plugin is on. Any other code in this file runs last, as your own plugin;
+;;; its definitions are local to it, so put helpers that `config:` blocks
+;;; also need in a module next to this file and import it by its path, as
+;;; in (import "my-helpers"). Each plugin, and your own code, has 5 s to
+;;; turn on; one that takes longer is stopped and turned off.
+;;;
+;;; Loading this file runs only its imports and declarations. The code of
+;;; the modules you import, and macro code, also run at load: they must not
+;;; change the editor, since nothing could undo it.
 
 (import :tuna/plugins/keys
         :tuna/plugins/web
