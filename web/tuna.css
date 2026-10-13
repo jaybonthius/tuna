@@ -83,6 +83,7 @@ body {
   flex-direction: column;
 }
 
+.layout > * + *,
 .container.fit.horizontal > * + * {
   border-inline-start: 1px solid var(--tuna-rule);
 }
