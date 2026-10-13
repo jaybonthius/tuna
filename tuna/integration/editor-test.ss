@@ -1,7 +1,7 @@
 ;;; Integration: the editor's real plugins with command fixtures from
 ;;; tuna/test-support/, driven by keys through the real editor loop: a
 ;;; minibuffer prompt (rename-buffer) and quitting it, describe-services in
-;;; the help panel, and a slow job (the digit highlighter) whose results
+;;; the *Help* buffer and closing it, and a slow job (the digit highlighter) whose results
 ;;; follow typing, are cancelled when its plugin turns off, and skip the
 ;;; minibuffer.
 (import :std/sync/completion
@@ -13,9 +13,10 @@
         :tuna/services/echo-area
         :tuna/services/help
         :tuna/services/settings
+        :tuna/services/layout
         :tuna/plugins/keys
         :tuna/plugins/echo-area
-        :tuna/plugins/help-panel
+        :tuna/plugins/help-buffer
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
@@ -32,7 +33,7 @@
 (export editor-test)
 
 (def editor-plugins
-  [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
+  [keys-plugin echo-area-plugin help-buffer-plugin rope-text-store-plugin
    settings-plugin no-session-plugin buffers-plugin layout-plugin html-renderer-plugin
    basic-editing-plugin minibuffer-plugin
    rename-command-plugin services-help-plugin digit-highlighter-plugin])
@@ -44,7 +45,7 @@
   (set! jobs (new-job-group ctx)))
 
 (def job-plugins
-  [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
+  [keys-plugin rope-text-store-plugin settings-plugin
    buffers-plugin basic-editing-plugin job-host-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
@@ -100,13 +101,16 @@
          (start-editor-loop!)
          (type! "C-c" "r" "n" "o" "t" "e" "s")
          (let (html (screen))
-           (check (contains? html "<span class=\"prompt\">New name: </span>") => #t)
+           (check (contains? html "class=\"prompt\">New name: </span>") => #t)
            (check (contains? html "notes<span class=\"cursor\"> </span>") => #t)
-           (check (contains? html "Tuna · *scratch*") => #t))
+           ;; The view the question came from keeps its status line, its
+           ;; cursor hollow while the prompt's view is selected.
+           (check (contains? html "Tuna · *scratch*") => #t)
+           (check (contains? html "class=\"inactive-cursor\"") => #t))
          (type! "RET")
          (check (on-baton (lambda () (buffer-name (current-buffer)))) => "notes")
          (let (html (screen))
-           (check (contains? html "class=\"minibuffer\"") => #f)
+           (check (contains? html "New name: ") => #f)
            (check (contains? html "Tuna · notes") => #t)
            (check (contains? html "Renamed to notes") => #t)))))
 
@@ -118,11 +122,11 @@
          (check (contains? (screen) "New name: ") => #t)
          (type! "C-g")
          (let (html (screen))
-           (check (contains? html "class=\"minibuffer\"") => #f)
+           (check (contains? html "New name: ") => #f)
            (check (contains? html "Tuna · *scratch*") => #t)
            (check (contains? html ">Quit<") => #t)))))
 
-    (test-case "C-h s shows buffers adapting to the text store"
+    (test-case "C-h s shows buffers adapting to the text store, in *Help*; C-h q closes it"
       (call-with-fresh-kernel editor-plugins
        (lambda ()
          (start-editor-loop!)
@@ -130,7 +134,19 @@
          (check (on-baton (lambda () (help-output-lines (current-help))))
                 ? (cut member
                        "text-store (live)  provider: rope-text-store-plugin  dependents: buffers-plugin (adapts)"
-                       <>)))))
+                       <>))
+         (let (html (screen))
+           (check (contains? html ">Services</h1>") => #t)
+           (check (contains? html "provider: rope-text-store-plugin  dependents: buffers-plugin (adapts)") => #t)
+           (check (contains? html "Tuna · *Help*") => #t))
+         ;; The selected view stays where it was.
+         (check (on-baton (lambda () (buffer-name (current-buffer)))) => "*scratch*")
+         (check (on-baton (lambda () (map (lambda (v) (buffer-name (view-showing v))) (view-list))))
+                ? (cut member "*Help*" <>))
+         (type! "C-h" "q")
+         (check (on-baton (lambda () (map (lambda (v) (buffer-name (view-showing v))) (view-list))))
+                ? (lambda (names) (not (member "*Help*" names))))
+         (check (contains? (screen) "Tuna · *Help*") => #f))))
 
     (test-case "the slow highlighter colors digits shortly after typing"
       (call-with-fresh-kernel editor-plugins

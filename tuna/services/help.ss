@@ -1,4 +1,5 @@
-;;; The help service: where help commands show their output.
+;;; The help service: where help commands show their output. The default
+;;; shows it in the *Help* buffer, an ordinary buffer in a view (ADR 13).
 prelude: :gerbil/core
 
 (import :std/interface
@@ -15,7 +16,7 @@ prelude: :gerbil/core
 
 (interface Help
   (show-help! (output : help-output)) => :void
-  ;; The help output shown now, or #f.
+  ;; The help output shown last, or #f.
   (current-help) => :t)
 
 (def help-service

@@ -253,7 +253,6 @@ prelude: :gerbil/core
 
 (defclass toy-buffers ((newest-first : :list)   ; the buffers, newest first
                        (selected     : view)
-                       (focus        : :list)
                        (kinds        : entry-table)
                        (renderers    : entry-table))
   final: #t)
@@ -327,7 +326,6 @@ prelude: :gerbil/core
                            b))
                        (buffers-description-buffers d)))
       (set! self.newest-first (if (null? buffers) [(toy-scratch)] (reverse buffers)))
-      (set! self.focus [])
       (let* ((vd (buffers-description-selected d))
              (b (or (toy-find self (view-description-buffer vd)) (last self.newest-first)))
              (n (text-node-in (view-description-node vd) b))
@@ -410,11 +408,8 @@ prelude: :gerbil/core
   (buffer-point-node (lambda (self b) (using (b : toy-buffer) b.point-node)))
   (buffer-point (lambda (self b) (toy-buffer-point-now b)))
   (set-buffer-point! (lambda (self b n position) (toy-set-point! b n position)))
-  (current-view (lambda (self) (if (pair? self.focus) (car self.focus) self.selected)))
   (selected-view (lambda (self) self.selected))
   (set-selected-view! (lambda (self v) (set! self.selected v)))
-  (push-focus-view! (lambda (self v) (set! self.focus (cons v self.focus))))
-  (remove-focus-view! (lambda (self v) (set! self.focus (remq v self.focus))))
   (node-kinds (lambda (self) self.kinds))
   (node-renderers (lambda (self) self.renderers))
   (describe-buffers (lambda (self) (toy-describe self)))
@@ -426,7 +421,7 @@ prelude: :gerbil/core
   (let* ((scratch (toy-scratch))
          (self (toy-buffers newest-first: [scratch]
                             selected: (new-view-at scratch (toy-buffer-point-node scratch) 1 0)
-                            focus: [] kinds: (new-entry-table) renderers: (new-entry-table))))
+                            kinds: (new-entry-table) renderers: (new-entry-table))))
     (context-add-entry! ctx (toy-buffers-kinds self) 'text
                         (make-node-kind-info 'text "Text that users edit."
                                              (lambda (n) (text-string (text-node-content n))))
@@ -442,4 +437,4 @@ prelude: :gerbil/core
                                               (toy-tree-texts b.root)))
                                   (toy-buffers-newest-first self)))))
     (context-add-setting-scope! ctx 'buffer
-                                (lambda (s) (buffer-setting (current-buffer) s)))))
+                                (lambda (s) (buffer-setting (settings-buffer) s)))))

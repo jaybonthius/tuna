@@ -2,7 +2,9 @@
 ;;; keys, under the default layout: C-x 2, C-x 3, C-x 0, C-x 1, C-x o,
 ;;; S-<arrows>, C-x n s, C-x n w, and the frame marks on C-x r w, C-x r j
 ;;; and C-x r l, read in the minibuffer; and the same commands under the
-;;; toy layout, which falls back as the contract allows.
+;;; toy layout, which falls back as the contract allows. The bar (the
+;;; minibuffer's and echo area's views, pinned and locked) is left out of
+;;; the views these tests count, except where they check it stays.
 (import :std/test
         :tuna/kernel
         :tuna/services/buffers
@@ -37,8 +39,12 @@
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
+;; The views outside the bar, whose buffers are not internal.
+(def (own-views)
+  (filter (lambda (v) (not (internal-buffer? (view-showing v)))) (view-list)))
+
 (def (index-of v)
-  (let lp ((views (view-list)) (i 0))
+  (let lp ((views (own-views)) (i 0))
     (cond
      ((null? views) #f)
      ((eq? (car views) v) i)
@@ -46,13 +52,24 @@
 
 ;; Each view's buffer name and point, in order, and the selected index.
 (def (views-state)
-  (on-baton (lambda () [(map (lambda (v) [(buffer-name (view-showing v)) (view-point v)]) (view-list))
+  (on-baton (lambda () [(map (lambda (v) [(buffer-name (view-showing v)) (view-point v)]) (own-views))
                         (index-of (selected-view))])))
 
-;; The indexes of the views the frame shows, and the kinds of the nodes
-;; they are drawn from.
+;; The indexes of the views the frame shows outside the bar, and the kinds
+;; of the nodes they are drawn from.
 (def (shown)
-  (on-baton (lambda () (render-layout 'test (lambda (v selected? start) [(index-of v) (node-kind start)])))))
+  (on-baton (lambda ()
+              (filter identity
+                      (render-layout 'test (lambda (v selected? start)
+                                             (and (index-of v) [(index-of v) (node-kind start)])))))))
+
+;; The names of the bar's buffers the frame shows.
+(def (bar-shown)
+  (on-baton (lambda ()
+              (filter identity
+                      (render-layout 'test (lambda (v selected? start)
+                                             (and (internal-buffer? (view-showing v))
+                                                  (buffer-name (view-showing v)))))))))
 
 (def (message-now) (on-baton current-message))
 
@@ -89,6 +106,8 @@
          (check (length (shown)) => 3)
          (type! "C-x" "1")
          (check (shown) => [[0 'text]])
+         ;; The bar is pinned: it stays.
+         (check (bar-shown) => [" *Echo Area*" " *Minibuf-0*"])
          ;; Splitting the view the frame is on keeps both in the frame.
          (type! "C-x" "3")
          (check (shown) => [[0 'text] [1 'text]])

@@ -8,7 +8,7 @@
         :tuna/services/buffers
         :tuna/plugins/keys
         :tuna/plugins/echo-area
-        :tuna/plugins/help-panel
+        :tuna/plugins/help-buffer
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
@@ -28,7 +28,7 @@
 (export renderer-swap-test)
 
 (def renderer-plugins
-  [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
+  [keys-plugin echo-area-plugin help-buffer-plugin rope-text-store-plugin
    settings-plugin no-session-plugin buffers-plugin layout-plugin
    view-commands-plugin
    html-renderer-plugin basic-editing-plugin minibuffer-plugin
@@ -86,11 +86,12 @@
            (check (contains? html "xy<span class=\"inactive-cursor\"> </span>") => #t)
            (check (contains? html "data-selected=\"true\"") => #t)))))
 
-    (test-case "a prompt shows its question and answer in the footer"
+    (test-case "a prompt shows its question and answer in its view, which has no status line"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (start-editor-loop!)
          (type! "C-c" "v" "C-c" "r" "o" "k")
-         (check (contains? (screen) "<pre class=\"plain-text\" role=\"status\">New name: ok<span class=\"cursor\"> </span>\n</pre>")
-                => #t)
-         (type! "C-g"))))))
+         (check (contains? (screen) "New name: \nok<span class=\"cursor\"> </span></pre>") => #t)
+         (type! "C-g")
+         (check (contains? (screen) "New name: ") => #f)
+         (check (contains? (screen) "Quit</pre>") => #t))))))

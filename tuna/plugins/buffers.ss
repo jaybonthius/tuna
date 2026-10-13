@@ -1,8 +1,7 @@
 ;;; The default buffers provider (live tier; ADR 6, ADR 13): texts with a
 ;;; change journal, undo by change records, and highlight layers that move
 ;;; with edits; node trees with parent links and revisions; the buffer
-;;; list; the selected view and the focus views pushed over it; and the
-;;; node-kind registries. Starts with *scratch*, a buffer holding one empty
+;;; list; the selected view; and the node-kind registries. Starts with *scratch*, a buffer holding one empty
 ;;; text node, selected in a view that the layout takes over as its first
 ;;; view.
 ;;;
@@ -330,7 +329,6 @@ prelude: :gerbil/core
 
 (defclass buffer-registry ((buffers   : :list)          ; oldest first
                            (selected  : view)            ; the layout's selected view
-                           (focus     : :list)           ; focus views, innermost first
                            (kinds     : entry-table)
                            (renderers : entry-table))
   final: #t)
@@ -423,7 +421,6 @@ prelude: :gerbil/core
         b))
     (let (buffers (map adopt-buffer (buffers-description-buffers d)))
       (set! self.buffers (if (null? buffers) [(new-scratch-buffer)] buffers))
-      (set! self.focus [])
       (let* ((vd (buffers-description-selected d))
              (b (or (find-buffer self (view-description-buffer vd)) (car self.buffers)))
              (n (text-node-of nodes (view-description-node vd) b))
@@ -490,11 +487,8 @@ prelude: :gerbil/core
   (buffer-point-node (lambda (self b) (using (b : default-buffer) b.point-node)))
   (buffer-point (lambda (self b) (point-of b)))
   (set-buffer-point! (lambda (self b n position) (set-point! b n position)))
-  (current-view (lambda (self) (match self.focus ([v . _] v) ([] self.selected))))
   (selected-view (lambda (self) self.selected))
   (set-selected-view! (lambda (self v) (set! self.selected v)))
-  (push-focus-view! (lambda (self v) (set! self.focus (cons v self.focus))))
-  (remove-focus-view! (lambda (self v) (set! self.focus (remq v self.focus))))
   (node-kinds (lambda (self) self.kinds))
   (node-renderers (lambda (self) self.renderers))
   (describe-buffers (lambda (self) (describe self)))
@@ -507,7 +501,6 @@ prelude: :gerbil/core
          (focus (default-buffer-point-node scratch))
          (registry (buffer-registry buffers: [scratch]
                                     selected: (new-view-at scratch focus 1 0)
-                                    focus: []
                                     kinds: (new-entry-table)
                                     renderers: (new-entry-table))))
     ;; Into this provider's own table: another provider may be current.
@@ -519,4 +512,4 @@ prelude: :gerbil/core
     (context-adapt! ctx text-store-service
                     (lambda (old new) (move-texts! registry (TextStore new))))
     (context-add-setting-scope! ctx 'buffer
-                                (lambda (s) (buffer-setting (current-buffer) s)))))
+                                (lambda (s) (buffer-setting (settings-buffer) s)))))

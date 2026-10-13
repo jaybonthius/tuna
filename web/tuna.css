@@ -28,30 +28,18 @@ body {
   font-family: var(--tuna-font);
 }
 
-/* The screen fills the browser window; views scroll inside it. */
+/* The screen is the layout, and fills the browser window; views scroll
+   inside it. */
 .screen {
   display: flex;
   flex-direction: column;
   block-size: 100vh;
 }
 
-.screen > footer {
-  margin-block-start: auto;
-}
-
-.help {
-  padding: 1rem;
-  overflow: auto;
-}
-
+/* *Help*: a title over the help text. */
 .help h1 {
   margin-block: 0 0.5rem;
   font-size: 1rem;
-}
-
-.help pre {
-  margin: 0;
-  font-family: inherit;
 }
 
 /* The layout draws from the frame's target. Containers lay out their
@@ -69,6 +57,19 @@ body {
   flex: var(--tuna-size, 1) 1 0;
   min-inline-size: 0;
   min-block-size: 0;
+}
+
+/* A part as big as its content, such as the bar at the bottom. */
+.layout > [data-size="content"],
+.container.fit > [data-size="content"],
+.tab-panel > [data-size="content"] {
+  flex: none;
+}
+
+/* The selected part, when it is a container (C-x w a). */
+[data-selected-part] {
+  outline: 2px solid var(--tuna-muted);
+  outline-offset: -2px;
 }
 
 .container {
@@ -142,6 +143,16 @@ body {
 .view {
   display: flex;
   flex-direction: column;
+}
+
+/* The idle minibuffer's view takes no space; the echo area keeps its line. */
+.view:has(> .buffer > .minibuffer:empty) {
+  display: none;
+}
+
+/* The bar's views are one line each. */
+.buffer:has(> .minibuffer, > .echo-area) {
+  padding: 0;
 }
 
 .buffer {

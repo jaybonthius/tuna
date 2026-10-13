@@ -1,5 +1,8 @@
+;;; The HTML renderer: nodes, highlights and cursors, element ids, the
+;;; layout drawn from the frame, and HTML reuse.
 (import :std/test
         :tuna/kernel
+        :tuna/services/settings
         :tuna/services/renderer
         :tuna/services/buffers
         :tuna/services/layout
@@ -38,6 +41,44 @@
 
 (def (screen)
   (Renderer-render-screen (Renderer (service-provider renderer-service))))
+
+;; Calls of the counted kind's HTML renderer, by the name of the buffer
+;; holding the node.
+(def renders (make-hash-table))
+
+(def (renders-of name) (hash-ref renders name 0))
+
+(def (node-buffer-name n)
+  (let (root (let up ((n n)) (or (and (node-parent n) (up (node-parent n))) n)))
+    (buffer-name (find (lambda (b) (eq? (buffer-root b) root)) (buffer-list)))))
+
+;; The counted kind, and two buffers: "a", a counted root holding a
+;; counted child and a text node; "b", a counted root holding two counted
+;; children.
+(defplugin (counted-kind ctx)
+  "Defines the counted kind, whose HTML renderer counts its calls, and buffers a and b."
+  requires: [buffers-service]
+  (context-define-node-kind! ctx 'counted)
+  (context-define-node-renderer! ctx 'counted 'html
+                                 (lambda (n children)
+                                   (hash-update! renders (node-buffer-name n) 1+ 0)
+                                   `(div (@ (class "counted")) ,(or (node-attribute n 'label) "") ,@children)))
+  (context-add-buffer! ctx (new-buffer "a" (new-node 'counted children: [(new-node 'counted)
+                                                                         (new-text-node (new-text "a"))])))
+  (context-add-buffer! ctx (new-buffer "b" (new-node 'counted children: [(new-node 'counted)
+                                                                         (new-node 'counted)]))))
+
+(defplugin (remapping ctx)
+  "Draws digits as keywords."
+  requires: [settings-service]
+  (context-set-setting! ctx face-remapping [(cons 'digit 'keyword)]))
+
+;; a | b, a selected.
+(def (two-counted-views!)
+  (activate-plugin! counted-kind)
+  (let (right (split-view (selected-view) 'right))
+    (set-view-buffer (selected-view) (get-buffer "a"))
+    (set-view-buffer right (get-buffer "b"))))
 
 ;; Position of NEEDLE in HAYSTACK, or #f.
 (def (offset needle haystack)
@@ -149,4 +190,63 @@
            (check (and (offset "data-container=" html) #t) => #t)
            (check (and (offset "style=\"--tuna-size: 1\"" html) #t) => #t)
            ;; *scratch* already shows, so display-buffer reuses its view.
-           (check (offset "class=\"container fit vertical\"" html) => #f)))))))
+           (check (offset "class=\"container fit vertical\"" html) => #f)))))
+
+    (test-case "HTML reuse: an unchanged buffer's node renderers are not called again"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (two-counted-views!)
+         (hash-clear! renders)
+         (let (first (screen))
+           (check [(renders-of "a") (renders-of "b")] => [2 3])
+           (hash-clear! renders)
+           ;; Nothing changed: the same screen, without calling them.
+           (check (screen) => first)
+           (check [(renders-of "a") (renders-of "b")] => [0 0])))))
+
+    (test-case "HTML reuse: an edit redraws only the changed buffer's parts"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (two-counted-views!)
+         (screen)
+         (hash-clear! renders)
+         ;; One of b's children: it and b's root, not its sibling, not a.
+         (set-node-attribute! (car (node-children (buffer-root (get-buffer "b")))) 'label "changed")
+         (let (html (screen))
+           (check [(renders-of "a") (renders-of "b")] => [0 2])
+           (check (and (string-contains html ">changed</div>") #t) => #t))
+         (hash-clear! renders)
+         ;; Typing in a: its root holds the text node, its other child is kept.
+         (insert "!")
+         (let (html (screen))
+           (check [(renders-of "a") (renders-of "b")] => [1 0])
+           (check (and (string-contains html "!<span class=\"cursor\">a</span>") #t) => #t))
+         (hash-clear! renders)
+         ;; Moving point is view state: the nodes holding it are drawn again.
+         (goto-char 1)
+         (screen)
+         (check [(renders-of "a") (renders-of "b")] => [1 0])
+         (hash-clear! renders)
+         ;; Selecting the other view changes both views' state.
+         (select-view (cadr (view-list)))
+         (let (html (screen))
+           (check [(renders-of "a") (renders-of "b")] => [1 0])
+           (check (and (string-contains html "<span class=\"inactive-cursor\">!</span>a") #t) => #t)))))
+
+    (test-case "HTML reuse: a face or setting change redraws everything"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (two-counted-views!)
+         (set-highlights! (text-node-content (cadr (node-children (buffer-root (get-buffer "a")))))
+                          'digits [(make-span 1 2 'digit)])
+         (check (and (string-contains (screen) "face-digit") #t) => #t)
+         (hash-clear! renders)
+         (activate-plugin! remapping)
+         (let (html (screen))
+           (check [(renders-of "a") (renders-of "b")] => [2 3])
+           (check (and (string-contains html "face-keyword") #t) => #t)
+           (check (string-contains html "face-digit") => #f))
+         (hash-clear! renders)
+         (deactivate-plugin! remapping)
+         (check (and (string-contains (screen) "face-digit") #t) => #t)
+         (check [(renders-of "a") (renders-of "b")] => [2 3]))))))

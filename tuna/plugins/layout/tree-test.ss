@@ -16,22 +16,34 @@
 
 (def (ids parts) (map part-id parts))
 
-;; The tree's shape: leaf ids, and (kind direction focus (size shape) ...).
+;; The tree's shape: leaf ids, and (kind direction focus (size shape) ...),
+;; with `pinned` and `locked` after the size of a flagged link.
 (def (shape p)
   (if (leaf? p)
     (part-id p)
     [(container-kind p) (container-direction p) (container-focus p)
-     (map (lambda (l) [(link-size l) (shape (link-part l))]) (container-links p))]))
+     (map (lambda (l)
+            (append [(link-size l)]
+                    (if (link-pinned? l) '(pinned) '())
+                    (if (link-locked? l) '(locked) '())
+                    [(shape (link-part l))]))
+          (container-links p))]))
+
+(def (pin root id)
+  (update-link root id (lambda (l) (make-link (link-size l) (link-part l) #t (link-locked? l)))))
+
+(def (lock root id)
+  (update-link root id (lambda (l) (make-link (link-size l) (link-part l) #t #t))))
 
 ;; 100 [fit horizontal: 1 | 200 [fit vertical: 2 / 3] | 300 [tabbed: 4, 5]]
 (def (sample)
   (make-container 100 'fit 'horizontal
-                  [(make-link 1 (leaf-of 1))
-                   (make-link 2 (make-container 200 'fit 'vertical
-                                                [(make-link 1 (leaf-of 2)) (make-link 1 (leaf-of 3))]
+                  [(new-link 1 (leaf-of 1))
+                   (new-link 2 (make-container 200 'fit 'vertical
+                                                [(new-link 1 (leaf-of 2)) (new-link 1 (leaf-of 3))]
                                                 3))
-                   (make-link 1 (make-container 300 'tabbed 'horizontal
-                                                [(make-link 1 (leaf-of 4)) (make-link 1 (leaf-of 5))]
+                   (new-link 1 (make-container 300 'tabbed 'horizontal
+                                                [(new-link 1 (leaf-of 4)) (new-link 1 (leaf-of 5))]
                                                 4))]
                   1))
 
@@ -96,7 +108,7 @@
     (test-case "replacing a part keeps its link's size; inserting a link"
       (let* ((root (sample))
              (replaced (replace-part root 200 (leaf-of 7) kind-of))
-             (inserted (insert-link-after root 300 4 (make-link 1 (leaf-of 8)) kind-of)))
+             (inserted (insert-link root 300 '(after . 4) (new-link 1 (leaf-of 8)))))
         (check (shape replaced) => ['fit 'horizontal 1 [[1 1] [2 7] [1 ['tabbed 'horizontal 4 [[1 4] [1 5]]]]]])
         (check (ids (part-leaves (find-part inserted 300))) => [4 8 5])))
 
@@ -113,4 +125,80 @@
         ;; Tabs are not side by side.
         (check (neighbor-leaf root 4 'horizontal #t kind-of) => #f)
         ;; Inside TOP only.
-        (check (neighbor-leaf (find-part root 200) 2 'horizontal #f kind-of) => #f)))))
+        (check (neighbor-leaf (find-part root 200) 2 'horizontal #f kind-of) => #f)))
+
+    (test-case "drawing under zoom: the child on the way and the pinned children of each container"
+      (let* ((root (sample))
+             (pinned (pin (pin root 3) 300)))
+        ;; Without pins, the target alone; with no zoom, everything.
+        (check (part-id (drawn-part root 2)) => 2)
+        (check (eq? (drawn-part pinned 100) pinned) => #t)
+        ;; Several pins: 3 beside 2 in their column, and the tabs beside the
+        ;; column, which takes the weight of 1, left out, as well as its own.
+        (check (shape (drawn-part pinned 2))
+               => ['fit 'horizontal 200
+                   [[3 ['fit 'vertical 2 [[1 2] [1 'pinned 3]]]]
+                    [1 'pinned ['tabbed 'horizontal 4 [[1 4] [1 5]]]]]])
+        (check (ids (visible-leaves (drawn-part pinned 2) kind-of)) => [2 3 4])
+        ;; The child on the way takes what the pinned children leave,
+        ;; however big they are.
+        (let (sized (update-link pinned 300 (lambda (l) (make-link 'content (link-part l) #t #f))))
+          (check (link-size (car (container-links (drawn-part sized 2)))) => 3)
+          (check (link-size (cadr (container-links (drawn-part sized 2)))) => 'content))))
+
+    (test-case "zooming into a tab with a pinned sibling tab shows both tabs, the zoomed one active"
+      (let* ((root (pin (sample) 5))
+             (drawn (drawn-part root 4)))
+        (check (shape drawn) => ['tabbed 'horizontal 4 [[1 4] [1 'pinned 5]]])
+        (check (ids (visible-leaves drawn kind-of)) => [4])
+        ;; Zoomed onto the pinned tab itself, its unpinned sibling hides.
+        (check (part-id (drawn-part root 5)) => 5)))
+
+    (test-case "the frame's target inside a pinned part follows the same rule"
+      (let* ((root (pin (pin (sample) 300) 1))
+             (drawn (drawn-part root 5)))
+        (check (shape drawn) => ['fit 'horizontal 300 [[1 'pinned 1] [3 'pinned 5]]])
+        (check (ids (visible-leaves drawn kind-of)) => [1 5])))
+
+    (test-case "moving a part past a sibling, into a neighbor container, or out of its container"
+      (let (root (sample))
+        ;; Past a sibling: the same in a fit column and among tabs.
+        (check (shape (find-part (move-part root 2 'vertical #t kind-of) 200))
+               => ['fit 'vertical 3 [[1 3] [1 2]]])
+        (check (shape (find-part (move-part root 4 'horizontal #t kind-of) 300))
+               => ['tabbed 'horizontal 4 [[1 5] [1 4]]])
+        ;; Into a neighbor container, at the near end.
+        (check (shape (move-part root 1 'horizontal #t kind-of))
+               => ['fit 'horizontal 1 [[2 ['fit 'vertical 3 [[1 1] [1 2] [1 3]]]]
+                                       [1 ['tabbed 'horizontal 4 [[1 4] [1 5]]]]]])
+        ;; Out of a column across the axis, beside it; the column collapses
+        ;; into its other child, which keeps the column's link.
+        (check (shape (move-part root 2 'horizontal #f kind-of))
+               => ['fit 'horizontal 1 [[1 1] [1 2] [2 3] [1 ['tabbed 'horizontal 4 [[1 4] [1 5]]]]]])
+        ;; Out of the tabs at their edge; they keep their single tab.
+        (check (shape (move-part root 5 'horizontal #t kind-of))
+               => ['fit 'horizontal 1 [[1 1] [2 ['fit 'vertical 3 [[1 2] [1 3]]]]
+                                       [1 ['tabbed 'horizontal 4 [[1 4]]]] [1 5]]])
+        ;; No container of that direction above: it cannot move.
+        (check (move-part root 3 'vertical #t kind-of) => #f)
+        (check (move-part root 1 'horizontal #f kind-of) => #f)
+        (check (move-part root 100 'horizontal #t kind-of) => #f)))
+
+    (test-case "a moved part keeps its link: size, pin and lock"
+      (let* ((root (lock (pin (sample) 2) 300))
+             (moved (move-part root 2 'horizontal #f kind-of)))
+        (check (shape moved)
+               => ['fit 'horizontal 1 [[1 1] [1 'pinned 2] [2 3] [1 'pinned 'locked ['tabbed 'horizontal 4 [[1 4] [1 5]]]]]])
+        (check (shape (move-part moved 300 'horizontal #f kind-of))
+               => ['fit 'horizontal 1 [[1 1] [1 'pinned 2] [1 'pinned 'locked ['tabbed 'horizontal 4 [[1 4] [1 5]]]] [2 3]]])))
+
+    (test-case "locks: inside a locked part, and holding one"
+      (let (root (lock (sample) 300))
+        (check (inside-locked? root 4) => #t)
+        (check (inside-locked? root 300) => #t)
+        (check (inside-locked? root 2) => #f)
+        (check (holds-locked? root) => #t)
+        (check (holds-locked? (find-part root 200)) => #f)
+        (check (holds-locked? (find-part root 300)) => #f)
+        (check (link-locked? (part-link root 300)) => #t)
+        (check (part-link root 100) => #f)))))
