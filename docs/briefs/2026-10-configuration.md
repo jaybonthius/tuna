@@ -9,7 +9,7 @@ Today Tuna turns on a fixed list of 15 plugins written into its start-up code. Y
 Four rules shape it:
 - **There is no standard setup.** Tuna ships a starter configuration as a file, but nothing ever uses it unless you ask for it, and nothing falls back to it or to any built-in plugin set.
 - **No magic.** Tuna never creates, copies or edits your configuration on its own.
-- **No stored history.** Tuna never keeps old copies of your configuration. When a reload goes wrong, the running editor is the "last good" version: anything that fails is undone and the old part keeps running.
+- **No stored history.** Tuna never keeps old copies of your configuration. When a reload goes wrong, the running editor is the "last good" version: anything that fails is undone and the old part keeps running. (As built, one exception: a module of your own that `init.ss` imports by path has its definitions replaced when its changed file loads, even if the reload then fails; see `docs/overview.md`.)
 - **The kernel does not change.** Loading a configuration only needs "turn this plugin on" and "turn it off", which the kernel already has.
 
 Evidence: [what Gerbil can do](../../agents/research/configuration/01-gerbil-runtime.md) (tested) and [how other systems do it](../../agents/research/configuration/02-prior-art.md): Cordis and Koishi (Tuna's plugin model), Caddy and nginx (check a new config, keep the old one running if it fails), Kubernetes and systemd (one failing part never takes the others down), Doom Emacs and lazy.nvim (plugin declarations inside the config file), Helix, Lem, Nyxt.

@@ -198,6 +198,44 @@
                (check (probe-on? 'mine-2) => #t)
                (check (probe-on? 'good) => #t)))))))
 
+    ;; A limit of reload: a user module is loaded again in its own
+    ;; namespace, so its new definitions replace the running version's as
+    ;; soon as it loads, even when the reload then fails.
+    (test-case "a changed user module's definitions replace the running ones even if the reload fails"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let ((mine (lambda (helper-body extra)
+                       (write-file-string
+                        (path-expand "mine.ss" directory)
+                        (string-append "(import :tuna/kernel \"" test-plugins-module "\")\n"
+                                       "(export mine-plugin)\n"
+                                       "(def (helper) " helper-body ")\n"
+                                       "(defplugin mine-plugin \"The user's own plugin.\" "
+                                       "(set-callback! 'mine (lambda () (helper))) (probe-on! (helper)))\n"
+                                       extra)))))
+           (mine "'k1" "")
+           (let (path (write-init directory "(use-plugin mine-plugin)"))
+             (call-with-fresh-kernel []
+               (lambda ()
+                 (start path)
+                 (check (call-callback 'mine) => 'k1)
+                 ;; X20: the new version fails at load. The reload changes
+                 ;; nothing in the editor, but the running plugin already
+                 ;; calls the new helper.
+                 (mine "'k2" "(error \"mine.ss fails at load\")\n")
+                 (check (contains? (reload-report-problem (reload)) "mine.ss fails at load") ? values)
+                 (check (probe-on? 'k1) => #t)
+                 (check (call-callback 'mine) => 'k2)
+                 ;; X7: the new helper fails, so the new plugin fails, and
+                 ;; turning the running version back on runs the new helper
+                 ;; too.
+                 (mine "(error \"helper fails\")" "")
+                 (let (report (reload))
+                   (check (assoc "mine-plugin" (changes report)) => '("mine-plugin" failed))
+                   (check (detail report "mine-plugin")
+                          => "helper fails; turning the running version back on failed too: helper fails"))
+                 (check (probe-on? 'k1) => #f))))))))
+
     (test-case "failing new user code keeps the running user code"
       (call-with-temporary-directory
        (lambda (directory)

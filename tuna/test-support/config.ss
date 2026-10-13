@@ -26,7 +26,9 @@
         restored-data
         notes-text
         set-notes-text!
-        notes-plugin)
+        notes-plugin
+        set-callback!
+        call-callback)
 
 ;; Probe name -> live registrations.
 (def probes (make-hash-table))
@@ -145,3 +147,12 @@
   requires: [probe-service]
   (context-provide! (current-context) fixed-service 'fixed)
   (probe-on! 'fixed-needs-probe))
+
+;; Name -> a procedure a plugin left for the test to call; never undone.
+(def callbacks (make-hash-table))
+
+(def (set-callback! (name : :symbol) (proc : :procedure)) => :void
+  (hash-put! callbacks name proc))
+
+(def (call-callback (name : :symbol)) => :t
+  ((hash-ref callbacks name)))

@@ -16,7 +16,11 @@
 ;;; After editing this file, reload it without restarting: C-c R (the
 ;;; reload-config command) inside Tuna, or `tuna reload` in a terminal.
 ;;; Only what changed is turned off and on; if a changed part fails, the
-;;; version that was running is turned back on.
+;;; version that was running is turned back on. That holds for this file,
+;;; its config: blocks, your own code, and Tuna's plugins. A module of
+;;; your own that this file imports by path is different: when its file
+;;; changed, it is loaded again in place, so its new definitions replace
+;;; the running ones as soon as it loads, even if the reload then fails.
 ;;;
 ;;; Loading this file runs only its imports and declarations. The code of
 ;;; the modules you import, and macro code, also run at load: they must not
