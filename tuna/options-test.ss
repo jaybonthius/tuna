@@ -16,13 +16,11 @@
         :std/interface
         :tuna/services/configuration
         :tuna/services/keys
-        :tuna/services/echo-area
         :tuna/plugins/keys
-        :tuna/plugins/echo-area
         :tuna/plugins/web
         :tuna/plugins/reload-config
         "test-support/kernel"
-        (only-in "test-support/string-input" test-input-plugin)
+        (only-in "test-support/string-input" test-input-plugin test-messages-plugin current-message)
         "test-support/config")
 (export options-test)
 
@@ -239,7 +237,7 @@
                (check (last-configuration-report) => (reload-report-text report))))))))
 
     (test-case "reload-config and show-config-report go through the contract"
-      (call-with-fresh-kernel [keys-plugin echo-area-plugin stub-configuration-plugin reload-config-plugin]
+      (call-with-fresh-kernel [keys-plugin test-messages-plugin stub-configuration-plugin reload-config-plugin]
         (lambda ()
           (run-command 'show-config-report)
           (check (current-message) => "There is no configuration report yet.")

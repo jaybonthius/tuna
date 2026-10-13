@@ -1,28 +1,62 @@
-;;; HTML renderer (live tier): editor state -> SXML -> HTML (ADR 7).
-;;; The layout arranges the views under the frame; for each, the renderer
-;;; walks its buffer's tree, from where the frame points, and renders each node through the procedure registered
+;;; HTML renderer (live tier): editor state -> SXML -> HTML (ADR 7). The
+;;; screen is the layout drawn from the frame, nothing else: the minibuffer,
+;;; the echo area and help are buffers in views like any other (ADR 13).
+;;; For each view the renderer walks its buffer's tree, from where the
+;;; frame points, and renders each node through the procedure registered
 ;;; for its kind and the `html` target. A kind without one is shown as its
-;;; text projection. Text nodes show their highlights as face classes and
-;;; each view's point as a cursor: solid where typing goes, hollow in other
-;;; views. The innermost waiting prompt shows above the echo area.
+;;; text projection. Text nodes show their highlights as face classes,
+;;; through the buffer's face-remapping, and each view's point as a cursor:
+;;; solid in the selected view, hollow in others. A view's status line
+;;; shows unless its buffer's show-status-line is off.
 ;;;
 ;;; Every view and node element has a stable id, so the browser's morph
 ;;; keeps its scroll position: a view's is view-V, a node's view-V-node-N,
 ;;; since one buffer may show in several views.
+;;;
+;;; HTML reuse: the HTML of each node, as drawn in each view, is kept and
+;;; reused while the node's revision (which a change to it or below it
+;;; replaces), the view state it depends on (point and whether the view is
+;;; selected, for the nodes holding the view's focused text node), how its
+;;; kind renders, and the display-wide inputs (the buffer's face-remapping)
+;;; are unchanged. So a node renderer must draw only from its node, its
+;;; children's renderings (opaque HTML fragments to place), and those
+;;; inputs. Every redraw still sends the whole visible screen as one fat
+;;; morph. Kept HTML belongs to the views drawn: a view not drawn, or drawn
+;;; from another node, drops its own.
 prelude: :gerbil/core
 
-(import :std/text/markup/sxml/print
+(import (only-in :gerbil/runtime/hash HashTable)
+        :std/text/markup/sxml/print
         :tuna/kernel
+        :tuna/services/settings
         :tuna/services/renderer
         :tuna/services/buffers
-        :tuna/services/echo-area
-        :tuna/services/help
-        :tuna/services/minibuffer
         :tuna/services/layout)
-(export html-renderer-plugin
-        screen-sxml)
+(export html-renderer-plugin)
 
-(defstruct html-renderer ()
+;; A node's HTML in one view, and what it was drawn from.
+(defstruct kept-html ((revision   : :fixnum)
+                      (view-state : :t)          ; (point . selected?), or #f
+                      (how        : :t)          ; the kind's renderer or kind info
+                      (inputs     : :t)          ; the display-wide inputs
+                      (html       : :string))
+  final: #t)
+
+;; What one view keeps: the node it was drawn from, and node id ->
+;; kept-html.
+(defclass view-html ((start : node)
+                     (nodes : HashTable))
+  final: #t)
+
+(defclass html-renderer ((views : HashTable))    ; view id -> view-html
+  final: #t)
+
+;; Drawing one view: its kept HTML, the nodes from its buffer's root down
+;; to its focused text node, its view state, and the display-wide inputs.
+(defstruct drawing ((nodes      : HashTable)
+                    (focus-path : :list)
+                    (view-state : :t)
+                    (inputs     : :t))
   final: #t)
 
 ;; The view whose buffer is being rendered: where its text nodes show point.
@@ -45,25 +79,49 @@ prelude: :gerbil/core
       ([tag . body] (cons* tag (cons '@ ids) body))
       (else element))))
 
-(def (render-node (n : node)) => :t
-  (let ((children (map render-node (node-children n)))
-        (render (node-renderer (node-kind n) 'html)))
-    (with-node-id n
-      (if render
-        (render n children)
-        `(div (@ (class "node") (data-kind ,(symbol->string (node-kind n))))
-              ,@(if (null? children) [(node-text-projection n)] children))))))
+(def (html-string (markup : :t)) => :string
+  (call-with-output-string ""
+    (lambda (port) (write-sxml markup port: port xml?: #f))))
+
+;; N's HTML as a fragment, kept or drawn again.
+(def (render-node (d : drawing) (n : node)) => :list
+  (let* ((kind (node-kind n))
+         (render (node-renderer kind 'html))
+         (how (or render (node-kind-ref kind)))
+         (view-state (and (memq n (drawing-focus-path d)) (drawing-view-state d)))
+         (revision (node-revision n))
+         (kept (hash-get (drawing-nodes d) (node-id n))))
+    (if (and kept
+             (using (kept : kept-html)
+               (and (fx= kept.revision revision)
+                    (equal? kept.view-state view-state)
+                    (eq? kept.how how)
+                    (equal? kept.inputs (drawing-inputs d)))))
+      ['*unencoded* (kept-html-html kept)]
+      (let* ((children (map (cut render-node d <>) (node-children n)))
+             (html (html-string
+                    (with-node-id n
+                      (if render
+                        (render n children)
+                        `(div (@ (class "node") (data-kind ,(symbol->string kind)))
+                              ,@(if (null? children) [(node-text-projection n)] children)))))))
+        (hash-put! (drawing-nodes d) (node-id n)
+                   (make-kept-html revision view-state how (drawing-inputs d) html))
+        ['*unencoded* html]))))
 
 ;; A text node: one element per line, with the cursor when the node has
 ;; the rendered view's focus.
 (def (render-text-node (n : node) (children : :list)) => :list
   (let* ((t (text-node-content n))
          (v (rendering-view))
+         (b (and v (view-showing v)))
          (position (and v (eq? n (view-node v)) (view-point v)))
-         (cursor-class (if (eq? v (current-view)) "cursor" "inactive-cursor"))
+         (cursor-class (if (eq? v (selected-view)) "cursor" "inactive-cursor"))
          (cursor-line (and position (text-line-at t position)))
          (cursor-column (and position (text-column t position)))
-         (spans (text-all-highlights t)))
+         (spans (map (lambda ((s : span))
+                       (if b (make-span (span-start s) (span-end s) (remapped-face (span-value s) b)) s))
+                     (text-all-highlights t))))
     `(div (@ (class "text"))
           ,@(let lp ((line (text-line-count t)) (out []))
               (if (fx< line 1)
@@ -123,55 +181,59 @@ prelude: :gerbil/core
   `(span (@ (class ,(if face (string-append cursor-class " " (face-class face)) cursor-class)))
          ,character))
 
+;; The nodes from N up to its buffer's root.
+(def (node-ancestors (n :? node)) => :list
+  (let up ((n n) (out []))
+    (if n (up (node-parent n) (cons n out)) out)))
+
+;; What SELF keeps for V drawn from START, emptied when V was drawn from
+;; another node before.
+(def (view-html-for (self : html-renderer) (v : view) (start : node)) => view-html
+  (let (kept (hash-get (html-renderer-views self) (view-id v)))
+    (if (and kept (eq? (view-html-start kept) start))
+      kept
+      (let (fresh (view-html start: start nodes: (make-hash-table-eqv)))
+        (hash-put! (html-renderer-views self) (view-id v) fresh)
+        fresh))))
+
 ;; V: its buffer from node START (the root, or where the frame points),
-;; then its status line.
-(def (render-view (v : view) (selected? : :boolean) (start : node)) => :list
-  (let (b (view-showing v))
+;; then its status line unless its buffer turns it off.
+(def (render-view (self : html-renderer) (v : view) (selected? : :boolean) (start : node)) => :list
+  (let* ((b (view-showing v))
+         (focus (view-node v))
+         (d (make-drawing (view-html-nodes (view-html-for self v start))
+                          (node-ancestors focus)
+                          (and focus (cons (view-point v) selected?))
+                          (buffer-local-value face-remapping b))))
     (parameterize ((rendering-view v))
       `(section (@ (class "view")
                    (id ,(view-element-id v))
                    (data-view ,(number->string (view-id v)))
                    ,@(if selected? '((data-selected "true")) '()))
          (article (@ (class "buffer") (aria-label ,(buffer-name b)))
-                  ,(render-node start))
-         (p (@ (class "status-line")) ,(status-line-text v selected?))))))
+                  ,(render-node d start))
+         ,@(if (buffer-local-value show-status-line b)
+             [`(p (@ (class "status-line")) ,(status-line-text v selected?))]
+             [])))))
 
-;; The innermost waiting prompt: its question, then the answer being typed.
-(def (minibuffer-sxml) => :list
-  (let (prompt (active-prompt))
-    (if prompt
-      (using (prompt : prompt-display)
-        `((div (@ (class "minibuffer"))
-               (span (@ (class "prompt")) ,prompt.question)
-               ,(parameterize ((rendering-view (current-view)))
-                  (render-node prompt.answer)))))
-      [])))
-
-;; The screen: help output when there is some, the layout, the
-;; minibuffer while a prompt waits, and the echo area.
-(def (screen-sxml) => :list
-  (let (help (current-help))
-    `(main (@ (id "screen") (class "screen"))
-       ,@(if help
-           (using (help : help-output)
-             `((section (@ (class "help") (aria-label "Help"))
-                 (h1 ,help.title)
-                 (pre ,(string-join help.lines "\n")))))
-           [])
-       ,(render-layout 'html render-view)
-       (footer
-        ,@(minibuffer-sxml)
-        (p (@ (class "echo-area") (role "status")) ,(current-message))))))
-
-(def (html-string (markup : :list)) => :string
-  (call-with-output-string ""
-    (lambda (port) (write-sxml markup port: port xml?: #f))))
+;; The screen: the layout drawn from the frame. Views not drawn drop what
+;; they kept.
+(def (render-screen! (self : html-renderer)) => :string
+  (let* ((drawn [])
+         (layout (render-layout 'html
+                                (lambda (v selected? start)
+                                  (set! drawn (cons (view-id v) drawn))
+                                  (render-view self v selected? start))))
+         (views (html-renderer-views self)))
+    (for-each (lambda (id) (unless (memv id drawn) (hash-remove! views id)))
+              (hash-keys views))
+    (html-string `(main (@ (id "screen") (class "screen")) ,layout))))
 
 (defmethod {render-screen html-renderer}
-  (lambda (self) (html-string (screen-sxml))))
+  (lambda (self) (render-screen! self)))
 
 (defplugin (html-renderer-plugin ctx)
-  "Renders the screen as HTML."
-  requires: [buffers-service layout-service]
+  "Renders the screen as HTML: the layout drawn from the frame."
+  requires: [buffers-service layout-service settings-service]
   (context-define-node-renderer! ctx 'text 'html render-text-node)
-  (context-provide! ctx renderer-service (Renderer (make-html-renderer))))
+  (context-provide! ctx renderer-service (Renderer (html-renderer views: (make-hash-table-eqv)))))

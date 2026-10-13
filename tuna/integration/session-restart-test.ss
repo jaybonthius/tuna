@@ -54,17 +54,21 @@
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
+;; The views outside the bar: those whose buffers are not internal.
+(def (own-views)
+  (filter (lambda (v) (not (internal-buffer? (view-showing v)))) (view-list)))
+
 (def (views-state)
   (on-baton
    (lambda ()
      (map (lambda (v) [(buffer-name (view-showing v)) (view-point v)])
-          (view-list)))))
+          (own-views)))))
 
-;; The index of the selected view in the view list.
+;; The index of the selected view among them.
 (def (selected-index)
   (on-baton
    (lambda ()
-     (let lp ((views (view-list)) (i 0))
+     (let lp ((views (own-views)) (i 0))
        (if (eq? (car views) (selected-view)) i (lp (cdr views) (+ i 1)))))))
 
 (def (screen)
@@ -109,7 +113,7 @@
          (check (file-text (path-expand "autosave/notes" directory)) => "hi1\nthére😀")
          (run-tuna directory
            (lambda ()
-             (check (on-baton (lambda () (map buffer-name (buffer-list))))
+             (check (on-baton (lambda () (map buffer-name (filter (lambda (b) (not (internal-buffer? b))) (buffer-list)))))
                     => ["*scratch*" "notes" "other"])
              (check (buffer-text "notes") => "hi1\nthére😀")
              (check (buffer-text "other") => "another text")
@@ -135,7 +139,12 @@
              (check (selected-index) => 1)
              (on-baton save-session)))
          (check (match (assq 'layout (cddr (read-session-datum directory)))
-                  (['layout 2 [['tree ['container _ 'fit 'horizontal _ [[1 ['container _ 'tabbed 'horizontal _ _]] [1 ['view _ "*scratch*" 4 #f]]]]]
+                  ;; The bar at the bottom: content-sized, pinned and locked.
+                 (['layout 3 [['tree ['container _ 'fit 'vertical _
+                                      [[1 [] ['container _ 'fit 'horizontal _
+                                              [[1 [] ['container _ 'tabbed 'horizontal _ _]]
+                                               [1 [] ['view _ "*scratch*" 4 #f]]]]]
+                                       ['content ['pinned 'locked] _]]]]
                                ['frame (? fixnum?) #f (? fixnum?)]
                                ['marks ["m" #f #f]]]]
                    #t)
@@ -145,13 +154,14 @@
            (lambda ()
              (check (views-state) => [["*scratch*" 2] ["*scratch*" 2] ["*scratch*" 4]])
              (check (selected-index) => 1)
-             ;; The frame is still on the selected view: the screen shows one view.
+             ;; The frame is still on the selected view: the screen shows
+             ;; one view, and the bar's two, which are pinned.
              (check (on-baton (lambda () (frame-target-part (current-frame-target))))
                     => (on-baton (lambda () (view-id (selected-view)))))
-             (check (count-of "<section class=\"view\"" (screen)) => 1)
+             (check (count-of "<section class=\"view\"" (screen)) => 3)
              (type! "C-x" "r" "j" "m" "RET")
              (check (on-baton (lambda () (frame-target-part (current-frame-target)))) => #f)
-             (check (count-of "<section class=\"view\"" (screen)) => 2)
+             (check (count-of "<section class=\"view\"" (screen)) => 4)
              (check (count-of "class=\"tab\"" (screen)) => 2)
              (check (buffer-text "*scratch*") => "abc"))))))
 

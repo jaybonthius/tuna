@@ -2,7 +2,7 @@
 ;;; commands (tabs, zooming), driven through the real editor loop:
 ;;; splitting and deleting, neighbors and focus memory, tabs, the frame
 ;;; and its zoom (onto a node too), frame marks, display-buffer and
-;;; dedicated views, and the session slot.
+;;; dedicated views, pins, locks and moves, and the session slot.
 (import :std/test
         :tuna/kernel
         :tuna/services/buffers
@@ -90,6 +90,36 @@
   (lambda (element)
     (and (symbol? (car element))
          (equal? (attribute element 'class) class))))
+
+;; Show a new buffer NAME, holding one text node, in view I.
+(def (named! i name)
+  (on-baton (lambda ()
+              (let (b (new-buffer name (new-text-node (new-text name))))
+                (add-buffer! b)
+                (set-view-buffer (list-ref (view-list) i) b)))))
+
+;; The views drawn, by their buffers' names; the selected one as [name].
+(def (drawn-names)
+  (on-baton
+   (lambda ()
+     (render-layout 'test (lambda (v selected? start)
+                            (let (name (buffer-name (view-showing v)))
+                              (if selected? [name] name)))))))
+
+(def (view-named name)
+  (find (lambda (v) (equal? (buffer-name (view-showing v)) name)) (view-list)))
+
+(def (select-named! name) (on-baton (lambda () (select-view (view-named name)))))
+(def (frame-on-named! name)
+  (on-baton (lambda () (move-frame (make-frame-target (view-id (view-named name)) #f)))))
+
+;; A locked view of a new buffer NAME in the bar.
+(def (lock-new! name)
+  (on-baton (lambda ()
+              (let (b (new-buffer name (new-text-node (new-text name))))
+                (add-buffer! b)
+                (add-locked-view b side: 'bottom size: 'content)
+                b))))
 
 (def (call-with-state-directory proc)
   (let (directory (path-expand (string-append "tuna-layout-test-"
@@ -185,7 +215,7 @@
          (check (shown) => [[2 #t 'text]])
          (check (target-part) => (on-baton (lambda () (view-id (selected-view)))))
          (type! "C-x" "n" "i")
-         (check (message-now) => "The frame is on the selected view")
+         (check (message-now) => "The frame is on a view")
          ;; C-x o cycles through what the frame shows only.
          (check (on-baton (lambda () (index-of (next-view (selected-view))))) => 2)
          (type! "C-x" "n" "o")
@@ -351,4 +381,204 @@
                 (check (on-baton frame-mark-names) => ["tabs"])
                 (check (on-baton (lambda () (jump-to-frame-mark "tabs"))) => 'jumped)
                 (check (shown) => [[1 #f 'text] [2 #t 'text]])
-                (check (length (elements-where (with-class "tab") (layout-html))) => 2))))))))
+                (check (length (elements-where (with-class "tab") (layout-html))) => 2))))))
+
+    (test-case "several pins stay drawn while zoomed; moving between views visits only the drawn ones"
+      (with-layout
+       (lambda ()
+         ;; a | (b / c / d)
+         (split! 0 'right)
+         (split! 1 'below)
+         (split! 2 'below)
+         (for-each named! [0 1 2 3] ["a" "b" "c" "d"])
+         (check (drawn-names) => [["a"] "b" "c" "d"])
+         (type! "C-x" "w" "p")
+         (select-named! "d")
+         (type! "C-x" "w" "p")
+         ;; With no zoom, pins make no difference.
+         (check (drawn-names) => ["a" "b" "c" ["d"]])
+         (frame-on-named! "b")
+         (check (drawn-names) => ["a" ["b"] "d"])
+         (check (on-baton (lambda () (buffer-name (view-showing (next-view (selected-view)))))) => "d")
+         (check (on-baton (lambda () (buffer-name (view-showing (neighbor-view (selected-view) 'down)))))
+                => "d")
+         ;; The child on the way takes the space the pinned children leave.
+         (let (column (car (elements-where (with-class "container fit vertical") (layout-html))))
+           (check (map (lambda (child) (attribute child 'style)) (cddr column))
+                  => ["--tuna-size: 1.5" "--tuna-size: .5"])))))
+
+    (test-case "selecting a pinned view keeps the zoom; unpinning it while zoomed selects a drawn view"
+      (with-layout
+       (lambda ()
+         (split! 0 'right)
+         (split! 1 'below)
+         (for-each named! [0 1 2] ["a" "b" "c"])
+         (select-named! "c")
+         (type! "C-x" "w" "p")
+         (frame-on-named! "b")
+         (let (target (target-part))
+           (select-named! "c")
+           (check (target-part) => target)
+           (check (drawn-names) => ["b" ["c"]])
+           (type! "C-x" "w" "u")
+           (check (message-now) => "Unpinned the view of c")
+           (check (drawn-names) => [["b"]])
+           (check (target-part) => target)))))
+
+    (test-case "the selected part: pinning a container"
+      (with-layout
+       (lambda ()
+         ;; a | (b / c), the column pinned.
+         (split! 0 'right)
+         (split! 1 'below)
+         (for-each named! [0 1 2] ["a" "b" "c"])
+         (select-named! "b")
+         (type! "C-x" "w" "a")
+         (check (message-now) => "Selected part: a fit vertical container of 2 views")
+         (check (length (elements-where (lambda (e) (and (symbol? (car e)) (attribute e 'data-selected-part)))
+                                        (layout-html)))
+                => 1)
+         (type! "C-x" "w" "p")
+         (type! "C-x" "w" "a" "C-x" "w" "a")
+         (check (message-now) => "The selected part is the whole layout")
+         (type! "C-x" "w" "c" "C-x" "w" "c")
+         (check (message-now) => "Selected part: the view of b")
+         (type! "C-x" "w" "c")
+         (check (message-now) => "The selected part is the selected view")
+         (frame-on-named! "a")
+         (check (drawn-names) => [["a"] "b" "c"]))))
+
+    (test-case "moving the selected part; a pinned part keeps its pin when it moves"
+      (with-layout
+       (lambda ()
+         ;; a | (b / c), c pinned.
+         (split! 0 'right)
+         (split! 1 'below)
+         (for-each named! [0 1 2] ["a" "b" "c"])
+         (select-named! "c")
+         (type! "C-x" "w" "p")
+         (type! "C-x" "w" "<up>")
+         (check (on-baton (lambda () (map (lambda (v) (buffer-name (view-showing v))) (view-list))))
+                => ["a" "c" "b"])
+         ;; Out of the column to the left: a | c | b.
+         (type! "C-x" "w" "<left>")
+         (check (on-baton (lambda () (map (lambda (v) (buffer-name (view-showing v))) (view-list))))
+                => ["a" "c" "b"])
+         (check (length (elements-where (with-class "container fit vertical") (layout-html))) => 0)
+         (type! "C-x" "w" "<left>")
+         (check (on-baton (lambda () (map (lambda (v) (buffer-name (view-showing v))) (view-list))))
+                => ["c" "a" "b"])
+         (type! "C-x" "w" "<left>")
+         (check (message-now) => "Cannot move further that way")
+         ;; The pin moved with it.
+         (frame-on-named! "b")
+         (check (drawn-names) => ["c" ["b"]])
+         ;; Moving the selected view out of the zoom moves the frame to keep it drawn.
+         (select-named! "c")
+         (type! "C-x" "w" "<right>" "C-x" "w" "<right>")
+         (check (on-baton (lambda () (map (lambda (v) (buffer-name (view-showing v))) (view-list))))
+                => ["a" "b" "c"])
+         (check (member ["c"] (drawn-names)) ? pair?))))
+
+    (test-case "a locked part refuses unpinning and deleting, and goes with its buffer"
+      (with-layout
+       (lambda ()
+         (named! 0 "a")
+         (let ((bar (lock-new! "bar"))
+               (status (lock-new! "status")))
+           (check (drawn-names) => [["a"] "bar" "status"])
+           ;; The two share one container in the bar, all sized by content.
+           (check (length (elements-where (lambda (e) (and (symbol? (car e))
+                                                           (equal? (attribute e 'data-size) "content")))
+                                          (layout-html)))
+                  => 3)
+           (frame-on-named! "a")
+           (check (drawn-names) => [["a"] "bar" "status"])
+           (select-named! "bar")
+           (type! "C-x" "w" "u")
+           (check (message-now) => "Locked: the plugin that owns it keeps it pinned")
+           (check (on-baton (lambda ()
+                              (with-catch (lambda (e) 'refused)
+                                          (lambda () (delete-view (selected-view)) 'deleted))))
+                  => 'refused)
+           ;; Nor may the last view outside locked parts go.
+           (select-named! "a")
+           (check (on-baton (lambda ()
+                              (with-catch (lambda (e) 'refused)
+                                          (lambda () (delete-view (selected-view)) 'deleted))))
+                  => 'refused)
+           ;; Showing the buffer again reuses its view.
+           (check (on-baton (lambda () (eq? (add-locked-view bar) (view-named "bar")))) => #t)
+           (on-baton (lambda () (kill-buffer bar) (kill-buffer status)))
+           (check (drawn-names) => [["a"]])))))
+
+    (test-case "zooming into a tab with a pinned sibling tab shows both tabs"
+      (with-layout
+       (lambda ()
+         (named! 0 "a")
+         (type! "C-x" "t" "2")
+         (named! 1 "b")
+         (type! "C-x" "w" "p")
+         (type! "C-x" "t" "2")
+         (named! 2 "c")
+         (select-named! "a")
+         (frame-on-named! "a")
+         (let (tabs (elements-where (with-class "tab") (layout-html)))
+           (check (map last tabs) => ["a" "b"])
+           (check (map (lambda (tab) (attribute tab 'aria-selected)) tabs) => ["true" "false"]))
+         (check (drawn-names) => [["a"]]))))
+
+    (test-case "the frame's target inside a pinned part"
+      (with-layout
+       (lambda ()
+         ;; a | b | c, a and b pinned.
+         (split! 0 'right)
+         (split! 1 'right)
+         (for-each named! [0 1 2] ["a" "b" "c"])
+         (type! "C-x" "w" "p")
+         (select-named! "b")
+         (type! "C-x" "w" "p")
+         (frame-on-named! "b")
+         (check (drawn-names) => ["a" ["b"]])
+         (frame-on-named! "c")
+         (check (drawn-names) => ["a" "b" ["c"]]))))
+
+    (test-case "the session slot keeps pins, locks and content sizes"
+      (call-with-state-directory
+       (lambda (directory)
+         (defplugin (bar-plugin ctx)
+           "Puts a locked view of its own buffer in the bar."
+           requires: [buffers-service layout-service]
+           (let (b (new-buffer " *bar*" (new-text-node (new-text ""))))
+             (context-add-buffer! ctx b)
+             (add-locked-view b)))
+         (def (run thunk)
+           (call-with-fresh-kernel []
+             (lambda ()
+               (parameterize ((session-state-directory directory))
+                 (for-each activate-plugin!
+                           (append (map (lambda (p) (if (eq? p no-session-plugin) session-plugin p))
+                                        layout-plugins)
+                                   [bar-plugin])))
+               (restore-session)
+               (start-editor-loop!)
+               (thunk))))
+         (run (lambda ()
+                ;; *scratch* | (*scratch* / *scratch*), the bottom one pinned, zoomed on the top one.
+                (split! 0 'right)
+                (split! 1 'below)
+                (select! 2)
+                (type! "C-x" "w" "p")
+                (frame-on! 1)
+                (check (length (drawn-names)) => 3)
+                (on-baton save-session)))
+         (run (lambda ()
+                (check (map car (views-state)) => ["*scratch*" "*scratch*" "*scratch*" " *bar*"])
+                (check (drawn-names) => [["*scratch*"] "*scratch*" " *bar*"])
+                (on-baton (lambda () (select-view (view-named " *bar*"))))
+                (type! "C-x" "w" "u")
+                (check (message-now) => "Locked: the plugin that owns it keeps it pinned")
+                (check (length (elements-where (lambda (e) (and (symbol? (car e))
+                                                                (equal? (attribute e 'data-size) "content")))
+                                               (layout-html)))
+                       => 1))))))))

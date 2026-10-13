@@ -3,6 +3,11 @@
 ;;;   (let (name (read-string "New name: ")) ...)
 ;;; The command waits at the prompt without the baton, so the editor keeps
 ;;; handling keys; only the innermost waiting prompt receives them.
+;;;
+;;; A prompt is a buffer, its question and answer both part of what it
+;;; shows, in an ordinary view (ADR 13): the minibuffer view nearest the
+;;; selected view, which is selected while the prompt waits. A view is a
+;;; minibuffer view when its buffer's root is a `minibuffer` node.
 prelude: :gerbil/core
 
 (import :std/interface
@@ -11,14 +16,23 @@ prelude: :gerbil/core
 (export (interface-out Minibuffer)
         minibuffer-service
         (struct-out prompt-display)
+        minibuffer-node-kind
+        minibuffer-view?
         read-string
         active-prompt)
 
-;; What renderers show of the innermost prompt: its question and the text
-;; node holding the answer being typed.
+;; What the innermost prompt asks: its question and the text node holding
+;; the answer being typed.
 (defstruct prompt-display ((question : :string)
                            (answer   : node))       ; a text node
   final: #t)
+
+;; The kind of the root node of the buffers minibuffer views show.
+(def minibuffer-node-kind 'minibuffer)
+
+;; Whether V shows a minibuffer buffer, idle or asking.
+(def (minibuffer-view? (v : view)) => :boolean
+  (eq? (node-kind (buffer-root (view-showing v))) minibuffer-node-kind))
 
 (interface Minibuffer
   ;; Ask QUESTION with INITIAL as the answer so far, and return the answer.

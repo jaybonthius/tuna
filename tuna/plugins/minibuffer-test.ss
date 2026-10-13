@@ -1,17 +1,22 @@
-;;; Prompts driven by key events through the real editor loop.
+;;; Prompts driven by key events through the real editor loop: each
+;;; prompt is a buffer, question and answer, shown in the minibuffer view
+;;; nearest the selected view, which is selected while it waits.
 (import :std/test
         :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers
         :tuna/services/settings
         :tuna/services/minibuffer
+        :tuna/services/layout
         :tuna/plugins/keys
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
+        :tuna/plugins/layout
         :tuna/plugins/minibuffer
         "../test-support/kernel"
         "../test-support/keys"
+        "../test-support/session"
         (only-in "../test-support/string-input" test-messages-plugin current-message))
 (export minibuffer-test)
 
@@ -54,18 +59,33 @@
   (set! answers [])
   (set! quit? #f)
   (call-with-fresh-kernel [keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin
-                           buffers-plugin typing minibuffer-plugin asking]
+                           no-session-plugin buffers-plugin layout-plugin typing minibuffer-plugin asking]
     (lambda ()
       (start-editor-loop!)
       (thunk))))
 
-;; Once every key sent so far has run: the selected view's buffer text, the
-;; innermost prompt's question and answer so far (or #f), and the message.
+;; The selected view, and what it shows: the question of a prompt's
+;; buffer, or the buffer's name.
+(def (selected-shows)
+  (call-on-editor-loop
+   (lambda ()
+     (let* ((v (selected-view))
+            (root (buffer-root (view-showing v))))
+       (if (and (minibuffer-view? v) (pair? (node-children root)))
+         ['question (node-attribute (car (node-children root)) 'content)]
+         (buffer-name (view-showing v)))))))
+
+(def (bar-shows)
+  (call-on-editor-loop
+   (lambda () (map (lambda (v) (buffer-name (view-showing v))) (filter minibuffer-view? (view-list))))))
+
+;; Once every key sent so far has run: *scratch*'s text, the innermost
+;; prompt's question and answer so far (or #f), and the message.
 (def (state)
   (call-on-editor-loop
    (lambda ()
      (let (prompt (active-prompt))
-       [(text-string (text-node-content (first-text-node (buffer-root (view-showing (selected-view))))))
+       [(text-string (text-node-content (buffer-root (get-buffer "*scratch*"))))
         (and prompt [(prompt-display-question prompt)
                      (text-string (text-node-content (prompt-display-answer prompt)))])
         (current-message)]))))
@@ -87,7 +107,7 @@
          (type! "RET")
          (check (state) => ["x" #f ""])
          (check answers => ["new"])
-         (check (minibuffer-buffers) => [])
+         (check (minibuffer-buffers) => [" *Minibuf-0*"])
          ;; Typing goes to the buffer again.
          (type! "y")
          (check (state) => ["xy" #f ""]))))
@@ -103,7 +123,7 @@
          (check (state) => ["" #f "Quit"])
          (check quit? => #t)
          (check answers => [])
-         (check (minibuffer-buffers) => []))))
+         (check (minibuffer-buffers) => [" *Minibuf-0*"]))))
 
     (test-case "nested prompts are answered innermost first"
       (with-minibuffer
@@ -140,4 +160,60 @@
          (call-on-editor-loop (lambda () (deactivate-plugin! minibuffer-plugin)))
          (check (wait-until (lambda () quit?)) => #t)
          (check (state) => ["" #f "Quit"])
-         (check (minibuffer-buffers) => []))))))
+         (check (minibuffer-buffers) => []))))
+
+    (test-case "a prompt is a buffer in the bar's view, selected while it waits; the selection comes back"
+      (with-minibuffer
+       (lambda ()
+         (check (bar-shows) => [" *Minibuf-0*"])
+         (check (selected-shows) => "*scratch*")
+         (type! "C-c" "a")
+         (check (state) => ["" ["Name: " ""] ""])
+         (check (selected-shows) => ['question "Name: "])
+         (check (length (bar-shows)) => 1)
+         ;; Typing goes to the answer, in the prompt's buffer.
+         (type! "o" "k")
+         (check (state) => ["" ["Name: " "ok"] ""])
+         (check (call-on-editor-loop (lambda () (text-string (current-text)))) => "ok")
+         ;; Nested: the inner prompt shows in the same view, then the outer again.
+         (type! "C-c" "a")
+         (check (selected-shows) => ['question "Name: "])
+         (check (state) => ["" ["Name: " ""] ""])
+         (type! "RET")
+         (check (state) => ["" ["Name: " "ok"] ""])
+         (check (selected-shows) => ['question "Name: "])
+         (type! "RET")
+         (check (selected-shows) => "*scratch*")
+         (check answers => ["ok" ""])
+         (check (bar-shows) => [" *Minibuf-0*"]))))
+
+    (test-case "a minibuffer pinned inside a split catches the questions asked from that split"
+      (with-minibuffer
+       (lambda ()
+         ;; left | (right / its own minibuffer, pinned), and the bar.
+         (call-on-editor-loop
+          (lambda ()
+            (let* ((left (selected-view))
+                   (right (split-view left 'right))
+                   (own (split-view right 'below))
+                   (b (new-buffer " *own minibuffer*" (new-node minibuffer-node-kind))))
+              (add-buffer! b)
+              (set-view-buffer own b)
+              (select-view own))))
+         (type! "C-x" "w" "p")
+         (call-on-editor-loop (lambda () (select-view (cadr (view-list)))))
+         (type! "C-c" "a")
+         (check (selected-shows) => ['question "Name: "])
+         ;; The split's own minibuffer view asks; the bar's stays idle.
+         (check (cdr (bar-shows)) => [" *Minibuf-0*"])
+         (check (call-on-editor-loop (lambda () (eq? (selected-view) (caddr (view-list))))) => #t)
+         (type! "RET")
+         (check (bar-shows) => [" *own minibuffer*" " *Minibuf-0*"])
+         (check (call-on-editor-loop (lambda () (eq? (selected-view) (cadr (view-list))))) => #t)
+         ;; From the left half the split's minibuffer is not pinned beside the
+         ;; way up: the question goes to the bar.
+         (call-on-editor-loop (lambda () (select-view (car (view-list)))))
+         (type! "C-c" "a")
+         (check (call-on-editor-loop (lambda () (eq? (selected-view) (cadddr (view-list))))) => #t)
+         (type! "C-g")
+         (check (call-on-editor-loop (lambda () (eq? (selected-view) (car (view-list))))) => #t))))))

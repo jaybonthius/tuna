@@ -1,5 +1,5 @@
-;;; The toy renderer (live tier): the same screen as preformatted plain
-;;; text. It proves the renderer slot can be swapped while Tuna runs (ADR 7,
+;;; The toy renderer (live tier): the same screen, the layout drawn from
+;;; the frame, as preformatted plain text. It proves the renderer slot can be swapped while Tuna runs (ADR 7,
 ;;; ADR 12). The browser still receives HTML, but only <pre> blocks of text,
 ;;; with the cursors marked.
 ;;;
@@ -13,11 +13,9 @@ prelude: :gerbil/core
 
 (import :std/text/markup/sxml/print
         :tuna/kernel
+        :tuna/services/settings
         :tuna/services/renderer
         :tuna/services/buffers
-        :tuna/services/echo-area
-        :tuna/services/help
-        :tuna/services/minibuffer
         :tuna/services/layout)
 (export plain-text-renderer-plugin
         join-runs)
@@ -56,7 +54,7 @@ prelude: :gerbil/core
                       (fx1+ i)
                       i)))
         [(substring content 0 i)
-         [(if (eq? v (current-view)) 'cursor 'inactive-cursor)
+         [(if (eq? v (selected-view)) 'cursor 'inactive-cursor)
           (if (fx= under i) " " (substring content i under))]
          (substring content under size)])
       [content])))
@@ -79,32 +77,13 @@ prelude: :gerbil/core
                    ,@(if selected? '((data-selected "true")) '()))
          (pre (@ (class "plain-text") (aria-label ,(buffer-name b)))
               ,@(runs->sxml (node-runs start))
-              "\n── " ,(status-line-text v selected?))))))
-
-;; The innermost waiting prompt's question and answer, on a line of its own.
-(def (minibuffer-runs) => :list
-  (let (prompt (active-prompt))
-    (if prompt
-      (using (prompt : prompt-display)
-        (cons prompt.question
-              (append (parameterize ((rendering-view (current-view)))
-                        (node-runs prompt.answer))
-                      ["\n"])))
-      [])))
+              ,@(if (buffer-local-value show-status-line b)
+                  ["\n── " (status-line-text v selected?)]
+                  []))))))
 
 (def (screen-sxml) => :list
-  (let (help (current-help))
-    `(main (@ (id "screen") (class "screen") (data-renderer "plain-text"))
-       ,@(if help
-           (using (help : help-output)
-             `((section (@ (class "help") (aria-label "Help"))
-                 (pre (@ (class "plain-text")) ,help.title "\n\n" ,(string-join help.lines "\n")))))
-           [])
-       ,(render-layout 'html render-view)
-       (footer
-        (pre (@ (class "plain-text") (role "status"))
-             ,@(runs->sxml (minibuffer-runs))
-             ,(current-message))))))
+  `(main (@ (id "screen") (class "screen") (data-renderer "plain-text"))
+     ,(render-layout 'html render-view)))
 
 (defmethod {render-screen plain-text-renderer}
   (lambda (self)
@@ -113,6 +92,6 @@ prelude: :gerbil/core
 
 (defplugin (plain-text-renderer-plugin ctx)
   "Renders the screen as plain text (a toy). Outranks the HTML renderer while active."
-  requires: [buffers-service layout-service]
+  requires: [buffers-service layout-service settings-service]
   (context-define-node-renderer! ctx 'text 'plain-text text-node-runs)
   (context-provide! ctx renderer-service (Renderer (make-plain-text-renderer)) priority: 10))

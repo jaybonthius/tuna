@@ -9,7 +9,7 @@
         :tuna/services/layout
         :tuna/plugins/keys
         :tuna/plugins/echo-area
-        :tuna/plugins/help-panel
+        :tuna/plugins/help-buffer
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
@@ -30,7 +30,7 @@
 (export layout-swap-test)
 
 (def layout-plugins
-  [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
+  [keys-plugin echo-area-plugin help-buffer-plugin rope-text-store-plugin
    settings-plugin no-session-plugin buffers-plugin layout-plugin
    view-commands-plugin
    html-renderer-plugin basic-editing-plugin minibuffer-plugin
@@ -60,11 +60,11 @@
       (delete-file-or-directory directory #t)))))
 
 ;; Each view's buffer name and point, in order, and the selected one's
-;; index.
+;; index; views of internal buffers (the bar's) left out.
 (def (views-state)
   (on-baton
    (lambda ()
-     (let (views (view-list))
+     (let (views (filter (lambda (v) (not (internal-buffer? (view-showing v)))) (view-list)))
        [(map (lambda (v) [(buffer-name (view-showing v)) (view-point v)]) views)
         (let lp ((rest views) (i 0))
           (if (eq? (car rest) (selected-view)) i (lp (cdr rest) (+ i 1))))]))))
@@ -125,7 +125,9 @@
          (check (views-state) => [[["*scratch*" 3] ["*scratch*" 4]] 0])
          (let (html (screen))
            (check (count-of "class=\"container fit horizontal\"" html) => 1)
-           (check (count-of "class=\"container fit vertical\"" html) => 0)))))
+           ;; Only the bar's: the bar itself, and the container holding it
+           ;; under the rest.
+           (check (count-of "class=\"container fit vertical\"" html) => 2)))))
 
     (test-case "C-x o moves between two views of one buffer with independent points"
       (call-with-fresh-kernel layout-plugins
@@ -161,17 +163,25 @@
          (check (text) => "ab")
          (check (views-state) => [[["*scratch*" 3]] 0]))))
 
-    (test-case "a prompt keeps the focus while C-x o selects another view"
+    (test-case "under the toy, which has no bar, a prompt shows in the other view while it waits"
       (call-with-fresh-kernel layout-plugins
        (lambda ()
+         (def (shows)
+           (on-baton (lambda ()
+                       (map (lambda (v)
+                              (let (b (view-showing v))
+                                [(if (internal-buffer? b) 'prompt (buffer-name b)) (eq? v (selected-view))]))
+                            (view-list)))))
          (start-editor-loop!)
-         (type! "a" "C-c" "w" "C-c" "r" "C-x" "o" "n")
-         (check (views-state) => [[["*scratch*" 2] ["*scratch*" 2]] 1])
+         (type! "a" "C-c" "w" "C-c" "r" "n")
+         (check (shows) => [["*scratch*" #f] ['prompt #t]])
+         (check (text) => "n")
          (type! "RET")
          (check (on-baton (lambda () (buffer-name (current-buffer)))) => "n")
-         ;; The focus returns to the view selected meanwhile.
+         ;; The other view shows its buffer again, and the first is selected.
+         (check (shows) => [["n" #t] ["n" #f]])
          (type! "b")
-         (check (views-state) => [[["n" 2] ["n" 3]] 1]))))
+         (check (views-state) => [[["n" 3] ["n" 2]] 0]))))
 
     (test-case "killing a buffer shows another in every view that showed it"
       (call-with-fresh-kernel layout-plugins
@@ -193,4 +203,5 @@
                 ? (lambda (info)
                     (and (eq? (service-info-provider info) 'two-views-plugin)
                          (equal? (list-sort string<? (map symbol->string (service-info-dependents info)))
-                                 ["html-renderer-plugin" "view-commands-plugin"])))))))))
+                                 ["echo-area-plugin" "help-buffer-plugin" "html-renderer-plugin"
+                                  "minibuffer-plugin" "view-commands-plugin"])))))))))

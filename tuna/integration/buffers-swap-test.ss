@@ -10,7 +10,7 @@
         :tuna/services/layout
         :tuna/plugins/keys
         :tuna/plugins/echo-area
-        :tuna/plugins/help-panel
+        :tuna/plugins/help-buffer
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
@@ -29,7 +29,7 @@
 (export buffers-swap-test)
 
 (def swap-plugins
-  [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
+  [keys-plugin echo-area-plugin help-buffer-plugin rope-text-store-plugin
    settings-plugin no-session-plugin buffers-plugin layout-plugin
    view-commands-plugin html-renderer-plugin basic-editing-plugin minibuffer-plugin
    swap-commands-plugin rename-command-plugin tree-buffer-plugin])
@@ -37,11 +37,17 @@
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
 ;; Every buffer's name and text, oldest first.
+;; Each buffer's name and text, internal ones (the bar's, which their
+;; plugins rebuild on a swap) left out.
 (def (buffer-texts-state)
   (on-baton
    (lambda ()
      (map (lambda (b) [(buffer-name b) (node-text-projection (buffer-root b))])
-          (buffer-list)))))
+          (filter (lambda (b) (not (internal-buffer? b))) (buffer-list))))))
+
+;; The views outside the bar, whose plugins put them back on a swap.
+(def (own-views)
+  (filter (lambda (v) (not (internal-buffer? (view-showing v)))) (view-list)))
 
 ;; The selected view's buffer and point.
 (def (selected-state)
@@ -94,7 +100,7 @@
            (check (equal? (assoc "*welcome*" (buffer-texts-state)) welcome) => #f)
            (check (selected-state) => ["*scratch*" 4])
            (type! "C-c" "w" "C-e" "C-x" "o" "Z")
-           (check (on-baton (lambda () (map (lambda (v) (buffer-name (view-showing v))) (view-list))))
+           (check (on-baton (lambda () (map (lambda (v) (buffer-name (view-showing v))) (own-views))))
                   => ["*scratch*" "*scratch*"])
            (check (on-baton (lambda () (text-string (current-text)))) => "abcZ")
            (type! "C-c" "B")
@@ -105,11 +111,11 @@
        (lambda ()
          (start-editor-loop!)
          (type! "h" "e" "l" "l" "o" "C-x" "3" "C-a" "C-f" "C-x" "o" "C-x" "t" "2" "C-b")
-         (let ((views (on-baton view-list))
+         (let ((views (on-baton own-views))
                (state (lambda ()
                         (on-baton (lambda ()
                                     [(map (lambda (v) [(buffer-name (view-showing v)) (view-point v)])
-                                          (view-list))
+                                          (own-views))
                                      (view-id (selected-view))])))))
            (check (map car (car (state))) => ["*scratch*" "*scratch*" "*scratch*"])
            (check (map cadr (car (state))) => [2 6 5])
@@ -118,14 +124,14 @@
              (type! "C-c" "B")
              (check (toy?) => #t)
              ;; The same view objects, re-pointed at the toy's buffers.
-             (check (on-baton view-list) => views)
+             (check (on-baton own-views) => views)
              (check (state) => before)
              (check (on-baton (lambda () (frame-target-part (current-frame-target)))) => (cadr before))
              (type! "!")
              (check (on-baton (lambda () (text-string (current-text)))) => "hell!o")
              (type! "C-x" "n" "w" "C-c" "B")
              (check (toy?) => #f)
-             (check (on-baton view-list) => views)
+             (check (on-baton own-views) => views)
              (check (state) => [[["*scratch*" 2] ["*scratch*" 7] ["*scratch*" 6]] (cadr before)]))))))
 
     (test-case "C-h s shows the toy providing buffers, and the default waiting behind it"

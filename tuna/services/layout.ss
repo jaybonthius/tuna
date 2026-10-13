@@ -17,13 +17,30 @@
 ;;; layout does not understand, such as a side for `display-buffer`, are
 ;;; interpreted its own way or ignored.
 ;;;
+;;; Pins (ADR 13, "Pinning"). A layout that arranges parts in a tree may
+;;; pin a part on its link to its container: the part stays drawn when the
+;;; frame zooms past it. Drawing walks from the frame's target up to the
+;;; top; each container on the way draws only the child the way runs
+;;; through and its pinned children, as its kind always draws children, and
+;;; the child on the way gets the space the pinned children do not use.
+;;; Pins never move anything, and travel with a part when it moves; tree
+;;; order decides placement. A part may also be locked: a plugin owns it,
+;;; the user can neither unpin nor delete it, and it goes when its buffer
+;;; does (`add-locked-view!`). Sizes on links are shares of the space, or
+;;; `content`: as big as the part's content. The views drawn are the
+;;; visible ones: the selected view is always one of them, and moving
+;;; between views visits only them. A layout without pins (a toy) may
+;;; ignore them and have no places for locked views.
+;;;
 ;;; Replacing the provider hands the views over through a neutral
 ;;; description: the views in order and the selected one. Arrangement,
-;;; frame and frame marks belong to each layout.
+;;; pins, frame and frame marks belong to each layout, and locked views to
+;;; the plugins that put them in, which put them back in the next layout.
 prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
+        :tuna/services/settings
         :tuna/services/buffers)
 (export (interface-out Layout)
         layout-service
@@ -36,6 +53,10 @@ prelude: :gerbil/core
         delete-view
         neighbor-view
         display-buffer
+        add-locked-view
+        nearest-view
+        no-other-view
+        view-skipped?
         current-frame-target
         move-frame
         frame-mark-names
@@ -66,7 +87,8 @@ prelude: :gerbil/core
   ;; of the buffers service. A V outside the frame's target moves the frame
   ;; up until it holds V.
   (select-view! (v : view)) => :void
-  ;; The view after V among those the frame shows, cyclically (`other-view`).
+  ;; The view after V among the visible views that are not skipped
+  ;; (`view-skipped?`), cyclically (`other-view`).
   (next-view (v : view)) => :t
   ;; Show B in V.
   (show-buffer! (v : view) (b : buffer)) => :void
@@ -75,15 +97,30 @@ prelude: :gerbil/core
   (split-view! (v : view) (side : :symbol)) => :t
   ;; Remove V from the layout; the layout's last view cannot go.
   (delete-view! (v : view)) => :void
-  ;; The view next to V that the frame shows, toward DIRECTION ('left,
-  ;; 'right, 'up, 'down), or #f.
+  ;; The visible view next to V toward DIRECTION ('left, 'right, 'up,
+  ;; 'down) that is not skipped, or #f.
   (neighbor-view (v : view) (direction : :symbol)) => :t
   ;; Show B somewhere and return the view. HINTS is an alist: (side . S)
   ;; with S one of left, right, top, bottom asks for a view at that side of
   ;; what the frame shows, (size . X) for its share, a number between 0
-  ;; and 1. A view made only for B is dedicated to it: it closes when B is
-  ;; killed. Killing a buffer shows another buffer in its other views.
+  ;; and 1, or `content`. A view made only for B is dedicated to it: it
+  ;; closes when B is killed. Killing a buffer shows another buffer in its
+  ;; other views.
   (display-buffer! (b : buffer) (hints : :list)) => :t
+  ;; Show B in a view a plugin owns, pinned and locked at SIDE (left,
+  ;; right, top, bottom) of the whole layout, with SIZE (a share between 0
+  ;; and 1, or `content`). Such views at one side share one container
+  ;; there; at the bottom it is the bar. The view is dedicated, so it goes
+  ;; when B is killed, as when its plugin turns off. A view already showing
+  ;; B is reused. Returns the view, or #f for a layout without such places.
+  (add-locked-view! (b : buffer) (side : :symbol) (size : :t)) => :t
+  ;; The view nearest V for which (MATCH? view) holds: V itself, or else,
+  ;; walking up from V, the first visible one in a part pinned beside the
+  ;; way, in tree order, so one that stays drawn when the frame zooms onto
+  ;; V; #f if none. Prompts and messages find their views so: the bar at
+  ;; the top serves everything, a minibuffer pinned inside a split serves
+  ;; that split.
+  (nearest-view (v : view) (match? : :procedure)) => :t
   ;; The frame's target, as a frame-target.
   (current-frame-target) => :t
   ;; Point the frame at TARGET; the selected view moves under it if needed.
@@ -155,20 +192,49 @@ prelude: :gerbil/core
     (error "Look left, right, up, or down, not" direction))
   (Layout-neighbor-view (current-layout) v direction))
 
+;; A size between 0 and 1, or `content`.
+(def (check-size (size : :t)) => :void
+  (unless (or (eq? size 'content) (and (real? size) (< 0 size 1)))
+    (error "A size between 0 and 1, or content, not" size)))
+
 ;; Show B and return its view (Emacs `display-buffer`):
 ;;   (display-buffer b side: 'left size: 1/5)
 (def (display-buffer (b : buffer)
                      side: (side :? :symbol := #f)
-                     size: (size :? :real := #f))
+                     size: (size :? :t := #f))
   => view
   (when (and side (not (memq side '(left right top bottom))))
     (error "Display at the left, right, top, or bottom, not" side))
-  (when (and size (not (< 0 size 1)))
-    (error "Display with a size between 0 and 1, not" size))
+  (when size
+    (check-size size))
   (: (Layout-display-buffer! (current-layout) b
                              (append (if side [(cons 'side side)] [])
                                      (if size [(cons 'size size)] [])))
      view))
+
+;; Show B in a plugin's locked, pinned view at SIDE of the whole layout,
+;; or return #f when the layout has no such places:
+;;   (add-locked-view b side: 'bottom size: 'content)
+(def (add-locked-view (b : buffer)
+                      side: (side : :symbol := 'bottom)
+                      size: (size : :t := 'content))
+  => (Maybe view)
+  (unless (memq side '(left right top bottom))
+    (error "Lock a view at the left, right, top, or bottom, not" side))
+  (check-size size)
+  (Layout-add-locked-view! (current-layout) b side size))
+
+;; The visible view nearest V for which (MATCH? view) holds, or #f.
+(def (nearest-view (v : view) (match? : :procedure)) => (Maybe view)
+  (Layout-nearest-view (current-layout) v match?))
+
+;; Emacs's `no-other-window`, for a buffer rather than a window.
+(defsetting no-other-view #f
+  "Whether moving between views (other-view, the S-arrows) skips views of this buffer.")
+
+;; Whether moving between views skips V: its buffer's no-other-view.
+(def (view-skipped? (v : view)) => :boolean
+  (and (buffer-local-value no-other-view (view-showing v)) #t))
 
 (def (current-frame-target) => frame-target
   (: (Layout-current-frame-target (current-layout)) frame-target))

@@ -9,7 +9,7 @@
         :tuna/plugins/web
         :tuna/plugins/settings
         :tuna/plugins/echo-area
-        :tuna/plugins/help-panel
+        :tuna/plugins/help-buffer
         :tuna/plugins/session
         :tuna/plugins/rope
         :tuna/plugins/buffers
@@ -33,8 +33,6 @@
 (use-plugin web-transport-plugin        ; the browser page; `tuna --port N` overrides port:
   port: 0)                              ; 0: any free port
 (use-plugin settings-plugin)
-(use-plugin echo-area-plugin)
-(use-plugin help-panel-plugin)
 ;; Session slots restore in activation order: buffers (autosave) before
 ;; the views that show them (layout).
 (use-plugin session-plugin)
@@ -46,6 +44,8 @@
 (use-plugin html-renderer-plugin)
 (use-plugin basic-editing-plugin)
 (use-plugin minibuffer-plugin)
+(use-plugin echo-area-plugin)           ; in the bar, under the minibuffer
+(use-plugin help-buffer-plugin)         ; *Help*; C-h q closes it
 (use-plugin endless-commands-plugin)    ; C-c l and C-c L: loops to quit with C-g
 (use-plugin services-help-plugin)       ; C-h s: describe-services
 (use-plugin rename-command-plugin)      ; C-c r: rename the buffer in the minibuffer

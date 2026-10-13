@@ -26,7 +26,7 @@ prelude: :gerbil/core
         (only-in :tuna/plugins/rope)
         (only-in :tuna/plugins/settings)
         (only-in :tuna/plugins/echo-area)
-        (only-in :tuna/plugins/help-panel)
+        (only-in :tuna/plugins/help-buffer)
         (only-in :tuna/plugins/buffers)
         (only-in :tuna/plugins/session)
         (only-in :tuna/plugins/autosave)

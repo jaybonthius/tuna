@@ -10,15 +10,14 @@
 ;;; text nodes refer to texts, and any other node kind is defined by a
 ;;; plugin. Each node has one parent, and a revision number that every
 ;;; change to it or below it replaces with a new, larger one. A view is one
-;;; place in the layout (or a prompt) showing a buffer: the focused text
-;;; node, point, and the goal column, so two views of one buffer have their
-;;; own points. Editing primitives act on the current view's focused text
-;;; node. Positions are 1-based character positions within that node's
+;;; place in the layout showing a buffer: the focused text node, point, and
+;;; the goal column, so two views of one buffer have their own points.
+;;; Editing primitives act on the selected view's focused text node. Positions are 1-based character positions within that node's
 ;;; text.
 ;;;
 ;;; Texts, nodes, and buffers are the provider's objects: the classes here
-;;; hold only their identity, and providers extend them. Views belong to
-;;; whoever shows them (the layout, a prompt) and are plain data here.
+;;;; hold only their identity, and providers extend them. Views belong to
+;;; the layout and are plain data here.
 ;;;
 ;;; Replacing the provider hands the buffers over through a neutral
 ;;; description: each buffer's name, settings, point, and node tree with
@@ -61,7 +60,8 @@ prelude: :gerbil/core
         node-kind-ref node-renderer node-text-projection
         ;; buffers
         buffer buffer? buffer-id buffer-name buffer-root new-buffer rename-buffer!
-        buffer-setting set-buffer-setting! buffer-point-node buffer-point set-buffer-point!
+        buffer-setting set-buffer-setting! buffer-local-value settings-buffer
+        buffer-point-node buffer-point set-buffer-point!
         internal-buffer?
         buffer-list get-buffer add-buffer! context-add-buffer! kill-buffer kill-buffer-hook
         other-buffer buffer-texts
@@ -69,7 +69,7 @@ prelude: :gerbil/core
         view view? view-id view-showing view-node view-position view-revision
         new-view new-view-at copy-view reset-view!
         view-point set-view-point! set-view-showing!
-        current-view selected-view set-selected-view! push-focus-view! remove-focus-view!
+        selected-view set-selected-view!
         current-buffer switch-to-buffer
         current-text-node current-text
         point point-min point-max goto-char
@@ -272,15 +272,10 @@ prelude: :gerbil/core
   (buffer-point-node (b : buffer)) => :t
   (buffer-point (b : buffer)) => :fixnum
   (set-buffer-point! (b : buffer) (n :? node) (position : :fixnum)) => :void
-  ;; Views. The view that receives editing: the innermost focus view (a
-  ;; waiting prompt's), or else the selected view.
-  (current-view) => :t
-  ;; The selected view: the layout's, set by the layout.
+  ;; Views. The selected view, which receives editing: the layout's, set
+  ;; by the layout.
   (selected-view) => :t
   (set-selected-view! (v : view)) => :void
-  ;; Give V the focus over the selected view until it is removed.
-  (push-focus-view! (v : view)) => :void
-  (remove-focus-view! (v : view)) => :void
   ;; Entry tables of node kinds (by name) and node renderers (by kind and
   ;; render target).
   (node-kinds) => :t
@@ -596,6 +591,23 @@ prelude: :gerbil/core
 (def (set-buffer-setting! (b : buffer) (s : setting) (value : :t)) => :void
   (Buffers-set-buffer-setting! (current-buffers) b s value))
 
+;; The buffer whose own values the buffer settings scope reads, while
+;; buffer-local-value reads another buffer's.
+(def reading-buffer (make-parameter #f))
+
+;; The buffer whose own values settings resolve through: the current
+;; buffer, or the one buffer-local-value reads. Buffers providers' setting
+;; scopes look here.
+(def (settings-buffer) => buffer
+  (let (b (reading-buffer))
+    (if b (: b buffer) (current-buffer))))
+
+;; S's value as seen from B (Emacs `buffer-local-value`): B's own value,
+;; or else what S resolves to with B as the settings buffer.
+(def (buffer-local-value (s : setting) (b : buffer)) => :t
+  (parameterize ((reading-buffer b))
+    (setting-value s)))
+
 (def (buffer-list) => :list
   (Buffers-buffer-list (current-buffers)))
 
@@ -702,33 +714,23 @@ prelude: :gerbil/core
         (set! v.revision (node-chars-revision n))
         (set! v.goal-column #f)))))
 
-(def (current-view) => view
-  (: (Buffers-current-view (current-buffers)) view))
-
 (def (selected-view) => view
   (: (Buffers-selected-view (current-buffers)) view))
 
-;; Make V the selected view, which receives editing while no focus view is
-;; pushed. The layout calls this when it selects a view.
+;; Make V the selected view, which receives editing. The layout calls this
+;; when it selects a view.
 (def (set-selected-view! (v : view)) => :void
   (Buffers-set-selected-view! (current-buffers) v))
 
-;; Make V receive editing until it is removed; prompts push their views.
-(def (push-focus-view! (v : view)) => :void
-  (Buffers-push-focus-view! (current-buffers) v))
-
-(def (remove-focus-view! (v : view)) => :void
-  (Buffers-remove-focus-view! (current-buffers) v))
-
 (def (current-buffer) => buffer
-  (using (v (current-view) : view)
+  (using (v (selected-view) : view)
     v.showing))
 
 (def (switch-to-buffer (b : buffer)) => :void
-  (set-view-showing! (current-view) b))
+  (set-view-showing! (selected-view) b))
 
 (def (current-text-node) => (Maybe node)
-  (using (v (current-view) : view)
+  (using (v (selected-view) : view)
     v.focus))
 
 ;; The focused text of the current view.
@@ -740,7 +742,7 @@ prelude: :gerbil/core
 
 (def (point) => :fixnum
   (current-text)                        ; signals when there is no text here
-  (view-point (current-view)))
+  (view-point (selected-view)))
 
 (def (point-min) => :fixnum
   1)
@@ -751,7 +753,7 @@ prelude: :gerbil/core
 ;; Move point to POSITION, limited to the text.
 (def (goto-char (position : :fixnum)) => :void
   (current-text)
-  (set-view-point! (current-view) position))
+  (set-view-point! (selected-view) position))
 
 ;; Insert INSERTION at point, leaving point after it.
 (def (insert (insertion : :string)) => :void
@@ -763,8 +765,8 @@ prelude: :gerbil/core
   (text-replace! (current-text) (fxmin start end) (fxmax start end) "" point-before: (point)))
 
 (def (goal-column) => (Maybe :fixnum)
-  (using (v (current-view) : view)
+  (using (v (selected-view) : view)
     v.goal-column))
 
 (def (set-goal-column! (column :? :fixnum)) => :void
-  (set! (view-goal-column (current-view)) column))
+  (set! (view-goal-column (selected-view)) column))

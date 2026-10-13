@@ -10,7 +10,7 @@
         :tuna/plugins/keys
         :tuna/plugins/web
         :tuna/plugins/echo-area
-        :tuna/plugins/help-panel
+        :tuna/plugins/help-buffer
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
@@ -24,7 +24,7 @@
 (export web-test)
 
 (def browser-editor-plugins
-  [keys-plugin web-transport-plugin echo-area-plugin help-panel-plugin
+  [keys-plugin web-transport-plugin echo-area-plugin help-buffer-plugin
    rope-text-store-plugin settings-plugin no-session-plugin buffers-plugin layout-plugin
    html-renderer-plugin basic-editing-plugin endless-commands-plugin services-help-plugin])
 
