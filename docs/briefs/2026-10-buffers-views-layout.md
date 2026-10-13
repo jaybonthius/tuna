@@ -24,6 +24,18 @@ You see one tree, but two plugins own the pieces in memory:
 
 Two owners keep things replaceable. One buffer can appear in several views, a buffer exists when it isn't shown, and either plugin can be swapped without disturbing the other.
 
+## Frames: where you're looking
+
+A **frame** points at any part of the tree, and the browser tab draws that part and everything under it. The part can be a container, a view, or a node inside a buffer. Moving the frame changes where you're looking, not what's there:
+- **Point the frame at one view of a split,** and you see only that buffer, full size. The split is still there.
+- **Point it at one of two tab groups,** and you see only that group.
+- **Point it at one org heading or magit section,** and you see only that part. This makes Emacs's narrowing (`C-x n n`, `org-narrow-to-subtree`) the same feature as moving the frame.
+- **Move it back up,** and the larger arrangement reappears untouched.
+
+You can save frame locations as **frame marks** and jump back to them. A frame mark points at a part of the tree, not at a path like "the second child of the first split", so it keeps working after you rearrange things. Emacs comes closest by saving a window configuration to a register (`C-x r w`), but that stores a copy, so jumping back undoes later changes. Jumping to a frame mark only moves the frame.
+
+Tmux's zoom and i3's fullscreen are narrow versions of this: they can enlarge one pane, but they can't stand at any level of the tree. The idea is from your notes in `agents/research/owner-notes/window-layout-topology.org`.
+
 ## A walkthrough
 
 ![The layout in this walkthrough](../diagrams/layout-example.svg)
@@ -33,7 +45,8 @@ Two owners keep things replaceable. One buffer can appear in several views, a bu
 3. **You switch to the sidebar and back.** The left-to-right container remembered that you were last in the tabs, and the tabs container remembered `notes.txt`. Focus returns to the right place because focus is stored in the layout.
 4. **You open a new buffer.** The buffer-list plugin's hook adds a button. That stamps a new revision on `*buffers*`, so only the sidebar's HTML is recomputed. The whole screen is still sent.
 5. **A command asks a question.** The minibuffer view appears at the bottom of the tree. It's an ordinary view of the minibuffer's buffer, not a special case, and it goes away when you answer.
-6. **You turn the buffer-list plugin off.** Its buffer is removed, and its view closes because it was made only for that buffer. The layout goes back to the tabs alone.
+6. **You zoom in on `notes.txt`.** The frame moves down to that view, so the screen shows only `notes.txt`. You save this spot as a frame mark, zoom back out, and the sidebar and tabs reappear unchanged. Later, one key jumps you back to the mark.
+7. **You turn the buffer-list plugin off.** Its buffer is removed, and its view closes because it was made only for that buffer. The layout goes back to the tabs alone.
 
 ## A code sample (package author's view)
 
@@ -62,6 +75,7 @@ Each stage runs in the browser:
    - "fit" and "tabbed" containers, with focus remembered in each container;
    - split, close, and move between views (`C-x 2`, `C-x 3`, `C-x 0`, `C-x o`);
    - `display-buffer` with side hints;
+   - moving the frame (zoom in, zoom out, onto a node inside a buffer) and frame marks; the renderer starts drawing at the frame;
    - the layout is saved across restarts as plain data, and each plugin rebuilds its own buffers from its own state.
 3. **Everything on screen is the layout.** The minibuffer, echo area and help become views. The renderer draws only the layout tree, and it reuses the HTML of unchanged parts.
 
@@ -69,7 +83,9 @@ Each stage runs in the browser:
 - scrolling containers, and drawing only what's in view (their own brief, with the research on how the browser reports what's visible);
 - clicking buttons;
 - files;
-- several browser tabs showing different parts of the layout.
+- several browser tabs, each with its own frame. The model already allows it, but it waits for per-tab input.
+
+Focus has two parts. The frame holds the view you're in, and each container remembers its last-focused child, so moving the frame into a container lands where you were. With one frame these never conflict. When several tabs share containers, their focus memories could collide; that's settled with per-tab frames.
 
 So that drawing only what's in view can come later without changing the contract, any tree can hand the renderer just children 200 to 260.
 
@@ -94,7 +110,8 @@ The kernel gains nothing. There's no shared tree library yet, because the two tr
 - **Recommendation: (a).** An Emacs window is exactly "a buffer shown in one place, with its own cursor, scroll position and history of buffers shown there". A view would be the same thing, so porting is a mechanical rename (`selected-window` → `selected-view`, `window-point` → `view-point`). VS Code uses the same word: its sidebar parts are "views" inside "view containers".
 - **The other names:**
   - **Keep *buffer*.** Emacs buffers were never only files: dired, magit and `*Messages*` are buffers. Alternatives like *surface* or *panel* would cost every porter a translation and gain little.
-  - **Keep *frame* for what one browser tab shows.** *Tab* is already taken by tabbed containers.
+  - **Keep *frame* for the movable pointer a browser tab draws from.** An Emacs frame is the special case that always points at the top of its window tree. *Tab* is already taken by tabbed containers.
+  - **Call saved frame locations *frame marks*.** Emacs's plain *mark* is a buffer position (one end of the region), so the full name is always used, never just "mark". *Bookmarks* would clash with Emacs bookmarks, which point to file positions.
 
 **2. One tree on screen, two owners in memory?**
 - **Options:**
@@ -102,10 +119,20 @@ The kernel gains nothing. There's no shared tree library yet, because the two tr
   - (b) literally one stored tree, holding containers and buffer contents together.
 - **Recommendation: (a).** With (b), a buffer shown twice would have to be copied or shared awkwardly, a hidden buffer would have no place in the tree, and swapping the layout plugin would mean handing over every buffer's contents. The research also found the two trees need different storage to stay fast: frozen for the layout, changed in place for buffers. You still see, draw and navigate one tree.
 
-## New terms
+## Vocabulary
 
-- **Layout:** the tree of containers and views that arranges the screen; owned by a replaceable layout plugin.
-- **Container:** a part of the layout that arranges its children. *Fit* splits the space between them. *Tabbed* shows one at a time. *Scroll*, a strip wider than the screen, comes later.
-- **View:** one place in the layout showing one buffer, with its own cursor and scroll position. It replaces "window".
-- **Frame:** what one browser tab shows, a part of the layout. Today there is one.
-- **Revision number:** a counter stamped on a part of a buffer, and on the parts above it, whenever it changes. Unchanged revision means unchanged HTML.
+| Word | Meaning | Emacs counterpart |
+|---|---|---|
+| **Buffer** | A named piece of UI: a tree of nodes. A file, magit, a sidebar, the minibuffer. | buffer |
+| **Node** | One part of a buffer's tree. A *text node* holds editable text; any other node (a button, a section) is a *rich node*. | none (text properties, magit sections) |
+| **Text** | The characters, their properties and the undo history inside a text node. Several buffers can share one. | buffer text (shared by indirect buffers) |
+| **Layout** | The tree of containers and views that arranges buffers on screen. | a frame's window tree |
+| **Container** | A part of the layout that arranges its children: *fit*, *tabbed*, later *scroll*. | internal (combination) window |
+| **View** | One place in the layout showing one buffer, with its own cursor and scroll. Replaces "window". | live window |
+| **Selected view** | The view you're typing in. | selected window |
+| **Frame** | A movable pointer to any part of the tree; a browser tab draws from it. | frame, plus narrowing |
+| **Frame mark** | A saved frame location you can jump back to. | window configuration in a register, roughly |
+| **Revision number** | A counter stamped on a changed part of a buffer and the parts above it. | none |
+
+Words that go away: *window*, *pane*, and the minibuffer's special "focus view". *Point*, *mark* and *region* keep their Emacs meanings.
+
