@@ -29,3 +29,14 @@ Tuna runs several suspended commands and tasks at once ([ADR 3](0003-command-loo
 - **No temporary binding; explicit arguments everywhere.** Rejected: rewrites most ported code.
 - **Mutate a shared value and restore it with `dynamic-wind`.** Rejected: suspended commands and tasks would observe each other's temporary values.
 - **Emacs `safe-local-variable` predicates per setting.** Rejected in favor of schemas, which are needed anyway for customization and validation.
+
+## Amendment: plugin options are not settings (2026-10-13, configuration stage 3)
+
+`(use-plugin p key: value ...)` in `init.ss` gives a plugin **options** (`tuna/lib/plugin-options.ss`), declared by the plugin with `defplugin-options` (name, default, documentation, type). Options and settings are two concepts on purpose:
+
+- **Options are per-declaration activation parameters.** They are checked when `init.ss` loads, with no service running (settings resolution is a startup-tier service that some plugins with options, such as the web transport, come up before), and a plugin reads them when it is turned on. Changing an option replaces that plugin on reload; there is no scope chain, no dynamic binding, and no change notification.
+- **Settings are scoped runtime values,** resolved through the chain above while plugins run.
+- **One type vocabulary.** When settings get schemas, they use the same `option-type` values and constructors (`string-type`, `boolean-type`, `symbol-type`, `integer-type`), not a second vocabulary; the type struct moves to a neutrally named library when `defsetting` first takes a type.
+- **Editing.** The planned settings screen (configuration brief, decision 4) edits settings and saves them to `custom.ss`; options are edited only in `init.ss`, and are not a settings layer.
+
+Recorded as a divergence in [`docs/emacs-equivalents.md`](../../docs/emacs-equivalents.md): Emacs has one mechanism, `defcustom` set through `use-package :custom` or customize.

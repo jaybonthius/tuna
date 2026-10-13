@@ -70,6 +70,7 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 
 | What Emacs does | What Tuna does | Why | Cost when porting | Decision |
 |---|---|---|---|---|
+| `defcustom` serves both package options in `use-package :custom` and values changed later through customize or `setq` | Two concepts: plugin options (`use-plugin p key: value`), parameters of one declaration checked when `init.ss` loads, a change replacing the plugin; and settings, scoped runtime values. Settings will use the options' types when they get schemas; the settings screen edits settings, options are edited in `init.ss` | Options must be checked before anything runs, and a changed option must be undoable by replacing one plugin | A ported `defcustom` read only at load becomes an option; one read while running becomes a setting | [ADR 9](../agents/adr/0009-settings-and-scoped-values.md) (amendment 2026-10-13) |
 | Renders in its own window or terminal | Renders HTML in a browser tab | Rich UI, remote use | Display code is rewritten | [ADR 7](../agents/adr/0007-rendering-and-transport.md) |
 | Buffers are flat text | Buffers are node trees | Real structure instead of text hacks | Magit-, Dired-, agenda-style buffers are rewritten as rich nodes | [ADR 6](../agents/adr/0006-buffers-nodes-and-text-store.md) |
 | Keys the window system delivers | Keys the browser delivers; some (`C-w`, `C-n`, `C-t`) never arrive in an ordinary tab | Ordinary tabs must work for remote development | Users rebind those keys | [ADR 7](../agents/adr/0007-rendering-and-transport.md) |
