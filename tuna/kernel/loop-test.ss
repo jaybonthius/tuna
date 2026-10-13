@@ -1,10 +1,11 @@
-(import (only-in :gerbil/runtime/hash HashTable)
+(import (only-in :gerbil/runtime/thread thread-main)
         :std/error
         :std/test
-        :tuna/kernel)
+        :tuna/kernel
+        (only-in :tuna/kernel/hooks hook-callback-names)
+        "../test-support/kernel"
+        "../test-support/string-input")
 (export loop-test)
-
-(include "test-fixtures.ss")
 
 (def log [])
 (def (note! item) (set! log (cons item log)))
@@ -84,22 +85,19 @@
 
 ;; Start a fresh loop with the test tasks and PLUGINS, run THUNK, and stop.
 (def (with-loop thunk quit-grace: (quit-grace 0.5) plugins: (plugins []))
-  (call-with-test-kernel
-   (lambda ()
-     (set! log [])
-     (set! started? #f)
-     (set! cleaned-up? #f)
-     (set! released? #f)
-     (set! waiting #f)
-     (activate-plugin! test-input-plugin)
-     (activate-plugin! test-display)
-     (for-each activate-plugin! plugins)
-     (start-editor-loop! quit-grace: quit-grace)
-     (thunk))))
+  (set! log [])
+  (set! started? #f)
+  (set! cleaned-up? #f)
+  (set! released? #f)
+  (set! waiting #f)
+  (call-with-fresh-kernel (cons* test-input-plugin test-display plugins)
+    (lambda ()
+      (start-editor-loop! quit-grace: quit-grace)
+      (thunk))))
 
 ;; Submit the input item ITEM, usually a plain string, which the test Input
 ;; provider resolves.
-(def (press item) (submit-input! item))
+(def (press item) ((input-submitter) item))
 
 ;; Wait for every earlier item and its task, then read the last message.
 (def (settled-message) (call-on-editor-loop current-message))
@@ -117,6 +115,21 @@
          (for-each press ["note-a" "note-b" "unbound" "note-a"])
          (settled-message)
          (check (reverse log) => '(a b a)))))
+
+    (test-case "an input submitter captured before the loop starts works from a thread without the kernel"
+      (set! log [])
+      (call-with-fresh-kernel [test-input-plugin test-display]
+        (lambda ()
+          (let (submit (input-submitter))
+            (start-editor-loop!)
+            ;; A root thread starts with an empty dynamic environment, as
+            ;; a transport's request threads may.
+            (thread-join!
+             (thread-start!
+              (make-root-thread (cut thread-main (lambda () (submit "note-a")))
+                                'outside-the-kernel)))
+            (settled-message)
+            (check log => '(a))))))
 
     (test-case "a failing task is reported and the loop continues"
       (with-loop
@@ -225,7 +238,7 @@
          (check (current-task-name) => #f)
          (call-on-editor-loop
           (lambda ()
-            (submit-input! "note-b")
+            (press "note-b")
             (resume! waiting 'answer)))
          (settled-message)
          (check (reverse log) => '(a (answer) b)))))

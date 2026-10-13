@@ -9,17 +9,14 @@
         :tuna/plugins/buffers
         :tuna/plugins/single-window
         :tuna/plugins/html-renderer
-        :tuna/plugins/demo)
+        :tuna/plugins/demo
+        "../test-support/kernel"
+        "../test-support/session")
 (export html-renderer-test)
 
-(include "test-session.ss")
-
-(def (with-editor thunk)
-  (parameterize ((current-kernel (new-kernel)))
-    (for-each activate-plugin!
-              [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin no-session-plugin
-               buffers-plugin single-window-plugin html-renderer-plugin demo-plugin])
-    (thunk)))
+(def renderer-plugins
+  [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin no-session-plugin
+   buffers-plugin single-window-plugin html-renderer-plugin demo-plugin])
 
 (def (screen)
   (Renderer-render-screen (Renderer (service-provider renderer-service))))
@@ -31,7 +28,7 @@
 (def html-renderer-test
   (test-suite "tuna/plugins/html-renderer"
     (test-case "*scratch* renders its one text node with the cursor"
-      (with-editor
+      (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (insert "a<b\nc")
          (goto-char 2)
@@ -41,7 +38,7 @@
            (check (and (offset "line 1, column 1" html) #t) => #t)))))
 
     (test-case "highlights render as face classes, around and under the cursor"
-      (with-editor
+      (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (insert "a12b\n34")
          (set-highlights! (current-text) 'digits
@@ -53,7 +50,7 @@
            (check (and (offset "<span class=\"face-digit\">34</span>" html) #t) => #t)))))
 
     (test-case "*welcome* renders as a column: the heading, then the editable text"
-      (with-editor
+      (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (switch-to-buffer (get-buffer "*welcome*"))
          (insert "Hi. ")
@@ -69,7 +66,7 @@
            (check (and (offset "data-node=" html) #t) => #t)))))
 
     (test-case "a kind without an HTML renderer shows its text projection"
-      (with-editor
+      (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (defplugin (box-kind ctx)
            "Defines the box kind, with a projection but no HTML renderer."

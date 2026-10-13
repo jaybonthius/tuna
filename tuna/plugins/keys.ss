@@ -75,7 +75,7 @@ prelude: :gerbil/core
   (let (prefix (string-append keys " "))
     (ormap (lambda ((keymap : entry-table))
              (ormap (lambda ((bound : :string)) (string-prefix? prefix bound))
-                    (entry-table-keys keymap)))
+                    (entry-table-names keymap)))
            keymaps)))
 
 (def (printing-char? (key : :string)) => :boolean

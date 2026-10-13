@@ -20,10 +20,10 @@
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
-        :tuna/plugins/demo)
+        :tuna/plugins/demo
+        "../test-support/kernel"
+        "../test-support/keys")
 (export session-test)
-
-(include "test-keys.ss")
 
 (def (call-with-state-directory proc)
   (let (directory (path-expand (string-append "tuna-session-test-"
@@ -43,16 +43,13 @@
 ;; One run of Tuna on DIRECTORY, booted as main does: activate, restore,
 ;; start the loop.
 (def (run-tuna directory thunk)
-  (parameterize ((current-kernel (new-kernel)))
-    (try
-     (parameterize ((session-state-directory directory))
-       (for-each activate-plugin! session-plugins))
-     (restore-session)
-     (start-editor-loop!)
-     (thunk)
-     (finally
-      (stop-editor-loop!)
-      (deactivate-all-plugins!)))))
+  (call-with-fresh-kernel []
+    (lambda ()
+      (parameterize ((session-state-directory directory))
+        (for-each activate-plugin! session-plugins))
+      (restore-session)
+      (start-editor-loop!)
+      (thunk))))
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
@@ -119,13 +116,11 @@
 ;; A fresh kernel with only the session plugin on DIRECTORY, without the
 ;; editor loop.
 (def (with-session-only directory thunk)
-  (parameterize ((current-kernel (new-kernel)))
-    (try
-     (parameterize ((session-state-directory directory))
-       (activate-plugin! session-plugin))
-     (thunk)
-     (finally
-      (deactivate-all-plugins!)))))
+  (call-with-fresh-kernel []
+    (lambda ()
+      (parameterize ((session-state-directory directory))
+        (activate-plugin! session-plugin))
+      (thunk))))
 
 (def session-test
   (test-suite "tuna/plugins/session"

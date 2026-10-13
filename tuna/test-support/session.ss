@@ -1,8 +1,9 @@
 ;;; A session provider that keeps and saves nothing, for tests whose plugins
 ;;; register session slots (window managers require `session-service`) but
-;;; that do not test the session; included by test files (not a module).
-
-(import (only-in :tuna/services/session session-service))
+;;; that do not test the session.
+(import :tuna/kernel
+        (only-in :tuna/services/session session-service))
+(export no-session-plugin)
 
 (defstruct no-session ()
   final: #t)

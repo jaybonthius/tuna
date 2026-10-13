@@ -16,18 +16,17 @@
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
-        :tuna/plugins/demo)
+        :tuna/plugins/demo
+        "../test-support/kernel"
+        "../test-support/keys"
+        "../test-support/session")
 (export two-windows-test)
 
-(include "test-keys.ss")
-(include "test-session.ss")
-
-(def (with-windows thunk)
-  (call-with-editor [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
-                     settings-plugin no-session-plugin buffers-plugin single-window-plugin
-                     window-commands-plugin
-                     html-renderer-plugin basic-editing-plugin minibuffer-plugin demo-plugin]
-                    thunk))
+(def window-plugins
+  [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
+   settings-plugin no-session-plugin buffers-plugin single-window-plugin
+   window-commands-plugin
+   html-renderer-plugin basic-editing-plugin minibuffer-plugin demo-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
@@ -57,8 +56,9 @@
 (def two-windows-test
   (test-suite "tuna/plugins/two-windows"
     (test-case "C-c w hands the window over to two windows and back, keeping points"
-      (with-windows
+      (call-with-fresh-kernel window-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "h" "e" "l" "l" "o" "C-a" "C-f" "C-f")
          (check (windows-state) => [[["*scratch*" 3]] 0])
          (type! "C-c" "w")
@@ -73,8 +73,9 @@
          (check (windows-state) => [[["*scratch*" 6] ["*scratch*" 6]] 0]))))
 
     (test-case "C-x o moves between two views of one buffer with independent points"
-      (with-windows
+      (call-with-fresh-kernel window-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "a" "b" "c" "d" "C-c" "w")
          (type! "C-a" "C-f")
          (check (windows-state) => [[["*scratch*" 2] ["*scratch*" 5]] 0])
@@ -98,15 +99,17 @@
          (check (windows-state) => [[["*welcome*" 1] ["*scratch*" 7]] 0]))))
 
     (test-case "with one window, C-x o stays put"
-      (with-windows
+      (call-with-fresh-kernel window-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "a" "C-x" "o" "b")
          (check (text) => "ab")
          (check (windows-state) => [[["*scratch*" 3]] 0]))))
 
     (test-case "a prompt keeps the focus while C-x o selects another window"
-      (with-windows
+      (call-with-fresh-kernel window-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "a" "C-c" "w" "C-c" "r" "C-x" "o" "n")
          (check (windows-state) => [[["*scratch*" 2] ["*scratch*" 2]] 1])
          (type! "RET")
@@ -116,16 +119,18 @@
          (check (windows-state) => [[["n" 2] ["n" 3]] 1]))))
 
     (test-case "killing a buffer shows another in every window that showed it"
-      (with-windows
+      (call-with-fresh-kernel window-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "C-c" "w" "C-c" "b" "C-x" "o" "C-c" "b")
          (check (map car (car (windows-state))) => ["*welcome*" "*welcome*"])
          (on-baton (lambda () (deactivate-plugin! demo-plugin)))
          (check (map car (car (windows-state))) => ["*scratch*" "*scratch*"]))))
 
     (test-case "C-h s shows the window manager, its provider, and its dependents"
-      (with-windows
+      (call-with-fresh-kernel window-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "C-c" "w")
          (check (on-baton (lambda ()
                             (find (lambda (info) (eq? (service-info-name info) 'window-manager))

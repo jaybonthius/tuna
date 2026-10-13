@@ -30,7 +30,7 @@ prelude: :gerbil/core
 (def static-assets (embed-directory "../../web" "/static"))
 
 (defclass web-transport
-  ((editor      : kernel)       ; the kernel whose loop receives input
+  ((submit      : :procedure)   ; input item -> void; submits to the editor loop
    (port        : :fixnum)
    (token       : :string)      ; in the launch URL
    (session     : :string)      ; the cookie it is exchanged for
@@ -273,8 +273,7 @@ prelude: :gerbil/core
         (do-with-lock self.admission
           ;; Acknowledge, then enqueue, in arrival order across request threads.
           (ResponseHandler-write! response No-Content [] #u8())
-          (parameterize ((current-kernel self.editor))
-            (submit-input! event)))
+          ((web-transport-submit self) event))
         (respond-text response Bad-Request "Invalid event."))))))
 
 (def (short-string? (value : :t)) => :boolean
@@ -320,7 +319,7 @@ prelude: :gerbil/core
   (let* ((port (let (configured (web-transport-listen-port))
                  (if (zero? configured) (free-loopback-port) configured)))
          (host (string-append "127.0.0.1:" (number->string port)))
-         (self (web-transport editor: (current-kernel)
+         (self (web-transport submit: (input-submitter)
                               port: port
                               token: (new-secret)
                               session: (new-secret)

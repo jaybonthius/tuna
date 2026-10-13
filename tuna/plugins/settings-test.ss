@@ -4,7 +4,8 @@
         :tuna/services/buffers
         :tuna/plugins/rope
         :tuna/plugins/settings
-        :tuna/plugins/buffers)
+        :tuna/plugins/buffers
+        "../test-support/kernel")
 (export settings-test)
 
 (defsetting fill-column 70 "Where filling breaks lines.")
@@ -17,15 +18,13 @@
   "Sets fill-column globally to 40."
   (context-set-setting! ctx fill-column 40))
 
-(def (with-settings-plugins thunk)
-  (parameterize ((current-kernel (new-kernel)))
-    (for-each activate-plugin! [rope-text-store-plugin settings-plugin buffers-plugin])
-    (thunk)))
+(def buffer-plugins
+  [rope-text-store-plugin settings-plugin buffers-plugin])
 
 (def settings-test
   (test-suite "tuna/plugins/settings"
     (test-case "a setting resolves through the dynamic layer, the buffer, global values, then its default"
-      (with-settings-plugins
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (check (setting-value fill-column) => 70)
          (activate-plugin! sets-wide)
@@ -40,7 +39,7 @@
          (check (setting-value fill-column) => 80))))
 
     (test-case "global values are owner-tagged and revert in any order"
-      (with-settings-plugins
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (activate-plugin! sets-wide)
          (activate-plugin! sets-narrow)
@@ -54,7 +53,7 @@
          (check (setting-value fill-column) => 70))))
 
     (test-case "with-settings bindings belong to one thread; threads it starts inherit them"
-      (with-settings-plugins
+      (call-with-fresh-kernel buffer-plugins
        (lambda ()
          (with-settings ((fill-column 20))
            (check (thread-join! (spawn (lambda () (setting-value fill-column)))) => 20))

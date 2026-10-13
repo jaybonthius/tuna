@@ -19,18 +19,17 @@
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
-        :tuna/plugins/demo)
+        :tuna/plugins/demo
+        "../test-support/kernel"
+        "../test-support/keys"
+        "../test-support/session")
 (export demo-test)
 
-(include "test-keys.ss")
-(include "test-session.ss")
-
-(def (with-demo thunk)
-  (call-with-editor [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
-                     settings-plugin no-session-plugin buffers-plugin single-window-plugin html-renderer-plugin
-                     basic-editing-plugin
-                     minibuffer-plugin demo-plugin]
-                    thunk))
+(def demo-plugins
+  [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
+   settings-plugin no-session-plugin buffers-plugin single-window-plugin html-renderer-plugin
+   basic-editing-plugin
+   minibuffer-plugin demo-plugin])
 
 (def jobs #f)
 
@@ -38,10 +37,9 @@
   "Lends a job group to the tests."
   (set! jobs (new-job-group ctx)))
 
-(def (with-editing thunk)
-  (call-with-editor [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
-                     buffers-plugin basic-editing-plugin job-host-plugin]
-                    thunk))
+(def editing-plugins
+  [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
+   buffers-plugin basic-editing-plugin job-host-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
@@ -62,8 +60,9 @@
 (def demo-test
   (test-suite "tuna/plugins/demo"
     (test-case "C-c r renames the current buffer through the minibuffer"
-      (with-demo
+      (call-with-fresh-kernel demo-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "C-c" "r" "n" "o" "t" "e" "s")
          (let (html (screen))
            (check (contains? html "<span class=\"prompt\">New name: </span>") => #t)
@@ -77,8 +76,9 @@
            (check (contains? html "Renamed to notes") => #t)))))
 
     (test-case "C-g abandons the rename prompt"
-      (with-demo
+      (call-with-fresh-kernel demo-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "C-c" "r" "x")
          (check (contains? (screen) "New name: ") => #t)
          (type! "C-g")
@@ -88,8 +88,9 @@
            (check (contains? html ">Quit<") => #t)))))
 
     (test-case "C-h s shows buffers adapting to the text store"
-      (with-demo
+      (call-with-fresh-kernel demo-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "C-h" "s")
          (check (on-baton (lambda () (help-output-lines (current-help))))
                 ? (cut member
@@ -97,8 +98,9 @@
                        <>)))))
 
     (test-case "the slow highlighter colors digits shortly after typing"
-      (with-demo
+      (call-with-fresh-kernel demo-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "a" "1" "2" "b" "3")
          (check (wait-until (lambda () (equal? (highlighted) ["12" "3"]))) => #t)
          (check (contains? (screen) "a<span class=\"face-digit\">12</span>b") => #t)
@@ -107,8 +109,9 @@
          (check (wait-until (lambda () (equal? (highlighted) ["4" "12" "3"]))) => #t))))
 
     (test-case "the slow highlighter leaves the minibuffer's text alone"
-      (with-demo
+      (call-with-fresh-kernel demo-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "C-c" "r" "1" "2")
          (thread-sleep! (* 2 (on-baton (lambda () (setting-value digit-highlight-delay)))))
          (check (on-baton (lambda () (text-string (current-text)))) => "12")
@@ -117,8 +120,9 @@
          (check (wait-until (lambda () (equal? (highlighted) ["3"]))) => #t))))
 
     (test-case "rebased digit highlights land on the right characters after edits made while the job ran"
-      (with-editing
+      (call-with-fresh-kernel editing-plugins
        (lambda ()
+         (start-editor-loop!)
          (let (gate (make-completion))
            (type! "a" "1" "2" "b" "3" "4")
            (on-baton

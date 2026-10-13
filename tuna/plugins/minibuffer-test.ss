@@ -12,10 +12,10 @@
         :tuna/plugins/settings
         :tuna/plugins/buffers
         :tuna/plugins/basic-editing
-        :tuna/plugins/minibuffer)
+        :tuna/plugins/minibuffer
+        "../test-support/kernel"
+        "../test-support/keys")
 (export minibuffer-test)
-
-(include "test-keys.ss")
 
 (defsetting case-fold-search #t "Whether searches ignore case.")
 
@@ -43,9 +43,11 @@
 (def (with-minibuffer thunk)
   (set! answers [])
   (set! quit? #f)
-  (call-with-editor [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
-                     buffers-plugin basic-editing-plugin minibuffer-plugin asking]
-                    thunk))
+  (call-with-fresh-kernel [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
+                           buffers-plugin basic-editing-plugin minibuffer-plugin asking]
+    (lambda ()
+      (start-editor-loop!)
+      (thunk))))
 
 ;; Once every key sent so far has run: the selected window's buffer text, the
 ;; innermost prompt's question and answer so far (or #f), and the message.

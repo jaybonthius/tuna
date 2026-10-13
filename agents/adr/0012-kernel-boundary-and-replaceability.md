@@ -14,7 +14,7 @@ The two differ in one respect that matters: whether Tuna's default implementatio
 - **The kernel** is the only part that is not a plugin. It contains:
   1. the plugin runtime: contexts, receipts, the service registry, manifests, and dependency activation ([ADR 2](0002-plugins-contexts-and-services.md));
   2. the execution rules: the baton, tasks and yield points, jobs, and the quit lane ([ADR 3](0003-command-loop-and-jobs.md)) (the kernel contract below keeps only posting results; jobs are a shared library);
-  3. shared vocabulary that contracts depend on: identities, revisions, and change records ([ADR 4](0004-state-ownership.md)) (the kernel contract below moves change records to the buffers contract).
+  3. shared vocabulary that contracts depend on: identities, revisions, and change records ([ADR 4](0004-state-ownership.md)) (the kernel contract below moves change records to the buffers contract and keeps only identities; revisions belong to the objects that carry them).
 
   It contains no editor features.
 - **Three tiers of replaceability.**
@@ -39,7 +39,7 @@ The skeleton let the kernel drift from about 1,050 to 1,800 non-test lines by ab
 
 **The kernel contains exactly:**
 1. **Plugin runtime:** plugins, `defplugin`, contexts and receipts (`context-defer!` is the one primitive every registration is built from), owner-tagged entries, activation and deactivation, services with providers, tiers, dependents that restart or adapt, and swap handover.
-2. **Execution rules:** the baton, tasks, suspension at yield points, the quit lane, the input queue, `input-pending?`, `discard-input`, and posting a result to the editor thread from another thread (`result-poster`).
+2. **Execution rules:** the baton, tasks, suspension at yield points, the quit lane, the input queue, `input-pending?`, `discard-input`, and posting a result to the editor thread from another thread (`result-poster`). Input reaches the queue through a procedure captured from the kernel (`input-submitter`, which replaced `submit-input!`): the kernel object is private, so only the kernel can bind a submission to its own loop, and a transport's request threads never select a kernel.
 3. **Hooks and identities:** one generic hook mechanism (each hook object owns its callbacks; no kernel table), which the kernel also uses to announce its own lifecycle events (`plugin-activated-hook`, `plugin-deactivated-hook`, `service-changed-hook`, `task-started-hook`, `task-finished-hook`; each runs after its state change is complete, and its callbacks must not activate or deactivate plugins; while the editor loop runs they may queue a task that does); and `next-id!`.
 4. **Consumed seams:** the `Input`, `Display`, and `Messages` services the kernel calls.
 
@@ -47,7 +47,7 @@ The skeleton let the kernel drift from about 1,050 to 1,800 non-test lines by ab
 
 **Input:** the kernel queues opaque input items and never looks inside them. The `Input` service has two duties: classify an arriving item as "queue" or "interrupt" (on the arriving thread, without touching editor state; this is how the quit key works), and resolve a queued item to the task it starts, as a name and a thunk (on the baton; for keys, the command registry in the keys plugin supplies both). Key presses are resolved through keymaps by context and mode. Clickable UI (buttons, menu items, mouse clicks) sends "activate node N with gesture G"; the input plugin checks that node N is still current and resolves the gesture through the node's keymap, which the server bound when it rendered the node (for example `activate` to a command with captured arguments). The client never names a command. This follows Emacs, where buttons and menus are events resolved through keymaps. Purely presentational interaction (scrolling, disclosure) may stay in the browser.
 
-**Changes to the kernel:** there is no size limit. Every new kernel export, data field, or interface method requires an amendment to this ADR saying why no plugin or library could own it, and every merge review states whether the kernel changed and why. `make test` includes mechanical checks: a search of `tuna/kernel/` for the forbidden nouns above, a check that the kernel imports no service or plugin module, and a check that libraries import only `:gerbil`, `:std`, the kernel facade `:tuna/kernel`, and other libraries.
+**Changes to the kernel:** there is no size limit. Every new kernel export, data field, or interface method requires an amendment to this ADR saying why no plugin or library could own it, and every merge review states whether the kernel changed and why. `make test` includes mechanical checks: a search of `tuna/kernel/` for the forbidden nouns above, a check that the kernel imports no service or plugin module, a check that libraries import only `:gerbil`, `:std`, the kernel facade `:tuna/kernel`, and other libraries, and a check that only tests import test support (`tuna/test-support/`, which holds the test-only way to make a fresh kernel).
 
 ## Consequences
 

@@ -16,18 +16,17 @@
         :tuna/plugins/plain-text-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
-        :tuna/plugins/demo)
+        :tuna/plugins/demo
+        "../test-support/kernel"
+        "../test-support/keys"
+        "../test-support/session")
 (export plain-text-renderer-test)
 
-(include "test-keys.ss")
-(include "test-session.ss")
-
-(def (with-renderers thunk)
-  (call-with-editor [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
-                     settings-plugin no-session-plugin buffers-plugin single-window-plugin
-                     window-commands-plugin
-                     html-renderer-plugin basic-editing-plugin minibuffer-plugin demo-plugin]
-                    thunk))
+(def renderer-plugins
+  [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
+   settings-plugin no-session-plugin buffers-plugin single-window-plugin
+   window-commands-plugin
+   html-renderer-plugin basic-editing-plugin minibuffer-plugin demo-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
@@ -40,8 +39,9 @@
 (def plain-text-renderer-test
   (test-suite "tuna/plugins/plain-text-renderer"
     (test-case "C-c v swaps to plain text and back without losing text or point"
-      (with-renderers
+      (call-with-fresh-kernel renderer-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "a" "<" "b" "RET" "c" "C-p")
          (check (contains? (screen) "class=\"text\"") => #t)
          (type! "C-c" "v")
@@ -63,15 +63,17 @@
            (check (contains? html "Renderer: HTML") => #t)))))
 
     (test-case "kinds render through their plain-text procedures, or their children"
-      (with-renderers
+      (call-with-fresh-kernel renderer-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "C-c" "v" "C-c" "b")
          (check (contains? (screen) "Welcome to Tuna\n===============\n<span class=\"cursor\">T</span>his buffer")
                 => #t))))
 
     (test-case "two windows render side by side, each with its cursor"
-      (with-renderers
+      (call-with-fresh-kernel renderer-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "x" "y" "C-c" "v" "C-c" "w" "C-b")
          (let (html (screen))
            (check (contains? html "x<span class=\"cursor\">y</span>") => #t)
@@ -79,8 +81,9 @@
            (check (contains? html "data-selected=\"true\"") => #t)))))
 
     (test-case "a prompt shows its question and answer in the footer"
-      (with-renderers
+      (call-with-fresh-kernel renderer-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "C-c" "v" "C-c" "r" "o" "k")
          (check (contains? (screen) "<pre class=\"plain-text\" role=\"status\">New name: ok<span class=\"cursor\"> </span>\n</pre>")
                 => #t)

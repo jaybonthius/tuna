@@ -1,11 +1,13 @@
-(import (only-in :gerbil/runtime/hash HashTable)
-        :std/error
+(import :std/error
         :std/interface
         :std/test
-        :tuna/kernel)
+        :tuna/kernel
+        (only-in :tuna/kernel/state new-kernel current-kernel)
+        (only-in :tuna/kernel/plugins startup-service-error?)
+        (only-in :tuna/kernel/hooks hook-callback-names)
+        "../test-support/kernel"
+        "../test-support/string-input")
 (export plugins-test)
-
-(include "test-fixtures.ss")
 
 (interface Greeter
   (greet) => :string)
@@ -148,7 +150,7 @@
 (def plugins-test
   (test-suite "tuna/kernel/plugins"
     (test-case "receipts undo in reverse order"
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (defplugin (three-undos ctx)
            "Records three undos."
@@ -161,7 +163,7 @@
          (check (plugin-active? three-undos) => #f))))
 
     (test-case "a failed activation undoes what it registered"
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (defplugin (half-done ctx)
            "Registers an entry, then fails."
@@ -172,7 +174,7 @@
          (check (plugin-active? half-done) => #f))))
 
     (test-case "registrations record their plugin, source, and documentation"
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (defplugin (documented ctx)
            "Adds one entry."
@@ -188,7 +190,7 @@
                 ? values))))
 
     (test-case "owner-tagged entries survive deactivation in either order"
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (activate-plugin! slot-a)
          (activate-plugin! slot-b)
@@ -211,7 +213,7 @@
          (check (slot-value) => 'a))))
 
     (test-case "dependents wait for services and follow provider changes"
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (take-log!)
          (activate-plugin! greeting-user)
@@ -228,7 +230,7 @@
          (check (take-log!) => ['off "b"]))))
 
     (test-case "adapting dependents migrate in place, until no provider is left"
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (take-log!)
          (activate-plugin! greeter-a)
@@ -244,7 +246,7 @@
          (check (take-log!) => ["b"]))))
 
     (test-case "hooks run by depth, drop a failing callback, and go with their plugin"
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (take-log!)
          (activate-plugin! test-input-plugin)
@@ -258,7 +260,7 @@
          (check (hook-callback-names test-hook) => '()))))
 
     (test-case "lifecycle hooks announce each change once, after the whole operation"
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (take-log!)
          (activate-plugin! lifecycle-watcher)
@@ -289,7 +291,7 @@
                                 ['deactivated 'greeter-a #f]]))))
 
     (test-case "an operation that raises still announces what it changed, in order"
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (activate-plugin! lifecycle-watcher)
          (activate-plugin! greeter-a)
@@ -306,7 +308,7 @@
          (check (plugin-active? greeter-then-fails) => #f))))
 
     (test-case "a failing lifecycle callback is removed and activation carries on"
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (activate-plugin! test-input-plugin)
          (activate-plugin! lifecycle-breaker)
@@ -319,7 +321,7 @@
          (check (plugin-active? greeter-a) => #t))))
 
     (test-case "lifecycle callbacks must not activate or deactivate plugins"
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (activate-plugin! test-input-plugin)
          (activate-plugin! lifecycle-meddler)
@@ -338,7 +340,7 @@
         (activate-plugin! lifecycle-watcher)
         (check (hook-callback-names test-hook) => '(early broken late)))
       (take-log!)
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (check (hook-callback-names test-hook) => '())
          (check (hook-callback-names plugin-activated-hook) => '())
@@ -349,7 +351,7 @@
          (check (hook-callback-names test-hook) => '(early broken late)))))
 
     (test-case "describe-services lists tier, provider, and dependents"
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (activate-plugin! greeter-a)
          (activate-plugin! greeting-user)
@@ -363,7 +365,7 @@
                     ['messages 'live 'test-input-plugin []]]))))
 
     (test-case "a service's handover moves state between providers, before dependents restart"
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (activate-plugin! counter-a)
          (activate-plugin! counter-user)
@@ -380,7 +382,7 @@
          (check (take-log!) => []))))
 
     (test-case "startup-tier services refuse live replacement"
-      (call-with-test-kernel
+      (call-with-fresh-kernel []
        (lambda ()
          (activate-plugin! test-input-plugin)
          (activate-plugin! greeter-a)

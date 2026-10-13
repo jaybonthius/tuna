@@ -9,7 +9,9 @@
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
-        :tuna/plugins/basic-editing)
+        :tuna/plugins/basic-editing
+        "../test-support/kernel"
+        "../test-support/keys")
 (export basic-editing-test)
 
 (def editing-commands
@@ -20,12 +22,9 @@
   ["<printing-char>" "SPC" "RET" "DEL" "C-d" "C-f" "C-b" "C-n" "C-p" "C-a" "C-e"
    "<left>" "<right>" "<up>" "<down>" "C-/" "C-_"])
 
-(include "test-keys.ss")
-
-(def (with-editor thunk)
-  (call-with-editor [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
-                     buffers-plugin basic-editing-plugin]
-                    thunk))
+(def editing-plugins
+  [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
+   buffers-plugin basic-editing-plugin])
 
 ;; The focused text and point once every key sent so far has run.
 (def (state)
@@ -35,8 +34,9 @@
 (def basic-editing-test
   (test-suite "tuna/plugins/basic-editing"
     (test-case "typing, deleting, and moving in *scratch*"
-      (with-editor
+      (call-with-fresh-kernel editing-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "a" "é" "😀" "SPC" "b" "RET" "c" "d")
          (check (state) => ["aé😀 b\ncd" 9 ""])
          (type! "<up>")
@@ -57,8 +57,9 @@
          (check (state) => ["é b\ncd" 1 "Beginning of buffer"]))))
 
     (test-case "line motion keeps the goal column across short lines"
-      (with-editor
+      (call-with-fresh-kernel editing-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "a" "b" "c" "d" "e" "RET" "x" "RET" "a" "b" "c" "d" "e" "C-b")
          (check (state) => ["abcde\nx\nabcde" 13 ""])
          (type! "C-p")
@@ -67,8 +68,9 @@
          (check (state) => ["abcde\nx\nabcde" 5 ""]))))
 
     (test-case "undo undoes typing as one group, other commands one at a time; after another command it redoes"
-      (with-editor
+      (call-with-fresh-kernel editing-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "a" "b" "c" "DEL")
          (check (state) => ["ab" 3 ""])
          (type! "C-/")
@@ -81,23 +83,26 @@
          (check (state) => ["abc" 4 "Undo"]))))
 
     (test-case "consecutive self-inserts group in twenties"
-      (with-editor
+      (call-with-fresh-kernel editing-plugins
        (lambda ()
+         (start-editor-loop!)
          (for-each (lambda (_) (type! "x")) (iota 25))
          (type! "C-/")
          (check (state) => [(make-string 20 #\x) 21 "Undo"]))))
 
     (test-case "undoing a forward delete puts point back before the restored text"
-      (with-editor
+      (call-with-fresh-kernel editing-plugins
        (lambda ()
+         (start-editor-loop!)
          (type! "a" "b" "C-a" "C-d")
          (check (state) => ["b" 1 ""])
          (type! "C-/")
          (check (state) => ["ab" 1 "Undo"]))))
 
     (test-case "turning basic editing off and on leaves no stray commands or keys"
-      (with-editor
+      (call-with-fresh-kernel editing-plugins
        (lambda ()
+         (start-editor-loop!)
          (call-on-editor-loop
           (lambda ()
             (deactivate-plugin! basic-editing-plugin)

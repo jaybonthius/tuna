@@ -1,13 +1,12 @@
-(import (only-in :gerbil/runtime/hash HashTable)
-        :std/error
+(import :std/error
         :std/interface
         :std/sync/completion
         :std/test
         :tuna/kernel
-        :tuna/lib/jobs)
+        :tuna/lib/jobs
+        "../test-support/kernel"
+        "../test-support/string-input")
 (export jobs-test)
-
-(include "../kernel/test-fixtures.ss")
 
 ;; A job target the tests change by hand. It rebases a result R computed at
 ;; revision N to (R N current-revision); FORGOTTEN? makes it drop results
@@ -49,14 +48,11 @@
   (set! owner-jobs (new-job-group ctx)))
 
 (def (with-jobs thunk)
-  (call-with-test-kernel
-   (lambda ()
-     (set! applied [])
-     (activate-plugin! test-input-plugin)
-     (activate-plugin! job-starter)
-     (activate-plugin! other-job-starter)
-     (start-editor-loop!)
-     (thunk))))
+  (set! applied [])
+  (call-with-fresh-kernel [test-input-plugin job-starter other-job-starter]
+    (lambda ()
+      (start-editor-loop!)
+      (thunk))))
 
 ;; Start a job of GROUP (by default the job-starter plugin's) on the baton
 ;; whose run waits for GATE and returns its input.

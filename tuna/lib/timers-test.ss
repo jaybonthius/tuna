@@ -1,11 +1,10 @@
-(import (only-in :gerbil/runtime/hash HashTable)
-        :std/error
+(import :std/error
         :std/test
         :tuna/kernel
-        :tuna/lib/timers)
+        :tuna/lib/timers
+        "../test-support/kernel"
+        "../test-support/string-input")
 (export timers-test)
-
-(include "../kernel/test-fixtures.ss")
 
 (def ticks 0)
 (def waiting #f)          ; the suspension of the waiting timer's callback
@@ -23,14 +22,13 @@
                                          (lambda () (suspend (lambda (s) (set! waiting s))))))))
 
 (def (with-loop thunk)
-  (call-with-test-kernel
-   (lambda ()
-     (set! ticks 0)
-     (set! waiting #f)
-     (set! timer-quit? #f)
-     (activate-plugin! test-input-plugin)
-     (start-editor-loop!)
-     (thunk))))
+  (set! ticks 0)
+  (set! waiting #f)
+  (set! timer-quit? #f)
+  (call-with-fresh-kernel [test-input-plugin]
+    (lambda ()
+      (start-editor-loop!)
+      (thunk))))
 
 (def timers-test
   (test-suite "tuna/lib/timers"

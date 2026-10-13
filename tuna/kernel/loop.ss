@@ -23,14 +23,12 @@ prelude: :gerbil/core
         start-editor-loop!
         stop-editor-loop!
         editor-loop-running?
-        submit-input!
+        input-submitter
         call-on-editor-loop
-        task?
         running-task
         spawn-task!
         cancel-task!
         result-poster
-        suspension?
         suspend
         resume!
         resume-quit!
@@ -38,10 +36,8 @@ prelude: :gerbil/core
         discard-input
         check-quit
         signal-quit
-        call-with-inhibit-quit
         with-inhibit-quit
         quit-condition?
-        quit-condition-forced?
         redisplay
         current-task-name
         current-task-id
@@ -232,26 +228,25 @@ prelude: :gerbil/core
 
 (def redisplay-cap 0.1) ; seconds; render at least this often under sustained input
 
-(def (kernel-editor-loop) => (Maybe editor-loop)
-  (using (k (the-kernel) : kernel)
-    (let (loop k.loop)
-      (and loop (: loop editor-loop)))))
+(def (kernel-editor-loop (k : kernel)) => (Maybe editor-loop)
+  (let (loop (kernel-loop k))
+    (and loop (: loop editor-loop))))
 
-(def (running-loop) => editor-loop
-  (let (loop (kernel-editor-loop))
+(def (running-loop (k : kernel)) => editor-loop
+  (let (loop (kernel-editor-loop k))
     (unless loop
       (error "The editor loop is not running"))
     (: loop editor-loop)))
 
 (def (send-to-loop! (msg : :t)) => :void
-  (using (loop (running-loop) : editor-loop)
+  (using (loop (running-loop (the-kernel)) : editor-loop)
     (thread-send (: loop.thread :thread) msg)))
 
 (def (now) => :real
   (time->seconds (current-time)))
 
 (def (editor-loop-running?) => :boolean
-  (and (kernel-editor-loop) #t))
+  (and (kernel-editor-loop (the-kernel)) #t))
 
 ;; Start the loop. The kernel becomes live: startup-tier services refuse
 ;; replacement from now on.
@@ -277,7 +272,7 @@ prelude: :gerbil/core
 ;; queued calls. The kernel stops being live.
 (def (stop-editor-loop!) => :void
   (using (k (the-kernel) : kernel)
-    (let (loop (kernel-editor-loop))
+    (let (loop (kernel-editor-loop k))
       (when loop
         (using ((loop : editor-loop)
                 (thread loop.thread : :thread))
@@ -288,16 +283,21 @@ prelude: :gerbil/core
             (set! k.loop #f)
             (set! k.live? #f)))))))
 
-;; Queue the input ITEM for the Input provider to resolve, unless the
+;; A procedure of an input item that submits it to this kernel's editor
+;; loop: the item is queued for the Input provider to resolve, unless the
 ;; provider classifies it as an interrupt, which bypasses the queue
-;; (ADR 3). Callable from any thread.
-(def (submit-input! (item : :t)) => :void
-  (using (loop (running-loop) : editor-loop)
-    (thread-send (: loop.thread :thread)
-                 (case (Input-arrival loop.input item)
-                   ((queue) [enqueue: (make-queued-input item)])
-                   ((interrupt) [interrupt: item])
-                   (else (error "Input arrival must return queue or interrupt" item))))))
+;; (ADR 3). The procedure works from any thread, including one whose
+;; dynamic environment lacks the kernel, and may be captured before the
+;; loop starts; calling it while the loop is stopped raises.
+(def (input-submitter) => :procedure
+  (let (k (the-kernel))
+    (lambda ((item : :t)) => :void
+      (using (loop (running-loop k) : editor-loop)
+        (thread-send (: loop.thread :thread)
+                     (case (Input-arrival loop.input item)
+                       ((queue) [enqueue: (make-queued-input item)])
+                       ((interrupt) [interrupt: item])
+                       (else (error "Input arrival must return queue or interrupt" item))))))))
 
 ;; Run PROCEDURE as a task on the baton, after the input queued before it,
 ;; and return its value or raise its exception. Callable from any thread
@@ -331,7 +331,7 @@ prelude: :gerbil/core
 ;; results). It works from any thread, including one whose dynamic
 ;; environment lacks the kernel.
 (def (result-poster) => :procedure
-  (using (loop (running-loop) : editor-loop)
+  (using (loop (running-loop (the-kernel)) : editor-loop)
     (let (thread (: loop.thread :thread))
       (lambda ((name : :symbol) (procedure : :procedure))
         (thread-send thread [result: (new-task name procedure #f)])))))
@@ -344,7 +344,7 @@ prelude: :gerbil/core
 
 ;; The name of the running task, or #f.
 (def (current-task-name) => (Maybe :symbol)
-  (let (loop (kernel-editor-loop))
+  (let (loop (kernel-editor-loop (the-kernel)))
     (and loop
          (using (loop : editor-loop)
            (let (running loop.running)
@@ -361,7 +361,7 @@ prelude: :gerbil/core
     (unless running
       (error "Only a task can wait"))
     (using ((running : task)
-            (loop (running-loop) : editor-loop))
+            (loop (running-loop (the-kernel)) : editor-loop))
       (check-quit)
       (using (s (suspension waiter: running done: (make-completion) outcome: #f) : suspension)
         (arm s)
@@ -383,7 +383,7 @@ prelude: :gerbil/core
 ;; Whether input items are queued (Emacs `input-pending-p`). Call it from
 ;; a task.
 (def (input-pending?) => :boolean
-  (using (loop (running-loop) : editor-loop)
+  (using (loop (running-loop (the-kernel)) : editor-loop)
     (if (eq? (current-thread) loop.thread)
       (input-queued? loop)
       (let (done (make-completion))

@@ -18,9 +18,7 @@ prelude: :gerbil/core
 (import ./ids
         ./state)
 (export hook
-        hook?
         hook-name
-        hook-doc
         new-hook
         hook-callback-names
         hook-callback
