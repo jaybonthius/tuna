@@ -72,6 +72,17 @@ prelude: :gerbil/core
   (let (b (find (lambda ((b : buffer)) (memq t (buffer-texts b))) (buffer-list)))
     (and b (internal-buffer? b))))
 
+;; Sleep for DELAY seconds in short slices, stopping early once CANCELLED?
+;; returns true. Returns whether the full delay passed.
+(def (sleep-unless-cancelled (delay : :real) (cancelled? : :procedure)) => :boolean
+  (let lp ((left delay))
+    (cond
+     ((cancelled?) #f)
+     ((<= left 0) #t)
+     (else
+      (thread-sleep! (min left 0.02))
+      (lp (- left 0.02))))))
+
 ;; After each change, recolor the text's digits from a job. Typing goes on
 ;; meanwhile; the rebase policy moves the colors past what was typed. The
 ;; minibuffer's answers are left alone.
@@ -79,11 +90,11 @@ prelude: :gerbil/core
   (when (and (editor-loop-running?) (not (internal-text? t)))
     (job-group-start! jobs ['highlight-digits (text-id t)]
                       input: [(text-snapshot t) (setting-value digit-highlight-delay)]
-                      run: (lambda (input)
+                      run: (lambda (input cancelled?)
                              (match input
                                ([snapshot delay]
-                                (thread-sleep! delay)
-                                (digit-spans snapshot))))
+                                (and (sleep-unless-cancelled delay cancelled?)
+                                     (digit-spans snapshot)))))
                       apply: (lambda (spans) (set-highlights! t 'digits spans))
                       target: t
                       validity: 'rebase)

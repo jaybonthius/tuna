@@ -43,11 +43,40 @@
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
+(defplugin (slow-highlighter-plugin ctx)
+  "Makes the demo's highlighter sleep for five seconds."
+  requires: [settings-service]
+  (context-set-setting! ctx digit-highlight-delay 5))
+
+(def job-results 0)                     ; job-result tasks started
+
+(defplugin (job-result-counter-plugin ctx)
+  "Counts job-result tasks."
+  (context-add-hook! ctx task-started-hook 'count-job-results
+                     (lambda (id name)
+                       (when (eq? name 'job-result)
+                         (set! job-results (fx1+ job-results))))))
+
 (def (screen)
   (on-baton (lambda () (Renderer-render-screen (Renderer (service-provider renderer-service))))))
 
 (def (contains? html needle)
   (and (string-contains html needle) #t))
+
+;; On the baton, start a job that waits for GATE, then computes the current
+;; text's digit spans and applies them with the rebase policy.
+(def (start-gated-digits! gate)
+  (on-baton
+   (lambda ()
+     (let (t (current-text))
+       (job-group-start! jobs 'gated-digits
+                         input: (text-snapshot t)
+                         run: (lambda (snapshot cancelled?)
+                                (completion-wait! gate)
+                                (digit-spans snapshot))
+                         apply: (lambda (spans) (set-highlights! t 'digits spans))
+                         target: t
+                         validity: 'rebase)))))
 
 ;; The characters under the current text's digit highlights.
 (def (highlighted)
@@ -108,6 +137,20 @@
          (type! "C-a" "x" "4")
          (check (wait-until (lambda () (equal? (highlighted) ["4" "12" "3"]))) => #t))))
 
+    (test-case "deactivating the demo stops its sleeping highlighter job early, applying nothing"
+      (set! job-results 0)
+      (call-with-fresh-kernel (append demo-plugins [slow-highlighter-plugin job-result-counter-plugin])
+       (lambda ()
+         (start-editor-loop!)
+         (type! "1")
+         (thread-sleep! 0.1)
+         (check job-results => 0)
+         (on-baton (lambda () (deactivate-plugin! demo-plugin)))
+         ;; The job reports back well before its five-second sleep ends.
+         (check (wait-until (lambda () (fx>= job-results 1))) => #t)
+         (on-baton void)
+         (check (highlighted) => []))))
+
     (test-case "the slow highlighter leaves the minibuffer's text alone"
       (call-with-fresh-kernel demo-plugins
        (lambda ()
@@ -125,18 +168,23 @@
          (start-editor-loop!)
          (let (gate (make-completion))
            (type! "a" "1" "2" "b" "3" "4")
-           (on-baton
-            (lambda ()
-              (let (t (current-text))
-                (job-group-start! jobs 'gated-digits
-                                  input: (text-snapshot t)
-                                  run: (lambda (snapshot) (completion-wait! gate) (digit-spans snapshot))
-                                  apply: (lambda (spans) (set-highlights! t 'digits spans))
-                                  target: t
-                                  validity: 'rebase))))
+           (start-gated-digits! gate)
            ;; While the job runs: type before everything, and delete the b.
            (type! "C-a" "Z" "C-f" "C-f" "C-f" "C-d")
            (check (on-baton (lambda () (text-string (current-text)))) => "Za1234")
            (completion-post! gate #t)
            (check (wait-until (lambda () (pair? (highlighted)))) => #t)
-           (check (highlighted) => ["12" "34"])))))))
+           (check (highlighted) => ["12" "34"])))))
+
+    (test-case "a digit highlight grows over text typed inside its run while the job ran"
+      (call-with-fresh-kernel editing-plugins
+       (lambda ()
+         (start-editor-loop!)
+         (let (gate (make-completion))
+           (type! "a" "1" "2" "3" "b")
+           (start-gated-digits! gate)
+           (type! "C-a" "C-f" "C-f" "x")
+           (check (on-baton (lambda () (text-string (current-text)))) => "a1x23b")
+           (completion-post! gate #t)
+           (check (wait-until (lambda () (pair? (highlighted)))) => #t)
+           (check (highlighted) => ["1x23"])))))))

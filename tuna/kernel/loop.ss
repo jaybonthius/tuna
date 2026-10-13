@@ -255,12 +255,13 @@ prelude: :gerbil/core
 ;; A procedure of a name and a thunk that queues the thunk as a task on
 ;; this loop after pending input, but before the next redisplay (ADR 3: job
 ;; results). It works from any thread, including one whose dynamic
-;; environment lacks the kernel.
+;; environment lacks the kernel. It sends only the name and the thunk; the
+;; loop thread builds the task, so posting allocates nothing shared.
 (def (result-poster) => :procedure
   (using (loop (running-loop (the-kernel)) : editor-loop)
     (let (thread (: loop.thread :thread))
       (lambda ((name : :symbol) (procedure : :procedure))
-        (thread-send thread [result: (new-task name procedure #f)])))))
+        (thread-send thread [result: name procedure])))))
 
 ;; Redisplay now. Only the baton holder may call this: the loop, or a task.
 (def (redisplay) => :void
@@ -330,7 +331,8 @@ prelude: :gerbil/core
         (#f (on-timeout! loop))
         ([wake:] (void))
         ([enqueue: item] (enqueue! loop item))
-        ([result: result-task] (set! loop.results (append loop.results [result-task])))
+        ([result: name procedure]
+         (set! loop.results (append loop.results [(new-task name procedure #f)])))
         ([interrupt: item] (on-interrupt! loop item))
         ([suspended: s] (on-suspended! loop s))
         ([resume: s raised? value] (on-resume! loop s raised? value))

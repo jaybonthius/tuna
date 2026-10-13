@@ -1,6 +1,7 @@
 (import (only-in :gerbil/runtime/thread thread-main)
         :std/error
         :std/interface
+        :std/sync/completion
         :std/test
         :tuna/kernel
         (only-in :tuna/kernel/hooks hook-callback-names)
@@ -137,6 +138,23 @@
   "Activates slowly."
   (set! started? #t)
   (let lp () (unless released? (check-quit) (thread-sleep! 0.01) (lp))))
+
+;; Set by each test that uses loop-holder.
+(def loop-held #f)                      ; completion: the loop thread is held
+(def loop-release #f)                   ; completion: let the loop thread go
+(def probe-id #f)                       ; the id of the task named probe-result
+
+;; Holds the loop thread, in its task-started callback, while a task named
+;; hold-loop starts; notes the id of the task named probe-result.
+(defplugin (loop-holder ctx)
+  "Holds the loop thread when a task named hold-loop starts."
+  (context-add-hook! ctx task-started-hook 'hold
+                     (lambda (id name)
+                       (case name
+                         ((hold-loop)
+                          (completion-post! loop-held #t)
+                          (completion-wait! loop-release))
+                         ((probe-result) (set! probe-id id))))))
 
 (defstruct failing-display ()
   final: #t)
@@ -342,6 +360,23 @@
          (check saw-pending? => #t)
          (check (memq 'a log) => #f)
          (check (memq 'b log) => #f))))
+
+    (test-case "the loop thread, not the posting thread, builds a job result's task"
+      (set! loop-held (make-completion))
+      (set! loop-release (make-completion))
+      (set! probe-id #f)
+      (with-loop
+       (lambda ()
+         (spawn-task! 'hold-loop void)
+         (completion-wait! loop-held)
+         ;; The loop thread is held, so it cannot build the result's task
+         ;; before this thread takes the next id after posting.
+         ((result-poster) 'probe-result void)
+         (let (taken-after-posting (next-id!))
+           (completion-post! loop-release #t)
+           (check (wait-until (lambda () probe-id)) => #t)
+           (check (> probe-id taken-after-posting) => #t)))
+       plugins: [loop-holder]))
 
     (test-case "input-pending? ignores queued tasks and job results"
       (with-loop
