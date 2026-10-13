@@ -6,7 +6,6 @@
         :tuna/kernel
         :tuna/services/buffers
         :tuna/services/session
-        :tuna/services/windows
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/session
@@ -46,14 +45,6 @@
       (thunk))))
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
-
-(def (windows-state)
-  (on-baton
-   (lambda ()
-     (map (lambda (w)
-            (let (v (window-view w))
-              [(buffer-name (view-showing v)) (view-point v)]))
-          (window-list)))))
 
 (def (buffer-text name)
   (on-baton

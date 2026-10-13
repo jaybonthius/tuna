@@ -43,7 +43,7 @@ prelude: :gerbil/core
   (context-define-node-renderer! ctx 'column 'plain-text (lambda (n children) (join-runs children)))
   (context-define-node-renderer! ctx 'heading 'plain-text heading-runs)
   (context-add-buffer! ctx (welcome-buffer))
-  (define-command ctx (switch-demo-buffer) "Switch to *welcome*, and from it back to the buffer before."
+  (define-command ctx (switch-to-welcome-buffer) "Switch to *welcome*, and from it back to the buffer before."
     (let (welcome (or (get-buffer "*welcome*") (error "No buffer named" "*welcome*")))
       (if (eq? (current-buffer) welcome)
         (let (back (if (memq previous-buffer (buffer-list)) previous-buffer (other-buffer welcome)))
@@ -51,4 +51,4 @@ prelude: :gerbil/core
         (begin
           (set! previous-buffer (current-buffer))
           (switch-to-buffer welcome)))))
-  (keymap-set ctx "C-c b" 'switch-demo-buffer))
+  (keymap-set ctx "C-c b" 'switch-to-welcome-buffer))
