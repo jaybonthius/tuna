@@ -99,6 +99,10 @@ prelude: :gerbil/core
 ;;   target-alive    TARGET still exists;
 ;;   rebase          TARGET still exists and adjusts the result for its
 ;;                   changes since the job started (JobTarget job-rebase).
+;; A running job of the same key keeps running, so results keep arriving,
+;; unless it is exact-revision and TARGET has changed since it started:
+;; then its result can no longer apply, and it is cancelled. A plugin that
+;; wants every older job stopped calls job-cancel! on the one it holds.
 ;; Deactivating the group's plugin cancels the job. Raises an error if the
 ;; group is closed: its plugin was deactivated. Call on the baton.
 (def (job-group-start! (group    : job-group)
@@ -123,9 +127,12 @@ prelude: :gerbil/core
                      slot))))
     (using (slot : job-slot)
       (if slot.running
-        (begin
+        (using (running slot.running : job)
           (let (old slot.pending)
             (when old (change-job-state! old 'cancelled)))
+          (when (and (eq? running.validity 'exact-revision)
+                     (not (fx= running.revision (job-revision new))))
+            (job-cancel! running))
           (set! slot.pending new))
         (run-job! slots slot new)))
     new))

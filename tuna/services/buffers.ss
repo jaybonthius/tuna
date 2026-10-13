@@ -319,10 +319,13 @@ prelude: :gerbil/core
   (append-map cdr t.decorations))
 
 ;; Where POSITION is after change C: the one rule that points, highlights,
-;; and rebased spans all follow. A position inside the replaced range moves
-;; to its start; one after it shifts by the change in length. Text inserted
-;; exactly at POSITION goes after it, unless BEFORE-INSERTION? (then the
-;; position moves past the insertion, as a span's start does).
+;; and rebased spans all follow. A position before C stays; one inside the
+;; removed range moves to C's start; one at or after the removed range's
+;; end shifts by the change in length. BEFORE-INSERTION? matters only when
+;; nothing is removed: a pure insertion exactly at POSITION goes after it,
+;; unless BEFORE-INSERTION? (then the position moves past the insertion, as
+;; a span's start does). A replacement starting at POSITION moves nothing:
+;; POSITION stays at C's start, before the inserted text.
 (def (position-after-change (c : change) (position : :fixnum) (before-insertion? : :boolean))
   => :fixnum
   (let* ((removed (string-length c.removed))
@@ -333,9 +336,13 @@ prelude: :gerbil/core
      ((fx>= position edit-end) (fx+ position (fx- (string-length c.inserted) removed)))
      (else c.start))))
 
-;; S after change C, or #f once it is empty. Text inserted at either edge
-;; stays outside; text inserted inside joins it; deleting part of it
-;; shrinks it.
+;; S after change C, or #f if it is empty afterwards, which includes an
+;; already-empty span after any change. A pure insertion at either edge
+;; stays outside; one inside joins it; deleting part of it shrinks it. For
+;; a replacement, an end of S inside the removed range moves to C's start,
+;; so the inserted text lands inside S when the removed range ends after
+;; S's start and at or before its end, and outside when it runs past S's
+;; end; a replacement that removes all of S empties it.
 (def (span-after-change (s : span) (c : change)) => (Maybe span)
   (let ((start (position-after-change c s.start #t))
         (end (position-after-change c s.end #f)))

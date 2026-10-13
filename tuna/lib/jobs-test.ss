@@ -71,10 +71,10 @@
 ;; whose run notes its input in RAN, then polls its cancellation check for
 ;; up to ten seconds, far longer than wait-until waits; once the check
 ;; turns true it notes its input in STOPPED and returns.
-(def (start-cancellable-job! key input target group: (group #f))
+(def (start-cancellable-job! key input target group: (group #f) validity: (validity 'exact-revision))
   (call-on-editor-loop
    (lambda ()
-     (job-group-start! (or group starter) key input: input target: target
+     (job-group-start! (or group starter) key input: input target: target validity: validity
                        run: (lambda (input cancelled?)
                               (set! ran (cons input ran))
                               (let poll ((n 0))
@@ -147,6 +147,39 @@
            (check (noted? 'cancelled (lambda () stopped)) => #t)
            (start-gated-job! 'free 'free open-gate target)
            (check (applied-after 1) => '(free))))))
+
+    (test-case "a newer job cancels a running exact-revision job of its key once the target changed"
+      (with-jobs
+       (lambda ()
+         (let ((open-gate (make-completion))
+               (target (new-target)))
+           (completion-post! open-gate #t)
+           (start-cancellable-job! 'k 'running target)
+           (check (noted? 'running (lambda () ran)) => #t)
+           ;; Same revision: the running job's result can still apply.
+           (start-gated-job! 'k 'same-revision open-gate target)
+           (thread-sleep! 0.1)
+           (check (memq 'running stopped) => #f)
+           (on-baton (lambda () (edit! target)))
+           (start-gated-job! 'k 'newer open-gate target)
+           (check (noted? 'running (lambda () stopped)) => #t)
+           (check (applied-after 1) => '(newer))))))
+
+    (test-case "a newer job leaves a running rebase job of its key running after a change"
+      (with-jobs
+       (lambda ()
+         (let* ((open-gate (make-completion))
+                (target (new-target))
+                (j (start-cancellable-job! 'k 'rebasing target validity: 'rebase)))
+           (completion-post! open-gate #t)
+           (check (noted? 'rebasing (lambda () ran)) => #t)
+           (on-baton (lambda () (edit! target)))
+           (start-gated-job! 'k 'next open-gate target)
+           (thread-sleep! 0.1)
+           (check (memq 'rebasing stopped) => #f)
+           (on-baton (lambda () (job-cancel! j)))
+           (check (noted? 'rebasing (lambda () stopped)) => #t)
+           (check (applied-after 1) => '(next))))))
 
     (test-case "closing a job's group cancels its running job cooperatively"
       (with-jobs

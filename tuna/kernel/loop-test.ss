@@ -5,7 +5,6 @@
         :std/test
         :tuna/kernel
         (only-in :tuna/kernel/hooks hook-callback-names)
-        (only-in :tuna/kernel/ids next-id!)
         "../test-support/kernel"
         "../test-support/string-input")
 (export loop-test)

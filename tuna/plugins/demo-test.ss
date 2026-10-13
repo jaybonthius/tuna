@@ -43,6 +43,20 @@
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
+(defplugin (slow-highlighter-plugin ctx)
+  "Makes the demo's highlighter sleep for five seconds."
+  requires: [settings-service]
+  (context-set-setting! ctx digit-highlight-delay 5))
+
+(def job-results 0)                     ; job-result tasks started
+
+(defplugin (job-result-counter-plugin ctx)
+  "Counts job-result tasks."
+  (context-add-hook! ctx task-started-hook 'count-job-results
+                     (lambda (id name)
+                       (when (eq? name 'job-result)
+                         (set! job-results (fx1+ job-results))))))
+
 (def (screen)
   (on-baton (lambda () (Renderer-render-screen (Renderer (service-provider renderer-service))))))
 
@@ -122,6 +136,20 @@
          ;; Typing continues: the colors follow.
          (type! "C-a" "x" "4")
          (check (wait-until (lambda () (equal? (highlighted) ["4" "12" "3"]))) => #t))))
+
+    (test-case "deactivating the demo stops its sleeping highlighter job early, applying nothing"
+      (set! job-results 0)
+      (call-with-fresh-kernel (append demo-plugins [slow-highlighter-plugin job-result-counter-plugin])
+       (lambda ()
+         (start-editor-loop!)
+         (type! "1")
+         (thread-sleep! 0.1)
+         (check job-results => 0)
+         (on-baton (lambda () (deactivate-plugin! demo-plugin)))
+         ;; The job reports back well before its five-second sleep ends.
+         (check (wait-until (lambda () (fx>= job-results 1))) => #t)
+         (on-baton void)
+         (check (highlighted) => []))))
 
     (test-case "the slow highlighter leaves the minibuffer's text alone"
       (call-with-fresh-kernel demo-plugins
