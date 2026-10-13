@@ -36,6 +36,8 @@ Read this first when resuming work. Last updated 2026-10-13. It records where th
 - Focus is state (2026-10-13): every layout container remembers its last-focused child (as in i3 and niri), stored in the layout tree.
 - A buffer is generically a UI element (2026-10-13): a named tree of UI nodes, e.g. a VS Code-style sidebar of buttons is a buffer pinned to the side. "Saving" is not a buffer concept; writing to a file belongs to a text node that visits a file. Restoring the UI after a restart persists each plugin's state and lets the owning plugin redraw, never the node tree itself. The owner is open to a better name than "buffer"; settle it in the "buffers, views and layout" brief.
 
+- Tuna has no users yet (2026-10-13): do not ask about or preserve saved sessions, state files, or other compatibility with earlier builds until the owner says he is using Tuna day to day. Drop or reset them freely.
+
 ## Lessons recorded from this attempt
 
 - Task briefs named what to build but not where; reviews checked tests, not placement; agents' reports of kernel additions were accepted. AGENTS.md "Keep the kernel small" now requires naming the owning layer in every task and checking placement at every merge.
