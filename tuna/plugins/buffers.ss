@@ -1,7 +1,7 @@
 ;;; The default buffers provider (live tier): the buffer list, the selected
 ;;; view and the focus views pushed over it, and the node-kind registries.
 ;;; Starts with *scratch*, a buffer holding one empty text node, selected in
-;;; a view that the window manager's first window takes over.
+;;; a view that the layout takes over as its first view.
 ;;;
 ;;; It adapts to a new text store instead of restarting, which would discard
 ;;; every buffer: it moves each buffer's texts into the new store. It adds
@@ -16,7 +16,7 @@ prelude: :gerbil/core
 (export buffers-plugin)
 
 (defclass buffer-registry ((buffers   : :list)          ; oldest first
-                           (selected  : view)            ; the selected window's view
+                           (selected  : view)            ; the layout's selected view
                            (focus     : :list)           ; focus views, innermost first
                            (kinds     : entry-table)
                            (renderers : entry-table))
@@ -28,7 +28,7 @@ prelude: :gerbil/core
   (remove-buffer! (lambda (self b) (set! self.buffers (remq b self.buffers))))
   (current-view (lambda (self) (match self.focus ([v . _] v) ([] self.selected))))
   (selected-view (lambda (self) self.selected))
-  (select-view! (lambda (self v) (set! self.selected v)))
+  (set-selected-view! (lambda (self v) (set! self.selected v)))
   (push-focus-view! (lambda (self v) (set! self.focus (cons v self.focus))))
   (remove-focus-view! (lambda (self v) (set! self.focus (remq v self.focus))))
   (node-kinds (lambda (self) self.kinds))

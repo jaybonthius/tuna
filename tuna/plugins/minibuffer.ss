@@ -39,7 +39,7 @@
         (end-prompt! self p)))))
 
 ;; Undo what ask! set up; the focus returns to the next prompt out, or to
-;; the selected window.
+;; the selected view.
 (def (end-prompt! (self : minibuffer) (p : prompt)) => :void
   (set! self.prompts (remq p self.prompts))
   (remove-input-target! p.target)

@@ -14,8 +14,8 @@
         :tuna/plugins/rope
         :tuna/plugins/buffers
         :tuna/plugins/autosave
-        :tuna/plugins/single-window
-        :tuna/plugins/window-commands
+        :tuna/plugins/single-view
+        :tuna/plugins/view-commands
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
@@ -34,21 +34,21 @@
 (use-plugin settings-plugin)
 (use-plugin echo-area-plugin)
 (use-plugin help-panel-plugin)
-;; Session slots restore in activation order: buffers (autosave) before the
-;; windows that show them (single-window).
+;; Session slots restore in activation order: buffers (autosave) before
+;; the views that show them (single-view).
 (use-plugin session-plugin)
 (use-plugin rope-text-store-plugin)
 (use-plugin buffers-plugin)
 (use-plugin autosave-plugin)
-(use-plugin single-window-plugin)
-(use-plugin window-commands-plugin)
+(use-plugin single-view-plugin)
+(use-plugin view-commands-plugin)
 (use-plugin html-renderer-plugin)
 (use-plugin basic-editing-plugin)
 (use-plugin minibuffer-plugin)
 (use-plugin endless-commands-plugin)    ; C-c l and C-c L: loops to quit with C-g
 (use-plugin services-help-plugin)       ; C-h s: describe-services
 (use-plugin rename-command-plugin)      ; C-c r: rename the buffer in the minibuffer
-(use-plugin swap-commands-plugin)       ; C-c v and C-c w: swap renderer and window manager
+(use-plugin swap-commands-plugin)       ; C-c v and C-c w: swap renderer and layout
 (use-plugin digit-highlighter-plugin)   ; colors digits from a slow job
 (use-plugin tree-buffer-plugin)         ; C-c b: the *welcome* buffer, built as a tree
 (use-plugin demo-plugin)                ; C-c s text store, C-c p basic editing

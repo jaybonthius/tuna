@@ -1,6 +1,6 @@
 ;;; Integration: the renderer slot swapped live (C-c v) to the plain-text
 ;;; contract double (tuna/test-support/plain-text-renderer.ss) and back
-;;; while editing, with tree buffers, two windows, and a prompt, driven by
+;;; while editing, with tree buffers, two views, and a prompt, driven by
 ;;; keys through the real editor loop.
 (import :std/test
         :tuna/kernel
@@ -12,8 +12,8 @@
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
-        :tuna/plugins/single-window
-        :tuna/plugins/window-commands
+        :tuna/plugins/single-view
+        :tuna/plugins/view-commands
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
@@ -21,7 +21,7 @@
         "../test-support/keys"
         "../test-support/session"
         "../test-support/plain-text-renderer"
-        "../test-support/two-windows"
+        "../test-support/two-views"
         "../test-support/swap-commands"
         "../test-support/rename-command"
         "../test-support/tree-buffer")
@@ -29,8 +29,8 @@
 
 (def renderer-plugins
   [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
-   settings-plugin no-session-plugin buffers-plugin single-window-plugin
-   window-commands-plugin
+   settings-plugin no-session-plugin buffers-plugin single-view-plugin
+   view-commands-plugin
    html-renderer-plugin basic-editing-plugin minibuffer-plugin
    swap-commands-plugin rename-command-plugin tree-buffer-plugin])
 
@@ -76,7 +76,7 @@
          (check (contains? (screen) "Welcome to Tuna\n===============\n<span class=\"cursor\">T</span>his buffer")
                 => #t))))
 
-    (test-case "two windows render side by side, each with its cursor"
+    (test-case "two views render side by side, each with its cursor"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (start-editor-loop!)

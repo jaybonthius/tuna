@@ -59,7 +59,7 @@
       (start-editor-loop!)
       (thunk))))
 
-;; Once every key sent so far has run: the selected window's buffer text, the
+;; Once every key sent so far has run: the selected view's buffer text, the
 ;; innermost prompt's question and answer so far (or #f), and the message.
 (def (state)
   (call-on-editor-loop

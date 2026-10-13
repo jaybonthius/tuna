@@ -3,9 +3,10 @@
 ;;;
 ;;; A text holds content: a text-store version, revisions, a journal of
 ;;; change records, and undo history. A buffer is a named tree of nodes; text nodes refer to
-;;; texts, and any other node kind is defined by a plugin. A view is a buffer
-;;; as one window (or prompt) shows it: the focused text node, point, and the
-;;; goal column, so two windows on one buffer have their own points.
+;;; texts, and any other node kind is defined by a plugin. A view is one
+;;; place in the layout (or a prompt) showing a buffer: the focused text
+;;; node, point, and the goal column, so two views of one buffer have their
+;;; own points (ADR 13).
 ;;; Editing primitives act on the current view's focused text node.
 ;;; Positions are 1-based character positions within that node's text.
 prelude: :gerbil/core
@@ -43,11 +44,11 @@ prelude: :gerbil/core
         ;; buffers and the view
         buffer buffer? buffer-name buffer-root new-buffer rename-buffer!
         buffer-setting set-buffer-setting! buffer-point set-buffer-point! internal-buffer?
-        view view? view-showing view-node new-view copy-view
-        view-point set-view-point! set-view-buffer!
+        view view? view-id view-showing view-node new-view copy-view
+        view-point set-view-point! set-view-showing!
         buffer-list get-buffer add-buffer! context-add-buffer! kill-buffer kill-buffer-hook
         other-buffer buffer-texts
-        current-view selected-view select-view! push-focus-view! remove-focus-view!
+        current-view selected-view set-selected-view! push-focus-view! remove-focus-view!
         current-buffer switch-to-buffer
         current-text-node current-text
         point point-min point-max goto-char
@@ -446,7 +447,8 @@ prelude: :gerbil/core
                   (settings       : :list))       ; buffer-local (setting . value) pairs
   final: #t)
 
-(defclass view ((showing     : buffer)
+(defclass view ((id          : :fixnum)
+                (showing     : buffer)
                 (node        :? text-node)        ; the focused text node
                 (position    : :fixnum)           ; point, valid at REVISION
                 (revision    : :fixnum)
@@ -461,9 +463,9 @@ prelude: :gerbil/core
   ;; The view that receives editing: the innermost focus view (a waiting
   ;; prompt's), or else the selected view.
   (current-view) => :t
-  ;; The selected view: the selected window's, set by the window manager.
+  ;; The selected view: the layout's, set by the layout.
   (selected-view) => :t
-  (select-view! (v : view)) => :void
+  (set-selected-view! (v : view)) => :void
   ;; Give V the focus over the selected view until it is removed.
   (push-focus-view! (v : view)) => :void
   (remove-focus-view! (v : view)) => :void
@@ -564,12 +566,12 @@ prelude: :gerbil/core
                          (filter (lambda ((pair : :pair)) (not (eq? (car pair) s))) b.settings))))
 
 (def (new-view (b : buffer)) => view
-  (view showing: b node: b.point-node position: b.point-position
+  (view id: (next-id!) showing: b node: b.point-node position: b.point-position
         revision: b.point-revision goal-column: #f))
 
-;; A new view of V's buffer at V's point, as when a window is split.
+;; A new view of V's buffer at V's point, as when a view is split.
 (def (copy-view (v : view)) => view
-  (view showing: v.showing node: v.node position: (view-point v)
+  (view id: (next-id!) showing: v.showing node: v.node position: (view-point v)
         revision: (if v.node (text-chars-revision (text-node-content v.node)) 0)
         goal-column: #f))
 
@@ -609,7 +611,7 @@ prelude: :gerbil/core
   (add-buffer! b)
   (context-defer! ctx (lambda () (kill-buffer b))))
 
-;; Runs with a buffer about to be killed, so whatever shows it (windows)
+;; Runs with a buffer about to be killed, so whatever shows it (views)
 ;; can show another buffer instead.
 (def kill-buffer-hook
   (new-hook 'kill-buffer doc: "Runs with a buffer about to be killed."))
@@ -626,7 +628,7 @@ prelude: :gerbil/core
   (let (selected (selected-view))
     (when (eq? b (view-showing selected))
       (let (other (other-buffer b))
-        (when other (set-view-buffer! selected other)))))
+        (when other (set-view-showing! selected other)))))
   (Buffers-remove-buffer! (current-buffers) b)
   (for-each (lambda ((t : text)) (set! t.live? #f)) (buffer-texts b)))
 
@@ -644,9 +646,9 @@ prelude: :gerbil/core
   (: (Buffers-selected-view (current-buffers)) view))
 
 ;; Make V the selected view, which receives editing while no focus view is
-;; pushed. The window manager calls this when it selects a window.
-(def (select-view! (v : view)) => :void
-  (Buffers-select-view! (current-buffers) v))
+;; pushed. The layout calls this when it selects a view.
+(def (set-selected-view! (v : view)) => :void
+  (Buffers-set-selected-view! (current-buffers) v))
 
 ;; Make V receive editing until it is removed; prompts push their views.
 (def (push-focus-view! (v : view)) => :void
@@ -660,10 +662,11 @@ prelude: :gerbil/core
     v.showing))
 
 (def (switch-to-buffer (b : buffer)) => :void
-  (set-view-buffer! (current-view) b))
+  (set-view-showing! (current-view) b))
 
-;; Show B in V. The buffer V showed keeps V's point as its own.
-(def (set-view-buffer! (v : view) (b : buffer)) => :void
+;; Show B in V. The buffer V showed keeps V's point as its own. Layouts
+;; call this; commands call `set-view-buffer`, which asks the layout.
+(def (set-view-showing! (v : view) (b : buffer)) => :void
   (unless (eq? b v.showing)
     (using (old v.showing : buffer)
       (set! old.point-node v.node)

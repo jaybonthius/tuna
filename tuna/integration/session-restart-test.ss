@@ -1,13 +1,13 @@
 ;;; Integration: a restart through the session and autosave plugins while
-;;; the whole editor runs. Typing, renaming, windows swapped live and moved
-;;; between, then a simulated restart, with the real keys, editing, window
-;;; and rendering plugins. tuna/plugins/session-test.ss tests the session
+;;; the whole editor runs. Typing, renaming, layouts swapped live and views
+;;; moved between, then a simulated restart, with the real keys, editing,
+;;; layout and rendering plugins. tuna/plugins/session-test.ss tests the session
 ;;; and autosave plugins alone.
 (import :std/test
         :tuna/kernel
         :tuna/services/buffers
         :tuna/services/session
-        :tuna/services/windows
+        :tuna/services/layout
         :tuna/plugins/keys
         :tuna/plugins/echo-area
         :tuna/plugins/rope
@@ -15,8 +15,8 @@
         :tuna/plugins/session
         :tuna/plugins/buffers
         :tuna/plugins/autosave
-        :tuna/plugins/single-window
-        :tuna/plugins/window-commands
+        :tuna/plugins/single-view
+        :tuna/plugins/view-commands
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         "../test-support/kernel"
@@ -36,7 +36,7 @@
 
 (def editor-plugins
   [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
-   session-plugin buffers-plugin autosave-plugin single-window-plugin window-commands-plugin
+   session-plugin buffers-plugin autosave-plugin single-view-plugin view-commands-plugin
    html-renderer-plugin basic-editing-plugin swap-commands-plugin])
 
 ;; One run of Tuna on DIRECTORY, booted as main does: activate, restore,
@@ -52,13 +52,11 @@
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
-(def (windows-state)
+(def (views-state)
   (on-baton
    (lambda ()
-     (map (lambda (w)
-            (let (v (window-view w))
-              [(buffer-name (view-showing v)) (view-point v)]))
-          (window-list)))))
+     (map (lambda (v) [(buffer-name (view-showing v)) (view-point v)])
+          (view-list)))))
 
 (def (buffer-text name)
   (on-baton
@@ -99,24 +97,24 @@
              (check (buffer-text "notes") => "hi1\nthére😀")
              (check (buffer-text "other") => "another text")
              (check (on-baton (lambda () (buffer-point (get-buffer "other")))) => 4)
-             (check (windows-state) => [["notes" 2]])
+             (check (views-state) => [["notes" 2]])
              ;; Typing goes on where it left off; the restored text is not undoable.
              (type! "X")
              (check (buffer-text "notes") => "hXi1\nthére😀")
              (type! "C-/" "C-/")
              (check (buffer-text "notes") => "hi1\nthére😀"))))))
 
-    (test-case "a session saved with two windows restores the selected one under one window"
+    (test-case "a session saved with two views restores the selected one under one view"
       (call-with-state-directory
        (lambda (directory)
          (run-tuna directory
            (lambda ()
              (type! "a" "b" "c" "C-c" "w" "C-b" "C-b" "C-x" "o")
-             (check (windows-state) => [["*scratch*" 2] ["*scratch*" 4]])
+             (check (views-state) => [["*scratch*" 2] ["*scratch*" 4]])
              (on-baton save-session)))
-         (check (assq 'windows (cddr (read-session-datum directory)))
-                => ['windows 1 [['selected 1] ['windows ["*scratch*" 2] ["*scratch*" 4]]]])
+         (check (assq 'layout (cddr (read-session-datum directory)))
+                => ['layout 1 [['selected 1] ['views ["*scratch*" 2] ["*scratch*" 4]]]])
          (run-tuna directory
            (lambda ()
-             (check (windows-state) => [["*scratch*" 4]])
+             (check (views-state) => [["*scratch*" 4]])
              (check (buffer-text "*scratch*") => "abc"))))))))

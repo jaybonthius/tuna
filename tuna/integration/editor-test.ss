@@ -19,7 +19,7 @@
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
-        :tuna/plugins/single-window
+        :tuna/plugins/single-view
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
@@ -33,7 +33,7 @@
 
 (def editor-plugins
   [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
-   settings-plugin no-session-plugin buffers-plugin single-window-plugin html-renderer-plugin
+   settings-plugin no-session-plugin buffers-plugin single-view-plugin html-renderer-plugin
    basic-editing-plugin minibuffer-plugin
    rename-command-plugin services-help-plugin digit-highlighter-plugin])
 

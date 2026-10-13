@@ -53,19 +53,19 @@ body {
   font-family: inherit;
 }
 
-.windows {
+.layout {
   display: flex;
   flex: 1;
 }
 
-.window {
+.view {
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
   min-inline-size: 0;
 }
 
-.window + .window {
+.view + .view {
   border-inline-start: 1px solid var(--tuna-rule);
 }
 
@@ -105,7 +105,7 @@ body {
   color: var(--tuna-background);
 }
 
-/* Point in a window that does not receive typing, as Emacs's hollow box. */
+/* Point in a view that does not receive typing, as Emacs's hollow box. */
 .inactive-cursor {
   outline: 1px solid var(--tuna-muted);
   outline-offset: -1px;
@@ -148,7 +148,7 @@ body {
   color: var(--tuna-muted);
 }
 
-.window[data-selected] > .status-line {
+.view[data-selected] > .status-line {
   color: var(--tuna-foreground);
 }
 

@@ -1,5 +1,5 @@
 ;;; A session provider that keeps and saves nothing, for tests whose plugins
-;;; register session slots (window managers require `session-service`) but
+;;; register session slots (layouts require `session-service`) but
 ;;; that do not test the session.
 (import :tuna/kernel
         (only-in :tuna/services/session session-service))

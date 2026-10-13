@@ -1,11 +1,14 @@
 ;;; HTML renderer (live tier): editor state -> SXML -> HTML (ADR 7).
-;;; The window manager arranges the windows; for each, the renderer walks
-;;; its view's buffer tree and renders each node through the procedure
-;;; registered for its kind and the `html` target. A kind without one is
-;;; shown as its text projection. Text nodes show their highlights as face
-;;; classes and each view's point as a cursor: solid where typing goes,
-;;; hollow in other windows. The innermost waiting prompt shows above the
-;;; echo area.
+;;; The layout arranges the views; for each, the renderer walks its
+;;; buffer's tree and renders each node through the procedure registered
+;;; for its kind and the `html` target. A kind without one is shown as its
+;;; text projection. Text nodes show their highlights as face classes and
+;;; each view's point as a cursor: solid where typing goes, hollow in other
+;;; views. The innermost waiting prompt shows above the echo area.
+;;;
+;;; Every view and node element has a stable id, so the browser's morph
+;;; keeps its scroll position: a view's is view-V, a node's view-V-node-N,
+;;; since one buffer may show in several views.
 prelude: :gerbil/core
 
 (import :std/text/markup/sxml/print
@@ -15,7 +18,7 @@ prelude: :gerbil/core
         :tuna/services/echo-area
         :tuna/services/help
         :tuna/services/minibuffer
-        :tuna/services/windows)
+        :tuna/services/layout)
 (export html-renderer-plugin
         screen-sxml)
 
@@ -25,12 +28,21 @@ prelude: :gerbil/core
 ;; The view whose buffer is being rendered: where its text nodes show point.
 (def rendering-view (make-parameter #f))
 
-;; ELEMENT with a data-node attribute identifying N (ADR 7).
+;; The element id of view V.
+(def (view-element-id (v : view)) => :string
+  (string-append "view-" (number->string (view-id v))))
+
+;; ELEMENT with a data-node attribute identifying N (ADR 7), and an element
+;; id unique to N in the rendered view.
 (def (with-node-id (n : node) (element : :t)) => :t
-  (let (id ['data-node (number->string (node-id n))])
+  (let* ((number (number->string (node-id n)))
+         (v (rendering-view))
+         (ids (if v
+                [['id (string-append (view-element-id v) "-node-" number)] ['data-node number]]
+                [['data-node number]])))
     (match element
-      ([tag ['@ . attributes] . body] (cons* tag (cons* '@ id attributes) body))
-      ([tag . body] (cons* tag ['@ id] body))
+      ([tag ['@ . attributes] . body] (cons* tag (cons '@ (append ids attributes)) body))
+      ([tag . body] (cons* tag (cons '@ ids) body))
       (else element))))
 
 (def (render-node (n : node)) => :t
@@ -111,13 +123,13 @@ prelude: :gerbil/core
   `(span (@ (class ,(if face (string-append cursor-class " " (face-class face)) cursor-class)))
          ,character))
 
-;; W: its view's buffer, then its status line.
-(def (render-window (w : window) (selected? : :boolean)) => :list
-  (let* ((v (window-view w))
-         (b (view-showing v)))
+;; V: its buffer, then its status line.
+(def (render-view (v : view) (selected? : :boolean)) => :list
+  (let (b (view-showing v))
     (parameterize ((rendering-view v))
-      `(section (@ (class "window")
-                   (data-window ,(number->string (window-id w)))
+      `(section (@ (class "view")
+                   (id ,(view-element-id v))
+                   (data-view ,(number->string (view-id v)))
                    ,@(if selected? '((data-selected "true")) '()))
          (article (@ (class "buffer") (aria-label ,(buffer-name b)))
                   ,(render-node (buffer-root b)))
@@ -134,7 +146,7 @@ prelude: :gerbil/core
                   (render-node prompt.node)))))
       [])))
 
-;; The screen: help output when there is some, the window area, the
+;; The screen: help output when there is some, the layout, the
 ;; minibuffer while a prompt waits, and the echo area.
 (def (screen-sxml) => :list
   (let (help (current-help))
@@ -145,7 +157,7 @@ prelude: :gerbil/core
                  (h1 ,help.title)
                  (pre ,(string-join help.lines "\n")))))
            [])
-       ,(render-window-area 'html render-window)
+       ,(render-layout 'html render-view)
        (footer
         ,@(minibuffer-sxml)
         (p (@ (class "echo-area") (role "status")) ,(current-message))))))
@@ -159,6 +171,6 @@ prelude: :gerbil/core
 
 (defplugin (html-renderer-plugin ctx)
   "Renders the screen as HTML."
-  requires: [buffers-service window-manager-service]
+  requires: [buffers-service layout-service]
   (context-define-node-renderer! ctx 'text 'html render-text-node)
   (context-provide! ctx renderer-service (Renderer (make-html-renderer))))
