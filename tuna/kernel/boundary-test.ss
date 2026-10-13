@@ -1,5 +1,5 @@
 ;;; Mechanical checks of the kernel and library boundaries (ADR 12, "Kernel
-;;; contract").
+;;; contract"), and of who uses the program's own code.
 ;;;
 ;;; tuna/kernel/ may hold only Gerbil source and the baseline. Kernel source
 ;;; may import only :gerbil, :std, and kernel modules, may include only
@@ -416,6 +416,33 @@
                  (referenced-names (read-forms (source-path file)))))
               (kernel-client-names))))
 
+;;; Program code
+
+;; The program's start-up, reload, and command-line code (ADR 12,
+;; amendment for configuration stage 2): only the program uses it, plus
+;; one recorded exception, the reload-config plugin, until stage 3 gives
+;; reload a configuration contract.
+(def program-modules '("tuna/main" "tuna/boot" "tuna/control"))
+(def program-files '("tuna/main.ss" "tuna/boot.ss" "tuna/control.ss"))
+(def program-exceptions '(("tuna/plugins/reload-config.ss" . "tuna/boot")))
+
+(def (program-code-problems) => :list
+  (apply append
+         (map (lambda ((file : :string))
+                (filter-map
+                 (lambda ((name : :string))
+                   (let (target (find (lambda ((module : :string))
+                                        (equal? (reference-target file name) (source-path module)))
+                                      program-modules))
+                     (and target
+                          (not (member (cons file target) program-exceptions))
+                          (string-append file ": imports or includes " name
+                                         "; only the program (" (string-join program-files ", ")
+                                         ") uses program code"))))
+                 (referenced-names (read-forms (source-path file)))))
+              (filter (lambda ((file : :string)) (not (member file program-files)))
+                      (non-test-source-names)))))
+
 ;;; Forbidden nouns
 
 (def (word-char? (c : :char)) => :boolean
@@ -620,4 +647,6 @@
       (check (problem-count (append (test-support-problems) (build-script-problems))) => 0))
     (test-case "outside the kernel and test support, only the kernel facade is imported"
       (displayln "  kernel facade boundary: " (length (kernel-client-names)) " files checked")
-      (check (problem-count (kernel-internal-problems)) => 0))))
+      (check (problem-count (kernel-internal-problems)) => 0))
+    (test-case "only the program, and the reload-config plugin, import program code"
+      (check (problem-count (program-code-problems)) => 0))))

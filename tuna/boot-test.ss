@@ -130,8 +130,8 @@
                  (check (probe-on? 'good-block) => #f)
                  (check (probe-on? 'user) => #f)
                  (check (plugin-active? good-plugin) => #f)
-                 (check (statuses (make-startup-report (make-config-choice path "--config") #f
-                                                       (activate-configuration! loaded)))
+                 (check (statuses (let (choice (make-config-choice path "--config"))
+                                    (make-startup-report choice #f (activate-configuration! choice loaded))))
                         => '(("config-blocks" on) ("good-plugin" on)
                              ("config: block of good-plugin" on)
                              ("your own code (plugin init)" on)))
@@ -418,7 +418,8 @@
                    => '(keys-plugin web-transport-plugin settings-plugin echo-area-plugin
                         help-panel-plugin session-plugin rope-text-store-plugin buffers-plugin
                         autosave-plugin single-window-plugin window-commands-plugin
-                        html-renderer-plugin basic-editing-plugin minibuffer-plugin demo-plugin))
+                        html-renderer-plugin basic-editing-plugin minibuffer-plugin demo-plugin
+                        reload-config-plugin))
             (check (describe-services) => [])))))
 
     (test-case "tuna init copies the starter once and never overwrites"

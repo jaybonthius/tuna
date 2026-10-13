@@ -4,8 +4,9 @@
 ;;; off, so does its block, which turns on again if the plugin was only
 ;;; restarted. Lifecycle callbacks may not turn plugins on or off, so a
 ;;; change is not made in the callback: while the editor loop runs it is
-;;; queued as a task; before then it is recorded, and the start-up code
-;;; (tuna/boot.ss) makes it after each activation.
+;;; queued as a task; while the loop is stopped, or while the start-up
+;;; or reload code (tuna/boot.ss) is changing plugins, it is recorded, and
+;;; that code makes it after each change.
 prelude: :gerbil/core
 
 (import :tuna/kernel
@@ -13,50 +14,69 @@ prelude: :gerbil/core
 (export block-follower
         block-follower-hooks
         new-block-follower
+        follow-declarations!
+        defer-block-syncs!
         take-pending-block-syncs!)
 
-;; The config-blocks plugin for one configuration (HOOKS, set once it is
-;; made), and the declarations whose blocks the start-up code must bring
-;; in line with their plugins, newest first.
-(defclass block-follower ((hooks   :? plugin)
-                          (pending : :list))
+;; The config-blocks plugin for the running configuration (HOOKS, set
+;; once it is made); the declarations whose blocks it keeps, which a
+;; reload replaces; the names of the plugins whose blocks must be brought
+;; in line, newest first; and whether changes are recorded rather than
+;; queued as tasks.
+(defclass block-follower ((hooks        :? plugin)
+                          (declarations : :list)
+                          (pending      : :list)
+                          (deferring?   : :boolean))
   final: #t)
 
 (def (new-block-follower (declarations : :list)) => block-follower
-  (let ((blocks (filter declaration-block declarations))
-        (self (block-follower hooks: #f pending: [])))
-    (def (follow! (d : declaration))
+  (let (self (block-follower hooks: #f declarations: declarations pending: [] deferring?: #f))
+    (def (follow! (name : :symbol))
       (cond
-       ((editor-loop-running?)
-        (spawn-task! 'config-block (lambda () (sync-block! d)))
+       ((and (editor-loop-running?) (not (block-follower-deferring? self)))
+        (spawn-task! 'config-block
+                     (lambda ()
+                       (let (d (declaration-named self name))
+                         (when d (sync-block! d)))))
         (void))
-       ((not (memq d (block-follower-pending self)))
-        (set! (block-follower-pending self) (cons d (block-follower-pending self))))))
+       ((not (memq name (block-follower-pending self)))
+        (set! (block-follower-pending self) (cons name (block-follower-pending self))))))
     (defplugin config-blocks
       "Keeps each config: block of init.ss on while its plugin is on."
       (let (ctx (current-context))
         (context-add-hook! ctx plugin-activated-hook 'config-blocks
                            (lambda ((p : plugin))
-                             (for-each (lambda ((d : declaration))
-                                         (unless (plugin-active? (: (declaration-block d) plugin))
-                                           (follow! d)))
-                                       (declarations-of blocks p))))
+                             (let (d (declaration-named self (plugin-name p)))
+                               (when (and d (not (plugin-active? (: (declaration-block d) plugin))))
+                                 (follow! (plugin-name p))))))
         (context-add-hook! ctx plugin-deactivated-hook 'config-blocks
                            (lambda ((p : plugin))
-                             (for-each follow! (declarations-of blocks p))))))
+                             (when (declaration-named self (plugin-name p))
+                               (follow! (plugin-name p)))))))
     (set! (block-follower-hooks self) config-blocks)
     self))
 
-;; The declarations whose blocks the start-up code must sync, oldest
-;; first; asking clears them.
-(def (take-pending-block-syncs! (f : block-follower)) => :list
-  (let (declarations (reverse (block-follower-pending f)))
-    (set! (block-follower-pending f) [])
-    declarations))
+;; Keep the blocks of DECLARATIONS from now on.
+(def (follow-declarations! (f : block-follower) (declarations : :list)) => :void
+  (set! (block-follower-declarations f) declarations))
 
-(def (declarations-of (declarations : :list) (p : plugin)) => :list
-  (filter (lambda ((d : declaration)) (eq? (plugin-name (declaration-target d)) (plugin-name p)))
-          declarations))
+;; While DEFER? is true, record block changes for take-pending-block-syncs!
+;; even while the editor loop runs.
+(def (defer-block-syncs! (f : block-follower) (defer? : :boolean)) => :void
+  (set! (block-follower-deferring? f) defer?))
+
+;; The declarations whose blocks the start-up or reload code must sync,
+;; oldest first; asking clears them.
+(def (take-pending-block-syncs! (f : block-follower)) => :list
+  (let (names (reverse (block-follower-pending f)))
+    (set! (block-follower-pending f) [])
+    (filter-map (cut declaration-named f <>) names)))
+
+;; The declaration with a block for the plugin named NAME, or #f.
+(def (declaration-named (f : block-follower) (name : :symbol)) => (Maybe declaration)
+  (find (lambda ((d : declaration))
+          (and (declaration-block d) (eq? (plugin-name (declaration-target d)) name)))
+        (block-follower-declarations f)))
 
 ;; Turn D's block off, then on again if its plugin is on.
 (def (sync-block! (d : declaration)) => :void

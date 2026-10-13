@@ -1,6 +1,6 @@
 # Brief: your configuration, reloading it, and recovering from mistakes
 
-**Status:** decided 2026-10-12 (see "Decisions" below). Nothing is built yet.
+**Status:** decided 2026-10-12 (see "Decisions" below). Built: starting from `init.ss` (stage 1, 2026-10-12) and reloading it (stage 2, 2026-10-13: the `reload-config` command from the `reload-config-plugin`, bound to `C-c R` in the starter, and `tuna reload`, which talks to the running Tuna over a private Unix-domain socket from Tuna's start-up code, so it needs no plugin). Options and the report inside Tuna (stage 3) are not built yet; see [the plan](../../agents/plans/configuration.md).
 
 ## What this is and why
 
@@ -9,7 +9,7 @@ Today Tuna turns on a fixed list of 15 plugins written into its start-up code. Y
 Four rules shape it:
 - **There is no standard setup.** Tuna ships a starter configuration as a file, but nothing ever uses it unless you ask for it, and nothing falls back to it or to any built-in plugin set.
 - **No magic.** Tuna never creates, copies or edits your configuration on its own.
-- **No stored history.** Tuna never keeps old copies of your configuration. When a reload goes wrong, the running editor is the "last good" version: anything that fails is undone and the old part keeps running.
+- **No stored history.** Tuna never keeps old copies of your configuration. When a reload goes wrong, the running editor is the "last good" version: anything that fails is undone and the old part keeps running. (As built, one exception: a module of your own that `init.ss` imports by path has its definitions replaced when its changed file loads, even if the reload then fails; see `docs/overview.md`.)
 - **The kernel does not change.** Loading a configuration only needs "turn this plugin on" and "turn it off", which the kernel already has.
 
 Evidence: [what Gerbil can do](../../agents/research/configuration/01-gerbil-runtime.md) (tested) and [how other systems do it](../../agents/research/configuration/02-prior-art.md): Cordis and Koishi (Tuna's plugin model), Caddy and nginx (check a new config, keep the old one running if it fails), Kubernetes and systemd (one failing part never takes the others down), Doom Emacs and lazy.nvim (plugin declarations inside the config file), Helix, Lem, Nyxt.
@@ -70,7 +70,7 @@ The report lists what came up, what failed and why (file and line), and what was
 
 Neither inside the kernel nor as a special case:
 - **Finding and reading your file, and turning plugins on at start-up,** is done by Tuna's start-up code, the program's `main`, which sits outside the kernel and uses only the kernel's public "turn on / turn off".
-- **The reload and check commands** (`reload-config`, and `tuna reload` / `tuna check` from a terminal) come from an ordinary configuration plugin, which you could replace.
+- **The reload and check commands** (`reload-config`, and `tuna reload` / `tuna check` from a terminal) come from an ordinary configuration plugin, which you could replace. *As built:* `reload-config` is such a plugin; `tuna reload` and `tuna check` are part of Tuna's start-up code instead, because they must work when no plugin, or a broken one, handles input.
 - **The kernel is unchanged.**
 
 ## What gets built first

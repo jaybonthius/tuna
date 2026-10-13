@@ -38,7 +38,7 @@ prelude: :gerbil/core
     ((_ plugin-name)
      (identifier? #'plugin-name)
      (with-syntax ((source (stx-source-string stx)))
-       #'(declare-plugin! plugin-name #f source)))
+       #'(declare-plugin! plugin-name #f [] source)))
     ((_ plugin-name config: body ...)
      (identifier? #'plugin-name)
      (with-syntax ((source (stx-source-string stx))
@@ -48,6 +48,7 @@ prelude: :gerbil/core
                             (defplugin block "Code attached to a plugin by a config: block in init.ss."
                               requires: [] body ...)
                             block)
+                          '(body ...)
                           source)))))
 
 ;; The user's own code, as the plugin `init`. The reader below emits it;
@@ -57,11 +58,12 @@ prelude: :gerbil/core
     ((_ body ...)
      #'(declare-user-code!
         (let ()
-;; An explicit requires: makes a leading requires: of the user's
+          ;; An explicit requires: makes a leading requires: of the user's
           ;; an ordinary expression of the body.
           (defplugin init "Your own code in init.ss, activated after the plugins it declares."
             requires: [] body ...)
-          init)))))
+          init)
+        '(body ...)))))
 
 (begin-syntax
   ;; Keep import, export, and use-plugin forms at the top level; wrap

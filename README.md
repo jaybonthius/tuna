@@ -20,4 +20,4 @@ make
 make run
 ```
 
-`make run` starts Tuna with the starter configuration, `starter/init.ss`. Otherwise Tuna reads your `~/.config/tuna/init.ss` (or `tuna --config PATH`); `tuna init` copies the starter there for you to edit.
+`make run` starts Tuna with the starter configuration, `starter/init.ss`. Otherwise Tuna reads your `~/.config/tuna/init.ss` (or `tuna --config PATH`); `tuna init` copies the starter there for you to edit. After editing it, `tuna reload` (or `C-c R` inside Tuna, with the starter) applies the changes without restarting.

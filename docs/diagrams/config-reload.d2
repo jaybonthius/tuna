@@ -29,11 +29,11 @@ classes: {
 }
 
 legend: |md
-  **Status:** decided 2026-10-12; not built yet. Green boxes are where a mistake stops, leaving what is running untouched.
+  **Status:** built 2026-10-13 (configuration stage 2). Green boxes are where a mistake stops, leaving what is running untouched.
 |
 
 edit: "1. You edit init.ss\nand run reload (a command, or tuna reload in a terminal)" {class: step}
-check: "2. Trial run, changing nothing:\nrun init.ss, check every option" {class: step}
+check: "2. Trial run, changing nothing:\nrun init.ss (checking every option: planned, stage 3)" {class: step}
 stop: "Mistake found: nothing changes;\nyou see the error and the line" {class: safe}
 compare: "3. Compare with what is running now" {class: step}
 apply: "4. For each changed plugin or block:\nturn the old one off, the new one on" {class: step}

@@ -211,7 +211,11 @@
                (check (restore!) => [])
                (deactivate-plugin! slots-early)
                (activate-plugin! slots-late)
-               (check (restore!) => [['beta 2 "B"] ['alpha 3 "A"]])
+               ;; A plugin turned off leaves its slots' latest data in
+               ;; memory when no other slot keeps the name: beta holds what
+               ;; late saved, and alpha holds early's version 1, which the
+               ;; effective alpha (version 3) skips.
+               (check (restore!) => [['beta 2 "late beta"]])
                (deactivate-plugin! slots-late)
                (check (restore!) => [])))))))
 
