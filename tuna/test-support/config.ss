@@ -2,7 +2,8 @@
 ;;; files those tests write import this module by its absolute path. Each
 ;;; plugin turns a named probe on through its context, so the probe is off
 ;;; again once its receipt has run.
-(import :tuna/kernel)
+(import :tuna/kernel
+        :tuna/services/session)
 (export probe-on!
         probe-on?
         probe-service
@@ -19,7 +20,12 @@
         counted-plugin
         fixed-service
         fixed-provider-plugin
-        better-fixed-provider-plugin)
+        better-fixed-provider-plugin
+        record-restore!
+        restored-data
+        notes-text
+        set-notes-text!
+        notes-plugin)
 
 ;; Probe name -> live registrations.
 (def probes (make-hash-table))
@@ -109,3 +115,25 @@
 (defplugin better-fixed-provider-plugin "Provides fixed with a higher priority."
   (context-provide! (current-context) fixed-service 'fixed priority: 10)
   (probe-on! 'better-fixed))
+
+;; Slot name -> the data its last restore received; never undone.
+(def restores (make-hash-table))
+
+(def (record-restore! (name : :symbol) (data : :t)) => :void
+  (hash-put! restores name data))
+
+(def (restored-data (name : :symbol)) => :t
+  (hash-ref restores name #f))
+
+(def current-notes "fresh")
+(def (notes-text) => :string current-notes)
+(def (set-notes-text! (text : :string)) => :void (set! current-notes text))
+
+;; Keeps the session slot notes: saves the notes text, records restores.
+(defplugin notes-plugin "Keeps a session slot."
+  requires: [session-service]
+  (context-add-session-slot! (current-context) 'notes version: 1
+                             save: notes-text
+                             restore: (lambda (data)
+                                        (record-restore! 'notes data)
+                                        (set-notes-text! data))))

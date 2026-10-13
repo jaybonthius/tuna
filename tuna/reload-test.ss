@@ -9,6 +9,8 @@
         :tuna/kernel
         :tuna/boot
         :tuna/control
+        :tuna/services/session
+        :tuna/plugins/session
         "test-support/kernel"
         "test-support/string-input"
         "test-support/config")
@@ -257,6 +259,65 @@
                (write-init directory "(use-plugin good-plugin)")
                (check (changes (reload)) => [["good-plugin" 'on] [user-code 'on]])
                (check (probe-on? 'good) => #t)))))))
+
+    (test-case "session slots: restored when a reload turns a plugin on, kept when it is replaced"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let* ((state (path-expand "state" directory))
+                (file (path-expand "session.ss" state))
+                (saved (lambda () (call-with-input-file file read)))
+                (slot-module
+                 (lambda (save-text fail?)
+                   (write-mine directory
+                               (string-append
+                                "requires: [session-service] "
+                                "(context-add-session-slot! (current-context) 'mine version: 1 "
+                                "save: (lambda () \"" save-text "\") "
+                                "restore: (lambda (data) (record-restore! 'mine data)))"
+                                (if fail? " (error \"mine fails\")" ""))))))
+           (create-directory* state)
+           (write-file-string file "(tuna-session 1 (notes 1 \"keep me\") (mine 1 \"mine kept\"))\n")
+           ;; mine.ss imports the session contract too.
+           (slot-module "from v1" #t)
+           (write-file-string (path-expand "mine.ss" directory)
+                              (string-append "(import :tuna/services/session)\n"
+                                             (read-file-string (path-expand "mine.ss" directory))))
+           (parameterize ((session-state-directory state))
+             (call-with-fresh-kernel []
+               (lambda ()
+                 (let (path (write-init directory "(import :tuna/plugins/session)"
+                                        "(use-plugin session-plugin)" "(use-plugin mine-plugin)"))
+                   ;; Walkthrough step 4: mine fails at start-up; the
+                   ;; program restores; saving keeps mine's saved data.
+                   (check (assoc "mine-plugin" (statuses (startup-report-entries (start path))))
+                          => '("mine-plugin" failed))
+                   (restore-session)
+                   (save-session)
+                   (check (saved) => '(tuna-session 1 (notes 1 "keep me") (mine 1 "mine kept")))
+                   ;; Fixed, a reload turns it on with its saved data.
+                   (slot-module "from v2" #f)
+                   (write-file-string (path-expand "mine.ss" directory)
+                                      (string-append "(import :tuna/services/session)\n"
+                                                     (read-file-string (path-expand "mine.ss" directory))))
+                   (check (assoc "mine-plugin" (changes (reload))) => '("mine-plugin" on))
+                   (check (restored-data 'mine) => "mine kept")
+                   ;; A plugin added by a reload gets its saved data.
+                   (write-init directory "(import :tuna/plugins/session)"
+                               "(use-plugin session-plugin)" "(use-plugin mine-plugin)"
+                               "(use-plugin notes-plugin)")
+                   (check (assoc "notes-plugin" (changes (reload))) => '("notes-plugin" on))
+                   (check (restored-data 'notes) => "keep me")
+                   (set-notes-text! "edited")
+                   ;; A replaced user-module plugin gets the running
+                   ;; version's latest data, not the file's.
+                   (slot-module "from v3" #f)
+                   (write-file-string (path-expand "mine.ss" directory)
+                                      (string-append "(import :tuna/services/session)\n"
+                                                     (read-file-string (path-expand "mine.ss" directory))))
+                   (check (assoc "mine-plugin" (changes (reload))) => '("mine-plugin" replaced))
+                   (check (restored-data 'mine) => "from v2")
+                   (save-session)
+                   (check (saved) => '(tuna-session 1 (notes 1 "edited") (mine 1 "from v3")))))))))))
 
     (test-case "tuna reload asks the running Tuna and prints its report"
       (call-with-temporary-directory
