@@ -59,8 +59,9 @@ The owner talks to one primary agent in this checkout (`/home/jay/Code/workbench
 ```sh
 make deps          # install Gerbil package dependencies into .gerbil/
 make               # build the browser asset and the Gerbil package
-make test          # Gerbil tests and the keyboard-plugin test
-make run           # build, then run .gerbil/bin/tuna
+make test          # Gerbil tests, the keyboard-plugin test, and a check that demo/init.ss loads
+make run           # build, then run .gerbil/bin/tuna with starter/init.ss
+make demo          # build, then run the development demo (demo/init.ss)
 ```
 
 `gerbil build` needs at least one commit, because it records `git describe` in the package manifest. A Racket-era `tuna` binary may be on `PATH`; run this checkout's binary through `make run` or `gerbil env tuna`.
