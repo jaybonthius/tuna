@@ -418,7 +418,8 @@
                    => '(keys-plugin web-transport-plugin settings-plugin echo-area-plugin
                         help-panel-plugin session-plugin rope-text-store-plugin buffers-plugin
                         autosave-plugin single-window-plugin window-commands-plugin
-                        html-renderer-plugin basic-editing-plugin minibuffer-plugin demo-plugin))
+                        html-renderer-plugin basic-editing-plugin minibuffer-plugin demo-plugin
+                        reload-config-plugin))
             (check (describe-services) => [])))))
 
     (test-case "tuna init copies the starter once and never overwrites"

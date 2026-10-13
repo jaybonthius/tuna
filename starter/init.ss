@@ -13,6 +13,11 @@
 ;;; in (import "my-helpers"). Each plugin, and your own code, has 5 s to
 ;;; turn on; one that takes longer is stopped and turned off.
 ;;;
+;;; After editing this file, reload it without restarting: C-c R (the
+;;; reload-config command) inside Tuna, or `tuna reload` in a terminal.
+;;; Only what changed is turned off and on; if a changed part fails, the
+;;; version that was running is turned back on.
+;;;
 ;;; Loading this file runs only its imports and declarations. The code of
 ;;; the modules you import, and macro code, also run at load: they must not
 ;;; change the editor, since nothing could undo it.
@@ -31,7 +36,8 @@
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
-        :tuna/plugins/demo)
+        :tuna/plugins/demo
+        :tuna/plugins/reload-config)
 
 (use-plugin keys-plugin)
 (use-plugin web-transport-plugin)
@@ -50,3 +56,5 @@
 (use-plugin basic-editing-plugin)
 (use-plugin minibuffer-plugin)
 (use-plugin demo-plugin)                ; the skeleton demo: digit highlighting, C-c commands
+(use-plugin reload-config-plugin        ; reload this file without restarting
+  config: (keymap-set "C-c R" 'reload-config))
