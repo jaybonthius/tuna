@@ -83,6 +83,26 @@
   "Tries to activate a plugin when a task starts."
   (context-add-hook! ctx task-started-hook 'meddle (lambda (id name) (activate-plugin! idle))))
 
+(def quitting-hook (new-hook 'quitting))
+
+;; Quits from a hook callback, and from a lifecycle callback when idle
+;; activates.
+(defplugin (quitting-hook-user ctx)
+  "Adds hook callbacks that quit."
+  (context-add-hook! ctx quitting-hook 'quit-now (lambda () (note! 'quitting) (signal-quit)))
+  (context-add-hook! ctx plugin-activated-hook 'quit-on-idle
+                     (lambda (p) (when (eq? p idle) (note! 'activated) (signal-quit)))))
+
+(defstruct failing-display ()
+  final: #t)
+
+(defmethod {redisplay! failing-display}
+  (lambda (self) (error "display broke")))
+
+(defplugin (failing-display-plugin ctx)
+  "Provides a display that always fails."
+  (context-provide! ctx display-service (make-failing-display)))
+
 ;; Start a fresh loop with the test tasks and PLUGINS, run THUNK, and stop.
 (def (with-loop thunk quit-grace: (quit-grace 0.5) plugins: (plugins []))
   (set! log [])
@@ -362,6 +382,54 @@
          (settled-message)
          (check log => '(b a)))
        plugins: [broken-task-watcher]))
+
+    (test-case "a quit in a hook callback unwinds the task and keeps the callback"
+      (with-loop
+       (lambda ()
+         (spawn-task! 'run-quitting-hook (lambda () (run-hook quitting-hook) (note! 'after)))
+         (check (settled-message) => "Quit")
+         (check log => '(quitting))
+         (check (call-on-editor-loop (lambda () (hook-callback-names quitting-hook)))
+                => '(quit-now)))
+       plugins: [quitting-hook-user]))
+
+    (test-case "a quit in a lifecycle callback on a task thread unwinds the task"
+      (with-loop
+       (lambda ()
+         (spawn-task! 'activate-idle (lambda () (activate-plugin! idle) (note! 'after)))
+         (check (settled-message) => "Quit")
+         (check log => '(activated))
+         (check (call-on-editor-loop
+                 (lambda () [(plugin-active? idle) (hook-callback-names plugin-activated-hook)]))
+                => [#t '(quit-on-idle)]))
+       plugins: [quitting-hook-user]))
+
+    (test-case "outside a task, a quit in a hook callback counts as a failure"
+      (set! log [])
+      (call-with-fresh-kernel [test-input-plugin quitting-hook-user]
+        (lambda ()
+          (run-hook quitting-hook)
+          (check log => '(quitting))
+          (check (hook-callback-names quitting-hook) => '())
+          (check (string-prefix? "Hook quitting callback quit-now (from quitting-hook-user) failed"
+                                 (current-message))
+                 => #t))))
+
+    (test-case "a failing redisplay is reported on stderr, not stdout"
+      (let* ((out (open-output-string))
+             (err (open-output-string))
+             ;; The loop thread inherits these ports. Checks run outside
+             ;; them, since a verbose test run writes to stdout.
+             (reported?
+              (parameterize ((current-output-port out)
+                             (current-error-port err))
+                (call-with-fresh-kernel [test-input-plugin failing-display-plugin]
+                  (lambda ()
+                    (start-editor-loop!)
+                    (wait-until (lambda () (string-prefix? "Redisplay failed: display broke\n"
+                                                           (get-output-string err)))))))))
+        (check reported? => #t)
+        (check (get-output-string out) => "")))
 
     (test-case "task callbacks must not activate plugins"
       (with-loop

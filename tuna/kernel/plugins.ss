@@ -154,12 +154,16 @@ prelude: :gerbil/core
     (context-defer! ctx (lambda () (remove-hook-callback! h callback)))))
 
 ;; Call each of H's callbacks with ARGS. A callback that fails is removed
-;; and reported; the others still run.
+;; and reported; the others still run. A quit in a task is not a failure:
+;; it unwinds the task (ADR 3) and the callback stays. Outside a task, where
+;; nothing can unwind, a quit counts as a failure.
 (def (run-hook (h : hook) . args) => :void
   (for-each
     (lambda ((callback : hook-callback))
       (with-catch
        (lambda (e)
+         (when (and (quit-condition? e) (current-task))
+           (raise e))
          (remove-hook-callback! h callback)
          (message (string-append "Hook " (symbol->string (hook-name h)) " callback "
                                  (symbol->string (hook-callback-name callback)) " (from "
@@ -323,13 +327,10 @@ prelude: :gerbil/core
     (when (and handover (not (eq? outgoing incoming)))
       (with-catch
        (lambda (e)
-         (let (text (string-append "Service " (symbol->string (service-name svc))
-                                   " failed to hand over to its new provider: "
-                                   (exception-summary e)))
-           (message text)
-           (let (port (current-error-port))
-             (display text port)
-             (newline port))))
+         (report-failure-message!
+          (string-append "Service " (symbol->string (service-name svc))
+                         " failed to hand over to its new provider: "
+                         (exception-summary e))))
        (lambda () (handover outgoing incoming))))))
 
 (def (check-live-change! (k : kernel) (svc : service)) => :void
@@ -455,10 +456,9 @@ prelude: :gerbil/core
              records))
 
 (def (report-failure! (name : :symbol) (what : :string) (e : :t)) => :void
-  (let (text (string-append "Plugin " (symbol->string name) " failed while "
-                            what ": " (exception-summary e)))
-    (message text)
-    (displayln text (current-error-port))))
+  (report-failure-message!
+   (string-append "Plugin " (symbol->string name) " failed while "
+                  what ": " (exception-summary e))))
 
 ;;; Activation
 
@@ -607,19 +607,34 @@ prelude: :gerbil/core
 
 ;;; Messages
 
-;; Where the kernel and plugins report to the user (ADR 12: the echo area is
-;; a plugin).
+;; Where the kernel and plugins report to the user (ADR 12: a plugin
+;; provides it). The kernel adds no other failure channel: its failures go
+;; here and to stderr.
 (interface Messages
-  ;; Show TEXT to the user; "" clears the message.
-  (message! (text : :string)) => :void)
+  ;; Show MESSAGE to the user; "" clears the shown message.
+  (message! (message : :string)) => :void)
 
 (def messages-service
   (new-service 'messages is-Messages? tier: 'live
                doc: "Shows messages to the user."))
 
-;; Show TEXT in the echo area, or on stderr while no plugin shows messages.
-(def (message (text : :string)) => :void
+;; Show STRING through the Messages provider, or on stderr while no plugin
+;; provides it.
+(def (message (string : :string)) => :void
   (let (provider (service-provider messages-service))
     (cond
-     (provider (Messages-message! (Messages provider) text))
-     ((not (string-empty? text)) (displayln text (current-error-port))))))
+     (provider (Messages-message! (Messages provider) string))
+     ((not (string-empty? string)) (write-error-line string)))))
+
+;; Report a plugin or service failure: through the Messages provider when
+;; there is one, and on stderr either way, exactly once.
+(def (report-failure-message! (string : :string)) => :void
+  (let (provider (service-provider messages-service))
+    (when provider
+      (Messages-message! (Messages provider) string))
+    (write-error-line string)))
+
+(def (write-error-line (string : :string)) => :void
+  (let (port (current-error-port))
+    (display string port)
+    (newline port)))

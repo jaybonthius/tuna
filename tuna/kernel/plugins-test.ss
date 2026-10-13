@@ -147,6 +147,15 @@
   "Tries to replace the input service."
   (context-provide! ctx input-service (make-test-input (make-hash-table))))
 
+;; Call THUNK and return what it wrote to stdout and to stderr.
+(def (captured-output thunk)
+  (let ((out (open-output-string))
+        (err (open-output-string)))
+    (parameterize ((current-output-port out)
+                   (current-error-port err))
+      (thunk))
+    [(get-output-string out) (get-output-string err)]))
+
 (def plugins-test
   (test-suite "tuna/kernel/plugins"
     (test-case "receipts undo in reverse order"
@@ -380,6 +389,28 @@
          ;; With no provider left, there is no one to hand over to.
          (deactivate-plugin! counter-a)
          (check (take-log!) => []))))
+
+    (test-case "message writes to stderr, not stdout, while no plugin provides Messages"
+      (call-with-fresh-kernel []
+       (lambda ()
+         (check (captured-output (lambda () (message "hello"))) => ["" "hello\n"])
+         (check (captured-output (lambda () (message ""))) => ["" ""]))))
+
+    (test-case "a plugin failure goes to stderr exactly once, and to Messages when provided"
+      (call-with-fresh-kernel []
+       (lambda ()
+         (defplugin (failing-undo ctx)
+           "Registers an undo that fails."
+           (context-defer! ctx (lambda () (error "undo failed"))))
+         (let (report "Plugin failing-undo failed while deactivating: undo failed")
+           (activate-plugin! failing-undo)
+           (check (captured-output (lambda () (deactivate-plugin! failing-undo)))
+                  => ["" (string-append report "\n")])
+           (activate-plugin! test-input-plugin)
+           (activate-plugin! failing-undo)
+           (check (captured-output (lambda () (deactivate-plugin! failing-undo)))
+                  => ["" (string-append report "\n")])
+           (check (current-message) => report)))))
 
     (test-case "startup-tier services refuse live replacement"
       (call-with-fresh-kernel []

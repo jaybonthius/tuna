@@ -6,8 +6,8 @@
 ;;; checked kernel files, and must not use the nouns ADR 12 forbids. Known
 ;;; noun hits are listed in boundary-baseline.sexp; the check fails on any
 ;;; hit beyond that list and on any entry larger than what remains, so the
-;;; list can only shrink as the kernel cleanup
-;;; (agents/plans/kernel-cleanup.md) lands.
+;;; list can only shrink. After the kernel cleanup
+;;; (agents/plans/kernel-cleanup.md) only permanent entries remain.
 ;;;
 ;;; tuna/lib/ may hold only Gerbil source. Library source may import only
 ;;; :gerbil, :std, the kernel facade :tuna/kernel, and library modules, and
@@ -526,8 +526,9 @@
                            (reason : :string))
   final: #t)
 
-;; The kernel-cleanup plan steps that remove baseline entries.
-(def baseline-steps '("step 8"))
+;; The kernel-cleanup plan steps that remove baseline entries. None
+;; remain, so every entry must give a "permanent: <why>" reason.
+(def baseline-steps '())
 
 (def (valid-reason? (reason : :string)) => :boolean
   (or (and (member reason baseline-steps) #t)
@@ -541,8 +542,8 @@
             (unless (fx> count 0)
               (error "Baseline count must be positive" baseline-name form))
             (unless (valid-reason? reason)
-              (error "Baseline reason must be a remaining step of baseline-steps or \"permanent: <why>\""
-                     baseline-name form baseline-steps))
+              (error "Baseline reason must be \"permanent: <why>\"; no kernel-cleanup step remains in baseline-steps"
+                     baseline-name form))
             (make-baseline-entry file label count reason))
            (else (error "Malformed baseline entry; expected (file term count reason)"
                         baseline-name form))))

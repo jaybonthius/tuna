@@ -44,7 +44,9 @@ prelude: :gerbil/core
     (else (usage))))
 
 (def (usage) => :void
-  (displayln "usage: tuna [--port PORT]" (current-error-port))
+  (let (port (current-error-port))
+    (display "usage: tuna [--port PORT]" port)
+    (newline port))
   (exit 2))
 
 (def (run (port : :fixnum)) => :void

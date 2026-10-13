@@ -1,5 +1,7 @@
-;;; The kernel's state.
-;;; Everything here is confined to the editor baton (ADR 3, ADR 4).
+;;; The kernel's state, the quit condition, and the running task's binding.
+;;; The kernel object is confined to the editor baton (ADR 3, ADR 4).
+;;; ./plugins and ./loop both need the quit condition and the task binding:
+;;; run-hook lets quits unwind the running task (ADR 3).
 prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable)
@@ -15,6 +17,10 @@ prelude: :gerbil/core
         kernel-adapters
         kernel-live?
         kernel-loop
+        quit-condition
+        quit-condition?
+        quit-condition-forced?
+        current-task
         exception-summary)
 
 (defclass kernel
@@ -41,7 +47,16 @@ prelude: :gerbil/core
 (def (the-kernel) => kernel
   (: (current-kernel) kernel))
 
-;; One line describing an exception, for the echo area.
+;; Raised in a task to quit it. Not an Error, so handlers for errors do not
+;; swallow it.
+(defclass quit-condition ((forced? : :boolean))
+  final: #t)
+
+;; The task running in this thread, or #f outside tasks. ./loop binds it
+;; and owns the task class.
+(def current-task (make-parameter #f))
+
+;; One line describing an exception, for a message to the user.
 (def (exception-summary (e : :t)) => :string
   (if (Error? e)
     (call-with-output-string ""
