@@ -230,9 +230,92 @@
                (let (report (call-on-editor-loop reload))
                  (check (changes report) => '(("better-fixed-provider-plugin" deferred)))
                  (check (detail report "better-fixed-provider-plugin")
-                        => "would take over the startup-tier service fixed, so it takes effect at next start"))
+                        => "would replace or restart the provider of the startup-tier service fixed (fixed-provider-plugin), so it takes effect at next start"))
                (check (probe-on? 'better-fixed) => #f)
                (check (probe-on? 'fixed) => #t)))))))
+
+    (test-case "turning off what a startup-tier provider needs waits for the next start"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory "(use-plugin provider-plugin)" "(use-plugin fixed-needs-probe-plugin)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (activate-plugin! test-input-plugin)
+               (start-editor-loop!)
+               ;; X5b: removing the provider fixed-needs-probe-plugin needs.
+               (write-init directory "(use-plugin fixed-needs-probe-plugin)")
+               (let (report (call-on-editor-loop reload))
+                 (check (changes report) => '(("provider-plugin" deferred)))
+                 (check (detail report "provider-plugin")
+                        => "the provider of the startup-tier service fixed (fixed-needs-probe-plugin) needs it, so turning it off takes effect at next start")
+                 (check (reload-succeeded? report) => #t))
+               (check (probe-on? 'provider) => #t)
+               (check (probe-on? 'fixed-needs-probe) => #t)))))))
+
+    (test-case "edited user code that provides a startup-tier service waits for the next start"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory "(import :tuna/kernel)"
+                                "(context-provide! (current-context) fixed-service 'fixed)"
+                                "(probe-on! 'user-1)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (activate-plugin! test-input-plugin)
+               (start-editor-loop!)
+               ;; X6: the running code stays, on every reload until the next start.
+               (write-init directory "(import :tuna/kernel)"
+                           "(context-provide! (current-context) fixed-service 'fixed)"
+                           "(probe-on! 'user-2)")
+               (for-each
+                (lambda (_)
+                  (let (report (call-on-editor-loop reload))
+                    (check (changes report) => [[user-code 'deferred]])
+                    (check (detail report user-code)
+                           => "it provides the startup-tier service fixed, so the new version takes effect at next start")))
+                [1 2])
+               (check (probe-on? 'user-1) => #t)
+               (check (probe-on? 'user-2) => #f)))))))
+
+    (test-case "an edited config: block that provides a startup-tier service waits for the next start"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory "(import :tuna/kernel)"
+                                "(use-plugin good-plugin config: (context-provide! (current-context) fixed-service 'fixed) (probe-on! 'block-1))"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (activate-plugin! test-input-plugin)
+               (start-editor-loop!)
+               (write-init directory "(import :tuna/kernel)"
+                           "(use-plugin good-plugin config: (context-provide! (current-context) fixed-service 'fixed) (probe-on! 'block-2))")
+               (let (report (call-on-editor-loop reload))
+                 (check (changes report) => '(("config: block of good-plugin" deferred)))
+                 (check (detail report "config: block of good-plugin")
+                        => "it provides the startup-tier service fixed, so the new version takes effect at next start"))
+               (check (probe-on? 'block-1) => #t)
+               (check (probe-on? 'block-2) => #f)))))))
+
+    (test-case "a new version of what a startup-tier provider needs waits for the next start"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (write-mine directory "(context-provide! (current-context) probe-service 'probe) (probe-on! 'mine-1)")
+         (let (path (write-init directory "(use-plugin mine-plugin)" "(use-plugin fixed-needs-probe-plugin)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (activate-plugin! test-input-plugin)
+               (start-editor-loop!)
+               ;; X24: the provider's module changed.
+               (write-mine directory "(context-provide! (current-context) probe-service 'probe) (probe-on! 'mine-2)")
+               (let (report (call-on-editor-loop reload))
+                 (check (assoc "mine-plugin" (changes report)) => '("mine-plugin" deferred))
+                 (check (detail report "mine-plugin")
+                        => "the provider of the startup-tier service fixed (fixed-needs-probe-plugin) needs it, so the new version takes effect at next start"))
+               (check (probe-on? 'mine-1) => #t)
+               (check (probe-on? 'mine-2) => #f)
+               (check (probe-on? 'fixed-needs-probe) => #t)))))))
 
     (test-case "a plugin that failed at start-up comes up once fixed, with what needs it"
       (call-with-temporary-directory

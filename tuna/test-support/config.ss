@@ -21,6 +21,7 @@
         fixed-service
         fixed-provider-plugin
         better-fixed-provider-plugin
+        fixed-needs-probe-plugin
         record-restore!
         restored-data
         notes-text
@@ -137,3 +138,10 @@
                              restore: (lambda (data)
                                         (record-restore! 'notes data)
                                         (set-notes-text! data))))
+
+;; Provides the startup-tier service fixed and needs probe, so while the
+;; editor loop runs the kernel refuses to turn probe's provider off.
+(defplugin fixed-needs-probe-plugin "Provides fixed; needs probe."
+  requires: [probe-service]
+  (context-provide! (current-context) fixed-service 'fixed)
+  (probe-on! 'fixed-needs-probe))

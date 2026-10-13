@@ -493,7 +493,10 @@ prelude: :gerbil/core
          (user-code (running-configuration-user-code old))
          (user-forms (running-configuration-user-forms old))
          (kept-units [])                ; units left alone, to check at the end
-         (restored [])                  ; names whose failed new version was undone
+         ;; Units whose status the reload decided although the kernel,
+         ;; which knows plugins only by name, would report it otherwise: a
+         ;; failed new version undone, or a turn-off the kernel refused.
+         (decided [])
          (entries []))                  ; newest first
     ;; Add ENTRY, replacing an earlier entry for the same plugin.
     (def (record! (entry : report-entry))
@@ -531,10 +534,24 @@ prelude: :gerbil/core
         (let (entry (sync-block-entry d))
           (unless (memq (report-entry-status entry) '(on off))
             (record! entry)))))
-    (def (turn-off-block! (d : declaration))
+    ;; Turn D's block off: #f once it is off (or D has none), otherwise
+    ;; why the kernel kept it on.
+    (def (turn-off-block! (d : declaration)) => :t
       (let (block (declaration-block d))
-        (when block
-          (with-catch void (lambda () (deactivate-plugin! block))))))
+        (and block (stays-on block))))
+    (def (decide! (name : :symbol))
+      (set! decided (cons name decided)))
+    ;; Record that turning off P, or the block of D, was refused, with
+    ;; WHY from stays-on and CONSEQUENCE after the reason.
+    (def (record-refusal! (p : plugin) (what : :string) (source :? :string) (why : :t)
+                          (consequence : :string))
+      (decide! (plugin-name p))
+      (match (refusal-outcome why p consequence)
+        ([status . detail] (record! (make-report-entry p what source status detail)))))
+    ;; A unit whose block the kernel kept on is left as it is.
+    (def (block-refused! (d : declaration) (why : :t) (consequence : :string))
+      (record-refusal! (: (declaration-block d) plugin) (block-label d) (declaration-source d)
+                       why consequence))
 
     ;; A plugin no longer declared.
     (def (remove! (d : declaration))
@@ -546,27 +563,27 @@ prelude: :gerbil/core
           (record! (make-report-entry p what source 'deferred
                                       (string-append (provides-text fixed)
                                                      ", so turning it off takes effect at next start")))
-          (begin
-            (turn-off-block! d)
+          (cond
+           ((turn-off-block! d)
+            => (cut block-refused! d <> ", so turning it off takes effect at next start"))
+           (else
             (set-working! (declaration-name d) #f)
-            (with-catch
-             (lambda (e)
-               (set-working! (declaration-name d) d)
-               (restore-block! d)
-               (record! (make-report-entry p what source 'failed
-                                           (string-append "could not be turned off: "
-                                                          (exception-summary e)))))
-             (lambda ()
-               (deactivate-plugin! p)
-               (drain! #f)
-               (record! (make-report-entry p what source 'off "no longer declared"))))))))
+            (cond
+             ((stays-on p)
+              => (lambda (why)
+                   (set-working! (declaration-name d) d)
+                   (restore-block! d)
+                   (record-refusal! p what source why ", so turning it off takes effect at next start")))
+             (else
+              (drain! #f)
+              (record! (make-report-entry p what source 'off "no longer declared")))))))))
 
     ;; A plugin declared now that was not before, or the same plugin, off.
     (def (add! (c : change))
       (let* ((d (change-new c))
              (p (declaration-target d)))
         (when (change-old c)
-          (turn-off-block! (change-old c)))
+          (turn-off-block! (change-old c)))       ; its plugin is off, so nothing needs it
         (set-working! (declaration-name d) d)
         (record! (activate-entry p (plugin-label p) (declaration-source d)))
         (drain! #f)))
@@ -584,10 +601,12 @@ prelude: :gerbil/core
           (record! (make-report-entry running what source 'deferred
                                       (string-append (provides-text fixed)
                                                      ", so the new version takes effect at next start")))
-          (begin
-            (turn-off-block! o)
+          (cond
+           ((turn-off-block! o)
+            => (cut block-refused! o <> ", so the new version takes effect at next start"))
+           (else
             (set-working! (declaration-name d) d)
-            (match (with-catch (lambda (e) e) (lambda () (deactivate-plugin! running) #f))
+            (match (stays-on running)
               (#f
                (drain! #t)
                (let (entry (activate-entry p what source))
@@ -597,27 +616,29 @@ prelude: :gerbil/core
                      (drain! #f))
                    (begin
                      (set-working! (declaration-name o) o)
-                     (set! restored (cons (plugin-name running) restored))
+                     (decide! (plugin-name running))
                      (record! (with-status entry (report-entry-status entry)
                                            (string-append (report-entry-detail entry)
                                                           (restored-text running what source))))
                      (drain! #t)))))
-              (e
+              (why
                (set-working! (declaration-name o) o)
                (restore-block! o)
-               (record! (make-report-entry running what source 'failed
-                                           (string-append "the running version could not be turned off: "
-                                                          (exception-summary e))))))))))
+               (record-refusal! running what source why
+                                ", so the new version takes effect at next start"))))))))
 
     ;; The same plugin with a changed block, or with its block off.
     (def (replace-block! (c : change))
       (let* ((d (change-new c))
              (o (: (change-old c) declaration))
              (block (declaration-block d))
-             (old-block-on? (and (declaration-block o) (plugin-active? (declaration-block o)))))
-        (turn-off-block! o)
-        (set-working! (declaration-name d) d)
+             (old-block-on? (and (declaration-block o) (plugin-active? (declaration-block o))))
+             (why (turn-off-block! o)))
+        (unless why
+          (set-working! (declaration-name d) d))
         (cond
+         (why
+          (block-refused! o why ", so the new version takes effect at next start"))
          ((not block)
           (when old-block-on?
             (record! (make-report-entry (: (declaration-block o) plugin) (block-label o)
@@ -633,7 +654,7 @@ prelude: :gerbil/core
               (let (running (make-declaration (declaration-target o) (declaration-block o)
                                               (declaration-block-forms o) (declaration-source d)))
                 (set-working! (declaration-name d) running)
-                (set! restored (cons (plugin-name block) restored))
+                (decide! (plugin-name block))
                 (let (back (sync-block-entry running))
                   (record! (with-status entry 'failed
                                         (string-append (report-entry-detail entry)
@@ -717,9 +738,12 @@ prelude: :gerbil/core
                (was-on? (and user-code (plugin-active? user-code))))
           (if (and was-on? (not modules-reloaded?) (equal? user-forms new-forms))
             (set! kept-units (cons user-code kept-units))
-            (begin
-              (when was-on?
-                (with-catch void (lambda () (deactivate-plugin! user-code))))
+            (cond
+             ((and was-on? (stays-on user-code))
+              => (lambda (why)
+                   (record-refusal! user-code what #f why
+                                    ", so the new version takes effect at next start")))
+             (else
               (let (entry (activate-entry new-code what #f))
                 (cond
                  ((eq? (report-entry-status entry) 'on)
@@ -727,14 +751,14 @@ prelude: :gerbil/core
                   (set! user-forms new-forms)
                   (record! (if was-on? (with-status entry 'replaced "") entry)))
                  (was-on?
-                  (set! restored (cons 'init restored))
+                  (decide! 'init)
                   (record! (with-status entry 'failed
                                         (string-append (report-entry-detail entry)
                                                        (restored-text user-code what #f)))))
                  (else
                   (set! user-code new-code)
                   (set! user-forms new-forms)
-                  (record! entry))))))))
+                  (record! entry)))))))))
       (set! current-running
         (make-running-configuration
          choice
@@ -766,7 +790,7 @@ prelude: :gerbil/core
     ;; A unit whose failed new version was undone is on again under the
     ;; same name, which is all the kernel knows it by.
     (let* ((final (map (lambda ((e : report-entry))
-                         (if (memq (plugin-name (report-entry-subject e)) restored)
+                         (if (memq (plugin-name (report-entry-subject e)) decided)
                            e
                            (final-entry e)))
                        (reverse entries)))
@@ -794,6 +818,44 @@ prelude: :gerbil/core
       "; the running version is back on"
       (string-append "; turning the running version back on failed too: "
                      (report-entry-detail entry)))))
+
+;; Turn P off: #f once it is off, otherwise why the kernel kept it on
+;; (what it raised, or #t).
+(def (stays-on (p : plugin)) => :t
+  (let (raised (with-catch (lambda (e) e) (lambda () (deactivate-plugin! p) #f)))
+    (and (plugin-active? p) (or raised #t))))
+
+;; How to report that the kernel kept P on (WHY, from stays-on), as
+;; (status . detail). Turning off a plugin that the provider of a
+;; startup-tier service needs, or that provides one, waits for the next
+;; start: CONSEQUENCE says what waits.
+(def (refusal-outcome (why : :t) (p : plugin) (consequence : :string)) => :pair
+  (match (refused-startup-service why)
+    (#f (cons 'failed (string-append "could not be turned off: "
+                                     (if (eq? why #t) "it stayed on" (exception-summary why)))))
+    ([service . provider]
+     (cons 'deferred
+           (string-append (if (eq? provider (plugin-name p))
+                            (string-append "it provides the startup-tier service "
+                                           (symbol->string service))
+                            (string-append "the provider of the startup-tier service "
+                                           (symbol->string service) " (" (symbol->string provider)
+                                           ") needs it"))
+                          consequence)))))
+
+;; When E is the kernel refusing to change the provider of a startup-tier
+;; service while the editor loop runs: (service . its provider's name).
+;; The kernel raises an error naming the service.
+(def (refused-startup-service (e : :t)) => (Maybe :pair)
+  (match (and (Error? e) (Error-irritants e))
+    ([(? symbol? name)]
+     (let (info (find (lambda ((info : service-info))
+                        (and (eq? (service-info-name info) name)
+                             (eq? (service-info-tier info) 'startup)
+                             (service-info-provider info)))
+                      (describe-services)))
+       (and info (cons name (service-info-provider (: info service-info))))))
+    (else #f)))
 
 ;; The startup-tier services whose provider is P.
 (def (startup-services (p : plugin)) => :list
@@ -833,30 +895,25 @@ prelude: :gerbil/core
      ((plugin-active? p)
       (make-report-entry p what source 'on ""))
      ((match outcome (['raised . e] (startup-refusal e p)) (else #f))
-      => (lambda ((service : :symbol))
-           (make-report-entry p what source 'deferred
-                              (string-append "would take over the startup-tier service "
-                                             (symbol->string service)
-                                             ", so it takes effect at next start"))))
+      => (lambda ((found : :pair))
+           (match found
+            ([service . provider]
+            (make-report-entry p what source 'deferred
+                               (string-append "would replace or restart the provider of the startup-tier service "
+                                              (symbol->string service) " (" (symbol->string provider)
+                                              "), so it takes effect at next start"))))))
      (else
       (make-report-entry p what source 'failed
                          (match outcome
                            (['raised . e] (exception-summary e))
                            (else "did not come on")))))))
 
-;; The startup-tier service whose replacement the kernel refused when E
-;; was raised turning P on, or #f. The kernel raises an error naming the
-;; service; it is recognized by that service having another provider.
-(def (startup-refusal (e : :t) (p : plugin)) => (Maybe :symbol)
-  (match (and (Error? e) (Error-irritants e))
-    ([(? symbol? name)]
-     (and (find (lambda ((info : service-info))
-                  (and (eq? (service-info-name info) name)
-                       (eq? (service-info-tier info) 'startup)
-                       (service-info-provider info)
-                       (not (eq? (service-info-provider info) (plugin-name p)))))
-                (describe-services))
-          name))
+;; When the kernel refused to turn P on because it would replace or
+;; restart the provider of a startup-tier service while the editor loop
+;; runs: (service . that provider's name).
+(def (startup-refusal (e : :t) (p : plugin)) => (Maybe :pair)
+  (match (refused-startup-service e)
+    ((and found [_ . provider]) (and (not (eq? provider (plugin-name p))) found))
     (else #f)))
 
 (def (block-label (d : declaration)) => :string
