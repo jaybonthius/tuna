@@ -18,6 +18,7 @@
     "tuna/kernel"
     "tuna/lib/timers"
     "tuna/lib/jobs"
+    "tuna/lib/configuration"
     "tuna/services/keys"
     "tuna/services/text-store"
     "tuna/services/settings"
@@ -42,10 +43,14 @@
     "tuna/plugins/html-renderer"
     "tuna/plugins/plain-text-renderer"
     "tuna/prelude"
+    "tuna/config"
     "tuna/plugins/basic-editing"
     "tuna/plugins/minibuffer"
     "tuna/plugins/demo"
     "tuna/plugins/window-commands"
+    "tuna/plugins/config-blocks"
     "tuna/plugins/web/embed"
     (gxc: "tuna/plugins/web" (extra-inputs: ,web-assets))
+    ;; tuna init writes the starter configuration, which boot embeds.
+    (gxc: "tuna/boot" (extra-inputs: ("starter/init.ss")))
     (exe: "tuna/main" bin: "tuna")))

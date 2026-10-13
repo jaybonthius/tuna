@@ -27,4 +27,4 @@ test-frontend: assets
 	node --experimental-vm-modules --test tests/keyboard.test.mjs
 
 run: all
-	gerbil env tuna
+	gerbil env tuna --config starter/init.ss

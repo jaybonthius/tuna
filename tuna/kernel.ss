@@ -18,6 +18,7 @@ prelude: :gerbil/core
   plugin-name                           ; lifecycle hooks pass plugins
   plugin-doc
   plugin-source
+  plugin-requires                       ; start-up waits for, and reports, missing services
   defplugin
   context
   current-context

@@ -1,6 +1,6 @@
 # How Tuna works
 
-**Status (2026-10-12):** the architecture skeleton is complete. Built: the small kernel (plugins with receipts, services that can be swapped at startup or live, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the token-protected browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML, or plain text as a toy), a swappable window manager (one window, or two side by side as a toy), and saving your session and unsaved text across restarts. Not built yet: files, `M-x`, completion, modes, real window layouts, and your `init.ss`. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
+**Status (2026-10-12):** the architecture skeleton is complete. Built: the small kernel (plugins with receipts, services that can be swapped at startup or live, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the token-protected browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML, or plain text as a toy), a swappable window manager (one window, or two side by side as a toy), saving your session and unsaved text across restarts, and starting from your `init.ss` (stage 1 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, and `tuna check`). Not built yet: reloading `init.ss` while Tuna runs, plugin options, files, `M-x`, completion, modes, and real window layouts. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
 
 ## The idea
 
@@ -110,7 +110,17 @@ A plugin file looks like ordinary Emacs-style code. Everything at the top level 
   (lambda () (message "Saved")))
 ```
 
-Your own configuration file, `init.ss`, is also a plugin, so re-running it cleanly replaces what it did last time.
+Your own configuration file, `init.ss`, declares which plugins to turn on, and the rest of its code becomes one more plugin, turned on last (built; reloading it while Tuna runs is planned):
+
+```scheme
+#lang :tuna/config
+(import :tuna/plugins/keys :tuna/plugins/demo)
+(use-plugin keys-plugin)
+(use-plugin demo-plugin config: (keymap-set "C-c t" 'describe-services))
+(defcommand (say-hello) "Say hello." (message "hello"))
+```
+
+Tuna looks for it at `tuna --config PATH`, then `$TUNA_CONFIG`, then `~/.config/tuna/init.ss`. Without one it turns nothing on and says how to get one: `tuna init` copies the starter configuration (`starter/init.ss` in the repository) there. Loading the file runs only its imports and its `use-plugin` declarations, which change nothing; Tuna then turns the declared plugins on one by one, and a plugin that fails is turned off again while the rest come up. Two things do run while the file loads and must not change the editor, because nothing could undo it: the code of the modules it imports (plugin modules only define plugins, so they are safe) and macro code. Definitions in `init.ss` belong to your own plugin, so `config:` blocks cannot see them; helpers both need go in a module that `init.ss` imports by a path such as `(import "my-helpers")`, found next to `init.ss`. Each plugin, and your own code, gets 5 seconds to turn on; one that takes longer is stopped and turned off. What came up, what failed, and what was skipped is printed when Tuna starts and written to `~/.local/state/tuna/startup.log`.
 
 ## Swapping out a part
 
@@ -143,10 +153,11 @@ What you see in a window is a **view** of a buffer. Two windows can show the sam
 | Your files | Wherever they live | When you save |
 | Unsaved changes | `~/.local/state/tuna/autosave/` | Every so often, and when idle |
 | Open buffers, cursor positions, window layout, history | `~/.local/state/tuna/session.ss` | When idle, and on exit |
-| Settings changed through Tuna's UI | `~/.config/tuna/custom.ss` | When changed |
+| Settings changed through Tuna's UI | `~/.config/tuna/custom.ss` (planned) | When changed |
 | Your configuration code | `~/.config/tuna/init.ss` | You edit it |
+| The start-up report | `~/.local/state/tuna/startup.log` | Replaced on every start |
 
-Autosave and the session file are built; `custom.ss` and `init.ss` are not yet.
+Autosave, the session file, `init.ss`, and the start-up report are built. A settings screen that saves to `custom.ss`, overriding `init.ss`, comes later ([roadmap](roadmap.md)).
 
 The saved files are plain Scheme data, readable in any editor, and Tuna never runs them as code. Only `init.ss` is code. Each plugin decides what of its own state is worth saving, and hands it to the session plugin as a named *session slot*; the kernel knows nothing about saving.
 

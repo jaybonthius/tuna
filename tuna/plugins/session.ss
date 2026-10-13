@@ -1,7 +1,7 @@
 ;;; The session plugin (startup tier; ADR 5): keeps the session slots
 ;;; plugins register, and saves them in $XDG_STATE_HOME/tuna/session.ss. It
 ;;; saves while the editor is idle, when anything changed, and when the
-;;; program saves it on exit; the program restores it once the standard
+;;; program saves it on exit; the program restores it once the configured
 ;;; plugins are active.
 ;;;
 ;;; The file holds one datum, (tuna-session 1 (SLOT VERSION DATA) ...),
