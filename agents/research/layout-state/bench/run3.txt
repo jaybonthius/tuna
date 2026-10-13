@@ -1,0 +1,88 @@
+Gerbil v0.19-dev-63-g1cfb032c
+
+== layout tree  fanouts=(3 4 3)
+  nodes: 52  depth: 3
+  persistent path-copy, vector kids, no hash   : .158 us/op (n=20000)
+  persistent path-copy + Merkle hash on path   : .115 us/op (n=20000)
+  persistent path-copy, LIST kids (buffers.ss): .062 us/op (n=20000)
+  Merkle FULL recompute (no cache)             : .211 us/op (n=200)
+  mutable set + ancestor revs + journal entry  : .012 us/op (n=20000)
+  mutable + invalidate hash on path + relazy   : .052 us/op (n=20000)
+  arena (id->record table) set + ancestor revs : .152 us/op (n=20000)
+  full traversal (count only)                  : .145 us/op (n=200)
+  full render to HTML string port              : 19.441 us/op (n=100)
+  memoized render after 1 path-copy update     : 9.768 us/op (n=20000)
+  render only dirty subtrees (mutable, revs)   : .98 us/op (n=20000)
+  persist: write plain data to string          : 22.576 us/op (n=100)
+  persisted size: 322 bytes
+  persist: read plain data from string         : 3.488 us/op (n=100)
+
+== buffer 10k  fanouts=(20 10 50)
+  nodes: 10221  depth: 3
+  persistent path-copy, vector kids, no hash   : .076 us/op (n=2000)
+  persistent path-copy + Merkle hash on path   : .257 us/op (n=2000)
+  persistent path-copy, LIST kids (buffers.ss): .129 us/op (n=2000)
+  Merkle FULL recompute (no cache)             : 39.923 us/op (n=20)
+  mutable set + ancestor revs + journal entry  : .018 us/op (n=2000)
+  mutable + invalidate hash on path + relazy   : .294 us/op (n=2000)
+  arena (id->record table) set + ancestor revs : .157 us/op (n=2000)
+  full traversal (count only)                  : 26.5 us/op (n=20)
+  full render to HTML string port              : 4858.661 us/op (n=10)
+  memoized render after 1 path-copy update     : 391.936 us/op (n=2000)
+  render only dirty subtrees (mutable, revs)   : .692 us/op (n=2000)
+  persist: write plain data to string          : 6221.819 us/op (n=10)
+  persisted size: 90661 bytes
+  persist: read plain data from string         : 758.076 us/op (n=10)
+
+== buffer 50k  fanouts=(100 10 50)
+  nodes: 51101  depth: 3
+  persistent path-copy, vector kids, no hash   : .107 us/op (n=2000)
+  persistent path-copy + Merkle hash on path   : .557 us/op (n=2000)
+  persistent path-copy, LIST kids (buffers.ss): .24 us/op (n=2000)
+  Merkle FULL recompute (no cache)             : 209.785 us/op (n=20)
+  mutable set + ancestor revs + journal entry  : .014 us/op (n=2000)
+  mutable + invalidate hash on path + relazy   : .666 us/op (n=2000)
+  arena (id->record table) set + ancestor revs : .149 us/op (n=2000)
+  full traversal (count only)                  : 135.469 us/op (n=20)
+  full render to HTML string port              : 32372.093 us/op (n=10)
+  memoized render after 1 path-copy update     : 1679.889 us/op (n=2000)
+  render only dirty subtrees (mutable, revs)   : .977 us/op (n=2000)
+  persist: write plain data to string          : 41860.366 us/op (n=10)
+  persisted size: 497701 bytes
+  persist: read plain data from string         : 4102.588 us/op (n=10)
+
+== buffer 100k  fanouts=(200 10 50)
+  nodes: 102201  depth: 3
+  persistent path-copy, vector kids, no hash   : .139 us/op (n=2000)
+  persistent path-copy + Merkle hash on path   : .829 us/op (n=2000)
+  persistent path-copy, LIST kids (buffers.ss): .675 us/op (n=2000)
+  Merkle FULL recompute (no cache)             : 411.344 us/op (n=20)
+  mutable set + ancestor revs + journal entry  : .014 us/op (n=2000)
+  mutable + invalidate hash on path + relazy   : .949 us/op (n=2000)
+  arena (id->record table) set + ancestor revs : .152 us/op (n=2000)
+  full traversal (count only)                  : 270.569 us/op (n=20)
+  full render to HTML string port              : 53513.479 us/op (n=10)
+  memoized render after 1 path-copy update     : 2822.016 us/op (n=2000)
+  render only dirty subtrees (mutable, revs)   : 1.514 us/op (n=2000)
+  persist: write plain data to string          : 62200.475 us/op (n=10)
+  persisted size: 1008703 bytes
+  persist: read plain data from string         : 8146.906 us/op (n=10)
+
+== flat 50k (root with 50k kids)  fanouts=(50000)
+  nodes: 50001  depth: 1
+  persistent path-copy, vector kids, no hash   : 142.729 us/op (n=500)
+  persistent path-copy + Merkle hash on path   : 239.829 us/op (n=500)
+  persistent path-copy, LIST kids (buffers.ss): 86.022 us/op (n=500)
+  Merkle FULL recompute (no cache)             : 179.338 us/op (n=5)
+  mutable set + ancestor revs + journal entry  : .017 us/op (n=500)
+  mutable + invalidate hash on path + relazy   : 188.12 us/op (n=500)
+  arena (id->record table) set + ancestor revs : .08 us/op (n=500)
+  full traversal (count only)                  : 121.641 us/op (n=5)
+  full render to HTML string port              : 22780.991 us/op (n=5)
+  memoized render after 1 path-copy update     : 8758.459 us/op (n=500)
+  render only dirty subtrees (mutable, revs)   : 149.822 us/op (n=500)
+  persist: write plain data to string          : 43463.627 us/op (n=3)
+  persisted size: 488901 bytes
+  persist: read plain data from string         : 3979.365 us/op (n=3)
+  SXML build + write-sxml, 511 nodes (viewport): 2501.314 us/op (n=200)
+sink 11123
