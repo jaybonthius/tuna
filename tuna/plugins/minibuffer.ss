@@ -12,7 +12,7 @@
 (export minibuffer-plugin)
 
 (defclass prompt ((question : :string)
-                  (node     : text-node)
+                  (answer   : node)            ; the text node holding the answer
                   (holder   : buffer)          ; its internal buffer
                   (focus    : view)            ; its focus view while it waits
                   (target   : input-target)
@@ -26,7 +26,7 @@
 (def (ask! (self : minibuffer) (question : :string) (initial : :string)) => :string
   (let* ((node (new-text-node (new-text initial)))
          (b (new-buffer (string-append " *Minibuf-" (number->string (next-id!)) "*") node)))
-    (using (p (prompt question: question node: node holder: b focus: (new-view b)
+    (using (p (prompt question: question answer: node holder: b focus: (new-view b)
                       target: (make-input-target 'minibuffer self.keymap) waiting: #f)
               : prompt)
       (add-buffer! b)
@@ -55,7 +55,7 @@
   (read-from-minibuffer (lambda (self question initial) (ask! self question initial)))
   (active-prompt (lambda (self)
                    (match self.prompts
-                     ([p . _] (make-prompt-display (prompt-question p) (prompt-node p)))
+                     ([p . _] (make-prompt-display (prompt-question p) (prompt-answer p)))
                      ([] #f)))))
 
 (defplugin (minibuffer-plugin ctx)
@@ -64,7 +64,7 @@
   (using (self (minibuffer prompts: [] keymap: (new-keymap)) : minibuffer)
     (defcommand (exit-minibuffer) "Answer the innermost prompt with the text typed."
       (using (p (innermost self) : prompt)
-        (resume! p.waiting (text-string (text-node-content p.node)))))
+        (resume! p.waiting (text-string (text-node-content p.answer)))))
     (defcommand (abort-minibuffers) "Abandon the innermost prompt; its command receives quit."
       (using (p (innermost self) : prompt)
         (resume-quit! p.waiting)))

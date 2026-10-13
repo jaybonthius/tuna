@@ -45,7 +45,7 @@ prelude: :gerbil/core
 
 ;; A text node: its text, with the rendered view's point marked. At the end
 ;; of a line the cursor stands on a space.
-(def (text-node-runs (n : text-node) (children : :list)) => :list
+(def (text-node-runs (n : node) (children : :list)) => :list
   (let* ((content (text-string (text-node-content n)))
          (v (rendering-view))
          (position (and v (eq? n (view-node v)) (view-point v))))
@@ -88,7 +88,7 @@ prelude: :gerbil/core
       (using (prompt : prompt-display)
         (cons prompt.question
               (append (parameterize ((rendering-view (current-view)))
-                        (node-runs prompt.node))
+                        (node-runs prompt.answer))
                       ["\n"])))
       [])))
 

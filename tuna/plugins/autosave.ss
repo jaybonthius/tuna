@@ -47,7 +47,7 @@ prelude: :gerbil/core
   (and (not (internal-buffer? b)) (text-node? (buffer-root b))))
 
 (def (buffer-text (b : buffer)) => text
-  (text-node-content (: (buffer-root b) text-node)))
+  (text-node-content (buffer-root b)))
 
 ;; B's point: the selected view's when it shows B.
 (def (current-point (b : buffer)) => :fixnum

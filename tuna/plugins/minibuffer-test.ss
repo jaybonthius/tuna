@@ -67,7 +67,7 @@
      (let (prompt (active-prompt))
        [(text-string (text-node-content (first-text-node (buffer-root (view-showing (selected-view))))))
         (and prompt [(prompt-display-question prompt)
-                     (text-string (text-node-content (prompt-display-node prompt)))])
+                     (text-string (text-node-content (prompt-display-answer prompt)))])
         (current-message)]))))
 
 (def (minibuffer-buffers)

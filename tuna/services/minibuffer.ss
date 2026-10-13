@@ -17,7 +17,7 @@ prelude: :gerbil/core
 ;; What renderers show of the innermost prompt: its question and the text
 ;; node holding the answer being typed.
 (defstruct prompt-display ((question : :string)
-                           (node     : text-node))
+                           (answer   : node))       ; a text node
   final: #t)
 
 (interface Minibuffer

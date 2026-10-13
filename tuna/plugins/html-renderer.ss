@@ -56,7 +56,7 @@ prelude: :gerbil/core
 
 ;; A text node: one element per line, with the cursor when the node has
 ;; the rendered view's focus.
-(def (render-text-node (n : text-node) (children : :list)) => :list
+(def (render-text-node (n : node) (children : :list)) => :list
   (let* ((t (text-node-content n))
          (v (rendering-view))
          (position (and v (eq? n (view-node v)) (view-point v)))
@@ -143,7 +143,7 @@ prelude: :gerbil/core
         `((div (@ (class "minibuffer"))
                (span (@ (class "prompt")) ,prompt.question)
                ,(parameterize ((rendering-view (current-view)))
-                  (render-node prompt.node)))))
+                  (render-node prompt.answer)))))
       [])))
 
 ;; The screen: help output when there is some, the layout, the
