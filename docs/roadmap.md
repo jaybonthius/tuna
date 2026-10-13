@@ -25,7 +25,7 @@ Out of scope: windows and splits, files, modes, completion UI, real highlighting
 
 The skeleton let pieces of features creep into the kernel. The approved plan ([kernel contract](briefs/2026-10-kernel-contract.md)) fixes that first, in this order:
 
-1. Clean up the kernel to match the contract (no new features).
+1. *Done (2026-10-12).* Clean up the kernel to match the contract (no new features). See [how Tuna works](overview.md#a-small-kernel-and-a-lot-of-plugins).
 2. Make buffers really replaceable (a short brief first).
 3. Take the demo out of the default startup (a short brief first).
 4. General-purpose hooks and advice, including redefining functions while Tuna runs (a brief first).

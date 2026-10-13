@@ -1,6 +1,6 @@
 # How Tuna works
 
-**Status (2026-10-12):** the architecture skeleton is complete. Built: the small engine (plugins with receipts, services that can be swapped at startup or live, the editor thread with `C-g`), the token-protected browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, hooks, background jobs, a swappable renderer (HTML, or plain text as a toy), a swappable window manager (one window, or two side by side as a toy), and saving your session and unsaved text across restarts. Not built yet: files, `M-x`, completion, modes, real window layouts, and your `init.ss`. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
+**Status (2026-10-12):** the architecture skeleton is complete. Built: the small kernel (plugins with receipts, services that can be swapped at startup or live, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the token-protected browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML, or plain text as a toy), a swappable window manager (one window, or two side by side as a toy), and saving your session and unsaved text across restarts. Not built yet: files, `M-x`, completion, modes, real window layouts, and your `init.ss`. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
 
 ## The idea
 
@@ -10,9 +10,34 @@ Tuna is Emacs-inspired, not an Emacs clone. [Tuna and Emacs](emacs-equivalents.m
 
 Almost everything in Tuna is a plugin, including basic editing. You can turn plugins off, reload them, or swap out core parts (even the data structure that holds text) while Tuna is running.
 
-## A small engine and a lot of plugins
+## A small kernel and a lot of plugins
 
-Tuna itself is a small, fixed engine. It loads plugins, keeps track of what each one added so it can be undone, connects plugins to the services they need, and enforces the rules for who may change editor state and when. It also announces its own events as hooks (a plugin turned on or off, a service changed hands, a task started or finished), so other plugins, such as a future profiler, can watch it without changing it. Everything that makes Tuna an editor (buffers, the text store, key handling, the minibuffer, windows, how screens are drawn, saving your session) is a plugin. Tuna's own versions of those get no special treatment, so anything they can do, a replacement can do too.
+**Status:** built. The kernel was cut back to this shape on 2026-10-12.
+
+![The kernel and the layers on top of it](diagrams/kernel-layers.svg)
+
+Tuna itself is a small, fixed **kernel**. Everything that makes Tuna an editor sits on top of it, in three more layers, and each layer may use only the layers below it:
+
+- **Plugins** (`tuna/plugins/`) do everything you'd recognize as Tuna: keys and commands, buffers and the text store, basic editing, the echo area and minibuffer, windows, drawing the screen, the browser connection, settings, and saving your session. Tuna's own plugins get no special access, so anything they can do, a replacement can do too.
+- **Contracts** (`tuna/services/`) say what each slot promises, such as "a text store can insert, delete and read a line", so a different plugin can fill it. A contract also holds the shared types that go with its promise: the buffers contract, for example, defines the record of what an edit changed.
+- **Shared libraries** (`tuna/lib/`) are conveniences built only from the kernel's public parts: timers and background jobs. They have no special access; a plugin could write its own. The buffers contract uses the jobs library.
+- **The kernel** (`tuna/kernel.ss`, its public face, and `tuna/kernel/`) holds four things and no editor features:
+  1. **Plugins:** turn a plugin on and off, undo everything it added, connect it to the services it needs, and swap a service's plugin while Tuna runs. Turning a plugin on or off finishes as a whole: `C-g` waits until it is done (a third `C-g` still forces a stop).
+  2. **The editor thread:** one task at a time changes editor state, a task can pause for a question, `C-g` stops it, and input waits in an ordered queue. The kernel never looks inside an **input item**. The browser connection hands items in through a function the kernel gave it when the plugin turned on, and the plugin filling the input slot (the keys plugin) decides what each item means, including which key means "quit".
+  3. **Hooks and IDs:** a named list of callbacks, plus unique IDs. The kernel uses hooks to announce its own events: a plugin turned on, a plugin turned off, a service changed hands, a task started, a task finished. Other plugins, such as a future profiler, can watch these without changing the kernel.
+  4. **The slots it calls:** input (what an item means), display (bring the screen up to date), and messages (show a short note; the echo area fills this slot). When nothing fills messages, failures are printed to the terminal Tuna was started from.
+
+Where the parts that once crept into the kernel live now:
+
+| Part | Lives in |
+|---|---|
+| Commands and keymaps | The keys contract (`defcommand`, `keymap-set`); the keys plugin keeps them |
+| Session slots | The session contract (`context-add-session-slot!`); the session plugin keeps them |
+| Timers | The timers library (`context-run-with-timer!`) |
+| Background jobs | The jobs library. A plugin makes a **job group** when it turns on and starts its jobs in it; turning the plugin off cancels them. |
+| Records of what an edit changed | The buffers contract |
+
+`make test` checks these boundaries mechanically. Kernel code may import only Gerbil's standard library and other kernel files, and may not use the words the [kernel decision record](../agents/adr/0012-kernel-boundary-and-replaceability.md) forbids (keys, buffers, windows, settings, timers, and so on). Libraries may import only the standard library, the kernel's public face, and other libraries. Everything else imports only the kernel's public face, and only tests may use the test helpers in `tuna/test-support/`.
 
 Some plugins can be swapped while Tuna runs: the text store, the window manager, the renderer, and nearly everything else. A few are chosen at startup and need a restart to change, such as how keys are resolved and how settings are looked up, because swapping them mid-session would pull the rug out from under running commands. If a plugin combination breaks things, a safe mode starts Tuna with only its standard plugins, and `describe-services` shows which plugin is filling each slot.
 
@@ -24,7 +49,7 @@ Follow the numbers for the main loop:
 
 1. The **keyboard plugin** in your browser sends each key press to Tuna.
 2. The **web server** says "got it" immediately and puts the key in a queue, in order.
-3. The **editor thread** takes the next key, finds the command bound to it, and runs that command. The command changes the **editor state**: buffers, windows, the minibuffer. The editor thread is the only thing allowed to change editor state, so commands never trip over each other.
+3. The **editor thread** takes the next key and asks the keys plugin what it means; the keys plugin finds the command bound to it, and the editor thread runs that command. The command changes the **editor state**: buffers, windows, the minibuffer. The editor thread is the only thing allowed to change editor state, so commands never trip over each other.
 4. When there's no more input waiting, the editor thread draws a new **screen**: everything the tab shows, as HTML.
 5. The web server sends that screen to every open browser tab.
 
@@ -123,7 +148,7 @@ What you see in a window is a **view** of a buffer. Two windows can show the sam
 
 Autosave and the session file are built; `custom.ss` and `init.ss` are not yet.
 
-The saved files are plain Scheme data, readable in any editor, and Tuna never runs them as code. Only `init.ss` is code. Each plugin decides what of its own state is worth saving, and hands it to the session plugin as a named *session slot*; the engine knows nothing about saving.
+The saved files are plain Scheme data, readable in any editor, and Tuna never runs them as code. Only `init.ss` is code. Each plugin decides what of its own state is worth saving, and hands it to the session plugin as a named *session slot*; the kernel knows nothing about saving.
 
 ## How this differs from Emacs
 
@@ -144,7 +169,13 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 - **Version** (or revision): a number that goes up every time a buffer changes.
 - **Snapshot**: a frozen copy of a buffer's text at one version, cheap to make.
 - **Job**: slow work done off the editor thread using a snapshot.
+- **Job group**: a plugin's set of jobs; turning the plugin off cancels them.
 - **Plugin**: a bundle of commands, keys, hooks, and services that can be turned on and off.
 - **Receipt**: a plugin's record of everything it added, used to undo it.
 - **Service**: a swappable part of Tuna, defined by what it promises to do.
+- **Kernel**: the small fixed part of Tuna that is not a plugin: the plugin machinery, the editor thread and its rules, hooks, and the slots it calls.
+- **Contract**: what a service slot promises, written down so another plugin can fill it.
+- **Shared library**: convenience code, such as timers and jobs, built only from the kernel's public parts.
+- **Hook**: a named list of callbacks that run when something happens, such as a buffer changing or a plugin turning on.
+- **Input item**: one unit of input from a browser tab, such as a key press; the kernel queues it without looking inside.
 - **Session slot**: a named piece of one plugin's state that the session plugin saves while Tuna is idle and on exit, and hands back on the next start.
