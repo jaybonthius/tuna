@@ -580,7 +580,8 @@ prelude: :gerbil/core
                          (tier       : :symbol)
                          (provider   :? :symbol)
                          (dependents : :list)          ; plugin names
-                         (adapting   : :list))         ; the dependents that adapt
+                         (adapting   : :list)          ; the dependents that adapt
+                         (doc        : :string))
   final: #t)
 
 (def (describe-services) => :list
@@ -597,7 +598,8 @@ prelude: :gerbil/core
                                 (service-tier svc)
                                 (and best (entry-owner best))
                                 (names dependents)
-                                (names (filter (cut adapting? k name <>) dependents)))))
+                                (names (filter (cut adapting? k name <>) dependents))
+                                (service-doc svc))))
          (list-sort (lambda ((a : service) (b : service))
                       (string<? (symbol->string (service-name a))
                                 (symbol->string (service-name b))))

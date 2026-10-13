@@ -3,7 +3,7 @@
         :std/test
         :tuna/kernel
         (only-in :tuna/kernel/state new-kernel current-kernel)
-        (only-in :tuna/kernel/plugins plugin-doc plugin-source startup-service-error?)
+        (only-in :tuna/kernel/plugins startup-service-error?)
         (only-in :tuna/kernel/hooks hook-callback-names)
         "../test-support/kernel"
         "../test-support/string-input")

@@ -14,7 +14,10 @@
 ;;; may include only checked library files. Libraries may use the nouns.
 ;;;
 ;;; Test support (tuna/test-support/) is for tests only: no other non-test
-;;; source under tuna/ may import or include it.
+;;; source under tuna/ may import or include it, and build.ss must not list
+;;; it. The kernel object is private: outside tuna/kernel/ and test support,
+;;; source and tests may import only the kernel facade :tuna/kernel, never
+;;; a module under tuna/kernel/.
 (import (only-in :gerbil/runtime/hash HashTable)
         :std/misc/ports
         :std/source
@@ -160,17 +163,20 @@
 
 ;;; Imports and includes
 
-;; The top-level forms of the file at PATH. A first line "#lang MODULE",
-;; which the reader cannot read, becomes the form (import MODULE).
+;; The top-level forms of the file at PATH. A first line "#lang PRELUDE
+;; ...", which the reader cannot read, becomes the form (import PRELUDE):
+;; as Gerbil does (read-lang in gerbil/expander/module.ss), the rest of the
+;; line is read as data, and its first datum, a symbol or a string, is the
+;; prelude.
 (def (read-forms (path : :string)) => :list
   (let* ((source (read-file-string path))
          (lang? (string-prefix? "#lang " source))
          (end (if lang? (or (string-index source #\newline) (string-length source)) 0))
          (port (open-input-string (substring source end (string-length source)))))
     (let lp ((forms (if lang?
-                      [['import (string->symbol
-                                 (car (filter (lambda ((word : :string)) (not (string-empty? word)))
-                                              (string-split (substring source 6 end) #\space))))]]
+                      (match (call-with-input-string (substring source 6 end) (cut read-all <> read))
+                        ([prelude . _] [['import prelude]])
+                        (else (error "#lang line names no prelude" path)))
                       [])))
       (let (form (read port))
         (if (eof-object? form)
@@ -312,7 +318,7 @@
                       (included-paths forms)))))
                 checked))))
 
-;;; Test support
+;;; Test support and the private kernel
 
 (def test-support-directory "tuna/test-support")
 
@@ -326,15 +332,29 @@
       ([".." . more] (lp more (if (and (pair? kept) (not (equal? (car kept) ""))) (cdr kept) kept)))
       ([segment . more] (lp more (cons segment kept))))))
 
-;; Whether NAME, imported or included by FILE, is in tuna/test-support/: a
-;; module :tuna/test-support/x, or a path relative to FILE.
+;; The source NAME refers to when FILE imports or includes it: a module
+;; :a/b as the root-relative a/b, or a path relative to FILE, without
+;; extension, as an absolute path.
+(def (reference-target (file : :string) (name : :string)) => :string
+  (if (string-prefix? ":" name)
+    (source-path (substring name 1 (string-length name)))
+    (lexical-path (path-expand name (path-directory (source-path file))))))
+
+;; Whether NAME, imported or included by FILE, is in DIRECTORY (relative to
+;; the repository root).
+(def (name-within? (file : :string) (name : :string) (directory : :string)) => :boolean
+  (string-prefix? (string-append (source-path directory) "/") (reference-target file name)))
+
+;; Whether NAME, imported or included by FILE, is tuna/test-support/ or in it.
 (def (test-support-name? (file : :string) (name : :string)) => :boolean
-  (let* ((target (if (string-prefix? ":" name)
-                   (source-path (substring name 1 (string-length name)))
-                   (lexical-path (path-expand name (path-directory (source-path file))))))
-         (directory (source-path test-support-directory)))
-    (or (equal? target directory)
-        (string-prefix? (string-append directory "/") target))))
+  (or (equal? (reference-target file name) (source-path test-support-directory))
+      (name-within? file name test-support-directory)))
+
+;; Every module name, module-like symbol, and included path in FORMS.
+(def (referenced-names (forms : :list)) => :list
+  (unique (append (imported-module-names forms)
+                  (module-like-symbols forms)
+                  (included-paths forms))))
 
 ;; Every .ss file under tuna/ other than tests and test support itself.
 (def (non-test-source-names) => :list
@@ -347,16 +367,54 @@
 (def (test-support-problems) => :list
   (apply append
          (map (lambda ((file : :string))
-                (let (forms (read-forms (source-path file)))
-                  (filter-map
-                   (lambda ((name : :string))
-                     (and (test-support-name? file name)
-                          (string-append file ": imports or includes " name
-                                         "; only tests may use " test-support-directory "/")))
-                   (unique (append (imported-module-names forms)
-                                   (module-like-symbols forms)
-                                   (included-paths forms))))))
+                (filter-map
+                 (lambda ((name : :string))
+                   (and (test-support-name? file name)
+                        (string-append file ": imports or includes " name
+                                       "; only tests may use " test-support-directory "/")))
+                 (referenced-names (read-forms (source-path file)))))
               (non-test-source-names))))
+
+;; Every string in FORM, at any depth.
+(def (strings-in (form : :t)) => :list
+  (cond
+   ((pair? form) (append (strings-in (car form)) (strings-in (cdr form))))
+   ((vector? form) (strings-in (vector->list form)))
+   ((string? form) [form])
+   (else [])))
+
+;; build.ss entries under tuna/test-support/, which gerbil build would compile
+;; into the package.
+(def (build-script-problems) => :list
+  (filter-map (lambda ((name : :string))
+                (and (or (equal? name test-support-directory)
+                         (string-prefix? (string-append test-support-directory "/") name))
+                     (string-append "build.ss: lists " name "; test support must not be built")))
+              (strings-in (read-forms (source-path "build.ss")))))
+
+;; Every .ss file under tuna/, tests included, other than the kernel (its
+;; facade tuna/kernel.ss and tuna/kernel/) and test support.
+(def (kernel-client-names) => :list
+  (filter (lambda ((name : :string))
+            (and (string-suffix? ".ss" name)
+                 (not (equal? name "tuna/kernel.ss"))
+                 (not (string-prefix? "tuna/kernel/" name))
+                 (not (string-prefix? (string-append test-support-directory "/") name))))
+          (map car (tree-entries "tuna"))))
+
+;; Imports or includes of a module under tuna/kernel/ by a kernel client,
+;; which bypass the facade and may reach the private kernel object.
+(def (kernel-internal-problems) => :list
+  (apply append
+         (map (lambda ((file : :string))
+                (filter-map
+                 (lambda ((name : :string))
+                   (and (name-within? file name "tuna/kernel")
+                        (string-append file ": imports or includes " name
+                                       "; outside the kernel and test support, use only"
+                                       " the kernel facade :tuna/kernel")))
+                 (referenced-names (read-forms (source-path file)))))
+              (kernel-client-names))))
 
 ;;; Forbidden nouns
 
@@ -556,6 +614,9 @@
     (test-case "libraries import only :gerbil, :std, :tuna/kernel, and library modules"
       (displayln "  library boundary: " (length (layer-source-names library-layer)) " files checked")
       (check (problem-count (import-problems library-layer)) => 0))
-    (test-case "only tests import or include test support"
+    (test-case "only tests import or include test support, and build.ss does not list it"
       (displayln "  test-support boundary: " (length (non-test-source-names)) " non-test files checked")
-      (check (problem-count (test-support-problems)) => 0))))
+      (check (problem-count (append (test-support-problems) (build-script-problems))) => 0))
+    (test-case "outside the kernel and test support, only the kernel facade is imported"
+      (displayln "  kernel facade boundary: " (length (kernel-client-names)) " files checked")
+      (check (problem-count (kernel-internal-problems)) => 0))))

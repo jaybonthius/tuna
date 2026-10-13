@@ -15,6 +15,8 @@ prelude: :gerbil/core
   ;; entries, activation, services with providers and adapting dependents.
   plugin                                ; the type, for annotations
   plugin-name                           ; lifecycle hooks pass plugins
+  plugin-doc
+  plugin-source
   defplugin
   context
   current-context
@@ -31,6 +33,8 @@ prelude: :gerbil/core
   entry-table-ref
   entry-table-entries
   entry-table-names
+  service                               ; the type, for annotations
+  service-name                          ; service-changed-hook passes services
   new-service
   service-provider
   context-provide!
@@ -46,6 +50,7 @@ prelude: :gerbil/core
   service-info-provider
   service-info-dependents
   service-info-adapting
+  service-info-doc
   (phi: +1 stx-source-string)           ; for registration macros that record their source
 
   ;; 2. Execution rules: the editor loop and its baton, tasks, yield
