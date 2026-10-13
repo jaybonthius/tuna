@@ -380,6 +380,7 @@ prelude: :gerbil/core
                      ":" (number->string (fx1+ (##filepos-col position))) ": "
                      (exception-text e))))
    ((SyntaxError? e) (syntax-error-text e))
+   ((option-problems? e) (option-problems-text e))
    (else (exception-text e))))
 
 ;; A syntax error as one line: where, what, and the offending form.

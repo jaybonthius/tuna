@@ -10,7 +10,7 @@ prelude: :gerbil/core
 
 (import :tuna/kernel
         :tuna/lib/plugin-options)
-(export (struct-out declaration configuration)
+(export (struct-out declaration configuration option-problems)
         declare-plugin!
         declare-user-code!
         collect-configuration)
@@ -32,6 +32,10 @@ prelude: :gerbil/core
 (defstruct configuration ((declarations : :list)
                           (user-code    : plugin)
                           (user-forms   : :list))
+  final: #t)
+
+;; What a load raises when options have problems: one line per problem.
+(defstruct option-problems ((text : :string))
   final: #t)
 
 ;; What one load has collected so far: the declarations, the user's code,
@@ -111,7 +115,7 @@ prelude: :gerbil/core
       (unless c.user-code
         (error "The file declared nothing: does it start with #lang :tuna/config?"))
       (unless (null? c.problems)
-        (error (string-join (reverse c.problems) "\n")))
+        (raise (make-option-problems (string-join (reverse c.problems) "\n"))))
       (for-each check-not-reserved! c.declarations)
       (make-configuration (reverse c.declarations) c.user-code c.user-forms))))
 

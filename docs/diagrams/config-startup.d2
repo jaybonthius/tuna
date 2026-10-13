@@ -46,7 +46,7 @@ boot: "Start-up step\nruns init.ss in a trial run\nand collects what it declares
 kernel: "Kernel\nturns each plugin on, or undoes it" {class: tuna}
 plugins: "Your plugins\neach one on its own" {class: yours}
 init: "Your own code\napplied last" {class: yours}
-terminal: "Terminal and log file\nwhat worked, what failed, and why" {class: out}
+terminal: "Terminal, log file, and echo area\nwhat worked, what failed, and why" {class: out}
 
 files -> boot: "1. read"
 boot -> kernel: "2. turn on each plugin"

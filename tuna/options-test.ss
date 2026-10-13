@@ -88,6 +88,7 @@
                              (check (contains? (reload-report-text report) line) ? values))
                            expected)
                  (check (contains? (reload-report-text report) "Nothing was changed.") ? values)
+                 (check (contains? (reload-report-text report) "*** ERROR") => #f)
                  (check (changes report) => [])
                  (check (fx- (activation-count 'optioned-plugin) before) => 1)
                  (check (last-greeting) => "hi")
