@@ -14,6 +14,8 @@ The owner's vision, recorded here; nothing below is decided except where marked 
 - Proposed names (not decided): buffer, node, view, container, layout. The word "window" goes away. "Frame" means which part of the layout a browser tab shows.
 - Open: how layout and buffer state is stored so changes stay cheap and rendering stays incremental, and whether a generic tree belongs in the kernel, a shared library, or each plugin. Research in progress: `agents/research/layout-state/`.
 
+Drawing is immediate mode: each redisplay sends everything visible, never patches of individual parts, so the browser cannot drift out of sync. Only what is in view is drawn, and parts that have not changed are not recomputed on the server. Scrolling inside buffers and in scrolling containers will probably use the browser's native scrolling with content drawn only when it comes into view (like hyperlith's virtual scroll), ideally the same mechanism for both. How exactly is still open.
+
 ## The idea
 
 Emacs splits windows one way: a fixed tree of left/right and top/bottom splits, built into its C core. Tuna should let you arrange windows like i3 (splits and tabs), like Niri (an endless strip of columns you scroll through), or any mixture, nested as deeply as you like. And unlike Emacs, the whole window manager is a plugin you can replace.

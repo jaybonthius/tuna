@@ -1,5 +1,7 @@
 # Layout and buffer tree state: representation, incremental rendering, persistence
 
+> **Owner decision, 2026-10-13:** the recommendation below to send Datastar patches for individual changed node ids is rejected. Rendering stays immediate mode (UI = function(state)): every redisplay streams the whole visible UI as one fat morph. Per-node revisions remain useful as server-side memoization keys so unchanged parts' HTML is not recomputed. See agents/STATUS.md owner decisions.
+
 Research, 2026-10-13. Read-only on code; benchmark and results are in [`bench/`](bench/). Labels: **Fact** (checked in a source or measured), **Inference** (my reasoning), **Unverified** (not checked). Evidence, not decisions.
 
 ## Answer
