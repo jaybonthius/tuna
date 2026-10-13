@@ -37,35 +37,14 @@ prelude: :gerbil/core
 (export main)
 
 (def (main . args)
-  (match args
-    (["init"]
+  (match (parse-command-line args)
+    (['init]
      (let (outcome (init-configuration!))
        (displayln (cdr outcome))
        (exit (if (car outcome) 0 1))))
-    (["check" . options]
-     (let (config (parse-options options #f))
-       (check config)))
-    (else
-     (let (port 0)
-       (let (config (parse-options args (lambda ((value : :string))
-                                          (let (number (string->number value))
-                                            (if (and (fixnum? number) (<= 1 number 65535))
-                                              (set! port number)
-                                              (usage))))))
-         (run port config))))))
-
-;; The --config path in OPTIONS, or #f. ON-PORT receives --port's value;
-;; without it, --port is not accepted.
-(def (parse-options (options : :list) (on-port :? :procedure)) => (Maybe :string)
-  (let loop ((rest options) (config #f))
-    (match rest
-      ([] config)
-      (["--config" path . more] (loop more path))
-      (["--port" value . more]
-       (if on-port
-         (begin (on-port value) (loop more config))
-         (usage)))
-      (else (usage)))))
+    (['check config] (check config))
+    (['run port config] (run port config))
+    (else (usage))))
 
 (def (usage) => :void
   (let (port (current-error-port))

@@ -48,6 +48,7 @@
     "tuna/plugins/minibuffer"
     "tuna/plugins/demo"
     "tuna/plugins/window-commands"
+    "tuna/plugins/config-blocks"
     "tuna/plugins/web/embed"
     (gxc: "tuna/plugins/web" (extra-inputs: ,web-assets))
     ;; tuna init writes the starter configuration, which boot embeds.

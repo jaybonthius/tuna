@@ -1,7 +1,7 @@
 ;;; Starting from init.ss (tuna/boot.ss, tuna/config.ss): finding the
 ;;; file, loading it without effect, turning plugins on with per-plugin and
-;;; per-block isolation, time limits, the start-up report and its log, and
-;;; tuna init. Every test writes its init.ss to its own temporary directory
+;;; per-block isolation, time limits, the start-up report and its log,
+;;; tuna check, tuna init, and the command line. Every test writes its init.ss to its own temporary directory
 ;;; and runs in a fresh kernel.
 (import :std/misc/ports
         :std/source
@@ -72,6 +72,21 @@
 
 (def boot-test
   (test-suite "start-up from init.ss"
+    (test-case "the command line: run, check, and init"
+      (check (parse-command-line []) => '(run 0 #f))
+      (check (parse-command-line ["--port" "8001"]) => '(run 8001 #f))
+      (check (parse-command-line ["--config" "a.ss" "--port" "8001"]) => '(run 8001 "a.ss"))
+      (check (parse-command-line ["--port" "0"]) => #f)
+      (check (parse-command-line ["--port" "65536"]) => #f)
+      (check (parse-command-line ["--port" "x"]) => #f)
+      (check (parse-command-line ["--config"]) => #f)
+      (check (parse-command-line ["--bogus"]) => #f)
+      (check (parse-command-line ["check"]) => '(check #f))
+      (check (parse-command-line ["check" "--config" "a.ss"]) => '(check "a.ss"))
+      (check (parse-command-line ["check" "--port" "8001"]) => #f)
+      (check (parse-command-line ["init"]) => '(init))
+      (check (parse-command-line ["init" "--config" "a.ss"]) => #f))
+
     (test-case "discovery: --config, then TUNA_CONFIG, then XDG_CONFIG_HOME, then HOME"
       (call-with-environment
        '(("TUNA_CONFIG" . "/env/init.ss") ("XDG_CONFIG_HOME" . "/xdg") ("HOME" . "/home/u"))
@@ -222,8 +237,12 @@
            (lambda ()
              (let (problem (load-configuration (write-init directory "(use-plugin no-such-plugin)")))
                (check (contains? problem "Reference to unbound identifier") ? values)
-               (check (contains? problem "init.ss\"@3.13") ? values))
+               (check (contains? problem "init.ss:3:13: Reference to unbound identifier: no-such-plugin")
+                      ? values))
              (check (contains? (load-configuration (write-init directory "(use-plugin 42)"))
+                               "Bad syntax")
+                    ? values)
+             (check (contains? (load-configuration (write-init directory "(use-plugin car)"))
                                "use-plugin needs a plugin")
                     ? values)
              (check (contains? (load-configuration (write-init directory
@@ -245,7 +264,8 @@
       (call-with-temporary-directory
        (lambda (directory)
          (let (path (write-init directory
-                                "(use-plugin (let spin ((n 0)) (spin (if (fx< n 1000) (fx1+ n) 0))))"))
+                                "(defrules spin () ((_) (spin)))"
+                                "(spin)"))
            (call-with-fresh-kernel []
              (lambda ()
                (parameterize ((load-time-limit 0.5))
@@ -270,9 +290,114 @@
                    (check (statuses report)
                           => '(("hanging-plugin" failed) ("good-plugin" on)
                                ("your own code (plugin init)" on)))
-                   (check (contains? (detail report "hanging-plugin") "rolled back") ? values)
+                   (check (detail report "hanging-plugin")
+                          => "did not finish turning on within 0.5 s and was stopped")
                    (check (probe-on? 'hanging) => #f)
                    (check (plugin-active? hanging-plugin) => #f)))))))))
+
+    (test-case "an activation that ignores being stopped is waited for, never killed"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let ((path (write-init directory
+                                 "(use-plugin stubborn-provider-plugin)"
+                                 "(use-plugin dependent-plugin)"
+                                 "(use-plugin good-plugin)"))
+               (errors (open-output-string)))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (let (report (parameterize ((activation-time-limit 0.2)
+                                           (stop-grace 0.2)
+                                           (current-error-port errors))
+                              (start path)))
+                 (check (contains? (get-output-string errors)
+                                   "stubborn-provider-plugin did not stop when asked after 0.2 s; start-up is waiting for it")
+                        ? values)
+                 (check (statuses report)
+                        => '(("stubborn-provider-plugin" failed) ("good-plugin" on)
+                             ("dependent-plugin" skipped) ("your own code (plugin init)" on)))
+                 (check (detail report "stubborn-provider-plugin") => "stubborn-provider-plugin gave up")
+                 ;; Rolled back: no provider is left without its plugin.
+                 (check (probe-on? 'stubborn) => #f)
+                 (check (service-provider probe-service) => #f)
+                 (check (map (lambda ((info : service-info))
+                               [(service-info-name info) (service-info-provider info)
+                                (service-info-dependents info)])
+                             (describe-services))
+                        => '((probe #f ()))))))
+           ;; Deactivating everything left nothing behind.
+           (check (probe-on? 'good) => #f)
+           (check (probe-on? 'stubborn) => #f)))))
+
+    (test-case "a config: block is applied again when start-up restarts its plugin"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory
+                                "(use-plugin provider-plugin)"
+                                "(use-plugin dependent-plugin config: (note-activation! 'restart-block) (probe-on! 'restart-block))"
+                                "(use-plugin better-provider-plugin)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (let (report (start path))
+                 (check (statuses report)
+                        => '(("config-blocks" on) ("provider-plugin" on) ("dependent-plugin" on)
+                             ("config: block of dependent-plugin" on) ("better-provider-plugin" on)
+                             ("your own code (plugin init)" on)))
+                 (check (activation-count 'restart-block) => 2)
+                 (check (probe-on? 'restart-block) => #t))))))))
+
+    (test-case "load-time code is limited to imports and declarations"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (call-with-fresh-kernel []
+           (lambda ()
+             ;; use-plugin takes only a name.
+             (check (string? (load-configuration
+                              (write-init directory "(import :tuna/kernel)"
+                                          "(use-plugin (begin (activate-plugin! good-plugin) good-plugin))")))
+                    ? values)
+             (check (plugin-active? good-plugin) => #f)
+             ;; A leading requires: is the user's code, run only at activation.
+             (check (configuration? (load-configuration
+                                     (write-init directory "(import :tuna/kernel)"
+                                                 "requires: (begin (activate-plugin! good-plugin) [])")))
+                    ? values)
+             (check (plugin-active? good-plugin) => #f)
+             (check (configuration? (load-configuration
+                                     (write-init directory "(import :tuna/kernel)"
+                                                 "(use-plugin provider-plugin config: requires: (begin (activate-plugin! good-plugin) []))")))
+                    ? values)
+             (check (plugin-active? good-plugin) => #f)
+             ;; A file in another language is not run at all.
+             (for-each
+              (lambda ((first-line : :string))
+                (let (path (path-expand "init.ss" directory))
+                  (write-file-string
+                   path
+                   (string-append first-line
+                                  "(import :tuna/kernel \"" test-plugins-module "\")\n"
+                                  "(activate-plugin! good-plugin)\n"))
+                  (check (contains? (load-configuration path)
+                                    ":1: the first line must be `#lang :tuna/config`")
+                         ? values)
+                  (check (plugin-active? good-plugin) => #f)))
+              ["" "#lang :tuna/prelude\n" "#lang :tuna/configuration\n"]))))))
+
+    (test-case "tuna check loads and validates without turning anything on"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (call-with-fresh-kernel []
+           (lambda ()
+             (check (contains? (check-configuration (make-config-choice "/nonexistent/init.ss" "TUNA_CONFIG"))
+                               "No configuration at /nonexistent/init.ss (TUNA_CONFIG)")
+                    ? values)
+             (let (path (write-init directory "(use-plugin good-plugin" ))
+               (check (contains? (check-configuration (make-config-choice path "--config"))
+                                 "Incomplete form")
+                      ? values))
+             (let (path (write-init directory "(use-plugin good-plugin)" "(probe-on! 'user)"))
+               (check (check-configuration (make-config-choice path "--config")) => #f))
+             (check (plugin-active? good-plugin) => #f)
+             (check (describe-services) => []))))))
 
     (test-case "the start-up log is replaced on every start"
       (call-with-temporary-directory

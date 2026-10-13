@@ -1,18 +1,18 @@
 ;;; What loading init.ss yields: the declared plugins, each with its
 ;;; optional config: block, and the user's own code as one more plugin
 ;;; (docs/briefs/2026-10-configuration.md, ADR 2). Loading only collects
-;;; these values; nothing touches the editor until a plugin is turned on,
-;;; so receipts undo every effect. The language users write this in is
+;;; these values; the plugins change the editor only once they are turned
+;;; on, so receipts undo every effect. The language users write this in is
 ;;; :tuna/config; the start-up code that loads and activates it is
-;;; tuna/boot.ss.
+;;; tuna/boot.ss, and the plugin that keeps config: blocks with their
+;;; plugins is tuna/plugins/config-blocks.ss.
 prelude: :gerbil/core
 
 (import :tuna/kernel)
 (export (struct-out declaration configuration)
         declare-plugin!
         declare-user-code!
-        collect-configuration
-        new-config-block-follower)
+        collect-configuration)
 
 ;; One use-plugin form: the plugin it declares (target), its config:
 ;; block as a plugin of its own, and where the form is ("file:line").
@@ -83,51 +83,3 @@ prelude: :gerbil/core
     (when (memq name '(init config-blocks))
       (error (string-append (or (declaration-source d) "init.ss") ": the plugin name "
                             (symbol->string name) " is reserved for the configuration itself")))))
-
-;;; config: blocks follow their plugins
-
-;; A plugin that keeps each config: block of DECLARATIONS on exactly while
-;; its plugin is on, while the editor loop runs: when the plugin turns on,
-;; its block turns on after it; when it turns off, so does its block, which
-;; turns on again if the plugin was only restarted. Lifecycle callbacks may
-;; not turn plugins on or off, so each change is queued as a task. Before
-;; the loop runs, the start-up code activates blocks itself.
-(def (new-config-block-follower (declarations : :list)) => plugin
-  (let (blocks (filter declaration-block declarations))
-    (defplugin config-blocks
-      "Keeps each config: block of init.ss on while its plugin is on."
-      (let (ctx (current-context))
-        (context-add-hook! ctx plugin-activated-hook 'config-blocks
-                           (lambda ((p : plugin))
-                             (for-each (lambda ((d : declaration))
-                                         (unless (plugin-active? (declaration-block d))
-                                           (queue-block-sync! d)))
-                                       (declarations-of blocks p))))
-        (context-add-hook! ctx plugin-deactivated-hook 'config-blocks
-                           (lambda ((p : plugin))
-                             (for-each queue-block-sync! (declarations-of blocks p))))))
-    config-blocks))
-
-(def (declarations-of (declarations : :list) (p : plugin)) => :list
-  (filter (lambda ((d : declaration)) (eq? (plugin-name (declaration-target d)) (plugin-name p)))
-          declarations))
-
-(def (queue-block-sync! (d : declaration)) => :void
-  (when (editor-loop-running?)
-    (spawn-task! 'config-block (lambda () (sync-block! d)))
-    (void)))
-
-;; Turn D's block off, then on again if its plugin is on.
-(def (sync-block! (d : declaration)) => :void
-  (let ((parent (declaration-target d))
-        (block (: (declaration-block d) plugin)))
-    (deactivate-plugin! block)
-    (when (plugin-active? parent)
-      (with-catch (lambda (e)
-                    (message (string-append "The config: block of "
-                                            (symbol->string (plugin-name parent))
-                                            (if (declaration-source d)
-                                              (string-append " (" (declaration-source d) ")")
-                                              "")
-                                            " failed and is off: " (exception-summary e))))
-                  (lambda () (activate-plugin! block))))))
