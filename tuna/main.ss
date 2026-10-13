@@ -1,16 +1,19 @@
 ;;; The tuna program. `tuna` starts from the user's configuration
 ;;; (tuna/boot.ss), restores the session, runs the editor loop until
-;;; interrupted, then saves the session and shuts down. `tuna check` loads
-;;; the configuration without starting anything; `tuna init` copies the
-;;; starter configuration to the default location.
+;;; interrupted, then saves the session and shuts down; meanwhile it
+;;; reloads the configuration when `tuna reload` asks (tuna/control.ss).
+;;; `tuna check` loads the configuration without starting anything;
+;;; `tuna init` copies the starter configuration to the default location.
 prelude: :gerbil/core
 
 (import :std/os/signal
         :std/os/signal-handler
         :std/sync/channel
+        :std/sync/completion
         :tuna/version
         :tuna/kernel
         :tuna/boot
+        :tuna/control
         :tuna/services/session
         (only-in :tuna/plugins/web web-transport-listen-port web-transport-url)
         ;; Linked into the executable so that init.ss can import them.
@@ -33,7 +36,8 @@ prelude: :gerbil/core
         (only-in :tuna/plugins/basic-editing)
         (only-in :tuna/plugins/minibuffer)
         (only-in :tuna/plugins/demo)
-        (only-in :tuna/plugins/window-commands))
+        (only-in :tuna/plugins/window-commands)
+        (only-in :tuna/plugins/reload-config))
 (export main)
 
 (def (main . args)
@@ -43,12 +47,13 @@ prelude: :gerbil/core
        (displayln (cdr outcome))
        (exit (if (car outcome) 0 1))))
     (['check config] (check config))
+    (['reload] (exit (request-reloads (current-output-port))))
     (['run port config] (run port config))
     (else (usage))))
 
 (def (usage) => :void
   (let (port (current-error-port))
-    (display "usage: tuna [--port PORT] [--config PATH]\n       tuna check [--config PATH]\n       tuna init\n"
+    (display "usage: tuna [--port PORT] [--config PATH]\n       tuna check [--config PATH]\n       tuna init\n       tuna reload\n"
              port))
   (exit 2))
 
@@ -87,25 +92,77 @@ prelude: :gerbil/core
                     (newline port)))
                 thunk)))
 
+;; Run Tuna: start, then handle events on this thread until stopped. The
+;; editor loop runs once a plugin provides input. A `tuna reload` request
+;; reloads on the editor loop's baton when the loop runs; otherwise this
+;; thread, the only one changing plugins then, reloads, and starts the
+;; loop if input is now provided (brief, walkthrough step 4).
 (def (run (port : :fixnum) (config :? :string)) => :void
   (report-start-up
    (parameterize ((web-transport-listen-port port))
      (start-from-configuration (find-configuration config))))
   (call-reporting-session-failure "Restoring the session" restore-session)
-  (let ((url (web-transport-url))
-        (input? (and (service-provider input-service) #t))
-        (stopped (make-channel)))
-    (add-signal-handler! SIGINT (lambda () (channel-close stopped)))
-    (add-signal-handler! SIGTERM (lambda () (channel-close stopped)))
-    (when input?
-      (start-editor-loop!))
-    (displayln "Tuna " (tuna-version) " is running."
-               (if url (string-append " Open " url) "")
-               (if input? "" " No plugin provides input, so the editor loop is not running."))
-    (force-output)
-    (channel-get stopped)
+  (let* ((events (make-channel))           ; 'stop, or [reload: completion]
+         (control (start-control-server-reporting
+                   (lambda ()
+                     (if (editor-loop-running?)
+                       (call-on-editor-loop reload-outcome)
+                       (let (done (make-completion))
+                         (channel-put events [reload: done])
+                         (completion-wait! done)))))))
+    (add-signal-handler! SIGINT (lambda () (channel-put events 'stop)))
+    (add-signal-handler! SIGTERM (lambda () (channel-put events 'stop)))
+    (start-editor-loop-when-input! #t)
+    (let loop ()
+      (match (channel-get events)
+        ('stop (void))
+        ([reload: done]
+         (completion-post! done (with-catch (lambda (e)
+                                              (cons #f (string-append "The reload failed: "
+                                                                      (exception-summary e) "\n")))
+                                            reload-outcome))
+         (start-editor-loop-when-input! #f)
+         (loop))))
+    (when control
+      (stop-control-server! control
+                            (lambda ()
+                              (match (channel-try-get events)
+                                ([reload: done]
+                                 (completion-post! done (cons #f "Tuna is shutting down; nothing was reloaded.\n")))
+                                (else (void))))))
     (stop-editor-loop!)
     (call-reporting-session-failure "Saving the session" save-session)
     (deactivate-all-plugins!)
     (remove-signal-handler! SIGINT)
     (remove-signal-handler! SIGTERM)))
+
+;; Reload and return (succeeded? . report-text). The caller holds the baton.
+(def (reload-outcome) => :pair
+  (let (report (reload-configuration!))
+    (cons (reload-succeeded? report) (reload-report-text report))))
+
+;; Start the editor loop if it is not running and a plugin provides
+;; input. Say that Tuna runs when the loop starts, and, when ANNOUNCE?,
+;; also when it cannot.
+(def (start-editor-loop-when-input! (announce? : :boolean)) => :void
+  (let* ((input? (and (service-provider input-service) #t))
+         (start? (and input? (not (editor-loop-running?)))))
+    (when start?
+      (start-editor-loop!))
+    (when (or start? announce?)
+      (let (url (web-transport-url))
+        (displayln "Tuna " (tuna-version) " is running."
+                   (if url (string-append " Open " url) "")
+                   (if input? "" " No plugin provides input, so the editor loop is not running."))
+        (force-output)))))
+
+;; Listen for `tuna reload`; on failure say why on stderr and carry on
+;; without it, returning #f.
+(def (start-control-server-reporting (reload! : :procedure)) => :t
+  (with-catch (lambda (e)
+                (let (port (current-error-port))
+                  (display "tuna reload will not reach this Tuna: " port)
+                  (display (exception-summary e) port)
+                  (newline port))
+                #f)
+              (lambda () (start-control-server! reload!))))

@@ -130,8 +130,8 @@
                  (check (probe-on? 'good-block) => #f)
                  (check (probe-on? 'user) => #f)
                  (check (plugin-active? good-plugin) => #f)
-                 (check (statuses (make-startup-report (make-config-choice path "--config") #f
-                                                       (activate-configuration! loaded)))
+                 (check (statuses (let (choice (make-config-choice path "--config"))
+                                    (make-startup-report choice #f (activate-configuration! choice loaded))))
                         => '(("config-blocks" on) ("good-plugin" on)
                              ("config: block of good-plugin" on)
                              ("your own code (plugin init)" on)))

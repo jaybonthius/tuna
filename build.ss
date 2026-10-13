@@ -53,4 +53,6 @@
     (gxc: "tuna/plugins/web" (extra-inputs: ,web-assets))
     ;; tuna init writes the starter configuration, which boot embeds.
     (gxc: "tuna/boot" (extra-inputs: ("starter/init.ss")))
+    "tuna/control"
+    "tuna/plugins/reload-config"
     (exe: "tuna/main" bin: "tuna")))
