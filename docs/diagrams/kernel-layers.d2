@@ -1,7 +1,7 @@
 # What is in the kernel, and what sits on top of it?
 vars: {
   d2-config: {
-    layout-engine: dagre
+    layout-engine: elk
     theme-id: 0
   }
 }
@@ -30,16 +30,18 @@ classes: {
 }
 
 legend: |md
-  **Status:** proposed. Arrows mean "is built on".
+  **Status:** built (kernel cleanup finished 2026-10-12). Arrows mean "is built on".
+
   Only the bottom box is fixed; everything above it can be replaced.
 |
 
-plugins: "Plugins (Tuna's own and yours)\nkeys and commands, buffers, minibuffer,\nwindows, renderer, browser connection,\nsession saving, profiler, ..." {class: layer}
-contracts: "Contracts\nwhat a slot promises:\ntext store, buffers, input, renderer, windows" {class: layer}
+plugins: "Plugins (Tuna's own and yours)\nkeys and commands, buffers, minibuffer,\nwindows, renderer, browser connection,\nsession saving, ..." {class: layer}
+contracts: "Contracts\nwhat a slot promises:\ntext store, buffers, keys, renderer,\nwindows, settings, session" {class: layer}
 libraries: "Shared libraries\ntimers, background jobs" {class: layer}
-kernel: "Kernel (fixed)\n1. plugins: turn on, turn off, undo, swap\n2. the editor thread, C-g, the input queue\n3. hooks and IDs" {class: kernel}
+kernel: "Kernel (fixed)\n1. plugins: turn on, turn off, undo, swap\n2. the editor thread: tasks, C-g, the input queue\n3. hooks and IDs\n4. the slots it calls: input, display, messages" {class: kernel}
 
 plugins -> contracts
 plugins -> libraries
+contracts -> libraries: "the buffers contract\nuses background jobs"
 contracts -> kernel
 libraries -> kernel

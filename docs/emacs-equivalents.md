@@ -29,15 +29,16 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | Highlight layer (`set-highlights!`) | Overlays or `font-lock-face` properties set by a highlighter | A text holds named layers of ranges with faces; changing one bumps the decoration revision, not the content revision, and ranges move with edits. Built (minimal). |
 | Marker | Marker | Same. |
 | Character and content revisions | `buffer-chars-modified-tick`, `buffer-modified-tick` | Same, plus a separate revision for decorations. |
-| Command | `defun` with `(interactive …)` | Same; Tuna commands declare how each argument is obtained. |
+| Command (`defcommand`) | `defun` with `(interactive …)` | Same; Tuna commands will declare how each argument is obtained. Commands belong to the keys contract and are kept by the keys plugin, not the kernel. Built (without argument declarations). |
 | Input session | Per-terminal command-loop state (`last-command`, prefix argument, keyboard macro) | Same idea, named. |
-| Keymap stack | `current-active-maps` precedence | Same order, made explicit; adds keymaps on nodes. |
-| `keymap-set` | `keymap-set` | Same syntax (`"C-x C-f"`). |
+| Keymap stack | `current-active-maps` precedence | Same order, made explicit; adds keymaps on nodes. Keymaps belong to the keys contract and are kept by the keys plugin. |
+| `keymap-set` | `keymap-set` | Same syntax (`"C-x C-f"`). Part of the keys contract. Built. |
 | The `<printing-char>` binding | Printing characters bound to `self-insert-command` in `global-map` | Same effect through one pseudo-key. Built. |
 | `last-command`, `last-command-event` | Same names | Same. Built. |
-| `input-pending?`, `discard-input` | `input-pending-p`, `discard-input` | Same. Built. |
+| Input item and the input service | Input events and `read-key-sequence` | The kernel queues each item without looking inside it; the plugin filling the input service (the keys plugin) decides whether it means "quit" and which command it runs, much as Emacs looks events up in keymaps. Built. |
+| `input-pending?`, `discard-input` | `input-pending-p`, `discard-input` | Same; part of the kernel. Built. |
 | Echo area | Echo area | Same; it is a plugin. Built. |
-| Hook | Hook | Same; callbacks are named, ordered by depth, and a failing one is removed with a notice. Built. |
+| Hook (`new-hook`, `context-add-hook!`, `run-hook`) | Hook | Same; callbacks are named, ordered by depth, and a failing one is removed with a notice. The one hook mechanism is part of the kernel; each hook keeps its own callbacks. Built. |
 | `kill-buffer-hook` | `kill-buffer-hook`, `replace-buffer-in-windows` | Same hook; window managers use it to show another buffer in the windows that showed the killed one, which Emacs does inside `kill-buffer`. Built. |
 | `after-change-hook` | `after-change-functions` | Same role; callbacks receive the text and its change record. Built. |
 | `plugin-activated-hook`, `plugin-deactivated-hook`, `service-changed-hook`, `task-started-hook`, `task-finished-hook` | `after-load-functions`, for activation only | The engine announces its own events. Emacs has no general hook for unloading, services, or tasks; `pre-command-hook` and `post-command-hook` are per command and will belong to the input plugin ([ADR 8](../agents/adr/0008-input-keymaps-and-command-composition.md)). Built. |
@@ -50,13 +51,13 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | Manifest and stub commands | Autoloads (`;;;###autoload`, `loaddefs`) | Same purpose. |
 | Service | Nothing direct; closest are generic functions and backend lists (`xref`, `project`) | New in Tuna. |
 | Editor loop, baton | Command loop, global Lisp lock | Same role. |
-| Task | Command, timer, or process callback | Same, except a task may wait in the middle (see divergences). Built for commands and timers. |
-| `context-run-with-timer!` | `run-with-timer` | Same; the timer and its callbacks stop when its plugin is turned off. A shared library, not part of the kernel. Built. |
-| Job (`job-group-start!`) | Async subprocess or thread | New: works on a snapshot and never touches live buffers; a plugin starts jobs in a job group it owns, and a newer job of the same group with the same key replaces the waiting one. A shared library, not part of the kernel. Built (threads). |
+| Task | Command, timer, or process callback | Same, except a task may wait in the middle (see divergences). Tasks are part of the kernel. Built for commands and timers. |
+| `context-run-with-timer!` | `run-with-timer` | Same; the timer and its callbacks stop when its plugin is turned off. A shared library (`tuna/lib/timers.ss`), not part of the kernel. Built. |
+| Job (`job-group-start!`) | Async subprocess or thread | New: works on a snapshot and never touches live buffers; a plugin starts jobs in a job group it owns (`new-job-group`), and a newer job of the same group with the same key replaces the waiting one. A shared library (`tuna/lib/jobs.ss`), not part of the kernel; the kernel only posts each result back to the editor thread. Built (threads). |
 | Prompt (`read-string`, `completing-read`) | Same names, via recursive minibuffer | Same style. `read-string` is built. |
 | Minibuffer | Minibuffer, recursive minibuffers | Same: each waiting prompt has its own internal buffer; only the innermost receives keys. `RET` runs `exit-minibuffer`, `C-g` runs `abort-minibuffers`. Built. |
 | `quit` and the quit key | `quit` signal, `C-g`, `inhibit-quit` | Same names; stronger guarantee (see divergences). |
-| Session slots (`context-add-session-slot!`) | `savehist`, `desktop`, `saveplace` | Same purpose, kept by the session plugin and stored as plain data in `$XDG_STATE_HOME/tuna/session.ss`, saved while idle and on exit, restored on start. Built: buffers (names, points) and windows. |
+| Session slots (`context-add-session-slot!`) | `savehist`, `desktop`, `saveplace` | Same purpose, defined by the session contract (not the kernel), kept by the session plugin and stored as plain data in `$XDG_STATE_HOME/tuna/session.ss`, saved while idle and on exit, restored on start. Built: buffers (names, points) and windows. |
 | Autosave | `auto-save-mode`, `recover-session` | Same purpose: unsaved buffer text goes to `$XDG_STATE_HOME/tuna/autosave/`. Unlike Emacs, it comes back by itself on start, with the session, for buffers that visit no file (Emacs's `desktop` does not keep their text). Built. |
 | `init.ss`, `custom.ss` | `init.el`, `custom-file` | Same roles; `custom.ss` is data, not code. |
 | File-system service providers | `file-name-handler-alist` (TRAMP, compressed files) | Same purpose. |
