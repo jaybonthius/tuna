@@ -1,0 +1,55 @@
+# What happens when Tuna starts with your configuration?
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 0
+  }
+}
+direction: right
+
+classes: {
+  yours: {
+    style: {
+      fill: "#fff8e1"
+      stroke: "#8d6e00"
+      font-color: "#3e2c00"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+  tuna: {
+    style: {
+      fill: "#eef3fb"
+      stroke: "#355c96"
+      font-color: "#172b4d"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+  out: {
+    style: {
+      fill: "#f3f3f3"
+      stroke: "#555555"
+      font-color: "#222222"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+}
+
+legend: |md
+  **Status:** proposed; nothing here is built yet. Yellow boxes are files you own.
+|
+
+files: "Your files\nplugins.ss: which plugins, with what options\ninit.ss: your own code" {class: yours}
+boot: "Start-up step\nreads the plugin list as plain data" {class: tuna}
+kernel: "Kernel\nturns each plugin on, or undoes it" {class: tuna}
+plugins: "Your plugins\neach one on its own" {class: yours}
+init: "init.ss\nturned on last, as one plugin" {class: yours}
+terminal: "The terminal you started Tuna from\nwhat worked, what failed, and why" {class: out}
+
+files -> boot: "1. read"
+boot -> kernel: "2. turn on each plugin"
+kernel -> plugins: "3. a failure is undone and skipped;\nplugins that need it are skipped too"
+kernel -> init: "4. then your code"
+boot -> terminal: "5. report"
