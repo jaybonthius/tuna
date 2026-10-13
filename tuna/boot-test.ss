@@ -73,10 +73,11 @@
 (def boot-test
   (test-suite "start-up from init.ss"
     (test-case "the command line: run, check, and init"
-      (check (parse-command-line []) => '(run 0 #f))
+      (check (parse-command-line []) => '(run #f #f))
       (check (parse-command-line ["--port" "8001"]) => '(run 8001 #f))
       (check (parse-command-line ["--config" "a.ss" "--port" "8001"]) => '(run 8001 "a.ss"))
-      (check (parse-command-line ["--port" "0"]) => #f)
+      (check (parse-command-line ["--port" "0"]) => '(run 0 #f))
+      (check (parse-command-line ["--port" "-1"]) => #f)
       (check (parse-command-line ["--port" "65536"]) => #f)
       (check (parse-command-line ["--port" "x"]) => #f)
       (check (parse-command-line ["--config"]) => #f)

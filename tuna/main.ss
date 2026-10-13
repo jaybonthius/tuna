@@ -81,6 +81,13 @@ prelude: :gerbil/core
                   (newline port))
                 (lambda () (write-startup-report! text (startup-log-path))))))
 
+;; When start-up had problems and a plugin can show messages, say so there
+;; too, in one line naming the command that shows the whole report.
+(def (show-start-up-summary (report : startup-report)) => :void
+  (let (summary (startup-report-summary report))
+    (when (and summary (service-provider messages-service))
+      (message summary))))
+
 ;; Print a failure of the session plugin's save or restore; Tuna carries on.
 (def (call-reporting-session-failure (what : :string) (thunk : :procedure)) => :void
   (when (service-provider session-service)
@@ -97,10 +104,13 @@ prelude: :gerbil/core
 ;; reloads on the editor loop's baton when the loop runs; otherwise this
 ;; thread, the only one changing plugins then, reloads, and starts the
 ;; loop if input is now provided (brief, walkthrough step 4).
-(def (run (port : :fixnum) (config :? :string)) => :void
-  ;; Set for good, so a web transport a reload turns on uses it too.
+(def (run (port :? :fixnum) (config :? :string)) => :void
+  ;; Set for good, so a web transport a reload turns on uses it too. A
+  ;; port given here beats the web transport's port option in init.ss.
   (web-transport-listen-port port)
-  (report-start-up (start-from-configuration (find-configuration config)))
+  (let (report (start-from-configuration (find-configuration config)))
+    (report-start-up report)
+    (show-start-up-summary report))
   (call-reporting-session-failure "Restoring the session" restore-session)
   (let* ((events (make-channel))           ; 'stop, or [reload: completion]
          (control (start-control-server-reporting

@@ -16,10 +16,13 @@ prelude: :gerbil/core
         (only-in :gerbil/runtime/syntax
                  SyntaxError? SyntaxError-message SyntaxError-irritants __AST-source __AST->datum)
         (only-in :gerbil/runtime/thread spawn-thread)
+        :std/interface
         :std/misc/ports
         :std/source
         :tuna/kernel
         :tuna/lib/configuration
+        :tuna/lib/plugin-options
+        :tuna/services/configuration
         :tuna/plugins/config-blocks)
 (export (struct-out config-choice report-entry startup-report reload-report)
         parse-command-line
@@ -39,6 +42,8 @@ prelude: :gerbil/core
         reload-report-text
         check-configuration
         startup-report-text
+        startup-report-summary
+        last-report-text
         write-startup-report!
         starter-configuration
         init-configuration!)
@@ -46,8 +51,8 @@ prelude: :gerbil/core
 ;;; The command line
 
 ;; What ARGS ask for: (run PORT CONFIG), (check CONFIG), (init), or (reload), where
-;; PORT is 0 for any free port and CONFIG is the --config path or #f; #f
-;; when ARGS are not valid.
+;; PORT is the --port number or #f and CONFIG is the --config path or #f;
+;; #f when ARGS are not valid.
 (def (parse-command-line (args : :list)) => :t
   (match args
     (["init"] '(init))
@@ -60,15 +65,15 @@ prelude: :gerbil/core
        (and parsed (list 'run (car parsed) (cdr parsed)))))))
 
 ;; OPTIONS as (port . config), or #f when they are not valid; --port is
-;; accepted only when PORT? is true.
+;; accepted only when PORT? is true, and 0 asks for any free port.
 (def (parse-options (options : :list) (port? : :boolean)) => (Maybe :pair)
-  (let loop ((rest options) (port 0) (config #f))
+  (let loop ((rest options) (port #f) (config #f))
     (match rest
       ([] (cons port config))
       (["--config" path . more] (loop more port path))
       (["--port" value . more]
        (let (number (string->number value))
-         (and port? (fixnum? number) (<= 1 number 65535)
+         (and port? (fixnum? number) (<= 0 number 65535)
               (loop more number config))))
       (else #f))))
 
@@ -594,6 +599,7 @@ prelude: :gerbil/core
         (when (change-old c)
           (turn-off-block! (change-old c)))       ; its plugin is off, so nothing needs it
         (set-working! (declaration-name d) d)
+        (set-plugin-options! p (declaration-options d))
         (record! (activate-entry p (plugin-label p) (declaration-source d)))
         (drain! #f)))
 
@@ -618,6 +624,7 @@ prelude: :gerbil/core
             (match (stays-on running)
               (#f
                (drain! #t)
+               (set-plugin-options! p (declaration-options d))
                (let (entry (activate-entry p what source))
                  (if (eq? (report-entry-status entry) 'on)
                    (begin
@@ -625,7 +632,8 @@ prelude: :gerbil/core
                      (record! (with-status entry 'replaced ""))
                      (drain! #f)
                      ;; Its block came on again with it: a new version too.
-                     (when (and (declaration-block o) (declaration-block d))
+                     (when (and (declaration-block o) (declaration-block d)
+                                (not (eq? (declaration-block o) (declaration-block d))))
                        (let (name (plugin-name (declaration-block d)))
                          (set! entries
                            (map (lambda ((e : report-entry))
@@ -636,6 +644,7 @@ prelude: :gerbil/core
                                 entries)))))
                    (begin
                      (set-working! (declaration-name o) o)
+                     (set-plugin-options! running (declaration-options o))
                      (decide! (plugin-name running))
                      (record! (with-status entry (report-entry-status entry)
                                            (string-append (report-entry-detail entry)
@@ -672,7 +681,8 @@ prelude: :gerbil/core
                          entry)))
              ((and (declaration-block o) (eq? (change-kind c) 'block))
               (let (running (make-declaration (declaration-target o) (declaration-block o)
-                                              (declaration-block-forms o) (declaration-source d)))
+                                              (declaration-block-forms o) (declaration-source d)
+                                              (declaration-options o)))
                 (set-working! (declaration-name d) running)
                 (decide! (plugin-name block))
                 (let (back (sync-block-entry running))
@@ -700,10 +710,13 @@ prelude: :gerbil/core
                                 (not (declaration-block o))))
                  (kept (if same-block?
                          (make-declaration (declaration-target d) (declaration-block o)
-                                           (declaration-block-forms d) (declaration-source d))
+                                           (declaration-block-forms d) (declaration-source d)
+                                           (declaration-options d))
                          d)))
             (cond
              ((not (plugin-active? (declaration-target d))) (make-change 'retry kept o))
+             ((not (equal? (declaration-options d) (declaration-options o)))
+              (make-change 'replace kept o))
              ((not same-block?) (make-change 'block kept o))
              ((and (declaration-block kept) (not (plugin-active? (: (declaration-block kept) plugin))))
               (make-change 'retry-block kept o))
@@ -1008,16 +1021,63 @@ prelude: :gerbil/core
   final: #t)
 
 ;; Find, load, and activate. Nothing here ends the program: whatever
-;; fails is reported, and the rest of Tuna keeps running.
+;; fails is reported, and the rest of Tuna keeps running. The
+;; configuration plugin comes on first, so plugins can reach the reload
+;; and the report through the configuration service.
 (def (start-from-configuration (choice : config-choice)) => startup-report
   (set! current-running (make-running-configuration choice [] #f [] #f))
-  (let (path (config-choice-path choice))
-    (if (not (file-exists? path))
-      (make-startup-report choice (missing-configuration-text choice) [])
-      (let (loaded (load-configuration path))
-        (if (configuration? loaded)
-          (make-startup-report choice #f (car (apply-configuration! choice loaded #f)))
-          (make-startup-report choice (string-append loaded "\nNothing was turned on.") []))))))
+  (let* ((path (config-choice-path choice))
+         (service-entry (activate-entry config-service "the configuration service" #f))
+         (service-failure (if (eq? (report-entry-status service-entry) 'on) [] [service-entry]))
+         (report
+          (if (not (file-exists? path))
+            (make-startup-report choice (missing-configuration-text choice) service-failure)
+            (let (loaded (load-configuration path))
+              (if (configuration? loaded)
+                (make-startup-report choice #f
+                                     (append service-failure
+                                             (car (apply-configuration! choice loaded #f))))
+                (make-startup-report choice (string-append loaded "\nNothing was turned on.")
+                                     service-failure))))))
+    (set! last-report-text (startup-report-text report))
+    report))
+
+;; The text of the last start-up or reload report, or #f before either.
+(def last-report-text #f)
+
+;; The configuration service (tuna/services/configuration.ss), provided
+;; by the start-up code itself, which owns the reload and the reports.
+(defclass configuration-provider () final: #t)
+
+(implement Configuration configuration-provider
+  (reload! (lambda (self) (reload-report-text (reload-configuration!))))
+  (last-report (lambda (self) last-report-text)))
+
+(defplugin (config-service ctx)
+  "Provides the configuration service: reload init.ss, and the last report."
+  (context-provide! ctx configuration-service (Configuration (configuration-provider))))
+
+;; One line for the echo area when REPORT has problems, or #f: what failed
+;; or was skipped, and the command that shows the whole report.
+(def (startup-report-summary (report : startup-report)) => (Maybe :string)
+  (let* ((entries (startup-report-entries report))
+         (named (lambda ((status : :symbol))
+                  (filter-map (lambda ((e : report-entry))
+                                (and (eq? (report-entry-status e) status) (report-entry-what e)))
+                              entries)))
+         (failed (named 'failed))
+         (skipped (named 'skipped))
+         (parts (append (if (null? failed) []
+                            [(string-append "failed: " (string-join failed ", "))])
+                        (if (null? skipped) []
+                            [(string-append "skipped: " (string-join skipped ", "))]))))
+    (cond
+     ((startup-report-problem report)
+      "Tuna start-up: the configuration did not load. show-config-report shows the report.")
+     ((null? parts) #f)
+     (else
+      (string-append "Tuna start-up: " (string-join parts "; ")
+                     ". show-config-report shows the report.")))))
 
 ;; `tuna check`: load CHOICE's file without turning anything on. Returns
 ;; the problem, or #f when the file loads and its declarations are valid.
@@ -1089,11 +1149,16 @@ prelude: :gerbil/core
                                                                    (or reloaded? modules-pending?)))))
                             #f))))
              (set! modules-pending? #f)
-             (make-reload-report choice #f (car applied) (cdr applied) quit?)))
+             (remember-report! (make-reload-report choice #f (car applied) (cdr applied) quit?))))
           ([problem . reloaded?]
            (when reloaded?
              (set! modules-pending? #t))
-           (make-reload-report choice (string-append problem "\nNothing was changed.") [] 0 #f)))))))
+           (remember-report!
+            (make-reload-report choice (string-append problem "\nNothing was changed.") [] 0 #f))))))))
+
+(def (remember-report! (report : reload-report)) => reload-report
+  (set! last-report-text (reload-report-text report))
+  report)
 
 ;; Whether the reload loaded and nothing in it failed.
 (def (reload-succeeded? (report : reload-report)) => :boolean

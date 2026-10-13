@@ -8,7 +8,8 @@
 ;;; plugins is tuna/plugins/config-blocks.ss.
 prelude: :gerbil/core
 
-(import :tuna/kernel)
+(import :tuna/kernel
+        :tuna/lib/plugin-options)
 (export (struct-out declaration configuration)
         declare-plugin!
         declare-user-code!
@@ -16,12 +17,14 @@ prelude: :gerbil/core
 
 ;; One use-plugin form: the plugin it declares (target), its config:
 ;; block as a plugin of its own with the block's code as written
-;; (block-forms, which a reload compares), and where the form is
-;; ("file:line").
+;; (block-forms, which a reload compares), where the form is
+;; ("file:line"), and the options it gives the plugin, checked, as
+;; (name . value) pairs (tuna/lib/plugin-options.ss).
 (defstruct declaration ((target      : plugin)
                         (block       :? plugin)
                         (block-forms : :list)
-                        (source      :? :string))
+                        (source      :? :string)
+                        (options     : :list))
   final: #t)
 
 ;; A loaded init.ss: its declarations in order, and the plugin holding the
@@ -31,10 +34,13 @@ prelude: :gerbil/core
                           (user-forms   : :list))
   final: #t)
 
-;; What one load has collected so far.
+;; What one load has collected so far: the declarations, the user's code,
+;; and every problem with an option, each one line starting with where it
+;; is in init.ss.
 (defclass collector ((declarations : :list)    ; newest first
                      (user-code    :? plugin)
-                     (user-forms   : :list))
+                     (user-forms   : :list)
+                     (problems     : :list))   ; newest first
   final: #t)
 
 ;; The collector of the load in progress, or #f.
@@ -46,8 +52,12 @@ prelude: :gerbil/core
 
 ;; Record a use-plugin form. VALUE must be a plugin; a plugin declared
 ;; twice is an error that names both forms. FORMS is BLOCK's code as
-;; written, [] without a block.
-(def (declare-plugin! (value : :t) (block :? plugin) (forms : :list) (source :? :string)) => :void
+;; written, [] without a block. OPTIONS are the options the form gives,
+;; as (name value where) lists; their problems are collected, and the
+;; load fails with all of them once the whole file has been read.
+(def (declare-plugin! (value : :t) (block :? plugin) (forms : :list) (source :? :string)
+                      (options : :list))
+  => :void
   (using (c (loading-collector "use-plugin") : collector)
     (let* ((p (with-catch (lambda (_)
                             (error (string-append (or source "init.ss")
@@ -61,7 +71,25 @@ prelude: :gerbil/core
         (error (string-append (or source "init.ss") ": plugin "
                               (symbol->string (plugin-name p)) " is already declared at "
                               (or (declaration-source earlier) "an earlier use-plugin"))))
-      (set! c.declarations (cons (make-declaration p block forms source) c.declarations)))))
+      (let (problems (plugin-option-problems
+                      p (map (lambda (o) [(car o) (cadr o) (place-text (caddr o))]) options)))
+        (set! c.problems (append (reverse problems) c.problems))
+        (set! c.declarations
+          (cons (make-declaration p block forms source
+                                  (map (lambda (o) (cons (car o) (cadr o))) options))
+                c.declarations))))))
+
+;; SOURCE, "file:line" or #f, as "init.ss line 6".
+(def (place-text (source :? :string)) => :string
+  (if (not source)
+    "init.ss"
+    (let loop ((i (fx1- (string-length source))))
+      (cond
+       ((fx< i 0) source)
+       ((char=? (string-ref source i) #\:)
+        (string-append (path-strip-directory (substring source 0 i))
+                       " line " (substring source (fx1+ i) (string-length source))))
+       (else (loop (fx1- i)))))))
 
 ;; Record the plugin holding the user's own code, and that code as
 ;; written. The configuration language emits exactly one call, after the
@@ -73,14 +101,17 @@ prelude: :gerbil/core
 
 ;; Call LOAD, which loads one init.ss, and return what it declared. LOAD
 ;; runs in the calling thread; the declarations it makes elsewhere do not
-;; count.
+;; count. A file whose options have problems fails with every one of
+;; them, one per line.
 (def (collect-configuration (load : :procedure)) => configuration
-  (let (c (collector declarations: [] user-code: #f user-forms: []))
+  (let (c (collector declarations: [] user-code: #f user-forms: [] problems: []))
     (parameterize ((current-collector c))
       (load))
     (using (c : collector)
       (unless c.user-code
         (error "The file declared nothing: does it start with #lang :tuna/config?"))
+      (unless (null? c.problems)
+        (error (string-join (reverse c.problems) "\n")))
       (for-each check-not-reserved! c.declarations)
       (make-configuration (reverse c.declarations) c.user-code c.user-forms))))
 
@@ -88,6 +119,6 @@ prelude: :gerbil/core
 ;; configuration itself uses.
 (def (check-not-reserved! (d : declaration)) => :void
   (let (name (plugin-name (declaration-target d)))
-    (when (memq name '(init config-blocks))
+    (when (memq name '(init config-blocks config-service))
       (error (string-append (or (declaration-source d) "init.ss") ": the plugin name "
                             (symbol->string name) " is reserved for the configuration itself")))))

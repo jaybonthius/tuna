@@ -419,12 +419,11 @@
 ;;; Program code
 
 ;; The program's start-up, reload, and command-line code (ADR 12,
-;; amendment for configuration stage 2): only the program uses it, plus
-;; one recorded exception, the reload-config plugin, until stage 3 gives
-;; reload a configuration contract.
+;; amendment for configuration stage 2): only the program uses it.
+;; Plugins reach reload and the configuration report through the
+;; configuration service (tuna/services/configuration.ss).
 (def program-modules '("tuna/main" "tuna/boot" "tuna/control"))
 (def program-files '("tuna/main.ss" "tuna/boot.ss" "tuna/control.ss"))
-(def program-exceptions '(("tuna/plugins/reload-config.ss" . "tuna/boot")))
 
 (def (program-code-problems) => :list
   (apply append
@@ -435,7 +434,6 @@
                                         (equal? (reference-target file name) (source-path module)))
                                       program-modules))
                      (and target
-                          (not (member (cons file target) program-exceptions))
                           (string-append file ": imports or includes " name
                                          "; only the program (" (string-join program-files ", ")
                                          ") uses program code"))))
@@ -648,5 +646,5 @@
     (test-case "outside the kernel and test support, only the kernel facade is imported"
       (displayln "  kernel facade boundary: " (length (kernel-client-names)) " files checked")
       (check (problem-count (kernel-internal-problems)) => 0))
-    (test-case "only the program, and the reload-config plugin, import program code"
+    (test-case "only the program imports program code"
       (check (problem-count (program-code-problems)) => 0))))

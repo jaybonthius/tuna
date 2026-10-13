@@ -13,8 +13,15 @@
 ;;; in (import "my-helpers"). Each plugin, and your own code, has 5 s to
 ;;; turn on; one that takes longer is stopped and turned off.
 ;;;
+;;; `(use-plugin p key: value ...)` gives a plugin options, written as data:
+;;; port: 8080, leader: "SPC". Tuna checks every option against what the
+;;; plugin accepts when it loads this file; with any problem it changes
+;;; nothing and reports each one with its line. `tuna check` does the same
+;;; from a terminal.
+;;;
 ;;; After editing this file, reload it without restarting: C-c R (the
 ;;; reload-config command) inside Tuna, or `tuna reload` in a terminal.
+;;; C-c C-r (show-config-report) shows the last start-up or reload report.
 ;;; Only what changed is turned off and on; if a changed part fails, the
 ;;; version that was running is turned back on. That holds for this file,
 ;;; its config: blocks, your own code, and Tuna's plugins. A module of
@@ -44,7 +51,8 @@
         :tuna/plugins/reload-config)
 
 (use-plugin keys-plugin)
-(use-plugin web-transport-plugin)
+(use-plugin web-transport-plugin        ; the browser page; `tuna --port N` beats port:
+  port: 0)                              ; 0: any free port
 (use-plugin settings-plugin)
 (use-plugin echo-area-plugin)
 (use-plugin help-panel-plugin)
@@ -60,5 +68,6 @@
 (use-plugin basic-editing-plugin)
 (use-plugin minibuffer-plugin)
 (use-plugin demo-plugin)                ; the skeleton demo: digit highlighting, C-c commands
-(use-plugin reload-config-plugin        ; reload this file without restarting
-  config: (keymap-set "C-c R" 'reload-config))
+(use-plugin reload-config-plugin        ; reload this file; show the last report
+  config: (keymap-set "C-c R" 'reload-config)
+          (keymap-set "C-c C-r" 'show-config-report))
