@@ -3,7 +3,9 @@
 ;;; one on; a failed load changes nothing; startup-tier changes wait for
 ;;; the next start. Every test writes its files to its own temporary
 ;;; directory and runs in a fresh kernel.
-(import :std/misc/ports
+(import :std/io
+        :std/net/address
+        :std/misc/ports
         :std/source
         :std/test
         :tuna/kernel
@@ -469,6 +471,60 @@
                    (save-session)
                    (check (saved) => '(tuna-session 1 (notes 1 "edited") (mine 1 "from v3")))))))))))
 
+    (test-case "a dependent the kernel restarts for a replaced provider is listed"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (write-mine directory "(context-provide! (current-context) probe-service 'probe) (probe-on! 'mine-1)")
+         (let (path (write-init directory "(use-plugin mine-plugin)" "(use-plugin dependent-plugin)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (write-mine directory "(context-provide! (current-context) probe-service 'probe) (probe-on! 'mine-2)")
+               (let (report (reload))
+                 (check (changes report)
+                        => [["mine-plugin" 'replaced] [user-code 'replaced] ["dependent-plugin" 'restarted]])
+                 (check (detail report "dependent-plugin")
+                        => "the kernel restarted it for the new provider of probe"))
+               (check (probe-on? 'dependent) => #t)))))))
+
+    (test-case "modules read again by a failed load still count at the next reload"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (write-mine directory "(probe-on! 'mine-1)")
+         (let (path (write-init directory "(use-plugin mine-plugin config: (probe-on! 'mine-block))"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (write-mine directory "(probe-on! 'mine-2)")
+               (write-init directory "(use-plugin mine-plugin config: (probe-on! 'mine-block)")
+               (check (reload-report-entries (reload)) => [])
+               (write-init directory "(use-plugin mine-plugin config: (probe-on! 'mine-block))")
+               (check (changes (reload))
+                      => [["mine-plugin" 'replaced] ["config: block of mine-plugin" 'replaced]
+                          [user-code 'replaced]])
+               (check (probe-on? 'mine-2) => #t)
+               (check (probe-on? 'mine-block) => #t)))))))
+
+    (test-case "C-g during a reload: the reload finishes and its report is delivered"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory "(probe-on! 'user-1)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (activate-plugin! test-input-plugin)
+               (start-editor-loop!)
+               (write-init directory "(thread-sleep! 0.5)" "(probe-on! 'user-2)")
+               (let* ((reloading (spawn (lambda () (call-on-editor-loop reload)))))
+                 (thread-sleep! 0.2)
+                 ((input-submitter) "quit")
+                 (let (report (thread-join! reloading))
+                   (check (reload-report-quit? report) => #t)
+                   (check (changes report) => [[user-code 'replaced]])
+                   (check (contains? (reload-report-text report) "C-g was pressed during the reload")
+                          ? values)))
+               (check (probe-on? 'user-2) => #t)))))))
+
     (test-case "tuna reload asks the running Tuna and prints its report"
       (call-with-temporary-directory
        (lambda (directory)
@@ -482,7 +538,7 @@
                 (activate-plugin! test-input-plugin)
                 (start-editor-loop!)
                 ;; Nothing listens yet; a stale socket file is deleted.
-                (create-directory* (control-directory))
+                (create-directory (list path: (control-directory) permissions: #o700))
                 (write-file-string (path-expand "999999999.sock" (control-directory)) "")
                 (let (output (open-output-string))
                   (check (request-reloads output) => 1)
@@ -496,6 +552,7 @@
                                      (cons (reload-succeeded? report) (reload-report-text report))))))))
                   (try
                    (check (file-exists? (control-server-path server)) => #t)
+                   (check (fxand (file-info-mode (file-info (control-server-path server))) #o777) => #o600)
                    (write-init directory "(use-plugin provider-plugin)")
                    (let* ((output (open-output-string))
                           (status (request-reloads output))
@@ -515,5 +572,31 @@
                    (finally
                     (stop-control-server! server void)))
                   (check (file-exists? (control-server-path server)) => #f))))
+            (finally
+             (if saved (setenv "XDG_RUNTIME_DIR" saved) (setenv "XDG_RUNTIME_DIR"))))))))
+
+    (test-case "tuna reload: a Tuna that does not answer, and a directory that is not private"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (saved (getenv "XDG_RUNTIME_DIR" #f))
+           (setenv "XDG_RUNTIME_DIR" directory)
+           (try
+            (create-directory (list path: (path-expand "tuna" directory) permissions: #o700))
+            ;; Accepts, never answers.
+            (let (silent (unix-listen (UnixAddress (path-expand "999999998.sock" (control-directory)))))
+              (try
+               (let* ((output (open-output-string))
+                      (status (parameterize ((reply-time-limit 0.3)) (request-reloads output)))
+                      (text (get-output-string output)))
+                 (check status => 1)
+                 (check (contains? text "Tuna process 999999998 did not answer within 0.3 s") ? values))
+               (finally (ServerSocket-close silent))))
+            (delete-file-or-directory (path-expand "tuna" directory) #t)
+            (create-directory (list path: (path-expand "tuna" directory) permissions: #o755))
+            (let* ((output (open-output-string))
+                   (status (request-reloads output)))
+              (check status => 1)
+              (check (contains? (get-output-string output) "is not a directory private to you") ? values))
+            (check (with-catch (lambda (e) 'refused) (lambda () (start-control-server! void))) => 'refused)
             (finally
              (if saved (setenv "XDG_RUNTIME_DIR" saved) (setenv "XDG_RUNTIME_DIR"))))))))))

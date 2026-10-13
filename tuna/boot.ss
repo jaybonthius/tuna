@@ -30,6 +30,7 @@ prelude: :gerbil/core
         load-time-limit
         activation-time-limit
         stop-grace
+        seconds-text
         load-configuration
         activate-configuration!
         start-from-configuration
@@ -185,8 +186,11 @@ prelude: :gerbil/core
                (unless (thread-receive (stop-grace) #f)
                  (let (port (current-error-port))
                    (display (string-append what " did not stop when asked after " (seconds-text limit)
-                                           "; " (current-phase) " is waiting for it. Fix init.ss and"
-                                           " restart Tuna (Ctrl-C quits).\n")
+                                           "; " (current-phase) " is waiting for it. "
+                                           (if (equal? (current-phase) "reload")
+                                             "Tuna stays as it is until it stops; to quit, press Ctrl-C twice (the session is not saved)."
+                                             "Fix init.ss and restart Tuna (Ctrl-C quits).")
+                                           "\n")
                             port)
                    (force-output port)))))
            'tuna-activation-watchdog))
@@ -425,7 +429,7 @@ prelude: :gerbil/core
 (defstruct report-entry ((subject : plugin)       ; the plugin, block, or user code
                          (what   : :string)
                          (source :? :string)      ; where init.ss declares it
-                         ;; on, replaced, off, failed, skipped, or deferred
+                         ;; on, replaced, restarted, off, failed, skipped, or deferred
                          (status : :symbol)
                          (detail : :string))      ; why, for anything but on and replaced
   final: #t)
@@ -500,6 +504,8 @@ prelude: :gerbil/core
          ;; which knows plugins only by name, would report it otherwise: a
          ;; failed new version undone, or a turn-off the kernel refused.
          (decided [])
+         (providers-before (service-providers))
+         (replaced-names [])            ; plugins replaced by a new value
          (entries []))                  ; newest first
     ;; Add ENTRY, replacing an earlier entry for the same plugin.
     (def (record! (entry : report-entry))
@@ -615,8 +621,19 @@ prelude: :gerbil/core
                (let (entry (activate-entry p what source))
                  (if (eq? (report-entry-status entry) 'on)
                    (begin
+                     (set! replaced-names (cons (plugin-name p) replaced-names))
                      (record! (with-status entry 'replaced ""))
-                     (drain! #f))
+                     (drain! #f)
+                     ;; Its block came on again with it: a new version too.
+                     (when (and (declaration-block o) (declaration-block d))
+                       (let (name (plugin-name (declaration-block d)))
+                         (set! entries
+                           (map (lambda ((e : report-entry))
+                                  (if (and (eq? (plugin-name (report-entry-subject e)) name)
+                                           (eq? (report-entry-status e) 'on))
+                                    (with-status e 'replaced "")
+                                    e))
+                                entries)))))
                    (begin
                      (set-working! (declaration-name o) o)
                      (decide! (plugin-name running))
@@ -784,7 +801,15 @@ prelude: :gerbil/core
                                                    (turned-off-text p))))
                       ((and block (not (plugin-active? block)))
                        (record! (make-report-entry block (block-label unit) (declaration-source unit)
-                                                   'off "was turned off during the reload"))))))
+                                                   'off "was turned off during the reload"))))
+                     (match (and (plugin-active? p)
+                                 (restarting-services p providers-before replaced-names))
+                       ([svc . more]
+                        (record! (make-report-entry
+                                  p (plugin-label p) (declaration-source unit) 'restarted
+                                  (string-append "the kernel restarted it for the new provider of "
+                                                 (string-join (map symbol->string (cons svc more)) ", ")))))
+                       (else (void)))))
                   (else
                    (unless (plugin-active? unit)
                      (record! (make-report-entry unit "your own code (plugin init)" #f 'off
@@ -821,6 +846,29 @@ prelude: :gerbil/core
       "; the running version is back on"
       (string-append "; turning the running version back on failed too: "
                      (report-entry-detail entry)))))
+
+;; Each service's name and the name of its provider, or #f.
+(def (service-providers) => :list
+  (map (lambda ((info : service-info)) (cons (service-info-name info) (service-info-provider info)))
+       (describe-services)))
+
+;; The services P requires whose provider changed since BEFORE (from
+;; service-providers), or was replaced by a new value (its name in
+;; REPLACED), and to which P does not adapt: the kernel restarted P for
+;; each.
+(def (restarting-services (p : plugin) (before : :list) (replaced : :list)) => :list
+  (let (infos (describe-services))
+    (filter-map
+     (lambda ((svc : service))
+       (let* ((name (service-name svc))
+              (info (find (lambda ((i : service-info)) (eq? (service-info-name i) name)) infos))
+              (now (and info (service-info-provider info)))
+              (was (cond ((assq name before) => cdr) (else #f))))
+         (and now
+              (or (not (eq? now was)) (memq now replaced))
+              (not (memq (plugin-name p) (service-info-adapting info)))
+              name)))
+     (plugin-requires p))))
 
 ;; Turn P off: #f once it is off, otherwise why the kernel kept it on
 ;; (what it raised, or #t).
@@ -938,7 +986,7 @@ prelude: :gerbil/core
   (let ((active? (plugin-active? (report-entry-subject e)))
         (status (report-entry-status e)))
     (cond
-     ((and (memq status '(on replaced)) (not active?))
+     ((and (memq status '(on replaced restarted)) (not active?))
       (with-status e 'off (string-append "was turned off again during " (current-phase))))
      ((and (memq status '(failed off)) active?)
       (with-status e 'on ""))
@@ -995,8 +1043,15 @@ prelude: :gerbil/core
 (defstruct reload-report ((choice    : config-choice)
                           (problem   :? :string)
                           (entries   : :list)
-                          (unchanged : :fixnum))
+                          (unchanged : :fixnum)
+                          ;; A quit (C-g) arrived during the reload, which
+                          ;; finished first.
+                          (quit?     : :boolean))
   final: #t)
+
+;; A user module was read again by a load that then failed, so the next
+;; reload that applies must still replace blocks and the user's code.
+(def modules-pending? #f)
 
 ;; Load the running configuration's file again as a trial and, if it
 ;; loads, apply the difference (apply-configuration!); a failed load
@@ -1004,7 +1059,10 @@ prelude: :gerbil/core
 ;; editor loop runs (the reload-config command, or call-on-editor-loop
 ;; for `tuna reload`), and otherwise the only thread changing plugins.
 ;; A quit waits until the reload is done, as for any plugin operation
-;; (ADR 3). Nothing is written to disk.
+;; (ADR 3); the report is returned anyway, saying a quit arrived, since
+;; raising the quit would replace it and nothing is left to stop. A
+;; stronger quit (ADR 3's third interrupt) fails the unit it lands in,
+;; which is undone like any failure. Nothing is written to disk.
 (def (reload-configuration!) => reload-report
   (let (running current-running)
     (unless running
@@ -1015,14 +1073,27 @@ prelude: :gerbil/core
         (make-reload-report choice
                             (string-append "No configuration at " path " ("
                                            (config-choice-origin choice) "). Nothing was changed.")
-                            [] 0)
+                            [] 0 #f)
         (match (load-configuration/modules path)
           ([(? configuration? loaded) . reloaded?]
-           (let (applied (parameterize ((current-phase "reload"))
-                           (with-inhibit-quit (apply-configuration! choice loaded reloaded?))))
-             (make-reload-report choice #f (car applied) (cdr applied))))
-          ([problem . _]
-           (make-reload-report choice (string-append problem "\nNothing was changed.") [] 0)))))))
+           (let* ((applied #f)
+                  (quit? (with-catch
+                          (lambda (e)
+                            (unless (and applied (quit-condition? e))
+                              (raise e))
+                            #t)
+                          (lambda ()
+                            (parameterize ((current-phase "reload"))
+                              (with-inhibit-quit
+                               (set! applied (apply-configuration! choice loaded
+                                                                   (or reloaded? modules-pending?)))))
+                            #f))))
+             (set! modules-pending? #f)
+             (make-reload-report choice #f (car applied) (cdr applied) quit?)))
+          ([problem . reloaded?]
+           (when reloaded?
+             (set! modules-pending? #t))
+           (make-reload-report choice (string-append problem "\nNothing was changed.") [] 0 #f)))))))
 
 ;; Whether the reload loaded and nothing in it failed.
 (def (reload-succeeded? (report : reload-report)) => :boolean
@@ -1038,9 +1109,13 @@ prelude: :gerbil/core
 
 ;; A reload report in the start-up report's format.
 (def (reload-report-text (report : reload-report)) => :string
-  (report-text "Tuna reload report" (reload-report-choice report)
-               (reload-report-problem report) (reload-report-entries report)
-               (reload-report-unchanged report)))
+  (string-append
+   (report-text "Tuna reload report" (reload-report-choice report)
+                (reload-report-problem report) (reload-report-entries report)
+                (reload-report-unchanged report))
+   (if (reload-report-quit? report)
+     "C-g was pressed during the reload; the reload finished first.\n"
+     "")))
 
 ;; TITLE, the configuration, then PROBLEM or one line per entry and the
 ;; counts; UNCHANGED, when given, counts the units left as they were.
@@ -1077,7 +1152,7 @@ prelude: :gerbil/core
                         (if (zero? n)
                           ""
                           (string-append ", " (number->string n) " " (symbol->string status)))))
-                    '(replaced off deferred)))
+                    '(replaced restarted off deferred)))
         (if unchanged (string-append ", " (number->string unchanged) " unchanged") "")
         ".\n")))))
 
