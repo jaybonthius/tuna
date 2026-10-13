@@ -13,9 +13,16 @@
         :tuna/kernel
         :tuna/boot
         :tuna/lib/plugin-options
+        :std/interface
         :tuna/services/configuration
+        :tuna/services/keys
+        :tuna/services/echo-area
+        :tuna/plugins/keys
+        :tuna/plugins/echo-area
         :tuna/plugins/web
+        :tuna/plugins/reload-config
         "test-support/kernel"
+        (only-in "test-support/string-input" test-input-plugin)
         "test-support/config")
 (export options-test)
 
@@ -53,6 +60,26 @@
 
 (def (contains? (text : :string) (part : :string)) => :boolean
   (and (string-contains text part) #t))
+
+;; A second, small Configuration provider: reload returns a fixed text
+;; and counts calls; the last report is whatever reload returned.
+(defclass stub-configuration ((reloads : :fixnum) (last : :t)) final: #t)
+
+(implement Configuration stub-configuration
+  (reload! (lambda (self)
+             (set! self.reloads (fx1+ self.reloads))
+             (set! self.last (string-append "stub reload " (number->string self.reloads) "\n"))
+             self.last))
+  (last-report (lambda (self) self.last)))
+
+(def the-stub (stub-configuration reloads: 0 last: #f))
+
+(defplugin (stub-configuration-plugin ctx)
+  "Provides the configuration service with a stub."
+  (context-provide! ctx configuration-service (Configuration the-stub)))
+
+(def (run-command (name : :symbol)) => :void
+  ((command-procedure (: (command-ref name) command))))
 
 ;; A loopback port nothing listens on now.
 (def (free-port) => :fixnum
@@ -137,7 +164,7 @@
                ;; Start, replace, the failing value, the running one back, defaults.
                (check (fx- (activation-count 'optioned-plugin) before) => 5)))))))
 
-    (test-case "the web transport's port option, and --port beats it"
+    (test-case "the web transport's port option, and --port overrides it"
       (let ((option-port (free-port))
             (flag-port (free-port)))
         (try
@@ -147,14 +174,39 @@
              (check (contains? (web-transport-url)
                                (string-append "127.0.0.1:" (number->string option-port) "/"))
                     ? values)))
-         (parameterize ((web-transport-listen-port flag-port))
-           (call-with-fresh-kernel [web-transport-plugin]
-             (lambda ()
-               (check (contains? (web-transport-url)
-                                 (string-append "127.0.0.1:" (number->string flag-port) "/"))
-                      ? values))))
+         (override-plugin-option! web-transport-plugin 'port flag-port "--port")
+         (call-with-fresh-kernel [web-transport-plugin]
+           (lambda ()
+             (check (contains? (web-transport-url)
+                               (string-append "127.0.0.1:" (number->string flag-port) "/"))
+                    ? values)))
          (finally
+          (remove-plugin-option-override! web-transport-plugin 'port)
           (set-plugin-options! web-transport-plugin [])))))
+
+    (test-case "an overridden option: noted at start-up; changing it touches nothing"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (try
+          (override-plugin-option! optioned-plugin 'greeting "forced" "--greeting")
+          (call-with-fresh-kernel []
+            (lambda ()
+              (let* ((path (write-init directory "(use-plugin optioned-plugin greeting: \"a\")"))
+                     (report (start path))
+                     (before (activation-count 'optioned-plugin)))
+                (check (last-greeting) => "forced")
+                (check (contains? (startup-report-text report)
+                                  "optioned-plugin (init.ss:3): option greeting is overridden by --greeting")
+                       ? values)
+                (write-init directory "(use-plugin optioned-plugin greeting: \"b\")")
+                (let (report (reload-configuration!))
+                  (check (changes report) => [["optioned-plugin" 'deferred]])
+                  (check (contains? (reload-report-text report)
+                                    "option greeting is overridden by --greeting, so the change takes effect only when Tuna starts without the override")
+                         ? values))
+                (check (activation-count 'optioned-plugin) => before))))
+          (finally
+           (remove-plugin-option-override! optioned-plugin 'greeting))))))
 
     (test-case "the configuration service: the last report, the summary, and reload"
       (call-with-temporary-directory
@@ -167,13 +219,151 @@
                                       "(use-plugin dependent-plugin)"))
                     (report (start path)))
                (check (last-configuration-report) => (startup-report-text report))
-               (check (startup-report-summary report)
-                      => "Tuna start-up: failed: failing-provider-plugin; skipped: dependent-plugin. show-config-report shows the report.")
+               (check (startup-report-summary report "/s/startup.log" #t)
+                      => "Tuna start-up: failed: failing-provider-plugin; skipped: dependent-plugin. The report is in /s/startup.log; show-config-report shows it.")
+               (check (startup-report-summary report "/s/startup.log" #f)
+                      => "Tuna start-up: failed: failing-provider-plugin; skipped: dependent-plugin. The report is in /s/startup.log.")
                (write-init directory "(use-plugin good-plugin)")
                (let (text (reload-configuration-report))
                  (check (contains? text "Tuna reload report") ? values)
                  (check (last-configuration-report) => text)))))
          (call-with-fresh-kernel []
            (lambda ()
-             (check (startup-report-summary (start (write-init directory "(use-plugin good-plugin)")))
-                    => #f))))))))
+             (check (startup-report-summary (start (write-init directory "(use-plugin good-plugin)"))
+                                            "/s/startup.log" #t)
+                    => #f)
+             ;; A reload that finds no file is the last report too.
+             (delete-file (path-expand "init.ss" directory))
+             (let (report (reload-configuration!))
+               (check (contains? (reload-report-problem report) "No configuration at") ? values)
+               (check (last-configuration-report) => (reload-report-text report))))))))
+
+    (test-case "reload-config and show-config-report go through the contract"
+      (call-with-fresh-kernel [keys-plugin echo-area-plugin stub-configuration-plugin reload-config-plugin]
+        (lambda ()
+          (run-command 'show-config-report)
+          (check (current-message) => "There is no configuration report yet.")
+          (run-command 'reload-config)
+          (check (current-message) => "stub reload 1")
+          (run-command 'show-config-report)
+          (check (current-message) => "stub reload 1")
+          (check (stub-configuration-reloads the-stub) => 1))))
+
+    (test-case "reordered options and a written-out default touch nothing"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (call-with-fresh-kernel []
+           (lambda ()
+             (let ((path (write-init directory "(use-plugin optioned-plugin greeting: \"a\" times: 2)"))
+                   (before (activation-count 'optioned-plugin)))
+               (start path)
+               (write-init directory "(use-plugin optioned-plugin times: 2 greeting: \"a\")")
+               (check (changes (reload-configuration!)) => [])
+               (write-init directory "(use-plugin optioned-plugin times: 2 greeting: \"a\" fail: #f)")
+               (check (changes (reload-configuration!)) => [])
+               (check (fx- (activation-count 'optioned-plugin) before) => 1)))))))
+
+    (test-case "an option change restarts an unchanged config: block with its plugin"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (call-with-fresh-kernel []
+           (lambda ()
+             (let (path (write-init directory "(use-plugin optioned-plugin greeting: \"a\" config: (note-activation! 'optioned-block))"))
+               (start path)
+               (write-init directory "(use-plugin optioned-plugin greeting: \"b\" config: (note-activation! 'optioned-block))")
+               (let ((before (activation-count 'optioned-block))
+                     (report (reload-configuration!)))
+                 (check (changes report)
+                        => [["optioned-plugin" 'replaced] ["config: block of optioned-plugin" 'restarted]])
+                 (check (fx- (activation-count 'optioned-block) before) => 1))))))))
+
+    (test-case "a changed user module with a failing option falls back to the running version"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (def (write-mine version)
+           (write-file-string
+            (path-expand "mine.ss" directory)
+            (string-append "(import :tuna/kernel :tuna/lib/plugin-options \"" test-plugins-module "\")\n"
+                           "(export mine-plugin)\n"
+                           "(defplugin mine-plugin \"" version "\" (when (plugin-option mine-plugin 'bad) (error \"told to fail\")) (probe-on! 'mine))\n"
+                           "(defplugin-options mine-plugin (bad #f \"Fail.\" boolean-type))\n")))
+         (def (write-init-mine line)
+           (write-file-string
+            (path-expand "init.ss" directory)
+            (string-append "#lang :tuna/config\n(import \"" test-plugins-module "\" \"mine\")\n" line)))
+         (write-mine "v1")
+         (write-init-mine "(use-plugin mine-plugin)")
+         (call-with-fresh-kernel []
+           (lambda ()
+             (start (path-expand "init.ss" directory))
+             (check (probe-on? 'mine) => #t)
+             (write-mine "v2")
+             (write-init-mine "(use-plugin mine-plugin bad: #t)")
+             (let (report (reload-configuration!))
+               ;; The user's code is replaced too, since a user module was read again.
+               (check (changes report)
+                      => [["mine-plugin" 'failed] ["your own code (plugin init)" 'replaced]])
+               (check (contains? (reload-report-text report) "the running version is back on") ? values))
+             (check (probe-on? 'mine) => #t))))))
+
+    (test-case "declaration problems are collected with option problems, without a banner"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let* ((path (write-init directory
+                                  "(use-plugin optioned-plugin greeting: 1)"
+                                  "(use-plugin good-plugin)"
+                                  "(use-plugin good-plugin)"
+                                  "(use-plugin car)"
+                                  "(use-plugin plugin-named-config-service)"))
+                (text (check-configuration (make-config-choice path "--config"))))
+           (for-each (lambda (line) (check (contains? text line) ? values))
+                     ["init.ss line 3: optioned-plugin option greeting must be a string"
+                      "init.ss line 5: plugin good-plugin is already declared at init.ss line 4"
+                      "init.ss line 6: use-plugin needs a plugin, not"
+                      "init.ss line 7: the plugin name config-service is reserved"])
+           (check (contains? text "*** ERROR") => #f)))))
+
+    (test-case "an option after config: is a syntax error"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (text (check-configuration
+                     (make-config-choice
+                      (write-init directory "(use-plugin optioned-plugin config: (note-activation! 'x) times: 3)")
+                      "--config")))
+           (check (contains? text "use-plugin options go before config:") ? values)))))
+
+    (test-case "a kernel restart reads the same options"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (call-with-fresh-kernel []
+           (lambda ()
+             (start (write-init directory
+                                "(use-plugin provider-plugin)"
+                                "(use-plugin optioned-dependent-plugin greeting: \"kept\")"))
+             (let (before (activation-count 'optioned-dependent-plugin))
+               (activate-plugin! better-provider-plugin)
+               (check (fx- (activation-count 'optioned-dependent-plugin) before) => 1)
+               (check (dependent-greeting) => "kept")))))))
+
+    (test-case "an option change of a startup-tier provider waits for the next start"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (call-with-fresh-kernel []
+           (lambda ()
+             (start (write-init directory "(use-plugin fixed-optioned-plugin n: 1)"))
+             (activate-plugin! test-input-plugin)
+             (start-editor-loop!)
+             (write-init directory "(use-plugin fixed-optioned-plugin n: 2)")
+             (let (report (call-on-editor-loop reload-configuration!))
+               (check (changes report) => [["fixed-optioned-plugin" 'deferred]])
+               (check (contains? (reload-report-text report) "so the new options take effect at next start")
+                      ? values))
+             (check (fixed-n) => 1)
+             (check (plugin-option fixed-optioned-plugin 'n) => 1))))))
+
+    (test-case "defplugin-options checks defaults; plugin-option needs a declared name"
+      (let ()
+        (defplugin lone-plugin "Declares options.")
+        (check-exception (defplugin-options lone-plugin (x "text" "A flag." boolean-type)) true)
+        (check (plugin-option-specs lone-plugin) => [])
+        (check-exception (plugin-option good-plugin 'colour) true)))))

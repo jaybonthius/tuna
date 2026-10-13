@@ -80,6 +80,16 @@ prelude: :gerbil/core
         ((stx-null? rest)
          (use-plugin-expansion stx #'plugin-name (reverse options) #f))
         ((and (stx-pair? rest) (eq? (stx-e (stx-car rest)) 'config:))
+         ;; A keyword here is an option written after config:, which
+         ;; would otherwise become code of the block.
+         (let (stray (let find-keyword ((body (stx-cdr rest)))
+                       (cond
+                        ((not (stx-pair? body)) #f)
+                        ((stx-keyword? (stx-car body)) (stx-car body))
+                        (else (find-keyword (stx-cdr body))))))
+           (when stray
+             (raise-syntax-error #f "use-plugin options go before config:, not in its code"
+                                 stx stray)))
          (use-plugin-expansion stx #'plugin-name (reverse options) (stx-cdr rest)))
         ((and (stx-pair? rest) (stx-keyword? (stx-car rest)) (stx-pair? (stx-cdr rest)))
          (loop (stx-cdr (stx-cdr rest))

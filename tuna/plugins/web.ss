@@ -19,12 +19,7 @@ prelude: :gerbil/core
         :tuna/services/renderer
         ./web/embed)
 (export web-transport-plugin
-        web-transport-listen-port
         web-transport-url)
-
-;; The loopback port from the command line (`tuna --port`), or #f. It
-;; beats the plugin's port option from init.ss.
-(def web-transport-listen-port (make-parameter #f))
 
 ;; Seconds between keep-alive events, which also detect closed tabs.
 (def heartbeat-seconds 15.)
@@ -318,8 +313,7 @@ prelude: :gerbil/core
 
 (defplugin (web-transport-plugin ctx)
   "Serves screens to browser tabs on loopback and receives their input."
-  (let* ((port (let (configured (or (web-transport-listen-port)
-                                    (plugin-option web-transport-plugin 'port)))
+  (let* ((port (let (configured (plugin-option web-transport-plugin 'port))
                  (if (zero? configured) (free-loopback-port) configured)))
          (host (string-append "127.0.0.1:" (number->string port)))
          (self (web-transport submit: (input-submitter)
@@ -351,5 +345,5 @@ prelude: :gerbil/core
     (context-provide! ctx display-service self)))
 
 (defplugin-options web-transport-plugin
-  (port 0 "The loopback port to listen on; 0 picks a free one. tuna --port beats it."
+  (port 0 "The loopback port to listen on; 0 picks a free one. tuna --port overrides it."
         (integer-type 0 65535)))

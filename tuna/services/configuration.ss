@@ -16,7 +16,7 @@ prelude: :gerbil/core
   ;; reload report. The caller holds the baton.
   (reload!) => :string
   ;; The report of the last start-up or reload, or #f before either.
-  (last-report) => :t)
+  (last-report) => (Maybe :string))
 
 (def configuration-service
   (new-service 'configuration is-Configuration? tier: 'live

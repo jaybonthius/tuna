@@ -380,7 +380,7 @@ prelude: :gerbil/core
                      ":" (number->string (fx1+ (##filepos-col position))) ": "
                      (exception-text e))))
    ((SyntaxError? e) (syntax-error-text e))
-   ((option-problems? e) (option-problems-text e))
+   ((configuration-problems? e) (configuration-problems-text e))
    (else (exception-text e))))
 
 ;; A syntax error as one line: where, what, and the offending form.
@@ -601,7 +601,8 @@ prelude: :gerbil/core
           (turn-off-block! (change-old c)))       ; its plugin is off, so nothing needs it
         (set-working! (declaration-name d) d)
         (set-plugin-options! p (declaration-options d))
-        (record! (activate-entry p (plugin-label p) (declaration-source d)))
+        (record! (with-override-note (activate-entry p (plugin-label p) (declaration-source d))
+                                     (declaration-options d)))
         (drain! #f)))
 
     ;; A new value of a running plugin.
@@ -612,14 +613,17 @@ prelude: :gerbil/core
              (running (declaration-target o))
              (what (plugin-label p))
              (source (declaration-source d))
-             (fixed (if live? (startup-services running) [])))
+             (fixed (if live? (startup-services running) []))
+             ;; The same plugin replaced only for its options.
+             (consequence (if (eq? p running)
+                            ", so the new options take effect at next start"
+                            ", so the new version takes effect at next start")))
         (if (pair? fixed)
           (record! (make-report-entry running what source 'deferred
-                                      (string-append (provides-text fixed)
-                                                     ", so the new version takes effect at next start")))
+                                      (string-append (provides-text fixed) consequence)))
           (cond
            ((turn-off-block! o)
-            => (cut block-refused! o <> ", so the new version takes effect at next start"))
+            => (cut block-refused! o <> consequence))
            (else
             (set-working! (declaration-name d) d)
             (match (stays-on running)
@@ -630,22 +634,31 @@ prelude: :gerbil/core
                  (if (eq? (report-entry-status entry) 'on)
                    (begin
                      (set! replaced-names (cons (plugin-name p) replaced-names))
-                     (record! (with-status entry 'replaced ""))
+                     (record! (with-override-note (with-status entry 'replaced "")
+                                                  (declaration-options d)))
                      (drain! #f)
-                     ;; Its block came on again with it: a new version too.
-                     (when (and (declaration-block o) (declaration-block d)
-                                (not (eq? (declaration-block o) (declaration-block d))))
-                       (let (name (plugin-name (declaration-block d)))
+                     ;; Its block came on again with it: a new version, or
+                     ;; the same one restarted with its plugin.
+                     (when (and (declaration-block o) (declaration-block d))
+                       (let ((name (plugin-name (declaration-block d)))
+                             (same? (eq? (declaration-block o) (declaration-block d))))
                          (set! entries
                            (map (lambda ((e : report-entry))
                                   (if (and (eq? (plugin-name (report-entry-subject e)) name)
                                            (eq? (report-entry-status e) 'on))
-                                    (with-status e 'replaced "")
+                                    (if same?
+                                      (with-status e 'restarted "its plugin was replaced")
+                                      (with-status e 'replaced ""))
                                     e))
                                 entries)))))
                    (begin
                      (set-working! (declaration-name o) o)
+                     ;; The running version's code may read the options
+                     ;; through its module's global, which now names the
+                     ;; failed new object (a user module read again), so
+                     ;; both get the running options back.
                      (set-plugin-options! running (declaration-options o))
+                     (set-plugin-options! p (declaration-options o))
                      (decide! (plugin-name running))
                      (record! (with-status entry (report-entry-status entry)
                                            (string-append (report-entry-detail entry)
@@ -654,8 +667,7 @@ prelude: :gerbil/core
               (why
                (set-working! (declaration-name o) o)
                (restore-block! o)
-               (record-refusal! running what source why
-                                ", so the new version takes effect at next start"))))))))
+               (record-refusal! running what source why consequence))))))))
 
     ;; The same plugin with a changed block, or with its block off.
     (def (replace-block! (c : change))
@@ -696,6 +708,28 @@ prelude: :gerbil/core
              (else (record! entry))))))
         (drain! #f)))
 
+    ;; Whether D gives its plugin other options than O, the running
+    ;; declaration of the same plugin object: compared by each option's
+    ;; value or default, so reordering options or writing out a default
+    ;; changes nothing. A difference only in options that program code
+    ;; overrides (tuna --port) changes nothing now either; it is reported
+    ;; as taking effect at a start without the override.
+    (def (options-change? (d : declaration) (o : declaration)) => :boolean
+      (let* ((p (declaration-target d))
+             (new (plugin-option-values p (declaration-options d)))
+             (old (plugin-option-values p (declaration-options o)))
+             (differing (map car (filter (lambda (n) (not (member n old))) new)))
+             (overridden (filter (cut plugin-option-override p <>) differing)))
+        (cond
+         ((null? differing) #f)
+         ((fx= (length overridden) (length differing))
+          (record! (make-report-entry
+                    p (plugin-label p) (declaration-source d) 'deferred
+                    (string-append (overridden-text p overridden)
+                                   ", so the change takes effect only when Tuna starts without the override")))
+          #f)
+         (else #t))))
+
     ;; Classify D against the running declarations.
     (def (classify (d : declaration)) => change
       (let (o (named (declaration-name d) old-declarations))
@@ -716,8 +750,7 @@ prelude: :gerbil/core
                          d)))
             (cond
              ((not (plugin-active? (declaration-target d))) (make-change 'retry kept o))
-             ((not (equal? (declaration-options d) (declaration-options o)))
-              (make-change 'replace kept o))
+             ((options-change? d o) (make-change 'replace kept o))
              ((not same-block?) (make-change 'block kept o))
              ((and (declaration-block kept) (not (plugin-active? (: (declaration-block kept) plugin))))
               (make-change 'retry-block kept o))
@@ -860,6 +893,23 @@ prelude: :gerbil/core
       "; the running version is back on"
       (string-append "; turning the running version back on failed too: "
                      (report-entry-detail entry)))))
+
+;; "option port is overridden by --port" for P's options NAMES.
+(def (overridden-text (p : plugin) (names : :list)) => :string
+  (string-join (map (lambda ((name : :symbol))
+                      (string-append "option " (symbol->string name) " is overridden by "
+                                     (or (plugin-option-override p name) "the program")))
+                    names)
+               "; "))
+
+;; ENTRY, when it is on or replaced, noting the options in GIVEN that
+;; program code overrides.
+(def (with-override-note (entry : report-entry) (given : :list)) => report-entry
+  (let* ((p (report-entry-subject entry))
+         (overridden (filter (cut plugin-option-override p <>) (map car given))))
+    (if (and (pair? overridden) (memq (report-entry-status entry) '(on replaced)))
+      (with-status entry (report-entry-status entry) (overridden-text p overridden))
+      entry)))
 
 ;; Each service's name and the name of its provider, or #f.
 (def (service-providers) => :list
@@ -1058,27 +1108,33 @@ prelude: :gerbil/core
   "Provides the configuration service: reload init.ss, and the last report."
   (context-provide! ctx configuration-service (Configuration (configuration-provider))))
 
-;; One line for the echo area when REPORT has problems, or #f: what failed
-;; or was skipped, and the command that shows the whole report.
-(def (startup-report-summary (report : startup-report)) => (Maybe :string)
+;; One line for the echo area when REPORT has problems, or #f: every
+;; unit whose status is not on or restarted, grouped by status, where the
+;; whole report is (LOG, the start-up log), and, when COMMAND? (the
+;; show-config-report command exists), the command that shows it.
+(def (startup-report-summary (report : startup-report) (log : :string) (command? : :boolean))
+  => (Maybe :string)
   (let* ((entries (startup-report-entries report))
-         (named (lambda ((status : :symbol))
-                  (filter-map (lambda ((e : report-entry))
-                                (and (eq? (report-entry-status e) status) (report-entry-what e)))
-                              entries)))
-         (failed (named 'failed))
-         (skipped (named 'skipped))
-         (parts (append (if (null? failed) []
-                            [(string-append "failed: " (string-join failed ", "))])
-                        (if (null? skipped) []
-                            [(string-append "skipped: " (string-join skipped ", "))]))))
+         (statuses (filter (lambda ((status : :symbol)) (not (memq status '(on restarted))))
+                           (map (lambda ((e : report-entry)) (report-entry-status e)) entries)))
+         (parts (filter-map
+                 (lambda ((status : :symbol))
+                   (let (names (filter-map (lambda ((e : report-entry))
+                                             (and (eq? (report-entry-status e) status)
+                                                  (report-entry-what e)))
+                                           entries))
+                     (and (pair? names)
+                          (string-append (symbol->string status) ": " (string-join names ", ")))))
+                 (filter (lambda (status) (memq status statuses))
+                         '(failed skipped off deferred replaced))))
+         (where (string-append ". The report is in " log
+                               (if command? "; show-config-report shows it." "."))))
     (cond
      ((startup-report-problem report)
-      "Tuna start-up: the configuration did not load. show-config-report shows the report.")
+      (string-append "Tuna start-up: the configuration did not load" where))
      ((null? parts) #f)
      (else
-      (string-append "Tuna start-up: " (string-join parts "; ")
-                     ". show-config-report shows the report.")))))
+      (string-append "Tuna start-up: " (string-join parts "; ") where)))))
 
 ;; `tuna check`: load CHOICE's file without turning anything on. Returns
 ;; the problem, or #f when the file loads and its declarations are valid.
@@ -1131,10 +1187,11 @@ prelude: :gerbil/core
     (let* ((choice (running-configuration-choice running))
            (path (config-choice-path choice)))
       (if (not (file-exists? path))
-        (make-reload-report choice
-                            (string-append "No configuration at " path " ("
-                                           (config-choice-origin choice) "). Nothing was changed.")
-                            [] 0 #f)
+        (remember-report!
+         (make-reload-report choice
+                             (string-append "No configuration at " path " ("
+                                            (config-choice-origin choice) "). Nothing was changed.")
+                             [] 0 #f))
         (match (load-configuration/modules path)
           ([(? configuration? loaded) . reloaded?]
            (let* ((applied #f)

@@ -10,7 +10,7 @@ prelude: :gerbil/core
 
 (import :tuna/kernel
         :tuna/lib/plugin-options)
-(export (struct-out declaration configuration option-problems)
+(export (struct-out declaration configuration configuration-problems)
         declare-plugin!
         declare-user-code!
         collect-configuration)
@@ -34,13 +34,14 @@ prelude: :gerbil/core
                           (user-forms   : :list))
   final: #t)
 
-;; What a load raises when options have problems: one line per problem.
-(defstruct option-problems ((text : :string))
+;; What a load raises when declarations or options have problems: one
+;; line per problem.
+(defstruct configuration-problems ((text : :string))
   final: #t)
 
 ;; What one load has collected so far: the declarations, the user's code,
-;; and every problem with an option, each one line starting with where it
-;; is in init.ss.
+;; and every problem with a declaration or an option, each one line
+;; starting with where it is in init.ss.
 (defclass collector ((declarations : :list)    ; newest first
                      (user-code    :? plugin)
                      (user-forms   : :list)
@@ -54,34 +55,45 @@ prelude: :gerbil/core
   (or (current-collector)
       (error (string-append form " works only at the top level of init.ss, while Tuna loads it"))))
 
-;; Record a use-plugin form. VALUE must be a plugin; a plugin declared
-;; twice is an error that names both forms. FORMS is BLOCK's code as
-;; written, [] without a block. OPTIONS are the options the form gives,
-;; as (name value where) lists; their problems are collected, and the
-;; load fails with all of them once the whole file has been read.
+;; Plugins are known by name, so a declared plugin must not take a name the
+;; configuration itself uses.
+(def reserved-names '(init config-blocks config-service))
+
+;; Record a use-plugin form. FORMS is BLOCK's code as written, [] without
+;; a block. OPTIONS are the options the form gives, as (name value where)
+;; lists. Problems are collected, not raised, and the load fails with all
+;; of them once the whole file has been read: VALUE is not a plugin, the
+;; plugin is already declared, its name is reserved, or an option is bad.
 (def (declare-plugin! (value : :t) (block :? plugin) (forms : :list) (source :? :string)
                       (options : :list))
   => :void
   (using (c (loading-collector "use-plugin") : collector)
-    (let* ((p (with-catch (lambda (_)
-                            (error (string-append (or source "init.ss")
-                                                  ": use-plugin needs a plugin, not")
-                                   value))
-                          (lambda () (: value plugin))))
-           (earlier (find (lambda ((d : declaration))
-                            (eq? (plugin-name (declaration-target d)) (plugin-name p)))
-                          c.declarations)))
-      (when earlier
-        (error (string-append (or source "init.ss") ": plugin "
-                              (symbol->string (plugin-name p)) " is already declared at "
-                              (or (declaration-source earlier) "an earlier use-plugin"))))
-      (let (problems (plugin-option-problems
-                      p (map (lambda (o) [(car o) (cadr o) (place-text (caddr o))]) options)))
-        (set! c.problems (append (reverse problems) c.problems))
-        (set! c.declarations
-          (cons (make-declaration p block forms source
-                                  (map (lambda (o) (cons (car o) (cadr o))) options))
-                c.declarations))))))
+    (let (where (place-text source))
+      (def (problem! (text : :string))
+        (set! c.problems (cons (string-append where ": " text) c.problems)))
+      ;; The kernel exports the plugin type but no predicate; the cast checks.
+      (if (not (with-catch (lambda (_) #f) (lambda () (: value plugin) #t)))
+        (problem! (string-append "use-plugin needs a plugin, not " (object->string value)))
+        (let* ((p (: value plugin))
+               (name (symbol->string (plugin-name p)))
+               (earlier (find (lambda ((d : declaration))
+                                (eq? (plugin-name (declaration-target d)) (plugin-name p)))
+                              c.declarations)))
+          (cond
+           (earlier
+            (problem! (string-append "plugin " name " is already declared at "
+                                     (place-text (declaration-source earlier)))))
+           ((memq (plugin-name p) reserved-names)
+            (problem! (string-append "the plugin name " name
+                                     " is reserved for the configuration itself")))
+           (else
+            (let (problems (plugin-option-problems
+                            p (map (lambda (o) [(car o) (cadr o) (place-text (caddr o))]) options)))
+              (set! c.problems (append (reverse problems) c.problems))
+              (set! c.declarations
+                (cons (make-declaration p block forms source
+                                        (map (lambda (o) (cons (car o) (cadr o))) options))
+                      c.declarations))))))))))
 
 ;; SOURCE, "file:line" or #f, as "init.ss line 6".
 (def (place-text (source :? :string)) => :string
@@ -105,8 +117,8 @@ prelude: :gerbil/core
 
 ;; Call LOAD, which loads one init.ss, and return what it declared. LOAD
 ;; runs in the calling thread; the declarations it makes elsewhere do not
-;; count. A file whose options have problems fails with every one of
-;; them, one per line.
+;; count. A file whose declarations or options have problems fails with
+;; every one of them, one per line.
 (def (collect-configuration (load : :procedure)) => configuration
   (let (c (collector declarations: [] user-code: #f user-forms: [] problems: []))
     (parameterize ((current-collector c))
@@ -115,14 +127,5 @@ prelude: :gerbil/core
       (unless c.user-code
         (error "The file declared nothing: does it start with #lang :tuna/config?"))
       (unless (null? c.problems)
-        (raise (make-option-problems (string-join (reverse c.problems) "\n"))))
-      (for-each check-not-reserved! c.declarations)
+        (raise (make-configuration-problems (string-join (reverse c.problems) "\n"))))
       (make-configuration (reverse c.declarations) c.user-code c.user-forms))))
-
-;; Plugins are known by name, so a declared plugin must not take a name the
-;; configuration itself uses.
-(def (check-not-reserved! (d : declaration)) => :void
-  (let (name (plugin-name (declaration-target d)))
-    (when (memq name '(init config-blocks config-service))
-      (error (string-append (or (declaration-source d) "init.ss") ": the plugin name "
-                            (symbol->string name) " is reserved for the configuration itself")))))

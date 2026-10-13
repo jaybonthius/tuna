@@ -8,7 +8,8 @@
 ;;; declaration's options just before it turns the plugin on
 ;;; (tuna/boot.ss); and the plugin reads them when it is activated, with
 ;;; plugin-option. A plugin that the kernel restarts reads the same values
-;;; again.
+;;; again. Program code can override an option, as `tuna --port` does
+;;; for the web transport's port; the override beats init.ss.
 ;;;
 ;;;   (defplugin (web-transport-plugin ctx) "..."
 ;;;     (let (port (plugin-option web-transport-plugin 'port)) ...))
@@ -27,6 +28,10 @@ prelude: :gerbil/core
         plugin-option-specs
         plugin-option-problems
         set-plugin-options!
+        plugin-option-values
+        override-plugin-option!
+        plugin-option-override
+        remove-plugin-option-override!
         plugin-option)
 
 ;; What values an option accepts: a description that completes "must be"
@@ -52,12 +57,17 @@ prelude: :gerbil/core
   final: #t)
 
 ;; Plugin -> its option specs. Keyed by the plugin value, so a new version
-;; of a plugin (its module read again) has its own declaration.
-(def declared-options (make-hash-table-eq))
+;; of a plugin (its module read again) has its own declaration; weak, so
+;; an old version nothing uses any more is collected with its entry.
+(def declared-options (make-hash-table-eq weak-keys: #t))
 
 ;; Plugin -> the options its declaration in init.ss gives, as
 ;; (name . value) pairs; absent options take their default.
-(def given-options (make-hash-table-eq))
+(def given-options (make-hash-table-eq weak-keys: #t))
+
+;; Plugin -> overrides from program code, as (name value . why) lists,
+;; where WHY names what overrides init.ss, such as "--port".
+(def option-overrides (make-hash-table-eq weak-keys: #t))
 
 ;; (defplugin-options plugin (name default "doc" type) ...)
 (defrules defplugin-options ()
@@ -115,13 +125,49 @@ prelude: :gerbil/core
     (hash-remove! given-options p)
     (hash-put! given-options p values)))
 
-;; The value of P's option NAME: the one init.ss gives, else its default.
-(def (plugin-option (p : plugin) (name : :symbol)) => :t
-  (let (spec (find (lambda ((s : option-spec)) (eq? (option-spec-name s) name))
-                   (plugin-option-specs p)))
-    (unless spec
+;; Every option P declares, in declaration order, as (name . value): the
+;; value in GIVEN, (name . value) pairs from init.ss, else the default.
+;; Two declarations with equal values give P the same options, whatever
+;; their order or whether a default is written out.
+(def (plugin-option-values (p : plugin) (given : :list)) => :list
+  (map (lambda ((s : option-spec))
+         (cons (option-spec-name s)
+               (cond
+                ((assq (option-spec-name s) given) => cdr)
+                (else (option-spec-default s)))))
+       (plugin-option-specs p)))
+
+;; Make P's option NAME VALUE whatever init.ss gives; WHY says what
+;; overrides it, such as "--port".
+(def (override-plugin-option! (p : plugin) (name : :symbol) (value : :t) (why : :string)) => :void
+  (option-spec-named p name)
+  (hash-put! option-overrides p
+             (cons [name value . why]
+                   (filter (lambda (o) (not (eq? (car o) name)))
+                           (hash-ref option-overrides p [])))))
+
+;; Let init.ss decide P's option NAME again.
+(def (remove-plugin-option-override! (p : plugin) (name : :symbol)) => :void
+  (hash-put! option-overrides p
+             (filter (lambda (o) (not (eq? (car o) name)))
+                     (hash-ref option-overrides p []))))
+
+;; What overrides P's option NAME, such as "--port", or #f.
+(def (plugin-option-override (p : plugin) (name : :symbol)) => (Maybe :string)
+  (let (found (assq name (hash-ref option-overrides p [])))
+    (and found (cddr found))))
+
+(def (option-spec-named (p : plugin) (name : :symbol)) => option-spec
+  (or (find (lambda ((s : option-spec)) (eq? (option-spec-name s) name))
+            (plugin-option-specs p))
       (error (string-append (symbol->string (plugin-name p)) " declares no option "
-                            (symbol->string name))))
+                            (symbol->string name)))))
+
+;; The value of P's option NAME: an override from program code, else the
+;; one init.ss gives, else its default.
+(def (plugin-option (p : plugin) (name : :symbol)) => :t
+  (let (spec (option-spec-named p name))
     (cond
+     ((assq name (hash-ref option-overrides p [])) => cadr)
      ((assq name (hash-ref given-options p [])) => cdr)
      (else (option-spec-default spec)))))

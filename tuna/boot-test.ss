@@ -364,9 +364,12 @@
                                                  "requires: (begin (activate-plugin! good-plugin) [])")))
                     ? values)
              (check (plugin-active? good-plugin) => #f)
-             (check (configuration? (load-configuration
-                                     (write-init directory "(import :tuna/kernel)"
-                                                 "(use-plugin provider-plugin config: requires: (begin (activate-plugin! good-plugin) []))")))
+             ;; In a config: block a keyword is an option written too late
+             ;; (configuration stage 3): a syntax error, and nothing runs.
+             (check (contains? (load-configuration
+                                (write-init directory "(import :tuna/kernel)"
+                                            "(use-plugin provider-plugin config: requires: (begin (activate-plugin! good-plugin) []))"))
+                               "use-plugin options go before config:")
                     ? values)
              (check (plugin-active? good-plugin) => #f)
              ;; A file in another language is not run at all.

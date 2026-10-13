@@ -15,7 +15,9 @@ prelude: :gerbil/core
         :tuna/boot
         :tuna/control
         :tuna/services/session
-        (only-in :tuna/plugins/web web-transport-listen-port web-transport-url)
+        (only-in :tuna/services/keys command-ref)
+        :tuna/lib/plugin-options
+        (only-in :tuna/plugins/web web-transport-plugin web-transport-url)
         ;; Linked into the executable so that init.ss can import them.
         (only-in :tuna/config)
         (only-in :tuna/lib/jobs)
@@ -82,9 +84,13 @@ prelude: :gerbil/core
                 (lambda () (write-startup-report! text (startup-log-path))))))
 
 ;; When start-up had problems and a plugin can show messages, say so there
-;; too, in one line naming the command that shows the whole report.
+;; too, in one line naming the log and, when it exists, the command that
+;; shows the whole report.
 (def (show-start-up-summary (report : startup-report)) => :void
-  (let (summary (startup-report-summary report))
+  (let (summary (startup-report-summary
+                 report (startup-log-path)
+                 (with-catch (lambda (_) #f)
+                             (lambda () (and (command-ref 'show-config-report) #t)))))
     (when (and summary (service-provider messages-service))
       (message summary))))
 
@@ -105,9 +111,10 @@ prelude: :gerbil/core
 ;; thread, the only one changing plugins then, reloads, and starts the
 ;; loop if input is now provided (brief, walkthrough step 4).
 (def (run (port :? :fixnum) (config :? :string)) => :void
-  ;; Set for good, so a web transport a reload turns on uses it too. A
-  ;; port given here beats the web transport's port option in init.ss.
-  (web-transport-listen-port port)
+  ;; For good, so a web transport a reload turns on uses it too: a port
+  ;; given here overrides the web transport's port option in init.ss.
+  (when port
+    (override-plugin-option! web-transport-plugin 'port port "--port"))
   (let (report (start-from-configuration (find-configuration config)))
     (report-start-up report)
     (show-start-up-summary report))
