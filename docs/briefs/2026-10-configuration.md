@@ -96,7 +96,7 @@ All taken by the owner on 2026-10-12:
 1. **One configuration file,** `init.ss`, with a declarative `use-plugin` form, rather than a separate plugin-list file.
 2. **No automatic copying.** With no configuration Tuna turns nothing on and says how to get one; `tuna init` copies the starter only when you run it. `--config PATH` and `TUNA_CONFIG` choose the file.
 3. **The start-up report** goes to the terminal, a log file replaced on every start, and Tuna's own display when one is available.
-4. **No settings screen is planned.** An earlier decision record (ADR 5) reserved `custom.ss` for settings changed through Tuna's interface, as Emacs's Customize does. It is not part of this work. If it is ever built, what it saves overrides `init.ss`.
+4. **A settings screen comes later, not in this work.** It will be like Emacs's `M-x customize`: settings changed through Tuna's interface are saved as plain data in `custom.ss` (ADR 5), and they override `init.ss`. It is on the roadmap.
 
 ## New terms
 

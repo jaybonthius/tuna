@@ -44,3 +44,4 @@ How the server learns layout facts from the browser (event-attached facts, measu
 5. First rich (non-text) buffer kind and navigation across nodes.
 6. Attached REPL, `init.ss` reload, package reload.
 7. Per-tab frames and input sessions; client-side reactivity where it pays off.
+8. A settings screen, like Emacs's `M-x customize`: browse and change plugin settings through Tuna's interface; changes are saved as plain data in `custom.ss` and override `init.ss`.
