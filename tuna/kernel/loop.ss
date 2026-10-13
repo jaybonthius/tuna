@@ -15,6 +15,7 @@ prelude: :gerbil/core
         :std/sync/completion
         ./ids
         ./state
+        ./tasks
         ./plugins
         (only-in ./hooks new-hook))
 (export (interface-out Input Display)
@@ -25,7 +26,6 @@ prelude: :gerbil/core
         editor-loop-running?
         input-submitter
         call-on-editor-loop
-        running-task
         spawn-task!
         cancel-task!
         result-poster
@@ -34,12 +34,8 @@ prelude: :gerbil/core
         resume-quit!
         input-pending?
         discard-input
-        check-quit
-        signal-quit
-        with-inhibit-quit
         redisplay
         current-task-name
-        current-task-id
         task-started-hook
         task-finished-hook)
 
@@ -95,26 +91,7 @@ prelude: :gerbil/core
   (new-hook 'task-finished
             doc: "Runs with a task's id, name, and how it finished, after it finished."))
 
-;;; Tasks and quitting
-
-;; A task: code holding the baton in its own thread. The loop thread sets
-;; the quit fields; the task's thread reads them at its quit checks.
-(defclass task ((id              : :fixnum)
-                (name            : :symbol)
-                (procedure       : :procedure)
-                (reply           :? :procedure)    ; receives raised? and value
-                (thread          :? :thread)
-                ;; queued, running, suspended, quitting, finished, cancelled
-                (state           : :symbol)
-                (suspension      :? :t)            ; its wait, while suspended
-                (quit-requested? : :boolean)
-                (interrupts      : :fixnum)
-                (inhibit-depth   : :fixnum))
-  final: #t)
-
-(def (new-task (name : :symbol) (procedure : :procedure) (reply :? :procedure)) => task
-  (task id: (next-id!) name: name procedure: procedure reply: reply thread: #f
-        state: 'queued suspension: #f quit-requested?: #f interrupts: 0 inhibit-depth: 0))
+;;; Quitting
 
 ;; One wait of a suspended task. The loop thread records the outcome, a
 ;; pair of raised? and value, and hands it over with the baton.
@@ -122,50 +99,6 @@ prelude: :gerbil/core
                       (done    : :t)               ; a completion
                       (outcome :? :pair))
   final: #t)
-
-;; The running task, for cancel-task!, or #f outside tasks.
-(def (running-task) => (Maybe task)
-  (current-task))
-
-;; The identity of the running task, or #f outside tasks. Undo uses it to
-;; group the changes one command makes.
-(def (current-task-id) => (Maybe :fixnum)
-  (let (running (current-task))
-    (and running (task-id running))))
-
-(def (raise-quit! (running : task) (forced? : :boolean)) => :void
-  (set! running.state 'quitting)
-  (raise (quit-condition forced?: forced?)))
-
-;; Quit now if a quit was requested for the running task (Emacs's quit
-;; check). Long-running loops call this.
-(def (check-quit) => :void
-  (let (running (current-task))
-    (when running
-      (using (running : task)
-        (when (and running.quit-requested? (fxzero? running.inhibit-depth))
-          (raise-quit! running #f))))))
-
-;; Quit the running task, as Emacs's quit command does.
-(def (signal-quit) => :void
-  (raise (quit-condition forced?: #f)))
-
-;; Run THUNK with quitting deferred to its end. A third interrupt while it
-;; runs overrides this.
-(def (call-with-inhibit-quit (thunk : :procedure)) => :t
-  (let (running (current-task))
-    (if running
-      (using (running : task)
-        (let (result (dynamic-wind
-                       (lambda () (set! running.inhibit-depth (fx1+ running.inhibit-depth)))
-                       thunk
-                       (lambda () (set! running.inhibit-depth (fx1- running.inhibit-depth)))))
-          (check-quit)
-          result))
-      (thunk))))
-
-(defrule (with-inhibit-quit body ...)
-  (call-with-inhibit-quit (lambda () body ...)))
 
 ;; Runs inside the task's thread through thread-interrupt!.
 (def (forced-quit-thunk (running : task)) => :procedure

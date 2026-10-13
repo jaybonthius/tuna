@@ -11,6 +11,7 @@
     "tuna/kernel/ids"
     "tuna/kernel/entries"
     "tuna/kernel/state"
+    "tuna/kernel/tasks"
     "tuna/kernel/plugins"
     "tuna/kernel/hooks"
     "tuna/kernel/loop"

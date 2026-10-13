@@ -7,6 +7,7 @@ prelude: :gerbil/core
 (import ./kernel/ids
         ./kernel/entries
         ./kernel/state
+        ./kernel/tasks
         ./kernel/plugins
         ./kernel/hooks
         ./kernel/loop)

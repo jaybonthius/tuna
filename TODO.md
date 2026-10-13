@@ -10,7 +10,6 @@
 ## Tuna
 
 - [ ] **Jobs that post several results** (carry-over from stage 3). A job's `run` returns one result. Posting partial results (for example a highlighter coloring a large text in chunks) needs a way for `run` to post through the job's validity check without finishing; deferred until a job needs it.
-- [ ] **`displayln` with a port argument.** Gerbil's `displayln` displays all its arguments to the current output port, so `(displayln text (current-error-port))` prints the port object to standard output. Stage 1–3 code does this in `report-failure!` (`tuna/kernel/plugins.ss`), the redisplay failure report (`tuna/kernel/loop.ss`), and `usage` (`tuna/main.ss`); stage 4 code writes to the error port directly.
 - [ ] **Autosave runs on the baton.** Each changed text is written synchronously while idle. Texts are persistent, so a large text could be written from a job over a snapshot instead.
 - [ ] **No `fsync` before the atomic rename** of session and autosave files: a crash of the machine (not of Tuna) shortly after a save could leave an empty file on some file systems. Gambit has no portable `fsync`.
 
