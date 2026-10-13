@@ -19,3 +19,5 @@ make deps
 make
 make run
 ```
+
+`make run` starts Tuna with the starter configuration, `starter/init.ss`. Otherwise Tuna reads your `~/.config/tuna/init.ss` (or `tuna --config PATH`); `tuna init` copies the starter there for you to edit.

@@ -59,7 +59,9 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | `quit` and the quit key | `quit` signal, `C-g`, `inhibit-quit` | Same names; stronger guarantee (see divergences). |
 | Session slots (`context-add-session-slot!`) | `savehist`, `desktop`, `saveplace` | Same purpose, defined by the session contract (not the kernel), kept by the session plugin and stored as plain data in `$XDG_STATE_HOME/tuna/session.ss`, saved while idle and on exit, restored on start. Built: buffers (names, points) and windows. |
 | Autosave | `auto-save-mode`, `recover-session` | Same purpose: unsaved buffer text goes to `$XDG_STATE_HOME/tuna/autosave/`. Unlike Emacs, it comes back by itself on start, with the session, for buffers that visit no file (Emacs's `desktop` does not keep their text). Built. |
-| `init.ss`, `custom.ss` | `init.el`, `custom-file` | Same roles; `custom.ss` is data, not code. |
+| `init.ss`, `custom.ss` | `init.el`, `custom-file` | Same roles; `custom.ss` is data, not code, and comes later with a settings screen; what it saves overrides `init.ss`. `init.ss` is found through `--config`, `$TUNA_CONFIG`, or `~/.config/tuna/init.ss`; its code other than `import` and `use-plugin` becomes the plugin `init`, turned on last. Built. |
+| `use-plugin` | `use-package`, Doom's `doom!` | Declares a plugin; loading `init.ss` turns nothing on. A `config:` block (like `:config`) is its own small plugin, on while its plugin is on. Built (no options yet). |
+| Start-up report, `tuna check` | `*Warnings*`, `--debug-init` | One line per plugin: on, failed (and why), or skipped (and what it needs); also in `$XDG_STATE_HOME/tuna/startup.log`. Unlike an error in `init.el`, a failure skips only that plugin. Built. |
 | File-system service providers | `file-name-handler-alist` (TRAMP, compressed files) | Same purpose. |
 
 ## Divergences

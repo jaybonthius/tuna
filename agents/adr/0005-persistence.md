@@ -15,7 +15,7 @@ Emacs reaches remote and virtual files through `file-name-handler-alist` (TRAMP,
 | File contents | The visited file | Explicit save | Files plugin |
 | Unsaved buffer text | `$XDG_STATE_HOME/tuna/autosave/` | Idle and on a timer | Autosave plugin |
 | Session: open buffers, points, layout, histories | `$XDG_STATE_HOME/tuna/session.ss` | Idle and on exit | Each plugin's session slot |
-| Settings changed from the UI | `$XDG_CONFIG_HOME/tuna/custom.ss` | On change | Customization plugin |
+| Settings changed from the UI | `$XDG_CONFIG_HOME/tuna/custom.ss` | On change | Customization plugin (later, not part of the configuration work: configuration brief decision 4 and roadmap; what it saves overrides `init.ss`) |
 | User code | `$XDG_CONFIG_HOME/tuna/init.ss` | Edited by the user | User |
 
 - **File-system and process services.** Plugins access files and spawn processes only through the file-system and process services ([ADR 2](0002-plugins-contexts-and-services.md)), which pick a provider by path. The default provider is the local machine; remote (TRAMP-like) and archive providers can be added later without changing callers. `default-directory` is a scoped setting ([ADR 9](0009-settings-and-scoped-values.md)).
