@@ -112,7 +112,8 @@
             (check (startup-report-entries report) => [])
             (check (contains? (startup-report-problem report) "tuna init") ? values)
             (check (contains? (startup-report-text report) "/nonexistent/tuna/init.ss") ? values)
-            (check (describe-services) => [])))))
+            ;; Only the start-up code's own configuration service.
+            (check (map service-info-provider (describe-services)) => '(config-service))))))
 
     (test-case "loading has no effect; activation applies plugins, blocks, and code"
       (call-with-temporary-directory
@@ -324,7 +325,7 @@
                                [(service-info-name info) (service-info-provider info)
                                 (service-info-dependents info)])
                              (describe-services))
-                        => '((probe #f ()))))))
+                        => '((configuration config-service ()) (probe #f ()))))))
            ;; Deactivating everything left nothing behind.
            (check (probe-on? 'good) => #f)
            (check (probe-on? 'stubborn) => #f)))))
