@@ -38,6 +38,39 @@ prelude: :gerbil/core
         init-user-code
         (phi: +1 read-module-body))
 
+(begin-syntax
+  ;; The use-plugin form STX declaring PLUGIN with OPTIONS (expressions
+  ;; from option-expression) and, unless BODY is #f, a config: block.
+  (def (use-plugin-expansion stx plugin options body)
+    (with-syntax ((plugin-name plugin)
+                  (source (stx-source-string stx))
+                  ((option ...) options))
+      (if body
+        (with-syntax (((body ...) body)
+                      (block (stx-identifier plugin plugin "/config")))
+          #'(declare-plugin! plugin-name
+                             (let ()
+                               (defplugin block "Code attached to a plugin by a config: block in init.ss."
+                                 requires: [] body ...)
+                               block)
+                             '(body ...)
+                             source
+                             (list option ...)))
+        #'(declare-plugin! plugin-name #f [] source (list option ...)))))
+
+  ;; One option, KEY: VALUE, as an expression for (name value "file:line").
+  ;; VALUE is data, never evaluated, so no code of the user's runs at load:
+  ;; a word without quotes is a symbol, and 'x is the same as x.
+  (def (option-expression key value stx)
+    (with-syntax ((name (string->symbol (keyword->string (stx-e key))))
+                  (datum (if (and (stx-pair? value)
+                                  (eq? (stx-e (stx-car value)) 'quote)
+                                  (stx-pair? (stx-cdr value)))
+                           (stx-car (stx-cdr value))
+                           value))
+                  (source (or (stx-source-string key) (stx-source-string stx))))
+      #'(list 'name 'datum source))))
+
 (defsyntax (use-plugin stx)
   (syntax-case stx ()
     ((_ plugin-name . clauses)
@@ -70,38 +103,6 @@ prelude: :gerbil/core
         '(body ...)))))
 
 (begin-syntax
-  ;; The use-plugin form STX declaring PLUGIN with OPTIONS (expressions
-  ;; from option-expression) and, unless BODY is #f, a config: block.
-  (def (use-plugin-expansion stx plugin options body)
-    (with-syntax ((plugin-name plugin)
-                  (source (stx-source-string stx))
-                  ((option ...) options))
-      (if body
-        (with-syntax (((body ...) body)
-                      (block (stx-identifier plugin plugin "/config")))
-          #'(declare-plugin! plugin-name
-                             (let ()
-                               (defplugin block "Code attached to a plugin by a config: block in init.ss."
-                                 requires: [] body ...)
-                               block)
-                             '(body ...)
-                             source
-                             (list option ...)))
-        #'(declare-plugin! plugin-name #f [] source (list option ...)))))
-
-  ;; One option, KEY: VALUE, as an expression for (name value "file:line").
-  ;; VALUE is data, never evaluated, so no code of the user's runs at load:
-  ;; a word without quotes is a symbol, and 'x is the same as x.
-  (def (option-expression key value stx)
-    (with-syntax ((name (string->symbol (keyword->string (stx-e key))))
-                  (datum (if (and (stx-pair? value)
-                                  (eq? (stx-e (stx-car value)) 'quote)
-                                  (stx-pair? (stx-cdr value)))
-                           (stx-car (stx-cdr value))
-                           value))
-                  (source (or (stx-source-string key) (stx-source-string stx))))
-      #'(list 'name 'datum source)))
-
   ;; Keep import, export, and use-plugin forms at the top level; wrap
   ;; every other form, in order, in one init-user-code form.
   (def (read-module-body port)

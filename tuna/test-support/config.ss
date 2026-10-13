@@ -3,8 +3,11 @@
 ;;; plugin turns a named probe on through its context, so the probe is off
 ;;; again once its receipt has run.
 (import :tuna/kernel
+        :tuna/lib/plugin-options
         :tuna/services/session)
-(export probe-on!
+(export optioned-plugin
+        last-greeting
+        probe-on!
         probe-on?
         probe-service
         note-activation!
@@ -156,3 +159,20 @@
 
 (def (call-callback (name : :symbol)) => :t
   ((hash-ref callbacks name)))
+
+;; Accepts options; records the greeting it was given at its last
+;; activation, and fails when its option fail is #t.
+(def current-greeting #f)
+(def (last-greeting) => :t current-greeting)
+
+(defplugin optioned-plugin "Takes options."
+  (note-activation! 'optioned-plugin)
+  (when (plugin-option optioned-plugin 'fail)
+    (error "optioned-plugin was told to fail"))
+  (set! current-greeting (plugin-option optioned-plugin 'greeting))
+  (probe-on! 'optioned))
+
+(defplugin-options optioned-plugin
+  (greeting "hello" "What to say." string-type)
+  (times 1 "How often to say it." (integer-type 1 10))
+  (fail #f "Fail on activation." boolean-type))
