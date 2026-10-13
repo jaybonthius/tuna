@@ -28,6 +28,8 @@
   (set! (fake-target-revision target) (fx1+ (fake-target-revision target))))
 
 (def applied [])
+(def ran [])                            ; inputs of cancellable jobs that started
+(def stopped [])                        ; inputs of those that saw their cancellation
 
 ;; The job groups of plugins that start jobs, set when each activates.
 (def starter #f)
@@ -49,6 +51,8 @@
 
 (def (with-jobs thunk)
   (set! applied [])
+  (set! ran [])
+  (set! stopped [])
   (call-with-fresh-kernel [test-input-plugin job-starter other-job-starter]
     (lambda ()
       (start-editor-loop!)
@@ -60,8 +64,28 @@
   (call-on-editor-loop
    (lambda ()
      (job-group-start! (or group starter) key input: input target: target validity: validity
-                       run: (lambda (input) (completion-wait! gate) input)
+                       run: (lambda (input cancelled?) (completion-wait! gate) input)
                        apply: (lambda (result) (set! applied (cons result applied)))))))
+
+;; Start a job of GROUP (by default the job-starter plugin's) on the baton
+;; whose run notes its input in RAN, then polls its cancellation check for
+;; up to ten seconds, far longer than wait-until waits; once the check
+;; turns true it notes its input in STOPPED and returns.
+(def (start-cancellable-job! key input target group: (group #f))
+  (call-on-editor-loop
+   (lambda ()
+     (job-group-start! (or group starter) key input: input target: target
+                       run: (lambda (input cancelled?)
+                              (set! ran (cons input ran))
+                              (let poll ((n 0))
+                                (cond
+                                 ((cancelled?) (set! stopped (cons input stopped)))
+                                 ((< n 1000) (thread-sleep! 0.01) (poll (fx1+ n)))))
+                              input)
+                       apply: (lambda (result) (set! applied (cons result applied)))))))
+
+(def (noted? input notes)
+  (wait-until (lambda () (and (memq input (notes)) #t))))
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
@@ -83,7 +107,7 @@
           (lambda ()
             (parameterize ((setting 'inside))
               (job-group-start! starter 'probe input: 'input target: (new-target)
-                                run: (lambda (input) [input (setting) (running-task)])
+                                run: (lambda (input cancelled?) [input (setting) (running-task)])
                                 apply: (lambda (result)
                                          (set! applied [(append result [(and (running-task) #t)])]))))))
          (check (applied-after 1) => '((input outside #f #t))))))
@@ -97,6 +121,46 @@
            (start-gated-job! 'other 4 gate target)
            (completion-post! gate #t)
            (check (list-sort < (applied-after 3)) => [1 3 4])))))
+
+    (test-case "a pending job replaced by a newer one never runs"
+      (with-jobs
+       (lambda ()
+         (let ((gate (make-completion))
+               (target (new-target)))
+           (start-gated-job! 'same 'first gate target)
+           (start-cancellable-job! 'same 'replaced target)
+           (start-gated-job! 'same 'newest gate target)
+           (completion-post! gate #t)
+           (check (applied-after 2) => '(first newest))
+           (check ran => [])))))
+
+    (test-case "a cancelled running job sees its check turn true, stops early, and applies nothing"
+      (with-jobs
+       (lambda ()
+         (let* ((open-gate (make-completion))
+                (target (new-target))
+                (j (start-cancellable-job! 'k 'cancelled target)))
+           (completion-post! open-gate #t)
+           (check (noted? 'cancelled (lambda () ran)) => #t)
+           (check stopped => [])
+           (on-baton (lambda () (job-cancel! j)))
+           (check (noted? 'cancelled (lambda () stopped)) => #t)
+           (start-gated-job! 'free 'free open-gate target)
+           (check (applied-after 1) => '(free))))))
+
+    (test-case "closing a job's group cancels its running job cooperatively"
+      (with-jobs
+       (lambda ()
+         (let ((open-gate (make-completion))
+               (target (new-target)))
+           (completion-post! open-gate #t)
+           (on-baton (lambda () (activate-plugin! job-owner)))
+           (start-cancellable-job! 'k 'owned target group: owner-jobs)
+           (check (noted? 'owned (lambda () ran)) => #t)
+           (on-baton (lambda () (deactivate-plugin! job-owner)))
+           (check (noted? 'owned (lambda () stopped)) => #t)
+           (start-gated-job! 'free 'free open-gate target)
+           (check (applied-after 1) => '(free))))))
 
     (test-case "jobs of two groups with the same key do not coalesce"
       (with-jobs

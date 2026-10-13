@@ -49,6 +49,21 @@
 (def (contains? html needle)
   (and (string-contains html needle) #t))
 
+;; On the baton, start a job that waits for GATE, then computes the current
+;; text's digit spans and applies them with the rebase policy.
+(def (start-gated-digits! gate)
+  (on-baton
+   (lambda ()
+     (let (t (current-text))
+       (job-group-start! jobs 'gated-digits
+                         input: (text-snapshot t)
+                         run: (lambda (snapshot cancelled?)
+                                (completion-wait! gate)
+                                (digit-spans snapshot))
+                         apply: (lambda (spans) (set-highlights! t 'digits spans))
+                         target: t
+                         validity: 'rebase)))))
+
 ;; The characters under the current text's digit highlights.
 (def (highlighted)
   (on-baton
@@ -125,18 +140,23 @@
          (start-editor-loop!)
          (let (gate (make-completion))
            (type! "a" "1" "2" "b" "3" "4")
-           (on-baton
-            (lambda ()
-              (let (t (current-text))
-                (job-group-start! jobs 'gated-digits
-                                  input: (text-snapshot t)
-                                  run: (lambda (snapshot) (completion-wait! gate) (digit-spans snapshot))
-                                  apply: (lambda (spans) (set-highlights! t 'digits spans))
-                                  target: t
-                                  validity: 'rebase))))
+           (start-gated-digits! gate)
            ;; While the job runs: type before everything, and delete the b.
            (type! "C-a" "Z" "C-f" "C-f" "C-f" "C-d")
            (check (on-baton (lambda () (text-string (current-text)))) => "Za1234")
            (completion-post! gate #t)
            (check (wait-until (lambda () (pair? (highlighted)))) => #t)
-           (check (highlighted) => ["12" "34"])))))))
+           (check (highlighted) => ["12" "34"])))))
+
+    (test-case "a digit highlight grows over text typed inside its run while the job ran"
+      (call-with-fresh-kernel editing-plugins
+       (lambda ()
+         (start-editor-loop!)
+         (let (gate (make-completion))
+           (type! "a" "1" "2" "3" "b")
+           (start-gated-digits! gate)
+           (type! "C-a" "C-f" "C-f" "x")
+           (check (on-baton (lambda () (text-string (current-text)))) => "a1x23b")
+           (completion-post! gate #t)
+           (check (wait-until (lambda () (pair? (highlighted)))) => #t)
+           (check (highlighted) => ["1x23"])))))))

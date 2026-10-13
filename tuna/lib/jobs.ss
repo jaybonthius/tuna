@@ -14,6 +14,10 @@
 ;;; pending one. Results therefore keep arriving while new jobs keep being
 ;;; started. Deactivating the plugin closes its groups and cancels their
 ;;; jobs.
+;;;
+;;; Cancellation is cooperative: a cancelled job's thread runs on until its
+;;; procedure returns, and its result is never applied. The procedure
+;;; receives a check it should call now and then to stop early.
 prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable)
@@ -38,15 +42,25 @@ prelude: :gerbil/core
   ;; target's changes since: (list adjusted-result), or #f to drop it.
   (job-rebase (result : :t) (revision : :fixnum)) => (Maybe :pair))
 
+;; Only the baton changes STATE, under LOCK, because the job's thread reads
+;; it through its cancellation check.
 (defclass job ((key      : :t)
                (input    : :t)
-               (run      : :procedure)       ; input -> result, on the job's thread
+               (run      : :procedure)       ; input, cancelled? -> result, on the job's thread
                (apply    : :procedure)       ; result -> void, on the baton
                (validity : :symbol)          ; exact-revision, target-alive, or rebase
                (target   : :t)               ; JobTarget
                (revision : :fixnum)          ; the target's revision when started
-               (state    : :symbol))         ; pending, running, done, cancelled
+               (state    : :symbol)          ; pending, running, done, cancelled
+               (lock     : :mutex))
   final: #t)
+
+(def (change-job-state! (j : job) (state : :symbol)) => :void
+  (do-with-lock j.lock (set! j.state state)))
+
+;; Whether J was cancelled. Callable from any thread.
+(def (job-cancelled? (j : job)) => :boolean
+  (do-with-lock j.lock (eq? j.state 'cancelled)))
 
 ;; The running and pending jobs of one key.
 (defclass job-slot ((running :? job)
@@ -76,8 +90,11 @@ prelude: :gerbil/core
                       (hash-clear! group.slots)))
     group))
 
-;; Start a job of GROUP keyed KEY that applies (RUN INPUT) to TARGET with
-;; APPLY, on the baton, if its result is still valid under VALIDITY:
+;; Start a job of GROUP keyed KEY that applies (RUN INPUT CANCELLED?) to
+;; TARGET with APPLY, on the baton, if its result is still valid under
+;; VALIDITY. CANCELLED? is a procedure of no arguments, callable from the
+;; job's thread, that returns true once the job is cancelled; RUN should
+;; call it now and then and return early when it does. Validity policies:
 ;;   exact-revision  TARGET's revision is unchanged;
 ;;   target-alive    TARGET still exists;
 ;;   rebase          TARGET still exists and adjusts the result for its
@@ -98,7 +115,7 @@ prelude: :gerbil/core
     (error "Unknown job validity policy" validity))
   (let* ((new (job key: key input: input run: run apply: apply validity: validity
                    target: target revision: (JobTarget-job-revision target)
-                   state: 'pending))
+                   state: 'pending lock: (make-mutex 'tuna-job)))
          (slots (job-group-slots group))
          (slot (or (hash-get slots key)
                    (let (slot (job-slot running: #f pending: #f))
@@ -108,30 +125,32 @@ prelude: :gerbil/core
       (if slot.running
         (begin
           (let (old slot.pending)
-            (when old (set! (job-state old) 'cancelled)))
+            (when old (change-job-state! old 'cancelled)))
           (set! slot.pending new))
         (run-job! slots slot new)))
     new))
 
-;; Cancel J: it never applies a result. A running job's thread finishes
-;; on its own; jobs do not touch editor state, so nothing needs undoing.
+;; Cancel J: it never applies a result, and its cancellation check returns
+;; true from now on. A running job's thread finishes on its own; jobs do
+;; not touch editor state, so nothing needs undoing. Call on the baton.
 (def (job-cancel! (j : job)) => :void
   (unless (eq? j.state 'done)
-    (set! j.state 'cancelled)))
+    (change-job-state! j 'cancelled)))
 
 ;; Run J in a root thread: it inherits no parameters (ADR 3, ADR 9).
 (def (run-job! (slots : HashTable) (slot : job-slot) (j : job)) => :void
-  (set! j.state 'running)
+  (change-job-state! j 'running)
   (set! slot.running j)
   (let ((post (result-poster))
         (run j.run)
-        (input j.input))
+        (input j.input)
+        (cancelled? (lambda () (job-cancelled? j))))
     (thread-start!
      (make-root-thread
       (cut thread-main
            (lambda ()
              (let (outcome (with-catch (lambda (e) (cons #t e))
-                                       (lambda () (cons #f (run input)))))
+                                       (lambda () (cons #f (run input cancelled?)))))
                (with-catch void
                            (lambda ()
                              (post 'job-result (lambda () (finish-job! slots slot j outcome))))))))
@@ -148,7 +167,7 @@ prelude: :gerbil/core
         (run-job! slots slot next)
         (hash-remove! slots j.key))))
   (unless (eq? j.state 'cancelled)
-    (set! j.state 'done)
+    (change-job-state! j 'done)
     (if (car outcome)
       (message (string-append "Job failed: " (exception-summary (cdr outcome))))
       (let (result (valid-result j (cdr outcome)))
