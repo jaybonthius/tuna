@@ -1,6 +1,6 @@
 # How Tuna works
 
-**Status (2026-10-13):** the architecture skeleton is complete. Built: the small kernel (plugins with receipts, services that can be swapped at startup or live, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the token-protected browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML, or plain text as a toy), a swappable window manager (one window, or two side by side as a toy), saving your session and unsaved text across restarts, and starting from and reloading your `init.ss` (stages 1 and 2 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, `tuna check`, reloading with `reload-config` or `tuna reload`, and, from stage 3, plugin options and the `show-config-report` command). Not built yet: files, `M-x`, completion, modes, and real window layouts. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
+**Status (2026-10-13):** the architecture skeleton is complete. Built: the small kernel (plugins with receipts, services that can be swapped at startup or live, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the token-protected browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML; a toy plain-text renderer proves the slot can be swapped), a swappable window manager (one window; a toy two-window manager proves the slot), saving your session and unsaved text across restarts, and starting from and reloading your `init.ss` (stages 1 and 2 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, `tuna check`, reloading with `reload-config` or `tuna reload`, and, from stage 3, plugin options and the `show-config-report` command). Not built yet: files, `M-x`, completion, modes, and real window layouts. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
 
 ## The idea
 
@@ -37,9 +37,16 @@ Where the parts that once crept into the kernel live now:
 | Background jobs | The jobs library. A plugin makes a **job group** when it turns on and starts its jobs in it; turning the plugin off cancels them. |
 | Records of what an edit changed | The buffers contract |
 
-`make test` checks these boundaries mechanically. Kernel code may import only Gerbil's standard library and other kernel files, and may not use the words the [kernel decision record](../agents/adr/0012-kernel-boundary-and-replaceability.md) forbids (keys, buffers, windows, settings, timers, and so on). Libraries may import only the standard library, the kernel's public face, and other libraries. Everything else imports only the kernel's public face, and only tests may use the test helpers in `tuna/test-support/`.
+`tuna/plugins/` holds only real plugins, the ones a configuration might use. Two other places hold plugins that are not part of Tuna:
 
-Some plugins can be swapped while Tuna runs: the text store, the window manager, the renderer, and nearly everything else. A few are chosen at startup and need a restart to change, such as how keys are resolved and how settings are looked up, because swapping them mid-session would pull the rug out from under running commands. If a plugin combination breaks things, Tuna recovers from your own configuration, by skipping what failed or going back to your last working configuration, rather than switching to some built-in default; how exactly is still being designed, and `describe-services` shows which plugin is filling each slot.
+- **Test doubles** (`tuna/test-support/`): deliberately small second plugins that prove a contract can be filled by more than one plugin (a plain-string text store, a plain-text renderer, a two-window manager), and small command fixtures for tests (endless loops to stop with `C-g`, a slow background job, a prompt, swapping a slot). Only tests and the demo use them; Tuna's program does not include them.
+- **The demo** (`demo/`, development only): `make demo` runs Tuna with `demo/init.ss`, the starter's plugins plus demo commands: a slow digit highlighter, `C-c l` (a loop to stop with `C-g`), `C-c w` (swap the window manager), and `C-h s` (`describe-services`). The starter configuration does not include it, and nothing in `tuna/` or `starter/` may use it. `make run` starts the starter.
+
+Most tests test one plugin with only the plugins it needs. Tests that exercise many plugins together (typing, rendering, swapping slots, a restart, the browser over HTTP) are in `tuna/integration/`.
+
+`make test` checks these boundaries mechanically. Kernel code may import only Gerbil's standard library and other kernel files, and may not use the words the [kernel decision record](../agents/adr/0012-kernel-boundary-and-replaceability.md) forbids (keys, buffers, windows, settings, timers, and so on). Libraries may import only the standard library, the kernel's public face, and other libraries. Everything else imports only the kernel's public face, only tests and the demo may use the test helpers in `tuna/test-support/`, and nothing in `tuna/` or `starter/` may use the demo.
+
+Some plugins can be swapped while Tuna runs: the text store, the window manager, the renderer, and nearly everything else. A few are chosen at startup and need a restart to change, such as how keys are resolved and how settings are looked up, because swapping them mid-session would pull the rug out from under running commands. If a plugin combination breaks things, Tuna recovers from your own configuration, by skipping what failed or going back to your last working configuration, rather than switching to some built-in default; how exactly is still being designed, and the kernel's `describe-services` reports which plugin is filling each slot (the demo shows it with `C-h s`).
 
 ## The big parts
 
@@ -114,10 +121,10 @@ Your own configuration file, `init.ss`, declares which plugins to turn on, and t
 
 ```scheme
 #lang :tuna/config
-(import :tuna/plugins/keys :tuna/plugins/web :tuna/plugins/demo)
+(import :tuna/plugins/keys :tuna/plugins/web :tuna/plugins/reload-config)
 (use-plugin keys-plugin)
 (use-plugin web-transport-plugin port: 8080)
-(use-plugin demo-plugin config: (keymap-set "C-c t" 'describe-services))
+(use-plugin reload-config-plugin config: (keymap-set "C-c R" 'reload-config))
 (defcommand (say-hello) "Say hello." (message "hello"))
 ```
 

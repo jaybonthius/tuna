@@ -21,13 +21,17 @@ Brief: [briefs/2026-10-architecture-skeleton.md](briefs/2026-10-architecture-ske
 
 Out of scope: windows and splits, files, modes, completion UI, real highlighting.
 
+## Done: configuration (2026-10-13)
+
+Brief: [briefs/2026-10-configuration.md](briefs/2026-10-configuration.md). Tuna starts from your own `init.ss`, which declares the plugins to turn on (`use-plugin`) with their options; `tuna init` copies the starter configuration, `tuna check` validates a configuration, and `reload-config` (`C-c R` in the starter) or `tuna reload` reloads it while Tuna runs, changing only what changed.
+
 ## Now: getting the core back to its intended shape
 
 The skeleton let pieces of features creep into the kernel. The approved plan ([kernel contract](briefs/2026-10-kernel-contract.md)) fixes that first, in this order:
 
 1. *Done (2026-10-12).* Clean up the kernel to match the contract (no new features). See [how Tuna works](overview.md#a-small-kernel-and-a-lot-of-plugins).
 2. Make buffers really replaceable (a short brief first).
-3. Take the demo out of the default startup (a short brief first).
+3. *Done (2026-10-13).* Take the demo out of the default startup: the starter configuration declares only real plugins, and the demo runs with `make demo`.
 4. General-purpose hooks and advice, including redefining functions while Tuna runs (a brief first).
 5. The optional [profiler plugin](briefs/2026-10-profiler.md).
 

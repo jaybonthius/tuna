@@ -1,9 +1,11 @@
-;;; Input and Messages providers for kernel and library tests. The Input
-;;; provider takes plain strings, which shows that the kernel never looks
-;;; inside an input item.
+;;; Input and Messages providers for kernel, library, and plugin tests. The
+;;; Input provider takes plain strings, which shows that the kernel never
+;;; looks inside an input item. test-messages-plugin provides only
+;;; Messages, for tests whose input comes from another plugin, such as keys.
 (import (only-in :gerbil/runtime/hash HashTable)
         :tuna/kernel)
 (export test-input-plugin
+        test-messages-plugin
         test-bindings
         make-test-input
         current-message)
@@ -30,7 +32,7 @@
 (defmethod {message! test-messages}
   (lambda (self text) (set! (test-messages-text self) text)))
 
-;; The last message, or "" without a test-input-plugin.
+;; The last message, or "" without a test-input-plugin or test-messages-plugin.
 (def (current-message) => :string
   (let (provider (service-provider messages-service))
     (if provider (test-messages-text provider) "")))
@@ -39,3 +41,7 @@
   "Resolves test input items through test-bindings and keeps the last message."
   (context-provide! ctx messages-service (make-test-messages ""))
   (context-provide! ctx input-service (make-test-input test-bindings)))
+
+(defplugin (test-messages-plugin ctx)
+  "Keeps the last message."
+  (context-provide! ctx messages-service (make-test-messages "")))

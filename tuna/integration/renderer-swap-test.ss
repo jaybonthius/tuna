@@ -1,5 +1,7 @@
-;;; The plain-text renderer, and swapping renderers live (C-c v), driven
-;;; through the real editor loop.
+;;; Integration: the renderer slot swapped live (C-c v) to the plain-text
+;;; contract double (tuna/test-support/plain-text-renderer.ss) and back
+;;; while editing, with tree buffers, two windows, and a prompt, driven by
+;;; keys through the real editor loop.
 (import :std/test
         :tuna/kernel
         :tuna/services/renderer
@@ -13,20 +15,24 @@
         :tuna/plugins/single-window
         :tuna/plugins/window-commands
         :tuna/plugins/html-renderer
-        :tuna/plugins/plain-text-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
-        :tuna/plugins/demo
         "../test-support/kernel"
         "../test-support/keys"
-        "../test-support/session")
-(export plain-text-renderer-test)
+        "../test-support/session"
+        "../test-support/plain-text-renderer"
+        "../test-support/two-windows"
+        "../test-support/swap-commands"
+        "../test-support/rename-command"
+        "../test-support/tree-buffer")
+(export renderer-swap-test)
 
 (def renderer-plugins
   [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
    settings-plugin no-session-plugin buffers-plugin single-window-plugin
    window-commands-plugin
-   html-renderer-plugin basic-editing-plugin minibuffer-plugin demo-plugin])
+   html-renderer-plugin basic-editing-plugin minibuffer-plugin
+   swap-commands-plugin rename-command-plugin tree-buffer-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
@@ -36,8 +42,8 @@
 (def (contains? html needle)
   (and (string-contains html needle) #t))
 
-(def plain-text-renderer-test
-  (test-suite "tuna/plugins/plain-text-renderer"
+(def renderer-swap-test
+  (test-suite "integration: swapping the renderer live"
     (test-case "C-c v swaps to plain text and back without losing text or point"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()

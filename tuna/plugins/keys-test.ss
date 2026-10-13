@@ -2,10 +2,9 @@
         :std/test
         :tuna/kernel
         :tuna/services/keys
-        :tuna/services/echo-area
         :tuna/plugins/keys
-        :tuna/plugins/echo-area
-        "../test-support/kernel")
+        "../test-support/kernel"
+        (only-in "../test-support/string-input" test-messages-plugin current-message))
 (export keys-test)
 
 (def (keydown key ctrl?: (ctrl? #f) alt?: (alt? #f) shift?: (shift? #f)
@@ -25,7 +24,7 @@
     (and e (entry-value e))))
 
 (def keys-plugins
-  [echo-area-plugin keys-plugin])
+  [test-messages-plugin keys-plugin])
 
 ;; The name of the task EVENT resolves to, or #f.
 (def (resolve event)

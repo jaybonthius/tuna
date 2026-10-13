@@ -13,9 +13,14 @@
 ;;; :gerbil, :std, the kernel facade :tuna/kernel, and library modules, and
 ;;; may include only checked library files. Libraries may use the nouns.
 ;;;
-;;; Test support (tuna/test-support/) is for tests only: no other non-test
-;;; source under tuna/ may import or include it, and build.ss must not list
-;;; it. The kernel object is private: outside tuna/kernel/ and test support,
+;;; Test support (tuna/test-support/) is for tests and the demo only: no
+;;; other non-test source under tuna/, and nothing under starter/, may
+;;; import or include it, and build.ss must not list it. The demo may use
+;;; only its plugin fixtures and contract doubles (files defining a plugin
+;;; named after the file), and like Tuna's own source it imports only the
+;;; kernel facade and no program code. The demo (demo/)
+;;; is for development only: nothing under tuna/, tests included, or under
+;;; starter/ may import or include it, and build.ss must not list it. The kernel object is private: outside tuna/kernel/ and test support,
 ;;; source and tests may import only the kernel facade :tuna/kernel, never
 ;;; a module under tuna/kernel/.
 (import (only-in :gerbil/runtime/hash HashTable)
@@ -152,14 +157,53 @@
 (def (kernel-source-names) => :list
   (layer-source-names kernel-layer))
 
-;; Plugin names, from the module files in tuna/plugins/.
+;; Whether FORM, at any depth, defines the plugin STEM-plugin or STEM with
+;; defplugin, as (defplugin name ...) or (defplugin (name ctx) ...).
+(def (defines-plugin-named? (form : :t) (stem : :string)) => :boolean
+  (and (pair? form)
+       (or (and (eq? (car form) 'defplugin)
+                (pair? (cdr form))
+                (let (head (if (pair? (cadr form)) (car (cadr form)) (cadr form)))
+                  (and (symbol? head)
+                       (member (symbol->string head) [stem (string-append stem "-plugin")])
+                       #t)))
+           (defines-plugin-named? (car form) stem)
+           (defines-plugin-named? (cdr form) stem))))
+
+;; The stems of FILES (relative to the repository root) that are non-test
+;; .ss files defining a plugin named after their file.
+(def (plugin-file-stems (files : :list)) => :list
+  (filter-map (lambda ((file : :string))
+                (let (stem (path-strip-extension (path-strip-directory file)))
+                  (and (string-suffix? ".ss" file)
+                       (not (string-suffix? "-test.ss" file))
+                       (defines-plugin-named? (read-forms (source-path file)) stem)
+                       stem)))
+              files))
+
+;; The plugin fixtures and contract doubles in tuna/test-support/, by stem:
+;; the files there that define a plugin named after the file. Helpers such
+;; as kernel.ss, keys.ss, or session.ss (no-session-plugin) are not.
+(def (test-support-plugin-stems) => :list
+  (plugin-file-stems (map car (tree-entries "tuna/test-support"))))
+
+;; Plugins whose modules are not in tuna/plugins/: the plugin fixtures and
+;; contract doubles in test support, the demo's plugins, and the start-up
+;; code's config-blocks.
+(def (plugin-names-elsewhere) => :list
+  (append (test-support-plugin-stems)
+          (plugin-file-stems (append (map car (tree-entries "demo"))
+                                     ["tuna/config-blocks.ss"]))))
+
+;; Plugin names, from the module files in tuna/plugins/, and those above.
 (def (plugin-names) => :list
   (list-sort string<?
-             (map path-strip-extension
-                  (filter (lambda ((file : :string))
-                            (and (string-suffix? ".ss" file)
-                                 (not (string-suffix? "-test.ss" file))))
-                          (directory-files (path-expand "plugins" tuna-directory))))))
+             (append (plugin-names-elsewhere)
+                     (map path-strip-extension
+                          (filter (lambda ((file : :string))
+                                    (and (string-suffix? ".ss" file)
+                                         (not (string-suffix? "-test.ss" file))))
+                                  (directory-files (path-expand "plugins" tuna-directory)))))))
 
 ;;; Imports and includes
 
@@ -364,6 +408,12 @@
                  (not (string-prefix? (string-append test-support-directory "/") name))))
           (map car (tree-entries "tuna"))))
 
+(def starter-directory "starter")
+
+;; Every .ss file under starter/.
+(def (starter-source-names) => :list
+  (filter (cut string-suffix? ".ss" <>) (map car (tree-entries starter-directory))))
+
 (def (test-support-problems) => :list
   (apply append
          (map (lambda ((file : :string))
@@ -371,9 +421,55 @@
                  (lambda ((name : :string))
                    (and (test-support-name? file name)
                         (string-append file ": imports or includes " name
-                                       "; only tests may use " test-support-directory "/")))
+                                       "; only tests and the demo may use " test-support-directory "/")))
                  (referenced-names (read-forms (source-path file)))))
-              (non-test-source-names))))
+              (append (non-test-source-names) (starter-source-names)))))
+
+;;; The demo
+
+(def demo-directory "demo")
+
+;; Every .ss file under demo/.
+(def (demo-source-names) => :list
+  (filter (cut string-suffix? ".ss" <>) (map car (tree-entries demo-directory))))
+
+;; Imports or includes by the demo of test support other than its plugin
+;; fixtures and contract doubles: the demo runs in a real Tuna, so it must
+;; not reach the test-only kernel facade or other test helpers.
+(def (demo-test-support-problems) => :list
+  (let (allowed (map (lambda ((stem : :string))
+                       (source-path (string-append test-support-directory "/" stem)))
+                     (test-support-plugin-stems)))
+    (apply append
+           (map (lambda ((file : :string))
+                  (filter-map
+                   (lambda ((name : :string))
+                     (and (test-support-name? file name)
+                          (not (member (reference-target file name) allowed))
+                          (string-append file ": imports or includes " name
+                                         "; the demo may use only the plugin fixtures and"
+                                         " contract doubles in " test-support-directory "/")))
+                   (referenced-names (read-forms (source-path file)))))
+                (demo-source-names)))))
+
+;; Every .ss file under tuna/, tests included, and under starter/.
+(def (demo-client-names) => :list
+  (append (filter (cut string-suffix? ".ss" <>) (map car (tree-entries "tuna")))
+          (starter-source-names)))
+
+;; Imports or includes of demo/ by Tuna's package, its tests, or the
+;; starter configuration: the demo is for development only.
+(def (demo-problems) => :list
+  (apply append
+         (map (lambda ((file : :string))
+                (filter-map
+                 (lambda ((name : :string))
+                   (and (or (equal? (reference-target file name) (source-path demo-directory))
+                            (name-within? file name demo-directory))
+                        (string-append file ": imports or includes " name
+                                       "; nothing in tuna/ or starter/ may use " demo-directory "/")))
+                 (referenced-names (read-forms (source-path file)))))
+              (demo-client-names))))
 
 ;; Every string in FORM, at any depth.
 (def (strings-in (form : :t)) => :list
@@ -383,24 +479,25 @@
    ((string? form) [form])
    (else [])))
 
-;; build.ss entries under tuna/test-support/, which gerbil build would compile
-;; into the package.
-(def (build-script-problems) => :list
+;; build.ss entries under DIRECTORY, which gerbil build would compile into
+;; the package.
+(def (build-script-problems (directory : :string) (what : :string)) => :list
   (filter-map (lambda ((name : :string))
-                (and (or (equal? name test-support-directory)
-                         (string-prefix? (string-append test-support-directory "/") name))
-                     (string-append "build.ss: lists " name "; test support must not be built")))
+                (and (or (equal? name directory)
+                         (string-prefix? (string-append directory "/") name))
+                     (string-append "build.ss: lists " name "; " what " must not be built")))
               (strings-in (read-forms (source-path "build.ss")))))
 
 ;; Every .ss file under tuna/, tests included, other than the kernel (its
-;; facade tuna/kernel.ss and tuna/kernel/) and test support.
+;; facade tuna/kernel.ss and tuna/kernel/) and test support; and the demo.
 (def (kernel-client-names) => :list
-  (filter (lambda ((name : :string))
-            (and (string-suffix? ".ss" name)
-                 (not (equal? name "tuna/kernel.ss"))
-                 (not (string-prefix? "tuna/kernel/" name))
-                 (not (string-prefix? (string-append test-support-directory "/") name))))
-          (map car (tree-entries "tuna"))))
+  (append (filter (lambda ((name : :string))
+                    (and (string-suffix? ".ss" name)
+                         (not (equal? name "tuna/kernel.ss"))
+                         (not (string-prefix? "tuna/kernel/" name))
+                         (not (string-prefix? (string-append test-support-directory "/") name))))
+                  (map car (tree-entries "tuna")))
+          (demo-source-names)))
 
 ;; Imports or includes of a module under tuna/kernel/ by a kernel client,
 ;; which bypass the facade and may reach the private kernel object.
@@ -419,11 +516,12 @@
 ;;; Program code
 
 ;; The program's start-up, reload, and command-line code (ADR 12,
-;; amendment for configuration stage 2): only the program uses it.
+;; amendment for configuration stage 2), with config-blocks, which the
+;; start-up code turns on itself: only the program uses it.
 ;; Plugins reach reload and the configuration report through the
 ;; configuration service (tuna/services/configuration.ss).
-(def program-modules '("tuna/main" "tuna/boot" "tuna/control"))
-(def program-files '("tuna/main.ss" "tuna/boot.ss" "tuna/control.ss"))
+(def program-modules '("tuna/main" "tuna/boot" "tuna/control" "tuna/config-blocks"))
+(def program-files '("tuna/main.ss" "tuna/boot.ss" "tuna/control.ss" "tuna/config-blocks.ss"))
 
 (def (program-code-problems) => :list
   (apply append
@@ -439,7 +537,7 @@
                                          ") uses program code"))))
                  (referenced-names (read-forms (source-path file)))))
               (filter (lambda ((file : :string)) (not (member file program-files)))
-                      (non-test-source-names)))))
+                      (append (non-test-source-names) (demo-source-names))))))
 
 ;;; Forbidden nouns
 
@@ -633,18 +731,31 @@
       (displayln "  kernel boundary: " (length (kernel-source-names)) " files checked; "
                  baseline-name " allows "
                  (foldl fx+ 0 (hash-values (baseline-limits (read-baseline))))
-                 " known forbidden-noun hits")
+                 " known forbidden-noun hits; plugin names outside tuna/plugins/: "
+                 (string-join (plugin-names-elsewhere) ", "))
       (check (problem-count (noun-problems)) => 0))
     (test-case "tuna/lib/ holds only .ss files"
       (check (problem-count (tree-problems library-layer)) => 0))
     (test-case "libraries import only :gerbil, :std, :tuna/kernel, and library modules"
       (displayln "  library boundary: " (length (layer-source-names library-layer)) " files checked")
       (check (problem-count (import-problems library-layer)) => 0))
-    (test-case "only tests import or include test support, and build.ss does not list it"
-      (displayln "  test-support boundary: " (length (non-test-source-names)) " non-test files checked")
-      (check (problem-count (append (test-support-problems) (build-script-problems))) => 0))
+    (test-case "only tests and the demo import or include test support, and build.ss does not list it"
+      (displayln "  test-support boundary: "
+                 (length (append (non-test-source-names) (starter-source-names)))
+                 " non-test files checked")
+      (check (problem-count (append (test-support-problems)
+                                    (demo-test-support-problems)
+                                    (build-script-problems test-support-directory "test support")))
+             => 0))
+    (test-case "nothing in tuna/ or starter/ imports or includes the demo, and build.ss does not list it"
+      (displayln "  demo boundary: " (length (demo-client-names)) " files checked")
+      (check (problem-count (append (demo-problems)
+                                    (build-script-problems demo-directory "the demo")))
+             => 0))
     (test-case "outside the kernel and test support, only the kernel facade is imported"
       (displayln "  kernel facade boundary: " (length (kernel-client-names)) " files checked")
       (check (problem-count (kernel-internal-problems)) => 0))
     (test-case "only the program imports program code"
+      (displayln "  program-code boundary: "
+                 (length (append (non-test-source-names) (demo-source-names))) " files checked")
       (check (problem-count (program-code-problems)) => 0))))

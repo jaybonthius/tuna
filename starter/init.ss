@@ -47,7 +47,6 @@
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
-        :tuna/plugins/demo
         :tuna/plugins/reload-config)
 
 (use-plugin keys-plugin)
@@ -67,7 +66,6 @@
 (use-plugin html-renderer-plugin)
 (use-plugin basic-editing-plugin)
 (use-plugin minibuffer-plugin)
-(use-plugin demo-plugin)                ; the skeleton demo: digit highlighting, C-c commands
 (use-plugin reload-config-plugin        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)
           (keymap-set "C-c C-r" 'show-config-report))

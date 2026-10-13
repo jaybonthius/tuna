@@ -23,6 +23,7 @@ The owner must understand the architecture and every plan. Earlier attempts fail
 
 ## How to work
 
+- `tuna/plugins/` holds only real plugins; demos live in `demo/`, test doubles in `tuna/test-support/`; `starter/init.ss` declares only real plugins.
 - Build working vertical slices. Every milestone must run in the browser; specify interfaces and invariants, not the internals behind them.
 - Keep plans to a page, in `agents/plans/`. Write an ADR only for a hard-to-reverse choice with real alternatives.
 - Do not add review, oracle, or acceptance-report loops unless the owner asks. Validate with tests and by running the program.
@@ -58,8 +59,9 @@ The owner talks to one primary agent in this checkout (`/home/jay/Code/workbench
 ```sh
 make deps          # install Gerbil package dependencies into .gerbil/
 make               # build the browser asset and the Gerbil package
-make test          # Gerbil tests and the keyboard-plugin test
-make run           # build, then run .gerbil/bin/tuna
+make test          # Gerbil tests, the keyboard-plugin test, and a check that demo/init.ss loads
+make run           # build, then run .gerbil/bin/tuna with starter/init.ss
+make demo          # build, then run the development demo (demo/init.ss)
 ```
 
 `gerbil build` needs at least one commit, because it records `git describe` in the package manifest. A Racket-era `tuna` binary may be on `PATH`; run this checkout's binary through `make run` or `gerbil env tuna`.

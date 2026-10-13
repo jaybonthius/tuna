@@ -23,7 +23,7 @@ prelude: :gerbil/core
         :tuna/lib/configuration
         :tuna/lib/plugin-options
         :tuna/services/configuration
-        :tuna/plugins/config-blocks)
+        :tuna/config-blocks)
 (export (struct-out config-choice report-entry startup-report reload-report)
         parse-command-line
         find-configuration

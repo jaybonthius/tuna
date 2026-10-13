@@ -3,18 +3,16 @@
         :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers
-        :tuna/services/echo-area
         :tuna/services/settings
         :tuna/services/minibuffer
         :tuna/plugins/keys
-        :tuna/plugins/echo-area
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
-        :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
         "../test-support/kernel"
-        "../test-support/keys")
+        "../test-support/keys"
+        (only-in "../test-support/string-input" test-messages-plugin current-message))
 (export minibuffer-test)
 
 (defsetting case-fold-search #t "Whether searches ignore case.")
@@ -40,11 +38,23 @@
   (keymap-set ctx "C-c w" 'ask-with-setting)
   (keymap-set ctx "C-c v" 'read-setting))
 
+;; Typing and deleting a character, standing in for basic editing so that
+;; answers can be typed into a prompt.
+(defplugin (typing ctx)
+  "Inserts printing characters; DEL deletes the character before point."
+  requires: [input-service buffers-service]
+  (define-command ctx (self-insert-command) "Insert the character typed."
+    (insert (key-event-key (last-command-event))))
+  (define-command ctx (delete-backward-char) "Delete the character before point."
+    (delete-region (fx1- (point)) (point)))
+  (keymap-set ctx printing-char-key 'self-insert-command)
+  (keymap-set ctx "DEL" 'delete-backward-char))
+
 (def (with-minibuffer thunk)
   (set! answers [])
   (set! quit? #f)
-  (call-with-fresh-kernel [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
-                           buffers-plugin basic-editing-plugin minibuffer-plugin asking]
+  (call-with-fresh-kernel [keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin
+                           buffers-plugin typing minibuffer-plugin asking]
     (lambda ()
       (start-editor-loop!)
       (thunk))))

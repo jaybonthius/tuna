@@ -1,0 +1,147 @@
+;;; A Tuna under test with the web transport on an ephemeral loopback
+;;; port, and a minimal HTTP client that controls every header.
+(import :std/error
+        :std/io
+        :std/net/address
+        :std/time/timeout
+        :tuna/kernel
+        :tuna/plugins/web
+        "kernel")
+(export with-web-tuna
+        http
+        post-key
+        open-screen-stream
+        read-until
+        string-search
+        reply-status
+        reply-header
+        reply-body
+        keydown-json
+        host
+        port
+        token
+        session-cookie)
+
+
+(defstruct reply (status headers body) final: #t)
+
+(def (connect port)
+  (let (socket (tcp-connect (string->address (string-append "inet4:127.0.0.1:" (number->string port)))))
+    (Socket-set-input-timeout! socket (IOTimeout 5))
+    socket))
+
+(def (send! socket text)
+  (Writer-write (StreamSocket-writer socket) (string->utf8 text)))
+
+(def (request-text method path headers body)
+  (string-append
+   method " " path " HTTP/1.1\r\n"
+   (apply string-append (map (lambda (h) (string-append (car h) ": " (cdr h) "\r\n")) headers))
+   "Content-Length: " (number->string (u8vector-length (string->utf8 body))) "\r\n"
+   "Connection: close\r\n\r\n"
+   body))
+
+;; Read until (DONE? text) or end of input.
+(def (read-until socket done?)
+  (let ((reader (StreamSocket-reader socket))
+        (buffer (make-u8vector 4096)))
+    (let lp ((chunks []))
+      (let (text (utf8->string (apply u8vector-append (reverse chunks))))
+        (if (done? text)
+          text
+          (let (count (with-catch (lambda (e) (if (premature-end-of-input-error? e) 0 (raise e)))
+                                  (lambda () (Reader-read reader buffer 0 4096 1))))
+            (if (zero? count)
+              text
+              (lp (cons (subu8vector buffer 0 count) chunks)))))))))
+
+(def (parse-reply text)
+  (let* ((split (string-search "\r\n\r\n" text))
+         (head (string-split (substring text 0 split) #\newline))
+         (status (string->number (cadr (string-split (car head) #\space)))))
+    (make-reply status
+                (map (lambda (line)
+                       (let (colon (string-index line #\:))
+                         (cons (substring line 0 colon)
+                               (string-trim-cr (substring line (+ colon 2) (string-length line))))))
+                     (cdr head))
+                (substring text (+ split 4) (string-length text)))))
+
+(def (string-search needle text)
+  (let lp ((i 0))
+    (cond
+     ((> (+ i (string-length needle)) (string-length text)) #f)
+     ((string=? needle (substring text i (+ i (string-length needle)))) i)
+     (else (lp (+ i 1))))))
+
+(def (string-trim-cr line)
+  (if (and (> (string-length line) 0)
+           (char=? (string-ref line (- (string-length line) 1)) #\return))
+    (substring line 0 (- (string-length line) 1))
+    line))
+
+(def (reply-header reply name)
+  (let (pair (find (lambda (h) (string-ci=? (car h) name)) (reply-headers reply)))
+    (and pair (cdr pair))))
+
+;;; The running Tuna under test
+
+(def port #f)
+(def token #f)
+(def session-cookie #f)
+
+(def (host) (string-append "127.0.0.1:" (number->string port)))
+
+(def (http method path headers: (headers []) body: (body "")
+           host: (host-header (host)) cookie: (cookie session-cookie))
+  (let (socket (connect port))
+    (send! socket (request-text method path
+                                (append [(cons "Host" host-header)]
+                                        (if cookie [(cons "Cookie" cookie)] [])
+                                        headers)
+                                body))
+    (let (text (read-until socket (lambda (text) #f)))
+      (Socket-close socket)
+      (parse-reply text))))
+
+(def (keydown-json key ctrl? sequence)
+  (string-append
+   "{\"version\":1,\"type\":\"keydown\",\"clientId\":\"web-test\",\"sequence\":"
+   (number->string sequence)
+   ",\"key\":\"" key "\",\"code\":\"\",\"location\":0,\"repeat\":false,"
+   "\"isComposing\":false,\"altKey\":false,\"ctrlKey\":" (if ctrl? "true" "false")
+   ",\"metaKey\":false,\"shiftKey\":false}"))
+
+(def sequence 0)
+
+(def (post-key key ctrl?: (ctrl? #f))
+  (set! sequence (+ sequence 1))
+  (http "POST" "/commands"
+        headers: [(cons "Datastar-Request" "true") (cons "Content-Type" "application/json")]
+        body: (keydown-json key ctrl? sequence)))
+
+(def (open-screen-stream)
+  (let (socket (connect port))
+    (send! socket (request-text "GET" "/screen"
+                                [(cons "Host" (host)) (cons "Cookie" session-cookie)
+                                 (cons "Datastar-Request" "true")]
+                                ""))
+    socket))
+
+
+;; Activate PLUGINS, which include the web transport, in a fresh kernel;
+;; start the editor loop; exchange the launch token for the session
+;; cookie; then call THUNK.
+(def (with-web-tuna plugins thunk)
+  (call-with-fresh-kernel plugins
+    (lambda ()
+      (start-editor-loop! quit-grace: 0.3)
+      (let* ((url (web-transport-url))
+             (colon (string-index url #\: 7))
+             (slash (string-index url #\/ colon)))
+        (set! port (string->number (substring url (+ colon 1) slash)))
+        (set! token (substring url (+ (string-search "token=" url) 6) (string-length url))))
+      (let (exchange (http "GET" (string-append "/?token=" token) cookie: #f))
+        (set! session-cookie (car (string-split (reply-header exchange "Set-Cookie") #\;))))
+      (thunk))))
+

@@ -1,5 +1,9 @@
-;;; The demo's minibuffer rename, slow digit highlighter, and
-;;; describe-services, driven through the real editor loop.
+;;; Integration: the editor's real plugins with command fixtures from
+;;; tuna/test-support/, driven by keys through the real editor loop: a
+;;; minibuffer prompt (rename-buffer) and quitting it, describe-services in
+;;; the help panel, and a slow job (the digit highlighter) whose results
+;;; follow typing, are cancelled when its plugin turns off, and skip the
+;;; minibuffer.
 (import :std/sync/completion
         :std/test
         :tuna/kernel
@@ -19,17 +23,19 @@
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
-        :tuna/plugins/demo
         "../test-support/kernel"
         "../test-support/keys"
-        "../test-support/session")
-(export demo-test)
+        "../test-support/session"
+        "../test-support/rename-command"
+        "../test-support/services-help"
+        "../test-support/digit-highlighter")
+(export editor-test)
 
-(def demo-plugins
+(def editor-plugins
   [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
    settings-plugin no-session-plugin buffers-plugin single-window-plugin html-renderer-plugin
-   basic-editing-plugin
-   minibuffer-plugin demo-plugin])
+   basic-editing-plugin minibuffer-plugin
+   rename-command-plugin services-help-plugin digit-highlighter-plugin])
 
 (def jobs #f)
 
@@ -37,14 +43,14 @@
   "Lends a job group to the tests."
   (set! jobs (new-job-group ctx)))
 
-(def editing-plugins
+(def job-plugins
   [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
    buffers-plugin basic-editing-plugin job-host-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
 (defplugin (slow-highlighter-plugin ctx)
-  "Makes the demo's highlighter sleep for five seconds."
+  "Makes the digit highlighter sleep for five seconds."
   requires: [settings-service]
   (context-set-setting! ctx digit-highlight-delay 5))
 
@@ -86,10 +92,10 @@
        (map (lambda (s) (text-substring t (span-start s) (span-end s)))
             (text-highlights t 'digits))))))
 
-(def demo-test
-  (test-suite "tuna/plugins/demo"
+(def editor-test
+  (test-suite "integration: prompts, help, and a slow job in the editor"
     (test-case "C-c r renames the current buffer through the minibuffer"
-      (call-with-fresh-kernel demo-plugins
+      (call-with-fresh-kernel editor-plugins
        (lambda ()
          (start-editor-loop!)
          (type! "C-c" "r" "n" "o" "t" "e" "s")
@@ -105,7 +111,7 @@
            (check (contains? html "Renamed to notes") => #t)))))
 
     (test-case "C-g abandons the rename prompt"
-      (call-with-fresh-kernel demo-plugins
+      (call-with-fresh-kernel editor-plugins
        (lambda ()
          (start-editor-loop!)
          (type! "C-c" "r" "x")
@@ -117,7 +123,7 @@
            (check (contains? html ">Quit<") => #t)))))
 
     (test-case "C-h s shows buffers adapting to the text store"
-      (call-with-fresh-kernel demo-plugins
+      (call-with-fresh-kernel editor-plugins
        (lambda ()
          (start-editor-loop!)
          (type! "C-h" "s")
@@ -127,7 +133,7 @@
                        <>)))))
 
     (test-case "the slow highlighter colors digits shortly after typing"
-      (call-with-fresh-kernel demo-plugins
+      (call-with-fresh-kernel editor-plugins
        (lambda ()
          (start-editor-loop!)
          (type! "a" "1" "2" "b" "3")
@@ -137,22 +143,22 @@
          (type! "C-a" "x" "4")
          (check (wait-until (lambda () (equal? (highlighted) ["4" "12" "3"]))) => #t))))
 
-    (test-case "deactivating the demo stops its sleeping highlighter job early, applying nothing"
+    (test-case "deactivating the highlighter stops its sleeping job early, applying nothing"
       (set! job-results 0)
-      (call-with-fresh-kernel (append demo-plugins [slow-highlighter-plugin job-result-counter-plugin])
+      (call-with-fresh-kernel (append editor-plugins [slow-highlighter-plugin job-result-counter-plugin])
        (lambda ()
          (start-editor-loop!)
          (type! "1")
          (thread-sleep! 0.1)
          (check job-results => 0)
-         (on-baton (lambda () (deactivate-plugin! demo-plugin)))
+         (on-baton (lambda () (deactivate-plugin! digit-highlighter-plugin)))
          ;; The job reports back well before its five-second sleep ends.
          (check (wait-until (lambda () (fx>= job-results 1))) => #t)
          (on-baton void)
          (check (highlighted) => []))))
 
     (test-case "the slow highlighter leaves the minibuffer's text alone"
-      (call-with-fresh-kernel demo-plugins
+      (call-with-fresh-kernel editor-plugins
        (lambda ()
          (start-editor-loop!)
          (type! "C-c" "r" "1" "2")
@@ -163,7 +169,7 @@
          (check (wait-until (lambda () (equal? (highlighted) ["3"]))) => #t))))
 
     (test-case "rebased digit highlights land on the right characters after edits made while the job ran"
-      (call-with-fresh-kernel editing-plugins
+      (call-with-fresh-kernel job-plugins
        (lambda ()
          (start-editor-loop!)
          (let (gate (make-completion))
@@ -177,7 +183,7 @@
            (check (highlighted) => ["12" "34"])))))
 
     (test-case "a digit highlight grows over text typed inside its run while the job ran"
-      (call-with-fresh-kernel editing-plugins
+      (call-with-fresh-kernel job-plugins
        (lambda ()
          (start-editor-loop!)
          (let (gate (make-completion))
