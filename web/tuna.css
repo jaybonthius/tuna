@@ -155,5 +155,5 @@ body {
 .echo-area {
   min-block-size: 1.5em;
   /* Multi-line messages, such as the reload report, keep their lines. */
-  white-space: pre-line;
+  white-space: pre-wrap;
 }

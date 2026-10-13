@@ -70,7 +70,7 @@ The report lists what came up, what failed and why (file and line), and what was
 
 Neither inside the kernel nor as a special case:
 - **Finding and reading your file, and turning plugins on at start-up,** is done by Tuna's start-up code, the program's `main`, which sits outside the kernel and uses only the kernel's public "turn on / turn off".
-- **The reload and check commands** (`reload-config`, and `tuna reload` / `tuna check` from a terminal) come from an ordinary configuration plugin, which you could replace.
+- **The reload and check commands** (`reload-config`, and `tuna reload` / `tuna check` from a terminal) come from an ordinary configuration plugin, which you could replace. *As built:* `reload-config` is such a plugin; `tuna reload` and `tuna check` are part of Tuna's start-up code instead, because they must work when no plugin, or a broken one, handles input.
 - **The kernel is unchanged.**
 
 ## What gets built first
