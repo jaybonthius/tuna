@@ -38,6 +38,9 @@ Read this first when resuming work. Last updated 2026-10-13. It records where th
 
 - Tuna has no users yet (2026-10-13): do not ask about or preserve saved sessions, state files, or other compatibility with earlier builds until the owner says he is using Tuna day to day. Drop or reset them freely.
 
+- Mouse interaction (2026-10-13): next after the buffers, views and layout milestone (hooks and advice deferred). Dragging sends one input item on drop, not a stream; the drag must still look good in the browser, done with Datastar attributes and CSS. Text-node mouse interaction (selection, clicking into text) is deferred; it may become a Rocket component. Research in `agents/research/mouse-input/`, then a brief.
+- Polish matters (2026-10-13): Tuna must not look like a terminal; hover states and a polished, designed UI are wanted (the owner sees Emacs's plain UI as hurting adoption). A design pass comes later; keep markup and classes friendly to it.
+
 ## Lessons recorded from this attempt
 
 - Task briefs named what to build but not where; reviews checked tests, not placement; agents' reports of kernel additions were accepted. AGENTS.md "Keep the kernel small" now requires naming the owning layer in every task and checking placement at every merge.
