@@ -321,7 +321,10 @@ prelude: :gerbil/core
 ;; module that imports one, directly or not. Returns whether any was
 ;; dropped.
 (def (forget-changed-user-modules! (init-path : :string)) => :boolean
-  (let* ((contexts (filter (lambda (context) (not (equal? (source-module-path context) init-path)))
+  ;; The expander knows a module by its normalized path: links and ".."
+  ;; resolved.
+  (let* ((init (if (file-exists? init-path) (path-normalize init-path) init-path))
+         (contexts (filter (lambda (context) (not (equal? (source-module-path context) init)))
                            (source-module-contexts)))
          (changed (filter (lambda (context)
                             (let (path (source-module-path context))

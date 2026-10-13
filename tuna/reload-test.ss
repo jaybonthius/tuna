@@ -101,6 +101,35 @@
                (check (activation-count 'user) => 1)
                (check (probe-on? 'counted) => #t)))))))
 
+    (test-case "a path through a link or .. counts init.ss as init.ss, not as a user module"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let ((real (path-expand "real" directory))
+               (link (path-expand "link" directory)))
+           (create-directory* real)
+           (create-symbolic-link real link)
+           (for-each
+            (lambda ((path : :string))
+              (write-init real
+                          "(use-plugin counted-plugin config: (note-activation! 'linked-block))"
+                          "(note-activation! 'linked-user)")
+              (call-with-fresh-kernel []
+                (lambda ()
+                  (start path)
+                  (let ((block (activation-count 'linked-block))
+                        (user (activation-count 'linked-user)))
+                    (write-init real
+                                "(use-plugin counted-plugin config: (note-activation! 'linked-block))"
+                                "(use-plugin good-plugin)"
+                                "(note-activation! 'linked-user)")
+                    (let (report (reload))
+                      (check (changes report) => '(("good-plugin" on)))
+                      (check (reload-report-unchanged report) => 3))
+                    (check (activation-count 'linked-block) => block)
+                    (check (activation-count 'linked-user) => user)))))
+            [(path-expand "init.ss" link)
+             (path-expand "../real/init.ss" real)])))))
+
     (test-case "added plugins are turned on and removed ones off"
       (call-with-temporary-directory
        (lambda (directory)
