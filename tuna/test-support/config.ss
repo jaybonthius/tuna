@@ -10,7 +10,8 @@
         provider-plugin
         failing-provider-plugin
         dependent-plugin
-        hanging-plugin)
+        hanging-plugin
+        plugin-named-init)
 
 ;; Probe name -> live registrations.
 (def probes (make-hash-table))
@@ -43,6 +44,12 @@
 (defplugin dependent-plugin "Needs the probe service."
   requires: [probe-service]
   (probe-on! 'dependent))
+
+;; A plugin whose name the configuration reserves for the user's code.
+(def plugin-named-init
+  (let ()
+    (defplugin init "Takes a reserved name.")
+    init))
 
 ;; Spins until stopped. The loop has a body: gxc -O never finishes
 ;; compiling an empty self-loop (agents/guides/gerbil.md).

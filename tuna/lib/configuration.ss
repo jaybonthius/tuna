@@ -73,7 +73,16 @@ prelude: :gerbil/core
     (using (c : collector)
       (unless c.user-code
         (error "The file declared nothing: does it start with #lang :tuna/config?"))
+      (for-each check-not-reserved! c.declarations)
       (make-configuration (reverse c.declarations) c.user-code))))
+
+;; Plugins are known by name, so a declared plugin must not take a name the
+;; configuration itself uses.
+(def (check-not-reserved! (d : declaration)) => :void
+  (let (name (plugin-name (declaration-target d)))
+    (when (memq name '(init config-blocks))
+      (error (string-append (or (declaration-source d) "init.ss") ": the plugin name "
+                            (symbol->string name) " is reserved for the configuration itself")))))
 
 ;;; config: blocks follow their plugins
 

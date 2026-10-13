@@ -14,9 +14,9 @@ prelude: :gerbil/core
         :tuna/services/session
         (only-in :tuna/plugins/web web-transport-listen-port web-transport-url)
         ;; Linked into the executable so that init.ss can import them.
-        :tuna/config
-        :tuna/lib/jobs
-        :tuna/lib/timers
+        (only-in :tuna/config)
+        (only-in :tuna/lib/jobs)
+        (only-in :tuna/lib/timers)
         (only-in :tuna/plugins/keys)
         (only-in :tuna/plugins/rope)
         (only-in :tuna/plugins/string-text-store)

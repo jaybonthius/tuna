@@ -228,6 +228,10 @@ prelude: :gerbil/core
       (['ok . _] (make-report-entry what source 'on ""))
       (['raised . e] (make-report-entry what source 'failed (exception-summary e)))
       (['timed-out . stopped?]
+       ;; A stopped activation has turned P off; one that could not be
+       ;; stopped left P wanted, so turn it off before anything retries it.
+       (unless stopped?
+         (with-catch void (lambda () (deactivate-plugin! p))))
        (make-report-entry what source 'failed
                           (string-append "did not finish turning on within " (seconds-text limit)
                                          (if stopped?

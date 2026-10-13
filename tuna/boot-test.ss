@@ -231,6 +231,9 @@
                                                                "(use-plugin good-plugin)"))
                                "already declared at")
                     ? values)
+             (check (contains? (load-configuration (write-init directory "(use-plugin plugin-named-init)"))
+                               "reserved")
+                    ? values)
              ;; Not at the top level, use-plugin is the user's own code,
              ;; where it fails when that code runs.
              (let (report (start (write-init directory "(when #t (use-plugin good-plugin))")))
