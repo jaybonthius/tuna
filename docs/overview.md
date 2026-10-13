@@ -1,6 +1,6 @@
 # How Tuna works
 
-**Status (2026-10-13):** the architecture skeleton is complete. Built: the small kernel (plugins with receipts, services that can be swapped at startup or live, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the token-protected browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML; a toy plain-text renderer proves the slot can be swapped), a swappable window manager (one window; a toy two-window manager proves the slot), saving your session and unsaved text across restarts, and starting from and reloading your `init.ss` (stages 1 and 2 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, `tuna check`, reloading with `reload-config` or `tuna reload`, and, from stage 3, plugin options and the `show-config-report` command). Not built yet: files, `M-x`, completion, modes, and real window layouts. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
+**Status (2026-10-13):** the architecture skeleton and the buffers, views and layout work are complete. Built: the small kernel (plugins with receipts, services that can be swapped at startup or live, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the token-protected browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML; a toy plain-text renderer proves the slot can be swapped), buffers as a replaceable service (editing, undo and highlights live in the buffers plugin; a toy buffers plugin proves the slot), the layout (splits, tabs, a movable frame with frame marks, pinning, and the minibuffer and echo area as ordinary views; a toy two-view layout proves the slot), saving your session and unsaved text across restarts, and starting from and reloading your `init.ss` (stages 1 and 2 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, `tuna check`, reloading with `reload-config` or `tuna reload`, and, from stage 3, plugin options and the `show-config-report` command). Not built yet: files, `M-x`, completion, modes, scrolling strips, and drawing only what is in view. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
 
 ## The idea
 
@@ -18,7 +18,7 @@ Almost everything in Tuna is a plugin, including basic editing. You can turn plu
 
 Tuna itself is a small, fixed **kernel**. Everything that makes Tuna an editor sits on top of it, in three more layers, and each layer may use only the layers below it:
 
-- **Plugins** (`tuna/plugins/`) do everything you'd recognize as Tuna: keys and commands, buffers and the text store, basic editing, the echo area and minibuffer, windows, drawing the screen, the browser connection, settings, and saving your session. Tuna's own plugins get no special access, so anything they can do, a replacement can do too.
+- **Plugins** (`tuna/plugins/`) do everything you'd recognize as Tuna: keys and commands, buffers and the text store, basic editing, the echo area and minibuffer, the layout, drawing the screen, the browser connection, settings, and saving your session. Tuna's own plugins get no special access, so anything they can do, a replacement can do too.
 - **Contracts** (`tuna/services/`) say what each slot promises, such as "a text store can insert, delete and read a line", so a different plugin can fill it. A contract also holds the shared types that go with its promise: the buffers contract, for example, defines the record of what an edit changed.
 - **Shared libraries** (`tuna/lib/`) are conveniences built only from the kernel's public parts: timers, background jobs, plugin options, and what loading `init.ss` collects. They have no special access; a plugin could write its own. The buffers contract uses the jobs library.
 - **The kernel** (`tuna/kernel.ss`, its public face, and `tuna/kernel/`) holds four things and no editor features:
@@ -39,14 +39,14 @@ Where the parts that once crept into the kernel live now:
 
 `tuna/plugins/` holds only real plugins, the ones a configuration might use. Two other places hold plugins that are not part of Tuna:
 
-- **Test doubles** (`tuna/test-support/`): deliberately small second plugins that prove a contract can be filled by more than one plugin (a plain-string text store, a plain-text renderer, a two-window manager), and small command fixtures for tests (endless loops to stop with `C-g`, a slow background job, a prompt, swapping a slot). Only tests and the demo use them; Tuna's program does not include them.
-- **The demo** (`demo/`, development only): `make demo` runs Tuna with `demo/init.ss`, the starter's plugins plus demo commands: a slow digit highlighter, `C-c l` (a loop to stop with `C-g`), `C-c w` (swap the window manager), and `C-h s` (`describe-services`). The starter configuration does not include it, and nothing in `tuna/` or `starter/` may use it. `make run` starts the starter.
+- **Test doubles** (`tuna/test-support/`): deliberately small second plugins that prove a contract can be filled by more than one plugin (a plain-string text store, a plain-text renderer, a toy buffers plugin, a two-view layout), and small command fixtures for tests (endless loops to stop with `C-g`, a slow background job, a prompt, swapping a slot). Only tests and the demo use them; Tuna's program does not include them.
+- **The demo** (`demo/`, development only): `make demo` runs Tuna with `demo/init.ss`, the starter's plugins plus demo commands: a slow digit highlighter, `C-c l` (a loop to stop with `C-g`), `C-c w` (swap the layout), `C-c B` (swap the buffers plugin), `C-c d` (a sidebar pinned on the left), and `C-h s` (`describe-services`). The starter configuration does not include it, and nothing in `tuna/` or `starter/` may use it. `make run` starts the starter.
 
 Most tests test one plugin with only the plugins it needs. Tests that exercise many plugins together (typing, rendering, swapping slots, a restart, the browser over HTTP) are in `tuna/integration/`.
 
 `make test` checks these boundaries mechanically. Kernel code may import only Gerbil's standard library and other kernel files, and may not use the words the [kernel decision record](../agents/adr/0012-kernel-boundary-and-replaceability.md) forbids (keys, buffers, windows, settings, timers, and so on). Libraries may import only the standard library, the kernel's public face, and other libraries. Everything else imports only the kernel's public face, only tests and the demo may use the test helpers in `tuna/test-support/`, and nothing in `tuna/` or `starter/` may use the demo.
 
-Some plugins can be swapped while Tuna runs: the text store, the window manager, the renderer, and nearly everything else. A few are chosen at startup and need a restart to change, such as how keys are resolved and how settings are looked up, because swapping them mid-session would pull the rug out from under running commands. If a plugin combination breaks things, Tuna recovers from your own configuration, by skipping what failed or going back to your last working configuration, rather than switching to some built-in default; how exactly is still being designed, and the kernel's `describe-services` reports which plugin is filling each slot (the demo shows it with `C-h s`).
+Some plugins can be swapped while Tuna runs: the text store, buffers, the layout, the renderer, and nearly everything else. A few are chosen at startup and need a restart to change, such as how keys are resolved and how settings are looked up, because swapping them mid-session would pull the rug out from under running commands. If a plugin combination breaks things, Tuna recovers from your own configuration, by skipping what failed or going back to your last working configuration, rather than switching to some built-in default; how exactly is still being designed, and the kernel's `describe-services` reports which plugin is filling each slot (the demo shows it with `C-h s`).
 
 ## The big parts
 
@@ -56,7 +56,7 @@ Follow the numbers for the main loop:
 
 1. The **keyboard plugin** in your browser sends each key press to Tuna.
 2. The **web server** says "got it" immediately and puts the key in a queue, in order.
-3. The **editor thread** takes the next key and asks the keys plugin what it means; the keys plugin finds the command bound to it, and the editor thread runs that command. The command changes the **editor state**: buffers, windows, the minibuffer. The editor thread is the only thing allowed to change editor state, so commands never trip over each other.
+3. The **editor thread** takes the next key and asks the keys plugin what it means; the keys plugin finds the command bound to it, and the editor thread runs that command. The command changes the **editor state**: buffers, the layout, the minibuffer. The editor thread is the only thing allowed to change editor state, so commands never trip over each other.
 4. When there's no more input waiting, the editor thread draws a new **screen**: everything the tab shows, as HTML.
 5. The web server sends that screen to every open browser tab.
 
@@ -154,9 +154,36 @@ In Emacs a buffer is always a flat piece of text with decorations. In Tuna a buf
 
 Positions in a buffer count characters from 1, as in Emacs, because they are something people read.
 
-![Two windows on one file](diagrams/who-owns-what.svg)
+A buffer is a generic piece of UI, not just a file: the minibuffer, the echo area, `*Help*`, and a sidebar of buttons are all buffers. Saving to a file will belong to the buffer's text, not to the buffer.
 
-What you see in a window is a **view** of a buffer. Two windows can show the same file, each with its own cursor and scroll position, while sharing the buffer and its text. Emacs works the same way; Tuna just names the view. A view can also hold several cursors, which is how multiple-cursor editing will work later.
+![Two views on one file](diagrams/who-owns-what.svg)
+
+A **view** is one place on screen showing a buffer. Two views can show the same file, each with its own cursor and scroll position, while sharing the buffer and its text. A view is what Emacs calls a window; Tuna has no separate window. A view can also hold several cursors, which is how multiple-cursor editing will work later.
+
+## What's on screen: the layout
+
+**Status:** built, except scrolling strips and drawing only what is in view.
+
+![Who owns what you see](diagrams/screen-owners.svg)
+
+The screen is one tree. The **layout** arranges views in **containers**: *fit* containers split their space (by shares, or as big as the content), *tabbed* containers show one child at a time with a tab strip, and each is horizontal or vertical. Each container remembers which child you were last in. The layout plugin owns the layout as a frozen value: every change makes a new tree that shares the unchanged parts. Buffers plugins own buffers, changed in place, and every change stamps the changed part and the parts above it with a new revision number. To draw, the renderer walks the layout and, inside each view, that view's buffer. Every redraw sends the whole visible screen, but a part whose revision, view state, and display settings have not changed reuses the HTML it made last time.
+
+The **frame** is where you're looking: a pointer to any part of the tree, which the browser tab draws. `C-x n i` and `C-x n o` zoom in and out one level, `C-x n s` puts the frame on the node at point, `C-x n w` goes back to the top, and `C-x 1` puts it on the selected view (unlike Emacs, nothing is deleted). Zooming never changes the tree, only what you see. **Frame marks** save frame locations (`C-x r w`, `C-x r j`, `C-x r l`); they point at parts, not paths, so they survive rearranging.
+
+Zooming hides the parts outside the frame, except **pinned** ones. A pin is a flag on a part; it never moves anything. At each container between the frame and the top of the tree, the container shows the part you're zoomed into plus its pinned children, in their usual places, and the zoomed part gets the space the pinned ones don't use:
+
+```text
+root (top to bottom)                       zoomed onto main.ss:
+├─ main (left to right)                    ┌──────────┬──────────────┐
+│   ├─ explorer          [pinned]          │ explorer │ main.ss      │
+│   ├─ editors (tabs): main.ss, notes.txt  ├──────────┴──────────────┤
+│   └─ outline                             │ terminal                │
+├─ terminal              [pinned]          ├─────────────────────────┤
+└─ bar          [pinned, locked]           │ minibuffer, echo area   │
+                                           └─────────────────────────┘
+```
+
+The minibuffer and echo area are ordinary buffers in views in that locked, pinned bar, put there by their plugins; a locked part can't be unpinned or deleted by you. A question appears in the minibuffer nearest the view you're in, so a pinned minibuffer inside one split serves just that split. Splits are `C-x 2` and `C-x 3`, `C-x 0` deletes a view, Shift-arrows move between visible views, and tabs use Emacs's `C-x t` keys. `C-x w p` and `C-x w u` pin and unpin the selected part, `C-x w a` and `C-x w c` widen the selection to the surrounding container and back, and `C-x w` followed by an arrow moves a part past its siblings or into a neighboring container. The layout, frame, marks and pins are saved with your session.
 
 ## Where things are saved
 
@@ -164,7 +191,7 @@ What you see in a window is a **view** of a buffer. Two windows can show the sam
 |---|---|---|
 | Your files | Wherever they live | When you save |
 | Unsaved changes | `~/.local/state/tuna/autosave/` | Every so often, and when idle |
-| Open buffers, cursor positions, window layout, history | `~/.local/state/tuna/session.ss` | When idle, and on exit |
+| Open buffers, cursor positions, the layout with its frame, frame marks and pins, history | `~/.local/state/tuna/session.ss` | When idle, and on exit |
 | Settings changed through Tuna's UI | `~/.config/tuna/custom.ss` (planned) | When changed |
 | Your configuration code | `~/.config/tuna/init.ss` | You edit it |
 | The start-up report | `~/.local/state/tuna/startup.log` | Replaced on every start |
@@ -179,17 +206,21 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 
 ## Words used here
 
-- **Buffer**: something you look at and edit, such as a file or the minibuffer.
+- **Buffer**: a named piece of UI, made of a tree of nodes: a file, the minibuffer, `*Help*`, a sidebar.
 - **Node**: one piece of a buffer's tree; a text node holds editable text.
 - **Command**: a named action, such as `forward-char`, usually bound to a key.
 - **Editor thread**: the single worker that runs commands and is the only thing allowed to change editor state.
 - **Screen**: one complete drawing of what a browser tab shows, sent as HTML.
-- **Frame**: as in Emacs, a top-level window holding other windows. At first every browser tab shows the same frame.
-- **Window**: one area of a frame showing a buffer. How windows are arranged is up to a replaceable window-manager plugin; see [window management](ideas/window-management.md).
-- **View**: a buffer as shown in one window, with its own cursor and scroll position.
+- **Text**: the characters, their properties, and undo history that a text node shows; text nodes in different buffers can show the same text.
+- **View**: one place on screen showing one buffer, with its own cursor and scroll position; what Emacs calls a window.
+- **Layout**: the tree of containers and views that arranges the screen, owned by a replaceable layout plugin.
+- **Container**: a part of the layout that arranges its children: *fit* (split the space) or *tabbed* (one at a time), horizontal or vertical.
+- **Frame**: where you're looking: a movable pointer to any part of the tree, drawn by a browser tab. Every tab shows the same frame for now.
+- **Frame mark**: a saved frame location you can jump back to.
+- **Pin**: a flag on a part of the layout that keeps it visible when the frame zooms past it; a **locked** pin belongs to a plugin.
 - **Task**: anything that runs on the editor thread, such as a command or a timer; it may pause to wait for an answer.
 - **Client**: one connected browser tab.
-- **Version** (or revision): a number that goes up every time a buffer changes.
+- **Version** (or revision): a number that goes up every time a buffer, or a part of it, changes.
 - **Snapshot**: a frozen copy of a buffer's text at one version, cheap to make.
 - **Job**: slow work done off the editor thread using a snapshot.
 - **Job group**: a plugin's set of jobs; turning the plugin off cancels them.

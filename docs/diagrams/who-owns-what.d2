@@ -1,4 +1,4 @@
-# Two windows showing the same file: what is shared and what is separate?
+# Two views showing the same file: what is shared and what is separate?
 vars: {
   d2-config: {
     layout-engine: dagre
@@ -29,25 +29,19 @@ classes: {
 }
 
 legend: |md
-  **Status:** built: the two-window toy window manager shows this.
-  Boxes marked (shared) serve both windows.
+  **Status:** built. Boxes marked (shared) serve both views.
 |
 
-frame: Frame\none Emacs-style top-level window,\nshown in your browser tab {class: part}
+layout: "Layout\ntwo views side by side" {class: part}
 
-lwin: Left window {class: part}
-rwin: Right window {class: part}
+lview: "Left view\ncursor on line 10,\nscrolled to the top" {class: part}
+rview: "Right view\ncursor on line 400,\nscrolled halfway" {class: part}
 
-lview: View\ncursor on line 10,\nscrolled to the top {class: part}
-rview: View\ncursor on line 400,\nscrolled halfway {class: part}
+buffer: "Buffer main.ss (shared)\nname, mode, local settings,\nmarkers, overlays" {class: shared}
+text: "Text (shared)\nthe characters, their properties,\nundo history" {class: shared}
 
-buffer: Buffer "main.ss" (shared)\nname, mode, local settings,\nmarkers, overlays {class: shared}
-text: Text (shared)\nthe characters, their properties,\nundo history {class: shared}
-
-frame -> lwin: contains
-frame -> rwin: contains
-lwin -> lview: shows
-rwin -> rview: shows
-lview -> buffer: of
-rview -> buffer: of
+layout -> lview: contains
+layout -> rview: contains
+lview -> buffer: shows
+rview -> buffer: shows
 buffer -> text: holds

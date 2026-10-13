@@ -24,7 +24,7 @@ Owner-approved brief: [`docs/briefs/2026-10-buffers-views-layout.md`](../../docs
    - Session slot `layout`: layout and frame marks as plain data; restore tolerates missing buffers; the old `windows` slot is ignored.
    - The renderer draws from the frame target with CSS layout (no geometry on the server).
    - The two-window double becomes a toy layout provider; a test swaps layout providers while Tuna runs and keeps the views.
-3. **Everything on screen is the layout.**
+3. **Everything on screen is the layout.** **Done 2026-10-13** (stage 3 merge): pins, locks, moves, the bar with minibuffer and echo area views, `*Help*`, HTML reuse (unchanged redraw of a 5,000-line text: about 64 ms before, 2.2 ms after; a redraw after typing is unchanged at about 64 ms). Report: `/home/jay/Code/workbench-gerbil/scratch/tuna-views/stage3-report.md`. Overview updated.
    - Pinning per ADR 13 "Pinning": pin and lock flags on links (saved with the layout), pin and unpin commands, content-sized links, the drawing rule for fit and tabbed, commands to move the selected view (or its part) among its siblings and into neighbors, the visible-selected-view invariant.
    - The minibuffer and echo area become buffers shown in views in a locked, pinned bar at the bottom of the root; prompts and messages use the nearest minibuffer and echo area. Help is an ordinary view (`display-buffer`). The minibuffer's focus views go away if selection covers them. The renderer's special cases go away.
    - HTML reuse: a part's HTML is reused when its revision, its view state, and the display-wide inputs are unchanged. A test proves an unchanged buffer's node renderers are not called on the next redraw, and that a face or setting change redraws everything.
