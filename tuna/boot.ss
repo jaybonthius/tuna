@@ -613,13 +613,15 @@ prelude: :gerbil/core
     (def (replace-block! (c : change))
       (let* ((d (change-new c))
              (o (: (change-old c) declaration))
-             (block (declaration-block d)))
+             (block (declaration-block d))
+             (old-block-on? (and (declaration-block o) (plugin-active? (declaration-block o)))))
         (turn-off-block! o)
         (set-working! (declaration-name d) d)
         (cond
          ((not block)
-          (record! (make-report-entry (: (declaration-block o) plugin) (block-label o)
-                                      (declaration-source d) 'off "no longer declared")))
+          (when old-block-on?
+            (record! (make-report-entry (: (declaration-block o) plugin) (block-label o)
+                                        (declaration-source d) 'off "no longer declared"))))
          (else
           (let (entry (sync-block-entry d))
             (cond
