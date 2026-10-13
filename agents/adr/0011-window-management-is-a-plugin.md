@@ -1,6 +1,6 @@
 # 11. Window management is a replaceable plugin built on a small window contract
 
-Status: accepted as direction (2026-10-11). The default window manager's detailed design is deferred to its own brief before windows are built. Research: [`agents/research/window-management/`](../research/window-management/README.md).
+Status: accepted as direction (2026-10-11); amended 2026-10-13 by [ADR 13](0013-views-layout-and-frames.md), which replaces "window" with *view*, the window contract with the layout contract, makes frames movable pointers into the tree with frame marks, keeps per-container focus memory in the layout (not frame state), gives every container kind a horizontal and vertical form, and puts the minibuffer and echo area in the layout. Where they differ, ADR 13 wins. Research: [`agents/research/window-management/`](../research/window-management/README.md).
 
 ## Context
 

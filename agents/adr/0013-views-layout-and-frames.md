@@ -1,0 +1,37 @@
+# 13. Buffers as UI, views in a layout, and movable frames
+
+Status: accepted (2026-10-13). Owner-approved brief: [`docs/briefs/2026-10-buffers-views-layout.md`](../../docs/briefs/2026-10-buffers-views-layout.md). Research: [`agents/research/layout-state/`](../research/layout-state/README.md), [`agents/research/window-management/`](../research/window-management/README.md); owner notes `agents/research/owner-notes/window-layout-topology.org`. Amends [ADR 6](0006-buffers-nodes-and-text-store.md) (views, the buffers contract, files), [ADR 7](0007-rendering-and-transport.md) (what a redraw walks), and [ADR 11](0011-window-management-is-a-plugin.md) (vocabulary, frames, focus memory, container directions).
+
+## Context
+
+The owner wants one tree you can see and move around in: buffers are generic pieces of UI (a file, magit, a VS Code-style sidebar, the minibuffer, the echo area), a layout of containers arranges them, and you may look at any part of that tree, not only its top. ADR 11 had a separate *window* holding a *view* for life, a frame fixed at the top of the layout, focus memory as frame state, and the minibuffer and echo area outside the layout. ADR 6's buffers contract covered only the buffer list (audit P1-1): editing, undo, the change journal, and highlights were concrete procedures no replacement could change.
+
+The layout-state research measured the options in Gerbil: the layout is small (about 50 parts) and benefits from snapshots; a rich buffer can have 100,000 wide, shallow parts, where frozen copying is slow and in-place change with revision stamps is cheap at any size.
+
+## Decision
+
+- **Vocabulary.** *Buffer*: a named piece of UI, a tree of *nodes*. *Text node*: a node holding editable text; other nodes are *rich nodes*. *Text*: characters, properties and undo history, referred to by text nodes; the *file link belongs to the text*. *Layout*: the tree of *containers* and *views*. *View*: one place in the layout showing one buffer, with its own selections, scroll and folding; it **replaces "window"**, which is no longer a Tuna concept. *Selected view*: the one receiving input. *Frame*: a movable pointer into the tree from which a browser tab draws. *Frame mark*: a saved frame location. Point, mark and region keep their Emacs meanings; a frame mark is never called just "mark".
+- **One tree presented, two owners.** The layout plugin owns the layout as a frozen value (a change builds a new tree sharing unchanged parts; old values are free snapshots). Buffers plugins own buffers as nodes changed in place; each change stamps the changed node and its ancestors with a new revision number. The renderer presents the two as one tree: inside each view it walks that view's buffer. No shared tree library and nothing in the kernel.
+- **Sharing.** Several views may show one buffer; they share everything buffer-level. A node belongs to exactly one buffer (one parent). Content is shared below that: several text nodes, in different buffers, may refer to one text or to a range of it, so a search-results buffer can edit a file's text directly (Emacs's wgrep copies instead).
+- **Containers.** Kinds *fit*, *tabbed*, and later *scroll*, each horizontal or vertical (a vertical tabbed container has its tabs down the side). Each child's size lives on its link to the parent. **Each container remembers its last-focused child** in the layout value (supersedes ADR 11's "per-container focus memory is frame view state").
+- **Frames.** A frame points at any part of the tree: a container, a view, or a node inside a buffer as shown by one view (a view plus a node, because one buffer can be shown in several views). The renderer starts at the frame's target. Moving the frame changes what you see, never the tree. Pointing it into a buffer is how Tuna narrows to a structural part (Emacs `org-narrow-to-subtree`); narrowing a plain text node to an arbitrary region stays the buffer's narrowing (ADR 6). The frame holds the selected view, which must lie under its target; when an edit removes it, the frame picks another under its target. Frame marks point at part identities, not paths, so they survive rearrangement; a mark whose part is gone reports that and is dropped. Several browser tabs, each with a frame, are allowed by the model and built later with per-tab input.
+- **The layout contract** (replacing ADR 11's window contract) covers: the views in order; the selected view and selecting; splitting and deleting views; moving between neighbors; showing a buffer in a view; `display-buffer` with hints such as a side and size, which a layout plugin without sides interprets its own way; the frame's target, moving it, and frame marks; drawing from the frame; and the neutral handover description (views in order, each with its buffer and view state, the selected one). Layout-specific commands belong to the layout plugin.
+- **Buffers are truly replaceable.** The buffers contract covers creating nodes and buffers, editing, undo, the change journal, highlights, positions and their relocation, and node identity, kind, children, parent and revision. The default buffers plugin implements them. Replacing the buffers provider hands buffers over instead of starting from a fresh `*scratch*`.
+- **Everything on screen is in the layout.** The minibuffer, echo area and help are buffers shown by ordinary views (a divergence from Emacs's minibuffer window). A view made only for one buffer (dedicated) closes when that buffer goes.
+- **Drawing** stays immediate mode (owner decision 2026-10-13): each redraw sends the whole visible screen as one fat morph, never patches of single parts. A part's HTML is reused when its revision, its view state, and the display-wide inputs (faces, settings) are unchanged. So that drawing only what is in view can come later without changing contracts, any tree can hand the renderer a range of children.
+- **Persistence.** The layout and frame marks are saved as plain data in a session slot. Buffers are never saved as trees: each plugin saves its own state and rebuilds its buffers on restart; file content belongs to texts and files.
+
+## Consequences
+
+- Porting maps Emacs *window* to Tuna *view* by renaming (`selected-window` → `selected-view`, `window-point` → `view-point`); side windows map to `display-buffer` side hints.
+- A VS Code-style screen is assembled from ordinary buffers and containers.
+- The renderer, minibuffer, echo area, help, session, and window commands change shape; the kernel does not.
+- The old `windows` session slot is not migrated; a session saved before the change restores buffers but not their arrangement.
+- Frames shared by several tabs may later disagree about container focus memory; settled with per-tab frames.
+
+## Alternatives considered
+
+- **Literally one stored tree** holding containers and buffer contents. Rejected: a buffer shown twice must be copied or awkwardly shared, hidden buffers have no place, swapping the layout plugin would hand over every buffer, and the two trees need different storage to stay fast.
+- **A *pane* holding a view, or keeping *window*.** Rejected: today each window holds one view for life, so they are one concept; "window" is ambiguous in a browser.
+- **Patching changed parts by id in the browser.** Rejected by the owner: the browser can drift out of sync with the server.
+- **Frames fixed at the top of the layout (Emacs).** Rejected: the owner's design lets you stand at any level of the tree.

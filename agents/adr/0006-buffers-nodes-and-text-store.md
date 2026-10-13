@@ -1,6 +1,6 @@
 # 6. Texts, buffers, and views; buffers are node trees; 1-based positions
 
-Status: accepted (2026-10-11); amended after the [capability audit](../research/capability-audit/README.md) (text/buffer/view split, per-view point, selections, styled text, positions, overlays).
+Status: accepted (2026-10-11); amended after the [capability audit](../research/capability-audit/README.md) (text/buffer/view split, per-view point, selections, styled text, positions, overlays); amended 2026-10-13 by [ADR 13](0013-views-layout-and-frames.md): a view is a place in the layout (no separate window), the buffers contract covers editing, undo, the journal, highlights and node revisions, and the file link belongs to the text.
 
 ## Context
 

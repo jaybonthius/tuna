@@ -1,6 +1,6 @@
 # Brief: buffers, views and layout
 
-**Date:** 2026-10-13. **Status:** proposed; waiting for your approval. Research: `agents/research/layout-state/` (how to store the trees, with Gerbil measurements) and `agents/research/window-management/`. Your vision: `docs/ideas/window-management.md`, "One tree all the way down".
+**Date:** 2026-10-13. **Status:** approved 2026-10-13 (both decisions as recommended; *frame marks* accepted; a frame may point inside a buffer). Decision record: [ADR 13](../../agents/adr/0013-views-layout-and-frames.md); plan: [`agents/plans/buffers-views-layout.md`](../../agents/plans/buffers-views-layout.md). Research: `agents/research/layout-state/` (how to store the trees, with Gerbil measurements) and `agents/research/window-management/`. Your vision: `docs/ideas/window-management.md`, "One tree all the way down".
 
 ## What this is and why
 
@@ -125,7 +125,7 @@ The kernel gains nothing. There's no shared tree library yet, because the two tr
 |---|---|---|
 | **Buffer** | A named piece of UI: a tree of nodes. A file, magit, a sidebar, the minibuffer. | buffer |
 | **Node** | One part of a buffer's tree. A *text node* holds editable text; any other node (a button, a section) is a *rich node*. | none (text properties, magit sections) |
-| **Text** | The characters, their properties and the undo history inside a text node. Kept separate from the buffer so another buffer can show and edit part of it, as in editable search results. Several views of one buffer need no sharing: they are the same buffer. | buffer text (indirect buffers share it) |
+| **Text** | The characters, their properties and the undo history that a text node shows; linked to its file, if any. A node belongs to one buffer, but text nodes in different buffers can show the same text or part of it, so editable search results edit the file directly. Several views of one buffer need no sharing: they are the same buffer. | buffer text (indirect buffers share it) |
 | **Layout** | The tree of containers and views that arranges buffers on screen. | a frame's window tree |
 | **Container** | A part of the layout that arranges its children, horizontally or vertically: *fit* splits the space, *tabbed* shows one at a time, later *scroll* is a strip wider than the screen. | internal (combination) window |
 | **View** | One place in the layout showing one buffer, with its own cursor and scroll. Replaces "window". | live window |

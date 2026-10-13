@@ -6,18 +6,20 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 
 | Tuna | Emacs | Same or different? |
 |---|---|---|
-| Buffer | Buffer | Same idea, but a Tuna buffer holds a tree of nodes; a one-text-node buffer behaves like an Emacs buffer. |
-| Text | Buffer text (shared by indirect buffers) | Same. |
+| Buffer | Buffer | Same idea, but a Tuna buffer is a generic piece of UI holding a tree of nodes (a file, magit, a sidebar, the minibuffer); a one-text-node buffer behaves like an Emacs buffer. Saving to a file belongs to the text, not the buffer. |
+| Text | Buffer text (shared by indirect buffers) | Same, and linked to its file. Text nodes in different buffers can show the same text or a range of it, so a search-results buffer edits the file directly (Emacs's wgrep copies and writes back). |
 | Text store | The gap buffer inside Emacs's C code | Tuna's is a replaceable service; the default is a persistent rope, so old versions stay valid. Built. |
 | Undo by command, undo chains | `undo`, `undo-boundary`, `pending-undo-list` | Same: one group per command, consecutive self-inserts grouped up to 20, point restored to where the command left it; undoing after another command redoes. Built. |
-| View | The window's own point and scroll position (`window-point`, `window-start`) | Same idea, made a named object. Built: each window has its own view, so two windows on one buffer have independent points. |
-| Window | Live window (a leaf of the window tree) | Same. Built (the default shows one; the toy window manager shows two side by side). |
-| Window manager | Emacs's built-in C window tree plus `display-buffer` | Tuna's is a replaceable plugin behind a small contract: the windows in order, the selected window, selecting, the next window, showing a buffer in a window, and rendering the window area. Swapping it while Tuna runs hands the windows over as a neutral description (like `window-state-get`). Built (one-window default, two-window toy; no splits yet). |
+| View | Live window (a leaf of the window tree), with its `window-point` and `window-start` | Same thing, renamed (see divergences). Planned ([ADR 13](../agents/adr/0013-views-layout-and-frames.md)). Built today as two objects: a *window* holding a *view* for life; two windows on one buffer have independent points. |
+| Selected view | Selected window | Same. Planned name. |
+| Layout plugin (built today as the window manager) | Emacs's built-in C window tree plus `display-buffer` | Tuna's is a replaceable plugin behind a small contract (the layout contract, planned): the windows in order, the selected window, selecting, the next window, showing a buffer in a window, and rendering the window area. Swapping it while Tuna runs hands the windows over as a neutral description (like `window-state-get`). Built (one-window default, two-window toy; no splits yet). |
 | `other-window` (`C-x o`) | `other-window` | Same; it uses only the window contract, so it works under any window manager. Built. |
-| Layout container (fit, scroll, tabbed) | Internal "combination" window (horizontal or vertical split only) | Tuna adds scrolling strips, tabs, and plugin-defined kinds. |
+| Container (fit, tabbed, scroll; each horizontal or vertical) | Internal "combination" window (horizontal or vertical split only) | Tuna adds tabs (a vertical tabbed container has side tabs), scrolling strips, and plugin-defined kinds; each container remembers its last-focused child. |
+| `display-buffer` side hints | Side windows (`display-buffer-in-side-window`), as used by treemacs and speedbar | Same role; a layout plugin without sides places the view its own way. A view dedicated to one buffer closes with it. |
 | `display-buffer` and display rules | `display-buffer`, `display-buffer-alist` | Same role, part of the window contract. |
 | Window configuration | `window-configuration`, `window-state` | Same role. |
-| Frame | Frame (a top-level window holding windows) | Same. Initially every browser tab shows the same frame. |
+| Frame | Frame (a top-level window holding the whole window tree), plus narrowing | Different: a movable pointer to any part of the tree (see divergences). Initially every browser tab shows the same frame. |
+| Frame mark | A window configuration saved to a register (`C-x r w`) | Different: jumping to a frame mark only moves the frame, so later changes to the layout are kept; a register restores a copy. Never called just "mark", which keeps its Emacs meaning. |
 | Screen | What redisplay draws | Tuna sends each screen to the browser as HTML. |
 | Client (a browser tab) | A terminal connected with `emacsclient` | Similar. |
 | Text node | The buffer's text with its properties | Same. |
@@ -37,7 +39,7 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | `last-command`, `last-command-event` | Same names | Same. Built. |
 | Input item and the input service | Input events and `read-key-sequence` | The kernel queues each item without looking inside it; the plugin filling the input service (the keys plugin) decides whether it means "quit" and which command it runs, much as Emacs looks events up in keymaps. Built. |
 | `input-pending?`, `discard-input` | `input-pending-p`, `discard-input` | Same; part of the kernel. Built. |
-| Echo area | Echo area | Same; it is a plugin. Built. |
+| Echo area | Echo area | Same; it is a plugin. Built. Planned: a buffer shown in an ordinary view (see divergences). |
 | Hook (`new-hook`, `context-add-hook!`, `run-hook`) | Hook | Same; callbacks are named, ordered by depth, and a failing one is removed with a notice. The one hook mechanism is part of the kernel; each hook keeps its own callbacks. Built. |
 | `kill-buffer-hook` | `kill-buffer-hook`, `replace-buffer-in-windows` | Same hook; window managers use it to show another buffer in the windows that showed the killed one, which Emacs does inside `kill-buffer`. Built. |
 | `after-change-hook` | `after-change-functions` | Same role; callbacks receive the text and its change record. Built. |
@@ -76,6 +78,9 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | Keys the window system delivers | Keys the browser delivers; some (`C-w`, `C-n`, `C-t`) never arrive in an ordinary tab | Ordinary tabs must work for remote development | Users rebind those keys | [ADR 7](../agents/adr/0007-rendering-and-transport.md) |
 | Fixed C layout engine | Layout belongs to the browser; monospace and proportional text can mix | Anything should be possible visually | Screen-based commands need layout facts from the browser (still being designed) | [ADR 7](../agents/adr/0007-rendering-and-transport.md) |
 | Display, windows, buffers, and the command loop are C code that Lisp can only customize | A small fixed engine; everything that makes Tuna an editor is a plugin with no special access | Anything Tuna does, a replacement can do | None for ordinary packages | [ADR 12](../agents/adr/0012-kernel-boundary-and-replaceability.md) |
+| *Window* names a leaf of the window tree, which holds a buffer, point and scroll | The same thing is called a *view*; there is no separate window | A window held exactly one view for life, so they were one concept; "window" is ambiguous in a browser | Mechanical renames (`selected-window` → `selected-view`, `window-point` → `view-point`) | [ADR 13](../agents/adr/0013-views-layout-and-frames.md) |
+| A frame always shows its whole window tree; narrowing is a separate buffer feature | A frame points at any part of the tree: a container, a view, or a node inside a buffer; the screen shows that part. Frame marks save locations | Look at any level of the arrangement without closing anything; structural narrowing (`org-narrow-to-subtree`) becomes moving the frame | Code that narrows to a structural part moves the frame instead; `narrow-to-region` on text stays | [ADR 13](../agents/adr/0013-views-layout-and-frames.md) |
+| The minibuffer and echo area live in a special minibuffer window | They are buffers shown by ordinary views in the layout | One mechanism for everything on screen; layout plugins can place them | Code that finds the minibuffer window uses the minibuffer contract instead | [ADR 13](../agents/adr/0013-views-layout-and-frames.md) |
 | Windows are a fixed tree of splits built into C | Window management is a replaceable plugin; the default is a recursive tree of splits, scrolling strips (Niri), and tabs (i3) | Far more flexible layouts; users can swap the whole manager | Packages that walk the window tree with `window-tree` or `window-child` need the window contract instead | [ADR 11](../agents/adr/0011-window-management-is-a-plugin.md) |
 | `unload-feature` is best-effort | Turning a plugin off undoes everything it added, in any order | Reliable reload and disable | Packages must register through their context | [ADR 2](../agents/adr/0002-plugins-contexts-and-services.md) |
 | `define-key` overwrites one shared keymap | Bindings are entries tagged with their owner | Exact undo; help shows who bound a key | Code that treats keymaps as raw lists changes | [ADR 2](../agents/adr/0002-plugins-contexts-and-services.md), [ADR 8](../agents/adr/0008-input-keymaps-and-command-composition.md) |

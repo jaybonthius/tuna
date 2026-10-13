@@ -16,3 +16,4 @@ Each record covers one hard-to-reverse choice. Change a decision by amending its
 | [10](0010-security-clients-and-trust.md) | Token-authenticated clients, client identity, and the trust boundary |
 | [11](0011-window-management-is-a-plugin.md) | Window management is a replaceable plugin over a small window contract; the default is a recursive layout tree with pluggable container kinds |
 | [12](0012-kernel-boundary-and-replaceability.md) | A small fixed kernel (plugin runtime, execution rules, hooks and identities, consumed seams); every editor feature is a plugin, replaceable at startup or live |
+| [13](0013-views-layout-and-frames.md) | Buffers are UI; views (not windows) in a layout owned by a plugin; buffers changed in place with revisions; movable frames and frame marks; the buffers contract covers editing and undo |

@@ -1,6 +1,6 @@
 # Window management: the desired design
 
-**Status:** desired, not scheduled in detail. A brief comes before anything is built. Updated 2026-10-13: see "One tree all the way down". Decision record: [ADR 11](../../agents/adr/0011-window-management-is-a-plugin.md). Research: [`agents/research/window-management/`](../../agents/research/window-management/README.md).
+**Status:** the brief is approved (2026-10-13): [`docs/briefs/2026-10-buffers-views-layout.md`](../briefs/2026-10-buffers-views-layout.md), [ADR 13](../../agents/adr/0013-views-layout-and-frames.md). Where this page differs (for example "window", frames fixed at the top), those win. Updated 2026-10-13: see "One tree all the way down". Decision record: [ADR 11](../../agents/adr/0011-window-management-is-a-plugin.md). Research: [`agents/research/window-management/`](../../agents/research/window-management/README.md).
 
 ## One tree all the way down (2026-10-13)
 

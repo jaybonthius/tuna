@@ -1,6 +1,6 @@
 # 7. Server-rendered HTML screens over Datastar; layout belongs to the browser
 
-Status: accepted (2026-10-11); amended after the [capability audit](../research/capability-audit/README.md) (ordinary tabs first-class, layout ownership, input proxy, event identity, "screen" terminology).
+Status: accepted (2026-10-11); amended after the [capability audit](../research/capability-audit/README.md) (ordinary tabs first-class, layout ownership, input proxy, event identity, "screen" terminology); amended 2026-10-13 by [ADR 13](0013-views-layout-and-frames.md): a redraw walks the layout from the frame's target, still sending the whole visible screen, and reuses the HTML of unchanged parts.
 
 ## Context
 
