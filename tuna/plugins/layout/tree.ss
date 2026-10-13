@@ -154,9 +154,9 @@ prelude: :gerbil/core
         ([] new)
         ([c . more]
          (up more c
-             (if (and (eq? old new) (fx= (container-focus c) id))
+             (if (and (eq? old new) (fx= (container-focus c) (part-id old)))
                c
-               (with-links c (replace-link (container-links c) (part-id old) new) id))))))))
+               (with-links c (replace-link (container-links c) (part-id old) new) (part-id old)))))))))
 
 ;; LINKS with the child whose id is ID replaced by NEW, keeping its size.
 (def (replace-link (links : :list) (id : :fixnum) (new : :t)) => :list
