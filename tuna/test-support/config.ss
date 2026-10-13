@@ -3,8 +3,16 @@
 ;;; plugin turns a named probe on through its context, so the probe is off
 ;;; again once its receipt has run.
 (import :tuna/kernel
+        :tuna/lib/plugin-options
         :tuna/services/session)
-(export probe-on!
+(export optioned-plugin
+        last-greeting
+        optioned-dependent-plugin
+        dependent-greeting
+        fixed-optioned-plugin
+        fixed-n
+        plugin-named-config-service
+        probe-on!
         probe-on?
         probe-service
         note-activation!
@@ -156,3 +164,51 @@
 
 (def (call-callback (name : :symbol)) => :t
   ((hash-ref callbacks name)))
+
+;; Accepts options; records the greeting it was given at its last
+;; activation, and fails when its option fail is #t.
+(def current-greeting #f)
+(def (last-greeting) => :t current-greeting)
+
+(defplugin optioned-plugin "Takes options."
+  (note-activation! 'optioned-plugin)
+  (when (plugin-option optioned-plugin 'fail)
+    (error "optioned-plugin was told to fail"))
+  (set! current-greeting (plugin-option optioned-plugin 'greeting))
+  (probe-on! 'optioned))
+
+(defplugin-options optioned-plugin
+  (greeting "hello" "What to say." string-type)
+  (times 1 "How often to say it." (integer-type 1 10))
+  (fail #f "Fail on activation." boolean-type))
+
+;; Needs the probe service, so the kernel restarts it when the provider
+;; changes; records the greeting it read at its last activation.
+(def current-dependent-greeting #f)
+(def (dependent-greeting) => :t current-dependent-greeting)
+
+(defplugin optioned-dependent-plugin "Needs the probe service and takes an option."
+  requires: [probe-service]
+  (note-activation! 'optioned-dependent-plugin)
+  (set! current-dependent-greeting (plugin-option optioned-dependent-plugin 'greeting)))
+
+(defplugin-options optioned-dependent-plugin
+  (greeting "hello" "What to say." string-type))
+
+;; Provides the startup-tier service fixed and takes an option, so an
+;; option change waits for the next start while the editor loop runs.
+(def current-fixed-n #f)
+(def (fixed-n) => :t current-fixed-n)
+
+(defplugin fixed-optioned-plugin "Provides fixed; takes the option n."
+  (context-provide! (current-context) fixed-service 'fixed)
+  (set! current-fixed-n (plugin-option fixed-optioned-plugin 'n)))
+
+(defplugin-options fixed-optioned-plugin
+  (n 1 "A number." (integer-type 0 9)))
+
+;; A plugin whose name the configuration reserves for its service plugin.
+(def plugin-named-config-service
+  (let ()
+    (defplugin config-service "Takes a reserved name.")
+    config-service))

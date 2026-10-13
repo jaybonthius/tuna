@@ -1,6 +1,6 @@
 # Brief: your configuration, reloading it, and recovering from mistakes
 
-**Status:** decided 2026-10-12 (see "Decisions" below). Built: starting from `init.ss` (stage 1, 2026-10-12) and reloading it (stage 2, 2026-10-13: the `reload-config` command from the `reload-config-plugin`, bound to `C-c R` in the starter, and `tuna reload`, which talks to the running Tuna over a private Unix-domain socket from Tuna's start-up code, so it needs no plugin). Options and the report inside Tuna (stage 3) are not built yet; see [the plan](../../agents/plans/configuration.md).
+**Status:** decided 2026-10-12 (see "Decisions" below). Built: starting from `init.ss` (stage 1, 2026-10-12) and reloading it (stage 2, 2026-10-13: the `reload-config` command from the `reload-config-plugin`, bound to `C-c R` in the starter, and `tuna reload`, which talks to the running Tuna over a private Unix-domain socket from Tuna's start-up code, so it needs no plugin). Options and the report inside Tuna (stage 3, 2026-10-13): `(use-plugin p key: value ...)` with options each plugin declares through `defplugin-options`, checked at load with every problem and its line; a one-line summary in the echo area after a start-up with problems; and the `show-config-report` command (`C-c C-r` in the starter), which shows the last start-up or reload report; see [the plan](../../agents/plans/configuration.md).
 
 ## What this is and why
 
@@ -31,7 +31,7 @@ One file, `init.ss`. Tuna looks for it in this order and uses the first it finds
 2. the `TUNA_CONFIG` environment variable;
 3. `~/.config/tuna/init.ss`.
 
-For local development, `tuna --config starter/init.ss` runs the starter configuration straight from the repository. If no configuration is found, Tuna turns nothing on and says how to get one: copy the starter yourself, or run `tuna init`, which copies it to `~/.config/tuna/init.ss` and tells you so.
+For local development, `tuna --config starter/init.ss` runs the starter configuration straight from the repository. If no configuration is found, Tuna turns nothing on and says how to get one: copy the starter yourself, or run `tuna init`, which copies it to `~/.config/tuna/init.ss` and tells you so. *As built (stage 3):* start-up always turns on one plugin of its own, `config-service`, which only lets plugins reach reload and the last report (the configuration contract); nothing else is turned on without a configuration.
 
 `use-plugin` **declares** a plugin; it does not turn it on. Running `init.ss` only collects the declarations and your other code. Nothing is turned on until the whole file has run successfully in a trial run. Then Tuna compares the result with what is running and changes only the difference. This is how Doom's `doom!` block and lazy.nvim's plugin specs work too. Choices that can only be made at start-up, such as how keys work, are declared the same way and take effect at the next start.
 
@@ -71,6 +71,7 @@ The report lists what came up, what failed and why (file and line), and what was
 Neither inside the kernel nor as a special case:
 - **Finding and reading your file, and turning plugins on at start-up,** is done by Tuna's start-up code, the program's `main`, which sits outside the kernel and uses only the kernel's public "turn on / turn off".
 - **The reload and check commands** (`reload-config`, and `tuna reload` / `tuna check` from a terminal) come from an ordinary configuration plugin, which you could replace. *As built:* `reload-config` is such a plugin; `tuna reload` and `tuna check` are part of Tuna's start-up code instead, because they must work when no plugin, or a broken one, handles input.
+- **Reload and the last report reach plugins through a contract.** *As built (stage 3):* `tuna/services/configuration.ss` (reload, the last start-up or reload report) is provided by a plugin of Tuna's start-up code, `config-service`, which start-up always turns on first; `reload-config` and `show-config-report` use the contract, so no plugin imports start-up code.
 - **The kernel is unchanged.**
 
 ## What gets built first

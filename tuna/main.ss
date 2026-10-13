@@ -15,7 +15,9 @@ prelude: :gerbil/core
         :tuna/boot
         :tuna/control
         :tuna/services/session
-        (only-in :tuna/plugins/web web-transport-listen-port web-transport-url)
+        (only-in :tuna/services/keys command-ref)
+        :tuna/lib/plugin-options
+        (only-in :tuna/plugins/web web-transport-plugin web-transport-url)
         ;; Linked into the executable so that init.ss can import them.
         (only-in :tuna/config)
         (only-in :tuna/lib/jobs)
@@ -81,6 +83,17 @@ prelude: :gerbil/core
                   (newline port))
                 (lambda () (write-startup-report! text (startup-log-path))))))
 
+;; When start-up had problems and a plugin can show messages, say so there
+;; too, in one line naming the log and, when it exists, the command that
+;; shows the whole report.
+(def (show-start-up-summary (report : startup-report)) => :void
+  (let (summary (startup-report-summary
+                 report (startup-log-path)
+                 (with-catch (lambda (_) #f)
+                             (lambda () (and (command-ref 'show-config-report) #t)))))
+    (when (and summary (service-provider messages-service))
+      (message summary))))
+
 ;; Print a failure of the session plugin's save or restore; Tuna carries on.
 (def (call-reporting-session-failure (what : :string) (thunk : :procedure)) => :void
   (when (service-provider session-service)
@@ -97,10 +110,14 @@ prelude: :gerbil/core
 ;; reloads on the editor loop's baton when the loop runs; otherwise this
 ;; thread, the only one changing plugins then, reloads, and starts the
 ;; loop if input is now provided (brief, walkthrough step 4).
-(def (run (port : :fixnum) (config :? :string)) => :void
-  ;; Set for good, so a web transport a reload turns on uses it too.
-  (web-transport-listen-port port)
-  (report-start-up (start-from-configuration (find-configuration config)))
+(def (run (port :? :fixnum) (config :? :string)) => :void
+  ;; For good, so a web transport a reload turns on uses it too: a port
+  ;; given here overrides the web transport's port option in init.ss.
+  (when port
+    (override-plugin-option! web-transport-plugin 'port port "--port"))
+  (let (report (start-from-configuration (find-configuration config)))
+    (report-start-up report)
+    (show-start-up-summary report))
   (call-reporting-session-failure "Restoring the session" restore-session)
   (let* ((events (make-channel))           ; 'stop, or [reload: completion]
          (control (start-control-server-reporting

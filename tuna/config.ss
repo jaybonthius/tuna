@@ -14,6 +14,11 @@
 ;;;
 ;;; (use-plugin PLUGIN) declares a plugin; it does not turn it on. PLUGIN
 ;;; must be a name, so no expression of the user's runs at load.
+;;; (use-plugin PLUGIN key: value ...) also gives PLUGIN options, which it
+;;; declares with defplugin-options (tuna/lib/plugin-options.ss). Each
+;;; value is data, written as it would be quoted: 8080, "SPC", #t, vim.
+;;; Loading checks every option against the plugin's declaration and fails
+;;; with every problem, each with its line, before anything changes.
 ;;; (use-plugin PLUGIN config: BODY ...) also declares BODY as a block of
 ;;; code attached to PLUGIN: a plugin of its own, named PLUGIN/config, that
 ;;; is on while PLUGIN is on and fails without affecting PLUGIN.
@@ -33,23 +38,65 @@ prelude: :gerbil/core
         init-user-code
         (phi: +1 read-module-body))
 
+(begin-syntax
+  ;; The use-plugin form STX declaring PLUGIN with OPTIONS (expressions
+  ;; from option-expression) and, unless BODY is #f, a config: block.
+  (def (use-plugin-expansion stx plugin options body)
+    (with-syntax ((plugin-name plugin)
+                  (source (stx-source-string stx))
+                  ((option ...) options))
+      (if body
+        (with-syntax (((body ...) body)
+                      (block (stx-identifier plugin plugin "/config")))
+          #'(declare-plugin! plugin-name
+                             (let ()
+                               (defplugin block "Code attached to a plugin by a config: block in init.ss."
+                                 requires: [] body ...)
+                               block)
+                             '(body ...)
+                             source
+                             (list option ...)))
+        #'(declare-plugin! plugin-name #f [] source (list option ...)))))
+
+  ;; One option, KEY: VALUE, as an expression for (name value "file:line").
+  ;; VALUE is data, never evaluated, so no code of the user's runs at load:
+  ;; a word without quotes is a symbol, and 'x is the same as x.
+  (def (option-expression key value stx)
+    (with-syntax ((name (string->symbol (keyword->string (stx-e key))))
+                  (datum (if (and (stx-pair? value)
+                                  (eq? (stx-e (stx-car value)) 'quote)
+                                  (stx-pair? (stx-cdr value)))
+                           (stx-car (stx-cdr value))
+                           value))
+                  (source (or (stx-source-string key) (stx-source-string stx))))
+      #'(list 'name 'datum source))))
+
 (defsyntax (use-plugin stx)
   (syntax-case stx ()
-    ((_ plugin-name)
+    ((_ plugin-name . clauses)
      (identifier? #'plugin-name)
-     (with-syntax ((source (stx-source-string stx)))
-       #'(declare-plugin! plugin-name #f [] source)))
-    ((_ plugin-name config: body ...)
-     (identifier? #'plugin-name)
-     (with-syntax ((source (stx-source-string stx))
-                   (block (stx-identifier #'plugin-name #'plugin-name "/config")))
-       #'(declare-plugin! plugin-name
-                          (let ()
-                            (defplugin block "Code attached to a plugin by a config: block in init.ss."
-                              requires: [] body ...)
-                            block)
-                          '(body ...)
-                          source)))))
+     (let loop ((rest #'clauses) (options []))
+       (cond
+        ((stx-null? rest)
+         (use-plugin-expansion stx #'plugin-name (reverse options) #f))
+        ((and (stx-pair? rest) (eq? (stx-e (stx-car rest)) 'config:))
+         ;; A keyword here is an option written after config:, which
+         ;; would otherwise become code of the block.
+         (let (stray (let find-keyword ((body (stx-cdr rest)))
+                       (cond
+                        ((not (stx-pair? body)) #f)
+                        ((stx-keyword? (stx-car body)) (stx-car body))
+                        (else (find-keyword (stx-cdr body))))))
+           (when stray
+             (raise-syntax-error #f "use-plugin options go before config:, not in its code"
+                                 stx stray)))
+         (use-plugin-expansion stx #'plugin-name (reverse options) (stx-cdr rest)))
+        ((and (stx-pair? rest) (stx-keyword? (stx-car rest)) (stx-pair? (stx-cdr rest)))
+         (loop (stx-cdr (stx-cdr rest))
+               (cons (option-expression (stx-car rest) (stx-car (stx-cdr rest)) stx) options)))
+        (else
+         (raise-syntax-error #f "use-plugin takes a plugin name, then option: value pairs, then config: and code"
+                             stx (if (stx-pair? rest) (stx-car rest) rest))))))))
 
 ;; The user's own code, as the plugin `init`. The reader below emits it;
 ;; init.ss does not call it directly.

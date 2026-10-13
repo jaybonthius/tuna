@@ -73,10 +73,11 @@
 (def boot-test
   (test-suite "start-up from init.ss"
     (test-case "the command line: run, check, and init"
-      (check (parse-command-line []) => '(run 0 #f))
+      (check (parse-command-line []) => '(run #f #f))
       (check (parse-command-line ["--port" "8001"]) => '(run 8001 #f))
       (check (parse-command-line ["--config" "a.ss" "--port" "8001"]) => '(run 8001 "a.ss"))
-      (check (parse-command-line ["--port" "0"]) => #f)
+      (check (parse-command-line ["--port" "0"]) => '(run 0 #f))
+      (check (parse-command-line ["--port" "-1"]) => #f)
       (check (parse-command-line ["--port" "65536"]) => #f)
       (check (parse-command-line ["--port" "x"]) => #f)
       (check (parse-command-line ["--config"]) => #f)
@@ -111,7 +112,8 @@
             (check (startup-report-entries report) => [])
             (check (contains? (startup-report-problem report) "tuna init") ? values)
             (check (contains? (startup-report-text report) "/nonexistent/tuna/init.ss") ? values)
-            (check (describe-services) => [])))))
+            ;; Only the start-up code's own configuration service.
+            (check (map service-info-provider (describe-services)) => '(config-service))))))
 
     (test-case "loading has no effect; activation applies plugins, blocks, and code"
       (call-with-temporary-directory
@@ -323,7 +325,7 @@
                                [(service-info-name info) (service-info-provider info)
                                 (service-info-dependents info)])
                              (describe-services))
-                        => '((probe #f ()))))))
+                        => '((configuration config-service ()) (probe #f ()))))))
            ;; Deactivating everything left nothing behind.
            (check (probe-on? 'good) => #f)
            (check (probe-on? 'stubborn) => #f)))))
@@ -362,9 +364,12 @@
                                                  "requires: (begin (activate-plugin! good-plugin) [])")))
                     ? values)
              (check (plugin-active? good-plugin) => #f)
-             (check (configuration? (load-configuration
-                                     (write-init directory "(import :tuna/kernel)"
-                                                 "(use-plugin provider-plugin config: requires: (begin (activate-plugin! good-plugin) []))")))
+             ;; In a config: block a keyword is an option written too late
+             ;; (configuration stage 3): a syntax error, and nothing runs.
+             (check (contains? (load-configuration
+                                (write-init directory "(import :tuna/kernel)"
+                                            "(use-plugin provider-plugin config: requires: (begin (activate-plugin! good-plugin) []))"))
+                               "use-plugin options go before config:")
                     ? values)
              (check (plugin-active? good-plugin) => #f)
              ;; A file in another language is not run at all.
@@ -420,6 +425,8 @@
                         autosave-plugin single-window-plugin window-commands-plugin
                         html-renderer-plugin basic-editing-plugin minibuffer-plugin demo-plugin
                         reload-config-plugin))
+            (check (declaration-options (cadr (configuration-declarations loaded)))
+                   => '((port . 0)))
             (check (describe-services) => [])))))
 
     (test-case "tuna init copies the starter once and never overwrites"
