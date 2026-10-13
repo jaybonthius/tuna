@@ -318,51 +318,52 @@ prelude: :gerbil/core
 (def (text-all-highlights (t : text)) => :list
   (append-map cdr t.decorations))
 
-;; Move highlights with an edit. Text inserted at either edge stays
-;; outside; a span whose characters are all deleted goes.
+;; Where POSITION is after change C: the one rule that points, highlights,
+;; and rebased spans all follow. A position inside the replaced range moves
+;; to its start; one after it shifts by the change in length. Text inserted
+;; exactly at POSITION goes after it, unless BEFORE-INSERTION? (then the
+;; position moves past the insertion, as a span's start does).
+(def (position-after-change (c : change) (position : :fixnum) (before-insertion? : :boolean))
+  => :fixnum
+  (let* ((removed (string-length c.removed))
+         (edit-end (fx+ c.start removed)))
+    (cond
+     ((fx< position c.start) position)
+     ((and (fx= position c.start) (not before-insertion?)) position)
+     ((fx>= position edit-end) (fx+ position (fx- (string-length c.inserted) removed)))
+     (else c.start))))
+
+;; S after change C, or #f once it is empty. Text inserted at either edge
+;; stays outside; text inserted inside joins it; deleting part of it
+;; shrinks it.
+(def (span-after-change (s : span) (c : change)) => (Maybe span)
+  (let ((start (position-after-change c s.start #t))
+        (end (position-after-change c s.end #f)))
+    (and (fx< start end)
+         (if (and (fx= start s.start) (fx= end s.end))
+           s
+           (make-span start end s.value)))))
+
+;; Move highlights with an edit (span-after-change).
 (def (relocate-decorations! (t : text) (c : change)) => :void
   (unless (null? t.decorations)
-    (let* ((removed (string-length (change-removed c)))
-           (shift (fx- (string-length (change-inserted c)) removed))
-           (edit-start (change-start c))
-           (edit-end (fx+ edit-start removed))
-           (move (lambda ((position : :fixnum) (insert-after? : :boolean))
-                   (cond
-                    ((fx< position edit-start) position)
-                    ((and (fx= position edit-start) (not insert-after?)) position)
-                    ((fx>= position edit-end) (fx+ position shift))
-                    (else edit-start)))))
-      (set! t.decorations
-        (map (lambda ((layer : :pair))
-               (cons (car layer)
-                     (filter-map (lambda ((s : span))
-                                   (let ((start (move (span-start s) (fx= removed 0)))
-                                         (end (move (span-end s) #f)))
-                                     (and (fx< start end)
-                                          (make-span start end (span-value s)))))
-                                 (cdr layer))))
-             t.decorations)))))
+    (set! t.decorations
+      (map (lambda ((layer : :pair))
+             (cons (car layer)
+                   (filter-map (cut span-after-change <> c) (cdr layer))))
+           t.decorations))))
 
-;; SPANS moved through CHANGES (oldest first). A span a change touched is
-;; dropped: one overlapping a replaced range, or with an insertion strictly
-;; inside it. Insertions at a span's edge leave it intact.
+;; SPANS moved through CHANGES (oldest first), as highlights move with
+;; edits (span-after-change); a span is dropped once it is empty.
 (def (rebase-spans (spans : :list) (changes : :list)) => :list
   (filter-map
    (lambda ((s : span))
-     (let lp ((rest changes) (start s.start) (end s.end))
+     (let lp ((rest changes) (s s))
        (match rest
-         ([] (make-span start end s.value))
+         ([] s)
          ([c . more]
-          (using (c : change)
-            (let* ((removed (string-length c.removed))
-                   (shift (fx- (string-length c.inserted) removed))
-                   (edit-end (fx+ c.start removed)))
-              (cond
-               ((if (fx= removed 0) (fx<= c.start start) (fx<= edit-end start))
-                (lp more (fx+ start shift) (fx+ end shift)))
-               ((fx>= c.start end)
-                (lp more start end))
-               (else #f))))))))
+          (let (moved (span-after-change s c))
+            (and moved (lp more moved)))))))
    spans))
 
 ;; Where POSITION, valid at T's character revision REVISION, is now.
@@ -383,15 +384,7 @@ prelude: :gerbil/core
 (def (relocate-through (changes : :list) (position : :fixnum)) => :fixnum
   (let lp ((rest changes) (position position))
     (match rest
-      ([c . more]
-       (using (c : change)
-         (let ((removed (string-length c.removed))
-               (inserted (string-length c.inserted)))
-           (lp more
-               (cond
-                ((fx<= position c.start) position)
-                ((fx>= position (fx+ c.start removed)) (fx+ position (fx- inserted removed)))
-                (else c.start))))))
+      ([c . more] (lp more (position-after-change c position #f)))
       ([] position))))
 
 ;;; Nodes

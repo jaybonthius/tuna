@@ -189,13 +189,38 @@
              (for-each (lambda (_) (insert "x")) (iota 1100))
              (check (text-changes-since t revision) => #f))))))
 
-    (test-case "rebase-spans shifts, keeps edges, and drops touched spans"
+    (test-case "rebase-spans moves spans as highlights move and drops only emptied ones"
       (let (spans [(make-span 3 5 'a) (make-span 7 9 'b)])
+        ;; Insertions at either edge stay outside.
         (check (spans-of (rebase-spans spans [(make-change 1 3 "" "xy")])) => [[5 7] [9 11]])
         (check (spans-of (rebase-spans spans [(make-change 1 5 "" "xy")])) => [[3 5] [9 11]])
-        (check (spans-of (rebase-spans spans [(make-change 1 4 "" "x")])) => [[8 10]])
+        ;; An insertion inside grows the span.
+        (check (spans-of (rebase-spans spans [(make-change 1 4 "" "x")])) => [[3 6] [8 10]])
         (check (spans-of (rebase-spans spans [(make-change 1 1 "ab" "")])) => [[1 3] [5 7]])
-        (check (spans-of (rebase-spans spans [(make-change 1 4 "abc" "")])) => [[4 6]])))
+        ;; A deletion inside shrinks it.
+        (check (spans-of (rebase-spans spans [(make-change 1 4 "abc" "")])) => [[3 4] [4 6]])
+        ;; A span whose characters are all deleted goes.
+        (check (spans-of (rebase-spans spans [(make-change 1 3 "ab" "")])) => [[5 7]])
+        (check (spans-of (rebase-spans spans [(make-change 1 4 "" "x") (make-change 2 3 "axb" "")]))
+               => [[5 7]])))
+
+    (test-case "rebase-spans and highlights follow the same rule"
+      (call-with-fresh-kernel buffer-plugins
+       (lambda ()
+         (let (t (current-text))
+           (insert "ab12cd345ef")
+           (let ((revision (text-chars-revision t))
+                 (spans [(make-span 3 5 'digit) (make-span 7 10 'digit)]))
+             (set-highlights! t 'digits spans)
+             (text-replace! t 1 1 "XY")
+             (text-replace! t 5 5 "<")
+             (text-replace! t 7 7 "9")
+             (text-replace! t 11 13 "")
+             (text-replace! t 12 12 ">")
+             (check (text-string t) => "XYab<192cd5>ef")
+             (check (spans-of (text-highlights t 'digits)) => [[6 9] [11 12]])
+             (check (spans-of (rebase-spans spans (text-changes-since t revision)))
+                    => (spans-of (text-highlights t 'digits))))))))
 
     (test-case "a text rebases job spans past its changes, until its journal no longer reaches back"
       (call-with-fresh-kernel buffer-plugins
@@ -206,8 +231,8 @@
                  (revision (text-chars-revision t))
                  (spans [(make-span 2 4 'digit) (make-span 5 7 'digit)]))
              (text-replace! t 1 1 "xx")     ; "xxa12b34": both shift by 2
-             (text-replace! t 8 8 "!")      ; inside 34: that span is dropped
-             (check (map spans-of (JobTarget-job-rebase target spans revision)) => [[[4 6]]])
+             (text-replace! t 8 8 "!")      ; inside 34: that span grows
+             (check (map spans-of (JobTarget-job-rebase target spans revision)) => [[[4 6] [7 10]]])
              (for-each (lambda (_) (insert "x")) (iota 1100))
              (check (JobTarget-job-rebase target spans revision) => #f))))))
 
