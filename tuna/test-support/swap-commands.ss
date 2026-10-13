@@ -1,12 +1,14 @@
-;;; C-c v and C-c w: swap the renderer and the layout for the contract
-;;; doubles (plain-text-renderer.ss, two-views.ss) while Tuna
-;;; runs, for tests that swap a live slot through the editor.
+;;; C-c v, C-c w, and C-c B: swap the renderer, the layout, and the buffers
+;;; provider for the contract doubles (plain-text-renderer.ss, two-views.ss,
+;;; toy-buffers.ss) while Tuna runs, for tests that swap a live slot through
+;;; the editor.
 prelude: :gerbil/core
 
 (import :tuna/kernel
         :tuna/services/keys
         "plain-text-renderer"
-        "two-views")
+        "two-views"
+        "toy-buffers")
 (export swap-commands-plugin)
 
 (def (toggle-plugin! (p : plugin)) => :void
@@ -15,7 +17,7 @@ prelude: :gerbil/core
     (activate-plugin! p)))
 
 (defplugin (swap-commands-plugin ctx)
-  "C-c v swaps the renderer, C-c w the layout, for their doubles."
+  "C-c v swaps the renderer, C-c w the layout, C-c B the buffers provider, for their doubles."
   requires: [input-service]
   (define-command ctx (swap-renderer) "Switch between the HTML and the plain-text renderer."
     (toggle-plugin! plain-text-renderer-plugin)
@@ -27,5 +29,11 @@ prelude: :gerbil/core
     (message (if (plugin-active? two-views-plugin)
                "Layout: two views"
                "Layout: one view")))
+  (define-command ctx (swap-buffers) "Switch between the default and the toy buffers provider."
+    (toggle-plugin! toy-buffers-plugin)
+    (message (if (plugin-active? toy-buffers-plugin)
+               "Buffers: toy"
+               "Buffers: default")))
   (keymap-set ctx "C-c v" 'swap-renderer)
-  (keymap-set ctx "C-c w" 'swap-layout))
+  (keymap-set ctx "C-c w" 'swap-layout)
+  (keymap-set ctx "C-c B" 'swap-buffers))

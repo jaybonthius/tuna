@@ -81,6 +81,24 @@
            (check (and (offset "Hi. " html) #t) => #t)
            (check (and (offset "data-node=" html) #t) => #t)))))
 
+    (test-case "views and nodes carry stable element ids, so the browser keeps their scroll"
+      (call-with-fresh-kernel (append renderer-plugins [tree-buffer-plugin])
+       (lambda ()
+         (switch-to-buffer (get-buffer "*welcome*"))
+         (let* ((view-id (string-append "view-" (number->string (view-id (selected-view)))))
+                (root (buffer-root (current-buffer)))
+                (node-ids (map (lambda (n) (string-append view-id "-node-" (number->string (node-id n))))
+                               (cons root (node-children root))))
+                (html (screen)))
+           (check (and (offset (string-append "id=\"" view-id "\"") html) #t) => #t)
+           (for-each (lambda (id) (check (and (offset (string-append "id=\"" id "\"") html) #t) => #t))
+                     node-ids)
+           ;; The same ids on the next redraw, after an edit.
+           (insert "x")
+           (let (again (screen))
+             (for-each (lambda (id) (check (and (offset (string-append "id=\"" id "\"") again) #t) => #t))
+                       (cons view-id node-ids)))))))
+
     (test-case "a kind without an HTML renderer shows its text projection"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
