@@ -29,14 +29,14 @@ classes: {
 }
 
 legend: |md
-  **Status:** proposed; nothing here is built yet. Green boxes are where a mistake stops, leaving what is running untouched.
+  **Status:** decided 2026-10-12; not built yet. Green boxes are where a mistake stops, leaving what is running untouched.
 |
 
-edit: "1. You edit plugins.ss or init.ss\nand run reload (a command, or tuna reload in a terminal)" {class: step}
-check: "2. Check, changing nothing:\nread the files, check every option,\nload changed code in a trial run" {class: step}
+edit: "1. You edit init.ss\nand run reload (a command, or tuna reload in a terminal)" {class: step}
+check: "2. Trial run, changing nothing:\nrun init.ss, check every option" {class: step}
 stop: "Mistake found: nothing changes;\nyou see the error and the line" {class: safe}
 compare: "3. Compare with what is running now" {class: step}
-apply: "4. For each changed plugin:\nturn the old one off, the new one on" {class: step}
+apply: "4. For each changed plugin or block:\nturn the old one off, the new one on" {class: step}
 keep: "New one fails: it is undone and\nthe old one is turned back on" {class: safe}
 report: "5. Report what changed and what did not" {class: step}
 

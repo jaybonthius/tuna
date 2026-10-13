@@ -10,7 +10,7 @@ Read this first when resuming work. Last updated 2026-10-12. It records where th
 
 ## Next, in order
 
-1. **Configuration** (owner request 2026-10-12): brief `docs/briefs/2026-10-configuration.md` awaits the owner's four decisions; research in `agents/research/configuration/`. Owner decisions already given: ship a starter configuration (a file the user copies and owns, never a fallback); no stored history such as a last-known-good config; recovery comes from the user's own configuration. Build nothing before approval.
+1. **Configuration** (owner request 2026-10-12): brief `docs/briefs/2026-10-configuration.md` decided 2026-10-12 (one `init.ss` with a declarative `use-plugin`; no automatic copying, `tuna init` copies the starter on request, `--config PATH` and `TUNA_CONFIG` choose the file; start-up report to terminal, a log file replaced each start, and Tuna's display when available; no settings screen planned, and if one is ever built what it saves overrides `init.ss`; configuration is not a kernel feature: start-up code in `main` plus an ordinary configuration plugin); next: a one-page build plan; research in `agents/research/configuration/`. Owner decisions already given: ship a starter configuration (a file the user copies and owns, never a fallback); no stored history such as a last-known-good config; recovery comes from the user's own configuration. Approved to plan and build.
 2. **Brief: making buffers replaceable** (audit P1-1: `services/buffers.ss` is the implementation, not a contract), with a toy second buffers provider. Owner approval before work.
 3. **Brief: demo out of default startup**, `describe-services` into a help plugin, and the smaller audit items (P2-3, P2-5, P2-7).
 3a. **Jobs hardening: done** 2026-10-12 (merged `092e4d3`): cooperative cancellation, spans mapped instead of dropped, result tasks built on the loop thread, stale exact-revision runs cancelled; ADR 3 records the settle-by items (edit results exact-revision only, re-run is the starting plugin's job, inline fast path before syntax highlighting, ordered deltas before out-of-process workers, a yield-point edit test before minibuffer/completion work, empty-span policy before the first diagnostics producer, no CRDT/OT).
@@ -30,6 +30,7 @@ Read this first when resuming work. Last updated 2026-10-12. It records where th
 - Delegate substantial implementation to agents in their own worktrees (`tuna__<task>`), merge locally with `--no-ff`, never push. The owner talks only to the primary agent.
 - Commit work as it lands; the owner wants things committed.
 - Tuna has no "standard" setup (2026-10-12). The plugins in this repository are ordinary plugins; users need not use any of them and may use completely different keybindings and input models. Recovery from a broken configuration comes from the user's own configuration (skip only what fails, or return to the last known-good one), never from a built-in default plugin set; the exact design is being researched for the configuration brief.
+- No magic (2026-10-12): Tuna never creates, copies or edits the user's configuration on its own; explicit commands only.
 
 ## Lessons recorded from this attempt
 

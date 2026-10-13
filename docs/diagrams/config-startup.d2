@@ -38,15 +38,15 @@ classes: {
 }
 
 legend: |md
-  **Status:** proposed; nothing here is built yet. Yellow boxes are files you own.
+  **Status:** decided 2026-10-12; not built yet. Yellow boxes are yours.
 |
 
-files: "Your files\nplugins.ss: which plugins, with what options\ninit.ss: your own code" {class: yours}
-boot: "Start-up step\nreads the plugin list as plain data" {class: tuna}
+files: "Your init.ss\nwhich plugins, with what options,\nplus your own code" {class: yours}
+boot: "Start-up step\nruns init.ss in a trial run\nand collects what it declares" {class: tuna}
 kernel: "Kernel\nturns each plugin on, or undoes it" {class: tuna}
 plugins: "Your plugins\neach one on its own" {class: yours}
-init: "init.ss\nturned on last, as one plugin" {class: yours}
-terminal: "The terminal you started Tuna from\nwhat worked, what failed, and why" {class: out}
+init: "Your own code\napplied last" {class: yours}
+terminal: "Terminal and log file\nwhat worked, what failed, and why" {class: out}
 
 files -> boot: "1. read"
 boot -> kernel: "2. turn on each plugin"

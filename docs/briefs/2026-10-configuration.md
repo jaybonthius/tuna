@@ -1,17 +1,18 @@
 # Brief: your configuration, reloading it, and recovering from mistakes
 
-**Status:** proposed, awaiting your decisions below. Nothing is built yet.
+**Status:** decided 2026-10-12 (see "Decisions" below). Nothing is built yet.
 
 ## What this is and why
 
-Today Tuna turns on a fixed list of 15 plugins written into its start-up code. You cannot choose them, and there is no `init.ss`. This brief proposes how you choose your plugins, write your own code, reload both without restarting, and recover when something you wrote is broken.
+Today Tuna turns on a fixed list of 15 plugins written into its start-up code. You cannot choose them, and there is no `init.ss`. This brief describes how you choose your plugins, write your own code, reload both without restarting, and recover when something you wrote is broken.
 
-Three rules shape it:
-- **There is no standard setup.** Tuna ships a starter configuration as a file you copy and own, but nothing ever falls back to it or to any built-in plugin set.
+Four rules shape it:
+- **There is no standard setup.** Tuna ships a starter configuration as a file, but nothing ever uses it unless you ask for it, and nothing falls back to it or to any built-in plugin set.
+- **No magic.** Tuna never creates, copies or edits your configuration on its own.
 - **No stored history.** Tuna never keeps old copies of your configuration. When a reload goes wrong, the running editor is the "last good" version: anything that fails is undone and the old part keeps running.
 - **The kernel does not change.** Loading a configuration only needs "turn this plugin on" and "turn it off", which the kernel already has.
 
-Evidence: [what Gerbil can do](../../agents/research/configuration/01-gerbil-runtime.md) (tested) and [how other systems do it](../../agents/research/configuration/02-prior-art.md): Cordis and Koishi (Tuna's plugin model), Caddy and nginx (check a new config, keep the old one running if it fails), Kubernetes and systemd (one failing part never takes the others down), Helix, Neovim, Doom Emacs, Lem, Nyxt.
+Evidence: [what Gerbil can do](../../agents/research/configuration/01-gerbil-runtime.md) (tested) and [how other systems do it](../../agents/research/configuration/02-prior-art.md): Cordis and Koishi (Tuna's plugin model), Caddy and nginx (check a new config, keep the old one running if it fails), Kubernetes and systemd (one failing part never takes the others down), Doom Emacs and lazy.nvim (plugin declarations inside the config file), Helix, Lem, Nyxt.
 
 ## The picture
 
@@ -23,30 +24,28 @@ Reloading:
 
 ![What happens when you reload](../diagrams/config-reload.svg)
 
-## Your files
+## Your configuration
 
-Two files in `~/.config/tuna/`:
-- **`plugins.ss`, the plugin list.** Which plugins to use and with what options. It is plain data: Tuna reads it but never runs it, so a typo can't hang or crash anything, and Tuna can check it before using it. It is also where you choose the parts that can only be picked at start-up, such as how keys work.
-- **`init.ss`, your code.** Key bindings, hooks, small commands, even whole plugins of your own. It is itself a plugin, turned on after everything else, so reloading it first undoes everything its previous version added.
+One file, `init.ss`. Tuna looks for it in this order and uses the first it finds:
+1. the path given with `tuna --config PATH`;
+2. the `TUNA_CONFIG` environment variable;
+3. `~/.config/tuna/init.ss`.
 
-Settings you change through Tuna's own interface go to `custom.ss`, as already decided.
+For local development, `tuna --config starter/init.ss` runs the starter configuration straight from the repository. If no configuration is found, Tuna turns nothing on and says how to get one: copy the starter yourself, or run `tuna init`, which copies it to `~/.config/tuna/init.ss` and tells you so.
 
-```scheme
-;; ~/.config/tuna/plugins.ss: which plugins, with what options. Read, never run.
-((keys        :tuna/plugins/keys)
- (browser     :tuna/plugins/web       port: 8001)
- (buffers     :tuna/plugins/buffers)
- (text-store  :tuna/plugins/rope)
- (windows     :tuna/plugins/two-windows)
- (modal       :jay/modal              leader: "SPC")   ; a package you installed
- (demo        :tuna/plugins/demo      disabled: #t))
-```
+`use-plugin` **declares** a plugin; it does not turn it on. Running `init.ss` only collects the declarations and your other code. Nothing is turned on until the whole file has run successfully in a trial run. Then Tuna compares the result with what is running and changes only the difference. This is how Doom's `doom!` block and lazy.nvim's plugin specs work too. Choices that can only be made at start-up, such as how keys work, are declared the same way and take effect at the next start.
+
+Code inside a `use-plugin` block belongs to that plugin. It is applied when the plugin turns on, removed when the plugin turns off, and if it fails, only that block is undone and skipped.
 
 ```scheme
-;; ~/.config/tuna/init.ss: your own code, turned on last.
+;; ~/.config/tuna/init.ss
 #lang :tuna/prelude
-(keymap-set "C-c t" 'toggle-theme)
-(defcommand (insert-date) "Insert today's date."
+(use-plugin keys)
+(use-plugin web     port: 8001)
+(use-plugin buffers)
+(use-plugin modal   leader: "SPC"                    ; a package you installed
+  config: (keymap-set "C-c t" 'toggle-theme))       ; belongs to modal
+(defcommand (insert-date) "Insert today's date."    ; your own code, applied last
   (insert (todays-date)))
 ```
 
@@ -54,46 +53,54 @@ Names and syntax are illustrative; they will settle as this is built.
 
 ## A walkthrough
 
-1. **You add a plugin with a typo in an option** (`leader: SPC` without quotes) and run `reload-config`. The check step finds it before anything changes: "plugins.ss line 6: modal option leader must be a string". Tuna keeps running exactly as before.
-2. **You fix it and reload.** Tuna compares the list with what is running. Only `modal` is new, so only `modal` is turned on; nothing else is touched.
-3. **Your new `init.ss` has a bug** that raises an error halfway through. That version is undone completely, nothing half-applied, and the previous `init.ss` you were running is turned back on. The message names the line.
-4. **Next morning you break `modal`, your own input plugin, and restart Tuna.** At start-up there is no running editor to keep, so Tuna turns on every plugin it can, skips `modal` and the two plugins that need it, and stays running. Since you can't type into Tuna, the report goes to the terminal you started it from: "modal failed: modal.ss line 42 ... skipped: 2 plugins that need it". You fix the file in any editor and run `tuna reload` in that terminal. Tuna reloads as in step 2, and `modal` comes up.
-5. **Before restarting next time,** you can run `tuna check`, which does all of the start-up checks without starting anything and lists every problem.
+1. **You add `modal` with a typo in an option** (`leader: SPC` without quotes) and run `reload-config`. The trial run catches it before anything changes: "init.ss line 6: modal option leader must be a string". Tuna keeps running exactly as before.
+2. **You fix it and reload.** Tuna compares the declarations with what is running. Only `modal` is new, so only `modal` is turned on; nothing else is touched.
+3. **The `config:` code in the `modal` block has a bug** that raises an error. That block is undone and skipped; `modal` itself and everything else stay on. The message names the line.
+4. **Next morning you break `modal`, your own input plugin, and restart Tuna.** There is no running editor to keep, so Tuna turns on every plugin it can, skips `modal` and the two plugins that need it, and stays running. You can't type into Tuna, so the report goes to the terminal you started it from and to a log file. You fix `modal` in any editor and run `tuna reload` in a terminal; Tuna reloads as in step 2 and `modal` comes up.
+5. **If `init.ss` has a syntax error** (an unbalanced parenthesis), Tuna cannot read it at all, so on a cold start nothing is turned on. You see the error and line in the terminal and the log, fix it, and run `tuna reload`. During a reload the same mistake is harmless: the trial run fails and nothing changes. `tuna check` runs every start-up check without starting anything, so you can catch this before restarting.
+
+## The start-up report
+
+The report lists what came up, what failed and why (file and line), and what was skipped because something it needed failed. It goes to:
+- the terminal Tuna was started from;
+- a log file in Tuna's state folder, replaced on every start (Tuna never reads it back);
+- inside Tuna, once something can show it: if any plugin that can display messages came up, the failures are shown there too, with a command to see the full report again.
+
+## Where configuration lives
+
+Neither inside the kernel nor as a special case:
+- **Finding and reading your file, and turning plugins on at start-up,** is done by Tuna's start-up code, the program's `main`, which sits outside the kernel and uses only the kernel's public "turn on / turn off".
+- **The reload and check commands** (`reload-config`, and `tuna reload` / `tuna check` from a terminal) come from an ordinary configuration plugin, which you could replace.
+- **The kernel is unchanged.**
 
 ## What gets built first
 
-- The start-up step reads `plugins.ss` instead of the hard-coded list.
-- A starter configuration ships with Tuna.
-- `init.ss` is loaded as your own plugin.
-- Reload works from inside Tuna (`reload-config`) and from a terminal (`tuna reload`).
-- `tuna check` runs the start-up checks without starting anything.
-- A report says what worked, what failed and why, and what was skipped because something it needed failed.
+- `init.ss` with `use-plugin`, found through `--config`, `TUNA_CONFIG`, or `~/.config/tuna/init.ss`.
+- A starter `init.ss` in the repository and `tuna init` to copy it.
+- The trial run, the comparison, and per-plugin and per-block failure isolation.
+- Reload from inside Tuna and from a terminal; `tuna check`.
+- The start-up report, in all three places.
 
-Later, each with its own short plan: narrowing a broken configuration down to the bad part by switching halves off (VS Code's "extension bisect", kept only in memory), reloading the code of plugins themselves while Tuna runs, and installing packages from inside Tuna.
+Later, each with its own short plan:
+- narrowing a broken configuration down to the bad part by switching halves off, kept only in memory;
+- reloading the code of plugins themselves while Tuna runs;
+- installing packages from inside Tuna.
 
 Things to know:
 - **Running your code needs part of Gerbil built into Tuna:** the expander, which turns code like `def` and `import` into something runnable. It adds about 1.7 MB and about 80 ms the first time it's used, and can load in the background.
 - **Reloading Tuna's own compiled plugins in place does not work in Gerbil;** reloading from source does. That shapes the later plugin-reload work, not this one.
-- **Nothing in the kernel changes.** The start-up step lives outside it, and the reload and check commands live in an ordinary configuration plugin you could replace.
 
-## Decisions for you
+## Decisions
 
-1. **Two files: a plugin list as data, plus `init.ss` as code.**
-   - *Options:* (a) two files as above; (b) one `init.ss` that also chooses plugins in code.
-   - *Recommendation:* (a). Start-up parts must be chosen before any of your code runs (Emacs needed `early-init.el` for the same reason). A data list can be checked before use, can't hang start-up, and Tuna can switch entries on and off for you.
-2. **First run with no configuration.**
-   - *Options:* (a) Tuna copies the starter files into `~/.config/tuna/` once and tells you; (b) Tuna starts nothing and tells you to run `tuna init`.
-   - *Recommendation:* (a). After the copy the files are yours; Tuna never touches them again.
-3. **Where the start-up report goes when you can't see Tuna.**
-   - *Options:* (a) the terminal only; (b) the terminal, and also a log file in Tuna's state folder that is replaced on every start; (c) also a recovery page in the starter configuration, as an ordinary plugin with its own address, so a broken input plugin can't take it down.
-   - *Recommendation:* (b). The log matters when Tuna is started without a terminal, by a desktop launcher or a service. It is a report, not remembered configuration: nothing ever reads it back. (c) can come later if you want it.
-4. **When `init.ss` and the settings interface set the same thing, which wins?**
-   - *Options:* (a) your code wins, and help shows "set by init.ss line 12, overriding a setting you saved"; (b) the interface wins.
-   - *Recommendation:* (a). Code you wrote is the more deliberate choice, and help makes the override visible instead of mysterious.
+All taken by the owner on 2026-10-12:
+1. **One configuration file,** `init.ss`, with a declarative `use-plugin` form, rather than a separate plugin-list file.
+2. **No automatic copying.** With no configuration Tuna turns nothing on and says how to get one; `tuna init` copies the starter only when you run it. `--config PATH` and `TUNA_CONFIG` choose the file.
+3. **The start-up report** goes to the terminal, a log file replaced on every start, and Tuna's own display when one is available.
+4. **No settings screen is planned.** An earlier decision record (ADR 5) reserved `custom.ss` for settings changed through Tuna's interface, as Emacs's Customize does. It is not part of this work. If it is ever built, what it saves overrides `init.ss`.
 
 ## New terms
 
-- **Plugin list:** `plugins.ss`, the data file saying which plugins to use and with what options.
-- **Starter configuration:** the files Tuna ships for you to copy and change; never a fallback.
-- **Reload:** check your files, compare them with what's running, and change only what differs; anything that fails is undone and the old version keeps running.
+- **Configuration:** your `init.ss`, the one file that says which plugins to use, with what options, plus your own code.
+- **Starter configuration:** an `init.ss` that ships in the repository for you to copy or run with `--config`; never used unless you ask.
+- **Reload:** run your configuration in a trial run, compare it with what's running, and change only the difference; anything that fails is undone and the old version keeps running.
 - **Start-up report:** what came up, what failed and why, and what was skipped because something it needed failed.
