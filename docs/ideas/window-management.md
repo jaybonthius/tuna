@@ -1,6 +1,18 @@
 # Window management: the desired design
 
-**Status:** desired, not scheduled in detail. A brief comes before anything is built. Decision record: [ADR 11](../../agents/adr/0011-window-management-is-a-plugin.md). Research: [`agents/research/window-management/`](../../agents/research/window-management/README.md).
+**Status:** desired, not scheduled in detail. A brief comes before anything is built. Updated 2026-10-13: see "One tree all the way down". Decision record: [ADR 11](../../agents/adr/0011-window-management-is-a-plugin.md). Research: [`agents/research/window-management/`](../../agents/research/window-management/README.md).
+
+## One tree all the way down (2026-10-13)
+
+The owner's vision, recorded here; nothing below is decided except where marked as the owner's.
+
+- A **buffer** is a named tree of **nodes**: text nodes and other UI nodes. A buffer is the unit that moves together; a magit or dired buffer is a bundle of nodes that moves as one.
+- The **layout** is a tree of **containers** (split, tabs, scroll; horizontal or vertical; nested freely, fully composable) whose leaves are **views**. A view is a buffer plus its own state for that place: cursors, scroll, folding.
+- The minibuffer and echo area are ordinary leaves of this tree, not special cases. This diverges from Emacs.
+- The owner's idea: literally one big tree.
+- The architect's proposal (not decided): one tree as you see and navigate it (each view expands its buffer's nodes in place; a browser tab shows any part of the tree you focus), but two owners in the data. The same buffer can appear in several views, buffers exist when not shown, and the layout plugin and buffer plugins must stay separately replaceable.
+- Proposed names (not decided): buffer, node, view, container, layout. The word "window" goes away. "Frame" means which part of the layout a browser tab shows.
+- Open: how layout and buffer state is stored so changes stay cheap and rendering stays incremental, and whether a generic tree belongs in the kernel, a shared library, or each plugin. Research in progress: `agents/research/layout-state/`.
 
 ## The idea
 
