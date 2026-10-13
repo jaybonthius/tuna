@@ -503,6 +503,15 @@ prelude: :gerbil/core
     ([tag . body] (cons* tag ['@ attribute] body))
     (else element)))
 
+;; What C's weights are multiplied by for CSS: flex children whose grow
+;; factors sum below 1 share only that part of the free space, so weights
+;; that do (left by a removal beside a part sized by content) are scaled
+;; up to sum to 1.
+(def (weight-scale (c : container)) => :real
+  (let (sum (foldl (lambda ((l : link) (sum : :real)) (if (real? l.size) (+ sum l.size) sum))
+                   0 (container-links c)))
+    (if (< 0 sum 1) (/ 1 sum) 1)))
+
 ;; The id of the selected part when it is a container, or #f.
 (def (selected-container-id (self : tree-layout)) => (Maybe :fixnum)
   (let (p (selected-part self))
@@ -518,10 +527,13 @@ prelude: :gerbil/core
       (if (leaf? p)
         (let (v (leaf-view p))
           (render-view v (eq? v selected) (or (and (eq? p top) start) (buffer-root (view-showing v)))))
-        (let (element ((layout-kind-render (kind-of (container-kind p)))
-                       p
-                       (lambda ((l : link)) (with-attribute (render l.part) (size-attribute l.size)))
-                       (lambda (part) (buffer-name (view-showing (leaf-view (focused-leaf part)))))))
+        (let* ((scale (weight-scale p))
+               (element ((layout-kind-render (kind-of (container-kind p)))
+                         p
+                         (lambda ((l : link))
+                           (with-attribute (render l.part)
+                                           (size-attribute (if (real? l.size) (* scale l.size) l.size))))
+                         (lambda (part) (buffer-name (view-showing (leaf-view (focused-leaf part))))))))
           (if (eqv? (container-id p) marked)
             (with-attribute element ['data-selected-part "true"])
             element))))))
@@ -831,10 +843,12 @@ prelude: :gerbil/core
                   ((and tail (pair? (cdr tail))) (cadr tail))
                   ((pair? shown) (car shown))
                   (else v)))))
+  ;; A dedicated view showing another buffer is no longer dedicated, unless
+  ;; it is locked: a plugin's view stays its plugin's.
   (show-buffer! (lambda (self v b)
                   (let (l (own-leaf self v))
                     (set-view-showing! v b)
-                    (when (leaf-dedicated? l)
+                    (when (and (leaf-dedicated? l) (not (inside-locked? self.root (view-id v))))
                       (commit! self (replace-part self.root (view-id v) (make-leaf v #f) (kind-of self)))))))
   (split-view! (lambda (self v side)
                  (own-leaf self v)

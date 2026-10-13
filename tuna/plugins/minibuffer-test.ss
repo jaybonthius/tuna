@@ -152,15 +152,21 @@
          (check answers => ["q"])
          (check seen-after-wait => #f))))
 
-    (test-case "turning the minibuffer off abandons waiting prompts"
+    (test-case "turning the minibuffer off abandons waiting prompts and removes its view"
       (with-minibuffer
        (lambda ()
+         ;; One prompt answered first, so its view has shown another buffer.
+         (type! "C-c" "a" "RET")
+         (check (state) => ["" #f ""])
          (type! "C-c" "a" "z")
          (check (state) => ["" ["Name: " "z"] ""])
          (call-on-editor-loop (lambda () (deactivate-plugin! minibuffer-plugin)))
          (check (wait-until (lambda () quit?)) => #t)
          (check (state) => ["" #f "Quit"])
-         (check (minibuffer-buffers) => []))))
+         (check (minibuffer-buffers) => [])
+         ;; Its locked view went with it, though a prompt had shown there.
+         (check (bar-shows) => [])
+         (check (call-on-editor-loop (lambda () (length (view-list)))) => 1))))
 
     (test-case "a prompt is a buffer in the bar's view, selected while it waits; the selection comes back"
       (with-minibuffer

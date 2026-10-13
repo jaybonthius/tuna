@@ -512,6 +512,17 @@
            (on-baton (lambda () (kill-buffer bar) (kill-buffer status)))
            (check (drawn-names) => [["a"]])))))
 
+    (test-case "weights left summing below 1 beside a part sized by content still fill the space"
+      (with-layout
+       (lambda ()
+         (lock-new! "bar")
+         ;; (a 1/2 / b 1/2 / bar); deleting b leaves a's 1/2 beside the bar.
+         (split! 0 'below)
+         (on-baton (lambda () (delete-view (list-ref (view-list) 1))))
+         (check (map (lambda (e) (attribute e 'style))
+                     (elements-where (lambda (e) (eq? (car e) 'view)) (layout-html)))
+                => ["--tuna-size: 1" #f]))))
+
     (test-case "zooming into a tab with a pinned sibling tab shows both tabs"
       (with-layout
        (lambda ()

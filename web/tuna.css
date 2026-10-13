@@ -145,8 +145,8 @@ body {
   flex-direction: column;
 }
 
-/* A view whose buffer draws nothing takes no space: the idle minibuffer. */
-.view:has(> .buffer > :empty:only-child) {
+/* The idle minibuffer's view takes no space; the echo area keeps its line. */
+.view:has(> .buffer > .minibuffer:empty) {
   display: none;
 }
 
