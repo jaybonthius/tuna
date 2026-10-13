@@ -72,7 +72,7 @@ The Emacs version is `(display-buffer buf '(display-buffer-in-side-window (side 
 Each stage runs in the browser:
 1. **Names and the buffers contract.** The renames happen first. Then editing, undo, the record of changes, highlights and node creation go through the buffers contract, instead of being fixed code. Swapping buffers plugins carries your buffers over instead of starting from a fresh `*scratch*`. A small second buffers plugin, used only in tests, proves the contract. The screen looks the same as today.
 2. **The layout plugin.** It replaces the one-window plugin:
-   - "fit" and "tabbed" containers, with focus remembered in each container;
+   - "fit" and "tabbed" containers, each horizontal or vertical (a vertical tabbed container has its tabs down the side), with focus remembered in each container;
    - split, close, and move between views (`C-x 2`, `C-x 3`, `C-x 0`, `C-x o`);
    - `display-buffer` with side hints;
    - moving the frame (zoom in, zoom out, onto a node inside a buffer) and frame marks; the renderer starts drawing at the frame;
@@ -125,9 +125,9 @@ The kernel gains nothing. There's no shared tree library yet, because the two tr
 |---|---|---|
 | **Buffer** | A named piece of UI: a tree of nodes. A file, magit, a sidebar, the minibuffer. | buffer |
 | **Node** | One part of a buffer's tree. A *text node* holds editable text; any other node (a button, a section) is a *rich node*. | none (text properties, magit sections) |
-| **Text** | The characters, their properties and the undo history inside a text node. Several buffers can share one. | buffer text (shared by indirect buffers) |
+| **Text** | The characters, their properties and the undo history inside a text node. Kept separate from the buffer so another buffer can show and edit part of it, as in editable search results. Several views of one buffer need no sharing: they are the same buffer. | buffer text (indirect buffers share it) |
 | **Layout** | The tree of containers and views that arranges buffers on screen. | a frame's window tree |
-| **Container** | A part of the layout that arranges its children: *fit*, *tabbed*, later *scroll*. | internal (combination) window |
+| **Container** | A part of the layout that arranges its children, horizontally or vertically: *fit* splits the space, *tabbed* shows one at a time, later *scroll* is a strip wider than the screen. | internal (combination) window |
 | **View** | One place in the layout showing one buffer, with its own cursor and scroll. Replaces "window". | live window |
 | **Selected view** | The view you're typing in. | selected window |
 | **Frame** | A movable pointer to any part of the tree; a browser tab draws from it. | frame, plus narrowing |
