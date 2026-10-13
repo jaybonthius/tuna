@@ -1,5 +1,7 @@
-;;; Window managers swapped live (C-c w), and C-x o between two views of one
-;;; buffer, driven through the real editor loop.
+;;; Integration: the window-manager slot swapped live (C-c w) to the
+;;; two-window contract double (tuna/test-support/two-windows.ss) and back,
+;;; and C-x o between two views of one buffer, with editing, a prompt, and
+;;; a tree buffer, driven by keys through the real editor loop.
 (import :std/test
         :tuna/kernel
         :tuna/services/renderer
@@ -16,17 +18,21 @@
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
-        :tuna/plugins/demo
         "../test-support/kernel"
         "../test-support/keys"
-        "../test-support/session")
-(export two-windows-test)
+        "../test-support/session"
+        "../test-support/two-windows"
+        "../test-support/swap-commands"
+        "../test-support/rename-command"
+        "../test-support/tree-buffer")
+(export window-swap-test)
 
 (def window-plugins
   [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
    settings-plugin no-session-plugin buffers-plugin single-window-plugin
    window-commands-plugin
-   html-renderer-plugin basic-editing-plugin minibuffer-plugin demo-plugin])
+   html-renderer-plugin basic-editing-plugin minibuffer-plugin
+   swap-commands-plugin rename-command-plugin tree-buffer-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
@@ -53,8 +59,8 @@
     (let (found (string-contains haystack needle start))
       (if found (lp (+ found 1) (+ n 1)) n))))
 
-(def two-windows-test
-  (test-suite "tuna/plugins/two-windows"
+(def window-swap-test
+  (test-suite "integration: swapping the window manager live"
     (test-case "C-c w hands the window over to two windows and back, keeping points"
       (call-with-fresh-kernel window-plugins
        (lambda ()
@@ -124,7 +130,7 @@
          (start-editor-loop!)
          (type! "C-c" "w" "C-c" "b" "C-x" "o" "C-c" "b")
          (check (map car (car (windows-state))) => ["*welcome*" "*welcome*"])
-         (on-baton (lambda () (deactivate-plugin! demo-plugin)))
+         (on-baton (lambda () (deactivate-plugin! tree-buffer-plugin)))
          (check (map car (car (windows-state))) => ["*scratch*" "*scratch*"]))))
 
     (test-case "C-h s shows the window manager, its provider, and its dependents"

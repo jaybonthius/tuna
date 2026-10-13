@@ -2,21 +2,37 @@
         :tuna/kernel
         :tuna/services/renderer
         :tuna/services/buffers
-        :tuna/plugins/keys
-        :tuna/plugins/echo-area
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
         :tuna/plugins/single-window
         :tuna/plugins/html-renderer
-        :tuna/plugins/demo
         "../test-support/kernel"
         "../test-support/session")
 (export html-renderer-test)
 
 (def renderer-plugins
-  [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin no-session-plugin
-   buffers-plugin single-window-plugin html-renderer-plugin demo-plugin])
+  [rope-text-store-plugin settings-plugin no-session-plugin
+   buffers-plugin single-window-plugin html-renderer-plugin])
+
+;; A *welcome* buffer built as a tree: (column (heading "Welcome to Tuna")
+;; (text "…")), with HTML renderers for both kinds.
+(defplugin (tree-buffer-plugin ctx)
+  "Defines the column and heading kinds and adds a *welcome* tree buffer."
+  requires: [buffers-service]
+  (context-define-node-kind! ctx 'column doc: "Children stacked vertically.")
+  (context-define-node-kind! ctx 'heading doc: "A heading."
+                             project: (lambda (n) (node-attribute n 'content)))
+  (context-define-node-renderer! ctx 'column 'html
+                                 (lambda (n children) `(div (@ (class "column")) ,@children)))
+  (context-define-node-renderer! ctx 'heading 'html
+                                 (lambda (n children) `(h1 (@ (class "heading")) ,(node-attribute n 'content))))
+  (context-add-buffer! ctx
+                       (new-buffer "*welcome*"
+                                   (new-node 'column
+                                             children: [(new-node 'heading attributes: [['content . "Welcome to Tuna"]])
+                                                        (new-text-node
+                                                         (new-text "This buffer is a tree: a column holding a heading and this text.\nType here; the heading stays.\n"))]))))
 
 (def (screen)
   (Renderer-render-screen (Renderer (service-provider renderer-service))))
@@ -50,7 +66,7 @@
            (check (and (offset "<span class=\"face-digit\">34</span>" html) #t) => #t)))))
 
     (test-case "*welcome* renders as a column: the heading, then the editable text"
-      (call-with-fresh-kernel renderer-plugins
+      (call-with-fresh-kernel (append renderer-plugins [tree-buffer-plugin])
        (lambda ()
          (switch-to-buffer (get-buffer "*welcome*"))
          (insert "Hi. ")

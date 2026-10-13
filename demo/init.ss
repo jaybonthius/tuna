@@ -25,6 +25,7 @@
         "../tuna/test-support/rename-command"
         "../tuna/test-support/swap-commands"
         "../tuna/test-support/digit-highlighter"
+        "../tuna/test-support/tree-buffer"
         "demo")
 
 (use-plugin keys-plugin)
@@ -49,7 +50,8 @@
 (use-plugin rename-command-plugin)      ; C-c r: rename the buffer in the minibuffer
 (use-plugin swap-commands-plugin)       ; C-c v and C-c w: swap renderer and window manager
 (use-plugin digit-highlighter-plugin)   ; colors digits from a slow job
-(use-plugin demo-plugin)                ; C-c b *welcome*, C-c s text store, C-c p basic editing
+(use-plugin tree-buffer-plugin)         ; C-c b: the *welcome* buffer, built as a tree
+(use-plugin demo-plugin)                ; C-c s text store, C-c p basic editing
 (use-plugin reload-config-plugin        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)
           (keymap-set "C-c C-r" 'show-config-report))
