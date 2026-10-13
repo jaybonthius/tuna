@@ -14,5 +14,5 @@
 - [ ] **Autosave runs on the baton.** Each changed text is written synchronously while idle. Texts are persistent, so a large text could be written from a job over a snapshot instead.
 - [ ] **No `fsync` before the atomic rename** of session and autosave files: a crash of the machine (not of Tuna) shortly after a save could leave an empty file on some file systems. Gambit has no portable `fsync`.
 
-- [ ] **Session restore order is implicit.** Slots restore in the order plugins registered them; `main.ss` activates autosave before the window manager so buffers exist before windows refer to them. Make restore order explicit (dependencies between slots) before more stateful plugins arrive.
-- [ ] **Window contract is partial.** ADR 11's split, delete, neighbor, swap, `display-buffer`, window configurations, parameters and dedicated windows are not built; due with the real window manager.
+- [ ] **Session restore order is implicit.** Slots restore in the order plugins registered them; the configuration activates autosave before the layout so buffers exist before views refer to them. Make restore order explicit (dependencies between slots) before more stateful plugins arrive.
+- [ ] **Layout contract is partial.** ADR 13's split, delete, neighbor, `display-buffer`, frames, frame marks and dedicated views are not built; due with the layout plugin (stage 2 of `agents/plans/buffers-views-layout.md`).

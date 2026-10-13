@@ -1,7 +1,7 @@
 ;;; The demo plugin, for development only (`make demo`, demo/init.ss):
 ;;; swapping the text store (C-c s) and basic editing (C-c p) while Tuna
 ;;; runs. The demo's other commands (the *welcome* tree buffer, endless
-;;; loops, describe-services, renaming, renderer and window-manager swaps,
+;;; loops, describe-services, renaming, renderer and layout swaps,
 ;;; the slow digit highlighter) are test fixtures from tuna/test-support/
 ;;; that demo/init.ss declares beside it. The demo turns other plugins on
 ;;; and off, so it imports them; ordinary plugins do not. Nothing in tuna/

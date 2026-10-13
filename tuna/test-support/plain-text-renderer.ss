@@ -18,7 +18,7 @@ prelude: :gerbil/core
         :tuna/services/echo-area
         :tuna/services/help
         :tuna/services/minibuffer
-        :tuna/services/windows)
+        :tuna/services/layout)
 (export plain-text-renderer-plugin
         join-runs)
 
@@ -45,7 +45,7 @@ prelude: :gerbil/core
 
 ;; A text node: its text, with the rendered view's point marked. At the end
 ;; of a line the cursor stands on a space.
-(def (text-node-runs (n : text-node) (children : :list)) => :list
+(def (text-node-runs (n : node) (children : :list)) => :list
   (let* ((content (text-string (text-node-content n)))
          (v (rendering-view))
          (position (and v (eq? n (view-node v)) (view-point v))))
@@ -70,12 +70,12 @@ prelude: :gerbil/core
                   (else (error "Not a plain-text run" run))))
               runs))
 
-(def (render-window (w : window) (selected? : :boolean)) => :list
-  (let* ((v (window-view w))
-         (b (view-showing v)))
+(def (render-view (v : view) (selected? : :boolean)) => :list
+  (let (b (view-showing v))
     (parameterize ((rendering-view v))
-      `(section (@ (class "window")
-                   (data-window ,(number->string (window-id w)))
+      `(section (@ (class "view")
+                   (id ,(string-append "view-" (number->string (view-id v))))
+                   (data-view ,(number->string (view-id v)))
                    ,@(if selected? '((data-selected "true")) '()))
          (pre (@ (class "plain-text") (aria-label ,(buffer-name b)))
               ,@(runs->sxml (node-runs (buffer-root b)))
@@ -88,7 +88,7 @@ prelude: :gerbil/core
       (using (prompt : prompt-display)
         (cons prompt.question
               (append (parameterize ((rendering-view (current-view)))
-                        (node-runs prompt.node))
+                        (node-runs prompt.answer))
                       ["\n"])))
       [])))
 
@@ -100,7 +100,7 @@ prelude: :gerbil/core
              `((section (@ (class "help") (aria-label "Help"))
                  (pre (@ (class "plain-text")) ,help.title "\n\n" ,(string-join help.lines "\n")))))
            [])
-       ,(render-window-area 'html render-window)
+       ,(render-layout 'html render-view)
        (footer
         (pre (@ (class "plain-text") (role "status"))
              ,@(runs->sxml (minibuffer-runs))
@@ -113,6 +113,6 @@ prelude: :gerbil/core
 
 (defplugin (plain-text-renderer-plugin ctx)
   "Renders the screen as plain text (a toy). Outranks the HTML renderer while active."
-  requires: [buffers-service window-manager-service]
+  requires: [buffers-service layout-service]
   (context-define-node-renderer! ctx 'text 'plain-text text-node-runs)
   (context-provide! ctx renderer-service (Renderer (make-plain-text-renderer)) priority: 10))

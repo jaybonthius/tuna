@@ -17,9 +17,9 @@ prelude: :gerbil/core
   (new-service 'renderer is-Renderer? tier: 'live
                doc: "Turns editor state into a screen."))
 
-;; The text of the status line (Emacs's mode line) of a window showing V:
-;; the buffer, the line and column of V's point, and, for the selected
-;; window, the running command.
+;; The text of the status line (Emacs's mode line) of view V: the buffer,
+;; the line and column of V's point, and, for the selected view, the
+;; running command.
 (def (status-line-text (v : view) (selected? : :boolean)) => :string
   (let ((command (and selected? (current-task-name)))
         (n (view-node v)))

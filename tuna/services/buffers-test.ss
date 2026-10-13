@@ -1,193 +1,386 @@
+;;; The buffers contract, checked against both providers: the default
+;;; (tuna/plugins/buffers.ss) and the toy (tuna/test-support/toy-buffers.ss).
+;;; Each provider runs alone with a text store and settings. The handover
+;;; between them is checked last.
 (import :std/error
         :std/test
         :tuna/kernel
         :tuna/lib/jobs
         :tuna/services/text-store
+        :tuna/services/settings
         :tuna/services/buffers
         :tuna/plugins/rope
         :tuna/plugins/settings
         "../test-support/string-text-store"
         :tuna/plugins/buffers
+        "../test-support/toy-buffers"
         "../test-support/kernel")
-(export buffers-test)
-
-(def buffer-plugins
-  [rope-text-store-plugin settings-plugin buffers-plugin])
+(export buffers-test
+        toy-buffers-test
+        buffers-handover-test)
 
 (def (raises? thunk)
   (with-catch (lambda (e) #t) (lambda () (thunk) #f)))
 
 (def (spans-of spans) (map (lambda (s) [(span-start s) (span-end s)]) spans))
 
-(def buffers-test
-  (test-suite "tuna/services/buffers"
-    (test-case "*scratch* is a tree holding one empty text node"
-      (call-with-fresh-kernel buffer-plugins
-       (lambda ()
-         (check (buffer-name (current-buffer)) => "*scratch*")
-         (check (text-node? (buffer-root (current-buffer))) => #t)
-         (check (eq? (current-text-node) (buffer-root (current-buffer))) => #t)
-         (check (point) => 1)
-         (check (point-max) => 1))))
+(defsetting fill-width 70 "A setting for buffer-local values.")
 
-    (test-case "positions count characters from 1; lines from 1, columns from 0"
-      (call-with-fresh-kernel buffer-plugins
-       (lambda ()
-         (let (t (current-text))
-           ;; h é l l o _ 😀 | \n | w ö r l d
-           (insert "héllo 😀\nwörld")
-           (check (point) => 14)
-           (check (point-max) => 14)
-           (check (text-substring t 7 8) => "😀")
-           (check (text-line-count t) => 2)
-           (check (text-line-at t 8) => 1)
-           (check (text-line-at t 9) => 2)
-           (check (text-line-start t 2) => 9)
-           (check (text-line-end t 1) => 8)
-           (check (text-line-end t 2) => 14)
-           (check (text-column t 7) => 6)
-           (check (text-column t 11) => 2)
-           (check (text-position-at t 2 3) => 12)
-           (check (text-position-at t 1 100) => 8)
-           (check (raises? (lambda () (text-substring t 0 1))) => #t)
-           (check (raises? (lambda () (text-substring t 1 15))) => #t)
-           (check (raises? (lambda () (text-line-start t 3))) => #t)
-           (goto-char 100)
-           (check (point) => 14)
-           (goto-char 0)
-           (check (point) => 1)))))
+;; The contract's cases, run with PROVIDER as the buffers plugin.
+(def (buffers-contract-cases provider)
+  (def buffer-plugins [rope-text-store-plugin settings-plugin provider])
 
-    (test-case "undo removes one group at a time; undoing after a break redoes"
-      (call-with-fresh-kernel buffer-plugins
-       (lambda ()
-         (let (t (current-text))
-           (insert "a")
-           (insert "b")
-           (undo-boundary! t)
-           (insert "c")
-           (check (text-undo! t #f) => 3)
-           (check (text-string t) => "ab")
-           (check (text-undo! t #t) => 1)
-           (check (text-string t) => "")
-           (check (raises? (lambda () (text-undo! t #t))) => #t)
-           (text-undo! t #f)
-           (check (text-string t) => "ab")))))
+  (test-case "*scratch* is a tree holding one empty text node"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (check (buffer-name (current-buffer)) => "*scratch*")
+       (check (text-node? (buffer-root (current-buffer))) => #t)
+       (check (eq? (current-text-node) (buffer-root (current-buffer))) => #t)
+       (check (point) => 1)
+       (check (point-max) => 1))))
 
-    (test-case "points relocate through changes made elsewhere"
-      (call-with-fresh-kernel buffer-plugins
-       (lambda ()
-         (let (t (current-text))
-           (insert "hello world")
-           (goto-char 7)
-           (text-replace! t 1 1 "XX")
-           (check (point) => 9)
-           (text-replace! t 1 3 "")
-           (check (point) => 7)
-           (text-replace! t 5 9 "")
-           (check (point) => 5)
-           (check (text-string t) => "hellrld")))))
+  (test-case "positions count characters from 1; lines from 1, columns from 0"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let (t (current-text))
+         ;; h é l l o _ 😀 | \n | w ö r l d
+         (insert "héllo 😀\nwörld")
+         (check (point) => 14)
+         (check (point-max) => 14)
+         (check (text-substring t 7 8) => "😀")
+         (check (text-line-count t) => 2)
+         (check (text-line-at t 8) => 1)
+         (check (text-line-at t 9) => 2)
+         (check (text-line-start t 2) => 9)
+         (check (text-line-end t 1) => 8)
+         (check (text-line-end t 2) => 14)
+         (check (text-column t 7) => 6)
+         (check (text-column t 11) => 2)
+         (check (text-position-at t 2 3) => 12)
+         (check (text-position-at t 1 100) => 8)
+         (check (raises? (lambda () (text-substring t 0 1))) => #t)
+         (check (raises? (lambda () (text-substring t 1 15))) => #t)
+         (check (raises? (lambda () (text-line-start t 3))) => #t)
+         (goto-char 100)
+         (check (point) => 14)
+         (goto-char 0)
+         (check (point) => 1)))))
 
-    (test-case "the buffers plugin adapts to a new text store: every text, point, and undo survive"
-      (call-with-fresh-kernel buffer-plugins
-       (lambda ()
-         (defplugin (adds-other ctx)
-           "Adds a second buffer."
-           (context-add-buffer! ctx (new-buffer "other" (new-text-node (new-text "second ☃ buffer")))))
-         (activate-plugin! adds-other)
-         (let ((other-text (text-node-content (buffer-root (get-buffer "other"))))
-               (t (current-text))
-               (registry (service-provider buffers-service))
-               (stored-as-string? (lambda (t) (string? (snapshot-version (text-snapshot t))))))
-           (insert "hello\nwörld 😀")
-           (goto-char 4)
-           (check (stored-as-string? t) => #f)
-           (activate-plugin! string-text-store-plugin)
-           (check (eq? (service-provider text-store-service) string-text-store) => #t)
-           ;; Adapting, not restarting: the same provider object, texts moved.
-           (check (eq? (service-provider buffers-service) registry) => #t)
-           (check (stored-as-string? t) => #t)
-           (check (stored-as-string? other-text) => #t)
-           (check (text-string t) => "hello\nwörld 😀")
-           (check (point) => 4)
-           (undo-boundary! t)
-           (insert "p")
-           (check (text-string t) => "helplo\nwörld 😀")
-           (check (text-string other-text) => "second ☃ buffer")
-           (deactivate-plugin! string-text-store-plugin)
-           (check (eq? (service-provider buffers-service) registry) => #t)
-           (check (stored-as-string? t) => #f)
-           (check (stored-as-string? other-text) => #f)
-           (check (text-string t) => "helplo\nwörld 😀")
-           (check (point) => 5)
-           (text-undo! t #f)
-           (check (text-string t) => "hello\nwörld 😀")))))
+  (test-case "undo removes one group at a time; undoing after a break redoes"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let (t (current-text))
+         (insert "a")
+         (insert "b")
+         (undo-boundary! t)
+         (insert "c")
+         (check (text-undo! t #f) => 3)
+         (check (text-string t) => "ab")
+         (check (text-undo! t #t) => 1)
+         (check (text-string t) => "")
+         (check (raises? (lambda () (text-undo! t #t))) => #t)
+         (text-undo! t #f)
+         (check (text-string t) => "ab")))))
 
-    (test-case "describe-services lists buffers as an adapting dependent of the text store"
-      (call-with-fresh-kernel buffer-plugins
-       (lambda ()
-         (let (info (find (lambda (info) (eq? (service-info-name info) 'text-store))
-                          (describe-services)))
-           (check (service-info-dependents info) => '(buffers-plugin))
-           (check (service-info-adapting info) => '(buffers-plugin))))))
+  (test-case "undo puts point back where the command left it"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let (t (current-text))
+         (insert "abc")
+         (goto-char 2)
+         (undo-boundary! t)
+         (delete-region 2 3)            ; a forward delete, point before it
+         (check (text-undo! t #f) => 2)
+         (check (text-string t) => "abc")
+         (goto-char 3)
+         (undo-boundary! t)
+         (delete-region 2 3)            ; a backward delete, point after it
+         (check (text-undo! t #f) => 3)
+         (check (text-string t) => "abc")
+         (text-clear-undo! t)
+         (check (raises? (lambda () (text-undo! t #f))) => #t)))))
 
-    (test-case "without any text store, the buffers plugin goes too"
-      (call-with-fresh-kernel buffer-plugins
-       (lambda ()
+  (test-case "points relocate through changes made elsewhere"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let (t (current-text))
+         (insert "hello world")
+         (goto-char 7)
+         (text-replace! t 1 1 "XX")
+         (check (point) => 9)
+         (text-replace! t 1 3 "")
+         (check (point) => 7)
+         (text-replace! t 5 9 "")
+         (check (point) => 5)
+         (check (text-string t) => "hellrld")
+         (check (relocate-position t 1 0) => 1)))))
+
+  (test-case "the provider adapts to a new text store: every text, point, and undo survive"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (defplugin (adds-other ctx)
+         "Adds a second buffer."
+         (context-add-buffer! ctx (new-buffer "other" (new-text-node (new-text "second ☃ buffer")))))
+       (activate-plugin! adds-other)
+       (let ((other-text (text-node-content (buffer-root (get-buffer "other"))))
+             (t (current-text))
+             (registry (service-provider buffers-service))
+             (stored-as-string? (lambda (t) (string? (snapshot-version (text-snapshot t))))))
+         (insert "hello\nwörld 😀")
+         (goto-char 4)
+         (check (stored-as-string? t) => #f)
          (activate-plugin! string-text-store-plugin)
-         (deactivate-plugin! rope-text-store-plugin)
-         (check (plugin-active? buffers-plugin) => #t)
+         (check (eq? (service-provider text-store-service) string-text-store) => #t)
+         ;; Adapting, not restarting: the same provider object, texts moved.
+         (check (eq? (service-provider buffers-service) registry) => #t)
+         (check (stored-as-string? t) => #t)
+         (check (stored-as-string? other-text) => #t)
+         (check (text-string t) => "hello\nwörld 😀")
+         (check (point) => 4)
+         (undo-boundary! t)
+         (insert "p")
+         (check (text-string t) => "helplo\nwörld 😀")
+         (check (text-string other-text) => "second ☃ buffer")
          (deactivate-plugin! string-text-store-plugin)
-         (check (plugin-active? buffers-plugin) => #f)
-         (activate-plugin! rope-text-store-plugin)
-         (check (plugin-active? buffers-plugin) => #t))))
+         (check (eq? (service-provider buffers-service) registry) => #t)
+         (check (stored-as-string? t) => #f)
+         (check (stored-as-string? other-text) => #f)
+         (check (text-string t) => "helplo\nwörld 😀")
+         (check (point) => 5)
+         (text-undo! t #f)
+         (check (text-string t) => "hello\nwörld 😀")))))
 
-    (test-case "undo puts point back where the command left it"
-      (call-with-fresh-kernel buffer-plugins
-       (lambda ()
-         (let (t (current-text))
-           (insert "abc")
-           (goto-char 2)
-           (undo-boundary! t)
-           (delete-region 2 3)            ; a forward delete, point before it
-           (check (text-undo! t #f) => 2)
-           (check (text-string t) => "abc")
-           (goto-char 3)
-           (undo-boundary! t)
-           (delete-region 2 3)            ; a backward delete, point after it
-           (check (text-undo! t #f) => 3)
-           (check (text-string t) => "abc")))))
+  (test-case "describe-services lists the provider as an adapting dependent of the text store"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let (info (find (lambda (info) (eq? (service-info-name info) 'text-store))
+                        (describe-services)))
+         (check (service-info-dependents info) => [(plugin-name provider)])
+         (check (service-info-adapting info) => [(plugin-name provider)])))))
 
-    (test-case "highlights relocate with edits and change only the decoration revision"
-      (call-with-fresh-kernel buffer-plugins
-       (lambda ()
-         (let (t (current-text))
-           (insert "ab12cd345")
-           (let ((content (text-content-revision t))
-                 (decoration (text-decoration-revision t)))
-             (set-highlights! t 'digits [(make-span 3 5 'digit) (make-span 7 10 'digit)])
-             (check (text-content-revision t) => content)
-             (check (> (text-decoration-revision t) decoration) => #t))
-           (text-replace! t 1 1 "XY")       ; before both: both shift
-           (text-replace! t 5 5 "<")        ; at the first's start: stays outside
-           (text-replace! t 11 12 "")       ; inside the second: it shrinks
-           (check (text-string t) => "XYab<12cd35")
-           (check (map (lambda (s) [(span-start s) (span-end s)]) (text-highlights t 'digits))
-                  => [[6 8] [10 12]])
-           (text-replace! t 6 8 "")         ; all of the first: it goes
-           (check (length (text-highlights t 'digits)) => 1)))))
+  (test-case "without any text store, the provider goes too"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (activate-plugin! string-text-store-plugin)
+       (deactivate-plugin! rope-text-store-plugin)
+       (check (plugin-active? provider) => #t)
+       (deactivate-plugin! string-text-store-plugin)
+       (check (plugin-active? provider) => #f)
+       (activate-plugin! rope-text-store-plugin)
+       (check (plugin-active? provider) => #t))))
 
-    (test-case "a text's changes since a revision come oldest first, while the journal reaches back"
-      (call-with-fresh-kernel buffer-plugins
-       (lambda ()
-         (let (t (current-text))
-           (insert "a")
-           (let (revision (text-chars-revision t))
-             (insert "b")
-             (insert "c")
-             (check (map change-inserted (text-changes-since t revision)) => ["b" "c"])
-             (check (text-changes-since t (text-chars-revision t)) => [])
-             (for-each (lambda (_) (insert "x")) (iota 1100))
-             (check (text-changes-since t revision) => #f))))))
+  (test-case "highlights relocate with edits and change only the decoration revision"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let (t (current-text))
+         (insert "ab12cd345")
+         (let ((content (text-content-revision t))
+               (decoration (text-decoration-revision t)))
+           (set-highlights! t 'digits [(make-span 3 5 'digit) (make-span 7 10 'digit)])
+           (check (text-content-revision t) => content)
+           (check (> (text-decoration-revision t) decoration) => #t))
+         (text-replace! t 1 1 "XY")       ; before both: both shift
+         (text-replace! t 5 5 "<")        ; at the first's start: stays outside
+         (text-replace! t 11 12 "")       ; inside the second: it shrinks
+         (check (text-string t) => "XYab<12cd35")
+         (check (spans-of (text-highlights t 'digits)) => [[6 8] [10 12]])
+         (check (length (text-all-highlights t)) => 2)
+         (text-replace! t 6 8 "")         ; all of the first: it goes
+         (check (length (text-highlights t 'digits)) => 1)
+         (check (text-highlights t 'other) => [])))))
+
+  (test-case "a text's changes since a revision come oldest first, while the journal reaches back"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let (t (current-text))
+         (insert "a")
+         (let (revision (text-chars-revision t))
+           (insert "b")
+           (insert "c")
+           (check (map change-inserted (text-changes-since t revision)) => ["b" "c"])
+           (check (text-changes-since t (text-chars-revision t)) => [])
+           (for-each (lambda (_) (insert "x")) (iota 1100))
+           (check (text-changes-since t revision) => #f))))))
+
+  (test-case "rebase-spans and highlights follow the same rule"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let (t (current-text))
+         (insert "ab12cd345ef")
+         (let ((revision (text-chars-revision t))
+               (spans [(make-span 3 5 'digit) (make-span 7 10 'digit)]))
+           (set-highlights! t 'digits spans)
+           (text-replace! t 1 1 "XY")
+           (text-replace! t 5 5 "<")
+           (text-replace! t 7 7 "9")
+           (text-replace! t 11 13 "")
+           (text-replace! t 12 12 ">")
+           (check (text-string t) => "XYab<192cd5>ef")
+           (check (spans-of (text-highlights t 'digits)) => [[6 9] [11 12]])
+           (check (spans-of (rebase-spans spans (text-changes-since t revision)))
+                  => (spans-of (text-highlights t 'digits))))))))
+
+  (test-case "a text rebases job spans past its changes, until its journal no longer reaches back"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let (t (current-text))
+         (insert "a12b34")
+         (let ((target (JobTarget t))
+               (revision (text-chars-revision t))
+               (spans [(make-span 2 4 'digit) (make-span 5 7 'digit)]))
+           (text-replace! t 1 1 "xx")     ; "xxa12b34": both shift by 2
+           (text-replace! t 8 8 "!")      ; inside 34: that span grows
+           (check (JobTarget-job-revision target) => (text-chars-revision t))
+           (check (JobTarget-job-target-alive? target) => #t)
+           (check (map spans-of (JobTarget-job-rebase target spans revision)) => [[[4 6] [7 10]]])
+           (for-each (lambda (_) (insert "x")) (iota 1100))
+           (check (JobTarget-job-rebase target spans revision) => #f))))))
+
+  (test-case "after-change-hook receives each change after the text has it"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let ((seen [])
+             (t (current-text)))
+         (defplugin (watcher ctx)
+           "Records changes."
+           (context-add-hook! ctx after-change-hook 'record
+                              (lambda (text c) (set! seen (cons [(text-string text) (change-inserted c)] seen)))))
+         (activate-plugin! watcher)
+         (insert "ab")
+         (delete-region 1 2)
+         (check (reverse seen) => [["ab" "ab"] ["b" ""]])))))
+
+  (test-case "nodes have one parent, a child count, and children by range"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let* ((items (map (lambda (i) (new-node 'item attributes: [['n . i]])) (iota 5)))
+              (text-node (new-text-node (new-text "t")))
+              (tree (new-node 'column children: (append items [text-node]))))
+         (check (node-kind tree) => 'column)
+         (check (node-parent tree) => #f)
+         (check (node-child-count tree) => 6)
+         (check (map (cut node-attribute <> 'n) (node-children tree 1 3)) => [1 2])
+         (check (length (node-children tree)) => 6)
+         (check (node-children tree 6 6) => [])
+         (check (raises? (lambda () (node-children tree 4 7))) => #t)
+         (check (eq? (node-parent (car items)) tree) => #t)
+         (check (eq? (first-text-node tree) text-node) => #t)
+         (check (text-node? (car items)) => #f)
+         (check (raises? (lambda () (new-node 'other children: [(car items)]))) => #t)
+         (let (b (new-buffer "tree" tree))
+           (add-buffer! b)
+           (check (eq? (buffer-root b) tree) => #t)
+           (check (eq? (buffer-point-node b) text-node) => #t)
+           (check (buffer-texts b) => [(text-node-content text-node)]))
+         (set-node-children! tree (cdr items))
+         (check (node-parent (car items)) => #f)
+         (check (node-parent text-node) => #f)
+         (check (node-child-count tree) => 4)))))
+
+  (test-case "a change stamps its node and every node above it with a new, larger revision"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let* ((t (new-text "abc"))
+              (leaf (new-text-node t))
+              (other (new-node 'item))
+              (section (new-node 'section children: [leaf]))
+              (root (new-node 'root children: [section other])))
+         (def (revisions) (map node-revision [leaf section root other]))
+         (let (before (revisions))
+           (text-replace! t 1 1 "x")
+           (let (after (revisions))
+             (check (> (car after) (car before)) => #t)
+             (check (cadr after) => (car after))
+             (check (caddr after) => (car after))
+             (check (cadddr after) => (cadddr before))))
+         (let (before (revisions))
+           (set-highlights! t 'digits [])
+           (check (> (node-revision root) (caddr before)) => #t)
+           (check (node-revision other) => (cadddr before)))
+         (let (before (node-revision root))
+           (set-node-attribute! other 'label "Other")
+           (check (node-attribute other 'label) => "Other")
+           (check (> (node-revision other) before) => #t)
+           (check (node-revision root) => (node-revision other))
+           (check (> (node-revision root) (node-revision section)) => #t))
+         (let (before (node-revision root))
+           (set-node-children! section [])
+           (check (> (node-revision root) before) => #t))))))
+
+  (test-case "buffers: names are unique; a killed buffer leaves the selected view and its texts die"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let* ((b (new-buffer "notes" (new-text-node (new-text "n"))))
+              (t (text-node-content (buffer-root b)))
+              (killed []))
+         (defplugin (watcher ctx)
+           "Records killed buffers."
+           (context-add-hook! ctx kill-buffer-hook 'record
+                              (lambda (b) (set! killed (cons (buffer-name b) killed)))))
+         (activate-plugin! watcher)
+         (add-buffer! b)
+         (check (raises? (lambda () (add-buffer! (new-buffer "notes" (new-node 'x))))) => #t)
+         (check (map buffer-name (buffer-list)) => ["*scratch*" "notes"])
+         (check (raises? (lambda () (rename-buffer! b "*scratch*"))) => #t)
+         (rename-buffer! b "notes2")
+         (check (eq? (get-buffer "notes2") b) => #t)
+         (switch-to-buffer b)
+         (goto-char 2)
+         (check (eq? (current-buffer) b) => #t)
+         (check (text-live? t) => #t)
+         (kill-buffer b)
+         (check killed => ["notes2"])
+         (check (buffer-name (current-buffer)) => "*scratch*")
+         (check (map buffer-name (buffer-list)) => ["*scratch*"])
+         (check (text-live? t) => #f)))))
+
+  (test-case "a buffer keeps its point and settings while no view shows it"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let ((scratch (current-buffer))
+             (b (new-buffer "notes" (new-text-node (new-text "hello")))))
+         (add-buffer! b)
+         (set-buffer-point! b 3)
+         (check (buffer-point b) => 3)
+         (set-buffer-setting! b fill-width 40)
+         (check (buffer-setting b fill-width) => (cons fill-width 40))
+         (check (buffer-setting scratch fill-width) => #f)
+         (switch-to-buffer b)
+         (check (point) => 3)
+         (check (setting-value fill-width) => 40)
+         (goto-char 5)
+         (switch-to-buffer scratch)
+         (check (setting-value fill-width) => 70)
+         (text-replace! (text-node-content (buffer-root b)) 1 1 "oh, ")
+         (check (buffer-point b) => 9)
+         (let (v (new-view b))
+           (check (eq? (view-showing v) b) => #t)
+           (check (view-point v) => 9)
+           (check (= (view-id v) (view-id (selected-view))) => #f))))))
+
+  (test-case "node kinds come and go with their plugin; projections need no renderer"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (defplugin (box-kind ctx)
+         "Defines the box node kind."
+         (context-define-node-kind! ctx 'box doc: "A box."
+                                    project: (lambda (n) (node-attribute n 'label))))
+       (let (tree (new-node 'column
+                            children: [(new-node 'box attributes: [['label . "Box"]])
+                                       (new-text-node (new-text "text"))]))
+         (check (node-kind-ref 'box) => #f)
+         (check (node-kind-info-name (node-kind-ref 'text)) => 'text)
+         (activate-plugin! box-kind)
+         (check (node-kind-info-name (node-kind-ref 'box)) => 'box)
+         (check (node-text-projection tree) => "Box\ntext")
+         (check (text-node? (first-text-node tree)) => #t)
+         (deactivate-plugin! box-kind)
+         (check (node-kind-ref 'box) => #f)
+         (check (node-text-projection tree) => "\ntext"))))))
+
+(def buffers-test
+  (test-suite "tuna/services/buffers: the default provider"
+    (buffers-contract-cases buffers-plugin)
 
     (test-case "rebase-spans moves spans as highlights move and drops only emptied ones"
       (let (spans [(make-span 3 5 'a) (make-span 7 9 'b)])
@@ -202,55 +395,65 @@
         ;; A span whose characters are all deleted goes.
         (check (spans-of (rebase-spans spans [(make-change 1 3 "ab" "")])) => [[5 7]])
         (check (spans-of (rebase-spans spans [(make-change 1 4 "" "x") (make-change 2 3 "axb" "")]))
-               => [[5 7]])))
+               => [[5 7]])))))
 
-    (test-case "rebase-spans and highlights follow the same rule"
-      (call-with-fresh-kernel buffer-plugins
-       (lambda ()
-         (let (t (current-text))
-           (insert "ab12cd345ef")
-           (let ((revision (text-chars-revision t))
-                 (spans [(make-span 3 5 'digit) (make-span 7 10 'digit)]))
-             (set-highlights! t 'digits spans)
-             (text-replace! t 1 1 "XY")
-             (text-replace! t 5 5 "<")
-             (text-replace! t 7 7 "9")
-             (text-replace! t 11 13 "")
-             (text-replace! t 12 12 ">")
-             (check (text-string t) => "XYab<192cd5>ef")
-             (check (spans-of (text-highlights t 'digits)) => [[6 9] [11 12]])
-             (check (spans-of (rebase-spans spans (text-changes-since t revision)))
-                    => (spans-of (text-highlights t 'digits))))))))
+(def toy-buffers-test
+  (test-suite "tuna/services/buffers: the toy provider"
+    (buffers-contract-cases toy-buffers-plugin)))
 
-    (test-case "a text rebases job spans past its changes, until its journal no longer reaches back"
-      (call-with-fresh-kernel buffer-plugins
-       (lambda ()
-         (let (t (current-text))
-           (insert "a12b34")
-           (let ((target (JobTarget t))
-                 (revision (text-chars-revision t))
-                 (spans [(make-span 2 4 'digit) (make-span 5 7 'digit)]))
-             (text-replace! t 1 1 "xx")     ; "xxa12b34": both shift by 2
-             (text-replace! t 8 8 "!")      ; inside 34: that span grows
-             (check (map spans-of (JobTarget-job-rebase target spans revision)) => [[[4 6] [7 10]]])
-             (for-each (lambda (_) (insert "x")) (iota 1100))
-             (check (JobTarget-job-rebase target spans revision) => #f))))))
+;; The provider's buffers as plain data: each buffer's name, text, and
+;; point, and the selected view's buffer and point.
+(def (buffers-state)
+  [(map (lambda (b)
+          [(buffer-name b) (node-text-projection (buffer-root b)) (buffer-point b)])
+        (buffer-list))
+   (buffer-name (view-showing (selected-view)))
+   (view-point (selected-view))])
 
-    (test-case "node kinds come and go with their plugin; projections need no renderer"
-      (call-with-fresh-kernel buffer-plugins
+(def buffers-handover-test
+  (test-suite "tuna/services/buffers: handing buffers over"
+    (test-case "swapping providers carries buffers, trees, texts, highlights, settings, and the selected view"
+      (call-with-fresh-kernel [rope-text-store-plugin settings-plugin buffers-plugin]
        (lambda ()
-         (defplugin (box-kind ctx)
-           "Defines the box node kind."
-           (context-define-node-kind! ctx 'box doc: "A box."
-                                      project: (lambda (n) (node-attribute n 'label))))
-         (let (tree (new-node 'column
-                              children: [(new-node 'box attributes: [['label . "Box"]])
-                                         (new-text-node (new-text "text"))]))
-           (check (node-kind-ref 'box) => #f)
-           (activate-plugin! box-kind)
-           (check (node-kind-info-name (node-kind-ref 'box)) => 'box)
-           (check (node-text-projection tree) => "Box\ntext")
-           (check (text-node? (first-text-node tree)) => #t)
-           (deactivate-plugin! box-kind)
-           (check (node-kind-ref 'box) => #f)
-           (check (node-text-projection tree) => "\ntext")))))))
+         (let* ((shared (new-text "shared ☃"))
+                (heading (new-node 'heading attributes: [['content . "Notes"]]))
+                (body (new-text-node shared))
+                (tree (new-node 'column children: [heading body (new-text-node shared)]))
+                (ids (map node-id (cons tree (node-children tree))))
+                (notes (new-buffer "notes" tree))
+                (selected (selected-view))
+                (default (service-provider buffers-service)))
+           (add-buffer! notes)
+           (set-buffer-setting! notes fill-width 40)
+           (insert "hello")
+           (goto-char 3)
+           (set-highlights! shared 'digits [(make-span 1 3 'digit)])
+           (let (before (buffers-state))
+             (activate-plugin! toy-buffers-plugin)
+             (check (eq? (service-provider buffers-service) default) => #f)
+             (check (buffers-state) => before)
+             ;; The same view object, now showing the toy's *scratch*.
+             (check (eq? (selected-view) selected) => #t)
+             (let* ((adopted (buffer-root (get-buffer "notes")))
+                    (children (node-children adopted)))
+               ;; Node ids carry over; the nodes are the toy's own.
+               (check (map node-id (cons adopted children)) => ids)
+               (check (eq? adopted tree) => #f)
+               (check (node-attribute (car children) 'content) => "Notes")
+               (check (eq? (node-parent (cadr children)) adopted) => #t)
+               ;; Two text nodes still share one text.
+               (check (eq? (text-node-content (cadr children)) (text-node-content (caddr children))) => #t)
+               (check (spans-of (text-highlights (text-node-content (cadr children)) 'digits)) => [[1 3]])
+               (check (buffer-setting (get-buffer "notes") fill-width) => (cons fill-width 40)))
+             ;; Editing goes on in the toy, then everything comes back.
+             (insert "!")
+             (check (text-string (current-text)) => "he!llo")
+             (deactivate-plugin! toy-buffers-plugin)
+             (check (eq? (service-provider buffers-service) default) => #t)
+             (check (buffers-state)
+                    => [(map (lambda (entry)
+                               (if (equal? (car entry) "*scratch*") ["*scratch*" "he!llo" 1] entry))
+                             (car before))
+                        "*scratch*" 4])
+             (check (eq? (selected-view) selected) => #t)
+             (check (text-string (current-text)) => "he!llo"))))))))

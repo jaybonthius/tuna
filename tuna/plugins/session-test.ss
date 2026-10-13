@@ -1,4 +1,4 @@
-;;; The session plugin and its slot clients autosave and single-window:
+;;; The session plugin and its slot clients autosave and single-view:
 ;;; saving, restoring across a simulated restart, corrupt files, unknown
 ;;; slots, and atomic writes. Every test uses its own temporary state
 ;;; directory.
@@ -11,7 +11,7 @@
         :tuna/plugins/session
         :tuna/plugins/buffers
         :tuna/plugins/autosave
-        :tuna/plugins/single-window
+        :tuna/plugins/single-view
         "../test-support/kernel"
         (only-in "../test-support/string-input" test-input-plugin current-message))
 (export session-test)
@@ -27,11 +27,11 @@
       (delete-file-or-directory directory #t)))))
 
 ;; The session and autosave plugins, the plugins that fill the slots they
-;; and the window manager require, and a stand-in for the editor loop's
+;; and the layout require, and a stand-in for the editor loop's
 ;; input and for messages.
 (def session-plugins
   [test-input-plugin rope-text-store-plugin settings-plugin
-   session-plugin buffers-plugin autosave-plugin single-window-plugin])
+   session-plugin buffers-plugin autosave-plugin single-view-plugin])
 
 ;; One run of Tuna on DIRECTORY, booted as main does: activate, restore,
 ;; start the loop.
@@ -206,7 +206,7 @@
                (delete-file aside)))
            ["(tuna-session 1 (buffers 1 ((\"x\" 1 \"x\"))"           ; truncated
             "(tuna-session 1 (buffers 1 #.(exit 3)))"              ; read-time evaluation
-            "(tuna-session 1 (windows 1 #!eof))"                   ; not plain data
+            "(tuna-session 1 (layout 1 #!eof))"                    ; not plain data
             "(tuna-session 1) (more)"                              ; two data
             "(tuna-session 99 (buffers 1 ()))"                     ; unknown format
             ""])
@@ -230,7 +230,7 @@
          (let (entries (cddr (read-session-datum directory)))
            (check (assq 'mystery entries) => ['mystery 3 ['a "b" #(1 2)]])
            (check (assq 'unplain entries) => ['unplain 1 "old"])
-           (check (and (assq 'buffers entries) (assq 'windows entries) #t) => #t)))))
+           (check (and (assq 'buffers entries) (assq 'layout entries) #t) => #t)))))
 
     (test-case "a session cannot point autosave outside its directory"
       (call-with-state-directory

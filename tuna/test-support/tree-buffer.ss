@@ -1,7 +1,7 @@
 ;;; A *welcome* buffer built as a tree, (column (heading "Welcome to
 ;;; Tuna") (text "…")), with HTML and plain-text renderers for its kinds,
 ;;; and C-c b to switch to it and back: for tests of node kinds, tree
-;;; buffers, and buffers shown in several windows. Turning the plugin off
+;;; buffers, and buffers shown in several views. Turning the plugin off
 ;;; kills the buffer.
 prelude: :gerbil/core
 
