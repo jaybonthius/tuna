@@ -155,6 +155,24 @@
              (check (count-of "class=\"tab\"" (screen)) => 2)
              (check (buffer-text "*scratch*") => "abc"))))))
 
+    (test-case "swapping the buffers provider keeps live text and every view's point"
+      (call-with-state-directory
+       (lambda (directory)
+         (run-tuna directory
+           (lambda ()
+             (type! "h" "e" "l" "l" "o" "RET" "w" "o" "r" "l" "d" "C-x" "3")
+             (type! "C-x" "o" "C-a" "C-x" "o" "C-p")
+             (on-baton save-session)
+             ;; Typed after the save: the autosave file is older than the text.
+             (type! "!")
+             (check (views-state) => [["*scratch*" 7] ["*scratch*" 8]])
+             (type! "C-c" "B")
+             (check (buffer-text "*scratch*") => "hello!\nworld")
+             (check (views-state) => [["*scratch*" 7] ["*scratch*" 8]])
+             (type! "C-c" "B")
+             (check (buffer-text "*scratch*") => "hello!\nworld")
+             (check (views-state) => [["*scratch*" 7] ["*scratch*" 8]]))))))
+
     (test-case "a restored layout skips views of buffers that are gone"
       (call-with-state-directory
        (lambda (directory)

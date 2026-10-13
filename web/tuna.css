@@ -216,7 +216,11 @@ body {
   color: var(--tuna-muted);
 }
 
+/* One line, so the status lines of views side by side stay aligned. */
 .status-line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   border-block: 1px solid var(--tuna-rule);
   background: var(--tuna-bar);
   color: var(--tuna-muted);

@@ -89,8 +89,10 @@ prelude: :gerbil/core
       (close-port port))))
 
 ;; Bring back the buffers DATA lists. A buffer of that name that is one
-;; text node receives the text (*scratch*, made at startup); otherwise a
-;; new buffer is made.
+;; empty text node receives the text (*scratch*, made at startup); one
+;; that already holds text keeps it, since it is live (handed over when
+;; the buffers provider was replaced, which restarts this plugin), and the
+;; file may be older; otherwise a new buffer is made.
 (def (restore-buffers! (self : autosave) (data : :t)) => :void
   (let (directory (autosave-directory))
     (for-each
@@ -116,6 +118,8 @@ prelude: :gerbil/core
         (add-buffer! b)
         (set-buffer-point! b position)
         (hash-put! self.written (buffer-text b) (cons file (text-chars-revision (buffer-text b))))))
+     ((and (kept? existing) (fx> (text-size (buffer-text existing)) 0))
+      (void))
      ((kept? existing)
       (let (t (buffer-text existing))
         (text-replace! t 1 (fx1+ (text-size t)) content)
