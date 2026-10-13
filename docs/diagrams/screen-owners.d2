@@ -1,0 +1,66 @@
+# Who owns what you see: the layout and the buffers
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 0
+  }
+}
+direction: right
+
+classes: {
+  box: {
+    style: {
+      fill: "#eef3fb"
+      stroke: "#355c96"
+      font-color: "#172b4d"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+  buf: {
+    style: {
+      fill: "#fff8e1"
+      stroke: "#8d6e00"
+      font-color: "#3e2f00"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+  owner: {
+    style: {
+      fill: "#fafafa"
+      stroke: "#777777"
+      font-color: "#333333"
+      font-size: 20
+      stroke-dash: 3
+    }
+  }
+}
+
+legend: |md
+  **Status:** planned. Today one window fills the screen, and the buffers plugin keeps only the list of buffers.
+|
+
+layout: "Layout plugin owns the layout\n(a frozen tree: a change makes a new one)" {
+  class: owner
+  root: "Container\nside by side" {class: box}
+  side: "View: sidebar" {class: box}
+  main: "View: editing" {class: box}
+  root -> side
+  root -> main
+}
+
+buffers: "Buffers plugin owns the buffers\n(changed in place: each change\nstamps a revision number)" {
+  class: owner
+  list: "Buffer *buffers*\na list of buttons" {class: buf}
+  notes: "Buffer notes.txt\none text node" {class: buf}
+}
+
+renderer: "Renderer\nwalks the layout, and inside\neach view that view's buffer,\nreusing the HTML of unchanged parts" {class: box}
+tab: "Browser tab\n(a frame)" {class: box}
+
+layout.side -> buffers.list: shows
+layout.main -> buffers.notes: shows
+renderer -> layout: reads
+renderer -> buffers: reads
+renderer -> tab: "the whole screen,\nevery redraw"
