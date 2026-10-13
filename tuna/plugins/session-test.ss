@@ -1,4 +1,4 @@
-;;; The session plugin and its slot clients autosave and single-view:
+;;; The session plugin and its slot clients autosave and the layout:
 ;;; saving, restoring across a simulated restart, corrupt files, unknown
 ;;; slots, and atomic writes. Every test uses its own temporary state
 ;;; directory.
@@ -11,9 +11,10 @@
         :tuna/plugins/session
         :tuna/plugins/buffers
         :tuna/plugins/autosave
-        :tuna/plugins/single-view
+        :tuna/plugins/keys
+        :tuna/plugins/layout
         "../test-support/kernel"
-        (only-in "../test-support/string-input" test-input-plugin current-message))
+        (only-in "../test-support/string-input" test-messages-plugin current-message))
 (export session-test)
 
 (def (call-with-state-directory proc)
@@ -27,11 +28,10 @@
       (delete-file-or-directory directory #t)))))
 
 ;; The session and autosave plugins, the plugins that fill the slots they
-;; and the layout require, and a stand-in for the editor loop's
-;; input and for messages.
+;; and the layout require (keys for input), and a stand-in for messages.
 (def session-plugins
-  [test-input-plugin rope-text-store-plugin settings-plugin
-   session-plugin buffers-plugin autosave-plugin single-view-plugin])
+  [keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin
+   session-plugin buffers-plugin autosave-plugin layout-plugin])
 
 ;; One run of Tuna on DIRECTORY, booted as main does: activate, restore,
 ;; start the loop.

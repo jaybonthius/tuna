@@ -422,7 +422,7 @@
                         (configuration-declarations loaded))
                    => '(keys-plugin web-transport-plugin settings-plugin echo-area-plugin
                         help-panel-plugin session-plugin rope-text-store-plugin buffers-plugin
-                        autosave-plugin single-view-plugin view-commands-plugin
+                        autosave-plugin layout-plugin view-commands-plugin
                         html-renderer-plugin basic-editing-plugin minibuffer-plugin
                         reload-config-plugin))
             (check (declaration-options (cadr (configuration-declarations loaded)))

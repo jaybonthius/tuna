@@ -12,7 +12,7 @@
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
-        :tuna/plugins/single-view
+        :tuna/plugins/layout
         :tuna/plugins/view-commands
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
@@ -29,7 +29,7 @@
 
 (def renderer-plugins
   [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
-   settings-plugin no-session-plugin buffers-plugin single-view-plugin
+   settings-plugin no-session-plugin buffers-plugin layout-plugin
    view-commands-plugin
    html-renderer-plugin basic-editing-plugin minibuffer-plugin
    swap-commands-plugin rename-command-plugin tree-buffer-plugin])

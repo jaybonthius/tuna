@@ -14,7 +14,7 @@
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
-        :tuna/plugins/single-view
+        :tuna/plugins/layout
         :tuna/plugins/view-commands
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
@@ -30,7 +30,7 @@
 
 (def swap-plugins
   [keys-plugin echo-area-plugin help-panel-plugin rope-text-store-plugin
-   settings-plugin no-session-plugin buffers-plugin single-view-plugin
+   settings-plugin no-session-plugin buffers-plugin layout-plugin
    view-commands-plugin html-renderer-plugin basic-editing-plugin minibuffer-plugin
    swap-commands-plugin rename-command-plugin tree-buffer-plugin])
 
@@ -99,6 +99,34 @@
            (check (on-baton (lambda () (text-string (current-text)))) => "abcZ")
            (type! "C-c" "B")
            (check (on-baton (lambda () (text-string (current-text)))) => "abcZ")))))
+
+    (test-case "the layout adapts to a swap: split views, tabs, points and the frame stay"
+      (call-with-fresh-kernel swap-plugins
+       (lambda ()
+         (start-editor-loop!)
+         (type! "h" "e" "l" "l" "o" "C-x" "3" "C-a" "C-f" "C-x" "o" "C-x" "t" "2" "C-b")
+         (let ((views (on-baton view-list))
+               (state (lambda ()
+                        (on-baton (lambda ()
+                                    [(map (lambda (v) [(buffer-name (view-showing v)) (view-point v)])
+                                          (view-list))
+                                     (view-id (selected-view))])))))
+           (check (map car (car (state))) => ["*scratch*" "*scratch*" "*scratch*"])
+           (check (map cadr (car (state))) => [2 6 5])
+           (type! "C-x" "1")
+           (let (before (state))
+             (type! "C-c" "B")
+             (check (toy?) => #t)
+             ;; The same view objects, re-pointed at the toy's buffers.
+             (check (on-baton view-list) => views)
+             (check (state) => before)
+             (check (on-baton (lambda () (frame-target-part (current-frame-target)))) => (cadr before))
+             (type! "!")
+             (check (on-baton (lambda () (text-string (current-text)))) => "hell!o")
+             (type! "C-x" "n" "w" "C-c" "B")
+             (check (toy?) => #f)
+             (check (on-baton view-list) => views)
+             (check (state) => [[["*scratch*" 2] ["*scratch*" 7] ["*scratch*" 6]] (cadr before)]))))))
 
     (test-case "C-h s shows the toy providing buffers, and the default waiting behind it"
       (call-with-fresh-kernel swap-plugins

@@ -28,10 +28,11 @@ body {
   font-family: var(--tuna-font);
 }
 
+/* The screen fills the browser window; views scroll inside it. */
 .screen {
   display: flex;
   flex-direction: column;
-  min-block-size: 100vh;
+  block-size: 100vh;
 }
 
 .screen > footer {
@@ -53,20 +54,94 @@ body {
   font-family: inherit;
 }
 
+/* The layout draws from the frame's target. Containers lay out their
+   children with flexbox; a child's weight on its link to the parent comes
+   from the server as --tuna-size, and the browser computes the geometry. */
 .layout {
   display: flex;
   flex: 1;
+  min-block-size: 0;
+}
+
+.layout > *,
+.container.fit > *,
+.tab-panel > * {
+  flex: var(--tuna-size, 1) 1 0;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+.container {
+  display: flex;
+}
+
+.container.fit.horizontal {
+  flex-direction: row;
+}
+
+.container.fit.vertical {
+  flex-direction: column;
+}
+
+.layout > * + *,
+.container.fit.horizontal > * + * {
+  border-inline-start: 1px solid var(--tuna-rule);
+}
+
+.container.fit.vertical > * + * {
+  border-block-start: 1px solid var(--tuna-rule);
+}
+
+/* Tabbed: the tab strip on top when horizontal, down the side when
+   vertical, then the active child. */
+.container.tabbed.horizontal {
+  flex-direction: column;
+}
+
+.container.tabbed.vertical {
+  flex-direction: row;
+}
+
+.tabs {
+  display: flex;
+  flex: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--tuna-bar);
+  color: var(--tuna-muted);
+}
+
+.container.tabbed.horizontal > .tabs {
+  border-block-end: 1px solid var(--tuna-rule);
+}
+
+.container.tabbed.vertical > .tabs {
+  flex-direction: column;
+  border-inline-end: 1px solid var(--tuna-rule);
+}
+
+.tab {
+  padding: 0.25rem 0.75rem;
+  white-space: nowrap;
+}
+
+.tab[aria-selected="true"] {
+  background: var(--tuna-background);
+  color: var(--tuna-foreground);
+  font-weight: bold;
+}
+
+.tab-panel {
+  display: flex;
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
 }
 
 .view {
   display: flex;
-  flex: 1 1 0;
   flex-direction: column;
-  min-inline-size: 0;
-}
-
-.view + .view {
-  border-inline-start: 1px solid var(--tuna-rule);
 }
 
 .buffer {
@@ -142,7 +217,11 @@ body {
   color: var(--tuna-muted);
 }
 
+/* One line, so the status lines of views side by side stay aligned. */
 .status-line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   border-block: 1px solid var(--tuna-rule);
   background: var(--tuna-bar);
   color: var(--tuna-muted);

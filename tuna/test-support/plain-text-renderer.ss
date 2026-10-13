@@ -70,7 +70,7 @@ prelude: :gerbil/core
                   (else (error "Not a plain-text run" run))))
               runs))
 
-(def (render-view (v : view) (selected? : :boolean)) => :list
+(def (render-view (v : view) (selected? : :boolean) (start : node)) => :list
   (let (b (view-showing v))
     (parameterize ((rendering-view v))
       `(section (@ (class "view")
@@ -78,7 +78,7 @@ prelude: :gerbil/core
                    (data-view ,(number->string (view-id v)))
                    ,@(if selected? '((data-selected "true")) '()))
          (pre (@ (class "plain-text") (aria-label ,(buffer-name b)))
-              ,@(runs->sxml (node-runs (buffer-root b)))
+              ,@(runs->sxml (node-runs start))
               "\n── " ,(status-line-text v selected?))))))
 
 ;; The innermost waiting prompt's question and answer, on a line of its own.

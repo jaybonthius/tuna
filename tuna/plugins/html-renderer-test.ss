@@ -2,18 +2,20 @@
         :tuna/kernel
         :tuna/services/renderer
         :tuna/services/buffers
+        :tuna/services/layout
+        :tuna/plugins/keys
         :tuna/plugins/rope
         :tuna/plugins/settings
         :tuna/plugins/buffers
-        :tuna/plugins/single-view
+        :tuna/plugins/layout
         :tuna/plugins/html-renderer
         "../test-support/kernel"
         "../test-support/session")
 (export html-renderer-test)
 
 (def renderer-plugins
-  [rope-text-store-plugin settings-plugin no-session-plugin
-   buffers-plugin single-view-plugin html-renderer-plugin])
+  [keys-plugin rope-text-store-plugin settings-plugin no-session-plugin
+   buffers-plugin layout-plugin html-renderer-plugin])
 
 ;; A *welcome* buffer built as a tree: (column (heading "Welcome to Tuna")
 ;; (text "…")), with HTML renderers for both kinds.
@@ -119,4 +121,32 @@
            (check (and (offset "<span class=\"cursor\">x</span>" html) #t) => #t))
          (deactivate-plugin! box-kind)
          (check (get-buffer "*box*") => #f)
-         (check (buffer-name (current-buffer)) => "*scratch*"))))))
+         (check (buffer-name (current-buffer)) => "*scratch*"))))
+
+    (test-case "the screen draws from the frame: a node inside a buffer keeps its cursor"
+      (call-with-fresh-kernel (append renderer-plugins [tree-buffer-plugin])
+       (lambda ()
+         (switch-to-buffer (get-buffer "*welcome*"))
+         (let (text-node (current-text-node))
+           (move-frame (make-frame-target (view-id (selected-view)) text-node))
+           (let (html (screen))
+             (check (offset "Welcome to Tuna" html) => #f)
+             (check (and (offset "<span class=\"cursor\">T</span>his buffer" html) #t) => #t)
+             ;; The view keeps its element id and the node its own.
+             (check (and (offset (string-append "id=\"view-" (number->string (view-id (selected-view))) "\"") html) #t)
+                    => #t))
+           (move-frame (make-frame-target #f #f))
+           (check (and (offset "Welcome to Tuna" (screen)) #t) => #t)))))
+
+    (test-case "containers carry stable ids, their kind and direction, and each child's weight"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (split-view (selected-view) 'right)
+         (display-buffer (get-buffer "*scratch*") side: 'top size: 1/4)
+         (let (html (screen))
+           (check (and (offset "class=\"container fit horizontal\"" html) #t) => #t)
+           (check (and (offset "id=\"container-" html) #t) => #t)
+           (check (and (offset "data-container=" html) #t) => #t)
+           (check (and (offset "style=\"--tuna-size: 1\"" html) #t) => #t)
+           ;; *scratch* already shows, so display-buffer reuses its view.
+           (check (offset "class=\"container fit vertical\"" html) => #f)))))))

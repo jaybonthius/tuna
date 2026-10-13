@@ -1,7 +1,7 @@
 ;;; Integration: a restart through the session and autosave plugins while
-;;; the whole editor runs. Typing, renaming, layouts swapped live and views
-;;; moved between, then a simulated restart, with the real keys, editing,
-;;; layout and rendering plugins. tuna/plugins/session-test.ss tests the session
+;;; the whole editor runs. Typing, renaming, views split and tabbed, the
+;;; frame moved and a frame mark set, then a simulated restart, with the
+;;; real keys, editing, layout and rendering plugins. tuna/plugins/session-test.ss tests the session
 ;;; and autosave plugins alone.
 (import :std/test
         :tuna/kernel
@@ -15,10 +15,12 @@
         :tuna/plugins/session
         :tuna/plugins/buffers
         :tuna/plugins/autosave
-        :tuna/plugins/single-view
+        :tuna/plugins/layout
         :tuna/plugins/view-commands
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
+        :tuna/plugins/minibuffer
+        :tuna/services/renderer
         "../test-support/kernel"
         "../test-support/keys"
         "../test-support/swap-commands")
@@ -36,8 +38,8 @@
 
 (def editor-plugins
   [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
-   session-plugin buffers-plugin autosave-plugin single-view-plugin view-commands-plugin
-   html-renderer-plugin basic-editing-plugin swap-commands-plugin])
+   session-plugin buffers-plugin autosave-plugin layout-plugin view-commands-plugin
+   html-renderer-plugin basic-editing-plugin minibuffer-plugin swap-commands-plugin])
 
 ;; One run of Tuna on DIRECTORY, booted as main does: activate, restore,
 ;; start the loop.
@@ -57,6 +59,21 @@
    (lambda ()
      (map (lambda (v) [(buffer-name (view-showing v)) (view-point v)])
           (view-list)))))
+
+;; The index of the selected view in the view list.
+(def (selected-index)
+  (on-baton
+   (lambda ()
+     (let lp ((views (view-list)) (i 0))
+       (if (eq? (car views) (selected-view)) i (lp (cdr views) (+ i 1)))))))
+
+(def (screen)
+  (on-baton (lambda () (Renderer-render-screen (Renderer (service-provider renderer-service))))))
+
+(def (count-of needle haystack)
+  (let lp ((start 0) (n 0))
+    (let (found (string-contains haystack needle start))
+      (if found (lp (+ found 1) (+ n 1)) n))))
 
 (def (buffer-text name)
   (on-baton
@@ -104,17 +121,70 @@
              (type! "C-/" "C-/")
              (check (buffer-text "notes") => "hi1\nthére😀"))))))
 
-    (test-case "a session saved with two views restores the selected one under one view"
+    (test-case "the layout, the frame and frame marks come back after a restart"
       (call-with-state-directory
        (lambda (directory)
          (run-tuna directory
            (lambda ()
-             (type! "a" "b" "c" "C-c" "w" "C-b" "C-b" "C-x" "o")
-             (check (views-state) => [["*scratch*" 2] ["*scratch*" 4]])
+             ;; Two views side by side; the left one becomes the first of
+             ;; two tabs; a frame mark on the whole layout; the frame on
+             ;; the new tab's view.
+             (type! "a" "b" "c" "C-x" "3" "C-b" "C-b" "C-x" "t" "2")
+             (type! "C-x" "r" "w" "m" "RET" "C-x" "1")
+             (check (views-state) => [["*scratch*" 2] ["*scratch*" 2] ["*scratch*" 4]])
+             (check (selected-index) => 1)
              (on-baton save-session)))
-         (check (assq 'layout (cddr (read-session-datum directory)))
-                => ['layout 1 [['selected 1] ['views ["*scratch*" 2] ["*scratch*" 4]]]])
+         (check (match (assq 'layout (cddr (read-session-datum directory)))
+                  (['layout 2 [['tree ['container _ 'fit 'horizontal _ [[1 ['container _ 'tabbed 'horizontal _ _]] [1 ['view _ "*scratch*" 4 #f]]]]]
+                               ['frame (? fixnum?) #f (? fixnum?)]
+                               ['marks ["m" #f #f]]]]
+                   #t)
+                  (else #f))
+                => #t)
          (run-tuna directory
            (lambda ()
-             (check (views-state) => [["*scratch*" 4]])
-             (check (buffer-text "*scratch*") => "abc"))))))))
+             (check (views-state) => [["*scratch*" 2] ["*scratch*" 2] ["*scratch*" 4]])
+             (check (selected-index) => 1)
+             ;; The frame is still on the selected view: the screen shows one view.
+             (check (on-baton (lambda () (frame-target-part (current-frame-target))))
+                    => (on-baton (lambda () (view-id (selected-view)))))
+             (check (count-of "<section class=\"view\"" (screen)) => 1)
+             (type! "C-x" "r" "j" "m" "RET")
+             (check (on-baton (lambda () (frame-target-part (current-frame-target)))) => #f)
+             (check (count-of "<section class=\"view\"" (screen)) => 2)
+             (check (count-of "class=\"tab\"" (screen)) => 2)
+             (check (buffer-text "*scratch*") => "abc"))))))
+
+    (test-case "swapping the buffers provider keeps live text and every view's point"
+      (call-with-state-directory
+       (lambda (directory)
+         (run-tuna directory
+           (lambda ()
+             (type! "h" "e" "l" "l" "o" "RET" "w" "o" "r" "l" "d" "C-x" "3")
+             (type! "C-x" "o" "C-a" "C-x" "o" "C-p")
+             (on-baton save-session)
+             ;; Typed after the save: the autosave file is older than the text.
+             (type! "!")
+             (check (views-state) => [["*scratch*" 7] ["*scratch*" 8]])
+             (type! "C-c" "B")
+             (check (buffer-text "*scratch*") => "hello!\nworld")
+             (check (views-state) => [["*scratch*" 7] ["*scratch*" 8]])
+             (type! "C-c" "B")
+             (check (buffer-text "*scratch*") => "hello!\nworld")
+             (check (views-state) => [["*scratch*" 7] ["*scratch*" 8]]))))))
+
+    (test-case "a restored layout skips views of buffers that are gone"
+      (call-with-state-directory
+       (lambda (directory)
+         (run-tuna directory
+           (lambda ()
+             (on-baton (lambda ()
+                         (let (b (new-buffer "gone" (new-node 'column)))
+                           (add-buffer! b)
+                           (display-buffer b side: 'left size: 1/5))))
+             (check (map car (views-state)) => ["gone" "*scratch*"])
+             (on-baton save-session)))
+         (run-tuna directory
+           (lambda ()
+             ;; Autosave keeps only buffers of one text node, so "gone" is gone.
+             (check (views-state) => [["*scratch*" 1]]))))))))
