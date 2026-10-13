@@ -154,15 +154,40 @@
 (def (kernel-source-names) => :list
   (layer-source-names kernel-layer))
 
-;; Plugins whose modules are not in tuna/plugins/: the contract doubles in
-;; test support, the start-up code's config-blocks, and the demo.
-(def plugin-names-elsewhere
-  '("string-text-store" "plain-text-renderer" "two-windows" "config-blocks" "demo"))
+;; Whether FORM, at any depth, defines the plugin STEM-plugin or STEM with
+;; defplugin, as (defplugin name ...) or (defplugin (name ctx) ...).
+(def (defines-plugin-named? (form : :t) (stem : :string)) => :boolean
+  (and (pair? form)
+       (or (and (eq? (car form) 'defplugin)
+                (pair? (cdr form))
+                (let (head (if (pair? (cadr form)) (car (cadr form)) (cadr form)))
+                  (and (symbol? head)
+                       (member (symbol->string head) [stem (string-append stem "-plugin")])
+                       #t)))
+           (defines-plugin-named? (car form) stem)
+           (defines-plugin-named? (cdr form) stem))))
+
+;; Plugins whose modules are not in tuna/plugins/: the stems of the non-test
+;; files under tuna/test-support/ and demo/, and of tuna/config-blocks.ss,
+;; that define a plugin named after their file (contract doubles, fixtures,
+;; the demo, the start-up code's config-blocks). Files whose plugins have
+;; other names, such as no-session-plugin in session.ss, are not plugin
+;; names.
+(def (plugin-names-elsewhere) => :list
+  (filter-map (lambda ((file : :string))
+                (let (stem (path-strip-extension (path-strip-directory file)))
+                  (and (string-suffix? ".ss" file)
+                       (not (string-suffix? "-test.ss" file))
+                       (defines-plugin-named? (read-forms (source-path file)) stem)
+                       stem)))
+              (append (map car (tree-entries "tuna/test-support"))
+                      (map car (tree-entries "demo"))
+                      ["tuna/config-blocks.ss"])))
 
 ;; Plugin names, from the module files in tuna/plugins/, and those above.
 (def (plugin-names) => :list
   (list-sort string<?
-             (append plugin-names-elsewhere
+             (append (plugin-names-elsewhere)
                      (map path-strip-extension
                           (filter (lambda ((file : :string))
                                     (and (string-suffix? ".ss" file)
@@ -671,7 +696,8 @@
       (displayln "  kernel boundary: " (length (kernel-source-names)) " files checked; "
                  baseline-name " allows "
                  (foldl fx+ 0 (hash-values (baseline-limits (read-baseline))))
-                 " known forbidden-noun hits")
+                 " known forbidden-noun hits; plugin names outside tuna/plugins/: "
+                 (string-join (plugin-names-elsewhere) ", "))
       (check (problem-count (noun-problems)) => 0))
     (test-case "tuna/lib/ holds only .ss files"
       (check (problem-count (tree-problems library-layer)) => 0))
