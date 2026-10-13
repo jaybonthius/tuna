@@ -1,0 +1,20 @@
+# What happens when you drag a split border?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: You
+page: "Page in your browser tab"
+server: "Tuna"
+
+you -> page: "1. press on the border between two views"
+you -> page: "2. drag: the border follows the pointer\n(drawn by the browser alone; nothing is sent)"
+server -> page: "a redraw for another reason arrives:\nthe preview stays, because it lives outside the redrawn part"
+you -> page: "3. release"
+page -> server: "4. one item: 'dropped border handle:C:A:B at 30%'"
+server -> server: "5. look up <handle> <drag-mouse-1>,\nset the two sizes"
+server -> page: "6. the whole new screen;\nthe browser drops its preview"

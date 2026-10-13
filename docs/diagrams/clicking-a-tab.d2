@@ -1,0 +1,23 @@
+# What happens when you click a tab?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: You
+page: "Page in your browser tab"
+server: "Tuna (editor thread)"
+keys: "Keys plugin"
+layout: "Layout plugin"
+
+you -> page: "1. release the mouse on the tab notes.txt"
+page -> server: "2. 'left click on part tab:30, screen 812'\n(same queue as key presses)"
+server -> keys: "3. what does this mean?"
+keys -> keys: "4. look up <tab> <mouse-1>\nfrom the clicked part upward"
+keys -> layout: "5. run tab-select"
+layout -> layout: "6. new layout: notes.txt is the active tab"
+server -> page: "7. the whole new screen"
+page -> you: "8. notes.txt is showing"
