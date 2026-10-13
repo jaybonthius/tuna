@@ -8,6 +8,7 @@ prelude: :gerbil/core
         ./ids
         ./entries
         ./state
+        ./tasks
         ./hooks)
 (export (struct-out plugin)
         defplugin
@@ -80,7 +81,7 @@ prelude: :gerbil/core
         ([] (reverse failures))
         ([undo . more]
          (loop more
-               (with-catch (lambda (e) (cons e failures))
+               (with-catch (lambda (e) (if (hold-quit! e) failures (cons e failures)))
                            (lambda () (undo) failures))))))))
 
 ;; Add an owner-tagged entry for NAME to TABLE and undo it on deactivation.
@@ -154,17 +155,24 @@ prelude: :gerbil/core
     (context-defer! ctx (lambda () (remove-hook-callback! h callback)))))
 
 ;; Call each of H's callbacks with ARGS. A callback that fails is removed
-;; and reported; the others still run.
+;; and reported; the others still run. A quit is not a failure, and the
+;; callback stays: inside a plugin operation the quit is held (see Plugin
+;; operations and quitting) and the other callbacks still run; otherwise,
+;; in a task, it unwinds the task (ADR 3). Outside both, where nothing can
+;; unwind, a quit counts as a failure.
 (def (run-hook (h : hook) . args) => :void
   (for-each
     (lambda ((callback : hook-callback))
       (with-catch
        (lambda (e)
-         (remove-hook-callback! h callback)
+         (cond
+          ((hold-quit! e) (void))
+          ((and (quit-condition? e) (current-task)) (raise e))
+          (else (remove-hook-callback! h callback)
          (message (string-append "Hook " (symbol->string (hook-name h)) " callback "
                                  (symbol->string (hook-callback-name callback)) " (from "
                                  (symbol->string (hook-callback-owner callback))
-                                 ") failed and was removed: " (exception-summary e))))
+                                 ") failed and was removed: " (exception-summary e))))))
        (lambda () (apply (hook-callback-procedure callback) args))))
     (current-hook-callbacks h)))
 
@@ -174,7 +182,11 @@ prelude: :gerbil/core
 ;;; after the event's state change is complete, on the thread that holds the
 ;;; baton: the thread that activated or deactivated the plugin, or the loop
 ;;; thread for tasks. A failing callback is removed and reported like any
-;;; other; the operation, the loop, and the task carry on. Callbacks may read
+;;; other; the operation, the loop, and the task carry on. A quit in a
+;;; callback is not a failure: during a plugin operation it is held until
+;;; every event has been announced (see Plugin operations and quitting), and
+;;; on the loop thread, where nothing can unwind, it counts as a failure.
+;;; Callbacks may read
 ;;; kernel state, but must not activate or deactivate plugins: those calls
 ;;; raise, which removes the callback. To react with such a change while
 ;;; the editor loop runs (editor-loop-running?), queue a task with
@@ -185,7 +197,8 @@ prelude: :gerbil/core
 ;;; Plugin and service events are recorded while an activation or
 ;;; deactivation runs, including everything it cascades into (dependents
 ;;; restarting, providers handing over), and announced in order once the
-;;; outermost operation has finished, even if it raised. Callbacks therefore
+;;; outermost operation has finished, even if it raised or quit. Every
+;;; callback of every event runs, even after one quits. Callbacks therefore
 ;;; see the kernel as the whole operation left it: a dependent that restarted
 ;;; is already active again when its deactivation is announced. A plugin's
 ;;; own callbacks are gone by the time its deactivation is announced.
@@ -224,19 +237,65 @@ prelude: :gerbil/core
       (set-box! events (cons (cons h args) (unbox events)))
       (apply run-lifecycle-hook h args))))
 
-;; Run THUNK as a plugin operation, then announce the lifecycle events it
-;; recorded. A nested operation records into the outermost one.
+;;; Plugin operations and quitting (ADR 3)
+;;;
+;;; An activation or deactivation, with everything it cascades into and its
+;;; announcements, is atomic with respect to quitting. It runs with quit
+;;; inhibited, so a quit request, from one interrupt or two, waits until the
+;;; operation has finished; a third interrupt overrides the inhibition, as
+;;; everywhere. A quit raised inside the operation anyway (by a third
+;;; interrupt, signal-quit, or a suspension resumed with quit) that reaches
+;;; one of the kernel's failure catchers is held: hook callbacks, receipt
+;;; undos, handovers, and adapters count as done, nothing is reported, and
+;;; no callback is removed. A plugin whose own activation quit cannot be
+;;; done, so it is rolled back and turned off as on failure, without a
+;;; report. Once the operation and its announcements have finished, a held
+;;; quit is raised in the task, which unwinds; outside a task it is dropped.
+;;; A quit that reaches no catcher, in practice only a third interrupt
+;;; landing in the kernel's own code, ends the operation early; the events
+;;; it recorded are still announced.
+
+;; The held quit of the plugin operation in progress, in a box; #f outside
+;; one.
+(def held-quit (make-parameter #f))
+
+;; If E is a quit and a plugin operation is in progress, hold E (the first
+;; quit held wins) and return #t; otherwise return #f. Failure catchers call
+;; this first.
+(def (hold-quit! (e : :t)) => :boolean
+  (let (held (held-quit))
+    (and held
+         (quit-condition? e)
+         (begin
+           (unless (unbox held)
+             (set-box! held e))
+           #t))))
+
+;; Run THUNK as a plugin operation with quit inhibited, announce the
+;; lifecycle events it recorded, then raise a held quit in a task. A nested
+;; operation records and holds into the outermost one.
 (def (call-as-plugin-operation (thunk : :procedure)) => :void
   (when (announcing?)
     (error "Lifecycle hook callbacks must not activate or deactivate plugins"))
   (if (pending-events)
     (thunk)
-    (let (events (box []))
-      (unwind-protect
-        (parameterize ((pending-events events))
-          (thunk))
-        (for-each (lambda ((event : :pair)) (apply run-lifecycle-hook (car event) (cdr event)))
-                  (reverse (unbox events)))))))
+    (let ((events (box []))
+          (held (box #f)))
+      (parameterize ((held-quit held))
+        (call-with-inhibit-quit
+         (lambda ()
+           (unwind-protect
+             (parameterize ((pending-events events))
+               (thunk))
+             (for-each (lambda ((event : :pair))
+                         (with-catch (lambda (e) (unless (hold-quit! e) (raise e)))
+                                     (lambda () (apply run-lifecycle-hook (car event) (cdr event)))))
+                       (reverse (unbox events))))
+           ;; Raised here, it keeps a forced quit's flag; the inhibited
+           ;; region's own quit check would raise an unforced one.
+           (let (quit (unbox held))
+             (when (and quit (current-task))
+               (raise quit)))))))))
 
 ;;; Services
 
@@ -323,13 +382,11 @@ prelude: :gerbil/core
     (when (and handover (not (eq? outgoing incoming)))
       (with-catch
        (lambda (e)
-         (let (text (string-append "Service " (symbol->string (service-name svc))
-                                   " failed to hand over to its new provider: "
-                                   (exception-summary e)))
-           (message text)
-           (let (port (current-error-port))
-             (display text port)
-             (newline port))))
+         (unless (hold-quit! e)
+           (report-failure-message!
+            (string-append "Service " (symbol->string (service-name svc))
+                           " failed to hand over to its new provider: "
+                           (exception-summary e)))))
        (lambda () (handover outgoing incoming))))))
 
 (def (check-live-change! (k : kernel) (svc : service)) => :void
@@ -423,7 +480,9 @@ prelude: :gerbil/core
                         (new (entry-value best)))
                     (unless (eq? old new)
                       (set! a.seen new)
-                      (with-catch (cut report-failure! (entry-owner e) "adapting" <>)
+                      (with-catch (lambda (exn)
+                                    (unless (hold-quit! exn)
+                                      (report-failure! (entry-owner e) "adapting" exn)))
                                   (lambda () (a.handler old new)))))))
               (entry-table-entries adapters name)))))
       (entry-table-names adapters))))
@@ -455,10 +514,9 @@ prelude: :gerbil/core
              records))
 
 (def (report-failure! (name : :symbol) (what : :string) (e : :t)) => :void
-  (let (text (string-append "Plugin " (symbol->string name) " failed while "
-                            what ": " (exception-summary e)))
-    (message text)
-    (displayln text (current-error-port))))
+  (report-failure-message!
+   (string-append "Plugin " (symbol->string name) " failed while "
+                  what ": " (exception-summary e))))
 
 ;;; Activation
 
@@ -497,7 +555,8 @@ prelude: :gerbil/core
     (record-event! plugin-activated-hook (plugin-record-definition rec))))
 
 ;; Activate wanted plugins whose services are all provided, until nothing
-;; changes. Returns failures as (record . exception) pairs.
+;; changes. A plugin whose activation fails or quits is turned off. Returns
+;; failures as (record . exception) pairs; a held quit is not a failure.
 (def (activate-wanted! (k : kernel)) => :list
   (let loop ((failures []))
     (let (ready (find (lambda ((rec : plugin-record))
@@ -511,7 +570,9 @@ prelude: :gerbil/core
         (loop (with-catch
                (lambda (e)
                  (set! (plugin-record-wanted? ready) #f)
-                 (cons (cons ready e) failures))
+                 (if (hold-quit! e)
+                   failures
+                   (cons (cons ready e) failures)))
                (lambda ()
                  (run-activation! k ready)
                  failures)))
@@ -607,19 +668,35 @@ prelude: :gerbil/core
 
 ;;; Messages
 
-;; Where the kernel and plugins report to the user (ADR 12: the echo area is
-;; a plugin).
+;; Where the kernel and plugins report to the user (ADR 12: a plugin
+;; provides it). The kernel adds no other failure channel: its failures go
+;; here, or to stderr while no plugin provides it; plugin and service
+;; failures always go to stderr too.
 (interface Messages
-  ;; Show TEXT to the user; "" clears the message.
-  (message! (text : :string)) => :void)
+  ;; Show MESSAGE to the user; "" clears the shown message.
+  (message! (message : :string)) => :void)
 
 (def messages-service
   (new-service 'messages is-Messages? tier: 'live
                doc: "Shows messages to the user."))
 
-;; Show TEXT in the echo area, or on stderr while no plugin shows messages.
-(def (message (text : :string)) => :void
+;; Show STRING through the Messages provider, or on stderr while no plugin
+;; provides it.
+(def (message (string : :string)) => :void
   (let (provider (service-provider messages-service))
     (cond
-     (provider (Messages-message! (Messages provider) text))
-     ((not (string-empty? text)) (displayln text (current-error-port))))))
+     (provider (Messages-message! (Messages provider) string))
+     ((not (string-empty? string)) (write-error-line string)))))
+
+;; Report a plugin or service failure on stderr, exactly once, and then
+;; through the Messages provider when there is one.
+(def (report-failure-message! (string : :string)) => :void
+  (write-error-line string)
+  (let (provider (service-provider messages-service))
+    (when provider
+      (Messages-message! (Messages provider) string))))
+
+(def (write-error-line (string : :string)) => :void
+  (let (port (current-error-port))
+    (display string port)
+    (newline port)))

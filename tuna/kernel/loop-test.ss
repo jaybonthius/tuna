@@ -1,5 +1,6 @@
 (import (only-in :gerbil/runtime/thread thread-main)
         :std/error
+        :std/interface
         :std/test
         :tuna/kernel
         (only-in :tuna/kernel/hooks hook-callback-names)
@@ -82,6 +83,70 @@
 (defplugin (meddling-task-watcher ctx)
   "Tries to activate a plugin when a task starts."
   (context-add-hook! ctx task-started-hook 'meddle (lambda (id name) (activate-plugin! idle))))
+
+(def quitting-hook (new-hook 'quitting))
+
+;; Quits from a hook callback, and from a lifecycle callback when idle
+;; activates.
+(defplugin (quitting-hook-user ctx)
+  "Adds hook callbacks that quit."
+  (context-add-hook! ctx quitting-hook 'quit-now (lambda () (note! 'quitting) (signal-quit)))
+  (context-add-hook! ctx plugin-activated-hook 'quit-on-idle
+                     (lambda (p) (when (eq? p idle) (note! 'activated) (signal-quit)))))
+
+;; Runs quitting-hook when deactivated, then notes that its undo finished.
+(defplugin (hook-running-owner ctx)
+  "Runs quitting-hook from an undo."
+  (context-defer! ctx (lambda () (run-hook quitting-hook) (note! 'undo-finished))))
+
+(interface Dummy
+  (dummy-op) => :void)
+
+(defstruct dummy ()
+  final: #t)
+
+(defmethod {dummy-op dummy}
+  (lambda (self) (void)))
+
+(def dummy-service
+  (new-service 'dummy is-Dummy? tier: 'live doc: "Does nothing."))
+
+(defplugin (dummy-provider ctx)
+  "Provides the dummy service."
+  (context-provide! ctx dummy-service (make-dummy)))
+
+(defplugin (dummy-user ctx)
+  "Requires the dummy service."
+  requires: [dummy-service]
+  (void))
+
+(defplugin (lifecycle-recorder ctx)
+  "Notes plugin activations and service changes."
+  (context-add-hook! ctx plugin-activated-hook 'note-activated
+                     (lambda (p) (note! ['activated (plugin-name p)])))
+  (context-add-hook! ctx service-changed-hook 'note-changed
+                     (lambda (svc old new) (note! ['changed (service-name svc)]))))
+
+(defplugin (provider-quitter ctx)
+  "Quits when dummy-provider activates."
+  (context-add-hook! ctx plugin-activated-hook 'quit-on-provider
+                     (lambda (p) (when (eq? p dummy-provider) (signal-quit)))))
+
+;; Activates until the test releases it, checking for quit.
+(defplugin (slow-activation ctx)
+  "Activates slowly."
+  (set! started? #t)
+  (let lp () (unless released? (check-quit) (thread-sleep! 0.01) (lp))))
+
+(defstruct failing-display ()
+  final: #t)
+
+(defmethod {redisplay! failing-display}
+  (lambda (self) (error "display broke")))
+
+(defplugin (failing-display-plugin ctx)
+  "Provides a display that always fails."
+  (context-provide! ctx display-service (make-failing-display)))
 
 ;; Start a fresh loop with the test tasks and PLUGINS, run THUNK, and stop.
 (def (with-loop thunk quit-grace: (quit-grace 0.5) plugins: (plugins []))
@@ -362,6 +427,123 @@
          (settled-message)
          (check log => '(b a)))
        plugins: [broken-task-watcher]))
+
+    (test-case "a quit in a hook callback unwinds the task and keeps the callback"
+      (with-loop
+       (lambda ()
+         (spawn-task! 'run-quitting-hook (lambda () (run-hook quitting-hook) (note! 'after)))
+         (check (settled-message) => "Quit")
+         (check log => '(quitting))
+         (check (call-on-editor-loop (lambda () (hook-callback-names quitting-hook)))
+                => '(quit-now)))
+       plugins: [quitting-hook-user]))
+
+    (test-case "a quit in a lifecycle callback on a task thread unwinds the task"
+      (with-loop
+       (lambda ()
+         (spawn-task! 'activate-idle (lambda () (activate-plugin! idle) (note! 'after)))
+         (check (settled-message) => "Quit")
+         (check log => '(activated))
+         (check (call-on-editor-loop
+                 (lambda () [(plugin-active? idle) (hook-callback-names plugin-activated-hook)]))
+                => [#t '(quit-on-idle)]))
+       plugins: [quitting-hook-user]))
+
+    (test-case "a quit in a lifecycle callback is held until every event is announced"
+      (with-loop
+       (lambda ()
+         (set! log [])
+         (spawn-task! 'activate-provider
+                      (lambda () (activate-plugin! dummy-provider) (note! 'after)))
+         (check (settled-message) => "Quit")
+         ;; The quitter's callback runs first; the recorder still sees every
+         ;; event, including the dependent activated by the same operation.
+         (check (reverse log) => [['changed 'dummy] ['activated 'dummy-provider]
+                                  ['activated 'dummy-user]])
+         (check (call-on-editor-loop
+                 (lambda () [(plugin-active? dummy-user) (hook-callback-names plugin-activated-hook)]))
+                => [#t '(quit-on-provider note-activated)]))
+       plugins: [provider-quitter lifecycle-recorder dummy-user]))
+
+    (test-case "a quit in a hook run by an undo lets the deactivation finish, then unwinds"
+      (with-loop
+       (lambda ()
+         (set! log [])
+         (spawn-task! 'deactivate-owner
+                      (lambda () (deactivate-plugin! hook-running-owner) (note! 'after)))
+         (check (settled-message) => "Quit")
+         (check (reverse log) => '(quitting undo-finished))
+         (check (call-on-editor-loop
+                 (lambda () [(plugin-active? hook-running-owner) (hook-callback-names quitting-hook)]))
+                => [#f '(quit-now)]))
+       plugins: [quitting-hook-user hook-running-owner]))
+
+    (test-case "two interrupts during a plugin operation wait until it has finished"
+      (with-loop
+       (lambda ()
+         (spawn-task! 'activate-slowly
+                      (lambda () (activate-plugin! slow-activation) (note! 'after)))
+         (check (wait-until (lambda () started?)) => #t)
+         (press "quit")
+         (press "quit")
+         (thread-sleep! 0.3)
+         (check (current-task-name) => 'activate-slowly)
+         (set! released? #t)
+         (check (settled-message) => "Quit")
+         (check log => '())
+         (check (call-on-editor-loop (lambda () (plugin-active? slow-activation))) => #t))
+       quit-grace: 0.1))
+
+    (test-case "a third interrupt quits a plugin activation, which is rolled back"
+      (with-loop
+       (lambda ()
+         (spawn-task! 'activate-slowly
+                      (lambda () (activate-plugin! slow-activation) (note! 'after)))
+         (check (wait-until (lambda () started?)) => #t)
+         (press "quit")
+         (press "quit")
+         (press "quit")
+         (check (settled-message) => "Quit (forced: plugin or library state may be inconsistent)")
+         (check log => '())
+         (check (call-on-editor-loop (lambda () (plugin-active? slow-activation))) => #f))
+       quit-grace: 10.))
+
+    (test-case "outside a task, a quit held by a plugin operation is dropped"
+      (set! log [])
+      (call-with-fresh-kernel [test-input-plugin quitting-hook-user]
+        (lambda ()
+          (activate-plugin! idle)
+          (check log => '(activated))
+          (check (plugin-active? idle) => #t)
+          (check (hook-callback-names plugin-activated-hook) => '(quit-on-idle))
+          (check (current-message) => ""))))
+
+    (test-case "outside a task, a quit in a hook callback counts as a failure"
+      (set! log [])
+      (call-with-fresh-kernel [test-input-plugin quitting-hook-user]
+        (lambda ()
+          (run-hook quitting-hook)
+          (check log => '(quitting))
+          (check (hook-callback-names quitting-hook) => '())
+          (check (string-prefix? "Hook quitting callback quit-now (from quitting-hook-user) failed"
+                                 (current-message))
+                 => #t))))
+
+    (test-case "a failing redisplay is reported on stderr, not stdout"
+      (let* ((out (open-output-string))
+             (err (open-output-string))
+             ;; The loop thread inherits these ports. Checks run outside
+             ;; them, since a verbose test run writes to stdout.
+             (reported?
+              (parameterize ((current-output-port out)
+                             (current-error-port err))
+                (call-with-fresh-kernel [test-input-plugin failing-display-plugin]
+                  (lambda ()
+                    (start-editor-loop!)
+                    (wait-until (lambda () (string-prefix? "Redisplay failed: display broke\n"
+                                                           (get-output-string err)))))))))
+        (check reported? => #t)
+        (check (get-output-string out) => "")))
 
     (test-case "task callbacks must not activate plugins"
       (with-loop

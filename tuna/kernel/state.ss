@@ -41,7 +41,7 @@ prelude: :gerbil/core
 (def (the-kernel) => kernel
   (: (current-kernel) kernel))
 
-;; One line describing an exception, for the echo area.
+;; One line describing an exception, for a message to the user.
 (def (exception-summary (e : :t)) => :string
   (if (Error? e)
     (call-with-output-string ""

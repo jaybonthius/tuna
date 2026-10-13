@@ -58,11 +58,14 @@ prelude: :gerbil/core
 (def (session-file (self : session-store)) => :string
   (path-expand "session.ss" self.directory))
 
+;; Report TEXT on stderr, and as a message when a plugin shows messages;
+;; without one, message would write it to stderr a second time.
 (def (report! (text : :string)) => :void
-  (message text)
   (let (port (current-error-port))
     (display text port)
-    (newline port)))
+    (newline port))
+  (when (service-provider messages-service)
+    (message text)))
 
 ;; DATUM's slot entries if it is a valid session, or else #f.
 (def (session-entries (datum : :t)) => (Maybe :list)
