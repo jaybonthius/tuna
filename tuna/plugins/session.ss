@@ -187,14 +187,16 @@ prelude: :gerbil/core
                     (restore-slot! self (entry-value best)))))
               (entry-table-names self.slots))))
 
-;; SLOT's plugin is turning off: if SLOT is live and effective, keep its
-;; latest data in memory for whatever registers the name next, and for
+;; SLOT's plugin is turning off: if SLOT is live and the only slot of its
+;; name (REGISTERED is its entry), keep its latest data in memory for whatever
+;; registers the name next, such as a new version of the plugin, and for
 ;; the next save. A slot that never got its state (its plugin failed
-;; while turning on) saves nothing, so it cannot overwrite saved data.
-(def (keep-slot-data! (self : session-store) (slot : session-slot) (new : entry)) => :void
+;; while turning on) saves nothing, so it cannot overwrite saved data; nor
+;; does one whose name another slot keeps, which holds its own state.
+(def (keep-slot-data! (self : session-store) (slot : session-slot) (registered : entry)) => :void
   (when (memq slot self.live)
     (set! self.live (remq slot self.live))
-    (when (eq? (entry-table-ref self.slots (session-slot-name slot)) new)
+    (when (equal? (entry-table-entries self.slots (session-slot-name slot)) [registered])
       (let (saved (save-slot slot))
         (when saved
           (set! self.entries
