@@ -51,7 +51,7 @@
         :tuna/plugins/reload-config)
 
 (use-plugin keys-plugin)
-(use-plugin web-transport-plugin        ; the browser page; `tuna --port N` beats port:
+(use-plugin web-transport-plugin        ; the browser page; `tuna --port N` overrides port:
   port: 0)                              ; 0: any free port
 (use-plugin settings-plugin)
 (use-plugin echo-area-plugin)
