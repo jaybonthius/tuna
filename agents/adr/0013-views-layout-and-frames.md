@@ -1,6 +1,6 @@
 # 13. Buffers as UI, views in a layout, and movable frames
 
-Status: accepted (2026-10-13). Owner-approved brief: [`docs/briefs/2026-10-buffers-views-layout.md`](../../docs/briefs/2026-10-buffers-views-layout.md). Research: [`agents/research/layout-state/`](../research/layout-state/README.md), [`agents/research/window-management/`](../research/window-management/README.md); owner notes `agents/research/owner-notes/window-layout-topology.org`. Amends [ADR 6](0006-buffers-nodes-and-text-store.md) (views, the buffers contract, files), [ADR 7](0007-rendering-and-transport.md) (what a redraw walks), and [ADR 11](0011-window-management-is-a-plugin.md) (vocabulary, frames, focus memory, container directions).
+Status: accepted (2026-10-13). Owner-approved brief: [`docs/briefs/2026-10-buffers-views-layout.md`](../../docs/briefs/2026-10-buffers-views-layout.md). Research: [`agents/research/layout-state/`](../research/layout-state/README.md), [`agents/research/window-management/`](../research/window-management/README.md); owner notes `agents/research/owner-notes/window-layout-topology.org`. Amended 2026-10-13 after stage 2 (see "Stage 2 additions"). Amends [ADR 6](0006-buffers-nodes-and-text-store.md) (views, the buffers contract, files), [ADR 7](0007-rendering-and-transport.md) (what a redraw walks), and [ADR 11](0011-window-management-is-a-plugin.md) (vocabulary, frames, focus memory, container directions).
 
 ## Context
 
@@ -20,6 +20,12 @@ The layout-state research measured the options in Gerbil: the layout is small (a
 - **Everything on screen is in the layout.** The minibuffer, echo area and help are buffers shown by ordinary views (a divergence from Emacs's minibuffer window). A view made only for one buffer (dedicated) closes when that buffer goes.
 - **Drawing** stays immediate mode (owner decision 2026-10-13): each redraw sends the whole visible screen as one fat morph, never patches of single parts. A part's HTML is reused when its revision, its view state, and the display-wide inputs (faces, settings) are unchanged. So that drawing only what is in view can come later without changing contracts, any tree can hand the renderer a range of children.
 - **Persistence.** The layout and frame marks are saved as plain data in a session slot. Buffers are never saved as trees: each plugin saves its own state and rebuilds its buffers on restart; file content belongs to texts and files.
+
+## Stage 2 additions (2026-10-13)
+
+- **`C-x 1` moves the frame onto the selected view** instead of deleting the other views (`delete-other-windows`). Nothing is lost; `C-x n w` returns to the top. Frame marks and tabs keep their parts. Code ported from Emacs that wants one view either moves the frame or deletes views itself.
+- **Commands that need only the layout contract** (split, delete, neighbors, frame movement, frame marks) live in the `view-commands` plugin and work under any layout plugin; commands that need the tree (tabs, one-level zoom) belong to the default layout plugin.
+- **A side view wraps what the frame currently shows,** so it stays visible while zoomed.
 
 ## Consequences
 

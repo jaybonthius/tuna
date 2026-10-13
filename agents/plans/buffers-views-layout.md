@@ -17,7 +17,7 @@ Owner-approved brief: [`docs/briefs/2026-10-buffers-views-layout.md`](../../docs
    - Text links to files are not built here (no files yet); nothing may assume the link is on the buffer.
    - Buffers handover: replacing the provider carries buffers and the selected view across.
    - A toy buffers provider in `tuna/test-support/` passes the same contract tests; a test swaps it in while Tuna runs.
-2. **The layout plugin**, replacing `single-window` in the starter.
+2. **The layout plugin**, replacing `single-window` in the starter. **Done 2026-10-13** (merged after `03847c3`): `tuna/plugins/layout.ss` with pure tree operations in `tuna/plugins/layout/tree.ss`; contract-only commands in `view-commands`; demo sidebar on `C-c d`; the layout adapts to a buffers swap; autosave keeps live text when restarted by a swap. Report: `/home/jay/Code/workbench-gerbil/scratch/tuna-views/stage2-report.md`.
    - Frozen layout value: fit and tabbed containers, each horizontal or vertical, sizes on parent links, last-focused child per container.
    - Commands: split below and right (`C-x 2`, `C-x 3`), delete (`C-x 0`), delete others (`C-x 1`), next view (`C-x o`), move to a neighbor, make a tabbed container and switch tabs; `display-buffer` with side and size hints; a dedicated view closes with its buffer.
    - Frames: the frame target (container, view, or view plus node), zoom in one level toward the selected view, zoom out, frame onto the node at point, frame marks (set, jump, list). Starter key bindings must not collide with Emacs defaults the starter already uses.
