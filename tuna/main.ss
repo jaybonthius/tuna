@@ -6,7 +6,9 @@
 ;;; `tuna init` copies the starter configuration to the default location.
 prelude: :gerbil/core
 
-(import :std/os/signal
+(import :std/interface
+        :std/log
+        :std/os/signal
         :std/os/signal-handler
         :std/sync/channel
         :std/sync/completion
@@ -42,7 +44,38 @@ prelude: :gerbil/core
         (only-in :tuna/plugins/reload-config))
 (export main)
 
+;; Formatting is process policy, not a plugin's responsibility. The sink
+;; writes and flushes each complete record on Gerbil's logger thread.
+(def (write-log-line (record : Record) (port :~ output-port?)) => :void
+  (unless (fx= record.level INFO)
+    (display (log-level->string record.level) port)
+    (display " [" port)
+    (display record.source port)
+    (display "] " port))
+  (display record.msg port)
+  (when (and (fx<= record.level WARN) (pair? record.data.alist))
+    (display " " port)
+    (write record.data.alist port))
+  (newline port)
+  (force-output port))
+
+(defstruct (tuna-stderr-sink BasicLogger) ((port :~ output-port?)) final: #t)
+
+(implement
+  (Logger
+   (tuna-stderr-sink
+    (log (lambda (self record) (write-log-line record self.port)))))
+  (LogSink
+   (tuna-stderr-sink
+    (start! void)
+    (stop! (lambda (self) (force-output self.port))))))
+
 (def (main . args)
+  (set-default-log-levels! "info")
+  (set-system-log-level! INFO)
+  ;; Linked modules may have created sources before main set the default.
+  (for-each (cut set-source-log-level! <> INFO) (current-log-sources))
+  (add-system-sink! (LogSink (tuna-stderr-sink "/tuna/stderr" INFO (current-error-port))))
   (match (parse-command-line args)
     (['init]
      (let (outcome (init-configuration!))

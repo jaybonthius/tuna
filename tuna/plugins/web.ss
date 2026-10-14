@@ -13,8 +13,6 @@ prelude: :gerbil/core
         :std/encoding/hex
         :std/io
         :std/log
-        (only-in :std/list/walist wanull)
-        (only-in :std/time/precise current-time-coarse)
         :std/net/address
         :std/net/http/server
         :std/net/url
@@ -29,6 +27,8 @@ prelude: :gerbil/core
         ./web/embed)
 (export web-transport-plugin
         web-transport-url)
+
+(deflogger web-log name: "web")
 
 ;; Seconds between keep-alive events, which also detect closed tabs.
 (def heartbeat-seconds 15.)
@@ -442,14 +442,8 @@ prelude: :gerbil/core
     (Server-start! server)
     (context-defer! ctx (lambda () (stop-web-transport! self)))
     (context-provide! ctx display-service self)
-    ;; A launch link is essential start-up output, even when the default
-    ;; log level suppresses informational records. Use the stderr sink
-    ;; directly rather than changing the process's logging policy.
-    (Logger-log (stderr-log-sink)
-                (Record (current-time-coarse) INFO "tuna/web"
-                        (string-append "Tuna " (tuna-version) " is running. Open http://"
-                                       host "/?token=" (web-transport-token self))
-                        (wanull)))))
+    (web-log.infof "Tuna %a is running. Open http://%a/?token=%a"
+                   (tuna-version) host (web-transport-token self))))
 
 (defplugin-options web-transport-plugin
   (port 0 "The loopback port to listen on; 0 picks a free one."
