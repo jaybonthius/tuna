@@ -14,6 +14,9 @@ prelude: :gerbil/core
         :tuna/kernel
         :tuna/services/buffers)
 (export (interface-out Minibuffer)
+        (interface-out Prompt)
+        read-from-minibuffer minibuffer-history
+        prompt-buffer prompt-keymap prompt-input prompt-set-exit-check! prompt-exit!
         minibuffer-service
         (struct-out prompt-display)
         minibuffer-node-kind
@@ -35,12 +38,33 @@ prelude: :gerbil/core
   (eq? (node-kind (buffer-root (view-showing v))) minibuffer-node-kind))
 
 (interface Minibuffer
-  ;; Ask QUESTION with INITIAL as the answer so far, and return the answer.
-  ;; A yield point: the calling task suspends until the prompt is answered,
-  ;; and raises quit if it is abandoned.
-  (read-from-minibuffer (question : :string) (initial : :string)) => :string
+  ;; SETUP receives a Prompt handle on the baton, before yielding.
+  ;; HISTORY is a named string history or #f. Return the exit value.
+  (read-from-minibuffer (question : :string) (initial : :string)
+                        (history :? :symbol) (setup :? :procedure)) => :t
+  (minibuffer-history (name : :symbol)) => :list
   ;; The innermost waiting prompt, as a prompt-display, or #f.
   (active-prompt) => :t)
+
+(interface Prompt
+  ;; Add nodes through the ordinary buffers contract, not a second UI API.
+  (prompt-buffer) => buffer
+  ;; A prompt-local map, before its shared RET/C-g map.
+  (prompt-keymap) => entry-table
+  (prompt-input) => :string
+  ;; CHECK receives typed text: #f accepts, a string refuses with a message.
+  (prompt-set-exit-check! (check : :procedure)) => :void
+  ;; History text is separate from a record-valued answer.
+  (prompt-exit! (value : :t) (history-text : :string)) => :void)
+
+(def (prompt-buffer (p : Prompt)) => buffer (Prompt-prompt-buffer p))
+(def (prompt-keymap (p : Prompt)) => entry-table (Prompt-prompt-keymap p))
+(def (prompt-input (p : Prompt)) => :string (Prompt-prompt-input p))
+(def (prompt-set-exit-check! (p : Prompt) (check : :procedure)) => :void
+  (Prompt-prompt-set-exit-check! p check))
+(def (prompt-exit! (p : Prompt) (value : :t)
+                   history-text: (history-text : :string := (prompt-input p))) => :void
+  (Prompt-prompt-exit! p value history-text))
 
 (def minibuffer-service
   (new-service 'minibuffer is-Minibuffer? tier: 'live
@@ -52,10 +76,19 @@ prelude: :gerbil/core
       (error "No plugin provides the minibuffer"))
     (Minibuffer provider)))
 
-;; Ask QUESTION in the minibuffer and return the answer (Emacs
-;; `read-string`). Call it from a task.
-(def (read-string (question : :string) (initial : :string := "")) => :string
-  (Minibuffer-read-from-minibuffer (current-minibuffer) question initial))
+(def (read-from-minibuffer (question : :string) (initial : :string := "")
+                           history: (history :? :symbol := #f)
+                           setup: (setup :? :procedure := #f)) => :t
+  (Minibuffer-read-from-minibuffer (current-minibuffer) question initial history setup))
+
+;; The plain string reader is only a typed user of the prompt protocol.
+(def (read-string (question : :string) (initial : :string := "")
+                  history: (history :? :symbol := #f)) => :string
+  (:- (read-from-minibuffer question initial history: history) :string))
+
+;; Newest first; callers treat the returned list as immutable.
+(def (minibuffer-history (name : :symbol)) => :list
+  (Minibuffer-minibuffer-history (current-minibuffer) name))
 
 (def (active-prompt) => (Maybe prompt-display)
   (let (provider (service-provider minibuffer-service))

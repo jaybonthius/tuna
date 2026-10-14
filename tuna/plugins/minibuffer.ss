@@ -18,27 +18,110 @@
 ;;; ends, its view shows what it showed before and the previously selected
 ;;; view is selected again.
 (import :std/interface
+        (only-in :gerbil/runtime/hash HashTable)
         :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers
         :tuna/services/renderer
         :tuna/services/layout
-        :tuna/services/minibuffer)
-(export minibuffer-plugin)
+        :tuna/services/minibuffer
+        :tuna/services/settings
+        :tuna/services/session)
+(export minibuffer-plugin minibuffer-history-length)
 
-(defclass prompt ((question        : :string)
-                  (answer          : node)       ; the text node holding the answer
-                  (holder          : buffer)     ; its internal buffer
-                  (shown-in        : view)       ; the view showing it while it waits
-                  (previous-buffer :? buffer)    ; what that view showed before
-                  (previous-view   : view)       ; the view selected before
-                  (waiting         :? :t))       ; its suspension, once suspended
+(defsetting minibuffer-history-length 100
+  "Maximum entries in each named minibuffer history; #f keeps every entry, 0 keeps none.")
+
+(defclass minibuffer ((prompts : :list)
+                      (keymap : entry-table)
+                      (idle : buffer)
+                      (histories : HashTable))
   final: #t)
 
-(defclass minibuffer ((prompts : :list)          ; waiting prompts, innermost first
-                      (keymap  : entry-table)    ; the keymap of every prompt's buffer
-                      (idle    : buffer))        ; shown while nothing is asked
+(defclass prompt ((owner : minibuffer)
+                  (question : :string)
+                  (answer : node)
+                  (holder : buffer)
+                  (keymap : entry-table)
+                  (shown-in : view)
+                  (previous-buffer :? buffer)
+                  (previous-view : view)
+                  (waiting :? :t)
+                  (exit-check : :procedure)
+                  (history-name :? :symbol)
+                  (history-items : :list)
+                  (history-position : :fixnum)
+                  (draft : :string))
   final: #t)
+
+;; Deduplicate and trim on read, save and restore as well as insertion, so
+;; a live length-setting change applies to every list without a hook.
+(def (trim-history (items : :list)) => :list
+  (let ((limit (setting-value minibuffer-history-length))
+        (seen (make-hash-table)))
+    (unless (or (not limit) (and (fixnum? limit) (fx>= limit 0)))
+      (error "History length must be a nonnegative fixnum or #f" limit))
+    (let lp ((rest items) (count 0))
+      (match rest
+        ([] [])
+        ([item . more]
+         (cond
+          ((and limit (fx>= count limit)) [])
+          ((hash-key? seen item) (lp more count))
+          (else
+           (hash-put! seen item #t)
+           (cons item (lp more (fx1+ count))))))))))
+
+(def (history-list (self : minibuffer) (name : :symbol)) => :list
+  (trim-history (hash-ref self.histories name [])))
+
+(def (save-histories (self : minibuffer)) => :list
+  (hash-map (lambda ((name : :symbol) (items : :list)) (cons name (trim-history items)))
+            self.histories))
+
+(def (restore-histories! (self : minibuffer) (data : :t)) => :void
+  (unless (and (list? data)
+               (andmap (lambda (row)
+                         (and (pair? row) (symbol? (car row))
+                              (list? (cdr row)) (andmap string? (cdr row))))
+                       data))
+    (error "Invalid minibuffer histories" data))
+  (hash-clear! self.histories)
+  (for-each (lambda (row) (hash-put! self.histories (car row) (trim-history (cdr row)))) data))
+
+(implement Prompt prompt
+  (prompt-buffer (lambda (self) self.holder))
+  (prompt-keymap (lambda (self) self.keymap))
+  (prompt-input (lambda (self) (text-string (text-node-content self.answer))))
+  (prompt-set-exit-check! (lambda (self check) (set! self.exit-check check)))
+  (prompt-exit! (lambda (self value history-text)
+                  (using (owner self.owner : minibuffer)
+                    (unless (and self.waiting (eq? self (car owner.prompts)))
+                      (error "Not in the innermost minibuffer"))
+                    (let (refusal (self.exit-check (prompt-input (Prompt self))))
+                      (if refusal
+                        (message (:- refusal :string))
+                        (begin
+                          (when self.history-name
+                            (hash-put! owner.histories self.history-name
+                                       (trim-history (cons history-text
+                                                          (history-list owner self.history-name)))))
+                          (resume! self.waiting value))))))))
+
+;; Navigation saves the unfinished input on first M-p; M-n returns to it.
+(def (move-history! (p : prompt) (delta : :fixnum)) => :void
+  (let (next (fx+ p.history-position delta))
+    (cond
+     ((or (fx< next 0) (fx> next (length p.history-items)))
+      (message "No further minibuffer history"))
+     (else
+      (when (fxzero? p.history-position)
+        (set! p.draft (prompt-input (Prompt p))))
+      (let* ((input (if (fxzero? next) p.draft (list-ref p.history-items (fx1- next))))
+             (t (text-node-content p.answer)))
+        (text-replace! t 1 (fx1+ (text-size t)) input)
+        (goto-char (fx1+ (string-length input)))
+        (set! p.history-position next))))))
 
 ;; An internal buffer whose root is a minibuffer node holding CHILDREN,
 ;; with KEYMAP if any, drawn without a status line.
@@ -50,33 +133,41 @@
 (def (live? (b : buffer)) => :boolean
   (and (memq b (buffer-list)) #t))
 
-(def (ask! (self : minibuffer) (question : :string) (initial : :string)) => :string
-  (let* ((answer (new-text-node (new-text initial)))
+(def (ask! (self : minibuffer) (question : :string) (initial : :string)
+           (history :? :symbol) (setup :? :procedure)) => :t
+  (let* ((keymap (new-keymap))
+         (answer (new-text-node (new-text initial)))
          (b (minibuffer-buffer (string-append " *Minibuf-" (number->string (next-id!)) "*")
                                [(new-node 'minibuffer-prompt attributes: [['content . question]])
                                 answer]
                                self.keymap)))
+    (set-node-keymap! answer keymap)
     (add-buffer! b)
     (let* ((before (selected-view))
            (showing (map (lambda ((v : view)) (cons v (view-showing v))) (view-list)))
            (v (or (nearest-view before minibuffer-view?) (display-buffer b)))
            (previous (assq v showing)))
-      (using (p (prompt question: question answer: answer holder: b shown-in: v
+      (using (p (prompt owner: self question: question answer: answer holder: b keymap: keymap shown-in: v
                         previous-buffer: (and previous (cdr previous)) previous-view: before
-                        waiting: #f)
+                        waiting: #f exit-check: (lambda (input) #f)
+                        history-name: history history-items: (if history (history-list self history) [])
+                        history-position: 0 draft: initial)
                 : prompt)
         (set-view-buffer v b)
         (select-view v)
         (goto-char (point-max))
         (set! self.prompts (cons p self.prompts))
         (unwind-protect
-          (suspend (lambda (s) (set! p.waiting s)))
+          (suspend (lambda (s)
+                     (set! p.waiting s)
+                     (when setup (setup (Prompt p)))))
           (end-prompt! self p))))))
 
 ;; Undo what ask! set up: the prompt's view shows what it showed before
 ;; (the idle buffer if that is gone), the view selected before is selected
 ;; again, and the prompt's buffer goes.
 (def (end-prompt! (self : minibuffer) (p : prompt)) => :void
+  (set! p.waiting #f)
   (set! self.prompts (remq p self.prompts))
   (let ((v p.shown-in)
         (views (view-list)))
@@ -104,7 +195,8 @@
            (lp more (cons p inside))))))))
 
 (implement Minibuffer minibuffer
-  (read-from-minibuffer (lambda (self question initial) (ask! self question initial)))
+  (read-from-minibuffer (lambda (self question initial history setup) (ask! self question initial history setup)))
+  (minibuffer-history (lambda (self name) (history-list self name)))
   (active-prompt (lambda (self)
                    (match self.prompts
                      ([p . _] (make-prompt-display (prompt-question p) (prompt-answer p)))
@@ -112,7 +204,7 @@
 
 (defplugin (minibuffer-plugin ctx)
   "Asks questions in the minibuffer, a view in the bar: read-string. RET answers, C-g abandons."
-  requires: [input-service buffers-service layout-service]
+  requires: [input-service buffers-service layout-service settings-service session-service]
   (context-define-node-kind! ctx minibuffer-node-kind doc: "A prompt's question and answer, or nothing.")
   (context-define-node-kind! ctx 'minibuffer-prompt doc: "A prompt's question."
                              project: (lambda (n) (node-attribute n 'content)))
@@ -124,15 +216,30 @@
     (set-buffer-setting! idle no-other-view #t)
     (context-add-buffer! ctx idle)
     (add-locked-view idle side: 'bottom size: 'content)
-    (using (self (minibuffer prompts: [] keymap: (new-keymap) idle: idle) : minibuffer)
+    (using (self (minibuffer prompts: [] keymap: (new-keymap) idle: idle histories: (make-hash-table-eq)) : minibuffer)
+      (context-add-session-slot! ctx 'minibuffer-history version: 1
+                                 save: (lambda () (save-histories self))
+                                 restore: (lambda (data) (restore-histories! self data)))
+      (defcommand (previous-minibuffer-history) "Replace the prompt input with an older answer."
+        (move-history! (car (prompts-here self)) 1))
+      (defcommand (next-minibuffer-history) "Replace the prompt input with a newer answer, or the unfinished input."
+        (move-history! (car (prompts-here self)) -1))
       (defcommand (exit-minibuffer) "Answer the prompt here with the text typed; it must be the innermost."
         (match (prompts-here self)
           ([p] (using (p : prompt)
-                 (resume! p.waiting (text-string (text-node-content p.answer)))))
+                 (prompt-exit! (Prompt p) (prompt-input (Prompt p)))))
           (else (error "Not in the innermost minibuffer"))))
       (defcommand (abort-minibuffers) "Abandon the prompt here and any inside it; their commands receive quit."
         (for-each (lambda ((p : prompt)) (resume-quit! p.waiting))
                   (prompts-here self)))
+      ;; Prompt-only commands are executable but not picker candidates.
+      (for-each (lambda ((name : :symbol))
+                  (let (c (command-ref name))
+                    (set! (command-visible? c)
+                          (lambda (command origin) #f))))
+                '(exit-minibuffer abort-minibuffers previous-minibuffer-history next-minibuffer-history))
+      (keymap-set-in self.keymap "M-p" 'previous-minibuffer-history)
+      (keymap-set-in self.keymap "M-n" 'next-minibuffer-history)
       (keymap-set-in self.keymap "RET" 'exit-minibuffer)
       (keymap-set-in self.keymap "C-g" 'abort-minibuffers)
       (context-provide! ctx minibuffer-service (Minibuffer self))
