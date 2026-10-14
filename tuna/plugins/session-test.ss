@@ -11,6 +11,7 @@
         :tuna/plugins/session
         :tuna/plugins/buffers
         :tuna/plugins/autosave
+        :tuna/plugins/commands
         :tuna/plugins/keys
         :tuna/plugins/layout
         "../test-support/kernel"
@@ -30,7 +31,7 @@
 ;; The session and autosave plugins, the plugins that fill the slots they
 ;; and the layout require (keys for input), and a stand-in for messages.
 (def session-plugins
-  [keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin
+  [commands-plugin keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin
    session-plugin buffers-plugin autosave-plugin layout-plugin])
 
 ;; One run of Tuna on DIRECTORY, booted as main does: activate, restore,

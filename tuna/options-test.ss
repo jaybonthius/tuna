@@ -16,6 +16,7 @@
         :std/interface
         :tuna/services/configuration
         :tuna/services/keys
+        :tuna/plugins/commands
         :tuna/plugins/keys
         :tuna/plugins/web
         :tuna/plugins/reload-config
@@ -237,7 +238,7 @@
                (check (last-configuration-report) => (reload-report-text report))))))))
 
     (test-case "reload-config and show-config-report go through the contract"
-      (call-with-fresh-kernel [keys-plugin test-messages-plugin stub-configuration-plugin reload-config-plugin]
+      (call-with-fresh-kernel [commands-plugin keys-plugin test-messages-plugin stub-configuration-plugin reload-config-plugin]
         (lambda ()
           (run-command 'show-config-report)
           (check (current-message) => "There is no configuration report yet.")

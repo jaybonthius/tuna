@@ -19,12 +19,13 @@
   (set! sequence (+ sequence 1))
   (let* ((ctrl? (string-prefix? "C-" key))
          (shift? (string-prefix? "S-" key))
-         (name (if (or ctrl? shift?) (substring key 2 (string-length key)) key))
+         (alt? (string-prefix? "M-" key))
+         (name (if (or ctrl? shift? alt?) (substring key 2 (string-length key)) key))
          (browser-key (cond
                        ((assoc name browser-keys) => cdr)
                        (else name))))
     ((input-submitter)
-     (make-key-event "test-client" sequence browser-key "" 0 #f #f #f ctrl? #f shift? #f #f #f #f))))
+     (make-key-event "test-client" sequence browser-key "" 0 #f #f alt? ctrl? #f shift? #f #f #f #f))))
 
 (def (type! . keys)
   (for-each press keys))

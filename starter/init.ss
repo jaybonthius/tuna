@@ -33,7 +33,8 @@
 ;;; the modules you import, and macro code, also run at load: they must not
 ;;; change the editor, since nothing could undo it.
 
-(import :tuna/plugins/keys
+(import :tuna/plugins/commands
+        :tuna/plugins/keys
         :tuna/plugins/web
         :tuna/plugins/settings
         :tuna/plugins/echo-area
@@ -50,6 +51,7 @@
         :tuna/plugins/minibuffer
         :tuna/plugins/reload-config)
 
+(use-plugin commands-plugin)
 (use-plugin keys-plugin)
 (use-plugin web-transport-plugin        ; the browser page; `tuna --port N` overrides port:
   port: 0)                              ; 0: any free port

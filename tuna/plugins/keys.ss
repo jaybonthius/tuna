@@ -1,4 +1,4 @@
-;;; Key handling (startup tier): the command table, the global keymap, the
+;;; Key handling (startup tier): the global keymap, the
 ;;; input-target stack, key resolution, and the quit key (ADR 3, ADR 8).
 ;;;
 ;;; Keys resolve in the keymaps of the focused node and the nodes above it
@@ -24,12 +24,9 @@ prelude: :gerbil/core
 
 (def quit-key "C-g")
 
-(defclass global-keys ((commands      : entry-table)    ; command name -> command
-                       (keymap        : entry-table)    ; key sequence -> command name
+(defclass global-keys ((keymap        : entry-table)    ; key sequence -> command name
                        (targets       : :list)          ; input targets, innermost first
                        (pending       : :list)          ; keys typed so far of a prefix
-                       (this-command  :? :symbol)       ; the input session (ADR 8)
-                       (last-command  :? :symbol)
                        (command-event :? :t)            ; key-event or pointer-event
                        (generation    : :fixnum))       ; changes with any binding
   final: #t)
@@ -190,27 +187,21 @@ prelude: :gerbil/core
 (defsyntax (this-source stx)
   (with-syntax ((source (stx-source-string stx))) #'source))
 
-;; Add the command NAME to SELF's table, owned by CTX's plugin.
-(def (add-command! (self : global-keys) (ctx : context) (name : :symbol) (procedure : :procedure)
-                   (doc : :string) (source :? :string))
-  => :void
-  (context-add-entry! ctx self.commands name (make-command name procedure doc)
-                      doc: doc source: source)
-  (void))
+;; Capture the event in the resolved task, so another command at a prompt
+;; cannot overwrite the suspended command's event.
+(def activation-event (make-parameter #f))
 
-;; The task that runs the command named NAME, as (name . thunk), or #f.
 (def (command-task (self : global-keys) (name : :symbol)) => (Maybe :pair)
-  (let (best (entry-table-ref self.commands name))
-    (and best
-         (using (c (entry-value best) : command)
-           (cons c.name c.procedure)))))
+  (and (command-entry name)
+       (let (event self.command-event)
+         (cons name (lambda ()
+                      (parameterize ((activation-event event))
+                        (call-command name)))))))
 
 ;; A key sequence ended with EVENT, a key or pointer event, and selected
 ;; the command named NAME, or #f for none.
 (def (complete-keys! (self : global-keys) (event : :t) (name :? :symbol)) => :void
   (set! self.pending [])
-  (set! self.last-command self.this-command)
-  (set! self.this-command name)
   (set! self.command-event event))
 
 (def (resolve-key! (self : global-keys) (event : key-event)) => (Maybe :pair)
@@ -293,14 +284,42 @@ prelude: :gerbil/core
   (lambda (self event)
     (if (and (key-event? event) (equal? (key-description event) quit-key)) 'interrupt 'queue)))
 
-(defmethod {define-command! global-keys}
-  (lambda (self ctx name procedure doc source)
-    (add-command! self ctx name procedure doc source)))
+(defmethod {dispatch-command global-keys}
+  (lambda (self c)
+    (run-hook pre-command-hook)
+    (unwind-protect
+      ((command-procedure c))
+      (run-hook post-command-hook))))
 
-(defmethod {command-entry global-keys}
-  (lambda (self name)
-    (using (self : global-keys)
-      (entry-table-ref self.commands name))))
+;; A sequence is effective only if every preceding prefix resolves in the
+;; same active stack. This excludes shadowed exact bindings and prefixes.
+(def (effective-sequence? (maps : :list) (keys : :string) (name : :symbol)) => :boolean
+  (let lp ((parts (string-split keys #\space)) (prefix ""))
+    (match parts
+      ([part . more]
+       (let* ((sequence (if (string-empty? prefix) part (string-append prefix " " part)))
+              (found (find-binding maps sequence #f)))
+         (if (null? more)
+           (and found (not (eq? found 'prefix)) (eq? (entry-value found) name))
+           (and (eq? found 'prefix) (lp more sequence)))))
+      ([] #f))))
+
+(defmethod {where-is global-keys}
+  (lambda (self name focus)
+    (let* ((maps (active-keymaps self (or focus (focused-node))))
+           (names (hash-keys (list->hash-table
+                             (map (lambda (keys) (cons keys #t))
+                                  (foldr append [] (map entry-table-names maps))))))
+           (bound (filter (lambda (keys) (effective-sequence? maps keys name)) names)))
+      (list-sort (lambda ((a : :string) (b : :string))
+                    (let ((na (length (string-split a #\space)))
+                          (nb (length (string-split b #\space))))
+                      (or (fx< na nb)
+                          (and (fx= na nb)
+                               (or (fx< (string-length a) (string-length b))
+                                   (and (fx= (string-length a) (string-length b))
+                                        (string<? a b)))))))
+                 bound))))
 
 ;; Bind KEYS to COMMAND in KEYMAP for CTX's plugin. The generation changes
 ;; now and again once the binding is gone: the deferred change is
@@ -338,22 +357,21 @@ prelude: :gerbil/core
       (entry-table-ref self.keymap (normalize-keys keys)))))
 
 (defmethod {last-command global-keys}
-  (lambda (self) (global-keys-last-command self)))
+  (lambda (self) (last-command)))
 
 (defmethod {last-command-event global-keys}
-  (lambda (self) (global-keys-command-event self)))
+  (lambda (self) (or (activation-event) (global-keys-command-event self))))
 
 (defmethod {keymap-generation global-keys}
   (lambda (self) (global-keys-generation self)))
 
 (defplugin (keys-plugin ctx)
   "Resolves keys through node keymaps and the global keymap. C-g quits."
-  (using (self (global-keys commands: (new-entry-table) keymap: (new-entry-table) targets: []
-                            pending: [] this-command: #f last-command: #f command-event: #f
+  requires: [commands-service]
+  (using (self (global-keys keymap: (new-entry-table) targets: []
+                            pending: [] command-event: #f
                             generation: (next-id!))
                : global-keys)
-    ;; Straight into this table: while this plugin activates, the input
-    ;; service need not resolve to it yet.
-    (add-command! self ctx 'keyboard-quit signal-quit
-                  "Cancel the current key sequence or command." (this-source))
+    (context-define-command! ctx 'keyboard-quit signal-quit
+                             doc: "Cancel the current key sequence or command." source: (this-source))
     (context-provide! ctx input-service (Keys self))))

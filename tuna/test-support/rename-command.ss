@@ -12,7 +12,7 @@ prelude: :gerbil/core
   "C-c r renames the current buffer, asking the new name in the minibuffer."
   requires: [input-service buffers-service]
   (define-command ctx (rename-buffer) "Give the current buffer a new name, asked in the minibuffer."
-    (let (name (read-string "New name: "))
+    (let (name (read-string "New name: " history: 'rename-buffer))
       (when (string-empty? name)
         (error "Empty string is invalid as a buffer name"))
       (rename-buffer! (current-buffer) name)

@@ -6,6 +6,7 @@
         :tuna/kernel
         :tuna/services/renderer
         :tuna/services/buffers
+        :tuna/plugins/commands
         :tuna/plugins/keys
         :tuna/plugins/echo-area
         :tuna/plugins/help-buffer
@@ -28,7 +29,7 @@
 (export renderer-swap-test)
 
 (def renderer-plugins
-  [keys-plugin echo-area-plugin help-buffer-plugin rope-text-store-plugin
+  [commands-plugin keys-plugin echo-area-plugin help-buffer-plugin rope-text-store-plugin
    settings-plugin no-session-plugin buffers-plugin layout-plugin
    view-commands-plugin
    html-renderer-plugin basic-editing-plugin minibuffer-plugin

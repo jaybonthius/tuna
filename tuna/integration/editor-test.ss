@@ -14,6 +14,7 @@
         :tuna/services/help
         :tuna/services/settings
         :tuna/services/layout
+        :tuna/plugins/commands
         :tuna/plugins/keys
         :tuna/plugins/echo-area
         :tuna/plugins/help-buffer
@@ -33,7 +34,7 @@
 (export editor-test)
 
 (def editor-plugins
-  [keys-plugin echo-area-plugin help-buffer-plugin rope-text-store-plugin
+  [commands-plugin keys-plugin echo-area-plugin help-buffer-plugin rope-text-store-plugin
    settings-plugin no-session-plugin buffers-plugin layout-plugin html-renderer-plugin
    basic-editing-plugin minibuffer-plugin
    rename-command-plugin services-help-plugin digit-highlighter-plugin])
@@ -45,7 +46,7 @@
   (set! jobs (new-job-group ctx)))
 
 (def job-plugins
-  [keys-plugin rope-text-store-plugin settings-plugin
+  [commands-plugin keys-plugin rope-text-store-plugin settings-plugin
    buffers-plugin basic-editing-plugin job-host-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))

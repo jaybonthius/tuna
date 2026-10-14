@@ -10,6 +10,7 @@
         :tuna/services/buffers
         :tuna/services/echo-area
         :tuna/services/layout
+        :tuna/plugins/commands
         :tuna/plugins/keys
         :tuna/plugins/echo-area
         :tuna/plugins/rope
@@ -27,7 +28,7 @@
 (export view-commands-test)
 
 (def command-plugins
-  [keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin no-session-plugin
+  [commands-plugin keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin no-session-plugin
    buffers-plugin layout-plugin view-commands-plugin basic-editing-plugin minibuffer-plugin
    swap-commands-plugin tree-buffer-plugin])
 

@@ -8,6 +8,7 @@
         :tuna/services/buffers
         :tuna/services/session
         :tuna/services/layout
+        :tuna/plugins/commands
         :tuna/plugins/keys
         :tuna/plugins/rope
         :tuna/plugins/settings
@@ -21,7 +22,7 @@
 (export layout-test)
 
 (def layout-plugins
-  [keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin no-session-plugin
+  [commands-plugin keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin no-session-plugin
    buffers-plugin layout-plugin])
 
 (def (with-layout thunk)

@@ -2,6 +2,7 @@
         :std/test
         :tuna/kernel
         :tuna/services/keys
+        :tuna/plugins/commands
         :tuna/plugins/keys
         :tuna/services/settings
         :tuna/plugins/settings
@@ -36,7 +37,7 @@
     (and e (entry-value e))))
 
 (def keys-plugins
-  [test-messages-plugin keys-plugin])
+  [test-messages-plugin commands-plugin keys-plugin])
 
 ;; The name of the task EVENT resolves to, or #f.
 (def (resolve event)
@@ -60,6 +61,25 @@
 
 (def keys-test
   (test-suite "tuna/plugins/keys"
+    (test-case "where-is orders effective bindings by key count, length and spelling"
+      (call-with-fresh-kernel keys-plugins
+        (lambda ()
+          (let (map (new-keymap))
+            (defplugin (reverse-bindings ctx)
+              "Reverse lookup and shadows."
+              requires: [input-service]
+              (keymap-set "C-c a" 'named)
+              (keymap-set "z" 'named)
+              (keymap-set "x" 'named)
+              (keymap-set "M-x" 'named)
+              (keymap-set-in map "x" 'other))
+            (activate-plugin! reverse-bindings)
+            (check (where-is 'named) => ["x" "z" "M-x" "C-c a"])
+            (push-input-target! (make-input-target 'reverse map))
+            (check (where-is 'named) => ["z" "M-x" "C-c a"])
+            (check (where-is 'other) => ["x"])
+            (deactivate-plugin! reverse-bindings)
+            (check (where-is 'named) => [])))))
     (test-case "browser keys are described in Emacs key syntax"
       (check (key-description (keydown "a")) => "a")
       (check (key-description (keydown "c" ctrl?: #t)) => "C-c")

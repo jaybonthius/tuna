@@ -7,6 +7,7 @@
         :tuna/services/renderer
         :tuna/services/buffers
         :tuna/services/layout
+        :tuna/plugins/commands
         :tuna/plugins/keys
         :tuna/plugins/rope
         :tuna/plugins/settings
@@ -18,7 +19,7 @@
 (export html-renderer-test)
 
 (def renderer-plugins
-  [keys-plugin rope-text-store-plugin settings-plugin no-session-plugin
+  [commands-plugin keys-plugin rope-text-store-plugin settings-plugin no-session-plugin
    buffers-plugin layout-plugin html-renderer-plugin])
 
 ;; A *welcome* buffer built as a tree: (column (heading "Welcome to Tuna")
