@@ -12,7 +12,7 @@ Owner-approved brief: [`docs/briefs/2026-10-kernel-cordis.md`](../../docs/briefs
 
 ## Stages
 
-1. **Declared use, ties, command ownership** (no change to swapping yet).
+1. **Declared use, ties, command ownership** (no change to swapping yet). **Done 2026-10-14** (merged; report `/home/jay/Code/workbench-gerbil/scratch/tuna-cordis/stage1-report.md`).
    - Declared use (D7): `service-provider` and the contract dispatchers check that the calling owner (the task's plugin, or the activating context) declared the service; a violation is an error naming the plugin and the service. Plugins declare optional services explicitly (replacing today's comment blocks); code with no plugin owner stays unchecked. Every plugin's `requires:` and optional list is made exact.
    - Ties (D6): entry tables break equal priority by an order the activator supplies (boot passes each declaration's position in `init.ss`), never by registration time; a reload then equals a fresh start (test: reload the older of two equal-priority bindings; the winner does not change).
    - Command ownership (D4): a task started for a command is owned by the command's plugin context and is cancelled by its receipt (test: a command waiting at `read-string` is quit when its plugin turns off).
