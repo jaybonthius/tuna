@@ -1,6 +1,6 @@
 # 4. Owner-confined mutable objects, persistent text, revision counters
 
-Status: accepted (2026-10-11); amended after the [capability audit](../research/capability-audit/README.md) (split revisions, thread-scoped context; settings moved to ADR 9).
+Status: accepted (2026-10-11); amended after the [capability audit](../research/capability-audit/README.md) (split revisions, thread-scoped context; settings moved to ADR 9); amended 2026-10-14 by the [kernel alignment brief](../../docs/briefs/2026-10-kernel-cordis.md) (state across a provider swap).
 
 ## Context
 
@@ -17,6 +17,7 @@ UI is a function of state, so rendering must read one coherent state. Earlier re
 - **No transactional rollback.** A command that fails midway leaves its partial changes, as in Emacs. User-facing recovery is undo. A command that needs atomicity uses explicit helpers, such as a cancellable undo group.
 - **Undo** belongs to a text ([ADR 6](0006-buffers-nodes-and-text-store.md)), is recorded from change records with boundaries per command, and is memory-only at first.
 - **Settings** are specified in [ADR 9](0009-settings-and-scoped-values.md).
+- **State across a replacement (2026-10-14).** Live objects never cross from one provider to another. State that must survive a swap, reload or restart is plain data in a session slot ([ADR 5](0005-persistence.md)): a provider restores its own slot when it has one, otherwise its contract's neutral slot; everything else is rebuilt, so undo history, change journals and highlights are lost when buffers are replaced. Owner decision: losing in-memory editor state on a swap is acceptable ([ADR 2](0002-plugins-contexts-and-services.md)).
 
 ## Consequences
 

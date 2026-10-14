@@ -8,7 +8,7 @@ Tuna's plugin kernel follows Cordis, but in several places it drifted from Cordi
 
 ## The picture
 
-**Status:** planned.
+**Status:** built (2026-10-14). The brief is historical; `docs/overview.md` describes what is current.
 
 ![Swapping the layout plugin](../diagrams/swapping-a-plugin.svg)
 

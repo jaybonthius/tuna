@@ -1,6 +1,6 @@
 # 12. A small fixed kernel; every editor feature is a plugin, in three tiers of replaceability
 
-Status: accepted (2026-10-11); amended 2026-10-12 with the kernel contract (owner-approved brief: [`docs/briefs/2026-10-kernel-contract.md`](../../docs/briefs/2026-10-kernel-contract.md); research: [`agents/research/kernel-contract/`](../research/kernel-contract/), [`kernel-audit-2026-10-12.md`](../research/kernel-audit-2026-10-12.md)). The "Kernel contract" section below supersedes the kernel list in the Decision section where they differ.
+Status: accepted (2026-10-11); amended 2026-10-12 with the kernel contract (owner-approved brief: [`docs/briefs/2026-10-kernel-contract.md`](../../docs/briefs/2026-10-kernel-contract.md); research: [`agents/research/kernel-contract/`](../research/kernel-contract/), [`kernel-audit-2026-10-12.md`](../research/kernel-audit-2026-10-12.md)). The "Kernel contract" section below supersedes the kernel list in the Decision section where they differ. Amended 2026-10-14 by the owner-approved [kernel alignment brief](../../docs/briefs/2026-10-kernel-cordis.md) (three sections at the end of the kernel contract; kept divergences from Cordis are recorded in [ADR 2](0002-plugins-contexts-and-services.md)).
 
 ## Context
 
@@ -23,9 +23,9 @@ The two differ in one respect that matters: whether Tuna's default implementatio
   |---|---|---|
   | Fixed | The kernel | Only by upgrading Tuna |
   | Startup | Command-loop policy (key resolution, keymap stack, input sessions; [ADR 8](0008-input-keymaps-and-command-composition.md)), settings resolution ([ADR 9](0009-settings-and-scoped-values.md)), persistence format ([ADR 5](0005-persistence.md)), client transport ([ADR 7](0007-rendering-and-transport.md)) | Select another provider in configuration and restart |
-  | Live | Text store, texts/buffers/views, window manager ([ADR 11](0011-window-management-is-a-plugin.md)), renderer, minibuffer and prompts, completion, modes, themes, and everything else | Swap at runtime; the outgoing provider hands its state to the incoming one through the contract |
+  | Live | Text store, texts/buffers/views, window manager ([ADR 11](0011-window-management-is-a-plugin.md)), renderer, minibuffer and prompts, completion, modes, themes, and everything else | Swap at runtime: the provider and its dependents restart and restore their saved state (*2026-10-14*; formerly the outgoing provider handed its state over) |
 
-  A service declares its tier. Startup-tier services refuse live replacement.
+  A service declares its tier. ~~Startup-tier services refuse live replacement.~~ *2026-10-14:* the tier is a label; start-up code's reload policy, not the kernel, defers a change that touches a startup-tier provider to the next start.
 - **Few, coarse contracts.** Contracts sit at subsystem boundaries (text store, buffers, window manager, renderer, input), not around individual functions, and contracts between coupled subsystems are designed together.
 - **Proving contracts.** Each contract is designed while its default is built and proven by swapping in a deliberately small second implementation.
 - **Versioning.** Contracts carry versions; plugin manifests declare which versions they support.
@@ -69,6 +69,10 @@ The approved [kernel alignment brief](../../docs/briefs/2026-10-kernel-cordis.md
 - The read-only `plugin-deactivation-closure` query exposes the active plugin definitions that would turn off, in activation order. Only the kernel can compute this closure from its dependency records. `plugin-provides` exposes the declared service list so configuration can reject duplicates before activation and pair a removed provider with its replacement.
 - Program code uses one restart path for reload, swap and restart: the session plugin captures the closure's slots before any receipt runs; program code turns off the closure and activates the replacement; the session plugin restores its saved data. Failure restores the old definitions and captured data. A provider uses its own saved slot when present, otherwise its contract's neutral saved slot. Session state never enters the kernel.
 - `startup` remains a service label, not a kernel prohibition. Reload policy defers a change whose closure includes a startup-tier provider while the editor loop runs.
+
+### The session owner (amendment, 2026-10-14, Cordis stage 3)
+
+No kernel change. Interactive evaluation belongs to one always-on owner, `session-owner`: the start-up code's own plugin, which also provides the configuration contract, uses the stage 1 `unchecked:` exemption, is not a declaration in `init.ss`, and is therefore never diffed, replaced or restarted by `reload-config`. The configuration contract gains `evaluate-form` and `evaluate-forms`, which run under that owner in a persistent top-level environment importing `:tuna/config`; a sequence stops at the first error and keeps earlier effects, as in Emacs. Its entries take the greatest declaration order, so they win equal-priority ties with the configuration even after a reload.
 
 ## Consequences
 
