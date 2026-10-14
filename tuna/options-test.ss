@@ -71,6 +71,7 @@
              (set! self.last (string-append "stub reload " (number->string self.reloads) "\n"))
              self.last))
   (last-report (lambda (self) self.last))
+  (evaluate (lambda (self form) (error "This configuration double does not evaluate code")))
   (swap! (lambda (self old new) (restart-plugin! old new))))
 
 (def the-stub (stub-configuration reloads: 0 last: #f))
@@ -316,13 +317,13 @@
                                   "(use-plugin good-plugin)"
                                   "(use-plugin good-plugin)"
                                   "(use-plugin car)"
-                                  "(use-plugin plugin-named-config-service)"))
+                                  "(use-plugin plugin-named-session-owner)"))
                 (text (check-configuration (make-config-choice path "--config"))))
            (for-each (lambda (line) (check (contains? text line) ? values))
                      ["init.ss line 3: optioned-plugin option greeting must be a string"
                       "init.ss line 5: plugin good-plugin is already declared at init.ss line 4"
                       "init.ss line 6: use-plugin needs a plugin, not"
-                      "init.ss line 7: the plugin name config-service is reserved"])
+                      "init.ss line 7: the plugin name session-owner is reserved"])
            (check (contains? text "*** ERROR") => #f)))))
 
     (test-case "an option after config: is a syntax error"

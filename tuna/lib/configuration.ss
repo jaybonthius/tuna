@@ -57,7 +57,7 @@ prelude: :gerbil/core
 
 ;; Plugins are known by name, so a declared plugin must not take a name the
 ;; configuration itself uses.
-(def reserved-names '(init config-blocks config-service))
+(def reserved-names '(init config-blocks session-owner))
 
 ;; Record a use-plugin form. FORMS is BLOCK's code as written, [] without
 ;; a block. OPTIONS are the options the form gives, as (name value where)

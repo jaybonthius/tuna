@@ -11,7 +11,7 @@
         dependent-greeting
         fixed-optioned-plugin
         fixed-n
-        plugin-named-config-service
+        plugin-named-session-owner
         probe-on!
         probe-on?
         probe-service
@@ -216,7 +216,7 @@
   (n 1 "A number." (integer-type 0 9)))
 
 ;; A plugin whose name the configuration reserves for its service plugin.
-(def plugin-named-config-service
+(def plugin-named-session-owner
   (let ()
-    (defplugin config-service "Takes a reserved name.")
-    config-service))
+    (defplugin session-owner "Takes a reserved name.")
+    session-owner))

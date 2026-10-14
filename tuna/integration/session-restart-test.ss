@@ -3,7 +3,7 @@
 ;;; frame moved and a frame mark set, then a simulated restart, with the
 ;;; real keys, editing, layout and rendering plugins. tuna/plugins/session-test.ss tests the session
 ;;; and autosave plugins alone.
-(import (only-in :tuna/boot config-service restart-plugin!)
+(import (only-in :tuna/boot session-owner restart-plugin!)
         :std/test
         :tuna/kernel
         :tuna/services/buffers
@@ -46,7 +46,7 @@
 (def editor-plugins
   [commands-plugin keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
    session-plugin buffers-plugin autosave-plugin layout-plugin view-commands-plugin
-   html-renderer-plugin basic-editing-plugin minibuffer-plugin config-service swap-configuration swap-commands-plugin])
+   html-renderer-plugin basic-editing-plugin minibuffer-plugin session-owner swap-configuration swap-commands-plugin])
 
 ;; One run of Tuna on DIRECTORY, booted as main does: activate, restore,
 ;; start the loop.
