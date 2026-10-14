@@ -5,7 +5,8 @@
 ;;; command fixtures from tuna/test-support/ that it builds on. Tuna's
 ;;; executable does not link any of them; they load from source.
 
-(import :tuna/plugins/keys
+(import :tuna/plugins/commands
+        :tuna/plugins/keys
         :tuna/plugins/web
         :tuna/plugins/settings
         :tuna/plugins/echo-area
@@ -30,6 +31,7 @@
         "demo"
         "sidebar")
 
+(use-plugin commands-plugin)
 (use-plugin keys-plugin)
 (use-plugin web-transport-plugin        ; the browser page; `tuna --port N` overrides port:
   port: 0)                              ; 0: any free port

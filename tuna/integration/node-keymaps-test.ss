@@ -9,6 +9,7 @@
         :tuna/services/keys
         :tuna/services/buffers
         :tuna/services/layout
+        :tuna/plugins/commands
         :tuna/plugins/keys
         :tuna/plugins/rope
         :tuna/plugins/settings
@@ -20,7 +21,7 @@
 (export node-keymaps-test)
 
 (def lookup-plugins
-  [keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin no-session-plugin
+  [commands-plugin keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin no-session-plugin
    buffers-plugin layout-plugin])
 
 (def (keydown (key : :string) ctrl?: (ctrl? : :boolean := #f)) => key-event
@@ -92,6 +93,27 @@
 
 (def node-keymaps-test
   (test-suite "tuna/integration/node-keymaps"
+    (test-case "where-is follows explicit focus, ancestor shadows and prefix shadows"
+      (call-with-fresh-kernel lookup-plugins
+        (lambda ()
+          (activate-plugin! layered)
+          (show-tree!)
+          (let ((leaf (current-text-node))
+                (root (buffer-root (current-buffer))))
+            (check (where-is 'leaf-a leaf) => ["C-c a"])
+            (check (where-is 'section-a leaf) => [])
+            (check (where-is 'global-a leaf) => [])
+            (check (where-is 'global-a root) => ["C-c a"])
+            (check (where-is 'root-b root) => ["C-c b"])
+            (defplugin (prefix-shadow ctx)
+              "An exact local prefix hides longer sequences."
+              requires: [input-service]
+              (keymap-set-in ctx leaf-keymap "C-c" 'leaf-x))
+            (activate-plugin! prefix-shadow)
+            (check (where-is 'global-t leaf) => [])
+            (check (where-is 'leaf-x leaf) => ["C-c"])
+            (deactivate-plugin! prefix-shadow)
+            (check (where-is 'global-t leaf) => ["C-c t"])))))
     (test-case "keys: the focused node, the nodes above it to the root, the input target, then the global keymap"
       (call-with-fresh-kernel lookup-plugins
        (lambda ()

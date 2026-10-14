@@ -8,6 +8,7 @@
         :tuna/services/settings
         :tuna/services/minibuffer
         :tuna/services/layout
+        :tuna/plugins/commands
         :tuna/plugins/keys
         :tuna/plugins/rope
         :tuna/plugins/settings
@@ -61,7 +62,7 @@
 (def (with-minibuffer thunk)
   (set! answers [])
   (set! quit? #f)
-  (call-with-fresh-kernel [keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin
+  (call-with-fresh-kernel [commands-plugin keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin
                            no-session-plugin buffers-plugin layout-plugin typing minibuffer-plugin asking]
     (lambda ()
       (start-editor-loop!)

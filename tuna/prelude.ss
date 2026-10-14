@@ -7,6 +7,7 @@ prelude: :gerbil/core
 
 (import :gerbil/core
         :tuna/kernel
+        :tuna/services/commands
         :tuna/services/keys
         :tuna/services/settings)
 (export (import: :gerbil/core)

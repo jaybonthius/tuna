@@ -3,6 +3,7 @@
         :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers
+        :tuna/plugins/commands
         :tuna/plugins/keys
         :tuna/plugins/rope
         :tuna/plugins/settings
@@ -22,7 +23,7 @@
    "<left>" "<right>" "<up>" "<down>" "C-/" "C-_"])
 
 (def editing-plugins
-  [keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin
+  [commands-plugin keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin
    buffers-plugin basic-editing-plugin])
 
 ;; The focused text and point once every key sent so far has run.

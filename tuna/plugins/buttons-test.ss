@@ -8,6 +8,7 @@
         :tuna/services/buffers
         :tuna/services/layout
         :tuna/services/buttons
+        :tuna/plugins/commands
         :tuna/plugins/keys
         :tuna/plugins/rope
         :tuna/plugins/settings
@@ -34,7 +35,7 @@
 
 (def (with-buttons thunk)
   (set! happened [])
-  (call-with-fresh-kernel [keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin
+  (call-with-fresh-kernel [commands-plugin keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin
                            no-session-plugin buffers-plugin layout-plugin buttons-plugin view-clicks]
     (lambda ()
       (start-editor-loop!)

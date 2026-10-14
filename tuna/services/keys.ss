@@ -1,6 +1,6 @@
-;;; Commands and key bindings: the key and pointer events a transport
+;;; Key bindings: the key and pointer events a transport
 ;;; submits as input items, the part of the input service that plugins
-;;; define commands and bind keys through, and the input-target stack
+;;; bind keys through, and the input-target stack
 ;;; (ADR 3, ADR 8). Plugins that define commands or bind keys require
 ;;; `input-service`.
 ;;;
@@ -35,8 +35,12 @@
 prelude: :gerbil/core
 
 (import :std/interface
-        :tuna/kernel)
-(export (struct-out key-event posn pointer-event)
+        :tuna/kernel
+        :tuna/services/commands
+        (only-in :tuna/services/buffers node))
+(export (import: :tuna/services/commands)
+        pre-command-hook post-command-hook where-is
+        (struct-out key-event posn pointer-event)
         pointer-event-names
         event-start
         part-clickable?
@@ -44,12 +48,6 @@ prelude: :gerbil/core
         keymap-generation
         report-stale-click
         (interface-out Keys)
-        (struct-out command)
-        context-define-command!
-        define-command
-        defcommand
-        command-entry
-        command-ref
         keymap-set
         keymap-set!
         keymap-set-in
@@ -60,7 +58,6 @@ prelude: :gerbil/core
         remove-input-target!
         key-binding
         printing-char-key
-        last-command
         last-command-event)
 
 ;; One keydown from a client, with the client's id and sequence number
@@ -143,12 +140,6 @@ prelude: :gerbil/core
                           " is gone (clicked on screen "
                           (number->string (posn-revision p)) ")")))
 
-;; A named action that runs as a task, usually bound to keys.
-(defstruct command ((name      : :symbol)
-                    (procedure : :procedure)          ; thunk, run as a task
-                    (doc       : :string))
-  final: #t)
-
 ;; Binds every printing character that has no binding of its own.
 (def printing-char-key "<printing-char>")
 
@@ -163,13 +154,11 @@ prelude: :gerbil/core
   (new-entry-table))
 
 (interface (Keys Input)
-  ;; Define the command NAME, which runs PROCEDURE, owned by CTX's plugin
-  ;; and defined at SOURCE.
-  (define-command! (ctx : context) (name : :symbol) (procedure : :procedure) (doc : :string)
-                   (source : :t))
-  => :void
-  ;; The effective entry for the command named NAME, or #f.
-  (command-entry (name : :symbol)) => :t
+  ;; Run a command body between the input provider's command-loop hooks.
+  ;; Commands owns activation identity; this method owns input reactions.
+  (dispatch-command (c : command)) => :t
+  ;; Reverse lookup in the maps active from FOCUS (#f: current focus), shortest first.
+  (where-is (name : :symbol) (focus :? node)) => :list
   ;; Bind KEYS, in `keymap-set` syntax ("C-c l"), to the command named
   ;; COMMAND, owned by CTX's plugin and defined at SOURCE.
   (keymap-set! (ctx : context) (keys : :string) (command : :symbol) (source : :t)) => :void
@@ -183,9 +172,8 @@ prelude: :gerbil/core
   (remove-input-target! (target : input-target)) => :void
   ;; The effective binding entry for KEYS, or #f.
   (key-binding (keys : :string)) => :t
-  ;; The name of the command whose keys were completed before the running
-  ;; command's, or #f (Emacs `last-command`).
-  (last-command) => :t
+  ;; Compatibility dispatcher; identity now belongs to Commands.
+  (last-command) => (Maybe :symbol)
   ;; The key or pointer event that completed the running command's keys,
   ;; or #f (Emacs `last-command-event`).
   (last-command-event) => :t
@@ -199,41 +187,11 @@ prelude: :gerbil/core
       (error "The input service does not provide key bindings" input))
     (Keys input)))
 
-(def (context-define-command! (ctx       : context)
-                              (name      : :symbol)
-                              (procedure : :procedure)
-                              doc:    (doc    : :string := "")
-                              source: (source :? :string := #f))
-  => :void
-  (Keys-define-command! (current-keys) ctx name procedure doc source))
+(def pre-command-hook (new-hook 'pre-command doc: "Before each command body; this-command identifies it."))
+(def post-command-hook (new-hook 'post-command doc: "After each command body, before the following redraw."))
 
-;; (define-command ctx (name) "doc" body ...)
-(defsyntax (define-command stx)
-  (syntax-case stx ()
-    ((_ ctx (name) doc body ...)
-     (and (identifier? #'name) (stx-string? #'doc))
-     (with-syntax ((source (stx-source-string stx)))
-       #'(context-define-command! ctx 'name (lambda () body ...)
-                                  doc: doc source: source)))))
-
-;; (defcommand (name) "doc" body ...) in a plugin body defines a command
-;; through (current-context).
-(defsyntax (defcommand stx)
-  (syntax-case stx ()
-    ((_ (name) doc body ...)
-     (and (identifier? #'name) (stx-string? #'doc))
-     (with-syntax ((source (stx-source-string stx)))
-       #'(context-define-command! (current-context) 'name (lambda () body ...)
-                                  doc: doc source: source)))))
-
-;; The effective entry for the command named NAME, with provenance, or #f.
-(def (command-entry (name : :symbol)) => (Maybe entry)
-  (Keys-command-entry (current-keys) name))
-
-;; The effective command named NAME, or #f.
-(def (command-ref (name : :symbol)) => (Maybe command)
-  (let (best (command-entry name))
-    (and best (entry-value best))))
+(def (where-is (name : :symbol) (focus :? node := #f)) => :list
+  (Keys-where-is (current-keys) name focus))
 
 (def (keymap-set! (ctx : context) (keys : :string) (command : :symbol) (source :? :string)) => :void
   (Keys-keymap-set! (current-keys) ctx keys command source))
@@ -273,9 +231,6 @@ prelude: :gerbil/core
 
 (def (key-binding (keys : :string)) => :t
   (Keys-key-binding (current-keys) keys))
-
-(def (last-command) => (Maybe :symbol)
-  (Keys-last-command (current-keys)))
 
 ;; A key-event, a pointer-event, or #f.
 (def (last-command-event) => :t
