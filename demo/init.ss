@@ -1,5 +1,5 @@
 #lang :tuna/config
-;;; The demo configuration, for development only: `make demo` runs
+;;; The demo configuration, for development only: run
 ;;; `tuna --config demo/init.ss`. It declares the starter's plugins
 ;;; (starter/init.ss) plus the demo: the demo plugins (demo.ss, sidebar.ss) and the
 ;;; command fixtures from tuna/test-support/ that it builds on. Tuna's

@@ -1,4 +1,4 @@
-;;; The demo plugin, for development only (`make demo`, demo/init.ss):
+;;; The demo plugin, for development only (`tuna --config demo/init.ss`):
 ;;; swapping the text store (C-c s) and basic editing (C-c p) while Tuna
 ;;; runs. The demo's other commands (the *welcome* tree buffer, endless
 ;;; loops, describe-services, renaming, renderer and layout swaps,

@@ -1,4 +1,4 @@
-.PHONY: all assets build deps test test-frontend demo-check run demo
+.PHONY: all assets build deps test test-frontend demo-check run
 
 ESBUILD ?= esbuild
 
@@ -34,7 +34,3 @@ run: all
 # built into the package, so this is what keeps it from rotting.
 demo-check: build
 	gerbil env tuna check --config demo/init.ss
-
-# The demo (demo/): the starter's plugins plus demo commands. Development only.
-demo: all
-	gerbil env tuna --config demo/init.ss
