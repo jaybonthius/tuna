@@ -425,6 +425,7 @@ prelude: :gerbil/core
 (defplugin (toy-buffers-plugin ctx)
   "Keeps buffers simply (a toy). Outranks the default buffers provider while active."
   requires: [text-store-service settings-service]
+  optional: [buffers-service messages-service]
   (let* ((scratch (toy-scratch))
          (self (toy-buffers newest-first: [scratch]
                             selected: (new-view-at scratch (toy-buffer-point-node scratch) 1 0)

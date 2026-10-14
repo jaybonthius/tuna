@@ -24,11 +24,12 @@ prelude: :gerbil/core
                doc: "Shows help output."))
 
 (def (show-help (title : :string) (lines : :list)) => :void
-  (let (provider (service-provider help-service))
-    (unless provider
-      (error "No plugin shows help"))
-    (Help-show-help! (Help provider) (make-help-output title lines))))
+  (:- (call-with-service-provider help-service
+        (lambda (provider)
+          (unless provider (error "No plugin shows help"))
+          (Help-show-help! (Help provider) (make-help-output title lines)))) :void))
 
 (def (current-help) => (Maybe help-output)
-  (let (provider (service-provider help-service))
-    (and provider (Help-current-help (Help provider)))))
+  (:? (call-with-service-provider help-service
+        (lambda (provider)
+          (and provider (Help-current-help (Help provider))))) help-output))

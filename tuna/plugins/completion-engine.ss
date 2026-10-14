@@ -1,10 +1,5 @@
 ;;; Inline completion engine. Matching sees plain text/indices, never buffers
 ;;; or candidate values; the post-command hook finishes it before redisplay.
-;;; Optional services:
-;;; - completion-ui-service: present! checks its provider once; without it,
-;;;   exact-input completion still works, without a candidate list.
-;;; - messages-service: notices via the kernel's guarded message dispatcher;
-;;;   without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import :std/interface (only-in :gerbil/runtime/hash HashTable)
@@ -61,7 +56,7 @@ prelude: :gerbil/core
                   (else (string<? x y)))))
         matches))))
 
-(defclass completion-engine ((sessions : :list) (styles : entry-table) (annotators : entry-table)
+(defclass completion-engine ((ctx : context) (sessions : :list) (styles : entry-table) (annotators : entry-table)
                             (keymap : entry-table)) final: #t)
 (defclass completion-session ((owner : completion-engine) (table : completion-table)
                              (prompt : Prompt) (input : :string) (candidates : :list)
@@ -103,7 +98,9 @@ prelude: :gerbil/core
 (def (present! (s : completion-session)) => :void
   (let (ui (service-provider completion-ui-service))
     (when (or (not (eq? ui s.ui)) (not (fx= s.revision s.drawn-revision)))
-      (when ui (CompletionUI-present (CompletionUI ui) (CompletionSession s) s.prompt))
+      (when ui
+        (call-with-service-provider completion-ui-service
+          (lambda (provider) (CompletionUI-present (CompletionUI provider) (CompletionSession s) s.prompt))))
       (set! s.ui ui)
       (set! s.drawn-revision s.revision))))
 
@@ -162,7 +159,9 @@ prelude: :gerbil/core
                      (let (c (list-ref s.candidates index))
                        (unless (eq? c s.selected)
                          (set! s.selected c) (set! s.revision (fx1+ s.revision))))))
-  (session-exit! (lambda (s use-input?) (exit-session! s use-input?)))
+  (session-exit! (lambda (s use-input?)
+                   (call-with-context (completion-engine-ctx s.owner)
+                     (lambda () (exit-session! s use-input?)))))
   (session-insert! (lambda (s)
                      (unless (eq? s (session-here s.owner)) (error "Not in the active completion prompt"))
                      (when s.selected
@@ -225,7 +224,8 @@ prelude: :gerbil/core
 (defplugin (completion-engine-plugin ctx)
   "Completion reads with smart-case substring matching; works without a list UI."
   requires: [commands-service input-service buffers-service minibuffer-service settings-service]
-  (let (self (completion-engine sessions: [] styles: (new-entry-table) annotators: (new-entry-table)
+  optional: [completion-service completion-ui-service messages-service]
+  (let (self (completion-engine ctx: ctx sessions: [] styles: (new-entry-table) annotators: (new-entry-table)
                                keymap: (new-keymap)))
     (context-provide! ctx completion-service (Completion self))
     (keymap-set-in ctx (completion-engine-keymap self) "RET" 'completion-accept-input)

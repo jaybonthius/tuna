@@ -61,31 +61,38 @@ prelude: :gerbil/core
 (def completion-ui-service (new-service 'completion-ui is-CompletionUI? tier: 'live
   doc: "Presents a completion session in its prompt buffer."))
 
-(def (current-completion) => Completion
-  (let (provider (service-provider completion-service))
-    (unless provider (error "No plugin provides completion"))
-    (Completion provider)))
+
 
 (def (completing-read (question : :string) (table : completion-table)
                       require-match: (require-match : :boolean := #t)
                       initial: (initial : :string := "")
                       history: (history :? :symbol := #f)
                       default: (default :? :string := #f)) => :t
-  (Completion-completing-read (current-completion) question table require-match initial history default))
+  (call-with-service-provider completion-service
+    (lambda (implementation)
+      (let (provider (Completion (or implementation (error "No plugin provides" 'completion))))
+        (Completion-completing-read provider question table require-match initial history default)))))
 
 (def (current-completion-session) => (Maybe CompletionSession)
-  (let (provider (service-provider completion-service))
-    (and provider (Completion-current-session (Completion provider)))))
+  (:? (call-with-service-provider completion-service
+        (lambda (provider)
+          (and provider (Completion-current-session (Completion provider))))) CompletionSession))
 
 (def (context-define-completion-style! (ctx : context) (style : completion-style)
                                        priority: (priority : :fixnum := 0)) => :void
-  (context-add-entry! ctx (Completion-styles (current-completion)) (completion-style-name style) style
-                      priority: priority doc: (completion-style-doc style)))
+  (:- (call-with-service-provider completion-service
+    (lambda (implementation)
+      (let (provider (Completion (or implementation (error "No plugin provides" 'completion))))
+        (context-add-entry! ctx (Completion-styles provider) (completion-style-name style) style
+                            priority: priority doc: (completion-style-doc style))))) :void))
 
 ;; An annotator may return #f to decline, or a field list (including []).
 (def (context-define-annotator! (ctx : context) (category : :symbol) (annotate : :procedure)
                                priority: (priority : :fixnum := 0)) => :void
-  (context-add-entry! ctx (Completion-annotators (current-completion)) category annotate priority: priority))
+  (:- (call-with-service-provider completion-service
+    (lambda (implementation)
+      (let (provider (Completion (or implementation (error "No plugin provides" 'completion))))
+        (context-add-entry! ctx (Completion-annotators provider) category (context-bind ctx annotate) priority: priority)))) :void))
 
 (def (strings->candidates (strings : :list)) => :list
   (map (lambda ((text : :string)) (make-candidate text: text value: text key: text)) strings))

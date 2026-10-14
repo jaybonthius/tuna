@@ -7,9 +7,6 @@
 ;;; provides. Commands run as tasks, so the reload holds the baton. The
 ;;; plugin binds no key; init.ss can. `tuna reload` from a terminal does
 ;;; not need this plugin.
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 (import :tuna/services/commands
         :tuna/kernel
         :tuna/services/configuration)
@@ -25,6 +22,7 @@
 (defplugin reload-config-plugin
   "The reload-config and show-config-report commands."
   requires: [commands-service configuration-service]
+  optional: [messages-service]
   (defcommand (reload-config) "Load init.ss again and apply what changed; show the report."
     (message (echo-text (reload-configuration-report))))
   (defcommand (show-config-report) "Show the last start-up or reload report of init.ss."

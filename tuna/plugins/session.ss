@@ -12,9 +12,6 @@
 ;;; data, never evaluated. A file that fails is moved aside and reported,
 ;;; and Tuna starts without it. Data of slots no active plugin registers is
 ;;; kept, so turning a plugin off does not erase what it saved.
-;;; Optional services:
-;;; - messages-service: report! checks its provider once; without it, reports
-;;;   go only to stderr. Saving and restoring do not need a message display.
 prelude: :gerbil/core
 
 (import :std/interface
@@ -218,6 +215,7 @@ prelude: :gerbil/core
 
 (defplugin (session-plugin ctx)
   "Saves the session to $XDG_STATE_HOME/tuna/session.ss while idle and on exit, and restores it."
+  optional: [messages-service]
   (let* ((directory (or (session-state-directory) (default-state-directory)))
          (entries (read-session (path-expand "session.ss" directory))))
     ;; What the file holds, as far as saving needs to know.

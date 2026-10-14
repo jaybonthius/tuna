@@ -8,12 +8,6 @@
 ;;; without it, each from the most specific event name down
 ;;; (`pointer-event-names`), before the next keymap. A click does not clear
 ;;; the echo area, so clicking it to read a message keeps the message.
-;;; Optional services:
-;;; - settings-service: live Option policy; without it, declared defaults.
-;;; - buffers-service: focused node maps; without it, input-target/global maps.
-;;; - layout-service: clicked node maps; without it, global click bindings.
-;;; - messages-service: notices via the kernel's guarded message dispatcher;
-;;;   without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import :tuna/kernel
@@ -368,6 +362,7 @@ prelude: :gerbil/core
 (defplugin (keys-plugin ctx)
   "Resolves keys through node keymaps and the global keymap. C-g quits."
   requires: [commands-service]
+  optional: [settings-service buffers-service layout-service messages-service]
   (using (self (global-keys keymap: (new-entry-table) targets: []
                             pending: [] command-event: #f
                             generation: (next-id!))

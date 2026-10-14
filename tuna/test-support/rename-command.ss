@@ -1,8 +1,5 @@
 ;;; C-c r (rename-buffer): a command that asks in the minibuffer, for tests
 ;;; of prompts.
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import :tuna/services/commands
@@ -15,6 +12,7 @@ prelude: :gerbil/core
 (defplugin (rename-command-plugin ctx)
   "C-c r renames the current buffer, asking the new name in the minibuffer."
   requires: [commands-service input-service buffers-service minibuffer-service]
+  optional: [messages-service]
   (define-command ctx (rename-buffer) "Give the current buffer a new name, asked in the minibuffer."
     (let (name (read-string "New name: " history: 'rename-buffer))
       (when (string-empty? name)

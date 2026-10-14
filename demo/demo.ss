@@ -6,9 +6,6 @@
 ;;; that demo/init.ss declares beside it. The demo turns other plugins on
 ;;; and off, so it imports them; ordinary plugins do not. Nothing in tuna/
 ;;; or starter/ may import it (tuna/kernel/boundary-test.ss).
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import :tuna/services/commands
@@ -26,6 +23,7 @@ prelude: :gerbil/core
 (defplugin (demo-plugin ctx)
   "Demo commands: swap the text store (C-c s) and basic editing (C-c p) while Tuna runs."
   requires: [commands-service input-service]
+  optional: [messages-service]
   (define-command ctx (swap-text-store) "Switch between the rope and the plain-string text store."
     (toggle-plugin! string-text-store-plugin)
     (message (if (plugin-active? string-text-store-plugin)

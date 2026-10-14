@@ -35,6 +35,7 @@ prelude: :gerbil/core
 (defplugin (tree-buffer-plugin ctx)
   "Defines the column and heading kinds, adds *welcome*, and binds C-c b to switch to it."
   requires: [commands-service input-service buffers-service]
+  optional: [messages-service]
   (def previous-buffer #f)              ; where C-c b returns from *welcome*
   (context-define-node-kind! ctx 'column doc: "Children stacked vertically.")
   (context-define-node-kind! ctx 'heading doc: "A heading."

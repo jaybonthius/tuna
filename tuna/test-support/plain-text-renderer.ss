@@ -93,5 +93,6 @@ prelude: :gerbil/core
 (defplugin (plain-text-renderer-plugin ctx)
   "Renders the screen as plain text (a toy). Outranks the HTML renderer while active."
   requires: [buffers-service layout-service settings-service]
+  optional: [input-service]
   (context-define-node-renderer! ctx 'text 'plain-text text-node-runs)
   (context-provide! ctx renderer-service (Renderer (make-plain-text-renderer)) priority: 10))

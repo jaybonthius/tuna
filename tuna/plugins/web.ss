@@ -7,9 +7,6 @@
 ;;; key-event or a pointer-event. Each screen carries its revision as
 ;;; data-revision on its root element, and a pointer item names the screen
 ;;; it was computed on, which must be one this transport sent.
-;;; Optional services:
-;;; - renderer-service: render-screen checks its provider once; without it,
-;;;   the transport serves a "No renderer is active" screen.
 prelude: :gerbil/core
 
 (import :std/crypto/random
@@ -74,7 +71,8 @@ prelude: :gerbil/core
 (def (render-screen) => :string
   (let (renderer (service-provider renderer-service))
     (if renderer
-      (Renderer-render-screen (Renderer renderer))
+      (:- (call-with-service-provider renderer-service
+            (lambda (provider) (Renderer-render-screen (Renderer provider)))) :string)
       "<main id=\"screen\"><p>No renderer is active.</p></main>")))
 
 ;; SCREEN with REVISION as data-revision on its root element, so that
@@ -409,6 +407,7 @@ prelude: :gerbil/core
 
 (defplugin (web-transport-plugin ctx)
   "Serves screens to browser tabs on loopback and receives their input."
+  optional: [renderer-service]
   (let* ((port (let (configured (plugin-option web-transport-plugin 'port))
                  (if (zero? configured) (free-loopback-port) configured)))
          (host (string-append "127.0.0.1:" (number->string port)))

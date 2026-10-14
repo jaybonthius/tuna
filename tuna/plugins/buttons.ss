@@ -9,9 +9,6 @@
 ;;; real <button>, out of the browser's tab order (tabindex -1), since
 ;;; keyboard focus is Tuna's, not the browser's; it is marked clickable
 ;;; from its keymap like any node.
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import :tuna/services/commands
@@ -33,6 +30,7 @@ prelude: :gerbil/core
 (defplugin (buttons-plugin ctx)
   "Buttons in buffers: a click on one runs its action."
   requires: [commands-service input-service buffers-service layout-service]
+  optional: [messages-service]
   (context-define-node-kind! ctx button-node-kind
                              doc: "A button: a label, and an action run when it is clicked."
                              project: (lambda (n) (node-attribute n 'label)))

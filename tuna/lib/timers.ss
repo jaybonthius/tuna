@@ -26,7 +26,7 @@ prelude: :gerbil/core
                               (procedure : :procedure)
                               name: (name : :symbol := 'timer))
   => timer
-  (using (new (timer name: name procedure: procedure thread: #f cancelled?: #f tasks: []) : timer)
+  (using (new (timer name: name procedure: (context-bind ctx procedure) thread: #f cancelled?: #f tasks: []) : timer)
     (set! new.thread (spawn-thread (lambda () (countdown-thread new seconds repeat))
                                    'tuna-timer))
     (context-defer! ctx (lambda () (cancel-timer new)))

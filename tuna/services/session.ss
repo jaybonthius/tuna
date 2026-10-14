@@ -49,11 +49,7 @@ prelude: :gerbil/core
   (new-service 'session is-Session? tier: 'startup
                doc: "Saves and restores session slots as plain data."))
 
-(def (current-session) => Session
-  (let (provider (service-provider session-service))
-    (unless provider
-      (error "No plugin keeps the session"))
-    (Session provider)))
+
 
 (def (context-add-session-slot! (ctx : context)
                                 (name : :symbol)
@@ -62,17 +58,29 @@ prelude: :gerbil/core
                                 restore:  (restore  : :procedure)
                                 priority: (priority : :fixnum := 0))
   => :void
-  (Session-add-session-slot! (current-session) ctx
-                             (make-session-slot name version save restore) priority))
+  (:- (call-with-service-provider session-service
+    (lambda (implementation)
+      (let (provider (Session (or implementation (error "No plugin provides" 'session))))
+        (Session-add-session-slot! provider ctx
+                                   (make-session-slot name version (context-bind ctx save) (context-bind ctx restore)) priority)))) :void))
 
 (def (save-session) => :void
-  (Session-save-session! (current-session)))
+  (:- (call-with-service-provider session-service
+    (lambda (implementation)
+      (let (provider (Session (or implementation (error "No plugin provides" 'session))))
+        (Session-save-session! provider)))) :void))
 
 (def (restore-session) => :void
-  (Session-restore-session! (current-session)))
+  (:- (call-with-service-provider session-service
+    (lambda (implementation)
+      (let (provider (Session (or implementation (error "No plugin provides" 'session))))
+        (Session-restore-session! provider)))) :void))
 
 (def (state-directory) => :string
-  (Session-state-directory (current-session)))
+  (:- (call-with-service-provider session-service
+    (lambda (implementation)
+      (let (provider (Session (or implementation (error "No plugin provides" 'session))))
+        (Session-state-directory provider)))) :string))
 
 ;; Whether VALUE is plain data that `write` and `read` round-trip: lists,
 ;; vectors, strings, symbols, numbers, characters, and booleans, without

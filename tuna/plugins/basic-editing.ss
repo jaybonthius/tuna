@@ -2,9 +2,6 @@
 ;;; Basic editing: typing, deleting, moving by characters and lines, and
 ;;; undo. Every command acts on the current view's focused text node, so it
 ;;; works the same in a one-text buffer and in a tree with other nodes.
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 (import :tuna/services/commands
         :tuna/kernel
         :tuna/services/keys
@@ -47,6 +44,7 @@
 (defplugin basic-editing-plugin
   "Typing, deleting, moving by characters and lines, and undo."
   requires: [commands-service input-service buffers-service]
+  optional: [messages-service]
   (defcommand (self-insert-command) "Insert the character typed."
     ;; Consecutive self-inserts undo together, up to 20 (as in Emacs).
     (when (eq? (last-command) 'self-insert-command)
