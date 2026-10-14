@@ -1,6 +1,7 @@
 ;;; Behavior through real commands, prompt tasks, node clicks and redraws.
 prelude: :gerbil/core
-(import :std/test :std/interface :tuna/kernel
+(import :tuna/services/commands
+        :std/test :std/interface :tuna/kernel
         :tuna/services/keys :tuna/services/buffers :tuna/services/minibuffer
         :tuna/services/layout
         :tuna/services/completion :tuna/services/settings :tuna/services/renderer
@@ -193,6 +194,19 @@ prelude: :gerbil/core
           (check (on-editor texts) => ["test-alpha" "test-beta"])
           (type! "C-g")
           (check (on-editor (lambda () (minibuffer-history 'extended-command))) => ["test-alpha"]))))
+    (test-case "keys, editing, prompts and completion work without optional messages"
+      (run-completion completion-vertical-plugin
+        (lambda ()
+          (on-editor (lambda () (deactivate-plugin! test-messages-plugin)
+                                (check (service-provider messages-service) => #f)))
+          (type! "M-x" "t" "e" "s" "t" "-" "a" "l" "p" "h" "a" "RET")
+          (check (on-editor session) => #f)
+          (check results => ['alpha])
+          (type! "C-c" "f" "b")
+          (check (on-editor row-texts) => ["beta"])
+          (type! "RET")
+          (check (on-editor session) => #f)
+          (check results => ["beta" 'alpha]))))
     (test-case "without a UI, RET validates an exact name and M-x still runs"
       (run-completion #f
         (lambda ()

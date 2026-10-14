@@ -1,7 +1,11 @@
 ;;; Vertical completion presentation. Nodes are rebuilt from the session;
 ;;; the renderer still sends one whole-screen morph. No client list state.
+;;; Optional services:
+;;; - messages-service: notices via the kernel's guarded message dispatcher
+;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
-(import :std/interface (only-in :gerbil/runtime/hash HashTable)
+(import :tuna/services/commands
+        :std/interface (only-in :gerbil/runtime/hash HashTable)
         :tuna/kernel :tuna/services/keys :tuna/services/buffers
         :tuna/services/layout :tuna/services/minibuffer :tuna/services/settings
         :tuna/services/completion)
@@ -68,7 +72,7 @@ prelude: :gerbil/core
   (let* ((b (prompt-buffer p)) (root (buffer-root b))
          (d (or (hash-get self.displays b)
                 (let* ((children (node-children root))
-                       (answer (prompt-display-answer (active-prompt)))
+                       (answer (prompt-answer-node p))
                        (counter (new-node 'completion-counter))
                        (list (new-node 'completion-list))
                        (fresh (vertical-display prompt: p session: s counter: counter list: list
@@ -104,7 +108,7 @@ prelude: :gerbil/core
 
 (defplugin (completion-vertical-plugin ctx)
   "A vertical completion list with keyboard navigation and clickable rows."
-  requires: [completion-service input-service buffers-service settings-service layout-service]
+  requires: [commands-service completion-service input-service buffers-service settings-service layout-service]
   (for-each (lambda (kind) (context-define-node-kind! ctx kind))
             '(completion-counter completion-list completion-row completion-group))
   (context-define-node-renderer! ctx 'completion-counter 'html

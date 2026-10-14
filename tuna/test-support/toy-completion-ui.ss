@@ -1,6 +1,7 @@
 ;;; A deliberately different UI: one text summary, no candidate rows.
 prelude: :gerbil/core
-(import :std/interface (only-in :gerbil/runtime/hash HashTable)
+(import :tuna/services/commands
+        :std/interface (only-in :gerbil/runtime/hash HashTable)
         :tuna/kernel :tuna/services/keys :tuna/services/buffers
         :tuna/services/minibuffer :tuna/services/completion)
 (export toy-completion-ui-plugin)
@@ -11,7 +12,7 @@ prelude: :gerbil/core
   (present (lambda (self session prompt)
     (let* ((b (prompt-buffer prompt)) (root (buffer-root b))
            (kept (or (hash-get self.shown b)
-                     (let* ((answer (prompt-display-answer (active-prompt)))
+                     (let* ((answer (prompt-answer-node prompt))
                             (summary (new-node 'toy-completion-summary))
                             (fresh [summary answer (node-keymap answer)]))
                        (set-node-keymap! answer self.keymap)
@@ -24,7 +25,7 @@ prelude: :gerbil/core
 
 (defplugin (toy-completion-ui-plugin ctx)
   "A one-line test completion UI, proving presentation is replaceable."
-  requires: [completion-service input-service buffers-service]
+  requires: [commands-service completion-service input-service buffers-service]
   (context-define-node-kind! ctx 'toy-completion-summary project: (lambda (n) (node-attribute n 'content)))
   (let (self (toy-completion-ui shown: (make-hash-table-eq) keymap: (new-keymap)))
     (context-define-command! ctx 'toy-completion-select

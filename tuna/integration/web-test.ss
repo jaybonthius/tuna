@@ -22,6 +22,7 @@
         :tuna/plugins/view-commands
         :tuna/plugins/html-renderer
         :tuna/plugins/basic-editing
+        :tuna/plugins/minibuffer
         "../test-support/session"
         "../test-support/endless-commands"
         "../test-support/services-help"
@@ -31,7 +32,7 @@
 (def browser-editor-plugins
   [commands-plugin keys-plugin web-transport-plugin echo-area-plugin help-buffer-plugin
    rope-text-store-plugin settings-plugin no-session-plugin buffers-plugin layout-plugin
-   view-commands-plugin html-renderer-plugin basic-editing-plugin endless-commands-plugin services-help-plugin])
+   minibuffer-plugin view-commands-plugin html-renderer-plugin basic-editing-plugin endless-commands-plugin services-help-plugin])
 
 (def (with-tuna thunk)
   (with-web-tuna browser-editor-plugins thunk))

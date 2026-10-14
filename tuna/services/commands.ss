@@ -5,7 +5,8 @@ prelude: :gerbil/core
 (export (struct-out command)
         (interface-out Commands)
         commands-service context-define-command! define-command defcommand
-        command-entry command-ref command-names call-command this-command last-command)
+        command-entry command-ref command-names call-command this-command last-command
+        pre-command-hook post-command-hook)
 
 ;; Visibility receives this command and the caller's origin (usually a
 ;; buffer). Modes and argument specifications are reserved, not interpreted.
@@ -16,6 +17,9 @@ prelude: :gerbil/core
                     (modes : :list := [])
                     (arguments : :list := []))
   final: #t)
+
+(def pre-command-hook (new-hook 'pre-command doc: "Before each command body; this-command identifies it."))
+(def post-command-hook (new-hook 'post-command doc: "After each command body, before the following redraw."))
 
 (interface Commands
   (define-command! (ctx : context) (c : command) (source :? :string)) => :void

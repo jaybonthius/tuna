@@ -4,7 +4,8 @@
 ;;; up to the buffer's root, then the innermost input target, then the
 ;;; global keymap. A click is looked up under every one of its names in a
 ;;; keymap before the next keymap.
-(import :std/test
+(import :tuna/services/commands
+        :std/test
         :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers

@@ -12,6 +12,9 @@
 ;;; data, never evaluated. A file that fails is moved aside and reported,
 ;;; and Tuna starts without it. Data of slots no active plugin registers is
 ;;; kept, so turning a plugin off does not erase what it saved.
+;;; Optional services:
+;;; - messages-service: report! checks its provider once; without it, reports
+;;;   go only to stderr. Saving and restoring do not need a message display.
 prelude: :gerbil/core
 
 (import :std/interface

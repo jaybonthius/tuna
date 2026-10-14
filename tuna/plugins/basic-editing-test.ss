@@ -1,5 +1,6 @@
 ;;; Basic editing driven by key events through the real editor loop.
-(import :std/test
+(import :tuna/services/commands
+        :std/test
         :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers

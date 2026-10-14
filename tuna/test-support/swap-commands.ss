@@ -2,9 +2,13 @@
 ;;; provider for the contract doubles (plain-text-renderer.ss, two-views.ss,
 ;;; toy-buffers.ss) while Tuna runs, for tests that swap a live slot through
 ;;; the editor.
+;;; Optional services:
+;;; - messages-service: notices via the kernel's guarded message dispatcher
+;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
-(import :tuna/kernel
+(import :tuna/services/commands
+        :tuna/kernel
         :tuna/services/keys
         "plain-text-renderer"
         "two-views"
@@ -18,7 +22,7 @@ prelude: :gerbil/core
 
 (defplugin (swap-commands-plugin ctx)
   "C-c v swaps the renderer, C-c w the layout, C-c B the buffers provider, for their doubles."
-  requires: [input-service]
+  requires: [commands-service input-service]
   (define-command ctx (swap-renderer) "Switch between the HTML and the plain-text renderer."
     (toggle-plugin! plain-text-renderer-plugin)
     (message (if (plugin-active? plain-text-renderer-plugin)

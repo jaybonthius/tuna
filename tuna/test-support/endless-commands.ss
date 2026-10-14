@@ -1,15 +1,19 @@
 ;;; Commands that never finish, for tests of quitting with C-g: C-c l loops
 ;;; checking for quit; C-c L loops without checking, so only a forced quit
 ;;; stops it.
+;;; Optional services:
+;;; - messages-service: notices via the kernel's guarded message dispatcher
+;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
-(import :tuna/kernel
+(import :tuna/services/commands
+        :tuna/kernel
         :tuna/services/keys)
 (export endless-commands-plugin)
 
 (defplugin (endless-commands-plugin ctx)
   "Endless commands to quit with C-g: C-c l checks for quit, C-c L does not."
-  requires: [input-service]
+  requires: [commands-service input-service]
   (define-command ctx (loop-forever) "Loop until quit, checking for quit."
     (message "Looping forever, checking for quit. Press C-g.")
     (redisplay)

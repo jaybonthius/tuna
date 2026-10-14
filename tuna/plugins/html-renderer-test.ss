@@ -15,7 +15,8 @@
         :tuna/plugins/layout
         :tuna/plugins/html-renderer
         "../test-support/kernel"
-        "../test-support/session")
+        "../test-support/session"
+        "../test-support/two-views")
 (export html-renderer-test)
 
 (def renderer-plugins
@@ -88,6 +89,16 @@
 
 (def html-renderer-test
   (test-suite "tuna/plugins/html-renderer"
+    (test-case "renders without the optional input and message services"
+      (call-with-fresh-kernel
+        [rope-text-store-plugin settings-plugin buffers-plugin two-views-plugin html-renderer-plugin]
+        (lambda ()
+          (check (service-provider input-service) => #f)
+          (check (service-provider messages-service) => #f)
+          (insert "hello")
+          (let (html (screen))
+            (check (and (offset "hello" html) #t) => #t)
+            (check (offset "data-clickable" html) => #f)))))
     (test-case "*scratch* renders its one text node with the cursor"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()

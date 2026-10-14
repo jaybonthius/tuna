@@ -1,8 +1,7 @@
 ;;; A deliberately small Commands double: one entry table per name,
-;;; linear lookup, with the same optional input dispatch seam.
+;;; linear lookup, with command hooks and thread-scoped identity.
 prelude: :gerbil/core
-(import :std/interface :tuna/kernel :tuna/services/commands
-        (only-in :tuna/services/keys Keys is-Keys? Keys-dispatch-command))
+(import :std/interface :tuna/kernel :tuna/services/commands)
 (export toy-commands-plugin)
 
 (defclass toy-commands ((tables : :list) (previous :? :symbol)) final: #t)
@@ -19,10 +18,11 @@ prelude: :gerbil/core
           (frame (vector name (if parent (vector-ref parent 1) self.previous) name)))
       (parameterize ((toy-activation frame))
         (unwind-protect
-          (let (input (service-provider input-service))
-            (if (and input (is-Keys? input))
-              (Keys-dispatch-command (Keys input) (entry-value e))
-              ((command-procedure (entry-value e)))))
+          (begin
+            (run-hook pre-command-hook)
+            (unwind-protect
+              ((command-procedure (entry-value e)))
+              (run-hook post-command-hook)))
           (begin
             (set! self.previous (vector-ref frame 2))
             (when parent

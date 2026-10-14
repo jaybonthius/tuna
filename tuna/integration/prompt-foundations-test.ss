@@ -1,6 +1,7 @@
 ;;; Foundations through real tasks, including both buffers providers.
 prelude: :gerbil/core
-(import :std/test :std/error :std/interface :tuna/kernel
+(import :tuna/services/commands
+        :std/test :std/error :std/interface :tuna/kernel
         :tuna/services/keys :tuna/services/buffers :tuna/services/minibuffer
         :tuna/services/settings :tuna/services/layout :tuna/services/session
         :tuna/plugins/commands :tuna/plugins/keys :tuna/plugins/rope
@@ -16,7 +17,7 @@ prelude: :gerbil/core
 
 (defplugin (questions ctx)
   "History reads, a customizable prompt, and a yield-point edit."
-  requires: [commands-service input-service minibuffer-service]
+  requires: [commands-service input-service minibuffer-service buffers-service]
   (defcommand (history-question) "Ask with a named history."
     (set! results (cons (read-string "History: " history: 'names) results)))
   (keymap-set "C-c h" 'history-question)
@@ -80,6 +81,27 @@ prelude: :gerbil/core
 
 (def prompt-foundations-test
   (test-suite "prompt foundations"
+    (test-case "a prompt handle keeps its answer node while an inner prompt is active"
+      (with-temporary-state
+        (lambda (directory)
+          (run-prompts directory buffers-plugin
+            (lambda ()
+              (type! "C-c" "c" "o")
+              (let* ((outer (on-editor (lambda () handle)))
+                     (answer (on-editor (lambda () (prompt-answer-node outer)))))
+                (type! "C-c" "c" "i")
+                (on-editor
+                  (lambda ()
+                    (check (eq? (prompt-answer-node outer) answer) => #t)
+                    (check (text-string (text-node-content answer)) => "o")
+                    (check (text-string (text-node-content (prompt-answer-node handle))) => "i")
+                    (check (eq? (prompt-answer-node handle)
+                                (prompt-display-answer (active-prompt))) => #t)
+                    (check (eq? answer (prompt-answer-node handle)) => #f)))
+                (type! "C-g")
+                (check (prompt-state) => "o")
+                (type! "C-g")
+                (check (on-editor active-prompt) => #f)))))))
     (test-case "an invalid history length fails before a prompt buffer is added"
       (with-temporary-state
        (lambda (directory)

@@ -1,8 +1,8 @@
 ;;; Key bindings: the key and pointer events a transport
 ;;; submits as input items, the part of the input service that plugins
 ;;; bind keys through, and the input-target stack
-;;; (ADR 3, ADR 8). Plugins that define commands or bind keys require
-;;; `input-service`.
+;;; (ADR 3, ADR 8). Plugins that bind keys require `input-service`;
+;;; command definitions require the separate commands service.
 ;;;
 ;;; Keymaps are entry tables (`new-keymap`): every binding is an entry
 ;;; owned by the plugin that made it and goes when that plugin is turned
@@ -36,10 +36,8 @@ prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
-        :tuna/services/commands
         (only-in :tuna/services/buffers node))
-(export (import: :tuna/services/commands)
-        pre-command-hook post-command-hook where-is
+(export where-is
         (struct-out key-event posn pointer-event)
         pointer-event-names
         event-start
@@ -154,9 +152,6 @@ prelude: :gerbil/core
   (new-entry-table))
 
 (interface (Keys Input)
-  ;; Run a command body between the input provider's command-loop hooks.
-  ;; Commands owns activation identity; this method owns input reactions.
-  (dispatch-command (c : command)) => :t
   ;; Reverse lookup in the maps active from FOCUS (#f: current focus), shortest first.
   (where-is (name : :symbol) (focus :? node)) => :list
   ;; Bind KEYS, in `keymap-set` syntax ("C-c l"), to the command named
@@ -172,8 +167,6 @@ prelude: :gerbil/core
   (remove-input-target! (target : input-target)) => :void
   ;; The effective binding entry for KEYS, or #f.
   (key-binding (keys : :string)) => :t
-  ;; Compatibility dispatcher; identity now belongs to Commands.
-  (last-command) => (Maybe :symbol)
   ;; The key or pointer event that completed the running command's keys,
   ;; or #f (Emacs `last-command-event`).
   (last-command-event) => :t
@@ -186,9 +179,6 @@ prelude: :gerbil/core
     (unless (and input (is-Keys? input))
       (error "The input service does not provide key bindings" input))
     (Keys input)))
-
-(def pre-command-hook (new-hook 'pre-command doc: "Before each command body; this-command identifies it."))
-(def post-command-hook (new-hook 'post-command doc: "After each command body, before the following redraw."))
 
 (def (where-is (name : :symbol) (focus :? node := #f)) => :list
   (Keys-where-is (current-keys) name focus))

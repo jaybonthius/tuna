@@ -539,6 +539,106 @@
               (filter (lambda ((file : :string)) (not (member file program-files)))
                       (append (non-test-source-names) (demo-source-names))))))
 
+;;; Contracts and plugin ownership
+
+;; Tests may assemble providers; implementation modules may not reach
+;; sideways. All references are normalized, including relative imports,
+;; preludes, nested import specs, macro-built imports and includes.
+(def contract-layer
+  (make-layer "contract" "tuna/services" #f [] [":tuna/kernel"]))
+
+(def (contract-allowed-import? (file : :string) (name : :string)
+                               (contracts : :list) (libraries : :list)) => :boolean
+  (or (and (or (member name [":gerbil" ":std" ":tuna/kernel"])
+               (string-prefix? ":gerbil/" name)
+               (string-prefix? ":std/" name)) #t)
+      (and (member (string-append (path-strip-extension (reference-target file name)) ".ss")
+                   (map source-path (append contracts libraries))) #t)))
+
+;; Re-exports remain forbidden even inside phi: or a macro template.
+(def (re-exports? (form : :t)) => :boolean
+  (and (pair? form)
+       (or (eq? (car form) 'import:)
+           (re-exports? (car form))
+           (re-exports? (cdr form)))))
+
+(def (contract-problems) => :list
+  (let ((contracts (layer-source-names contract-layer))
+        (libraries (layer-source-names library-layer)))
+    (apply append
+      (map (lambda ((file : :string))
+             (let (forms (read-forms (source-path file)))
+               (append
+                 (filter-map
+                   (lambda ((name : :string))
+                     (and (not (contract-allowed-import? file name contracts libraries))
+                          (string-append file ": imports " name
+                            "; contracts import only :gerbil, :std, the kernel facade,"
+                            " checked libraries and contracts")))
+                   (unique (append (imported-module-names forms) (module-like-symbols forms))))
+                 (if (re-exports? forms)
+                   [(string-append file ": re-exports a module; contracts export only their own vocabulary")]
+                   [])
+                 (filter-map
+                   (lambda ((name : :string))
+                     (and (not (member (reference-target file name) (map source-path contracts)))
+                          (string-append file ": includes " name "; contracts include only checked contracts")))
+                   (included-paths forms)))))
+           contracts))))
+
+;; Each row is (contract . imported-contracts), with normalized source paths.
+(def (contract-graph) => :list
+  (let (contracts (map source-path (layer-source-names contract-layer)))
+    (map (lambda ((file : :string))
+           (cons file
+                 (unique
+                   (filter-map
+                     (lambda ((name : :string))
+                       (let (target (string-append (path-strip-extension (reference-target file name)) ".ss"))
+                         (and (member target contracts) target)))
+                     (referenced-names (read-forms file))))))
+         contracts)))
+
+;; A path-local visited set catches self-imports and indirect cycles.
+;; DONE avoids walking shared dependencies again.
+(def (graph-cycle-problems (graph : :list)) => :list
+  (let ((done []) (problems []))
+    (let visit ((file #f) (path []))
+      (cond
+        ((not file) (for-each (lambda (row) (visit (car row) [])) graph))
+        ((member file path)
+         (set! problems (cons (string-append "contract cycle: "
+                               (string-join (reverse (cons file path)) " -> ")) problems)))
+        ((not (member file done))
+         (for-each (lambda (dependency) (visit dependency (cons file path)))
+                   (cdr (assoc file graph)))
+         (set! done (cons file done)))))
+    (reverse problems)))
+
+;; Ownership is a path convention: x.ss and every x/*.ss belong to x.
+;; It does not depend on a defplugin's binding name (web.ss, for example,
+;; defines web-transport-plugin). Nested private modules inherit x.
+(def (plugin-owner (file : :string)) => :string
+  (path-strip-extension (car (string-split file #\/))))
+
+(def (plugin-reference-problems (file : :string) (names : :list)) => :list
+  (let* ((prefix (string-append (source-path "tuna/plugins") "/"))
+         (owner (plugin-owner (substring file (string-length "tuna/plugins/") (string-length file)))))
+    (filter-map
+      (lambda ((name : :string))
+        (let (target (reference-target file name))
+          (and (string-prefix? prefix target)
+               (not (equal? owner (plugin-owner (substring target (string-length prefix) (string-length target)))))
+               (string-append file ": imports or includes " name
+                 "; a plugin may use only its own private modules (" owner "/)"))))
+      names)))
+
+(def (plugin-import-problems) => :list
+  (apply append
+    (map (lambda ((file : :string))
+           (plugin-reference-problems file (referenced-names (read-forms (source-path file)))))
+         (layer-source-names (make-layer "plugin" "tuna/plugins" #f [] [])))))
+
 ;;; Forbidden nouns
 
 (def (word-char? (c : :char)) => :boolean
@@ -755,6 +855,24 @@
     (test-case "outside the kernel and test support, only the kernel facade is imported"
       (displayln "  kernel facade boundary: " (length (kernel-client-names)) " files checked")
       (check (problem-count (kernel-internal-problems)) => 0))
+    (test-case "contracts use only allowed lower layers and never re-export modules"
+      (check (problem-count (contract-problems)) => 0))
+    (test-case "the contract import graph is acyclic"
+      (check (problem-count (graph-cycle-problems (contract-graph))) => 0))
+    (test-case "plugins import only their own private plugin modules"
+      (check (problem-count (plugin-import-problems)) => 0))
+    (test-case "cycle detection rejects self-imports and indirect cycles"
+      (check (length (graph-cycle-problems '(("a" "a")))) => 1)
+      (check (length (graph-cycle-problems '(("a" "b") ("b" "c") ("c" "a")))) => 1)
+      (check (graph-cycle-problems '(("a" "b" "c") ("b" "c") ("c"))) => []))
+    (test-case "nested re-exports and cross-plugin relative paths cannot hide"
+      (check (re-exports? '(export (phi: +1 (import: :tuna/services/commands)))) => #t)
+      (check (re-exports? '(export own-name)) => #f)
+      (check (plugin-reference-problems "tuna/plugins/layout.ss" '("./layout/tree")) => [])
+      (check (plugin-reference-problems "tuna/plugins/layout/tree.ss" '("./private" "../layout")) => [])
+      (check (length (plugin-reference-problems "tuna/plugins/keys.ss"
+                      '(":tuna/plugins/layout/tree" "./layout"))) => 2)
+      (check (length (plugin-reference-problems "tuna/plugins/layout/tree.ss" '("../keys"))) => 1))
     (test-case "only the program imports program code"
       (displayln "  program-code boundary: "
                  (length (append (non-test-source-names) (demo-source-names))) " files checked")

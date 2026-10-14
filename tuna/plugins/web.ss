@@ -7,6 +7,9 @@
 ;;; key-event or a pointer-event. Each screen carries its revision as
 ;;; data-revision on its root element, and a pointer item names the screen
 ;;; it was computed on, which must be one this transport sent.
+;;; Optional services:
+;;; - renderer-service: render-screen checks its provider once; without it,
+;;;   the transport serves a "No renderer is active" screen.
 prelude: :gerbil/core
 
 (import :std/crypto/random

@@ -1,6 +1,7 @@
 ;;; M-x is a command over the public commands/completion contracts.
 prelude: :gerbil/core
-(import :tuna/kernel :tuna/services/keys :tuna/services/buffers :tuna/services/completion)
+(import :tuna/services/commands
+        :tuna/kernel :tuna/services/keys :tuna/services/buffers :tuna/services/completion)
 (export extended-command-plugin)
 
 (def (visible-command-candidates (origin : buffer)) => :list

@@ -2,7 +2,8 @@
 ;;; button runs its action, which reads the click with event-start and
 ;;; posn-node; the button's binding shadows the global view click and
 ;;; goes with the plugin.
-(import :std/test
+(import :tuna/services/commands
+        :std/test
         :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers

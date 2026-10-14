@@ -1,5 +1,10 @@
 ;;; Inline completion engine. Matching sees plain text/indices, never buffers
 ;;; or candidate values; the post-command hook finishes it before redisplay.
+;;; Optional services:
+;;; - completion-ui-service: present! checks its provider once; without it,
+;;;   exact-input completion still works, without a candidate list.
+;;; - messages-service: notices via the kernel's guarded message dispatcher;
+;;;   without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import :std/interface (only-in :gerbil/runtime/hash HashTable)
@@ -161,7 +166,7 @@ prelude: :gerbil/core
   (session-insert! (lambda (s)
                      (unless (eq? s (session-here s.owner)) (error "Not in the active completion prompt"))
                      (when s.selected
-                       (let* ((answer (prompt-display-answer (active-prompt)))
+                       (let* ((answer (prompt-answer-node s.prompt))
                               (t (text-node-content answer))
                               (input (candidate-text s.selected)))
                          (text-replace! t 1 (fx1+ (text-size t)) input)
@@ -201,7 +206,7 @@ prelude: :gerbil/core
                          (lambda ((input : :string))
                            (and require-match (not (completion-session-accepting? session))
                                 (not (exact-candidate session input)) "Input does not name a candidate")))
-                       (set-node-keymap! (prompt-display-answer (active-prompt)) self.keymap)
+                       (set-node-keymap! (prompt-answer-node p) self.keymap)
                        (present! session))))
         (cond ((candidate? answer) (candidate-value answer))
               ((and require-match (string? answer))

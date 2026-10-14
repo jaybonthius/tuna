@@ -29,6 +29,10 @@
 ;;; inputs. Every redraw still sends the whole visible screen as one fat
 ;;; morph. Kept HTML belongs to the views drawn: a view not drawn, or drawn
 ;;; from another node, drops its own.
+;;; Optional services:
+;;; - input-service: clickable marks and keymap generation, through the keys
+;;;   contract's provider-guarded accessors; without it, unmarked HTML and
+;;;   generation zero. Rendering and node-local binding marks still work.
 prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable)

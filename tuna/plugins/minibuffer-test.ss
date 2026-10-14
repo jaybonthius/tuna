@@ -1,7 +1,8 @@
 ;;; Prompts driven by key events through the real editor loop: each
 ;;; prompt is a buffer, question and answer, shown in the minibuffer view
 ;;; nearest the selected view, which is selected while it waits.
-(import :std/test
+(import :tuna/services/commands
+        :std/test
         :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers

@@ -61,7 +61,8 @@
              (check (and (string-search "SameSite=Strict" set-cookie) #t) => #t)))
          (let (page (http "GET" "/"))
            (check (reply-status page) => 200)
-           (check (and (string-search "id=\"screen\"" (reply-body page)) #t) => #t)))))
+           (check (and (string-search "id=\"screen\"" (reply-body page)) #t) => #t)
+           (check (and (string-search "No renderer is active." (reply-body page)) #t) => #t)))))
 
     (test-case "requests without the cookie are refused on every route"
       (with-tuna
