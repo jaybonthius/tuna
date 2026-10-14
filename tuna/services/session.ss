@@ -3,7 +3,7 @@
 ;;; are saved and restored. The provider keeps the slots. Saved state is
 ;;; plain data, written with `write` and read with `read`, never evaluated.
 ;;; Files are replaced atomically. A plugin that registers slots must
-;;; require session-service and restart with it (not adapt), so its slots
+;;; require session-service and restart with it, so its slots
 ;;; move to a new provider; a configuration that keeps no session provides
 ;;; one that saves nothing.
 prelude: :gerbil/core
@@ -16,6 +16,7 @@ prelude: :gerbil/core
         context-add-session-slot!
         save-session
         restore-session
+        restart-with-session
         state-directory
         plain-data?
         write-file-atomically!)
@@ -26,14 +27,15 @@ prelude: :gerbil/core
 (defstruct session-slot ((name    : :symbol)
                          (version : :fixnum)
                          (save    : :procedure)    ; -> plain data
-                         (restore : :procedure))   ; plain data -> void
+                         (restore : :procedure)
+                         (fallback :? :symbol))   ; plain data -> void
   final: #t)
 
 (interface Session
   ;; Register SLOT for CTX's plugin until it is deactivated. Several plugins
   ;; may register the same name (alternative providers of one service); the
   ;; highest PRIORITY is effective. CTX's plugin must require session-service
-  ;; and restart with it (not adapt), so its slots move to a new provider.
+  ;; and restart with it, so its slots move to a new provider.
   (add-session-slot! (ctx : context) (slot : session-slot) (priority : :fixnum)) => :void
   ;; Save every slot's data now.
   (save-session!) => :void
@@ -42,6 +44,10 @@ prelude: :gerbil/core
   ;; slots registered before it. Call once, after the plugins that own
   ;; slots are active.
   (restore-session!) => :void
+  ;; Capture OWNERS before teardown, defer automatic restore while APPLY runs,
+  ;; then restore new slots in registration order. On failure ROLLBACK turns
+  ;; the old definitions back on and receives the same captured data.
+  (restart! (owners : :list) (apply : :procedure) (rollback : :procedure)) => :void
   ;; The directory holding Tuna's state ($XDG_STATE_HOME/tuna).
   (state-directory) => :string)
 
@@ -54,17 +60,22 @@ prelude: :gerbil/core
                                 version:  (version  : :fixnum)
                                 save:     (save     : :procedure)
                                 restore:  (restore  : :procedure)
-                                priority: (priority : :fixnum := 0))
+                                priority: (priority : :fixnum := 0)
+                                fallback: (fallback :? :symbol := #f))
   => :void
   (:- (with-service-provider (provider session-service Session)
     (Session-add-session-slot! provider ctx
-                               (make-session-slot name version (context-bind ctx save) (context-bind ctx restore)) priority)) :void))
+                               (make-session-slot name version (context-bind ctx save) (context-bind ctx restore) fallback) priority)) :void))
 
 (def (save-session) => :void
   (:- (with-service-provider (provider session-service Session) (Session-save-session! provider)) :void))
 
 (def (restore-session) => :void
   (:- (with-service-provider (provider session-service Session) (Session-restore-session! provider)) :void))
+
+(def (restart-with-session (owners : :list) (apply : :procedure) (rollback : :procedure)) => :void
+  (:- (with-service-provider (provider session-service Session)
+    (Session-restart! provider owners apply rollback)) :void))
 
 (def (state-directory) => :string
   (:- (with-service-provider (provider session-service Session) (Session-state-directory provider)) :string))

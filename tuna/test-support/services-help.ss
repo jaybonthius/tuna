@@ -19,13 +19,11 @@ prelude: :gerbil/core
                         (let (provider (service-info-provider info))
                           (if provider (symbol->string provider) "none"))
                         "  dependents: "
-                        (let ((dependents (service-info-dependents info))
-                              (adapting (service-info-adapting info)))
+                        (let (dependents (service-info-dependents info))
                           (if (null? dependents)
                             "none"
                             (string-join (map (lambda ((name : :symbol))
-                                                (string-append (symbol->string name)
-                                                               (if (memq name adapting) " (adapts)" "")))
+                                                (symbol->string name))
                                               dependents)
                                          ", ")))))
        (describe-services)))

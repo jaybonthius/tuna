@@ -23,7 +23,6 @@ prelude: :gerbil/core
         context-defer!
         context-add-entry!
         context-provide!
-        context-adapt!
         context-add-hook!
         run-hook
         plugin-activated-hook
@@ -33,10 +32,10 @@ prelude: :gerbil/core
         (struct-out service)
         new-service
         service-provider
-        startup-service-error?
         activate-plugin!
         deactivate-plugin!
         plugin-active?
+        plugin-deactivation-closure
         deactivate-all-plugins!
         (struct-out service-info)
         describe-services
@@ -51,6 +50,7 @@ prelude: :gerbil/core
 (defstruct plugin ((name     : :symbol)
                    (doc      : :string)
                    (requires : :list)            ; services
+                   (provides : :list)
                    (optional : :list)
                    (unchecked? : :boolean)
                    (activate : :procedure)       ; context -> void
@@ -145,22 +145,25 @@ prelude: :gerbil/core
      #'(defplugin (name ctx) doc clause ...))
     ((_ (name ctx) doc clause ...)
      (and (identifier? #'name) (identifier? #'ctx) (stx-string? #'doc))
-     (let loop ((rest #'(clause ...)) (required #'[]) (optional #'[]) (unchecked #'#f) (have-required? #f) (have-optional? #f) (have-unchecked? #f))
+     (let loop ((rest #'(clause ...)) (required #'[]) (provided #'[]) (optional #'[]) (unchecked #'#f) (have-required? #f) (have-provided? #f) (have-optional? #f) (have-unchecked? #f))
        (syntax-case rest ()
          ((requires: services body ...)
           (not have-required?)
-          (loop #'(body ...) #'services optional unchecked #t have-optional? have-unchecked?))
+          (loop #'(body ...) #'services provided optional unchecked #t have-provided? have-optional? have-unchecked?))
+         ((provides: services body ...)
+          (not have-provided?)
+          (loop #'(body ...) required #'services optional unchecked have-required? #t have-optional? have-unchecked?))
          ((optional: services body ...)
           (not have-optional?)
-          (loop #'(body ...) required #'services unchecked have-required? #t have-unchecked?))
+          (loop #'(body ...) required provided #'services unchecked have-required? have-provided? #t have-unchecked?))
          ((unchecked: value body ...)
           (not have-unchecked?)
-          (loop #'(body ...) required optional #'value have-required? have-optional? #t))
+          (loop #'(body ...) required provided optional #'value have-required? have-provided? have-optional? #t))
          ((body ...)
           (with-syntax ((source (stx-source-string stx))
-                        (required required) (optional optional) (unchecked unchecked))
+                        (required required) (provided provided) (optional optional) (unchecked unchecked))
             #'(def name
-                (make-plugin 'name doc required optional unchecked
+                (make-plugin 'name doc required provided optional unchecked
                              (lambda ((ctx : context)) => :void body ... (void))
                              source)))))))))
 
@@ -229,7 +232,7 @@ prelude: :gerbil/core
 ;;;
 ;;; Plugin and service events are recorded while an activation or
 ;;; deactivation runs, including everything it cascades into (dependents
-;;; restarting, providers handing over), and announced in order once the
+;;; restarting), and announced in order once the
 ;;; outermost operation has finished, even if it raised or quit. Every
 ;;; callback of every event runs, even after one quits. Callbacks therefore
 ;;; see the kernel as the whole operation left it: a dependent that restarted
@@ -246,8 +249,7 @@ prelude: :gerbil/core
 
 ;; Arguments: the service, its old provider or #f, and its new provider or
 ;; #f. Runs only when the effective provider becomes a different object: one
-;; is provided where there was none, a provider replaces another (after the
-;; handover), or the last provider is withdrawn.
+;; is provided where there was none, or its provider is withdrawn.
 (def service-changed-hook
   (new-hook 'service-changed
             doc: "Runs with a service, its old provider or #f, and its new provider or #f."))
@@ -279,7 +281,7 @@ prelude: :gerbil/core
 ;;; everywhere. A quit raised inside the operation anyway (by a third
 ;;; interrupt, signal-quit, or a suspension resumed with quit) that reaches
 ;;; one of the kernel's failure catchers is held: hook callbacks, receipt
-;;; undos, handovers, and adapters count as done, nothing is reported, and
+;;; undos count as done, nothing is reported, and
 ;;; no callback is removed. A plugin whose own activation quit cannot be
 ;;; done, so it is rolled back and turned off as on failure, without a
 ;;; report. Once the operation and its announcements have finished, a held
@@ -337,7 +339,6 @@ prelude: :gerbil/core
                     (tier        : :symbol)      ; startup or live
                     (implements? : :procedure)
                     (doc         : :string)
-                    (handover    :? :procedure) ; outgoing, incoming provider -> void
                     (home        :? kernel)
                     (implementation : :t)
                     (provider-context :? context)
@@ -345,21 +346,14 @@ prelude: :gerbil/core
                     (owners      : :list))
   final: #t)
 
-;; With HANDOVER, whenever the effective provider changes from one provider
-;; to another, HANDOVER receives both and moves the outgoing provider's
-;; state into the incoming one through the service's interface (ADR 11,
-;; ADR 12). It runs before the service's dependents restart.
 (def (new-service (name : :symbol)
                   (implements? : :procedure)
-                  tier:     (tier     : :symbol)
-                  doc:      (doc      : :string)
-                  handover: (handover :? :procedure := #f))
+                  tier: (tier : :symbol)
+                  doc: (doc : :string))
   => service
   (unless (memq tier '(startup live))
     (raise-bad-argument new-service "tier startup or live" tier))
-  (make-service name tier implements? doc handover #f #f #f #f []))
-
-(deferror-class StartupServiceError () startup-service-error?)
+  (make-service name tier implements? doc #f #f #f #f []))
 
 (def (remember-service! (k : kernel) (svc : service)) => :void
   (hash-put! (kernel-services k) (service-name svc) svc))
@@ -429,74 +423,26 @@ prelude: :gerbil/core
                                    (error "No plugin provides" (service-name slot)))))
         body ...))))
 
-;; Replace this owner's contribution. A changed effective provider still
-;; follows the existing swap rules, even for a same-rank replacement.
-(def (context-provide! (ctx  : context)
-                       (svc  : service)
-                       (impl : :t)
-                       priority: (priority : :fixnum := 0))
-  => :void
+(def (context-provide! (ctx : context) (svc : service) (impl : :t)) => :void
+  (unless (or (plugin-unchecked? (context-owner ctx))
+              (memq svc (plugin-provides (context-owner ctx))))
+    (error "Plugin provided an undeclared service" (context-plugin-name ctx) (service-name svc)))
   (unless ((service-implements? svc) impl)
     (raise-bad-argument context-provide! "an implementation of the service" (service-name svc) impl))
   (let* ((k (the-kernel))
          (name (service-name svc))
-         (current (entry-table-ref (kernel-providers k) name))
-         (new (make-entry (context-plugin-name ctx) priority (context-order ctx) (next-id!) impl
-                          (service-doc svc) (plugin-source (context-owner ctx))))
-         (other (find (lambda ((e : entry)) (not (eq? (entry-owner e) (entry-owner new))))
-                      (entry-table-entries (kernel-providers k) name)))
-         (next (if (and other (entry-outranks? other new)) other new)))
+         (current (entry-table-ref (kernel-providers k) name)))
+    (when current
+      (error "Service already has a provider" name (entry-owner current) (context-plugin-name ctx)))
     (remember-service! k svc)
-    (when (and current (not (eq? current next)))
-      (check-live-change! k svc)
-      (let (closure (deactivation-closure k (restarting-dependents k name)))
-        (check-removable! k closure)
-        (deactivate-records! k closure)))
-    (entry-table-add! (kernel-providers k) name new)
-    (refresh-cached-services! k)
-    (context-defer! ctx (lambda () (withdraw-provider! k svc new)))
-    (let* ((effective (:- (entry-table-ref (kernel-providers k) name) entry))
-           (incoming (entry-value effective)))
-      (cond
-       ((not current)
-        (record-event! service-changed-hook svc #f incoming))
-       ((not (eq? current effective))
-        (hand-over! svc (entry-value current) incoming)
-        (unless (eq? (entry-value current) incoming)
-          (record-event! service-changed-hook svc (entry-value current) incoming)))))))
-
-;; Remove the provider entry OLD of SVC; if it was effective, hand over to
-;; the provider that takes its place.
-(def (withdraw-provider! (k : kernel) (svc : service) (old : entry)) => :void
-  (let* ((name (service-name svc))
-         (effective? (eq? (entry-table-ref (kernel-providers k) name) old)))
-    (entry-table-remove! (kernel-providers k) name old)
-    (refresh-cached-services! k)
-    (when effective?
-      (let* ((next (entry-table-ref (kernel-providers k) name))
-             (incoming (and next (entry-value next))))
-        (when next
-          (hand-over! svc (entry-value old) incoming))
-        (unless (eq? (entry-value old) incoming)
-          (record-event! service-changed-hook svc (entry-value old) incoming))))))
-
-;; Run SVC's handover from OUTGOING to INCOMING; a failure is reported.
-(def (hand-over! (svc : service) (outgoing : :t) (incoming : :t)) => :void
-  (let (handover (service-handover svc))
-    (when (and handover (not (eq? outgoing incoming)))
-      (with-catch
-       (lambda (e)
-         (unless (hold-quit! e)
-           (report-failure-message!
-            (string-append "Service " (symbol->string (service-name svc))
-                           " failed to hand over to its new provider: "
-                           (exception-summary e)))))
-       (lambda () (handover outgoing incoming))))))
-
-(def (check-live-change! (k : kernel) (svc : service)) => :void
-  (when (and (kernel-live? k) (eq? (service-tier svc) 'startup))
-    (raise (StartupServiceError "startup-tier service refuses live replacement; restart Tuna to change it"
-                                irritants: [(service-name svc)]))))
+    (let (new (context-add-entry! ctx (kernel-providers k) name impl doc: (service-doc svc)))
+      (refresh-cached-services! k)
+      (context-defer! ctx
+        (lambda ()
+          (entry-table-remove! (kernel-providers k) name new)
+          (refresh-cached-services! k)
+          (record-event! service-changed-hook svc impl #f))))
+    (record-event! service-changed-hook svc #f impl)))
 
 ;; Names of the services whose effective provider is REC's plugin.
 (def (provided-service-names (k : kernel) (rec : plugin-record)) => :list
@@ -514,90 +460,25 @@ prelude: :gerbil/core
                         (plugin-requires (plugin-record-definition rec)))))
           (hash-values (kernel-plugins k))))
 
-;; Whether REC's plugin adapts to a new provider of the service named NAME
-;; instead of restarting.
-(def (adapting? (k : kernel) (name : :symbol) (rec : plugin-record)) => :boolean
-  (let (owner (plugin-name (plugin-record-definition rec)))
-    (ormap (lambda ((e : entry)) (eq? (entry-owner e) owner))
-           (entry-table-entries (kernel-adapters k) name))))
-
-(def (restarting-dependents (k : kernel) (name : :symbol)) => :list
-  (filter (lambda ((rec : plugin-record)) (not (adapting? k name rec)))
-          (service-dependents k name)))
-
-;; ROOTS plus every active plugin that transitively depends on a service
-;; they provide. Adapting dependents stay unless no provider would remain.
+;; ROOTS plus every active required dependent, recursively.
 (def (deactivation-closure (k : kernel) (roots : :list)) => :list
   (let loop ((pending roots) (seen []))
     (match pending
-      ([]
-       (let (stranded (stranded-adapters k seen))
-         (if (null? stranded)
-           seen
-           (loop stranded seen))))
+      ([] seen)
       ([rec . rest]
        (if (memq rec seen)
          (loop rest seen)
-         (loop (append (append-map (cut restarting-dependents k <>)
-                                   (provided-service-names k rec))
-                       rest)
+         (loop (append (append-map (cut service-dependents k <>)
+                                   (provided-service-names k rec)) rest)
                (cons rec seen)))))))
 
-;; Adapting dependents, outside GOING, of services GOING provides that no
-;; plugin outside GOING also provides.
-(def (stranded-adapters (k : kernel) (going : :list)) => :list
-  (let (owners (map (lambda ((rec : plugin-record)) (plugin-name (plugin-record-definition rec)))
-                    going))
-    (append-map
-     (lambda ((name : :symbol))
-       (if (ormap (lambda ((e : entry)) (not (memq (entry-owner e) owners)))
-                  (entry-table-entries (kernel-providers k) name))
-         []
-         (filter (lambda ((rec : plugin-record)) (not (memq rec going)))
-                 (service-dependents k name))))
-     (append-map (cut provided-service-names k <>) going))))
-
-;; A dependent's handler for a new provider, and the provider it last saw.
-(defclass adapter ((handler : :procedure)       ; old provider, new provider -> void
-                   (seen    : :t))
-  final: #t)
-
-;; Declare that CTX's plugin adapts to a new provider of SVC, which it
-;; requires, instead of restarting: HANDLER receives the old and new
-;; providers and migrates the plugin's state in place (ADR 2).
-(def (context-adapt! (ctx : context) (svc : service) (handler : :procedure)) => :void
-  (context-add-entry! ctx (kernel-adapters (the-kernel)) (service-name svc)
-                      (adapter handler: (context-bind ctx handler) seen: (service-provider svc)))
-  (void))
-
-;; Tell each adapter whose service changed provider since it last looked.
-(def (reconcile-adapters! (k : kernel)) => :void
-  (let (adapters (kernel-adapters k))
-    (for-each
-      (lambda ((name : :symbol))
-        (let (best (entry-table-ref (kernel-providers k) name))
-          (when best
-            (for-each
-              (lambda ((e : entry))
-                (using (a (entry-value e) : adapter)
-                  (let ((old a.seen)
-                        (new (entry-value best)))
-                    (unless (eq? old new)
-                      (set! a.seen new)
-                      (with-catch (lambda (exn)
-                                    (unless (hold-quit! exn)
-                                      (report-failure! (entry-owner e) "adapting" exn)))
-                                  (lambda () (a.handler old new)))))))
-              (entry-table-entries adapters name)))))
-      (entry-table-names adapters))))
-
-(def (check-removable! (k : kernel) (records : :list)) => :void
-  (for-each
-    (lambda ((rec : plugin-record))
-      (for-each (lambda ((name : :symbol))
-                  (check-live-change! k (hash-ref (kernel-services k) name)))
-                (provided-service-names k rec)))
-    records))
+;; Read-only query for orchestrators that capture state before teardown.
+(def (plugin-deactivation-closure (p : plugin)) => :list
+  (let* ((k (the-kernel))
+         (rec (hash-get (kernel-plugins k) (plugin-name p))))
+    (if (and rec (plugin-record-active rec))
+      (map plugin-record-definition (by-activation (deactivation-closure k [rec])))
+      [])))
 
 ;; Deactivate RECORDS, newest activation first, so dependents go before
 ;; the providers they use.
@@ -694,7 +575,6 @@ prelude: :gerbil/core
                   (report-failure! (plugin-name (plugin-record-definition (car failure)))
                                    "activating" (cdr failure))))
               failures)
-    (reconcile-adapters! k)
     (cond
      ((assq target failures) => (lambda ((failure : :pair)) (raise (cdr failure)))))))
 
@@ -730,7 +610,6 @@ prelude: :gerbil/core
        (when rec
          (when (plugin-record-active rec)
            (let (closure (deactivation-closure k [rec]))
-             (check-removable! k closure)
              (set! (plugin-record-wanted? rec) #f)
              (deactivate-records! k closure)))
          (set! (plugin-record-wanted? rec) #f)
@@ -758,7 +637,6 @@ prelude: :gerbil/core
                          (tier       : :symbol)
                          (provider   :? :symbol)
                          (dependents : :list)          ; plugin names
-                         (adapting   : :list)          ; the dependents that adapt
                          (doc        : :string))
   final: #t)
 
@@ -776,7 +654,6 @@ prelude: :gerbil/core
                                 (service-tier svc)
                                 (and best (entry-owner best))
                                 (names dependents)
-                                (names (filter (cut adapting? k name <>) dependents))
                                 (service-doc svc))))
          (list-sort (lambda ((a : service) (b : service))
                       (string<? (symbol->string (service-name a))

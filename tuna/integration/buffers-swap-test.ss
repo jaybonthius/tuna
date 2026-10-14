@@ -2,8 +2,10 @@
 ;;; (tuna/test-support/toy-buffers.ss) and back while the editor runs, with
 ;;; typing, undo, a renamed buffer, a tree buffer, two views, and the
 ;;; renderer, driven by keys through the real editor loop. Every buffer's
-;;; text, the selected view, and its point carry over.
-(import :std/test
+;;; saved plain text, the selected view, and its point carry over; unsaved
+;;; rich trees are recreated by their owning plugins.
+(import (only-in :tuna/boot config-service restart-plugin!)
+        :std/test
         :tuna/kernel
         :tuna/services/renderer
         :tuna/services/buffers
@@ -22,18 +24,35 @@
         :tuna/plugins/minibuffer
         "../test-support/kernel"
         "../test-support/keys"
-        "../test-support/session"
+        :tuna/plugins/autosave
+        :tuna/plugins/session
+        :tuna/services/session
         "../test-support/toy-buffers"
         "../test-support/swap-commands"
         "../test-support/rename-command"
         "../test-support/tree-buffer")
 (export buffers-swap-test)
 
+(defplugin (swap-configuration ctx)
+  "Selects the default providers for swap commands in this test configuration."
+  (context-set-swap-providers! ctx html-renderer-plugin layout-plugin buffers-plugin))
+
+
+(def (call-with-state-kernel (plugins : :list) (thunk : :procedure)) => :t
+  (let (directory (path-expand (string-append "tuna-swap-" (number->string (random-integer 1000000000)))
+                              (getenv "TMPDIR" "/tmp")))
+    (create-directory* directory)
+    (unwind-protect
+      (parameterize ((session-state-directory directory))
+        (call-with-fresh-kernel plugins
+          (lambda () (when (service-provider session-service) (restore-session)) (thunk))))
+      (delete-file-or-directory directory #t))))
+
 (def swap-plugins
   [commands-plugin keys-plugin echo-area-plugin help-buffer-plugin rope-text-store-plugin
-   settings-plugin no-session-plugin buffers-plugin layout-plugin
+   settings-plugin session-plugin buffers-plugin autosave-plugin layout-plugin
    view-commands-plugin html-renderer-plugin basic-editing-plugin minibuffer-plugin
-   swap-commands-plugin rename-command-plugin tree-buffer-plugin])
+   config-service swap-configuration swap-commands-plugin rename-command-plugin tree-buffer-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
@@ -44,7 +63,8 @@
   (on-baton
    (lambda ()
      (map (lambda (b) [(buffer-name b) (node-text-projection (buffer-root b))])
-          (filter (lambda (b) (not (internal-buffer? b))) (buffer-list))))))
+          (list-sort (lambda (a b) (string<? (buffer-name a) (buffer-name b)))
+                     (filter (lambda (b) (not (internal-buffer? b))) (buffer-list)))))))
 
 ;; The views outside the bar, whose plugins put them back on a swap.
 (def (own-views)
@@ -61,12 +81,13 @@
 
 (def buffers-swap-test
   (test-suite "integration: swapping the buffers provider live"
-    (test-case "C-c B hands every buffer over to the toy and back, keeping text and point"
-      (call-with-fresh-kernel swap-plugins
+    (test-case "C-c B restores saved plain-text buffers to the toy and back, keeping text and point"
+      (call-with-state-kernel swap-plugins
        (lambda ()
          (start-editor-loop!)
          (type! "h" "e" "l" "l" "o" "RET" "w" "o" "r" "l" "d" "C-p" "C-e")
          (type! "C-c" "r" "n" "o" "t" "e" "s" "RET")
+         (on-baton (lambda () (add-buffer! (new-buffer "*scratch*" (new-text-node (new-text ""))))))
          (let (before (buffer-texts-state))
            (check (selected-state) => ["notes" 6])
            (type! "C-c" "B")
@@ -86,7 +107,7 @@
            (check (map car (buffer-texts-state)) => (map car before))))))
 
     (test-case "two views and the tree buffer survive a swap"
-      (call-with-fresh-kernel swap-plugins
+      (call-with-state-kernel swap-plugins
        (lambda ()
          (start-editor-loop!)
          (type! "a" "b" "c" "C-c" "b" "X")
@@ -99,7 +120,8 @@
            (check (assoc "*scratch*" (buffer-texts-state)) => ["*scratch*" "abc"])
            (check (and (assoc "*welcome*" (buffer-texts-state)) #t) => #t)
            (check (equal? (assoc "*welcome*" (buffer-texts-state)) welcome) => #f)
-           (check (selected-state) => ["*scratch*" 4])
+           (check (selected-state) => ["*welcome*" 2])
+           (on-baton (lambda () (switch-to-buffer (get-buffer "*scratch*"))))
            (type! "C-c" "w" "C-e" "C-x" "o" "Z")
            (check (on-baton (lambda () (map (lambda (v) (buffer-name (view-showing v))) (own-views))))
                   => ["*scratch*" "*scratch*"])
@@ -107,8 +129,8 @@
            (type! "C-c" "B")
            (check (on-baton (lambda () (text-string (current-text)))) => "abcZ")))))
 
-    (test-case "the layout adapts to a swap: split views, tabs, points and the frame stay"
-      (call-with-fresh-kernel swap-plugins
+    (test-case "the layout restarts across a swap: split views, tabs, points and the frame stay"
+      (call-with-state-kernel swap-plugins
        (lambda ()
          (start-editor-loop!)
          (type! "h" "e" "l" "l" "o" "C-x" "3" "C-a" "C-f" "C-x" "o" "C-x" "t" "2" "C-b")
@@ -117,26 +139,28 @@
                         (on-baton (lambda ()
                                     [(map (lambda (v) [(buffer-name (view-showing v)) (view-point v)])
                                           (own-views))
-                                     (view-id (selected-view))])))))
+                                     (let loop ((rest (own-views)) (i 0))
+                                       (if (eq? (car rest) (selected-view)) i (loop (cdr rest) (fx1+ i))))])))))
            (check (map car (car (state))) => ["*scratch*" "*scratch*" "*scratch*"])
            (check (map cadr (car (state))) => [2 6 5])
            (type! "C-x" "1")
            (let (before (state))
              (type! "C-c" "B")
              (check (toy?) => #t)
-             ;; The same view objects, re-pointed at the toy's buffers.
-             (check (on-baton own-views) => views)
+             ;; Fresh views, restored from the layout slot.
+             (check (eq? (car (on-baton own-views)) (car views)) => #f)
              (check (state) => before)
-             (check (on-baton (lambda () (frame-target-part (current-frame-target)))) => (cadr before))
+             (check (on-baton (lambda () (frame-target-part (current-frame-target))))
+                    => (on-baton (lambda () (view-id (selected-view)))))
              (type! "!")
              (check (on-baton (lambda () (text-string (current-text)))) => "hell!o")
              (type! "C-x" "n" "w" "C-c" "B")
              (check (toy?) => #f)
-             (check (on-baton own-views) => views)
+             (check (eq? (car (on-baton own-views)) (car views)) => #f)
              (check (state) => [[["*scratch*" 2] ["*scratch*" 7] ["*scratch*" 6]] (cadr before)]))))))
 
-    (test-case "C-h s shows the toy providing buffers, and the default waiting behind it"
-      (call-with-fresh-kernel swap-plugins
+    (test-case "C-h s shows the toy providing buffers, and the default inactive"
+      (call-with-state-kernel swap-plugins
        (lambda ()
          (start-editor-loop!)
          (type! "C-c" "B")
@@ -145,4 +169,4 @@
                              (find (lambda (info) (eq? (service-info-name info) 'buffers))
                                    (describe-services)))))
                 => 'toy-buffers-plugin)
-         (check (on-baton (lambda () (plugin-active? buffers-plugin))) => #t))))))
+         (check (on-baton (lambda () (plugin-active? buffers-plugin))) => #f))))))

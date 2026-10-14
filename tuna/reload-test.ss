@@ -53,7 +53,7 @@
    (path-expand "mine.ss" directory)
    (string-append "(import :tuna/kernel \"" test-plugins-module "\")\n"
                   "(export mine-plugin)\n"
-                  "(defplugin mine-plugin \"The user's own plugin.\" " body ")\n")))
+                  "(defplugin mine-plugin \"The user's own plugin.\" " (if (string-contains body "context-provide!") "provides: [probe-service] " "") body ")\n")))
 
 (def (start (path : :string)) => startup-report
   (start-from-configuration (make-config-choice path "--config")))
@@ -295,11 +295,11 @@
                         => "provides the startup-tier service fixed, so turning it off takes effect at next start"))
                (check (probe-on? 'fixed) => #t)
                ;; A plugin that would take it over is refused and rolled back.
-               (write-init directory "(use-plugin fixed-provider-plugin)" "(use-plugin better-fixed-provider-plugin)")
+               (write-init directory "(use-plugin better-fixed-provider-plugin)")
                (let (report (call-on-editor-loop reload))
                  (check (changes report) => '(("better-fixed-provider-plugin" deferred)))
                  (check (detail report "better-fixed-provider-plugin")
-                        => "would replace or restart the provider of the startup-tier service fixed (fixed-provider-plugin), so it takes effect at next start"))
+                        => "provides the startup-tier service fixed, so the new version takes effect at next start"))
                (check (probe-on? 'better-fixed) => #f)
                (check (probe-on? 'fixed) => #t)))))))
 

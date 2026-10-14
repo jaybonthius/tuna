@@ -250,6 +250,7 @@ prelude: :gerbil/core
 
 (defplugin (html-renderer-plugin ctx)
   "Renders the screen as HTML: the layout drawn from the frame."
+  provides: [renderer-service]
   requires: [buffers-service layout-service settings-service]
   optional: [input-service]
   (context-define-node-renderer! ctx 'text 'html render-text-node)

@@ -91,7 +91,7 @@
   (test-suite "tuna/plugins/html-renderer"
     (test-case "renders without the optional input and message services"
       (call-with-fresh-kernel
-        [rope-text-store-plugin settings-plugin buffers-plugin two-views-plugin html-renderer-plugin]
+        [rope-text-store-plugin settings-plugin no-session-plugin buffers-plugin two-views-plugin html-renderer-plugin]
         (lambda ()
           (check (service-provider input-service) => #f)
           (check (service-provider messages-service) => #f)

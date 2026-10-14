@@ -4,15 +4,14 @@
 ;;; the contract minimally: it cannot split or delete views, ignores
 ;;; display-buffer's hints, and its frame always shows the whole layout,
 ;;; the contract's fallback, so its frame marks all point there. It saves
-;;; no session slot. Taking over one view, it adds a second on the same
-;;; buffer at the same point, as splitting a view does; taking over more,
-;;; it keeps the selected view and one neighbor.
+;;; its own private slot, or the neutral layout slot on its first use.
 prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
         :tuna/services/buffers
-        :tuna/services/layout)
+        :tuna/services/layout
+        :tuna/services/session)
 (export two-views-plugin)
 
 (defclass two-views ((left     : view)
@@ -80,22 +79,38 @@ prelude: :gerbil/core
                      (case target
                        ((html) `(div (@ (class "layout")) ,@rendered))
                        (else rendered)))))
-  (describe-views (lambda (self) (make-layout-description (own-views self) self.selected)))
-  (adopt-views! (lambda (self description)
-                  (let* ((selected (layout-description-selected description))
-                         (kept (two-of (layout-description-views description) selected)))
-                    (set! self.left (car kept))
-                    (set! self.right (cadr kept))
-                    (set! self.selected selected)
-                    (set-selected-view! selected)))))
+)
+
+(def (saved-layout (self : two-views)) => :list
+  [(cons 'views (map saved-view-data (own-views self)))
+   ['selected (view-id self.selected)]
+   (cons 'marks (map (lambda (name) [name #f #f]) self.marks))])
+
+(def (restore-layout! (self : two-views) (data : :t)) => :void
+  (match data
+    ([['views . saved] ['selected selected] ['marks . marks]]
+     (let (pairs (filter-map (lambda (d) (let (v (restore-view-data d)) (and v (cons (car d) v)))) saved))
+       (when (pair? pairs)
+         (let* ((selected (cond ((assv selected pairs) => cdr) (else (cdar pairs))))
+                (kept (two-of (map cdr pairs) selected)))
+           (set! self.left (car kept))
+           (set! self.right (cadr kept))
+           (set! self.selected selected)
+           (set! self.marks (filter-map (lambda (m) (and (pair? m) (string? (car m)) (car m))) marks))
+           (set-selected-view! selected)))))
+    (else (void))))
 
 (defplugin (two-views-plugin ctx)
-  "Arranges views: two side by side (a toy). Outranks the default layout while active."
-  requires: [buffers-service]
-  optional: [layout-service]
+  "Arranges views: two side by side (a toy). Selected instead of the default layout."
+  provides: [layout-service]
+  requires: [buffers-service session-service]
   (let* ((left (selected-view))
          (right (copy-view left)))
     (using (self (two-views left: left right: right selected: left marks: []) : two-views)
       (context-add-hook! ctx kill-buffer-hook 'replace-buffer-in-views
                          (lambda (b) (replace-buffer-in-views (own-views self) b)))
-      (context-provide! ctx layout-service (Layout self) priority: 10))))
+      (context-add-session-slot! ctx 'layout version: 1 save: (lambda () (saved-layout self)) restore: void)
+      (context-add-session-slot! ctx 'layout-two-views version: 1 fallback: 'layout
+                                 save: (lambda () (saved-layout self))
+                                 restore: (lambda (data) (restore-layout! self data)))
+      (context-provide! ctx layout-service (Layout self)))))

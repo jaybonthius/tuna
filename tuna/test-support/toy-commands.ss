@@ -49,4 +49,5 @@ prelude: :gerbil/core
 
 (defplugin (toy-commands-plugin ctx)
   "Commands without a Keys dependency, using linear registry lookup."
+  provides: [commands-service]
   (context-provide! ctx commands-service (Commands (toy-commands tables: [] previous: #f))))

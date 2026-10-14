@@ -67,16 +67,19 @@
   (probe-on! 'good))
 
 (defplugin provider-plugin "Provides the probe service."
+  provides: [probe-service]
   (context-provide! (current-context) probe-service 'probe)
   (probe-on! 'provider))
 
 ;; Outranks provider-plugin, so its dependents restart when it comes on.
-(defplugin better-provider-plugin "Provides the probe service with a higher priority."
-  (context-provide! (current-context) probe-service 'probe priority: 10))
+(defplugin better-provider-plugin "Provides the probe service as an alternative."
+  provides: [probe-service]
+  (context-provide! (current-context) probe-service 'probe))
 
 ;; Provides the probe service, then ignores being asked to stop for about
 ;; a second, then fails.
 (defplugin stubborn-provider-plugin "Provides the probe service, ignores being stopped, then fails."
+  provides: [probe-service]
   (context-provide! (current-context) probe-service 'probe)
   (probe-on! 'stubborn)
   (let (deadline (+ (time->seconds (current-time)) 1.))
@@ -87,6 +90,7 @@
   (error "stubborn-provider-plugin gave up"))
 
 (defplugin failing-provider-plugin "Provides the probe service, then fails."
+  provides: [probe-service]
   (context-provide! (current-context) probe-service 'probe)
   (probe-on! 'failing-provider)
   (error "failing-provider-plugin fails on purpose"))
@@ -113,18 +117,20 @@
   (note-activation! 'counted-plugin)
   (probe-on! 'counted))
 
-;; A startup-tier service: while the editor loop runs, the kernel refuses
+;; A startup-tier service: while the editor loop runs, reload refuses
 ;; to take it from its provider.
 (def fixed-service
   (new-service 'fixed (lambda (x) (eq? x 'fixed)) tier: 'startup
                doc: "A startup-tier service for configuration tests."))
 
 (defplugin fixed-provider-plugin "Provides the startup-tier service fixed."
+  provides: [fixed-service]
   (context-provide! (current-context) fixed-service 'fixed)
   (probe-on! 'fixed))
 
-(defplugin better-fixed-provider-plugin "Provides fixed with a higher priority."
-  (context-provide! (current-context) fixed-service 'fixed priority: 10)
+(defplugin better-fixed-provider-plugin "Provides fixed as an alternative."
+  provides: [fixed-service]
+  (context-provide! (current-context) fixed-service 'fixed)
   (probe-on! 'better-fixed))
 
 ;; Slot name -> the data its last restore received; never undone.
@@ -152,6 +158,7 @@
 ;; Provides the startup-tier service fixed and needs probe, so while the
 ;; editor loop runs the kernel refuses to turn probe's provider off.
 (defplugin fixed-needs-probe-plugin "Provides fixed; needs probe."
+  provides: [fixed-service]
   requires: [probe-service]
   (context-provide! (current-context) fixed-service 'fixed)
   (probe-on! 'fixed-needs-probe))
@@ -201,6 +208,7 @@
 (def (fixed-n) => :t current-fixed-n)
 
 (defplugin fixed-optioned-plugin "Provides fixed; takes the option n."
+  provides: [fixed-service]
   (context-provide! (current-context) fixed-service 'fixed)
   (set! current-fixed-n (plugin-option fixed-optioned-plugin 'n)))
 

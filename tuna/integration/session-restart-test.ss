@@ -3,7 +3,8 @@
 ;;; frame moved and a frame mark set, then a simulated restart, with the
 ;;; real keys, editing, layout and rendering plugins. tuna/plugins/session-test.ss tests the session
 ;;; and autosave plugins alone.
-(import :std/test
+(import (only-in :tuna/boot config-service restart-plugin!)
+        :std/test
         :tuna/kernel
         :tuna/services/buffers
         :tuna/services/session
@@ -27,6 +28,11 @@
         "../test-support/swap-commands")
 (export session-restart-test)
 
+(defplugin (swap-configuration ctx)
+  "Selects the default providers for swap commands in this test configuration."
+  (context-set-swap-providers! ctx html-renderer-plugin layout-plugin buffers-plugin))
+
+
 (def (call-with-state-directory proc)
   (let (directory (path-expand (string-append "tuna-session-restart-test-"
                                               (number->string (random-integer 1000000000)))
@@ -40,7 +46,7 @@
 (def editor-plugins
   [commands-plugin keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
    session-plugin buffers-plugin autosave-plugin layout-plugin view-commands-plugin
-   html-renderer-plugin basic-editing-plugin minibuffer-plugin swap-commands-plugin])
+   html-renderer-plugin basic-editing-plugin minibuffer-plugin config-service swap-configuration swap-commands-plugin])
 
 ;; One run of Tuna on DIRECTORY, booted as main does: activate, restore,
 ;; start the loop.
@@ -139,12 +145,12 @@
              (check (views-state) => [["*scratch*" 2] ["*scratch*" 2] ["*scratch*" 4]])
              (check (selected-index) => 1)
              (on-baton save-session)))
-         (check (match (assq 'layout (cddr (read-session-datum directory)))
+         (check (match (assq 'layout-tree (cddr (read-session-datum directory)))
                   ;; The bar at the bottom: content-sized, pinned and locked.
-                 (['layout 3 [['tree ['container _ 'fit 'vertical _
+                 (['layout-tree 1 [['tree ['container _ 'fit 'vertical _
                                       [[1 [] ['container _ 'fit 'horizontal _
                                               [[1 [] ['container _ 'tabbed 'horizontal _ _]]
-                                               [1 [] ['view _ "*scratch*" 4 #f]]]]]
+                                               [1 [] ['view [_ "*scratch*" _ 4] #f]]]]]
                                        ['content ['pinned 'locked] _]]]]
                                ['frame (? fixnum?) #f (? fixnum?)]
                                ['marks ["m" #f #f]]]]

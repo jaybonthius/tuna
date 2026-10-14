@@ -5,14 +5,8 @@
 ;;; with *scratch*, a buffer holding one empty text node, selected in a
 ;;; view that the layout takes over as its first view.
 ;;;
-;;; It adapts to a new text store instead of restarting, which would discard
-;;; every buffer: it moves each buffer's texts into the new store. It adds
-;;; the buffer scope to settings: buffer-local values of the current buffer.
-;;;
-;;; Methods work on this provider's own objects through the procedures
-;;; below. Describing the buffers for a handover runs while the incoming
-;;; provider is already current, so it never calls the contract's
-;;; dispatchers.
+;;; Changing the text store restarts this provider and its dependents.
+;;; Autosave restores plain-text buffers from the session store.
 prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable)
@@ -72,12 +66,6 @@ prelude: :gerbil/core
 
 (def (string-of (t : default-text)) => :string
   (TextStore-slice (store-of t) t.version 1 (fx1+ (text-size-of t))))
-
-;; Move T's content into STORE (when the text-store provider is replaced).
-(def (move-to-store! (t : default-text) (store : TextStore)) => :void
-  (unless (eq? store t.store)
-    (set! t.version (TextStore-from-string store (string-of t)))
-    (set! t.store store)))
 
 (def (replace! (t : default-text) (start : :fixnum) (end : :fixnum) (replacement : :string)
                (point-before :? :fixnum))
@@ -365,89 +353,6 @@ prelude: :gerbil/core
   (set! self.buffers (remq b self.buffers))
   (for-each (lambda ((t : default-text)) (set! t.live? #f)) (tree-texts b.root)))
 
-(def (move-texts! (self : buffer-registry) (store : TextStore)) => :void
-  (for-each (lambda ((b : default-buffer))
-              (for-each (cut move-to-store! <> store) (tree-texts b.root)))
-            self.buffers))
-
-;;; Handover
-
-(def (describe (self : buffer-registry)) => buffers-description
-  (let (texts (make-hash-table-eq))     ; default-text -> text-description
-    (def (describe-text (t : default-text)) => text-description
-      (or (hash-get texts t)
-          (let (d (make-text-description (string-of t) t.decorations))
-            (hash-put! texts t d)
-            d)))
-    (def (describe-node (n : default-node)) => node-description
-      (make-node-description (node-id n) n.kind n.attributes (map describe-node n.children)
-                             (and n.content (describe-text n.content)) n.keymap))
-    (make-buffers-description
-     (map (lambda ((b : default-buffer))
-            (make-buffer-description b.name (describe-node b.root) b.settings
-                                     (and b.point-node (node-id b.point-node)) (point-of b)))
-          self.buffers)
-     (let* ((v self.selected)
-            (n (view-node v))
-            (position (if n
-                        (relocate (default-node-content n) (view-position v) (view-revision v))
-                        (view-position v))))
-       (make-view-description v (default-buffer-name (view-showing v))
-                              (and n (node-id n)) position)))))
-
-;; Replace this provider's buffers with those DESCRIPTION describes, and
-;; point the described selected view at them. Node ids carry over, so
-;; elements the browser shows keep their ids.
-(def (adopt! (self : buffer-registry) (d : buffers-description)) => :void
-  (for-each (lambda ((b : default-buffer))
-              (for-each (lambda ((t : default-text)) (set! t.live? #f)) (tree-texts b.root)))
-            self.buffers)
-  (let ((texts (make-hash-table-eq))    ; text-description -> default-text
-        (nodes (make-hash-table-eqv)))  ; node id -> default-node
-    (def (adopt-text (d : text-description)) => default-text
-      (or (hash-get texts d)
-          (let (t (new-default-text (text-description-content d)))
-            (set-highlights-from! t (text-description-highlights d))
-            (hash-put! texts d t)
-            t)))
-    (def (adopt-node (d : node-description)) => default-node
-      (let (n (new-default-node (node-description-id d) (node-description-kind d)
-                                 (node-description-attributes d)
-                                 (map adopt-node (node-description-children d))
-                                 (let (text (node-description-text d))
-                                   (and text (adopt-text text)))
-                                 (node-description-keymap d)))
-        (hash-put! nodes (node-id n) n)
-        n))
-    (def (adopt-buffer (d : buffer-description)) => default-buffer
-      (let (b (new-default-buffer (buffer-description-name d) (adopt-node (buffer-description-root d))))
-        (set! (default-buffer-settings b) (buffer-description-settings d))
-        (set-point! b (text-node-of nodes (buffer-description-point-node d) b)
-                    (buffer-description-point d))
-        b))
-    (let (buffers (map adopt-buffer (buffers-description-buffers d)))
-      (set! self.buffers (if (null? buffers) [(new-scratch-buffer)] buffers))
-      (let* ((vd (buffers-description-selected d))
-             (b (or (find-buffer self (view-description-buffer vd)) (car self.buffers)))
-             (n (text-node-of nodes (view-description-node vd) b))
-             (t (and n (default-node-content n))))
-        (reset-view! (view-description-of vd) b n
-                     (if t
-                       (fxmax 1 (fxmin (view-description-point vd) (fx1+ (text-size-of t))))
-                       (view-description-point vd))
-                     (if t (default-text-chars-revision t) 0))
-        (set! self.selected (view-description-of vd))))))
-
-;; The text node with id ID in NODES, or else B's first text node.
-(def (text-node-of (nodes : HashTable) (id :? :fixnum) (b : default-buffer)) => (Maybe default-node)
-  (let (n (and id (hash-get nodes id)))
-    (if (and n (default-node-content n))
-      n
-      (first-text b.root))))
-
-(def (set-highlights-from! (t : default-text) (layers : :list)) => :void
-  (for-each (lambda ((layer : :pair)) (set-layer! t (car layer) (cdr layer))) layers))
-
 (implement Buffers buffer-registry
   (make-text (lambda (self initial) (new-default-text initial)))
   (text-snapshot (lambda (self t)
@@ -498,12 +403,11 @@ prelude: :gerbil/core
   (selected-view (lambda (self) self.selected))
   (set-selected-view! (lambda (self v) (set! self.selected v)))
   (node-kinds (lambda (self) self.kinds))
-  (node-renderers (lambda (self) self.renderers))
-  (describe-buffers (lambda (self) (describe self)))
-  (adopt-buffers! (lambda (self description) (adopt! self description))))
+  (node-renderers (lambda (self) self.renderers)))
 
 (defplugin (buffers-plugin ctx)
   "Keeps buffers, their texts and nodes, and node kinds; starts with *scratch*."
+  provides: [buffers-service]
   requires: [text-store-service settings-service]
   (let* ((scratch (new-scratch-buffer))
          (focus (default-buffer-point-node scratch))
@@ -517,7 +421,5 @@ prelude: :gerbil/core
                                              (lambda (n) (text-string (text-node-content n))))
                         doc: "Text that users edit.")
     (context-provide! ctx buffers-service (Buffers registry))
-    (context-adapt! ctx text-store-service
-                    (lambda (old new) (move-texts! registry (TextStore new))))
     (context-add-setting-scope! ctx 'buffer
                                 (lambda (s) (buffer-setting (settings-buffer) s)))))

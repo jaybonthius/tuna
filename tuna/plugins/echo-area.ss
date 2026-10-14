@@ -41,6 +41,7 @@ prelude: :gerbil/core
 
 (defplugin (echo-area-plugin ctx)
   "Shows messages in the echo area, a view in the bar."
+  provides: [messages-service]
   requires: [buffers-service layout-service]
   (context-define-node-kind! ctx echo-area-node-kind doc: "A message."
                              project: (lambda (n) (node-attribute n 'content)))

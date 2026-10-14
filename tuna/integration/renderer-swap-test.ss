@@ -2,7 +2,8 @@
 ;;; contract double (tuna/test-support/plain-text-renderer.ss) and back
 ;;; while editing, with tree buffers, two views, and a prompt, driven by
 ;;; keys through the real editor loop.
-(import :std/test
+(import (only-in :tuna/boot config-service restart-plugin!)
+        :std/test
         :tuna/kernel
         :tuna/services/renderer
         :tuna/services/buffers
@@ -28,12 +29,17 @@
         "../test-support/tree-buffer")
 (export renderer-swap-test)
 
+(defplugin (swap-configuration ctx)
+  "Selects the default providers for swap commands in this test configuration."
+  (context-set-swap-providers! ctx html-renderer-plugin layout-plugin buffers-plugin))
+
+
 (def renderer-plugins
   [commands-plugin keys-plugin echo-area-plugin help-buffer-plugin rope-text-store-plugin
    settings-plugin no-session-plugin buffers-plugin layout-plugin
    view-commands-plugin
    html-renderer-plugin basic-editing-plugin minibuffer-plugin
-   swap-commands-plugin rename-command-plugin tree-buffer-plugin])
+   config-service swap-configuration swap-commands-plugin rename-command-plugin tree-buffer-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 

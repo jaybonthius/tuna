@@ -9,12 +9,16 @@ prelude: :gerbil/core
 (export (interface-out Configuration)
         configuration-service
         reload-configuration-report
-        last-configuration-report)
+        last-configuration-report
+        swap-plugins)
 
 (interface Configuration
   ;; Load init.ss again as a trial, apply what changed, and return the
   ;; reload report. The caller holds the baton.
   (reload!) => :string
+  ;; Replace OLD by NEW (or turn OLD off with #f), including saved state.
+  ;; Startup-only closures are deferred to a process restart.
+  (swap! (old : plugin) (new :? plugin)) => :void
   ;; The report of the last start-up or reload, or #f before either.
   (last-report) => (Maybe :string))
 
@@ -27,3 +31,7 @@ prelude: :gerbil/core
 
 (def (last-configuration-report) => (Maybe :string)
   (:? (with-service-provider (provider configuration-service Configuration) (Configuration-last-report provider)) :string))
+
+(def (swap-plugins (old : plugin) (new :? plugin)) => :void
+  (:- (with-service-provider (provider configuration-service Configuration)
+    (Configuration-swap! provider old new)) :void))

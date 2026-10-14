@@ -27,6 +27,7 @@
 
 (defplugin (test-display ctx)
   "Counts redisplays."
+  provides: [display-service]
   (context-provide! ctx display-service (make-counting-display)))
 
 ;; The tasks input items resolve to, each (name . thunk).
@@ -114,6 +115,7 @@
 
 (defplugin (dummy-provider ctx)
   "Provides the dummy service."
+  provides: [dummy-service]
   (context-provide! ctx dummy-service (make-dummy)))
 
 (defplugin (dummy-user ctx)
@@ -164,6 +166,7 @@
 
 (defplugin (failing-display-plugin ctx)
   "Provides a display that always fails."
+  provides: [display-service]
   (context-provide! ctx display-service (make-failing-display)))
 
 ;; Start a fresh loop with the test tasks and PLUGINS, run THUNK, and stop.

@@ -350,22 +350,12 @@
            (check (probe-on? 'good) => #f)
            (check (probe-on? 'stubborn) => #f)))))
 
-    (test-case "a config: block is applied again when start-up restarts its plugin"
+    (test-case "configuration rejects two declared providers before activation"
       (call-with-temporary-directory
-       (lambda (directory)
-         (let (path (write-init directory
-                                "(use-plugin provider-plugin)"
-                                "(use-plugin dependent-plugin config: (note-activation! 'restart-block) (probe-on! 'restart-block))"
-                                "(use-plugin better-provider-plugin)"))
-           (call-with-fresh-kernel []
-             (lambda ()
-               (let (report (start path))
-                 (check (statuses report)
-                        => '(("config-blocks" on) ("provider-plugin" on) ("dependent-plugin" on)
-                             ("config: block of dependent-plugin" on) ("better-provider-plugin" on)
-                             ("your own code (plugin init)" on)))
-                 (check (activation-count 'restart-block) => 2)
-                 (check (probe-on? 'restart-block) => #t))))))))
+        (lambda (directory)
+          (let* ((path (write-init directory "(use-plugin provider-plugin)" "(use-plugin better-provider-plugin)"))
+                 (problem (check-configuration (make-config-choice path "--config"))))
+            (check (contains? problem "service probe is provided by both provider-plugin and better-provider-plugin") => #t)))))
 
     (test-case "load-time code is limited to imports and declarations"
       (call-with-temporary-directory
