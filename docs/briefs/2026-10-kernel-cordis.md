@@ -1,6 +1,6 @@
 # Brief: align the kernel with Cordis
 
-**Date:** 2026-10-14. **Status:** the seven decisions in "What changes" were approved by the owner on 2026-10-14; this brief needs approval as a whole, including the one decision below. Research: [`agents/research/cordis-alignment/README.md`](../../agents/research/cordis-alignment/README.md) (the full Cordis paper, arXiv 2608.25512, and its source).
+**Date:** 2026-10-14. **Status:** the seven decisions in "What changes" were approved by the owner on 2026-10-14; this brief needs approval as a whole. The decision below (re-evaluating a buffer) is open: the owner has thoughts to share before any implementation starts. Research: [`agents/research/cordis-alignment/README.md`](../../agents/research/cordis-alignment/README.md) (the full Cordis paper, arXiv 2608.25512, and its source).
 
 ## What this is and why
 
