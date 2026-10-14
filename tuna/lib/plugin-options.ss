@@ -15,7 +15,7 @@
 ;;;     (let (port (plugin-option web-transport-plugin 'port)) ...))
 ;;;   (defplugin-options web-transport-plugin
 ;;;     (port 0 "The loopback port to listen on; 0 picks a free one."
-;;;           (integer-type 0 65535)))
+;;;           (integer-type 0 65535) flag: "--port"))
 prelude: :gerbil/core
 
 (import :tuna/kernel)
@@ -26,6 +26,7 @@ prelude: :gerbil/core
         integer-type
         defplugin-options
         plugin-option-specs
+        parse-option-flag-value
         plugin-option-problems
         set-plugin-options!
         plugin-option-values
@@ -34,26 +35,34 @@ prelude: :gerbil/core
         remove-plugin-option-override!
         plugin-option)
 
-;; What values an option accepts: a description that completes "must be"
-;; and a predicate.
+;; What values an option accepts, and how its command-line spelling is
+;; parsed. The parser returns a candidate value; CHECK validates it.
 (defstruct option-type ((description : :string)
-                        (check       : :procedure))
+                        (check       : :procedure)
+                        (parse       : :procedure))
   final: #t)
 
-(def string-type (make-option-type "a string" string?))
-(def boolean-type (make-option-type "#t or #f" boolean?))
-(def symbol-type (make-option-type "a symbol" symbol?))
+(def string-type (make-option-type "a string" string? values))
+(def boolean-type
+  (make-option-type "#t or #f" boolean?
+                    (lambda (text)
+                      (cond ((equal? text "#t") #t)
+                            ((equal? text "#f") #f)
+                            (else 'invalid)))))
+(def symbol-type (make-option-type "a symbol" symbol? string->symbol))
 
 (def (integer-type (low : :fixnum) (high : :fixnum)) => option-type
   (make-option-type (string-append "a whole number from " (number->string low)
                                    " to " (number->string high))
-                    (lambda (v) (and (fixnum? v) (fx<= low v high)))))
+                    (lambda (v) (and (fixnum? v) (fx<= low v high)))
+                    string->number))
 
 ;; One option a plugin accepts.
 (defstruct option-spec ((name    : :symbol)
                         (default : :t)
                         (doc     : :string)
-                        (type    : option-type))
+                        (type    : option-type)
+                        (flag    :? :string))
   final: #t)
 
 ;; Plugin -> its option specs. Keyed by the plugin value, so a new version
@@ -65,14 +74,21 @@ prelude: :gerbil/core
 ;; (name . value) pairs; absent options take their default.
 (def given-options (make-hash-table-eq weak-keys: #t))
 
-;; Plugin -> overrides from program code, as (name value . why) lists,
-;; where WHY names what overrides init.ss, such as "--port".
-(def option-overrides (make-hash-table-eq weak-keys: #t))
+;; Plugin name -> process-lifetime overrides, as (name value . why)
+;; lists. Reload may read a new plugin value with the same name; the
+;; command line must still win. WHY names the override, such as "--port".
+(def option-overrides (make-hash-table-eq))
 
-;; (defplugin-options plugin (name default "doc" type) ...)
+;; A flag is another spelling of the option, not an action handler.
+(defrules option-declaration ()
+  ((_ (name default doc type))
+   (make-option-spec 'name default doc type #f))
+  ((_ (name default doc type flag: flag))
+   (make-option-spec 'name default doc type flag)))
+
 (defrules defplugin-options ()
-  ((_ plugin (name default doc type) ...)
-   (declare-plugin-options! plugin (list (make-option-spec 'name default doc type) ...))))
+  ((_ plugin spec ...)
+   (declare-plugin-options! plugin (list (option-declaration spec) ...))))
 
 ;; Record SPECS as the options P accepts. A default must have its type.
 (def (declare-plugin-options! (p : plugin) (specs : :list)) => :void
@@ -86,6 +102,19 @@ prelude: :gerbil/core
 
 (def (plugin-option-specs (p : plugin)) => :list
   (hash-ref declared-options p []))
+
+;; Parse TEXT with the option's type; a failed parse uses the same type
+;; message as a bad value in init.ss, with the flag and plugin as context.
+(def (parse-option-flag-value (p : plugin) (spec : option-spec) (text : :string)) => :t
+  (let* ((type (option-spec-type spec))
+         (outcome (with-catch (lambda (_) '(failed))
+                             (lambda () (list 'parsed ((option-type-parse type) text))))))
+    (if (and (eq? (car outcome) 'parsed) ((option-type-check type) (cadr outcome)))
+      (cadr outcome)
+      (error (string-append (or (option-spec-flag spec) "flag") ": "
+                            (symbol->string (plugin-name p)) " option "
+                            (symbol->string (option-spec-name spec)) " must be "
+                            (option-type-description type))))))
 
 ;; Every problem with GIVEN, the options a use-plugin form gives P as
 ;; (name value where) lists, where WHERE is the option's place in init.ss
@@ -141,20 +170,20 @@ prelude: :gerbil/core
 ;; overrides it, such as "--port".
 (def (override-plugin-option! (p : plugin) (name : :symbol) (value : :t) (why : :string)) => :void
   (option-spec-named p name)
-  (hash-put! option-overrides p
+  (hash-put! option-overrides (plugin-name p)
              (cons [name value . why]
                    (filter (lambda (o) (not (eq? (car o) name)))
-                           (hash-ref option-overrides p [])))))
+                           (hash-ref option-overrides (plugin-name p) [])))))
 
 ;; Let init.ss decide P's option NAME again.
 (def (remove-plugin-option-override! (p : plugin) (name : :symbol)) => :void
-  (hash-put! option-overrides p
+  (hash-put! option-overrides (plugin-name p)
              (filter (lambda (o) (not (eq? (car o) name)))
-                     (hash-ref option-overrides p []))))
+                     (hash-ref option-overrides (plugin-name p) []))))
 
 ;; What overrides P's option NAME, such as "--port", or #f.
 (def (plugin-option-override (p : plugin) (name : :symbol)) => (Maybe :string)
-  (let (found (assq name (hash-ref option-overrides p [])))
+  (let (found (assq name (hash-ref option-overrides (plugin-name p) [])))
     (and found (cddr found))))
 
 (def (option-spec-named (p : plugin) (name : :symbol)) => option-spec
@@ -168,6 +197,6 @@ prelude: :gerbil/core
 (def (plugin-option (p : plugin) (name : :symbol)) => :t
   (let (spec (option-spec-named p name))
     (cond
-     ((assq name (hash-ref option-overrides p [])) => cadr)
+     ((assq name (hash-ref option-overrides (plugin-name p) [])) => cadr)
      ((assq name (hash-ref given-options p [])) => cdr)
      (else (option-spec-default spec)))))

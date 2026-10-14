@@ -185,9 +185,9 @@
   (probe-on! 'optioned))
 
 (defplugin-options optioned-plugin
-  (greeting "hello" "What to say." string-type)
-  (times 1 "How often to say it." (integer-type 1 10))
-  (fail #f "Fail on activation." boolean-type))
+  (greeting "hello" "What to say." string-type flag: "--greeting")
+  (times 1 "How often to say it." (integer-type 1 10) flag: "--times")
+  (fail #f "Fail on activation." boolean-type flag: "--fail"))
 
 ;; Needs the probe service, so the kernel restarts it when the provider
 ;; changes; records the greeting it read at its last activation.
@@ -200,7 +200,7 @@
   (set! current-dependent-greeting (plugin-option optioned-dependent-plugin 'greeting)))
 
 (defplugin-options optioned-dependent-plugin
-  (greeting "hello" "What to say." string-type))
+  (greeting "hello" "What to say." string-type flag: "--greeting"))
 
 ;; Provides the startup-tier service fixed and takes an option, so an
 ;; option change waits for the next start while the editor loop runs.
