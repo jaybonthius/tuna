@@ -140,6 +140,9 @@ Tuna is Emacs-inspired, not an Emacs clone. This page maps Tuna's concepts to Em
 | Every input event clears a message in the echo area | A click leaves the echo area alone; the next key clears it | Clicking the echo area (or anything) to read a message keeps it | None | [ADR 8](../agents/adr/0008-input-keymaps-and-command-composition.md) (Clicks) |
 | Plain `emacs --daemon` socket with optional server key | Every client needs a per-launch token | The server can run any command | Launch through the `tuna` command or its URL | [ADR 10](../agents/adr/0010-security-clients-and-trust.md) |
 
+| Completion candidates are strings; data rides in text properties, and equal strings are told apart by appended invisible characters | A candidate is a record: the text shown and matched, the value returned, an identity, and optional category and group | No hidden data or disambiguation tricks; the chosen thing comes back directly | String tables need a one-line adapter; code reading candidate text properties reads record fields | [ADR 14](../agents/adr/0014-completion.md) |
+| Vertico and Marginalia plug in by advising `completing-read-default` and `completion-metadata-get` | A completion UI slot and an annotator registry; a session object any plugin can query | Extension points instead of advice; any UI gets annotations | Packages that advise completion internals use the slots and registries | [ADR 14](../agents/adr/0014-completion.md) |
+
 ### Under consideration
 
 Not decided; recorded so they are not forgotten.
@@ -148,7 +151,7 @@ Not decided; recorded so they are not forgotten.
 - **Highlighting kept as a cache** that survives edits instead of being written into buffer text properties.
 - **Folding as per-view state**, so the same file can be folded differently in two windows.
 - **Mode line, header line and tab bar as rich nodes** instead of the `mode-line-format` mini-language.
-- **Typed completion candidates** instead of strings carrying hidden properties, and completion filtering as jobs.
+- **Completion filtering as jobs** (typed candidates are decided: see divergences).
 - **Resumable debugger**: a failing command waits so you can fix it and continue.
 - **Action resolver** in the style of Plan 9's plumber, unifying `ffap`, `browse-url`, buttons, and Embark actions.
 - **Several views per node kind** that you can switch between (summary, table, raw), as in Glamorous Toolkit.

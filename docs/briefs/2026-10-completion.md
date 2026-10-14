@@ -1,6 +1,6 @@
 # Brief: completion and M-x
 
-**Date:** 2026-10-13. **Status:** proposed; waiting for your approval. Research: [`agents/research/completion/`](../../agents/research/completion/README.md) (Emacs's `minibuffer.el` and M-x; Vertico, Orderless, Marginalia, Consult and Embark, cloned at pinned commits; every advice and hook they use).
+**Date:** 2026-10-13. **Status:** approved 2026-10-13 (candidates as records). Decision record: [ADR 14](../../agents/adr/0014-completion.md); plan: [`agents/plans/completion.md`](../../agents/plans/completion.md). Research: [`agents/research/completion/`](../../agents/research/completion/README.md) (Emacs's `minibuffer.el` and M-x; Vertico, Orderless, Marginalia, Consult and Embark, cloned at pinned commits; every advice and hook they use).
 
 ## What this is and why
 
