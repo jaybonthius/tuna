@@ -1,0 +1,24 @@
+# What happens when you swap the layout plugin for another?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: You
+config: "Configuration reload"
+session: "Session store\n(lives on)"
+old: "Splits layout"
+deps: "Plugins that use\nthe layout"
+new: "Tabs layout"
+
+you -> config: "1. init.ss now declares the tabs layout"
+config -> session: "2. keep the latest saved data of the\nlayout and everything that uses it"
+config -> deps: "3. turn off (their additions are undone)"
+config -> old: "4. turn off (its additions are undone)"
+config -> new: "5. turn on"
+config -> deps: "6. turn on again, from a clean start"
+session -> new: "7. here is the saved arrangement:\nviews, buffers, cursors, frame marks"
+new -> you: "8. your views, now as tabs"
