@@ -1,16 +1,37 @@
 ;;; Commands and key bindings: the key and pointer events a transport
 ;;; submits as input items, the part of the input service that plugins
 ;;; define commands and bind keys through, and the input-target stack
-;;; prompts push (ADR 3, ADR 8). Plugins that define commands or bind keys
-;;; require `input-service`.
+;;; (ADR 3, ADR 8). Plugins that define commands or bind keys require
+;;; `input-service`.
+;;;
+;;; Keymaps are entry tables (`new-keymap`): every binding is an entry
+;;; owned by the plugin that made it and goes when that plugin is turned
+;;; off. Besides the global keymap, buffer nodes carry keymaps (the buffers
+;;; contract's `node-keymap`; a buffer's root node's keymap is the buffer's
+;;; own, Emacs's local map), and input targets do. The input service
+;;; resolves a key in this order, the first keymap holding a binding or a
+;;; longer sequence starting with the keys typed winning:
+;;;   1. the keymap of the node that has focus (the selected view's
+;;;      focused text node, or its buffer's root without one), then of
+;;;      each node above it, up to the buffer's root;
+;;;   2. the innermost input target's keymap;
+;;;   3. the global keymap.
 ;;;
 ;;; Clicks are looked up like keys, by their Emacs event names (`mouse-1`,
 ;;; `C-mouse-1`, `double-mouse-1`), first with the kind of part clicked as
 ;;; a prefix key ("<tab-line> <mouse-1>", as Emacs's "<mode-line> <mouse-1>"),
 ;;; then without it; a double or triple click falls back to the single
-;;; one. A command reads its click with `last-command-event` and
-;;; `event-start`; the layout contract finds the view and node a posn names
-;;; (`posn-view`, `posn-node`).
+;;; one. The keymaps are those of the same order, starting at the node
+;;; clicked (or, with none, at the root of the clicked view's buffer); each
+;;; keymap is searched under every one of those names before the next, so
+;;; a node's `<mouse-1>` shadows the global `<view> <mouse-1>`. A command
+;;; reads its click with `last-command-event` and `event-start`; the layout
+;;; contract finds the view and node a posn names (`posn-view`,
+;;; `posn-node`).
+;;;
+;;; The keymap generation (`keymap-generation`) changes whenever any
+;;; binding is added or removed, so renderers that reuse HTML marked from
+;;; bindings (`data-clickable`) know to draw it again.
 prelude: :gerbil/core
 
 (import :std/interface
@@ -19,6 +40,8 @@ prelude: :gerbil/core
         pointer-event-names
         event-start
         part-clickable?
+        keymap-clickable?
+        keymap-generation
         report-stale-click
         (interface-out Keys)
         (struct-out command)
@@ -124,8 +147,8 @@ prelude: :gerbil/core
 ;; Binds every printing character that has no binding of its own.
 (def printing-char-key "<printing-char>")
 
-;; What a waiting prompt pushes: while it is the innermost target, keys
-;; resolve in KEYMAP before the global keymap.
+;; A keymap pushed on the input-target stack: while it is the innermost
+;; target, keys resolve in KEYMAP before the global keymap.
 (defstruct input-target ((name   : :symbol)
                          (keymap : entry-table))
   final: #t)
@@ -160,7 +183,10 @@ prelude: :gerbil/core
   (last-command) => :t
   ;; The key or pointer event that completed the running command's keys,
   ;; or #f (Emacs `last-command-event`).
-  (last-command-event) => :t)
+  (last-command-event) => :t
+  ;; A number that changes whenever a binding is added to or removed from
+  ;; any keymap.
+  (keymap-generation) => :fixnum)
 
 (def (current-keys) => Keys
   (let (input (service-provider input-service))
@@ -250,14 +276,37 @@ prelude: :gerbil/core
 (def (last-command-event) => :t
   (Keys-last-command-event (current-keys)))
 
-;; Whether a plain click (mouse-1, mouse-2 or mouse-3) on a part of kind
-;; AREA has a global binding with AREA as its prefix key ("<tab-line> <mouse-1>"),
-;; so renderers mark such parts clickable; #f without key bindings.
+;; The keys of a plain click (mouse-1, mouse-2 or mouse-3) on a part of
+;; kind AREA: under AREA as a prefix key ("<view> <mouse-1>"), and also
+;; without it when ALONE?.
+(def (plain-click-keys (area : :symbol) (alone? : :boolean)) => :list
+  (let (prefix (string-append "<" (symbol->string area) "> "))
+    (foldr (lambda ((button : :string) (out : :list))
+             (let (click (string-append "<mouse-" button ">"))
+               (cons (string-append prefix click) (if alone? (cons click out) out))))
+           []
+           ["1" "2" "3"])))
+
+;; Whether a plain click on a part of kind AREA has a global binding with
+;; AREA as its prefix key ("<tab-line> <mouse-1>"), so renderers mark such
+;; parts clickable; #f without key bindings. The unprefixed global
+;; fallbacks do not count: they would make every part clickable.
 (def (part-clickable? (area : :symbol)) => :boolean
   (let (input (service-provider input-service))
     (and input (is-Keys? input)
-         (let (prefix (string-append "<" (symbol->string area) "> <mouse-"))
-           (and (ormap (lambda ((button : :string))
-                         (Keys-key-binding (Keys input) (string-append prefix button ">")))
-                       ["1" "2" "3"])
-                #t)))))
+         (ormap (lambda ((keys : :string)) (Keys-key-binding (Keys input) keys))
+                (plain-click-keys area #f))
+         #t)))
+
+;; Whether KEYMAP, a node's own, binds a plain click on a part of kind
+;; AREA, with or without AREA as a prefix key ("<mouse-1>", "<view>
+;; <mouse-1>"), so renderers mark the node clickable.
+(def (keymap-clickable? (keymap : entry-table) (area : :symbol)) => :boolean
+  (and (ormap (cut entry-table-ref keymap <>) (plain-click-keys area #t)) #t))
+
+;; The current keymap generation, or 0 without key bindings.
+(def (keymap-generation) => :fixnum
+  (let (input (service-provider input-service))
+    (if (and input (is-Keys? input))
+      (Keys-keymap-generation (Keys input))
+      0)))

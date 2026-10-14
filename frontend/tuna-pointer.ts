@@ -19,11 +19,15 @@ function partOf(target: EventTarget | null): Element | null {
   return target instanceof Element ? target.closest("[data-part]") : null;
 }
 
-// Chrome is a part outside any buffer node: pressing on it keeps keyboard
-// focus where it is and starts no text selection. Inside nodes the browser
-// keeps its own behavior, such as selecting text.
-function onChrome(target: EventTarget | null): boolean {
-  return partOf(target) !== null && (target as Element).closest("[data-node]") === null;
+// Pressing keeps keyboard focus where it is and starts no text selection
+// on chrome (a part outside any buffer node) and on whatever the server
+// marked clickable, such as a button node, which would otherwise take
+// focus. Inside other nodes the browser keeps its own behavior, such as
+// selecting text.
+function keepsFocus(target: EventTarget | null): boolean {
+  if (partOf(target) === null) return false;
+  const element = target as Element;
+  return element.closest("[data-node]") === null || element.closest("[data-clickable]") !== null;
 }
 
 // A non-negative integer attribute's value, or null.
@@ -49,7 +53,7 @@ action({
       case "mousedown":
       case "contextmenu":
         // contextmenu too, so a right click on chrome reaches auxclick.
-        if (onChrome(evt.target)) evt.preventDefault();
+        if (keepsFocus(evt.target)) evt.preventDefault();
         return;
       case "click":
       case "auxclick": {

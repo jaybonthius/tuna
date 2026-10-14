@@ -2,7 +2,7 @@
 ;;; parts a click can name, the layout drawn from the frame, and HTML reuse.
 (import :std/test
         :tuna/kernel
-        (only-in :tuna/services/keys keymap-set!)
+        (only-in :tuna/services/keys keymap-set! keymap-set-in! new-keymap)
         :tuna/services/settings
         :tuna/services/renderer
         :tuna/services/buffers
@@ -165,6 +165,44 @@
              ;; views, and the text nodes inside them, stay unmarked.
              (check (and (offset (string-append view " data-selected=\"true\">") html) #t) => #t)
              (check (offset "data-clickable" (substring html 0 (offset status-line html))) => #f))))))
+
+    (test-case "a node is clickable while its own keymap binds a plain click; a rebind draws it again"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (activate-plugin! counted-kind)
+         (let* ((keymap (new-keymap))
+                (b (get-buffer "b"))
+                (child (car (node-children (buffer-root b))))
+                (marked (string-append "data-node=\"" (number->string (node-id child))
+                                       "\" data-clickable=\"\"")))
+           (defplugin (other-bindings ctx)
+             "A global click, and a key in the node's keymap: neither marks the node."
+             requires: [input-service]
+             (keymap-set! ctx "<mouse-1>" 'global-click #f)
+             (keymap-set! ctx "<view> <mouse-1>" 'view-click #f)
+             (keymap-set-in! ctx keymap "RET" 'node-key #f))
+           (defplugin (node-click ctx)
+             "Binds a click in the node's keymap."
+             requires: [input-service]
+             (keymap-set-in! ctx keymap "<mouse-1>" 'node-click #f))
+           (set-view-buffer (selected-view) b)
+           (set-node-keymap! child keymap)
+           (activate-plugin! other-bindings)
+           (check (offset "data-clickable" (screen)) => #f)
+           (hash-clear! renders)
+           (check (offset "data-clickable" (screen)) => #f)
+           (check (renders-of "b") => 0)
+           ;; Binding the click changes no node; the keymap generation makes
+           ;; the next screen draw the nodes again, marked.
+           (activate-plugin! node-click)
+           (let (html (screen))
+             (check (and (offset marked html) #t) => #t)
+             (check (renders-of "b") => 3))
+           (hash-clear! renders)
+           (deactivate-plugin! node-click)
+           (let (html (screen))
+             (check (offset "data-clickable" html) => #f)
+             (check (renders-of "b") => 3))))))
 
     (test-case "a kind without an HTML renderer shows its text projection"
       (call-with-fresh-kernel renderer-plugins

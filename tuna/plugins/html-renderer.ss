@@ -13,14 +13,18 @@
 ;;; keeps its scroll position: a view's is view-V, a node's view-V-node-N,
 ;;; since one buffer may show in several views. Views and status lines are
 ;;; parts a click can name (data-part "view:V", "status-line:V"); a status
-;;; line is marked clickable while a click on one has a binding.
+;;; line is marked clickable while a click on one has a binding, and so is
+;;; a node whose own keymap binds a plain click (data-clickable).
+;;; Unprefixed global click bindings, which every part falls back to, mark
+;;; nothing.
 ;;;
 ;;; HTML reuse: the HTML of each node, as drawn in each view, is kept and
 ;;; reused while the node's revision (which a change to it or below it
 ;;; replaces), the view state it depends on (point and whether the view is
 ;;; selected, for the nodes holding the view's focused text node), how its
-;;; kind renders, and the display-wide inputs (the buffer's face-remapping)
-;;; are unchanged. So a node renderer must draw only from its node, its
+;;; kind renders, and the display-wide inputs (the buffer's face-remapping,
+;;; and the keymap generation, so a rebind marks clickable nodes again) are
+;;; unchanged. So a node renderer must draw only from its node, its
 ;;; children's renderings (opaque HTML fragments to place), and those
 ;;; inputs. Every redraw still sends the whole visible screen as one fat
 ;;; morph. Kept HTML belongs to the views drawn: a view not drawn, or drawn
@@ -30,7 +34,7 @@ prelude: :gerbil/core
 (import (only-in :gerbil/runtime/hash HashTable)
         :std/text/markup/sxml/print
         :tuna/kernel
-        (only-in :tuna/services/keys part-clickable?)
+        (only-in :tuna/services/keys part-clickable? keymap-clickable? keymap-generation)
         :tuna/services/settings
         :tuna/services/renderer
         :tuna/services/buffers
@@ -69,14 +73,18 @@ prelude: :gerbil/core
 (def (view-element-id (v : view)) => :string
   (string-append "view-" (number->string (view-id v))))
 
-;; ELEMENT with a data-node attribute identifying N (ADR 7), and an element
-;; id unique to N in the rendered view.
+;; ELEMENT with a data-node attribute identifying N (ADR 7), an element id
+;; unique to N in the rendered view, and data-clickable when N's own
+;; keymap binds a plain click.
 (def (with-node-id (n : node) (element : :t)) => :t
   (let* ((number (number->string (node-id n)))
          (v (rendering-view))
+         (keymap (node-keymap n))
+         (clickable (if (and keymap (keymap-clickable? keymap 'view)) [['data-clickable ""]] []))
          (ids (if v
-                [['id (string-append (view-element-id v) "-node-" number)] ['data-node number]]
-                [['data-node number]])))
+                (cons* ['id (string-append (view-element-id v) "-node-" number)] ['data-node number]
+                       clickable)
+                (cons ['data-node number] clickable))))
     (match element
       ([tag ['@ . attributes] . body] (cons* tag (cons '@ (append ids attributes)) body))
       ([tag . body] (cons* tag (cons '@ ids) body))
@@ -208,7 +216,7 @@ prelude: :gerbil/core
          (d (make-drawing (view-html-nodes (view-html-for self v start))
                           (node-ancestors focus)
                           (and focus (cons (view-point v) selected?))
-                          (buffer-local-value face-remapping b))))
+                          (cons (buffer-local-value face-remapping b) (keymap-generation)))))
     (parameterize ((rendering-view v))
       `(section (@ (class "view")
                    (id ,(view-element-id v))

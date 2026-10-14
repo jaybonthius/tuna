@@ -280,3 +280,17 @@ test("pressing on chrome keeps focus and the context menu away; inside text node
   assert.equal(pressed(parts.outside), false);
   assert.equal(h.posts.length, 0, "a press alone sends nothing");
 });
+
+test("pressing on a node marked clickable, such as a button, keeps focus; its click names the node", async () => {
+  const parts = screenParts();
+  const button = new Element({ "data-node": 9, "data-clickable": "" }, parts.node);
+  const label = new Element({}, button);
+  const h = await harness(new MemoryStorage(), parts.screen);
+  const evt = new MouseEvent("mousedown", label);
+  h.point(evt);
+  assert.equal(evt.defaultPrevented, true);
+  assert.equal(h.posts.length, 0, "a press alone sends nothing");
+  h.point(new MouseEvent("click", label));
+  assert.equal(h.posts[0].body.target, "view:12");
+  assert.equal(h.posts[0].body.node, 9);
+});

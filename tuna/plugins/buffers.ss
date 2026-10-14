@@ -1,9 +1,9 @@
 ;;; The default buffers provider (live tier; ADR 6, ADR 13): texts with a
 ;;; change journal, undo by change records, and highlight layers that move
-;;; with edits; node trees with parent links and revisions; the buffer
-;;; list; the selected view; and the node-kind registries. Starts with *scratch*, a buffer holding one empty
-;;; text node, selected in a view that the layout takes over as its first
-;;; view.
+;;; with edits; node trees with parent links, revisions and keymaps; the
+;;; buffer list; the selected view; and the node-kind registries. Starts
+;;; with *scratch*, a buffer holding one empty text node, selected in a
+;;; view that the layout takes over as its first view.
 ;;;
 ;;; It adapts to a new text store instead of restarting, which would discard
 ;;; every buffer: it moves each buffer's texts into the new store. It adds
@@ -219,7 +219,8 @@ prelude: :gerbil/core
    (children   : :list)              ; default nodes
    (parent     :? node)           ; a default node
    (revision   : :fixnum)
-   (content    :? default-text))     ; a text node's text
+   (content    :? default-text)      ; a text node's text
+   (keymap     :? entry-table))
   final: #t)
 
 ;; Give N, and every node above it, one new revision. Revisions come from
@@ -248,10 +249,10 @@ prelude: :gerbil/core
   (for-each (lambda ((child : default-node)) (set! child.parent parent)) children))
 
 (def (new-default-node (id : :fixnum) (kind : :symbol) (attributes : :list) (children : :list)
-                        (content :? default-text))
+                        (content :? default-text) (keymap :? entry-table))
   => default-node
   (let (n (default-node id: id kind: kind attributes: attributes children: children
-                        parent: #f revision: (next-id!) content: content))
+                        parent: #f revision: (next-id!) content: content keymap: keymap))
     (adopt-children! n children)
     (when content
       (set! (default-text-nodes content) (cons n (default-text-nodes content))))
@@ -266,6 +267,10 @@ prelude: :gerbil/core
 (def (set-attribute! (n : default-node) (name : :symbol) (value : :t)) => :void
   (set! n.attributes (cons (cons name value)
                            (filter (lambda ((pair : :pair)) (not (eq? (car pair) name))) n.attributes)))
+  (stamp! n))
+
+(def (set-keymap! (n : default-node) (keymap :? entry-table)) => :void
+  (set! n.keymap keymap)
   (stamp! n))
 
 ;; The texts of the tree at N, depth first.
@@ -323,7 +328,7 @@ prelude: :gerbil/core
                          (filter (lambda ((pair : :pair)) (not (eq? (car pair) s))) b.settings))))
 
 (def (new-scratch-buffer) => default-buffer
-  (new-default-buffer "*scratch*" (new-default-node (next-id!) 'text [] [] (new-default-text ""))))
+  (new-default-buffer "*scratch*" (new-default-node (next-id!) 'text [] [] (new-default-text "") #f)))
 
 ;;; The registry
 
@@ -376,7 +381,7 @@ prelude: :gerbil/core
             d)))
     (def (describe-node (n : default-node)) => node-description
       (make-node-description (node-id n) n.kind n.attributes (map describe-node n.children)
-                             (and n.content (describe-text n.content))))
+                             (and n.content (describe-text n.content)) n.keymap))
     (make-buffers-description
      (map (lambda ((b : default-buffer))
             (make-buffer-description b.name (describe-node b.root) b.settings
@@ -410,7 +415,8 @@ prelude: :gerbil/core
                                  (node-description-attributes d)
                                  (map adopt-node (node-description-children d))
                                  (let (text (node-description-text d))
-                                   (and text (adopt-text text)))))
+                                   (and text (adopt-text text)))
+                                 (node-description-keymap d)))
         (hash-put! nodes (node-id n) n)
         n))
     (def (adopt-buffer (d : buffer-description)) => default-buffer
@@ -462,11 +468,13 @@ prelude: :gerbil/core
   (text-highlights (lambda (self t name) (layer-spans t name)))
   (text-all-highlights (lambda (self t) (using (t : default-text) (:- (append-map cdr t.decorations) :list))))
   (make-node (lambda (self kind attributes children)
-               (new-default-node (next-id!) kind attributes children #f)))
-  (make-text-node (lambda (self t) (new-default-node (next-id!) 'text [] [] t)))
+               (new-default-node (next-id!) kind attributes children #f #f)))
+  (make-text-node (lambda (self t) (new-default-node (next-id!) 'text [] [] t #f)))
   (node-kind (lambda (self n) (using (n : default-node) n.kind)))
   (node-attributes (lambda (self n) (using (n : default-node) n.attributes)))
   (set-node-attribute! (lambda (self n name value) (set-attribute! n name value)))
+  (node-keymap (lambda (self n) (using (n : default-node) n.keymap)))
+  (set-node-keymap! (lambda (self n keymap) (set-keymap! n keymap)))
   (node-parent (lambda (self n) (using (n : default-node) n.parent)))
   (node-revision (lambda (self n) (using (n : default-node) n.revision)))
   (node-text (lambda (self n) (using (n : default-node) n.content)))

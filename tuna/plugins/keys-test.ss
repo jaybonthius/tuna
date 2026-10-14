@@ -286,4 +286,43 @@
          (check (part-clickable? 'tab-line) => #f)
          (activate-plugin! tab-clicks)
          (check (part-clickable? 'tab-line) => #t)
-         (check (part-clickable? 'view) => #f))))))
+         (check (part-clickable? 'view) => #f))))
+
+    (test-case "keymap-clickable? looks for a plain click with or without the part kind"
+      (call-with-fresh-kernel keys-plugins
+       (lambda ()
+         (let ((prefixed (new-keymap))
+               (plain (new-keymap))
+               (other (new-keymap)))
+           (defplugin (node-clicks ctx)
+             "Binds clicks and keys in three keymaps."
+             requires: [input-service]
+             (keymap-set-in ctx prefixed "<view> <mouse-3>" 'command-a)
+             (keymap-set-in ctx plain "<mouse-1>" 'command-a)
+             (keymap-set-in ctx other "<C-mouse-1>" 'command-a)
+             (keymap-set-in ctx other "RET" 'command-a))
+           (check (keymap-clickable? plain 'view) => #f)
+           (activate-plugin! node-clicks)
+           (check (keymap-clickable? prefixed 'view) => #t)
+           (check (keymap-clickable? prefixed 'tab-line) => #f)
+           (check (keymap-clickable? plain 'view) => #t)
+           (check (keymap-clickable? other 'view) => #f)))))
+
+    (test-case "the keymap generation changes when a binding comes or goes, in any keymap"
+      (call-with-fresh-kernel keys-plugins
+       (lambda ()
+         (let (keymap (new-keymap))
+           (defplugin (node-key ctx)
+             "Binds a key in a keymap of its own."
+             requires: [input-service]
+             (keymap-set-in ctx keymap "RET" 'command-a))
+           (let (g0 (keymap-generation))
+             (activate-plugin! binds-a)
+             (let (g1 (keymap-generation))
+               (check (= g1 g0) => #f)
+               (activate-plugin! node-key)
+               (let (g2 (keymap-generation))
+                 (check (= g2 g1) => #f)
+                 (deactivate-plugin! node-key)
+                 (check (= (keymap-generation) g2) => #f)
+                 (check (entry-table-ref keymap "RET") => #f))))))))))

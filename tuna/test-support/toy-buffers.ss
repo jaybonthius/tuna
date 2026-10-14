@@ -171,7 +171,8 @@ prelude: :gerbil/core
    (children   : :vector)
    (parent     :? node)
    (revision   : :fixnum)
-   (text       :? toy-text))
+   (text       :? toy-text)
+   (keymap     :? entry-table))
   final: #t)
 
 (def (stamp-all! (nodes : :list)) => :void
@@ -192,10 +193,10 @@ prelude: :gerbil/core
             children))
 
 (def (new-toy-node (id : :fixnum) (kind : :symbol) (attributes : :list) (children : :list)
-                   (text :? toy-text))
+                   (text :? toy-text) (keymap :? entry-table))
   => toy-node
   (let (n (toy-node id: id kind: kind attributes: attributes children: (list->vector children)
-                    parent: #f revision: (next-id!) text: text))
+                    parent: #f revision: (next-id!) text: text keymap: keymap))
     (attach! n children)
     (when text
       (set! (toy-text-nodes text) (cons n (toy-text-nodes text))))
@@ -247,7 +248,7 @@ prelude: :gerbil/core
       (set! b.revision 0))))
 
 (def (toy-scratch) => toy-buffer
-  (new-toy-buffer "*scratch*" (new-toy-node (next-id!) 'text [] [] (new-toy-text ""))))
+  (new-toy-buffer "*scratch*" (new-toy-node (next-id!) 'text [] [] (new-toy-text "") #f)))
 
 ;;; The provider
 
@@ -280,7 +281,7 @@ prelude: :gerbil/core
     (def (describe-node (n : toy-node)) => node-description
       (make-node-description (node-id n) n.kind n.attributes
                              (map describe-node (vector->list n.children))
-                             (and n.text (describe-text n.text))))
+                             (and n.text (describe-text n.text)) n.keymap))
     (make-buffers-description
      (map (lambda ((b : toy-buffer))
             (make-buffer-description b.name (describe-node b.root) b.settings
@@ -311,7 +312,8 @@ prelude: :gerbil/core
       (let (n (new-toy-node (node-description-id d) (node-description-kind d)
                             (node-description-attributes d)
                             (map adopt-node (node-description-children d))
-                            (let (text (node-description-text d)) (and text (adopt-text text)))))
+                            (let (text (node-description-text d)) (and text (adopt-text text)))
+                            (node-description-keymap d)))
         (hash-put! nodes (node-id n) n)
         n))
     (def (text-node-in (id :? :fixnum) (b : toy-buffer)) => (Maybe toy-node)
@@ -361,8 +363,8 @@ prelude: :gerbil/core
   (text-all-highlights (lambda (self t)
                          (using (t : toy-text) (:- (append-map cdr (hash->list t.layers)) :list))))
   (make-node (lambda (self kind attributes children)
-               (new-toy-node (next-id!) kind attributes children #f)))
-  (make-text-node (lambda (self t) (new-toy-node (next-id!) 'text [] [] t)))
+               (new-toy-node (next-id!) kind attributes children #f #f)))
+  (make-text-node (lambda (self t) (new-toy-node (next-id!) 'text [] [] t #f)))
   (node-kind (lambda (self n) (using (n : toy-node) n.kind)))
   (node-attributes (lambda (self n) (using (n : toy-node) n.attributes)))
   (set-node-attribute! (lambda (self n name value)
@@ -371,6 +373,11 @@ prelude: :gerbil/core
                                                     (filter (lambda ((pair : :pair)) (not (eq? (car pair) name)))
                                                             n.attributes)))
                            (stamp-all! [n]))))
+  (node-keymap (lambda (self n) (using (n : toy-node) n.keymap)))
+  (set-node-keymap! (lambda (self n keymap)
+                      (using (n : toy-node)
+                        (set! n.keymap keymap)
+                        (stamp-all! [n]))))
   (node-parent (lambda (self n) (using (n : toy-node) n.parent)))
   (node-revision (lambda (self n) (using (n : toy-node) n.revision)))
   (node-text (lambda (self n) (using (n : toy-node) n.text)))
