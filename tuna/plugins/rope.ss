@@ -235,4 +235,5 @@ prelude: :gerbil/core
 
 (defplugin (rope-text-store-plugin ctx)
   "Stores text in a persistent rope (the default text store)."
+  provides: [text-store-service]
   (context-provide! ctx text-store-service rope-text-store))

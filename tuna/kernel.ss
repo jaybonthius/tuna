@@ -13,11 +13,12 @@ prelude: :gerbil/core
         ./kernel/loop)
 (export
   ;; 1. Plugin runtime: plugins, contexts and receipts, owner-tagged
-  ;; entries, activation, services with providers and adapting dependents.
+  ;; entries, activation, services with one provider.
   plugin                                ; the type, for annotations
   plugin-name                           ; lifecycle hooks pass plugins
   plugin-doc
   plugin-source
+  plugin-provides                       ; start-up checks unique service declarations
   plugin-requires                       ; start-up waits for, and reports, missing services
   defplugin
   context
@@ -45,10 +46,10 @@ prelude: :gerbil/core
   new-service
   service-provider
   context-provide!
-  context-adapt!
   activate-plugin!
   deactivate-plugin!
   plugin-active?
+  plugin-deactivation-closure
   deactivate-all-plugins!
   describe-services
   service-info
@@ -56,7 +57,6 @@ prelude: :gerbil/core
   service-info-tier
   service-info-provider
   service-info-dependents
-  service-info-adapting
   service-info-doc
   (phi: +1 stx-source-string)           ; for registration macros that record their source
 

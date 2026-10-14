@@ -32,6 +32,7 @@
 
 (defplugin (recording-input-plugin ctx)
   "Records the input items it resolves."
+  provides: [input-service]
   (context-provide! ctx input-service recorded))
 
 ;; The items resolved so far, oldest first, once there are COUNT of them.

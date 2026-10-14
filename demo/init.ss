@@ -66,7 +66,11 @@
 (use-plugin endless-commands-plugin)    ; C-c l and C-c L: loops to quit with C-g
 (use-plugin services-help-plugin)       ; C-h s: describe-services
 (use-plugin rename-command-plugin)      ; C-c r: rename the buffer in the minibuffer
-(use-plugin swap-commands-plugin)       ; C-c v, C-c w, C-c B: swap renderer, layout, buffers
+;; C-c v, C-c w, C-c B: swap renderer, layout, buffers.
+(use-plugin swap-commands-plugin
+  config:
+  (context-set-swap-providers! (current-context)
+                               html-renderer-plugin layout-plugin buffers-plugin))
 (use-plugin digit-highlighter-plugin)   ; colors digits from a slow job
 (use-plugin tree-buffer-plugin)         ; C-c b: the *welcome* buffer, built as a tree
 (use-plugin demo-plugin)                ; C-c s text store, C-c p basic editing

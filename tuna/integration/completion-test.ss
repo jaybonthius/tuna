@@ -46,6 +46,7 @@ prelude: :gerbil/core
 
 (defplugin (fixture ctx)
   "Reads, commands and a redraw observer for completion integration tests."
+  provides: [display-service]
   requires: [commands-service input-service completion-service minibuffer-service buffers-service]
   (context-provide! ctx display-service (completion-display))
   (define-command ctx (test-alpha) "An alpha action.\nMore details on the next line." (set! results (cons 'alpha results)))
@@ -268,14 +269,16 @@ prelude: :gerbil/core
           (check (on-editor session) => #f)
           (check results => [2])
           (check (on-editor (lambda () (minibuffer-history 'picks))) => ["car"]))))
-    (test-case "a second live UI replaces the first immediately, then restores it"
+    (test-case "configuration selects one UI at a time"
       (run-completion completion-vertical-plugin
         (lambda ()
           (type! "C-c" "f" "b")
-          (on-editor (lambda () (activate-plugin! toy-completion-ui-plugin)))
+          (on-editor (lambda () (deactivate-plugin! completion-vertical-plugin)
+                                 (activate-plugin! toy-completion-ui-plugin)))
           (check (on-editor row-texts) => [])
           (check (on-editor (lambda () (length (prompt-nodes 'toy-completion-summary)))) => 1)
-          (on-editor (lambda () (deactivate-plugin! toy-completion-ui-plugin)))
+          (on-editor (lambda () (deactivate-plugin! toy-completion-ui-plugin)
+                                 (activate-plugin! completion-vertical-plugin)))
           (check (on-editor row-texts) => ["beta"])
           (check (on-editor (lambda () (prompt-nodes 'toy-completion-summary))) => [])
           (type! "RET")

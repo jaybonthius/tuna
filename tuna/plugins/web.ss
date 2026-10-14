@@ -407,6 +407,7 @@ prelude: :gerbil/core
 
 (defplugin (web-transport-plugin ctx)
   "Serves screens to browser tabs on loopback and receives their input."
+  provides: [display-service]
   optional: [renderer-service]
   (let* ((port (let (configured (plugin-option web-transport-plugin 'port))
                  (if (zero? configured) (free-loopback-port) configured)))

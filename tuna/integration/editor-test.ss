@@ -127,18 +127,18 @@
            (check (contains? html "Tuna · *scratch*") => #t)
            (check (contains? html ">Quit<") => #t)))))
 
-    (test-case "C-h s shows buffers adapting to the text store, in *Help*; C-h q closes it"
+    (test-case "C-h s shows buffers depending on the text store, in *Help*; C-h q closes it"
       (call-with-fresh-kernel editor-plugins
        (lambda ()
          (start-editor-loop!)
          (type! "C-h" "s")
          (check (on-baton (lambda () (help-output-lines (current-help))))
                 ? (cut member
-                       "text-store (live)  provider: rope-text-store-plugin  dependents: buffers-plugin (adapts)"
+                       "text-store (live)  provider: rope-text-store-plugin  dependents: buffers-plugin"
                        <>))
          (let (html (screen))
            (check (contains? html ">Services</h1>") => #t)
-           (check (contains? html "provider: rope-text-store-plugin  dependents: buffers-plugin (adapts)") => #t)
+           (check (contains? html "provider: rope-text-store-plugin  dependents: buffers-plugin") => #t)
            (check (contains? html "Tuna · *Help*") => #t))
          ;; The selected view stays where it was.
          (check (on-baton (lambda () (buffer-name (current-buffer)))) => "*scratch*")

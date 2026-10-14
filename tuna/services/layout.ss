@@ -32,10 +32,8 @@
 ;;; between views visits only them. A layout without pins (a toy) may
 ;;; ignore them and have no places for locked views.
 ;;;
-;;; Replacing the provider hands the views over through a neutral
-;;; description: the views in order and the selected one. Arrangement,
-;;; pins, frame and frame marks belong to each layout, and locked views to
-;;; the plugins that put them in, which put them back in the next layout.
+;;; Replacing the provider restores views and frame marks from session
+;;; data. The old provider's private slot keeps its arrangement for a return.
 ;;;
 ;;; Clicks name parts by id (the keys contract's `posn`): a view and its
 ;;; status line by the view's id. `posn-view` and `posn-node` find the view
@@ -49,7 +47,9 @@ prelude: :gerbil/core
         :tuna/services/buffers)
 (export (interface-out Layout)
         layout-service
-        (struct-out layout-description frame-target)
+        (struct-out frame-target)
+        saved-view-data
+        restore-view-data
         view-list
         select-view
         next-view
@@ -72,11 +72,32 @@ prelude: :gerbil/core
         render-layout
         replace-buffer-in-views)
 
-;; What one layout hands the next: its views in order and the selected
-;; one, which is one of them.
-(defstruct layout-description ((views    : :list)
-                               (selected : view))
-  final: #t)
+;; Neutral session slot `layout`, version 1:
+;; ((views (VIEW-ID BUFFER-NAME NODE-ID POINT) ...) (selected VIEW-ID)
+;;  (marks (NAME VIEW-ID-OR-#f NODE-ID-OR-#f) ...)).
+;; Locked views are rebuilt by their owning plugins. A mark on a container
+;; becomes a whole-layout mark (#f); containers are provider-private.
+(def (saved-view-data (v : view)) => :list
+  [(view-id v) (buffer-name (view-showing v))
+   (let (n (view-node v)) (and n (node-id n))) (view-point v)])
+
+(def (saved-node (root : node) (id : :fixnum)) => (Maybe node)
+  (if (eqv? (node-id root) id) root
+    (ormap (lambda ((child : node)) (saved-node child id)) (node-children root))))
+
+(def (restore-view-data (data : :t)) => (Maybe view)
+  (match data
+    ([(? fixnum?) (? string? name) node-id (? fixnum? position)]
+     (let (b (get-buffer name))
+       (and b
+            (let* ((root (buffer-root b))
+                   (n (or (and (fixnum? node-id) (saved-node root node-id)) root))
+                   (v (new-view b)))
+              (when (text-node? n)
+                (reset-view! v b n 1 (text-chars-revision (text-node-content n))))
+              (set-view-point! v position)
+              v))))
+    (else #f)))
 
 ;; Where the frame points: the part of the layout with id PART (a
 ;; container's id, or a view's `view-id`), or the whole layout when PART is
@@ -147,19 +168,11 @@ prelude: :gerbil/core
   ;; 'html both are SXML elements. For a target it does not know, the
   ;; result is the list of the views it shows, rendered, in order.
   (render-layout (target : :symbol) (render-view : :procedure)) => :t
-  ;; The neutral description of the layout's views.
-  (describe-views) => :t
-  ;; Take over the views of DESCRIPTION, arranged in this layout's own way,
-  ;; and select its selected view.
-  (adopt-views! (description : layout-description)) => :void)
+)
 
 (def layout-service
   (new-service 'layout is-Layout? tier: 'live
-               doc: "Arranges views, each showing a buffer, and the frame that shows them."
-               handover: (lambda (outgoing incoming)
-                           (Layout-adopt-views!
-                            (Layout incoming)
-                            (Layout-describe-views (Layout outgoing))))))
+               doc: "Arranges views, each showing a buffer, and the frame that shows them."))
 
 ;; Every view, in order (Emacs `window-list`).
 (def (view-list) => :list

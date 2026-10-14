@@ -11,6 +11,8 @@ prelude: :gerbil/core
 (import :tuna/services/commands
         :tuna/kernel
         :tuna/services/keys
+        :tuna/services/configuration
+        :tuna/plugins/rope
         :tuna/plugins/basic-editing
         "../tuna/test-support/string-text-store")
 (export demo-plugin)
@@ -22,9 +24,11 @@ prelude: :gerbil/core
 
 (defplugin (demo-plugin ctx)
   "Demo commands: swap the text store (C-c s) and basic editing (C-c p) while Tuna runs."
-  requires: [commands-service input-service]
+  requires: [commands-service input-service configuration-service]
   (define-command ctx (swap-text-store) "Switch between the rope and the plain-string text store."
-    (toggle-plugin! string-text-store-plugin)
+    (if (plugin-active? string-text-store-plugin)
+      (swap-plugins string-text-store-plugin rope-text-store-plugin)
+      (swap-plugins rope-text-store-plugin string-text-store-plugin))
     (message (if (plugin-active? string-text-store-plugin)
                "Text store: plain strings"
                "Text store: rope")))

@@ -87,6 +87,19 @@ prelude: :gerbil/core
             (problem! (string-append "the plugin name " name
                                      " is reserved for the configuration itself")))
            (else
+            (for-each
+             (lambda ((svc : service))
+               (let (other (find (lambda ((d : declaration))
+                                  (ormap (lambda ((provided : service))
+                                           (eq? (service-name svc) (service-name provided)))
+                                         (plugin-provides (declaration-target d))))
+                                c.declarations))
+                 (when other
+                   (problem! (string-append "service " (symbol->string (service-name svc))
+                                            " is provided by both "
+                                            (symbol->string (plugin-name (declaration-target other)))
+                                            " and " name)))))
+             (plugin-provides p))
             (let (problems (plugin-option-problems
                             p (map (lambda (o) [(car o) (cadr o) (place-text (caddr o))]) options)))
               (set! c.problems (append (reverse problems) c.problems))

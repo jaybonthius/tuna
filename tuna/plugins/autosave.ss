@@ -71,7 +71,7 @@ prelude: :gerbil/core
                    (unless (and (equal? (hash-get self.written t) stamp) (file-exists? path))
                      (write-file-atomically! path (lambda (port) (display (text-string t) port))))
                    (hash-put! written t stamp)
-                   [(buffer-name b) (current-point b) file]))
+                   [(buffer-name b) (current-point b) file (node-id (buffer-root b))]))
                (filter kept? (buffer-list))))
       (set! self.written written)
       (let (files (map caddr entries))
@@ -90,15 +90,15 @@ prelude: :gerbil/core
 
 ;; Bring back the buffers DATA lists. A buffer of that name that is one
 ;; empty text node receives the text (*scratch*, made at startup); one
-;; that already holds text keeps it, since it is live (handed over when
-;; the buffers provider was replaced, which restarts this plugin), and the
-;; file may be older; otherwise a new buffer is made.
+;; that already holds text keeps it; otherwise a new buffer is made.
+;; Root ids are recorded for layout references; rebuilt roots get fresh ids,
+;; so layout restore falls back to their root when that id is absent.
 (def (restore-buffers! (self : autosave) (data : :t)) => :void
   (let (directory (autosave-directory))
     (for-each
       (lambda (entry)
         (match entry
-          ([(? string? name) (? fixnum? position) (? string? file)]
+          ([(? string? name) (? fixnum? position) (? string? file) (? fixnum? root-id)]
            (let (path (path-expand file directory))
              ;; The file name must be the one the name maps to, so the
              ;; session cannot point outside the autosave directory.

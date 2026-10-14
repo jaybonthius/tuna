@@ -1,7 +1,7 @@
 ;;; The toy buffers provider (live tier): the buffers contract kept as
 ;;; simply as possible, differently from the default. It proves buffers can
-;;; be swapped while Tuna runs (ADR 12, ADR 13): taking over, it rebuilds
-;;; the outgoing provider's buffers from their neutral description.
+;;; be swapped while Tuna runs (ADR 12, ADR 13): autosave rebuilds plain-text
+;;; buffers from the captured session after this provider starts.
 ;;;
 ;;; Differences from the default (tuna/plugins/buffers.ss): undo keeps,
 ;;; for each group, the whole text version from before it, and undoing
@@ -271,74 +271,6 @@ prelude: :gerbil/core
   (set! self.newest-first (remq b self.newest-first))
   (for-each (lambda ((t : toy-text)) (set! t.live? #f)) (toy-tree-texts b.root)))
 
-(def (toy-describe (self : toy-buffers)) => buffers-description
-  (let (texts (make-hash-table-eq))
-    (def (describe-text (t : toy-text)) => text-description
-      (or (hash-get texts t)
-          (let (d (make-text-description (toy-string t) (hash->list t.layers)))
-            (hash-put! texts t d)
-            d)))
-    (def (describe-node (n : toy-node)) => node-description
-      (make-node-description (node-id n) n.kind n.attributes
-                             (map describe-node (vector->list n.children))
-                             (and n.text (describe-text n.text)) n.keymap))
-    (make-buffers-description
-     (map (lambda ((b : toy-buffer))
-            (make-buffer-description b.name (describe-node b.root) b.settings
-                                     (and b.point-node (node-id b.point-node))
-                                     (toy-buffer-point-now b)))
-          (reverse self.newest-first))
-     (let* ((v self.selected)
-            (n (view-node v)))
-       (make-view-description v (toy-buffer-name (view-showing v)) (and n (node-id n))
-                              (if n
-                                (toy-relocate (toy-node-text n) (view-position v) (view-revision v))
-                                (view-position v)))))))
-
-(def (toy-adopt! (self : toy-buffers) (d : buffers-description)) => :void
-  (for-each (lambda ((b : toy-buffer))
-              (for-each (lambda ((t : toy-text)) (set! t.live? #f)) (toy-tree-texts b.root)))
-            self.newest-first)
-  (let ((texts (make-hash-table-eq))
-        (nodes (make-hash-table-eqv)))
-    (def (adopt-text (d : text-description)) => toy-text
-      (or (hash-get texts d)
-          (let (t (new-toy-text (text-description-content d)))
-            (for-each (lambda ((layer : :pair)) (toy-set-highlights! t (car layer) (cdr layer)))
-                      (text-description-highlights d))
-            (hash-put! texts d t)
-            t)))
-    (def (adopt-node (d : node-description)) => toy-node
-      (let (n (new-toy-node (node-description-id d) (node-description-kind d)
-                            (node-description-attributes d)
-                            (map adopt-node (node-description-children d))
-                            (let (text (node-description-text d)) (and text (adopt-text text)))
-                            (node-description-keymap d)))
-        (hash-put! nodes (node-id n) n)
-        n))
-    (def (text-node-in (id :? :fixnum) (b : toy-buffer)) => (Maybe toy-node)
-      (let (n (and id (hash-get nodes id)))
-        (if (and n (toy-node-text n)) n (first-toy-text-node b.root))))
-    (let (buffers (map (lambda ((d : buffer-description))
-                         (let (b (new-toy-buffer (buffer-description-name d)
-                                                 (adopt-node (buffer-description-root d))))
-                           (set! (toy-buffer-settings b) (buffer-description-settings d))
-                           (toy-set-point! b (text-node-in (buffer-description-point-node d) b)
-                                           (buffer-description-point d))
-                           b))
-                       (buffers-description-buffers d)))
-      (set! self.newest-first (if (null? buffers) [(toy-scratch)] (reverse buffers)))
-      (let* ((vd (buffers-description-selected d))
-             (b (or (toy-find self (view-description-buffer vd)) (last self.newest-first)))
-             (n (text-node-in (view-description-node vd) b))
-             (t (and n (toy-node-text n))))
-        (reset-view! (view-description-of vd) b n
-                     (if t
-                       (fxmax 1 (fxmin (view-description-point vd) (fx1+ (toy-size t))))
-                       (view-description-point vd))
-                     (if t (toy-text-revision t) 0))
-        (set! self.selected (view-description-of vd))))))
-
 (implement Buffers toy-buffers
   (make-text (lambda (self initial) (new-toy-text initial)))
   (text-snapshot (lambda (self t)
@@ -418,12 +350,11 @@ prelude: :gerbil/core
   (selected-view (lambda (self) self.selected))
   (set-selected-view! (lambda (self v) (set! self.selected v)))
   (node-kinds (lambda (self) self.kinds))
-  (node-renderers (lambda (self) self.renderers))
-  (describe-buffers (lambda (self) (toy-describe self)))
-  (adopt-buffers! (lambda (self description) (toy-adopt! self description))))
+  (node-renderers (lambda (self) self.renderers)))
 
 (defplugin (toy-buffers-plugin ctx)
-  "Keeps buffers simply (a toy). Outranks the default buffers provider while active."
+  "Keeps buffers simply (a toy). Selected instead of the default provider."
+  provides: [buffers-service]
   requires: [text-store-service settings-service]
   (let* ((scratch (toy-scratch))
          (self (toy-buffers newest-first: [scratch]
@@ -433,15 +364,6 @@ prelude: :gerbil/core
                         (make-node-kind-info 'text "Text that users edit."
                                              (lambda (n) (text-string (text-node-content n))))
                         doc: "Text that users edit.")
-    (context-provide! ctx buffers-service (Buffers self) priority: 10)
-    (context-adapt! ctx text-store-service
-                    (lambda (old new)
-                      (let (store (TextStore new))
-                        (for-each (lambda ((b : toy-buffer))
-                                    (for-each (lambda ((t : toy-text))
-                                                (set! t.version (TextStore-from-string store (toy-string t)))
-                                                (set! t.store store))
-                                              (toy-tree-texts b.root)))
-                                  (toy-buffers-newest-first self)))))
+    (context-provide! ctx buffers-service (Buffers self))
     (context-add-setting-scope! ctx 'buffer
                                 (lambda (s) (buffer-setting (settings-buffer) s)))))

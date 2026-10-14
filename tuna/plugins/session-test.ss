@@ -2,7 +2,9 @@
 ;;; saving, restoring across a simulated restart, corrupt files, unknown
 ;;; slots, and atomic writes. Every test uses its own temporary state
 ;;; directory.
-(import :std/test
+(import (only-in :tuna/boot restart-plugin!)
+        :std/test
+        :std/error
         :tuna/kernel
         :tuna/services/buffers
         :tuna/services/session
@@ -108,8 +110,91 @@
         (activate-plugin! session-plugin))
       (thunk))))
 
+(def restart-state-service (new-service 'restart-state symbol? tier: 'live doc: "A provider with saved test state."))
+(def owned-value 0)
+(def dependent-value 0)
+(def fail-restoration? #f)
+
+(defplugin (restart-owner ctx)
+  "Owns state whose cleanup runs before its session slot is removed."
+  requires: [session-service]
+  provides: [restart-state-service]
+  (set! owned-value 10)
+  (context-provide! ctx restart-state-service 'old)
+  (context-add-session-slot! ctx 'restart-state version: 1
+                             save: (lambda () owned-value)
+                             restore: (lambda (data) (set! owned-value data)))
+  (context-defer! ctx (lambda () (set! owned-value -1))))
+
+(defplugin (restart-replacement ctx)
+  "Restores the neutral saved state into an alternative provider."
+  requires: [session-service]
+  provides: [restart-state-service]
+  (set! owned-value 100)
+  (context-provide! ctx restart-state-service 'new)
+  (context-add-session-slot! ctx 'replacement-state version: 1 fallback: 'restart-state
+                             save: (lambda () owned-value)
+                             restore: (lambda (data)
+                                        (if fail-restoration? (error "restore failed")
+                                          (set! owned-value data))))
+  (context-defer! ctx (lambda () (set! owned-value -1))))
+
+(defplugin (restart-dependent ctx)
+  "Keeps separate state and restarts with its required provider."
+  requires: [session-service restart-state-service]
+  (set! dependent-value 20)
+  (context-add-session-slot! ctx 'restart-dependent version: 1
+                             save: (lambda () dependent-value)
+                             restore: (lambda (data) (set! dependent-value data)))
+  (context-defer! ctx (lambda () (set! dependent-value -1))))
+
+(def (with-restart-state (proc : :procedure)) => :void
+  (call-with-state-directory
+   (lambda (directory)
+     (with-session-only directory
+       (lambda ()
+         (activate-plugin! restart-owner)
+         (activate-plugin! restart-dependent)
+         (restore-session)
+         (set! owned-value 42)
+         (set! dependent-value 43)
+         (proc))))))
+
 (def session-test
   (test-suite "tuna/plugins/session"
+    (test-case "restart captures the whole closure before cleanup and restores neutral data"
+      (set! fail-restoration? #f)
+      (with-restart-state
+       (lambda ()
+         (restart-plugin! restart-owner restart-replacement)
+         (check (service-provider restart-state-service) => 'new)
+         (check owned-value => 42)
+         (check dependent-value => 43)
+         (check (plugin-active? restart-owner) => #f)
+         (check (plugin-active? restart-dependent) => #t))))
+
+    (test-case "failed restoration rolls back both provider and dependent saved state"
+      (set! fail-restoration? #t)
+      (with-restart-state
+       (lambda ()
+         (check-exception (restart-plugin! restart-owner restart-replacement) Error?)
+         (check (service-provider restart-state-service) => 'old)
+         (check owned-value => 42)
+         (check dependent-value => 43)
+         (check (plugin-active? restart-replacement) => #f)
+         (check (plugin-active? restart-dependent) => #t)))
+      (set! fail-restoration? #f))
+
+    (test-case "a failed capture leaves the plugin active"
+      (call-with-state-directory
+       (lambda (directory)
+         (with-session-only directory
+           (lambda ()
+             (activate-plugin! unplain-slot)
+             (restore-session)
+             (check-exception (restart-plugin! unplain-slot unplain-slot) Error?)
+             (check (plugin-active? unplain-slot) => #t))))))
+
     (test-case "the session is saved while idle, and only when it changed"
       (call-with-state-directory
        (lambda (directory)
@@ -126,7 +211,7 @@
              ;; The session file is written right after the autosave files.
              (thread-sleep! 0.2)
              (check (assq 'buffers (cddr (read-session-datum directory)))
-                    => ['buffers 1 [["*scratch*" 2 "%2Ascratch%2A"]]])
+                    => ['buffers 1 [["*scratch*" 2 "%2Ascratch%2A" (on-baton (lambda () (node-id (buffer-root (current-buffer)))))] ]])
              (let (stamp (file-info-last-modification-time (file-info (session-file directory))))
                (thread-sleep! 2.5)
                (check (time->seconds (file-info-last-modification-time

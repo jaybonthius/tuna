@@ -5,7 +5,8 @@
 ;;; toy layout, which falls back as the contract allows. The bar (the
 ;;; minibuffer's and echo area's views, pinned and locked) is left out of
 ;;; the views these tests count, except where they check it stays.
-(import :std/test
+(import (only-in :tuna/boot config-service restart-plugin!)
+        :std/test
         :tuna/kernel
         :tuna/services/buffers
         :tuna/services/echo-area
@@ -20,20 +21,38 @@
         :tuna/plugins/view-commands
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
+        :tuna/plugins/html-renderer
         "../test-support/kernel"
         "../test-support/keys"
-        "../test-support/session"
+        :tuna/plugins/autosave
+        :tuna/plugins/session
+        :tuna/services/session
         "../test-support/swap-commands"
         "../test-support/tree-buffer")
 (export view-commands-test)
 
+(defplugin (swap-configuration ctx)
+  "Selects the default providers for swap commands in this test configuration."
+  (context-set-swap-providers! ctx html-renderer-plugin layout-plugin buffers-plugin))
+
+
+(def (call-with-state-kernel (plugins : :list) (thunk : :procedure)) => :t
+  (let (directory (path-expand (string-append "tuna-swap-" (number->string (random-integer 1000000000)))
+                              (getenv "TMPDIR" "/tmp")))
+    (create-directory* directory)
+    (unwind-protect
+      (parameterize ((session-state-directory directory))
+        (call-with-fresh-kernel plugins
+          (lambda () (when (service-provider session-service) (restore-session)) (thunk))))
+      (delete-file-or-directory directory #t))))
+
 (def command-plugins
-  [commands-plugin keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin no-session-plugin
-   buffers-plugin layout-plugin view-commands-plugin basic-editing-plugin minibuffer-plugin
-   swap-commands-plugin tree-buffer-plugin])
+  [commands-plugin keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin session-plugin
+   buffers-plugin autosave-plugin layout-plugin view-commands-plugin basic-editing-plugin minibuffer-plugin
+   config-service swap-configuration swap-commands-plugin tree-buffer-plugin])
 
 (def (with-commands thunk)
-  (call-with-fresh-kernel command-plugins
+  (call-with-state-kernel command-plugins
     (lambda ()
       (start-editor-loop!)
       (thunk))))

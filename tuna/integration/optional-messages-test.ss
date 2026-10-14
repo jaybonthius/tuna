@@ -1,6 +1,7 @@
 ;;; Optional message displays must not become mandatory activation dependencies.
 prelude: :gerbil/core
-(import :std/test :std/interface :tuna/kernel
+(import (only-in :tuna/boot config-service restart-plugin!)
+        :std/test :std/interface :tuna/kernel
         :tuna/services/commands :tuna/services/buffers :tuna/services/layout
         :tuna/services/session :tuna/services/configuration
         :tuna/plugins/commands :tuna/plugins/keys :tuna/plugins/rope
@@ -8,24 +9,32 @@ prelude: :gerbil/core
         :tuna/plugins/session :tuna/plugins/autosave :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer :tuna/plugins/buttons :tuna/plugins/help-buffer
         :tuna/plugins/view-commands :tuna/plugins/reload-config
+        :tuna/plugins/html-renderer
         "../test-support/kernel" "../test-support/keys"
         "../test-support/rename-command" "../test-support/swap-commands"
         "../test-support/endless-commands")
 (export optional-messages-test)
 
+(defplugin (swap-configuration ctx)
+  "Selects the default providers for swap commands in this test configuration."
+  (context-set-swap-providers! ctx html-renderer-plugin layout-plugin buffers-plugin))
+
+
 (defclass silent-configuration () final: #t)
 (implement Configuration silent-configuration
   (reload! (lambda (self) "Reloaded.\n"))
-  (last-report (lambda (self) "Last report.\n")))
+  (last-report (lambda (self) "Last report.\n"))
+  (swap! (lambda (self old new) (restart-plugin! old new))))
 
 (defplugin (configuration-fixture ctx)
   "A configuration provider independent of any message display."
+  provides: [configuration-service]
   (context-provide! ctx configuration-service (Configuration (silent-configuration))))
 
 (def silent-plugins
   [commands-plugin keys-plugin rope-text-store-plugin settings-plugin session-plugin
    buffers-plugin layout-plugin autosave-plugin basic-editing-plugin minibuffer-plugin
-   buttons-plugin help-buffer-plugin view-commands-plugin configuration-fixture
+   buttons-plugin help-buffer-plugin view-commands-plugin configuration-fixture swap-configuration
    reload-config-plugin rename-command-plugin swap-commands-plugin endless-commands-plugin])
 
 (def optional-messages-test

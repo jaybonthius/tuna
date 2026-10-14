@@ -36,6 +36,7 @@ prelude: :gerbil/core
 
 (defplugin (settings-plugin ctx)
   "Resolves settings: with-settings bindings, then scopes such as the buffer, then global values."
+  provides: [settings-service]
   (context-provide! ctx settings-service
                     (Settings (setting-registry globals: (new-entry-table)
                                                 scopes: (new-entry-table)))))

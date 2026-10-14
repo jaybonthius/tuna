@@ -7,31 +7,41 @@ prelude: :gerbil/core
 (import :tuna/services/commands
         :tuna/kernel
         :tuna/services/keys
+        :tuna/services/configuration
         "plain-text-renderer"
         "two-views"
         "toy-buffers")
-(export swap-commands-plugin)
+(export swap-commands-plugin
+        context-set-swap-providers!)
 
-(def (toggle-plugin! (p : plugin)) => :void
-  (if (plugin-active? p)
-    (deactivate-plugin! p)
-    (activate-plugin! p)))
+(def providers (new-entry-table))
+
+(def (context-set-swap-providers! (ctx : context) (renderer : plugin) (layout : plugin) (buffers : plugin)) => :void
+  (context-add-entry! ctx providers 'renderer renderer)
+  (context-add-entry! ctx providers 'layout layout)
+  (context-add-entry! ctx providers 'buffers buffers)
+  (void))
+
+(def (swap-double! (option : :symbol) (double : plugin)) => :void
+  (let (default (:- (entry-value (or (entry-table-ref providers option)
+                                    (error "No configured swap provider" option))) plugin))
+    (if (plugin-active? double) (swap-plugins double default) (swap-plugins default double))))
 
 (defplugin (swap-commands-plugin ctx)
   "C-c v swaps the renderer, C-c w the layout, C-c B the buffers provider, for their doubles."
-  requires: [commands-service input-service]
+  requires: [commands-service input-service configuration-service]
   (define-command ctx (swap-renderer) "Switch between the HTML and the plain-text renderer."
-    (toggle-plugin! plain-text-renderer-plugin)
+    (swap-double! 'renderer plain-text-renderer-plugin)
     (message (if (plugin-active? plain-text-renderer-plugin)
                "Renderer: plain text"
                "Renderer: HTML")))
   (define-command ctx (swap-layout) "Switch between one view and two side by side."
-    (toggle-plugin! two-views-plugin)
+    (swap-double! 'layout two-views-plugin)
     (message (if (plugin-active? two-views-plugin)
                "Layout: two views"
                "Layout: one view")))
   (define-command ctx (swap-buffers) "Switch between the default and the toy buffers provider."
-    (toggle-plugin! toy-buffers-plugin)
+    (swap-double! 'buffers toy-buffers-plugin)
     (message (if (plugin-active? toy-buffers-plugin)
                "Buffers: toy"
                "Buffers: default")))

@@ -25,6 +25,7 @@ prelude: :gerbil/core
 
 (defplugin (toy-completion-ui-plugin ctx)
   "A one-line test completion UI, proving presentation is replaceable."
+  provides: [completion-ui-service]
   requires: [commands-service completion-service input-service buffers-service]
   (context-define-node-kind! ctx 'toy-completion-summary project: (lambda (n) (node-attribute n 'content)))
   (let (self (toy-completion-ui shown: (make-hash-table-eq) keymap: (new-keymap)))

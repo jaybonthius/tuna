@@ -59,4 +59,5 @@ prelude: :gerbil/core
 
 (defplugin (string-text-store-plugin ctx)
   "Stores text as plain strings (a toy text store). Outranks the rope while active."
-  (context-provide! ctx text-store-service string-text-store priority: 10))
+  provides: [text-store-service]
+  (context-provide! ctx text-store-service string-text-store))

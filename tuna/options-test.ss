@@ -70,12 +70,14 @@
              (set! self.reloads (fx1+ self.reloads))
              (set! self.last (string-append "stub reload " (number->string self.reloads) "\n"))
              self.last))
-  (last-report (lambda (self) self.last)))
+  (last-report (lambda (self) self.last))
+  (swap! (lambda (self old new) (restart-plugin! old new))))
 
 (def the-stub (stub-configuration reloads: 0 last: #f))
 
 (defplugin (stub-configuration-plugin ctx)
   "Provides the configuration service with a stub."
+  provides: [configuration-service]
   (context-provide! ctx configuration-service (Configuration the-stub)))
 
 (def (run-command (name : :symbol)) => :void
@@ -341,7 +343,7 @@
                                 "(use-plugin provider-plugin)"
                                 "(use-plugin optioned-dependent-plugin greeting: \"kept\")"))
              (let (before (activation-count 'optioned-dependent-plugin))
-               (activate-plugin! better-provider-plugin)
+               (restart-plugin! provider-plugin better-provider-plugin)
                (check (fx- (activation-count 'optioned-dependent-plugin) before) => 1)
                (check (dependent-greeting) => "kept")))))))
 

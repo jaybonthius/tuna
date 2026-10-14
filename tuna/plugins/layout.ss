@@ -24,14 +24,9 @@
 ;;; unpin or delete them, nor wrap or reshape them or a part holding them,
 ;;; and they close with their buffers.
 ;;;
-;;; The plugin adapts to a new buffers provider instead of restarting: it
-;;; re-points its views by buffer name and node id, which the buffers
-;;; handover keeps. Its session slot `layout` holds the tree with its pins
-;;; and locks, the frame and the frame marks as plain data; restoring skips
-;;; views of missing buffers, and is skipped when the layout took views
-;;; over from another layout, so a saved slot never overwrites a live
-;;; handover. After restoring or taking over views, plugins' locked views
-;;; that went missing are put back.
+;;; The private `layout-tree` session slot restores this provider's tree;
+;;; otherwise the neutral `layout` slot restores views and frame marks.
+;;; Dependents rebuild their locked views after activation.
 prelude: :gerbil/core
 
 (import :std/interface
@@ -71,8 +66,7 @@ prelude: :gerbil/core
                        (level        : :fixnum)      ; the selected part: 0 the selected view, 1 its container, ...
                        (marks        : :list)        ; frame marks, oldest first
                        (locked       : :list)        ; locked requests, oldest first
-                       (kinds        : entry-table)  ; kind name -> layout-kind
-                       (handed-over? : :boolean))    ; took views over from another layout
+                       (kinds        : entry-table)) ; kind name -> layout-kind
   final: #t)
 
 ;;; Container kinds
@@ -136,9 +130,6 @@ prelude: :gerbil/core
 
 ;;; The frame
 
-(def (effective? (self : tree-layout)) => :boolean
-  (eq? (service-provider layout-service) self))
-
 ;; PART as the frame stores it: #f for ROOT itself, unless a START node
 ;; needs the view's id.
 (def (normal-part (root : :t) (part :? :fixnum) (start :? node)) => (Maybe :fixnum)
@@ -201,8 +192,7 @@ prelude: :gerbil/core
     (unless (eq? v (frame-state-selected f))
       (set! self.level 0)
       (set! self.frame (make-frame-state (frame-state-part f) (frame-state-start f) v)))
-    (when (effective? self)
-      (set-selected-view! v))))
+    (set-selected-view! v)))
 
 ;; Where a frame targeting PART of OLD points in NEW: PART if it is still
 ;; there; else the lowest part holding what survives of PART's views; else
@@ -415,91 +405,42 @@ prelude: :gerbil/core
                   self.root
                   (part-leaves self.root))))
 
-;; Take over the views of D: views this layout holds keep their places,
-;; the others go, and new ones are split to the right of the view before
-;; them in D.
-(def (adopt! (self : tree-layout) (d : layout-description)) => :void
-  (let* ((views (layout-description-views d))
-         (kind-of (kind-of self))
-         (kept (foldl (lambda ((l : leaf) (root : :t))
-                        (if (or (not root) (memq (leaf-view l) views))
-                          root
-                          (remove-part root (part-id l) kind-of)))
-                      self.root
-                      (part-leaves self.root)))
-         (root (let lp ((rest views) (previous #f) (root kept))
-                 (match rest
-                   ([] root)
-                   ([v . more]
-                    (using (v : view)
-                      (cond
-                       ((and root (find-part root v.id)) (lp more v root))
-                       ((not root) (lp more v (make-leaf v #f)))
-                       (else
-                        (lp more v (split-part root
-                                               (if previous
-                                                 (view-id previous)
-                                                 (part-id (car (part-leaves root))))
-                                               (make-leaf v #f) 'horizontal (next-id!) kind-of))))))))))
-    (set! self.handed-over? #t)
-    (commit! self root)
-    (ensure-locked! self)
-    (select! self (layout-description-selected d))))
-
-;; Re-point V, a view of OLD's buffers, at the current provider's buffer of
-;; the same name and node of the same id, at the same point. A view whose
-;; buffer is gone shows another one.
-(def (re-point-view! (old : Buffers) (v : view)) => :void
-  (let* ((name (Buffers-buffer-name old (view-showing v)))
-         (focus (view-node v))
-         (position (with-catch
-                    (lambda (e) (view-position v))
-                    (lambda ()
-                      (if focus
-                        (let* ((t (Buffers-node-text old focus))
-                               (s (: (Buffers-text-snapshot old t) snapshot)))
-                          (if (fx= (snapshot-revision s) (view-revision v))
-                            (view-position v)
-                            (Buffers-relocate-position old t (view-position v) (view-revision v))))
-                        (view-position v)))))
-         (b (or (get-buffer name)
-                (find (lambda ((b : buffer)) (not (internal-buffer? b))) (buffer-list)))))
-    (when b
-      (let (n (or (and focus (find-node (buffer-root b) (node-id focus)))
-                  (buffer-point-node b)))
-        (reset-view! v b n 1 (if n (text-chars-revision (text-node-content n)) 0))
-        (set-view-point! v position)))))
-
-;; After the buffers provider changed from OLD: views showing buffers of
-;; the old provider are re-pointed (the selected view, which the buffers
-;; handover re-points itself, already shows a new buffer).
-(def (adapt-to-buffers! (self : tree-layout) (old : :t) (new : :t)) => :void
-  (when old
-    (let ((old (Buffers old))
-          (current (buffer-list))
-          (top (frame-top self))
-          (n (frame-state-start self.frame)))
-      (for-each (lambda ((l : leaf))
-                  (let (v (leaf-view l))
-                    (unless (memq (view-showing v) current)
-                      (re-point-view! old v))))
-                (part-leaves self.root))
-      (set! self.frame
-        (make-frame-state (frame-state-part self.frame)
-                    (and n (leaf? top)
-                         (find-node (buffer-root (view-showing (leaf-view top))) (node-id n)))
-                    (frame-state-selected self.frame)))
-      (settle-selection! self))))
-
-;; The neutral description: the views outside locked parts, which belong
-;; to plugins that put them back in the next layout, and the selected view,
-;; or the first of them when a locked view is selected.
-(def (describe (self : tree-layout)) => layout-description
+(def (neutral-data (self : tree-layout)) => :list
   (let* ((views (filter-map (lambda ((l : leaf))
                               (and (not (inside-locked? self.root (part-id l))) (leaf-view l)))
                             (part-leaves self.root)))
          (selected (frame-state-selected self.frame)))
-    (make-layout-description views (if (memq selected views) selected (car views)))))
+    [(cons 'views (map saved-view-data views))
+     ['selected (view-id (if (memq selected views) selected (car views)))]
+     (cons 'marks (map (lambda ((m : frame-mark))
+                        [m.name (and m.part (find (lambda ((v : view)) (eqv? (view-id v) m.part)) views) m.part)
+                         m.node]) self.marks))]))
+
+(def (restore-neutral! (self : tree-layout) (data : :t)) => :void
+  (match data
+    ([['views . saved] ['selected selected] ['marks . marks]]
+     (let* ((pairs (filter-map (lambda (d) (let (v (restore-view-data d)) (and v (cons (car d) v)))) saved))
+            (views (map cdr pairs)))
+       (when (pair? views)
+         (let* ((v (cond ((assv selected pairs) => cdr) (else (car views))))
+                (leaves (map (lambda (v) (make-leaf v #f)) views))
+                (root (if (null? (cdr leaves)) (car leaves)
+                        (make-container (next-id!) 'fit 'horizontal
+                                        (map (lambda (l) (make-link 1 l #f #f)) leaves) (view-id v)))))
+           (set! self.root root)
+           (set! self.frame (make-frame-state #f #f v))
+           (set! self.marks
+             (filter-map (lambda (m)
+                           (match m
+                             ([(? string? name) part node]
+                              (let (pair (assv part pairs))
+                                (make-frame-mark name (and pair (view-id (cdr pair)))
+                                                 (and pair (fixnum? node)
+                                                      (find-node (buffer-root (view-showing (cdr pair))) node) node))))
+                             (else #f))) marks))
+           (settle-selection! self)
+           (ensure-locked! self)))))
+    (else (void))))
 
 ;;; Rendering
 
@@ -569,7 +510,7 @@ prelude: :gerbil/core
 (def (part->data (p : :t)) => :list
   (if (leaf? p)
     (let (v (leaf-view p))
-      ['view (view-id v) (buffer-name (view-showing v)) (view-point v) (leaf-dedicated? p)])
+      ['view (saved-view-data v) (leaf-dedicated? p)])
     ['container (container-id p) (container-kind p) (container-direction p) (container-focus p)
      (map (lambda ((l : link)) [l.size (link-flags l) (part->data l.part)]) (container-links p))]))
 
@@ -593,13 +534,9 @@ prelude: :gerbil/core
 ;; The part DATA describes, or #f when it shows no existing buffer.
 (def (data->part (data : :t) (ids : :t) (kind-of : :procedure)) => :t
   (match data
-    (['view (? fixnum? id) (? string? name) (? fixnum? position) (? boolean? dedicated?)]
-     (let (b (get-buffer name))
-       (and b
-            (let (v (new-view b))
-              (set-view-point! v position)
-              (hash-put! ids id (view-id v))
-              (make-leaf v dedicated?)))))
+    (['view (and saved [(? fixnum? id) _ _ _]) (? boolean? dedicated?)]
+     (let (v (restore-view-data saved))
+       (and v (begin (hash-put! ids id (view-id v)) (make-leaf v dedicated?)))))
     (['container (? fixnum? id) (? symbol? kind) (? symbol? direction) (? fixnum? focus) (? list? entries)]
      (and (memq direction '(horizontal vertical))
           (let* ((new-id (fresh-id! ids id))
@@ -629,8 +566,7 @@ prelude: :gerbil/core
     (else #f)))
 
 (def (restore! (self : tree-layout) (data : :t)) => :void
-  (unless self.handed-over?
-    (match data
+  (match data
       ([['tree tree] ['frame part node selected] ['marks . marks]]
        (let* ((ids (make-hash-table-eqv))
               (root (data->part tree ids (kind-of self))))
@@ -655,7 +591,7 @@ prelude: :gerbil/core
                            (if (list? marks) marks [])))
              (settle-selection! self)
              (ensure-locked! self)))))
-      (else (void)))))
+    (else (void))))
 
 ;;; Frame marks
 
@@ -831,17 +767,7 @@ prelude: :gerbil/core
         (select! self v)
         (set! self.level level)))))
 
-(def (check-effective! (self : tree-layout)) => :void
-  (unless (effective? self)
-    (error "This command needs the default layout, which another layout outranks")))
 
-;;; Commands: wrapping parts and reshaping containers
-
-;; Why the user may not wrap or reshape the part P, or #f. A locked part
-;; keeps the place and shape its plugin gave it: wrapping it, or making
-;; the container holding it tabbed or turning it, could hide or misplace
-;; it (the bar holding the minibuffer), so neither a part that is locked or
-;; inside a locked part nor a part holding one may change this way.
 (def (rearranging-refusal (self : tree-layout) (p : :t)) => (Maybe :string)
   (cond
    ((inside-locked? self.root (part-id p)) "Locked: the plugin that owns it arranges it")
@@ -978,86 +904,68 @@ prelude: :gerbil/core
                                  (render-view v (eq? v selected)
                                               (or (and (eq? l top) start) (buffer-root (view-showing v))))))
                              (visible self)))))))
-  (describe-views (lambda (self) (describe self)))
-  (adopt-views! (lambda (self description) (adopt! self description))))
+)
 
 (defplugin (layout-plugin ctx)
   "Arranges views in fit and tabbed containers, with pins, a movable frame and frame marks."
+  provides: [layout-service]
   requires: [commands-service buffers-service session-service input-service settings-service]
   (let (v (selected-view))
     (using (self (tree-layout root: (make-leaf v #f) frame: (make-frame-state #f #f v) level: 0
-                              marks: [] locked: [] kinds: (new-entry-table) handed-over?: #f)
+                              marks: [] locked: [] kinds: (new-entry-table))
                  : tree-layout)
       (context-add-entry! ctx self.kinds 'fit fit-kind doc: (layout-kind-doc fit-kind))
       (context-add-entry! ctx self.kinds 'tabbed tabbed-kind doc: (layout-kind-doc tabbed-kind))
       (context-add-hook! ctx kill-buffer-hook 'layout (lambda (b) (buffer-killed! self b)))
-      (context-adapt! ctx buffers-service (lambda (old new) (adapt-to-buffers! self old new)))
-      (context-add-session-slot! ctx 'layout
-                                 version: 3
+      (context-add-session-slot! ctx 'layout version: 1
+                                 save: (lambda () (neutral-data self)) restore: void)
+      (context-add-session-slot! ctx 'layout-tree version: 1 fallback: 'layout
                                  save: (lambda () (layout->data self))
-                                 restore: (lambda (data) (restore! self data)))
+                                 restore: (lambda (data)
+                                            (if (assq 'tree data) (restore! self data)
+                                              (restore-neutral! self data))))
       (defcommand (tab-new) "Open a new tab on the selected view's buffer; outside tabs, make the view a tab first."
-        (check-effective! self)
         (new-tab! self))
       (defcommand (tab-next) "Select the next tab."
-        (check-effective! self)
         (switch-tab! self 1))
       (defcommand (tab-previous) "Select the previous tab."
-        (check-effective! self)
         (switch-tab! self -1))
       (defcommand (tab-close) "Close the current tab."
-        (check-effective! self)
         (close-tab! self))
       (defcommand (tab-select) "Switch to the tab clicked on."
-        (check-effective! self)
         (let (p (event-start (last-command-event)))
           (if p
             (select-clicked-tab! self p)
             (message "tab-select runs only from a click"))))
       (defcommand (frame-zoom-in) "Move the frame one level down, toward the selected view."
-        (check-effective! self)
         (zoom-in! self))
       (defcommand (frame-zoom-out) "Move the frame one level up."
-        (check-effective! self)
         (zoom-out! self))
       (defcommand (select-parent-part) "Select the container of the selected part, for pinning and moving."
-        (check-effective! self)
         (select-part-level! self 1))
       (defcommand (select-child-part) "Select the part below the selected part, toward the selected view."
-        (check-effective! self)
         (select-part-level! self -1))
       (defcommand (pin-part) "Pin the selected part: it stays drawn when the frame zooms past it."
-        (check-effective! self)
         (set-pinned! self #t))
       (defcommand (unpin-part) "Unpin the selected part, unless a plugin locked it."
-        (check-effective! self)
         (set-pinned! self #f))
       (defcommand (move-part-left) "Move the selected part left: past its neighbor, into it, or out of its container."
-        (check-effective! self)
         (move-selected-part! self 'left))
       (defcommand (move-part-right) "Move the selected part right: past its neighbor, into it, or out of its container."
-        (check-effective! self)
         (move-selected-part! self 'right))
       (defcommand (move-part-up) "Move the selected part up: past its neighbor, into it, or out of its container."
-        (check-effective! self)
         (move-selected-part! self 'up))
       (defcommand (move-part-down) "Move the selected part down: past its neighbor, into it, or out of its container."
-        (check-effective! self)
         (move-selected-part! self 'down))
       (defcommand (wrap-part-tabbed) "Wrap the selected part in a new tabbed container, as its only tab."
-        (check-effective! self)
         (wrap-selected-part! self 'tabbed 'horizontal))
       (defcommand (wrap-part-vertical) "Wrap the selected part in a new fit container that lays out top to bottom."
-        (check-effective! self)
         (wrap-selected-part! self 'fit 'vertical))
       (defcommand (wrap-part-horizontal) "Wrap the selected part in a new fit container that lays out left to right."
-        (check-effective! self)
         (wrap-selected-part! self 'fit 'horizontal))
       (defcommand (toggle-container-kind) "Make the selected container, or the selected view's, tabbed if it is fit, else fit."
-        (check-effective! self)
         (reshape-selected-container! self #t))
       (defcommand (toggle-container-direction) "Turn the selected container, or the selected view's, between horizontal and vertical."
-        (check-effective! self)
         (reshape-selected-container! self #f))
       (keymap-set "C-x t 2" 'tab-new)
       (keymap-set "C-x t o" 'tab-next)

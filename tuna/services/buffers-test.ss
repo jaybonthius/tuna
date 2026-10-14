@@ -1,7 +1,7 @@
 ;;; The buffers contract, checked against both providers: the default
 ;;; (tuna/plugins/buffers.ss) and the toy (tuna/test-support/toy-buffers.ss).
-;;; Each provider runs alone with a text store and settings. The handover
-;;; between them is checked last.
+;;; Each provider runs alone with a text store and settings.
+;;; Restart and restore are integration-tested with session and autosave.
 (import :std/error
         :std/test
         :tuna/kernel
@@ -16,8 +16,7 @@
         "../test-support/toy-buffers"
         "../test-support/kernel")
 (export buffers-test
-        toy-buffers-test
-        buffers-handover-test)
+        toy-buffers-test)
 
 (def (raises? thunk)
   (with-catch (lambda (e) #t) (lambda () (thunk) #f)))
@@ -115,57 +114,10 @@
          (check (text-string t) => "hellrld")
          (check (relocate-position t 1 0) => 1)))))
 
-  (test-case "the provider adapts to a new text store: every text, point, and undo survive"
-    (call-with-fresh-kernel buffer-plugins
-     (lambda ()
-       (defplugin (adds-other ctx)
-         "Adds a second buffer."
-         requires: [buffers-service]
-         (context-add-buffer! ctx (new-buffer "other" (new-text-node (new-text "second ☃ buffer")))))
-       (activate-plugin! adds-other)
-       (let ((other-text (text-node-content (buffer-root (get-buffer "other"))))
-             (t (current-text))
-             (registry (service-provider buffers-service))
-             (stored-as-string? (lambda (t) (string? (snapshot-version (text-snapshot t))))))
-         (insert "hello\nwörld 😀")
-         (goto-char 4)
-         (check (stored-as-string? t) => #f)
-         (activate-plugin! string-text-store-plugin)
-         (check (eq? (service-provider text-store-service) string-text-store) => #t)
-         ;; Adapting, not restarting: the same provider object, texts moved.
-         (check (eq? (service-provider buffers-service) registry) => #t)
-         (check (stored-as-string? t) => #t)
-         (check (stored-as-string? other-text) => #t)
-         (check (text-string t) => "hello\nwörld 😀")
-         (check (point) => 4)
-         (undo-boundary! t)
-         (insert "p")
-         (check (text-string t) => "helplo\nwörld 😀")
-         (check (text-string other-text) => "second ☃ buffer")
-         (deactivate-plugin! string-text-store-plugin)
-         (check (eq? (service-provider buffers-service) registry) => #t)
-         (check (stored-as-string? t) => #f)
-         (check (stored-as-string? other-text) => #f)
-         (check (text-string t) => "helplo\nwörld 😀")
-         (check (point) => 5)
-         (text-undo! t #f)
-         (check (text-string t) => "hello\nwörld 😀")))))
-
-  (test-case "describe-services lists the provider as an adapting dependent of the text store"
-    (call-with-fresh-kernel buffer-plugins
-     (lambda ()
-       (let (info (find (lambda (info) (eq? (service-info-name info) 'text-store))
-                        (describe-services)))
-         (check (service-info-dependents info) => [(plugin-name provider)])
-         (check (service-info-adapting info) => [(plugin-name provider)])))))
-
   (test-case "without any text store, the provider goes too"
     (call-with-fresh-kernel buffer-plugins
      (lambda ()
-       (activate-plugin! string-text-store-plugin)
        (deactivate-plugin! rope-text-store-plugin)
-       (check (plugin-active? provider) => #t)
-       (deactivate-plugin! string-text-store-plugin)
        (check (plugin-active? provider) => #f)
        (activate-plugin! rope-text-store-plugin)
        (check (plugin-active? provider) => #t))))
@@ -456,61 +408,3 @@
 
 ;; The provider's buffers as plain data: each buffer's name, text, and
 ;; point, and the selected view's buffer and point.
-(def (buffers-state)
-  [(map (lambda (b)
-          [(buffer-name b) (node-text-projection (buffer-root b)) (buffer-point b)])
-        (buffer-list))
-   (buffer-name (view-showing (selected-view)))
-   (view-point (selected-view))])
-
-(def buffers-handover-test
-  (test-suite "tuna/services/buffers: handing buffers over"
-    (test-case "swapping providers carries buffers, trees, keymaps, texts, highlights, settings, and the selected view"
-      (call-with-fresh-kernel [rope-text-store-plugin settings-plugin buffers-plugin]
-       (lambda ()
-         (let* ((shared (new-text "shared ☃"))
-                (keymap (new-entry-table))
-                (heading (new-node 'heading attributes: [['content . "Notes"]] keymap: keymap))
-                (body (new-text-node shared))
-                (tree (new-node 'column children: [heading body (new-text-node shared)]))
-                (ids (map node-id (cons tree (node-children tree))))
-                (notes (new-buffer "notes" tree))
-                (selected (selected-view))
-                (default (service-provider buffers-service)))
-           (add-buffer! notes)
-           (set-buffer-setting! notes fill-width 40)
-           (insert "hello")
-           (goto-char 3)
-           (set-highlights! shared 'digits [(make-span 1 3 'digit)])
-           (let (before (buffers-state))
-             (activate-plugin! toy-buffers-plugin)
-             (check (eq? (service-provider buffers-service) default) => #f)
-             (check (buffers-state) => before)
-             ;; The same view object, now showing the toy's *scratch*.
-             (check (eq? (selected-view) selected) => #t)
-             (let* ((adopted (buffer-root (get-buffer "notes")))
-                    (children (node-children adopted)))
-               ;; Node ids carry over; the nodes are the toy's own.
-               (check (map node-id (cons adopted children)) => ids)
-               (check (eq? adopted tree) => #f)
-               (check (node-attribute (car children) 'content) => "Notes")
-               ;; Keymaps carry over as they are: the same keymap object.
-               (check (eq? (node-keymap (car children)) keymap) => #t)
-               (check (node-keymap adopted) => #f)
-               (check (eq? (node-parent (cadr children)) adopted) => #t)
-               ;; Two text nodes still share one text.
-               (check (eq? (text-node-content (cadr children)) (text-node-content (caddr children))) => #t)
-               (check (spans-of (text-highlights (text-node-content (cadr children)) 'digits)) => [[1 3]])
-               (check (buffer-setting (get-buffer "notes") fill-width) => (cons fill-width 40)))
-             ;; Editing goes on in the toy, then everything comes back.
-             (insert "!")
-             (check (text-string (current-text)) => "he!llo")
-             (deactivate-plugin! toy-buffers-plugin)
-             (check (eq? (service-provider buffers-service) default) => #t)
-             (check (buffers-state)
-                    => [(map (lambda (entry)
-                               (if (equal? (car entry) "*scratch*") ["*scratch*" "he!llo" 1] entry))
-                             (car before))
-                        "*scratch*" 4])
-             (check (eq? (selected-view) selected) => #t)
-             (check (text-string (current-text)) => "he!llo"))))))))

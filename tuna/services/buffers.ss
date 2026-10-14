@@ -26,11 +26,12 @@
 ;;;; hold only their identity, and providers extend them. Views belong to
 ;;; the layout and are plain data here.
 ;;;
-;;; Replacing the provider hands the buffers over through a neutral
-;;; description: each buffer's name, settings, point, and node tree with
-;;; node ids, kinds, attributes, keymaps, and texts (characters and
-;;; highlights), and the selected view. Undo history and the change journal
-;;; stay behind.
+
+;;; Replacing the provider restores plain-text buffers from autosave's
+;;; `buffers` session slot, version 1:
+;;; ((BUFFER-NAME POINT AUTOSAVE-FILE ROOT-NODE-ID) ...).
+;;; Text lives in AUTOSAVE-FILE. Objects, undo history, change journals,
+;;; highlights, local keymaps and rich node trees are not transferred.
 ;;;
 ;;; `buffer-list-update-hook` runs after a buffer is added, killed or
 ;;; renamed through this contract (Emacs `buffer-list-update-hook`).
@@ -87,10 +88,7 @@ prelude: :gerbil/core
         point point-min point-max goto-char
         insert delete-region
         goal-column set-goal-column!
-        ;; handover
-        (struct-out buffers-description) (struct-out buffer-description)
-        (struct-out node-description) (struct-out text-description)
-        (struct-out view-description))
+)
 
 ;;; Changes
 
@@ -188,40 +186,10 @@ prelude: :gerbil/core
                 (goal-column :? :fixnum))
   final: #t)
 
-;;; The handover description: plain values that any provider can rebuild
-;;; its own buffers from. Two node descriptions that share a text share
-;;; one text description (eq?).
-
-(defstruct text-description ((content    : :string)
-                             (highlights : :list))   ; (layer-name . spans)
-  final: #t)
-
-(defstruct node-description ((id         : :fixnum)
-                             (kind       : :symbol)
-                             (attributes : :list)
-                             (children   : :list)    ; node descriptions
-                             (text       :? text-description)
-                             (keymap     :? entry-table))
-  final: #t)
-
-(defstruct buffer-description ((name       : :string)
-                               (root       : node-description)
-                               (settings   : :list)  ; (setting . value)
-                               (point-node :? :fixnum)
-                               (point      : :fixnum))
-  final: #t)
-
-;; The selected view OF, to be pointed at the new buffer named BUFFER, its
-;; node with id NODE, at POINT.
-(defstruct view-description ((of     : view)
-                             (buffer : :string)
-                             (node   :? :fixnum)
-                             (point  : :fixnum))
-  final: #t)
-
-(defstruct buffers-description ((buffers  : :list)   ; buffer descriptions, oldest first
-                                (selected : view-description))
-  final: #t)
+;; Neutral saved buffers (the autosave slot `buffers`, version 1):
+;; (NAME POINT AUTOSAVE-FILE ROOT-NODE-ID), oldest first. Only ordinary
+;; single-text-root buffers survive; owning plugins rebuild rich trees.
+;; A layout resolves a saved node id in the rebuilt buffer or uses its root.
 
 ;;; The interface. Methods receive the provider's own texts, nodes, and
 ;;; buffers. Positions are 1-based; child indexes count from 0, and child
@@ -297,18 +265,11 @@ prelude: :gerbil/core
   ;; render target).
   (node-kinds) => :t
   (node-renderers) => :t
-  ;; Handover. DESCRIBE-BUFFERS runs while the incoming provider is already
-  ;; current, so it must use only its own state, never these dispatchers.
-  (describe-buffers) => :t
-  (adopt-buffers! (description : buffers-description)) => :void)
+)
 
 (def buffers-service
   (new-service 'buffers is-Buffers? tier: 'live
-               doc: "Keeps buffers, their texts and nodes, the selected view, and node kinds."
-               handover: (lambda (outgoing incoming)
-                           (Buffers-adopt-buffers!
-                            (Buffers incoming)
-                            (Buffers-describe-buffers (Buffers outgoing))))))
+               doc: "Keeps buffers, their texts and nodes, the selected view, and node kinds."))
 
 ;;; Texts
 
@@ -704,7 +665,7 @@ prelude: :gerbil/core
 
 ;; Point V, keeping its identity, at B with its point at POSITION in N,
 ;; valid at N's text revision REVISION. For buffers providers adopting the
-;; selected view in a handover.
+;; selected view when rebuilding state.
 (def (reset-view! (v : view) (b : buffer) (n :? node) (position : :fixnum) (revision : :fixnum))
   => :void
   (set! v.showing b)

@@ -52,5 +52,6 @@ prelude: :gerbil/core
 
 (defplugin (commands-plugin ctx)
   "Defines, lists and invokes commands, independently of key bindings."
+  provides: [commands-service]
   (context-provide! ctx commands-service
                     (Commands (command-registry entries: (new-entry-table) last: #f))))

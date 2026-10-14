@@ -3,7 +3,6 @@
         :std/test
         :tuna/kernel
         (only-in :tuna/kernel/state new-kernel current-kernel)
-        (only-in :tuna/kernel/plugins startup-service-error?)
         (only-in :tuna/kernel/hooks hook-callback-names)
         (only-in :tuna/kernel/entries entry-table-remove!)
         "../test-support/kernel"
@@ -31,10 +30,12 @@
 
 (defplugin (greeter-a ctx)
   "Provides the greeter A."
+  provides: [greeter-service]
   (context-provide! ctx greeter-service (make-greeter "a")))
 
 (defplugin (greeter-b ctx)
   "Provides the greeter B."
+  provides: [greeter-service]
   (context-provide! ctx greeter-service (make-greeter "b")))
 
 (defplugin (greeting-user ctx)
@@ -42,15 +43,6 @@
   requires: [greeter-service]
   (note! (Greeter-greet (Greeter (service-provider greeter-service))))
   (context-defer! ctx (lambda () (note! 'off))))
-
-(defplugin (greeting-adapter ctx)
-  "Uses the greeter and adapts to a new one."
-  requires: [greeter-service]
-  (note! (Greeter-greet (Greeter (service-provider greeter-service))))
-  (context-adapt! ctx greeter-service
-                  (lambda (old new)
-                    (note! [(Greeter-greet (Greeter old)) '-> (Greeter-greet (Greeter new))])))
-  (context-defer! ctx (lambda () (note! 'adapter-off))))
 
 (def test-hook (new-hook 'test doc: "A hook for the tests."))
 
@@ -84,7 +76,8 @@
 
 (defplugin (greeter-then-fails ctx)
   "Provides a greeter that outranks A, then fails to activate."
-  (context-provide! ctx greeter-service (make-greeter "bad") priority: 5)
+  provides: [greeter-service]
+  (context-provide! ctx greeter-service (make-greeter "bad"))
   (error "activation failed"))
 
 (defplugin (lifecycle-breaker ctx)
@@ -132,18 +125,17 @@
   (set-count! (lambda (self n) (set! self.n n))))
 
 (def counter-service
-  (new-service 'counter is-Counter? tier: 'live doc: "Counts."
-               handover: (lambda (outgoing incoming)
-                           (note! ['handover (Counter-label (Counter outgoing)) '-> (Counter-label (Counter incoming))])
-                           (Counter-set-count! (Counter incoming) (Counter-count (Counter outgoing))))))
+  (new-service 'counter is-Counter? tier: 'live doc: "Counts."))
 
 (defplugin (counter-a ctx)
   "Provides the counter A."
+  provides: [counter-service]
   (context-provide! ctx counter-service (Counter (counter name: 'a n: 0))))
 
 (defplugin (counter-b ctx)
   "Provides the counter B, outranking A."
-  (context-provide! ctx counter-service (Counter (counter name: 'b n: 100)) priority: 10))
+  provides: [counter-service]
+  (context-provide! ctx counter-service (Counter (counter name: 'b n: 100))))
 
 (defplugin (counter-user ctx)
   "Uses the counter; restarts when it is replaced."
@@ -155,6 +147,7 @@
 
 (defplugin (second-input ctx)
   "Tries to replace the input service."
+  provides: [input-service]
   (context-provide! ctx input-service (make-test-input (make-hash-table))))
 
 ;; Call THUNK and return what it wrote to stdout and to stderr.
@@ -169,28 +162,22 @@
 (def plugins-test
   (test-suite "tuna/kernel/plugins"
 
-    (test-case "warm service cells follow providers, ranks, aliases and withdrawal"
+    (test-case "warm service cells follow one provider, ranks, aliases and withdrawal"
       (call-with-fresh-kernel []
         (lambda ()
           (let (alias (new-service 'greeter is-Greeter? tier: 'live doc: "Same slot."))
-            (check (service-provider greeter-service) => #f)
             (check (service-provider alias) => #f)
             (activate-plugin! greeter-a order: 1)
-            (let (a-context (greeter-dispatch-context greeter-service))
-              (activate-plugin! greeter-b order: 2)
-              (let (b-context (greeter-dispatch-context greeter-service))
-                (check (greeting (service-provider alias)) => "b")
-                (set-plugin-order! greeter-a 3)
-                (check (greeting (service-provider greeter-service)) => "a")
-                (check (greeter-dispatch-context alias) => a-context)
-                (activate-plugin! greeter-b order: 4)
-                (check (greeting (service-provider alias)) => "b")
-                (check (greeter-dispatch-context greeter-service) => b-context)
-                (deactivate-plugin! greeter-b)
-                (check (greeter-dispatch-context alias) => a-context)
-                (deactivate-plugin! greeter-a)
-                (check (service-provider greeter-service) => #f)
-                (check (service-provider alias) => #f)))))))
+            (let (ctx (greeter-dispatch-context greeter-service))
+              (set-plugin-order! greeter-a 3)
+              (check (greeter-dispatch-context alias) => ctx)
+              (check (with-catch exception-summary (lambda () (activate-plugin! greeter-b)))
+                     => "Service already has a provider greeter greeter-a greeter-b")
+              (check (greeter-dispatch-context alias) => ctx))
+            (deactivate-plugin! greeter-a)
+            (check (service-provider alias) => #f)
+            (activate-plugin! greeter-b)
+            (check (greeting (service-provider alias)) => "b")))))
 
     (test-case "warm dispatch retains activation, active and cleanup owner scopes"
       (call-with-fresh-kernel []
@@ -198,6 +185,7 @@
           (take-log!)
           (let (owner-context #f)
             (defplugin (cache-owner ctx) "Warms dispatch while activating and cleaning up."
+              provides: [greeter-service]
               (set! owner-context ctx)
               (context-provide! ctx greeter-service (make-greeter "cached"))
               (check (greeter-dispatch-context greeter-service) => ctx)
@@ -214,17 +202,21 @@
             (check (take-log!) => [owner-context])
             (check (service-provider greeter-service) => #f)))))
 
-    (test-case "warm cells recover the provider and owner after failed activation"
-      (call-with-fresh-kernel [greeter-a]
+    (test-case "warm cells clear the provider and owner after failed activation"
+      (call-with-fresh-kernel []
         (lambda ()
-          (let (a-context (greeter-dispatch-context greeter-service))
-            (defplugin (cached-failure ctx) "Provides, warms dispatch, then fails."
-              (context-provide! ctx greeter-service (make-greeter "bad") priority: 5)
-              (check (greeter-dispatch-context greeter-service) => ctx)
-              (error "activation failed"))
-            (check-exception (activate-plugin! cached-failure) Error?)
-            (check (greeting (service-provider greeter-service)) => "a")
-            (check (greeter-dispatch-context greeter-service) => a-context)))))
+          (defplugin (cached-failure ctx) "Provides, warms dispatch, then fails."
+            provides: [greeter-service]
+            (context-provide! ctx greeter-service (make-greeter "bad"))
+            (check (greeter-dispatch-context greeter-service) => ctx)
+            (error "activation failed"))
+          (check (with-catch exception-summary (lambda () (activate-plugin! cached-failure)))
+                 => "activation failed")
+          (check (plugin-active? cached-failure) => #f)
+          (check (service-provider greeter-service) => #f)
+          (activate-plugin! greeter-a)
+          (check (greeting (service-provider greeter-service)) => "a")
+          (check (current-context) => #f))))
 
     (test-case "service cells and self-use checks follow nested kernel selection"
       (call-with-fresh-kernel [greeter-a]
@@ -278,61 +270,35 @@
           (check (with-catch exception-summary (lambda () (activate-plugin! raw-messages-user)))
                  => "Plugin used an undeclared service raw-messages-user messages"))))
 
-    (test-case "a provider may use its own service, including while shadowed"
+    (test-case "a provider may use its own service"
       (call-with-fresh-kernel []
         (lambda ()
-          (defplugin (self-user ctx) "Provides and uses Greeter without requiring itself."
+          (defplugin (self-user ctx) "Provides and uses Greeter."
+            provides: [greeter-service]
             (context-provide! ctx greeter-service (make-greeter "self"))
-            (note! (call-with-service-provider greeter-service
-                     (lambda (implementation) (Greeter-greet (Greeter implementation)))))
-            (context-add-hook! ctx test-hook 'self
-              (lambda (item) (note! (Greeter-greet (Greeter (service-provider greeter-service)))))))
+            (note! (Greeter-greet (Greeter (service-provider greeter-service)))))
           (take-log!)
-          (activate-plugin! self-user order: 1)
-          (check (take-log!) => ["self"])
-          (activate-plugin! greeter-b order: 2)
-          (check (plugin-active? self-user) => #t)
-          (run-hook test-hook #f)
-          (check (take-log!) => ["b"]))))
+          (activate-plugin! self-user)
+          (check (take-log!) => ["self"]))))
 
-    (test-case "same-owner provider replacement still hands over and restarts dependents"
+    (test-case "even the same owner cannot provide a service twice"
       (call-with-fresh-kernel []
         (lambda ()
-          (let (provider-context #f)
-            (defplugin (repeated-provider ctx) "Keeps a context for replacement."
-              (set! provider-context ctx)
-              (context-provide! ctx counter-service (Counter (counter name: 'old n: 17))))
-            (defplugin (replace-provider ctx) "Replaces the same owner's contribution."
-              (context-provide! (:- provider-context context) counter-service
-                                (Counter (counter name: 'new n: 100))))
-            (activate-plugin! repeated-provider)
-            (activate-plugin! counter-user)
-            (take-log!)
-            (activate-plugin! replace-provider)
-            (check (take-log!) => '((handover old -> new) (user-sees 17)))
-            (check (counter-value) => 17)
-            (deactivate-plugin! repeated-provider)
-            (check (service-provider counter-service) => #f)
-            (check (plugin-active? counter-user) => #f)))))
+          (defplugin (duplicate-provider ctx) "Registers twice."
+            provides: [counter-service]
+            (context-provide! ctx counter-service (Counter (counter name: 'old n: 17)))
+            (context-provide! ctx counter-service (Counter (counter name: 'new n: 100))))
+          (check (with-catch exception-summary (lambda () (activate-plugin! duplicate-provider)))
+                 => "Service already has a provider counter duplicate-provider duplicate-provider")
+          (check (service-provider counter-service) => #f))))
 
-    (test-case "same-owner startup provider replacement is still rejected while live"
+    (test-case "provision must be declared statically"
       (call-with-fresh-kernel []
         (lambda ()
-          (let (provider-context #f)
-            (defplugin (owned-input ctx) "Keeps the original input context."
-              (set! provider-context ctx)
-              (context-provide! ctx input-service (make-test-input (make-hash-table))))
-            (defplugin (replace-input ctx) "Attempts a same-owner input replacement."
-              (context-provide! (:- provider-context context) input-service
-                                (make-test-input (make-hash-table))))
-            (activate-plugin! owned-input)
-            (let (before (service-provider input-service))
-              (start-editor-loop!)
-              (check-exception (call-on-editor-loop (lambda () (activate-plugin! replace-input)))
-                               startup-service-error?)
-              (check (service-provider input-service) => before)
-              (check (plugin-active? owned-input) => #t)
-              (check (plugin-active? replace-input) => #f))))))
+          (defplugin (undeclared-provider ctx) "Missing provides."
+            (context-provide! ctx greeter-service (make-greeter "bad")))
+          (check (with-catch exception-summary (lambda () (activate-plugin! undeclared-provider)))
+                 => "Plugin provided an undeclared service undeclared-provider greeter"))))
 
     (test-case "entry ties follow supplied rank when the older owner reloads"
       (call-with-fresh-kernel []
@@ -443,38 +409,19 @@
          (deactivate-plugin! slot-urgent)
          (check (slot-value) => 'a))))
 
-    (test-case "dependents wait for services and follow provider changes"
+    (test-case "dependents wait for services and restart after provider teardown"
       (call-with-fresh-kernel []
-       (lambda ()
-         (take-log!)
-         (activate-plugin! greeting-user)
-         (check (plugin-active? greeting-user) => #f)
-         (activate-plugin! greeter-a)
-         (check (plugin-active? greeting-user) => #t)
-         (activate-plugin! greeter-b)
-         (deactivate-plugin! greeter-b)
-         (check (take-log!) => ["a" 'off "b" 'off "a"])
-         (deactivate-plugin! greeter-a)
-         (check (plugin-active? greeting-user) => #f)
-         (activate-plugin! greeter-b)
-         (check (plugin-active? greeting-user) => #t)
-         (check (take-log!) => ['off "b"]))))
-
-    (test-case "adapting dependents migrate in place, until no provider is left"
-      (call-with-fresh-kernel []
-       (lambda ()
-         (take-log!)
-         (activate-plugin! greeter-a)
-         (activate-plugin! greeting-adapter)
-         (activate-plugin! greeter-b)
-         (deactivate-plugin! greeter-b)
-         (check (take-log!) => ["a" ["a" '-> "b"] ["b" '-> "a"]])
-         (check (plugin-active? greeting-adapter) => #t)
-         (deactivate-plugin! greeter-a)
-         (check (plugin-active? greeting-adapter) => #f)
-         (check (take-log!) => ['adapter-off])
-         (activate-plugin! greeter-b)
-         (check (take-log!) => ["b"]))))
+        (lambda ()
+          (take-log!)
+          (activate-plugin! greeting-user)
+          (check (plugin-active? greeting-user) => #f)
+          (activate-plugin! greeter-a)
+          (check (map plugin-name (plugin-deactivation-closure greeter-a)) => '(greeter-a greeting-user))
+          (deactivate-plugin! greeter-a)
+          (check (plugin-active? greeting-user) => #f)
+          (activate-plugin! greeter-b)
+          (check (take-log!) => '("a" off "b"))
+          (check (plugin-active? greeting-user) => #t))))
 
     (test-case "hooks run by depth, drop a failing callback, and go with their plugin"
       (call-with-fresh-kernel []
@@ -490,53 +437,27 @@
          (deactivate-plugin! hooked)
          (check (hook-callback-names test-hook) => '()))))
 
-    (test-case "lifecycle hooks announce each change once, after the whole operation"
+    (test-case "lifecycle events name the removed and new provider separately"
       (call-with-fresh-kernel []
-       (lambda ()
-         (take-log!)
-         (activate-plugin! lifecycle-watcher)
-         (check (take-log!) => [['activated 'lifecycle-watcher #t]])
-         (activate-plugin! greeter-a)
-         (check (take-log!) => [['greeter #f "a" #t] ['activated 'greeter-a #t]])
-         (activate-plugin! greeting-user)
-         (check (take-log!) => ["a" ['activated 'greeting-user #t]])
-         ;; Replacing the greeter restarts its user. The announcements wait
-         ;; until the user has restarted, so the user is active again by the
-         ;; time its deactivation is announced.
-         (activate-plugin! greeter-b)
-         (check (take-log!) => ['off "b"
-                                ['deactivated 'greeting-user #t]
-                                ['greeter "a" "b" #t]
-                                ['activated 'greeter-b #t]
-                                ['activated 'greeting-user #t]])
-         (deactivate-plugin! greeter-b)
-         (check (take-log!) => ['off "a"
-                                ['deactivated 'greeting-user #t]
-                                ['greeter "b" "a" #t]
-                                ['deactivated 'greeter-b #f]
-                                ['activated 'greeting-user #t]])
-         (deactivate-plugin! greeter-a)
-         (check (take-log!) => ['off
-                                ['deactivated 'greeting-user #f]
-                                ['greeter "a" #f #t]
-                                ['deactivated 'greeter-a #f]]))))
+        (lambda ()
+          (activate-plugin! lifecycle-watcher)
+          (activate-plugin! greeter-a)
+          (activate-plugin! greeting-user)
+          (take-log!)
+          (deactivate-plugin! greeter-a)
+          (check (take-log!) => '(off (deactivated greeting-user #f) (greeter "a" #f #t) (deactivated greeter-a #f)))
+          (activate-plugin! greeter-b)
+          (check (take-log!) => '("b" (greeter #f "b" #t) (activated greeter-b #t) (activated greeting-user #t))))))
 
-    (test-case "an operation that raises still announces what it changed, in order"
+    (test-case "a failed provider announces provision and withdrawal, without activating users"
       (call-with-fresh-kernel []
-       (lambda ()
-         (activate-plugin! lifecycle-watcher)
-         (activate-plugin! greeter-a)
-         (activate-plugin! greeting-user)
-         (take-log!)
-         ;; The failing provider restarts the user and is rolled back, so the
-         ;; greeter flips to bad and back to a before the user returns.
-         (check-exception (activate-plugin! greeter-then-fails) Error?)
-         (check (take-log!) => ['off "a"
-                                ['deactivated 'greeting-user #t]
-                                ['greeter "a" "bad" #f]
-                                ['greeter "bad" "a" #t]
-                                ['activated 'greeting-user #t]])
-         (check (plugin-active? greeter-then-fails) => #f))))
+        (lambda ()
+          (activate-plugin! lifecycle-watcher)
+          (activate-plugin! greeting-user)
+          (take-log!)
+          (check-exception (activate-plugin! greeter-then-fails) Error?)
+          (check (take-log!) => '((greeter #f "bad" #f) (greeter "bad" #f #t)))
+          (check (plugin-active? greeting-user) => #f))))
 
     (test-case "a failing lifecycle callback is removed and activation carries on"
       (call-with-fresh-kernel []
@@ -595,23 +516,6 @@
                     ['input 'startup 'test-input-plugin []]
                     ['messages 'live 'test-input-plugin []]]))))
 
-    (test-case "a service's handover moves state between providers, before dependents restart"
-      (call-with-fresh-kernel []
-       (lambda ()
-         (activate-plugin! counter-a)
-         (activate-plugin! counter-user)
-         (Counter-set-count! (Counter (service-provider counter-service)) 7)
-         (take-log!)
-         (activate-plugin! counter-b)
-         (check (take-log!) => [['handover 'a '-> 'b] ['user-sees 7]])
-         (Counter-set-count! (Counter (service-provider counter-service)) 8)
-         (deactivate-plugin! counter-b)
-         (check (take-log!) => [['handover 'b '-> 'a] ['user-sees 8]])
-         (check (counter-value) => 8)
-         ;; With no provider left, there is no one to hand over to.
-         (deactivate-plugin! counter-a)
-         (check (take-log!) => []))))
-
     (test-case "message writes to stderr, not stdout, while no plugin provides Messages"
       (call-with-fresh-kernel []
        (lambda ()
@@ -634,23 +538,12 @@
                   => ["" (string-append report "\n")])
            (check (current-message) => report)))))
 
-    (test-case "startup-tier services refuse live replacement"
-      (call-with-fresh-kernel []
-       (lambda ()
-         (activate-plugin! test-input-plugin)
-         (activate-plugin! greeter-a)
-         (start-editor-loop!)
-         (check-exception (call-on-editor-loop (lambda () (activate-plugin! second-input order: 1)))
-                          startup-service-error?)
-         (check (call-on-editor-loop (lambda () (plugin-active? second-input))) => #f)
-         (check-exception (call-on-editor-loop (lambda () (deactivate-plugin! test-input-plugin)))
-                          startup-service-error?)
-         (check (call-on-editor-loop (lambda () (plugin-active? test-input-plugin))) => #t)
-         ;; Live-tier services can still be replaced.
-         (call-on-editor-loop (lambda () (activate-plugin! greeter-b)))
-         (check (Greeter-greet (Greeter (call-on-editor-loop
-                                         (lambda () (service-provider greeter-service)))))
-                => "b")
-         (stop-editor-loop!)
-         (activate-plugin! second-input)
-         (check (plugin-active? second-input) => #t))))))
+    (test-case "startup tier is metadata, not a kernel teardown restriction"
+      (call-with-fresh-kernel [test-input-plugin greeter-a]
+        (lambda ()
+          (start-editor-loop!)
+          (check-exception (call-on-editor-loop (lambda () (activate-plugin! second-input))) Error?)
+          (call-on-editor-loop (lambda () (deactivate-plugin! test-input-plugin)))
+          (check (plugin-active? test-input-plugin) => #f)
+          (call-on-editor-loop (lambda () (activate-plugin! second-input)))
+          (check (plugin-active? second-input) => #t))))))
