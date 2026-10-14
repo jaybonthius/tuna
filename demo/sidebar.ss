@@ -7,9 +7,13 @@
 ;;; added, killed or renamed (buffer-list-update-hook). The sidebar's view
 ;;; is dedicated, so pressing C-c d again kills the buffer and the view
 ;;; closes. Turning the plugin off kills it too.
+;;; Optional services:
+;;; - messages-service: notices via the kernel's guarded message dispatcher
+;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
-(import :tuna/kernel
+(import :tuna/services/commands
+        :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers
         :tuna/services/layout
@@ -55,7 +59,7 @@ prelude: :gerbil/core
 
 (defplugin (sidebar-demo-plugin ctx)
   "C-c d shows a sidebar of buffer buttons pinned to the left; again, kills it and its view closes."
-  requires: [input-service buffers-service layout-service]
+  requires: [commands-service input-service buffers-service layout-service]
   (define-command ctx (toggle-sidebar) "Show *sidebar* at the left side, or kill it."
     (if (get-buffer sidebar-name)
       (kill-sidebar!)

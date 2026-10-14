@@ -5,7 +5,8 @@
 ;;; changed option replaces the plugin with the running version as the
 ;;; fallback. Every test writes its files to its own temporary directory
 ;;; and runs in a fresh kernel.
-(import :std/io
+(import :tuna/services/commands
+        :std/io
         :std/misc/ports
         :std/net/address
         :std/source

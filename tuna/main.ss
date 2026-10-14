@@ -15,7 +15,7 @@ prelude: :gerbil/core
         :tuna/boot
         :tuna/control
         :tuna/services/session
-        (only-in :tuna/services/keys command-ref)
+        (only-in :tuna/services/commands command-ref)
         :tuna/lib/plugin-options
         (only-in :tuna/plugins/web web-transport-plugin web-transport-url)
         ;; Linked into the executable so that init.ss can import them.

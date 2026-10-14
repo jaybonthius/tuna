@@ -1,6 +1,7 @@
 ;;; Category annotators add typed fields, independent of the completion UI.
 prelude: :gerbil/core
-(import :tuna/kernel :tuna/services/completion :tuna/services/keys
+(import :tuna/services/commands
+        :tuna/kernel :tuna/services/completion :tuna/services/keys
         :tuna/services/buffers)
 (export annotations-plugin)
 

@@ -5,7 +5,8 @@
 ;;; kills the buffer.
 prelude: :gerbil/core
 
-(import :tuna/kernel
+(import :tuna/services/commands
+        :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers
         (only-in "plain-text-renderer" join-runs))
@@ -33,7 +34,7 @@ prelude: :gerbil/core
 
 (defplugin (tree-buffer-plugin ctx)
   "Defines the column and heading kinds, adds *welcome*, and binds C-c b to switch to it."
-  requires: [input-service buffers-service]
+  requires: [commands-service input-service buffers-service]
   (def previous-buffer #f)              ; where C-c b returns from *welcome*
   (context-define-node-kind! ctx 'column doc: "Children stacked vertically.")
   (context-define-node-kind! ctx 'heading doc: "A heading."

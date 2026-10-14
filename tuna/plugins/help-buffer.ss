@@ -1,9 +1,13 @@
 ;;; Help in a buffer (live tier): help output goes to *Help*, a `help` node
 ;;; holding a `help-title` node and a text node, shown with display-buffer.
 ;;; C-h q (quit-help) kills *Help*, which closes a view made for it.
+;;; Optional services:
+;;; - messages-service: notices via the kernel's guarded message dispatcher
+;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
-(import :std/interface
+(import :tuna/services/commands
+        :std/interface
         :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers
@@ -48,7 +52,7 @@ prelude: :gerbil/core
 
 (defplugin (help-buffer-plugin ctx)
   "Shows help output in the *Help* buffer; C-h q closes it."
-  requires: [input-service buffers-service layout-service]
+  requires: [commands-service input-service buffers-service layout-service]
   (context-define-node-kind! ctx 'help doc: "Help output: a title, then text.")
   (context-define-node-kind! ctx 'help-title doc: "The title of help output."
                              project: (lambda (n) (node-attribute n 'content)))

@@ -7,6 +7,9 @@
 ;;; to the plugins that build them, and internal buffers are skipped. A
 ;;; buffer's file is rewritten only when its text changed; files of buffers
 ;;; that are gone are deleted.
+;;; Optional services:
+;;; - messages-service: notices via the kernel's guarded message dispatcher
+;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable)

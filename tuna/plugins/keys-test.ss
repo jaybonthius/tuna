@@ -1,4 +1,5 @@
-(import :std/error
+(import :tuna/services/commands
+        :std/error
         :std/test
         :tuna/kernel
         :tuna/services/keys

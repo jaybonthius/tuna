@@ -68,7 +68,7 @@ prelude: :gerbil/core
 
 (defplugin (digit-highlighter-plugin ctx)
   "Colors digits from a slow job after each change."
-  requires: [buffers-service]
+  requires: [buffers-service settings-service]
   (let (jobs (new-job-group ctx))
     (context-add-hook! ctx after-change-hook 'slow-digit-highlighter
                        (lambda (t c) (highlight-digits-later! jobs t)))))

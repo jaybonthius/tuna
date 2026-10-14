@@ -17,7 +17,11 @@
 ;;; Prompts nest: answers are delivered innermost first. When a prompt
 ;;; ends, its view shows what it showed before and the previously selected
 ;;; view is selected again.
-(import :std/interface
+;;; Optional services:
+;;; - messages-service: notices via the kernel's guarded message dispatcher
+;;;   (including stale-click reports); without it, nonempty notices go to stderr.
+(import :tuna/services/commands
+        :std/interface
         (only-in :gerbil/runtime/hash HashTable)
         :tuna/kernel
         :tuna/services/keys
@@ -91,6 +95,7 @@
 
 (implement Prompt prompt
   (prompt-buffer (lambda (self) self.holder))
+  (prompt-answer-node (lambda (self) self.answer))
   (prompt-keymap (lambda (self) self.keymap))
   (prompt-input (lambda (self) (text-string (text-node-content self.answer))))
   (prompt-set-exit-check! (lambda (self check) (set! self.exit-check check)))
@@ -205,7 +210,7 @@
 
 (defplugin (minibuffer-plugin ctx)
   "Asks questions in the minibuffer, a view in the bar: read-string. RET answers, C-g abandons."
-  requires: [input-service buffers-service layout-service settings-service session-service]
+  requires: [commands-service input-service buffers-service layout-service settings-service session-service]
   (context-define-node-kind! ctx minibuffer-node-kind doc: "A prompt's question and answer, or nothing.")
   (context-define-node-kind! ctx 'minibuffer-prompt doc: "A prompt's question."
                              project: (lambda (n) (node-attribute n 'content)))

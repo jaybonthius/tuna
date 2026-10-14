@@ -16,7 +16,7 @@ prelude: :gerbil/core
 (export (interface-out Minibuffer)
         (interface-out Prompt)
         read-from-minibuffer minibuffer-history
-        prompt-buffer prompt-keymap prompt-input prompt-set-exit-check! prompt-exit!
+        prompt-buffer prompt-answer-node prompt-keymap prompt-input prompt-set-exit-check! prompt-exit!
         minibuffer-service
         (struct-out prompt-display)
         minibuffer-node-kind
@@ -49,6 +49,8 @@ prelude: :gerbil/core
 (interface Prompt
   ;; Add nodes through the ordinary buffers contract, not a second UI API.
   (prompt-buffer) => buffer
+  ;; The answer node belongs to this handle, even while another prompt is active.
+  (prompt-answer-node) => node
   ;; A prompt-local map, before its shared RET/C-g map.
   (prompt-keymap) => entry-table
   (prompt-input) => :string
@@ -58,6 +60,7 @@ prelude: :gerbil/core
   (prompt-exit! (value : :t) (history-text : :string)) => :void)
 
 (def (prompt-buffer (p : Prompt)) => buffer (Prompt-prompt-buffer p))
+(def (prompt-answer-node (p : Prompt)) => node (Prompt-prompt-answer-node p))
 (def (prompt-keymap (p : Prompt)) => entry-table (Prompt-prompt-keymap p))
 (def (prompt-input (p : Prompt)) => :string (Prompt-prompt-input p))
 (def (prompt-set-exit-check! (p : Prompt) (check : :procedure)) => :void

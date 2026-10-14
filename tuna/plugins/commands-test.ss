@@ -16,6 +16,26 @@ prelude: :gerbil/core
 
 (def commands-test
   (test-suite "tuna/plugins/commands"
+    (test-case "named calls run command hooks even without an input provider"
+      (for-each
+        (lambda ((provider : plugin))
+          (call-with-fresh-kernel [provider actions]
+            (lambda ()
+              (let (events [])
+                (defplugin (observer ctx)
+                  "Observes command activations independently of input."
+                  requires: [commands-service]
+                  (context-add-hook! ctx pre-command-hook 'pre
+                    (lambda () (set! events (append events [['pre (this-command)]]))))
+                  (context-add-hook! ctx post-command-hook 'post
+                    (lambda () (set! events (append events [['post (this-command)]])))))
+                (activate-plugin! observer)
+                (check (service-provider input-service) => #f)
+                (check (call-command 'wrapper-action) => 'visible-action)
+                (check events => '((pre wrapper-action) (pre visible-action)
+                                  (post visible-action) (post wrapper-action)))
+                (check (this-command) => #f)))))
+        [commands-plugin toy-commands-plugin]))
     (test-case "commands work without an input provider and preserve provenance"
       (for-each
        (lambda ((provider : plugin))

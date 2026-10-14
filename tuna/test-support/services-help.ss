@@ -3,7 +3,8 @@
 ;;; reports through a running editor.
 prelude: :gerbil/core
 
-(import :tuna/kernel
+(import :tuna/services/commands
+        :tuna/kernel
         :tuna/services/keys
         :tuna/services/help)
 (export services-help-plugin
@@ -31,7 +32,7 @@ prelude: :gerbil/core
 
 (defplugin (services-help-plugin ctx)
   "C-h s shows each service's tier, provider, and dependents."
-  requires: [input-service]
+  requires: [commands-service input-service help-service]
   (define-command ctx (describe-services) "Show each service's tier, provider, and dependents."
     (show-help "Services" (services-description)))
   (keymap-set ctx "C-h s" 'describe-services))

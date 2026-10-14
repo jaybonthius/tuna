@@ -32,9 +32,13 @@
 ;;; over from another layout, so a saved slot never overwrites a live
 ;;; handover. After restoring or taking over views, plugins' locked views
 ;;; that went missing are put back.
+;;; Optional services:
+;;; - messages-service: notices via the kernel's guarded message dispatcher
+;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import :std/interface
+        :tuna/services/commands
         :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers
@@ -981,7 +985,7 @@ prelude: :gerbil/core
 
 (defplugin (layout-plugin ctx)
   "Arranges views in fit and tabbed containers, with pins, a movable frame and frame marks."
-  requires: [buffers-service session-service input-service]
+  requires: [commands-service buffers-service session-service input-service]
   (let (v (selected-view))
     (using (self (tree-layout root: (make-leaf v #f) frame: (make-frame-state #f #f v) level: 0
                               marks: [] locked: [] kinds: (new-entry-table) handed-over?: #f)

@@ -1,7 +1,6 @@
 ;;; Command registry and thread-scoped activations (ADR 8, ADR 14).
 prelude: :gerbil/core
-(import :std/interface :tuna/kernel :tuna/services/commands
-        (only-in :tuna/services/keys Keys is-Keys? Keys-dispatch-command))
+(import :std/interface :tuna/kernel :tuna/services/commands)
 (export commands-plugin)
 
 (defclass command-registry ((entries : entry-table) (last :? :symbol)) final: #t)
@@ -26,10 +25,9 @@ prelude: :gerbil/core
                             completed-name: name)))
         (parameterize ((current-activation a))
           (unwind-protect
-            (let (input (service-provider input-service))
-              (if (and input (is-Keys? input))
-                (Keys-dispatch-command (Keys input) c)
-                (c.procedure)))
+            (begin
+              (run-hook pre-command-hook)
+              (unwind-protect (c.procedure) (run-hook post-command-hook)))
             ;; A nested programmatic invocation replaces the wrapper for
             ;; repetition (e.g. M-x). Prompt keystrokes run in other tasks.
             (begin

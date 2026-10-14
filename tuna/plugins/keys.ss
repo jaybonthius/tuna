@@ -8,10 +8,17 @@
 ;;; without it, each from the most specific event name down
 ;;; (`pointer-event-names`), before the next keymap. A click does not clear
 ;;; the echo area, so clicking it to read a message keeps the message.
+;;; Optional services:
+;;; - settings-service: live Option policy; without it, declared defaults.
+;;; - buffers-service: focused node maps; without it, input-target/global maps.
+;;; - layout-service: clicked node maps; without it, global click bindings.
+;;; - messages-service: notices via the kernel's guarded message dispatcher;
+;;;   without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import :tuna/kernel
         :tuna/services/keys
+        :tuna/services/commands
         :tuna/services/settings
         (only-in :tuna/services/buffers
                  buffers-service selected-view view-node view-showing buffer-root
@@ -55,8 +62,11 @@ prelude: :gerbil/core
 (defsetting mac-right-option-modifier 'none
   "Right macOS Option: meta uses the physical US key; none types the browser character.")
 
+(def (optional-provider? (svc : service)) => :boolean
+  (and (service-provider svc) #t))
+
 (def (option-meta? (s : setting)) => :boolean
-  (case (if (service-provider settings-service) (setting-value s) (setting-default s))
+  (case (if (optional-provider? settings-service) (setting-value s) (setting-default s))
     ((meta) #t)
     ((none) #f)
     (else (error "Option modifier must be meta or none" (setting-name s)))))
@@ -137,14 +147,14 @@ prelude: :gerbil/core
 ;; The node keys start from: the selected view's focused text node, or the
 ;; root of its buffer when it has none; #f without buffers.
 (def (focused-node) => (Maybe node)
-  (and (service-provider buffers-service)
+  (and (optional-provider? buffers-service)
        (let (v (selected-view))
          (or (view-node v) (buffer-root (view-showing v))))))
 
 ;; The node a click at P starts from: the node clicked, or the root of the
 ;; clicked view's buffer; #f without a layout or a view.
 (def (clicked-node (p : posn)) => (Maybe node)
-  (and (service-provider layout-service)
+  (and (optional-provider? layout-service)
        (or (posn-node p)
            (let (v (posn-view p))
              (and v (buffer-root (view-showing v)))))))
@@ -284,13 +294,6 @@ prelude: :gerbil/core
   (lambda (self event)
     (if (and (key-event? event) (equal? (key-description event) quit-key)) 'interrupt 'queue)))
 
-(defmethod {dispatch-command global-keys}
-  (lambda (self c)
-    (run-hook pre-command-hook)
-    (unwind-protect
-      ((command-procedure c))
-      (run-hook post-command-hook))))
-
 ;; A sequence is effective only if every preceding prefix resolves in the
 ;; same active stack. This excludes shadowed exact bindings and prefixes.
 (def (effective-sequence? (maps : :list) (keys : :string) (name : :symbol)) => :boolean
@@ -355,9 +358,6 @@ prelude: :gerbil/core
   (lambda (self keys)
     (using (self : global-keys)
       (entry-table-ref self.keymap (normalize-keys keys)))))
-
-(defmethod {last-command global-keys}
-  (lambda (self) (last-command)))
 
 (defmethod {last-command-event global-keys}
   (lambda (self) (or (activation-event) (global-keys-command-event self))))
