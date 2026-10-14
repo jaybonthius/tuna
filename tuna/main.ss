@@ -32,6 +32,7 @@ prelude: :gerbil/core
         (only-in :tuna/plugins/autosave)
         (only-in :tuna/plugins/layout)
         (only-in :tuna/plugins/html-renderer)
+        (only-in :tuna/plugins/buttons)
         (only-in :tuna/plugins/basic-editing)
         (only-in :tuna/plugins/minibuffer)
         (only-in :tuna/plugins/view-commands)

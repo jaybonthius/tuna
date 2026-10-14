@@ -251,6 +251,18 @@ body {
   white-space: pre-wrap;
 }
 
+/* A button node (buttons plugin): an action in a buffer. Plain until the
+   design pass; hover and pressed come from [data-clickable]. */
+.button {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--tuna-rule);
+  border-radius: 0.25rem;
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
 /* Parts the server marks clickable (data-clickable): a click on them has a
    binding. Hover and pressed are an overlay, so the part keeps its own
    background (a status line's bar, the active tab's). The click itself goes

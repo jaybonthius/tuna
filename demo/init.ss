@@ -17,6 +17,7 @@
         :tuna/plugins/layout
         :tuna/plugins/view-commands
         :tuna/plugins/html-renderer
+        :tuna/plugins/buttons
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
         :tuna/plugins/reload-config
@@ -42,6 +43,7 @@
 (use-plugin layout-plugin)
 (use-plugin view-commands-plugin)
 (use-plugin html-renderer-plugin)
+(use-plugin buttons-plugin)             ; buttons in buffers: a click runs their action
 (use-plugin basic-editing-plugin)
 (use-plugin minibuffer-plugin)
 (use-plugin echo-area-plugin)           ; in the bar, under the minibuffer
@@ -53,7 +55,7 @@
 (use-plugin digit-highlighter-plugin)   ; colors digits from a slow job
 (use-plugin tree-buffer-plugin)         ; C-c b: the *welcome* buffer, built as a tree
 (use-plugin demo-plugin)                ; C-c s text store, C-c p basic editing
-(use-plugin sidebar-demo-plugin)        ; C-c d: *sidebar* pinned to the left, or killed
+(use-plugin sidebar-demo-plugin)        ; C-c d: a sidebar of buffer buttons pinned to the left, or killed
 (use-plugin reload-config-plugin        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)
           (keymap-set "C-c C-r" 'show-config-report))
