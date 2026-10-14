@@ -31,7 +31,7 @@ You have two views side by side; the right one is a tab group with `main.ss` and
 2. **You click it.** On release, the browser sends "left click on `tab:30`, screen 812". The keys plugin looks up `<tab> <mouse-1>` from the tab upward, finds `tab-select` (the layout plugin's binding), runs it, and the next screen shows `notes.txt`. You type immediately, and the letters land in `notes.txt`.
 3. **You click the left view.** `<view> <mouse-1>` runs `mouse-select-view`, so it becomes the selected view. As in Emacs, selecting is just what that binding does; another plugin could bind something else.
 4. **You drag the border between them** to 30%. The preview follows your pointer. On release one item goes to the server: "dropped `handle:C:A:B` at 0.3". `<handle> <drag-mouse-1>` sets the sizes.
-5. **You drag the `main.ss` tab onto the left edge of the left view.** The browser's built-in drag shows a ghost of the tab and highlights where it would land. On drop, the server moves the tab into a new split.
+5. **You drag the `main.ss` tab onto the left edge of the left view.** A tab is only a handle for the part it shows, so you are dragging the `main.ss` view. While you drag, the left view's left edge lights up, showing where it would land. On drop, the server puts the view beside the left view in a split. Had you dragged the tab group's strip instead, the whole group would have moved.
 6. **You click a tab that a slow command closed a moment ago.** The echo area says "That tab is gone" and nothing else happens. Clicks name parts by identity, never by position, so a stale click can't hit whatever moved into that spot.
 7. **You click a button in a sidebar buffer.** The button node has its own keymap binding `<mouse-1>` (and `RET`), so the click runs the button's command. This is the node keymap from ADR 8, not built yet; stage 2 below.
 
@@ -54,21 +54,38 @@ A button in a buffer, and the command it runs:
 
 In Emacs this is `(keymap-set map "<mouse-1>" ...)` on a `keymap` text property, and `(posn-point (event-start e))` in the command. Ported code changes names, not structure. Names are illustrative.
 
+## Rearranging anything
+
+Every part of the layout can be dragged, not just tabs: a view, a tab group, a split, a pinned bar part. A tab is not special; it is one kind of container, and dragging moves parts of the tree, never "tabs".
+
+**Where you grab a part** (handles):
+- a view: its status line;
+- a tab: the part that tab shows (a view, or a whole split inside the tab);
+- a tab group: its tab strip, outside the tabs;
+- any other container (a split has nothing visible to grab): select it with `C-x w a` and drag the selected outline, and later the layout outline sidebar ([idea](../ideas/layout-outline.md)).
+
+**Where it lands** (what the highlight shows while you drag), always relative to the part under the pointer:
+- an **edge** (left, right, top, bottom): beside that part. If its container already runs in that direction, the dragged part joins it as a sibling; otherwise the two are wrapped in a new split.
+- the **middle**: together with that part as tabs. Onto a tab group, it becomes a new tab; onto a view, the two become a new tab group.
+- a **tab strip position**: a tab at that position.
+
+A drop is one tree move: the part keeps its size and pin, and a container left with one child stays (it keeps its kind). Locked parts cannot be dragged, and the server marks which parts accept a drop, so the bar refuses. Dropping a part inside itself is refused.
+
 ## How it gets built
 
 Each stage runs in the browser:
 1. **Clicks.** Pointer items in the ordered queue; Emacs event names (`mouse-1`, `C-mouse-1`, `double-mouse-1`); lookup with the part kind as a prefix; commands read the click with `event-start`, `posn-node` and friends. Clicking a view selects it; clicking a tab switches to it. Views that should never be selected by a click (the echo area) refuse. Parts with a binding are marked clickable, with hover, pressed and pointer styles. Stale clicks report and do nothing.
 2. **Keymaps on buffer nodes.** Lookup starts at the clicked (or, for keys, focused) node and walks up through its buffer, view and containers. A demo sidebar of buttons shows it. This also fixes the bug where `RET` still answers a question after you move away from the minibuffer: its keys will belong to the minibuffer's buffer.
-3. **Dragging.** Split borders (pointer capture; the preview lives outside the redrawn screen and stays until the new screen arrives). Tabs and parts with the browser's built-in drag and drop. The server marks what accepts a drop, so the bar's views refuse.
+3. **Dragging.** Split borders (pointer capture; the preview lives outside the redrawn screen and stays until the new screen arrives). Any part by its handle, with the drop rules above and edge and middle highlights.
 
-**Not in this work:** clicking and selecting inside text, touch screens, context menus.
+**Not in this work:** clicking and selecting inside text, touch screens, context menus, the layout outline sidebar (an [idea](../ideas/layout-outline.md) for later), and commands that create nested containers (a known gap in `TODO.md`).
 
 The kernel gains nothing: it already passes input items through without looking inside.
 
 ## Decisions for you
 
-**1. How should dragging a tab work?**
-- **Context:** the browser has built-in drag and drop. It gives a ghost image of the tab and drop events for free. The prototype showed three limits: it doesn't work on touch screens, moving off a tab and releasing moves the tab rather than cancelling (Escape cancels), and the ghost is the browser's own, styled only by swapping in an image. The prototype couldn't show you the ghost, because headless screenshots don't capture it.
+**1. Which browser mechanism should dragging parts use?**
+- **Context:** the browser has built-in drag and drop. It gives a ghost image of the dragged handle and drop events for free. The prototype showed three limits: it doesn't work on touch screens, pressing a handle, moving off and releasing moves the part rather than cancelling (Escape cancels), and the ghost is the browser's own, styled only by swapping in an image. The prototype couldn't show you the ghost, because headless screenshots don't capture it.
 - **Options:** (a) built-in drag and drop now; (b) our own pointer handling, like the split border: more code, fully styleable, works on touch.
 - **Recommendation: (a)** for now, switching to (b) when the design pass wants a custom look or touch matters. It's contained in one place in the browser code, so switching later doesn't touch the server. If you'd like to see the ghost first: `cd /home/jay/Code/workbench-gerbil/tuna__mouse-spike && make && gerbil env tuna --config spike/init.ss`, then `C-x 3` and `C-x t 2`, and drag a tab.
 
