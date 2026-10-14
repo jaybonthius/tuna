@@ -64,6 +64,11 @@
 (def (greeting provider)
   (and provider (Greeter-greet (Greeter provider))))
 
+(def (greeter-dispatch-context (svc : service)) => (Maybe context)
+  (with-service-provider (provider svc Greeter)
+    (Greeter-greet provider)
+    (current-context)))
+
 (defplugin (lifecycle-watcher ctx)
   "Notes plugin events, whether the plugin is then active, and greeter changes."
   optional: [greeter-service]
@@ -163,6 +168,81 @@
 
 (def plugins-test
   (test-suite "tuna/kernel/plugins"
+
+    (test-case "warm service cells follow providers, ranks, aliases and withdrawal"
+      (call-with-fresh-kernel []
+        (lambda ()
+          (let (alias (new-service 'greeter is-Greeter? tier: 'live doc: "Same slot."))
+            (check (service-provider greeter-service) => #f)
+            (check (service-provider alias) => #f)
+            (activate-plugin! greeter-a order: 1)
+            (let (a-context (greeter-dispatch-context greeter-service))
+              (activate-plugin! greeter-b order: 2)
+              (let (b-context (greeter-dispatch-context greeter-service))
+                (check (greeting (service-provider alias)) => "b")
+                (set-plugin-order! greeter-a 3)
+                (check (greeting (service-provider greeter-service)) => "a")
+                (check (greeter-dispatch-context alias) => a-context)
+                (activate-plugin! greeter-b order: 4)
+                (check (greeting (service-provider alias)) => "b")
+                (check (greeter-dispatch-context greeter-service) => b-context)
+                (deactivate-plugin! greeter-b)
+                (check (greeter-dispatch-context alias) => a-context)
+                (deactivate-plugin! greeter-a)
+                (check (service-provider greeter-service) => #f)
+                (check (service-provider alias) => #f)))))))
+
+    (test-case "warm dispatch retains activation, active and cleanup owner scopes"
+      (call-with-fresh-kernel []
+        (lambda ()
+          (take-log!)
+          (let (owner-context #f)
+            (defplugin (cache-owner ctx) "Warms dispatch while activating and cleaning up."
+              (set! owner-context ctx)
+              (context-provide! ctx greeter-service (make-greeter "cached"))
+              (check (greeter-dispatch-context greeter-service) => ctx)
+              (context-defer! ctx
+                (lambda () (note! (greeter-dispatch-context greeter-service)))))
+            (activate-plugin! cache-owner)
+            (check (current-context) => #f)
+            (check (greeter-dispatch-context greeter-service) => owner-context)
+            (check (call-with-context (:- owner-context context)
+                     (lambda () (greeter-dispatch-context greeter-service)))
+                   => owner-context)
+            (check (current-context) => #f)
+            (deactivate-plugin! cache-owner)
+            (check (take-log!) => [owner-context])
+            (check (service-provider greeter-service) => #f)))))
+
+    (test-case "warm cells recover the provider and owner after failed activation"
+      (call-with-fresh-kernel [greeter-a]
+        (lambda ()
+          (let (a-context (greeter-dispatch-context greeter-service))
+            (defplugin (cached-failure ctx) "Provides, warms dispatch, then fails."
+              (context-provide! ctx greeter-service (make-greeter "bad") priority: 5)
+              (check (greeter-dispatch-context greeter-service) => ctx)
+              (error "activation failed"))
+            (check-exception (activate-plugin! cached-failure) Error?)
+            (check (greeting (service-provider greeter-service)) => "a")
+            (check (greeter-dispatch-context greeter-service) => a-context)))))
+
+    (test-case "service cells and self-use checks follow nested kernel selection"
+      (call-with-fresh-kernel [greeter-a]
+        (lambda ()
+          (let ((alias (new-service 'greeter is-Greeter? tier: 'live doc: "Same slot."))
+                (a-context (greeter-dispatch-context greeter-service)))
+            (check (greeting (service-provider alias)) => "a")
+            (call-with-fresh-kernel [greeter-b]
+              (lambda ()
+                (check (greeting (service-provider greeter-service)) => "b")
+                (check (greeting (service-provider alias)) => "b")
+                (check (with-catch exception-summary
+                         (lambda ()
+                           (call-with-context (:- a-context context)
+                             (lambda () (service-provider greeter-service)))))
+                       => "Plugin used an undeclared service greeter-a greeter")))
+            (check (greeting (service-provider alias)) => "a")
+            (check (greeter-dispatch-context greeter-service) => a-context)))))
     (test-case "an undeclared activating owner is rejected even without a provider"
       (call-with-fresh-kernel []
         (lambda ()

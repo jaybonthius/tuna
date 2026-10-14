@@ -337,7 +337,12 @@ prelude: :gerbil/core
                     (tier        : :symbol)      ; startup or live
                     (implements? : :procedure)
                     (doc         : :string)
-                    (handover    :? :procedure)) ; outgoing, incoming provider -> void
+                    (handover    :? :procedure) ; outgoing, incoming provider -> void
+                    (home        :? kernel)
+                    (implementation : :t)
+                    (provider-context :? context)
+                    (provider-owner :? :symbol)
+                    (owners      : :list))
   final: #t)
 
 ;; With HANDOVER, whenever the effective provider changes from one provider
@@ -352,52 +357,76 @@ prelude: :gerbil/core
   => service
   (unless (memq tier '(startup live))
     (raise-bad-argument new-service "tier startup or live" tier))
-  (make-service name tier implements? doc handover))
+  (make-service name tier implements? doc handover #f #f #f #f []))
 
 (deferror-class StartupServiceError () startup-service-error?)
 
 (def (remember-service! (k : kernel) (svc : service)) => :void
   (hash-put! (kernel-services k) (service-name svc) svc))
 
+;; Update read cells on mutations, never during a warm dispatch. A service
+;; keeps only its last kernel; other kernels rebuild that cell on next use.
+(def (refresh-cached-services! (k : kernel)) => :void
+  (for-each (lambda ((svc : service))
+              (when (eq? (service-home svc) k) (refresh-service-cache! k svc)))
+            (kernel-cached-services k)))
+
+(def (refresh-service-cache! (k : kernel) (svc : service)) => :void
+  (let* ((entries (entry-table-entries (kernel-providers k) (service-name svc)))
+         (best (and (pair? entries) (car entries)))
+         (record (and best (hash-get (kernel-plugins k) (entry-owner best)))))
+    (set! (service-home svc) k)
+    (set! (service-implementation svc) (and best (entry-value best)))
+    (set! (service-provider-context svc) (and record (plugin-record-active record)))
+    (set! (service-provider-owner svc) (and record (entry-owner best)))
+    (set! (service-owners svc) (map entry-owner entries))))
+
+(defrule (with-cached-service svc body ...)
+  (let (k (current-kernel))
+    (unless (and k (eq? (service-home svc) k))
+      (refresh-service-cache! (:- k kernel) svc)
+      (unless (memq svc (kernel-cached-services k))
+        (set! (kernel-cached-services k) (cons svc (kernel-cached-services k)))))
+    body ...))
+
 ;; The current provider of SVC, or #f.
 (def (service-provider (svc : service)) => :t
-  (let (entries (entry-table-entries (kernel-providers (the-kernel)) (service-name svc)))
-    (check-service-use! svc entries)
-    (and (pair? entries) (entry-value (car entries)))))
+  (with-cached-service svc
+    (let (caller (current-context))
+      (when caller (check-service-use! svc caller)))
+    (service-implementation svc)))
 
-(def (check-service-use! (svc : service) (entries : :list)) => :void
-  (let (ctx (current-context))
-    (when ctx
-      (using (ctx : context)
-        (let (p ctx.owner)
-          (unless (or (plugin-unchecked? p)
-                      (memq svc (plugin-requires p))
-                      (memq svc (plugin-optional p))
-                      (ormap (lambda ((e : entry)) (eq? (entry-owner e) (plugin-name p))) entries))
-            (error "Plugin used an undeclared service"
-                   (plugin-name p) (service-name svc))))))))
+(def (check-service-use! (svc : service) (ctx :? context)) => :void
+  (when ctx
+    (let (p (context-owner ctx))
+      (unless (or (plugin-unchecked? p)
+                  (memq svc (plugin-requires p))
+                  (memq svc (plugin-optional p))
+                  (memq (plugin-name p) (service-owners svc)))
+        (error "Plugin used an undeclared service" (plugin-name p) (service-name svc))))))
 
-;; Dispatchers check their caller before running a provider under its own
-;; owner. Calls through that provider cannot borrow the caller's declarations.
+;; Inline the scope on typed dispatchers: only parameterize's thunk is
+;; allocated, not another callback and return-contract wrapper around it.
+(defrule (with-provider-scope svc body ...)
+  (with-cached-service svc
+    (let* ((caller (current-context))
+           (_ (when caller (check-service-use! svc caller)))
+           (ctx (or (service-provider-context svc)
+                    (and caller (eq? (context-plugin-name caller) (service-provider-owner svc)) caller))))
+      (if (eq? caller ctx)
+        (begin body ...)
+        (parameterize ((current-context ctx)) body ...)))))
+
 (def (call-with-service-provider (svc : service) (procedure : :procedure)) => :t
-  (let* ((entries (entry-table-entries (kernel-providers (the-kernel)) (service-name svc)))
-         (_ (check-service-use! svc entries))
-         (best (and (pair? entries) (car entries)))
-         (provider (and best (entry-value best)))
-         (record (and best (hash-get (kernel-plugins (the-kernel)) (entry-owner best))))
-         (ctx (and record
-                   (or (plugin-record-active record)
-                       (let (activating (current-context))
-                         (and activating
-                              (eq? (context-plugin-name activating) (entry-owner best))
-                              activating))))))
-    (call-with-context ctx (lambda () (procedure provider)))))
+  (with-provider-scope svc (procedure (service-implementation svc))))
 
-;; Contract dispatchers keep their typed interface conversion at one seam.
+;; An activating/deactivating owner retains the same fallback scope as
+;; before its active context is installed. SVC is evaluated only once.
 (defrule (with-service-provider (provider svc interface) body ...)
-  (call-with-service-provider svc
-    (lambda (implementation)
-      (let (provider (interface (or implementation (error "No plugin provides" (service-name svc)))))
+  (let (slot (:- svc service))
+    (with-provider-scope slot
+      (let (provider (interface (or (service-implementation slot)
+                                   (error "No plugin provides" (service-name slot)))))
         body ...))))
 
 ;; Replace this owner's contribution. A changed effective provider still
@@ -424,6 +453,7 @@ prelude: :gerbil/core
         (check-removable! k closure)
         (deactivate-records! k closure)))
     (entry-table-add! (kernel-providers k) name new)
+    (refresh-cached-services! k)
     (context-defer! ctx (lambda () (withdraw-provider! k svc new)))
     (let* ((effective (:- (entry-table-ref (kernel-providers k) name) entry))
            (incoming (entry-value effective)))
@@ -441,6 +471,7 @@ prelude: :gerbil/core
   (let* ((name (service-name svc))
          (effective? (eq? (entry-table-ref (kernel-providers k) name) old)))
     (entry-table-remove! (kernel-providers k) name old)
+    (refresh-cached-services! k)
     (when effective?
       (let* ((next (entry-table-ref (kernel-providers k) name))
              (incoming (and next (entry-value next))))
@@ -576,6 +607,7 @@ prelude: :gerbil/core
       (let (ctx (plugin-record-active rec))
         (when ctx
           (set! (plugin-record-active rec) #f)
+          (refresh-cached-services! k)
           (for-each (cut report-failure! (plugin-name (plugin-record-definition rec)) "deactivating" <>)
                     (call-with-context ctx (lambda () (run-receipt! ctx))))
           (record-event! plugin-deactivated-hook (plugin-record-definition rec)))))
@@ -625,6 +657,7 @@ prelude: :gerbil/core
        (parameterize ((current-context ctx))
          ((plugin-activate (plugin-record-definition rec)) ctx))))
     (set! (plugin-record-active rec) ctx)
+    (refresh-cached-services! k)
     (set! (plugin-record-activated rec) (next-id!))
     (record-event! plugin-activated-hook (plugin-record-definition rec))))
 
@@ -668,7 +701,9 @@ prelude: :gerbil/core
 ;; The activator supplies a stable rank; later declarations win ties.
 ;; Without one, equal ranks break by plugin name, never registration time.
 (def (set-plugin-order! (p : plugin) (rank : :fixnum)) => :void
-  (set! (owner-order-rank (plugin-record-order (plugin-record! (the-kernel) p))) rank))
+  (let (k (the-kernel))
+    (set! (owner-order-rank (plugin-record-order (plugin-record! k p))) rank)
+    (refresh-cached-services! k)))
 
 ;; Turn P on. It activates now if its services are provided, otherwise as
 ;; soon as they are.
@@ -677,7 +712,9 @@ prelude: :gerbil/core
    (lambda ()
      (let* ((k (the-kernel))
             (rec (plugin-record! k p)))
-       (when rank (set! (owner-order-rank (plugin-record-order rec)) rank))
+       (when rank
+         (set! (owner-order-rank (plugin-record-order rec)) rank)
+         (refresh-cached-services! k))
        (for-each (cut remember-service! k <>) (plugin-requires p))
        (unless (plugin-record-active rec)
          (set! (plugin-record-wanted? rec) #t)
