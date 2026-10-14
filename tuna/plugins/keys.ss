@@ -1,7 +1,10 @@
 ;;; Key handling (startup tier): the command table, the global keymap, the
 ;;; input-target stack, key resolution, and the quit key (ADR 3, ADR 8).
 ;;; Keys resolve in the innermost input target's keymap, then in the global
-;;; keymap.
+;;; keymap. So do clicks: under the part kind as a prefix key, then without
+;;; it, each from the most specific event name down (`pointer-event-names`).
+;;; A click does not clear the echo area, so clicking it to read a message
+;;; keeps the message.
 prelude: :gerbil/core
 
 (import :tuna/kernel
@@ -17,7 +20,7 @@ prelude: :gerbil/core
                        (pending       : :list)          ; keys typed so far of a prefix
                        (this-command  :? :symbol)       ; the input session (ADR 8)
                        (last-command  :? :symbol)
-                       (command-event :? key-event))
+                       (command-event :? :t))           ; key-event or pointer-event
   final: #t)
 
 ;; Browser key names with Emacs spellings.
@@ -102,9 +105,9 @@ prelude: :gerbil/core
          (using (c (entry-value best) : command)
            (cons c.name c.procedure)))))
 
-;; A key sequence ended with EVENT and selected the command named NAME, or
-;; #f for none.
-(def (complete-keys! (self : global-keys) (event : key-event) (name :? :symbol)) => :void
+;; A key sequence ended with EVENT, a key or pointer event, and selected
+;; the command named NAME, or #f for none.
+(def (complete-keys! (self : global-keys) (event : :t) (name :? :symbol)) => :void
   (set! self.pending [])
   (set! self.last-command self.this-command)
   (set! self.this-command name)
@@ -134,10 +137,7 @@ prelude: :gerbil/core
          (binding
           (let (name (entry-value binding))
             (complete-keys! self event name)
-            (or (command-task self name)
-                (begin
-                  (message (string-append keys " runs " (symbol->string name) ", which is not defined"))
-                  #f))))
+            (bound-command-task self keys name)))
          ((prefix-of-binding? keymaps keys)
           (set! self.pending typed)
           (message (string-append keys "-"))
@@ -147,12 +147,49 @@ prelude: :gerbil/core
           (message (string-append keys " is undefined"))
           #f)))))))
 
-(defmethod {resolve! global-keys}
-  (lambda (self event) (resolve-key! self event)))
+;; The command NAME of a completed sequence KEYS, as a task, or #f with a
+;; message when no command has that name.
+(def (bound-command-task (self : global-keys) (keys : :string) (name : :symbol)) => (Maybe :pair)
+  (or (command-task self name)
+      (begin
+        (message (string-append keys " runs " (symbol->string name) ", which is not defined"))
+        #f)))
 
-;; The quit key interrupts; every other key event is queued.
+;; A click ends any pending prefix: the sequences it is looked up under
+;; are that prefix, the part kind, and each of its event names ("C-x <tab>
+;; <double-mouse-1>", "C-x <tab> <mouse-1>"), then the same without the
+;; part kind.
+(def (resolve-pointer! (self : global-keys) (event : pointer-event)) => (Maybe :pair)
+  (let* ((keymaps (active-keymaps self))
+         (area (string-append "<" (symbol->string (posn-area (pointer-event-start event))) ">"))
+         (names (map (lambda ((name : :string)) (string-append "<" name ">"))
+                     (pointer-event-names event)))
+         (sequences (map (lambda ((tail : :list)) (string-join (append self.pending tail) " "))
+                         (append (map (lambda (name) [area name]) names)
+                                 (map (lambda (name) [name]) names))))
+         (found (ormap (lambda ((keys : :string))
+                         (let (binding (lookup keymaps keys))
+                           (and binding (cons keys (entry-value binding)))))
+                       sequences)))
+    (if found
+      (begin
+        (complete-keys! self event (cdr found))
+        (bound-command-task self (car found) (cdr found)))
+      (begin
+        (complete-keys! self event #f)
+        (message (string-append (car sequences) " is undefined"))
+        #f))))
+
+(defmethod {resolve! global-keys}
+  (lambda (self event)
+    (if (pointer-event? event)
+      (resolve-pointer! self event)
+      (resolve-key! self event))))
+
+;; The quit key interrupts; every other key or pointer event is queued.
 (defmethod {arrival global-keys}
-  (lambda (self event) (if (equal? (key-description event) quit-key) 'interrupt 'queue)))
+  (lambda (self event)
+    (if (and (key-event? event) (equal? (key-description event) quit-key)) 'interrupt 'queue)))
 
 (defmethod {define-command! global-keys}
   (lambda (self ctx name procedure doc source)

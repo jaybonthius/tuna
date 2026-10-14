@@ -4,9 +4,10 @@ ESBUILD ?= esbuild
 
 all: assets build
 
-assets: web/tuna-keyboard.js
+assets: web/tuna-input.js
 
-web/tuna-keyboard.js: frontend/tuna-keyboard.ts Makefile
+web/tuna-input.js: frontend/tuna-input.ts frontend/input-queue.ts frontend/tuna-keyboard.ts \
+		frontend/tuna-pointer.ts Makefile
 	$(ESBUILD) $< --bundle --external:datastar --format=esm --minify \
 		--platform=browser --target=es2022 --legal-comments=none --outfile=$@
 
@@ -24,7 +25,7 @@ test: build test-frontend demo-check
 	@test "$$(tail -n 1 .gerbil/test.out)" = OK || { echo "make test: Gerbil tests failed" >&2; exit 1; }
 
 test-frontend: assets
-	node --experimental-vm-modules --test tests/keyboard.test.mjs
+	node --experimental-vm-modules --test tests/input.test.mjs
 
 run: all
 	gerbil env tuna --config starter/init.ss

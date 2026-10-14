@@ -11,7 +11,9 @@
 ;;;
 ;;; Every view and node element has a stable id, so the browser's morph
 ;;; keeps its scroll position: a view's is view-V, a node's view-V-node-N,
-;;; since one buffer may show in several views.
+;;; since one buffer may show in several views. Views and status lines are
+;;; parts a click can name (data-part "view:V", "status-line:V"); a status
+;;; line is marked clickable while a click on one has a binding.
 ;;;
 ;;; HTML reuse: the HTML of each node, as drawn in each view, is kept and
 ;;; reused while the node's revision (which a change to it or below it
@@ -28,6 +30,7 @@ prelude: :gerbil/core
 (import (only-in :gerbil/runtime/hash HashTable)
         :std/text/markup/sxml/print
         :tuna/kernel
+        (only-in :tuna/services/keys part-clickable?)
         :tuna/services/settings
         :tuna/services/renderer
         :tuna/services/buffers
@@ -200,6 +203,7 @@ prelude: :gerbil/core
 ;; then its status line unless its buffer turns it off.
 (def (render-view (self : html-renderer) (v : view) (selected? : :boolean) (start : node)) => :list
   (let* ((b (view-showing v))
+         (id (number->string (view-id v)))
          (focus (view-node v))
          (d (make-drawing (view-html-nodes (view-html-for self v start))
                           (node-ancestors focus)
@@ -208,12 +212,16 @@ prelude: :gerbil/core
     (parameterize ((rendering-view v))
       `(section (@ (class "view")
                    (id ,(view-element-id v))
-                   (data-view ,(number->string (view-id v)))
+                   (data-view ,id)
+                   (data-part ,(string-append "view:" id))
                    ,@(if selected? '((data-selected "true")) '()))
          (article (@ (class "buffer") (aria-label ,(buffer-name b)))
                   ,(render-node d start))
          ,@(if (buffer-local-value show-status-line b)
-             [`(p (@ (class "status-line")) ,(status-line-text v selected?))]
+             [`(p (@ (class "status-line")
+                     (data-part ,(string-append "status-line:" id))
+                     ,@(if (part-clickable? 'status-line) '((data-clickable "")) '()))
+                  ,(status-line-text v selected?))]
              [])))))
 
 ;; The screen: the layout drawn from the frame. Views not drawn drop what

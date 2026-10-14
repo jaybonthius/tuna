@@ -201,6 +201,35 @@
          (type! "C-x" "t" "0")
          (check (message-now) => "Cannot close the last view"))))
 
+    (test-case "clicking a tab switches to it; a click on a tab that is gone says so and does nothing"
+      (with-layout
+       (lambda ()
+         ;; Tabs: view 0, and (1 / 2) with 2 focused.
+         (type! "C-x" "t" "2")
+         (split! 1 'below)
+         (select! 2)
+         (let* ((first (on-baton (lambda () (view-id (list-ref (view-list) 0)))))
+                (tabs (elements-where (with-class "tab") (layout-html)))
+                (second-part (attribute (cadr tabs) 'data-part))
+                (second (string->number (substring second-part 4 (string-length second-part)))))
+           (check (attribute (car tabs) 'data-part) => (string-append "tab:" (number->string first)))
+           (check (string-prefix? "tab:" second-part) => #t)
+           (check (map (lambda (tab) (attribute tab 'data-clickable)) tabs) => ["" ""])
+           (click 'tab first)
+           (check (selected-index) => 0)
+           (check (shown) => [[0 #t 'text]])
+           ;; A tab showing a container selects its last-focused view; a
+           ;; double click falls back to the single click.
+           (click 'tab second clicks: 2)
+           (check (selected-index) => 2)
+           (select! 0)
+           (type! "C-x" "t" "0")
+           (check (length (views-state)) => 2)
+           (click 'tab first revision: 41)
+           (check (message-now) => "Stale click: the tab is gone (clicked on screen 41)")
+           (check (selected-index) => 1)
+           (check (shown) => [[0 #f 'text] [1 #t 'text]])))))
+
     (test-case "zooming the frame in and out one level at a time"
       (with-layout
        (lambda ()

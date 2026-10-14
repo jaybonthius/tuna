@@ -8,6 +8,9 @@
   --tuna-digit: #0550ae;
   --tuna-font: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --tuna-prose-font: system-ui, sans-serif;
+  /* Overlays for a clickable part under the pointer, and while pressed. */
+  --tuna-hover: color-mix(in srgb, var(--tuna-foreground) 8%, transparent);
+  --tuna-pressed: color-mix(in srgb, var(--tuna-foreground) 16%, transparent);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -246,4 +249,21 @@ body {
   min-block-size: 1.5em;
   /* Multi-line messages, such as the reload report, keep their lines. */
   white-space: pre-wrap;
+}
+
+/* Parts the server marks clickable (data-clickable): a click on them has a
+   binding. Hover and pressed are an overlay, so the part keeps its own
+   background (a status line's bar, the active tab's). The click itself goes
+   to the server; nothing here changes state. */
+[data-clickable] {
+  cursor: pointer;
+  user-select: none;
+}
+
+[data-clickable]:hover {
+  background-image: linear-gradient(var(--tuna-hover), var(--tuna-hover));
+}
+
+[data-clickable]:active {
+  background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
 }

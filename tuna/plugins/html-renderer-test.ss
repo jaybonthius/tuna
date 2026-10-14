@@ -1,7 +1,8 @@
 ;;; The HTML renderer: nodes, highlights and cursors, element ids, the
-;;; layout drawn from the frame, and HTML reuse.
+;;; parts a click can name, the layout drawn from the frame, and HTML reuse.
 (import :std/test
         :tuna/kernel
+        (only-in :tuna/services/keys keymap-set!)
         :tuna/services/settings
         :tuna/services/renderer
         :tuna/services/buffers
@@ -141,6 +142,29 @@
            (let (again (screen))
              (for-each (lambda (id) (check (and (offset (string-append "id=\"" id "\"") again) #t) => #t))
                        (cons view-id node-ids)))))))
+
+    (test-case "views and status lines are parts a click can name; only bound status lines are clickable"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (let* ((id (number->string (view-id (selected-view))))
+                (view (string-append "data-view=\"" id "\" data-part=\"view:" id "\""))
+                (status-line (string-append "<p class=\"status-line\" data-part=\"status-line:" id "\"")))
+           (let (html (screen))
+             (check (and (offset view html) #t) => #t)
+             (check (and (offset (string-append status-line ">") html) #t) => #t)
+             (check (offset "data-clickable" html) => #f))
+           (defplugin (clicks ctx)
+             "Binds clicks on views and status lines."
+             requires: [input-service]
+             (keymap-set! ctx "<view> <mouse-1>" 'mouse-select-view #f)
+             (keymap-set! ctx "<status-line> <mouse-1>" 'mouse-select-view #f))
+           (activate-plugin! clicks)
+           (let (html (screen))
+             (check (and (offset (string-append status-line " data-clickable=\"\">") html) #t) => #t)
+             ;; A view's click binding is the fallback for anything in it:
+             ;; views, and the text nodes inside them, stay unmarked.
+             (check (and (offset (string-append view " data-selected=\"true\">") html) #t) => #t)
+             (check (offset "data-clickable" (substring html 0 (offset status-line html))) => #f))))))
 
     (test-case "a kind without an HTML renderer shows its text projection"
       (call-with-fresh-kernel renderer-plugins

@@ -1,6 +1,12 @@
 ;;; Web transport (startup tier): the loopback HTTP server, client
 ;;; authentication, the page shell, POST /commands, and one SSE stream per
 ;;; client (ADR 7, ADR 10).
+;;;
+;;; POST /commands takes one input item: a keydown or a pointer item, each
+;;; with the tab's client id and sequence number, validated strictly into a
+;;; key-event or a pointer-event. Each screen carries its revision as
+;;; data-revision on its root element, and a pointer item names the screen
+;;; it was computed on, which must be one this transport sent.
 prelude: :gerbil/core
 
 (import :std/crypto/random
@@ -15,7 +21,7 @@ prelude: :gerbil/core
         :gerbil-datastar/http
         :tuna/kernel
         :tuna/lib/plugin-options
-        (only-in :tuna/services/keys key-event make-key-event)
+        (only-in :tuna/services/keys key-event make-key-event pointer-event make-pointer-event make-posn)
         :tuna/services/renderer
         ./web/embed)
 (export web-transport-plugin
@@ -68,13 +74,30 @@ prelude: :gerbil/core
       (Renderer-render-screen (Renderer renderer))
       "<main id=\"screen\"><p>No renderer is active.</p></main>")))
 
+;; SCREEN with REVISION as data-revision on its root element, so that
+;; pointer items can name the screen they were computed on (ADR 7).
+(def (stamp-revision (screen : :string) (revision : :fixnum)) => :string
+  (let* ((size (string-length screen))
+         (end (let lp ((i 1))
+                (if (and (fx< i size)
+                         (not (memv (string-ref screen i) '(#\space #\tab #\newline #\> #\/))))
+                  (lp (fx1+ i))
+                  i))))
+    (if (and (fx> size 1) (char=? (string-ref screen 0) #\<))
+      (string-append (substring screen 0 end)
+                     " data-revision=\"" (number->string revision) "\""
+                     (substring screen end size))
+      screen)))
+
+;; Only the editor loop redisplays, so revisions are assigned in order.
 (defmethod {redisplay! web-transport}
   (lambda (self)
     (using (self : web-transport)
-      (let (screen (render-screen))
+      (let* ((revision (fx1+ (do-with-lock self.mutex self.revision)))
+             (screen (stamp-revision (render-screen) revision)))
         (do-with-lock self.mutex
           (set! self.screen screen)
-          (set! self.revision (fx1+ self.revision))
+          (set! self.revision revision)
           (condition-variable-broadcast! self.changed))))))
 
 ;; The newest screen as (revision . html) once it is newer than SENT;
@@ -109,7 +132,13 @@ prelude: :gerbil/core
   (string-append
    "<!doctype html>"
    "<html lang=\"en\" data-init=\"@get('/screen')\""
-   " data-on:keydown__document__capture=\"@tunaKeyboard()\">"
+   " data-on:keydown__document__capture=\"@tunaKeyboard()\""
+   ;; One pointer action for clicks on release (click, auxclick), and for
+   ;; presses on chrome that must not move focus (mousedown, contextmenu).
+   " data-on:mousedown__document=\"@tunaPointer()\""
+   " data-on:contextmenu__document=\"@tunaPointer()\""
+   " data-on:click__document=\"@tunaPointer()\""
+   " data-on:auxclick__document=\"@tunaPointer()\">"
    (html-string
     '(head
       (meta (@ (charset "utf-8")))
@@ -118,7 +147,7 @@ prelude: :gerbil/core
       (link (@ (rel "stylesheet") (href "/static/tuna.css")))
       (script (@ (type "importmap"))
               "{\"imports\":{\"datastar\":\"/static/datastar-v1.0.2.js\"}}")
-      (script (@ (type "module") (src "/static/tuna-keyboard.js")))))
+      (script (@ (type "module") (src "/static/tuna-input.js")))))
    ;; The renderer's HTML is already escaped.
    "<body>" screen "</body></html>"))
 
@@ -265,7 +294,10 @@ prelude: :gerbil/core
    ((not (json-content-type? request))
     (respond-text response Unsupported-Media-Type "Expected JSON."))
    (else
-    (let (event (with-catch (lambda (e) #f) (lambda () (parse-key-event (read-signals request)))))
+    (let (event (with-catch (lambda (e) #f)
+                            (lambda ()
+                              (parse-input-item (read-signals request)
+                                                (do-with-lock self.mutex self.revision)))))
       (if event
         (do-with-lock self.admission
           ;; Acknowledge, then enqueue, in arrival order across request threads.
@@ -303,6 +335,66 @@ prelude: :gerbil/core
               (andmap boolean? flags)
               (apply make-key-event client sequence key code location flags)))))
 
+;; Browser buttons (0 left, 1 middle, 2 right) as Emacs numbers them.
+(def browser-buttons '((0 . 1) (1 . 2) (2 . 3)))
+
+;; A part name from data-part, "KIND:ID" ("tab:30", "status-line:12"), as
+;; (kind . id), or #f.
+(def (parse-part (value : :t)) => (Maybe :pair)
+  (and (string? value)
+       (fx<= (string-length value) 64)
+       (let (colon (string-index value #\:))
+         (and colon
+              (let ((kind (substring value 0 colon))
+                    (digits (substring value (fx1+ colon) (string-length value))))
+                (and (fx<= 1 (string-length kind) 32)
+                     (char-alphabetic? (string-ref kind 0))
+                     (andmap (lambda ((c : :char)) (or (char<=? #\a c #\z) (char=? c #\-)))
+                             (string->list kind))
+                     (fx<= 1 (string-length digits) 15)
+                     (andmap char-numeric? (string->list digits))
+                     (cons (string->symbol kind) (string->number digits))))))))
+
+;; A validated pointer item computed on a screen no newer than
+;; NEWEST-REVISION, or #f.
+(def (parse-pointer-event (value : :t) (newest-revision : :fixnum)) => (Maybe pointer-event)
+  (and (hash-table? value)
+       (eqv? (hash-get value "version") 1)
+       (equal? (hash-get value "type") "pointer")
+       (equal? (hash-get value "kind") "click")
+       (let ((client (hash-get value "clientId"))
+             (sequence (hash-get value "sequence"))
+             (revision (hash-get value "revision"))
+             (button (assv (hash-get value "button") browser-buttons))
+             (clicks (hash-get value "clicks"))
+             (modifiers (hash-get value "modifiers"))
+             (part (parse-part (hash-get value "target")))
+             (node (hash-ref value "node" (void))))
+         (and (client-id? client)
+              (fixnum? sequence) (fx>= sequence 0)
+              (fixnum? revision) (fx<= 0 revision newest-revision)
+              button
+              (fixnum? clicks) (fx<= 1 clicks 255)
+              (hash-table? modifiers)
+              part
+              (or (void? node) (and (fixnum? node) (fx>= node 0)))
+              (let (flags (map (lambda ((name : :string)) (hash-ref modifiers name 'missing))
+                               '("alt" "ctrl" "meta" "shift")))
+                (and (andmap boolean? flags)
+                     (apply make-pointer-event client sequence (cdr button) clicks
+                            (append flags
+                                    [(make-posn (car part) (cdr part)
+                                                (and (fixnum? node) node) revision)]))))))))
+
+;; A validated keydown or pointer item, or #f.
+(def (parse-input-item (value : :t) (newest-revision : :fixnum)) => :t
+  (and (hash-table? value)
+       (let (type (hash-get value "type"))
+         (cond
+          ((equal? type "keydown") (parse-key-event value))
+          ((equal? type "pointer") (parse-pointer-event value newest-revision))
+          (else #f)))))
+
 ;;; The plugin
 
 (def (stop-web-transport! (self : web-transport)) => :void
@@ -326,7 +418,7 @@ prelude: :gerbil/core
                               admission: (make-mutex 'tuna-admission)
                               mutex: (make-mutex 'tuna-screen)
                               changed: (make-condition-variable 'tuna-screen)
-                              screen: "<main id=\"screen\"></main>"
+                              screen: (stamp-revision "<main id=\"screen\"></main>" 0)
                               revision: 0
                               stopped?: #f
                               server: #f))

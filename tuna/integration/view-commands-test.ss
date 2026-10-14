@@ -149,6 +149,40 @@
          (type! "C-x" "r" "j" "o" "n" "e" "RET")
          (check (message-now) => "No frame mark named one"))))
 
+    (test-case "clicking a view or its status line selects it; the bar's views refuse; a gone view says so"
+      (with-commands
+       (lambda ()
+         (type! "a" "b" "C-x" "3")
+         (let ((left (on-baton (lambda () (view-id (car (own-views))))))
+               (right (on-baton (lambda () (view-id (cadr (own-views))))))
+               (echo-area (on-baton (lambda ()
+                                      (view-id (find (lambda (v)
+                                                       (equal? (buffer-name (view-showing v)) " *Echo Area*"))
+                                                     (view-list)))))))
+           (click 'view right)
+           (check (cadr (views-state)) => 1)
+           ;; Keys typed after the click go to the view it selected.
+           (type! "C-a")
+           (check (views-state) => [[["*scratch*" 3] ["*scratch*" 1]] 1])
+           (click 'status-line left)
+           (check (cadr (views-state)) => 0)
+           (click 'view right clicks: 2)
+           (check (cadr (views-state)) => 1)
+           ;; The echo area's view is skipped by other-view: a click
+           ;; leaves the selection, and the message, alone.
+           (on-baton (lambda () (message "still here")))
+           (click 'view echo-area)
+           (check (cadr (views-state)) => 1)
+           (check (message-now) => "still here")
+           (type! "C-x" "0")
+           (click 'view right revision: 7)
+           (check (message-now) => "Stale click: the view is gone (clicked on screen 7)")
+           (check (views-state) => [[["*scratch*" 3]] 0])
+           ;; The binding uses only the layout contract: it works under the toy layout.
+           (type! "C-c" "w")
+           (click 'view (on-baton (lambda () (view-id (cadr (own-views))))))
+           (check (cadr (views-state)) => 1)))))
+
     (test-case "under the toy layout the commands fall back as the contract allows"
       (with-commands
        (lambda ()

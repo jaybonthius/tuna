@@ -6,6 +6,10 @@
 ;;; that cannot do one of these says so or falls back as the contract
 ;;; allows. Commands that need one layout's own arrangement (tabs, zooming
 ;;; one level) come with that layout plugin.
+;;;
+;;; Clicking a view or its status line selects that view
+;;; (`mouse-select-view`, Emacs `mouse-select-window`), unless its buffer
+;;; is skipped by `other-view` (`no-other-view`: the bar's views).
 (import :tuna/kernel
         :tuna/services/keys
         :tuna/services/buffers
@@ -19,9 +23,23 @@
       (select-view v)
       (message (string-append "No view " where)))))
 
+;; Select the view the click being handled names, unless its buffer is
+;; skipped by other-view.
+(def (select-clicked-view) => :void
+  (let (p (event-start (last-command-event)))
+    (cond
+     ((not p) (message "mouse-select-view runs only from a click"))
+     ((posn-view p)
+      => (lambda ((v : view))
+           (unless (view-skipped? v)
+             (select-view v))))
+     (else (report-stale-click p)))))
+
 (defplugin view-commands-plugin
-  "View commands for any layout: C-x o, C-x 0 to 3, S-arrows, frames (C-x n), frame marks (C-x r)."
+  "View commands for any layout: C-x o, C-x 0 to 3, S-arrows, frames (C-x n), frame marks (C-x r), clicking a view."
   requires: [input-service buffers-service layout-service]
+  (defcommand (mouse-select-view) "Select the view clicked on, or the view whose status line was clicked."
+    (select-clicked-view))
   (defcommand (other-view) "Select the next view, cyclically."
     (select-view (next-view (selected-view))))
   (defcommand (split-view-below) "Split the selected view: a new view of its buffer below it."
@@ -75,4 +93,6 @@
   (keymap-set "S-<down>" 'select-view-down)
   (keymap-set "C-x r w" 'set-frame-mark)
   (keymap-set "C-x r j" 'jump-to-frame-mark)
-  (keymap-set "C-x r l" 'list-frame-marks))
+  (keymap-set "C-x r l" 'list-frame-marks)
+  (keymap-set "<view> <mouse-1>" 'mouse-select-view)
+  (keymap-set "<status-line> <mouse-1>" 'mouse-select-view))
