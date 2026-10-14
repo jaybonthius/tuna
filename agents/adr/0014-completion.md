@@ -28,3 +28,7 @@ The owner wants M-x with a Vertico, Orderless, Marginalia and Consult experience
 - **Strings with properties (Emacs).** Rejected: hidden data and disambiguation tricks for every source.
 - **Advice-based plugins mirroring the packages.** Rejected: the owner wants proper extension points, and advice hides who changes what.
 - **Filtering as jobs from the start.** Deferred: the list could arrive a redraw after the keystroke; the pure pipeline keeps it a later switch.
+
+## Amendment (2026-10-13)
+
+The command-loop hooks live in the commands contract, not keys (see ADR 8's amendment); the keys contract no longer re-exports commands. The vertical list uses only the session and prompt handle it is given.

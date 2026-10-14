@@ -44,3 +44,6 @@ Emacs commands compose through shared command-loop state: `this-command` and `la
 - Buttons (`button.el`): a node with a label and an action, drawn as a real `<button>`; one shared keymap owned by the buttons plugin. Only a click pushes a button until keyboard focus can rest on rich nodes.
 - `data-clickable` follows real node bindings; a keymap generation number joins the HTML-reuse key.
 
+## Command loop hooks move to commands (amendment, 2026-10-13)
+
+`pre-command-hook`, `post-command-hook`, `this-command` and `last-command` belong to the commands contract (`tuna/services/commands.ss`), not the input (keys) contract: they are about running commands. The keys plugin resolves a key or click to a command name and asks the commands contract to run it; the commands plugin runs the hooks around every command, including `call-command`. Dependencies point one way: keys depends on commands, commands on nothing.
