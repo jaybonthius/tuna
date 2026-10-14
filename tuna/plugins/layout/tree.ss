@@ -13,6 +13,12 @@
 ;;; view and whether the view is dedicated to its buffer. Every part has a
 ;;; stable id: a container its own, a leaf its view's.
 ;;;
+;;; A container left with no children goes. One that a removal leaves
+;;; with a single child is replaced by it unless its kind keeps one child;
+;;; one made with a single child (by wrapping a part, or by changing a
+;;; tabbed container's kind) keeps it, so a part can be wrapped in a fit
+;;; container before anything is put beside it.
+;;;
 ;;; Operations that depend on what a kind does take KIND-OF, a procedure
 ;;; from a kind's name to its `layout-kind`.
 prelude: :gerbil/core
@@ -39,6 +45,8 @@ prelude: :gerbil/core
         remove-part
         update-link
         split-part
+        wrap-part
+        reshape-container
         insert-link
         move-part
         inside-locked?
@@ -79,7 +87,7 @@ prelude: :gerbil/core
 ;; What a container kind does. SPATIAL? kinds show every child side by
 ;; side along their direction, so moving to a neighbor crosses them; other
 ;; kinds show only the focused child. A kind that does not KEEP-ONE-CHILD?
-;; is replaced by its child when only one is left. RENDER draws a
+;; is replaced by its child when a removal leaves only one. RENDER draws a
 ;; container of the kind for the `html` target; see the layout plugin.
 (defstruct layout-kind ((name            : :symbol)
                            (doc             : :string)
@@ -241,7 +249,7 @@ prelude: :gerbil/core
 ;; C with its child OLD-ID replaced by NEW, or removed when NEW is #f. A
 ;; removed focused child passes the focus to its previous sibling (or the
 ;; next). Returns the new container, #f if it has no children left, or its
-;; only child if its kind does not keep one.
+;; only child if the removal left one and its kind does not keep one.
 (def (replace-child (c : container) (old-id : :fixnum) (new : :t) (kind-of : :procedure)) => :t
   (let* ((links (container-links c))
          (index (link-index links old-id))
@@ -255,7 +263,8 @@ prelude: :gerbil/core
                  (else (part-id (link-part (list-ref links (fxmax 0 (fx1- index)))))))))
     (cond
      ((null? links) #f)
-     ((and (null? (cdr links))
+     ((and (not new)
+           (null? (cdr links))
            (not (layout-kind-keep-one-child? (kind-of (container-kind c)))))
       (link-part (car links)))
      (else (with-links c links focus)))))
@@ -326,6 +335,25 @@ prelude: :gerbil/core
                                     id)
                     kind-of))))
 
+;; ROOT with the part ID inside a new container of KIND and DIRECTION,
+;; with id CONTAINER-ID, holding only that part: the new container takes
+;; the part's link (size, pin and lock), and the part gets a link of size
+;; 1 with no flags. Wrapping ROOT makes the new container the root.
+(def (wrap-part (root : :t) (id : :fixnum) (kind : :symbol) (direction : :symbol)
+                (container-id : :fixnum))
+  => container
+  (let (path (or (part-path root id) (error "No part with id" id)))
+    (substitute-path path (make-container container-id kind direction [(new-link 1 (last path))] id))))
+
+;; ROOT with the container ID of KIND and DIRECTION, keeping its children,
+;; their links and its focus memory.
+(def (reshape-container (root : :t) (id : :fixnum) (kind : :symbol) (direction : :symbol)) => :t
+  (let* ((path (or (part-path root id) (error "No part with id" id)))
+         (c (last path)))
+    (unless (container? c)
+      (error "No container with id" id))
+    (substitute-path path (make-container id kind direction (container-links c) (container-focus c)))))
+
 ;; ROOT with NEW-LINK in the container PARENT-ID, at WHERE: `first`,
 ;; `last`, (after . ID) or (before . ID) for a child's id.
 (def (insert-link (root : :t) (parent-id : :fixnum) (where : :t) (new-link : link)) => :t
@@ -345,20 +373,22 @@ prelude: :gerbil/core
                        (append (take links i) [new-link] (drop links i)))))))
       (substitute-path path (with-links parent links (container-focus parent))))))
 
-;; P with every container left empty removed and every one left with one
-;; child replaced by it as its kind says; a focus on a child that changed
-;; follows it, or goes to the first child. #f when nothing is left.
-(def (normalize (p : :t) (kind-of : :procedure)) => :t
+;; P with every container left empty removed, and every one left with one
+;; child replaced by it as its kind says: one that lost children here, or
+;; the container SHRUNK-ID, which lost one before. A focus on a child that
+;; changed follows it, or goes to the first child. #f when nothing is left.
+(def (normalize (p : :t) (shrunk-id : :fixnum) (kind-of : :procedure)) => :t
   (if (leaf? p)
     p
     (let* ((links (container-links p))
            (kept (filter-map (lambda ((l : link))
-                               (let (q (normalize l.part kind-of))
+                               (let (q (normalize l.part shrunk-id kind-of))
                                  (and q (if (eq? q l.part) l (link-with-part l q)))))
                              links)))
       (cond
        ((null? kept) #f)
        ((and (null? (cdr kept))
+             (or (pair? (cdr links)) (fx= (container-id p) shrunk-id))
              (not (layout-kind-keep-one-child? (kind-of (container-kind p)))))
         (link-part (car kept)))
        ((and (fx= (length kept) (length links)) (andmap eq? kept links)) p)
@@ -406,7 +436,7 @@ prelude: :gerbil/core
                                                             (remq moving links)
                                                             (container-focus parent))))
                   (normalize (insert-link detached (car destination) (cdr destination) moving)
-                             kind-of)))))))
+                             (container-id parent) kind-of)))))))
 
 ;; Whether the link to the part ID, or one above it, is locked.
 (def (inside-locked? (root : :t) (id : :fixnum)) => :boolean

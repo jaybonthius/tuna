@@ -17,9 +17,12 @@
 ;;; target to the top draws its child on the way and its pinned children.
 ;;; The views drawn are the visible ones; the selected view is always one
 ;;; of them. The selected part is the selected view or one of its
-;;; containers (as i3's "focus parent"); pinning, unpinning and moving act
-;;; on it. Locked views belong to plugins (`add-locked-view!`): the user
-;;; cannot unpin or delete them, and they close with their buffers.
+;;; containers (as i3's "focus parent"); pinning, unpinning, moving and
+;;; wrapping in a new container act on it, and changing a container's kind
+;;; or direction acts on it or, for a view, on the container around it.
+;;; Locked views belong to plugins (`add-locked-view!`): the user cannot
+;;; unpin or delete them, nor wrap or reshape them or a part holding them,
+;;; and they close with their buffers.
 ;;;
 ;;; The plugin adapts to a new buffers provider instead of restarting: it
 ;;; re-points its views by buffer name and node id, which the buffers
@@ -591,7 +594,7 @@ prelude: :gerbil/core
               (set-view-point! v position)
               (hash-put! ids id (view-id v))
               (make-leaf v dedicated?)))))
-    (['container (? fixnum? id) (? symbol? kind) (? symbol? direction) (? fixnum? focus) (? list? links)]
+    (['container (? fixnum? id) (? symbol? kind) (? symbol? direction) (? fixnum? focus) (? list? entries)]
      (and (memq direction '(horizontal vertical))
           (let* ((new-id (fresh-id! ids id))
                  (links (filter-map (lambda (entry)
@@ -602,10 +605,13 @@ prelude: :gerbil/core
                                                              (and (memq 'pinned flags) #t)
                                                              (and (memq 'locked flags) #t)))))
                                         (else #f)))
-                                    links)))
+                                    entries)))
+            ;; As in the tree: a container left with one child by parts
+            ;; that were skipped collapses; one saved with one child stays.
             (cond
              ((null? links) #f)
              ((and (null? (cdr links))
+                   (pair? (cdr entries))
                    (not (layout-kind-keep-one-child? (kind-of kind))))
               (link-part (car links)))
              (else
@@ -778,8 +784,9 @@ prelude: :gerbil/core
 (def (describe-part (p : :t)) => :string
   (if (leaf? p)
     (string-append "the view of " (buffer-name (view-showing (leaf-view p))))
-    (string-append "a " (symbol->string (container-kind p)) " " (symbol->string (container-direction p))
-                   " container of " (number->string (length (part-leaves p))) " views")))
+    (let (count (length (part-leaves p)))
+      (string-append "a " (symbol->string (container-kind p)) " " (symbol->string (container-direction p))
+                     " container of " (number->string count) (if (fx= count 1) " view" " views")))))
 
 ;; Select the selected part's container (STEP 1) or the part below it on
 ;; the way to the selected view (STEP -1).
@@ -821,6 +828,55 @@ prelude: :gerbil/core
 (def (check-effective! (self : tree-layout)) => :void
   (unless (effective? self)
     (error "This command needs the default layout, which another layout outranks")))
+
+;;; Commands: wrapping parts and reshaping containers
+
+;; Why the user may not wrap or reshape the part P, or #f. A locked part
+;; keeps the place and shape its plugin gave it: wrapping it, or making
+;; the container holding it tabbed or turning it, could hide or misplace
+;; it (the bar holding the minibuffer), so neither a part that is locked or
+;; inside a locked part nor a part holding one may change this way.
+(def (rearranging-refusal (self : tree-layout) (p : :t)) => (Maybe :string)
+  (cond
+   ((inside-locked? self.root (part-id p)) "Locked: the plugin that owns it arranges it")
+   ((holds-locked? p) "It holds a locked part, which the plugin that owns it arranges")
+   (else #f)))
+
+;; Wrap the selected part in a new container of KIND and DIRECTION, which
+;; takes its link (size and pin). The selected view and the selected part
+;; stay selected; wrapping the whole layout makes a new root.
+(def (wrap-selected-part! (self : tree-layout) (kind : :symbol) (direction : :symbol)) => :void
+  (let* ((p (selected-part self))
+         (refusal (rearranging-refusal self p)))
+    (if refusal
+      (message refusal)
+      (let (id (next-id!))
+        (commit! self (wrap-part self.root (part-id p) kind direction id))
+        (message (string-append "Wrapped " (describe-part p) " in "
+                                (describe-part (find-part self.root id))))))))
+
+;; The container the kind and direction commands act on: the selected
+;; part, or the container around it when it is a view; #f for a view that
+;; is the whole layout.
+(def (selected-container (self : tree-layout)) => (Maybe container)
+  (let (p (selected-part self))
+    (if (container? p) p (parent-container self.root (part-id p)))))
+
+;; Change the selected container's kind (KIND? true: fit becomes tabbed,
+;; any other kind fit) or its direction, keeping its children, their links
+;; and its focus memory.
+(def (reshape-selected-container! (self : tree-layout) (kind? : :boolean)) => :void
+  (let (c (selected-container self))
+    (if (not c)
+      (message "The selected view is in no container")
+      (using (c : container)
+        (let (refusal (rearranging-refusal self c))
+          (if refusal
+            (message refusal)
+            (let ((kind (cond ((not kind?) c.kind) ((eq? c.kind 'fit) 'tabbed) (else 'fit)))
+                  (direction (cond (kind? c.direction) ((eq? c.direction 'horizontal) 'vertical) (else 'horizontal))))
+              (commit! self (reshape-container self.root c.id kind direction))
+              (message (string-append "Now " (describe-part (find-part self.root c.id)))))))))))
 
 ;; The view nearest V for which MATCH? holds: V, or else, walking up from
 ;; V in the drawn tree, the first visible one in a pinned child beside the
@@ -982,6 +1038,21 @@ prelude: :gerbil/core
       (defcommand (move-part-down) "Move the selected part down: past its neighbor, into it, or out of its container."
         (check-effective! self)
         (move-selected-part! self 'down))
+      (defcommand (wrap-part-tabbed) "Wrap the selected part in a new tabbed container, as its only tab."
+        (check-effective! self)
+        (wrap-selected-part! self 'tabbed 'horizontal))
+      (defcommand (wrap-part-vertical) "Wrap the selected part in a new fit container that lays out top to bottom."
+        (check-effective! self)
+        (wrap-selected-part! self 'fit 'vertical))
+      (defcommand (wrap-part-horizontal) "Wrap the selected part in a new fit container that lays out left to right."
+        (check-effective! self)
+        (wrap-selected-part! self 'fit 'horizontal))
+      (defcommand (toggle-container-kind) "Make the selected container, or the selected view's, tabbed if it is fit, else fit."
+        (check-effective! self)
+        (reshape-selected-container! self #t))
+      (defcommand (toggle-container-direction) "Turn the selected container, or the selected view's, between horizontal and vertical."
+        (check-effective! self)
+        (reshape-selected-container! self #f))
       (keymap-set "C-x t 2" 'tab-new)
       (keymap-set "C-x t o" 'tab-next)
       (keymap-set "C-x t O" 'tab-previous)
@@ -997,4 +1068,9 @@ prelude: :gerbil/core
       (keymap-set "C-x w <right>" 'move-part-right)
       (keymap-set "C-x w <up>" 'move-part-up)
       (keymap-set "C-x w <down>" 'move-part-down)
+      (keymap-set "C-x w t" 'wrap-part-tabbed)
+      (keymap-set "C-x w 2" 'wrap-part-vertical)
+      (keymap-set "C-x w 3" 'wrap-part-horizontal)
+      (keymap-set "C-x w k" 'toggle-container-kind)
+      (keymap-set "C-x w d" 'toggle-container-direction)
       (context-provide! ctx layout-service self))))
