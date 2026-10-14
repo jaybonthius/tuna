@@ -41,7 +41,7 @@ How the server learns layout facts from the browser (event-attached facts, measu
 
 ## Later, roughly in order
 
-1. Commands, prefix keymaps, `M-x`, minibuffer completion, echo area.
+1. *Done (2026-10-13): commands contract, `M-x`, completion ([brief](briefs/2026-10-completion.md)).* Still to do here: prefix-key help (which-key style), Consult-style sources and preview, Embark-style actions.
 2. Files: find-file, save, revert, autosave; many buffers; buffer switching; large-file viewport.
 3. Windows: the window contract and the default layout-tree window manager ([desired design](ideas/window-management.md)), starting with a brief; `display-buffer`-style rules, window configurations, mode line; major and minor modes as plugins.
 4. Real syntax highlighting and language-server integration as jobs and subprocesses.
