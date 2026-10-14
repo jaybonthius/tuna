@@ -54,6 +54,8 @@
     "tuna/plugins/completion-engine"
     "tuna/plugins/completion-vertical"
     "tuna/plugins/extended-command"
+    "tuna/plugins/orderless"
+    "tuna/plugins/command-annotations"
     "tuna/plugins/view-commands"
     "tuna/config-blocks"
     "tuna/plugins/web/embed"

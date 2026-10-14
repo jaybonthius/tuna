@@ -39,6 +39,8 @@ prelude: :gerbil/core
         (only-in :tuna/plugins/completion-engine)
         (only-in :tuna/plugins/completion-vertical)
         (only-in :tuna/plugins/extended-command)
+        (only-in :tuna/plugins/orderless)
+        (only-in :tuna/plugins/command-annotations)
         (only-in :tuna/plugins/view-commands)
         (only-in :tuna/plugins/reload-config))
 (export main)

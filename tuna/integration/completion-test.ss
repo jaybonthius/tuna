@@ -8,6 +8,7 @@ prelude: :gerbil/core
         :tuna/plugins/settings :tuna/plugins/buffers :tuna/plugins/layout
         :tuna/plugins/basic-editing :tuna/plugins/minibuffer :tuna/plugins/html-renderer
         :tuna/plugins/completion-engine :tuna/plugins/completion-vertical :tuna/plugins/extended-command
+        :tuna/plugins/orderless :tuna/plugins/command-annotations
         "../test-support/kernel" "../test-support/keys" "../test-support/session"
         "../test-support/string-input" "../test-support/toy-completion-ui")
 (export completion-test)
@@ -46,7 +47,7 @@ prelude: :gerbil/core
   "Reads, commands and a redraw observer for completion integration tests."
   requires: [input-service completion-service minibuffer-service]
   (context-provide! ctx display-service (completion-display))
-  (define-command ctx (test-alpha) "An alpha action." (set! results (cons 'alpha results)))
+  (define-command ctx (test-alpha) "An alpha action.\nMore details on the next line." (set! results (cons 'alpha results)))
   (define-command ctx (test-beta) "A beta action." (set! results (cons 'beta results)))
   (context-define-command! ctx 'test-hidden void visible?: (lambda (c origin) #f))
   (keymap-set "C-c a" 'test-alpha)
@@ -80,6 +81,22 @@ prelude: :gerbil/core
       (lambda (input) (lambda (text) (and (equal? text "beta") []))) "Only beta."))
   (context-set-setting! ctx completion-category-overrides '((test only-beta))))
 
+(defplugin (orderless-default ctx)
+  "Prefer Orderless, retaining substring if its plugin is removed."
+  requires: [settings-service]
+  (context-set-setting! ctx completion-styles '(orderless substring)))
+
+(defplugin (origin-bindings ctx)
+  "A local binding at the origin focus, not on the minibuffer."
+  requires: [input-service buffers-service]
+  (let* ((focus (or (view-node (selected-view)) (buffer-root (current-buffer))))
+         (before (node-keymap focus))
+         (map (new-keymap)))
+    (set-node-keymap! focus map)
+    (context-defer! ctx (lambda () (set-node-keymap! focus before)))
+    (keymap-set-in ctx map "C-a" 'test-alpha)
+    (keymap-set-in ctx map "C-c a" 'test-beta)))
+
 (def completion-engine-plugins
   [commands-plugin keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin no-session-plugin
    buffers-plugin layout-plugin basic-editing-plugin minibuffer-plugin html-renderer-plugin
@@ -94,6 +111,70 @@ prelude: :gerbil/core
 
 (def completion-test
   (test-suite "completion integration"
+    (test-case "Orderless M-x highlights every component and command rows show key and first doc line"
+      (run-completion completion-vertical-plugin
+        (lambda ()
+          (on-editor (lambda () (activate-plugin! orderless-default) (activate-plugin! orderless-plugin)
+                                (activate-plugin! annotations-plugin) (activate-plugin! origin-bindings)))
+          (type! "M-x" "a" "l" "p" "h" "a" "SPC" "t" "e" "s" "t")
+          (check (on-editor texts) => ["test-alpha"])
+          (check (on-editor (lambda ()
+            (let (fields (node-attribute (car (row-nodes)) 'annotations))
+              (map (lambda ((field : annotation-field)) [(annotation-field-class field) (annotation-field-text field)])
+                   fields)))) => [['key "C-a"] ['doc "An alpha action."]])
+          (check (on-editor (lambda () (contains? (html) "<mark>test</mark>-<mark>alpha</mark>"))) => #t)
+          (check (on-editor (lambda () (contains? (html) "completion-doc"))) => #t)
+          (check (on-editor (lambda () (contains? (html) "More details"))) => #f)
+          (type! "RET")
+          (check (on-editor session) => #f)
+          (check results => ['alpha]))))
+    (test-case "removing annotations restores M-x key-only fallback; removing Orderless restores substring"
+      (run-completion completion-vertical-plugin
+        (lambda ()
+          (on-editor (lambda () (activate-plugin! orderless-default) (activate-plugin! orderless-plugin)
+                                (activate-plugin! annotations-plugin)))
+          (type! "M-x" "a" "l" "p" "h" "a")
+          (check (on-editor (lambda () (contains? (html) "An alpha action."))) => #t)
+          (type! "C-g")
+          (on-editor (lambda () (deactivate-plugin! annotations-plugin)))
+          (type! "M-x" "a" "l" "p" "h" "a" "SPC" "t" "e" "s" "t")
+          (check (on-editor texts) => ["test-alpha"])
+          (check (on-editor (lambda ()
+            (map annotation-field-class (node-attribute (car (row-nodes)) 'annotations)))) => ['key])
+          (check (on-editor (lambda () (contains? (html) "C-c a"))) => #t)
+          (type! "RET")
+          (check (on-editor session) => #f)
+          (check results => ['alpha])
+          (on-editor (lambda () (deactivate-plugin! orderless-plugin)))
+          (type! "M-x" "a" "l" "p" "h" "a" "SPC" "t" "e" "s" "t")
+          (check (on-editor texts) => [])
+          (type! "C-g" "M-x" "a" "l" "p" "h" "a" "RET")
+          (check (on-editor session) => #f)
+          (check results => ['alpha 'alpha]))))
+    (test-case "Orderless and annotations remain optional with no list: plain M-x runs an exact name"
+      (run-completion #f
+        (lambda ()
+          (on-editor (lambda () (activate-plugin! orderless-default) (activate-plugin! orderless-plugin)
+                                (activate-plugin! annotations-plugin)))
+          (type! "M-x" "t" "e" "s" "t" "-" "a" "l" "p" "h" "a")
+          (check (on-editor row-texts) => [])
+          (check (on-editor (lambda () (contains? (html) "completion-doc"))) => #f)
+          (type! "RET")
+          (check (on-editor session) => #f)
+          (check results => ['alpha])
+          (check (on-editor session) => #f))))
+    (test-case "annotators for unrelated categories are never called"
+      (run-completion completion-vertical-plugin
+        (lambda ()
+          (on-editor (lambda () (activate-plugin! test-annotator) (activate-plugin! annotations-plugin)
+            (set! reads-table (make-completion-table category: 'unknown
+              items: [(make-candidate text: "test-alpha" value: 'test-alpha key: 'test-alpha)]))))
+          (type! "C-c" "f")
+          (check annotations => [])
+          (check (on-editor (lambda () (node-attribute (car (row-nodes)) 'annotations))) => [])
+          (type! "RET")
+          (check (on-editor session) => #f)
+          (check results => ['test-alpha]))))
     (test-case "M-x: visibility, same-redraw matches, navigate, run and recency history"
       (run-completion completion-vertical-plugin
         (lambda ()
