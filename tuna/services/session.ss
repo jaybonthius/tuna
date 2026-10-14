@@ -49,8 +49,6 @@ prelude: :gerbil/core
   (new-service 'session is-Session? tier: 'startup
                doc: "Saves and restores session slots as plain data."))
 
-
-
 (def (context-add-session-slot! (ctx : context)
                                 (name : :symbol)
                                 version:  (version  : :fixnum)
@@ -58,29 +56,18 @@ prelude: :gerbil/core
                                 restore:  (restore  : :procedure)
                                 priority: (priority : :fixnum := 0))
   => :void
-  (:- (call-with-service-provider session-service
-    (lambda (implementation)
-      (let (provider (Session (or implementation (error "No plugin provides" 'session))))
-        (Session-add-session-slot! provider ctx
-                                   (make-session-slot name version (context-bind ctx save) (context-bind ctx restore)) priority)))) :void))
+  (:- (with-service-provider (provider session-service Session)
+    (Session-add-session-slot! provider ctx
+                               (make-session-slot name version (context-bind ctx save) (context-bind ctx restore)) priority)) :void))
 
 (def (save-session) => :void
-  (:- (call-with-service-provider session-service
-    (lambda (implementation)
-      (let (provider (Session (or implementation (error "No plugin provides" 'session))))
-        (Session-save-session! provider)))) :void))
+  (:- (with-service-provider (provider session-service Session) (Session-save-session! provider)) :void))
 
 (def (restore-session) => :void
-  (:- (call-with-service-provider session-service
-    (lambda (implementation)
-      (let (provider (Session (or implementation (error "No plugin provides" 'session))))
-        (Session-restore-session! provider)))) :void))
+  (:- (with-service-provider (provider session-service Session) (Session-restore-session! provider)) :void))
 
 (def (state-directory) => :string
-  (:- (call-with-service-provider session-service
-    (lambda (implementation)
-      (let (provider (Session (or implementation (error "No plugin provides" 'session))))
-        (Session-state-directory provider)))) :string))
+  (:- (with-service-provider (provider session-service Session) (Session-state-directory provider)) :string))
 
 ;; Whether VALUE is plain data that `write` and `read` round-trip: lists,
 ;; vectors, strings, symbols, numbers, characters, and booleans, without

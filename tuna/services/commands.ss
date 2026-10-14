@@ -32,19 +32,15 @@ prelude: :gerbil/core
 (def commands-service
   (new-service 'commands is-Commands? tier: 'live doc: "Named commands and their activation identity."))
 
-
-
 (def (context-define-command! (ctx : context) (name : :symbol) (procedure : :procedure)
                               doc: (doc : :string := "")
                               visible?: (visible? : :procedure := (lambda (c origin) #t))
                               source: (source :? :string := #f)) => :void
-  (:- (call-with-service-provider commands-service
-    (lambda (implementation)
-      (let (provider (Commands (or implementation (error "No plugin provides" 'commands))))
-        (Commands-define-command! provider ctx
-                                  (make-command name: name
-                                          procedure: (lambda () (call-with-task-owner ctx procedure))
-                                          doc: doc visible?: (context-bind ctx visible?)) source)))) :void))
+  (:- (with-service-provider (provider commands-service Commands)
+    (Commands-define-command! provider ctx
+                              (make-command name: name
+                                      procedure: (lambda () (call-with-task-owner ctx procedure))
+                                      doc: doc visible?: (context-bind ctx visible?)) source)) :void))
 
 (defsyntax (define-command stx)
   (syntax-case stx ()
@@ -62,37 +58,22 @@ prelude: :gerbil/core
                                   doc: doc source: source)))))
 
 (def (command-entry (name : :symbol)) => (Maybe entry)
-  (:? (call-with-service-provider commands-service
-    (lambda (implementation)
-      (let (provider (Commands (or implementation (error "No plugin provides" 'commands))))
-        (Commands-command-entry provider name)))) entry))
+  (:? (with-service-provider (provider commands-service Commands) (Commands-command-entry provider name)) entry))
 
 (def (command-ref (name : :symbol)) => (Maybe command)
   (let (best (command-entry name)) (and best (entry-value best))))
 
 ;; Every effective name, including hidden commands; callers filter visibility.
 (def (command-names) => :list
-  (:- (call-with-service-provider commands-service
-    (lambda (implementation)
-      (let (provider (Commands (or implementation (error "No plugin provides" 'commands))))
-        (Commands-command-names provider)))) :list))
+  (:- (with-service-provider (provider commands-service Commands) (Commands-command-names provider)) :list))
 
 ;; Call from a task: prompts remain direct-style yield points. Returns the
 ;; procedure's value; missing names raise rather than silently doing nothing.
 (def (call-command (name : :symbol)) => :t
-  (call-with-service-provider commands-service
-    (lambda (implementation)
-      (let (provider (Commands (or implementation (error "No plugin provides" 'commands))))
-        (Commands-call-command provider name)))))
+  (with-service-provider (provider commands-service Commands) (Commands-call-command provider name)))
 
 (def (this-command) => (Maybe :symbol)
-  (:? (call-with-service-provider commands-service
-    (lambda (implementation)
-      (let (provider (Commands (or implementation (error "No plugin provides" 'commands))))
-        (Commands-this-command provider)))) :symbol))
+  (:? (with-service-provider (provider commands-service Commands) (Commands-this-command provider)) :symbol))
 
 (def (last-command) => (Maybe :symbol)
-  (:? (call-with-service-provider commands-service
-    (lambda (implementation)
-      (let (provider (Commands (or implementation (error "No plugin provides" 'commands))))
-        (Commands-last-command provider)))) :symbol))
+  (:? (with-service-provider (provider commands-service Commands) (Commands-last-command provider)) :symbol))

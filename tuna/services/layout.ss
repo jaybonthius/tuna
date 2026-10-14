@@ -161,60 +161,39 @@ prelude: :gerbil/core
                             (Layout incoming)
                             (Layout-describe-views (Layout outgoing))))))
 
-
-
 ;; Every view, in order (Emacs `window-list`).
 (def (view-list) => :list
-  (:- (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (Layout-views provider)))) :list))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-views provider)) :list))
 
 ;; Select V (Emacs `select-window`).
 (def (select-view (v : view)) => :void
-  (:- (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (Layout-select-view! provider v)))) :void))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-select-view! provider v)) :void))
 
 (def (next-view (v : view)) => view
-  (:- (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (: (Layout-next-view provider v) view)))) view))
+  (:- (with-service-provider (provider layout-service Layout) (: (Layout-next-view provider v) view)) view))
 
 ;; Show B in V (Emacs `set-window-buffer`).
 (def (set-view-buffer (v : view) (b : buffer)) => :void
-  (:- (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (Layout-show-buffer! provider v b)))) :void))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-show-buffer! provider v b)) :void))
 
 ;; Split V 'below or to the 'right; returns the new view (Emacs
 ;; `split-window-below`, `split-window-right`).
 (def (split-view (v : view) (side : :symbol)) => view
-  (:- (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (unless (memq side '(below right))
-          (error "Split below or right, not" side))
-        (: (Layout-split-view! provider v side) view)))) view))
+  (:- (with-service-provider (provider layout-service Layout)
+    (unless (memq side '(below right))
+      (error "Split below or right, not" side))
+    (: (Layout-split-view! provider v side) view)) view))
 
 ;; Remove V (Emacs `delete-window`).
 (def (delete-view (v : view)) => :void
-  (:- (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (Layout-delete-view! provider v)))) :void))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-delete-view! provider v)) :void))
 
 ;; The view toward DIRECTION from V, or #f (Emacs `window-in-direction`).
 (def (neighbor-view (v : view) (direction : :symbol)) => (Maybe view)
-  (:? (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (unless (memq direction '(left right up down))
-          (error "Look left, right, up, or down, not" direction))
-        (Layout-neighbor-view provider v direction)))) view))
+  (:? (with-service-provider (provider layout-service Layout)
+    (unless (memq direction '(left right up down))
+      (error "Look left, right, up, or down, not" direction))
+    (Layout-neighbor-view provider v direction)) view))
 
 ;; A size between 0 and 1, or `content`.
 (def (check-size (size : :t)) => :void
@@ -227,17 +206,15 @@ prelude: :gerbil/core
                      side: (side :? :symbol := #f)
                      size: (size :? :t := #f))
   => view
-  (:- (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (when (and side (not (memq side '(left right top bottom))))
-          (error "Display at the left, right, top, or bottom, not" side))
-        (when size
-          (check-size size))
-        (: (Layout-display-buffer! provider b
-                                   (append (if side [(cons 'side side)] [])
-                                           (if size [(cons 'size size)] [])))
-           view)))) view))
+  (:- (with-service-provider (provider layout-service Layout)
+    (when (and side (not (memq side '(left right top bottom))))
+      (error "Display at the left, right, top, or bottom, not" side))
+    (when size
+      (check-size size))
+    (: (Layout-display-buffer! provider b
+                               (append (if side [(cons 'side side)] [])
+                                       (if size [(cons 'size size)] [])))
+       view)) view))
 
 ;; Show B in a plugin's locked, pinned view at SIDE of the whole layout,
 ;; or return #f when the layout has no such places:
@@ -246,20 +223,15 @@ prelude: :gerbil/core
                       side: (side : :symbol := 'bottom)
                       size: (size : :t := 'content))
   => (Maybe view)
-  (:? (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (unless (memq side '(left right top bottom))
-          (error "Lock a view at the left, right, top, or bottom, not" side))
-        (check-size size)
-        (Layout-add-locked-view! provider b side size)))) view))
+  (:? (with-service-provider (provider layout-service Layout)
+    (unless (memq side '(left right top bottom))
+      (error "Lock a view at the left, right, top, or bottom, not" side))
+    (check-size size)
+    (Layout-add-locked-view! provider b side size)) view))
 
 ;; The visible view nearest V for which (MATCH? view) holds, or #f.
 (def (nearest-view (v : view) (match? : :procedure)) => (Maybe view)
-  (:? (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (Layout-nearest-view provider v match?)))) view))
+  (:? (with-service-provider (provider layout-service Layout) (Layout-nearest-view provider v match?)) view))
 
 ;; Emacs's `no-other-window`, for a buffer rather than a window.
 (defsetting no-other-view #f
@@ -288,42 +260,24 @@ prelude: :gerbil/core
              (ormap find-node (node-children n)))))))
 
 (def (current-frame-target) => frame-target
-  (:- (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (: (Layout-current-frame-target provider) frame-target)))) frame-target))
+  (:- (with-service-provider (provider layout-service Layout) (: (Layout-current-frame-target provider) frame-target)) frame-target))
 
 (def (move-frame (target : frame-target)) => :void
-  (:- (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (Layout-move-frame! provider target)))) :void))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-move-frame! provider target)) :void))
 
 (def (frame-mark-names) => :list
-  (:- (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (Layout-frame-mark-names provider)))) :list))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-frame-mark-names provider)) :list))
 
 (def (set-frame-mark (name : :string)) => :void
-  (:- (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (Layout-set-frame-mark! provider name)))) :void))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-set-frame-mark! provider name)) :void))
 
 ;; 'jumped, 'unknown, or 'gone (the mark is dropped).
 (def (jump-to-frame-mark (name : :string)) => :symbol
-  (:- (call-with-service-provider layout-service
-    (lambda (implementation)
-      (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-        (Layout-jump-to-frame-mark! provider name)))) :symbol))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-jump-to-frame-mark! provider name)) :symbol))
 
 (def (render-layout (target : :symbol) (render-view : :procedure)) => :t
   (let (render-view (context-bind (current-context) render-view))
-    (call-with-service-provider layout-service
-      (lambda (implementation)
-        (let (provider (Layout (or implementation (error "No plugin provides" 'layout))))
-          (Layout-render-layout provider target render-view))))))
+    (with-service-provider (provider layout-service Layout) (Layout-render-layout provider target render-view))))
 
 ;; For layouts, on `kill-buffer-hook`: show another buffer in each of VIEWS
 ;; that shows B.
