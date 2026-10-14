@@ -28,6 +28,15 @@ The owner must understand the architecture and every plan. Earlier attempts fail
 - Keep plans to a page, in `agents/plans/`. Write an ADR only for a hard-to-reverse choice with real alternatives.
 - Do not add review, oracle, or acceptance-report loops unless the owner asks. Validate with tests and by running the program.
 - Prefer deleting an abstraction to defending it. Add a framework only when a second concrete user needs it.
+- **No backward compatibility, ever, until the owner says Tuna is in use.** There is no old code, no old data, and no users. Never keep forwarders, aliases, re-exports, deprecated names, migrations, or fallbacks for earlier versions of Tuna's own code or saved state. When something moves or is renamed, update every caller in the same change and delete the old name.
+
+## Keep boundaries clean
+
+- A plugin imports only the kernel facade, libraries, contracts (`tuna/services/`), and its own private submodules; never another plugin.
+- A contract imports only the kernel facade, libraries, and the contracts its own vocabulary needs. It never re-exports another module. Dependencies between contracts point one way, with no cycles: if two contracts need each other, a concept is in the wrong one.
+- A plugin declares in `requires:` every service it calls. Use what you were handed (a session, a prompt handle) instead of reaching for another service's global "current" state.
+- Put each hook, record, and operation in the contract whose concept it is, not in whichever module was convenient.
+- Every merge review lists, for each changed module, which contracts it imports and which services it requires, and checks them against these rules. `make test` checks the mechanical parts.
 
 ## Keep the kernel small
 
