@@ -25,8 +25,7 @@
 ;;; the selected view. Undo history and the change journal stay behind.
 prelude: :gerbil/core
 
-(import (only-in :std/list/list append-map)
-        :std/interface
+(import :std/interface
         :tuna/kernel
         :tuna/services/text-store
         :tuna/services/settings)
@@ -640,12 +639,14 @@ prelude: :gerbil/core
 (def (kill-buffer (b : buffer)) => :void
   (Buffers-kill-buffer! (current-buffers) b))
 
-;; The texts of B's text nodes, depth first.
+;; The texts of B's text nodes, depth first. (Not append-map from
+;; :std/list/list, which reverses each sublist: TODO.md.)
 (def (buffer-texts (b : buffer)) => :list
-  (let walk ((n (buffer-root b)))
-    (if (text-node? n)
-      [(text-node-content n)]
-      (append-map walk (node-children n)))))
+  (reverse
+   (let walk ((n (buffer-root b)) (out []))
+     (if (text-node? n)
+       (cons (text-node-content n) out)
+       (foldl walk out (node-children n))))))
 
 ;;; Views
 
