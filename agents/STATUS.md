@@ -42,6 +42,7 @@ Read this first when resuming work. Last updated 2026-10-13. It records where th
 - The server processes everything (2026-10-13): every state-changing action, including mouse input and typing, goes to the server and takes effect when its screen arrives. No browser-owned editor state, no client-side prediction or optimistic UI, no CRDT/OT, no text-owning client component. The browser owns only pure presentation (hover, drag previews, scroll, animations).
 - Polish matters (2026-10-13): Tuna must not look like a terminal; hover states and a polished, designed UI are wanted (the owner sees Emacs's plain UI as hurting adoption). A design pass comes later; keep markup and classes friendly to it.
 
+- Nested containers (2026-10-13): done (`C-x w t/2/3` wrap, `C-x w k/d` reshape; ADR 13 "Nested containers"). Built as a three-way model comparison (GPT-6 Astra, GPT-6.1 Sol, Claude Opus 5.5 on the same task); Opus merged plus the tab-fill fix both OpenAI runs found. Notes: `/home/jay/Code/workbench-gerbil/scratch/tuna-nest/`.
 - Priorities (2026-10-13): UI before files. Files wait until the text buffer is fully designed (scroll state and the rest of what a text view needs); the owner wants the UI settled first.
 
 ## Lessons recorded from this attempt
