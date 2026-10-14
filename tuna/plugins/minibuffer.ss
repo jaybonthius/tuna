@@ -5,10 +5,18 @@
 ;;; question and a text node for the answer. The prompt's buffer shows in
 ;;; the minibuffer view nearest the selected view (or, with none visible,
 ;;; wherever display-buffer puts it), and that view is selected, so basic
-;;; editing types into the answer; an input target binds RET and C-g.
-;;; Prompts nest: only the innermost receives keys, and answers are
-;;; delivered innermost first. When a prompt ends, its view shows what it
-;;; showed before and the previously selected view is selected again.
+;;; editing types into the answer.
+;;;
+;;; RET and C-g belong to the prompt's buffer: they are bound in the
+;;; keymap of its root node, so they answer or abandon the question only
+;;; while focus is in that buffer. Elsewhere RET and C-g mean what they
+;;; always do (a newline; keyboard-quit, which leaves the question
+;;; waiting, as in Emacs), and the prompt waits until its view is selected
+;;; again.
+;;;
+;;; Prompts nest: answers are delivered innermost first. When a prompt
+;;; ends, its view shows what it showed before and the previously selected
+;;; view is selected again.
 (import :std/interface
         :tuna/kernel
         :tuna/services/keys
@@ -24,19 +32,18 @@
                   (shown-in        : view)       ; the view showing it while it waits
                   (previous-buffer :? buffer)    ; what that view showed before
                   (previous-view   : view)       ; the view selected before
-                  (target          : input-target)
                   (waiting         :? :t))       ; its suspension, once suspended
   final: #t)
 
 (defclass minibuffer ((prompts : :list)          ; waiting prompts, innermost first
-                      (keymap  : entry-table)    ; the minibuffer's own bindings
+                      (keymap  : entry-table)    ; the keymap of every prompt's buffer
                       (idle    : buffer))        ; shown while nothing is asked
   final: #t)
 
 ;; An internal buffer whose root is a minibuffer node holding CHILDREN,
-;; drawn without a status line.
-(def (minibuffer-buffer (name : :string) (children : :list)) => buffer
-  (let (b (new-buffer name (new-node minibuffer-node-kind children: children)))
+;; with KEYMAP if any, drawn without a status line.
+(def (minibuffer-buffer (name : :string) (children : :list) (keymap :? entry-table)) => buffer
+  (let (b (new-buffer name (new-node minibuffer-node-kind children: children keymap: keymap)))
     (set-buffer-setting! b show-status-line #f)
     b))
 
@@ -47,7 +54,8 @@
   (let* ((answer (new-text-node (new-text initial)))
          (b (minibuffer-buffer (string-append " *Minibuf-" (number->string (next-id!)) "*")
                                [(new-node 'minibuffer-prompt attributes: [['content . question]])
-                                answer])))
+                                answer]
+                               self.keymap)))
     (add-buffer! b)
     (let* ((before (selected-view))
            (showing (map (lambda ((v : view)) (cons v (view-showing v))) (view-list)))
@@ -55,13 +63,12 @@
            (previous (assq v showing)))
       (using (p (prompt question: question answer: answer holder: b shown-in: v
                         previous-buffer: (and previous (cdr previous)) previous-view: before
-                        target: (make-input-target 'minibuffer self.keymap) waiting: #f)
+                        waiting: #f)
                 : prompt)
         (set-view-buffer v b)
         (select-view v)
         (goto-char (point-max))
         (set! self.prompts (cons p self.prompts))
-        (push-input-target! p.target)
         (unwind-protect
           (suspend (lambda (s) (set! p.waiting s)))
           (end-prompt! self p))))))
@@ -71,7 +78,6 @@
 ;; again, and the prompt's buffer goes.
 (def (end-prompt! (self : minibuffer) (p : prompt)) => :void
   (set! self.prompts (remq p self.prompts))
-  (remove-input-target! p.target)
   (let ((v p.shown-in)
         (views (view-list)))
     (when (and (memq v views) (eq? (view-showing v) p.holder) p.previous-buffer)
@@ -85,10 +91,17 @@
       (select-view p.previous-view)))
   (kill-buffer p.holder))
 
-(def (innermost (self : minibuffer)) => prompt
-  (match self.prompts
-    ([p . _] p)
-    ([] (error "Not in the minibuffer"))))
+;; The prompt whose buffer is current, and the prompts inside it,
+;; innermost first: RET and C-g act where they are typed.
+(def (prompts-here (self : minibuffer)) => :list
+  (let (b (current-buffer))
+    (let lp ((rest self.prompts) (inside []))
+      (match rest
+        ([] (error "Not in a minibuffer"))
+        ([p . more]
+         (if (eq? (prompt-holder p) b)
+           (reverse (cons p inside))
+           (lp more (cons p inside))))))))
 
 (implement Minibuffer minibuffer
   (read-from-minibuffer (lambda (self question initial) (ask! self question initial)))
@@ -107,17 +120,19 @@
                                  (lambda (n children) `(div (@ (class "minibuffer")) ,@children)))
   (context-define-node-renderer! ctx 'minibuffer-prompt 'html
                                  (lambda (n children) `(span (@ (class "prompt")) ,(node-attribute n 'content))))
-  (let (idle (minibuffer-buffer " *Minibuf-0*" []))
+  (let (idle (minibuffer-buffer " *Minibuf-0*" [] #f))
     (set-buffer-setting! idle no-other-view #t)
     (context-add-buffer! ctx idle)
     (add-locked-view idle side: 'bottom size: 'content)
     (using (self (minibuffer prompts: [] keymap: (new-keymap) idle: idle) : minibuffer)
-      (defcommand (exit-minibuffer) "Answer the innermost prompt with the text typed."
-        (using (p (innermost self) : prompt)
-          (resume! p.waiting (text-string (text-node-content p.answer)))))
-      (defcommand (abort-minibuffers) "Abandon the innermost prompt; its command receives quit."
-        (using (p (innermost self) : prompt)
-          (resume-quit! p.waiting)))
+      (defcommand (exit-minibuffer) "Answer the prompt here with the text typed; it must be the innermost."
+        (match (prompts-here self)
+          ([p] (using (p : prompt)
+                 (resume! p.waiting (text-string (text-node-content p.answer)))))
+          (else (error "Not in the innermost minibuffer"))))
+      (defcommand (abort-minibuffers) "Abandon the prompt here and any inside it; their commands receive quit."
+        (for-each (lambda ((p : prompt)) (resume-quit! p.waiting))
+                  (prompts-here self)))
       (keymap-set-in self.keymap "RET" 'exit-minibuffer)
       (keymap-set-in self.keymap "C-g" 'abort-minibuffers)
       (context-provide! ctx minibuffer-service (Minibuffer self))

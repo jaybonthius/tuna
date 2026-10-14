@@ -371,6 +371,41 @@
            (check (view-point v) => 9)
            (check (= (view-id v) (view-id (selected-view))) => #f))))))
 
+  (test-case "a node carries a keymap, given when it is made or later; giving one is a change"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let* ((keymap (new-entry-table))
+              (other (new-entry-table))
+              (leaf (new-node 'item keymap: keymap))
+              (plain (new-node 'item))
+              (root (new-node 'column children: [leaf plain])))
+         (check (eq? (node-keymap leaf) keymap) => #t)
+         (check (node-keymap plain) => #f)
+         (let (before (node-revision root))
+           (set-node-keymap! plain other)
+           (check (eq? (node-keymap plain) other) => #t)
+           (check (> (node-revision plain) before) => #t)
+           (check (node-revision root) => (node-revision plain)))
+         (let (before (node-revision leaf))
+           (set-node-keymap! leaf #f)
+           (check (node-keymap leaf) => #f)
+           (check (> (node-revision leaf) before) => #t))))))
+
+  (test-case "buffer-list-update-hook runs after a buffer is added, renamed or killed"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let ((b (new-buffer "notes" (new-text-node (new-text ""))))
+             (seen []))
+         (defplugin (lister ctx)
+           "Records the buffer list whenever it changes."
+           (context-add-hook! ctx buffer-list-update-hook 'record
+                              (lambda () (set! seen (cons (map buffer-name (buffer-list)) seen)))))
+         (activate-plugin! lister)
+         (add-buffer! b)
+         (rename-buffer! b "notes2")
+         (kill-buffer b)
+         (check (reverse seen) => [["*scratch*" "notes"] ["*scratch*" "notes2"] ["*scratch*"]])))))
+
   (test-case "node kinds come and go with their plugin; projections need no renderer"
     (call-with-fresh-kernel buffer-plugins
      (lambda ()
@@ -425,11 +460,12 @@
 
 (def buffers-handover-test
   (test-suite "tuna/services/buffers: handing buffers over"
-    (test-case "swapping providers carries buffers, trees, texts, highlights, settings, and the selected view"
+    (test-case "swapping providers carries buffers, trees, keymaps, texts, highlights, settings, and the selected view"
       (call-with-fresh-kernel [rope-text-store-plugin settings-plugin buffers-plugin]
        (lambda ()
          (let* ((shared (new-text "shared ☃"))
-                (heading (new-node 'heading attributes: [['content . "Notes"]]))
+                (keymap (new-entry-table))
+                (heading (new-node 'heading attributes: [['content . "Notes"]] keymap: keymap))
                 (body (new-text-node shared))
                 (tree (new-node 'column children: [heading body (new-text-node shared)]))
                 (ids (map node-id (cons tree (node-children tree))))
@@ -453,6 +489,9 @@
                (check (map node-id (cons adopted children)) => ids)
                (check (eq? adopted tree) => #f)
                (check (node-attribute (car children) 'content) => "Notes")
+               ;; Keymaps carry over as they are: the same keymap object.
+               (check (eq? (node-keymap (car children)) keymap) => #t)
+               (check (node-keymap adopted) => #f)
                (check (eq? (node-parent (cadr children)) adopted) => #t)
                ;; Two text nodes still share one text.
                (check (eq? (text-node-content (cadr children)) (text-node-content (caddr children))) => #t)

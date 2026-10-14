@@ -45,6 +45,7 @@
         :tuna/plugins/layout
         :tuna/plugins/view-commands
         :tuna/plugins/html-renderer
+        :tuna/plugins/buttons
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
         :tuna/plugins/reload-config)
@@ -62,6 +63,7 @@
 (use-plugin layout-plugin)
 (use-plugin view-commands-plugin)
 (use-plugin html-renderer-plugin)
+(use-plugin buttons-plugin)             ; buttons in buffers: a click runs their action
 (use-plugin basic-editing-plugin)
 (use-plugin minibuffer-plugin)
 (use-plugin echo-area-plugin)           ; in the bar, under the minibuffer

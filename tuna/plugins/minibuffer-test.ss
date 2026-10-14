@@ -46,14 +46,17 @@
 ;; Typing and deleting a character, standing in for basic editing so that
 ;; answers can be typed into a prompt.
 (defplugin (typing ctx)
-  "Inserts printing characters; DEL deletes the character before point."
+  "Inserts printing characters and, on RET, a newline; DEL deletes the character before point."
   requires: [input-service buffers-service]
   (define-command ctx (self-insert-command) "Insert the character typed."
     (insert (key-event-key (last-command-event))))
   (define-command ctx (delete-backward-char) "Delete the character before point."
     (delete-region (fx1- (point)) (point)))
+  (define-command ctx (newline) "Insert a newline."
+    (insert "\n"))
   (keymap-set ctx printing-char-key 'self-insert-command)
-  (keymap-set ctx "DEL" 'delete-backward-char))
+  (keymap-set ctx "DEL" 'delete-backward-char)
+  (keymap-set ctx "RET" 'newline))
 
 (def (with-minibuffer thunk)
   (set! answers [])
@@ -89,6 +92,17 @@
         (and prompt [(prompt-display-question prompt)
                      (text-string (text-node-content (prompt-display-answer prompt)))])
         (current-message)]))))
+
+;; Select the view showing the buffer named NAME, or else the minibuffer
+;; view showing a prompt.
+(def (select-showing! name)
+  (call-on-editor-loop
+   (lambda ()
+     (select-view (find (lambda (v)
+                          (if name
+                            (equal? (buffer-name (view-showing v)) name)
+                            (and (minibuffer-view? v) (pair? (node-children (buffer-root (view-showing v)))))))
+                        (view-list))))))
 
 (def (minibuffer-buffers)
   (call-on-editor-loop
@@ -193,6 +207,44 @@
          (check answers => ["ok" ""])
          (check (bar-shows) => [" *Minibuf-0*"]))))
 
+    (test-case "RET and C-g belong to the prompt's buffer: in another view they mean what they always do"
+      (with-minibuffer
+       (lambda ()
+         (type! "C-c" "a" "o" "k")
+         (check (state) => ["" ["Name: " "ok"] ""])
+         ;; Away from the prompt RET is a newline, and the question waits.
+         (select-showing! "*scratch*")
+         (type! "x" "RET" "y")
+         (check (state) => ["x\ny" ["Name: " "ok"] ""])
+         ;; C-g there is keyboard-quit, as in Emacs: the question still waits.
+         (type! "C-g")
+         (check (state) => ["x\ny" ["Name: " "ok"] "Quit"])
+         (check quit? => #f)
+         ;; Back in the prompt, RET answers it.
+         (select-showing! #f)
+         (type! "RET")
+         (check (state) => ["x\ny" #f ""])
+         (check answers => ["ok"])
+         (check (selected-shows) => "*scratch*"))))
+
+    (test-case "nested prompts: C-g abandons the inner one, then the outer one"
+      (with-minibuffer
+       (lambda ()
+         (type! "C-c" "a" "o")
+         (type! "C-c" "a" "i")
+         (check (state) => ["" ["Name: " "i"] ""])
+         (type! "C-g")
+         (check (state) => ["" ["Name: " "o"] "Quit"])
+         (check quit? => #t)
+         (set! quit? #f)
+         (check (selected-shows) => ['question "Name: "])
+         (type! "C-g")
+         (check (state) => ["" #f "Quit"])
+         (check quit? => #t)
+         (check answers => [])
+         (check (selected-shows) => "*scratch*")
+         (check (minibuffer-buffers) => [" *Minibuf-0*"]))))
+
     (test-case "a minibuffer pinned inside a split catches the questions asked from that split"
       (with-minibuffer
        (lambda ()
@@ -222,4 +274,37 @@
          (type! "C-c" "a")
          (check (call-on-editor-loop (lambda () (eq? (selected-view) (cadddr (view-list))))) => #t)
          (type! "C-g")
-         (check (call-on-editor-loop (lambda () (eq? (selected-view) (car (view-list))))) => #t))))))
+         (check (call-on-editor-loop (lambda () (eq? (selected-view) (car (view-list))))) => #t))))
+
+    (test-case "only the innermost prompt is answered; C-g in an outer one abandons it and those inside"
+      (with-minibuffer
+       (lambda ()
+         ;; left | (right / its own minibuffer, pinned), and the bar.
+         (call-on-editor-loop
+          (lambda ()
+            (let* ((left (selected-view))
+                   (right (split-view left 'right))
+                   (own (split-view right 'below))
+                   (b (new-buffer " *own minibuffer*" (new-node minibuffer-node-kind))))
+              (add-buffer! b)
+              (set-view-buffer own b)
+              (select-view own))))
+         (type! "C-x" "w" "p")
+         ;; The outer question in the split's minibuffer, the inner in the bar.
+         (call-on-editor-loop (lambda () (select-view (cadr (view-list)))))
+         (type! "C-c" "a" "o")
+         (call-on-editor-loop (lambda () (select-view (car (view-list)))))
+         (type! "C-c" "a" "i")
+         (check (state) => ["" ["Name: " "i"] ""])
+         ;; RET in the outer prompt refuses; both still wait.
+         (call-on-editor-loop (lambda () (select-view (caddr (view-list)))))
+         (type! "RET")
+         (check (cadr (state)) => ["Name: " "i"])
+         (check (and (string-contains (caddr (state)) "Not in the innermost minibuffer") #t) => #t)
+         (check answers => [])
+         ;; C-g there abandons both.
+         (type! "C-g")
+         (check (state) => ["" #f "Quit"])
+         (check answers => [])
+         (check quit? => #t)
+         (check (minibuffer-buffers) => [" *Minibuf-0*"]))))))

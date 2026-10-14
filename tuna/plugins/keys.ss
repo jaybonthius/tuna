@@ -1,14 +1,21 @@
 ;;; Key handling (startup tier): the command table, the global keymap, the
 ;;; input-target stack, key resolution, and the quit key (ADR 3, ADR 8).
-;;; Keys resolve in the innermost input target's keymap, then in the global
-;;; keymap. So do clicks: under the part kind as a prefix key, then without
-;;; it, each from the most specific event name down (`pointer-event-names`).
-;;; A click does not clear the echo area, so clicking it to read a message
-;;; keeps the message.
+;;;
+;;; Keys resolve in the keymaps of the focused node and the nodes above it
+;;; (when a buffers provider is running), then the innermost input
+;;; target's, then the global keymap (the keys contract lists the order). So do clicks, starting at the node clicked (when a layout is
+;;; running): in each keymap under the part kind as a prefix key, then
+;;; without it, each from the most specific event name down
+;;; (`pointer-event-names`), before the next keymap. A click does not clear
+;;; the echo area, so clicking it to read a message keeps the message.
 prelude: :gerbil/core
 
 (import :tuna/kernel
-        :tuna/services/keys)
+        :tuna/services/keys
+        (only-in :tuna/services/buffers
+                 buffers-service selected-view view-node view-showing buffer-root
+                 node node-parent node-keymap)
+        (only-in :tuna/services/layout layout-service posn-view posn-node))
 (export keys-plugin
         key-description)
 
@@ -20,7 +27,8 @@ prelude: :gerbil/core
                        (pending       : :list)          ; keys typed so far of a prefix
                        (this-command  :? :symbol)       ; the input session (ADR 8)
                        (last-command  :? :symbol)
-                       (command-event :? :t))           ; key-event or pointer-event
+                       (command-event :? :t)            ; key-event or pointer-event
+                       (generation    : :fixnum))       ; changes with any binding
   final: #t)
 
 ;; Browser key names with Emacs spellings.
@@ -64,22 +72,56 @@ prelude: :gerbil/core
       (error "Empty key sequence" keys))
     (string-join parts " ")))
 
-;; The keymaps keys resolve in, first to last.
-(def (active-keymaps (self : global-keys)) => :list
-  (match self.targets
-    ([innermost . _] [(input-target-keymap innermost) self.keymap])
-    ([] [self.keymap])))
+;; The keymaps of N and of each node above it, innermost first.
+(def (node-keymaps (n :? node)) => :list
+  (let up ((n n) (out []))
+    (if n
+      (up (node-parent n) (let (keymap (node-keymap n)) (if keymap (cons keymap out) out)))
+      (reverse out))))
 
-;; The first binding of KEYS in KEYMAPS, or #f.
-(def (lookup (keymaps : :list) (keys : :string)) => (Maybe entry)
-  (ormap (cut entry-table-ref <> keys) keymaps))
+;; The node keys start from: the selected view's focused text node, or the
+;; root of its buffer when it has none; #f without buffers.
+(def (focused-node) => (Maybe node)
+  (and (service-provider buffers-service)
+       (let (v (selected-view))
+         (or (view-node v) (buffer-root (view-showing v))))))
 
-(def (prefix-of-binding? (keymaps : :list) (keys : :string)) => :boolean
+;; The node a click at P starts from: the node clicked, or the root of the
+;; clicked view's buffer; #f without a layout or a view.
+(def (clicked-node (p : posn)) => (Maybe node)
+  (and (service-provider layout-service)
+       (or (posn-node p)
+           (let (v (posn-view p))
+             (and v (buffer-root (view-showing v)))))))
+
+;; The keymaps a key or click resolves in, first to last: those of the
+;; nodes from START up, the innermost input target's, and the global
+;; keymap.
+(def (active-keymaps (self : global-keys) (start :? node)) => :list
+  (append (node-keymaps start)
+          (match self.targets
+            ([innermost . _] [(input-target-keymap innermost)])
+            ([] []))
+          [self.keymap]))
+
+(def (prefix-in? (keymap : entry-table) (keys : :string)) => :boolean
   (let (prefix (string-append keys " "))
-    (ormap (lambda ((keymap : entry-table))
-             (ormap (lambda ((bound : :string)) (string-prefix? prefix bound))
-                    (entry-table-names keymap)))
-           keymaps)))
+    (ormap (lambda ((bound : :string)) (string-prefix? prefix bound))
+           (entry-table-names keymap))))
+
+;; What KEYS means in KEYMAPS: the binding of the first keymap that binds
+;; KEYS (or, failing that, FALLBACK, such as <printing-char>), 'prefix when
+;; that keymap first binds a longer sequence starting with KEYS, or #f.
+(def (find-binding (keymaps : :list) (keys : :string) (fallback :? :string)) => :t
+  (let lp ((rest keymaps))
+    (match rest
+      ([] #f)
+      ([keymap . more]
+       (cond
+        ((entry-table-ref keymap keys))
+        ((prefix-in? keymap keys) 'prefix)
+        ((and fallback (entry-table-ref keymap fallback)))
+        (else (lp more)))))))
 
 (def (printing-char? (key : :string)) => :boolean
   (and (fx= (string-length key) 1)
@@ -115,33 +157,32 @@ prelude: :gerbil/core
 
 (def (resolve-key! (self : global-keys) (event : key-event)) => (Maybe :pair)
   (let ((key (key-description event))
-        (keymaps (active-keymaps self)))
+        (keymaps (active-keymaps self (focused-node))))
     (cond
      ((not key) #f)
      ((equal? key quit-key)
-      ;; The quit key cancels a pending prefix; a waiting prompt may bind it.
-      (let (name (cond
-                  ((lookup keymaps quit-key) => entry-value)
-                  (else 'keyboard-quit)))
+      ;; The quit key cancels a pending prefix; a keymap may bind it, as the
+      ;; minibuffer's prompts do.
+      (let* ((found (find-binding keymaps quit-key #f))
+             (name (if (and found (not (eq? found 'prefix))) (entry-value found) 'keyboard-quit)))
         (complete-keys! self event name)
         (command-task self name)))
      (else
       (message "")
       (let* ((typed (append self.pending [key]))
              (keys (string-join typed " "))
-             (binding (or (lookup keymaps keys)
-                          (and (null? self.pending)
-                               (printing-char? key)
-                               (lookup keymaps printing-char-key)))))
+             (found (find-binding keymaps keys
+                                  (and (null? self.pending) (printing-char? key)
+                                       printing-char-key))))
         (cond
-         (binding
-          (let (name (entry-value binding))
-            (complete-keys! self event name)
-            (bound-command-task self keys name)))
-         ((prefix-of-binding? keymaps keys)
+         ((eq? found 'prefix)
           (set! self.pending typed)
           (message (string-append keys "-"))
           #f)
+         (found
+          (let (name (entry-value found))
+            (complete-keys! self event name)
+            (bound-command-task self keys name)))
          (else
           (complete-keys! self event #f)
           (message (string-append keys " is undefined"))
@@ -157,20 +198,23 @@ prelude: :gerbil/core
 
 ;; A click ends any pending prefix: the sequences it is looked up under
 ;; are that prefix, the part kind, and each of its event names ("C-x
-;; <tab-line> <double-mouse-1>", "C-x <tab-line> <mouse-1>"), then the same without the
-;; part kind.
+;; <tab-line> <double-mouse-1>", "C-x <tab-line> <mouse-1>"), then the same
+;; without the part kind, all of them in one keymap before the next.
 (def (resolve-pointer! (self : global-keys) (event : pointer-event)) => (Maybe :pair)
-  (let* ((keymaps (active-keymaps self))
-         (area (string-append "<" (symbol->string (posn-area (pointer-event-start event))) ">"))
+  (let* ((start (pointer-event-start event))
+         (keymaps (active-keymaps self (clicked-node start)))
+         (area (string-append "<" (symbol->string (posn-area start)) ">"))
          (names (map (lambda ((name : :string)) (string-append "<" name ">"))
                      (pointer-event-names event)))
          (sequences (map (lambda ((tail : :list)) (string-join (append self.pending tail) " "))
                          (append (map (lambda (name) [area name]) names)
                                  (map (lambda (name) [name]) names))))
-         (found (ormap (lambda ((keys : :string))
-                         (let (binding (lookup keymaps keys))
-                           (and binding (cons keys (entry-value binding)))))
-                       sequences)))
+         (found (ormap (lambda ((keymap : entry-table))
+                         (ormap (lambda ((keys : :string))
+                                  (let (binding (entry-table-ref keymap keys))
+                                    (and binding (cons keys (entry-value binding)))))
+                                sequences))
+                       keymaps)))
     (if found
       (begin
         (complete-keys! self event (cdr found))
@@ -200,16 +244,25 @@ prelude: :gerbil/core
     (using (self : global-keys)
       (entry-table-ref self.commands name))))
 
+;; Bind KEYS to COMMAND in KEYMAP for CTX's plugin. The generation changes
+;; now and again once the binding is gone: the deferred change is
+;; registered first, so it runs after the entry's removal.
+(def (bind! (self : global-keys) (ctx : context) (keymap : entry-table) (keys : :string)
+            (command : :symbol) (source :? :string))
+  => :void
+  (let (normal (normalize-keys keys))
+    (context-defer! ctx (lambda () (set! self.generation (next-id!))))
+    (context-add-entry! ctx keymap normal command source: source)
+    (set! self.generation (next-id!))))
+
 (defmethod {keymap-set! global-keys}
   (lambda (self ctx keys command source)
     (using (self : global-keys)
-      (context-add-entry! ctx self.keymap (normalize-keys keys) command source: source)
-      (void))))
+      (bind! self ctx self.keymap keys command source))))
 
 (defmethod {keymap-set-in! global-keys}
   (lambda (self ctx keymap keys command source)
-    (context-add-entry! ctx keymap (normalize-keys keys) command source: source)
-    (void)))
+    (bind! self ctx keymap keys command source)))
 
 (defmethod {push-input-target! global-keys}
   (lambda (self target)
@@ -232,10 +285,14 @@ prelude: :gerbil/core
 (defmethod {last-command-event global-keys}
   (lambda (self) (global-keys-command-event self)))
 
+(defmethod {keymap-generation global-keys}
+  (lambda (self) (global-keys-generation self)))
+
 (defplugin (keys-plugin ctx)
-  "Resolves keys through the global keymap. C-g quits."
+  "Resolves keys through node keymaps and the global keymap. C-g quits."
   (using (self (global-keys commands: (new-entry-table) keymap: (new-entry-table) targets: []
-                            pending: [] this-command: #f last-command: #f command-event: #f)
+                            pending: [] this-command: #f last-command: #f command-event: #f
+                            generation: (next-id!))
                : global-keys)
     ;; Straight into this table: while this plugin activates, the input
     ;; service need not resolve to it yet.

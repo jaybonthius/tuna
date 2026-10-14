@@ -9,7 +9,14 @@
 ;;; change records, and undo history. A buffer is a named tree of nodes;
 ;;; text nodes refer to texts, and any other node kind is defined by a
 ;;; plugin. Each node has one parent, and a revision number that every
-;;; change to it or below it replaces with a new, larger one. A view is one
+;;; change to it or below it replaces with a new, larger one. A node may
+;;; carry a keymap (Emacs's `keymap` text property): keys typed with focus
+;;; in it or below it, and clicks on it or below it, look there first (the
+;;; keys contract gives the order). The keymap of a buffer's root node is
+;;; the buffer's own (Emacs's local map); there is no separate buffer
+;;; keymap. Giving a node another keymap is a change to it; bindings added
+;;; to or removed from a keymap are not, the keymap generation tracks them
+;;; (keys contract). A view is one
 ;;; place in the layout showing a buffer: the focused text node, point, and
 ;;; the goal column, so two views of one buffer have their own points.
 ;;; Editing primitives act on the selected view's focused text node. Positions are 1-based character positions within that node's
@@ -21,8 +28,12 @@
 ;;;
 ;;; Replacing the provider hands the buffers over through a neutral
 ;;; description: each buffer's name, settings, point, and node tree with
-;;; node ids, kinds, attributes, and texts (characters and highlights), and
-;;; the selected view. Undo history and the change journal stay behind.
+;;; node ids, kinds, attributes, keymaps, and texts (characters and
+;;; highlights), and the selected view. Undo history and the change journal
+;;; stay behind.
+;;;
+;;; `buffer-list-update-hook` runs after a buffer is added, killed or
+;;; renamed through this contract (Emacs `buffer-list-update-hook`).
 prelude: :gerbil/core
 
 (import :std/interface
@@ -52,6 +63,7 @@ prelude: :gerbil/core
         node node? node-id node-kind node-attributes node-attribute
         node-parent node-revision node-child-count node-children
         set-node-attribute! set-node-children!
+        node-keymap set-node-keymap!
         text-node? text-node-content
         new-node new-text-node first-text-node
         (struct-out node-kind-info)
@@ -63,6 +75,7 @@ prelude: :gerbil/core
         buffer-point-node buffer-point set-buffer-point!
         internal-buffer?
         buffer-list get-buffer add-buffer! context-add-buffer! kill-buffer kill-buffer-hook
+        buffer-list-update-hook
         other-buffer buffer-texts
         ;; views
         view view? view-id view-showing view-node view-position view-revision
@@ -187,7 +200,8 @@ prelude: :gerbil/core
                              (kind       : :symbol)
                              (attributes : :list)
                              (children   : :list)    ; node descriptions
-                             (text       :? text-description))
+                             (text       :? text-description)
+                             (keymap     :? entry-table))
   final: #t)
 
 (defstruct buffer-description ((name       : :string)
@@ -245,6 +259,10 @@ prelude: :gerbil/core
   (node-kind (n : node)) => :symbol
   (node-attributes (n : node)) => :list
   (set-node-attribute! (n : node) (name : :symbol) (value : :t)) => :void
+  ;; N's keymap, or #f.
+  (node-keymap (n : node)) => :t
+  ;; Give N KEYMAP (#f for none), stamping N and the nodes above it.
+  (set-node-keymap! (n : node) (keymap :? entry-table)) => :void
   (node-parent (n : node)) => :t
   (node-revision (n : node)) => :fixnum
   ;; N's text if N is a text node, or #f.
@@ -441,13 +459,18 @@ prelude: :gerbil/core
 
 ;;; Nodes
 
-;; A node of KIND with ATTRIBUTES (an alist of symbol -> value) and
-;; CHILDREN, which must have no parent yet.
+;; A node of KIND with ATTRIBUTES (an alist of symbol -> value),
+;; CHILDREN, which must have no parent yet, and KEYMAP, if any.
 (def (new-node (kind       : :symbol)
                attributes: (attributes : :list := [])
-               children:   (children   : :list := []))
+               children:   (children   : :list := [])
+               keymap:     (keymap     :? entry-table := #f))
   => node
-  (: (Buffers-make-node (current-buffers) kind attributes children) node))
+  (let* ((bs (current-buffers))
+         (n (: (Buffers-make-node bs kind attributes children) node)))
+    (when keymap
+      (Buffers-set-node-keymap! bs n keymap))
+    n))
 
 ;; A node whose content is T, a text that users edit.
 (def (new-text-node (t : text)) => node
@@ -465,6 +488,14 @@ prelude: :gerbil/core
 
 (def (set-node-attribute! (n : node) (name : :symbol) (value : :t)) => :void
   (Buffers-set-node-attribute! (current-buffers) n name value))
+
+;; N's keymap, or #f.
+(def (node-keymap (n : node)) => (Maybe entry-table)
+  (Buffers-node-keymap (current-buffers) n))
+
+;; Give N KEYMAP, or none with #f; a change to N.
+(def (set-node-keymap! (n : node) (keymap :? entry-table)) => :void
+  (Buffers-set-node-keymap! (current-buffers) n keymap))
 
 ;; N's parent, or #f for a buffer's root and a node not yet placed.
 (def (node-parent (n : node)) => (Maybe node)
@@ -564,7 +595,8 @@ prelude: :gerbil/core
 
 ;; Give B a new NAME, which no other buffer may have.
 (def (rename-buffer! (b : buffer) (name : :string)) => :void
-  (Buffers-rename-buffer! (current-buffers) b name))
+  (Buffers-rename-buffer! (current-buffers) b name)
+  (run-hook buffer-list-update-hook))
 
 ;; Buffers whose names start with a space are internal (as in Emacs):
 ;; prompts' buffers, for example. Commands that pick a buffer skip them.
@@ -617,7 +649,8 @@ prelude: :gerbil/core
 
 ;; Add B, whose name must be new.
 (def (add-buffer! (b : buffer)) => :void
-  (Buffers-add-buffer! (current-buffers) b))
+  (Buffers-add-buffer! (current-buffers) b)
+  (run-hook buffer-list-update-hook))
 
 ;; Add B for CTX's plugin; it is killed when the plugin is deactivated.
 (def (context-add-buffer! (ctx : context) (b : buffer)) => :void
@@ -629,6 +662,11 @@ prelude: :gerbil/core
 (def kill-buffer-hook
   (new-hook 'kill-buffer doc: "Runs with a buffer about to be killed."))
 
+;; Runs with no arguments after a buffer is added, killed or renamed, so
+;; lists of buffers can be drawn again. Callbacks must be cheap.
+(def buffer-list-update-hook
+  (new-hook 'buffer-list-update doc: "Runs after a buffer is added, killed or renamed."))
+
 ;; The buffer to show instead of B: the oldest other buffer that is not
 ;; internal, or #f.
 (def (other-buffer (b : buffer)) => (Maybe buffer)
@@ -637,7 +675,8 @@ prelude: :gerbil/core
 
 ;; Remove B. Views showing it show another buffer instead.
 (def (kill-buffer (b : buffer)) => :void
-  (Buffers-kill-buffer! (current-buffers) b))
+  (Buffers-kill-buffer! (current-buffers) b)
+  (run-hook buffer-list-update-hook))
 
 ;; The texts of B's text nodes, depth first. (Not append-map from
 ;; :std/list/list, which reverses each sublist: TODO.md.)
