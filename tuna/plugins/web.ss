@@ -326,7 +326,8 @@ prelude: :gerbil/core
              (code (hash-get value "code"))
              (location (hash-get value "location"))
              (flags (map (lambda ((name : :string)) (hash-ref value name 'missing))
-                         '("repeat" "isComposing" "altKey" "ctrlKey" "metaKey" "shiftKey"))))
+                         '("repeat" "isComposing" "altKey" "ctrlKey" "metaKey" "shiftKey"
+                           "isMac" "altLeft" "altRight" "altGraph"))))
          (and (client-id? client)
               (fixnum? sequence) (fx>= sequence 0)
               (short-string? key)

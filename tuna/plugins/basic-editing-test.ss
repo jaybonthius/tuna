@@ -55,6 +55,14 @@
          (type! "C-p" "C-p")
          (check (state) => ["é b\ncd" 1 "Beginning of buffer"]))))
 
+    (test-case "right Mac Option inserts its browser character through the editor loop"
+      (call-with-fresh-kernel editing-plugins
+       (lambda ()
+         (start-editor-loop!)
+         ((input-submitter)
+          (make-key-event "option-client" 1 "≈" "KeyX" 0 #f #f #t #f #f #f #t #f #t #f))
+         (check (state) => ["≈" 2 ""]))))
+
     (test-case "line motion keeps the goal column across short lines"
       (call-with-fresh-kernel editing-plugins
        (lambda ()

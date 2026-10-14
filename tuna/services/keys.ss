@@ -65,7 +65,8 @@ prelude: :gerbil/core
 
 ;; One keydown from a client, with the client's id and sequence number
 ;; (ADR 7, ADR 10). The web transport submits it as an input item; the
-;; input service resolves it.
+;; input service resolves it. MAC?, ALT-LEFT?, ALT-RIGHT? and ALT-GRAPH?
+;; are browser facts; the input plugin decides their meaning.
 (defstruct key-event ((client     : :string)
                       (sequence   : :fixnum)
                       (key        : :string)
@@ -76,7 +77,11 @@ prelude: :gerbil/core
                       (alt?       : :boolean)
                       (ctrl?      : :boolean)
                       (meta?      : :boolean)
-                      (shift?     : :boolean))
+                      (shift?     : :boolean)
+                      (mac?       : :boolean)
+                      (alt-left?  : :boolean)
+                      (alt-right? : :boolean)
+                      (alt-graph? : :boolean))
   final: #t)
 
 ;; Where a click happened (Emacs's position, `posn`): on the part of the
