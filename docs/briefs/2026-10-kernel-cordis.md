@@ -1,6 +1,6 @@
 # Brief: align the kernel with Cordis
 
-**Date:** 2026-10-14. **Status:** the seven decisions in "What changes" were approved by the owner on 2026-10-14; this brief needs approval as a whole. The decision below (re-evaluating a buffer) is open: the owner has thoughts to share before any implementation starts. Research: [`agents/research/cordis-alignment/README.md`](../../agents/research/cordis-alignment/README.md) (the full Cordis paper, arXiv 2608.25512, and its source).
+**Date:** 2026-10-14. **Status:** approved 2026-10-14: the seven changes below, and interactive evaluation works as in Emacs with one always-on session owner (see "Emacs facilities stay first-class"). Next: the plan (`agents/plans/kernel-cordis.md`), then stage 1. Research: [`agents/research/cordis-alignment/README.md`](../../agents/research/cordis-alignment/README.md) (the full Cordis paper, arXiv 2608.25512, and its source).
 
 ## What this is and why
 
@@ -26,11 +26,15 @@ Swapping, reloading, and restarting become one path: keep each plugin's saved da
 
 ## Emacs facilities stay first-class
 
-`eval-buffer`, evaluating an expression, loading a package, rebinding a key, or running a command must work on the live editor, as in Emacs. They fit the model:
-- **Every evaluation gets an owner,** like your `init.ss` code already does: a key bound or a hook added from `eval-buffer` is recorded as that buffer's, so it can be listed and undone.
+`eval-buffer`, `eval-region`, `eval-defun`, `eval-expression` (`M-:`), the REPL, loading a package, rebinding a key and running a command all work on the live editor, as in Emacs.
+
+- **Interactive evaluation works exactly like Emacs:** it evaluates into the running session, and effects accumulate. Evaluating a buffer twice adds a hook twice; deleting a line and evaluating again leaves the old effect in place. There is no per-buffer tracking. (Checked in Emacs at `541f693`: all of these evaluate into the one global environment; `eval-buffer` records only *definitions* of a file-visiting buffer in `load-history`, for help and `unload-feature`, and `eval-defun` resets a re-evaluated `defvar`/`defcustom`.)
+- **One always-on owner holds what interactive code adds.** In Tuna every key binding or hook belongs to an owner, so all interactive evaluation shares one owner, the live session: a single context, not new machinery. Reloading `init.ss` does not touch it, as in Emacs. Its additions can still be listed, and undone together if a command for that is ever wanted. This is the only difference from Emacs, recorded in `docs/emacs-equivalents.md`.
+- **`reload-config` is not `eval-buffer`.** `reload-config` replaces your configuration's plugins and code with the new version (only what changed); `eval-buffer` on `init.ss` would add its effects again on top, as `eval-buffer` on `init.el` does in Emacs. Use `reload-config` for your configuration.
 - **Redefining a function** is plain redefinition (ADR 1), not a plugin change.
 - **Loading a package** turns its plugins on through the same path as `init.ss`; **running a command** is `call-command`.
-- **Interactive code is not restricted** by rule 3 (Cordis gives its root the same freedom).
+- **Interactive code is not restricted** by "plugins use only what they declared" (Cordis gives its root the same freedom).
+- **Later, not now:** help showing where a function was defined (Emacs's `load-history`, from Gerbil source locations); and Emacs's "re-evaluating a `defvar` resets it" for settings, when settings get evaluation commands.
 
 ## A walkthrough
 
@@ -38,7 +42,7 @@ Swapping, reloading, and restarting become one path: keep each plugin's saved da
 2. **Switching back to splits** restores splits' own saved arrangement, splits and all, because the session store kept it while splits was off.
 3. **You remove the buffers plugin from `init.ss`, then add it back.** Turning it off saves its data (the open buffers, their text and points); turning it back on restores them. Undo history is lost.
 4. **Your config has an error in a plugin.** During a reload, nothing changes: the running version stays on. At a cold start, that plugin stays off, and its saved data stays untouched on disk; fix the config, run `tuna reload`, and it comes back.
-5. **You `eval-buffer` a file that binds `C-c x`.** The binding belongs to that evaluation. Evaluate the buffer again after editing it, and (see the decision) the old binding is replaced, not stacked.
+5. **You `eval-buffer` a file that binds `C-c x`.** The binding takes effect at once and belongs to the session owner. Evaluating the buffer again after changing it to `C-c y` adds `C-c y` and leaves `C-c x` bound, exactly as in Emacs.
 
 ## A code sample (package author's view)
 
@@ -58,20 +62,18 @@ Nothing else is needed to survive swaps, reloads and restarts. Names are illustr
 
 1. **Kernel:** one provider per slot; remove handover and adapters; declared-use checks with free interactive code; ties by declaration order; commands owned by their plugin. Tests that relied on outranking select their doubles in configuration instead.
 2. **Restart plus restore:** reload and an explicit swap go through capture, turn off, turn on, restore; the layout and buffers contracts define a neutral saved form so a different plugin can restore another's data; start-up-only slots move to reload policy.
-3. **Interactive evaluation owners:** `eval-buffer` and evaluating an expression run as owned units whose effects are recorded (the commands themselves can come with the REPL work).
+3. **The session owner:** one always-on owner that interactive evaluation runs under, exempt from declared-use checks (the evaluation commands themselves come with the REPL work).
 4. **Record:** ADRs 2, 3, 4, 5, 11 and 12 amended with each kept difference and its reason.
 
 The parked package-layout brief follows, rewritten on this foundation (one concept, one package owning its contract and default).
 
-## Decision for you
+## Decisions
 
-**Evaluating a buffer again: replace or stack?**
-- **Context:** in Emacs, re-evaluating a buffer that adds a hook or binds a key adds it again on top of the old one; removing a line from the buffer and re-evaluating leaves the old effect in place.
-- **Options:** (a) as Emacs: effects accumulate; (b) each evaluation of a buffer replaces that buffer's previous effects (removed lines are undone), the same rule `reload-config` follows.
-- **Recommendation: (b).** It is the Emacs behavior people wish they had, and it falls out of the model for free. Recorded as a divergence from Emacs.
+All settled (2026-10-14): the seven changes; interactive evaluation as in Emacs with one session owner; `reload-config` remains the way to apply a changed configuration.
 
 ## New terms
 
 - **Provider:** the one plugin that fills a slot.
 - **Restart:** turn a plugin off (everything it added is undone) and on again from a clean start.
 - **Saved data:** plain data a plugin hands the session store, kept even while the plugin is off and restored when it, or a replacement, turns on.
+- **Session owner:** the one always-on owner of everything added by interactive evaluation (`eval-buffer`, `M-:`, the REPL).
