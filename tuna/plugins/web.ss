@@ -28,7 +28,7 @@ prelude: :gerbil/core
 (export web-transport-plugin
         web-transport-url)
 
-(deflogger web-log name: "web")
+(deflogger web-log name: "tuna/web")
 
 ;; Seconds between keep-alive events, which also detect closed tabs.
 (def heartbeat-seconds 15.)

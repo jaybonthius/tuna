@@ -46,7 +46,13 @@ prelude: :gerbil/core
 
 ;; Formatting is process policy, not a plugin's responsibility. The sink
 ;; writes and flushes each complete record on Gerbil's logger thread.
+;; Informational records are shown only from Tuna's own sources ("tuna/..."):
+;; libraries such as the HTTP server log their start-up chatter at INFO.
 (def (write-log-line (record : Record) (port :~ output-port?)) => :void
+  (when (or (fx<= record.level WARN) (string-prefix? "tuna/" record.source))
+    (write-shown-log-line record port)))
+
+(def (write-shown-log-line (record : Record) (port :~ output-port?)) => :void
   (unless (fx= record.level INFO)
     (display (log-level->string record.level) port)
     (display " [" port)
