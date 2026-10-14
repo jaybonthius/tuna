@@ -17,6 +17,9 @@
         reply-header
         reply-body
         keydown-json
+        pointer-json
+        post-click
+        page-revision
         host
         port
         token
@@ -119,6 +122,40 @@
   (http "POST" "/commands"
         headers: [(cons "Datastar-Request" "true") (cons "Content-Type" "application/json")]
         body: (keydown-json key ctrl? sequence)))
+
+;; A pointer item as JSON: a left click on tab-line:30 on screen 0, with the
+;; fields in CHANGES, each (name . raw-json), or (name . #f) to leave the
+;; field out.
+(def (pointer-json . changes)
+  (let* ((fields '(("version" . "1") ("type" . "\"pointer\"") ("clientId" . "\"web-test\"")
+                   ("sequence" . "1") ("revision" . "0") ("kind" . "\"click\"")
+                   ("button" . "0") ("clicks" . "1")
+                   ("modifiers" . "{\"alt\":false,\"ctrl\":false,\"meta\":false,\"shift\":false}")
+                   ("target" . "\"tab-line:30\"") ("node" . "null")))
+         (merged (filter cdr (map (lambda (field)
+                                    (or (assoc (car field) changes) field))
+                                  fields))))
+    (string-append
+     "{"
+     (string-join (map (lambda (field) (string-append "\"" (car field) "\":" (cdr field))) merged) ",")
+     "}")))
+
+;; Post a left click on the part TARGET ("view:12") on screen REVISION, in
+;; sequence after the keys post-key sent.
+(def (post-click target revision: (revision 0) node: (node #f))
+  (set! sequence (+ sequence 1))
+  (http "POST" "/commands"
+        headers: [(cons "Datastar-Request" "true") (cons "Content-Type" "application/json")]
+        body: (pointer-json (cons "sequence" (number->string sequence))
+                            (cons "revision" (number->string revision))
+                            (cons "target" (string-append "\"" target "\""))
+                            (cons "node" (if node (number->string node) "null")))))
+
+;; The revision of the screen GET / shows.
+(def (page-revision)
+  (let* ((page (reply-body (http "GET" "/")))
+         (start (+ (string-search "data-revision=\"" page) 15)))
+    (string->number (substring page start (string-index page #\" start)))))
 
 (def (open-screen-stream)
   (let (socket (connect port))

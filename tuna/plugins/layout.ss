@@ -85,15 +85,21 @@ prelude: :gerbil/core
   (cons* 'div (container-attributes c "fit") (map render-link (container-links c))))
 
 ;; A tab strip (on top when horizontal, down the side when vertical) and
-;; the active child, which is the one last focused.
+;; the active child, which is the one last focused. A tab is the part
+;; "tab-line:P" (Emacs's area name for a window's tabs), P being the id of
+;; the part it shows, and is clickable while a click on a tab line has a
+;; binding ("<tab-line> <mouse-1>").
 (def (render-tabbed (c : container) (render-link : :procedure) (label : :procedure)) => :list
-  (let (active (focused-link c))
+  (let ((active (focused-link c))
+        (clickable (if (part-clickable? 'tab-line) '((data-clickable "")) '())))
     `(div ,(container-attributes c "tabbed")
           (ul (@ (class "tabs") (role "tablist")
                  (aria-orientation ,(symbol->string (container-direction c))))
               ,@(map (lambda ((l : link))
                        `(li (@ (class "tab") (role "tab")
-                               (aria-selected ,(if (eq? l active) "true" "false")))
+                               (aria-selected ,(if (eq? l active) "true" "false"))
+                               (data-part ,(string-append "tab-line:" (number->string (part-id l.part))))
+                               ,@clickable)
                             ,(label l.part)))
                      (container-links c)))
           (div (@ (class "tab-panel") (role "tabpanel")) ,(render-link active)))))
@@ -693,6 +699,14 @@ prelude: :gerbil/core
                                     (kind-of self))))
     (select! self (leaf-view new))))
 
+;; Select the tab the click P names: the view last focused in the part it
+;; shows. A tab whose part is gone reports the stale click.
+(def (select-clicked-tab! (self : tree-layout) (p : posn)) => :void
+  (let (part (find-part self.root (posn-part p)))
+    (if part
+      (select! self (leaf-view (focused-leaf part)))
+      (report-stale-click p what: "tab"))))
+
 (def (switch-tab! (self : tree-layout) (step : :fixnum)) => :void
   (let (tabs (enclosing-tabs self))
     (if (not tabs)
@@ -932,6 +946,12 @@ prelude: :gerbil/core
       (defcommand (tab-close) "Close the current tab."
         (check-effective! self)
         (close-tab! self))
+      (defcommand (tab-select) "Switch to the tab clicked on."
+        (check-effective! self)
+        (let (p (event-start (last-command-event)))
+          (if p
+            (select-clicked-tab! self p)
+            (message "tab-select runs only from a click"))))
       (defcommand (frame-zoom-in) "Move the frame one level down, toward the selected view."
         (check-effective! self)
         (zoom-in! self))
@@ -966,6 +986,7 @@ prelude: :gerbil/core
       (keymap-set "C-x t o" 'tab-next)
       (keymap-set "C-x t O" 'tab-previous)
       (keymap-set "C-x t 0" 'tab-close)
+      (keymap-set "<tab-line> <mouse-1>" 'tab-select)
       (keymap-set "C-x n i" 'frame-zoom-in)
       (keymap-set "C-x n o" 'frame-zoom-out)
       (keymap-set "C-x w a" 'select-parent-part)

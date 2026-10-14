@@ -1,10 +1,14 @@
 ;;; The web transport over real loopback HTTP on an ephemeral port: the
 ;;; launch token, the session cookie, Host and Origin checks, and event
-;;; requests. A stand-in provides the input the editor loop needs.
+;;; requests: keydowns and pointer items, validated strictly, and the
+;;; screen revision pointer items name. A stand-in provides the input the
+;;; editor loop needs; another records the items it resolves.
 (import :std/test
+        :tuna/kernel
+        :tuna/services/keys
         :tuna/plugins/web
         "../test-support/web-client"
-        (only-in "../test-support/string-input" test-input-plugin))
+        (only-in "../test-support/string-input" test-input-plugin test-messages-plugin))
 (export web-test)
 
 (def web-plugins
@@ -12,6 +16,37 @@
 
 (def (with-tuna thunk)
   (with-web-tuna web-plugins thunk))
+
+;; An input provider that records every item it resolves, newest first.
+(defstruct recording-input (items) final: #t)
+
+(defmethod {resolve! recording-input}
+  (lambda (self item)
+    (set! (recording-input-items self) (cons item (recording-input-items self)))
+    #f))
+
+(defmethod {arrival recording-input}
+  (lambda (self item) 'queue))
+
+(def recorded (make-recording-input []))
+
+(defplugin (recording-input-plugin ctx)
+  "Records the input items it resolves."
+  (context-provide! ctx input-service recorded))
+
+;; The items resolved so far, oldest first, once there are COUNT of them.
+(def (recorded-items count)
+  (let lp ((tries 300))
+    (let (items (call-on-editor-loop (lambda () (recording-input-items recorded))))
+      (if (or (>= (length items) count) (zero? tries))
+        (reverse items)
+        (begin (thread-sleep! 0.01) (lp (- tries 1)))))))
+
+(def (post-json body)
+  (reply-status (http "POST" "/commands"
+                      headers: [(cons "Datastar-Request" "true")
+                                (cons "Content-Type" "application/json")]
+                      body: body)))
 
 (def web-test
   (test-suite "tuna/plugins/web"
@@ -34,7 +69,7 @@
          (for-each (lambda (route)
                      (check (reply-status (http (car route) (cdr route) cookie: #f)) => 403))
                    '(("GET" . "/") ("GET" . "/screen") ("POST" . "/commands")
-                     ("GET" . "/static/tuna-keyboard.js") ("GET" . "/elsewhere")))
+                     ("GET" . "/static/tuna-input.js") ("GET" . "/elsewhere")))
          (check (reply-status (http "GET" "/?token=wrong" cookie: #f)) => 403)
          (check (reply-status (http "GET" "/" cookie: (string-append session-cookie "0"))) => 403))))
 
@@ -73,4 +108,62 @@
                                     headers: [(cons "Datastar-Request" "true")
                                               (cons "Content-Type" "text/plain")]
                                     body: (keydown-json "a" #f 3)))
-                => 415))))))
+                => 415))))
+
+    (test-case "each screen carries its revision on its root element"
+      (with-tuna
+       (lambda ()
+         (let (page (reply-body (http "GET" "/")))
+           (check (and (string-search "<main data-revision=\"" page) #t) => #t)
+           (check (fixnum? (page-revision)) => #t)))))
+
+    (test-case "a pointer item becomes a pointer event: Emacs's button, its part, node and screen"
+      (set! (recording-input-items recorded) [])
+      (with-web-tuna [test-messages-plugin recording-input-plugin web-transport-plugin]
+       (lambda ()
+         (let (revision (page-revision))
+           (check (post-json (pointer-json (cons "revision" (number->string revision))
+                                           (cons "button" "2") (cons "clicks" "2")
+                                           (cons "target" "\"status-line:12\"") (cons "node" "4")
+                                           (cons "modifiers" "{\"alt\":false,\"ctrl\":true,\"meta\":false,\"shift\":true}")))
+                  => 204)
+           (check (post-json (pointer-json (cons "node" #f))) => 204)
+           (let (items (recorded-items 2))
+             (check (length items) => 2)
+             (let ((e (car items))
+                   (bare (cadr items)))
+               (check (pointer-event-client e) => "web-test")
+               (check (pointer-event-button e) => 3)
+               (check (pointer-event-clicks e) => 2)
+               (check [(pointer-event-alt? e) (pointer-event-ctrl? e)
+                       (pointer-event-meta? e) (pointer-event-shift? e)]
+                      => [#f #t #f #t])
+               (check (pointer-event-names e) => ["C-S-double-mouse-3" "C-S-mouse-3"])
+               (let (p (pointer-event-start e))
+                 (check [(posn-area p) (posn-part p) (posn-node-id p) (posn-revision p)]
+                        => ['status-line 12 4 revision]))
+               (check (posn-node-id (pointer-event-start bare)) => #f)
+               (check (pointer-event-button bare) => 1)))))))
+
+    (test-case "malformed and forged pointer items are refused"
+      (with-tuna
+       (lambda ()
+         (check (post-json (pointer-json)) => 204)
+         (for-each
+           (lambda (change)
+             (check [change (post-json (pointer-json change))] => [change 400]))
+           '(("version" . "2") ("type" . "\"pointerdown\"") ("kind" . "\"drop\"") ("kind" . #f)
+             ("clientId" . "\"web test\"") ("clientId" . "\"\"") ("clientId" . #f)
+             ("sequence" . "-1") ("sequence" . "\"1\"")
+             ;; A screen the transport never sent.
+             ("revision" . "999999") ("revision" . "-1") ("revision" . #f)
+             ("button" . "3") ("button" . "-1") ("button" . "0.5")
+             ("clicks" . "0") ("clicks" . "256") ("clicks" . "true")
+             ("modifiers" . "{\"alt\":false,\"ctrl\":false,\"meta\":false}")
+             ("modifiers" . "{\"alt\":0,\"ctrl\":false,\"meta\":false,\"shift\":false}")
+             ("modifiers" . "[]")
+             ("target" . "\"tab-line\"") ("target" . "\"tab-line:\"") ("target" . "\":30\"")
+             ("target" . "\"Tab-line:30\"") ("target" . "\"tab-line:-30\"") ("target" . "\"tab-line:30:31\"")
+             ("target" . "\"tab-line:3x\"") ("target" . "\"1tab-line:30\"") ("target" . "30") ("target" . #f)
+             ("target" . "\"tab-line:1234567890123456\"")
+             ("node" . "\"4\"") ("node" . "-4") ("node" . "4.5"))))))))

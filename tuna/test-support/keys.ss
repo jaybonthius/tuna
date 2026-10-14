@@ -1,8 +1,10 @@
-;;; Key presses for tests that drive plugins through the real editor loop.
+;;; Key presses and clicks for tests that drive plugins through the real
+;;; editor loop.
 (import :tuna/kernel
-        (only-in :tuna/services/keys make-key-event))
+        (only-in :tuna/services/keys make-key-event make-pointer-event make-posn))
 (export press
-        type!)
+        type!
+        click)
 
 (def sequence 0)
 
@@ -26,3 +28,15 @@
 
 (def (type! . keys)
   (for-each press keys))
+
+;; Submit one click to the running editor loop on the part AREA with id
+;; PART, as if made on screen REVISION: (click 'tab-line 30),
+;; (click 'view 12 button: 3 clicks: 2 ctrl?: #t node: 4).
+(def (click (area : :symbol) (part : :fixnum)
+            button: (button 1) clicks: (clicks 1) node: (node #f) revision: (revision 0)
+            ctrl?: (ctrl? #f) alt?: (alt? #f) shift?: (shift? #f) meta?: (meta? #f))
+  => :void
+  (set! sequence (+ sequence 1))
+  ((input-submitter)
+   (make-pointer-event "test-client" sequence button clicks alt? ctrl? meta? shift?
+                       (make-posn area part node revision))))

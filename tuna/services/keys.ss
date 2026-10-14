@@ -1,13 +1,25 @@
-;;; Commands and key bindings: the key events a transport submits as input
-;;; items, the part of the input service that plugins define commands and
-;;; bind keys through, and the input-target stack prompts push (ADR 3,
-;;; ADR 8). Plugins that define commands or bind keys require
-;;; `input-service`.
+;;; Commands and key bindings: the key and pointer events a transport
+;;; submits as input items, the part of the input service that plugins
+;;; define commands and bind keys through, and the input-target stack
+;;; prompts push (ADR 3, ADR 8). Plugins that define commands or bind keys
+;;; require `input-service`.
+;;;
+;;; Clicks are looked up like keys, by their Emacs event names (`mouse-1`,
+;;; `C-mouse-1`, `double-mouse-1`), first with the kind of part clicked as
+;;; a prefix key ("<tab-line> <mouse-1>", as Emacs's "<mode-line> <mouse-1>"),
+;;; then without it; a double or triple click falls back to the single
+;;; one. A command reads its click with `last-command-event` and
+;;; `event-start`; the layout contract finds the view and node a posn names
+;;; (`posn-view`, `posn-node`).
 prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel)
-(export (struct-out key-event)
+(export (struct-out key-event posn pointer-event)
+        pointer-event-names
+        event-start
+        part-clickable?
+        report-stale-click
         (interface-out Keys)
         (struct-out command)
         context-define-command!
@@ -43,6 +55,65 @@ prelude: :gerbil/core
                       (meta?      : :boolean)
                       (shift?     : :boolean))
   final: #t)
+
+;; Where a click happened (Emacs's position, `posn`): on the part of the
+;; screen with kind AREA (tab-line, view, status-line; Emacs's `posn-area`) and
+;; id PART, over the node with id NODE-ID if any, on the screen with
+;; revision REVISION. Parts are named by stable id, never by position: a
+;; view or its status line by the view's id, a tab of a tab line by the id
+;; of the part it shows.
+(defstruct posn ((area     : :symbol)
+                 (part     : :fixnum)
+                 (node-id  :? :fixnum)
+                 (revision : :fixnum))
+  final: #t)
+
+;; One click from a client, with the client's id and sequence number
+;; (ADR 7, ADR 10): BUTTON 1, 2 or 3 (left, middle, right, numbered as
+;; Emacs does), released after CLICKS presses in a row, at START.
+(defstruct pointer-event ((client   : :string)
+                          (sequence : :fixnum)
+                          (button   : :fixnum)
+                          (clicks   : :fixnum)
+                          (alt?     : :boolean)
+                          (ctrl?    : :boolean)
+                          (meta?    : :boolean)
+                          (shift?   : :boolean)
+                          (start    : posn))
+  final: #t)
+
+;; The names EVENT is looked up under, most specific first: modifiers,
+;; then `double-` or `triple-`, then `mouse-BUTTON`; a triple click falls
+;; back to the double one and a double to the single one, as in Emacs:
+;; ("C-double-mouse-1" "C-mouse-1").
+(def (pointer-event-names (event : pointer-event)) => :list
+  (using (event : pointer-event)
+    (let ((modifiers (string-append (if event.ctrl? "C-" "")
+                                    (if event.alt? "M-" "")
+                                    (if event.shift? "S-" "")
+                                    (if event.meta? "s-" "")))
+          (base (string-append "mouse-" (number->string event.button))))
+      (map (lambda ((repeat : :string)) (string-append modifiers repeat base))
+           (cond
+            ((fx>= event.clicks 3) ["triple-" "double-" ""])
+            ((fx= event.clicks 2) ["double-" ""])
+            (else [""]))))))
+
+;; Where EVENT happened: a pointer event's posn, or #f for a key event,
+;; which has no position (Emacs gives point in the selected window).
+(def (event-start (event : :t)) => (Maybe posn)
+  (and (pointer-event? event) (pointer-event-start event)))
+
+;; Report in the echo area that the part P names is gone, naming the
+;; screen it was clicked on; the click does nothing else. WHAT names the
+;; part ("tab"); by default, its kind.
+(def (report-stale-click (p : posn) what: (what :? :string := #f)) => :void
+  (message (string-append "Stale click: the "
+                          (or what
+                              (string-map (lambda (c) (if (char=? c #\-) #\space c))
+                                          (symbol->string (posn-area p))))
+                          " is gone (clicked on screen "
+                          (number->string (posn-revision p)) ")")))
 
 ;; A named action that runs as a task, usually bound to keys.
 (defstruct command ((name      : :symbol)
@@ -87,8 +158,8 @@ prelude: :gerbil/core
   ;; The name of the command whose keys were completed before the running
   ;; command's, or #f (Emacs `last-command`).
   (last-command) => :t
-  ;; The key event that completed the running command's keys, or #f (Emacs
-  ;; `last-command-event`).
+  ;; The key or pointer event that completed the running command's keys,
+  ;; or #f (Emacs `last-command-event`).
   (last-command-event) => :t)
 
 (def (current-keys) => Keys
@@ -175,5 +246,18 @@ prelude: :gerbil/core
 (def (last-command) => (Maybe :symbol)
   (Keys-last-command (current-keys)))
 
-(def (last-command-event) => (Maybe key-event)
+;; A key-event, a pointer-event, or #f.
+(def (last-command-event) => :t
   (Keys-last-command-event (current-keys)))
+
+;; Whether a plain click (mouse-1, mouse-2 or mouse-3) on a part of kind
+;; AREA has a global binding with AREA as its prefix key ("<tab-line> <mouse-1>"),
+;; so renderers mark such parts clickable; #f without key bindings.
+(def (part-clickable? (area : :symbol)) => :boolean
+  (let (input (service-provider input-service))
+    (and input (is-Keys? input)
+         (let (prefix (string-append "<" (symbol->string area) "> <mouse-"))
+           (and (ormap (lambda ((button : :string))
+                         (Keys-key-binding (Keys input) (string-append prefix button ">")))
+                       ["1" "2" "3"])
+                #t)))))

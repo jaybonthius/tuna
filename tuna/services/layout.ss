@@ -36,10 +36,15 @@
 ;;; description: the views in order and the selected one. Arrangement,
 ;;; pins, frame and frame marks belong to each layout, and locked views to
 ;;; the plugins that put them in, which put them back in the next layout.
+;;;
+;;; Clicks name parts by id (the keys contract's `posn`): a view and its
+;;; status line by the view's id. `posn-view` and `posn-node` find the view
+;;; and node a click names, or #f once they are gone.
 prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
+        (only-in :tuna/services/keys posn posn-part posn-node-id)
         :tuna/services/settings
         :tuna/services/buffers)
 (export (interface-out Layout)
@@ -57,6 +62,8 @@ prelude: :gerbil/core
         nearest-view
         no-other-view
         view-skipped?
+        posn-view
+        posn-node
         current-frame-target
         move-frame
         frame-mark-names
@@ -235,6 +242,24 @@ prelude: :gerbil/core
 ;; Whether moving between views skips V: its buffer's no-other-view.
 (def (view-skipped? (v : view)) => :boolean
   (and (buffer-local-value no-other-view (view-showing v)) #t))
+
+;; The view whose id P names: the view clicked, or the one whose status
+;; line or tab was clicked; #f when no view has that id, because it is gone
+;; or the part is a container (Emacs `posn-window`).
+(def (posn-view (p : posn)) => (Maybe view)
+  (let (id (posn-part p))
+    (find (lambda ((v : view)) (fx= (view-id v) id)) (view-list))))
+
+;; The node clicked, in the buffer its view shows, or #f when the click
+;; named no node or it is no longer there (Emacs `posn-point`, for nodes).
+(def (posn-node (p : posn)) => (Maybe node)
+  (let ((v (posn-view p))
+        (id (posn-node-id p)))
+    (and v id
+         (let find-node ((n (buffer-root (view-showing v))))
+           (if (fx= (node-id n) id)
+             n
+             (ormap find-node (node-children n)))))))
 
 (def (current-frame-target) => frame-target
   (: (Layout-current-frame-target (current-layout)) frame-target))

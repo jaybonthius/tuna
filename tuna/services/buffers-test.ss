@@ -277,6 +277,19 @@
          (check (node-parent text-node) => #f)
          (check (node-child-count tree) => 4)))))
 
+  (test-case "buffer-texts lists the texts of the text nodes depth first, in tree order"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let* ((texts (map new-text ["a" "b" "c" "d"]))
+              (leaves (map new-text-node texts))
+              (b (new-buffer "ordered"
+                             (new-node 'column
+                                       children: [(car leaves)
+                                                  (new-node 'column children: [(cadr leaves) (caddr leaves)])
+                                                  (cadddr leaves)]))))
+         (add-buffer! b)
+         (check (map text-string (buffer-texts b)) => ["a" "b" "c" "d"])))))
+
   (test-case "a change stamps its node and every node above it with a new, larger revision"
     (call-with-fresh-kernel buffer-plugins
      (lambda ()
