@@ -50,7 +50,6 @@ prelude: :gerbil/core
 (defplugin (help-buffer-plugin ctx)
   "Shows help output in the *Help* buffer; C-h q closes it."
   requires: [commands-service input-service buffers-service layout-service]
-  optional: [messages-service]
   (context-define-node-kind! ctx 'help doc: "Help output: a title, then text.")
   (context-define-node-kind! ctx 'help-title doc: "The title of help output."
                              project: (lambda (n) (node-attribute n 'content)))

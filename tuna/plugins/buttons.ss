@@ -30,7 +30,6 @@ prelude: :gerbil/core
 (defplugin (buttons-plugin ctx)
   "Buttons in buffers: a click on one runs its action."
   requires: [commands-service input-service buffers-service layout-service]
-  optional: [messages-service]
   (context-define-node-kind! ctx button-node-kind
                              doc: "A button: a label, and an action run when it is clicked."
                              project: (lambda (n) (node-attribute n 'label)))

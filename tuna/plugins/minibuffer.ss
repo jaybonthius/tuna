@@ -211,7 +211,6 @@
 (defplugin (minibuffer-plugin ctx)
   "Asks questions in the minibuffer, a view in the bar: read-string. RET answers, C-g abandons."
   requires: [commands-service input-service buffers-service layout-service settings-service session-service]
-  optional: [messages-service]
   (context-define-node-kind! ctx minibuffer-node-kind doc: "A prompt's question and answer, or nothing.")
   (context-define-node-kind! ctx 'minibuffer-prompt doc: "A prompt's question."
                              project: (lambda (n) (node-attribute n 'content)))

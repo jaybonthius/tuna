@@ -39,7 +39,6 @@
 
 (defplugin (test-input-plugin ctx)
   "Resolves test input items through test-bindings and keeps the last message."
-  optional: [messages-service]
   (context-provide! ctx messages-service (make-test-messages ""))
   (context-provide! ctx input-service (make-test-input test-bindings)))
 

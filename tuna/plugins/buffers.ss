@@ -505,7 +505,6 @@ prelude: :gerbil/core
 (defplugin (buffers-plugin ctx)
   "Keeps buffers, their texts and nodes, and node kinds; starts with *scratch*."
   requires: [text-store-service settings-service]
-  optional: [buffers-service messages-service]
   (let* ((scratch (new-scratch-buffer))
          (focus (default-buffer-point-node scratch))
          (registry (buffer-registry buffers: [scratch]

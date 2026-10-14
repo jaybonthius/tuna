@@ -40,7 +40,6 @@
 (defplugin view-commands-plugin
   "View commands for any layout: C-x o, C-x 0 to 3, S-arrows, frames (C-x n), frame marks (C-x r), clicking a view."
   requires: [commands-service input-service buffers-service layout-service minibuffer-service settings-service]
-  optional: [messages-service]
   (defcommand (mouse-select-view) "Select the view clicked on, or the view whose status line was clicked."
     (select-clicked-view))
   (defcommand (other-view) "Select the next view, cyclically."

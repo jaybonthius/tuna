@@ -106,7 +106,6 @@ prelude: :gerbil/core
 (defplugin (completion-vertical-plugin ctx)
   "A vertical completion list with keyboard navigation and clickable rows."
   requires: [commands-service completion-service input-service buffers-service settings-service layout-service]
-  optional: [messages-service]
   (for-each (lambda (kind) (context-define-node-kind! ctx kind))
             '(completion-counter completion-list completion-row completion-group))
   (context-define-node-renderer! ctx 'completion-counter 'html

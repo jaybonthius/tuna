@@ -44,7 +44,6 @@
 (defplugin basic-editing-plugin
   "Typing, deleting, moving by characters and lines, and undo."
   requires: [commands-service input-service buffers-service]
-  optional: [messages-service]
   (defcommand (self-insert-command) "Insert the character typed."
     ;; Consecutive self-inserts undo together, up to 20 (as in Emacs).
     (when (eq? (last-command) 'self-insert-command)

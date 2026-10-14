@@ -11,7 +11,6 @@ prelude: :gerbil/core
 (defplugin (endless-commands-plugin ctx)
   "Endless commands to quit with C-g: C-c l checks for quit, C-c L does not."
   requires: [commands-service input-service]
-  optional: [messages-service]
   (define-command ctx (loop-forever) "Loop until quit, checking for quit."
     (message "Looping forever, checking for quit. Press C-g.")
     (redisplay)

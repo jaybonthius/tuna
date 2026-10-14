@@ -23,7 +23,6 @@ prelude: :gerbil/core
 (defplugin (demo-plugin ctx)
   "Demo commands: swap the text store (C-c s) and basic editing (C-c p) while Tuna runs."
   requires: [commands-service input-service]
-  optional: [messages-service]
   (define-command ctx (swap-text-store) "Switch between the rope and the plain-string text store."
     (toggle-plugin! string-text-store-plugin)
     (message (if (plugin-active? string-text-store-plugin)

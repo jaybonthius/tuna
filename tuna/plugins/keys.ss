@@ -362,7 +362,7 @@ prelude: :gerbil/core
 (defplugin (keys-plugin ctx)
   "Resolves keys through node keymaps and the global keymap. C-g quits."
   requires: [commands-service]
-  optional: [settings-service buffers-service layout-service messages-service]
+  optional: [settings-service buffers-service layout-service]
   (using (self (global-keys keymap: (new-entry-table) targets: []
                             pending: [] command-event: #f
                             generation: (next-id!))

@@ -984,7 +984,6 @@ prelude: :gerbil/core
 (defplugin (layout-plugin ctx)
   "Arranges views in fit and tabbed containers, with pins, a movable frame and frame marks."
   requires: [commands-service buffers-service session-service input-service settings-service]
-  optional: [layout-service messages-service]
   (let (v (selected-view))
     (using (self (tree-layout root: (make-leaf v #f) frame: (make-frame-state #f #f v) level: 0
                               marks: [] locked: [] kinds: (new-entry-table) handed-over?: #f)

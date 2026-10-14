@@ -18,6 +18,7 @@ prelude: :gerbil/core
         context-bind
         call-with-context-receipt
         call-with-service-provider
+        with-service-provider
         set-plugin-order!
         context-defer!
         context-add-entry!
@@ -76,7 +77,9 @@ prelude: :gerbil/core
 
 ;; Callback/provider execution changes the calling owner, not the task's lifetime.
 (def (call-with-context (ctx :? context) (thunk : :procedure)) => :t
-  (parameterize ((current-context ctx)) (thunk)))
+  (if (eq? ctx (current-context))
+    (thunk)
+    (parameterize ((current-context ctx)) (thunk))))
 
 (def (context-bind (ctx :? context) (procedure : :procedure)) => :procedure
   (lambda args
@@ -358,26 +361,29 @@ prelude: :gerbil/core
 
 ;; The current provider of SVC, or #f.
 (def (service-provider (svc : service)) => :t
-  (check-service-use! svc)
-  (let (best (entry-table-ref (kernel-providers (the-kernel)) (service-name svc)))
-    (and best (entry-value best))))
+  (let (entries (entry-table-entries (kernel-providers (the-kernel)) (service-name svc)))
+    (check-service-use! svc entries)
+    (and (pair? entries) (entry-value (car entries)))))
 
-(def (check-service-use! (svc : service)) => :void
+(def (check-service-use! (svc : service) (entries : :list)) => :void
   (let (ctx (current-context))
     (when ctx
       (using (ctx : context)
         (let (p ctx.owner)
           (unless (or (plugin-unchecked? p)
                       (memq svc (plugin-requires p))
-                      (memq svc (plugin-optional p)))
+                      (memq svc (plugin-optional p))
+                      (ormap (lambda ((e : entry)) (eq? (entry-owner e) (plugin-name p))) entries))
             (error "Plugin used an undeclared service"
                    (plugin-name p) (service-name svc))))))))
 
 ;; Dispatchers check their caller before running a provider under its own
 ;; owner. Calls through that provider cannot borrow the caller's declarations.
 (def (call-with-service-provider (svc : service) (procedure : :procedure)) => :t
-  (let* ((provider (service-provider svc))
-         (best (entry-table-ref (kernel-providers (the-kernel)) (service-name svc)))
+  (let* ((entries (entry-table-entries (kernel-providers (the-kernel)) (service-name svc)))
+         (_ (check-service-use! svc entries))
+         (best (and (pair? entries) (car entries)))
+         (provider (and best (entry-value best)))
          (record (and best (hash-get (kernel-plugins (the-kernel)) (entry-owner best))))
          (ctx (and record
                    (or (plugin-record-active record)
@@ -386,6 +392,13 @@ prelude: :gerbil/core
                               (eq? (context-plugin-name activating) (entry-owner best))
                               activating))))))
     (call-with-context ctx (lambda () (procedure provider)))))
+
+;; Contract dispatchers keep their typed interface conversion at one seam.
+(defrule (with-service-provider (provider svc interface) body ...)
+  (call-with-service-provider svc
+    (lambda (implementation)
+      (let (provider (interface (or implementation (error "No plugin provides" (service-name svc)))))
+        body ...))))
 
 ;; Replace this owner's contribution. A changed effective provider still
 ;; follows the existing swap rules, even for a same-rank replacement.
@@ -750,11 +763,13 @@ prelude: :gerbil/core
 ;; Show STRING through the Messages provider, or on stderr while no plugin
 ;; provides it.
 (def (message (string : :string)) => :void
-  (call-with-service-provider messages-service
-    (lambda (provider)
-      (cond
-       (provider (Messages-message! (Messages provider) string))
-       ((not (string-empty? string)) (write-error-line string)))))
+  (call-with-context #f
+    (lambda ()
+      (call-with-service-provider messages-service
+        (lambda (provider)
+          (cond
+           (provider (Messages-message! (Messages provider) string))
+           ((not (string-empty? string)) (write-error-line string)))))))
   (void))
 
 ;; Report a plugin or service failure on stderr, exactly once, and then

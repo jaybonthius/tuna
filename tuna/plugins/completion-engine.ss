@@ -224,7 +224,7 @@ prelude: :gerbil/core
 (defplugin (completion-engine-plugin ctx)
   "Completion reads with smart-case substring matching; works without a list UI."
   requires: [commands-service input-service buffers-service minibuffer-service settings-service]
-  optional: [completion-service completion-ui-service messages-service]
+  optional: [completion-ui-service]
   (let (self (completion-engine ctx: ctx sessions: [] styles: (new-entry-table) annotators: (new-entry-table)
                                keymap: (new-keymap)))
     (context-provide! ctx completion-service (Completion self))

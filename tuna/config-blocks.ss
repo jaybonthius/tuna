@@ -43,7 +43,6 @@ prelude: :gerbil/core
         (set! (block-follower-pending self) (cons name (block-follower-pending self))))))
     (defplugin config-blocks
       "Keeps each config: block of init.ss on while its plugin is on."
-      optional: [messages-service]
       (let (ctx (current-context))
         (context-add-hook! ctx plugin-activated-hook 'config-blocks
                            (lambda ((p : plugin))

@@ -135,7 +135,6 @@ prelude: :gerbil/core
 (defplugin (autosave-plugin ctx)
   "Autosaves unsaved buffer text; restores buffers, their text, and their points on start."
   requires: [buffers-service session-service]
-  optional: [messages-service]
   (using (self (autosave written: (make-hash-table-eq)) : autosave)
     (context-add-session-slot! ctx 'buffers
                                version: 1

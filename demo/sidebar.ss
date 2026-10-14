@@ -57,7 +57,6 @@ prelude: :gerbil/core
 (defplugin (sidebar-demo-plugin ctx)
   "C-c d shows a sidebar of buffer buttons pinned to the left; again, kills it and its view closes."
   requires: [commands-service input-service buffers-service layout-service]
-  optional: [messages-service]
   (define-command ctx (toggle-sidebar) "Show *sidebar* at the left side, or kill it."
     (if (get-buffer sidebar-name)
       (kill-sidebar!)

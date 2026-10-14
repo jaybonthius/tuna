@@ -182,6 +182,39 @@
           (deactivate-plugin! greeter-a)
           (check (plugin-active? optional-user) => #t))))
 
+    (test-case "kernel message needs no declaration, with a provider or stderr"
+      (call-with-fresh-kernel []
+        (lambda ()
+          (defplugin (logging-owner ctx) "Uses the kernel message facility."
+            (message "No Messages provider")
+            (context-add-hook! ctx test-hook 'log (lambda (item) (message item))))
+          (check (captured-output (lambda () (activate-plugin! logging-owner)))
+                 => ["" "No Messages provider\n"])
+          (activate-plugin! test-messages-plugin)
+          (run-hook test-hook "A Messages provider")
+          (check (current-message) => "A Messages provider")
+          (defplugin (raw-messages-user ctx) "Raw service access still needs a declaration."
+            (service-provider messages-service))
+          (check (with-catch exception-summary (lambda () (activate-plugin! raw-messages-user)))
+                 => "Plugin used an undeclared service raw-messages-user messages"))))
+
+    (test-case "a provider may use its own service, including while shadowed"
+      (call-with-fresh-kernel []
+        (lambda ()
+          (defplugin (self-user ctx) "Provides and uses Greeter without requiring itself."
+            (context-provide! ctx greeter-service (make-greeter "self"))
+            (note! (call-with-service-provider greeter-service
+                     (lambda (implementation) (Greeter-greet (Greeter implementation)))))
+            (context-add-hook! ctx test-hook 'self
+              (lambda (item) (note! (Greeter-greet (Greeter (service-provider greeter-service)))))))
+          (take-log!)
+          (activate-plugin! self-user order: 1)
+          (check (take-log!) => ["self"])
+          (activate-plugin! greeter-b order: 2)
+          (check (plugin-active? self-user) => #t)
+          (run-hook test-hook #f)
+          (check (take-log!) => ["b"]))))
+
     (test-case "same-owner provider replacement still hands over and restarts dependents"
       (call-with-fresh-kernel []
         (lambda ()
