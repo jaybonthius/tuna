@@ -17,9 +17,6 @@
 ;;; Prompts nest: answers are delivered innermost first. When a prompt
 ;;; ends, its view shows what it showed before and the previously selected
 ;;; view is selected again.
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 (import :tuna/services/commands
         :std/interface
         (only-in :gerbil/runtime/hash HashTable)
@@ -36,7 +33,7 @@
 (defsetting minibuffer-history-length 100
   "Maximum entries in each named minibuffer history; #f keeps every entry, 0 keeps none.")
 
-(defclass minibuffer ((prompts : :list)
+(defclass minibuffer ((ctx : context) (prompts : :list)
                       (keymap : entry-table)
                       (idle : buffer)
                       (histories : HashTable))
@@ -98,8 +95,11 @@
   (prompt-answer-node (lambda (self) self.answer))
   (prompt-keymap (lambda (self) self.keymap))
   (prompt-input (lambda (self) (text-string (text-node-content self.answer))))
-  (prompt-set-exit-check! (lambda (self check) (set! self.exit-check check)))
+  (prompt-set-exit-check! (lambda (self check)
+                            (set! self.exit-check (context-bind (current-context) check))))
   (prompt-exit! (lambda (self value history-text)
+                  (call-with-context (minibuffer-ctx self.owner)
+                    (lambda ()
                   (using (owner self.owner : minibuffer)
                     (unless (and self.waiting (eq? self (car owner.prompts)))
                       (error "Not in the innermost minibuffer"))
@@ -111,7 +111,7 @@
                             (hash-put! owner.histories self.history-name
                                        (trim-history (cons history-text
                                                           (history-list owner self.history-name)))))
-                          (resume! self.waiting value))))))))
+                          (resume! self.waiting value))))))))))
 
 ;; Navigation saves the unfinished input on first M-p; M-n returns to it.
 (def (move-history! (p : prompt) (delta : :fixnum)) => :void
@@ -222,7 +222,7 @@
     (set-buffer-setting! idle no-other-view #t)
     (context-add-buffer! ctx idle)
     (add-locked-view idle side: 'bottom size: 'content)
-    (using (self (minibuffer prompts: [] keymap: (new-keymap) idle: idle histories: (make-hash-table-eq)) : minibuffer)
+    (using (self (minibuffer ctx: ctx prompts: [] keymap: (new-keymap) idle: idle histories: (make-hash-table-eq)) : minibuffer)
       (context-add-session-slot! ctx 'minibuffer-history version: 1
                                  save: (lambda () (save-histories self))
                                  restore: (lambda (data) (restore-histories! self data)))

@@ -73,16 +73,11 @@ prelude: :gerbil/core
   (new-service 'minibuffer is-Minibuffer? tier: 'live
                doc: "Asks questions in the minibuffer."))
 
-(def (current-minibuffer) => Minibuffer
-  (let (provider (service-provider minibuffer-service))
-    (unless provider
-      (error "No plugin provides the minibuffer"))
-    (Minibuffer provider)))
-
 (def (read-from-minibuffer (question : :string) (initial : :string := "")
                            history: (history :? :symbol := #f)
                            setup: (setup :? :procedure := #f)) => :t
-  (Minibuffer-read-from-minibuffer (current-minibuffer) question initial history setup))
+  (let (setup (and setup (context-bind (current-context) setup)))
+    (with-service-provider (provider minibuffer-service Minibuffer) (Minibuffer-read-from-minibuffer provider question initial history setup))))
 
 ;; The plain string reader is only a typed user of the prompt protocol.
 (def (read-string (question : :string) (initial : :string := "")
@@ -91,8 +86,9 @@ prelude: :gerbil/core
 
 ;; Newest first; callers treat the returned list as immutable.
 (def (minibuffer-history (name : :symbol)) => :list
-  (Minibuffer-minibuffer-history (current-minibuffer) name))
+  (:- (with-service-provider (provider minibuffer-service Minibuffer) (Minibuffer-minibuffer-history provider name)) :list))
 
 (def (active-prompt) => (Maybe prompt-display)
-  (let (provider (service-provider minibuffer-service))
-    (and provider (Minibuffer-active-prompt (Minibuffer provider)))))
+  (:? (call-with-service-provider minibuffer-service
+        (lambda (provider)
+          (and provider (Minibuffer-active-prompt (Minibuffer provider))))) prompt-display))

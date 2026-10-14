@@ -2,9 +2,6 @@
 ;;; Basic editing: typing, deleting, moving by characters and lines, and
 ;;; undo. Every command acts on the current view's focused text node, so it
 ;;; works the same in a one-text buffer and in a tree with other nodes.
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 (import :tuna/services/commands
         :tuna/kernel
         :tuna/services/keys

@@ -28,6 +28,7 @@ prelude: :gerbil/core
         call-on-editor-loop
         spawn-task!
         cancel-task!
+        call-with-task-owner
         result-poster
         suspend
         resume!
@@ -178,7 +179,7 @@ prelude: :gerbil/core
 ;; replacement from now on.
 (def (start-editor-loop! quit-grace: (quit-grace : :real := 0.5)) => :void
   (using (k (the-kernel) : kernel)
-    (let (input (service-provider input-service))
+    (let (input (call-with-context #f (lambda () (service-provider input-service))))
       (when k.loop
         (error "The editor loop is already running"))
       (unless input
@@ -245,6 +246,14 @@ prelude: :gerbil/core
     (send-to-loop! [enqueue: queued])
     queued))
 
+;; Attribute direct-style work to CTX and cancel its task on receipt undo.
+;; Remove the inverse on return, so repeated invocations retain no tasks.
+(def (call-with-task-owner (ctx : context) (procedure : :procedure)) => :t
+  (let (running (running-task))
+    (if running
+      (call-with-context-receipt ctx (lambda () (cancel-task! running)) procedure)
+      (call-with-context ctx procedure))))
+
 ;; Cancel QUEUED-OR-RUNNING: a queued task never runs, a suspended one
 ;; resumes by raising quit, and a running one is asked to quit at its next
 ;; quit check. Callable from any thread.
@@ -265,9 +274,11 @@ prelude: :gerbil/core
 
 ;; Redisplay now. Only the baton holder may call this: the loop, or a task.
 (def (redisplay) => :void
-  (let (display (service-provider display-service))
-    (when display
-      (Display-redisplay! (Display display)))))
+  (call-with-context #f
+    (lambda ()
+      (call-with-service-provider display-service
+        (lambda (provider)
+          (when provider (Display-redisplay! (Display provider))))))))
 
 ;; The name of the running task, or #f.
 (def (current-task-name) => (Maybe :symbol)
@@ -415,7 +426,8 @@ prelude: :gerbil/core
     (with-catch
      (lambda (e) (message (exception-summary e)))
      (lambda ()
-       (let (resolved (Input-resolve! loop.input (queued-input-item next)))
+       (let (resolved (call-with-service-provider input-service
+                         (lambda (provider) (Input-resolve! loop.input (queued-input-item next)))))
          (when resolved
            (start-task! loop (new-task (car resolved) (cdr resolved) #f)))))))))
 
@@ -440,7 +452,7 @@ prelude: :gerbil/core
 (def (baton-task-thread (loop-thread : :thread) (running : task)) => :void
   (let* ((raised? #t)
          (procedure running.procedure)
-         (value (parameterize ((current-task running))
+         (value (parameterize ((current-task running) (current-context #f))
                   (with-catch
                    (lambda (e)
                      (set! running.state 'finished)

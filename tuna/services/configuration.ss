@@ -22,14 +22,8 @@ prelude: :gerbil/core
   (new-service 'configuration is-Configuration? tier: 'live
                doc: "Reloads init.ss and keeps the last start-up or reload report."))
 
-(def (current-configuration) => Configuration
-  (let (provider (service-provider configuration-service))
-    (unless provider
-      (error "Nothing provides the configuration service"))
-    (Configuration provider)))
-
 (def (reload-configuration-report) => :string
-  (Configuration-reload! (current-configuration)))
+  (:- (with-service-provider (provider configuration-service Configuration) (Configuration-reload! provider)) :string))
 
 (def (last-configuration-report) => (Maybe :string)
-  (Configuration-last-report (current-configuration)))
+  (:? (with-service-provider (provider configuration-service Configuration) (Configuration-last-report provider)) :string))

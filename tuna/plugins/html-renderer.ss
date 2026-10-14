@@ -29,10 +29,6 @@
 ;;; inputs. Every redraw still sends the whole visible screen as one fat
 ;;; morph. Kept HTML belongs to the views drawn: a view not drawn, or drawn
 ;;; from another node, drops its own.
-;;; Optional services:
-;;; - input-service: clickable marks and keymap generation, through the keys
-;;;   contract's provider-guarded accessors; without it, unmarked HTML and
-;;;   generation zero. Rendering and node-local binding marks still work.
 prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable)
@@ -255,5 +251,6 @@ prelude: :gerbil/core
 (defplugin (html-renderer-plugin ctx)
   "Renders the screen as HTML: the layout drawn from the frame."
   requires: [buffers-service layout-service settings-service]
+  optional: [input-service]
   (context-define-node-renderer! ctx 'text 'html render-text-node)
   (context-provide! ctx renderer-service (Renderer (html-renderer views: (make-hash-table-eqv)))))

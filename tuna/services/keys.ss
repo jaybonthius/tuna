@@ -174,17 +174,11 @@ prelude: :gerbil/core
   ;; any keymap.
   (keymap-generation) => :fixnum)
 
-(def (current-keys) => Keys
-  (let (input (service-provider input-service))
-    (unless (and input (is-Keys? input))
-      (error "The input service does not provide key bindings" input))
-    (Keys input)))
-
 (def (where-is (name : :symbol) (focus :? node := #f)) => :list
-  (Keys-where-is (current-keys) name focus))
+  (:- (with-service-provider (provider input-service Keys) (Keys-where-is provider name focus)) :list))
 
 (def (keymap-set! (ctx : context) (keys : :string) (command : :symbol) (source :? :string)) => :void
-  (Keys-keymap-set! (current-keys) ctx keys command source))
+  (:- (with-service-provider (provider input-service Keys) (Keys-keymap-set! provider ctx keys command source)) :void))
 
 ;; (keymap-set ctx "C-c l" 'command), or (keymap-set "C-c l" 'command) in a
 ;; plugin body, which binds through (current-context). Records the source.
@@ -200,7 +194,7 @@ prelude: :gerbil/core
 (def (keymap-set-in! (ctx : context) (keymap : entry-table) (keys : :string) (command : :symbol)
                      (source :? :string))
   => :void
-  (Keys-keymap-set-in! (current-keys) ctx keymap keys command source))
+  (:- (with-service-provider (provider input-service Keys) (Keys-keymap-set-in! provider ctx keymap keys command source)) :void))
 
 ;; (keymap-set-in ctx keymap "RET" 'command), or without CTX in a plugin
 ;; body. Records the source.
@@ -214,17 +208,17 @@ prelude: :gerbil/core
        #'(keymap-set-in! (current-context) keymap keys command source)))))
 
 (def (push-input-target! (target : input-target)) => :void
-  (Keys-push-input-target! (current-keys) target))
+  (:- (with-service-provider (provider input-service Keys) (Keys-push-input-target! provider target)) :void))
 
 (def (remove-input-target! (target : input-target)) => :void
-  (Keys-remove-input-target! (current-keys) target))
+  (:- (with-service-provider (provider input-service Keys) (Keys-remove-input-target! provider target)) :void))
 
 (def (key-binding (keys : :string)) => :t
-  (Keys-key-binding (current-keys) keys))
+  (with-service-provider (provider input-service Keys) (Keys-key-binding provider keys)))
 
 ;; A key-event, a pointer-event, or #f.
 (def (last-command-event) => :t
-  (Keys-last-command-event (current-keys)))
+  (with-service-provider (provider input-service Keys) (Keys-last-command-event provider)))
 
 ;; The keys of a plain click (mouse-1, mouse-2 or mouse-3) on a part of
 ;; kind AREA: under AREA as a prefix key ("<view> <mouse-1>"), and also
@@ -242,11 +236,12 @@ prelude: :gerbil/core
 ;; parts clickable; #f without key bindings. The unprefixed global
 ;; fallbacks do not count: they would make every part clickable.
 (def (part-clickable? (area : :symbol)) => :boolean
-  (let (input (service-provider input-service))
-    (and input (is-Keys? input)
-         (ormap (lambda ((keys : :string)) (Keys-key-binding (Keys input) keys))
-                (plain-click-keys area #f))
-         #t)))
+  (:- (call-with-service-provider input-service
+        (lambda (input)
+          (and input (is-Keys? input)
+               (ormap (lambda ((keys : :string)) (Keys-key-binding (Keys input) keys))
+                      (plain-click-keys area #f))
+               #t))) :boolean))
 
 ;; Whether KEYMAP, a node's own, binds a plain click on a part of kind
 ;; AREA, with or without AREA as a prefix key ("<mouse-1>", "<view>
@@ -256,7 +251,8 @@ prelude: :gerbil/core
 
 ;; The current keymap generation, or 0 without key bindings.
 (def (keymap-generation) => :fixnum
-  (let (input (service-provider input-service))
-    (if (and input (is-Keys? input))
-      (Keys-keymap-generation (Keys input))
-      0)))
+  (:- (call-with-service-provider input-service
+        (lambda (input)
+          (if (and input (is-Keys? input))
+            (Keys-keymap-generation (Keys input))
+            0))) :fixnum))

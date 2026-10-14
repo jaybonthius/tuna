@@ -7,9 +7,6 @@
 ;;; added, killed or renamed (buffer-list-update-hook). The sidebar's view
 ;;; is dedicated, so pressing C-c d again kills the buffer and the view
 ;;; closes. Turning the plugin off kills it too.
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import :tuna/services/commands

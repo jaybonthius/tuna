@@ -6,9 +6,6 @@
 ;;; that demo/init.ss declares beside it. The demo turns other plugins on
 ;;; and off, so it imports them; ordinary plugins do not. Nothing in tuna/
 ;;; or starter/ may import it (tuna/kernel/boundary-test.ss).
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import :tuna/services/commands

@@ -2,9 +2,6 @@
 ;;; provider for the contract doubles (plain-text-renderer.ss, two-views.ss,
 ;;; toy-buffers.ss) while Tuna runs, for tests that swap a live slot through
 ;;; the editor.
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import :tuna/services/commands

@@ -12,10 +12,12 @@
 
 (defplugin (sets-wide ctx)
   "Sets fill-column globally to 100."
+  requires: [settings-service]
   (context-set-setting! ctx fill-column 100))
 
 (defplugin (sets-narrow ctx)
   "Sets fill-column globally to 40."
+  requires: [settings-service]
   (context-set-setting! ctx fill-column 40))
 
 (def buffer-plugins
@@ -41,8 +43,8 @@
     (test-case "global values are owner-tagged and revert in any order"
       (call-with-fresh-kernel buffer-plugins
        (lambda ()
-         (activate-plugin! sets-wide)
-         (activate-plugin! sets-narrow)
+         (activate-plugin! sets-wide order: 1)
+         (activate-plugin! sets-narrow order: 2)
          (check (setting-value fill-column) => 40)
          (deactivate-plugin! sets-narrow)
          (check (setting-value fill-column) => 100)

@@ -57,7 +57,7 @@
 
 (defplugin (layered ctx)
   "Commands, and bindings in every layer."
-  requires: [input-service]
+  requires: [commands-service input-service]
   (for-each (lambda (name) (context-define-command! ctx name void)) command-names)
   (for-each (lambda (binding) (keymap-set! ctx (car binding) (cdr binding) #f))
             '(("C-c a" . global-a) ("C-c b" . global-b) ("C-c c" . global-c) ("C-c d" . global-d)
@@ -161,7 +161,7 @@
        (lambda ()
          (defplugin (prefixes ctx)
            "C-c is a global command; in the leaf it is a prefix."
-           requires: [input-service]
+           requires: [commands-service input-service]
            (context-define-command! ctx 'global-c-c void)
            (context-define-command! ctx 'leaf-c-c-c void)
            (keymap-set! ctx "C-c" 'global-c-c #f)

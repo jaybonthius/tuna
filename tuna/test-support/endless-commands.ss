@@ -1,9 +1,6 @@
 ;;; Commands that never finish, for tests of quitting with C-g: C-c l loops
 ;;; checking for quit; C-c L loops without checking, so only a forced quit
 ;;; stops it.
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import :tuna/services/commands

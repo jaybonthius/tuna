@@ -22,6 +22,11 @@ prelude: :gerbil/core
   defplugin
   context
   current-context
+  call-with-context
+  context-bind
+  call-with-service-provider
+  with-service-provider
+  set-plugin-order!
   context-defer!
   context-add-entry!
   entry
@@ -64,6 +69,7 @@ prelude: :gerbil/core
   call-on-editor-loop
   spawn-task!
   cancel-task!
+  call-with-task-owner
   running-task
   current-task-id
   current-task-name

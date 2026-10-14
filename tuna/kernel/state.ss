@@ -12,6 +12,8 @@ prelude: :gerbil/core
         kernel-plugins
         kernel-services
         kernel-providers
+        kernel-cached-services
+        kernel-cached-services-set!
         kernel-adapters
         kernel-live?
         kernel-loop
@@ -21,6 +23,7 @@ prelude: :gerbil/core
   ((plugins   : HashTable)       ; plugin name -> plugin record
    (services  : HashTable)       ; service name -> service
    (providers : entry-table)     ; service name -> provider entries
+   (cached-services : :list)     ; service objects whose dispatch cells were read
    (adapters  : entry-table)     ; service name -> adapter entries
    (live?     : :boolean)        ; the editor loop is running
    (loop      : :t))             ; the editor loop object, owned by ./loop
@@ -30,6 +33,7 @@ prelude: :gerbil/core
   (kernel plugins: (make-hash-table)
           services: (make-hash-table)
           providers: (new-entry-table)
+          cached-services: []
           adapters: (new-entry-table)
           live?: #f
           loop: #f))

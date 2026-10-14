@@ -1,8 +1,5 @@
 ;;; Vertical completion presentation. Nodes are rebuilt from the session;
 ;;; the renderer still sends one whole-screen morph. No client list state.
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 (import :tuna/services/commands
         :std/interface (only-in :gerbil/runtime/hash HashTable)

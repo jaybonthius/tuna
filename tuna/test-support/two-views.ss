@@ -92,6 +92,7 @@ prelude: :gerbil/core
 (defplugin (two-views-plugin ctx)
   "Arranges views: two side by side (a toy). Outranks the default layout while active."
   requires: [buffers-service]
+  optional: [layout-service]
   (let* ((left (selected-view))
          (right (copy-view left)))
     (using (self (two-views left: left right: right selected: left marks: []) : two-views)

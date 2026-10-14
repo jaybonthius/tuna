@@ -7,9 +7,6 @@
 ;;; provides. Commands run as tasks, so the reload holds the baton. The
 ;;; plugin binds no key; init.ss can. `tuna reload` from a terminal does
 ;;; not need this plugin.
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 (import :tuna/services/commands
         :tuna/kernel
         :tuna/services/configuration)

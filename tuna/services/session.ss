@@ -49,12 +49,6 @@ prelude: :gerbil/core
   (new-service 'session is-Session? tier: 'startup
                doc: "Saves and restores session slots as plain data."))
 
-(def (current-session) => Session
-  (let (provider (service-provider session-service))
-    (unless provider
-      (error "No plugin keeps the session"))
-    (Session provider)))
-
 (def (context-add-session-slot! (ctx : context)
                                 (name : :symbol)
                                 version:  (version  : :fixnum)
@@ -62,17 +56,18 @@ prelude: :gerbil/core
                                 restore:  (restore  : :procedure)
                                 priority: (priority : :fixnum := 0))
   => :void
-  (Session-add-session-slot! (current-session) ctx
-                             (make-session-slot name version save restore) priority))
+  (:- (with-service-provider (provider session-service Session)
+    (Session-add-session-slot! provider ctx
+                               (make-session-slot name version (context-bind ctx save) (context-bind ctx restore)) priority)) :void))
 
 (def (save-session) => :void
-  (Session-save-session! (current-session)))
+  (:- (with-service-provider (provider session-service Session) (Session-save-session! provider)) :void))
 
 (def (restore-session) => :void
-  (Session-restore-session! (current-session)))
+  (:- (with-service-provider (provider session-service Session) (Session-restore-session! provider)) :void))
 
 (def (state-directory) => :string
-  (Session-state-directory (current-session)))
+  (:- (with-service-provider (provider session-service Session) (Session-state-directory provider)) :string))
 
 ;; Whether VALUE is plain data that `write` and `read` round-trip: lists,
 ;; vectors, strings, symbols, numbers, characters, and booleans, without

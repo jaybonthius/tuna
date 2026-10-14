@@ -58,21 +58,15 @@ prelude: :gerbil/core
   (new-service 'settings is-Settings? tier: 'startup
                doc: "Resolves settings through the dynamic layer, scopes, and global values."))
 
-(def (current-settings) => Settings
-  (let (provider (service-provider settings-service))
-    (unless provider
-      (error "No plugin resolves settings"))
-    (Settings provider)))
-
 (def (setting-value (s : setting)) => :t
-  (Settings-resolve (current-settings) s (current-setting-bindings)))
+  (with-service-provider (provider settings-service Settings) (Settings-resolve provider s (current-setting-bindings))))
 
 (def (context-set-setting! (ctx : context) (s : setting) (value : :t)) => :void
-  (Settings-add-global-value! (current-settings) ctx s value))
+  (:- (with-service-provider (provider settings-service Settings) (Settings-add-global-value! provider ctx s value)) :void))
 
 (def (context-add-setting-scope! (ctx : context)
                                  (name : :symbol)
                                  (lookup : :procedure)
                                  priority: (priority : :fixnum := 0))
   => :void
-  (Settings-add-scope! (current-settings) ctx name lookup priority))
+  (:- (with-service-provider (provider settings-service Settings) (Settings-add-scope! provider ctx name (context-bind ctx lookup) priority)) :void))

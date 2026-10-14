@@ -72,6 +72,26 @@
 
 (def boot-test
   (test-suite "start-up from init.ss"
+    (test-case "a user's config block may use undeclared services but turns off with its target"
+      (call-with-temporary-directory
+        (lambda (directory)
+          (let (path (write-init directory
+                       "(import :tuna/kernel)"
+                       "(use-plugin provider-plugin)"
+                       "(use-plugin good-plugin config: (unless (service-provider probe-service) (error \"Missing probe\")) (probe-on! 'unlisted-config))"))
+            (call-with-fresh-kernel []
+              (lambda ()
+                (let (report (start path))
+                  (check (statuses report)
+                         => '(("config-blocks" on) ("provider-plugin" on) ("good-plugin" on)
+                              ("config: block of good-plugin" on) ("your own code (plugin init)" on)))
+                  (check (probe-on? 'unlisted-config) => #t)
+                  (activate-plugin! test-input-plugin)
+                  (start-editor-loop!)
+                  (call-on-editor-loop (lambda () (deactivate-plugin! good-plugin)))
+                  (check (call-on-editor-loop (lambda () (probe-on? 'unlisted-config))) => #f)
+                  (check (plugin-active? provider-plugin) => #t))))))))
+
     (test-case "the command line: run, check, and init"
       (check (parse-command-line []) => '(run #f #f))
       (check (parse-command-line ["--port" "8001"]) => '(run 8001 #f))

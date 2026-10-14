@@ -24,7 +24,8 @@ prelude: :gerbil/core
   (eq? (node-kind (buffer-root (view-showing v))) echo-area-node-kind))
 
 (def (current-message) => :string
-  (let (provider (service-provider messages-service))
-    (if (and provider (is-EchoArea? provider))
-      (EchoArea-current-message (EchoArea provider))
-      "")))
+  (:- (call-with-service-provider messages-service
+        (lambda (provider)
+          (if (and provider (is-EchoArea? provider))
+            (EchoArea-current-message (EchoArea provider))
+            ""))) :string))

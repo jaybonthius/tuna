@@ -46,7 +46,7 @@ prelude: :gerbil/core
 
 (defplugin (fixture ctx)
   "Reads, commands and a redraw observer for completion integration tests."
-  requires: [input-service completion-service minibuffer-service]
+  requires: [commands-service input-service completion-service minibuffer-service buffers-service]
   (context-provide! ctx display-service (completion-display))
   (define-command ctx (test-alpha) "An alpha action.\nMore details on the next line." (set! results (cons 'alpha results)))
   (define-command ctx (test-beta) "A beta action." (set! results (cons 'beta results)))
@@ -68,7 +68,7 @@ prelude: :gerbil/core
 
 (defplugin (test-annotator ctx)
   "An annotator that records its buffer and only the shown candidates."
-  requires: [completion-service]
+  requires: [completion-service buffers-service]
   (context-define-annotator! ctx 'test
     (lambda ((c : candidate))
       (set! annotations (cons [(candidate-text c) (buffer-name (current-buffer))] annotations))

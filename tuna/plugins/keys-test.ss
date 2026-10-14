@@ -8,7 +8,7 @@
         :tuna/services/settings
         :tuna/plugins/settings
         "../test-support/kernel"
-        (only-in "../test-support/string-input" test-messages-plugin current-message))
+        (only-in "../test-support/string-input" test-input-plugin test-messages-plugin current-message))
 (export keys-test)
 
 (def (keydown (key : :string) ctrl?: (ctrl? : :boolean := #f) alt?: (alt? : :boolean := #f)
@@ -27,10 +27,12 @@
 
 (defplugin (binds-a ctx)
   "Binds C-c x to command-a."
+  requires: [input-service]
   (keymap-set ctx "C-c x" 'command-a))
 
 (defplugin (binds-b ctx)
   "Binds C-c x to command-b."
+  requires: [input-service]
   (keymap-set ctx "C-c  x" 'command-b))
 
 (def (binding keys)
@@ -47,12 +49,12 @@
 
 (defplugin (defines-a ctx)
   "Defines command-shared as a."
-  requires: [input-service]
+  requires: [commands-service]
   (define-command ctx (command-shared) "Runs a." 'a))
 
 (defplugin (defines-b ctx)
   "Defines command-shared as b."
-  requires: [input-service]
+  requires: [commands-service]
   (define-command ctx (command-shared) "Runs b." 'b))
 
 ;; What the effective command-shared returns when run, or #f.
@@ -62,6 +64,29 @@
 
 (def keys-test
   (test-suite "tuna/plugins/keys"
+    (test-case "optional key queries accept an input provider with no Keys interface"
+      (call-with-fresh-kernel [test-input-plugin]
+        (lambda ()
+          (check (part-clickable? 'view) => #f)
+          (check (keymap-generation) => 0))))
+
+    (test-case "the same owner's key replaces its previous binding"
+      (call-with-fresh-kernel keys-plugins
+        (lambda ()
+          (let (map (new-keymap))
+            (defplugin (repeated-binding ctx) "Two definitions of one key."
+              requires: [input-service]
+              (keymap-set ctx "C-c x" 'first)
+              (keymap-set ctx "C-c x" 'second)
+              (keymap-set-in ctx map "C-c x" 'first)
+              (keymap-set-in ctx map "C-c x" 'second))
+            (activate-plugin! repeated-binding)
+            (check (binding "C-c x") => 'second)
+            (check (length (entry-table-entries map "C-c x")) => 1)
+            (deactivate-plugin! repeated-binding)
+            (check (binding "C-c x") => #f)
+            (check (entry-table-ref map "C-c x") => #f)))))
+
     (test-case "where-is orders effective bindings by key count, length and spelling"
       (call-with-fresh-kernel keys-plugins
         (lambda ()
@@ -116,6 +141,7 @@
            (check (key-description (keydown "≈" code: "KeyX" alt?: #t mac?: #t right?: #t)) => "M-x"))
          (defplugin (option-settings ctx)
            "Changes the Option settings while the input plugin is running."
+           requires: [settings-service]
            (context-set-setting! ctx mac-option-modifier 'none)
            (context-set-setting! ctx mac-right-option-modifier 'meta))
          (activate-plugin! option-settings)
@@ -131,7 +157,7 @@
        (lambda ()
          (defplugin (meta-command ctx)
            "A command reached by Meta-x."
-           requires: [input-service]
+           requires: [commands-service input-service]
            (define-command ctx (meta-x) "Runs on M-x." 'ran)
            (keymap-set ctx "M-x" 'meta-x))
          (activate-plugin! meta-command)
@@ -168,7 +194,7 @@
          (deactivate-plugin! binds-a)
          (check (binding "C-c x") => 'command-b)
          (activate-plugin! binds-a)
-         (check (binding "C-c x") => 'command-a)
+         (check (binding "C-c x") => 'command-b)
          (deactivate-plugin! binds-b)
          (check (binding "C-c x") => 'command-a)
          (activate-plugin! binds-b)
@@ -186,7 +212,7 @@
          (deactivate-plugin! defines-a)
          (check (shared-result) => 'b)
          (activate-plugin! defines-a)
-         (check (shared-result) => 'a)
+         (check (shared-result) => 'b)
          (deactivate-plugin! defines-b)
          (check (shared-result) => 'a)
          (deactivate-plugin! defines-a)
@@ -209,7 +235,7 @@
        (lambda ()
          (defplugin (documented ctx)
            "Defines one command."
-           requires: [input-service]
+           requires: [commands-service]
            (define-command ctx (documented-command) "Does nothing." (void)))
          (activate-plugin! documented)
          (let (e (command-entry 'documented-command))
@@ -240,7 +266,7 @@
        (lambda ()
          (defplugin (commands ctx)
            "A command bound under C-c."
-           requires: [input-service]
+           requires: [commands-service input-service]
            (define-command ctx (command-a) "A." (void))
            (keymap-set ctx "C-c x" 'command-a))
          (activate-plugin! commands)
@@ -261,7 +287,7 @@
        (lambda ()
          (defplugin (targets ctx)
            "Commands for the global keymap and two input targets."
-           requires: [input-service]
+           requires: [commands-service input-service]
            (for-each (lambda (name) (context-define-command! ctx name void))
                      '(global-x outer-x inner-x inner-quit))
            (keymap-set ctx "C-c x" 'global-x))
@@ -270,6 +296,7 @@
                (inner (make-input-target 'inner (new-keymap))))
            (defplugin (target-keys ctx)
              "Binds keys in the two targets' keymaps."
+             requires: [input-service]
              (keymap-set-in ctx (input-target-keymap outer) "C-c x" 'outer-x)
              (keymap-set-in ctx (input-target-keymap inner) "C-c x" 'inner-x)
              (keymap-set-in ctx (input-target-keymap inner) "C-g" 'inner-quit))
@@ -287,14 +314,14 @@
            (resolve (keydown "c" ctrl?: #t))
            (check (resolve (keydown "x")) => 'global-x)))))
 
-    (test-case "restarting the keys plugin re-registers a dependent's commands"
+    (test-case "restarting the command registry re-registers a dependent's commands"
       (call-with-fresh-kernel keys-plugins
        (lambda ()
          (activate-plugin! defines-a)
          (check (shared-result) => 'a)
-         (deactivate-plugin! keys-plugin)
+         (deactivate-plugin! commands-plugin)
          (check (plugin-active? defines-a) => #f)
-         (activate-plugin! keys-plugin)
+         (activate-plugin! commands-plugin)
          (check (plugin-active? defines-a) => #t)
          (check (shared-result) => 'a)
          (let (quit (command-entry 'keyboard-quit))
@@ -329,7 +356,7 @@
        (lambda ()
          (defplugin (clicks ctx)
            "Commands bound to clicks."
-           requires: [input-service]
+           requires: [commands-service input-service]
            (for-each (lambda (name) (context-define-command! ctx name void))
                      '(tab-click tab-double-click any-click any-double-click))
            (keymap-set ctx "<tab-line> <mouse-1>" 'tab-click)
@@ -353,7 +380,7 @@
        (lambda ()
          (defplugin (prefixed ctx)
            "A command under C-c, and one on a tab click."
-           requires: [input-service]
+           requires: [commands-service input-service]
            (context-define-command! ctx 'command-a void)
            (keymap-set ctx "C-c x" 'command-a)
            (keymap-set ctx "<tab-line> <mouse-1>" 'command-a))

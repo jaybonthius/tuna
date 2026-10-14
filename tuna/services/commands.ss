@@ -32,17 +32,15 @@ prelude: :gerbil/core
 (def commands-service
   (new-service 'commands is-Commands? tier: 'live doc: "Named commands and their activation identity."))
 
-(def (current-commands) => Commands
-  (let (provider (service-provider commands-service))
-    (unless provider (error "No plugin provides commands"))
-    (Commands provider)))
-
 (def (context-define-command! (ctx : context) (name : :symbol) (procedure : :procedure)
                               doc: (doc : :string := "")
                               visible?: (visible? : :procedure := (lambda (c origin) #t))
                               source: (source :? :string := #f)) => :void
-  (Commands-define-command! (current-commands) ctx
-                            (make-command name: name procedure: procedure doc: doc visible?: visible?) source))
+  (:- (with-service-provider (provider commands-service Commands)
+    (Commands-define-command! provider ctx
+                              (make-command name: name
+                                      procedure: (lambda () (call-with-task-owner ctx procedure))
+                                      doc: doc visible?: (context-bind ctx visible?)) source)) :void))
 
 (defsyntax (define-command stx)
   (syntax-case stx ()
@@ -60,22 +58,22 @@ prelude: :gerbil/core
                                   doc: doc source: source)))))
 
 (def (command-entry (name : :symbol)) => (Maybe entry)
-  (Commands-command-entry (current-commands) name))
+  (:? (with-service-provider (provider commands-service Commands) (Commands-command-entry provider name)) entry))
 
 (def (command-ref (name : :symbol)) => (Maybe command)
   (let (best (command-entry name)) (and best (entry-value best))))
 
 ;; Every effective name, including hidden commands; callers filter visibility.
 (def (command-names) => :list
-  (Commands-command-names (current-commands)))
+  (:- (with-service-provider (provider commands-service Commands) (Commands-command-names provider)) :list))
 
 ;; Call from a task: prompts remain direct-style yield points. Returns the
 ;; procedure's value; missing names raise rather than silently doing nothing.
 (def (call-command (name : :symbol)) => :t
-  (Commands-call-command (current-commands) name))
+  (with-service-provider (provider commands-service Commands) (Commands-call-command provider name)))
 
 (def (this-command) => (Maybe :symbol)
-  (Commands-this-command (current-commands)))
+  (:? (with-service-provider (provider commands-service Commands) (Commands-this-command provider)) :symbol))
 
 (def (last-command) => (Maybe :symbol)
-  (Commands-last-command (current-commands)))
+  (:? (with-service-provider (provider commands-service Commands) (Commands-last-command provider)) :symbol))

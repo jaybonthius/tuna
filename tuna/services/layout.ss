@@ -161,43 +161,39 @@ prelude: :gerbil/core
                             (Layout incoming)
                             (Layout-describe-views (Layout outgoing))))))
 
-(def (current-layout) => Layout
-  (let (provider (service-provider layout-service))
-    (unless provider
-      (error "No plugin provides the layout"))
-    (Layout provider)))
-
 ;; Every view, in order (Emacs `window-list`).
 (def (view-list) => :list
-  (Layout-views (current-layout)))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-views provider)) :list))
 
 ;; Select V (Emacs `select-window`).
 (def (select-view (v : view)) => :void
-  (Layout-select-view! (current-layout) v))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-select-view! provider v)) :void))
 
 (def (next-view (v : view)) => view
-  (: (Layout-next-view (current-layout) v) view))
+  (:- (with-service-provider (provider layout-service Layout) (: (Layout-next-view provider v) view)) view))
 
 ;; Show B in V (Emacs `set-window-buffer`).
 (def (set-view-buffer (v : view) (b : buffer)) => :void
-  (Layout-show-buffer! (current-layout) v b))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-show-buffer! provider v b)) :void))
 
 ;; Split V 'below or to the 'right; returns the new view (Emacs
 ;; `split-window-below`, `split-window-right`).
 (def (split-view (v : view) (side : :symbol)) => view
-  (unless (memq side '(below right))
-    (error "Split below or right, not" side))
-  (: (Layout-split-view! (current-layout) v side) view))
+  (:- (with-service-provider (provider layout-service Layout)
+    (unless (memq side '(below right))
+      (error "Split below or right, not" side))
+    (: (Layout-split-view! provider v side) view)) view))
 
 ;; Remove V (Emacs `delete-window`).
 (def (delete-view (v : view)) => :void
-  (Layout-delete-view! (current-layout) v))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-delete-view! provider v)) :void))
 
 ;; The view toward DIRECTION from V, or #f (Emacs `window-in-direction`).
 (def (neighbor-view (v : view) (direction : :symbol)) => (Maybe view)
-  (unless (memq direction '(left right up down))
-    (error "Look left, right, up, or down, not" direction))
-  (Layout-neighbor-view (current-layout) v direction))
+  (:? (with-service-provider (provider layout-service Layout)
+    (unless (memq direction '(left right up down))
+      (error "Look left, right, up, or down, not" direction))
+    (Layout-neighbor-view provider v direction)) view))
 
 ;; A size between 0 and 1, or `content`.
 (def (check-size (size : :t)) => :void
@@ -210,14 +206,15 @@ prelude: :gerbil/core
                      side: (side :? :symbol := #f)
                      size: (size :? :t := #f))
   => view
-  (when (and side (not (memq side '(left right top bottom))))
-    (error "Display at the left, right, top, or bottom, not" side))
-  (when size
-    (check-size size))
-  (: (Layout-display-buffer! (current-layout) b
-                             (append (if side [(cons 'side side)] [])
-                                     (if size [(cons 'size size)] [])))
-     view))
+  (:- (with-service-provider (provider layout-service Layout)
+    (when (and side (not (memq side '(left right top bottom))))
+      (error "Display at the left, right, top, or bottom, not" side))
+    (when size
+      (check-size size))
+    (: (Layout-display-buffer! provider b
+                               (append (if side [(cons 'side side)] [])
+                                       (if size [(cons 'size size)] [])))
+       view)) view))
 
 ;; Show B in a plugin's locked, pinned view at SIDE of the whole layout,
 ;; or return #f when the layout has no such places:
@@ -226,14 +223,15 @@ prelude: :gerbil/core
                       side: (side : :symbol := 'bottom)
                       size: (size : :t := 'content))
   => (Maybe view)
-  (unless (memq side '(left right top bottom))
-    (error "Lock a view at the left, right, top, or bottom, not" side))
-  (check-size size)
-  (Layout-add-locked-view! (current-layout) b side size))
+  (:? (with-service-provider (provider layout-service Layout)
+    (unless (memq side '(left right top bottom))
+      (error "Lock a view at the left, right, top, or bottom, not" side))
+    (check-size size)
+    (Layout-add-locked-view! provider b side size)) view))
 
 ;; The visible view nearest V for which (MATCH? view) holds, or #f.
 (def (nearest-view (v : view) (match? : :procedure)) => (Maybe view)
-  (Layout-nearest-view (current-layout) v match?))
+  (:? (with-service-provider (provider layout-service Layout) (Layout-nearest-view provider v match?)) view))
 
 ;; Emacs's `no-other-window`, for a buffer rather than a window.
 (defsetting no-other-view #f
@@ -262,23 +260,24 @@ prelude: :gerbil/core
              (ormap find-node (node-children n)))))))
 
 (def (current-frame-target) => frame-target
-  (: (Layout-current-frame-target (current-layout)) frame-target))
+  (:- (with-service-provider (provider layout-service Layout) (: (Layout-current-frame-target provider) frame-target)) frame-target))
 
 (def (move-frame (target : frame-target)) => :void
-  (Layout-move-frame! (current-layout) target))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-move-frame! provider target)) :void))
 
 (def (frame-mark-names) => :list
-  (Layout-frame-mark-names (current-layout)))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-frame-mark-names provider)) :list))
 
 (def (set-frame-mark (name : :string)) => :void
-  (Layout-set-frame-mark! (current-layout) name))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-set-frame-mark! provider name)) :void))
 
 ;; 'jumped, 'unknown, or 'gone (the mark is dropped).
 (def (jump-to-frame-mark (name : :string)) => :symbol
-  (Layout-jump-to-frame-mark! (current-layout) name))
+  (:- (with-service-provider (provider layout-service Layout) (Layout-jump-to-frame-mark! provider name)) :symbol))
 
 (def (render-layout (target : :symbol) (render-view : :procedure)) => :t
-  (Layout-render-layout (current-layout) target render-view))
+  (let (render-view (context-bind (current-context) render-view))
+    (with-service-provider (provider layout-service Layout) (Layout-render-layout provider target render-view))))
 
 ;; For layouts, on `kill-buffer-hook`: show another buffer in each of VIEWS
 ;; that shows B.

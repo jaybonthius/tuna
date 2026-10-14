@@ -1,9 +1,6 @@
 ;;; Help in a buffer (live tier): help output goes to *Help*, a `help` node
 ;;; holding a `help-title` node and a text node, shown with display-buffer.
 ;;; C-h q (quit-help) kills *Help*, which closes a view made for it.
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import :tuna/services/commands

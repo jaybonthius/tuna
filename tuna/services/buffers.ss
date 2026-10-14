@@ -310,12 +310,6 @@ prelude: :gerbil/core
                             (Buffers incoming)
                             (Buffers-describe-buffers (Buffers outgoing))))))
 
-(def (current-buffers) => Buffers
-  (let (provider (service-provider buffers-service))
-    (unless provider
-      (error "No plugin provides buffers"))
-    (Buffers provider)))
-
 ;;; Texts
 
 ;; Runs on the baton after each change to a text, with the text and the
@@ -324,26 +318,26 @@ prelude: :gerbil/core
   (new-hook 'after-change doc: "Runs after each change to a text, with the text and the change."))
 
 (def (new-text (initial : :string := "")) => text
-  (: (Buffers-make-text (current-buffers) initial) text))
+  (:- (with-service-provider (provider buffers-service Buffers) (: (Buffers-make-text provider initial) text)) text))
 
 (def (text-snapshot (t : text)) => snapshot
-  (: (Buffers-text-snapshot (current-buffers) t) snapshot))
+  (:- (with-service-provider (provider buffers-service Buffers) (: (Buffers-text-snapshot provider t) snapshot)) snapshot))
 
 (def (text-chars-revision (t : text)) => :fixnum
   (snapshot-revision (text-snapshot t)))
 
 (def (text-content-revision (t : text)) => :fixnum
-  (Buffers-text-content-revision (current-buffers) t))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-text-content-revision provider t)) :fixnum))
 
 (def (text-decoration-revision (t : text)) => :fixnum
-  (Buffers-text-decoration-revision (current-buffers) t))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-text-decoration-revision provider t)) :fixnum))
 
 ;; False once T's buffer is killed.
 (def (text-live? (t : text)) => :boolean
-  (Buffers-text-live? (current-buffers) t))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-text-live? provider t)) :boolean))
 
 (def (text-changes-since (t : text) (revision : :fixnum)) => (Maybe :list)
-  (Buffers-text-changes-since (current-buffers) t revision))
+  (:? (with-service-provider (provider buffers-service Buffers) (Buffers-text-changes-since provider t revision)) :list))
 
 (def (snapshot-size (s : snapshot)) => :fixnum
   (TextStore-size (snapshot-store s) (snapshot-version s)))
@@ -410,18 +404,19 @@ prelude: :gerbil/core
 (def (text-replace! (t : text) (start : :fixnum) (end : :fixnum) (replacement : :string)
                     point-before: (point-before :? :fixnum := #f))
   => :void
-  (check-range (text-snapshot t) start end)
-  (Buffers-text-replace! (current-buffers) t start end replacement point-before))
+  (:- (with-service-provider (provider buffers-service Buffers)
+    (check-range (text-snapshot t) start end)
+    (Buffers-text-replace! provider t start end replacement point-before)) :void))
 
 ;; Each command's changes form one undo group: a change from a different
 ;; task than the previous one starts a new group. End the current group.
 (def (undo-boundary! (t : text)) => :void
-  (Buffers-undo-boundary! (current-buffers) t))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-undo-boundary! provider t)) :void))
 
 ;; Let the running command's changes to T join the newest undo group if it
 ;; holds fewer than LIMIT changes, as Emacs groups consecutive self-inserts.
 (def (undo-amalgamate! (t : text) (limit : :fixnum)) => :void
-  (Buffers-undo-amalgamate! (current-buffers) t limit))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-undo-amalgamate! provider t limit)) :void))
 
 ;; Undo one group of T's changes and return where point belongs: where it
 ;; was before the group's first change, if known, or else after the text
@@ -429,16 +424,16 @@ prelude: :gerbil/core
 ;; before the one the previous undo undid; otherwise the newest group. The
 ;; undoing is itself recorded, so undoing it again redoes (as in Emacs).
 (def (text-undo! (t : text) (continue? : :boolean)) => :fixnum
-  (Buffers-text-undo! (current-buffers) t continue?))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-text-undo! provider t continue?)) :fixnum))
 
 ;; Forget T's undo history, as after restoring its content from a file.
 (def (text-clear-undo! (t : text)) => :void
-  (Buffers-text-clear-undo! (current-buffers) t))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-text-clear-undo! provider t)) :void))
 
 ;; Where POSITION, valid at T's character revision REVISION, is now
 ;; (position-after-change). Changes older than the journal clamp.
 (def (relocate-position (t : text) (position : :fixnum) (revision : :fixnum)) => :fixnum
-  (Buffers-relocate-position (current-buffers) t position revision))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-relocate-position provider t position revision)) :fixnum))
 
 ;;; Decorations
 
@@ -447,15 +442,15 @@ prelude: :gerbil/core
 ;; not the content revision (ADR 4), and move with edits
 ;; (span-after-change).
 (def (set-highlights! (t : text) (name : :symbol) (spans : :list)) => :void
-  (Buffers-set-highlights! (current-buffers) t name spans))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-set-highlights! provider t name spans)) :void))
 
 ;; T's highlight spans in layer NAME.
 (def (text-highlights (t : text) (name : :symbol)) => :list
-  (Buffers-text-highlights (current-buffers) t name))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-text-highlights provider t name)) :list))
 
 ;; Every highlight span of T, in no particular order.
 (def (text-all-highlights (t : text)) => :list
-  (Buffers-text-all-highlights (current-buffers) t))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-text-all-highlights provider t)) :list))
 
 ;;; Nodes
 
@@ -466,68 +461,71 @@ prelude: :gerbil/core
                children:   (children   : :list := [])
                keymap:     (keymap     :? entry-table := #f))
   => node
-  (let* ((bs (current-buffers))
-         (n (: (Buffers-make-node bs kind attributes children) node)))
-    (when keymap
-      (Buffers-set-node-keymap! bs n keymap))
-    n))
+  (:- (with-service-provider (provider buffers-service Buffers)
+    (let* ((bs provider)
+           (n (: (Buffers-make-node bs kind attributes children) node)))
+      (when keymap
+        (Buffers-set-node-keymap! bs n keymap))
+      n)) node))
 
 ;; A node whose content is T, a text that users edit.
 (def (new-text-node (t : text)) => node
-  (: (Buffers-make-text-node (current-buffers) t) node))
+  (:- (with-service-provider (provider buffers-service Buffers) (: (Buffers-make-text-node provider t) node)) node))
 
 (def (node-kind (n : node)) => :symbol
-  (Buffers-node-kind (current-buffers) n))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-node-kind provider n)) :symbol))
 
 (def (node-attributes (n : node)) => :list
-  (Buffers-node-attributes (current-buffers) n))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-node-attributes provider n)) :list))
 
 (def (node-attribute (n : node) (name : :symbol)) => :t
   (let (pair (assq name (node-attributes n)))
     (and pair (cdr pair))))
 
 (def (set-node-attribute! (n : node) (name : :symbol) (value : :t)) => :void
-  (Buffers-set-node-attribute! (current-buffers) n name value))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-set-node-attribute! provider n name value)) :void))
 
 ;; N's keymap, or #f.
 (def (node-keymap (n : node)) => (Maybe entry-table)
-  (Buffers-node-keymap (current-buffers) n))
+  (:? (with-service-provider (provider buffers-service Buffers) (Buffers-node-keymap provider n)) entry-table))
 
 ;; Give N KEYMAP, or none with #f; a change to N.
 (def (set-node-keymap! (n : node) (keymap :? entry-table)) => :void
-  (Buffers-set-node-keymap! (current-buffers) n keymap))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-set-node-keymap! provider n keymap)) :void))
 
 ;; N's parent, or #f for a buffer's root and a node not yet placed.
 (def (node-parent (n : node)) => (Maybe node)
-  (Buffers-node-parent (current-buffers) n))
+  (:? (with-service-provider (provider buffers-service Buffers) (Buffers-node-parent provider n)) node))
 
 ;; A number that a change to N or below it replaces with a larger one.
 (def (node-revision (n : node)) => :fixnum
-  (Buffers-node-revision (current-buffers) n))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-node-revision provider n)) :fixnum))
 
 (def (node-child-count (n : node)) => :fixnum
-  (Buffers-node-child-count (current-buffers) n))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-node-child-count provider n)) :fixnum))
 
 ;; N's children from index START (from 0) up to END, exclusive; by default
 ;; all of them. Renderers that draw only what is in view read a range.
 (def (node-children (n : node) (start : :fixnum := 0) (end :? :fixnum := #f)) => :list
-  (let* ((bs (current-buffers))
-         (count (Buffers-node-child-count bs n))
-         (end (or end count)))
-    (unless (fx<= 0 start end count)
-      (error "Child range out of range" start end))
-    (Buffers-node-children bs n start end)))
+  (:- (with-service-provider (provider buffers-service Buffers)
+    (let* ((bs provider)
+           (count (Buffers-node-child-count bs n))
+           (end (or end count)))
+      (unless (fx<= 0 start end count)
+        (error "Child range out of range" start end))
+      (Buffers-node-children bs n start end))) :list))
 
 ;; Replace N's children with CHILDREN, which must have no parent but N.
 (def (set-node-children! (n : node) (children : :list)) => :void
-  (Buffers-set-node-children! (current-buffers) n children))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-set-node-children! provider n children)) :void))
 
 (def (text-node? (n : :t)) => :boolean
-  (and (node? n) (Buffers-node-text (current-buffers) n) #t))
+  (:- (with-service-provider (provider buffers-service Buffers) (and (node? n) (Buffers-node-text provider n) #t)) :boolean))
 
 (def (text-node-content (n : node)) => text
-  (or (Buffers-node-text (current-buffers) n)
-      (error "Not a text node" (node-id n))))
+  (:- (with-service-provider (provider buffers-service Buffers)
+    (or (Buffers-node-text provider n)
+        (error "Not a text node" (node-id n)))) text))
 
 ;; The first text node of the tree at N, depth first.
 (def (first-text-node (n : node)) => (Maybe node)
@@ -545,10 +543,11 @@ prelude: :gerbil/core
                                 doc:     (doc     : :string := "")
                                 project: (project :? :procedure := #f))
   => :void
-  (context-add-entry! ctx (: (Buffers-node-kinds (current-buffers)) entry-table) name
-                      (make-node-kind-info name doc project)
-                      doc: doc)
-  (void))
+  (:- (with-service-provider (provider buffers-service Buffers)
+    (context-add-entry! ctx (: (Buffers-node-kinds provider) entry-table) name
+                        (make-node-kind-info name doc (and project (context-bind ctx project)))
+                        doc: doc)
+    (void)) :void))
 
 ;; Render nodes of KIND for TARGET (such as 'html) with RENDER, called with
 ;; the node and its children already rendered.
@@ -557,18 +556,21 @@ prelude: :gerbil/core
                                     (target : :symbol)
                                     (render : :procedure))
   => :void
-  (context-add-entry! ctx (: (Buffers-node-renderers (current-buffers)) entry-table)
-                      [kind target] render)
-  (void))
+  (:- (with-service-provider (provider buffers-service Buffers)
+    (context-add-entry! ctx (: (Buffers-node-renderers provider) entry-table)
+                        [kind target] render)
+    (void)) :void))
 
 (def (node-kind-ref (kind : :symbol)) => (Maybe node-kind-info)
-  (let (best (entry-table-ref (: (Buffers-node-kinds (current-buffers)) entry-table) kind))
-    (and best (entry-value best))))
+  (:? (with-service-provider (provider buffers-service Buffers)
+    (let (best (entry-table-ref (: (Buffers-node-kinds provider) entry-table) kind))
+      (and best (entry-value best)))) node-kind-info))
 
 (def (node-renderer (kind : :symbol) (target : :symbol)) => (Maybe :procedure)
-  (let (best (entry-table-ref (: (Buffers-node-renderers (current-buffers)) entry-table)
-                              [kind target]))
-    (and best (entry-value best))))
+  (:? (with-service-provider (provider buffers-service Buffers)
+    (let (best (entry-table-ref (: (Buffers-node-renderers provider) entry-table)
+                                [kind target]))
+      (and best (entry-value best)))) :procedure))
 
 ;; N as plain text: a text node's text, the kind's projection, or the
 ;; children's projections on separate lines.
@@ -585,18 +587,19 @@ prelude: :gerbil/core
 ;; A buffer named NAME holding the tree at ROOT, which must have no parent.
 ;; It is not in the buffer list until added.
 (def (new-buffer (name : :string) (root : node)) => buffer
-  (: (Buffers-make-buffer (current-buffers) name root) buffer))
+  (:- (with-service-provider (provider buffers-service Buffers) (: (Buffers-make-buffer provider name root) buffer)) buffer))
 
 (def (buffer-name (b : buffer)) => :string
-  (Buffers-buffer-name (current-buffers) b))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-buffer-name provider b)) :string))
 
 (def (buffer-root (b : buffer)) => node
-  (: (Buffers-buffer-root (current-buffers) b) node))
+  (:- (with-service-provider (provider buffers-service Buffers) (: (Buffers-buffer-root provider b) node)) node))
 
 ;; Give B a new NAME, which no other buffer may have.
 (def (rename-buffer! (b : buffer) (name : :string)) => :void
-  (Buffers-rename-buffer! (current-buffers) b name)
-  (run-hook buffer-list-update-hook))
+  (:- (with-service-provider (provider buffers-service Buffers)
+    (Buffers-rename-buffer! provider b name)
+    (run-hook buffer-list-update-hook)) :void))
 
 ;; Buffers whose names start with a space are internal (as in Emacs):
 ;; prompts' buffers, for example. Commands that pick a buffer skip them.
@@ -605,22 +608,23 @@ prelude: :gerbil/core
 
 ;; The text node B's point is in while no view shows B, or #f.
 (def (buffer-point-node (b : buffer)) => (Maybe node)
-  (Buffers-buffer-point-node (current-buffers) b))
+  (:? (with-service-provider (provider buffers-service Buffers) (Buffers-buffer-point-node provider b)) node))
 
 ;; B's point while no view shows it.
 (def (buffer-point (b : buffer)) => :fixnum
-  (Buffers-buffer-point (current-buffers) b))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-buffer-point provider b)) :fixnum))
 
 (def (set-buffer-point! (b : buffer) (position : :fixnum)) => :void
-  (let (bs (current-buffers))
-    (Buffers-set-buffer-point! bs b (Buffers-buffer-point-node bs b) position)))
+  (:- (with-service-provider (provider buffers-service Buffers)
+    (let (bs provider)
+      (Buffers-set-buffer-point! bs b (Buffers-buffer-point-node bs b) position))) :void))
 
 ;; B's own value for S, as a (setting . value) pair, or #f.
 (def (buffer-setting (b : buffer) (s : setting)) => (Maybe :pair)
-  (Buffers-buffer-setting (current-buffers) b s))
+  (:? (with-service-provider (provider buffers-service Buffers) (Buffers-buffer-setting provider b s)) :pair))
 
 (def (set-buffer-setting! (b : buffer) (s : setting) (value : :t)) => :void
-  (Buffers-set-buffer-setting! (current-buffers) b s value))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-set-buffer-setting! provider b s value)) :void))
 
 ;; The buffer whose own values the buffer settings scope reads, while
 ;; buffer-local-value reads another buffer's.
@@ -640,17 +644,19 @@ prelude: :gerbil/core
     (setting-value s)))
 
 (def (buffer-list) => :list
-  (Buffers-buffer-list (current-buffers)))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-buffer-list provider)) :list))
 
 (def (get-buffer (name : :string)) => (Maybe buffer)
-  (let (bs (current-buffers))
-    (find (lambda ((b : buffer)) (string=? (Buffers-buffer-name bs b) name))
-          (Buffers-buffer-list bs))))
+  (:? (with-service-provider (provider buffers-service Buffers)
+    (let (bs provider)
+      (find (lambda ((b : buffer)) (string=? (Buffers-buffer-name bs b) name))
+            (Buffers-buffer-list bs)))) buffer))
 
 ;; Add B, whose name must be new.
 (def (add-buffer! (b : buffer)) => :void
-  (Buffers-add-buffer! (current-buffers) b)
-  (run-hook buffer-list-update-hook))
+  (:- (with-service-provider (provider buffers-service Buffers)
+    (Buffers-add-buffer! provider b)
+    (run-hook buffer-list-update-hook)) :void))
 
 ;; Add B for CTX's plugin; it is killed when the plugin is deactivated.
 (def (context-add-buffer! (ctx : context) (b : buffer)) => :void
@@ -675,8 +681,9 @@ prelude: :gerbil/core
 
 ;; Remove B. Views showing it show another buffer instead.
 (def (kill-buffer (b : buffer)) => :void
-  (Buffers-kill-buffer! (current-buffers) b)
-  (run-hook buffer-list-update-hook))
+  (:- (with-service-provider (provider buffers-service Buffers)
+    (Buffers-kill-buffer! provider b)
+    (run-hook buffer-list-update-hook)) :void))
 
 ;; The texts of B's text nodes, depth first. (Not append-map from
 ;; :std/list/list, which reverses each sublist: TODO.md.)
@@ -744,23 +751,24 @@ prelude: :gerbil/core
 ;; Show B in V. The buffer V showed keeps V's point as its own. Layouts
 ;; call this; commands call `set-view-buffer`, which asks the layout.
 (def (set-view-showing! (v : view) (b : buffer)) => :void
-  (unless (eq? b v.showing)
-    (let (bs (current-buffers))
-      (Buffers-set-buffer-point! bs v.showing v.focus (view-point v))
-      (let (n (Buffers-buffer-point-node bs b))
-        (set! v.showing b)
-        (set! v.focus n)
-        (set! v.position (Buffers-buffer-point bs b))
-        (set! v.revision (node-chars-revision n))
-        (set! v.goal-column #f)))))
+  (:- (with-service-provider (provider buffers-service Buffers)
+    (unless (eq? b v.showing)
+      (let (bs provider)
+        (Buffers-set-buffer-point! bs v.showing v.focus (view-point v))
+        (let (n (Buffers-buffer-point-node bs b))
+          (set! v.showing b)
+          (set! v.focus n)
+          (set! v.position (Buffers-buffer-point bs b))
+          (set! v.revision (node-chars-revision n))
+          (set! v.goal-column #f))))) :void))
 
 (def (selected-view) => view
-  (: (Buffers-selected-view (current-buffers)) view))
+  (:- (with-service-provider (provider buffers-service Buffers) (: (Buffers-selected-view provider) view)) view))
 
 ;; Make V the selected view, which receives editing. The layout calls this
 ;; when it selects a view.
 (def (set-selected-view! (v : view)) => :void
-  (Buffers-set-selected-view! (current-buffers) v))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-set-selected-view! provider v)) :void))
 
 (def (current-buffer) => buffer
   (using (v (selected-view) : view)

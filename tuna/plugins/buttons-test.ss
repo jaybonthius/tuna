@@ -28,7 +28,7 @@
 
 (defplugin (view-clicks ctx)
   "Records a click on a view, standing in for selecting it."
-  requires: [input-service]
+  requires: [commands-service input-service]
   (define-command ctx (record-view-click) "Record a click on a view."
     (set! happened (cons 'view happened)))
   (keymap-set ctx "<view> <mouse-1>" 'record-view-click)

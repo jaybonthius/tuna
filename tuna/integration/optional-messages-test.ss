@@ -66,6 +66,7 @@ prelude: :gerbil/core
                   (lambda ()
                     (defplugin (loop-observer ctx)
                       "Records when the cooperative endless command starts."
+                      requires: [commands-service]
                       (context-add-hook! ctx pre-command-hook 'observe-loop
                         (lambda ()
                           (when (eq? (this-command) 'loop-forever) (set! started? #t)))))

@@ -756,6 +756,16 @@ prelude: :gerbil/core
               (make-change 'retry-block kept o))
              (else (make-change 'keep kept o))))))))
 
+    ;; Supply file order before any activation, including blocks. Kept
+    ;; owners share this rank with their entries, so a reorder is immediate.
+    (let loop ((rest new-declarations) (rank 1))
+      (unless (null? rest)
+        (let (d (: (car rest) declaration))
+          (set-plugin-order! (declaration-target d) rank)
+          (when (declaration-block d)
+            (set-plugin-order! (declaration-block d) rank)))
+        (loop (cdr rest) (fx1+ rank))))
+    (set-plugin-order! (configuration-user-code config) (fx1+ (length new-declarations)))
     (unwind-protect
       (begin
         (when follower

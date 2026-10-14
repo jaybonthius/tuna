@@ -1,8 +1,5 @@
 ;;; C-c r (rename-buffer): a command that asks in the minibuffer, for tests
 ;;; of prompts.
-;;; Optional services:
-;;; - messages-service: notices via the kernel's guarded message dispatcher
-;;;   (including stale-click reports); without it, nonempty notices go to stderr.
 prelude: :gerbil/core
 
 (import :tuna/services/commands
