@@ -20,12 +20,15 @@ prelude: :gerbil/core
         :std/time/timeout
         :gerbil-datastar/http
         :tuna/kernel
+        :tuna/version
         :tuna/lib/plugin-options
         (only-in :tuna/services/keys key-event make-key-event pointer-event make-pointer-event make-posn)
         :tuna/services/renderer
         ./web/embed)
 (export web-transport-plugin
         web-transport-url)
+
+(deflogger web-log name: "tuna/web")
 
 ;; Seconds between keep-alive events, which also detect closed tabs.
 (def heartbeat-seconds 15.)
@@ -438,8 +441,10 @@ prelude: :gerbil/core
     (set! (web-transport-server self) server)
     (Server-start! server)
     (context-defer! ctx (lambda () (stop-web-transport! self)))
-    (context-provide! ctx display-service self)))
+    (context-provide! ctx display-service self)
+    (web-log.infof "Tuna %a is running. Open http://%a/?token=%a"
+                   (tuna-version) host (web-transport-token self))))
 
 (defplugin-options web-transport-plugin
-  (port 0 "The loopback port to listen on; 0 picks a free one. tuna --port overrides it."
-        (integer-type 0 65535)))
+  (port 0 "The loopback port to listen on; 0 picks a free one."
+        (integer-type 0 65535) flag: "--port"))

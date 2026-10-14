@@ -93,6 +93,97 @@
 
 (def options-test
   (test-suite "plugin options and the configuration report"
+    (test-case "declared flags parse through option types and override before activation"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (try
+          (call-with-fresh-kernel []
+            (lambda ()
+              (let* ((path (write-init directory "(use-plugin optioned-plugin greeting: \"init\" times: 2)"))
+                     (choice (make-config-choice path "--config")))
+                ;; check validates but installs no overrides or plugins.
+                (check (check-configuration choice ["--greeting" "checked" "--fail" "#t"]) => #f)
+                (check (plugin-option-override optioned-plugin 'greeting) => #f)
+                (check (plugin-active? optioned-plugin) => #f)
+                (check (startup-report-problem
+                        (start-from-configuration choice
+                          ["--greeting" "first" "--times" "3" "--fail" "#f" "--greeting" "forced"]))
+                       => #f)
+                (check (last-greeting) => "forced")
+                (check (plugin-option optioned-plugin 'times) => 3)
+                (check (plugin-option optioned-plugin 'fail) => #f)
+                (check (plugin-option-override optioned-plugin 'times) => "--times")
+                (let (spec (make-option-spec 'mode 'normal "A mode." symbol-type "--mode"))
+                  (check (parse-option-flag-value optioned-plugin spec "normal") => 'normal)))))
+          (finally
+           (for-each (cut remove-plugin-option-override! optioned-plugin <>) '(greeting times fail)))))))
+
+    (test-case "unknown flags, missing values and bad values change nothing"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (call-with-fresh-kernel []
+           (lambda ()
+             (let* ((path (write-init directory "(use-plugin optioned-plugin)"))
+                    (choice (make-config-choice path "--config"))
+                    (cases '((("--bogus") . "Unknown flag: --bogus")
+                            (("--times") . "Flag --times needs a value")
+                            (("--times" "--greeting" "hi") . "Flag --times needs a value")
+                            (("--times" "11") . "--times: optioned-plugin option times must be a whole number from 1 to 10")
+                            (("--times" "x") . "--times: optioned-plugin option times must be a whole number from 1 to 10")
+                            (("--fail" "false") . "--fail: optioned-plugin option fail must be #t or #f")
+                            (("--greeting" "partial" "--bogus") . "Unknown flag: --bogus"))))
+               (for-each
+                (lambda (c)
+                  (check (check-configuration choice (car c)) => (cdr c))
+                  (check (with-catch exception-summary
+                           (lambda () (start-from-configuration choice (car c)) "did not fail"))
+                         => (cdr c))
+                  (check (plugin-active? optioned-plugin) => #f)
+                  (check (plugin-active? session-owner) => #f)
+                  (check (plugin-option-override optioned-plugin 'greeting) => #f))
+                cases)))))))
+
+    (test-case "two configured plugins cannot claim the same flag, even without arguments"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (call-with-fresh-kernel []
+           (lambda ()
+             (let* ((path (write-init directory "(use-plugin optioned-plugin)"
+                                     "(use-plugin optioned-dependent-plugin)"))
+                    (choice (make-config-choice path "--config"))
+                    (problem "Flag --greeting is claimed by both optioned-plugin and optioned-dependent-plugin"))
+               (check (check-configuration choice) => problem)
+               (check (with-catch exception-summary (lambda () (start-from-configuration choice))) => problem)
+               (check (contains? (command-line-help choice) problem) => #t)
+               (check (plugin-active? optioned-plugin) => #f)
+               (check (plugin-active? session-owner) => #f)))))))
+
+    (test-case "help lists only configured flags with their option docs, without activation"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (call-with-fresh-kernel []
+           (lambda ()
+             (let* ((path (write-init directory "(use-plugin optioned-plugin)"))
+                    (choice (make-config-choice path "--config"))
+                    (before (activation-count 'optioned-plugin))
+                    (help (command-line-help choice)))
+               (check (contains? help "--config PATH") => #t)
+               (check (contains? help "--greeting VALUE  What to say. (optioned-plugin)") => #t)
+               (check (contains? help "--times VALUE  How often to say it. (optioned-plugin)") => #t)
+               (check (contains? help "--fail VALUE  Fail on activation. (optioned-plugin)") => #t)
+               (check (contains? help "--port") => #f)
+               (check (activation-count 'optioned-plugin) => before)
+               (check (plugin-active? session-owner) => #f)
+               (write-init directory "(use-plugin good-plugin)")
+               (check (contains? (command-line-help choice) "  (none)") => #t)
+               (write-file-string path "#lang :tuna/config\n(")
+               (check (contains? (command-line-help choice) "Plugin flags unavailable:") => #t)
+               (delete-file path)
+               (let (help (command-line-help choice))
+                 (check (contains? help "--help") => #t)
+                 (check (contains? help "Plugin flags unavailable: No configuration at") => #t)
+                 (check (contains? help "--greeting") => #f))))))))
+
     (test-case "every option problem is reported with its line, and the load changes nothing"
       (call-with-temporary-directory
        (lambda (directory)
@@ -191,11 +282,11 @@
       (call-with-temporary-directory
        (lambda (directory)
          (try
-          (override-plugin-option! optioned-plugin 'greeting "forced" "--greeting")
           (call-with-fresh-kernel []
             (lambda ()
               (let* ((path (write-init directory "(use-plugin optioned-plugin greeting: \"a\")"))
-                     (report (start path))
+                     (report (start-from-configuration (make-config-choice path "--config")
+                                                       ["--greeting" "forced"]))
                      (before (activation-count 'optioned-plugin)))
                 (check (last-greeting) => "forced")
                 (check (contains? (startup-report-text report)
@@ -207,9 +298,50 @@
                   (check (contains? (reload-report-text report)
                                     "option greeting is overridden by --greeting, so the change takes effect only when Tuna starts without the override")
                          ? values))
-                (check (activation-count 'optioned-plugin) => before))))
+                (check (activation-count 'optioned-plugin) => before)
+                ;; A restart caused by another option still reads the override.
+                (write-init directory "(use-plugin optioned-plugin greeting: \"c\" times: 2)")
+                (check (changes (reload-configuration!)) => [["optioned-plugin" 'replaced]])
+                (check (last-greeting) => "forced")
+                (check (plugin-option-override optioned-plugin 'greeting) => "--greeting"))))
           (finally
            (remove-plugin-option-override! optioned-plugin 'greeting))))))
+
+    (test-case "command-line overrides survive a source plugin being read again"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let ((helper (path-expand "flag-owner.ss" directory))
+               (old #f))
+           (def (write-helper (greeting : :string)) => :void
+             (write-file-string helper
+               (string-append
+                "(import :tuna/kernel :tuna/lib/plugin-options)\n(export flag-owner)\n"
+                "(defplugin flag-owner \"Takes a greeting.\")\n"
+                "(defplugin-options flag-owner (greeting \"" greeting
+                "\" \"What to say.\" string-type flag: \"--greeting\"))\n")))
+           (try
+            (call-with-fresh-kernel []
+              (lambda ()
+                (write-helper "hello")
+                (let* ((path (write-init directory "(import \"./flag-owner\")" "(use-plugin flag-owner)"))
+                       (choice (make-config-choice path "--config"))
+                       (report (start-from-configuration choice ["--greeting" "forced"])))
+                  (set! old (report-entry-subject
+                             (find (lambda ((e : report-entry))
+                                     (eq? (plugin-name (report-entry-subject e)) 'flag-owner))
+                                   (startup-report-entries report))))
+                  (write-helper "new default")
+                  (let* ((report (reload-configuration!))
+                         (entry (find (lambda ((e : report-entry))
+                                        (eq? (plugin-name (report-entry-subject e)) 'flag-owner))
+                                      (reload-report-entries report)))
+                         (new (report-entry-subject entry)))
+                    (check (report-entry-status entry) => 'replaced)
+                    (check (eq? old new) => #f)
+                    (check (plugin-option new 'greeting) => "forced")
+                    (check (plugin-option-override new 'greeting) => "--greeting")))))
+            (finally
+             (when old (remove-plugin-option-override! old 'greeting))))))))
 
     (test-case "the configuration service: the last report, the summary, and reload"
       (call-with-temporary-directory
