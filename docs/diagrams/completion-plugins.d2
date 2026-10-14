@@ -1,0 +1,60 @@
+# Which plugin does what when you complete something?
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 0
+  }
+}
+direction: down
+
+classes: {
+  user: {
+    style: {
+      fill: "#fff8e1"
+      stroke: "#8d6e00"
+      font-color: "#3e2f00"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+  part: {
+    style: {
+      fill: "#eef3fb"
+      stroke: "#355c96"
+      font-color: "#172b4d"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+  core: {
+    style: {
+      fill: "#e8f5e9"
+      stroke: "#2e7d32"
+      font-color: "#1b3d1f"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+}
+
+legend: |md
+  **Status:** planned. Yellow: features that ask a question. Green: the completion contract and its engine. Blue: replaceable plugins that plug into it.
+|
+
+mx: "M-x\n(a small plugin)" {class: user}
+picker: "Project file picker,\nbuffer switching (later)" {class: user}
+engine: "Completion contract and engine\ncandidates, categories, history,\nthe running session" {class: core}
+ui: "Vertical list\n(like Vertico)" {class: part}
+matcher: "Matching style\n(like Orderless)" {class: part}
+notes: "Annotations\n(like Marginalia)" {class: part}
+minibuffer: "Minibuffer\n(where you type)" {class: part}
+commands: "Commands\n(every command, its\ndoc and its keys)" {class: part}
+
+mx -> engine: "choose a command"
+picker -> engine: "choose a file"
+engine -> matcher: "which candidates match?"
+engine -> notes: "what to show beside each?"
+engine -> ui: "show the session"
+engine -> minibuffer: "ask in a prompt"
+mx -> commands: "list and run commands"
+notes -> commands: "doc and key binding"

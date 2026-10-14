@@ -1,0 +1,26 @@
+# What happens when you type a letter in M-x?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: You
+mini: "Minibuffer"
+engine: "Completion engine"
+matcher: "Matching style"
+notes: "Annotations"
+ui: "Vertical list"
+screen: "Screen"
+
+you -> mini: "1. type f (the prompt now holds 'buf f')"
+mini -> engine: "2. the command finished (post-command hook)"
+engine -> matcher: "3. which commands match 'buf' and 'f'?"
+matcher -> engine: "4. matches, with the matched letters"
+engine -> engine: "5. sort: recent first, then shorter;\nkeep the selection on the same command"
+engine -> ui: "6. the session changed"
+ui -> notes: "7. annotate only the 10 visible rows\n(asked through the engine)"
+ui -> ui: "8. rebuild 10 rows as nodes"
+screen -> you: "9. the whole screen, in the same redraw"
