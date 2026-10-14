@@ -1,6 +1,6 @@
 # Brief: mouse input
 
-**Date:** 2026-10-13. **Status:** proposed; waiting for your approval. Research: [`agents/research/mouse-input/README.md`](../../agents/research/mouse-input/README.md) (Emacs's mouse model, Datastar idioms) and [`spike.md`](../../agents/research/mouse-input/spike.md) (a throwaway prototype checked in Chrome; screenshots in `/home/jay/Code/workbench-gerbil/scratch/tuna-mouse/`).
+**Date:** 2026-10-13. **Status:** approved 2026-10-13 with a trimmed scope: clicks and node keymaps only. All dragging (parts, split borders) and the drag-mechanism decision move to the [layout outline](../ideas/layout-outline.md) work, where they belong. Plan: [`agents/plans/mouse-input.md`](../../agents/plans/mouse-input.md). Research: [`agents/research/mouse-input/README.md`](../../agents/research/mouse-input/README.md) (Emacs's mouse model, Datastar idioms) and [`spike.md`](../../agents/research/mouse-input/spike.md) (a throwaway prototype checked in Chrome; screenshots in `/home/jay/Code/workbench-gerbil/scratch/tuna-mouse/`).
 
 ## What this is and why
 
@@ -76,7 +76,7 @@ A drop is one tree move: the part keeps its size and pin, and a container left w
 Each stage runs in the browser:
 1. **Clicks.** Pointer items in the ordered queue; Emacs event names (`mouse-1`, `C-mouse-1`, `double-mouse-1`); lookup with the part kind as a prefix; commands read the click with `event-start`, `posn-node` and friends. Clicking a view selects it; clicking a tab switches to it. Views that should never be selected by a click (the echo area) refuse. Parts with a binding are marked clickable, with hover, pressed and pointer styles. Stale clicks report and do nothing.
 2. **Keymaps on buffer nodes.** Lookup starts at the clicked (or, for keys, focused) node and walks up through its buffer, view and containers. A demo sidebar of buttons shows it. This also fixes the bug where `RET` still answers a question after you move away from the minibuffer: its keys will belong to the minibuffer's buffer.
-3. **Dragging.** Split borders (pointer capture; the preview lives outside the redrawn screen and stays until the new screen arrives). Any part by its handle, with the drop rules above and edge and middle highlights.
+3. **Dragging: deferred** to the layout outline work. The design above and the prototype's findings are kept for it.
 
 **Not in this work:** clicking and selecting inside text, touch screens, context menus, the layout outline sidebar (an [idea](../ideas/layout-outline.md) for later), and commands that create nested containers (a known gap in `TODO.md`).
 
@@ -84,10 +84,7 @@ The kernel gains nothing: it already passes input items through without looking 
 
 ## Decisions for you
 
-**1. Which browser mechanism should dragging parts use?**
-- **Context:** the browser has built-in drag and drop. It gives a ghost image of the dragged handle and drop events for free. The prototype showed three limits: it doesn't work on touch screens, pressing a handle, moving off and releasing moves the part rather than cancelling (Escape cancels), and the ghost is the browser's own, styled only by swapping in an image. The prototype couldn't show you the ghost, because headless screenshots don't capture it.
-- **Options:** (a) built-in drag and drop now; (b) our own pointer handling, like the split border: more code, fully styleable, works on touch.
-- **Recommendation: (a)** for now, switching to (b) when the design pass wants a custom look or touch matters. It's contained in one place in the browser code, so switching later doesn't touch the server. If you'd like to see the ghost first: `cd /home/jay/Code/workbench-gerbil/tuna__mouse-spike && make && gerbil env tuna --config spike/init.ss`, then `C-x 3` and `C-x t 2`, and drag a tab.
+None left: dragging and its one decision (the browser's built-in drag and drop or our own pointer handling) moved to the layout outline work.
 
 ## New terms
 
