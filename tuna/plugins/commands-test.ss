@@ -16,6 +16,39 @@ prelude: :gerbil/core
 
 (def commands-test
   (test-suite "tuna/plugins/commands"
+    (test-case "dispatch checks the activating caller and command bodies keep their owner"
+      (call-with-fresh-kernel [commands-plugin]
+        (lambda ()
+          (defplugin (undeclared-registration ctx) "No Commands declaration."
+            (context-define-command! ctx 'bad void))
+          (check (with-catch exception-summary
+                   (lambda () (activate-plugin! undeclared-registration)))
+                 => "Plugin used an undeclared service undeclared-registration commands")
+          (defplugin (owned-command ctx) "Only Commands is declared."
+            requires: [commands-service]
+            (defcommand (owned-action) "An undeclared lookup."
+              (service-provider input-service)))
+          (activate-plugin! owned-command)
+          (check (with-catch exception-summary (lambda () (call-command 'owned-action)))
+                 => "Plugin used an undeclared service owned-command input"))))
+
+    (test-case "the same owner's command leaves only its replacement"
+      (for-each
+        (lambda ((provider : plugin))
+          (call-with-fresh-kernel [provider]
+            (lambda ()
+              (defplugin (repeated ctx) "Two definitions of one command."
+                requires: [commands-service]
+                (context-define-command! ctx 'same (lambda () 'old) doc: "Old.")
+                (context-define-command! ctx 'same (lambda () 'new) doc: "New."))
+              (activate-plugin! repeated)
+              (check (command-names) => ['same])
+              (check (command-doc (command-ref 'same)) => "New.")
+              (check (call-command 'same) => 'new)
+              (deactivate-plugin! repeated)
+              (check (command-entry 'same) => #f))))
+        [commands-plugin toy-commands-plugin]))
+
     (test-case "named calls run command hooks even without an input provider"
       (for-each
         (lambda ((provider : plugin))

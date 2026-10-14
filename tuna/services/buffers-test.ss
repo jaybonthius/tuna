@@ -120,6 +120,7 @@
      (lambda ()
        (defplugin (adds-other ctx)
          "Adds a second buffer."
+         requires: [buffers-service]
          (context-add-buffer! ctx (new-buffer "other" (new-text-node (new-text "second ☃ buffer")))))
        (activate-plugin! adds-other)
        (let ((other-text (text-node-content (buffer-root (get-buffer "other"))))
@@ -243,6 +244,7 @@
              (t (current-text)))
          (defplugin (watcher ctx)
            "Records changes."
+           requires: [buffers-service]
            (context-add-hook! ctx after-change-hook 'record
                               (lambda (text c) (set! seen (cons [(text-string text) (change-inserted c)] seen)))))
          (activate-plugin! watcher)
@@ -328,6 +330,7 @@
               (killed []))
          (defplugin (watcher ctx)
            "Records killed buffers."
+           requires: [buffers-service]
            (context-add-hook! ctx kill-buffer-hook 'record
                               (lambda (b) (set! killed (cons (buffer-name b) killed)))))
          (activate-plugin! watcher)
@@ -398,6 +401,7 @@
              (seen []))
          (defplugin (lister ctx)
            "Records the buffer list whenever it changes."
+           requires: [buffers-service]
            (context-add-hook! ctx buffer-list-update-hook 'record
                               (lambda () (set! seen (cons (map buffer-name (buffer-list)) seen)))))
          (activate-plugin! lister)
@@ -411,6 +415,7 @@
      (lambda ()
        (defplugin (box-kind ctx)
          "Defines the box node kind."
+         requires: [buffers-service]
          (context-define-node-kind! ctx 'box doc: "A box."
                                     project: (lambda (n) (node-attribute n 'label))))
        (let (tree (new-node 'column

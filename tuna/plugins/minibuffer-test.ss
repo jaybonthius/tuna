@@ -31,7 +31,7 @@
 
 (defplugin (asking ctx)
   "Commands that ask questions."
-  requires: [input-service]
+  requires: [commands-service input-service minibuffer-service settings-service]
   (define-command ctx (ask) "Ask a name."
     (with-catch (lambda (e) (set! quit? (quit-condition? e)) (raise e))
                 (lambda () (set! answers (cons (read-string "Name: ") answers)))))
@@ -49,7 +49,7 @@
 ;; answers can be typed into a prompt.
 (defplugin (typing ctx)
   "Inserts printing characters and, on RET, a newline; DEL deletes the character before point."
-  requires: [input-service buffers-service]
+  requires: [commands-service input-service buffers-service]
   (define-command ctx (self-insert-command) "Insert the character typed."
     (insert (key-event-key (last-command-event))))
   (define-command ctx (delete-backward-char) "Delete the character before point."
@@ -113,6 +113,18 @@
 
 (def minibuffer-test
   (test-suite "tuna/plugins/minibuffer"
+    (test-case "turning the command's plugin off quits its waiting read, leaving the minibuffer"
+      (with-minibuffer
+        (lambda ()
+          (type! "C-c" "a" "z")
+          (check (state) => ["" ["Name: " "z"] ""])
+          (call-on-editor-loop (lambda () (deactivate-plugin! asking)))
+          (check (wait-until (lambda () quit?)) => #t)
+          (check (state) => ["" #f "Quit"])
+          (check answers => [])
+          (check (plugin-active? minibuffer-plugin) => #t)
+          (check (bar-shows) => [" *Minibuf-0*"]))))
+
     (test-case "a prompt suspends its command while the editor keeps dispatching keys"
       (with-minibuffer
        (lambda ()
