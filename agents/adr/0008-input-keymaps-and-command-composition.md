@@ -1,6 +1,6 @@
 # 8. Input sessions, layered keymaps, and composable commands
 
-Status: accepted (2026-10-11), from the [capability audit](../research/capability-audit/README.md) (lanes 1 and 4).
+Status: accepted (2026-10-11), from the [capability audit](../research/capability-audit/README.md) (lanes 1 and 4); amended 2026-10-13 with clicks (see "Clicks"; brief [`docs/briefs/2026-10-mouse-input.md`](../../docs/briefs/2026-10-mouse-input.md)).
 
 ## Context
 
@@ -27,3 +27,12 @@ Emacs commands compose through shared command-loop state: `this-command` and `la
 
 - **Mutable global `this-command` (Emacs).** Rejected: prompts and suspended commands clobber it.
 - **A single flat keymap per buffer.** Rejected: cannot express modal editing, transient menus, or node-local bindings.
+
+## Clicks (amendment, 2026-10-13)
+
+- A click is an input item in the same ordered queue as keys, sent on release, naming the clicked part by stable id (`KIND:ID`) and the node under the pointer, plus the screen revision. The browser never names a command.
+- Event names follow Emacs (`mouse-1`, modifiers, `double-`/`triple-` falling back to the single click). The part kind is a prefix key, using Emacs's area name where one exists (`<tab-line>`, not `<tab>`, which is the Tab key). Lookup tries the prefixed name, then, unlike Emacs, the unprefixed one, so one global `<mouse-1>` can serve every part.
+- A posn names the part and node, not pixels or positions: layout belongs to the browser (ADR 7). A click on a part that is gone when handled reports it in the echo area and does nothing.
+- A click does not clear the echo area, so clicking to read a message keeps it.
+- Divergences are listed in `docs/emacs-equivalents.md`.
+
