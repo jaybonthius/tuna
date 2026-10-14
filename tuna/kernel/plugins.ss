@@ -14,6 +14,11 @@ prelude: :gerbil/core
         defplugin
         context
         current-context
+        call-with-context
+        context-bind
+        call-with-context-receipt
+        call-with-service-provider
+        set-plugin-order!
         context-defer!
         context-add-entry!
         context-provide!
@@ -45,18 +50,22 @@ prelude: :gerbil/core
 (defstruct plugin ((name     : :symbol)
                    (doc      : :string)
                    (requires : :list)            ; services
+                   (optional : :list)
+                   (unchecked? : :boolean)
                    (activate : :procedure)       ; context -> void
                    (source   :? :string))
   final: #t)
 
 ;; What one activation registered: inverse thunks, newest first.
 (defclass context ((owner   : plugin)
+                   (order   : owner-order)
                    (receipt : :list))
   final: #t)
 
 (defclass plugin-record ((definition : plugin)
                          (wanted?    : :boolean)     ; activate whenever requirements are met
                          (active     :? context)     ; its context while active
+                         (order      : owner-order)
                          (registered : :fixnum)
                          (activated  : :fixnum))
   final: #t)
@@ -65,12 +74,28 @@ prelude: :gerbil/core
 ;; that register into it implicitly.
 (def current-context (make-parameter #f))
 
+;; Callback/provider execution changes the calling owner, not the task's lifetime.
+(def (call-with-context (ctx :? context) (thunk : :procedure)) => :t
+  (parameterize ((current-context ctx)) (thunk)))
+
+(def (context-bind (ctx :? context) (procedure : :procedure)) => :procedure
+  (lambda args
+    (call-with-context ctx (lambda () (apply procedure args)))))
+
+;; Temporary work owns an inverse only while its body is live.
+(def (call-with-context-receipt (ctx : context) (undo : :procedure) (body : :procedure)) => :t
+  (dynamic-wind
+    (lambda () (set! (context-receipt ctx) (cons undo (context-receipt ctx))))
+    (lambda () (call-with-context ctx body))
+    (lambda () (set! (context-receipt ctx) (remq undo (context-receipt ctx))))))
+
 (def (context-plugin-name (ctx : context)) => :symbol
   (plugin-name (context-owner ctx)))
 
 ;; Record UNDO to run when the context's plugin is deactivated.
 (def (context-defer! (ctx : context) (undo : :procedure)) => :void
-  (set! (context-receipt ctx) (cons undo (context-receipt ctx))))
+  (set! (context-receipt ctx)
+    (cons (context-bind (current-context) undo) (context-receipt ctx))))
 
 ;; Run the receipt newest first; an inverse that fails does not stop the rest.
 (def (run-receipt! (ctx : context)) => :list
@@ -93,7 +118,7 @@ prelude: :gerbil/core
                          doc:      (doc      :? :string := #f)
                          source:   (source   :? :string := #f))
   => entry
-  (let (new (make-entry (context-plugin-name ctx) priority (next-id!) value doc source))
+  (let (new (make-entry (context-plugin-name ctx) priority (context-order ctx) (next-id!) value doc source))
     (entry-table-add! table name new)
     (context-defer! ctx (lambda () (entry-table-remove! table name new)))
     new))
@@ -114,45 +139,50 @@ prelude: :gerbil/core
   (syntax-case stx ()
     ((_ name doc clause ...)
      (and (identifier? #'name) (stx-string? #'doc))
-     (with-syntax ((source (stx-source-string stx)))
-       (syntax-case #'(clause ...) ()
+     #'(defplugin (name ctx) doc clause ...))
+    ((_ (name ctx) doc clause ...)
+     (and (identifier? #'name) (identifier? #'ctx) (stx-string? #'doc))
+     (let loop ((rest #'(clause ...)) (required #'[]) (optional #'[]) (unchecked #'#f) (have-required? #f) (have-optional? #f) (have-unchecked? #f))
+       (syntax-case rest ()
          ((requires: services body ...)
-          #'(def name
-              (make-plugin 'name doc services
-                           (lambda ((ctx : context)) => :void body ... (void))
-                           source)))
+          (not have-required?)
+          (loop #'(body ...) #'services optional unchecked #t have-optional? have-unchecked?))
+         ((optional: services body ...)
+          (not have-optional?)
+          (loop #'(body ...) required #'services unchecked have-required? #t have-unchecked?))
+         ((unchecked: value body ...)
+          (not have-unchecked?)
+          (loop #'(body ...) required optional #'value have-required? have-optional? #t))
          ((body ...)
-          #'(def name
-              (make-plugin 'name doc []
-                           (lambda ((ctx : context)) => :void body ... (void))
-                           source))))))
-    ((_ (name ctx) doc requires: services body ...)
-     (and (identifier? #'name) (identifier? #'ctx) (stx-string? #'doc))
-     (with-syntax ((source (stx-source-string stx)))
-       #'(def name
-           (make-plugin 'name doc services
-                        (lambda ((ctx : context)) => :void body ... (void))
-                        source))))
-    ((_ (name ctx) doc body ...)
-     (and (identifier? #'name) (identifier? #'ctx) (stx-string? #'doc))
-     (with-syntax ((source (stx-source-string stx)))
-       #'(def name
-           (make-plugin 'name doc []
-                        (lambda ((ctx : context)) => :void body ... (void))
-                        source))))))
+          (with-syntax ((source (stx-source-string stx))
+                        (required required) (optional optional) (unchecked unchecked))
+            #'(def name
+                (make-plugin 'name doc required optional unchecked
+                             (lambda ((ctx : context)) => :void body ... (void))
+                             source)))))))))
 
 ;;; Hooks
 
 ;; Add PROCEDURE to H under NAME for CTX's plugin; it is removed when the
 ;; plugin is deactivated.
-(def (context-add-hook! (ctx : context)
+(def (context-register-hook! (ctx : context)
                         (h : hook)
                         (name : :symbol)
                         (procedure : :procedure)
                         depth: (depth : :fixnum := 0))
   => :void
-  (let (callback (add-hook-callback! h name (context-plugin-name ctx) depth procedure))
+  (let (callback (add-hook-callback! h name (context-plugin-name ctx) depth (context-bind ctx procedure)))
     (context-defer! ctx (lambda () (remove-hook-callback! h callback)))))
+
+;; Named bindings stay live under (declare (separate)); expressions use
+;; context-add-hook! when capturing a closure is intentional.
+(defsyntax (context-add-hook! stx)
+  (syntax-case stx ()
+    ((_ ctx h name function option ...)
+     (identifier? #'function)
+     #'(context-register-hook! ctx h name (lambda args (apply function args)) option ...))
+    ((_ ctx h name expression option ...)
+     #'(context-register-hook! ctx h name expression option ...))))
 
 ;; Call each of H's callbacks with ARGS. A callback that fails is removed
 ;; and reported; the others still run. A quit is not a failure, and the
@@ -169,7 +199,7 @@ prelude: :gerbil/core
           ((hold-quit! e) (void))
           ((and (quit-condition? e) (current-task)) (raise e))
           (else (remove-hook-callback! h callback)
-         (message (string-append "Hook " (symbol->string (hook-name h)) " callback "
+         (report-failure-message! (string-append "Hook " (symbol->string (hook-name h)) " callback "
                                  (symbol->string (hook-callback-name callback)) " (from "
                                  (symbol->string (hook-callback-owner callback))
                                  ") failed and was removed: " (exception-summary e))))))
@@ -328,12 +358,37 @@ prelude: :gerbil/core
 
 ;; The current provider of SVC, or #f.
 (def (service-provider (svc : service)) => :t
+  (check-service-use! svc)
   (let (best (entry-table-ref (kernel-providers (the-kernel)) (service-name svc)))
     (and best (entry-value best))))
 
-;; Provide IMPL for SVC. A provider that outranks the current one replaces
-;; it: the service's dependents are deactivated now and reactivated against
-;; IMPL once this activation completes.
+(def (check-service-use! (svc : service)) => :void
+  (let (ctx (current-context))
+    (when ctx
+      (using (ctx : context)
+        (let (p ctx.owner)
+          (unless (or (plugin-unchecked? p)
+                      (memq svc (plugin-requires p))
+                      (memq svc (plugin-optional p)))
+            (error "Plugin used an undeclared service"
+                   (plugin-name p) (service-name svc))))))))
+
+;; Dispatchers check their caller before running a provider under its own
+;; owner. Calls through that provider cannot borrow the caller's declarations.
+(def (call-with-service-provider (svc : service) (procedure : :procedure)) => :t
+  (let* ((provider (service-provider svc))
+         (best (entry-table-ref (kernel-providers (the-kernel)) (service-name svc)))
+         (record (and best (hash-get (kernel-plugins (the-kernel)) (entry-owner best))))
+         (ctx (and record
+                   (or (plugin-record-active record)
+                       (let (activating (current-context))
+                         (and activating
+                              (eq? (context-plugin-name activating) (entry-owner best))
+                              activating))))))
+    (call-with-context ctx (lambda () (procedure provider)))))
+
+;; Replace this owner's contribution. A changed effective provider still
+;; follows the existing swap rules, even for a same-rank replacement.
 (def (context-provide! (ctx  : context)
                        (svc  : service)
                        (impl : :t)
@@ -344,23 +399,28 @@ prelude: :gerbil/core
   (let* ((k (the-kernel))
          (name (service-name svc))
          (current (entry-table-ref (kernel-providers k) name))
-         (new (make-entry (context-plugin-name ctx) priority (next-id!) impl
-                          (service-doc svc) (plugin-source (context-owner ctx)))))
+         (new (make-entry (context-plugin-name ctx) priority (context-order ctx) (next-id!) impl
+                          (service-doc svc) (plugin-source (context-owner ctx))))
+         (other (find (lambda ((e : entry)) (not (eq? (entry-owner e) (entry-owner new))))
+                      (entry-table-entries (kernel-providers k) name)))
+         (next (if (and other (entry-outranks? other new)) other new)))
     (remember-service! k svc)
-    (when (and current (entry-outranks? new current))
+    (when (and current (not (eq? current next)))
       (check-live-change! k svc)
       (let (closure (deactivation-closure k (restarting-dependents k name)))
         (check-removable! k closure)
         (deactivate-records! k closure)))
     (entry-table-add! (kernel-providers k) name new)
     (context-defer! ctx (lambda () (withdraw-provider! k svc new)))
-    (cond
-     ((not current)
-      (record-event! service-changed-hook svc #f impl))
-     ((entry-outranks? new current)
-      (hand-over! svc (entry-value current) impl)
-      (unless (eq? (entry-value current) impl)
-        (record-event! service-changed-hook svc (entry-value current) impl))))))
+    (let* ((effective (:- (entry-table-ref (kernel-providers k) name) entry))
+           (incoming (entry-value effective)))
+      (cond
+       ((not current)
+        (record-event! service-changed-hook svc #f incoming))
+       ((not (eq? current effective))
+        (hand-over! svc (entry-value current) incoming)
+        (unless (eq? (entry-value current) incoming)
+          (record-event! service-changed-hook svc (entry-value current) incoming)))))))
 
 ;; Remove the provider entry OLD of SVC; if it was effective, hand over to
 ;; the provider that takes its place.
@@ -463,7 +523,7 @@ prelude: :gerbil/core
 ;; providers and migrates the plugin's state in place (ADR 2).
 (def (context-adapt! (ctx : context) (svc : service) (handler : :procedure)) => :void
   (context-add-entry! ctx (kernel-adapters (the-kernel)) (service-name svc)
-                      (adapter handler: handler seen: (service-provider svc)))
+                      (adapter handler: (context-bind ctx handler) seen: (service-provider svc)))
   (void))
 
 ;; Tell each adapter whose service changed provider since it last looked.
@@ -504,7 +564,7 @@ prelude: :gerbil/core
         (when ctx
           (set! (plugin-record-active rec) #f)
           (for-each (cut report-failure! (plugin-name (plugin-record-definition rec)) "deactivating" <>)
-                    (run-receipt! ctx))
+                    (call-with-context ctx (lambda () (run-receipt! ctx))))
           (record-event! plugin-deactivated-hook (plugin-record-definition rec)))))
     (reverse (by-activation records))))
 
@@ -531,6 +591,7 @@ prelude: :gerbil/core
            rec))
      (else
       (let (rec (plugin-record definition: p wanted?: #f active: #f
+                               order: (owner-order rank: 0)
                                registered: (next-id!) activated: 0))
         (hash-put! plugins (plugin-name p) rec)
         rec)))))
@@ -542,7 +603,7 @@ prelude: :gerbil/core
 
 ;; Run REC's activation. On failure its partial receipt is undone.
 (def (run-activation! (k : kernel) (rec : plugin-record)) => :void
-  (let (ctx (context owner: (plugin-record-definition rec) receipt: []))
+  (let (ctx (context owner: (plugin-record-definition rec) order: (plugin-record-order rec) receipt: []))
     (with-catch
      (lambda (e)
        (run-receipt! ctx)
@@ -591,13 +652,19 @@ prelude: :gerbil/core
     (cond
      ((assq target failures) => (lambda ((failure : :pair)) (raise (cdr failure)))))))
 
+;; The activator supplies a stable rank; later declarations win ties.
+;; Without one, equal ranks break by plugin name, never registration time.
+(def (set-plugin-order! (p : plugin) (rank : :fixnum)) => :void
+  (set! (owner-order-rank (plugin-record-order (plugin-record! (the-kernel) p))) rank))
+
 ;; Turn P on. It activates now if its services are provided, otherwise as
 ;; soon as they are.
-(def (activate-plugin! (p : plugin)) => :void
+(def (activate-plugin! (p : plugin) order: (rank :? :fixnum := #f)) => :void
   (call-as-plugin-operation
    (lambda ()
      (let* ((k (the-kernel))
             (rec (plugin-record! k p)))
+       (when rank (set! (owner-order-rank (plugin-record-order rec)) rank))
        (for-each (cut remember-service! k <>) (plugin-requires p))
        (unless (plugin-record-active rec)
          (set! (plugin-record-wanted? rec) #t)
@@ -683,18 +750,23 @@ prelude: :gerbil/core
 ;; Show STRING through the Messages provider, or on stderr while no plugin
 ;; provides it.
 (def (message (string : :string)) => :void
-  (let (provider (service-provider messages-service))
-    (cond
-     (provider (Messages-message! (Messages provider) string))
-     ((not (string-empty? string)) (write-error-line string)))))
+  (call-with-service-provider messages-service
+    (lambda (provider)
+      (cond
+       (provider (Messages-message! (Messages provider) string))
+       ((not (string-empty? string)) (write-error-line string)))))
+  (void))
 
 ;; Report a plugin or service failure on stderr, exactly once, and then
 ;; through the Messages provider when there is one.
 (def (report-failure-message! (string : :string)) => :void
   (write-error-line string)
-  (let (provider (service-provider messages-service))
-    (when provider
-      (Messages-message! (Messages provider) string))))
+  (call-with-context #f
+    (lambda ()
+      (call-with-service-provider messages-service
+        (lambda (provider)
+          (when provider (Messages-message! (Messages provider) string))))))
+  (void))
 
 (def (write-error-line (string : :string)) => :void
   (let (port (current-error-port))

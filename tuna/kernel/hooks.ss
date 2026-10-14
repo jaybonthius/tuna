@@ -55,18 +55,24 @@ prelude: :gerbil/core
 (def (add-hook-callback! (h : hook) (name : :symbol) (owner : :symbol) (depth : :fixnum)
                          (procedure : :procedure))
   => hook-callback
-  (let (new (hook-callback name: name owner: owner home: (the-kernel) depth: depth
-                           serial: (next-id!) procedure: procedure))
-    (with-lock h.lock
-      (lambda ()
-        (set! h.callbacks (let insert ((rest h.callbacks))
-                            (match rest
-                              ([] [new])
-                              ([first . more]
-                               (if (runs-before? new first)
-                                 (cons new rest)
-                                 (cons first (insert more)))))))))
-    new))
+  (with-lock h.lock
+    (lambda ()
+      (let* ((same (find (lambda ((old : hook-callback))
+                           (and (eq? old.home (the-kernel))
+                                (eq? old.owner owner) (eq? old.name name)))
+                         h.callbacks))
+             (new (hook-callback name: name owner: owner home: (the-kernel) depth: depth
+                                 serial: (if same (hook-callback-serial same) (next-id!))
+                                 procedure: procedure)))
+        (set! h.callbacks
+          (let insert ((rest (if same (remq same h.callbacks) h.callbacks)))
+            (match rest
+              ([] [new])
+              ([first . more]
+               (if (runs-before? new first)
+                 (cons new rest)
+                 (cons first (insert more)))))))
+        new))))
 
 (def (remove-hook-callback! (h : hook) (old : hook-callback)) => :void
   (with-lock h.lock

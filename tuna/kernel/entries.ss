@@ -1,11 +1,12 @@
 ;;; Owner-tagged entries for slot-like effects (ADR 2).
 ;;; A slot's effective value is its highest-priority entry; among equal
-;;; priorities the newest wins. Removing an entry touches only that entry, so
+;;; priorities the later declared owner wins. Removing an entry touches only that entry, so
 ;;; plugins can be deactivated in any order.
 prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable))
-(export (struct-out entry)
+(export (struct-out owner-order)
+        (struct-out entry)
         entry-outranks?
         entry-table
         new-entry-table
@@ -15,9 +16,13 @@ prelude: :gerbil/core
         entry-table-entries
         entry-table-names)
 
+;; Shared by an owner's entries, so configuration reorder needs no restart.
+(defclass owner-order ((rank : :fixnum)) final: #t)
+
 ;; One contribution to a slot, with its provenance.
 (defstruct entry ((owner    : :symbol)
                   (priority : :fixnum)
+                  (order    : owner-order)
                   (serial   : :fixnum)
                   (value    : :t)
                   (doc      :? :string)
@@ -27,7 +32,12 @@ prelude: :gerbil/core
 (def (entry-outranks? (a : entry) (b : entry)) => :boolean
   (or (fx> (entry-priority a) (entry-priority b))
       (and (fx= (entry-priority a) (entry-priority b))
-           (fx> (entry-serial a) (entry-serial b)))))
+           (or (fx> (owner-order-rank (entry-order a))
+                    (owner-order-rank (entry-order b)))
+               (and (fx= (owner-order-rank (entry-order a))
+                         (owner-order-rank (entry-order b)))
+                    (string>? (symbol->string (entry-owner a))
+                              (symbol->string (entry-owner b))))))))
 
 ;; Slot name -> entries, best first.
 (defstruct entry-table ((slots : HashTable))
@@ -39,7 +49,9 @@ prelude: :gerbil/core
 (def (entry-table-add! (table : entry-table) (name : :t) (new : entry)) => :void
   (let (slots (entry-table-slots table))
     (hash-put! slots name
-               (let insert ((rest (hash-ref slots name [])))
+               (let insert ((rest (filter (lambda ((old : entry))
+                                           (not (eq? (entry-owner old) (entry-owner new))))
+                                         (hash-ref slots name []))))
                  (match rest
                    ([] [new])
                    ([first . more]
@@ -55,13 +67,13 @@ prelude: :gerbil/core
       (hash-put! slots name rest))))
 
 (def (entry-table-ref (table : entry-table) (name : :t)) => (Maybe entry)
-  (match (hash-get (entry-table-slots table) name)
+  (match (entry-table-entries table name)
     ([best . _] best)
     (else #f)))
 
 ;; Every entry for NAME, effective one first.
 (def (entry-table-entries (table : entry-table) (name : :t)) => :list
-  (hash-ref (entry-table-slots table) name []))
+  (list-sort entry-outranks? (hash-ref (entry-table-slots table) name [])))
 
 ;; The names that have entries.
 (def (entry-table-names (table : entry-table)) => :list

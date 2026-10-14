@@ -5,9 +5,11 @@
         (only-in :tuna/kernel/state new-kernel current-kernel)
         (only-in :tuna/kernel/plugins startup-service-error?)
         (only-in :tuna/kernel/hooks hook-callback-names)
+        (only-in :tuna/kernel/entries entry-table-remove!)
         "../test-support/kernel"
         "../test-support/string-input")
 (export plugins-test)
+(declare (separate))
 
 (interface Greeter
   (greet) => :string)
@@ -24,6 +26,8 @@
 (def log [])
 (def (note! item) (set! log (cons item log)))
 (def (take-log!) (let (items (reverse log)) (set! log []) items))
+
+(def (late-hook-callback (item : :t)) => :void (note! ['before item]))
 
 (defplugin (greeter-a ctx)
   "Provides the greeter A."
@@ -62,6 +66,7 @@
 
 (defplugin (lifecycle-watcher ctx)
   "Notes plugin events, whether the plugin is then active, and greeter changes."
+  optional: [greeter-service]
   (context-add-hook! ctx plugin-activated-hook 'note-activated
                      (lambda (p) (note! ['activated (plugin-name p) (plugin-active? p)])))
   (context-add-hook! ctx plugin-deactivated-hook 'note-deactivated
@@ -158,6 +163,110 @@
 
 (def plugins-test
   (test-suite "tuna/kernel/plugins"
+    (test-case "an undeclared activating owner is rejected even without a provider"
+      (call-with-fresh-kernel []
+        (lambda ()
+          (check (service-provider greeter-service) => #f)
+          (defplugin (undeclared ctx) "Undeclared lookup."
+            (service-provider greeter-service))
+          (check (with-catch exception-summary (lambda () (activate-plugin! undeclared)))
+                 => "Plugin used an undeclared service undeclared greeter")
+          (check (plugin-active? undeclared) => #f)
+          (defplugin (optional-user ctx) "Explicit guarded lookup."
+            optional: [greeter-service]
+            (note! (service-provider greeter-service)))
+          (take-log!)
+          (activate-plugin! optional-user)
+          (check (take-log!) => [#f])
+          (activate-plugin! greeter-a)
+          (deactivate-plugin! greeter-a)
+          (check (plugin-active? optional-user) => #t))))
+
+    (test-case "same-owner provider replacement still hands over and restarts dependents"
+      (call-with-fresh-kernel []
+        (lambda ()
+          (let (provider-context #f)
+            (defplugin (repeated-provider ctx) "Keeps a context for replacement."
+              (set! provider-context ctx)
+              (context-provide! ctx counter-service (Counter (counter name: 'old n: 17))))
+            (defplugin (replace-provider ctx) "Replaces the same owner's contribution."
+              (context-provide! (:- provider-context context) counter-service
+                                (Counter (counter name: 'new n: 100))))
+            (activate-plugin! repeated-provider)
+            (activate-plugin! counter-user)
+            (take-log!)
+            (activate-plugin! replace-provider)
+            (check (take-log!) => '((handover old -> new) (user-sees 17)))
+            (check (counter-value) => 17)
+            (deactivate-plugin! repeated-provider)
+            (check (service-provider counter-service) => #f)
+            (check (plugin-active? counter-user) => #f)))))
+
+    (test-case "same-owner startup provider replacement is still rejected while live"
+      (call-with-fresh-kernel []
+        (lambda ()
+          (let (provider-context #f)
+            (defplugin (owned-input ctx) "Keeps the original input context."
+              (set! provider-context ctx)
+              (context-provide! ctx input-service (make-test-input (make-hash-table))))
+            (defplugin (replace-input ctx) "Attempts a same-owner input replacement."
+              (context-provide! (:- provider-context context) input-service
+                                (make-test-input (make-hash-table))))
+            (activate-plugin! owned-input)
+            (let (before (service-provider input-service))
+              (start-editor-loop!)
+              (check-exception (call-on-editor-loop (lambda () (activate-plugin! replace-input)))
+                               startup-service-error?)
+              (check (service-provider input-service) => before)
+              (check (plugin-active? owned-input) => #t)
+              (check (plugin-active? replace-input) => #f))))))
+
+    (test-case "entry ties follow supplied rank when the older owner reloads"
+      (call-with-fresh-kernel []
+        (lambda ()
+          (activate-plugin! slot-a order: 1)
+          (activate-plugin! slot-b order: 2)
+          (check (slot-value) => 'b)
+          (deactivate-plugin! slot-a)
+          (activate-plugin! slot-a)
+          (check (slot-value) => 'b)
+          (set-plugin-order! slot-a 3)
+          (check (slot-value) => 'a))))
+
+    (test-case "same owner and slot replaces; a stale inverse leaves the replacement alone"
+      (call-with-fresh-kernel []
+        (lambda ()
+          (defplugin (duplicates ctx) "Re-register one slot."
+            (let (old (context-add-entry! ctx table 'slot 'old))
+              (context-add-entry! ctx table 'slot 'new)
+              (entry-table-remove! table 'slot old)))
+          (activate-plugin! duplicates)
+          (check (slot-value) => 'new)
+          (check (length (entry-table-entries table 'slot)) => 1)
+          (deactivate-plugin! duplicates)
+          (check (slot-value) => #f))))
+
+    (test-case "a named hook follows redefinition and duplicate registration leaves one"
+      (call-with-fresh-kernel []
+        (lambda ()
+          (let (before late-hook-callback)
+            (unwind-protect
+              (begin
+                (defplugin (named-hook ctx) "A named module callback."
+                  (context-add-hook! ctx test-hook 'late late-hook-callback)
+                  (context-add-hook! ctx test-hook 'late late-hook-callback))
+                (activate-plugin! named-hook)
+                (check (hook-callback-names test-hook) => '(late))
+                (take-log!)
+                (run-hook test-hook 1)
+                (check (take-log!) => [['before 1]])
+                (set! late-hook-callback (lambda (item) (note! ['after item])))
+                (run-hook test-hook 2)
+                (check (take-log!) => [['after 2]])
+                (deactivate-plugin! named-hook)
+                (check (hook-callback-names test-hook) => '()))
+              (set! late-hook-callback before))))))
+
     (test-case "receipts undo in reverse order"
       (call-with-fresh-kernel []
        (lambda ()
@@ -207,7 +316,7 @@
          (deactivate-plugin! slot-a)
          (check (slot-value) => 'b)
          (activate-plugin! slot-a)
-         (check (slot-value) => 'a)
+         (check (slot-value) => 'b)
          (deactivate-plugin! slot-a)
          (check (slot-value) => 'b)
          (activate-plugin! slot-a)
@@ -418,7 +527,7 @@
          (activate-plugin! test-input-plugin)
          (activate-plugin! greeter-a)
          (start-editor-loop!)
-         (check-exception (call-on-editor-loop (lambda () (activate-plugin! second-input)))
+         (check-exception (call-on-editor-loop (lambda () (activate-plugin! second-input order: 1)))
                           startup-service-error?)
          (check (call-on-editor-loop (lambda () (plugin-active? second-input))) => #f)
          (check-exception (call-on-editor-loop (lambda () (deactivate-plugin! test-input-plugin)))
