@@ -1,0 +1,63 @@
+# Which package may depend on which?
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 0
+  }
+}
+direction: up
+
+classes: {
+  core: {
+    style: {
+      fill: "#e8f5e9"
+      stroke: "#2e7d32"
+      font-color: "#1b3d1f"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+  contract: {
+    style: {
+      fill: "#fff8e1"
+      stroke: "#8d6e00"
+      font-color: "#3e2f00"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+  plugin: {
+    style: {
+      fill: "#eef3fb"
+      stroke: "#355c96"
+      font-color: "#172b4d"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+}
+
+legend: |md
+  **Status:** proposed. Arrows mean "depends on". Green: Tuna itself. Yellow: contracts and the language built on them. Blue: plugins. Nothing points down from Tuna to a plugin.
+|
+
+tuna: "tuna/\nkernel, libraries, start-up program\n(knows no plugin)" {class: core}
+lang: "language/ (own package)\nthe package and init.ss language\n(defcommand, keymap-set, use-plugin)" {class: contract}
+cmdc: "plugins/commands/contract\n(likewise keys, settings)" {class: contract}
+bufc: "plugins/buffers/contract\nwhat a buffers plugin promises" {class: contract}
+compc: "plugins/completion/contract" {class: contract}
+bufp: "plugins/buffers/plugin\nthe default buffers" {class: plugin}
+toy: "someone else's buffers plugin" {class: plugin}
+orderless: "plugins/orderless/plugin" {class: plugin}
+mini: "plugins/minibuffer/plugin" {class: plugin}
+
+bufc -> tuna
+compc -> tuna
+compc -> bufc
+lang -> tuna
+lang -> cmdc
+cmdc -> tuna
+bufp -> bufc
+toy -> bufc
+orderless -> compc
+mini -> bufc
