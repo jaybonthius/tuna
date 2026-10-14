@@ -80,6 +80,19 @@ prelude: :gerbil/core
 
 (def prompt-foundations-test
   (test-suite "prompt foundations"
+    (test-case "an invalid history length fails before a prompt buffer is added"
+      (with-temporary-state
+       (lambda (directory)
+         (run-prompts directory buffers-plugin
+          (lambda ()
+            (on-editor
+             (lambda ()
+               (with-settings ((minibuffer-history-length -1))
+                 (check-exception (read-string "Invalid: " history: 'names) Error?))
+               (check (active-prompt) => #f)
+               (check (filter (lambda (b) (string-prefix? " *Minibuf-" (buffer-name b)))
+                              (buffer-list))
+                      => [(get-buffer " *Minibuf-0*")]))))))))
     (test-case "named history deduplicates, navigates back to the draft, and persists across restart"
       (with-temporary-state
        (lambda (directory)

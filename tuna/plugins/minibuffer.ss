@@ -135,7 +135,8 @@
 
 (def (ask! (self : minibuffer) (question : :string) (initial : :string)
            (history :? :symbol) (setup :? :procedure)) => :t
-  (let* ((keymap (new-keymap))
+  (let* ((items (if history (history-list self history) []))
+         (keymap (new-keymap))
          (answer (new-text-node (new-text initial)))
          (b (minibuffer-buffer (string-append " *Minibuf-" (number->string (next-id!)) "*")
                                [(new-node 'minibuffer-prompt attributes: [['content . question]])
@@ -150,7 +151,7 @@
       (using (p (prompt owner: self question: question answer: answer holder: b keymap: keymap shown-in: v
                         previous-buffer: (and previous (cdr previous)) previous-view: before
                         waiting: #f exit-check: (lambda (input) #f)
-                        history-name: history history-items: (if history (history-list self history) [])
+                        history-name: history history-items: items
                         history-position: 0 draft: initial)
                 : prompt)
         (set-view-buffer v b)
