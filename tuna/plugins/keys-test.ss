@@ -3,13 +3,20 @@
         :tuna/kernel
         :tuna/services/keys
         :tuna/plugins/keys
+        :tuna/services/settings
+        :tuna/plugins/settings
         "../test-support/kernel"
         (only-in "../test-support/string-input" test-messages-plugin current-message))
 (export keys-test)
 
-(def (keydown key ctrl?: (ctrl? #f) alt?: (alt? #f) shift?: (shift? #f)
-              meta?: (meta? #f) composing?: (composing? #f))
-  (make-key-event "test-client" 1 key "" 0 #f composing? alt? ctrl? meta? shift?))
+(def (keydown (key : :string) ctrl?: (ctrl? : :boolean := #f) alt?: (alt? : :boolean := #f)
+              shift?: (shift? : :boolean := #f) meta?: (meta? : :boolean := #f)
+              composing?: (composing? : :boolean := #f) code: (code : :string := "")
+              mac?: (mac? : :boolean := #f) left?: (left? : :boolean := #f)
+              right?: (right? : :boolean := #f) graph?: (graph? : :boolean := #f))
+  => key-event
+  (make-key-event "test-client" 1 key code 0 #f composing? alt? ctrl? meta? shift?
+                  mac? left? right? graph?))
 
 (def (pointer area part button: (button 1) clicks: (clicks 1) ctrl?: (ctrl? #f)
                  alt?: (alt? #f) shift?: (shift? #f) meta?: (meta? #f))
@@ -65,6 +72,71 @@
       (check (key-description (keydown "s" meta?: #t)) => "s-s")
       (check (key-description (keydown "Control" ctrl?: #t)) => #f)
       (check (key-description (keydown "Process" composing?: #t)) => #f))
+
+    (test-case "Mac Option uses each side's live policy and physical US keys"
+      (call-with-fresh-kernel [settings-plugin keys-plugin]
+       (lambda ()
+         (check (key-description (keydown "≈" code: "KeyX" alt?: #t mac?: #t left?: #t)) => "M-x")
+         (check (key-description (keydown "≈" code: "KeyX" alt?: #t mac?: #t right?: #t)) => "≈")
+         (check (key-description (keydown "Dead" code: "KeyE" alt?: #t mac?: #t left?: #t)) => "M-e")
+         (check (key-description (keydown "ﬁ" code: "Digit5" alt?: #t mac?: #t left?: #t shift?: #t)) => "M-%")
+         (check (key-description (keydown "≈" code: "KeyX" alt?: #t mac?: #t left?: #t right?: #t)) => "M-x")
+         (check (key-description (keydown "≈" code: "KeyX" alt?: #t mac?: #t)) => "M-x")
+         (check (key-description (keydown "y" code: "KeyZ" alt?: #t mac?: #t left?: #t)) => "M-z")
+         (check (key-description (keydown "x" code: "KeyX" alt?: #t right?: #t)) => "M-x")
+         (check (key-description (keydown "@" code: "KeyQ" alt?: #t ctrl?: #t graph?: #t)) => "@")
+         (check (key-description (keydown "Dead" code: "KeyE" alt?: #t mac?: #t left?: #t composing?: #t)) => #f)
+         (check (key-description (keydown "Dead" code: "KeyE" alt?: #t mac?: #t right?: #t)) => #f)
+         (check (key-description (keydown "Process" code: "KeyE" alt?: #t mac?: #t left?: #t)) => #f)
+         (check (key-description (keydown "≈" code: "KeyX" alt?: #t mac?: #t left?: #t ctrl?: #t meta?: #t shift?: #t)) => "C-M-s-X")
+         (check (key-description (keydown "ArrowLeft" alt?: #t mac?: #t left?: #t shift?: #t)) => "M-S-<left>")
+         (with-settings ((mac-option-modifier 'none) (mac-right-option-modifier 'meta))
+           (check (key-description (keydown "≈" code: "KeyX" alt?: #t mac?: #t left?: #t)) => "≈")
+           (check (key-description (keydown "≈" code: "KeyX" alt?: #t mac?: #t right?: #t)) => "M-x"))
+         (defplugin (option-settings ctx)
+           "Changes the Option settings while the input plugin is running."
+           (context-set-setting! ctx mac-option-modifier 'none)
+           (context-set-setting! ctx mac-right-option-modifier 'meta))
+         (activate-plugin! option-settings)
+         (check (key-description (keydown "≈" code: "KeyX" alt?: #t mac?: #t left?: #t)) => "≈")
+         (check (key-description (keydown "≈" code: "KeyX" alt?: #t mac?: #t right?: #t)) => "M-x")
+         (deactivate-plugin! option-settings)
+         (check (key-description (keydown "≈" code: "KeyX" alt?: #t mac?: #t left?: #t)) => "M-x")
+         (with-settings ((mac-option-modifier 'super))
+           (check-exception (key-description (keydown "≈" code: "KeyX" alt?: #t mac?: #t left?: #t)) Error?)))))
+
+    (test-case "left Mac Option resolves the M-x binding even without a settings provider"
+      (call-with-fresh-kernel keys-plugins
+       (lambda ()
+         (defplugin (meta-command ctx)
+           "A command reached by Meta-x."
+           requires: [input-service]
+           (define-command ctx (meta-x) "Runs on M-x." 'ran)
+           (keymap-set ctx "M-x" 'meta-x))
+         (activate-plugin! meta-command)
+         (let (task (Input-resolve! (Input (service-provider input-service))
+                                   (keydown "≈" code: "KeyX" alt?: #t mac?: #t left?: #t)))
+           (check (car task) => 'meta-x)
+           (check ((cdr task)) => 'ran)))))
+
+    (test-case "Mac Meta maps letters, digits and the US punctuation table with Shift"
+      (call-with-fresh-kernel [settings-plugin]
+       (lambda ()
+         (for-each
+          (lambda (row)
+            (let ((code (car row)) (unshifted (cadr row)) (shifted (caddr row)))
+              (check (key-description (keydown "Dead" code: code alt?: #t mac?: #t left?: #t))
+                     => (string-append "M-" unshifted))
+              (check (key-description (keydown "Dead" code: code alt?: #t mac?: #t left?: #t shift?: #t))
+                     => (string-append "M-" shifted))))
+          '(("KeyA" "a" "A") ("KeyZ" "z" "Z")
+            ("Digit0" "0" ")") ("Digit1" "1" "!") ("Digit2" "2" "@")
+            ("Digit3" "3" "#") ("Digit4" "4" "$") ("Digit5" "5" "%")
+            ("Digit6" "6" "^") ("Digit7" "7" "&") ("Digit8" "8" "*") ("Digit9" "9" "(")
+            ("Backquote" "`" "~") ("Minus" "-" "_") ("Equal" "=" "+")
+            ("BracketLeft" "[" "{") ("BracketRight" "]" "}") ("Backslash" "\\" "|")
+            ("Semicolon" ";" ":") ("Quote" "'" "\"") ("Comma" "," "<")
+            ("Period" "." ">") ("Slash" "/" "?"))))))
 
     (test-case "two plugins binding the same key survive deactivation in either order"
       (call-with-fresh-kernel keys-plugins

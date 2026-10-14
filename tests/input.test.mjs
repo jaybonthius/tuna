@@ -18,6 +18,7 @@ class KeyboardEvent extends Event {
       altKey: false, ctrlKey: false, metaKey: false, shiftKey: false,
     }, metadata);
   }
+  getModifierState(name) { return name === "AltGraph" && (this.altGraph ?? false); }
 }
 
 class MouseEvent extends Event {
@@ -57,11 +58,15 @@ class MemoryStorage {
 }
 
 // Each harness is one page load; tabs share a storage across reloads.
-async function harness(sessionStorage = new MemoryStorage(), screen = new Element({ "data-revision": 7 })) {
+async function harness(sessionStorage = new MemoryStorage(), screen = new Element({ "data-revision": 7 }), platform = "Linux x86_64") {
   const posts = [];
   const errors = [];
   const actions = {};
+  const listeners = {};
+  const fire = (evt) => (listeners[evt.type] ?? []).forEach((listener) => listener(evt));
   const context = createContext({
+    navigator: { platform },
+    window: { addEventListener(type, listener) { (listeners[type] ??= []).push(listener); } },
     KeyboardEvent,
     MouseEvent,
     Element,
@@ -88,7 +93,8 @@ async function harness(sessionStorage = new MemoryStorage(), screen = new Elemen
   assert.deepEqual(Object.keys(actions).sort(), ["tunaKeyboard", "tunaPointer"]);
   return {
     posts, errors,
-    send: (evt) => actions.tunaKeyboard.apply({ evt }),
+    fire,
+    send: (evt) => { if (evt instanceof KeyboardEvent) fire(evt); actions.tunaKeyboard.apply({ evt }); },
     point: (evt) => actions.tunaPointer.apply({ evt }),
   };
 }
@@ -106,7 +112,7 @@ test("every keydown is posted in order, including modifiers and composition", as
   const h = await harness();
   const keys = ["a", "Alt", "Control", "Shift", "Meta", "AltGraph", "Dead", "Process", "Unidentified", "", "é", "Enter"];
   const events = keys.map((key, index) => new KeyboardEvent(key, {
-    code: "KeyA", location: index % 4, repeat: index % 2 === 1,
+    code: "KeyA", location: key === "Alt" ? 0 : index % 4, repeat: index % 2 === 1,
     isComposing: key === "Process", altKey: true, ctrlKey: true,
     metaKey: true, shiftKey: true,
   }));
@@ -126,12 +132,63 @@ test("every keydown is posted in order, including modifiers and composition", as
       key: event.key, code: event.code,
       location: event.location, repeat: event.repeat, isComposing: event.isComposing,
       altKey: true, ctrlKey: true, metaKey: true, shiftKey: true,
+      isMac: false, altLeft: false, altRight: false, altGraph: false,
     });
     assert.equal(event.defaultPrevented, !event.isComposing);
     post.resolve({ status: 204 });
     await setImmediate();
   }
   assert.deepEqual(h.errors, []);
+});
+
+test("Option sides are captured at keydown, released independently and cleared on blur", async () => {
+  const h = await harness(new MemoryStorage(), undefined, "MacIntel");
+  const alt = (code, type = "keydown") => new KeyboardEvent("Alt", { code, type, altKey: type === "keydown" });
+  h.send(alt("AltLeft"));
+  h.send(new KeyboardEvent("≈", { code: "KeyX", altKey: true }));
+  h.send(alt("AltRight"));
+  h.send(new KeyboardEvent("Dead", { code: "KeyE", altKey: true, repeat: true }));
+  h.send(alt("AltLeft", "keyup"));
+  h.send(new KeyboardEvent("≈", { code: "KeyX", altKey: true }));
+  h.send(alt("AltRight", "keyup"));
+  h.send(new KeyboardEvent("x", { code: "KeyX" }));
+  h.send(alt("AltRight"));
+  h.fire(new Event("blur"));
+  h.send(new KeyboardEvent("≈", { code: "KeyX", altKey: true }));
+  h.send(new KeyboardEvent("Alt", { code: "", location: 1, altKey: true }));
+  h.send(new KeyboardEvent("x", { altKey: false }));
+  const expected = [
+    ["Alt", true, false], ["≈", true, false], ["Alt", true, true], ["Dead", true, true],
+    ["≈", false, true], ["x", false, false], ["Alt", false, true], ["≈", false, false],
+    ["Alt", true, false], ["x", false, false],
+  ];
+  for (let index = 0; index < expected.length; index++) {
+    const post = h.posts[index];
+    assert.equal(post.body.isMac, true);
+    assert.equal(post.body.altGraph, false);
+    assert.deepEqual([post.body.key, post.body.altLeft, post.body.altRight], expected[index]);
+    assert.equal(post.body.sequence, index + 1, "keyup and blur never enter the ordered queue");
+    post.resolve({ status: 204 });
+    await setImmediate();
+  }
+  assert.equal(h.posts.length, expected.length);
+});
+
+test("location fallback tracks right Option and keyup, and AltGraph is a browser fact", async () => {
+  const h = await harness(new MemoryStorage(), undefined, "Win32");
+  h.send(new KeyboardEvent("Alt", { code: "", location: 2, altKey: true }));
+  h.send(new KeyboardEvent("@", { code: "KeyQ", ctrlKey: true, altKey: true, altGraph: true }));
+  h.send(new KeyboardEvent("Alt", { type: "keyup", code: "", location: 2 }));
+  h.send(new KeyboardEvent("q"));
+  for (let index = 0; index < 3; index++) {
+    const post = h.posts[index];
+    assert.equal(post.body.isMac, false);
+    assert.equal(post.body.altLeft, false);
+    assert.equal(post.body.altRight, index !== 2);
+    assert.equal(post.body.altGraph, index === 1);
+    post.resolve({ status: 204 });
+    await setImmediate();
+  }
 });
 
 test("captures facts immediately and ignores non-keydown events", async () => {

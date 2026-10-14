@@ -24,7 +24,7 @@
                        ((assoc name browser-keys) => cdr)
                        (else name))))
     ((input-submitter)
-     (make-key-event "test-client" sequence browser-key "" 0 #f #f #f ctrl? #f shift?))))
+     (make-key-event "test-client" sequence browser-key "" 0 #f #f #f ctrl? #f shift? #f #f #f #f))))
 
 (def (type! . keys)
   (for-each press keys))

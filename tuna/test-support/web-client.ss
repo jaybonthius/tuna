@@ -107,13 +107,22 @@
       (Socket-close socket)
       (parse-reply text))))
 
-(def (keydown-json key ctrl? sequence)
-  (string-append
-   "{\"version\":1,\"type\":\"keydown\",\"clientId\":\"web-test\",\"sequence\":"
-   (number->string sequence)
-   ",\"key\":\"" key "\",\"code\":\"\",\"location\":0,\"repeat\":false,"
-   "\"isComposing\":false,\"altKey\":false,\"ctrlKey\":" (if ctrl? "true" "false")
-   ",\"metaKey\":false,\"shiftKey\":false}"))
+;; CHANGES replaces a raw JSON field, or omits it when its value is #f.
+(def (keydown-json (key : :string) (ctrl? : :boolean) (sequence : :fixnum) . changes)
+  => :string
+  (let* ((fields [ (cons "version" "1") (cons "type" "\"keydown\"")
+                  (cons "clientId" "\"web-test\"") (cons "sequence" (number->string sequence))
+                  (cons "key" (string-append "\"" key "\"")) (cons "code" "\"\"")
+                  (cons "location" "0") (cons "repeat" "false") (cons "isComposing" "false")
+                  (cons "altKey" "false") (cons "ctrlKey" (if ctrl? "true" "false"))
+                  (cons "metaKey" "false") (cons "shiftKey" "false")
+                  (cons "isMac" "false") (cons "altLeft" "false")
+                  (cons "altRight" "false") (cons "altGraph" "false")])
+         (merged (filter cdr (map (lambda (field) (or (assoc (car field) changes) field)) fields))))
+    (string-append "{"
+                   (string-join (map (lambda (field) (string-append "\"" (car field) "\":" (cdr field)))
+                                     merged) ",")
+                   "}")))
 
 (def sequence 0)
 

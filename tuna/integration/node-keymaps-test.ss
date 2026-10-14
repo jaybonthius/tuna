@@ -23,8 +23,8 @@
   [keys-plugin test-messages-plugin rope-text-store-plugin settings-plugin no-session-plugin
    buffers-plugin layout-plugin])
 
-(def (keydown key ctrl?: (ctrl? #f))
-  (make-key-event "test-client" 1 key "" 0 #f #f #f ctrl? #f #f))
+(def (keydown (key : :string) ctrl?: (ctrl? : :boolean := #f)) => key-event
+  (make-key-event "test-client" 1 key "" 0 #f #f #f ctrl? #f #f #f #f #f #f))
 
 (def (pointer part node: (node #f) area: (area 'view) clicks: (clicks 1))
   (make-pointer-event "test-client" 1 1 clicks #f #f #f #f (make-posn area part node 1)))

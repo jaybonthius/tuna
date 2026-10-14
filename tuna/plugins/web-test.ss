@@ -110,6 +110,37 @@
                                     body: (keydown-json "a" #f 3)))
                 => 415))))
 
+    (test-case "key items preserve platform, held Option sides and AltGraph facts"
+      (set! (recording-input-items recorded) [])
+      (with-web-tuna [test-messages-plugin recording-input-plugin web-transport-plugin]
+       (lambda ()
+         (check (post-json (keydown-json "≈" #f 1 (cons "code" "\"KeyX\"")
+                                        (cons "altKey" "true") (cons "isMac" "true")
+                                        (cons "altLeft" "true") (cons "altRight" "false")
+                                        (cons "altGraph" "false"))) => 204)
+         (check (post-json (keydown-json "@" #t 2 (cons "altKey" "true")
+                                        (cons "altRight" "true") (cons "altGraph" "true"))) => 204)
+         (let (items (recorded-items 2))
+           (check (length items) => 2)
+           (let ((mac (car items)) (graph (cadr items)))
+             (check [(key-event-key mac) (key-event-code mac) (key-event-sequence mac)] => ["≈" "KeyX" 1])
+             (check [(key-event-mac? mac) (key-event-alt-left? mac)
+                     (key-event-alt-right? mac) (key-event-alt-graph? mac)] => [#t #t #f #f])
+             (check [(key-event-mac? graph) (key-event-alt-left? graph)
+                     (key-event-alt-right? graph) (key-event-alt-graph? graph)] => [#f #f #t #t]))))))
+
+    (test-case "missing or malformed keyboard facts are refused"
+      (with-tuna
+       (lambda ()
+         (check (post-json (keydown-json "x" #f 1)) => 204)
+         (for-each
+          (lambda (field)
+            (for-each (lambda (bad)
+                        (check [field bad (post-json (keydown-json "x" #f 2 (cons field bad)))]
+                               => [field bad 400]))
+                      [#f "null" "0" "1" "\"true\"" "[]" "{}"]))
+          ["isMac" "altLeft" "altRight" "altGraph"]))))
+
     (test-case "each screen carries its revision on its root element"
       (with-tuna
        (lambda ()

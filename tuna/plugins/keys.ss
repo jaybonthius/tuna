@@ -12,12 +12,15 @@ prelude: :gerbil/core
 
 (import :tuna/kernel
         :tuna/services/keys
+        :tuna/services/settings
         (only-in :tuna/services/buffers
                  buffers-service selected-view view-node view-showing buffer-root
                  node node-parent node-keymap)
         (only-in :tuna/services/layout layout-service posn-view posn-node))
 (export keys-plugin
-        key-description)
+        key-description
+        mac-option-modifier
+        mac-right-option-modifier)
 
 (def quit-key "C-g")
 
@@ -47,22 +50,77 @@ prelude: :gerbil/core
     "CapsLock" "NumLock" "ScrollLock" "Fn" "FnLock" "Symbol" "SymbolLock"
     "Dead" "Process" "Compose" "Unidentified"))
 
+;; Mac Option policy is resolved for each event, so live settings take
+;; effect without replacing the input plugin. Without a settings provider,
+;; the keys plugin can still run with the declared defaults.
+(defsetting mac-option-modifier 'meta
+  "Left macOS Option: meta uses the physical US key; none types the browser character.")
+(defsetting mac-right-option-modifier 'none
+  "Right macOS Option: meta uses the physical US key; none types the browser character.")
+
+(def (option-meta? (s : setting)) => :boolean
+  (case (if (service-provider settings-service) (setting-value s) (setting-default s))
+    ((meta) #t)
+    ((none) #f)
+    (else (error "Option modifier must be meta or none" (setting-name s)))))
+
+;; If both Options are held, either configured Meta wins. If the browser
+;; missed the modifier press (no side), use the left Option setting.
+(def (alt-meta? (event : key-event)) => :boolean
+  (and (key-event-alt? event)
+       (not (key-event-alt-graph? event))
+       (or (not (key-event-mac? event))
+           (and (or (key-event-alt-left? event) (not (key-event-alt-right? event)))
+                (option-meta? mac-option-modifier))
+           (and (key-event-alt-right? event) (option-meta? mac-right-option-modifier)))))
+
+;; Physical positions on a US keyboard: unshifted, then shifted.
+(def option-punctuation
+  (list->hash-table
+   '(("Backquote" . "`~") ("Minus" . "-_") ("Equal" . "=+")
+     ("BracketLeft" . "[{") ("BracketRight" . "]}") ("Backslash" . "\\|")
+     ("Semicolon" . ";:") ("Quote" . "'\"") ("Comma" . ",<")
+     ("Period" . ".>") ("Slash" . "/?"))))
+
+;; A Mac Meta key's physical US character, or the browser key for named
+;; keys and codes we cannot map. No physical translation while composing.
+(def (option-key (event : key-event)) => :string
+  (let ((code (key-event-code event))
+        (shift? (key-event-shift? event)))
+    (cond
+     ((and (fx= (string-length code) 4) (string-prefix? "Key" code)
+           (char<=? #\A (string-ref code 3) #\Z))
+      (let (letter (string-ref code 3))
+        (string (if shift? letter (char-downcase letter)))))
+     ((and (fx= (string-length code) 6) (string-prefix? "Digit" code)
+           (char<=? #\0 (string-ref code 5) #\9))
+      (let (digit (string-ref code 5))
+        (string (if shift? (string-ref ")!@#$%^&*(" (fx- (char->integer digit) 48)) digit))))
+     ((hash-get option-punctuation code)
+      => (lambda ((pair : :string)) (string (string-ref pair (if shift? 1 0)))))
+     (else (key-event-key event)))))
+
 ;; EVENT in Emacs key syntax ("C-c", "M-x", "<left>"), or #f for a key that
 ;; only modifies or composes others.
 (def (key-description (event : key-event)) => (Maybe :string)
-  (let (key (key-event-key event))
-    (and (not (key-event-composing? event))
-         (not (member key ignored-keys))
-         (let* ((character? (fx= (string-length key) 1))
-                (base (cond
-                       ((hash-get named-keys key))
-                       (character? key)
-                       (else (string-append "<" (string-downcase key) ">")))))
-           (string-append (if (key-event-ctrl? event) "C-" "")
-                          (if (key-event-alt? event) "M-" "")
-                          (if (and (key-event-shift? event) (not character?)) "S-" "")
-                          (if (key-event-meta? event) "s-" "")
-                          base)))))
+  (and (not (key-event-composing? event))
+       ;; Only Dead may become a physical Meta key; IME Process and the
+       ;; other ignored keys must stay ignored even if they have a code.
+       (or (equal? (key-event-key event) "Dead")
+           (not (member (key-event-key event) ignored-keys)))
+       (let* ((alt? (alt-meta? event))
+              (key (if (and alt? (key-event-mac? event)) (option-key event) (key-event-key event))))
+         (and (not (member key ignored-keys))
+              (let* ((character? (fx= (string-length key) 1))
+                     (base (cond
+                            ((hash-get named-keys key))
+                            (character? key)
+                            (else (string-append "<" (string-downcase key) ">")))))
+                (string-append (if (and (key-event-ctrl? event) (not (key-event-alt-graph? event))) "C-" "")
+                               (if alt? "M-" "")
+                               (if (and (key-event-shift? event) (not character?)) "S-" "")
+                               (if (key-event-meta? event) "s-" "")
+                               base))))))
 
 ;; "C-c  l" -> "C-c l".
 (def (normalize-keys (keys : :string)) => :string
