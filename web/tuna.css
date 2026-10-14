@@ -289,6 +289,7 @@ body {
 }
 
 .completion-counter {
+  margin-inline-end: 0.5rem;
   color: var(--tuna-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -330,6 +331,22 @@ body {
 
 .completion-label {
   overflow-wrap: anywhere;
+}
+
+.completion-row:has(> .completion-doc) {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 22ch) minmax(0, 3fr);
+}
+
+.completion-key {
+  overflow-wrap: anywhere;
+  font-weight: normal;
+}
+
+.completion-doc {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .completion-field,

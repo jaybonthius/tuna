@@ -424,6 +424,7 @@
                         rope-text-store-plugin buffers-plugin autosave-plugin layout-plugin
                         view-commands-plugin html-renderer-plugin buttons-plugin basic-editing-plugin
                         minibuffer-plugin completion-engine-plugin completion-vertical-plugin extended-command-plugin
+                        orderless-plugin annotations-plugin
                         echo-area-plugin help-buffer-plugin
                         reload-config-plugin))
             (check (declaration-options (caddr (configuration-declarations loaded)))
