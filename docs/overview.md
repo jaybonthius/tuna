@@ -1,6 +1,6 @@
 # How Tuna works
 
-**Status (2026-10-13):** the architecture skeleton and the buffers, views and layout work are complete. Built: the small kernel (plugins with receipts, services that can be swapped at startup or live, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the token-protected browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML; a toy plain-text renderer proves the slot can be swapped), buffers as a replaceable service (editing, undo and highlights live in the buffers plugin; a toy buffers plugin proves the slot), the layout (splits, tabs, a movable frame with frame marks, pinning, and the minibuffer and echo area as ordinary views; a toy two-view layout proves the slot), saving your session and unsaved text across restarts, and starting from and reloading your `init.ss` (stages 1 and 2 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, `tuna check`, reloading with `reload-config` or `tuna reload`, and, from stage 3, plugin options and the `show-config-report` command). Not built yet: files, `M-x`, completion, modes, scrolling strips, and drawing only what is in view. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
+**Status (2026-10-13):** the architecture skeleton and the buffers, views and layout work are complete. Built: the small kernel (plugins with receipts, services that can be swapped at startup or live, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the token-protected browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML; a toy plain-text renderer proves the slot can be swapped), buffers as a replaceable service (editing, undo and highlights live in the buffers plugin; a toy buffers plugin proves the slot), the layout (splits, tabs, a movable frame with frame marks, pinning, and the minibuffer and echo area as ordinary views; a toy two-view layout proves the slot), saving your session and unsaved text across restarts, and starting from and reloading your `init.ss` (stages 1 and 2 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, `tuna check`, reloading with `reload-config` or `tuna reload`, and, from stage 3, plugin options and the `show-config-report` command). Also built: clicks and buttons, nested containers, and `M-x` with completion (a vertical list, any-order matching, and annotations). Not built yet: files, modes, scrolling strips, and drawing only what is in view. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
 
 ## The idea
 
@@ -95,6 +95,23 @@ A command can stop in the middle and wait for an answer, just like in Emacs. Whi
 ```
 
 Names in code samples are illustrative; the exact API will be settled when it's built.
+
+Answers are remembered per question kind: `M-p` and `M-n` step through earlier answers, and the lists survive restarts.
+
+## Choosing from a list: completion
+
+**Status:** built (`M-x`); other pickers will reuse it.
+
+![Which plugin does what](diagrams/completion-plugins.svg)
+
+When a command asks you to choose (a command, later a file or a buffer), it calls `completing-read` with a list of **candidates**. A candidate is a small record, the text you see and the value you get back, not a string with hidden data as in Emacs. Several replaceable plugins share the work, the way Vertico, Orderless and Marginalia do in Emacs, but without advice:
+
+- the **engine** keeps the running question (the **session**: what you typed, the matches, the selection), sorts recent answers first, and updates the list in the same redraw as your keystroke;
+- the **vertical list** shows ten rows below the prompt: `C-n`/`C-p` move, `RET` chooses, `TAB` copies the selected text into the prompt, `M-RET` takes exactly what you typed, and a click chooses a row;
+- the **matching style** decides what matches: by default the parts you type, separated by spaces, in any order (`view sel` finds `select-view-left`), each as plain text or a regular expression, with upper case mattering only if you type it;
+- **annotations** add details beside each candidate of a **category**: for commands, the key binding and the first line of the description.
+
+`M-x` is itself a small plugin that asks the engine to choose a command. Turn off the annotations, the matching style or the list, and it keeps working with less. Commands have their own contract (listing them, their descriptions, running one by name), and `pre-command-hook` and `post-command-hook` run around every command.
 
 ## Plugins: how things get added and removed
 
@@ -224,6 +241,11 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 - **Snapshot**: a frozen copy of a buffer's text at one version, cheap to make.
 - **Job**: slow work done off the editor thread using a snapshot.
 - **Job group**: a plugin's set of jobs; turning the plugin off cancels them.
+- **Candidate**: one thing you can choose in a list, with the text shown and the value returned.
+- **Category**: what kind of thing the candidates are (`command`, later `buffer` or `file`); annotations and settings key off it.
+- **Session**: one running question in completion: what you have typed, the matches, and the selection.
+- **Matching style**: a rule for which candidates match what you typed.
+- **Annotator**: adds details beside each candidate of a category.
 - **Plugin**: a bundle of commands, keys, hooks, and services that can be turned on and off.
 - **Receipt**: a plugin's record of everything it added, used to undo it.
 - **Service**: a swappable part of Tuna, defined by what it promises to do.
