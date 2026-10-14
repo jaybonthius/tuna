@@ -25,3 +25,5 @@
 - [ ] **Views and containers have no keymaps** (mouse stage 2). Lookup walks from the focused or clicked node up to the buffer's root, then the innermost input target and the global keymap; the plan's "the view and its containers" layer is not built, so part-kind bindings (`<tab-line> <mouse-1>`) stay global.
 - [ ] **Keyboard focus never reaches a rich node** (mouse stage 2): it is the selected view's text node, or its buffer's root, so buttons are pushed only by clicks and `RET` is not bound on them. Node-to-node focus movement would make keyboard access possible.
 - [ ] **`posn-node` walks the clicked view's whole buffer** to find the node id (stage 1), now on every click looked up; an id index in the buffers contract would make it constant time once buffers get large.
+- [ ] **A click on a button that has gone falls through** (mouse stage 2): it selects the view instead of reporting a stale click.
+- [ ] **Any rebind repaints every view** (mouse stage 2): the keymap generation in the HTML-reuse key is global.

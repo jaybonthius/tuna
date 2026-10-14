@@ -36,3 +36,11 @@ Emacs commands compose through shared command-loop state: `this-command` and `la
 - A click does not clear the echo area, so clicking to read a message keeps it.
 - Divergences are listed in `docs/emacs-equivalents.md`.
 
+## Node keymaps (amendment, 2026-10-13)
+
+- A buffer node may carry a keymap; the root node's keymap is the buffer's own (there is no separate buffer keymap). Lookup for keys starts at the focused node (the selected view's text node, or its buffer's root) and walks up to the root, then the innermost input target, then the global keymap. Clicks start at the clicked node (or the clicked view's buffer root). View and container keymaps are not built (TODO).
+- For clicks, each keymap is searched under every name of the click (part-kind prefix first, double before single) before the next keymap, so a node's `<mouse-1>` shadows the global `<view> <mouse-1>`; Emacs tries each name in every keymap first.
+- The minibuffer's `RET` and `C-g` are bound on its prompt buffer's root, so they apply only in the minibuffer. `C-g` elsewhere runs `keyboard-quit` and the question keeps waiting, as in Emacs; `C-g` in an outer prompt abandons it and the prompts inside without asking.
+- Buttons (`button.el`): a node with a label and an action, drawn as a real `<button>`; one shared keymap owned by the buttons plugin. Only a click pushes a button until keyboard focus can rest on rich nodes.
+- `data-clickable` follows real node bindings; a keymap generation number joins the HTML-reuse key.
+
