@@ -10,14 +10,11 @@ prelude: :gerbil/core
         :std/os/signal-handler
         :std/sync/channel
         :std/sync/completion
-        :tuna/version
         :tuna/kernel
         :tuna/boot
         :tuna/control
         :tuna/services/session
         (only-in :tuna/services/commands command-ref)
-        :tuna/lib/plugin-options
-        (only-in :tuna/plugins/web web-transport-plugin web-transport-url)
         ;; Linked into the executable so that init.ss can import them.
         (only-in :tuna/config)
         (only-in :tuna/lib/jobs)
@@ -51,19 +48,20 @@ prelude: :gerbil/core
      (let (outcome (init-configuration!))
        (displayln (cdr outcome))
        (exit (if (car outcome) 0 1))))
-    (['check config] (check config))
+    (['check config flags] (check config flags))
     (['reload] (exit (request-reloads (current-output-port))))
-    (['run port config] (run port config))
+    (['help config _]
+     (display (command-line-help (find-configuration config)))
+     (exit 0))
+    (['run config flags] (run config flags))
     (else (usage))))
 
-(def (usage) => :void
-  (let (port (current-error-port))
-    (display "usage: tuna [--port PORT] [--config PATH]\n       tuna check [--config PATH]\n       tuna init\n       tuna reload\n"
-             port))
+(def (usage (choice : config-choice := (find-configuration #f))) => :void
+  (display (command-line-help choice) (current-error-port))
   (exit 2))
 
-(def (check (config :? :string)) => :void
-  (let (problem (check-configuration (find-configuration config)))
+(def (check (config :? :string) (flags : :list)) => :void
+  (let (problem (check-configuration (find-configuration config) flags))
     (if problem
       (begin
         (let (port (current-error-port))
@@ -113,12 +111,13 @@ prelude: :gerbil/core
 ;; reloads on the editor loop's baton when the loop runs; otherwise this
 ;; thread, the only one changing plugins then, reloads, and starts the
 ;; loop if input is now provided (brief, walkthrough step 4).
-(def (run (port :? :fixnum) (config :? :string)) => :void
-  ;; For good, so a web transport a reload turns on uses it too: a port
-  ;; given here overrides the web transport's port option in init.ss.
-  (when port
-    (override-plugin-option! web-transport-plugin 'port port "--port"))
-  (let (report (start-from-configuration (find-configuration config)))
+(def (run (config :? :string) (flags : :list)) => :void
+  (let* ((choice (find-configuration config))
+         (report (with-catch
+                  (lambda (e)
+                    (display (string-append (exception-summary e) "\n") (current-error-port))
+                    (usage choice))
+                  (lambda () (start-from-configuration choice flags)))))
     (report-start-up report)
     (show-start-up-summary report))
   (call-reporting-session-failure "Restoring the session" restore-session)
@@ -176,19 +175,17 @@ prelude: :gerbil/core
     (cons (reload-succeeded? report) (reload-report-text report))))
 
 ;; Start the editor loop if it is not running and a plugin provides
-;; input. Say that Tuna runs when the loop starts, and, when ANNOUNCE?,
-;; also when it cannot.
+;; input. When ANNOUNCE?, say why the loop cannot start. Plugins announce
+;; their own connections; the program knows only whether input is provided.
 (def (start-editor-loop-when-input! (announce? : :boolean)) => :void
   (let* ((input? (and (service-provider input-service) #t))
          (start? (and input? (not (editor-loop-running?)))))
     (when start?
       (start-editor-loop!))
-    (when (or start? announce?)
-      (let (url (web-transport-url))
-        (displayln "Tuna " (tuna-version) " is running."
-                   (if url (string-append " Open " url) "")
-                   (if input? "" " No plugin provides input, so the editor loop is not running."))
-        (force-output)))))
+    (when (and announce? (not input?))
+      (display "No plugin provides input, so the editor loop is not running.\n"
+               (current-error-port))
+      (force-output (current-error-port)))))
 
 ;; Listen for `tuna reload`; on failure say why on stderr and carry on
 ;; without it, returning #f.

@@ -873,6 +873,8 @@
       (check (length (plugin-reference-problems "tuna/plugins/keys.ss"
                       '(":tuna/plugins/layout/tree" "./layout"))) => 2)
       (check (length (plugin-reference-problems "tuna/plugins/layout/tree.ss" '("../keys"))) => 1))
+    (test-case "main names no web plugin or web-specific symbol"
+      (check (file-hits "tuna/main.ss" (term-index '("web"))) => []))
     (test-case "only the program imports program code"
       (displayln "  program-code boundary: "
                  (length (append (non-test-source-names) (demo-source-names))) " files checked")

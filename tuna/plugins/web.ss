@@ -13,6 +13,8 @@ prelude: :gerbil/core
         :std/encoding/hex
         :std/io
         :std/log
+        (only-in :std/list/walist wanull)
+        (only-in :std/time/precise current-time-coarse)
         :std/net/address
         :std/net/http/server
         :std/net/url
@@ -20,6 +22,7 @@ prelude: :gerbil/core
         :std/time/timeout
         :gerbil-datastar/http
         :tuna/kernel
+        :tuna/version
         :tuna/lib/plugin-options
         (only-in :tuna/services/keys key-event make-key-event pointer-event make-pointer-event make-posn)
         :tuna/services/renderer
@@ -438,8 +441,16 @@ prelude: :gerbil/core
     (set! (web-transport-server self) server)
     (Server-start! server)
     (context-defer! ctx (lambda () (stop-web-transport! self)))
-    (context-provide! ctx display-service self)))
+    (context-provide! ctx display-service self)
+    ;; A launch link is essential start-up output, even when the default
+    ;; log level suppresses informational records. Use the stderr sink
+    ;; directly rather than changing the process's logging policy.
+    (Logger-log (stderr-log-sink)
+                (Record (current-time-coarse) INFO "tuna/web"
+                        (string-append "Tuna " (tuna-version) " is running. Open http://"
+                                       host "/?token=" (web-transport-token self))
+                        (wanull)))))
 
 (defplugin-options web-transport-plugin
-  (port 0 "The loopback port to listen on; 0 picks a free one. tuna --port overrides it."
-        (integer-type 0 65535)))
+  (port 0 "The loopback port to listen on; 0 picks a free one."
+        (integer-type 0 65535) flag: "--port"))

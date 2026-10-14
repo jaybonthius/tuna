@@ -92,21 +92,25 @@
                   (check (call-on-editor-loop (lambda () (probe-on? 'unlisted-config))) => #f)
                   (check (plugin-active? provider-plugin) => #t))))))))
 
-    (test-case "the command line: run, check, and init"
-      (check (parse-command-line []) => '(run #f #f))
-      (check (parse-command-line ["--port" "8001"]) => '(run 8001 #f))
-      (check (parse-command-line ["--config" "a.ss" "--port" "8001"]) => '(run 8001 "a.ss"))
-      (check (parse-command-line ["--port" "0"]) => '(run 0 #f))
-      (check (parse-command-line ["--port" "-1"]) => #f)
-      (check (parse-command-line ["--port" "65536"]) => #f)
-      (check (parse-command-line ["--port" "x"]) => #f)
+    (test-case "program flags are parsed; plugin arguments wait for the configuration"
+      (check (parse-command-line []) => '(run #f ()))
+      (check (parse-command-line ["--port" "8001"]) => '(run #f ("--port" "8001")))
+      (check (parse-command-line ["--config" "a.ss" "--port" "8001"])
+             => '(run "a.ss" ("--port" "8001")))
+      (check (parse-command-line ["--greeting" "hi" "--config" "a.ss" "--times" "2"])
+             => '(run "a.ss" ("--greeting" "hi" "--times" "2")))
       (check (parse-command-line ["--config"]) => #f)
-      (check (parse-command-line ["--bogus"]) => #f)
-      (check (parse-command-line ["check"]) => '(check #f))
-      (check (parse-command-line ["check" "--config" "a.ss"]) => '(check "a.ss"))
-      (check (parse-command-line ["check" "--port" "8001"]) => #f)
+      (check (parse-command-line ["--config" "--help"]) => #f)
+      (check (parse-command-line ["--bogus"]) => '(run #f ("--bogus")))
+      (check (parse-command-line ["check"]) => '(check #f ()))
+      (check (parse-command-line ["check" "--config" "a.ss" "--port" "8001"])
+             => '(check "a.ss" ("--port" "8001")))
+      (check (parse-command-line ["--help" "--config" "a.ss"]) => '(help "a.ss" ()))
+      (check (parse-command-line ["check" "--help"]) => '(help #f ()))
       (check (parse-command-line ["init"]) => '(init))
-      (check (parse-command-line ["init" "--config" "a.ss"]) => #f))
+      (check (parse-command-line ["init" "--config" "a.ss"]) => #f)
+      (check (parse-command-line ["reload"]) => '(reload))
+      (check (parse-command-line ["reload" "--greeting" "hi"]) => #f))
 
     (test-case "discovery: --config, then TUNA_CONFIG, then XDG_CONFIG_HOME, then HOME"
       (call-with-environment

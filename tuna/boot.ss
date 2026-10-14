@@ -28,6 +28,7 @@ prelude: :gerbil/core
         :tuna/config-blocks)
 (export (struct-out config-choice report-entry startup-report reload-report)
         parse-command-line
+        command-line-help
         find-configuration
         xdg-directory
         default-config-path
@@ -54,32 +55,77 @@ prelude: :gerbil/core
 
 ;;; The command line
 
-;; What ARGS ask for: (run PORT CONFIG), (check CONFIG), (init), or (reload), where
-;; PORT is the --port number or #f and CONFIG is the --config path or #f;
-;; #f when ARGS are not valid.
+;; Only program options are understood here. Plugin arguments stay in
+;; order until init.ss has told us which plugins declare their flags.
+;; Result: (run|check|help CONFIG ARGS), (init), (reload), or #f.
 (def (parse-command-line (args : :list)) => :t
   (match args
     (["init"] '(init))
     (["reload"] '(reload))
-    (["check" . options]
-     (let (parsed (parse-options options #f))
-       (and parsed (list 'check (cdr parsed)))))
-    (else
-     (let (parsed (parse-options args #t))
-       (and parsed (list 'run (car parsed) (cdr parsed)))))))
+    ([(or "init" "reload") . _] #f)
+    (["check" . options] (parse-program-options options 'check))
+    (else (parse-program-options args 'run))))
 
-;; OPTIONS as (port . config), or #f when they are not valid; --port is
-;; accepted only when PORT? is true, and 0 asks for any free port.
-(def (parse-options (options : :list) (port? : :boolean)) => (Maybe :pair)
-  (let loop ((rest options) (port #f) (config #f))
+(def (parse-program-options (args : :list) (command : :symbol)) => :t
+  (let loop ((rest args) (config #f) (help? #f) (remaining []))
     (match rest
-      ([] (cons port config))
-      (["--config" path . more] (loop more port path))
-      (["--port" value . more]
-       (let (number (string->number value))
-         (and port? (fixnum? number) (<= 0 number 65535)
-              (loop more number config))))
-      (else #f))))
+      ([] (list (if help? 'help command) config (reverse remaining)))
+      (["--config" path . more]
+       (and (not (string-prefix? "--" path)) (loop more path help? remaining)))
+      (["--config"] #f)
+      (["--help" . more] (loop more config #t remaining))
+      ([arg . more] (loop more config help? (cons arg remaining))))))
+
+;; A configured plugin's command-line spelling and the option it names.
+(defstruct plugin-flag ((owner : plugin) (spec : option-spec)) final: #t)
+
+(def (configuration-flags (config : configuration)) => :list
+  (let (flags [])
+    (for-each
+     (lambda ((d : declaration))
+       (let (p (declaration-target d))
+         (for-each
+          (lambda ((spec : option-spec))
+            (let (flag (option-spec-flag spec))
+              (when flag
+                (unless (and (string-prefix? "--" flag) (fx> (string-length flag) 2)
+                             (not (string-index flag #\=))
+                             (not (ormap char-whitespace? (string->list flag))))
+                  (error (string-append (symbol->string (plugin-name p))
+                                        " declares an invalid flag: " flag)))
+                (when (member flag '("--config" "--help"))
+                  (error (string-append "Flag " flag " is claimed by the program and "
+                                        (symbol->string (plugin-name p)))))
+                (let (other (find (lambda ((f : plugin-flag))
+                                   (equal? flag (option-spec-flag (plugin-flag-spec f)))) flags))
+                  (when other
+                    (error (string-append "Flag " flag " is claimed by both "
+                                          (symbol->string (plugin-name (plugin-flag-owner other)))
+                                          " and " (symbol->string (plugin-name p))))))
+                (set! flags (cons (make-plugin-flag p spec) flags)))))
+          (plugin-option-specs p))))
+     (configuration-declarations config))
+    (reverse flags)))
+
+;; Parse everything before installing any override. A later bad argument
+;; must not leave a partly applied command line.
+(def (parse-plugin-flags (flags : :list) (args : :list)) => :list
+  (let loop ((rest args) (overrides []))
+    (match rest
+      ([] (reverse overrides))
+      ([arg . more]
+       (let (flag (find (lambda ((f : plugin-flag))
+                         (equal? arg (option-spec-flag (plugin-flag-spec f)))) flags))
+         (unless flag (error (string-append "Unknown flag: " arg)))
+         (when (or (null? more) (string-prefix? "--" (car more)))
+           (error (string-append "Flag " arg " needs a value")))
+         (let* ((p (plugin-flag-owner flag))
+                (spec (plugin-flag-spec flag))
+                (value (parse-option-flag-value p spec (car more))))
+           (loop (cdr more) (cons [p (option-spec-name spec) value arg] overrides))))))))
+
+(def usage-text
+  "usage: tuna [--config PATH] [PLUGIN FLAGS]\n       tuna check [--config PATH] [PLUGIN FLAGS]\n       tuna init\n       tuna reload\n       tuna --help [--config PATH]\n\n  --config PATH  Load this configuration file.\n  --help         Show this help without activating plugins.\n")
 
 ;;; Finding init.ss
 
@@ -87,6 +133,28 @@ prelude: :gerbil/core
 (defstruct config-choice ((path   : :string)     ; absolute
                           (origin : :string))    ; "--config", "TUNA_CONFIG", or "the default location"
   final: #t)
+
+;; Help remains useful with a broken or missing init.ss: program flags
+;; plus the load problem, never flags from an invented fallback setup.
+(def (command-line-help (choice : config-choice)) => :string
+  (let* ((path (config-choice-path choice))
+         (loaded (if (file-exists? path) (load-configuration path)
+                   (missing-configuration-text choice)))
+         (listing
+          (with-catch (lambda (e) (string-append "Plugin flags unavailable: " (exception-summary e) "\n"))
+            (lambda ()
+              (if (string? loaded)
+                (string-append "Plugin flags unavailable: " loaded "\n")
+                (string-append "Configured plugin flags (" path "):\n"
+                  (let (flags (configuration-flags loaded))
+                    (if (null? flags) "  (none)\n"
+                      (apply string-append
+                        (map (lambda ((f : plugin-flag))
+                               (let ((spec (plugin-flag-spec f)) (p (plugin-flag-owner f)))
+                                 (string-append "  " (option-spec-flag spec) " VALUE  "
+                                   (option-spec-doc spec) " (" (symbol->string (plugin-name p)) ")\n")))
+                             flags))))))))))
+    (string-append usage-text "\n" listing)))
 
 ;; The first of: FLAG (from --config), $TUNA_CONFIG, and
 ;; $XDG_CONFIG_HOME/tuna/init.ss. A path chosen by the flag or the
@@ -722,7 +790,7 @@ prelude: :gerbil/core
     ;; declaration of the same plugin object: compared by each option's
     ;; value or default, so reordering options or writing out a default
     ;; changes nothing. A difference only in options that program code
-    ;; overrides (tuna --port) changes nothing now either; it is reported
+    ;; overrides changes nothing now either; it is reported
     ;; as taking effect at a start without the override.
     (def (options-change? (d : declaration) (o : declaration)) => :boolean
       (let* ((p (declaration-target d))
@@ -1128,23 +1196,26 @@ prelude: :gerbil/core
 ;; fails is reported, and the rest of Tuna keeps running. The
 ;; configuration plugin comes on first, so plugins can reach the reload
 ;; and the report through the configuration service.
-(def (start-from-configuration (choice : config-choice)) => startup-report
-  (set! current-running (make-running-configuration choice [] #f [] #f))
+(def (start-from-configuration (choice : config-choice) (args : :list := [])) => startup-report
   (let* ((path (config-choice-path choice))
-         (service-entry (activate-entry session-owner "the configuration service" #f))
-         (service-failure (if (eq? (report-entry-status service-entry) 'on) [] [service-entry]))
-         (report
-          (if (not (file-exists? path))
-            (make-startup-report choice (missing-configuration-text choice) service-failure)
-            (let (loaded (load-configuration path))
-              (if (configuration? loaded)
-                (make-startup-report choice #f
-                                     (append service-failure
-                                             (car (apply-configuration! choice loaded #f))))
-                (make-startup-report choice (string-append loaded "\nNothing was turned on.")
-                                     service-failure))))))
-    (set! last-report-text (startup-report-text report))
-    report))
+         (loaded (if (file-exists? path) (load-configuration path)
+                   (missing-configuration-text choice)))
+         (overrides (if (configuration? loaded)
+                      (parse-plugin-flags (configuration-flags loaded) args)
+                      (if (null? args) []
+                        (error (string-append "Cannot validate plugin flags: " loaded))))))
+    (for-each (lambda (o) (apply override-plugin-option! o)) overrides)
+    (set! current-running (make-running-configuration choice [] #f [] #f))
+    (let* ((service-entry (activate-entry session-owner "the configuration service" #f))
+           (service-failure (if (eq? (report-entry-status service-entry) 'on) [] [service-entry]))
+           (report (if (configuration? loaded)
+                     (make-startup-report choice #f
+                                          (append service-failure
+                                                  (car (apply-configuration! choice loaded #f))))
+                     (make-startup-report choice (string-append loaded "\nNothing was turned on.")
+                                          service-failure))))
+      (set! last-report-text (startup-report-text report))
+      report)))
 
 ;; The text of the last start-up or reload report, or #f before either.
 (def last-report-text #f)
@@ -1206,12 +1277,16 @@ prelude: :gerbil/core
 
 ;; `tuna check`: load CHOICE's file without turning anything on. Returns
 ;; the problem, or #f when the file loads and its declarations are valid.
-(def (check-configuration (choice : config-choice)) => (Maybe :string)
+(def (check-configuration (choice : config-choice) (args : :list := [])) => (Maybe :string)
   (let (path (config-choice-path choice))
     (if (not (file-exists? path))
       (missing-configuration-text choice)
       (let (loaded (load-configuration path))
-        (and (string? loaded) loaded)))))
+        (if (string? loaded) loaded
+          (with-catch exception-summary
+            (lambda ()
+              (parse-plugin-flags (configuration-flags loaded) args)
+              #f)))))))
 
 (def (missing-configuration-text (choice : config-choice)) => :string
   (string-append
