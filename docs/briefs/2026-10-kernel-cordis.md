@@ -1,6 +1,6 @@
 # Brief: align the kernel with Cordis
 
-**Date:** 2026-10-14. **Status:** approved 2026-10-14: the seven changes below, and interactive evaluation works as in Emacs with one always-on session owner (see "Emacs facilities stay first-class"). Next: the plan (`agents/plans/kernel-cordis.md`), then stage 1. Research: [`agents/research/cordis-alignment/README.md`](../../agents/research/cordis-alignment/README.md) (the full Cordis paper, arXiv 2608.25512, and its source).
+**Date:** 2026-10-14. **Status:** approved 2026-10-14: the seven changes below, and interactive evaluation works as in Emacs with one always-on session owner (see "Emacs facilities stay first-class"). Plan: [`agents/plans/kernel-cordis.md`](../../agents/plans/kernel-cordis.md). Research: [`agents/research/cordis-alignment/README.md`](../../agents/research/cordis-alignment/README.md) (the full Cordis paper, arXiv 2608.25512, and its source).
 
 ## What this is and why
 
