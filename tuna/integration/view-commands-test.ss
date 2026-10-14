@@ -5,7 +5,7 @@
 ;;; toy layout, which falls back as the contract allows. The bar (the
 ;;; minibuffer's and echo area's views, pinned and locked) is left out of
 ;;; the views these tests count, except where they check it stays.
-(import (only-in :tuna/boot config-service restart-plugin!)
+(import (only-in :tuna/boot session-owner restart-plugin!)
         :std/test
         :tuna/kernel
         :tuna/services/buffers
@@ -49,7 +49,7 @@
 (def command-plugins
   [commands-plugin keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin session-plugin
    buffers-plugin autosave-plugin layout-plugin view-commands-plugin basic-editing-plugin minibuffer-plugin
-   config-service swap-configuration swap-commands-plugin tree-buffer-plugin])
+   session-owner swap-configuration swap-commands-plugin tree-buffer-plugin])
 
 (def (with-commands thunk)
   (call-with-state-kernel command-plugins

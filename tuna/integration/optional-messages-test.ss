@@ -1,6 +1,6 @@
 ;;; Optional message displays must not become mandatory activation dependencies.
 prelude: :gerbil/core
-(import (only-in :tuna/boot config-service restart-plugin!)
+(import (only-in :tuna/boot session-owner restart-plugin!)
         :std/test :std/interface :tuna/kernel
         :tuna/services/commands :tuna/services/buffers :tuna/services/layout
         :tuna/services/session :tuna/services/configuration
@@ -24,6 +24,7 @@ prelude: :gerbil/core
 (implement Configuration silent-configuration
   (reload! (lambda (self) "Reloaded.\n"))
   (last-report (lambda (self) "Last report.\n"))
+  (evaluate (lambda (self form) (error "This configuration double does not evaluate code")))
   (swap! (lambda (self old new) (restart-plugin! old new))))
 
 (defplugin (configuration-fixture ctx)

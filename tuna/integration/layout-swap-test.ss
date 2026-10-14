@@ -2,7 +2,7 @@
 ;;; contract double (tuna/test-support/two-views.ss) and back, and C-x o
 ;;; between two views of one buffer, with editing, a prompt, and a tree
 ;;; buffer, driven by keys through the real editor loop.
-(import (only-in :tuna/boot config-service restart-plugin!)
+(import (only-in :tuna/boot session-owner restart-plugin!)
         :std/test
         :tuna/kernel
         :tuna/services/renderer
@@ -51,7 +51,7 @@
    settings-plugin session-plugin buffers-plugin autosave-plugin layout-plugin
    view-commands-plugin
    html-renderer-plugin basic-editing-plugin minibuffer-plugin
-   config-service swap-configuration swap-commands-plugin rename-command-plugin tree-buffer-plugin])
+   session-owner swap-configuration swap-commands-plugin rename-command-plugin tree-buffer-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 

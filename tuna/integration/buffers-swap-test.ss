@@ -4,7 +4,7 @@
 ;;; renderer, driven by keys through the real editor loop. Every buffer's
 ;;; saved plain text, the selected view, and its point carry over; unsaved
 ;;; rich trees are recreated by their owning plugins.
-(import (only-in :tuna/boot config-service restart-plugin!)
+(import (only-in :tuna/boot session-owner restart-plugin!)
         :std/test
         :tuna/kernel
         :tuna/services/renderer
@@ -52,7 +52,7 @@
   [commands-plugin keys-plugin echo-area-plugin help-buffer-plugin rope-text-store-plugin
    settings-plugin session-plugin buffers-plugin autosave-plugin layout-plugin
    view-commands-plugin html-renderer-plugin basic-editing-plugin minibuffer-plugin
-   config-service swap-configuration swap-commands-plugin rename-command-plugin tree-buffer-plugin])
+   session-owner swap-configuration swap-commands-plugin rename-command-plugin tree-buffer-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 

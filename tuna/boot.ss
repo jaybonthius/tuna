@@ -11,6 +11,7 @@ prelude: :gerbil/core
 (import (only-in :std/error Error? Error-irritants)
         (only-in :gerbil/expander
                  import-module __module-registry module-context? module-context-path
+                 top-context make-top-context core-context-root current-expander-context
                  module-context-import import-set? import-set-source module-import?
                  module-import-source module-export-context)
         (only-in :gerbil/runtime/syntax
@@ -48,7 +49,7 @@ prelude: :gerbil/core
         write-startup-report!
         starter-configuration
         init-configuration!
-        config-service
+        session-owner
         restart-plugin!)
 
 ;;; The command line
@@ -1130,7 +1131,7 @@ prelude: :gerbil/core
 (def (start-from-configuration (choice : config-choice)) => startup-report
   (set! current-running (make-running-configuration choice [] #f [] #f))
   (let* ((path (config-choice-path choice))
-         (service-entry (activate-entry config-service "the configuration service" #f))
+         (service-entry (activate-entry session-owner "the configuration service" #f))
          (service-failure (if (eq? (report-entry-status service-entry) 'on) [] [service-entry]))
          (report
           (if (not (file-exists? path))
@@ -1148,20 +1149,32 @@ prelude: :gerbil/core
 ;; The text of the last start-up or reload report, or #f before either.
 (def last-report-text #f)
 
-;; The configuration service (tuna/services/configuration.ss), provided
-;; by the start-up code itself, which owns the reload and the reports.
-(defclass configuration-provider () final: #t)
+;; The start-up owner is never a declaration in the running configuration,
+;; so reload cannot diff or restart it. Its one environment lasts until exit.
+(defclass configuration-provider ((environment : top-context)) final: #t)
 
 (implement Configuration configuration-provider
   (reload! (lambda (self) (:- (call-with-context #f (lambda () (reload-report-text (reload-configuration!)))) :string)))
   (swap! (lambda (self old new) (restart-plugin! old new)))
-  (last-report (lambda (self) last-report-text)))
+  (last-report (lambda (self) last-report-text))
+  (evaluate (lambda (self form)
+              (parameterize ((current-expander-context self.environment))
+                (eval form)))))
 
-(defplugin (config-service ctx)
-  "Provides the configuration service: reload init.ss, and the last report."
+(defplugin (session-owner ctx)
+  "Owns live evaluation, reload init.ss, and configuration reports."
   provides: [configuration-service]
   unchecked: #t
-  (context-provide! ctx configuration-service (Configuration (configuration-provider))))
+  ;; Interactive customizations win ordinary configuration ties, even after
+  ;; declarations are reordered or added by a reload.
+  (set-plugin-order! session-owner (##greatest-fixnum))
+  (prepare-expander!)
+  (let (environment (parameterize ((current-expander-context (core-context-root)))
+                     (make-top-context)))
+    (parameterize ((current-expander-context environment))
+      (eval '(import :tuna/config)))
+    (context-provide! ctx configuration-service
+                      (Configuration (configuration-provider environment: environment)))))
 
 ;; One line for the echo area when REPORT has problems, or #f: every
 ;; unit whose status is not on or restarted, grouped by status, where the

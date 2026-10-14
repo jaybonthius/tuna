@@ -2,7 +2,7 @@
 ;;; contract double (tuna/test-support/plain-text-renderer.ss) and back
 ;;; while editing, with tree buffers, two views, and a prompt, driven by
 ;;; keys through the real editor loop.
-(import (only-in :tuna/boot config-service restart-plugin!)
+(import (only-in :tuna/boot session-owner restart-plugin!)
         :std/test
         :tuna/kernel
         :tuna/services/renderer
@@ -39,7 +39,7 @@
    settings-plugin no-session-plugin buffers-plugin layout-plugin
    view-commands-plugin
    html-renderer-plugin basic-editing-plugin minibuffer-plugin
-   config-service swap-configuration swap-commands-plugin rename-command-plugin tree-buffer-plugin])
+   session-owner swap-configuration swap-commands-plugin rename-command-plugin tree-buffer-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
