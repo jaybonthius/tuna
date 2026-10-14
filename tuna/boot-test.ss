@@ -423,7 +423,8 @@
                    => '(commands-plugin keys-plugin web-transport-plugin settings-plugin session-plugin
                         rope-text-store-plugin buffers-plugin autosave-plugin layout-plugin
                         view-commands-plugin html-renderer-plugin buttons-plugin basic-editing-plugin
-                        minibuffer-plugin echo-area-plugin help-buffer-plugin
+                        minibuffer-plugin completion-engine-plugin completion-vertical-plugin extended-command-plugin
+                        echo-area-plugin help-buffer-plugin
                         reload-config-plugin))
             (check (declaration-options (caddr (configuration-declarations loaded)))
                    => '((port . 0)))

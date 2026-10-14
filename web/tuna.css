@@ -279,3 +279,73 @@ body {
 [data-clickable]:active {
   background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
 }
+
+/* Completion is ordinary prompt-buffer content. CSS owns all column widths. */
+.minibuffer:has(> .completion-list) {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  row-gap: 0.25rem;
+}
+
+.completion-counter {
+  color: var(--tuna-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.completion-list {
+  grid-column: 1 / -1;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-block-size: 60vh;
+  overflow: auto;
+}
+
+.completion-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-auto-flow: column;
+  align-items: baseline;
+  gap: 1rem;
+  inline-size: 100%;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+.completion-row[aria-current="true"] {
+  border-color: var(--tuna-rule);
+  background: var(--tuna-bar);
+  font-weight: bold;
+}
+
+.completion-row:focus-visible {
+  outline: 2px solid var(--tuna-digit);
+}
+
+.completion-label {
+  overflow-wrap: anywhere;
+}
+
+.completion-field,
+.completion-group {
+  color: var(--tuna-muted);
+  font-weight: normal;
+}
+
+.completion-group {
+  padding: 0.25rem 0.5rem;
+  font-family: var(--tuna-prose-font);
+}
+
+.completion-row mark {
+  background: transparent;
+  color: var(--tuna-digit);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}

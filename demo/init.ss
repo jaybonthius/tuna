@@ -21,6 +21,9 @@
         :tuna/plugins/buttons
         :tuna/plugins/basic-editing
         :tuna/plugins/minibuffer
+        :tuna/plugins/completion-engine
+        :tuna/plugins/completion-vertical
+        :tuna/plugins/extended-command
         :tuna/plugins/reload-config
         "../tuna/test-support/endless-commands"
         "../tuna/test-support/services-help"
@@ -48,6 +51,9 @@
 (use-plugin buttons-plugin)             ; buttons in buffers: a click runs their action
 (use-plugin basic-editing-plugin)
 (use-plugin minibuffer-plugin)
+(use-plugin completion-engine-plugin)
+(use-plugin completion-vertical-plugin)
+(use-plugin extended-command-plugin)
 (use-plugin echo-area-plugin)           ; in the bar, under the minibuffer
 (use-plugin help-buffer-plugin)         ; *Help*; C-h q closes it
 (use-plugin endless-commands-plugin)    ; C-c l and C-c L: loops to quit with C-g
