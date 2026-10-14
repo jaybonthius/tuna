@@ -672,6 +672,24 @@
          (check (container-classes) => ["container fit vertical" "container fit horizontal"])
          (check (drawn-names) => ["a" "b" ["c"]]))))
 
+    (test-case "the active tab fills its group whatever its stored share, which a split restores"
+      (with-layout
+       (lambda ()
+         ;; a | b | c, where splitting b halved its share.
+         (split! 0 'right)
+         (split! 1 'right)
+         (for-each named! [0 1 2] ["a" "b" "c"])
+         (select-named! "b")
+         (let* ((view-styles (lambda ()
+                               (map (lambda (e) (attribute e 'style))
+                                    (elements-where (lambda (e) (eq? (car e) 'view)) (layout-html)))))
+                (before (view-styles)))
+           (check (cadr before) => "--tuna-size: .5")
+           (type! "C-x" "w" "k")
+           (check (view-styles) => ["--tuna-size: 1"])
+           (type! "C-x" "w" "k")
+           (check (view-styles) => before)))))
+
     (test-case "wrapping the whole layout makes a new root; C-x t 2 then adds a tab beside everything"
       (with-layout
        (lambda ()

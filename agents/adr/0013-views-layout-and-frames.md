@@ -42,6 +42,12 @@ Zooming must not hide things like the minibuffer, a VS Code-style button bar, or
 - **HTML reuse** keys a node's HTML on its revision, the view state, and display-wide settings; the first display-wide setting is `face-remapping` (Emacs `face-remapping-alist`).
 - Help is the ordinary `*Help*` buffer from `help-buffer-plugin`, shown with `display-buffer`; `C-h q` closes it.
 
+## Nested containers (2026-10-13)
+
+- `C-x w t`, `C-x w 2` and `C-x w 3` wrap the selected part in a new tabbed, top-to-bottom or left-to-right container that takes the part's size and pin; `C-x w k` and `C-x w d` toggle the selected container's (or a selected view's container's) kind and direction, keeping children, sizes and focus memory. Wrapping and reshaping refuse a locked part, a part inside one, or a part holding one. Nested tabs: wrap in tabs, then `C-x t 2` inside.
+- A container collapses into its only child only when a removal leaves it one; a one-child container made on purpose (by wrapping, or by a kind change) stays.
+- The active tab always fills its group: its stored share is kept for when the group becomes a split again.
+
 ## Stage 2 additions (2026-10-13)
 
 - **`C-x 1` moves the frame onto the selected view** instead of deleting the other views (`delete-other-windows`). Nothing is lost; `C-x n w` returns to the top. Frame marks and tabs keep their parts. Code ported from Emacs that wants one view either moves the frame or deletes views itself.

@@ -105,7 +105,11 @@ prelude: :gerbil/core
                                ,@clickable)
                             ,(label l.part)))
                      (container-links c)))
-          (div (@ (class "tab-panel") (role "tabpanel")) ,(render-link active)))))
+          ;; Only one child is drawn, so its stored split share must not
+          ;; leave unused space. The layout value keeps that share.
+          (div (@ (class "tab-panel") (role "tabpanel"))
+               ,(render-link (make-link 1 (link-part active)
+                                        (link-pinned? active) (link-locked? active)))))))
 
 (def fit-kind
   (make-layout-kind 'fit "Children side by side, sized by weight." #t #f render-fit))

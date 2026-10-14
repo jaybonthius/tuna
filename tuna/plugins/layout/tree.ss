@@ -225,7 +225,8 @@ prelude: :gerbil/core
       ([] new)
       ([c . more]
        (up more (container-id c)
-           (with-links c (replace-link (container-links c) old-id new) (container-focus c)))))))
+           (with-links c (replace-link (container-links c) old-id new)
+                       (if (fx= (container-focus c) old-id) (part-id new) (container-focus c))))))))
 
 ;; ROOT with every container on the way to the part with id ID focused
 ;; toward it (focus memory). Containers already focused that way are shared.
