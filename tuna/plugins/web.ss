@@ -338,7 +338,7 @@ prelude: :gerbil/core
 ;; Browser buttons (0 left, 1 middle, 2 right) as Emacs numbers them.
 (def browser-buttons '((0 . 1) (1 . 2) (2 . 3)))
 
-;; A part name from data-part, "KIND:ID" ("tab:30", "status-line:12"), as
+;; A part name from data-part, "KIND:ID" ("tab-line:30", "status-line:12"), as
 ;; (kind . id), or #f.
 (def (parse-part (value : :t)) => (Maybe :pair)
   (and (string? value)

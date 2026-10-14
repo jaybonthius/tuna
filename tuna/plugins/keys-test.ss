@@ -217,7 +217,7 @@
            (check (Input-arrival input (keydown "g" ctrl?: #t)) => 'interrupt)
            (check (Input-arrival input (keydown "g")) => 'queue)
            (check (Input-arrival input (keydown "g" ctrl?: #t alt?: #t)) => 'queue)
-           (check (Input-arrival input (pointer 'tab 30)) => 'queue)))))
+           (check (Input-arrival input (pointer 'tab-line 30)) => 'queue)))))
 
     (test-case "a click's Emacs names: modifiers, then double- or triple-, falling back to the single click"
       (check (pointer-event-names (pointer 'view 1)) => ["mouse-1"])
@@ -226,8 +226,8 @@
       (check (pointer-event-names (pointer 'view 1 clicks: 7 button: 2 alt?: #t shift?: #t meta?: #t))
              => ["M-S-s-triple-mouse-2" "M-S-s-double-mouse-2" "M-S-s-mouse-2"])
       (check (event-start (keydown "a")) => #f)
-      (let (p (event-start (pointer 'tab 30)))
-        (check (posn-area p) => 'tab)
+      (let (p (event-start (pointer 'tab-line 30)))
+        (check (posn-area p) => 'tab-line)
         (check (posn-part p) => 30)
         (check (posn-revision p) => 5)))
 
@@ -239,18 +239,18 @@
            requires: [input-service]
            (for-each (lambda (name) (context-define-command! ctx name void))
                      '(tab-click tab-double-click any-click any-double-click))
-           (keymap-set ctx "<tab> <mouse-1>" 'tab-click)
+           (keymap-set ctx "<tab-line> <mouse-1>" 'tab-click)
            (keymap-set ctx "<mouse-1>" 'any-click)
            (keymap-set ctx "<double-mouse-1>" 'any-double-click)
-           (keymap-set ctx "<tab> <C-double-mouse-1>" 'tab-double-click))
+           (keymap-set ctx "<tab-line> <C-double-mouse-1>" 'tab-double-click))
          (activate-plugin! clicks)
-         (check (resolve (pointer 'tab 30)) => 'tab-click)
+         (check (resolve (pointer 'tab-line 30)) => 'tab-click)
          (check (resolve (pointer 'view 12)) => 'any-click)
          ;; A double click on a tab falls back to the tab's single click
          ;; before leaving the part kind out.
-         (check (resolve (pointer 'tab 30 clicks: 2)) => 'tab-click)
+         (check (resolve (pointer 'tab-line 30 clicks: 2)) => 'tab-click)
          (check (resolve (pointer 'view 12 clicks: 2)) => 'any-double-click)
-         (check (resolve (pointer 'tab 30 clicks: 3 ctrl?: #t)) => 'tab-double-click)
+         (check (resolve (pointer 'tab-line 30 clicks: 3 ctrl?: #t)) => 'tab-double-click)
          (check (resolve (pointer 'view 12 clicks: 3)) => 'any-double-click)
          (check (pointer-event-start (Keys-last-command-event (Keys (service-provider input-service))))
                 ? posn?))))
@@ -263,16 +263,16 @@
            requires: [input-service]
            (context-define-command! ctx 'command-a void)
            (keymap-set ctx "C-c x" 'command-a)
-           (keymap-set ctx "<tab> <mouse-1>" 'command-a))
+           (keymap-set ctx "<tab-line> <mouse-1>" 'command-a))
          (activate-plugin! prefixed)
          (message "kept")
-         (check (resolve (pointer 'tab 30)) => 'command-a)
+         (check (resolve (pointer 'tab-line 30)) => 'command-a)
          (check (current-message) => "kept")
-         (check (resolve (pointer 'tab 30 button: 2 clicks: 2)) => #f)
-         (check (current-message) => "<tab> <double-mouse-2> is undefined")
+         (check (resolve (pointer 'tab-line 30 button: 2 clicks: 2)) => #f)
+         (check (current-message) => "<tab-line> <double-mouse-2> is undefined")
          (check (resolve (keydown "c" ctrl?: #t)) => #f)
-         (check (resolve (pointer 'tab 30)) => #f)
-         (check (current-message) => "C-c <tab> <mouse-1> is undefined")
+         (check (resolve (pointer 'tab-line 30)) => #f)
+         (check (current-message) => "C-c <tab-line> <mouse-1> is undefined")
          (check (resolve (keydown "x")) => #f)
          (check (current-message) => "x is undefined"))))
 
@@ -282,8 +282,8 @@
          (defplugin (tab-clicks ctx)
            "Binds a middle click on a tab."
            requires: [input-service]
-           (keymap-set ctx "<tab> <mouse-2>" 'command-a))
-         (check (part-clickable? 'tab) => #f)
+           (keymap-set ctx "<tab-line> <mouse-2>" 'command-a))
+         (check (part-clickable? 'tab-line) => #f)
          (activate-plugin! tab-clicks)
-         (check (part-clickable? 'tab) => #t)
+         (check (part-clickable? 'tab-line) => #t)
          (check (part-clickable? 'view) => #f))))))

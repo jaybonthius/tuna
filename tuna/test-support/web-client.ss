@@ -123,7 +123,7 @@
         headers: [(cons "Datastar-Request" "true") (cons "Content-Type" "application/json")]
         body: (keydown-json key ctrl? sequence)))
 
-;; A pointer item as JSON: a left click on tab:30 on screen 0, with the
+;; A pointer item as JSON: a left click on tab-line:30 on screen 0, with the
 ;; fields in CHANGES, each (name . raw-json), or (name . #f) to leave the
 ;; field out.
 (def (pointer-json . changes)
@@ -131,7 +131,7 @@
                    ("sequence" . "1") ("revision" . "0") ("kind" . "\"click\"")
                    ("button" . "0") ("clicks" . "1")
                    ("modifiers" . "{\"alt\":false,\"ctrl\":false,\"meta\":false,\"shift\":false}")
-                   ("target" . "\"tab:30\"") ("node" . "null")))
+                   ("target" . "\"tab-line:30\"") ("node" . "null")))
          (merged (filter cdr (map (lambda (field)
                                     (or (assoc (car field) changes) field))
                                   fields))))

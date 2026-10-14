@@ -156,8 +156,8 @@ prelude: :gerbil/core
         #f)))
 
 ;; A click ends any pending prefix: the sequences it is looked up under
-;; are that prefix, the part kind, and each of its event names ("C-x <tab>
-;; <double-mouse-1>", "C-x <tab> <mouse-1>"), then the same without the
+;; are that prefix, the part kind, and each of its event names ("C-x
+;; <tab-line> <double-mouse-1>", "C-x <tab-line> <mouse-1>"), then the same without the
 ;; part kind.
 (def (resolve-pointer! (self : global-keys) (event : pointer-event)) => (Maybe :pair)
   (let* ((keymaps (active-keymaps self))

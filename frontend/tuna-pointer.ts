@@ -11,7 +11,7 @@ type PointerFacts = Readonly<{
   button: 0 | 1 | 2;  // left, middle, right
   clicks: number;     // presses in a row: 2 for a double click
   modifiers: Readonly<{ alt: boolean; ctrl: boolean; meta: boolean; shift: boolean }>;
-  target: string;     // the nearest data-part, such as "tab:30"
+  target: string;     // the nearest data-part, such as "tab-line:30"
   node: number | null; // the nearest data-node inside that part
 }>;
 

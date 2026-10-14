@@ -201,7 +201,7 @@ test("each tab has its own client id and an increasing sequence across reloads",
 // server sends, reduced to the attributes the pointer action reads.
 function screenParts() {
   const screen = new Element({ id: "screen", "data-revision": 7 });
-  const tab = new Element({ "data-part": "tab:30", "data-clickable": "" }, screen);
+  const tab = new Element({ "data-part": "tab-line:30", "data-clickable": "" }, screen);
   const view = new Element({ "data-part": "view:12" }, screen);
   const node = new Element({ "data-node": 4 }, view);
   const line = new Element({}, node);
@@ -217,7 +217,7 @@ test("a click is sent on release as a pointer item naming its part, node and scr
   h.point(new MouseEvent("click", parts.line, { detail: 2, ctrlKey: true }));
   h.point(new MouseEvent("auxclick", parts.statusLine, { button: 2, shiftKey: true }));
   const expected = [
-    { button: 0, clicks: 1, target: "tab:30", node: null,
+    { button: 0, clicks: 1, target: "tab-line:30", node: null,
       modifiers: { alt: false, ctrl: false, meta: false, shift: false } },
     { button: 0, clicks: 2, target: "view:12", node: 4,
       modifiers: { alt: false, ctrl: true, meta: false, shift: false } },

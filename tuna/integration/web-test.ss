@@ -120,7 +120,7 @@
                             (show-new-buffer! two "two")
                             (select-view left)
                             two))))
-                  (tab (lambda (v) (string-append "tab:" (number->string (view-id v)))))
+                  (tab (lambda (v) (string-append "tab-line:" (number->string (view-id v)))))
                   (revision (page-revision)))
              (check (and (string-search (string-append "data-part=\"" (tab two) "\" data-clickable") 
                                         (reply-body (http "GET" "/")))

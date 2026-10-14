@@ -86,18 +86,19 @@ prelude: :gerbil/core
 
 ;; A tab strip (on top when horizontal, down the side when vertical) and
 ;; the active child, which is the one last focused. A tab is the part
-;; "tab:P", P being the id of the part it shows, and is clickable while a
-;; click on a tab has a binding ("<tab> <mouse-1>").
+;; "tab-line:P" (Emacs's area name for a window's tabs), P being the id of
+;; the part it shows, and is clickable while a click on a tab line has a
+;; binding ("<tab-line> <mouse-1>").
 (def (render-tabbed (c : container) (render-link : :procedure) (label : :procedure)) => :list
   (let ((active (focused-link c))
-        (clickable (if (part-clickable? 'tab) '((data-clickable "")) '())))
+        (clickable (if (part-clickable? 'tab-line) '((data-clickable "")) '())))
     `(div ,(container-attributes c "tabbed")
           (ul (@ (class "tabs") (role "tablist")
                  (aria-orientation ,(symbol->string (container-direction c))))
               ,@(map (lambda ((l : link))
                        `(li (@ (class "tab") (role "tab")
                                (aria-selected ,(if (eq? l active) "true" "false"))
-                               (data-part ,(string-append "tab:" (number->string (part-id l.part))))
+                               (data-part ,(string-append "tab-line:" (number->string (part-id l.part))))
                                ,@clickable)
                             ,(label l.part)))
                      (container-links c)))
@@ -704,7 +705,7 @@ prelude: :gerbil/core
   (let (part (find-part self.root (posn-part p)))
     (if part
       (select! self (leaf-view (focused-leaf part)))
-      (report-stale-click p))))
+      (report-stale-click p what: "tab"))))
 
 (def (switch-tab! (self : tree-layout) (step : :fixnum)) => :void
   (let (tabs (enclosing-tabs self))
@@ -985,7 +986,7 @@ prelude: :gerbil/core
       (keymap-set "C-x t o" 'tab-next)
       (keymap-set "C-x t O" 'tab-previous)
       (keymap-set "C-x t 0" 'tab-close)
-      (keymap-set "<tab> <mouse-1>" 'tab-select)
+      (keymap-set "<tab-line> <mouse-1>" 'tab-select)
       (keymap-set "C-x n i" 'frame-zoom-in)
       (keymap-set "C-x n o" 'frame-zoom-out)
       (keymap-set "C-x w a" 'select-parent-part)

@@ -6,7 +6,7 @@
 ;;;
 ;;; Clicks are looked up like keys, by their Emacs event names (`mouse-1`,
 ;;; `C-mouse-1`, `double-mouse-1`), first with the kind of part clicked as
-;;; a prefix key ("<tab> <mouse-1>", as Emacs's "<mode-line> <mouse-1>"),
+;;; a prefix key ("<tab-line> <mouse-1>", as Emacs's "<mode-line> <mouse-1>"),
 ;;; then without it; a double or triple click falls back to the single
 ;;; one. A command reads its click with `last-command-event` and
 ;;; `event-start`; the layout contract finds the view and node a posn names
@@ -57,11 +57,11 @@ prelude: :gerbil/core
   final: #t)
 
 ;; Where a click happened (Emacs's position, `posn`): on the part of the
-;; screen with kind AREA (tab, view, status-line; Emacs's `posn-area`) and
+;; screen with kind AREA (tab-line, view, status-line; Emacs's `posn-area`) and
 ;; id PART, over the node with id NODE-ID if any, on the screen with
 ;; revision REVISION. Parts are named by stable id, never by position: a
-;; view or its status line by the view's id, a tab by the id of the part it
-;; shows.
+;; view or its status line by the view's id, a tab of a tab line by the id
+;; of the part it shows.
 (defstruct posn ((area     : :symbol)
                  (part     : :fixnum)
                  (node-id  :? :fixnum)
@@ -105,11 +105,13 @@ prelude: :gerbil/core
   (and (pointer-event? event) (pointer-event-start event)))
 
 ;; Report in the echo area that the part P names is gone, naming the
-;; screen it was clicked on; the click does nothing else.
-(def (report-stale-click (p : posn)) => :void
+;; screen it was clicked on; the click does nothing else. WHAT names the
+;; part ("tab"); by default, its kind.
+(def (report-stale-click (p : posn) what: (what :? :string := #f)) => :void
   (message (string-append "Stale click: the "
-                          (string-map (lambda (c) (if (char=? c #\-) #\space c))
-                                      (symbol->string (posn-area p)))
+                          (or what
+                              (string-map (lambda (c) (if (char=? c #\-) #\space c))
+                                          (symbol->string (posn-area p))))
                           " is gone (clicked on screen "
                           (number->string (posn-revision p)) ")")))
 
@@ -249,7 +251,7 @@ prelude: :gerbil/core
   (Keys-last-command-event (current-keys)))
 
 ;; Whether a plain click (mouse-1, mouse-2 or mouse-3) on a part of kind
-;; AREA has a global binding with AREA as its prefix key ("<tab> <mouse-1>"),
+;; AREA has a global binding with AREA as its prefix key ("<tab-line> <mouse-1>"),
 ;; so renderers mark such parts clickable; #f without key bindings.
 (def (part-clickable? (area : :symbol)) => :boolean
   (let (input (service-provider input-service))

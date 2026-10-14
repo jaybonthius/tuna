@@ -30,7 +30,7 @@
   (for-each press keys))
 
 ;; Submit one click to the running editor loop on the part AREA with id
-;; PART, as if made on screen REVISION: (click 'tab 30),
+;; PART, as if made on screen REVISION: (click 'tab-line 30),
 ;; (click 'view 12 button: 3 clicks: 2 ctrl?: #t node: 4).
 (def (click (area : :symbol) (part : :fixnum)
             button: (button 1) clicks: (clicks 1) node: (node #f) revision: (revision 0)
