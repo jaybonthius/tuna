@@ -121,6 +121,15 @@
                 (add-locked-view b side: 'bottom size: 'content)
                 b))))
 
+;; The classes of the containers drawn, outermost first.
+(def (container-classes)
+  (map (lambda (e) (attribute e 'class))
+       (elements-where (lambda (e)
+                         (and (symbol? (car e))
+                              (let (class (attribute e 'class))
+                                (and (string? class) (string-prefix? "container " class)))))
+                       (layout-html))))
+
 (def (call-with-state-directory proc)
   (let (directory (path-expand (string-append "tuna-layout-test-"
                                               (number->string (random-integer 1000000000)))
@@ -582,6 +591,159 @@
          (check (drawn-names) => ["a" ["b"]])
          (frame-on-named! "c")
          (check (drawn-names) => ["a" "b" ["c"]]))))
+
+    (test-case "nested tabs: wrapping a view in tabs, then a new tab joins the inner group"
+      (with-layout
+       (lambda ()
+         ;; a | b, b selected.
+         (split! 0 'right)
+         (for-each named! [0 1] ["a" "b"])
+         (select-named! "b")
+         (type! "C-x" "w" "t")
+         (check (message-now) => "Wrapped the view of b in a tabbed horizontal container of 1 view")
+         (check (drawn-names) => ["a" ["b"]])
+         (type! "C-x" "t" "2")
+         (check (map car (views-state)) => ["a" "b" "b"])
+         (check (selected-index) => 2)
+         (check (container-classes) => ["container fit horizontal" "container tabbed horizontal"])
+         (let (tabs (elements-where (with-class "tab") (layout-html)))
+           (check (map (lambda (tab) (attribute tab 'aria-selected)) tabs) => ["false" "true"]))
+         (check (drawn-names) => ["a" ["b"]])
+         ;; Once more inside the new tab: tabs within tabs.
+         (type! "C-x" "w" "t" "C-x" "t" "2")
+         (check (map car (views-state)) => ["a" "b" "b" "b"])
+         (check (container-classes)
+                => ["container fit horizontal" "container tabbed horizontal" "container tabbed horizontal"])
+         (check (length (elements-where (with-class "tab") (layout-html))) => 4)
+         ;; The inner group's tabs switch inside it.
+         (type! "C-x" "t" "o")
+         (check (selected-index) => 2)
+         (type! "C-x" "t" "o")
+         (check (selected-index) => 3))))
+
+    (test-case "wrapping the selected container: its pin moves to the wrapper, its views stay selected"
+      (with-layout
+       (lambda ()
+         ;; a | (b / c), the column selected and pinned.
+         (split! 0 'right)
+         (split! 1 'below)
+         (for-each named! [0 1 2] ["a" "b" "c"])
+         (select-named! "b")
+         (type! "C-x" "w" "a" "C-x" "w" "p" "C-x" "w" "3")
+         (check (message-now)
+                => "Wrapped a fit vertical container of 2 views in a fit horizontal container of 2 views")
+         (check (container-classes)
+                => ["container fit horizontal" "container fit horizontal" "container fit vertical"])
+         (check (drawn-names) => ["a" ["b"] "c"])
+         ;; The column is still the selected part.
+         (check (map (lambda (e) (attribute e 'class))
+                     (elements-where (lambda (e) (and (symbol? (car e)) (attribute e 'data-selected-part)))
+                                     (layout-html)))
+                => ["container fit vertical"])
+         ;; The wrapper took the pin: zoomed on a, the column still shows.
+         (frame-on-named! "a")
+         (check (drawn-names) => [["a"] "b" "c"]))))
+
+    (test-case "changing a container's kind and direction; for a view, its container's"
+      (with-layout
+       (lambda ()
+         (type! "C-x" "w" "k")
+         (check (message-now) => "The selected view is in no container")
+         ;; a | (b / c), b selected.
+         (split! 0 'right)
+         (split! 1 'below)
+         (for-each named! [0 1 2] ["a" "b" "c"])
+         (select-named! "b")
+         (type! "C-x" "w" "k")
+         (check (message-now) => "Now a tabbed vertical container of 2 views")
+         (check (container-classes) => ["container fit horizontal" "container tabbed vertical"])
+         (check (drawn-names) => ["a" ["b"]])
+         (type! "C-x" "w" "d")
+         (check (container-classes) => ["container fit horizontal" "container tabbed horizontal"])
+         ;; The focus memory stays: c, focused inside the tabs, comes back.
+         (select-named! "c")
+         (select-named! "a")
+         (type! "C-x" "w" "d")
+         (check (container-classes) => ["container fit vertical" "container tabbed horizontal"])
+         (check (drawn-names) => [["a"] "c"])
+         ;; The selected part's container: the tabs, made fit again.
+         (select-named! "c")
+         (type! "C-x" "w" "a" "C-x" "w" "k")
+         (check (container-classes) => ["container fit vertical" "container fit horizontal"])
+         (check (drawn-names) => ["a" "b" ["c"]]))))
+
+    (test-case "wrapping the whole layout makes a new root; C-x t 2 then adds a tab beside everything"
+      (with-layout
+       (lambda ()
+         ;; a | b, b selected.
+         (split! 0 'right)
+         (for-each named! [0 1] ["a" "b"])
+         (select-named! "b")
+         (type! "C-x" "w" "a" "C-x" "w" "t")
+         (check (container-classes) => ["container tabbed horizontal" "container fit horizontal"])
+         (check (drawn-names) => ["a" ["b"]])
+         (type! "C-x" "t" "2")
+         (check (drawn-names) => [["b"]])
+         (type! "C-x" "t" "O")
+         (check (drawn-names) => ["a" ["b"]]))))
+
+    (test-case "a locked part, or a part holding one, is neither wrapped nor reshaped"
+      (with-layout
+       (lambda ()
+         (named! 0 "a")
+         (lock-new! "bar")
+         (check (container-classes) => ["container fit vertical"])
+         ;; a's container holds the bar.
+         (type! "C-x" "w" "k")
+         (check (message-now) => "It holds a locked part, which the plugin that owns it arranges")
+         (type! "C-x" "w" "d")
+         (type! "C-x" "w" "a" "C-x" "w" "t")
+         (check (message-now) => "It holds a locked part, which the plugin that owns it arranges")
+         (check (container-classes) => ["container fit vertical"])
+         (select-named! "bar")
+         (type! "C-x" "w" "2")
+         (check (message-now) => "Locked: the plugin that owns it arranges it")
+         ;; a itself may be wrapped; the bar stays drawn.
+         (select-named! "a")
+         (type! "C-x" "w" "t")
+         (check (container-classes) => ["container fit vertical" "container tabbed horizontal"])
+         (check (drawn-names) => [["a"] "bar"]))))
+
+    (test-case "the session slot keeps nested and wrapped containers"
+      (call-with-state-directory
+       (lambda (directory)
+         (def (run thunk)
+           (call-with-fresh-kernel []
+             (lambda ()
+               (parameterize ((session-state-directory directory))
+                 (for-each activate-plugin!
+                           (map (lambda (p) (if (eq? p no-session-plugin) session-plugin p))
+                                layout-plugins)))
+               (restore-session)
+               (start-editor-loop!)
+               (thunk))))
+         (def nested
+           ["container fit horizontal" "container fit vertical"
+            "container tabbed horizontal" "container tabbed vertical"])
+         (run (lambda ()
+                ;; 0 alone in a column | tabs (1, tabs (2, 3) turned vertical)
+                (split! 0 'right)
+                (select! 1)
+                (type! "C-x" "w" "t" "C-x" "t" "2" "C-x" "w" "t" "C-x" "t" "2" "C-x" "w" "d")
+                (select! 0)
+                (type! "C-x" "w" "2")
+                (check (container-classes) => nested)
+                (check (shown) => [[0 #t 'text] [3 #f 'text]])
+                (on-baton save-session)))
+         (run (lambda ()
+                (check (container-classes) => nested)
+                (check (shown) => [[0 #t 'text] [3 #f 'text]])
+                (check (length (elements-where (with-class "tab") (layout-html))) => 4)
+                ;; The column around 0 came back with its one child.
+                (type! "C-x" "w" "k")
+                (check (container-classes)
+                       => ["container fit horizontal" "container tabbed vertical"
+                           "container tabbed horizontal" "container tabbed vertical"]))))))
 
     (test-case "the session slot keeps pins, locks and content sizes"
       (call-with-state-directory

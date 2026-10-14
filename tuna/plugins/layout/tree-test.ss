@@ -112,6 +112,70 @@
         (check (shape replaced) => ['fit 'horizontal 1 [[1 1] [2 7] [1 ['tabbed 'horizontal 4 [[1 4] [1 5]]]]]])
         (check (ids (part-leaves (find-part inserted 300))) => [4 8 5])))
 
+    (test-case "wrapping a part: the new container takes its link, the part gets size 1 and no flags"
+      (let* ((root (pin (sample) 200))
+             (column (wrap-part root 200 'tabbed 'vertical 400))
+             (view (wrap-part root 1 'fit 'vertical 400)))
+        (check (shape column)
+               => ['fit 'horizontal 1
+                   [[1 1]
+                    [2 'pinned ['tabbed 'vertical 200 [[1 ['fit 'vertical 3 [[1 2] [1 3]]]]]]]
+                    [1 ['tabbed 'horizontal 4 [[1 4] [1 5]]]]]])
+        (check (car (cadddr (shape view))) => [1 ['fit 'vertical 1 [[1 1]]]])
+        ;; The wrapped part and the parts off the path are shared.
+        (check (eq? (find-part column 200) (find-part root 200)) => #t)
+        (check (eq? (find-part column 300) (find-part root 300)) => #t)
+        (check (ids (part-path column 3)) => [100 400 200 3])
+        (check (part-id (focused-leaf (find-part view 400))) => 1)))
+
+    (test-case "wrapping the root makes the new container the root; a locked part's lock moves to its wrapper"
+      (let* ((root (sample))
+             (wrapped (wrap-part root 100 'tabbed 'horizontal 400))
+             (locked (wrap-part (lock root 300) 300 'fit 'vertical 400)))
+        (check (shape wrapped) => ['tabbed 'horizontal 100 [[1 (shape root)]]])
+        (check (eq? (link-part (car (container-links wrapped))) root) => #t)
+        (check (part-link wrapped 400) => #f)
+        (check (shape (find-part locked 100))
+               => ['fit 'horizontal 1
+                   [[1 1] [2 ['fit 'vertical 3 [[1 2] [1 3]]]]
+                    [1 'pinned 'locked ['fit 'vertical 300 [[1 ['tabbed 'horizontal 4 [[1 4] [1 5]]]]]]]]])
+        (check (inside-locked? locked 300) => #t)
+        (check (link-locked? (part-link locked 300)) => #f)))
+
+    (test-case "a wrapper with one child stays until a removal empties it; a removal leaving one child collapses"
+      (let* ((root (wrap-part (sample) 1 'fit 'vertical 400))
+             (split (split-part root 1 (leaf-of 6) 'horizontal 500 kind-of))
+             (beside (split-part root 1 (leaf-of 6) 'vertical 500 kind-of))
+             (moved (move-part root 2 'vertical #t kind-of)))
+        ;; A change inside it, across its direction, nests a container in it.
+        (check (shape (find-part split 400)) => ['fit 'vertical 500 [[1 ['fit 'horizontal 1 [[1 1] [1 6]]]]]])
+        ;; Along its direction, the part's link is halved inside it.
+        (check (shape (find-part beside 400)) => ['fit 'vertical 1 [[1/2 1] [1/2 6]]])
+        ;; A change elsewhere leaves it alone.
+        (check (shape (find-part moved 400)) => ['fit 'vertical 1 [[1 1]]])
+        ;; Removing a child it was given collapses it again.
+        (check (car (cadddr (shape (remove-part beside 6 kind-of)))) => [1 1])
+        (check (find-part (remove-part root 1 kind-of) 400) => #f)))
+
+    (test-case "changing a container's kind and direction keeps its children, their links and its focus"
+      (let* ((root (select-path (pin (sample) 3) 3))
+             (tabbed (reshape-container root 200 'tabbed 'vertical))
+             (fit (reshape-container root 300 'fit 'vertical))
+             (turned (reshape-container root 100 'fit 'vertical)))
+        (check (shape (find-part tabbed 200)) => ['tabbed 'vertical 3 [[1 2] [1 'pinned 3]]])
+        (check (link-size (part-link tabbed 200)) => 2)
+        (check (ids (visible-leaves tabbed kind-of)) => [1 3 4])
+        (check (shape (find-part fit 300)) => ['fit 'vertical 4 [[1 4] [1 5]]])
+        (check (ids (visible-leaves fit kind-of)) => [1 2 3 4 5])
+        (check (shape turned) => (cons* 'fit 'vertical (cddr (shape root))))
+        (check (andmap eq? (container-links turned) (container-links root)) => #t)
+        ;; A single tab made a fit container keeps its one child.
+        (let (single (reshape-container (remove-part root 5 kind-of) 300 'fit 'horizontal))
+          (check (shape (find-part single 300)) => ['fit 'horizontal 4 [[1 4]]])
+          (check (shape (find-part (move-part single 2 'vertical #t kind-of) 300))
+                 => ['fit 'horizontal 4 [[1 4]]]))
+        (check-exception (reshape-container root 1 'fit 'vertical) true)))
+
     (test-case "neighbors cross spatial containers of the right direction, by focus memory"
       (let* ((root (sample))
              (remembered (select-path (select-path root 2) 1)))
