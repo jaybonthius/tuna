@@ -1,6 +1,6 @@
 # Brief: Tuna and its plugins, the repository and package layout
 
-**Date:** 2026-10-14. **Status:** proposed; waiting for your approval. Research, with measurements: [`agents/research/package-layout/README.md`](../../agents/research/package-layout/README.md).
+**Date:** 2026-10-14. **Status:** parked 2026-10-14. The owner questioned the contract model this brief assumes; see `agents/STATUS.md`. Research, with measurements: [`agents/research/package-layout/README.md`](../../agents/research/package-layout/README.md).
 
 ## What this is and why
 
