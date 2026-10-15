@@ -29,9 +29,9 @@ Two rules stay as they are and get stricter:
 
 ## How it works (for the implementer, briefly)
 
-- **Numbering.** Each page load picks a random *stream id* and numbers its input 1, 2, 3, …. A new stream id also starts whenever the screen stream reconnects, so the server never has to guess where an old numbering left off (after a reload or a server restart). The tab's client id (ADR 10) stays as it is.
-- **Server.** The web plugin keeps, per stream, the next number it expects and the items that arrived early. It hands items to the editor's input queue strictly in order. The kernel does not change.
-- **Lost requests.** The browser keeps each item until it gets *any* answer, and resends it with the same number if the network failed. The server ignores a number it has already seen. A stream that has more than 64 items waiting is dropped, and the echo area says some input was lost.
+- **Numbering.** The page numbers its input 1, 2, 3, … from the moment it loads. When a page opens its screen stream, the server starts expecting 1 again, so a reload or a server restart needs nothing special. One tab is assumed; nothing here plans for several.
+- **Server.** The web plugin keeps the next number it expects and the items that arrived early. It hands items to the editor's input queue strictly in order. The kernel does not change.
+- **Lost requests.** The browser keeps each item until it gets *any* answer, and resends it with the same number if the network failed. The server ignores a number it has already seen. If more than 64 items are waiting, they are dropped and the echo area says some input was lost.
 - **Unchanged:** keys and clicks share one numbering, so "type, click, type" stays in order (ADR 7); Datastar's screen stream is untouched.
 
 ## A code sample (the browser side)
@@ -39,7 +39,7 @@ Two rules stay as they are and get stricter:
 ```ts
 // Send at once; the server orders by number. Resend only if the network failed.
 function send(item: object): void {
-  const body = JSON.stringify({ stream, sequence: ++sequence, ...item });
+  const body = JSON.stringify({ sequence: ++sequence, ...item });
   const post = () => fetch("/commands", { method: "POST", headers, body })
     .catch(() => setTimeout(post, 250));
   post();
@@ -53,9 +53,9 @@ function send(item: object): void {
 - **Options:** (a) answer 204 like everything else and ignore the input; (b) answer 401/403 as today.
 - **Recommendation: (b).** Signed-in tabs always get 204. A tab that is not signed in has no other way to learn that it must open Tuna's link again, and the rejection tells an attacker nothing it does not already know.
 
-**2. What the echo area says when input is lost** (a stream dropped after 64 waiting items, or input the server could not read).
+**2. What the echo area says when input is lost** (more than 64 items waiting, or input the server could not read).
 - **Recommendation:** one line, "Some input was lost; type it again", and the details in the log. No retry beyond the resend above.
 
-## New terms
+## Why numbers, not timestamps
 
-- **Stream id:** a random name for one page load's numbered input, so the server can keep each page's input in order separately.
+A timestamp says which key came first, but not whether an earlier key is still on its way. With numbers, the server knows that after 1 comes 2: if 3 arrives and 2 has not, it waits for 2, and otherwise runs each key the moment it arrives. With timestamps it could never tell, so it would have to wait a fixed time before running every key, which adds the lag back.
