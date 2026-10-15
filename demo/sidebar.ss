@@ -9,14 +9,14 @@
 ;;; closes. Turning the plugin off kills it too.
 prelude: :gerbil/core
 
-(import :tuna/services/commands
+(import :tuna/plugins/commands/contract
         :tuna/kernel
-        :tuna/services/keys
-        :tuna/services/buffers
-        :tuna/services/layout
-        :tuna/services/buttons
-        (only-in :tuna/services/minibuffer minibuffer-view?))
-(export sidebar-demo-plugin)
+        :tuna/plugins/keys/contract
+        :tuna/plugins/buffers/contract
+        :tuna/plugins/layout/contract
+        :tuna/plugins/buttons/contract
+        (only-in :tuna/plugins/minibuffer/contract minibuffer-view?))
+(export sidebar-demo)
 
 (def sidebar-name "*sidebar*")
 
@@ -54,7 +54,7 @@ prelude: :gerbil/core
     (when b
       (kill-buffer b))))
 
-(defplugin (sidebar-demo-plugin ctx)
+(defplugin (sidebar-demo ctx)
   "C-c d shows a sidebar of buffer buttons pinned to the left; again, kills it and its view closes."
   requires: [commands-service input-service buffers-service layout-service]
   (define-command ctx (toggle-sidebar) "Show *sidebar* at the left side, or kill it."

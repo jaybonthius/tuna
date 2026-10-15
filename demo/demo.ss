@@ -8,32 +8,32 @@
 ;;; or starter/ may import it (tuna/kernel/boundary-test.ss).
 prelude: :gerbil/core
 
-(import :tuna/services/commands
+(import :tuna/plugins/commands/contract
         :tuna/kernel
-        :tuna/services/keys
+        :tuna/plugins/keys/contract
         :tuna/configuration
-        :tuna/plugins/rope
-        :tuna/plugins/basic-editing
-        "../tuna/test-support/string-text-store")
-(export demo-plugin)
+        :tuna/plugins/text-store/plugin
+        :tuna/plugins/basic-editing/plugin
+        "../plugins/text-store/tests/support/string-text-store")
+(export demo)
 
 (def (toggle-plugin! (p : plugin)) => :void
   (if (plugin-active? p)
     (deactivate-plugin! p)
     (activate-plugin! p)))
 
-(defplugin (demo-plugin ctx)
+(defplugin (demo ctx)
   "Demo commands: swap the text store (C-c s) and basic editing (C-c p) while Tuna runs."
   requires: [commands-service input-service configuration-service]
   (define-command ctx (swap-text-store) "Switch between the rope and the plain-string text store."
-    (if (plugin-active? string-text-store-plugin)
-      (swap-plugins string-text-store-plugin rope-text-store-plugin)
-      (swap-plugins rope-text-store-plugin string-text-store-plugin))
-    (message (if (plugin-active? string-text-store-plugin)
+    (if (plugin-active? string-text-store)
+      (swap-plugins string-text-store rope-text-store)
+      (swap-plugins rope-text-store string-text-store))
+    (message (if (plugin-active? string-text-store)
                "Text store: plain strings"
                "Text store: rope")))
   (define-command ctx (toggle-basic-editing) "Turn the basic-editing plugin off or on."
-    (toggle-plugin! basic-editing-plugin)
-    (message (if (plugin-active? basic-editing-plugin) "Basic editing on" "Basic editing off")))
+    (toggle-plugin! basic-editing)
+    (message (if (plugin-active? basic-editing) "Basic editing on" "Basic editing off")))
   (keymap-set ctx "C-c p" 'toggle-basic-editing)
   (keymap-set ctx "C-c s" 'swap-text-store))

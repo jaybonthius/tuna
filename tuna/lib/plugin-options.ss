@@ -11,9 +11,9 @@
 ;;; again. Program code can override an option, as `tuna --port` does
 ;;; for the web transport's port; the override beats init.ss.
 ;;;
-;;;   (defplugin (web-transport-plugin ctx) "..."
-;;;     (let (port (plugin-option web-transport-plugin 'port)) ...))
-;;;   (defplugin-options web-transport-plugin
+;;;   (defplugin (web-transport ctx) "..."
+;;;     (let (port (plugin-option web-transport 'port)) ...))
+;;;   (defplugin-options web-transport
 ;;;     (port 0 "The loopback port to listen on; 0 picks a free one."
 ;;;           (integer-type 0 65535) flag: "--port"))
 prelude: :gerbil/core

@@ -1,0 +1,602 @@
+;;; Reloading init.ss (tuna/boot.ss) and `tuna reload` (tuna/control.ss):
+;;; only what changed is touched; a failing new version leaves the running
+;;; one on; a failed load changes nothing; startup-tier changes wait for
+;;; the next start. Every test writes its files to its own temporary
+;;; directory and runs in a fresh kernel.
+(import :std/io
+        :std/net/address
+        :std/misc/ports
+        :std/source
+        :std/test
+        :tuna/kernel
+        :tuna/boot
+        :tuna/control
+        :tuna/plugins/session/contract
+        :tuna/plugins/session/plugin
+        "../../tuna/tests/support/kernel"
+        "../../tuna/tests/support/string-input"
+        "../support/config")
+(export reload-test)
+
+(def test-plugins-module
+  (path-expand "../support/config" (path-expand (this-source-directory))))
+
+(def (call-with-temporary-directory proc)
+  (let (directory (path-expand (string-append "tuna-reload-test-"
+                                              (number->string (random-integer 1000000000)))
+                               (getenv "TMPDIR" "/tmp")))
+    (create-directory* directory)
+    (try
+     (proc directory)
+     (finally
+      (delete-file-or-directory directory #t)))))
+
+;; Write DIRECTORY/init.ss: the language line, an import of the test
+;; plugins and of DIRECTORY/mine.ss when it exists, then LINES.
+(def (write-init (directory : :string) . lines) => :string
+  (let (path (path-expand "init.ss" directory))
+    (write-file-string
+     path
+     (string-join (append ["#lang :tuna/config"
+                           (string-append "(import \"" test-plugins-module "\""
+                                          (if (file-exists? (path-expand "mine.ss" directory))
+                                            " \"mine\""
+                                            "")
+                                          ")")]
+                          lines)
+                  "\n"))
+    path))
+
+;; Write DIRECTORY/mine.ss, a user module defining mine with BODY.
+(def (write-mine (directory : :string) (body : :string)) => :void
+  (write-file-string
+   (path-expand "mine.ss" directory)
+   (string-append "(import :tuna/kernel \"" test-plugins-module "\")\n"
+                  "(export mine)\n"
+                  "(defplugin mine \"The user's own plugin.\" " (if (string-contains body "context-provide!") "provides: [probe-service] " "") body ")\n")))
+
+(def (start (path : :string)) => startup-report
+  (start-from-configuration (make-config-choice path "--config")))
+
+;; The report's entries as (what status).
+(def (statuses (entries : :list)) => :list
+  (map (lambda ((e : report-entry)) [(report-entry-what e) (report-entry-status e)]) entries))
+
+(def (reload) => reload-report
+  (reload-configuration!))
+
+(def (changes (report : reload-report)) => :list
+  (statuses (reload-report-entries report)))
+
+(def (detail (report : reload-report) (what : :string)) => :string
+  (report-entry-detail
+   (find (lambda ((e : report-entry)) (equal? (report-entry-what e) what))
+         (reload-report-entries report))))
+
+(def (contains? (text : :string) (part : :string)) => :boolean
+  (and (string-contains text part) #t))
+
+(def user-code "your own code (plugin init)")
+
+(def reload-test
+  (test-suite "reloading init.ss"
+    (test-case "a reload with no changes touches nothing, twice in a row"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory
+                                "(use-plugin counted config: (note-activation! 'counted-block))"
+                                "(note-activation! 'user)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (check (activation-count 'counted) => 1)
+               (for-each
+                (lambda (_)
+                  (let (report (reload))
+                    (check (changes report) => [])
+                    (check (reload-report-unchanged report) => 3)
+                    (check (reload-succeeded? report) => #t)
+                    (check (contains? (reload-report-text report) "3 unchanged") ? values)))
+                [1 2])
+               (check (activation-count 'counted) => 1)
+               (check (activation-count 'counted-block) => 1)
+               (check (activation-count 'user) => 1)
+               (check (probe-on? 'counted) => #t)))))))
+
+    (test-case "a path through a link or .. counts init.ss as init.ss, not as a user module"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let ((real (path-expand "real" directory))
+               (link (path-expand "link" directory)))
+           (create-directory* real)
+           (create-symbolic-link real link)
+           (for-each
+            (lambda ((path : :string))
+              (write-init real
+                          "(use-plugin counted config: (note-activation! 'linked-block))"
+                          "(note-activation! 'linked-user)")
+              (call-with-fresh-kernel []
+                (lambda ()
+                  (start path)
+                  (let ((block (activation-count 'linked-block))
+                        (user (activation-count 'linked-user)))
+                    (write-init real
+                                "(use-plugin counted config: (note-activation! 'linked-block))"
+                                "(use-plugin good)"
+                                "(note-activation! 'linked-user)")
+                    (let (report (reload))
+                      (check (changes report) => '(("good" on)))
+                      (check (reload-report-unchanged report) => 3))
+                    (check (activation-count 'linked-block) => block)
+                    (check (activation-count 'linked-user) => user)))))
+            [(path-expand "init.ss" link)
+             (path-expand "../real/init.ss" real)])))))
+
+    (test-case "added plugins are turned on and removed ones off"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory "(use-plugin good)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (write-init directory "(use-plugin dependent)" "(use-plugin provider)")
+               (let (report (reload))
+                 (check (changes report)
+                        => '(("good" off) ("provider" on) ("dependent" on)))
+                 (check (detail report "good") => "no longer declared")
+                 (check (reload-report-unchanged report) => 1))
+               (check (probe-on? 'good) => #f)
+               (check (probe-on? 'provider) => #t)
+               (check (probe-on? 'dependent) => #t)))))))
+
+    (test-case "a changed config: block is replaced; its plugin is left alone"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory "(use-plugin counted config: (probe-on! 'block-1))"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (let (activations (activation-count 'counted))
+                 (write-init directory "(use-plugin counted config: (probe-on! 'block-2))")
+                 (check (changes (reload)) => '(("config: block of counted" replaced)))
+                 (check (activation-count 'counted) => activations))
+               (check (probe-on? 'block-1) => #f)
+               (check (probe-on? 'block-2) => #t)
+               ;; A block that now fails is undone and the running one is
+               ;; turned back on.
+               (write-init directory "(use-plugin counted config: (probe-on! 'block-3) (error \"block 3 fails\"))")
+               (let (report (reload))
+                 (check (changes report) => '(("config: block of counted" failed)))
+                 (check (detail report "config: block of counted")
+                        => "block 3 fails; the running version is back on"))
+               (check (probe-on? 'block-3) => #f)
+               (check (probe-on? 'block-2) => #t)
+               ;; Removing the block turns it off.
+               (write-init directory "(use-plugin counted)")
+               (check (changes (reload)) => '(("config: block of counted" off)))
+               (check (probe-on? 'block-2) => #f)
+               (check (probe-on? 'counted) => #t)))))))
+
+    (test-case "a changed user module replaces its plugin; a failing new version keeps the old"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (write-mine directory "(probe-on! 'mine-1)")
+         (let (path (write-init directory "(use-plugin mine)" "(use-plugin good)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (write-mine directory "(probe-on! 'mine-2)")
+               (let (report (reload))
+                 ;; The user's code is replaced too: it may use the module.
+                 (check (changes report) => [["mine" 'replaced] [user-code 'replaced]]))
+               (check (probe-on? 'mine-1) => #f)
+               (check (probe-on? 'mine-2) => #t)
+               (write-mine directory "(probe-on! 'mine-3) (error \"mine 3 fails\")")
+               (let (report (reload))
+                 (check (assoc "mine" (changes report)) => '("mine" failed))
+                 (check (detail report "mine") => "mine 3 fails; the running version is back on")
+                 (check (reload-succeeded? report) => #f))
+               (check (probe-on? 'mine-3) => #f)
+               (check (probe-on? 'mine-2) => #t)
+               (check (probe-on? 'good) => #t)))))))
+
+    ;; A limit of reload: a user module is loaded again in its own
+    ;; namespace, so its new definitions replace the running version's as
+    ;; soon as it loads, even when the reload then fails.
+    (test-case "a changed user module's definitions replace the running ones even if the reload fails"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let ((mine (lambda (helper-body extra)
+                       (write-file-string
+                        (path-expand "mine.ss" directory)
+                        (string-append "(import :tuna/kernel \"" test-plugins-module "\")\n"
+                                       "(export mine)\n"
+                                       "(def (helper) " helper-body ")\n"
+                                       "(defplugin mine \"The user's own plugin.\" "
+                                       "(set-callback! 'mine (lambda () (helper))) (probe-on! (helper)))\n"
+                                       extra)))))
+           (mine "'k1" "")
+           (let (path (write-init directory "(use-plugin mine)"))
+             (call-with-fresh-kernel []
+               (lambda ()
+                 (start path)
+                 (check (call-callback 'mine) => 'k1)
+                 ;; X20: the new version fails at load. The reload changes
+                 ;; nothing in the editor, but the running plugin already
+                 ;; calls the new helper.
+                 (mine "'k2" "(error \"mine.ss fails at load\")\n")
+                 (check (contains? (reload-report-problem (reload)) "mine.ss fails at load") ? values)
+                 (check (probe-on? 'k1) => #t)
+                 (check (call-callback 'mine) => 'k2)
+                 ;; X7: the new helper fails, so the new plugin fails, and
+                 ;; turning the running version back on runs the new helper
+                 ;; too.
+                 (mine "(error \"helper fails\")" "")
+                 (let (report (reload))
+                   (check (assoc "mine" (changes report)) => '("mine" failed))
+                   (check (detail report "mine")
+                          => "helper fails; turning the running version back on failed too: helper fails"))
+                 (check (probe-on? 'k1) => #f))))))))
+
+    (test-case "failing new user code keeps the running user code"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory "(use-plugin good)" "(probe-on! 'user-1)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (write-init directory "(use-plugin good)" "(probe-on! 'user-2)" "(error \"user 2 fails\")")
+               (let (report (reload))
+                 (check (changes report) => [[user-code 'failed]])
+                 (check (detail report user-code) => "user 2 fails; the running version is back on"))
+               (check (probe-on? 'user-1) => #t)
+               (check (probe-on? 'user-2) => #f)
+               ;; Fixed, it replaces the running code.
+               (write-init directory "(use-plugin good)" "(probe-on! 'user-3)")
+               (check (changes (reload)) => [[user-code 'replaced]])
+               (check (probe-on? 'user-1) => #f)
+               (check (probe-on? 'user-3) => #t)))))))
+
+    (test-case "a file that does not load changes nothing"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory "(use-plugin good)" "(probe-on! 'user)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (write-init directory "(use-plugin provider)" "(probe-on! 'user")
+               (let (report (reload))
+                 (check (reload-report-entries report) => [])
+                 (check (contains? (reload-report-problem report) (string-append path ":4:1: Incomplete form"))
+                        ? values)
+                 (check (contains? (reload-report-text report) "Nothing was changed.") ? values)
+                 (check (reload-succeeded? report) => #f))
+               (write-init directory "(use-plugin no-such-plugin)")
+               (check (contains? (reload-report-problem (reload)) "init.ss:3:13: Reference to unbound identifier")
+                      ? values)
+               (check (probe-on? 'good) => #t)
+               (check (probe-on? 'user) => #t)
+               (check (plugin-active? provider) => #f)))))))
+
+    (test-case "startup-tier changes wait for the next start while the editor loop runs"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory "(use-plugin fixed-provider)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (activate-plugin! test-input)
+               (start-editor-loop!)
+               ;; Removing its provider is deferred.
+               (write-init directory "")
+               (let (report (call-on-editor-loop reload))
+                 (check (changes report) => '(("fixed-provider" deferred)))
+                 (check (detail report "fixed-provider")
+                        => "provides the startup-tier service fixed, so turning it off takes effect at next start"))
+               (check (probe-on? 'fixed) => #t)
+               ;; A plugin that would take it over is refused and rolled back.
+               (write-init directory "(use-plugin better-fixed-provider)")
+               (let (report (call-on-editor-loop reload))
+                 (check (changes report) => '(("better-fixed-provider" deferred)))
+                 (check (detail report "better-fixed-provider")
+                        => "provides the startup-tier service fixed, so the new version takes effect at next start"))
+               (check (probe-on? 'better-fixed) => #f)
+               (check (probe-on? 'fixed) => #t)))))))
+
+    (test-case "turning off what a startup-tier provider needs waits for the next start"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory "(use-plugin provider)" "(use-plugin fixed-needs-probe)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (activate-plugin! test-input)
+               (start-editor-loop!)
+               ;; X5b: removing the provider fixed-needs-probe needs.
+               (write-init directory "(use-plugin fixed-needs-probe)")
+               (let (report (call-on-editor-loop reload))
+                 (check (changes report) => '(("provider" deferred)))
+                 (check (detail report "provider")
+                        => "the provider of the startup-tier service fixed (fixed-needs-probe) needs it, so turning it off takes effect at next start")
+                 (check (reload-succeeded? report) => #t))
+               (check (probe-on? 'provider) => #t)
+               (check (probe-on? 'fixed-needs-probe) => #t)))))))
+
+    (test-case "edited user code that provides a startup-tier service waits for the next start"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory "(import :tuna/kernel)"
+                                "(context-provide! (current-context) fixed-service 'fixed)"
+                                "(probe-on! 'user-1)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (activate-plugin! test-input)
+               (start-editor-loop!)
+               ;; X6: the running code stays, on every reload until the next start.
+               (write-init directory "(import :tuna/kernel)"
+                           "(context-provide! (current-context) fixed-service 'fixed)"
+                           "(probe-on! 'user-2)")
+               (for-each
+                (lambda (_)
+                  (let (report (call-on-editor-loop reload))
+                    (check (changes report) => [[user-code 'deferred]])
+                    (check (detail report user-code)
+                           => "it provides the startup-tier service fixed, so the new version takes effect at next start")))
+                [1 2])
+               (check (probe-on? 'user-1) => #t)
+               (check (probe-on? 'user-2) => #f)))))))
+
+    (test-case "an edited config: block that provides a startup-tier service waits for the next start"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory "(import :tuna/kernel)"
+                                "(use-plugin good config: (context-provide! (current-context) fixed-service 'fixed) (probe-on! 'block-1))"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (activate-plugin! test-input)
+               (start-editor-loop!)
+               (write-init directory "(import :tuna/kernel)"
+                           "(use-plugin good config: (context-provide! (current-context) fixed-service 'fixed) (probe-on! 'block-2))")
+               (let (report (call-on-editor-loop reload))
+                 (check (changes report) => '(("config: block of good" deferred)))
+                 (check (detail report "config: block of good")
+                        => "it provides the startup-tier service fixed, so the new version takes effect at next start"))
+               (check (probe-on? 'block-1) => #t)
+               (check (probe-on? 'block-2) => #f)))))))
+
+    (test-case "a new version of what a startup-tier provider needs waits for the next start"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (write-mine directory "(context-provide! (current-context) probe-service 'probe) (probe-on! 'mine-1)")
+         (let (path (write-init directory "(use-plugin mine)" "(use-plugin fixed-needs-probe)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (activate-plugin! test-input)
+               (start-editor-loop!)
+               ;; X24: the provider's module changed.
+               (write-mine directory "(context-provide! (current-context) probe-service 'probe) (probe-on! 'mine-2)")
+               (let (report (call-on-editor-loop reload))
+                 (check (assoc "mine" (changes report)) => '("mine" deferred))
+                 (check (detail report "mine")
+                        => "the provider of the startup-tier service fixed (fixed-needs-probe) needs it, so the new version takes effect at next start"))
+               (check (probe-on? 'mine-1) => #t)
+               (check (probe-on? 'mine-2) => #f)
+               (check (probe-on? 'fixed-needs-probe) => #t)))))))
+
+    (test-case "a plugin that failed at start-up comes up once fixed, with what needs it"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (write-mine directory "(context-provide! (current-context) probe-service 'probe) (error \"broken\")")
+         (let (path (write-init directory "(use-plugin mine)" "(use-plugin dependent)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (check (statuses (startup-report-entries (start path)))
+                      => [["mine" 'failed] ["dependent" 'skipped] [user-code 'on]])
+               (write-mine directory "(context-provide! (current-context) probe-service 'probe)")
+               (let (report (reload))
+                 (check (assoc "mine" (changes report)) => '("mine" on))
+                 (check (assoc "dependent" (changes report)) => '("dependent" on)))
+               (check (probe-on? 'dependent) => #t)))))))
+
+    (test-case "a start-up that loaded nothing is fixed by a reload"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory "(use-plugin good"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (check (startup-report-entries (start path)) => [])
+               (write-init directory "(use-plugin good)")
+               (check (changes (reload)) => [["good" 'on] [user-code 'on]])
+               (check (probe-on? 'good) => #t)))))))
+
+    (test-case "session slots: restored when a reload turns a plugin on, kept when it is replaced"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let* ((state (path-expand "state" directory))
+                (file (path-expand "session.ss" state))
+                (saved (lambda () (call-with-input-file file read)))
+                (slot-module
+                 (lambda (save-text fail?)
+                   (write-mine directory
+                               (string-append
+                                "requires: [session-service] "
+                                "(context-add-session-slot! (current-context) 'mine version: 1 "
+                                "save: (lambda () \"" save-text "\") "
+                                "restore: (lambda (data) (record-restore! 'mine data)))"
+                                (if fail? " (error \"mine fails\")" ""))))))
+           (create-directory* state)
+           (write-file-string file "(tuna-session 1 (notes 1 \"keep me\") (mine 1 \"mine kept\"))\n")
+           ;; mine.ss imports the session contract too.
+           (slot-module "from v1" #t)
+           (write-file-string (path-expand "mine.ss" directory)
+                              (string-append "(import :tuna/plugins/session/contract)\n"
+                                             (read-file-string (path-expand "mine.ss" directory))))
+           (parameterize ((session-state-directory state))
+             (call-with-fresh-kernel []
+               (lambda ()
+                 (let (path (write-init directory "(import :tuna/plugins/session/plugin)"
+                                        "(use-plugin session)" "(use-plugin mine)"))
+                   ;; Walkthrough step 4: mine fails at start-up; the
+                   ;; program restores; saving keeps mine's saved data.
+                   (check (assoc "mine" (statuses (startup-report-entries (start path))))
+                          => '("mine" failed))
+                   (restore-session)
+                   (save-session)
+                   (check (saved) => '(tuna-session 1 (notes 1 "keep me") (mine 1 "mine kept")))
+                   ;; Fixed, a reload turns it on with its saved data.
+                   (slot-module "from v2" #f)
+                   (write-file-string (path-expand "mine.ss" directory)
+                                      (string-append "(import :tuna/plugins/session/contract)\n"
+                                                     (read-file-string (path-expand "mine.ss" directory))))
+                   (check (assoc "mine" (changes (reload))) => '("mine" on))
+                   (check (restored-data 'mine) => "mine kept")
+                   ;; A plugin added by a reload gets its saved data.
+                   (write-init directory "(import :tuna/plugins/session/plugin)"
+                               "(use-plugin session)" "(use-plugin mine)"
+                               "(use-plugin notes)")
+                   (check (assoc "notes" (changes (reload))) => '("notes" on))
+                   (check (restored-data 'notes) => "keep me")
+                   (set-notes-text! "edited")
+                   ;; A replaced user-module plugin gets the running
+                   ;; version's latest data, not the file's.
+                   (slot-module "from v3" #f)
+                   (write-file-string (path-expand "mine.ss" directory)
+                                      (string-append "(import :tuna/plugins/session/contract)\n"
+                                                     (read-file-string (path-expand "mine.ss" directory))))
+                   (check (assoc "mine" (changes (reload))) => '("mine" replaced))
+                   (check (restored-data 'mine) => "from v2")
+                   (save-session)
+                   (check (saved) => '(tuna-session 1 (notes 1 "edited") (mine 1 "from v3")))))))))))
+
+    (test-case "a dependent the kernel restarts for a replaced provider is listed"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (write-mine directory "(context-provide! (current-context) probe-service 'probe) (probe-on! 'mine-1)")
+         (let (path (write-init directory "(use-plugin mine)" "(use-plugin dependent)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (write-mine directory "(context-provide! (current-context) probe-service 'probe) (probe-on! 'mine-2)")
+               (let (report (reload))
+                 (check (changes report)
+                        => [["mine" 'replaced] [user-code 'replaced] ["dependent" 'restarted]])
+                 (check (detail report "dependent")
+                        => "the kernel restarted it for the new provider of probe"))
+               (check (probe-on? 'dependent) => #t)))))))
+
+    (test-case "modules read again by a failed load still count at the next reload"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (write-mine directory "(probe-on! 'mine-1)")
+         (let (path (write-init directory "(use-plugin mine config: (probe-on! 'mine-block))"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (write-mine directory "(probe-on! 'mine-2)")
+               (write-init directory "(use-plugin mine config: (probe-on! 'mine-block)")
+               (check (reload-report-entries (reload)) => [])
+               (write-init directory "(use-plugin mine config: (probe-on! 'mine-block))")
+               (check (changes (reload))
+                      => [["mine" 'replaced] ["config: block of mine" 'replaced]
+                          [user-code 'replaced]])
+               (check (probe-on? 'mine-2) => #t)
+               (check (probe-on? 'mine-block) => #t)))))))
+
+    (test-case "C-g during a reload: the reload finishes and its report is delivered"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (path (write-init directory "(probe-on! 'user-1)"))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (activate-plugin! test-input)
+               (start-editor-loop!)
+               (write-init directory "(thread-sleep! 0.5)" "(probe-on! 'user-2)")
+               (let* ((reloading (spawn (lambda () (call-on-editor-loop reload)))))
+                 (thread-sleep! 0.2)
+                 ((input-submitter) "quit")
+                 (let (report (thread-join! reloading))
+                   (check (reload-report-quit? report) => #t)
+                   (check (changes report) => [[user-code 'replaced]])
+                   (check (contains? (reload-report-text report) "C-g was pressed during the reload")
+                          ? values)))
+               (check (probe-on? 'user-2) => #t)))))))
+
+    (test-case "tuna reload asks the running Tuna and prints its report"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let ((path (write-init directory "(use-plugin good)"))
+               (saved (getenv "XDG_RUNTIME_DIR" #f)))
+           (setenv "XDG_RUNTIME_DIR" directory)
+           (try
+            (call-with-fresh-kernel []
+              (lambda ()
+                (start path)
+                (activate-plugin! test-input)
+                (start-editor-loop!)
+                ;; Nothing listens yet; a stale socket file is deleted.
+                (create-directory (list path: (control-directory) permissions: #o700))
+                (write-file-string (path-expand "999999999.sock" (control-directory)) "")
+                (let (output (open-output-string))
+                  (check (request-reloads output) => 1)
+                  (check (get-output-string output) => "No running Tuna was found, so nothing was reloaded.\n"))
+                (check (file-exists? (path-expand "999999999.sock" (control-directory))) => #f)
+                (let (server (start-control-server!
+                              (lambda ()
+                                (call-on-editor-loop
+                                 (lambda ()
+                                   (let (report (reload-configuration!))
+                                     (cons (reload-succeeded? report) (reload-report-text report))))))))
+                  (try
+                   (check (file-exists? (control-server-path server)) => #t)
+                   (check (fxand (file-info-mode (file-info (control-server-path server))) #o777) => #o600)
+                   (write-init directory "(use-plugin provider)")
+                   (let* ((output (open-output-string))
+                          (status (request-reloads output))
+                          (text (get-output-string output)))
+                     (check status => 0)
+                     (check (contains? text "Tuna reload report") ? values)
+                     (check (contains? text "  on       provider (init.ss:3)") ? values)
+                     (check (contains? text "  off      good (init.ss:3): no longer declared") ? values))
+                   (check (probe-on? 'provider) => #t)
+                   (check (probe-on? 'good) => #f)
+                   ;; A failed load is reported, with a failing exit status.
+                   (write-init directory "(use-plugin provider")
+                   (let* ((output (open-output-string))
+                          (status (request-reloads output)))
+                     (check status => 1)
+                     (check (contains? (get-output-string output) "Nothing was changed.") ? values))
+                   (finally
+                    (stop-control-server! server void)))
+                  (check (file-exists? (control-server-path server)) => #f))))
+            (finally
+             (if saved (setenv "XDG_RUNTIME_DIR" saved) (setenv "XDG_RUNTIME_DIR"))))))))
+
+    (test-case "tuna reload: a Tuna that does not answer, and a directory that is not private"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let (saved (getenv "XDG_RUNTIME_DIR" #f))
+           (setenv "XDG_RUNTIME_DIR" directory)
+           (try
+            (create-directory (list path: (path-expand "tuna" directory) permissions: #o700))
+            ;; Accepts, never answers.
+            (let (silent (unix-listen (UnixAddress (path-expand "999999998.sock" (control-directory)))))
+              (try
+               (let* ((output (open-output-string))
+                      (status (parameterize ((reply-time-limit 0.3)) (request-reloads output)))
+                      (text (get-output-string output)))
+                 (check status => 1)
+                 (check (contains? text "Tuna process 999999998 did not answer within 0.3 s") ? values))
+               (finally (ServerSocket-close silent))))
+            (delete-file-or-directory (path-expand "tuna" directory) #t)
+            (create-directory (list path: (path-expand "tuna" directory) permissions: #o755))
+            (let* ((output (open-output-string))
+                   (status (request-reloads output)))
+              (check status => 1)
+              (check (contains? (get-output-string output) "is not a directory private to you") ? values))
+            (check (with-catch (lambda (e) 'refused) (lambda () (start-control-server! void))) => 'refused)
+            (finally
+             (if saved (setenv "XDG_RUNTIME_DIR" saved) (setenv "XDG_RUNTIME_DIR"))))))))))
