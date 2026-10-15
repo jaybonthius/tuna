@@ -356,7 +356,7 @@ prelude: :gerbil/core
 
 (defmethod {set-click-resolver! global-keys}
   (lambda (self ctx resolve)
-    (context-add-entry! ctx (global-keys-click-resolvers self) 'click (context-bind ctx resolve))
+    (context-add-entry! ctx (global-keys-click-resolvers self) 'click resolve)
     (void)))
 
 (defmethod {keymap-generation global-keys}

@@ -243,12 +243,11 @@ prelude: :gerbil/core
 ;; parts clickable; #f without key bindings. The unprefixed global
 ;; fallbacks do not count: they would make every part clickable.
 (def (part-clickable? (area : :symbol)) => :boolean
-  (:- (call-with-service-provider input-service
-        (lambda (input)
+  (:- (let (input (service-provider input-service))
           (and input (is-Keys? input)
                (ormap (lambda ((keys : :string)) (Keys-key-binding (Keys input) keys))
                       (plain-click-keys area #f))
-               #t))) :boolean))
+               #t)) :boolean))
 
 ;; Whether KEYMAP, a node's own, binds a plain click on a part of kind
 ;; AREA, with or without AREA as a prefix key ("<mouse-1>", "<view>
@@ -258,8 +257,7 @@ prelude: :gerbil/core
 
 ;; The current keymap generation, or 0 without key bindings.
 (def (keymap-generation) => :fixnum
-  (:- (call-with-service-provider input-service
-        (lambda (input)
+  (:- (let (input (service-provider input-service))
           (if (and input (is-Keys? input))
             (Keys-keymap-generation (Keys input))
-            0))) :fixnum))
+            0)) :fixnum))

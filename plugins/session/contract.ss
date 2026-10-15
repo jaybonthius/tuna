@@ -50,6 +50,8 @@ prelude: :gerbil/core
   (new-service 'session is-Session? tier: 'startup
                doc: "Saves and restores session slots as plain data."))
 
+;; Restore can rebuild registrations; implicit ones belong to the slot owner.
+;; Save is read-only and needs no owner binding.
 (def (context-add-session-slot! (ctx : context)
                                 (name : :symbol)
                                 version:  (version  : :fixnum)
@@ -60,7 +62,7 @@ prelude: :gerbil/core
   => :void
   (:- (with-service-provider (provider session-service Session)
     (Session-add-session-slot! provider ctx
-                               (make-session-slot name version (context-bind ctx save) (context-bind ctx restore) fallback) priority)) :void))
+                               (make-session-slot name version save (context-bind ctx restore) fallback) priority)) :void))
 
 (def (save-session) => :void
   (:- (with-service-provider (provider session-service Session) (Session-save-session! provider)) :void))

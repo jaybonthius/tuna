@@ -175,11 +175,10 @@ prelude: :gerbil/core
 (def (editor-loop-running?) => :boolean
   (and (kernel-editor-loop (the-kernel)) #t))
 
-;; Start the loop. The kernel becomes live: startup-tier services refuse
-;; replacement from now on.
+;; Start the loop. Start-up code applies its live reload policy from now on.
 (def (start-editor-loop! quit-grace: (quit-grace : :real := 0.5)) => :void
   (using (k (the-kernel) : kernel)
-    (let (input (call-with-context #f (lambda () (service-provider input-service))))
+    (let (input (service-provider input-service))
       (when k.loop
         (error "The editor loop is already running"))
       (unless input
@@ -220,13 +219,8 @@ prelude: :gerbil/core
   (let (k (the-kernel))
     (lambda ((item : :t)) => :void
       (using (loop (running-loop k) : editor-loop)
-        ;; A transport's thread inherits the transport's context; classify
-        ;; under the input provider's own context, as resolve! does.
         (thread-send (: loop.thread :thread)
-                     (case (call-with-context #f
-                             (lambda ()
-                               (call-with-service-provider input-service
-                                 (lambda (provider) (Input-arrival loop.input item)))))
+                     (case (Input-arrival loop.input item)
                        ((queue) [enqueue: (make-queued-input item)])
                        ((interrupt) [interrupt: item])
                        (else (error "Input arrival must return queue or interrupt" item))))))))
@@ -251,7 +245,7 @@ prelude: :gerbil/core
     (send-to-loop! [enqueue: queued])
     queued))
 
-;; Attribute direct-style work to CTX and cancel its task on receipt undo.
+;; Own direct-style registrations and cancel the task on receipt undo.
 ;; Remove the inverse on return, so repeated invocations retain no tasks.
 (def (call-with-task-owner (ctx : context) (procedure : :procedure)) => :t
   (let (running (running-task))
@@ -279,11 +273,8 @@ prelude: :gerbil/core
 
 ;; Redisplay now. Only the baton holder may call this: the loop, or a task.
 (def (redisplay) => :void
-  (call-with-context #f
-    (lambda ()
-      (call-with-service-provider display-service
-        (lambda (provider)
-          (when provider (Display-redisplay! (Display provider))))))))
+  (let (provider (service-provider display-service))
+    (when provider (Display-redisplay! (Display provider)))))
 
 ;; The name of the running task, or #f.
 (def (current-task-name) => (Maybe :symbol)
@@ -431,8 +422,7 @@ prelude: :gerbil/core
     (with-catch
      (lambda (e) (message (exception-summary e)))
      (lambda ()
-       (let (resolved (call-with-service-provider input-service
-                         (lambda (provider) (Input-resolve! loop.input (queued-input-item next)))))
+       (let (resolved (Input-resolve! loop.input (queued-input-item next)))
          (when resolved
            (start-task! loop (new-task (car resolved) (cdr resolved) #f)))))))))
 
@@ -457,7 +447,7 @@ prelude: :gerbil/core
 (def (baton-task-thread (loop-thread : :thread) (running : task)) => :void
   (let* ((raised? #t)
          (procedure running.procedure)
-         (value (parameterize ((current-task running) (current-context #f))
+         (value (parameterize ((current-task running))
                   (with-catch
                    (lambda (e)
                      (set! running.state 'finished)

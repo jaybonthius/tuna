@@ -506,7 +506,7 @@ prelude: :gerbil/core
   => :void
   (:- (with-service-provider (provider buffers-service Buffers)
     (context-add-entry! ctx (: (Buffers-node-kinds provider) entry-table) name
-                        (make-node-kind-info name doc (and project (context-bind ctx project)))
+                        (make-node-kind-info name doc project)
                         doc: doc)
     (void)) :void))
 

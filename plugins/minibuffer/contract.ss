@@ -76,8 +76,7 @@ prelude: :gerbil/core
 (def (read-from-minibuffer (question : :string) (initial : :string := "")
                            history: (history :? :symbol := #f)
                            setup: (setup :? :procedure := #f)) => :t
-  (let (setup (and setup (context-bind (current-context) setup)))
-    (with-service-provider (provider minibuffer-service Minibuffer) (Minibuffer-read-from-minibuffer provider question initial history setup))))
+  (with-service-provider (provider minibuffer-service Minibuffer) (Minibuffer-read-from-minibuffer provider question initial history setup)))
 
 ;; The plain string reader is only a typed user of the prompt protocol.
 (def (read-string (question : :string) (initial : :string := "")
@@ -89,6 +88,5 @@ prelude: :gerbil/core
   (:- (with-service-provider (provider minibuffer-service Minibuffer) (Minibuffer-minibuffer-history provider name)) :list))
 
 (def (active-prompt) => (Maybe prompt-display)
-  (:? (call-with-service-provider minibuffer-service
-        (lambda (provider)
-          (and provider (Minibuffer-active-prompt (Minibuffer provider))))) prompt-display))
+  (:? (let (provider (service-provider minibuffer-service))
+          (and provider (Minibuffer-active-prompt (Minibuffer provider)))) prompt-display))

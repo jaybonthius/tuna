@@ -3,7 +3,7 @@
 prelude: :gerbil/core
 
 (import (only-in :gerbil/expander
-                 import-module __module-registry module-context? module-context-id module-context-path
+                 import-module __module-registry module-context module-context? module-context-id module-context-path
                  module-context-import module-context-export import-set? import-set-source
                  module-import? module-import-source module-export-context module-export-phi
                  core-resolve-module-export module-binding? binding-id)
@@ -15,7 +15,7 @@ prelude: :gerbil/core
 
 ;; Read resolved imports, including only-in, rename-in and relative imports.
 ;; Do not follow a contract's imports: its own provider declares those uses.
-(def (module-imports (module : :t)) => :list
+(def (module-imports (module : module-context)) => :list
   (filter-map
    (lambda (import)
      (cond
@@ -40,7 +40,7 @@ prelude: :gerbil/core
 
 ;; Modules are already evaluated by init.ss's imports. Identity finds the
 ;; defining module even through renamed imports and re-exporting aggregators.
-(def (plugin-module (p : plugin)) => :t
+(def (plugin-module (p : plugin)) => (Maybe module-context)
   (let (found #f)
     (hash-for-each
      (lambda (_ module)
@@ -65,7 +65,7 @@ prelude: :gerbil/core
 
 ;; Gerbil's source package root, not the repository or a Tuna-specific path.
 ;; The package: value supplies the module-id prefix, also for compiled imports.
-(def (source-package (path : :string)) => :t
+(def (source-package (path : :string)) => (Maybe :string)
   (let walk ((directory (path-directory path)))
     (let (metadata (path-expand "gerbil.pkg" directory))
       (if (file-exists? metadata)
@@ -75,21 +75,7 @@ prelude: :gerbil/core
         (let (parent (path-directory (path-strip-trailing-directory-separator directory)))
           (and (not (equal? parent directory)) (walk parent)))))))
 
-;; Installed interfaces carry the package spelling even without source.
-(def (interface-package (module : :t)) => (Maybe :string)
-  (let (path (module-context-path module))
-    (and (string? path) (string-suffix? ".ssi" path)
-         (call-with-input-file path
-           (lambda (port)
-             (let loop ()
-               (let (item (read port))
-                 (cond
-                  ((eq? item package:) (let (prefix (read port))
-                                        (if (symbol? prefix) (symbol->string prefix) prefix)))
-                  ((keyword? item) (read port) (loop))
-                  (else #f)))))))))
-
-(def (same-package? (module : :t) (root : :t) (prefix :? :string)) => :boolean
+(def (same-package? (module : :t) (root : module-context) (prefix :? :string)) => :boolean
   (if prefix
     (let (id (symbol->string (module-context-id module)))
       (string-prefix? (string-append prefix "/") id))
@@ -104,15 +90,19 @@ prelude: :gerbil/core
 ;; including for filtered vocabulary-only imports; this is deliberately an
 ;; import rule, not an attempt to infer which execution paths call a method.
 (def (check-plugin-declarations! (p : plugin)) => :void
-  (let (root (plugin-module p))
-    ;; Locally defined init/config/evaluation plugins are user code, not
-    ;; exported package plugins. Their registrations still have receipts.
+  (let ((root (plugin-module p)) (source (plugin-source-path p)))
+    ;; Source-less distributions lack the original gerbil.pkg root: .ssi
+    ;; records only a module directory. Refuse rather than miss siblings.
+    (when (and source (not (file-exists? source)))
+      (error (string-append "no source package found for plugin "
+                            (symbol->string (plugin-name p))
+                            "; Tuna checks a plugin's declared services against its source")))
+    ;; Locally defined init/config/evaluation plugins are user code.
+    ;; Their registrations still have receipts.
     ;; The start-up program owns the session evaluator and block follower;
     ;; neither is a package declared by init.ss. Both run the user's code.
     (when (and root (not (memq (module-context-id root) '(tuna/boot tuna/config-blocks))))
-      (let* ((source (plugin-source-path p))
-             (prefix (or (and source (file-exists? source) (source-package source))
-                         (interface-package root)))
+      (let* ((prefix (and source (source-package source)))
              (declared (append (plugin-requires p) (plugin-optional p) (plugin-provides p)))
              (problems []))
         (let walk ((pending [root]) (seen []))

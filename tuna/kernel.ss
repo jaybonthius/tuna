@@ -26,7 +26,6 @@ prelude: :gerbil/core
   current-context
   call-with-context
   context-bind
-  call-with-service-provider
   with-service-provider
   set-plugin-order!
   context-defer!

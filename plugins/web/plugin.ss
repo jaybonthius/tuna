@@ -74,8 +74,7 @@ prelude: :gerbil/core
 (def (render-screen) => :string
   (let (renderer (service-provider renderer-service))
     (if renderer
-      (:- (call-with-service-provider renderer-service
-            (lambda (provider) (Renderer-render-screen (Renderer provider)))) :string)
+      (:- (Renderer-render-screen (Renderer renderer)) :string)
       "<main id=\"screen\"><p>No renderer is active.</p></main>")))
 
 ;; SCREEN with REVISION as data-revision on its root element, so that

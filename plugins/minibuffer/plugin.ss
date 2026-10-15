@@ -33,7 +33,7 @@
 (defsetting minibuffer-history-length 100
   "Maximum entries in each named minibuffer history; #f keeps every entry, 0 keeps none.")
 
-(defclass minibuffer-state ((ctx : context) (prompts : :list)
+(defclass minibuffer-state ((prompts : :list)
                       (keymap : entry-table)
                       (idle : buffer)
                       (histories : HashTable))
@@ -96,10 +96,8 @@
   (prompt-keymap (lambda (self) self.keymap))
   (prompt-input (lambda (self) (text-string (text-node-content self.answer))))
   (prompt-set-exit-check! (lambda (self check)
-                            (set! self.exit-check (context-bind (current-context) check))))
+                            (set! self.exit-check check)))
   (prompt-exit! (lambda (self value history-text)
-                  (call-with-context (minibuffer-state-ctx self.owner)
-                    (lambda ()
                   (using (owner self.owner : minibuffer-state)
                     (unless (and self.waiting (eq? self (car owner.prompts)))
                       (error "Not in the innermost minibuffer"))
@@ -111,7 +109,7 @@
                             (hash-put! owner.histories self.history-name
                                        (trim-history (cons history-text
                                                           (history-list owner self.history-name)))))
-                          (resume! self.waiting value))))))))))
+                          (resume! self.waiting value))))))))
 
 ;; Navigation saves the unfinished input on first M-p; M-n returns to it.
 (def (move-history! (p : prompt) (delta : :fixnum)) => :void
@@ -224,7 +222,7 @@
     (set-buffer-setting! idle no-other-view #t)
     (context-add-buffer! ctx idle)
     (add-locked-view idle side: 'bottom size: 'content)
-    (using (self (minibuffer-state ctx: ctx prompts: [] keymap: (new-keymap) idle: idle histories: (make-hash-table-eq)) : minibuffer-state)
+    (using (self (minibuffer-state prompts: [] keymap: (new-keymap) idle: idle histories: (make-hash-table-eq)) : minibuffer-state)
       (context-add-session-slot! ctx 'minibuffer-history version: 1
                                  save: (lambda () (save-histories self))
                                  restore: (lambda (data) (restore-histories! self data)))

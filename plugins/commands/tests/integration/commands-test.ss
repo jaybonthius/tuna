@@ -16,21 +16,19 @@ prelude: :gerbil/core
 
 (def commands-test
   (test-suite "tuna/plugins/commands"
-    (test-case "dispatch checks the activating caller and command bodies keep their owner"
+    (test-case "registrations made by a command belong to its defining plugin"
       (call-with-fresh-kernel [commands]
         (lambda ()
-          (defplugin (undeclared-registration ctx) "No Commands declaration."
-            (context-define-command! ctx 'bad void))
-          (check (with-catch exception-summary
-                   (lambda () (activate-plugin! undeclared-registration)))
-                 => "Plugin used an undeclared service undeclared-registration commands")
-          (defplugin (owned-command ctx) "Only Commands is declared."
+          (defplugin (owned-command ctx) "Registers a command from another command."
             requires: [commands-service]
-            (defcommand (owned-action) "An undeclared lookup."
-              (service-provider input-service)))
+            (defcommand (install-action) "Install another action."
+              (defcommand (created-action) "Owned by this plugin." 'created)))
           (activate-plugin! owned-command)
-          (check (with-catch exception-summary (lambda () (call-command 'owned-action)))
-                 => "Plugin used an undeclared service owned-command input"))))
+          (call-command 'install-action)
+          (check (entry-owner (command-entry 'created-action)) => 'owned-command)
+          (check (call-command 'created-action) => 'created)
+          (deactivate-plugin! owned-command)
+          (check (command-entry 'created-action) => #f))))
 
     (test-case "the same owner's command leaves only its replacement"
       (for-each

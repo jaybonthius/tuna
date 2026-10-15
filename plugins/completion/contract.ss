@@ -69,9 +69,8 @@ prelude: :gerbil/core
   (with-service-provider (provider completion-service Completion) (Completion-completing-read provider question table require-match initial history default)))
 
 (def (current-completion-session) => (Maybe CompletionSession)
-  (:? (call-with-service-provider completion-service
-        (lambda (provider)
-          (and provider (Completion-current-session (Completion provider))))) CompletionSession))
+  (:? (let (provider (service-provider completion-service))
+          (and provider (Completion-current-session (Completion provider)))) CompletionSession))
 
 (def (context-define-completion-style! (ctx : context) (style : completion-style)
                                        priority: (priority : :fixnum := 0)) => :void
@@ -82,7 +81,7 @@ prelude: :gerbil/core
 ;; An annotator may return #f to decline, or a field list (including []).
 (def (context-define-annotator! (ctx : context) (category : :symbol) (annotate : :procedure)
                                priority: (priority : :fixnum := 0)) => :void
-  (:- (with-service-provider (provider completion-service Completion) (context-add-entry! ctx (Completion-annotators provider) category (context-bind ctx annotate) priority: priority)) :void))
+  (:- (with-service-provider (provider completion-service Completion) (context-add-entry! ctx (Completion-annotators provider) category annotate priority: priority)) :void))
 
 (def (strings->candidates (strings : :list)) => :list
   (map (lambda ((text : :string)) (make-candidate text: text value: text key: text)) strings))

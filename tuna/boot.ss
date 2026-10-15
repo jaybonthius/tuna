@@ -1063,23 +1063,21 @@ prelude: :gerbil/core
                       prepare: (prepare : :procedure := void)
                       recover: (recover : :procedure := void)) => :void
   (when new (check-plugin-declarations! new))
-  (call-with-context #f
-    (lambda ()
-      (let ((fixed (startup-closure old))
-            (closure (plugin-deactivation-closure old)))
-        (when fixed (error "Restart required for startup service" (car fixed)))
-        (let ((apply (lambda ()
-                       (deactivate-plugin! old)
-                       (prepare)
-                       (when new
-                         (activate-plugin! new)
-                         (unless (plugin-active? new) (error "Replacement did not activate" (plugin-name new))))))
-              (rollback (lambda ()
-                          (when new (deactivate-plugin! new))
-                          (recover)
-                          (activate-plugin! old)
-                          (for-each activate-plugin! (cdr closure)))))
-          (call-with-configuration-restart (map plugin-name closure) apply rollback))))))
+  (let ((fixed (startup-closure old))
+        (closure (plugin-deactivation-closure old)))
+    (when fixed (error "Restart required for startup service" (car fixed)))
+    (let ((apply (lambda ()
+                   (deactivate-plugin! old)
+                   (prepare)
+                   (when new
+                     (activate-plugin! new)
+                     (unless (plugin-active? new) (error "Replacement did not activate" (plugin-name new))))))
+          (rollback (lambda ()
+                      (when new (deactivate-plugin! new))
+                      (recover)
+                      (activate-plugin! old)
+                      (for-each activate-plugin! (cdr closure)))))
+      (call-with-configuration-restart (map plugin-name closure) apply rollback))))
 
 (def (stays-on (p : plugin)) => :t
   (let (raised (with-catch (lambda (e) e) (lambda () (restart-plugin! p #f) #f)))
@@ -1251,12 +1249,13 @@ prelude: :gerbil/core
 ;; so reload cannot diff or restart it. Its one environment lasts until exit.
 (def initial-evaluation-context (make-parameter #f))
 
-(defclass configuration-provider ((environment : top-context)
+(defclass configuration-provider ((owner : context)
+                                  (environment : top-context)
                                   (restart-wrappers : entry-table)) final: #t)
 
 (implement Configuration configuration-provider
   (activate! (lambda (self target order) (activate-plugin! target order: order)))
-  (reload! (lambda (self) (:- (call-with-context #f (lambda () (reload-report-text (reload-configuration!)))) :string)))
+  (reload! (lambda (self) (reload-report-text (reload-configuration!))))
   (swap! (lambda (self old new) (restart-plugin! old new)))
   (set-restart-wrapper!
    (lambda (self ctx wrapper)
@@ -1264,6 +1263,8 @@ prelude: :gerbil/core
        (when old
          (let (attempt (context-add-entry! ctx (new-entry-table) 'restart #f))
            (error "Restart wrapper already registered" (entry-owner old) (entry-owner attempt))))
+       ;; An around-restart callback can register further effects later;
+       ;; those belong to its participant, not to the command that swaps.
        (context-add-entry! ctx self.restart-wrappers 'restart (context-bind ctx wrapper))
        (void))))
   (restart (lambda (self owners apply rollback)
@@ -1273,13 +1274,14 @@ prelude: :gerbil/core
                  (with-catch (lambda (e) (rollback) (raise e)) apply)))))
   (last-report (lambda (self) last-report-text))
   (evaluate (lambda (self form)
-              (parameterize ((current-expander-context self.environment))
-                (eval form)))))
+              (call-with-context self.owner
+                (lambda ()
+                  (parameterize ((current-expander-context self.environment))
+                    (eval form)))))))
 
 (defplugin (session-owner ctx)
   "Owns live evaluation, reload init.ss, and configuration reports."
   provides: [configuration-service]
-  unchecked: #t
   ;; Interactive customizations win ordinary configuration ties, even after
   ;; declarations are reordered or added by a reload.
   (set-plugin-order! session-owner (##greatest-fixnum))
@@ -1292,7 +1294,7 @@ prelude: :gerbil/core
     (parameterize ((current-expander-context environment))
       (eval '(import :tuna/config)))
     (context-provide! ctx configuration-service
-                      (Configuration (configuration-provider environment: environment
+                      (Configuration (configuration-provider owner: ctx environment: environment
                                                               restart-wrappers: (new-entry-table))))))
 
 ;; `tuna check`: load CHOICE's file without turning anything on. Returns
