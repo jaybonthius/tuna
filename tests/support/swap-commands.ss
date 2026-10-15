@@ -7,7 +7,7 @@ prelude: :gerbil/core
 (import :tuna/plugins/commands/contract
         :tuna/kernel
         :tuna/plugins/keys/contract
-        :tuna/configuration
+        (except-in :tuna/configuration activate-plugin!)
         "../../plugins/renderer/tests/support/plain-text-renderer"
         "../../plugins/layout/tests/support/two-views"
         "../../plugins/buffers/tests/support/toy-buffers")

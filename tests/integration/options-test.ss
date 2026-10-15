@@ -15,7 +15,7 @@
         :tuna/boot
         :tuna/lib/plugin-options
         :std/interface
-        :tuna/configuration
+        (except-in :tuna/configuration activate-plugin!)
         :tuna/plugins/keys/contract
         :tuna/plugins/commands/plugin
         :tuna/plugins/keys/plugin
@@ -66,6 +66,7 @@
 (defclass configuration-stub ((reloads : :fixnum) (last : :t)) final: #t)
 
 (implement Configuration configuration-stub
+  (activate! (lambda (self target order) (error "This configuration double does not activate plugins")))
   (set-restart-wrapper! (lambda (self ctx wrapper) (void)))
   (restart (lambda (self owners apply rollback)
              (with-catch (lambda (e) (rollback) (raise e)) apply)))
@@ -428,7 +429,7 @@
             (path-expand "mine.ss" directory)
             (string-append "(import :tuna/kernel :tuna/lib/plugin-options \"" test-plugins-module "\")\n"
                            "(export mine)\n"
-                           "(defplugin mine \"" version "\" (when (plugin-option mine 'bad) (error \"told to fail\")) (probe-on! 'mine))\n"
+                           "(defplugin mine \"" version "\" optional: [probe-service fixed-service] (when (plugin-option mine 'bad) (error \"told to fail\")) (probe-on! 'mine))\n"
                            "(defplugin-options mine (bad #f \"Fail.\" boolean-type))\n")))
          (def (write-init-mine line)
            (write-file-string

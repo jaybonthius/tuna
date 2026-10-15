@@ -18,6 +18,7 @@ prelude: :gerbil/core
 (defplugin (extended-command ctx)
   "M-x: choose and run a visible command, remembering recent choices."
   requires: [commands-service completion-service input-service buffers-service]
+  optional: [completion-ui-service]
   (define-command ctx (execute-extended-command) "Choose a command by name, then run it as if its keys were pressed."
     (let* ((origin (current-buffer))
            (focus (or (view-node (selected-view)) (buffer-root origin)))

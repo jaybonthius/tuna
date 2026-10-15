@@ -21,4 +21,5 @@ prelude: :gerbil/core
 (defplugin (annotations ctx)
   "Command key bindings and first-line documentation beside completion candidates."
   requires: [completion-service commands-service input-service buffers-service]
+  optional: [completion-ui-service]
   (context-define-annotator! ctx 'command annotate-command))

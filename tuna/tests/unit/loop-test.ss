@@ -118,27 +118,19 @@
   provides: [dummy-service]
   (context-provide! ctx dummy-service (make-dummy)))
 
-;; An Input provider whose arrival reads a service only it declares, and a
-;; plugin that declares nothing, as a transport may: the transport's request
-;; thread inherits its context when it submits input.
-(def probe-saw-dummy? #f)
+;; Arrival classifies on a foreign thread without consulting any service.
+(def probe-arrived? #f)
 (defstruct probing-input () final: #t)
 (defmethod {resolve! probing-input} (lambda (self item) #f))
 (defmethod {arrival probing-input}
   (lambda (self item)
-    (set! probe-saw-dummy? (and (service-provider dummy-service) #t))
+    (set! probe-arrived? #t)
     'queue))
 
 (defplugin (probing-input-provider ctx)
-  "Classifies input after reading the dummy service."
-  requires: [dummy-service]
+  "Classifies input without services."
   provides: [input-service]
   (context-provide! ctx input-service (make-probing-input)))
-
-(def bystander-context #f)
-(defplugin (bystander ctx)
-  "Declares no services."
-  (set! bystander-context ctx))
 
 (defplugin (dummy-user ctx)
   "Requires the dummy service."
@@ -239,13 +231,18 @@
             (settled-message)
             (check log => '(a))))))
 
-    (test-case "input arrival runs under the input provider, not the submitting plugin"
-      (set! probe-saw-dummy? #f)
-      (call-with-fresh-kernel [dummy-provider probing-input-provider test-messages test-display bystander]
+    (test-case "input arrival needs no service or submitting-thread kernel"
+      (set! probe-arrived? #f)
+      (call-with-fresh-kernel [probing-input-provider test-messages test-display]
         (lambda ()
-          (start-editor-loop!)
-          (call-with-context bystander-context (lambda () ((input-submitter) "x")))
-          (check probe-saw-dummy? => #t))))
+          (let (submit (input-submitter))
+            (start-editor-loop!)
+            (thread-join!
+             (thread-start!
+              (make-root-thread (cut thread-main (lambda () (submit "x")))
+                                'arrival-without-services)))
+            (check probe-arrived? => #t)
+            (check (service-provider dummy-service) => #f)))))
 
     (test-case "a failing task is reported and the loop continues"
       (with-loop

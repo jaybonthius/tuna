@@ -69,4 +69,4 @@ prelude: :gerbil/core
                                  (lookup : :procedure)
                                  priority: (priority : :fixnum := 0))
   => :void
-  (:- (with-service-provider (provider settings-service Settings) (Settings-add-scope! provider ctx name (context-bind ctx lookup) priority)) :void))
+  (:- (with-service-provider (provider settings-service Settings) (Settings-add-scope! provider ctx name lookup priority)) :void))

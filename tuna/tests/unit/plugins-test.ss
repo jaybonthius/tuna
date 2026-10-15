@@ -56,10 +56,8 @@
 (def (greeting provider)
   (and provider (Greeter-greet (Greeter provider))))
 
-(def (greeter-dispatch-context (svc : service)) => (Maybe context)
-  (with-service-provider (provider svc Greeter)
-    (Greeter-greet provider)
-    (current-context)))
+(def (greeter-dispatch (svc : service)) => :string
+  (with-service-provider (provider svc Greeter) (Greeter-greet provider)))
 
 (defplugin (lifecycle-watcher ctx)
   "Notes plugin events, whether the plugin is then active, and greeter changes."
@@ -168,47 +166,36 @@
           (let (alias (new-service 'greeter is-Greeter? tier: 'live doc: "Same slot."))
             (check (service-provider alias) => #f)
             (activate-plugin! greeter-a order: 1)
-            (let (ctx (greeter-dispatch-context greeter-service))
-              (set-plugin-order! greeter-a 3)
-              (check (greeter-dispatch-context alias) => ctx)
-              (check (with-catch exception-summary (lambda () (activate-plugin! greeter-b)))
-                     => "Service already has a provider greeter greeter-a greeter-b")
-              (check (greeter-dispatch-context alias) => ctx))
+            (check (greeter-dispatch greeter-service) => "a")
+            (set-plugin-order! greeter-a 3)
+            (check (greeter-dispatch alias) => "a")
+            (check (with-catch exception-summary (lambda () (activate-plugin! greeter-b)))
+                   => "Service already has a provider greeter greeter-a greeter-b")
+            (check (greeter-dispatch alias) => "a")
             (deactivate-plugin! greeter-a)
             (check (service-provider alias) => #f)
             (activate-plugin! greeter-b)
-            (check (greeting (service-provider alias)) => "b")))))
+            (check (greeter-dispatch alias) => "b")))))
 
-    (test-case "warm dispatch retains activation, active and cleanup owner scopes"
+    (test-case "later hook registrations belong to the callback owner"
       (call-with-fresh-kernel []
         (lambda ()
-          (take-log!)
-          (let (owner-context #f)
-            (defplugin (cache-owner ctx) "Warms dispatch while activating and cleaning up."
-              provides: [greeter-service]
-              (set! owner-context ctx)
-              (context-provide! ctx greeter-service (make-greeter "cached"))
-              (check (greeter-dispatch-context greeter-service) => ctx)
-              (context-defer! ctx
-                (lambda () (note! (greeter-dispatch-context greeter-service)))))
-            (activate-plugin! cache-owner)
-            (check (current-context) => #f)
-            (check (greeter-dispatch-context greeter-service) => owner-context)
-            (check (call-with-context (:- owner-context context)
-                     (lambda () (greeter-dispatch-context greeter-service)))
-                   => owner-context)
-            (check (current-context) => #f)
-            (deactivate-plugin! cache-owner)
-            (check (take-log!) => [owner-context])
-            (check (service-provider greeter-service) => #f)))))
+          (defplugin (registering-hook ctx) "Registers an entry when its hook runs."
+            (context-add-hook! ctx test-hook 'register
+              (lambda (_) (context-add-entry! (current-context) table 'hook-slot 'owned))))
+          (activate-plugin! registering-hook)
+          (run-hook test-hook #f)
+          (check (entry-owner (entry-table-ref table 'hook-slot)) => 'registering-hook)
+          (deactivate-plugin! registering-hook)
+          (check (entry-table-ref table 'hook-slot) => #f))))
 
-    (test-case "warm cells clear the provider and owner after failed activation"
+    (test-case "warm cells clear the provider after failed activation"
       (call-with-fresh-kernel []
         (lambda ()
           (defplugin (cached-failure ctx) "Provides, warms dispatch, then fails."
             provides: [greeter-service]
             (context-provide! ctx greeter-service (make-greeter "bad"))
-            (check (greeter-dispatch-context greeter-service) => ctx)
+            (check (greeter-dispatch greeter-service) => "bad")
             (error "activation failed"))
           (check (with-catch exception-summary (lambda () (activate-plugin! cached-failure)))
                  => "activation failed")
@@ -218,32 +205,20 @@
           (check (greeting (service-provider greeter-service)) => "a")
           (check (current-context) => #f))))
 
-    (test-case "service cells and self-use checks follow nested kernel selection"
+    (test-case "service cells follow nested kernel selection"
       (call-with-fresh-kernel [greeter-a]
         (lambda ()
-          (let ((alias (new-service 'greeter is-Greeter? tier: 'live doc: "Same slot."))
-                (a-context (greeter-dispatch-context greeter-service)))
-            (check (greeting (service-provider alias)) => "a")
+          (let (alias (new-service 'greeter is-Greeter? tier: 'live doc: "Same slot."))
+            (check (greeter-dispatch alias) => "a")
             (call-with-fresh-kernel [greeter-b]
               (lambda ()
-                (check (greeting (service-provider greeter-service)) => "b")
-                (check (greeting (service-provider alias)) => "b")
-                (check (with-catch exception-summary
-                         (lambda ()
-                           (call-with-context (:- a-context context)
-                             (lambda () (service-provider greeter-service)))))
-                       => "Plugin used an undeclared service greeter-a greeter")))
-            (check (greeting (service-provider alias)) => "a")
-            (check (greeter-dispatch-context greeter-service) => a-context)))))
-    (test-case "an undeclared activating owner is rejected even without a provider"
+                (check (greeter-dispatch greeter-service) => "b")
+                (check (greeter-dispatch alias) => "b")))
+            (check (greeter-dispatch alias) => "a")
+            (check (greeter-dispatch greeter-service) => "a")))))
+    (test-case "optional services do not delay activation or create required dependents"
       (call-with-fresh-kernel []
         (lambda ()
-          (check (service-provider greeter-service) => #f)
-          (defplugin (undeclared ctx) "Undeclared lookup."
-            (service-provider greeter-service))
-          (check (with-catch exception-summary (lambda () (activate-plugin! undeclared)))
-                 => "Plugin used an undeclared service undeclared greeter")
-          (check (plugin-active? undeclared) => #f)
           (defplugin (optional-user ctx) "Explicit guarded lookup."
             optional: [greeter-service]
             (note! (service-provider greeter-service)))
@@ -254,7 +229,7 @@
           (deactivate-plugin! greeter-a)
           (check (plugin-active? optional-user) => #t))))
 
-    (test-case "kernel message needs no declaration, with a provider or stderr"
+    (test-case "kernel message uses a provider or stderr"
       (call-with-fresh-kernel []
         (lambda ()
           (defplugin (logging-owner ctx) "Uses the kernel message facility."
@@ -264,11 +239,7 @@
                  => ["" "No Messages provider\n"])
           (activate-plugin! test-messages)
           (run-hook test-hook "A Messages provider")
-          (check (current-message) => "A Messages provider")
-          (defplugin (raw-messages-user ctx) "Raw service access still needs a declaration."
-            (service-provider messages-service))
-          (check (with-catch exception-summary (lambda () (activate-plugin! raw-messages-user)))
-                 => "Plugin used an undeclared service raw-messages-user messages"))))
+          (check (current-message) => "A Messages provider"))))
 
     (test-case "a provider may use its own service"
       (call-with-fresh-kernel []
@@ -292,13 +263,6 @@
                  => "Service already has a provider counter duplicate-provider duplicate-provider")
           (check (service-provider counter-service) => #f))))
 
-    (test-case "provision must be declared statically"
-      (call-with-fresh-kernel []
-        (lambda ()
-          (defplugin (undeclared-provider ctx) "Missing provides."
-            (context-provide! ctx greeter-service (make-greeter "bad")))
-          (check (with-catch exception-summary (lambda () (activate-plugin! undeclared-provider)))
-                 => "Plugin provided an undeclared service undeclared-provider greeter"))))
 
     (test-case "entry ties follow supplied rank when the older owner reloads"
       (call-with-fresh-kernel []

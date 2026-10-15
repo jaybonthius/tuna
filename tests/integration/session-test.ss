@@ -118,6 +118,7 @@
 
 (defplugin (restart-owner ctx)
   "Owns state whose cleanup runs before its session slot is removed."
+  optional: [buffers-service]
   requires: [session-service]
   provides: [restart-state-service]
   (set! owned-value 10)
@@ -129,6 +130,7 @@
 
 (defplugin (restart-replacement ctx)
   "Restores the neutral saved state into an alternative provider."
+  optional: [buffers-service]
   requires: [session-service]
   provides: [restart-state-service]
   (set! owned-value 100)
@@ -142,6 +144,7 @@
 
 (defplugin (restart-dependent ctx)
   "Keeps separate state and restarts with its required provider."
+  optional: [buffers-service]
   requires: [session-service restart-state-service]
   (set! dependent-value 20)
   (context-add-session-slot! ctx 'restart-dependent version: 1

@@ -32,9 +32,11 @@ prelude: :gerbil/core
 
 (import (except-in :tuna/prelude read-module-body)
         :tuna/kernel
+        (only-in :tuna/configuration activate-plugin!)
         :tuna/lib/configuration)
 (export (import: :tuna/prelude)
         use-plugin
+        activate-plugin!
         init-user-code
         (phi: +1 read-module-body))
 
@@ -51,7 +53,7 @@ prelude: :gerbil/core
           #'(declare-plugin! plugin-name
                              (let ()
                                (defplugin block "Code attached to a plugin by a config: block in init.ss."
-                                 requires: [] unchecked: #t body ...)
+                                 requires: [] body ...)
                                block)
                              '(body ...)
                              source
@@ -108,7 +110,7 @@ prelude: :gerbil/core
           ;; An explicit requires: makes a leading requires: of the user's
           ;; an ordinary expression of the body.
           (defplugin init "Your own code in init.ss, activated after the plugins it declares."
-            requires: [] unchecked: #t body ...)
+            requires: [] body ...)
           init)
         '(body ...)))))
 

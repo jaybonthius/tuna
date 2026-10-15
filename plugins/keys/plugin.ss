@@ -284,7 +284,11 @@ prelude: :gerbil/core
 ;; The quit key interrupts; every other key or pointer event is queued.
 (defmethod {arrival global-keys}
   (lambda (self event)
-    (if (and (key-event? event) (equal? (key-description event) quit-key)) 'interrupt 'queue)))
+    ;; Alt can never produce the quit key. In particular, Mac Option
+    ;; policy reads settings, which arrival must not consult off the baton.
+    (if (and (key-event? event) (not (key-event-alt? event))
+             (equal? (key-description event) quit-key))
+      'interrupt 'queue)))
 
 ;; A sequence is effective only if every preceding prefix resolves in the
 ;; same active stack. This excludes shadowed exact bindings and prefixes.
@@ -356,7 +360,7 @@ prelude: :gerbil/core
 
 (defmethod {set-click-resolver! global-keys}
   (lambda (self ctx resolve)
-    (context-add-entry! ctx (global-keys-click-resolvers self) 'click (context-bind ctx resolve))
+    (context-add-entry! ctx (global-keys-click-resolvers self) 'click resolve)
     (void)))
 
 (defmethod {keymap-generation global-keys}

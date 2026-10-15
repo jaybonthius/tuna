@@ -32,6 +32,18 @@
 
 (def timers-test
   (test-suite "tuna/lib/timers"
+    (test-case "later timer registrations belong to the timer owner"
+      (with-loop
+       (lambda ()
+         (let (entries (new-entry-table))
+           (defplugin (registering-timer ctx) "Registers an entry on a later tick."
+             (context-run-with-timer! ctx 0.01 #f
+               (lambda () (context-add-entry! (current-context) entries 'later 'owned))))
+           (call-on-editor-loop (lambda () (activate-plugin! registering-timer)))
+           (check (wait-until (lambda () (entry-table-ref entries 'later))) => #t)
+           (check (entry-owner (entry-table-ref entries 'later)) => 'registering-timer)
+           (call-on-editor-loop (lambda () (deactivate-plugin! registering-timer)))
+           (check (entry-table-ref entries 'later) => #f)))))
     (test-case "timers run as tasks and stop with their plugin"
       (with-loop
        (lambda ()

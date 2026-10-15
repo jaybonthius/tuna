@@ -11,6 +11,7 @@ prelude: :gerbil/core
         reload-configuration-report
         last-configuration-report
         swap-plugins
+        activate-plugin!
         evaluate-form
         evaluate-forms
         (struct-out configuration-report)
@@ -21,6 +22,8 @@ prelude: :gerbil/core
         call-with-configuration-restart)
 
 (interface Configuration
+  ;; Checked package activation; raw runtime activation is not public.
+  (activate! (target : plugin) (order :? :fixnum)) => :void
   ;; Load init.ss again as a trial, apply what changed, and return the
   ;; reload report. The caller holds the baton.
   (reload!) => :string
@@ -46,6 +49,10 @@ prelude: :gerbil/core
 
 (def (last-configuration-report) => (Maybe :string)
   (:? (with-service-provider (provider configuration-service Configuration) (Configuration-last-report provider)) :string))
+
+(def (activate-plugin! (target : plugin) order: (rank :? :fixnum := #f)) => :void
+  (:- (with-service-provider (provider configuration-service Configuration)
+        (Configuration-activate! provider target rank)) :void))
 
 (def (swap-plugins (old : plugin) (new :? plugin)) => :void
   (:- (with-service-provider (provider configuration-service Configuration)

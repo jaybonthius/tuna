@@ -7,7 +7,7 @@ prelude: :gerbil/core
         :std/test
         :tuna/kernel
         :tuna/boot
-        :tuna/configuration
+        (except-in :tuna/configuration activate-plugin!)
         :tuna/plugins/commands/contract
         :tuna/plugins/keys/contract
         "../../tuna/tests/support/kernel")

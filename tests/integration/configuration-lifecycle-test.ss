@@ -6,7 +6,7 @@ prelude: :gerbil/core
         :std/test
         :tuna/kernel
         :tuna/boot
-        :tuna/configuration
+        (except-in :tuna/configuration activate-plugin!)
         "../../tuna/tests/support/kernel")
 (export configuration-lifecycle-test)
 
@@ -80,7 +80,7 @@ prelude: :gerbil/core
         (unwind-protect
           (begin
             (write-file-string fixture
-              "(import :tuna/kernel :tuna/configuration)\n(export watcher late events)\n(def events [])\n(defplugin (watcher ctx) \"Watch lifecycle.\"\n (context-add-hook! ctx configuration-started-hook 'started\n  (lambda () (set! events (cons (list 'started (plugin-active? late)) events))))\n (context-add-hook! ctx configuration-stopping-hook 'stopping\n  (lambda () (set! events (cons (list 'stopping (plugin-active? late)) events))))\n (context-defer! ctx (lambda () (set! events (cons 'receipt events)))))\n(defplugin late \"Starts after the observer.\")\n")
+              "(import :tuna/kernel (except-in :tuna/configuration activate-plugin!))\n(export watcher late events)\n(def events [])\n(defplugin (watcher ctx) \"Watch lifecycle.\" optional: [configuration-service]\n (context-add-hook! ctx configuration-started-hook 'started\n  (lambda () (set! events (cons (list 'started (plugin-active? late)) events))))\n (context-add-hook! ctx configuration-stopping-hook 'stopping\n  (lambda () (set! events (cons (list 'stopping (plugin-active? late)) events))))\n (context-defer! ctx (lambda () (set! events (cons 'receipt events)))))\n(defplugin late \"Starts after the observer.\" optional: [configuration-service])\n")
             (write-file-string path
               "#lang :tuna/config\n(import \"fixture\")\n(use-plugin watcher)\n(use-plugin late)\n")
             (call-with-fresh-kernel []

@@ -440,11 +440,16 @@
   (filter-map
     (lambda ((name : :string))
       (and (name-within? file name "tuna/kernel")
-           (not (kernel-private-client? file))
+           (not (or (kernel-private-client? file)
+                    ;; The configuration gate alone calls raw activation.
+                    (and (equal? file "tuna/plugin-use.ss")
+                         (equal? (reference-target file name)
+                                 (source-path "tuna/kernel/plugins")))))
            (string-append file ": imports private kernel module " name "; use :tuna/kernel")))
     names))
 
-(def program-files '("tuna/main.ss" "tuna/boot.ss" "tuna/control.ss" "tuna/config-blocks.ss"))
+(def program-files '("tuna/main.ss" "tuna/boot.ss" "tuna/control.ss" "tuna/config-blocks.ss"
+                     "tuna/plugin-use.ss"))
 
 (def (program-reference-problems (file : :string) (names : :list)) => :list
   (filter-map
@@ -839,7 +844,9 @@
       (check (length (kernel-reference-problems "plugins/keys/tests/unit/plugin-test.ss"
                        '(":tuna/kernel/state" "../../../../tuna/kernel/entries"))) => 2)
       (check (kernel-reference-problems "tuna/tests/unit/plugins-test.ss" '(":tuna/kernel/state")) => [])
-      (check (length (kernel-reference-problems "tuna/tests/unit/jobs-test.ss" '(":tuna/kernel/state"))) => 1))
+      (check (length (kernel-reference-problems "tuna/tests/unit/jobs-test.ss" '(":tuna/kernel/state"))) => 1)
+      (check (kernel-reference-problems "tuna/plugin-use.ss" '(":tuna/kernel/plugins")) => [])
+      (check (length (kernel-reference-problems "tuna/plugin-use.ss" '(":tuna/kernel/state"))) => 1))
     (test-case "program code stays private from features and demo"
       (check (problem-count (source-reference-problems program-reference-problems (all-source-names))) => 0)
       (check (length (program-reference-problems "plugins/reload-config/plugin.ss" '(":tuna/boot"))) => 1)

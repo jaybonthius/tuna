@@ -23,7 +23,8 @@ prelude: :gerbil/core
         :tuna/kernel
         :tuna/lib/configuration
         :tuna/lib/plugin-options
-        :tuna/configuration
+        (except-in :tuna/configuration activate-plugin!)
+        (rename-in :tuna/plugin-use (activate-checked-plugin! activate-plugin!))
         :tuna/config-blocks)
 (export (struct-out config-choice report-entry startup-report reload-report)
         parse-command-line
@@ -334,6 +335,16 @@ prelude: :gerbil/core
                   (#f
                    (string-append "Loading " path " did not finish within "
                                   (seconds-text limit) " and was stopped. Look for a loop in the file.")))))
+          (when (configuration? result)
+            ;; Inspect every declaration before activating even the first one.
+            ;; Keep failures per plugin so unrelated declarations still start.
+            (set! (configuration-plugin-problems result)
+              (filter-map
+               (lambda ((d : declaration))
+                 (let (p (declaration-target d))
+                   (with-catch (lambda (e) (cons p (exception-summary e)))
+                     (lambda () (check-plugin-declarations! p) #f))))
+               (configuration-declarations result))))
           (remember-user-modules!)
           (cons result reloaded?))))))
 
@@ -857,8 +868,23 @@ prelude: :gerbil/core
                                 (find (lambda (pair) (eq? (cdr pair) d)) swaps))
                       (remove! d)))
                   (reverse old-declarations))
-        (let* ((changes (map classify new-declarations))
+        (let* ((all-changes (map classify new-declarations))
+               (problems (configuration-plugin-problems config))
+               (changes (filter (lambda ((c : change))
+                                  (not (assq (declaration-target (change-new c)) problems))) all-changes))
                (pending (filter (lambda ((c : change)) (not (eq? (change-kind c) 'keep))) changes)))
+          (for-each
+           (lambda ((c : change))
+             (let* ((d (change-new c)) (p (declaration-target d))
+                    (problem (assq p problems)) (old (change-old c)))
+               (when problem
+                 (set-working! (declaration-name d) (or old d))
+                 (decide! (plugin-name p))
+                 (record! (make-report-entry p (plugin-label p) (declaration-source d) 'failed
+                            (string-append (cdr problem)
+                              (if (and old (plugin-active? (declaration-target old)))
+                                "; the running version stays" "")))))))
+           all-changes)
           (for-each (lambda ((c : change))
                       (when (eq? (change-kind c) 'keep)
                         (set-working! (declaration-name (change-new c)) (change-new c))
@@ -1036,23 +1062,22 @@ prelude: :gerbil/core
 (def (restart-plugin! (old : plugin) (new :? plugin)
                       prepare: (prepare : :procedure := void)
                       recover: (recover : :procedure := void)) => :void
-  (call-with-context #f
-    (lambda ()
-      (let ((fixed (startup-closure old))
-            (closure (plugin-deactivation-closure old)))
-        (when fixed (error "Restart required for startup service" (car fixed)))
-        (let ((apply (lambda ()
-                       (deactivate-plugin! old)
-                       (prepare)
-                       (when new
-                         (activate-plugin! new)
-                         (unless (plugin-active? new) (error "Replacement did not activate" (plugin-name new))))))
-              (rollback (lambda ()
-                          (when new (deactivate-plugin! new))
-                          (recover)
-                          (activate-plugin! old)
-                          (for-each activate-plugin! (cdr closure)))))
-          (call-with-configuration-restart (map plugin-name closure) apply rollback))))))
+  (when new (check-plugin-declarations! new))
+  (let ((fixed (startup-closure old))
+        (closure (plugin-deactivation-closure old)))
+    (when fixed (error "Restart required for startup service" (car fixed)))
+    (let ((apply (lambda ()
+                   (deactivate-plugin! old)
+                   (prepare)
+                   (when new
+                     (activate-plugin! new)
+                     (unless (plugin-active? new) (error "Replacement did not activate" (plugin-name new))))))
+          (rollback (lambda ()
+                      (when new (deactivate-plugin! new))
+                      (recover)
+                      (activate-plugin! old)
+                      (for-each activate-plugin! (cdr closure)))))
+      (call-with-configuration-restart (map plugin-name closure) apply rollback))))
 
 (def (stays-on (p : plugin)) => :t
   (let (raised (with-catch (lambda (e) e) (lambda () (restart-plugin! p #f) #f)))
@@ -1224,11 +1249,13 @@ prelude: :gerbil/core
 ;; so reload cannot diff or restart it. Its one environment lasts until exit.
 (def initial-evaluation-context (make-parameter #f))
 
-(defclass configuration-provider ((environment : top-context)
+(defclass configuration-provider ((owner : context)
+                                  (environment : top-context)
                                   (restart-wrappers : entry-table)) final: #t)
 
 (implement Configuration configuration-provider
-  (reload! (lambda (self) (:- (call-with-context #f (lambda () (reload-report-text (reload-configuration!)))) :string)))
+  (activate! (lambda (self target order) (activate-plugin! target order: order)))
+  (reload! (lambda (self) (reload-report-text (reload-configuration!))))
   (swap! (lambda (self old new) (restart-plugin! old new)))
   (set-restart-wrapper!
    (lambda (self ctx wrapper)
@@ -1236,6 +1263,8 @@ prelude: :gerbil/core
        (when old
          (let (attempt (context-add-entry! ctx (new-entry-table) 'restart #f))
            (error "Restart wrapper already registered" (entry-owner old) (entry-owner attempt))))
+       ;; An around-restart callback can register further effects later;
+       ;; those belong to its participant, not to the command that swaps.
        (context-add-entry! ctx self.restart-wrappers 'restart (context-bind ctx wrapper))
        (void))))
   (restart (lambda (self owners apply rollback)
@@ -1245,13 +1274,14 @@ prelude: :gerbil/core
                  (with-catch (lambda (e) (rollback) (raise e)) apply)))))
   (last-report (lambda (self) last-report-text))
   (evaluate (lambda (self form)
-              (parameterize ((current-expander-context self.environment))
-                (eval form)))))
+              (call-with-context self.owner
+                (lambda ()
+                  (parameterize ((current-expander-context self.environment))
+                    (eval form)))))))
 
 (defplugin (session-owner ctx)
   "Owns live evaluation, reload init.ss, and configuration reports."
   provides: [configuration-service]
-  unchecked: #t
   ;; Interactive customizations win ordinary configuration ties, even after
   ;; declarations are reordered or added by a reload.
   (set-plugin-order! session-owner (##greatest-fixnum))
@@ -1264,7 +1294,7 @@ prelude: :gerbil/core
     (parameterize ((current-expander-context environment))
       (eval '(import :tuna/config)))
     (context-provide! ctx configuration-service
-                      (Configuration (configuration-provider environment: environment
+                      (Configuration (configuration-provider owner: ctx environment: environment
                                                               restart-wrappers: (new-entry-table))))))
 
 ;; `tuna check`: load CHOICE's file without turning anything on. Returns
@@ -1278,7 +1308,8 @@ prelude: :gerbil/core
           (with-catch exception-summary
             (lambda ()
               (parse-plugin-flags (configuration-flags loaded) args)
-              #f)))))))
+              (let (problems (configuration-plugin-problems loaded))
+                (and (pair? problems) (string-join (map cdr problems) "\n"))))))))))
 
 (def (missing-configuration-text (choice : config-choice)) => :string
   (string-append

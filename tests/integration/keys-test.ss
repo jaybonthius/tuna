@@ -64,6 +64,25 @@
 
 (def keys-test
   (test-suite "tuna/plugins/keys"
+    (test-case "arrival classifies every modifier path without reading settings"
+      (call-with-fresh-kernel [commands keys settings]
+        (lambda ()
+          (defplugin (no-arrival-settings ctx) "Fails if arrival reads any setting."
+            requires: [settings-service]
+            (context-add-setting-scope! ctx 'arrival
+              (lambda (s) (error "Arrival must not read settings")) priority: 100))
+          (activate-plugin! no-arrival-settings)
+          (let (input (Input (service-provider input-service)))
+            (for-each
+             (lambda (event) (check (Input-arrival input event) => 'queue))
+             [(keydown "x")
+              (keydown "≈" code: "KeyX" alt?: #t mac?: #t left?: #t)
+              (keydown "g" code: "KeyG" ctrl?: #t alt?: #t mac?: #t right?: #t)
+              (keydown "g" ctrl?: #t alt?: #t graph?: #t)
+              (keydown "g" ctrl?: #t alt?: #t)
+              (keydown "g" ctrl?: #t meta?: #t)
+              (pointer 'view 1)])
+            (check (Input-arrival input (keydown "g" ctrl?: #t)) => 'interrupt)))))
     (test-case "optional key queries accept an input provider with no Keys interface"
       (call-with-fresh-kernel [test-input]
         (lambda ()

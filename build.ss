@@ -12,7 +12,7 @@
      "kernel/ids" "kernel/entries" "kernel/state" "kernel/tasks"
      "kernel/plugins" "kernel/hooks" "kernel/loop" "kernel"
      "lib/timers" "lib/jobs" "lib/plugin-options" "lib/configuration"
-     "configuration" "prelude" "config" "config-blocks"
+     "configuration" "prelude" "config" "plugin-use" "config-blocks"
      (gxc: "boot" (extra-inputs: ("../starter/init.ss")))
      "control"
      (exe: "main" bin: "tuna"))

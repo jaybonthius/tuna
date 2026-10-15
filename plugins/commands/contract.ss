@@ -40,7 +40,7 @@ prelude: :gerbil/core
     (Commands-define-command! provider ctx
                               (make-command name: name
                                       procedure: (lambda () (call-with-task-owner ctx procedure))
-                                      doc: doc visible?: (context-bind ctx visible?)) source)) :void))
+                                      doc: doc visible?: visible?) source)) :void))
 
 (defsyntax (define-command stx)
   (syntax-case stx ()

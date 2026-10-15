@@ -289,8 +289,7 @@ prelude: :gerbil/core
   (:- (with-service-provider (provider layout-service Layout) (Layout-jump-to-frame-mark! provider name)) :symbol))
 
 (def (render-layout (target : :symbol) (render-view : :procedure)) => :t
-  (let (render-view (context-bind (current-context) render-view))
-    (with-service-provider (provider layout-service Layout) (Layout-render-layout provider target render-view))))
+  (with-service-provider (provider layout-service Layout) (Layout-render-layout provider target render-view)))
 
 ;; For layouts, on `kill-buffer-hook`: show another buffer in each of VIEWS
 ;; that shows B.

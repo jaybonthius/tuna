@@ -64,21 +64,25 @@
                doc: "A service for configuration tests."))
 
 (defplugin good "Turns the probe good on."
+  optional: [session-service]
   (probe-on! 'good))
 
 (defplugin provider "Provides the probe service."
+  optional: [session-service]
   provides: [probe-service]
   (context-provide! (current-context) probe-service 'probe)
   (probe-on! 'provider))
 
 ;; Outranks provider, so its dependents restart when it comes on.
 (defplugin better-provider "Provides the probe service as an alternative."
+  optional: [session-service]
   provides: [probe-service]
   (context-provide! (current-context) probe-service 'probe))
 
 ;; Provides the probe service, then ignores being asked to stop for about
 ;; a second, then fails.
 (defplugin stubborn-provider "Provides the probe service, ignores being stopped, then fails."
+  optional: [session-service]
   provides: [probe-service]
   (context-provide! (current-context) probe-service 'probe)
   (probe-on! 'stubborn)
@@ -90,12 +94,14 @@
   (error "stubborn-provider gave up"))
 
 (defplugin failing-provider "Provides the probe service, then fails."
+  optional: [session-service]
   provides: [probe-service]
   (context-provide! (current-context) probe-service 'probe)
   (probe-on! 'failing-provider)
   (error "failing-provider fails on purpose"))
 
 (defplugin dependent "Needs the probe service."
+  optional: [session-service]
   requires: [probe-service]
   (probe-on! 'dependent))
 
@@ -108,12 +114,14 @@
 ;; Spins until stopped. The loop has a body: gxc -O never finishes
 ;; compiling an empty self-loop (agents/guides/gerbil.md).
 (defplugin hanging "Never finishes activating."
+  optional: [session-service]
   (probe-on! 'hanging)
   (let spin ((n 0))
     (spin (if (fx< n 1000) (fx1+ n) 0))))
 
 ;; Counts its activations under its own name.
 (defplugin counted "Counts its activations."
+  optional: [session-service]
   (note-activation! 'counted)
   (probe-on! 'counted))
 
@@ -124,11 +132,13 @@
                doc: "A startup-tier service for configuration tests."))
 
 (defplugin fixed-provider "Provides the startup-tier service fixed."
+  optional: [session-service]
   provides: [fixed-service]
   (context-provide! (current-context) fixed-service 'fixed)
   (probe-on! 'fixed))
 
 (defplugin better-fixed-provider "Provides fixed as an alternative."
+  optional: [session-service]
   provides: [fixed-service]
   (context-provide! (current-context) fixed-service 'fixed)
   (probe-on! 'better-fixed))
@@ -158,6 +168,7 @@
 ;; Provides the startup-tier service fixed and needs probe, so while the
 ;; editor loop runs the kernel refuses to turn probe's provider off.
 (defplugin fixed-needs-probe "Provides fixed; needs probe."
+  optional: [session-service]
   provides: [fixed-service]
   requires: [probe-service]
   (context-provide! (current-context) fixed-service 'fixed)
@@ -178,6 +189,7 @@
 (def (last-greeting) => :t current-greeting)
 
 (defplugin optioned "Takes options."
+  optional: [session-service]
   (note-activation! 'optioned)
   (when (plugin-option optioned 'fail)
     (error "optioned was told to fail"))
@@ -195,6 +207,7 @@
 (def (dependent-greeting) => :t current-dependent-greeting)
 
 (defplugin optioned-dependent "Needs the probe service and takes an option."
+  optional: [session-service]
   requires: [probe-service]
   (note-activation! 'optioned-dependent)
   (set! current-dependent-greeting (plugin-option optioned-dependent 'greeting)))
@@ -208,6 +221,7 @@
 (def (fixed-n) => :t current-fixed-n)
 
 (defplugin fixed-optioned "Provides fixed; takes the option n."
+  optional: [session-service]
   provides: [fixed-service]
   (context-provide! (current-context) fixed-service 'fixed)
   (set! current-fixed-n (plugin-option fixed-optioned 'n)))
