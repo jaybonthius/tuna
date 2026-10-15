@@ -258,17 +258,18 @@ prelude: :gerbil/core
       (web-log.warnf "Ignored duplicate input %a." sequence))
      (else
       (hash-put! self.pending sequence event)
-      (if (fx> (hash-length self.pending) 64)
-        (begin
-          (hash-clear! self.pending)
-          (web-log.warnf "Dropped waiting input: more than 64 items."))
-        (let lp ()
-          (let (next (hash-get self.pending self.next))
-            (when next
-              (hash-remove! self.pending self.next)
-              (set! self.next (fx1+ self.next))
-              ((web-server-submit self) next)
-              (lp)))))))))
+      ;; A missing item that 64 later ones wait for is given up on, so
+      ;; input carries on from the earliest item that did arrive.
+      (when (fx> (hash-length self.pending) 64)
+        (web-log.warnf "Skipped missing input %a." self.next)
+        (set! self.next (apply min (hash-keys self.pending))))
+      (let lp ()
+        (let (next (hash-get self.pending self.next))
+          (when next
+            (hash-remove! self.pending self.next)
+            (set! self.next (fx1+ self.next))
+            ((web-server-submit self) next)
+            (lp))))))))
 
 (def (short-string? (value : :t)) => :boolean
   (and (string? value) (fx<= (string-length value) 64)))

@@ -137,17 +137,22 @@
            (Socket-close stream))
          (check (map key-event-key (recorded-items 3)) => ["a" "b" "c"]))))
 
-    (test-case "more than 64 waiting items are dropped and still acknowledged"
+    (test-case "a missing item that 64 later ones wait for is skipped; input carries on"
       (set! (input-recorder-items recorded) [])
       (with-web-tuna [test-messages recording-input web-transport]
        (lambda ()
          (let lp ((sequence 2))
            (when (<= sequence 66)
-             (check (post-json (keydown-json "early" #f sequence)) => 204)
+             (check (post-json (keydown-json (number->string sequence) #f sequence)) => 204)
              (lp (+ sequence 1))))
-         (check (post-json (keydown-json "a" #f 1)) => 204)
-         (check (post-json (keydown-json "b" #f 2)) => 204)
-         (check (map key-event-key (recorded-items 2)) => ["a" "b"]))))
+         ;; The missing item arriving late is ignored, still with 204.
+         (check (post-json (keydown-json "late" #f 1)) => 204)
+         (check (post-json (keydown-json "after" #f 67)) => 204)
+         (let (keys (map key-event-key (recorded-items 66)))
+           (check (car keys) => "2")
+           (check (list-ref keys 64) => "66")
+           (check (list-ref keys 65) => "after")
+           (check (member "late" keys) => #f)))))
 
     (test-case "key items preserve platform, held Option sides and AltGraph facts"
       (set! (input-recorder-items recorded) [])
