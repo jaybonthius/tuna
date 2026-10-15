@@ -1,4 +1,5 @@
-(import :std/error
+(import (only-in :gerbil/runtime/mop slot-ref)
+        :std/error
         :std/interface
         :std/test
         :tuna/kernel
@@ -309,6 +310,35 @@
                 (deactivate-plugin! named-hook)
                 (check (hook-callback-names test-hook) => '()))
               (set! late-hook-callback before))))))
+
+    (test-case "replacing entries and named hooks replaces their cleanup receipts"
+      (call-with-fresh-kernel []
+        (lambda ()
+          (let ((owner #f)
+                (other-table (new-entry-table))
+                (other-hook (new-hook 'other)))
+            (defplugin (replacing-owner ctx) "Replaces its registrations repeatedly."
+              (set! owner ctx)
+              (context-add-entry! ctx other-table 'slot 'other)
+              (context-add-hook! ctx other-hook 'same (lambda () (void)))
+              (for-each (lambda (n)
+                          (context-add-entry! ctx table 'slot n)
+                          (context-add-hook! ctx test-hook 'same (lambda (x) (note! [n x]))))
+                        (iota 1000)))
+            (activate-plugin! replacing-owner)
+            (check (length (slot-ref owner 'receipt)) => 4)
+            (check (slot-value) => 999)
+            (check (length (entry-table-entries table 'slot)) => 1)
+            (check (hook-callback-names test-hook) => '(same))
+            (take-log!)
+            (run-hook test-hook 'latest)
+            (check (take-log!) => [[999 'latest]])
+            (deactivate-plugin! replacing-owner)
+            (check (slot-ref owner 'receipt) => [])
+            (check (slot-value) => #f)
+            (check (entry-table-ref other-table 'slot) => #f)
+            (check (hook-callback-names test-hook) => [])
+            (check (hook-callback-names other-hook) => [])))))
 
     (test-case "receipts undo in reverse order"
       (call-with-fresh-kernel []

@@ -26,7 +26,8 @@ prelude: :gerbil/core
                   (serial   : :fixnum)
                   (value    : :t)
                   (doc      :? :string)
-                  (source   :? :string))
+                  (source   :? :string)
+                  (undo     :? :procedure))     ; its context's receipt inverse
   final: #t)
 
 (def (entry-outranks? (a : entry) (b : entry)) => :boolean

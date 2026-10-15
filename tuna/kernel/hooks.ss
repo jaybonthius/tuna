@@ -25,6 +25,8 @@ prelude: :gerbil/core
         hook-callback-name
         hook-callback-owner
         hook-callback-procedure
+        hook-callback-undo
+        hook-callback-undo-set!
         add-hook-callback!
         remove-hook-callback!
         current-hook-callbacks)
@@ -40,7 +42,8 @@ prelude: :gerbil/core
                          (home      : kernel)        ; the kernel whose plugin added it
                          (depth     : :fixnum)
                          (serial    : :fixnum)
-                         (procedure : :procedure))
+                         (procedure : :procedure)
+                         (undo      :? :procedure)) ; its context's receipt inverse
   final: #t)
 
 (def (new-hook (name : :symbol) doc: (doc : :string := "")) => hook
@@ -63,7 +66,7 @@ prelude: :gerbil/core
                          h.callbacks))
              (new (hook-callback name: name owner: owner home: (the-kernel) depth: depth
                                  serial: (if same (hook-callback-serial same) (next-id!))
-                                 procedure: procedure)))
+                                 procedure: procedure undo: #f)))
         (set! h.callbacks
           (let insert ((rest (if same (remq same h.callbacks) h.callbacks)))
             (match rest
