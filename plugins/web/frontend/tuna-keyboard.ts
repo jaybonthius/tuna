@@ -1,5 +1,5 @@
 import { action } from "datastar";
-import { enqueue } from "./input-queue";
+import { send } from "./input-sender";
 
 type KeydownFacts = Readonly<{
   type: "keydown";
@@ -38,7 +38,7 @@ action({
   apply({ evt }: { evt?: Event }): void {
     if (!(evt instanceof KeyboardEvent) || evt.type !== "keydown") return;
     if (!evt.isComposing) evt.preventDefault();
-    enqueue<KeydownFacts>({
+    send<KeydownFacts>({
       type: "keydown",
       key: evt.key,
       code: evt.code,

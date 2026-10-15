@@ -1,0 +1,21 @@
+# How do keys stay in order when the browser does not wait?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+browser: "Browser tab"
+server: "Tuna's web server"
+editor: "Editor thread"
+
+browser -> server: "1. key 'a' (number 1)"
+browser -> server: "2. key 'b' (number 2), sent at once"
+browser -> server: "3. key 'c' (number 3), sent at once"
+server -> browser: "4. 'got it' (204) for each, the moment it arrives"
+server -> editor: "5. 'a' arrived first: run it"
+server -> server: "6. 'c' arrived before 'b': hold 'c'"
+server -> editor: "7. 'b' arrives: run 'b', then the held 'c'"
+editor -> browser: "8. the new screen, over the screen stream"

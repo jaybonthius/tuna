@@ -7,7 +7,7 @@ Each milestone is a working program that can be shown in the browser. Write a sh
 Brief: [briefs/2026-10-architecture-skeleton.md](briefs/2026-10-architecture-skeleton.md). Goal: prove every seam in [the ADRs](../agents/adr/README.md) with the least feature code:
 
 - the editor loop accepts browser keys, runs commands under the baton, and redisplays to every connected tab;
-- clients authenticate with the launch token; events carry a client id and sequence number;
+- the browser opens a plain loopback URL, protected by Host/Origin checks; input is sent immediately and ordered by page-load numbers on the server;
 - a scratch buffer is one text node backed by the default persistent `TextStore`, shown through a view; positions are 1-based; typing, deleting, and basic motion work;
 - basic editing is a plugin: deactivating it removes its commands and keys, and reactivating restores them; two plugins binding the same key survive either deactivation order;
 - `C-g` interrupts a deliberately endless command;
