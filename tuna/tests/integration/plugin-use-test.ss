@@ -28,7 +28,7 @@
 (def (write-config (directory : :string) (body : :string)) => :string
   (let (path (path-expand "init.ss" directory))
     (write-file-string path
-      (string-append "#lang :tuna/config\n(import :tuna/kernel (except-in :tuna/configuration activate-plugin!) \"extension\" \"indirect\" \"vocabulary\")\n" body))
+      (string-append "#lang :tuna/config ; configuration language with a trailing comment\n(import :tuna/kernel (except-in :tuna/configuration activate-plugin!) \"extension\" \"indirect\" \"vocabulary\")\n" body))
     path))
 
 (def (start (path : :string)) => startup-report
@@ -51,59 +51,58 @@
        (call-with-fresh-kernel [] (lambda () (body path)))))))
 
 (def plugin-use-test
-(test-suite "declared imports at configuration activation"
-(test-case "third-party violations fail alone; required optional and provided declarations pass"
-(with-config "(use-plugin wrong)\n(use-plugin correct)\n(use-plugin required)\n(use-plugin provider)" (lambda (path)
-(let* ((report (start path)) (text (startup-report-text report)))
-  (check (status report "wrong") => 'failed)
-  (check (status report "correct") => 'on)
-  (check (status report "required") => 'on)
-  (check (status report "provider") => 'on)
-  (check (contains? text "wrong imports third-party/ledger-") => #t)
-  (check (contains? text "/vocabulary but does not declare ledger-service") => #t))
-))
-)
-(test-case "private module imports count, including filtered vocabulary-only imports"
-(with-config "(use-plugin indirect)" (lambda (path)
-(check (contains? (check-configuration (make-config-choice path "--config"))
-                  "indirect imports third-party/ledger-") => #t)
-(check (status (start path) "indirect") => 'failed)
-))
-)
-(test-case "init.ss and config blocks are user code and stay exempt"
-(with-config "(use-plugin provider)\n(use-plugin correct config: (service-provider ledger-service))\n(service-provider ledger-service)" (lambda (path)
-(check (check-configuration (make-config-choice path "--config")) => #f)
-(let (report (start path))
-  (check (status report "config: block of correct") => 'on)
-  (check (status report "your own code (plugin init)") => 'on))
-))
-)
-(test-case "reload refuses a newly declared invalid plugin"
-(with-config "(use-plugin correct)" (lambda (path)
-(start path)
-(write-file-string path (string-append (read-file-string path) "\n(use-plugin wrong)"))
-(let (text (reload-report-text (reload-configuration!)))
-  (check (contains? text "failed   wrong") => #t)
-  (check (contains? text "does not declare ledger-service") => #t))
-))
-)
-(test-case "evaluated activation uses the same gate and a refused swap leaves the owner on"
-(with-config "(use-plugin correct)" (lambda (path)
-(start path)
-(check (contains? (raised-text (lambda () (evaluate-form '(activate-plugin! wrong))))
-                  "does not declare ledger-service") => #t)
-(check (contains? (raised-text (lambda () (evaluate-form '(swap-plugins correct indirect))))
-                  "does not declare ledger-service") => #t)
-(check (evaluate-form '(plugin-active? correct)) => #t)
-(check (evaluate-form '(plugin-active? wrong)) => #f)
-(check (contains? (raised-text (lambda () (evaluate-form '(activate-plugin! (new-wrong)))))
-                  "does not declare ledger-service") => #t)
-(evaluate-forms '((deactivate-plugin! correct) (activate-plugin! correct)))
-(check (evaluate-form '(plugin-active? correct)) => #t)
-(delete-file (path-expand "extension.ss" (path-directory path)))
-(check (contains? (raised-text (lambda () (evaluate-form '(activate-plugin! wrong))))
-                  "no source package found for plugin wrong") => #t)
-))
-)
-)
-)
+  (test-suite "declared imports at configuration activation"
+    (test-case "third-party violations fail alone; required optional and provided declarations pass"
+      (with-config
+       "(use-plugin wrong)\n(use-plugin correct)\n(use-plugin required)\n(use-plugin provider)"
+       (lambda ((path : :string))
+         (let* ((report (start path)) (text (startup-report-text report)))
+           (check (status report "wrong") => 'failed)
+           (check (status report "correct") => 'on)
+           (check (status report "required") => 'on)
+           (check (status report "provider") => 'on)
+           (check (contains? text "wrong imports third-party/ledger-") => #t)
+           (check (contains? text "/vocabulary but does not declare ledger-service") => #t)))))
+
+    (test-case "private module imports count, including filtered vocabulary-only imports"
+      (with-config "(use-plugin indirect)"
+        (lambda ((path : :string))
+          (check (contains? (check-configuration (make-config-choice path "--config"))
+                            "indirect imports third-party/ledger-") => #t)
+          (check (status (start path) "indirect") => 'failed))))
+
+    (test-case "init.ss and config blocks are user code and stay exempt"
+      (with-config
+       "(use-plugin provider)\n(use-plugin correct config: (service-provider ledger-service))\n(service-provider ledger-service)"
+       (lambda ((path : :string))
+         (check (check-configuration (make-config-choice path "--config")) => #f)
+         (let (report (start path))
+           (check (status report "config: block of correct") => 'on)
+           (check (status report "your own code (plugin init)") => 'on)))))
+
+    (test-case "reload refuses a newly declared invalid plugin"
+      (with-config "(use-plugin correct)"
+        (lambda ((path : :string))
+          (start path)
+          (write-file-string path (string-append (read-file-string path) "\n(use-plugin wrong)"))
+          (let (text (reload-report-text (reload-configuration!)))
+            (check (contains? text "failed   wrong") => #t)
+            (check (contains? text "does not declare ledger-service") => #t)))))
+
+    (test-case "evaluated activation uses the gate and a refused swap leaves the owner on"
+      (with-config "(use-plugin correct)"
+        (lambda ((path : :string))
+          (start path)
+          (check (contains? (raised-text (lambda () (evaluate-form '(activate-plugin! wrong))))
+                            "does not declare ledger-service") => #t)
+          (check (contains? (raised-text (lambda () (evaluate-form '(swap-plugins correct indirect))))
+                            "does not declare ledger-service") => #t)
+          (check (evaluate-form '(plugin-active? correct)) => #t)
+          (check (evaluate-form '(plugin-active? wrong)) => #f)
+          (check (contains? (raised-text (lambda () (evaluate-form '(activate-plugin! (new-wrong)))))
+                            "does not declare ledger-service") => #t)
+          (evaluate-forms '((deactivate-plugin! correct) (activate-plugin! correct)))
+          (check (evaluate-form '(plugin-active? correct)) => #t)
+          (delete-file (path-expand "extension.ss" (path-directory path)))
+          (check (contains? (raised-text (lambda () (evaluate-form '(activate-plugin! wrong))))
+                            "no source package found for plugin wrong") => #t))))))

@@ -171,7 +171,7 @@ The renderer is a service too, which is how a terminal version of Tuna could exi
 
 **Status:** built (2026-10-14). The tabs layout in the diagram is an example; the demo swaps between the default layout and a toy two-view layout.
 
-Each service has exactly one plugin filling it. A plugin says which services it fills (`provides:`), which it needs (`requires:`), and which it uses only when present (`optional:`); using a service it did not declare is an error naming both. Your own code in `init.ss`, in `config:` blocks, and code you evaluate is exempt, as Emacs puts no rules on `init.el`. Declaring two plugins for one slot is an error that names both.
+Each service has exactly one plugin filling it. A plugin says which services it fills (`provides:`), which it needs (`requires:`), and which it uses only when present (`optional:`). When loading a configuration, Tuna checks the plugin's imports, including its own package's private modules: importing a contract that exports a service means declaring that service. A missing declaration refuses that plugin before it starts and names the plugin, contract, and service; other plugins still start. Service calls themselves are plain lookups, with no caller tracking. Your own code in `init.ss`, in `config:` blocks, and code you evaluate is exempt, as Emacs puts no rules on `init.el`; activating a package plugin from evaluated code still checks that plugin. Declaring two plugins for one slot is an error that names both.
 
 ![Swapping the layout plugin](diagrams/swapping-a-plugin.svg)
 

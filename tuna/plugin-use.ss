@@ -27,7 +27,7 @@ prelude: :gerbil/core
 
 ;; Only bindings defined here count. In particular, the kernel facade's
 ;; re-exports of its consumed seams do not make it a service contract.
-(def (module-values (module : :t)) => :list
+(def (module-values (module : module-context)) => :list
   (filter-map
    (lambda (export)
      (and (fx= (module-export-phi export) 0)
@@ -75,7 +75,7 @@ prelude: :gerbil/core
         (let (parent (path-directory (path-strip-trailing-directory-separator directory)))
           (and (not (equal? parent directory)) (walk parent)))))))
 
-(def (same-package? (module : :t) (root : module-context) (prefix :? :string)) => :boolean
+(def (same-package? (module : module-context) (root : module-context) (prefix :? :string)) => :boolean
   (if prefix
     (let (id (symbol->string (module-context-id module)))
       (string-prefix? (string-append prefix "/") id))
