@@ -17,12 +17,12 @@
               mac?: (mac? : :boolean := #f) left?: (left? : :boolean := #f)
               right?: (right? : :boolean := #f) graph?: (graph? : :boolean := #f))
   => key-event
-  (make-key-event "test-client" 1 key code 0 #f composing? alt? ctrl? meta? shift?
+  (make-key-event 1 key code 0 #f composing? alt? ctrl? meta? shift?
                   mac? left? right? graph?))
 
 (def (pointer area part button: (button 1) clicks: (clicks 1) ctrl?: (ctrl? #f)
                  alt?: (alt? #f) shift?: (shift? #f) meta?: (meta? #f))
-  (make-pointer-event "test-client" 1 button clicks alt? ctrl? meta? shift?
+  (make-pointer-event 1 button clicks alt? ctrl? meta? shift?
                       (make-posn area part #f 5)))
 
 (defplugin (binds-a ctx)

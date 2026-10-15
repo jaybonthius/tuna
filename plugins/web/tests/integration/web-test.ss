@@ -1,9 +1,10 @@
 ;;; The web transport over real loopback HTTP on an ephemeral port: the
-;;; launch token, the session cookie, Host and Origin checks, and event
+;;; plain URL, Host and Origin checks, and event
 ;;; requests: keydowns and pointer items, validated strictly, and the
 ;;; screen revision pointer items name. A stand-in provides the input the
 ;;; editor loop needs; another records the items it resolves.
-(import :std/test
+(import :std/io
+        :std/test
         :tuna/kernel
         :tuna/plugins/keys/contract
         :tuna/plugins/web/plugin
@@ -51,37 +52,27 @@
 
 (def web-test
   (test-suite "tuna/plugins/web"
-    (test-case "the launch token is exchanged for an HttpOnly SameSite=Strict cookie"
+    (test-case "the plain URL opens without a token or cookie"
       (with-tuna
        (lambda ()
-         (let (exchange (http "GET" (string-append "/?token=" token) cookie: #f))
-           (check (reply-status exchange) => 303)
-           (check (reply-header exchange "Location") => "/")
-           (let (set-cookie (reply-header exchange "Set-Cookie"))
-             (check (and (string-search "HttpOnly" set-cookie) #t) => #t)
-             (check (and (string-search "SameSite=Strict" set-cookie) #t) => #t)))
+         (check (web-transport-url) => (string-append "http://" (host) "/"))
          (let (page (http "GET" "/"))
            (check (reply-status page) => 200)
+           (check (reply-header page "Set-Cookie") => #f)
            (check (and (string-search "id=\"screen\"" (reply-body page)) #t) => #t)
-           (check (and (string-search "No renderer is active." (reply-body page)) #t) => #t)))))
+           (check (and (string-search "No renderer is active." (reply-body page)) #t) => #t))
+         (check (reply-status (http "GET" "/static/tuna-input.js")) => 200)
+         (check (reply-status (http "GET" "/elsewhere")) => 404))))
 
-    (test-case "requests without the cookie are refused on every route"
+    (test-case "a foreign Host or Origin is refused on every route"
       (with-tuna
        (lambda ()
-         (for-each (lambda (route)
-                     (check (reply-status (http (car route) (cdr route) cookie: #f)) => 403))
-                   '(("GET" . "/") ("GET" . "/screen") ("POST" . "/commands")
-                     ("GET" . "/static/tuna-input.js") ("GET" . "/elsewhere")))
-         (check (reply-status (http "GET" "/?token=wrong" cookie: #f)) => 403)
-         (check (reply-status (http "GET" "/" cookie: (string-append session-cookie "0"))) => 403))))
-
-    (test-case "a foreign Host or Origin is refused, even with the cookie"
-      (with-tuna
-       (lambda ()
-         (check (reply-status (http "GET" "/" host: "evil.example")) => 403)
+         (for-each
+          (lambda (path)
+            (check (reply-status (http "POST" path host: "evil.example")) => 403)
+            (check (reply-status (http "POST" path headers: [(cons "Origin" "http://evil.example")])) => 403))
+          ["/" "/screen" "/commands" "/static/tuna-input.js"])
          (check (reply-status (http "GET" "/" host: (string-append "localhost:" (number->string port))))
-                => 403)
-         (check (reply-status (http "GET" (string-append "/?token=" token) cookie: #f host: "evil.example"))
                 => 403)
          (check (reply-status (http "GET" "/" headers: [(cons "Origin" "http://evil.example")])) => 403)
          (check (reply-status (http "POST" "/commands"
@@ -93,24 +84,70 @@
          (check (reply-status (http "GET" "/" headers: [(cons "Origin" (string-append "http://" (host)))]))
                 => 200))))
 
-    (test-case "events are acknowledged with 204 and malformed ones refused"
+    (test-case "all command requests get 204, including malformed requests"
       (with-tuna
        (lambda ()
          (check (reply-status (post-key "a")) => 204)
+         (check (post-json "not JSON") => 204)
+         (check (post-json "[]") => 204)
+         (check (reply-status (http "GET" "/commands")) => 204)
          (check (reply-status (http "POST" "/commands"
                                     headers: [(cons "Datastar-Request" "true")
                                               (cons "Content-Type" "application/json")]
                                     body: "{\"version\":1,\"type\":\"keydown\"}"))
-                => 400)
+                => 204)
          (check (reply-status (http "POST" "/commands"
                                     headers: [(cons "Content-Type" "application/json")]
                                     body: (keydown-json "a" #f 2)))
-                => 400)
+                => 204)
          (check (reply-status (http "POST" "/commands"
                                     headers: [(cons "Datastar-Request" "true")
                                               (cons "Content-Type" "text/plain")]
                                     body: (keydown-json "a" #f 3)))
-                => 415))))
+                => 204))))
+
+    (test-case "out-of-order keys and clicks are submitted in order; duplicates are ignored"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (check (post-json (keydown-json "c" #f 3)) => 204)
+         (check (post-json (keydown-json "duplicate" #f 3)) => 204)
+         (check (post-json (keydown-json "a" #f 1)) => 204)
+         (check (post-json (pointer-json (cons "sequence" "2"))) => 204)
+         (check (post-json (keydown-json "duplicate" #f 1)) => 204)
+         (let (items (recorded-items 3))
+           (check (length items) => 3)
+           (check (key-event-key (car items)) => "a")
+           (check (pointer-event? (cadr items)) => #t)
+           (check (key-event-key (caddr items)) => "c")))))
+
+    (test-case "a new screen stream resets numbering and drops early items"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (check (post-json (keydown-json "a" #f 1)) => 204)
+         (check (post-json (keydown-json "old" #f 3)) => 204)
+         (let (stream (open-screen-stream))
+           (check (and (string-search "datastar-patch-elements"
+                                     (read-until stream (lambda (text)
+                                                          (string-search "datastar-patch-elements" text)))) #t)
+                  => #t)
+           (check (post-json (keydown-json "b" #f 1)) => 204)
+           (check (post-json (keydown-json "c" #f 2)) => 204)
+           (Socket-close stream))
+         (check (map key-event-key (recorded-items 3)) => ["a" "b" "c"]))))
+
+    (test-case "more than 64 waiting items are dropped and still acknowledged"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (let lp ((sequence 2))
+           (when (<= sequence 66)
+             (check (post-json (keydown-json "early" #f sequence)) => 204)
+             (lp (+ sequence 1))))
+         (check (post-json (keydown-json "a" #f 1)) => 204)
+         (check (post-json (keydown-json "b" #f 2)) => 204)
+         (check (map key-event-key (recorded-items 2)) => ["a" "b"]))))
 
     (test-case "key items preserve platform, held Option sides and AltGraph facts"
       (set! (input-recorder-items recorded) [])
@@ -131,17 +168,19 @@
              (check [(key-event-mac? graph) (key-event-alt-left? graph)
                      (key-event-alt-right? graph) (key-event-alt-graph? graph)] => [#f #f #t #t]))))))
 
-    (test-case "missing or malformed keyboard facts are refused"
-      (with-tuna
+    (test-case "missing or malformed keyboard facts get 204 without being submitted"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
        (lambda ()
          (check (post-json (keydown-json "x" #f 1)) => 204)
          (for-each
           (lambda (field)
             (for-each (lambda (bad)
                         (check [field bad (post-json (keydown-json "x" #f 2 (cons field bad)))]
-                               => [field bad 400]))
+                               => [field bad 204]))
                       [#f "null" "0" "1" "\"true\"" "[]" "{}"]))
-          ["isMac" "altLeft" "altRight" "altGraph"]))))
+          ["isMac" "altLeft" "altRight" "altGraph"])
+         (check (length (recorded-items 1)) => 1))))
 
     (test-case "each screen carries its revision on its root element"
       (with-tuna
@@ -160,12 +199,11 @@
                                            (cons "target" "\"status-line:12\"") (cons "node" "4")
                                            (cons "modifiers" "{\"alt\":false,\"ctrl\":true,\"meta\":false,\"shift\":true}")))
                   => 204)
-           (check (post-json (pointer-json (cons "node" #f))) => 204)
+           (check (post-json (pointer-json (cons "sequence" "2") (cons "node" #f))) => 204)
            (let (items (recorded-items 2))
              (check (length items) => 2)
              (let ((e (car items))
                    (bare (cadr items)))
-               (check (pointer-event-client e) => "web-test")
                (check (pointer-event-button e) => 3)
                (check (pointer-event-clicks e) => 2)
                (check [(pointer-event-alt? e) (pointer-event-ctrl? e)
@@ -178,16 +216,16 @@
                (check (posn-node-id (pointer-event-start bare)) => #f)
                (check (pointer-event-button bare) => 1)))))))
 
-    (test-case "malformed and forged pointer items are refused"
-      (with-tuna
+    (test-case "malformed and forged pointer items get 204 without being submitted"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
        (lambda ()
          (check (post-json (pointer-json)) => 204)
          (for-each
            (lambda (change)
-             (check [change (post-json (pointer-json change))] => [change 400]))
+             (check [change (post-json (pointer-json change (cons "sequence" "2")))] => [change 204]))
            '(("version" . "2") ("type" . "\"pointerdown\"") ("kind" . "\"drop\"") ("kind" . #f)
-             ("clientId" . "\"web test\"") ("clientId" . "\"\"") ("clientId" . #f)
-             ("sequence" . "-1") ("sequence" . "\"1\"")
+             ("sequence" . "-1") ("sequence" . "0") ("sequence" . "\"1\"")
              ;; A screen the transport never sent.
              ("revision" . "999999") ("revision" . "-1") ("revision" . #f)
              ("button" . "3") ("button" . "-1") ("button" . "0.5")
@@ -199,4 +237,5 @@
              ("target" . "\"Tab-line:30\"") ("target" . "\"tab-line:-30\"") ("target" . "\"tab-line:30:31\"")
              ("target" . "\"tab-line:3x\"") ("target" . "\"1tab-line:30\"") ("target" . "30") ("target" . #f)
              ("target" . "\"tab-line:1234567890123456\"")
-             ("node" . "\"4\"") ("node" . "-4") ("node" . "4.5"))))))))
+             ("node" . "\"4\"") ("node" . "-4") ("node" . "4.5")))
+         (check (length (recorded-items 1)) => 1))))))

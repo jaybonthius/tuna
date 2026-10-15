@@ -6,7 +6,7 @@ all: assets build
 
 assets: plugins/web/web/tuna-input.js
 
-plugins/web/web/tuna-input.js: plugins/web/frontend/tuna-input.ts plugins/web/frontend/input-queue.ts plugins/web/frontend/tuna-keyboard.ts \
+plugins/web/web/tuna-input.js: plugins/web/frontend/tuna-input.ts plugins/web/frontend/input-sender.ts plugins/web/frontend/tuna-keyboard.ts \
 		plugins/web/frontend/tuna-pointer.ts Makefile
 	$(ESBUILD) $< --bundle --external:datastar --format=esm --minify \
 		--platform=browser --target=es2022 --legal-comments=none --outfile=$@

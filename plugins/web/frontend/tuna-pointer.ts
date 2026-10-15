@@ -1,5 +1,5 @@
 import { action } from "datastar";
-import { enqueue } from "./input-queue";
+import { send } from "./input-sender";
 
 // What the browser saw, never what it means: the server looks the click
 // up in its keymaps (ADR 7, ADR 8). A click is sent on release, as the
@@ -63,7 +63,7 @@ action({
         const revision = screenRevision();
         const target = part?.getAttribute("data-part");
         if (part === null || revision === null || !target) return;
-        enqueue<PointerFacts>({
+        send<PointerFacts>({
           type: "pointer",
           kind: "click",
           revision,

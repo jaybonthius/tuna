@@ -59,12 +59,11 @@ prelude: :gerbil/core
         printing-char-key
         last-command-event)
 
-;; One keydown from a client, with the client's id and sequence number
-;; (ADR 7, ADR 10). The web transport submits it as an input item; the
-;; input service resolves it. MAC?, ALT-LEFT?, ALT-RIGHT? and ALT-GRAPH?
+;; One keydown with its page-load sequence number (ADR 7, ADR 10). The web
+;; transport submits it as an input item; the input service resolves it.
+;; MAC?, ALT-LEFT?, ALT-RIGHT? and ALT-GRAPH?
 ;; are browser facts; the input plugin decides their meaning.
-(defstruct key-event ((client     : :string)
-                      (sequence   : :fixnum)
+(defstruct key-event ((sequence   : :fixnum)
                       (key        : :string)
                       (code       : :string)
                       (location   : :fixnum)
@@ -92,11 +91,10 @@ prelude: :gerbil/core
                  (revision : :fixnum))
   final: #t)
 
-;; One click from a client, with the client's id and sequence number
-;; (ADR 7, ADR 10): BUTTON 1, 2 or 3 (left, middle, right, numbered as
-;; Emacs does), released after CLICKS presses in a row, at START.
-(defstruct pointer-event ((client   : :string)
-                          (sequence : :fixnum)
+;; One click with its page-load sequence number (ADR 7, ADR 10): BUTTON
+;; 1, 2 or 3 (left, middle, right, numbered as Emacs does), released after
+;; CLICKS presses in a row, at START.
+(defstruct pointer-event ((sequence : :fixnum)
                           (button   : :fixnum)
                           (clicks   : :fixnum)
                           (alt?     : :boolean)

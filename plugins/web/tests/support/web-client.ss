@@ -21,9 +21,7 @@
         post-click
         page-revision
         host
-        port
-        token
-        session-cookie)
+        port)
 
 
 (defstruct reply (status headers body) final: #t)
@@ -90,17 +88,14 @@
 ;;; The running Tuna under test
 
 (def port #f)
-(def token #f)
-(def session-cookie #f)
 
 (def (host) (string-append "127.0.0.1:" (number->string port)))
 
 (def (http method path headers: (headers []) body: (body "")
-           host: (host-header (host)) cookie: (cookie session-cookie))
+           host: (host-header (host)))
   (let (socket (connect port))
     (send! socket (request-text method path
                                 (append [(cons "Host" host-header)]
-                                        (if cookie [(cons "Cookie" cookie)] [])
                                         headers)
                                 body))
     (let (text (read-until socket (lambda (text) #f)))
@@ -111,7 +106,7 @@
 (def (keydown-json (key : :string) (ctrl? : :boolean) (sequence : :fixnum) . changes)
   => :string
   (let* ((fields [ (cons "version" "1") (cons "type" "\"keydown\"")
-                  (cons "clientId" "\"web-test\"") (cons "sequence" (number->string sequence))
+                  (cons "sequence" (number->string sequence))
                   (cons "key" (string-append "\"" key "\"")) (cons "code" "\"\"")
                   (cons "location" "0") (cons "repeat" "false") (cons "isComposing" "false")
                   (cons "altKey" "false") (cons "ctrlKey" (if ctrl? "true" "false"))
@@ -136,7 +131,7 @@
 ;; fields in CHANGES, each (name . raw-json), or (name . #f) to leave the
 ;; field out.
 (def (pointer-json . changes)
-  (let* ((fields '(("version" . "1") ("type" . "\"pointer\"") ("clientId" . "\"web-test\"")
+  (let* ((fields '(("version" . "1") ("type" . "\"pointer\"")
                    ("sequence" . "1") ("revision" . "0") ("kind" . "\"click\"")
                    ("button" . "0") ("clicks" . "1")
                    ("modifiers" . "{\"alt\":false,\"ctrl\":false,\"meta\":false,\"shift\":false}")
@@ -167,17 +162,17 @@
     (string->number (substring page start (string-index page #\" start)))))
 
 (def (open-screen-stream)
+  (set! sequence 0)
   (let (socket (connect port))
     (send! socket (request-text "GET" "/screen"
-                                [(cons "Host" (host)) (cons "Cookie" session-cookie)
+                                [(cons "Host" (host))
                                  (cons "Datastar-Request" "true")]
                                 ""))
     socket))
 
 
 ;; Activate PLUGINS, which include the web transport, in a fresh kernel;
-;; start the editor loop; exchange the launch token for the session
-;; cookie; then call THUNK.
+;; start the editor loop; then call THUNK at its plain loopback URL.
 (def (with-web-tuna plugins thunk)
   (call-with-fresh-kernel plugins
     (lambda ()
@@ -185,9 +180,7 @@
       (let* ((url (web-transport-url))
              (colon (string-index url #\: 7))
              (slash (string-index url #\/ colon)))
-        (set! port (string->number (substring url (+ colon 1) slash)))
-        (set! token (substring url (+ (string-search "token=" url) 6) (string-length url))))
-      (let (exchange (http "GET" (string-append "/?token=" token) cookie: #f))
-        (set! session-cookie (car (string-split (reply-header exchange "Set-Cookie") #\;))))
+        (set! port (string->number (substring url (+ colon 1) slash))))
+      (set! sequence 0)
       (thunk))))
 
