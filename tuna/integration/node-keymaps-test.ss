@@ -18,6 +18,7 @@
         :tuna/plugins/layout
         "../test-support/kernel"
         "../test-support/session"
+        "../test-support/two-views"
         (only-in "../test-support/string-input" test-messages-plugin current-message))
 (export node-keymaps-test)
 
@@ -121,6 +122,10 @@
             (deactivate-plugin! resolver-owner)
             (check (resolve (pointer part)) => 'view-click)
             (deactivate-plugin! layout-plugin)
+            (check (resolve (pointer part)) => 'view-click)
+            (activate-plugin! two-views-plugin)
+            (check (resolve (pointer (view-id (selected-view)) node: (node-id leaf))) => 'leaf-x)
+            (deactivate-plugin! two-views-plugin)
             (check (resolve (pointer part)) => 'view-click)))))
     (test-case "where-is follows explicit focus, ancestor shadows and prefix shadows"
       (call-with-fresh-kernel lookup-plugins

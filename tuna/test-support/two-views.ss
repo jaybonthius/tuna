@@ -11,6 +11,7 @@ prelude: :gerbil/core
         :tuna/kernel
         :tuna/services/buffers
         :tuna/services/layout
+        :tuna/services/keys
         :tuna/services/session)
 (export two-views-plugin)
 
@@ -104,9 +105,17 @@ prelude: :gerbil/core
   "Arranges views: two side by side (a toy). Selected instead of the default layout."
   provides: [layout-service]
   requires: [buffers-service session-service]
+  optional: [input-service]
   (let* ((left (selected-view))
          (right (copy-view left)))
     (using (self (two-views left: left right: right selected: left marks: []) : two-views)
+      (let (input (service-provider input-service))
+        (when (and input (is-Keys? input))
+          (context-set-click-resolver! ctx
+            (lambda ((p : posn))
+              (or (posn-node p)
+                  (let (v (posn-view p))
+                    (and v (buffer-root (view-showing v)))))))))
       (context-add-hook! ctx kill-buffer-hook 'replace-buffer-in-views
                          (lambda (b) (replace-buffer-in-views (own-views self) b)))
       (context-add-session-slot! ctx 'layout version: 1 save: (lambda () (saved-layout self)) restore: void)
