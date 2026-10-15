@@ -23,7 +23,7 @@ The owner must understand the architecture and every plan. Earlier attempts fail
 
 ## How to work
 
-- `tuna/plugins/` holds only real plugins; demos live in `demo/`, test doubles in `tuna/test-support/`; `starter/init.ss` declares only real plugins.
+- `tuna/` is Tuna itself (kernel, libraries, start-up program, `init.ss` language) and imports no concept or plugin. Each concept is a package `plugins/<concept>/` with `contract.ss`, its default `plugin.ss`, private files and `tests/{unit,integration,support}`; cross-plugin tests and shared fixtures live in `tests/integration/` and `tests/support/`; demos live in `demo/`; `starter/init.ss` declares only real plugins. Plugin bindings have no `-plugin` suffix.
 - Build working vertical slices. Every milestone must run in the browser; specify interfaces and invariants, not the internals behind them.
 - Keep plans to a page, in `agents/plans/`. Write an ADR only for a hard-to-reverse choice with real alternatives.
 - Do not add review, oracle, or acceptance-report loops unless the owner asks. Validate with tests and by running the program.
@@ -32,7 +32,7 @@ The owner must understand the architecture and every plan. Earlier attempts fail
 
 ## Keep boundaries clean
 
-- A plugin imports only the kernel facade, libraries, contracts (`tuna/services/`), and its own private submodules; never another plugin.
+- A plugin imports only Tuna's public modules (kernel facade, libraries, configuration), other packages' `contract.ss`, and its own files; never another package's plugin or private files. No two packages import each other.
 - A contract imports only the kernel facade, libraries, and the contracts its own vocabulary needs. It never re-exports another module. Dependencies between contracts point one way, with no cycles: if two contracts need each other, a concept is in the wrong one.
 - A plugin declares in `requires:` every service it calls. Use what you were handed (a session, a prompt handle) instead of reaching for another service's global "current" state.
 - Put each hook, record, and operation in the contract whose concept it is, not in whichever module was convenient.

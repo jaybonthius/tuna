@@ -35,7 +35,7 @@ The two differ in one respect that matters: whether Tuna's default implementatio
 
 The skeleton let the kernel drift from about 1,050 to 1,800 non-test lines by absorbing pieces of features (hooks table, timers, session slots, a command registry, a browser keyboard event type, text ranges for one job policy, latency data). This section is the authoritative statement of what the kernel is.
 
-**Four layers**, each using only the layers below it: plugins (Tuna's own and users'), contracts (`tuna/services/`: interfaces, service values, vocabulary types, thin dispatchers only), shared libraries (`tuna/lib/`: conveniences built only on the public kernel API, with no special access; today timers and jobs), and the kernel (`tuna/kernel/`, facade `tuna/kernel.ss`).
+**Four layers**, each using only the layers below it: plugins (Tuna's own and users'), contracts (*2026-10-14:* each concept package's `plugins/<concept>/contract.ss`, beside its default plugin, plus Tuna's own `tuna/configuration.ss`; formerly `tuna/services/`: interfaces, service values, vocabulary types, thin dispatchers only), shared libraries (`tuna/lib/`: conveniences built only on the public kernel API, with no special access; today timers and jobs), and the kernel (`tuna/kernel/`, facade `tuna/kernel.ss`).
 
 **The kernel contains exactly:**
 1. **Plugin runtime:** plugins, `defplugin`, contexts and receipts (`context-defer!` is the one primitive every registration is built from), owner-tagged entries, activation and deactivation, services with one provider each, tier labels, and required dependents that restart. Swap orchestration, state restoration and startup-only reload policy live outside the kernel.

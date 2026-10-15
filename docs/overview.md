@@ -1,6 +1,6 @@
 # How Tuna works
 
-**Status (2026-10-14):** the architecture skeleton, the buffers, views and layout work, and the kernel's alignment with Cordis are complete. Built: the small kernel (plugins with receipts, one plugin per service, swapping a service's plugin by restarting and restoring saved data, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the token-protected browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML; a toy plain-text renderer proves the slot can be swapped), buffers as a replaceable service (editing, undo and highlights live in the buffers plugin; a toy buffers plugin proves the slot), the layout (splits, tabs, a movable frame with frame marks, pinning, and the minibuffer and echo area as ordinary views; a toy two-view layout proves the slot), saving your session and unsaved text across restarts, and starting from and reloading your `init.ss` (stages 1 and 2 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, `tuna check`, reloading with `reload-config` or `tuna reload`, and, from stage 3, plugin options and the `show-config-report` command). Also built: clicks and buttons, nested containers, `M-x` with completion (a vertical list, any-order matching, and annotations), plugins that may use only the services they declare, and evaluating code into the running session (the entry points; the `eval-buffer` and `M-:` commands come later). Not built yet: files, modes, scrolling strips, and drawing only what is in view. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
+**Status (2026-10-14):** the architecture skeleton, the buffers, views and layout work, the kernel's alignment with Cordis, and the split into one package per concept are complete. Built: the small kernel (plugins with receipts, one plugin per service, swapping a service's plugin by restarting and restoring saved data, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the token-protected browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML; a toy plain-text renderer proves the slot can be swapped), buffers as a replaceable service (editing, undo and highlights live in the buffers plugin; a toy buffers plugin proves the slot), the layout (splits, tabs, a movable frame with frame marks, pinning, and the minibuffer and echo area as ordinary views; a toy two-view layout proves the slot), saving your session and unsaved text across restarts, and starting from and reloading your `init.ss` (stages 1 and 2 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, `tuna check`, reloading with `reload-config` or `tuna reload`, and, from stage 3, plugin options and the `show-config-report` command). Also built: clicks and buttons, nested containers, `M-x` with completion (a vertical list, any-order matching, and annotations), plugins that may use only the services they declare, and evaluating code into the running session (the entry points; the `eval-buffer` and `M-:` commands come later). Not built yet: files, modes, scrolling strips, and drawing only what is in view. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
 
 ## The idea
 
@@ -16,10 +16,10 @@ Almost everything in Tuna is a plugin, including basic editing. You can turn plu
 
 ![The kernel and the layers on top of it](diagrams/kernel-layers.svg)
 
-Tuna itself is a small, fixed **kernel**. Everything that makes Tuna an editor sits on top of it, in three more layers, and each layer may use only the layers below it:
+Tuna itself is a small, fixed **kernel**, plus the program that starts it. Everything that makes Tuna an editor sits on top, and each layer may use only the layers below it. On disk there are two kinds of package (directories with their own `gerbil.pkg`): **`tuna/`**, Tuna itself, which imports no editor concept and no plugin; and one **concept package** per concept under **`plugins/<concept>/`**, holding that concept's contract (`contract.ss`), its default plugin (`plugin.ss`), private files and tests. Someone else's package looks exactly the same and imports the contracts it needs; ours get no special access ([brief](briefs/2026-10-package-layout.md)).
 
-- **Plugins** (`tuna/plugins/`) do everything you'd recognize as Tuna: keys and commands, buffers and the text store, basic editing, the echo area and minibuffer, the layout, drawing the screen, the browser connection, settings, and saving your session. Tuna's own plugins get no special access, so anything they can do, a replacement can do too.
-- **Contracts** (`tuna/services/`) say what each slot promises, such as "a text store can insert, delete and read a line", so a different plugin can fill it. A contract also holds the shared types that go with its promise: the buffers contract, for example, defines the record of what an edit changed.
+- **Plugins** (each package's `plugin.ss`) do everything you'd recognize as Tuna: keys and commands, buffers and the text store, basic editing, the echo area and minibuffer, the layout, drawing the screen, the browser connection, settings, and saving your session. A plugin imports Tuna, the contracts it uses and its own files, never another plugin. Plugin names are plain: `(use-plugin buffers)`.
+- **Contracts** (each concept package's `contract.ss`) say what each slot promises, such as "a text store can insert, delete and read a line", so a different plugin can fill it. A contract also holds the shared types that go with its promise: the buffers contract, for example, defines the record of what an edit changed. The one contract Tuna owns itself is configuration (`tuna/configuration.ss`): reload, swap, evaluation, and the moments plugins can join (after start-up, around a swap, before shutdown).
 - **Shared libraries** (`tuna/lib/`) are conveniences built only from the kernel's public parts: timers, background jobs, plugin options, and what loading `init.ss` collects. They have no special access; a plugin could write its own. The buffers contract uses the jobs library.
 - **The kernel** (`tuna/kernel.ss`, its public face, and `tuna/kernel/`) holds four things and no editor features:
   1. **Plugins:** turn a plugin on and off, undo everything it added (including stopping its running commands), connect it to the services it declares, and check that it uses only those. Each service has one plugin filling it. When that plugin is replaced, the plugins that use it are turned off and on again; restoring their saved data happens outside the kernel ([below](#swapping-out-a-part)). Turning a plugin on or off finishes as a whole: `C-g` waits until it is done (a third `C-g` still forces a stop).
@@ -31,20 +31,21 @@ Where the parts that once crept into the kernel live now:
 
 | Part | Lives in |
 |---|---|
-| Commands and keymaps | The keys contract (`defcommand`, `keymap-set`); the keys plugin keeps them |
+| Commands | The commands contract (`defcommand`); the commands plugin keeps them |
+| Keymaps | The keys contract (`keymap-set`); the keys plugin keeps them |
 | Session slots | The session contract (`context-add-session-slot!`); the session plugin keeps them |
 | Timers | The timers library (`context-run-with-timer!`) |
 | Background jobs | The jobs library. A plugin makes a **job group** when it turns on and starts its jobs in it; turning the plugin off cancels them. |
 | Records of what an edit changed | The buffers contract |
 
-`tuna/plugins/` holds only real plugins, the ones a configuration might use. Two other places hold plugins that are not part of Tuna:
+`plugins/` holds only real plugins, the ones a configuration might use. Two other places hold plugins that are not part of Tuna:
 
-- **Test doubles** (`tuna/test-support/`): deliberately small second plugins that prove a contract can be filled by more than one plugin (a plain-string text store, a plain-text renderer, a toy buffers plugin, a two-view layout), and small command fixtures for tests (endless loops to stop with `C-g`, a slow background job, a prompt, swapping a slot). Only tests and the demo use them; Tuna's program does not include them.
+- **Test doubles** (in each concept's `tests/support/`, shared ones in `tests/support/`): deliberately small second plugins that prove a contract can be filled by more than one plugin (a plain-string text store, a plain-text renderer, a toy buffers plugin, a two-view layout), and small command fixtures for tests (endless loops to stop with `C-g`, a slow background job, a prompt, swapping a slot). Only tests and the demo use them; Tuna's program does not include them.
 - **The demo** (`demo/`, development only): run `.gerbil/bin/tuna --config demo/init.ss` after `make` (add `--port N` for a fixed port) for the starter's plugins plus demo commands: a slow digit highlighter, `C-c l` (a loop to stop with `C-g`), `C-c w` (swap the layout), `C-c B` (swap the buffers plugin), `C-c d` (a sidebar pinned on the left), and `C-h s` (`describe-services`). The starter configuration does not include it, and nothing in `tuna/` or `starter/` may use it. `make run` starts the starter.
 
-Most tests test one plugin with only the plugins it needs. Tests that exercise many plugins together (typing, rendering, swapping slots, a restart, the browser over HTTP) are in `tuna/integration/`.
+Most tests test one plugin with only the plugins it needs. Tests that exercise many plugins together (typing, rendering, swapping slots, a restart, the browser over HTTP) are in the top-level `tests/integration/`; every other test sits in a `tests/` directory beside what it tests.
 
-`make test` checks these boundaries mechanically. Kernel code may import only Gerbil's standard library and other kernel files, and may not use the words the [kernel decision record](../agents/adr/0012-kernel-boundary-and-replaceability.md) forbids (keys, buffers, windows, settings, timers, and so on). Libraries may import only the standard library, the kernel's public face, and other libraries. Everything else imports only the kernel's public face, only tests and the demo may use the test helpers in `tuna/test-support/`, and nothing in `tuna/` or `starter/` may use the demo.
+`make test` checks these boundaries mechanically. Kernel code may import only Gerbil's standard library and other kernel files, and may not use the words the [kernel decision record](../agents/adr/0012-kernel-boundary-and-replaceability.md) forbids (keys, buffers, windows, settings, timers, and so on). Libraries may import only the standard library, the kernel's public face, and other libraries. `tuna/` imports no package under `plugins/`; a plugin imports Tuna's public modules, other packages' contracts and its own files, never another plugin; no two packages import each other; only tests and the demo may use test support (`tests/support/`), and nothing in `tuna/`, `plugins/` or `starter/` may use the demo.
 
 Some plugins can be swapped while Tuna runs: the text store, buffers, the layout, the renderer, and nearly everything else. A few are chosen at startup and need a restart to change, such as how keys are resolved and how settings are looked up, because swapping them mid-session would pull the rug out from under running commands. If a plugin combination breaks things, Tuna recovers from your own configuration, by skipping what failed or going back to your last working configuration, rather than switching to some built-in default; how exactly is still being designed, and the kernel's `describe-services` reports which plugin is filling each slot (the demo shows it with `C-h s`).
 
@@ -138,10 +139,12 @@ Your own configuration file, `init.ss`, declares which plugins to turn on, and t
 
 ```scheme
 #lang :tuna/config
-(import :tuna/plugins/keys :tuna/plugins/web :tuna/plugins/reload-config)
-(use-plugin keys-plugin)
-(use-plugin web-transport-plugin port: 8080)
-(use-plugin reload-config-plugin config: (keymap-set "C-c R" 'reload-config))
+(import :tuna/plugins/keys/plugin :tuna/plugins/web/plugin :tuna/plugins/reload-config/plugin
+        :tuna/plugins/keys/contract        ; keymap-set
+        :tuna/plugins/commands/contract)   ; defcommand
+(use-plugin keys)
+(use-plugin web-transport port: 8080)
+(use-plugin reload-config config: (keymap-set "C-c R" 'reload-config))
 (defcommand (say-hello) "Say hello." (message "hello"))
 ```
 
@@ -266,4 +269,5 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 - **Shared library**: convenience code, such as timers and jobs, built only from the kernel's public parts.
 - **Hook**: a named list of callbacks that run when something happens, such as a buffer changing or a plugin turning on.
 - **Input item**: one unit of input from a browser tab, such as a key press; the kernel queues it without looking inside.
+- **Package**: a directory with its own `gerbil.pkg`; Gerbil names and builds its modules together. **Concept package**: one concept's contract and default plugin, under `plugins/<concept>/`.
 - **Session slot**: a named piece of one plugin's state that the session plugin saves while Tuna is idle and on exit, and hands back on the next start.
