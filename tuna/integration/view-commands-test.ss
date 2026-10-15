@@ -47,9 +47,9 @@
       (delete-file-or-directory directory #t))))
 
 (def command-plugins
-  [commands-plugin keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin session-plugin
+  [session-owner commands-plugin keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin session-plugin
    buffers-plugin autosave-plugin layout-plugin view-commands-plugin basic-editing-plugin minibuffer-plugin
-   session-owner swap-configuration swap-commands-plugin tree-buffer-plugin])
+   swap-configuration swap-commands-plugin tree-buffer-plugin])
 
 (def (with-commands thunk)
   (call-with-state-kernel command-plugins

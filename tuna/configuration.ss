@@ -12,12 +12,21 @@ prelude: :gerbil/core
         last-configuration-report
         swap-plugins
         evaluate-form
-        evaluate-forms)
+        evaluate-forms
+        (struct-out configuration-report)
+        configuration-started-hook
+        configuration-stopping-hook
+        configuration-report-ready-hook
+        context-set-restart-wrapper!
+        call-with-configuration-restart)
 
 (interface Configuration
   ;; Load init.ss again as a trial, apply what changed, and return the
   ;; reload report. The caller holds the baton.
   (reload!) => :string
+  ;; One around-restart participant; its context owns the registration.
+  (set-restart-wrapper! (ctx : context) (wrapper : :procedure)) => :void
+  (restart (owners : :list) (apply : :procedure) (rollback : :procedure)) => :void
   ;; Replace OLD by NEW (or turn OLD off with #f), including saved state.
   ;; Startup-only closures are deferred to a process restart.
   (swap! (old : plugin) (new :? plugin)) => :void
@@ -52,3 +61,30 @@ prelude: :gerbil/core
   (let loop ((rest forms) (result (void)))
     (if (null? rest) result
       (loop (cdr rest) (evaluate-form (car rest))))))
+
+;; Program lifecycle notifications carry no editor state. Hook callbacks are
+;; receipt-owned and execute under their registering contexts.
+(def configuration-started-hook
+  (new-hook 'configuration-started doc: "All configured plugins have finished starting."))
+(def configuration-stopping-hook
+  (new-hook 'configuration-stopping doc: "Before any plugin is deactivated at shutdown."))
+(def configuration-report-ready-hook
+  (new-hook 'configuration-report-ready doc: "The finalized start-up report and its log path."))
+
+;; ENTRIES are (status description) pairs, not plugin or editor values.
+(defstruct configuration-report ((text : :string) (problem :? :string)
+                                 (entries : :list) (log : :string)) final: #t)
+
+;; WRAPPER receives (owner-names apply rollback). Capture must finish before
+;; calling APPLY; it must restore after APPLY, and after ROLLBACK on failure.
+;; Only one participant is needed today. A second registration is an error.
+(def (context-set-restart-wrapper! (ctx : context) (wrapper : :procedure)) => :void
+  (:- (with-service-provider (provider configuration-service Configuration)
+        (Configuration-set-restart-wrapper! provider ctx wrapper)) :void))
+
+(def (call-with-configuration-restart (owners : :list) (apply : :procedure)
+                                       (rollback : :procedure)) => :void
+  (if (service-provider configuration-service)
+    (:- (with-service-provider (provider configuration-service Configuration)
+          (Configuration-restart provider owners apply rollback)) :void)
+    (with-catch (lambda (e) (rollback) (raise e)) apply)))

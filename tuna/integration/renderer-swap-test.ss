@@ -35,11 +35,11 @@
 
 
 (def renderer-plugins
-  [commands-plugin keys-plugin echo-area-plugin help-buffer-plugin rope-text-store-plugin
+  [session-owner commands-plugin keys-plugin echo-area-plugin help-buffer-plugin rope-text-store-plugin
    settings-plugin no-session-plugin buffers-plugin layout-plugin
    view-commands-plugin
    html-renderer-plugin basic-editing-plugin minibuffer-plugin
-   session-owner swap-configuration swap-commands-plugin rename-command-plugin tree-buffer-plugin])
+   swap-configuration swap-commands-plugin rename-command-plugin tree-buffer-plugin])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 

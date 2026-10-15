@@ -7,7 +7,7 @@ prelude: :gerbil/core
         :std/test
         :tuna/kernel
         :tuna/boot
-        :tuna/services/configuration
+        :tuna/configuration
         :tuna/services/commands
         :tuna/services/keys
         "../test-support/kernel")
@@ -16,7 +16,7 @@ prelude: :gerbil/core
 (def (write-evaluation-init (path : :string) (body : :string)) => :void
   (write-file-string path
     (string-append "#lang :tuna/config\n"
-      "(import :tuna/plugins/commands :tuna/plugins/keys)\n"
+      "(import :tuna/services/commands :tuna/services/keys :tuna/plugins/commands :tuna/plugins/keys)\n"
       "(use-plugin commands-plugin)\n(use-plugin keys-plugin)\n" body "\n")))
 
 (def (call-with-evaluation-session (thunk : :procedure)) => :t
@@ -40,6 +40,20 @@ prelude: :gerbil/core
 
 (def session-evaluation-test
   (test-suite "tuna/integration/session-evaluation"
+    (test-case "evaluation inherits resolved relative and renamed init imports"
+      (call-with-evaluation-session
+        (lambda ((path : :string))
+          (let (helper (path-expand "helper.ss" (path-directory path)))
+            (write-file-string helper "(export answer hidden)\n(def answer 42)\n(def hidden 9)\n")
+            (write-file-string path
+              "#lang :tuna/config\n(import (rename-in (only-in \"helper\" answer) (answer imported-answer)))\n")
+            ;; A new start, not reload, seeds a new evaluation environment.
+            (deactivate-all-plugins!)
+            (start-from-configuration (make-config-choice path "--config"))
+            (check (evaluate-form 'imported-answer) => 42)
+            (check-exception (evaluate-form 'hidden) unbound-global-exception?)
+            (check-exception (evaluate-form '(keymap-set "C-c x" 'not-imported))
+                             unbound-global-exception?)))))
     (test-case "evaluation wins configuration ties and survives changed and failed reloads"
       (call-with-evaluation-session
        (lambda ((path : :string))

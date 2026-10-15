@@ -23,8 +23,7 @@ prelude: :gerbil/core
         :tuna/kernel
         :tuna/lib/configuration
         :tuna/lib/plugin-options
-        :tuna/services/session
-        :tuna/services/configuration
+        :tuna/configuration
         :tuna/config-blocks)
 (export (struct-out config-choice report-entry startup-report reload-report)
         parse-command-line
@@ -45,7 +44,6 @@ prelude: :gerbil/core
         reload-report-text
         check-configuration
         startup-report-text
-        startup-report-summary
         last-report-text
         write-startup-report!
         starter-configuration
@@ -1054,9 +1052,7 @@ prelude: :gerbil/core
                           (recover)
                           (activate-plugin! old)
                           (for-each activate-plugin! (cdr closure)))))
-          (if (service-provider session-service)
-            (restart-with-session (map plugin-name closure) apply rollback)
-            (with-catch (lambda (e) (rollback) (raise e)) apply)))))))
+          (call-with-configuration-restart (map plugin-name closure) apply rollback))))))
 
 (def (stays-on (p : plugin)) => :t
   (let (raised (with-catch (lambda (e) e) (lambda () (restart-plugin! p #f) #f)))
@@ -1206,7 +1202,10 @@ prelude: :gerbil/core
                         (error (string-append "Cannot validate plugin flags: " loaded))))))
     (for-each (lambda (o) (apply override-plugin-option! o)) overrides)
     (set! current-running (make-running-configuration choice [] #f [] #f))
-    (let* ((service-entry (activate-entry session-owner "the configuration service" #f))
+    (let* ((service-entry
+            (parameterize ((initial-evaluation-context
+                            (and (configuration? loaded) (configuration-module loaded))))
+              (activate-entry session-owner "the configuration service" #f)))
            (service-failure (if (eq? (report-entry-status service-entry) 'on) [] [service-entry]))
            (report (if (configuration? loaded)
                      (make-startup-report choice #f
@@ -1215,6 +1214,7 @@ prelude: :gerbil/core
                      (make-startup-report choice (string-append loaded "\nNothing was turned on.")
                                           service-failure))))
       (set! last-report-text (startup-report-text report))
+      (run-hook configuration-started-hook)
       report)))
 
 ;; The text of the last start-up or reload report, or #f before either.
@@ -1222,11 +1222,27 @@ prelude: :gerbil/core
 
 ;; The start-up owner is never a declaration in the running configuration,
 ;; so reload cannot diff or restart it. Its one environment lasts until exit.
-(defclass configuration-provider ((environment : top-context)) final: #t)
+(def initial-evaluation-context (make-parameter #f))
+
+(defclass configuration-provider ((environment : top-context)
+                                  (restart-wrappers : entry-table)) final: #t)
 
 (implement Configuration configuration-provider
   (reload! (lambda (self) (:- (call-with-context #f (lambda () (reload-report-text (reload-configuration!)))) :string)))
   (swap! (lambda (self old new) (restart-plugin! old new)))
+  (set-restart-wrapper!
+   (lambda (self ctx wrapper)
+     (let (old (entry-table-ref self.restart-wrappers 'restart))
+       (when old
+         (let (attempt (context-add-entry! ctx (new-entry-table) 'restart #f))
+           (error "Restart wrapper already registered" (entry-owner old) (entry-owner attempt))))
+       (context-add-entry! ctx self.restart-wrappers 'restart (context-bind ctx wrapper))
+       (void))))
+  (restart (lambda (self owners apply rollback)
+             (let (registered (entry-table-ref self.restart-wrappers 'restart))
+               (if registered
+                 ((entry-value registered) owners apply rollback)
+                 (with-catch (lambda (e) (rollback) (raise e)) apply)))))
   (last-report (lambda (self) last-report-text))
   (evaluate (lambda (self form)
               (parameterize ((current-expander-context self.environment))
@@ -1240,40 +1256,16 @@ prelude: :gerbil/core
   ;; declarations are reordered or added by a reload.
   (set-plugin-order! session-owner (##greatest-fixnum))
   (prepare-expander!)
-  (let (environment (parameterize ((current-expander-context (core-context-root)))
-                     (make-top-context)))
+  ;; The loaded module already resolved relative imports and import filters.
+  ;; Its body defines no module bindings; user definitions are inside init.
+  ;; A child top context sees those imports but keeps evaluated definitions
+  ;; separate and alive when reload replaces the configuration module.
+  (let (environment (make-top-context (initial-evaluation-context)))
     (parameterize ((current-expander-context environment))
       (eval '(import :tuna/config)))
     (context-provide! ctx configuration-service
-                      (Configuration (configuration-provider environment: environment)))))
-
-;; One line for the echo area when REPORT has problems, or #f: every
-;; unit whose status is not on or restarted, grouped by status, where the
-;; whole report is (LOG, the start-up log), and, when COMMAND? (the
-;; show-config-report command exists), the command that shows it.
-(def (startup-report-summary (report : startup-report) (log : :string) (command? : :boolean))
-  => (Maybe :string)
-  (let* ((entries (startup-report-entries report))
-         (statuses (filter (lambda ((status : :symbol)) (not (memq status '(on restarted))))
-                           (map (lambda ((e : report-entry)) (report-entry-status e)) entries)))
-         (parts (filter-map
-                 (lambda ((status : :symbol))
-                   (let (names (filter-map (lambda ((e : report-entry))
-                                             (and (eq? (report-entry-status e) status)
-                                                  (report-entry-what e)))
-                                           entries))
-                     (and (pair? names)
-                          (string-append (symbol->string status) ": " (string-join names ", ")))))
-                 (filter (lambda (status) (memq status statuses))
-                         '(failed skipped off deferred replaced))))
-         (where (string-append ". The report is in " log
-                               (if command? "; show-config-report shows it." "."))))
-    (cond
-     ((startup-report-problem report)
-      (string-append "Tuna start-up: the configuration did not load" where))
-     ((null? parts) #f)
-     (else
-      (string-append "Tuna start-up: " (string-join parts "; ") where)))))
+                      (Configuration (configuration-provider environment: environment
+                                                              restart-wrappers: (new-entry-table))))))
 
 ;; `tuna check`: load CHOICE's file without turning anything on. Returns
 ;; the problem, or #f when the file loads and its declarations are valid.

@@ -17,10 +17,6 @@
 (defmethod {restore-session! no-session}
   (lambda (self) (void)))
 
-(defmethod {restart! no-session}
-  (lambda (self owners apply rollback)
-    (with-catch (lambda (e) (rollback) (raise e)) apply)))
-
 (defmethod {state-directory no-session}
   (lambda (self) (error "This session keeps no state")))
 

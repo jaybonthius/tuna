@@ -44,9 +44,9 @@
       (delete-file-or-directory directory #t)))))
 
 (def editor-plugins
-  [commands-plugin keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
+  [session-owner commands-plugin keys-plugin echo-area-plugin rope-text-store-plugin settings-plugin
    session-plugin buffers-plugin autosave-plugin layout-plugin view-commands-plugin
-   html-renderer-plugin basic-editing-plugin minibuffer-plugin session-owner swap-configuration swap-commands-plugin])
+   html-renderer-plugin basic-editing-plugin minibuffer-plugin swap-configuration swap-commands-plugin])
 
 ;; One run of Tuna on DIRECTORY, booted as main does: activate, restore,
 ;; start the loop.

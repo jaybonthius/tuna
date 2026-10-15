@@ -5,7 +5,9 @@
 ;;; command fixtures from tuna/test-support/ that it builds on. Tuna's
 ;;; executable does not link any of them; they load from source.
 
-(import :tuna/plugins/commands
+(import :tuna/services/commands
+        :tuna/services/keys
+        :tuna/plugins/commands
         :tuna/plugins/keys
         :tuna/plugins/web
         :tuna/plugins/settings

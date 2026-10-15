@@ -7,7 +7,7 @@ prelude: :gerbil/core
 (import :tuna/services/commands
         :tuna/kernel
         :tuna/services/keys
-        :tuna/services/configuration
+        :tuna/configuration
         "plain-text-renderer"
         "two-views"
         "toy-buffers")

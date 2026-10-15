@@ -1,5 +1,5 @@
 ;;; Plugin options in init.ss (tuna/lib/plugin-options.ss) and the
-;;; configuration service with its report (tuna/services/configuration.ss):
+;;; configuration service with its report (tuna/configuration.ss):
 ;;; options are checked at load with every problem and its line, a load
 ;;; with a bad option changes nothing, options reach the plugin, and a
 ;;; changed option replaces the plugin with the running version as the
@@ -15,7 +15,7 @@
         :tuna/boot
         :tuna/lib/plugin-options
         :std/interface
-        :tuna/services/configuration
+        :tuna/configuration
         :tuna/services/keys
         :tuna/plugins/commands
         :tuna/plugins/keys
@@ -66,6 +66,9 @@
 (defclass stub-configuration ((reloads : :fixnum) (last : :t)) final: #t)
 
 (implement Configuration stub-configuration
+  (set-restart-wrapper! (lambda (self ctx wrapper) (void)))
+  (restart (lambda (self owners apply rollback)
+             (with-catch (lambda (e) (rollback) (raise e)) apply)))
   (reload! (lambda (self)
              (set! self.reloads (fx1+ self.reloads))
              (set! self.last (string-append "stub reload " (number->string self.reloads) "\n"))
@@ -354,19 +357,24 @@
                                       "(use-plugin dependent-plugin)"))
                     (report (start path)))
                (check (last-configuration-report) => (startup-report-text report))
-               (check (startup-report-summary report "/s/startup.log" #t)
+               (for-each activate-plugin! [commands-plugin keys-plugin test-messages-plugin reload-config-plugin])
+               (run-hook configuration-report-ready-hook
+                         (make-configuration-report (startup-report-text report) #f
+                           (map (lambda ((e : report-entry)) [(report-entry-status e) (report-entry-what e)])
+                                (startup-report-entries report)) "/s/startup.log"))
+               (check (current-message)
                       => "Tuna start-up: failed: failing-provider-plugin; skipped: dependent-plugin. The report is in /s/startup.log; show-config-report shows it.")
-               (check (startup-report-summary report "/s/startup.log" #f)
-                      => "Tuna start-up: failed: failing-provider-plugin; skipped: dependent-plugin. The report is in /s/startup.log.")
                (write-init directory "(use-plugin good-plugin)")
                (let (text (reload-configuration-report))
                  (check (contains? text "Tuna reload report") ? values)
                  (check (last-configuration-report) => text)))))
          (call-with-fresh-kernel []
            (lambda ()
-             (check (startup-report-summary (start (write-init directory "(use-plugin good-plugin)"))
-                                            "/s/startup.log" #t)
-                    => #f)
+             (start (write-init directory "(use-plugin good-plugin)"))
+             (for-each activate-plugin! [commands-plugin keys-plugin test-messages-plugin reload-config-plugin])
+             (run-hook configuration-report-ready-hook
+                       (make-configuration-report "No problems" #f '((on "good-plugin")) "/s/startup.log"))
+             (check (current-message) => "")
              ;; A reload that finds no file is the last report too.
              (delete-file (path-expand "init.ss" directory))
              (let (report (reload-configuration!))
@@ -425,7 +433,7 @@
          (def (write-init-mine line)
            (write-file-string
             (path-expand "init.ss" directory)
-            (string-append "#lang :tuna/config\n(import \"" test-plugins-module "\" \"mine\")\n" line)))
+            (string-append "#lang :tuna/config\n(import :tuna/services/commands :tuna/services/keys :tuna/services/settings)\n(import \"" test-plugins-module "\" \"mine\")\n" line)))
          (write-mine "v1")
          (write-init-mine "(use-plugin mine-plugin)")
          (call-with-fresh-kernel []

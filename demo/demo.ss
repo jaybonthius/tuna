@@ -11,7 +11,7 @@ prelude: :gerbil/core
 (import :tuna/services/commands
         :tuna/kernel
         :tuna/services/keys
-        :tuna/services/configuration
+        :tuna/configuration
         :tuna/plugins/rope
         :tuna/plugins/basic-editing
         "../tuna/test-support/string-text-store")

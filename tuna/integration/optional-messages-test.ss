@@ -3,7 +3,7 @@ prelude: :gerbil/core
 (import (only-in :tuna/boot session-owner restart-plugin!)
         :std/test :std/interface :tuna/kernel
         :tuna/services/commands :tuna/services/buffers :tuna/services/layout
-        :tuna/services/session :tuna/services/configuration
+        :tuna/services/session :tuna/configuration
         :tuna/plugins/commands :tuna/plugins/keys :tuna/plugins/rope
         :tuna/plugins/settings :tuna/plugins/buffers :tuna/plugins/layout
         :tuna/plugins/session :tuna/plugins/autosave :tuna/plugins/basic-editing
@@ -22,6 +22,9 @@ prelude: :gerbil/core
 
 (defclass silent-configuration () final: #t)
 (implement Configuration silent-configuration
+  (set-restart-wrapper! (lambda (self ctx wrapper) (void)))
+  (restart (lambda (self owners apply rollback)
+             (with-catch (lambda (e) (rollback) (raise e)) apply)))
   (reload! (lambda (self) "Reloaded.\n"))
   (last-report (lambda (self) "Last report.\n"))
   (evaluate (lambda (self form) (error "This configuration double does not evaluate code")))

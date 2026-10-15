@@ -15,33 +15,7 @@ prelude: :gerbil/core
         :tuna/kernel
         :tuna/boot
         :tuna/control
-        :tuna/services/session
-        (only-in :tuna/services/commands command-ref)
-        ;; Linked into the executable so that init.ss can import them.
-        (only-in :tuna/config)
-        (only-in :tuna/lib/jobs)
-        (only-in :tuna/lib/timers)
-        (only-in :tuna/plugins/commands)
-        (only-in :tuna/plugins/keys)
-        (only-in :tuna/plugins/rope)
-        (only-in :tuna/plugins/settings)
-        (only-in :tuna/plugins/echo-area)
-        (only-in :tuna/plugins/help-buffer)
-        (only-in :tuna/plugins/buffers)
-        (only-in :tuna/plugins/session)
-        (only-in :tuna/plugins/autosave)
-        (only-in :tuna/plugins/layout)
-        (only-in :tuna/plugins/html-renderer)
-        (only-in :tuna/plugins/buttons)
-        (only-in :tuna/plugins/basic-editing)
-        (only-in :tuna/plugins/minibuffer)
-        (only-in :tuna/plugins/completion-engine)
-        (only-in :tuna/plugins/completion-vertical)
-        (only-in :tuna/plugins/extended-command)
-        (only-in :tuna/plugins/orderless)
-        (only-in :tuna/plugins/command-annotations)
-        (only-in :tuna/plugins/view-commands)
-        (only-in :tuna/plugins/reload-config))
+        :tuna/configuration)
 (export main)
 
 ;; Formatting is process policy, not a plugin's responsibility. The sink
@@ -123,28 +97,6 @@ prelude: :gerbil/core
                   (newline port))
                 (lambda () (write-startup-report! text (startup-log-path))))))
 
-;; When start-up had problems and a plugin can show messages, say so there
-;; too, in one line naming the log and, when it exists, the command that
-;; shows the whole report.
-(def (show-start-up-summary (report : startup-report)) => :void
-  (let (summary (startup-report-summary
-                 report (startup-log-path)
-                 (with-catch (lambda (_) #f)
-                             (lambda () (and (command-ref 'show-config-report) #t)))))
-    (when (and summary (service-provider messages-service))
-      (message summary))))
-
-;; Print a failure of the session plugin's save or restore; Tuna carries on.
-(def (call-reporting-session-failure (what : :string) (thunk : :procedure)) => :void
-  (when (service-provider session-service)
-    (with-catch (lambda (e)
-                  (let (port (current-error-port))
-                    (display what port)
-                    (display " failed: " port)
-                    (display (exception-summary e) port)
-                    (newline port)))
-                thunk)))
-
 ;; Run Tuna: start, then handle events on this thread until stopped. The
 ;; editor loop runs once a plugin provides input. A `tuna reload` request
 ;; reloads on the editor loop's baton when the loop runs; otherwise this
@@ -158,8 +110,13 @@ prelude: :gerbil/core
                     (usage choice))
                   (lambda () (start-from-configuration choice flags)))))
     (report-start-up report)
-    (show-start-up-summary report))
-  (call-reporting-session-failure "Restoring the session" restore-session)
+    (run-hook configuration-report-ready-hook
+              (make-configuration-report
+               (startup-report-text report) (startup-report-problem report)
+               (map (lambda ((entry : report-entry))
+                      [(report-entry-status entry) (report-entry-what entry)])
+                    (startup-report-entries report))
+               (startup-log-path))))
   (let* ((events (make-channel))           ; 'stop, or [reload: completion]
          (control (start-control-server-reporting
                    (lambda ()
@@ -203,7 +160,7 @@ prelude: :gerbil/core
                                  (completion-post! done (cons #f "Tuna is shutting down; nothing was reloaded.\n")))
                                 (else (void))))))
     (stop-editor-loop!)
-    (call-reporting-session-failure "Saving the session" save-session)
+    (run-hook configuration-stopping-hook)
     (deactivate-all-plugins!)
     (remove-signal-handler! SIGINT)
     (remove-signal-handler! SIGTERM)))
