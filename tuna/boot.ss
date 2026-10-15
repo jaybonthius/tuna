@@ -11,7 +11,7 @@ prelude: :gerbil/core
 (import (only-in :std/error Error? Error-irritants)
         (only-in :gerbil/expander
                  import-module __module-registry module-context? module-context-path
-                 top-context make-top-context core-context-root current-expander-context
+                 top-context make-top-context top-context-super-set! core-context-root current-expander-context
                  module-context-import import-set? import-set-source module-import?
                  module-import-source module-export-context)
         (only-in :gerbil/runtime/syntax
@@ -950,6 +950,7 @@ prelude: :gerbil/core
          user-code user-forms follower))
       (when follower
         (defer-block-syncs! follower #f)))
+    (set! evaluation-module (configuration-module config))
     ;; Units left alone that a change turned off on the way.
     (for-each (lambda (unit)
                 (match unit
@@ -1227,10 +1228,8 @@ prelude: :gerbil/core
                         (error (string-append "Cannot validate plugin flags: " loaded))))))
     (for-each (lambda (o) (apply override-plugin-option! o)) overrides)
     (set! current-running (make-running-configuration choice [] #f [] #f))
-    (let* ((service-entry
-            (parameterize ((initial-evaluation-context
-                            (and (configuration? loaded) (configuration-module loaded))))
-              (activate-entry session-owner "the configuration service" #f)))
+    (set! evaluation-module (and (configuration? loaded) (configuration-module loaded)))
+    (let* ((service-entry (activate-entry session-owner "the configuration service" #f))
            (service-failure (if (eq? (report-entry-status service-entry) 'on) [] [service-entry]))
            (report (if (configuration? loaded)
                      (make-startup-report choice #f
@@ -1246,8 +1245,9 @@ prelude: :gerbil/core
 (def last-report-text #f)
 
 ;; The start-up owner is never a declaration in the running configuration,
-;; so reload cannot diff or restart it. Its one environment lasts until exit.
-(def initial-evaluation-context (make-parameter #f))
+;; so reload cannot diff or restart it. Evaluated bindings last until exit;
+;; their parent tracks the latest successfully loaded configuration.
+(def evaluation-module #f)
 
 (defclass configuration-provider ((owner : context)
                                   (environment : top-context)
@@ -1279,6 +1279,7 @@ prelude: :gerbil/core
   (evaluate (lambda (self form)
               (call-with-context self.owner
                 (lambda ()
+                  (top-context-super-set! self.environment evaluation-module)
                   (parameterize ((current-expander-context self.environment))
                     (eval form)))))))
 
@@ -1291,9 +1292,9 @@ prelude: :gerbil/core
   (prepare-expander!)
   ;; The loaded module already resolved relative imports and import filters.
   ;; Its body defines no module bindings; user definitions are inside init.
-  ;; A child top context sees those imports but keeps evaluated definitions
-  ;; separate and alive when reload replaces the configuration module.
-  (let (environment (make-top-context (initial-evaluation-context)))
+  ;; The persistent child keeps evaluated definitions and explicit imports;
+  ;; evaluate updates its parent when reload replaces the configuration module.
+  (let (environment (make-top-context evaluation-module))
     (parameterize ((current-expander-context environment))
       (eval '(import :tuna/config)))
     (context-provide! ctx configuration-service

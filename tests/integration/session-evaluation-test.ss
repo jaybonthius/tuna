@@ -54,6 +54,22 @@ prelude: :gerbil/core
             (check-exception (evaluate-form 'hidden) unbound-global-exception?)
             (check-exception (evaluate-form '(keymap-set "C-c x" 'not-imported))
                              unbound-global-exception?)))))
+    (test-case "reload updates imports while keeping evaluated definitions and imports"
+      (call-with-evaluation-session
+       (lambda ((path : :string))
+         (evaluate-forms '((import :std/misc/ports)
+                          (def evaluation-answer 17)))
+         (let (helper (path-expand "reload-helper.ss" (path-directory path)))
+           (write-file-string helper "(export answer)\n(def answer 42)\n")
+           (write-evaluation-init path
+             "(import (rename-in (only-in \"reload-helper\" answer) (answer reload-answer)))")
+           (check (reload-succeeded? (reload-configuration!)) => #t)
+           (check (evaluate-form 'reload-answer) => 42)
+           (check (evaluate-form 'evaluation-answer) => 17)
+           (check (evaluate-form '(procedure? read-file-string)) => #t)
+           (write-file-string path "#lang :tuna/config\n(")
+           (check (reload-succeeded? (reload-configuration!)) => #f)
+           (check (evaluate-form 'reload-answer) => 42)))))
     (test-case "evaluation wins configuration ties and survives changed and failed reloads"
       (call-with-evaluation-session
        (lambda ((path : :string))
