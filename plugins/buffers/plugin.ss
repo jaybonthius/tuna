@@ -228,13 +228,29 @@
     (let (revision (next-id!))
       (for-each (cut stamp-from! <> revision) nodes))))
 
+;; Detached subtrees must not be kept alive by their texts. Reattachment
+;; also refreshes revisions, since a detached text may have changed.
+(def (track-text-nodes! (n : default-node) (attached? : :boolean)) => :void
+  (when n.content
+    (let (t n.content)
+      (set! (default-text-nodes t)
+        (if attached?
+          (cons n (remq n (default-text-nodes t)))
+          (remq n (default-text-nodes t))))
+      (when attached? (stamp! n))))
+  (for-each (cut track-text-nodes! <> attached?) n.children))
+
 ;; Make PARENT the parent of CHILDREN, which must have none but PARENT.
 (def (adopt-children! (parent : default-node) (children : :list)) => :void
   (for-each (lambda ((child : default-node))
               (when (and child.parent (not (eq? child.parent parent)))
                 (error "A node already has a parent" (node-id child))))
             children)
-  (for-each (lambda ((child : default-node)) (set! child.parent parent)) children))
+  (for-each (lambda ((child : default-node))
+              (unless (eq? child.parent parent)
+                (set! child.parent parent)
+                (track-text-nodes! child #t)))
+            children))
 
 (def (new-default-node (id : :fixnum) (kind : :symbol) (attributes : :list) (children : :list)
                         (content :? default-text) (keymap :? entry-table))
@@ -247,7 +263,11 @@
     n))
 
 (def (set-children! (n : default-node) (children : :list)) => :void
-  (for-each (lambda ((child : default-node)) (set! child.parent #f)) n.children)
+  (for-each (lambda ((child : default-node))
+              (unless (memq child children)
+                (set! child.parent #f)
+                (track-text-nodes! child #f)))
+            n.children)
   (adopt-children! n children)
   (set! n.children children)
   (stamp! n))
@@ -290,6 +310,7 @@
 (def (new-default-buffer (name : :string) (root : default-node)) => default-buffer
   (when root.parent
     (error "A buffer's root must have no parent" (node-id root)))
+  (track-text-nodes! root #t)
   (let (focus (first-text root))
     (default-buffer id: (next-id!) name: name root: root point-node: focus point-position: 1
                     point-revision: (if focus (default-text-chars-revision (default-node-content focus)) 0)

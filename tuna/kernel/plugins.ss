@@ -120,9 +120,16 @@ prelude: :gerbil/core
                          doc:      (doc      :? :string := #f)
                          source:   (source   :? :string := #f))
   => entry
-  (let (new (make-entry (context-plugin-name ctx) priority (context-order ctx) (next-id!) value doc source))
+  (let* ((owner (context-plugin-name ctx))
+         (old (find (lambda ((e : entry)) (eq? (entry-owner e) owner))
+                    (entry-table-entries table name)))
+         (new (make-entry owner priority (context-order ctx) (next-id!) value doc source #f))
+         (undo (lambda () (entry-table-remove! table name new))))
     (entry-table-add! table name new)
-    (context-defer! ctx (lambda () (entry-table-remove! table name new)))
+    (when old
+      (set! (context-receipt ctx) (remq (entry-undo old) (context-receipt ctx))))
+    (set! (entry-undo new) undo)
+    (context-defer! ctx undo)
     new))
 
 (begin-syntax
@@ -174,8 +181,16 @@ prelude: :gerbil/core
                         (procedure : :procedure)
                         depth: (depth : :fixnum := 0))
   => :void
-  (let (callback (add-hook-callback! h name (context-plugin-name ctx) depth (context-bind ctx procedure)))
-    (context-defer! ctx (lambda () (remove-hook-callback! h callback)))))
+  (let* ((owner (context-plugin-name ctx))
+         (old (find (lambda ((c : hook-callback))
+                      (and (eq? (hook-callback-owner c) owner) (eq? (hook-callback-name c) name)))
+                    (current-hook-callbacks h)))
+         (callback (add-hook-callback! h name owner depth (context-bind ctx procedure)))
+         (undo (lambda () (remove-hook-callback! h callback))))
+    (when old
+      (set! (context-receipt ctx) (remq (hook-callback-undo old) (context-receipt ctx))))
+    (set! (hook-callback-undo callback) undo)
+    (context-defer! ctx undo)))
 
 ;; Named bindings stay live under (declare (separate)); expressions use
 ;; context-add-hook! when capturing a closure is intentional.

@@ -2,7 +2,8 @@
 ;;; (tuna/plugins/buffers.ss) and the toy (tuna/test-support/toy-buffers.ss).
 ;;; Each provider runs alone with a text store and settings.
 ;;; Restart and restore are integration-tested with session and autosave.
-(import :std/error
+(import (only-in :gerbil/runtime/mop slot-ref)
+        :std/error
         :std/test
         :tuna/kernel
         :tuna/lib/jobs
@@ -386,6 +387,29 @@
 (def buffers-test
   (test-suite "tuna/services/buffers: the default provider"
     (buffers-contract-cases buffers)
+
+    (test-case "texts release detached subtrees and track them again on reattachment"
+      (call-with-fresh-kernel [rope-text-store settings buffers]
+        (lambda ()
+          (let* ((t (new-text "shared"))
+                 (root (new-node 'column)))
+            (for-each (lambda (_)
+                        (set-node-children! root
+                          [(new-node 'column children: [(new-text-node t)])]))
+                      (iota 1000))
+            (check (length (slot-ref t 'nodes)) => 1)
+            (let* ((branch (car (node-children root)))
+                   (leaf (car (node-children branch))))
+              (set-node-children! root [])
+              (check (slot-ref t 'nodes) => [])
+              (text-replace! t 1 1 "!")
+              (let (revision (node-revision leaf))
+                (set-node-children! root [branch])
+                (check (> (node-revision leaf) revision) => #t))
+              (check (slot-ref t 'nodes) => [leaf])
+              (let (revision (node-revision root))
+                (text-replace! t 1 1 "!")
+                (check (> (node-revision root) revision) => #t)))))))
 
     (test-case "rebase-spans moves spans as highlights move and drops only emptied ones"
       (let (spans [(make-span 3 5 'a) (make-span 7 9 'b)])

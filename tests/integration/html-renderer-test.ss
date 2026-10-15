@@ -1,6 +1,8 @@
 ;;; The HTML renderer: nodes, highlights and cursors, element ids, the
 ;;; parts a click can name, the layout drawn from the frame, and HTML reuse.
-(import :std/test
+(import (only-in :gerbil/runtime/mop slot-ref)
+        (only-in :gerbil/runtime/interface interface-instance-object)
+        :std/test
         :tuna/kernel
         (only-in :tuna/plugins/keys/contract keymap-set! keymap-set-in! new-keymap)
         :tuna/plugins/settings/contract
@@ -265,6 +267,31 @@
            (check (and (offset "style=\"--tuna-size: 1\"" html) #t) => #t)
            ;; *scratch* already shows, so display-buffer reuses its view.
            (check (offset "class=\"container fit vertical\"" html) => #f)))))
+
+    (test-case "HTML reuse: removed nodes leave the cache, unchanged subtrees stay"
+      (call-with-fresh-kernel renderer-plugins
+        (lambda ()
+          (activate-plugin! counted-kind)
+          (set-view-buffer (selected-view) (get-buffer "b"))
+          (let* ((root (buffer-root (current-buffer)))
+                 (kept (new-node 'counted children: [(new-node 'counted)]))
+                 (rendering (interface-instance-object (service-provider renderer-service))))
+            (for-each (lambda (_)
+                        (set-node-children! root [kept (new-node 'counted)])
+                        (screen))
+                      (iota 1000))
+            (let (cached (hash-get (slot-ref rendering 'views) (view-id (selected-view))))
+              (check (hash-length (slot-ref cached 'nodes)) => 4)
+              (hash-clear! renders)
+              (screen)
+              (check (renders-of "b") => 0)
+              (set-node-children! root [kept])
+              (screen)
+              (check (renders-of "b") => 1)
+              (check (hash-length (slot-ref cached 'nodes)) => 3)
+              (set-node-children! root [])
+              (screen)
+              (check (hash-length (slot-ref cached 'nodes)) => 1))))))
 
     (test-case "HTML reuse: an unchanged buffer's node renderers are not called again"
       (call-with-fresh-kernel renderer-plugins
