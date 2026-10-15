@@ -1,3 +1,4 @@
+#lang :tuna/prelude
 ;;; The default layout (live tier; ADR 11, ADR 13): views arranged in a
 ;;; tree of containers (tuna/plugins/layout/tree.ss), a movable frame, and
 ;;; frame marks.
@@ -27,7 +28,6 @@
 ;;; The private `layout-tree` session slot restores this provider's tree;
 ;;; otherwise the neutral `layout` slot restores views and frame marks.
 ;;; Dependents rebuild their locked views after activation.
-prelude: :gerbil/core
 
 (import :std/interface
         :tuna/plugins/commands/contract
@@ -38,8 +38,7 @@ prelude: :gerbil/core
         :tuna/plugins/settings/contract
         :tuna/plugins/layout/contract
         :tuna/plugins/layout/tree)
-(export layout
-        context-define-container-kind!)
+(export layout)
 
 ;; The frame: its target, the part with id PART (#f for the whole layout)
 ;; and, with a view's part, START, a node of that view's buffer; and the
@@ -117,16 +116,6 @@ prelude: :gerbil/core
   (lambda ((name : :symbol))
     (let (best (entry-table-ref self.kinds name))
       (if best (entry-value best) fit-kind))))
-
-;; Add the container KIND to the default layout for CTX's plugin, until
-;; that plugin is turned off. The current layout must be this plugin's.
-(def (context-define-container-kind! (ctx : context) (kind : layout-kind)) => :void
-  (let (provider (service-provider layout-service))
-    (unless (tree-layout? provider)
-      (error "The current layout does not take container kinds"))
-    (context-add-entry! ctx (tree-layout-kinds provider) (layout-kind-name kind) kind
-                        doc: (layout-kind-doc kind))
-    (void)))
 
 ;;; The frame
 
@@ -914,11 +903,7 @@ prelude: :gerbil/core
     (using (self (tree-layout root: (make-leaf v #f) frame: (make-frame-state #f #f v) level: 0
                               marks: [] locked: [] kinds: (new-entry-table))
                  : tree-layout)
-      (context-set-click-resolver! ctx
-        (lambda ((p : posn))
-          (or (posn-node p)
-              (let (v (posn-view p))
-                (and v (buffer-root (view-showing v)))))))
+      (context-set-click-resolver! ctx posn-start-node)
       (context-add-entry! ctx self.kinds 'fit fit-kind doc: (layout-kind-doc fit-kind))
       (context-add-entry! ctx self.kinds 'tabbed tabbed-kind doc: (layout-kind-doc tabbed-kind))
       (context-add-hook! ctx kill-buffer-hook 'layout (lambda (b) (buffer-killed! self b)))

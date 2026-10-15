@@ -571,14 +571,122 @@ prelude: :gerbil/core
 ;; Replacing turns the running unit off and the new one on. If the new one
 ;; fails it is undone, and the running one, still in memory, is turned
 ;; back on. While the editor loop runs, a plugin that provides a
-;; startup-tier service is neither turned off nor replaced, and one that
-;; would take such a service over fails in the kernel; both are reported
-;; as deferred to the next start. Every activation has the time limit of
+;; startup-tier service is neither turned off nor replaced: restart-plugin!
+;; checks its closure and reports it as deferred to the next start.
+;; Every activation has the time limit of
 ;; call-with-activation-time-limit.
-(def (apply-configuration! (choice : config-choice) (config : configuration)
-                           (modules-reloaded? : :boolean))
-  => :pair
+(defstruct configuration-diff ((choice : config-choice)
+                               (config : configuration)
+                               (old : running-configuration)
+                               (modules-reloaded? : :boolean)
+                               (removed : :list)
+                               (swaps : :list))
+  final: #t)
+
+(defstruct configuration-execution ((declarations : :list)
+                                    (kept : :list)
+                                    (decided : :list)
+                                    (providers-before : :list)
+                                    (replaced : :list)
+                                    (entries : :list))
+  final: #t)
+
+(def (classify-configuration (choice : config-choice) (config : configuration)
+                             (modules-reloaded? : :boolean)) => configuration-diff
   (let* ((old (or current-running (make-running-configuration choice [] #f [] #f)))
+         (old-declarations (running-configuration-declarations old))
+         (new-declarations (configuration-declarations config))
+         (swaps (filter-map
+                 (lambda ((d : declaration))
+                   (and (not (named (declaration-name d) old-declarations))
+                        (let (removed (find
+                                      (lambda ((o : declaration))
+                                        (and (not (named (declaration-name o) new-declarations))
+                                             (ormap (lambda ((svc : service))
+                                                      (memq svc (plugin-provides (declaration-target o))))
+                                                    (plugin-provides (declaration-target d)))))
+                                      old-declarations))
+                          (and removed (cons d removed))))) new-declarations)))
+    (make-configuration-diff choice config old modules-reloaded?
+      (filter (lambda ((d : declaration))
+                (not (or (named (declaration-name d) new-declarations)
+                         (find (lambda (pair) (eq? (cdr pair) d)) swaps))))
+              (reverse old-declarations))
+      swaps)))
+
+;; Report ordering is stable even when an earlier result is superseded.
+(def (record-entry (entries : :list) (entry : report-entry)) => :list
+  (let (same? (lambda ((e : report-entry))
+                (eq? (plugin-name (report-entry-subject e))
+                     (plugin-name (report-entry-subject entry)))))
+    (if (find same? entries)
+      (map (lambda ((e : report-entry)) (if (same? e) entry e)) entries)
+      (cons entry entries))))
+
+(def (apply-configuration! (choice : config-choice) (config : configuration)
+                           (modules-reloaded? : :boolean)) => :pair
+  (report-configuration
+   (execute-configuration! (classify-configuration choice config modules-reloaded?))))
+
+;; Whether D gives its plugin other options than O, the running
+;; declaration of the same plugin object: compared by each option's
+;; value or default, so reordering options or writing out a default
+;; changes nothing. A difference only in options that program code
+;; overrides changes nothing now either; it is reported
+;; as taking effect at a start without the override.
+(def (options-change? (d : declaration) (o : declaration) (record! : :procedure)) => :boolean
+  (let* ((p (declaration-target d))
+         (new (plugin-option-values p (declaration-options d)))
+         (old (plugin-option-values p (declaration-options o)))
+         (differing (map car (filter (lambda (n) (not (member n old))) new)))
+         (overridden (filter (cut plugin-option-override p <>) differing)))
+    (cond
+     ((null? differing) #f)
+     ((fx= (length overridden) (length differing))
+      (record! (make-report-entry
+                p (plugin-label p) (declaration-source d) 'deferred
+                (string-append (overridden-text p overridden)
+                               ", so the change takes effect only when Tuna starts without the override")))
+      #f)
+     (else #t))))
+
+;; Classify D against the running declarations.
+(def (classify-declaration (d : declaration) (diff : configuration-diff)
+                           (record! : :procedure)) => change
+  (let* ((old-declarations (running-configuration-declarations (configuration-diff-old diff)))
+         (swaps (configuration-diff-swaps diff))
+         (modules-reloaded? (configuration-diff-modules-reloaded? diff))
+         (o (named (declaration-name d) old-declarations)))
+    (cond
+     ((assq d swaps) => (lambda (pair) (make-change 'replace d (cdr pair))))
+     ((not o) (make-change 'add d #f))
+     ((not (eq? (declaration-target o) (declaration-target d)))
+      (make-change (if (plugin-active? (declaration-target o)) 'replace 'retry) d o))
+     (else
+      (let* ((same-block? (if (declaration-block d)
+                            (and (declaration-block o)
+                                 (not modules-reloaded?)
+                                 (equal? (declaration-block-forms d) (declaration-block-forms o)))
+                            (not (declaration-block o))))
+             (kept (if same-block?
+                     (make-declaration (declaration-target d) (declaration-block o)
+                                       (declaration-block-forms d) (declaration-source d)
+                                       (declaration-options d))
+                     d)))
+        (cond
+         ((not (plugin-active? (declaration-target d))) (make-change 'retry kept o))
+         ((options-change? d o record!) (make-change 'replace kept o))
+         ((not same-block?) (make-change 'block kept o))
+         ((and (declaration-block kept) (not (plugin-active? (: (declaration-block kept) plugin))))
+          (make-change 'retry-block kept o))
+         (else (make-change 'keep kept o))))))))
+
+;; Refine live/off decisions after removals, preserving retry and follower order.
+(def (execute-configuration! (diff : configuration-diff)) => configuration-execution
+  (let* ((choice (configuration-diff-choice diff))
+         (config (configuration-diff-config diff))
+         (modules-reloaded? (configuration-diff-modules-reloaded? diff))
+         (old (configuration-diff-old diff))
          (old-declarations (running-configuration-declarations old))
          (new-declarations (configuration-declarations config))
          (follower (running-configuration-follower old))
@@ -592,26 +700,9 @@ prelude: :gerbil/core
          (decided [])
          (providers-before (service-providers))
          (replaced-names [])            ; plugins replaced by a new value
-         (entries [])
-         (swaps (filter-map
-                 (lambda ((d : declaration))
-                   (and (not (named (declaration-name d) old-declarations))
-                        (let (removed (find
-                                      (lambda ((o : declaration))
-                                        (and (not (named (declaration-name o) new-declarations))
-                                             (ormap (lambda ((svc : service))
-                                                      (memq svc (plugin-provides (declaration-target o))))
-                                                    (plugin-provides (declaration-target d)))))
-                                      old-declarations))
-                          (and removed (cons d removed))))) new-declarations)))
-    ;; Add ENTRY, replacing an earlier entry for the same plugin.
-    (def (record! (entry : report-entry))
-      (let (same? (lambda ((e : report-entry))
-                    (eq? (plugin-name (report-entry-subject e))
-                         (plugin-name (report-entry-subject entry)))))
-        (set! entries (if (find same? entries)
-                        (map (lambda ((e : report-entry)) (if (same? e) entry e)) entries)
-                        (cons entry entries)))))
+         (entries []))
+    (def (record! (entry : report-entry)) => :void
+      (set! entries (record-entry entries entry)))
     ;; Make D the running declaration of NAME, or forget NAME when D is #f.
     (def (set-working! (name : :symbol) (d :? declaration))
       (let (others (filter (lambda ((e : declaration)) (not (eq? (declaration-name e) name)))
@@ -785,55 +876,6 @@ prelude: :gerbil/core
              (else (record! entry))))))
         (drain! #f)))
 
-    ;; Whether D gives its plugin other options than O, the running
-    ;; declaration of the same plugin object: compared by each option's
-    ;; value or default, so reordering options or writing out a default
-    ;; changes nothing. A difference only in options that program code
-    ;; overrides changes nothing now either; it is reported
-    ;; as taking effect at a start without the override.
-    (def (options-change? (d : declaration) (o : declaration)) => :boolean
-      (let* ((p (declaration-target d))
-             (new (plugin-option-values p (declaration-options d)))
-             (old (plugin-option-values p (declaration-options o)))
-             (differing (map car (filter (lambda (n) (not (member n old))) new)))
-             (overridden (filter (cut plugin-option-override p <>) differing)))
-        (cond
-         ((null? differing) #f)
-         ((fx= (length overridden) (length differing))
-          (record! (make-report-entry
-                    p (plugin-label p) (declaration-source d) 'deferred
-                    (string-append (overridden-text p overridden)
-                                   ", so the change takes effect only when Tuna starts without the override")))
-          #f)
-         (else #t))))
-
-    ;; Classify D against the running declarations.
-    (def (classify (d : declaration)) => change
-      (let (o (named (declaration-name d) old-declarations))
-        (cond
-         ((assq d swaps) => (lambda (pair) (make-change 'replace d (cdr pair))))
-         ((not o) (make-change 'add d #f))
-         ((not (eq? (declaration-target o) (declaration-target d)))
-          (make-change (if (plugin-active? (declaration-target o)) 'replace 'retry) d o))
-         (else
-          (let* ((same-block? (if (declaration-block d)
-                                (and (declaration-block o)
-                                     (not modules-reloaded?)
-                                     (equal? (declaration-block-forms d) (declaration-block-forms o)))
-                                (not (declaration-block o))))
-                 (kept (if same-block?
-                         (make-declaration (declaration-target d) (declaration-block o)
-                                           (declaration-block-forms d) (declaration-source d)
-                                           (declaration-options d))
-                         d)))
-            (cond
-             ((not (plugin-active? (declaration-target d))) (make-change 'retry kept o))
-             ((options-change? d o) (make-change 'replace kept o))
-             ((not same-block?) (make-change 'block kept o))
-             ((and (declaration-block kept) (not (plugin-active? (: (declaration-block kept) plugin))))
-              (make-change 'retry-block kept o))
-             (else (make-change 'keep kept o))))))))
-
     ;; Supply file order before any activation, including blocks. Kept
     ;; owners share this rank with their entries, so a reorder is immediate.
     (let loop ((rest new-declarations) (rank 1))
@@ -853,12 +895,8 @@ prelude: :gerbil/core
           (defer-block-syncs! follower #t)
           (let (p (: (block-follower-hooks follower) plugin))
             (record! (activate-entry p (plugin-label p) #f))))
-        (for-each (lambda ((d : declaration))
-                    (unless (or (named (declaration-name d) new-declarations)
-                                (find (lambda (pair) (eq? (cdr pair) d)) swaps))
-                      (remove! d)))
-                  (reverse old-declarations))
-        (let* ((all-changes (map classify new-declarations))
+        (for-each remove! (configuration-diff-removed diff))
+        (let* ((all-changes (map (lambda ((d : declaration)) (classify-declaration d diff record!)) new-declarations))
                (problems (configuration-plugin-problems config))
                (changes (filter (lambda ((c : change))
                                   (not (assq (declaration-target (change-new c)) problems))) all-changes))
@@ -941,6 +979,18 @@ prelude: :gerbil/core
       (when follower
         (defer-block-syncs! follower #f)))
     (set! evaluation-module (configuration-module config))
+    (make-configuration-execution new-declarations kept-units decided providers-before replaced-names entries)))
+
+;; Reconcile results with the final running state, then format the report.
+(def (report-configuration (result : configuration-execution)) => :pair
+  (let ((new-declarations (configuration-execution-declarations result))
+        (kept-units (configuration-execution-kept result))
+        (decided (configuration-execution-decided result))
+        (providers-before (configuration-execution-providers-before result))
+        (replaced-names (configuration-execution-replaced result))
+        (entries (configuration-execution-entries result)))
+    (def (record! (entry : report-entry)) => :void
+      (set! entries (record-entry entries entry)))
     ;; Units left alone that a change turned off on the way.
     (for-each (lambda (unit)
                 (match unit
@@ -1237,7 +1287,9 @@ prelude: :gerbil/core
   (evaluate (lambda (self form)
               (call-with-context self.owner
                 (lambda ()
-                  (top-context-super-set! self.environment evaluation-module)
+                  ;; Without a loaded init, keep the root that supplies core syntax.
+                  (when evaluation-module
+                    (top-context-super-set! self.environment evaluation-module))
                   (parameterize ((current-expander-context self.environment))
                     (eval form)))))))
 

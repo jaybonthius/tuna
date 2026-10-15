@@ -1,3 +1,4 @@
+#lang :tuna/prelude
 ;;; The default text store: a persistent rope (ADR 6).
 ;;;
 ;;; A rope is a height-balanced (AVL) binary tree whose leaves hold short
@@ -6,7 +7,6 @@
 ;;; new rope sharing every untouched subtree with the old one. Leaf strings
 ;;; are never mutated. Internally positions are 0-based offsets; the
 ;;; TextStore methods convert from 1-based positions at the boundary.
-prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel

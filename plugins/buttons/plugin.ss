@@ -1,3 +1,4 @@
+#lang :tuna/prelude
 ;;; Buttons (live tier; Emacs button.el): draws button nodes (the buttons
 ;;; contract) as buttons, and binds a left click on one, `<mouse-1>` in
 ;;; `button-keymap`, to `push-button`, which runs the action of the button
@@ -9,7 +10,6 @@
 ;;; real <button>, out of the browser's tab order (tabindex -1), since
 ;;; keyboard focus is Tuna's, not the browser's; it is marked clickable
 ;;; from its keymap like any node.
-prelude: :gerbil/core
 
 (import :tuna/plugins/commands/contract
         :tuna/kernel

@@ -189,13 +189,12 @@ prelude: :gerbil/core
                                 force-at: #f stopping: #f)
                    : editor-loop)
         (set! k.loop loop)
-        (set! k.live? #t)
         (let (thread (spawn-thread (lambda () (editor-thread loop)) 'tuna-editor-loop))
           (set! loop.thread thread)
           (thread-send thread [wake:]))))))
 
 ;; Stop the loop: force out a running task, quit waiting ones, and fail
-;; queued calls. The kernel stops being live.
+;; queued calls.
 (def (stop-editor-loop!) => :void
   (using (k (the-kernel) : kernel)
     (let (loop (kernel-editor-loop k))
@@ -206,8 +205,7 @@ prelude: :gerbil/core
             (thread-send thread [stop: (lambda () (completion-post! done #t))])
             (completion-wait! done)
             (thread-join! thread)
-            (set! k.loop #f)
-            (set! k.live? #f)))))))
+            (set! k.loop #f)))))))
 
 ;; A procedure of an input item that submits it to this kernel's editor
 ;; loop: the item is queued for the Input provider to resolve, unless the

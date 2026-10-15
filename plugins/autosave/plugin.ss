@@ -1,3 +1,4 @@
+#lang :tuna/prelude
 ;;; Autosave (live tier; ADR 5): keeps unsaved buffer text in
 ;;; $XDG_STATE_HOME/tuna/autosave/, one file per buffer, and the session slot
 ;;; `buffers`, which lists each buffer's name, point, and autosave file, so
@@ -7,7 +8,6 @@
 ;;; to the plugins that build them, and internal buffers are skipped. A
 ;;; buffer's file is rewritten only when its text changed; files of buffers
 ;;; that are gone are deleted.
-prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable)
         :tuna/kernel

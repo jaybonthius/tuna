@@ -1,6 +1,6 @@
+#lang :tuna/prelude
 ;;; Inline completion engine. Matching sees plain text/indices, never buffers
 ;;; or candidate values; the post-command hook finishes it before redisplay.
-prelude: :gerbil/core
 
 (import :std/interface (only-in :gerbil/runtime/hash HashTable)
         :tuna/kernel :tuna/plugins/commands/contract :tuna/plugins/keys/contract

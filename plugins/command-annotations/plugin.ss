@@ -1,5 +1,5 @@
+#lang :tuna/prelude
 ;;; Category annotators add typed fields, independent of the completion UI.
-prelude: :gerbil/core
 (import :tuna/plugins/commands/contract
         :tuna/kernel :tuna/plugins/completion/contract :tuna/plugins/keys/contract
         :tuna/plugins/buffers/contract)

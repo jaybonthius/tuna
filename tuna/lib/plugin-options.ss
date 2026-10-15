@@ -32,7 +32,6 @@ prelude: :gerbil/core
         plugin-option-values
         override-plugin-option!
         plugin-option-override
-        remove-plugin-option-override!
         plugin-option)
 
 ;; What values an option accepts, and how its command-line spelling is
@@ -174,12 +173,6 @@ prelude: :gerbil/core
              (cons [name value . why]
                    (filter (lambda (o) (not (eq? (car o) name)))
                            (hash-ref option-overrides (plugin-name p) [])))))
-
-;; Let init.ss decide P's option NAME again.
-(def (remove-plugin-option-override! (p : plugin) (name : :symbol)) => :void
-  (hash-put! option-overrides (plugin-name p)
-             (filter (lambda (o) (not (eq? (car o) name)))
-                     (hash-ref option-overrides (plugin-name p) []))))
 
 ;; What overrides P's option NAME, such as "--port", or #f.
 (def (plugin-option-override (p : plugin) (name : :symbol)) => (Maybe :string)

@@ -22,6 +22,8 @@
         :tuna/plugins/renderer/plugin
         :tuna/plugins/basic-editing/plugin
         :tuna/plugins/minibuffer/plugin
+        :tuna/plugins/completion/plugin
+        :tuna/plugins/extended-command/plugin
         :tuna/plugins/renderer/contract
         "../../tuna/tests/support/kernel"
         "../../plugins/keys/tests/support/keys"
@@ -46,7 +48,8 @@
 (def editor-plugins
   [session-owner commands keys echo-area rope-text-store settings
    session buffers autosave layout view-commands
-   html-renderer basic-editing minibuffer swap-configuration swap-commands])
+   html-renderer basic-editing minibuffer completion-engine extended-command
+   swap-configuration swap-commands])
 
 ;; One run of Tuna on DIRECTORY, booted as main does: activate, restore,
 ;; start the loop.
@@ -103,6 +106,26 @@
 
 (def session-restart-test
   (test-suite "integration: a session restart"
+    (test-case "a swap chosen through M-x retires its own command quietly"
+      (call-with-state-directory
+       (lambda (directory)
+         (run-tuna directory
+          (lambda ()
+            (let ((outcomes []) (before (on-baton (lambda () (service-provider buffers-service)))))
+              (defplugin (completion-observer ctx) "Observes task outcomes across swaps."
+                (context-add-hook! ctx task-finished-hook 'outcomes
+                  (lambda (id name how) (set! outcomes (cons [name how] outcomes)))))
+              (on-baton (lambda () (activate-plugin! completion-observer)))
+              (type! "h" "i")
+              (type! "M-x" "s" "w" "a" "p" "-" "b" "u" "f" "f" "e" "r" "s" "RET")
+              (check (buffer-text "*scratch*") => "hi")
+              (check (on-baton (lambda () (eq? before (service-provider buffers-service)))) => #f)
+              (check (on-baton (lambda () (assoc 'execute-extended-command outcomes)))
+                     => '(execute-extended-command returned))
+              (check (and (string-contains (screen) "Quit") #t) => #f)
+              (type! "M-x" "s" "w" "a" "p" "-" "b" "u" "f" "f" "e" "r" "s" "RET")
+              (check (buffer-text "*scratch*") => "hi")
+              (check (and (string-contains (screen) "Quit") #t) => #f)))))))
     (test-case "buffers, their text and names, and points come back after a restart"
       (call-with-state-directory
        (lambda (directory)

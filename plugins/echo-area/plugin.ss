@@ -1,8 +1,8 @@
+#lang :tuna/prelude
 ;;; The echo area (live tier): messages in a buffer, " *Echo Area*", which
 ;;; the plugin puts in a locked view in the bar at the bottom of the
 ;;; layout. A message goes to the echo area view nearest the selected view,
 ;;; or to this plugin's buffer when no echo area view is visible.
-prelude: :gerbil/core
 
 (import :tuna/kernel
         :tuna/plugins/buffers/contract

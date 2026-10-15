@@ -1,6 +1,6 @@
+#lang :tuna/prelude
 ;;; Settings resolution (startup tier): the dynamic layer, then plugin
 ;;; scopes, then owner-tagged global values, then the default (ADR 9).
-prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel

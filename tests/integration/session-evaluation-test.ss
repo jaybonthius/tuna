@@ -70,6 +70,20 @@ prelude: :gerbil/core
            (write-file-string path "#lang :tuna/config\n(")
            (check (reload-succeeded? (reload-configuration!)) => #f)
            (check (evaluate-form 'reload-answer) => 42)))))
+    (test-case "a successful reload after failed startup supplies evaluation imports"
+      (call-with-evaluation-session
+       (lambda ((path : :string))
+         (deactivate-all-plugins!)
+         (write-file-string path "#lang :tuna/config\n(")
+         (check (startup-report-problem
+                  (start-from-configuration (make-config-choice path "--config"))) ? string?)
+         (evaluate-form '(def before-recovery 17))
+         (write-file-string (path-expand "recovery.ss" (path-directory path))
+                            "(export recovered-answer)\n(def recovered-answer 42)\n")
+         (write-file-string path "#lang :tuna/config\n(import \"recovery\")\n")
+         (check (reload-succeeded? (reload-configuration!)) => #t)
+         (check (evaluate-form 'recovered-answer) => 42)
+         (check (evaluate-form 'before-recovery) => 17))))
     (test-case "evaluation wins configuration ties and survives changed and failed reloads"
       (call-with-evaluation-session
        (lambda ((path : :string))

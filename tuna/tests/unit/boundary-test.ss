@@ -53,7 +53,6 @@
 ;; in; expanding it at load time resolves it against that same directory.
 (def root-directory
   (path-normalize (path-expand "../../../" (this-source-directory))))
-(def baseline-name "tuna/kernel/boundary-baseline.sexp")
 
 (def (source-path (name : :string)) => :string
   (path-expand name root-directory))
@@ -73,7 +72,7 @@
 
 ;; The kernel: its facade tuna/kernel.ss and tuna/kernel/.
 (def kernel-layer
-  (make-layer "kernel" "tuna/kernel" "tuna/kernel.ss" [baseline-name] []))
+  (make-layer "kernel" "tuna/kernel" "tuna/kernel.ss" [] []))
 
 ;; Shared libraries, built only on the public kernel API: no kernel
 ;; module other than the facade, no contract, no plugin, no prelude.
@@ -158,19 +157,31 @@
     []))
 
 
-;; Feature names, not package paths or exported plugin bindings. These
-;; are the exact pre-move file stems: generic "completion" and "annotations"
-;; also name kernel concurrency objects and Gerbil types, not editor features.
-(def feature-names
-  '("autosave" "basic-editing" "buffers" "buttons"
-    "command-annotations" "commands" "completion-engine" "completion-vertical"
-    "echo-area" "extended-command" "help-buffer" "html-renderer"
-    "keys" "layout" "minibuffer" "orderless"
-    "reload-config" "rope" "session" "settings"
-    "view-commands" "web" "digit-highlighter" "endless-commands"
-    "plain-text-renderer" "rename-command" "services-help" "string-text-store"
-    "swap-commands" "toy-buffers" "toy-commands" "toy-completion-ui"
-    "tree-buffer" "two-views" "demo" "config-blocks"))
+;; New packages and source-only doubles automatically become forbidden kernel
+;; vocabulary. "completion" and "annotations" also name concurrency
+;; primitives and Gerbil type declarations, not just editor features.
+(def (plugin-package-directories) => :list
+  (filter-map (lambda ((name : :string))
+                (let (directory (string-append "plugins/" name))
+                  (and (file-exists? (source-path (string-append directory "/gerbil.pkg"))) directory)))
+              (list-sort string<? (directory-files (source-path "plugins")))))
+
+(def (feature-names) => :list
+  (unique
+   (filter (lambda ((name : :string)) (not (member name '("completion" "annotations"))))
+    (append
+     (map path-strip-directory (plugin-package-directories))
+     (apply append
+       (map (lambda ((file : :string))
+              (apply append (map defined-plugin-names (read-forms (source-path file)))))
+            (append (filter (lambda ((file : :string))
+                              (or (not (test-source? file))
+                                  (string-contains file "/tests/support/")))
+                            (source-names "plugins"))
+                    (source-names "demo")
+                    ;; Configuration fixtures exercise generic plugin/runtime vocabulary.
+                    (filter (lambda ((file : :string)) (not (equal? file "tests/support/config.ss")))
+                            (source-names "tests/support")))))))))
 
 ;;; Imports and includes
 
@@ -448,14 +459,17 @@
            (string-append file ": imports private kernel module " name "; use :tuna/kernel")))
     names))
 
-(def program-files '("tuna/main.ss" "tuna/boot.ss" "tuna/control.ss" "tuna/config-blocks.ss"
-                     "tuna/plugin-use.ss"))
+(def (program-files) => :list
+  (filter (lambda ((file : :string))
+            (and (fx= (length (string-split file #\/)) 2)
+                 (not (public-tuna-target? (source-path (path-strip-extension file))))))
+          (source-names "tuna")))
 
 (def (program-reference-problems (file : :string) (names : :list)) => :list
   (filter-map
     (lambda ((name : :string))
-      (and (not (or (member file program-files) (test-source? file)))
-           (member (string-append (reference-target file name) ".ss") (map source-path program-files))
+      (and (not (or (member file (program-files)) (test-source? file)))
+           (member (string-append (reference-target file name) ".ss") (map source-path (program-files)))
            (string-append file ": only the program uses program code " name)))
     names))
 
@@ -559,6 +573,17 @@
     (map (lambda ((owner : :string)) (cons owner (hash-ref graph owner)))
          (list-sort string<? (hash-keys graph)))))
 
+;; Read the declarative package list, never execute build.ss in a test.
+(def (built-package-directories) => :list
+  (match (find (lambda (form) (and (pair? form) (eq? (car form) 'def)
+                                  (pair? (cdr form)) (eq? (cadr form) 'packages)))
+               (read-forms (source-path "build.ss")))
+    (['def 'packages ['quasiquote packages]] (map car packages))
+    (else (error "build.ss has no declarative packages list"))))
+
+(def (unbuilt-packages (packages : :list) (built : :list)) => :list
+  (filter (lambda ((package : :string)) (not (member package built))) packages))
+
 (def (graph-cycle-problems (graph : :list)) => :list
   (let ((done []) (problems []))
     (let visit ((file #f) (path []))
@@ -620,7 +645,7 @@
 ;; Every forbidden term's label, once: words, registry names, then plugin
 ;; names that are not already words.
 (def (forbidden-labels) => :list
-  (unique (append forbidden-words forbidden-registry-names feature-names)))
+  (unique (append forbidden-words forbidden-registry-names (feature-names))))
 
 ;; First word -> the terms starting with it, each (label . words).
 (def (term-index (labels : :list)) => HashTable
@@ -680,46 +705,13 @@
 (def (number-list (numbers : :list)) => :string
   (string-join (map number->string numbers) ", "))
 
-;; One baseline entry: a known hit count and why it is still there.
-(defstruct baseline-entry ((file   : :string)
-                           (label  : :string)
-                           (count  : :fixnum)
-                           (reason : :string))
-  final: #t)
-
-;; The kernel-cleanup plan steps that remove baseline entries. None
-;; remain, so every entry must give a "permanent: <why>" reason.
-(def baseline-steps '())
-
-(def (valid-reason? (reason : :string)) => :boolean
-  (or (and (member reason baseline-steps) #t)
-      (and (string-prefix? "permanent: " reason)
-           (fx> (string-length reason) (string-length "permanent: ")))))
-
-(def (read-baseline) => :list
-  (map (lambda (form)
-         (match form
-           ([(? string? file) (? string? label) (? fixnum? count) (? string? reason)]
-            (unless (fx> count 0)
-              (error "Baseline count must be positive" baseline-name form))
-            (unless (valid-reason? reason)
-              (error "Baseline reason must be \"permanent: <why>\"; no kernel-cleanup step remains in baseline-steps"
-                     baseline-name form))
-            (make-baseline-entry file label count reason))
-           (else (error "Malformed baseline entry; expected (file term count reason)"
-                        baseline-name form))))
-       (read-forms (source-path baseline-name))))
-
-;; Hit limits from the baseline: (file . term) -> the sum of its entries'
-;; counts. A (file, term) may have several entries when its hits go away in
-;; different steps.
-(def (baseline-limits (baseline : :list)) => HashTable
-  (let (limits (make-hash-table))
-    (for-each (lambda ((e : baseline-entry))
-                (hash-update! limits (cons (baseline-entry-file e) (baseline-entry-label e))
-                              (cut fx+ <> (baseline-entry-count e)) 0))
-              baseline)
-    limits))
+;; Fixed exceptions to the forbidden vocabulary, not a cleanup budget.
+;; The two "keys" hits are Gerbil's hash-keys; "position" is Gambit's
+;; ##locat-start-position used to record a plugin definition's source.
+(def noun-allowlist
+  '(("tuna/kernel/entries.ss" "keys" 1)
+    ("tuna/kernel/plugins.ss" "keys" 1)
+    ("tuna/kernel/plugins.ss" "position" 1)))
 
 (def (noun-problems) => :list
   (let* ((index (term-index (forbidden-labels)))
@@ -729,14 +721,17 @@
                                (hash-put! table (cons (hits-file h) (hits-label h)) (hits-count h)))
                              actual)
                    table))
-         (limits (baseline-limits (read-baseline))))
+         (limits (let (table (make-hash-table))
+                   (for-each (lambda (entry) (hash-put! table (cons (car entry) (cadr entry)) (caddr entry)))
+                             noun-allowlist)
+                   table)))
     (append
      (filter-map
       (lambda ((h : hits))
         (let (limit (hash-ref limits (cons (hits-file h) (hits-label h)) 0))
           (and (fx> (hits-count h) limit)
                (string-append (hits-file h) ": forbidden term \"" (hits-label h) "\" has "
-                              (number->string (hits-count h)) " hits, baseline allows "
+                              (number->string (hits-count h)) " hits, allowlist allows "
                               (number->string limit) " (lines "
                               (number-list (hits-lines h)) ")"))))
       actual)
@@ -745,9 +740,9 @@
         (let ((limit (hash-ref limits key))
               (count (hash-ref counts key 0)))
           (and (fx> limit count)
-               (string-append (car key) ": baseline allows " (number->string limit)
+               (string-append (car key) ": allowlist allows " (number->string limit)
                               " hits of \"" (cdr key) "\" but only " (number->string count)
-                              " remain; lower or remove its entries in " baseline-name))))
+                              " remain; update the fixed noun-allowlist"))))
       (list-sort (lambda ((a : :pair) (b : :pair))
                    (string<? (string-append (car a) " " (cdr a))
                              (string-append (car b) " " (cdr b))))
@@ -761,7 +756,7 @@
 
 (def boundary-test
   (test-suite "package and kernel boundaries (ADR 12)"
-    (test-case "kernel tree holds only Gerbil source and its noun baseline"
+    (test-case "kernel tree holds only Gerbil source"
       (check (problem-count (tree-problems kernel-layer)) => 0)
       (check (length (tree-entry-problems kernel-layer '(("tuna/kernel/hidden.c" . regular)))) => 1)
       (check (allowed-include? "tuna/kernel/plugins.ss" "../boot.ss" (kernel-source-names)) => #f))
@@ -769,7 +764,7 @@
       (check (problem-count (import-problems kernel-layer)) => 0)
       (check (allowed-import? kernel-layer "tuna/kernel/plugins.ss" ":tuna/configuration" (kernel-source-names)) => #f)
       (check (allowed-import? kernel-layer "tuna/kernel/plugins.ss" ":tuna/kernel/ids" (kernel-source-names)) => #t))
-    (test-case "kernel forbidden nouns stay within the shrinking baseline"
+    (test-case "kernel forbidden nouns match the fixed allowlist"
       (check (problem-count (noun-problems)) => 0)
       (check (phrase-at? '("define" "command") '(("define" . 1) ("command" . 2))) => #t)
       (check (line-segments "contextDefineCommand! key2 HTTPServer")
@@ -813,6 +808,20 @@
     (test-case "contracts never re-export modules even inside macro templates"
       (check (re-exports? '(export (phi: +1 (import: :tuna/plugins/commands/contract)))) => #t)
       (check (re-exports? '(export own-name)) => #f))
+    (test-case "plugin implementations use the live-redefinition prelude"
+      (for-each
+       (lambda ((directory : :string))
+         (check (string-prefix? "#lang :tuna/prelude\n"
+                  (read-file-string (source-path (string-append directory "/plugin.ss")))) => #t))
+       (plugin-package-directories)))
+    (test-case "build.ss lists every plugin package"
+      (check (unbuilt-packages (plugin-package-directories) (built-package-directories)) => [])
+      (check (unbuilt-packages '("plugins/a" "plugins/new") '("tuna" "plugins/a"))
+             => '("plugins/new")))
+    (test-case "kernel feature vocabulary follows packages and plugin declarations"
+      (check (member "completion-vertical" (feature-names)) ? pair?)
+      (check (member "two-views" (feature-names)) ? pair?)
+      (check (member "completion" (feature-names)) => #f))
     (test-case "production package imports form a directed acyclic graph"
       (displayln "  package boundary: " (length (package-graph)) " packages checked")
       (check (problem-count (graph-cycle-problems (package-graph))) => 0))

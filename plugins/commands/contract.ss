@@ -36,11 +36,22 @@ prelude: :gerbil/core
                               doc: (doc : :string := "")
                               visible?: (visible? : :procedure := (lambda (c origin) #t))
                               source: (source :? :string := #f)) => :void
-  (:- (with-service-provider (provider commands-service Commands)
-    (Commands-define-command! provider ctx
-                              (make-command name: name
-                                      procedure: (lambda () (call-with-task-owner ctx procedure))
-                                      doc: doc visible?: visible?) source)) :void))
+  ;; A command may restart its own owner through swap/reload. Its receipt
+  ;; cancels that same task after the operation finishes; end quietly then,
+  ;; but keep quits from another task (including suspended commands) visible.
+  (let (retiring-task #f)
+    (context-defer! ctx (lambda () (set! retiring-task (current-task-id))))
+    (:- (with-service-provider (provider commands-service Commands)
+      (Commands-define-command! provider ctx
+        (make-command name: name
+          procedure: (lambda ()
+                       (with-catch
+                        (lambda (e)
+                          (unless (and (quit-condition? e) retiring-task
+                                       (eqv? retiring-task (current-task-id)))
+                            (raise e)))
+                        (lambda () (call-with-task-owner ctx procedure))))
+          doc: doc visible?: visible?) source)) :void)))
 
 (defsyntax (define-command stx)
   (syntax-case stx ()

@@ -1,3 +1,4 @@
+#lang :tuna/prelude
 ;;; The default buffers provider (live tier; ADR 6, ADR 13): texts with a
 ;;; change journal, undo by change records, and highlight layers that move
 ;;; with edits; node trees with parent links, revisions and keymaps; the
@@ -7,7 +8,6 @@
 ;;;
 ;;; Changing the text store restarts this provider and its dependents.
 ;;; Autosave restores plain-text buffers from the session store.
-prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable)
         (only-in :std/list/list append-map)

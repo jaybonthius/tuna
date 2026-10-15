@@ -111,11 +111,7 @@ prelude: :gerbil/core
     (using (self (two-view-layout left: left right: right selected: left marks: []) : two-view-layout)
       (let (input (service-provider input-service))
         (when (and input (is-Keys? input))
-          (context-set-click-resolver! ctx
-            (lambda ((p : posn))
-              (or (posn-node p)
-                  (let (v (posn-view p))
-                    (and v (buffer-root (view-showing v)))))))))
+          (context-set-click-resolver! ctx posn-start-node)))
       (context-add-hook! ctx kill-buffer-hook 'replace-buffer-in-views
                          (lambda (b) (replace-buffer-in-views (own-views self) b)))
       (context-add-session-slot! ctx 'layout version: 1 save: (lambda () (saved-layout self)) restore: void)

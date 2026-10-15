@@ -1,5 +1,5 @@
+#lang :tuna/prelude
 ;;; Command registry and thread-scoped activations (ADR 8, ADR 14).
-prelude: :gerbil/core
 (import :std/interface :tuna/kernel :tuna/plugins/commands/contract)
 (export commands)
 

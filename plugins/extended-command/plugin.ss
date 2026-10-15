@@ -1,5 +1,5 @@
+#lang :tuna/prelude
 ;;; M-x is a command over the public commands/completion contracts.
-prelude: :gerbil/core
 (import :tuna/plugins/commands/contract
         :tuna/kernel :tuna/plugins/keys/contract :tuna/plugins/buffers/contract :tuna/plugins/completion/contract)
 (export extended-command)
