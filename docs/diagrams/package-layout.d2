@@ -17,13 +17,22 @@ classes: {
       font-size: 18
     }
   }
+  pkg: {
+    style: {
+      fill: "#f7f9fc"
+      stroke: "#6b7a90"
+      stroke-dash: 3
+      font-color: "#2b3445"
+      font-size: 18
+    }
+  }
   contract: {
     style: {
       fill: "#fff8e1"
       stroke: "#8d6e00"
       font-color: "#3e2f00"
       border-radius: 8
-      font-size: 18
+      font-size: 17
     }
   }
   plugin: {
@@ -32,32 +41,58 @@ classes: {
       stroke: "#355c96"
       font-color: "#172b4d"
       border-radius: 8
-      font-size: 18
+      font-size: 17
+    }
+  }
+  user: {
+    style: {
+      fill: "#fce4ec"
+      stroke: "#ad1457"
+      font-color: "#4a0d24"
+      border-radius: 8
+      font-size: 17
     }
   }
 }
 
 legend: |md
-  **Status:** proposed. Arrows mean "depends on". Green: Tuna itself. Yellow: contracts and the language built on them. Blue: plugins. Nothing points down from Tuna to a plugin.
+  **Status:** proposed. Arrows mean "imports". Dashed boxes are packages.
+  Green: Tuna itself. Yellow: a concept's contract. Blue: a plugin. Pink: your own files.
+  Nothing points from Tuna to a package, and no plugin imports another plugin.
 |
 
-tuna: "tuna/\nkernel, libraries, start-up program\n(knows no plugin)" {class: core}
-lang: "language/ (own package)\nthe package and init.ss language\n(defcommand, keymap-set, use-plugin)" {class: contract}
-cmdc: "plugins/commands/contract\n(likewise keys, settings)" {class: contract}
-bufc: "plugins/buffers/contract\nwhat a buffers plugin promises" {class: contract}
-compc: "plugins/completion/contract" {class: contract}
-bufp: "plugins/buffers/plugin\nthe default buffers" {class: plugin}
-toy: "someone else's buffers plugin" {class: plugin}
-orderless: "plugins/orderless/plugin" {class: plugin}
-mini: "plugins/minibuffer/plugin" {class: plugin}
+tuna: "tuna/\nkernel, libraries, start-up program,\nthe init.ss language\n(knows no plugin and no editor concept)" {class: core}
 
-bufc -> tuna
-compc -> tuna
-compc -> bufc
-lang -> tuna
-lang -> cmdc
-cmdc -> tuna
-bufp -> bufc
-toy -> bufc
-orderless -> compc
-mini -> bufc
+buffers: "plugins/buffers/  (the buffers concept)" {
+  class: pkg
+  contract: "contract.ss\nwhat any buffers plugin promises" {class: contract}
+  plugin: "plugin.ss\nthe default buffers plugin" {class: plugin}
+}
+
+completion: "plugins/completion/  (the completion concept)" {
+  class: pkg
+  contract: "contract.ss\ncandidates, matching styles, the list UI slot" {class: contract}
+  plugin: "plugin.ss\nthe default completion engine" {class: plugin}
+}
+
+orderless: "plugins/orderless/" {
+  class: pkg
+  plugin: "plugin.ss\na matching style" {class: plugin}
+}
+
+mine: "your package" {
+  class: pkg
+  plugin: "my-buffers.ss\nyour own buffers plugin" {class: user}
+}
+
+init: "your init.ss" {class: user}
+
+buffers.contract -> tuna
+buffers.plugin -> buffers.contract
+completion.contract -> buffers.contract
+completion.plugin -> completion.contract
+orderless.plugin -> completion.contract
+mine.plugin -> buffers.contract
+init -> mine.plugin: "use-plugin"
+init -> orderless.plugin: "use-plugin"
+init -> tuna: "#lang :tuna/config"
