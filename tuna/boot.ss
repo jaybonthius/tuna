@@ -1256,7 +1256,10 @@ prelude: :gerbil/core
 (implement Configuration configuration-provider
   (activate! (lambda (self target order) (activate-plugin! target order: order)))
   (reload! (lambda (self) (reload-report-text (reload-configuration!))))
-  (swap! (lambda (self old new) (restart-plugin! old new)))
+  ;; Held quits, as for a reload: the calling command may belong to a
+  ;; plugin the swap restarts, and its cancellation must not cut the swap
+  ;; short; the command quits once the swap is complete.
+  (swap! (lambda (self old new) (with-inhibit-quit (restart-plugin! old new))))
   (set-restart-wrapper!
    (lambda (self ctx wrapper)
      (let (old (entry-table-ref self.restart-wrappers 'restart))

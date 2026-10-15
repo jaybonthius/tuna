@@ -39,7 +39,7 @@ prelude: :gerbil/core
     (swap-double! 'layout two-views)
     (message (if (plugin-active? two-views)
                "Layout: two views"
-               "Layout: one view")))
+               "Layout: default")))
   (define-command ctx (swap-buffers) "Switch between the default and the toy buffers provider."
     (swap-double! 'buffers toy-buffers)
     (message (if (plugin-active? toy-buffers)

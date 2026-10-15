@@ -8,6 +8,8 @@
         :std/test
         :tuna/kernel
         :tuna/plugins/renderer/contract
+        :tuna/plugins/commands/contract
+        :tuna/plugins/keys/contract
         :tuna/plugins/buffers/contract
         :tuna/plugins/layout/contract
         :tuna/plugins/commands/plugin
@@ -48,11 +50,20 @@
           (lambda () (when (service-provider session-service) (restore-session)) (thunk))))
       (delete-file-or-directory directory #t))))
 
+;; A command from a plugin that the buffers swap itself restarts, as M-x
+;; is: the swap must complete although the command's task is cancelled.
+(defplugin (dependent-swapper ctx)
+  "Runs swap-buffers from a command of a plugin that requires buffers."
+  requires: [commands-service input-service buffers-service]
+  (define-command ctx (swap-from-dependent) "Swap buffers from a dependent plugin's command."
+    (call-command 'swap-buffers))
+  (keymap-set ctx "C-c D" 'swap-from-dependent))
+
 (def swap-plugins
   [session-owner commands keys echo-area help-buffer rope-text-store
    settings session buffers autosave layout
    view-commands html-renderer basic-editing minibuffer
-   swap-configuration swap-commands rename-command tree-buffer])
+   swap-configuration swap-commands rename-command tree-buffer dependent-swapper])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
@@ -105,6 +116,19 @@
            (check (selected-state) => ["notes" 13])
            (check (on-baton (lambda () (text-string (current-text)))) => "hello!\nworld")
            (check (map car (buffer-texts-state)) => (map car before))))))
+
+    (test-case "a swap run by a command whose plugin the swap restarts completes"
+      (call-with-state-kernel swap-plugins
+       (lambda ()
+         (start-editor-loop!)
+         (type! "h" "i")
+         (type! "C-c" "D")
+         (check (toy?) => #t)
+         (check (on-baton (lambda () (plugin-active? html-renderer))) => #t)
+         (check (and (string-contains (screen) "hi") #t) => #t)
+         (type! "C-c" "D")
+         (check (toy?) => #f)
+         (check (and (string-contains (screen) "hi") #t) => #t))))
 
     (test-case "two views and the tree buffer survive a swap"
       (call-with-state-kernel swap-plugins
