@@ -1,6 +1,6 @@
 # Brief: one package per concept
 
-**Date:** 2026-10-14. **Status:** awaiting approval. This replaces the version parked on 2026-10-14; it builds on the Cordis alignment (ADRs 2 and 12, amended 2026-10-14). Evidence: [`agents/research/package-layout/refresh-2026-10-14.md`](../../agents/research/package-layout/refresh-2026-10-14.md) (current imports, cycles, the full move map), the earlier [package-layout research](../../agents/research/package-layout/README.md) (Gerbil packaging facts, start-up timing) and [contract-models research](../../agents/research/contract-models/README.md).
+**Date:** 2026-10-14. **Status:** approved 2026-10-14, with plugin names dropping the word "plugin". This replaces the version parked on 2026-10-14; it builds on the Cordis alignment (ADRs 2 and 12, amended 2026-10-14). Evidence: [`agents/research/package-layout/refresh-2026-10-14.md`](../../agents/research/package-layout/refresh-2026-10-14.md) (current imports, cycles, the full move map), the earlier [package-layout research](../../agents/research/package-layout/README.md) (Gerbil packaging facts, start-up timing) and [contract-models research](../../agents/research/contract-models/README.md).
 
 ## What this is and why
 
@@ -35,7 +35,7 @@ Arrows mean "imports". A replacement imports the concept's `contract.ss`, never 
 ;; plugins/my-buffers/plugin.ss
 (import :tuna/kernel
         :tuna/plugins/buffers/contract)        ; the promise only
-(defplugin (my-buffers-plugin ctx)
+(defplugin (my-buffers ctx)
   "Buffers kept my way."
   provides: [buffers-service]
   requires: [text-store-service settings-service]
@@ -46,11 +46,11 @@ Arrows mean "imports". A replacement imports the concept's `contract.ss`, never 
 (import :tuna/plugins/keys/plugin
         :tuna/plugins/keys/contract                ; keymap-set
         :tuna/plugins/commands/contract)           ; defcommand
-(use-plugin keys-plugin)
+(use-plugin keys)
 (keymap-set "C-c R" 'reload-config)
 ```
 
-Names are illustrative; the binding names inside plugins (`rope-text-store-plugin` and so on) do not change.
+Names are illustrative.
 
 ## What has to change before files move
 
@@ -70,7 +70,9 @@ Moving directories alone would leave Tuna importing editor packages and two conc
 
 ## Decisions
 
-**Decided by you (2026-10-14):** `init.ss` and plugin files import the forms they use; no editor-language package.
+**Decided by you (2026-10-14):**
+- `init.ss` and plugin files import the forms they use; no editor-language package.
+- **Plugin names drop the word "plugin"**: `(use-plugin buffers)`, not `(use-plugin buffers-plugin)`; likewise `keys`, `layout`, `rope-text-store`, `html-renderer`, `web-transport`. Done in the move step, every caller updated. Where a bare name would clash with a name its own contract exports, the implementer reports it and we pick another.
 
 **Decided by the evidence (tell me if you disagree):**
 - **The starter configuration stays inside Tuna as a file `tuna init` copies.** It names our plugins, but only as text you copy and own; Tuna's code never imports or turns on a plugin.
