@@ -76,6 +76,11 @@ The approved [kernel alignment brief](../../docs/briefs/2026-10-kernel-cordis.md
 
 No kernel change. Interactive evaluation belongs to one always-on owner, `session-owner`: the start-up code's own plugin, which also provides the configuration contract, uses the stage 1 `unchecked:` exemption, is not a declaration in `init.ss`, and is therefore never diffed, replaced or restarted by `reload-config`. The configuration contract gains `evaluate-form` and `evaluate-forms`, which run under that owner in a persistent top-level environment importing `:tuna/config`; a sequence stops at the first error and keeps earlier effects, as in Emacs. Its entries take the greatest declaration order, so they win equal-priority ties with the configuration even after a reload.
 
+### Two read-only accessors (amendment, 2026-10-15, review cleanup)
+
+- `plugin?`: configuration validates declaration data without using a failing type cast as a predicate.
+- `context-plugin-name`: registration diagnostics name the owning plugin without creating a registration to learn it.
+
 ## Consequences
 
 - "State management" is not a replaceable component: each plugin owns its state objects, the kernel enforces ownership, and saving state is the persistence plugin's job.
