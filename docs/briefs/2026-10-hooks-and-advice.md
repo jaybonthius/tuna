@@ -1,6 +1,6 @@
 # Brief: hooks and advice
 
-**Date:** 2026-10-15 (revised after three spikes). **Status:** proposed. Roadmap item 4 of "getting the core back to its intended shape". Research: [`agents/research/hooks-advice/`](../../agents/research/hooks-advice/) ([Emacs](../../agents/research/hooks-advice/emacs.md), [other systems](../../agents/research/hooks-advice/prior-art.md), [Gerbil and Tuna's hooks](../../agents/research/hooks-advice/gerbil-and-tuna.md), spikes [1](../../agents/research/hooks-advice/open-def-spike.md), [2](../../agents/research/hooks-advice/open-def-spike-2.md) and [3](../../agents/research/hooks-advice/open-def-spike-3.md)). Changes [ADR 1](../../agents/adr/0001-language-and-extension-surface.md) and [ADR 2](../../agents/adr/0002-plugins-contexts-and-services.md).
+**Date:** 2026-10-15 (revised after three spikes). **Status:** approved 2026-10-15: option (d), open by default, with one `advise!` for functions, commands and services. Plan: [`agents/plans/hooks-and-advice.md`](../../agents/plans/hooks-and-advice.md). Roadmap item 4 of "getting the core back to its intended shape". Research: [`agents/research/hooks-advice/`](../../agents/research/hooks-advice/) ([Emacs](../../agents/research/hooks-advice/emacs.md), [other systems](../../agents/research/hooks-advice/prior-art.md), [Gerbil and Tuna's hooks](../../agents/research/hooks-advice/gerbil-and-tuna.md), spikes [1](../../agents/research/hooks-advice/open-def-spike.md), [2](../../agents/research/hooks-advice/open-def-spike-2.md) and [3](../../agents/research/hooks-advice/open-def-spike-3.md)). Changes [ADR 1](../../agents/adr/0001-language-and-extension-surface.md) and [ADR 2](../../agents/adr/0002-plugins-contexts-and-services.md).
 
 ## What we're building and why
 
@@ -42,22 +42,27 @@ Emacs's manual and the research agree on one more lesson: prefer declared extens
 
 ## What a package author writes
 
-The names are provisional.
+The names are provisional; the forms are settled.
 
 ```scheme
 ;; A plugin advising another plugin's command.
 (defplugin (hungry-delete ctx)
   "Backspace deletes all the spaces before point at once."
   requires: [commands-service]
-  (advise-command! ctx 'delete-backward-char 'hungry
+  (advise! ctx (command delete-backward-char) 'hungry
     around: (lambda (original)
               (if (spaces-before-point?)
                 (delete-spaces-before-point!)
                 (original)))))
 
-;; Advising any package function, even a private one, by module and name.
-(advise! ctx (in :tuna/plugins/layout/plugin find-node) 'log-lookups
+;; Any package function, even a private one, by module and name.
+;; An imported function can be named directly: (advise! ctx find-node ...).
+(advise! ctx (function :tuna/plugins/layout/plugin find-node) 'log-lookups
   before: (lambda (tree id) (log-lookup id)))
+
+;; An operation of a service, whichever plugin provides it.
+(advise! ctx (service text-store-service insert!) 'timing
+  around: (lambda (original . args) (time-it (lambda () (apply original args)))))
 
 ;; A hot inner loop opts out, like Emacs's defsubst.
 (def/closed (rope-for-each-chunk f rope) …)
@@ -73,7 +78,7 @@ The names are provisional.
 
 **Advice.**
 - Each piece of advice has an owner (a plugin, a block of your configuration, or your session for code you evaluate), a name, a kind and a depth. Adding advice with the same owner and name replaces it. Turning the owner off removes it.
-- **Targets:** any open function (named by module and function), any command, and any service method.
+- **One form, three targets:** `advise!` takes a function (an imported name, or `(function module name)` for any open function, private ones included), a command (`(command name)`), or a service operation (`(service service operation)`). Service advice wraps the operation for whichever plugin provides the service and survives a swap; function advice wraps one specific piece of code. Both can apply at once; service advice is then outermost. Function targets reach named top-level functions only, so an operation a provider implements inline is reachable only through its service.
 - **Kinds:** ADR 1's ten Emacs kinds (`before`, `after`, `around`, `override`, `filter-args`, `filter-return`, and the four `before-while`-style variants). Emacs's newer eleventh kind, which changes only how a command reads its arguments, isn't needed: Tuna commands read their arguments inside their body.
 - **Order:** lower depth is outermost. Equal depths go by the owners' order in `init.ss`, not by when the advice was added, so a reload can't reorder them.
 - **Errors:** an error inside advice propagates like an error in the function itself, and the report names the advice and its owner. Hooks are different: a failing callback is removed and the rest continue. Silently skipping advice would change what the function returns.
@@ -89,7 +94,7 @@ The names are provisional.
 **Where it lives.**
 - The open-function macros live in Tuna's package prelude, not the kernel.
 - Combining advice is a small library outside the kernel.
-- Commands keep their own advice in the commands plugin.
+- `advise!` routes command advice to the commands plugin, which keeps it with the command.
 - Service methods need the only kernel change: alongside each service's provider, the kernel keeps an "advised view" of it and hands that out while advice exists. Advice never counts as a new provider, so it doesn't restart anything.
 
 **Hooks: three fixes, nothing new.**
