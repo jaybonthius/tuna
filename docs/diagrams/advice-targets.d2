@@ -1,0 +1,47 @@
+# What can be advised, and who keeps the advice?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+direction: right
+
+classes: {
+  yes: {
+    style: {
+      fill: "#eef3fb"
+      stroke: "#355c96"
+      font-color: "#172b4d"
+      border-radius: 8
+      font-size: 18
+    }
+  }
+  no: {
+    style: {
+      fill: "#f4f4f4"
+      stroke: "#777777"
+      font-color: "#333333"
+      border-radius: 8
+      stroke-dash: 4
+      font-size: 18
+    }
+  }
+}
+
+plugin: "Your plugin\nadds advice; turning it off removes it" {class: yes}
+
+can: "Can be advised and redefined one at a time" {
+  cmd: "A command\nkept by the commands plugin" {class: yes}
+  svc: "A service method\nkept by the kernel's service list" {class: yes}
+  decl: "A function its package declared advisable\nkept by that package" {class: yes}
+}
+
+cannot: "Cannot be advised" {
+  plain: "Any other package function\nchange it by reloading its package" {class: no}
+  kernel: "Tuna's kernel\nchange it through hooks and services" {class: no}
+}
+
+plugin -> can.cmd: "advise"
+plugin -> can.svc: "advise"
+plugin -> can.decl: "advise"

@@ -1,0 +1,21 @@
+# What happens when you press Backspace with the hungry-delete plugin on?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: "You"
+keys: "Key handling plugin"
+commands: "Commands plugin\n(keeps each command's advice)"
+hungry: "'hungry' advice\n(from hungry-delete)"
+original: "delete-backward-char\n(from basic-editing)"
+
+you -> keys: "1. Backspace"
+keys -> commands: "2. run delete-backward-char"
+commands -> hungry: "3. call the combined command, built once when the advice was added"
+hungry -> hungry: "4a. spaces before point: delete them all, done"
+hungry -> original: "4b. otherwise: call the original"
+original -> you: "5. either way, the screen redraws"
