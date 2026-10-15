@@ -1,0 +1,2 @@
+(package: tuna/plugins/web)
+(depend: ("git.cons.io/jay/gerbil-datastar"))

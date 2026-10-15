@@ -1,2 +1,2 @@
-;; The tuna/ directory supplies the module prefix, as in :tuna/main.
+;; Workspace dependencies; each source package declares its own prefix.
 (depend: ("git.cons.io/jay/gerbil-datastar"))

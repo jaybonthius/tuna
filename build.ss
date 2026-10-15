@@ -1,67 +1,70 @@
 #!/usr/bin/env gxi
 
-(import :std/build-script)
+(import :std/make :std/source)
 
-;; The web transport embeds web/ at compile time.
-(def web-assets
-  (map (lambda (name) (path-expand name "web")) (directory-files "web")))
+(def workspace-directory (path-expand (this-source-directory)))
 
-(defbuild-script
-  `("tuna/version"
-    "tuna/kernel/ids"
-    "tuna/kernel/entries"
-    "tuna/kernel/state"
-    "tuna/kernel/tasks"
-    "tuna/kernel/plugins"
-    "tuna/kernel/hooks"
-    "tuna/kernel/loop"
-    "tuna/kernel"
-    "tuna/lib/timers"
-    "tuna/lib/jobs"
-    "tuna/lib/plugin-options"
-    "tuna/lib/configuration"
-    "tuna/services/commands"
-    "tuna/services/keys"
-    "tuna/services/text-store"
-    "tuna/services/settings"
-    "tuna/services/help"
-    "tuna/services/buffers"
-    "tuna/services/echo-area"
-    "tuna/services/renderer"
-    "tuna/services/minibuffer"
-    "tuna/services/completion"
-    "tuna/services/session"
-    "tuna/services/layout"
-    "tuna/services/buttons"
-    "tuna/configuration"
-    "tuna/plugins/commands"
-    "tuna/plugins/keys"
-    "tuna/plugins/rope"
-    "tuna/plugins/settings"
-    "tuna/plugins/echo-area"
-    "tuna/plugins/help-buffer"
-    "tuna/plugins/buffers"
-    "tuna/plugins/session"
-    "tuna/plugins/autosave"
-    "tuna/plugins/layout/tree"
-    "tuna/plugins/layout"
-    "tuna/plugins/html-renderer"
-    "tuna/plugins/buttons"
-    "tuna/prelude"
-    "tuna/config"
-    "tuna/plugins/basic-editing"
-    "tuna/plugins/minibuffer"
-    "tuna/plugins/completion-engine"
-    "tuna/plugins/completion-vertical"
-    "tuna/plugins/extended-command"
-    "tuna/plugins/orderless"
-    "tuna/plugins/command-annotations"
-    "tuna/plugins/view-commands"
-    "tuna/config-blocks"
-    "tuna/plugins/web/embed"
-    (gxc: "tuna/plugins/web" (extra-inputs: ,web-assets))
-    ;; tuna init writes the starter configuration, which boot embeds.
-    (gxc: "tuna/boot" (extra-inputs: ("starter/init.ss")))
-    "tuna/control"
-    "tuna/plugins/reload-config"
-    (exe: "tuna/main" bin: "tuna")))
+;; One make call per gerbil.pkg, with specs relative to that package.
+;; This order follows package imports, not runtime service requirements.
+(def packages
+  `(("tuna"
+     "version"
+     "kernel/ids" "kernel/entries" "kernel/state" "kernel/tasks"
+     "kernel/plugins" "kernel/hooks" "kernel/loop" "kernel"
+     "lib/timers" "lib/jobs" "lib/plugin-options" "lib/configuration"
+     "configuration" "prelude" "config" "config-blocks"
+     (gxc: "boot" (extra-inputs: ("../starter/init.ss")))
+     "control"
+     (exe: "main" bin: "tuna"))
+    ("plugins/commands" "contract" "plugin")
+    ("plugins/settings" "contract" "plugin")
+    ("plugins/text-store" "contract" "plugin")
+    ("plugins/session" "contract" "plugin")
+    ("plugins/buffers" "contract" "plugin")
+    ("plugins/keys" "contract" "plugin")
+    ("plugins/layout" "contract" "tree" "plugin")
+    ("plugins/renderer" "contract" "plugin")
+    ("plugins/echo-area" "contract" "plugin")
+    ("plugins/help" "contract" "plugin")
+    ("plugins/buttons" "contract" "plugin")
+    ("plugins/basic-editing" "plugin")
+    ("plugins/minibuffer" "contract" "plugin")
+    ("plugins/completion" "contract" "plugin")
+    ("plugins/completion-vertical" "plugin")
+    ("plugins/extended-command" "plugin")
+    ("plugins/orderless" "plugin")
+    ("plugins/command-annotations" "plugin")
+    ("plugins/view-commands" "plugin")
+    ("plugins/autosave" "plugin")
+    ("plugins/reload-config" "plugin")
+    ("plugins/web" "embed"
+     (gxc: "plugin"
+           (extra-inputs: ,(map (cut string-append "web/" <>)
+                               (directory-files "plugins/web/web")))))))
+
+(def (build-options (args : :list)) => :list
+  (match args
+    ([] [])
+    (["--release" . rest] (cons* build-release: #t (build-options rest)))
+    (["--optimized" . rest] (cons* build-optimized: #t (build-options rest)))
+    (["--debug" . rest] (cons* debug: #t (build-options rest)))
+    (else (error "Unexpected build options" args))))
+
+(def (build-packages (options : :list)) => :void
+  (for-each (lambda ((package : :pair))
+              (apply make (cdr package)
+                     srcdir: (path-expand (car package) workspace-directory)
+                     options))
+            packages))
+
+(def (main . args)
+  (match args
+    (["meta"] (write '("spec" "compile" "clean")) (newline))
+    (["spec"] (pretty-print packages))
+    (["clean"]
+     (for-each (lambda ((package : :pair))
+                 (make-clean (cdr package)
+                             srcdir: (path-expand (car package) workspace-directory)))
+               (reverse packages)))
+    (["compile" . options] (build-packages (build-options options)))
+    ([] (build-packages []))))

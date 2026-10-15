@@ -33,58 +33,58 @@
 ;;; the modules you import, and macro code, also run at load: they must not
 ;;; change the editor, since nothing could undo it.
 
-(import :tuna/services/commands
-        :tuna/services/keys
-        :tuna/plugins/commands
-        :tuna/plugins/keys
-        :tuna/plugins/web
-        :tuna/plugins/settings
-        :tuna/plugins/echo-area
-        :tuna/plugins/help-buffer
-        :tuna/plugins/session
-        :tuna/plugins/rope
-        :tuna/plugins/buffers
-        :tuna/plugins/autosave
-        :tuna/plugins/layout
-        :tuna/plugins/view-commands
-        :tuna/plugins/html-renderer
-        :tuna/plugins/buttons
-        :tuna/plugins/basic-editing
-        :tuna/plugins/minibuffer
-        :tuna/plugins/completion-engine
-        :tuna/plugins/completion-vertical
-        :tuna/plugins/extended-command
-        :tuna/plugins/orderless
-        :tuna/plugins/command-annotations
-        :tuna/services/settings
+(import :tuna/plugins/commands/contract
+        :tuna/plugins/keys/contract
+        :tuna/plugins/commands/plugin
+        :tuna/plugins/keys/plugin
+        :tuna/plugins/web/plugin
+        :tuna/plugins/settings/plugin
+        :tuna/plugins/echo-area/plugin
+        :tuna/plugins/help/plugin
+        :tuna/plugins/session/plugin
+        :tuna/plugins/text-store/plugin
+        :tuna/plugins/buffers/plugin
+        :tuna/plugins/autosave/plugin
+        :tuna/plugins/layout/plugin
+        :tuna/plugins/view-commands/plugin
+        :tuna/plugins/renderer/plugin
+        :tuna/plugins/buttons/plugin
+        :tuna/plugins/basic-editing/plugin
+        :tuna/plugins/minibuffer/plugin
+        :tuna/plugins/completion/plugin
+        :tuna/plugins/completion-vertical/plugin
+        :tuna/plugins/extended-command/plugin
+        :tuna/plugins/orderless/plugin
+        :tuna/plugins/command-annotations/plugin
+        :tuna/plugins/settings/contract
         (only-in :tuna/kernel current-context)
-        :tuna/plugins/reload-config)
+        :tuna/plugins/reload-config/plugin)
 
-(use-plugin commands-plugin)
-(use-plugin keys-plugin)
-(use-plugin web-transport-plugin        ; the browser page; `tuna --port N` overrides port:
+(use-plugin commands)
+(use-plugin keys)
+(use-plugin web-transport        ; the browser page; `tuna --port N` overrides port:
   port: 0)                              ; 0: any free port
-(use-plugin settings-plugin)
+(use-plugin settings)
 ;; Session slots restore in activation order: buffers (autosave) before
 ;; the views that show them (layout).
-(use-plugin session-plugin)
-(use-plugin rope-text-store-plugin)
-(use-plugin buffers-plugin)
-(use-plugin autosave-plugin)
-(use-plugin layout-plugin)
-(use-plugin view-commands-plugin)
-(use-plugin html-renderer-plugin)
-(use-plugin buttons-plugin)             ; buttons in buffers: a click runs their action
-(use-plugin basic-editing-plugin)
-(use-plugin minibuffer-plugin)
-(use-plugin completion-engine-plugin
+(use-plugin session)
+(use-plugin rope-text-store)
+(use-plugin buffers)
+(use-plugin autosave)
+(use-plugin layout)
+(use-plugin view-commands)
+(use-plugin html-renderer)
+(use-plugin buttons)             ; buttons in buffers: a click runs their action
+(use-plugin basic-editing)
+(use-plugin minibuffer)
+(use-plugin completion-engine
   config: (context-set-setting! (current-context) completion-styles '(orderless substring)))
-(use-plugin completion-vertical-plugin)
-(use-plugin extended-command-plugin)
-(use-plugin orderless-plugin)
-(use-plugin annotations-plugin)
-(use-plugin echo-area-plugin)           ; in the bar, under the minibuffer
-(use-plugin help-buffer-plugin)         ; *Help*; C-h q closes it
-(use-plugin reload-config-plugin        ; reload this file; show the last report
+(use-plugin completion-vertical)
+(use-plugin extended-command)
+(use-plugin orderless)
+(use-plugin annotations)
+(use-plugin echo-area)           ; in the bar, under the minibuffer
+(use-plugin help-buffer)         ; *Help*; C-h q closes it
+(use-plugin reload-config        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)
           (keymap-set "C-c C-r" 'show-config-report))
