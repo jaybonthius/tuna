@@ -32,9 +32,11 @@ prelude: :gerbil/core
 
 (import (except-in :tuna/prelude read-module-body)
         :tuna/kernel
+        (only-in :tuna/configuration activate-plugin!)
         :tuna/lib/configuration)
 (export (import: :tuna/prelude)
         use-plugin
+        activate-plugin!
         init-user-code
         (phi: +1 read-module-body))
 

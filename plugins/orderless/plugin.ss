@@ -33,6 +33,7 @@ prelude: :gerbil/core
 (defplugin (orderless ctx)
   "Space-separated literal or regexp components, in any order, with smart case."
   requires: [completion-service]
+  optional: [completion-ui-service]
   (context-define-completion-style! ctx
     (make-completion-style 'orderless orderless-compile
       "Each component matches literally or as a valid regexp; uppercase makes that component case-sensitive.")))

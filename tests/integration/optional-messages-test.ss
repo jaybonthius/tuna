@@ -3,7 +3,7 @@ prelude: :gerbil/core
 (import (only-in :tuna/boot session-owner restart-plugin!)
         :std/test :std/interface :tuna/kernel
         :tuna/plugins/commands/contract :tuna/plugins/buffers/contract :tuna/plugins/layout/contract
-        :tuna/plugins/session/contract :tuna/configuration
+        :tuna/plugins/session/contract (except-in :tuna/configuration activate-plugin!)
         :tuna/plugins/commands/plugin :tuna/plugins/keys/plugin :tuna/plugins/text-store/plugin
         :tuna/plugins/settings/plugin :tuna/plugins/buffers/plugin :tuna/plugins/layout/plugin
         :tuna/plugins/session/plugin :tuna/plugins/autosave/plugin :tuna/plugins/basic-editing/plugin
@@ -22,6 +22,7 @@ prelude: :gerbil/core
 
 (defclass silent-configuration () final: #t)
 (implement Configuration silent-configuration
+  (activate! (lambda (self target order) (error "This configuration double does not activate plugins")))
   (set-restart-wrapper! (lambda (self ctx wrapper) (void)))
   (restart (lambda (self owners apply rollback)
              (with-catch (lambda (e) (rollback) (raise e)) apply)))

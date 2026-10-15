@@ -10,6 +10,8 @@
 prelude: :gerbil/core
 
 (import :tuna/kernel
+        (rename-in (only-in :tuna/plugin-use activate-checked-plugin!)
+                   (activate-checked-plugin! activate-plugin!))
         :tuna/lib/configuration)
 (export block-follower
         block-follower-hooks

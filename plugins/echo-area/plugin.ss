@@ -43,6 +43,7 @@ prelude: :gerbil/core
   "Shows messages in the echo area, a view in the bar."
   provides: [messages-service]
   requires: [buffers-service layout-service]
+  optional: [renderer-service]
   (context-define-node-kind! ctx echo-area-node-kind doc: "A message."
                              project: (lambda (n) (node-attribute n 'content)))
   (context-define-node-renderer! ctx echo-area-node-kind 'html

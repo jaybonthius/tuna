@@ -15,7 +15,7 @@ prelude: :gerbil/core
         :tuna/plugins/buffers/contract
         :tuna/plugins/layout/contract
         :tuna/plugins/buttons/contract
-        (only-in :tuna/plugins/minibuffer/contract minibuffer-view?))
+        (only-in :tuna/plugins/minibuffer/contract minibuffer-view? minibuffer-service))
 (export sidebar-demo)
 
 (def sidebar-name "*sidebar*")
@@ -57,6 +57,7 @@ prelude: :gerbil/core
 (defplugin (sidebar-demo ctx)
   "C-c d shows a sidebar of buffer buttons pinned to the left; again, kills it and its view closes."
   requires: [commands-service input-service buffers-service layout-service]
+  optional: [minibuffer-service]
   (define-command ctx (toggle-sidebar) "Show *sidebar* at the left side, or kill it."
     (if (get-buffer sidebar-name)
       (kill-sidebar!)

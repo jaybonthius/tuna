@@ -19,6 +19,7 @@ prelude: :gerbil/core
   plugin-doc
   plugin-source
   plugin-provides                       ; start-up checks unique service declarations
+  plugin-optional                       ; start-up checks imported contracts
   plugin-requires                       ; start-up waits for, and reports, missing services
   defplugin
   context
@@ -43,10 +44,10 @@ prelude: :gerbil/core
   entry-table-names
   service                               ; the type, for annotations
   service-name                          ; service-changed-hook passes services
+  service?                              ; start-up recognizes contract exports
   new-service
   service-provider
   context-provide!
-  activate-plugin!
   deactivate-plugin!
   plugin-active?
   plugin-deactivation-closure

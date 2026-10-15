@@ -34,7 +34,9 @@ prelude: :gerbil/core
                           (user-code    : plugin)
                           (user-forms   : :list)
                           ;; The resolved imports, including filters and relative paths.
-                          (module       : module-context))
+                          (module       : module-context)
+                          ;; Start-up preflight failures, (plugin . report text).
+                          (plugin-problems : :list))
   final: #t)
 
 ;; What a load raises when declarations or options have problems: one
@@ -143,4 +145,4 @@ prelude: :gerbil/core
         (error "The file declared nothing: does it start with #lang :tuna/config?"))
       (unless (null? c.problems)
         (raise (make-configuration-problems (string-join (reverse c.problems) "\n"))))
-      (make-configuration (reverse c.declarations) c.user-code c.user-forms module))))
+      (make-configuration (reverse c.declarations) c.user-code c.user-forms module []))))

@@ -2,9 +2,11 @@
 ;;; kernel (ADR 12), so every test kernel comes from call-with-fresh-kernel.
 ;;; Production modules must not import or include anything in
 ;;; tuna/test-support/; tuna/kernel/boundary-test.ss checks this.
-(import (only-in :tuna/kernel/state new-kernel current-kernel)
+(import (only-in :tuna/kernel/plugins activate-plugin!)
+        (only-in :tuna/kernel/state new-kernel current-kernel)
         :tuna/kernel)
-(export call-with-fresh-kernel
+(export activate-plugin!
+        call-with-fresh-kernel
         wait-until)
 
 ;; Select a fresh kernel, activate PLUGINS in order, and call THUNK. Then,

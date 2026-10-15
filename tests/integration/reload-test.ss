@@ -53,7 +53,7 @@
    (path-expand "mine.ss" directory)
    (string-append "(import :tuna/kernel \"" test-plugins-module "\")\n"
                   "(export mine)\n"
-                  "(defplugin mine \"The user's own plugin.\" " (if (string-contains body "context-provide!") "provides: [probe-service] " "") body ")\n")))
+                  "(defplugin mine \"The user's own plugin.\" optional: [probe-service fixed-service] " (if (string-contains body "context-provide!") "provides: [probe-service] " "") body ")\n")))
 
 (def (start (path : :string)) => startup-report
   (start-from-configuration (make-config-choice path "--config")))
@@ -212,7 +212,7 @@
                         (string-append "(import :tuna/kernel \"" test-plugins-module "\")\n"
                                        "(export mine)\n"
                                        "(def (helper) " helper-body ")\n"
-                                       "(defplugin mine \"The user's own plugin.\" "
+                                       "(defplugin mine \"The user's own plugin.\" optional: [probe-service fixed-service] "
                                        "(set-callback! 'mine (lambda () (helper))) (probe-on! (helper)))\n"
                                        extra)))))
            (mine "'k1" "")
