@@ -65,7 +65,7 @@ Moving directories alone would leave Tuna importing editor packages and two conc
 ## How it gets built
 
 1. **Untangle,** the six changes above, with no files moved; `make test` green.
-2. **Move,** in one change: each concept to `plugins/<concept>/` with its `gerbil.pkg`, contract, plugin, private files, tests and test doubles; one root `build.ss` building every package into one `.gerbil/` (one `make` call per package); `starter/`, `demo/` and every import updated (no compatibility names). Package names are concept names: `text-store` (default: the rope), `renderer` (default: HTML), `help`, `completion` (default: the engine). The full file-by-file map is in the research.
+2. **Move,** in one change: each concept to `plugins/<concept>/` with its `gerbil.pkg`, contract, plugin, private files, tests and test doubles; one root `build.ss` building every package into one `.gerbil/` (one `make` call per package); `starter/`, `demo/` and every import updated (no compatibility names). Package names are concept names: `text-store` (default: the rope), `renderer` (default: HTML), `help`, `completion` (default: the engine). Only the package that owns a concept's contract carries the concept's name; anyone else's package is named for what it is (`gap-buffer`, `terminal-renderer`) and imports that contract (owner, 2026-10-14: our defaults stay bundled with their concept). The full file-by-file map is in the research.
 3. **Check:** the boundary test enforces packages: Tuna imports no package; a plugin imports Tuna, contracts and its own files only; no two packages import each other.
 
 ## Decisions
