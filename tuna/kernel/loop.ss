@@ -220,8 +220,13 @@ prelude: :gerbil/core
   (let (k (the-kernel))
     (lambda ((item : :t)) => :void
       (using (loop (running-loop k) : editor-loop)
+        ;; A transport's thread inherits the transport's context; classify
+        ;; under the input provider's own context, as resolve! does.
         (thread-send (: loop.thread :thread)
-                     (case (Input-arrival loop.input item)
+                     (case (call-with-context #f
+                             (lambda ()
+                               (call-with-service-provider input-service
+                                 (lambda (provider) (Input-arrival loop.input item)))))
                        ((queue) [enqueue: (make-queued-input item)])
                        ((interrupt) [interrupt: item])
                        (else (error "Input arrival must return queue or interrupt" item))))))))
