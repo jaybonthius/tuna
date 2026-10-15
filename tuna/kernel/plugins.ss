@@ -13,6 +13,7 @@ prelude: :gerbil/core
 (export (struct-out plugin)
         defplugin
         context
+        context-plugin-name
         current-context
         call-with-context
         context-bind
