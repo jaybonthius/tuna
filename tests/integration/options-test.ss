@@ -23,7 +23,8 @@
         :tuna/plugins/reload-config/plugin
         "../../tuna/tests/support/kernel"
         (only-in "../../tuna/tests/support/string-input" test-input test-messages current-message)
-        "../support/config")
+        "../support/config"
+        "../support/plugin-options")
 (export options-test)
 
 (def test-plugins-module

@@ -166,6 +166,31 @@
 
 (def session-test
   (test-suite "tuna/plugins/session"
+    (test-case "restart captures and restores once; direct teardown keeps fallback data"
+      (call-with-state-directory
+       (lambda (directory)
+         (with-session-only directory
+          (lambda ()
+            (let ((captures 0) (restores 0) (value 0))
+              (defplugin (counted-state ctx) "Counts session callbacks."
+                optional: [buffers-service]
+                requires: [session-service]
+                (set! value 0)
+                (context-add-session-slot! ctx 'counted version: 1
+                  save: (lambda () (set! captures (fx1+ captures)) value)
+                  restore: (lambda (data) (set! restores (fx1+ restores)) (set! value data))))
+              (activate-plugin! counted-state)
+              (restore-session)
+              (set! value 42)
+              (restart-plugin! counted-state counted-state)
+              (check [captures restores value] => [1 1 42])
+              (set! value 43)
+              (deactivate-plugin! counted-state)
+              (check captures => 2)
+              (activate-plugin! counted-state)
+              (check [captures restores value] => [2 2 43])
+              (save-session)
+              (check captures => 3)))))))
     (test-case "restart captures the whole closure before cleanup and restores neutral data"
       (set! fail-restoration? #f)
       (with-restart-state

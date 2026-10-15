@@ -14,7 +14,6 @@ prelude: :gerbil/core
         kernel-providers
         kernel-cached-services
         kernel-cached-services-set!
-        kernel-live?
         kernel-loop
         exception-summary)
 
@@ -23,7 +22,6 @@ prelude: :gerbil/core
    (services  : HashTable)       ; service name -> service
    (providers : entry-table)     ; service name -> provider entries
    (cached-services : :list)     ; service objects whose dispatch cells were read
-   (live?     : :boolean)        ; the editor loop is running
    (loop      : :t))             ; the editor loop object, owned by ./loop
   final: #t)
 
@@ -32,7 +30,6 @@ prelude: :gerbil/core
           services: (make-hash-table)
           providers: (new-entry-table)
           cached-services: []
-          live?: #f
           loop: #f))
 
 ;; The kernel facade does not export this; tests select a fresh kernel

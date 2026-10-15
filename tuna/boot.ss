@@ -8,10 +8,10 @@
 ;;; `tuna init` (init-configuration!) writes one, when asked.
 prelude: :gerbil/core
 
-(import (only-in :std/error Error? Error-irritants)
+(import (only-in :std/error deferror-class Error:::init!)
         (only-in :gerbil/expander
                  import-module __module-registry module-context? module-context-path
-                 top-context make-top-context core-context-root current-expander-context
+                 top-context make-top-context top-context-super-set! core-context-root current-expander-context
                  module-context-import import-set? import-set-source module-import?
                  module-import-source module-export-context)
         (only-in :gerbil/runtime/syntax
@@ -571,29 +571,31 @@ prelude: :gerbil/core
 ;; Replacing turns the running unit off and the new one on. If the new one
 ;; fails it is undone, and the running one, still in memory, is turned
 ;; back on. While the editor loop runs, a plugin that provides a
-;; startup-tier service is neither turned off nor replaced, and one that
-;; would take such a service over fails in the kernel; both are reported
-;; as deferred to the next start. Every activation has the time limit of
+;; startup-tier service is neither turned off nor replaced: restart-plugin!
+;; checks its closure and reports it as deferred to the next start.
+;; Every activation has the time limit of
 ;; call-with-activation-time-limit.
-(def (apply-configuration! (choice : config-choice) (config : configuration)
-                           (modules-reloaded? : :boolean))
-  => :pair
+(defstruct configuration-diff ((choice : config-choice)
+                               (config : configuration)
+                               (old : running-configuration)
+                               (modules-reloaded? : :boolean)
+                               (removed : :list)
+                               (swaps : :list))
+  final: #t)
+
+(defstruct configuration-execution ((declarations : :list)
+                                    (kept : :list)
+                                    (decided : :list)
+                                    (providers-before : :list)
+                                    (replaced : :list)
+                                    (entries : :list))
+  final: #t)
+
+(def (classify-configuration (choice : config-choice) (config : configuration)
+                             (modules-reloaded? : :boolean)) => configuration-diff
   (let* ((old (or current-running (make-running-configuration choice [] #f [] #f)))
          (old-declarations (running-configuration-declarations old))
          (new-declarations (configuration-declarations config))
-         (live? (editor-loop-running?))
-         (follower (running-configuration-follower old))
-         (working old-declarations)     ; the declarations running now
-         (user-code (running-configuration-user-code old))
-         (user-forms (running-configuration-user-forms old))
-         (kept-units [])                ; units left alone, to check at the end
-         ;; Units whose status the reload decided although the kernel,
-         ;; which knows plugins only by name, would report it otherwise: a
-         ;; failed new version undone, or a turn-off the kernel refused.
-         (decided [])
-         (providers-before (service-providers))
-         (replaced-names [])            ; plugins replaced by a new value
-         (entries [])
          (swaps (filter-map
                  (lambda ((d : declaration))
                    (and (not (named (declaration-name d) old-declarations))
@@ -605,14 +607,102 @@ prelude: :gerbil/core
                                                     (plugin-provides (declaration-target d)))))
                                       old-declarations))
                           (and removed (cons d removed))))) new-declarations)))
-    ;; Add ENTRY, replacing an earlier entry for the same plugin.
-    (def (record! (entry : report-entry))
-      (let (same? (lambda ((e : report-entry))
-                    (eq? (plugin-name (report-entry-subject e))
-                         (plugin-name (report-entry-subject entry)))))
-        (set! entries (if (find same? entries)
-                        (map (lambda ((e : report-entry)) (if (same? e) entry e)) entries)
-                        (cons entry entries)))))
+    (make-configuration-diff choice config old modules-reloaded?
+      (filter (lambda ((d : declaration))
+                (not (or (named (declaration-name d) new-declarations)
+                         (find (lambda (pair) (eq? (cdr pair) d)) swaps))))
+              (reverse old-declarations))
+      swaps)))
+
+;; Report ordering is stable even when an earlier result is superseded.
+(def (record-entry (entries : :list) (entry : report-entry)) => :list
+  (let (same? (lambda ((e : report-entry))
+                (eq? (plugin-name (report-entry-subject e))
+                     (plugin-name (report-entry-subject entry)))))
+    (if (find same? entries)
+      (map (lambda ((e : report-entry)) (if (same? e) entry e)) entries)
+      (cons entry entries))))
+
+(def (apply-configuration! (choice : config-choice) (config : configuration)
+                           (modules-reloaded? : :boolean)) => :pair
+  (report-configuration
+   (execute-configuration! (classify-configuration choice config modules-reloaded?))))
+
+;; Whether D gives its plugin other options than O, the running
+;; declaration of the same plugin object: compared by each option's
+;; value or default, so reordering options or writing out a default
+;; changes nothing. A difference only in options that program code
+;; overrides changes nothing now either; it is reported
+;; as taking effect at a start without the override.
+(def (options-change? (d : declaration) (o : declaration) (record! : :procedure)) => :boolean
+  (let* ((p (declaration-target d))
+         (new (plugin-option-values p (declaration-options d)))
+         (old (plugin-option-values p (declaration-options o)))
+         (differing (map car (filter (lambda (n) (not (member n old))) new)))
+         (overridden (filter (cut plugin-option-override p <>) differing)))
+    (cond
+     ((null? differing) #f)
+     ((fx= (length overridden) (length differing))
+      (record! (make-report-entry
+                p (plugin-label p) (declaration-source d) 'deferred
+                (string-append (overridden-text p overridden)
+                               ", so the change takes effect only when Tuna starts without the override")))
+      #f)
+     (else #t))))
+
+;; Classify D against the running declarations.
+(def (classify-declaration (d : declaration) (diff : configuration-diff)
+                           (record! : :procedure)) => change
+  (let* ((old-declarations (running-configuration-declarations (configuration-diff-old diff)))
+         (swaps (configuration-diff-swaps diff))
+         (modules-reloaded? (configuration-diff-modules-reloaded? diff))
+         (o (named (declaration-name d) old-declarations)))
+    (cond
+     ((assq d swaps) => (lambda (pair) (make-change 'replace d (cdr pair))))
+     ((not o) (make-change 'add d #f))
+     ((not (eq? (declaration-target o) (declaration-target d)))
+      (make-change (if (plugin-active? (declaration-target o)) 'replace 'retry) d o))
+     (else
+      (let* ((same-block? (if (declaration-block d)
+                            (and (declaration-block o)
+                                 (not modules-reloaded?)
+                                 (equal? (declaration-block-forms d) (declaration-block-forms o)))
+                            (not (declaration-block o))))
+             (kept (if same-block?
+                     (make-declaration (declaration-target d) (declaration-block o)
+                                       (declaration-block-forms d) (declaration-source d)
+                                       (declaration-options d))
+                     d)))
+        (cond
+         ((not (plugin-active? (declaration-target d))) (make-change 'retry kept o))
+         ((options-change? d o record!) (make-change 'replace kept o))
+         ((not same-block?) (make-change 'block kept o))
+         ((and (declaration-block kept) (not (plugin-active? (: (declaration-block kept) plugin))))
+          (make-change 'retry-block kept o))
+         (else (make-change 'keep kept o))))))))
+
+;; Refine live/off decisions after removals, preserving retry and follower order.
+(def (execute-configuration! (diff : configuration-diff)) => configuration-execution
+  (let* ((choice (configuration-diff-choice diff))
+         (config (configuration-diff-config diff))
+         (modules-reloaded? (configuration-diff-modules-reloaded? diff))
+         (old (configuration-diff-old diff))
+         (old-declarations (running-configuration-declarations old))
+         (new-declarations (configuration-declarations config))
+         (follower (running-configuration-follower old))
+         (working old-declarations)     ; the declarations running now
+         (user-code (running-configuration-user-code old))
+         (user-forms (running-configuration-user-forms old))
+         (kept-units [])                ; units left alone, to check at the end
+         ;; Units whose status the reload decided although the kernel,
+         ;; which knows plugins only by name, would report it otherwise: a
+         ;; failed new version undone, or a turn-off the kernel refused.
+         (decided [])
+         (providers-before (service-providers))
+         (replaced-names [])            ; plugins replaced by a new value
+         (entries []))
+    (def (record! (entry : report-entry)) => :void
+      (set! entries (record-entry entries entry)))
     ;; Make D the running declaration of NAME, or forget NAME when D is #f.
     (def (set-working! (name : :symbol) (d :? declaration))
       (let (others (filter (lambda ((e : declaration)) (not (eq? (declaration-name e) name)))
@@ -645,15 +735,15 @@ prelude: :gerbil/core
     ;; why the kernel kept it on.
     (def (turn-off-block! (d : declaration)) => :t
       (let (block (declaration-block d))
-        (and block (stays-on block))))
+        (and block (turn-off! block))))
     (def (decide! (name : :symbol))
       (set! decided (cons name decided)))
     ;; Record that turning off P, or the block of D, was refused, with
-    ;; WHY from stays-on and CONSEQUENCE after the reason.
+    ;; WHY from turn-off! and CONSEQUENCE after the reason.
     (def (record-refusal! (p : plugin) (what : :string) (source :? :string) (why : :t)
                           (consequence : :string))
       (decide! (plugin-name p))
-      (match (refusal-outcome why p consequence)
+      (match (refusal-outcome why p consequence (not (equal? what (plugin-label p))))
         ([status . detail] (record! (make-report-entry p what source status detail)))))
     ;; A unit whose block the kernel kept on is left as it is.
     (def (block-refused! (d : declaration) (why : :t) (consequence : :string))
@@ -664,26 +754,21 @@ prelude: :gerbil/core
     (def (remove! (d : declaration))
       (let* ((p (declaration-target d))
              (what (plugin-label p))
-             (source (declaration-source d))
-             (fixed (if live? (startup-services p) [])))
-        (if (pair? fixed)
-          (record! (make-report-entry p what source 'deferred
-                                      (string-append (provides-text fixed)
-                                                     ", so turning it off takes effect at next start")))
-          (cond
+             (source (declaration-source d)))
+        (cond
            ((turn-off-block! d)
             => (cut block-refused! d <> ", so turning it off takes effect at next start"))
            (else
             (set-working! (declaration-name d) #f)
             (cond
-             ((stays-on p)
+             ((turn-off! p)
               => (lambda (why)
                    (set-working! (declaration-name d) d)
                    (restore-block! d)
                    (record-refusal! p what source why ", so turning it off takes effect at next start")))
              (else
               (drain! #f)
-              (record! (make-report-entry p what source 'off "no longer declared")))))))))
+              (record! (make-report-entry p what source 'off "no longer declared"))))))))
 
     ;; A plugin declared now that was not before, or the same plugin, off.
     (def (add! (c : change))
@@ -705,15 +790,11 @@ prelude: :gerbil/core
              (running (declaration-target o))
              (what (plugin-label p))
              (source (declaration-source d))
-             (fixed (if live? (startup-services running) []))
              ;; The same plugin replaced only for its options.
              (consequence (if (eq? p running)
                             ", so the new options take effect at next start"
                             ", so the new version takes effect at next start")))
-        (if (pair? fixed)
-          (record! (make-report-entry running what source 'deferred
-                                      (string-append (provides-text fixed) consequence)))
-          (cond
+        (cond
            ((turn-off-block! o)
             => (cut block-refused! o <> consequence))
            (else
@@ -738,8 +819,8 @@ prelude: :gerbil/core
                   (set-working! (declaration-name o) o)
                   (decide! (plugin-name p))
                   (record! (make-report-entry p what source
-                              (if (refused-startup-service (cdr outcome)) 'deferred 'failed)
-                              (if (refused-startup-service (cdr outcome))
+                              (if (StartupRestartRefusal? (cdr outcome)) 'deferred 'failed)
+                              (if (StartupRestartRefusal? (cdr outcome))
                                 (cdr (refusal-outcome (cdr outcome) running consequence))
                                 (string-append (exception-summary (cdr outcome))
                                   (if (plugin-active? running) "; the running version is back on"
@@ -754,7 +835,7 @@ prelude: :gerbil/core
                            (if (and (eq? (plugin-name (report-entry-subject e)) name)
                                     (eq? (report-entry-status e) 'on))
                              (with-status e (if same? 'restarted 'replaced)
-                                          (if same? "its plugin was replaced" "")) e)) entries))))))))))
+                                          (if same? "its plugin was replaced" "")) e)) entries)))))))))
 
     ;; The same plugin with a changed block, or with its block off.
     (def (replace-block! (c : change))
@@ -795,55 +876,6 @@ prelude: :gerbil/core
              (else (record! entry))))))
         (drain! #f)))
 
-    ;; Whether D gives its plugin other options than O, the running
-    ;; declaration of the same plugin object: compared by each option's
-    ;; value or default, so reordering options or writing out a default
-    ;; changes nothing. A difference only in options that program code
-    ;; overrides changes nothing now either; it is reported
-    ;; as taking effect at a start without the override.
-    (def (options-change? (d : declaration) (o : declaration)) => :boolean
-      (let* ((p (declaration-target d))
-             (new (plugin-option-values p (declaration-options d)))
-             (old (plugin-option-values p (declaration-options o)))
-             (differing (map car (filter (lambda (n) (not (member n old))) new)))
-             (overridden (filter (cut plugin-option-override p <>) differing)))
-        (cond
-         ((null? differing) #f)
-         ((fx= (length overridden) (length differing))
-          (record! (make-report-entry
-                    p (plugin-label p) (declaration-source d) 'deferred
-                    (string-append (overridden-text p overridden)
-                                   ", so the change takes effect only when Tuna starts without the override")))
-          #f)
-         (else #t))))
-
-    ;; Classify D against the running declarations.
-    (def (classify (d : declaration)) => change
-      (let (o (named (declaration-name d) old-declarations))
-        (cond
-         ((assq d swaps) => (lambda (pair) (make-change 'replace d (cdr pair))))
-         ((not o) (make-change 'add d #f))
-         ((not (eq? (declaration-target o) (declaration-target d)))
-          (make-change (if (plugin-active? (declaration-target o)) 'replace 'retry) d o))
-         (else
-          (let* ((same-block? (if (declaration-block d)
-                                (and (declaration-block o)
-                                     (not modules-reloaded?)
-                                     (equal? (declaration-block-forms d) (declaration-block-forms o)))
-                                (not (declaration-block o))))
-                 (kept (if same-block?
-                         (make-declaration (declaration-target d) (declaration-block o)
-                                           (declaration-block-forms d) (declaration-source d)
-                                           (declaration-options d))
-                         d)))
-            (cond
-             ((not (plugin-active? (declaration-target d))) (make-change 'retry kept o))
-             ((options-change? d o) (make-change 'replace kept o))
-             ((not same-block?) (make-change 'block kept o))
-             ((and (declaration-block kept) (not (plugin-active? (: (declaration-block kept) plugin))))
-              (make-change 'retry-block kept o))
-             (else (make-change 'keep kept o))))))))
-
     ;; Supply file order before any activation, including blocks. Kept
     ;; owners share this rank with their entries, so a reorder is immediate.
     (let loop ((rest new-declarations) (rank 1))
@@ -863,12 +895,8 @@ prelude: :gerbil/core
           (defer-block-syncs! follower #t)
           (let (p (: (block-follower-hooks follower) plugin))
             (record! (activate-entry p (plugin-label p) #f))))
-        (for-each (lambda ((d : declaration))
-                    (unless (or (named (declaration-name d) new-declarations)
-                                (find (lambda (pair) (eq? (cdr pair) d)) swaps))
-                      (remove! d)))
-                  (reverse old-declarations))
-        (let* ((all-changes (map classify new-declarations))
+        (for-each remove! (configuration-diff-removed diff))
+        (let* ((all-changes (map (lambda ((d : declaration)) (classify-declaration d diff record!)) new-declarations))
                (problems (configuration-plugin-problems config))
                (changes (filter (lambda ((c : change))
                                   (not (assq (declaration-target (change-new c)) problems))) all-changes))
@@ -920,7 +948,7 @@ prelude: :gerbil/core
           (if (and was-on? (not modules-reloaded?) (equal? user-forms new-forms))
             (set! kept-units (cons user-code kept-units))
             (cond
-             ((and was-on? (stays-on user-code))
+             ((and was-on? (turn-off! user-code))
               => (lambda (why)
                    (record-refusal! user-code what #f why
                                     ", so the new version takes effect at next start")))
@@ -950,6 +978,19 @@ prelude: :gerbil/core
          user-code user-forms follower))
       (when follower
         (defer-block-syncs! follower #f)))
+    (set! evaluation-module (configuration-module config))
+    (make-configuration-execution new-declarations kept-units decided providers-before replaced-names entries)))
+
+;; Reconcile results with the final running state, then format the report.
+(def (report-configuration (result : configuration-execution)) => :pair
+  (let ((new-declarations (configuration-execution-declarations result))
+        (kept-units (configuration-execution-kept result))
+        (decided (configuration-execution-decided result))
+        (providers-before (configuration-execution-providers-before result))
+        (replaced-names (configuration-execution-replaced result))
+        (entries (configuration-execution-entries result)))
+    (def (record! (entry : report-entry)) => :void
+      (set! entries (record-entry entries entry)))
     ;; Units left alone that a change turned off on the way.
     (for-each (lambda (unit)
                 (match unit
@@ -1046,8 +1087,7 @@ prelude: :gerbil/core
               name)))
      (plugin-requires p))))
 
-;; Turn P off: #f once it is off, otherwise why the kernel kept it on
-;; (what it raised, or #t).
+;; The startup-tier provider in P's restart closure, if the loop runs.
 (def (startup-closure (p : plugin)) => (Maybe :pair)
   (and (editor-loop-running?)
        (let* ((names (map plugin-name (plugin-deactivation-closure p)))
@@ -1065,7 +1105,7 @@ prelude: :gerbil/core
   (when new (check-plugin-declarations! new))
   (let ((fixed (startup-closure old))
         (closure (plugin-deactivation-closure old)))
-    (when fixed (error "Restart required for startup service" (car fixed)))
+    (when fixed (raise (StartupRestartRefusal (car fixed) (cdr fixed))))
     (let ((apply (lambda ()
                    (deactivate-plugin! old)
                    (prepare)
@@ -1079,53 +1119,39 @@ prelude: :gerbil/core
                       (for-each activate-plugin! (cdr closure)))))
       (call-with-configuration-restart (map plugin-name closure) apply rollback))))
 
-(def (stays-on (p : plugin)) => :t
+;; Turn P off: #f once it is off, otherwise the refusal or failure.
+(def (turn-off! (p : plugin)) => :t
   (let (raised (with-catch (lambda (e) e) (lambda () (restart-plugin! p #f) #f)))
     (and (plugin-active? p) (or raised #t))))
 
-;; How to report that the kernel kept P on (WHY, from stays-on), as
+;; How to report that the kernel kept P on (WHY, from turn-off!), as
 ;; (status . detail). Turning off a plugin that the provider of a
 ;; startup-tier service needs, or that provides one, waits for the next
 ;; start: CONSEQUENCE says what waits.
-(def (refusal-outcome (why : :t) (p : plugin) (consequence : :string)) => :pair
-  (match (refused-startup-service why)
+(def (refusal-outcome (why : :t) (p : plugin) (consequence : :string)
+                      (code-block? : :boolean := #f)) => :pair
+  (match (and (StartupRestartRefusal? why)
+              (cons (StartupRestartRefusal-service why) (StartupRestartRefusal-provider why)))
     (#f (cons 'failed (string-append "could not be turned off: "
                                      (if (eq? why #t) "it stayed on" (exception-summary why)))))
     ([service . provider]
      (cons 'deferred
            (string-append (if (eq? provider (plugin-name p))
-                            (string-append "it provides the startup-tier service "
+                            (string-append (if code-block? "it provides the startup-tier service "
+                                              "provides the startup-tier service ")
                                            (symbol->string service))
                             (string-append "the provider of the startup-tier service "
                                            (symbol->string service) " (" (symbol->string provider)
                                            ") needs it"))
                           consequence)))))
 
-;; When E is reload policy refusing to restart a startup-tier provider
-;; while the editor loop runs: (service . its provider's name).
-(def (refused-startup-service (e : :t)) => (Maybe :pair)
-  (match (and (Error? e) (Error-irritants e))
-    ([(? symbol? name)]
-     (let (info (find (lambda ((info : service-info))
-                        (and (eq? (service-info-name info) name)
-                             (eq? (service-info-tier info) 'startup)
-                             (service-info-provider info)))
-                      (describe-services)))
-       (and info (cons name (service-info-provider (: info service-info))))))
-    (else #f)))
-
-;; The startup-tier services whose provider is P.
-(def (startup-services (p : plugin)) => :list
-  (filter-map (lambda ((info : service-info))
-                (and (eq? (service-info-tier info) 'startup)
-                     (eq? (service-info-provider info) (plugin-name p))
-                     (service-info-name info)))
-              (describe-services)))
-
-(def (provides-text (services : :list)) => :string
-  (string-append "provides the startup-tier service"
-                 (if (pair? (cdr services)) "s " " ")
-                 (string-join (map symbol->string services) ", ")))
+;; The reload policy has one refusal, distinct from activation failures.
+(deferror-class StartupRestartRefusal ((service : :symbol) (provider : :symbol))
+  #f
+  (lambda (self service provider)
+    (Error:::init! self "Restart required for startup service" irritants: [service])
+    (set! (StartupRestartRefusal-service self) service)
+    (set! (StartupRestartRefusal-provider self) provider)))
 
 ;; Why P, which a reload left alone, is off now.
 (def (turned-off-text (p : plugin)) => :string
@@ -1144,34 +1170,18 @@ prelude: :gerbil/core
                ", "))
 
 ;; Activate P within the time limit and describe the outcome by whether
-;; it is on. A plugin the kernel refused because it would take over a
-;; startup-tier service while the editor loop runs is deferred.
-(def (activate-entry (p : plugin) (what : :string) (source :? :string)) => report-entry
-  (let (outcome (call-with-activation-time-limit what (lambda () (activate-plugin! p))))
+;; it is on. Startup-tier policy is checked by restart-plugin! before teardown.
+(def (activate-entry (p : plugin) (what : :string) (source :? :string)
+                     order: (order :? :fixnum := #f)) => report-entry
+  (let (outcome (call-with-activation-time-limit what (lambda () (activate-plugin! p order: order))))
     (cond
      ((plugin-active? p)
       (make-report-entry p what source 'on ""))
-     ((match outcome (['raised . e] (startup-refusal e p)) (else #f))
-      => (lambda ((found : :pair))
-           (match found
-            ([service . provider]
-            (make-report-entry p what source 'deferred
-                               (string-append "would replace or restart the provider of the startup-tier service "
-                                              (symbol->string service) " (" (symbol->string provider)
-                                              "), so it takes effect at next start"))))))
      (else
       (make-report-entry p what source 'failed
                          (match outcome
                            (['raised . e] (exception-summary e))
                            (else "did not come on")))))))
-
-;; When the kernel refused to turn P on because it would replace or
-;; restart the provider of a startup-tier service while the editor loop
-;; runs: (service . that provider's name).
-(def (startup-refusal (e : :t) (p : plugin)) => (Maybe :pair)
-  (match (refused-startup-service e)
-    ((and found [_ . provider]) (and (not (eq? provider (plugin-name p))) found))
-    (else #f)))
 
 (def (block-label (d : declaration)) => :string
   (string-append "config: block of " (symbol->string (declaration-name d))))
@@ -1227,10 +1237,8 @@ prelude: :gerbil/core
                         (error (string-append "Cannot validate plugin flags: " loaded))))))
     (for-each (lambda (o) (apply override-plugin-option! o)) overrides)
     (set! current-running (make-running-configuration choice [] #f [] #f))
-    (let* ((service-entry
-            (parameterize ((initial-evaluation-context
-                            (and (configuration? loaded) (configuration-module loaded))))
-              (activate-entry session-owner "the configuration service" #f)))
+    (set! evaluation-module (and (configuration? loaded) (configuration-module loaded)))
+    (let* ((service-entry (activate-entry session-owner "the configuration service" #f order: (##greatest-fixnum)))
            (service-failure (if (eq? (report-entry-status service-entry) 'on) [] [service-entry]))
            (report (if (configuration? loaded)
                      (make-startup-report choice #f
@@ -1246,8 +1254,9 @@ prelude: :gerbil/core
 (def last-report-text #f)
 
 ;; The start-up owner is never a declaration in the running configuration,
-;; so reload cannot diff or restart it. Its one environment lasts until exit.
-(def initial-evaluation-context (make-parameter #f))
+;; so reload cannot diff or restart it. Evaluated bindings last until exit;
+;; their parent tracks the latest successfully loaded configuration.
+(def evaluation-module #f)
 
 (defclass configuration-provider ((owner : context)
                                   (environment : top-context)
@@ -1264,8 +1273,7 @@ prelude: :gerbil/core
    (lambda (self ctx wrapper)
      (let (old (entry-table-ref self.restart-wrappers 'restart))
        (when old
-         (let (attempt (context-add-entry! ctx (new-entry-table) 'restart #f))
-           (error "Restart wrapper already registered" (entry-owner old) (entry-owner attempt))))
+         (error "Restart wrapper already registered" (entry-owner old) (context-plugin-name ctx)))
        ;; An around-restart callback can register further effects later;
        ;; those belong to its participant, not to the command that swaps.
        (context-add-entry! ctx self.restart-wrappers 'restart (context-bind ctx wrapper))
@@ -1279,6 +1287,9 @@ prelude: :gerbil/core
   (evaluate (lambda (self form)
               (call-with-context self.owner
                 (lambda ()
+                  ;; Without a loaded init, keep the root that supplies core syntax.
+                  (when evaluation-module
+                    (top-context-super-set! self.environment evaluation-module))
                   (parameterize ((current-expander-context self.environment))
                     (eval form)))))))
 
@@ -1287,13 +1298,12 @@ prelude: :gerbil/core
   provides: [configuration-service]
   ;; Interactive customizations win ordinary configuration ties, even after
   ;; declarations are reordered or added by a reload.
-  (set-plugin-order! session-owner (##greatest-fixnum))
   (prepare-expander!)
   ;; The loaded module already resolved relative imports and import filters.
   ;; Its body defines no module bindings; user definitions are inside init.
-  ;; A child top context sees those imports but keeps evaluated definitions
-  ;; separate and alive when reload replaces the configuration module.
-  (let (environment (make-top-context (initial-evaluation-context)))
+  ;; The persistent child keeps evaluated definitions and explicit imports;
+  ;; evaluate updates its parent when reload replaces the configuration module.
+  (let (environment (make-top-context evaluation-module))
     (parameterize ((current-expander-context environment))
       (eval '(import :tuna/config)))
     (context-provide! ctx configuration-service

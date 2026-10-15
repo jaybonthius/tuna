@@ -64,6 +64,7 @@ prelude: :gerbil/core
         view-skipped?
         posn-view
         posn-node
+        posn-start-node
         current-frame-target
         move-frame
         frame-mark-names
@@ -271,6 +272,12 @@ prelude: :gerbil/core
            (if (fx= (node-id n) id)
              n
              (ormap find-node (node-children n)))))))
+
+;; The node where click keymap lookup begins, falling back to the view's root.
+(def (posn-start-node (p : posn)) => (Maybe node)
+  (or (posn-node p)
+      (let (v (posn-view p))
+        (and v (buffer-root (view-showing v))))))
 
 (def (current-frame-target) => frame-target
   (:- (with-service-provider (provider layout-service Layout) (: (Layout-current-frame-target provider) frame-target)) frame-target))

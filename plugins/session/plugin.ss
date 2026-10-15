@@ -1,3 +1,4 @@
+#lang :tuna/prelude
 ;;; The session plugin (startup tier; ADR 5): keeps the session slots
 ;;; plugins register, and saves them in $XDG_STATE_HOME/tuna/session.ss. It
 ;;; saves while the editor is idle, when anything changed, and when the
@@ -12,7 +13,6 @@
 ;;; data, never evaluated. A file that fails is moved aside and reported,
 ;;; and Tuna starts without it. Data of slots no active plugin registers is
 ;;; kept, so turning a plugin off does not erase what it saved.
-prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
@@ -130,28 +130,33 @@ prelude: :gerbil/core
 (def (session-datum (entries : :list)) => :pair
   (cons* 'tuna-session format-version entries))
 
-;; SLOT's entry, or #f after reporting why its data cannot be saved.
-(def (save-slot (slot : session-slot)) => (Maybe :list)
-  (let (name (session-slot-name slot))
-    (with-catch
-     (lambda (e)
-       (report! (string-append "Session slot " (symbol->string name) " failed to save: "
-                               (exception-summary e)))
-       #f)
-     (lambda ()
-       (let (data ((session-slot-save slot)))
-         (unless (plain-data? data)
-           (error "Session slot data is not plain data" name))
-         [name (session-slot-version slot) data])))))
+;; Capture every requested slot before updating memory. Strict captures abort a
+;; restart before teardown; routine saves report individual failures and keep
+;; those slots' previous data.
+(def (capture-slots (self : session-store) (slots : :list)
+                    strict?: (strict? : :boolean := #f)) => :list
+  (let* ((saved (filter-map (lambda ((slot : session-slot))
+                             (with-catch
+                              (lambda (e)
+                                (if strict? (raise e)
+                                  (begin
+                                    (report! (string-append "Session slot " (symbol->string (session-slot-name slot))
+                                                            " failed to save: " (exception-summary e)))
+                                    #f)))
+                              (lambda ()
+                                (let (data ((session-slot-save slot)))
+                                  (unless (plain-data? data)
+                                    (error "Session slot data is not plain data" (session-slot-name slot)))
+                                  [(session-slot-name slot) (session-slot-version slot) data]))))
+                           slots))
+         (names (map car saved)))
+    (append saved (filter (lambda ((entry : :pair)) (not (memq (car entry) names)))
+                          self.entries))))
 
 ;; Save every slot. Entries of slots that are not registered, or failed to
 ;; save, are kept as they were. The file is rewritten only if it changes.
 (def (save! (self : session-store)) => :void
-  (let* ((saved (filter-map save-slot (effective-slots self)))
-         (names (map car saved))
-         (entries (append saved
-                          (filter (lambda ((entry : :pair)) (not (memq (car entry) names)))
-                                  self.entries)))
+  (let* ((entries (capture-slots self (effective-slots self)))
          (datum (session-datum entries)))
     (unless (equal? datum self.written)
       (create-directory* self.directory)
@@ -167,7 +172,7 @@ prelude: :gerbil/core
 ;; Give each registered slot its saved data, in slot order. One slot
 ;; failing does not stop the others.
 (def (restore! (self : session-store)) => :void
-  (for-each (cut restore-slot! self <>) (effective-slots self))
+  (restore-slots! self (effective-slots self))
   (set! self.restored? #t))
 
 ;; Give SLOT the data saved for it, and count it as live.
@@ -188,17 +193,27 @@ prelude: :gerbil/core
       (else (void))))
   (set! self.live (cons slot self.live)))
 
+;; One restore traversal for startup, late activation and restart. Startup
+;; explicitly restores every slot; late activation and restart select only
+;; slots that have not yet received their state.
+(def (restore-slots! (self : session-store) (slots : :list)
+                     strict?: (strict? : :boolean := #f)
+                     pending-only?: (pending-only? : :boolean := #f)) => :void
+  (for-each (lambda ((slot : session-slot))
+              (unless (and pending-only? (memq slot self.live))
+                (restore-slot! self slot strict?: strict?)))
+            slots))
+
 ;; Once the program's restore has run: restore the effective slots of P,
 ;; which has just turned on, that are not live yet.
 (def (restore-plugin-slots! (self : session-store) (p : plugin)) => :void
   (when (and self.restored? (not self.restarting?))
-    (for-each (lambda (name)
-                (let (best (entry-table-ref self.slots name))
-                  (when (and best
-                             (eq? (entry-owner best) (plugin-name p))
-                             (not (memq (entry-value best) self.live)))
-                    (restore-slot! self (entry-value best)))))
-              (entry-table-names self.slots))))
+    (restore-slots! self
+      (filter-map (lambda (name)
+                    (let (best (entry-table-ref self.slots name))
+                      (and best (eq? (entry-owner best) (plugin-name p)) (entry-value best))))
+                  (entry-table-names self.slots))
+      pending-only?: #t)))
 
 ;; SLOT's plugin is turning off: if SLOT is live and the only slot of its
 ;; name (REGISTERED is its entry), keep its latest data in memory for whatever
@@ -211,11 +226,7 @@ prelude: :gerbil/core
     (set! self.live (remq slot self.live))
     (when (and (not self.restarting?)
                (equal? (entry-table-entries self.slots (session-slot-name slot)) [registered]))
-      (let (saved (save-slot slot))
-        (when saved
-          (set! self.entries
-            (cons saved (filter (lambda ((entry : :pair)) (not (eq? (car entry) (car saved))))
-                                self.entries))))))))
+      (set! self.entries (capture-slots self [slot])))))
 
 ;; Capture first: a cleanup can erase a plugin's state before its slot's
 ;; inverse runs. A failed capture must not start teardown.
@@ -225,13 +236,7 @@ prelude: :gerbil/core
                   (let (e (entry-table-ref self.slots name))
                     (and e (memq (entry-owner e) owners) (entry-value e))))
                 (entry-table-names self.slots)))
-         (saved (map (lambda ((slot : session-slot))
-                       (let (data ((session-slot-save slot)))
-                         (unless (plain-data? data)
-                           (error "Session slot data is not plain data" (session-slot-name slot)))
-                         [(session-slot-name slot) (session-slot-version slot) data])) slots))
-         (names (map car saved))
-         (captured (append saved (filter (lambda (e) (not (memq (car e) names))) self.entries))))
+         (captured (capture-slots self slots strict?: #t)))
     (set! self.entries captured)
     (set! self.restarting? #t)
     (unwind-protect
@@ -246,9 +251,7 @@ prelude: :gerbil/core
 
 (def (restore-pending! (self : session-store)) => :void
   (when self.restored?
-    (for-each (lambda ((slot : session-slot))
-                (unless (memq slot self.live) (restore-slot! self slot strict?: #t)))
-              (effective-slots self))))
+    (restore-slots! self (effective-slots self) strict?: #t pending-only?: #t)))
 
 (implement Session session-store
   (add-session-slot! (lambda (self ctx slot priority)

@@ -113,6 +113,24 @@
 
 (def minibuffer-test
   (test-suite "tuna/plugins/minibuffer"
+    (test-case "prompt commands are hidden at registration without changing other owners"
+      (call-with-fresh-kernel [commands]
+        (lambda ()
+          (defplugin (other-commands ctx) "An earlier owner of a prompt command name."
+            requires: [commands-service]
+            (context-define-command! ctx 'exit-minibuffer void))
+          (activate-plugin! other-commands order: 100)
+          (let (other (command-ref 'exit-minibuffer))
+            (for-each activate-plugin! [keys test-messages rope-text-store settings no-session buffers layout minibuffer])
+            (check (command-ref 'exit-minibuffer) ? (cut eq? <> other))
+            (check ((command-visible? other) other #f) => #t)
+            (deactivate-plugin! other-commands)
+            (for-each
+              (lambda (name)
+                (let (command (command-ref name))
+                  (check (entry-owner (command-entry name)) => 'minibuffer)
+                  (check ((command-visible? command) command #f) => #f)))
+              '(exit-minibuffer abort-minibuffers previous-minibuffer-history next-minibuffer-history))))))
     (test-case "turning the command's plugin off quits its waiting read, leaving the minibuffer"
       (with-minibuffer
         (lambda ()

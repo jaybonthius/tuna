@@ -226,24 +226,29 @@
       (context-add-session-slot! ctx 'minibuffer-history version: 1
                                  save: (lambda () (save-histories self))
                                  restore: (lambda (data) (restore-histories! self data)))
-      (defcommand (previous-minibuffer-history) "Replace the prompt input with an older answer."
-        (move-history! (car (prompts-here self)) 1))
-      (defcommand (next-minibuffer-history) "Replace the prompt input with a newer answer, or the unfinished input."
-        (move-history! (car (prompts-here self)) -1))
-      (defcommand (exit-minibuffer) "Answer the prompt here with the text typed; it must be the innermost."
-        (match (prompts-here self)
-          ([p] (using (p : prompt)
-                 (prompt-exit! (Prompt p) (prompt-input (Prompt p)))))
-          (else (error "Not in the innermost minibuffer"))))
-      (defcommand (abort-minibuffers) "Abandon the prompt here and any inside it; their commands receive quit."
-        (for-each (lambda ((p : prompt)) (resume-quit! p.waiting))
-                  (prompts-here self)))
       ;; Prompt-only commands are executable but not picker candidates.
-      (for-each (lambda ((name : :symbol))
-                  (let (c (command-ref name))
-                    (set! (command-visible? c)
-                          (lambda (command origin) #f))))
-                '(exit-minibuffer abort-minibuffers previous-minibuffer-history next-minibuffer-history))
+      (context-define-command! ctx 'previous-minibuffer-history
+        (lambda () (move-history! (car (prompts-here self)) 1))
+        doc: "Replace the prompt input with an older answer."
+        visible?: (lambda (command origin) #f))
+      (context-define-command! ctx 'next-minibuffer-history
+        (lambda () (move-history! (car (prompts-here self)) -1))
+        doc: "Replace the prompt input with a newer answer, or the unfinished input."
+        visible?: (lambda (command origin) #f))
+      (context-define-command! ctx 'exit-minibuffer
+        (lambda ()
+          (match (prompts-here self)
+            ([p] (using (p : prompt)
+                   (prompt-exit! (Prompt p) (prompt-input (Prompt p)))))
+            (else (error "Not in the innermost minibuffer"))))
+        doc: "Answer the prompt here with the text typed; it must be the innermost."
+        visible?: (lambda (command origin) #f))
+      (context-define-command! ctx 'abort-minibuffers
+        (lambda ()
+          (for-each (lambda ((p : prompt)) (resume-quit! p.waiting))
+                    (prompts-here self)))
+        doc: "Abandon the prompt here and any inside it; their commands receive quit."
+        visible?: (lambda (command origin) #f))
       (keymap-set-in self.keymap "M-p" 'previous-minibuffer-history)
       (keymap-set-in self.keymap "M-n" 'next-minibuffer-history)
       (keymap-set-in self.keymap "RET" 'exit-minibuffer)

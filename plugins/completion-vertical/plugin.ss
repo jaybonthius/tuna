@@ -1,6 +1,6 @@
+#lang :tuna/prelude
 ;;; Vertical completion presentation. Nodes are rebuilt from the session;
 ;;; the renderer still sends one whole-screen morph. No client list state.
-prelude: :gerbil/core
 (import :tuna/plugins/commands/contract
         :std/interface (only-in :gerbil/runtime/hash HashTable)
         :tuna/kernel :tuna/plugins/keys/contract :tuna/plugins/buffers/contract

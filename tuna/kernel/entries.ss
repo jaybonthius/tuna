@@ -39,7 +39,7 @@ prelude: :gerbil/core
                     (string>? (symbol->string (entry-owner a))
                               (symbol->string (entry-owner b))))))))
 
-;; Slot name -> entries, best first.
+;; Slot name -> entries. Reads sort against the owners' current ranks.
 (defstruct entry-table ((slots : HashTable))
   final: #t)
 
@@ -49,15 +49,9 @@ prelude: :gerbil/core
 (def (entry-table-add! (table : entry-table) (name : :t) (new : entry)) => :void
   (let (slots (entry-table-slots table))
     (hash-put! slots name
-               (let insert ((rest (filter (lambda ((old : entry))
-                                           (not (eq? (entry-owner old) (entry-owner new))))
-                                         (hash-ref slots name []))))
-                 (match rest
-                   ([] [new])
-                   ([first . more]
-                    (if (entry-outranks? new first)
-                      (cons new rest)
-                      (cons first (insert more)))))))))
+               (cons new (filter (lambda ((old : entry))
+                                   (not (eq? (entry-owner old) (entry-owner new))))
+                                 (hash-ref slots name []))))))
 
 (def (entry-table-remove! (table : entry-table) (name : :t) (old : entry)) => :void
   (let* ((slots (entry-table-slots table))

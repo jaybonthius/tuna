@@ -31,9 +31,9 @@ prelude: :gerbil/core
   final: #t)
 
 (interface Session
-  ;; Register SLOT for CTX's plugin until it is deactivated. Several plugins
-  ;; may register the same name (alternative providers of one service); the
-  ;; highest PRIORITY is effective. CTX's plugin must require session-service
+  ;; Register SLOT for CTX's plugin until it is deactivated. If registrations
+  ;; share a name, the highest PRIORITY is effective, then declaration order.
+  ;; CTX's plugin must require session-service
   ;; and restart with it, so its slots move to a new provider.
   (add-session-slot! (ctx : context) (slot : session-slot) (priority : :fixnum)) => :void
   ;; Save every slot's data now.

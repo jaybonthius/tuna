@@ -13,6 +13,7 @@ prelude: :gerbil/core
 (export (struct-out plugin)
         defplugin
         context
+        context-plugin-name
         current-context
         call-with-context
         context-bind
@@ -577,7 +578,7 @@ prelude: :gerbil/core
   (call-as-plugin-operation
    (lambda ()
      (let (k (the-kernel))
-       (when (kernel-live? k)
+       (when (kernel-loop k)
          (error "Stop the editor loop before deactivating every plugin"))
        (for-each (lambda ((rec : plugin-record)) (set! (plugin-record-wanted? rec) #f))
                  (hash-values (kernel-plugins k)))

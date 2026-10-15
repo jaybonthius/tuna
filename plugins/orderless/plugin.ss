@@ -1,5 +1,5 @@
+#lang :tuna/prelude
 ;;; Every space-separated component must match; matching sees only plain text.
-prelude: :gerbil/core
 (import :std/text/pregexp :tuna/kernel :tuna/plugins/completion/contract)
 (export orderless orderless-compile)
 

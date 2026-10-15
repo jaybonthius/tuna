@@ -95,6 +95,21 @@
 
 (def node-keymaps-test
   (test-suite "tuna/integration/node-keymaps"
+    (test-case "click lookup starts at a live node, otherwise the view root"
+      (call-with-fresh-kernel lookup-plugins
+        (lambda ()
+          (show-tree!)
+          (let* ((view (selected-view))
+                 (root (buffer-root (view-showing view)))
+                 (leaf (current-text-node))
+                 (part (view-id view)))
+            (check (posn-start-node (make-posn 'view part (node-id leaf) 1))
+                   ? (cut eq? <> leaf))
+            (check (posn-start-node (make-posn 'status-line part #f 1))
+                   ? (cut eq? <> root))
+            (check (posn-start-node (make-posn 'view part -1 1))
+                   ? (cut eq? <> root))
+            (check (posn-start-node (make-posn 'view -1 #f 1)) => #f)))))
     (test-case "click resolvers run as their owner and disappear with its receipt"
       (call-with-fresh-kernel lookup-plugins
         (lambda ()

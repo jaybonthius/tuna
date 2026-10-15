@@ -1,3 +1,4 @@
+#lang :tuna/prelude
 ;;; Key handling (startup tier): the global keymap, the
 ;;; input-target stack, key resolution, and the quit key (ADR 3, ADR 8).
 ;;;
@@ -8,7 +9,6 @@
 ;;; without it, each from the most specific event name down
 ;;; (`pointer-event-names`), before the next keymap. A click does not clear
 ;;; the echo area, so clicking it to read a message keeps the message.
-prelude: :gerbil/core
 
 (import :tuna/kernel
         :tuna/plugins/keys/contract

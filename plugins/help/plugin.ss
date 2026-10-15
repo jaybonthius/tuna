@@ -1,7 +1,7 @@
+#lang :tuna/prelude
 ;;; Help in a buffer (live tier): help output goes to *Help*, a `help` node
 ;;; holding a `help-title` node and a text node, shown with display-buffer.
 ;;; C-h q (quit-help) kills *Help*, which closes a view made for it.
-prelude: :gerbil/core
 
 (import :tuna/plugins/commands/contract
         :std/interface

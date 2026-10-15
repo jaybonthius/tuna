@@ -76,8 +76,7 @@ prelude: :gerbil/core
     (let (where (place-text source))
       (def (problem! (text : :string))
         (set! c.problems (cons (string-append where ": " text) c.problems)))
-      ;; The kernel exports the plugin type but no predicate; the cast checks.
-      (if (not (with-catch (lambda (_) #f) (lambda () (: value plugin) #t)))
+      (if (not (plugin? value))
         (problem! (string-append "use-plugin needs a plugin, not " (object->string value)))
         (let* ((p (: value plugin))
                (name (symbol->string (plugin-name p)))

@@ -1,3 +1,4 @@
+#lang :tuna/prelude
 ;;; Web transport (startup tier): the loopback HTTP server, the page shell,
 ;;; ordered input over POST /commands, and the screen stream (ADR 7, ADR 10).
 ;;;
@@ -6,7 +7,6 @@
 ;;; key-event or a pointer-event. Each screen carries its revision as
 ;;; data-revision on its root element, and a pointer item names the screen
 ;;; it was computed on, which must be one this transport sent.
-prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable)
         :std/io

@@ -15,6 +15,7 @@ prelude: :gerbil/core
   ;; 1. Plugin runtime: plugins, contexts and receipts, owner-tagged
   ;; entries, activation, services with one provider.
   plugin                                ; the type, for annotations
+  plugin?                               ; configuration validates declarations
   plugin-name                           ; lifecycle hooks pass plugins
   plugin-doc
   plugin-source
@@ -23,6 +24,7 @@ prelude: :gerbil/core
   plugin-requires                       ; start-up waits for, and reports, missing services
   defplugin
   context
+  context-plugin-name                   ; registration diagnostics name their owner
   current-context
   call-with-context
   context-bind

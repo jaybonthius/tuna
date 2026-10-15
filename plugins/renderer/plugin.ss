@@ -1,3 +1,4 @@
+#lang :tuna/prelude
 ;;; HTML renderer (live tier): editor state -> SXML -> HTML (ADR 7). The
 ;;; screen is the layout drawn from the frame, nothing else: the minibuffer,
 ;;; the echo area and help are buffers in views like any other (ADR 13).
@@ -29,7 +30,6 @@
 ;;; inputs. Every redraw still sends the whole visible screen as one fat
 ;;; morph. Kept HTML belongs to the views drawn: a view not drawn, or drawn
 ;;; from another node, drops its own.
-prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable)
         :std/text/markup/sxml/print
