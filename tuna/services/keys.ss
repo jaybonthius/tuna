@@ -37,7 +37,8 @@ prelude: :gerbil/core
 (import :std/interface
         :tuna/kernel
         (only-in :tuna/services/buffers node))
-(export where-is
+(export context-set-click-resolver!
+        where-is
         (struct-out key-event posn pointer-event)
         pointer-event-names
         event-start
@@ -152,6 +153,8 @@ prelude: :gerbil/core
   (new-entry-table))
 
 (interface (Keys Input)
+  ;; RESOLVE receives a posn and returns the starting node, or #f.
+  (set-click-resolver! (ctx : context) (resolve : :procedure)) => :void
   ;; Reverse lookup in the maps active from FOCUS (#f: current focus), shortest first.
   (where-is (name : :symbol) (focus :? node)) => :list
   ;; Bind KEYS, in `keymap-set` syntax ("C-c l"), to the command named
@@ -173,6 +176,10 @@ prelude: :gerbil/core
   ;; A number that changes whenever a binding is added to or removed from
   ;; any keymap.
   (keymap-generation) => :fixnum)
+
+(def (context-set-click-resolver! (ctx : context) (resolve : :procedure)) => :void
+  (:- (with-service-provider (provider input-service Keys)
+        (Keys-set-click-resolver! provider ctx resolve)) :void))
 
 (def (where-is (name : :symbol) (focus :? node := #f)) => :list
   (:- (with-service-provider (provider input-service Keys) (Keys-where-is provider name focus)) :list))

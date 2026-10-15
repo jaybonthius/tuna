@@ -16,6 +16,7 @@ prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
+        :tuna/configuration
         :tuna/lib/timers
         :tuna/services/session)
 (export session-plugin
@@ -75,6 +76,15 @@ prelude: :gerbil/core
     (newline port))
   (when (service-provider messages-service)
     (message text)))
+
+(def (call-reporting-failure (what : :string) (thunk : :procedure)) => :void
+  (with-catch (lambda (e)
+                (let (port (current-error-port))
+                  (display what port)
+                  (display " failed: " port)
+                  (display (exception-summary e) port)
+                  (newline port)))
+              thunk))
 
 ;; DATUM's slot entries if it is a valid session, or else #f.
 (def (session-entries (datum : :t)) => (Maybe :list)
@@ -248,19 +258,27 @@ prelude: :gerbil/core
                          (context-defer! ctx (lambda () (keep-slot-data! self slot new))))))
   (save-session! (lambda (self) (save! self)))
   (restore-session! (lambda (self) (restore! self)))
-  (restart! (lambda (self owners apply rollback) (restart! self owners apply rollback)))
   (state-directory (lambda (self) self.directory)))
 
 (defplugin (session-plugin ctx)
   "Saves the session to $XDG_STATE_HOME/tuna/session.ss while idle and on exit, and restores it."
   provides: [session-service]
-  optional: [messages-service]
+  optional: [messages-service configuration-service]
   (let* ((directory (or (session-state-directory) (default-state-directory)))
          (entries (read-session (path-expand "session.ss" directory))))
     ;; What the file holds, as far as saving needs to know.
     (using (self (session-store slots: (new-entry-table) directory: directory entries: entries
                                 written: (session-datum entries) restored?: #f live: [] restarting?: #f)
                  : session-store)
+      (context-add-hook! ctx configuration-started-hook 'session
+                         (lambda () (call-reporting-failure "Restoring the session"
+                                                           (lambda () (restore! self)))))
+      (context-add-hook! ctx configuration-stopping-hook 'session
+                         (lambda () (call-reporting-failure "Saving the session"
+                                                           (lambda () (save! self)))))
+      (when (service-provider configuration-service)
+        (context-set-restart-wrapper! ctx
+          (lambda (owners apply rollback) (restart! self owners apply rollback))))
       (context-add-hook! ctx plugin-activated-hook 'session
                          (lambda ((p : plugin)) (restore-plugin-slots! self p)))
       (context-run-with-timer! ctx save-interval save-interval

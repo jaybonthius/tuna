@@ -33,7 +33,7 @@
     "tuna/services/session"
     "tuna/services/layout"
     "tuna/services/buttons"
-    "tuna/services/configuration"
+    "tuna/configuration"
     "tuna/plugins/commands"
     "tuna/plugins/keys"
     "tuna/plugins/rope"

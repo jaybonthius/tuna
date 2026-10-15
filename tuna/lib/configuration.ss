@@ -8,7 +8,8 @@
 ;;; plugins is tuna/config-blocks.ss.
 prelude: :gerbil/core
 
-(import :tuna/kernel
+(import (only-in :gerbil/expander module-context)
+        :tuna/kernel
         :tuna/lib/plugin-options)
 (export (struct-out declaration configuration configuration-problems)
         declare-plugin!
@@ -31,7 +32,9 @@ prelude: :gerbil/core
 ;; rest of its code, which is activated last, with that code as written.
 (defstruct configuration ((declarations : :list)
                           (user-code    : plugin)
-                          (user-forms   : :list))
+                          (user-forms   : :list)
+                          ;; The resolved imports, including filters and relative paths.
+                          (module       : module-context))
   final: #t)
 
 ;; What a load raises when declarations or options have problems: one
@@ -133,12 +136,11 @@ prelude: :gerbil/core
 ;; count. A file whose declarations or options have problems fails with
 ;; every one of them, one per line.
 (def (collect-configuration (load : :procedure)) => configuration
-  (let (c (collector declarations: [] user-code: #f user-forms: [] problems: []))
-    (parameterize ((current-collector c))
-      (load))
+  (let* ((c (collector declarations: [] user-code: #f user-forms: [] problems: []))
+         (module (parameterize ((current-collector c)) (load))))
     (using (c : collector)
       (unless c.user-code
         (error "The file declared nothing: does it start with #lang :tuna/config?"))
       (unless (null? c.problems)
         (raise (make-configuration-problems (string-join (reverse c.problems) "\n"))))
-      (make-configuration (reverse c.declarations) c.user-code c.user-forms))))
+      (make-configuration (reverse c.declarations) c.user-code c.user-forms module))))

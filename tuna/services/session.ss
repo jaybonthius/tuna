@@ -16,7 +16,6 @@ prelude: :gerbil/core
         context-add-session-slot!
         save-session
         restore-session
-        restart-with-session
         state-directory
         plain-data?
         write-file-atomically!)
@@ -44,10 +43,6 @@ prelude: :gerbil/core
   ;; slots registered before it. Call once, after the plugins that own
   ;; slots are active.
   (restore-session!) => :void
-  ;; Capture OWNERS before teardown, defer automatic restore while APPLY runs,
-  ;; then restore new slots in registration order. On failure ROLLBACK turns
-  ;; the old definitions back on and receives the same captured data.
-  (restart! (owners : :list) (apply : :procedure) (rollback : :procedure)) => :void
   ;; The directory holding Tuna's state ($XDG_STATE_HOME/tuna).
   (state-directory) => :string)
 
@@ -72,10 +67,6 @@ prelude: :gerbil/core
 
 (def (restore-session) => :void
   (:- (with-service-provider (provider session-service Session) (Session-restore-session! provider)) :void))
-
-(def (restart-with-session (owners : :list) (apply : :procedure) (rollback : :procedure)) => :void
-  (:- (with-service-provider (provider session-service Session)
-    (Session-restart! provider owners apply rollback)) :void))
 
 (def (state-directory) => :string
   (:- (with-service-provider (provider session-service Session) (Session-state-directory provider)) :string))

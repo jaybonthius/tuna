@@ -2,7 +2,7 @@
 ;;; saving, restoring across a simulated restart, corrupt files, unknown
 ;;; slots, and atomic writes. Every test uses its own temporary state
 ;;; directory.
-(import (only-in :tuna/boot restart-plugin!)
+(import (only-in :tuna/boot session-owner restart-plugin!)
         :std/test
         :std/error
         :tuna/kernel
@@ -107,6 +107,7 @@
   (call-with-fresh-kernel []
     (lambda ()
       (parameterize ((session-state-directory directory))
+        (activate-plugin! session-owner)
         (activate-plugin! session-plugin))
       (thunk))))
 

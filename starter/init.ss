@@ -33,7 +33,9 @@
 ;;; the modules you import, and macro code, also run at load: they must not
 ;;; change the editor, since nothing could undo it.
 
-(import :tuna/plugins/commands
+(import :tuna/services/commands
+        :tuna/services/keys
+        :tuna/plugins/commands
         :tuna/plugins/keys
         :tuna/plugins/web
         :tuna/plugins/settings

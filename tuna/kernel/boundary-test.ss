@@ -519,7 +519,7 @@
 ;; amendment for configuration stage 2), with config-blocks, which the
 ;; start-up code turns on itself: only the program uses it.
 ;; Plugins reach reload and the configuration report through the
-;; configuration service (tuna/services/configuration.ss).
+;; configuration service (tuna/configuration.ss).
 (def program-modules '("tuna/main" "tuna/boot" "tuna/control" "tuna/config-blocks"))
 (def program-files '("tuna/main.ss" "tuna/boot.ss" "tuna/control.ss" "tuna/config-blocks.ss"))
 
@@ -538,6 +538,26 @@
                  (referenced-names (read-forms (source-path file)))))
               (filter (lambda ((file : :string)) (not (member file program-files)))
                       (append (non-test-source-names) (demo-source-names))))))
+
+(def (tuna-module? (file : :string)) => :boolean
+  (or (equal? (path-directory file) "tuna/")
+      (string-prefix? "tuna/lib/" file)
+      (string-prefix? "tuna/kernel/" file)))
+
+(def (tuna-reference-problems (file : :string) (names : :list)) => :list
+  (filter-map
+   (lambda ((name : :string))
+     (and (or (name-within? file name "tuna/services")
+              (name-within? file name "tuna/plugins"))
+          (string-append file ": imports or includes " name
+                         "; Tuna imports no editor contract or plugin")))
+   names))
+
+(def (tuna-import-problems) => :list
+  (apply append
+    (map (lambda ((file : :string))
+           (tuna-reference-problems file (referenced-names (read-forms (source-path file)))))
+         (filter tuna-module? (non-test-source-names)))))
 
 ;;; Contracts and plugin ownership
 
@@ -563,7 +583,7 @@
            (re-exports? (cdr form)))))
 
 (def (contract-problems) => :list
-  (let ((contracts (layer-source-names contract-layer))
+  (let ((contracts (cons "tuna/configuration.ss" (layer-source-names contract-layer)))
         (libraries (layer-source-names library-layer)))
     (apply append
       (map (lambda ((file : :string))
@@ -588,7 +608,7 @@
 
 ;; Each row is (contract . imported-contracts), with normalized source paths.
 (def (contract-graph) => :list
-  (let (contracts (map source-path (layer-source-names contract-layer)))
+  (let (contracts (map source-path (cons "tuna/configuration.ss" (layer-source-names contract-layer))))
     (map (lambda ((file : :string))
            (cons file
                  (unique
@@ -855,6 +875,14 @@
     (test-case "outside the kernel and test support, only the kernel facade is imported"
       (displayln "  kernel facade boundary: " (length (kernel-client-names)) " files checked")
       (check (problem-count (kernel-internal-problems)) => 0))
+    (test-case "Tuna program language library and kernel import no editor concepts"
+      (check (problem-count (tuna-import-problems)) => 0)
+      (check (tuna-reference-problems "tuna/boot.ss" '(":tuna/configuration")) => [])
+      (check (length (tuna-reference-problems "tuna/boot.ss"
+                       '(":tuna/services/session" "./plugins/keys"))) => 2)
+      (check (tuna-module? "tuna/config.ss") => #t)
+      (check (tuna-module? "tuna/lib/jobs.ss") => #t)
+      (check (tuna-module? "tuna/plugins/keys.ss") => #f))
     (test-case "contracts use only allowed lower layers and never re-export modules"
       (check (problem-count (contract-problems)) => 0))
     (test-case "the contract import graph is acyclic"

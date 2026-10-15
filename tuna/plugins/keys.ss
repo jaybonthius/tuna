@@ -16,8 +16,7 @@ prelude: :gerbil/core
         :tuna/services/settings
         (only-in :tuna/services/buffers
                  buffers-service selected-view view-node view-showing buffer-root
-                 node node-parent node-keymap)
-        (only-in :tuna/services/layout layout-service posn-view posn-node))
+                 node node-parent node-keymap))
 (export keys-plugin
         key-description
         mac-option-modifier
@@ -25,7 +24,8 @@ prelude: :gerbil/core
 
 (def quit-key "C-g")
 
-(defclass global-keys ((keymap        : entry-table)    ; key sequence -> command name
+(defclass global-keys ((click-resolvers : entry-table)
+                       (keymap        : entry-table)    ; key sequence -> command name
                        (targets       : :list)          ; input targets, innermost first
                        (pending       : :list)          ; keys typed so far of a prefix
                        (command-event :? :t)            ; key-event or pointer-event
@@ -147,11 +147,9 @@ prelude: :gerbil/core
 
 ;; The node a click at P starts from: the node clicked, or the root of the
 ;; clicked view's buffer; #f without a layout or a view.
-(def (clicked-node (p : posn)) => (Maybe node)
-  (and (optional-provider? layout-service)
-       (or (posn-node p)
-           (let (v (posn-view p))
-             (and v (buffer-root (view-showing v)))))))
+(def (clicked-node (self : global-keys) (p : posn)) => (Maybe node)
+  (let (resolver (entry-table-ref self.click-resolvers 'click))
+    (and resolver (:? ((entry-value resolver) p) node))))
 
 ;; The keymaps a key or click resolves in, first to last: those of the
 ;; nodes from START up, the innermost input target's, and the global
@@ -255,7 +253,7 @@ prelude: :gerbil/core
 ;; without the part kind, all of them in one keymap before the next.
 (def (resolve-pointer! (self : global-keys) (event : pointer-event)) => (Maybe :pair)
   (let* ((start (pointer-event-start event))
-         (keymaps (active-keymaps self (clicked-node start)))
+         (keymaps (active-keymaps self (clicked-node self start)))
          (area (string-append "<" (symbol->string (posn-area start)) ">"))
          (names (map (lambda ((name : :string)) (string-append "<" name ">"))
                      (pointer-event-names event)))
@@ -356,6 +354,11 @@ prelude: :gerbil/core
 (defmethod {last-command-event global-keys}
   (lambda (self) (or (activation-event) (global-keys-command-event self))))
 
+(defmethod {set-click-resolver! global-keys}
+  (lambda (self ctx resolve)
+    (context-add-entry! ctx (global-keys-click-resolvers self) 'click (context-bind ctx resolve))
+    (void)))
+
 (defmethod {keymap-generation global-keys}
   (lambda (self) (global-keys-generation self)))
 
@@ -363,8 +366,8 @@ prelude: :gerbil/core
   "Resolves keys through node keymaps and the global keymap. C-g quits."
   provides: [input-service]
   requires: [commands-service]
-  optional: [settings-service buffers-service layout-service]
-  (using (self (global-keys keymap: (new-entry-table) targets: []
+  optional: [settings-service buffers-service]
+  (using (self (global-keys click-resolvers: (new-entry-table) keymap: (new-entry-table) targets: []
                             pending: [] command-event: #f
                             generation: (next-id!))
                : global-keys)

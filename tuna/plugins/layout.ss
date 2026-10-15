@@ -914,6 +914,11 @@ prelude: :gerbil/core
     (using (self (tree-layout root: (make-leaf v #f) frame: (make-frame-state #f #f v) level: 0
                               marks: [] locked: [] kinds: (new-entry-table))
                  : tree-layout)
+      (context-set-click-resolver! ctx
+        (lambda ((p : posn))
+          (or (posn-node p)
+              (let (v (posn-view p))
+                (and v (buffer-root (view-showing v)))))))
       (context-add-entry! ctx self.kinds 'fit fit-kind doc: (layout-kind-doc fit-kind))
       (context-add-entry! ctx self.kinds 'tabbed tabbed-kind doc: (layout-kind-doc tabbed-kind))
       (context-add-hook! ctx kill-buffer-hook 'layout (lambda (b) (buffer-killed! self b)))
