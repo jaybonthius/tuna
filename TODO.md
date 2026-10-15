@@ -10,6 +10,8 @@
 
 ## Tuna
 
+- [ ] **Code-review cleanup (owner, 2026-10-14: do all of it, after the declared-use discussion).** The 14 items in `agents/research/code-review-2026-10-14.md`, "Cleanup items": keys `arrival` reads no settings; `M-:` sees imports a reload adds; one startup-tier refusal; two kernel accessors instead of workarounds; `posn-start-node` in the layout contract; minibuffer hides commands through `visible?:`; entry tables sort on read; dead code and stale text; one session capture/restore path; `build.ss` completeness check; derived boundary-test lists; one prelude for plugin modules; split `apply-configuration!`. Item 2 (declared use) is being discussed with the owner.
+
 - [ ] **Jobs that post several results** (carry-over from stage 3). A job's `run` returns one result. Posting partial results (for example a highlighter coloring a large text in chunks) needs a way for `run` to post through the job's validity check without finishing; deferred until a job needs it.
 - [ ] **Autosave runs on the baton.** Each changed text is written synchronously while idle. Texts are persistent, so a large text could be written from a job over a snapshot instead.
 - [ ] **No `fsync` before the atomic rename** of session and autosave files: a crash of the machine (not of Tuna) shortly after a save could leave an empty file on some file systems. Gambit has no portable `fsync`.
