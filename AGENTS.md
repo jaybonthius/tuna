@@ -65,6 +65,8 @@ The owner talks to one primary agent in this checkout (`/home/jay/Code/workbench
 
 ## Commands
 
+Agents run every build, test and Gerbil process under a hard memory cap and a timeout, because a runaway test once took 31 GiB and froze the owner's machine (2026-10-15): `systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 timeout 1800 make test`. Raise the cap only with a reason.
+
 ```sh
 make deps          # install Gerbil package dependencies into .gerbil/
 make               # build the browser asset and the Gerbil package
