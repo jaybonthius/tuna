@@ -1,16 +1,14 @@
-;;; Web transport (startup tier): the loopback HTTP server, client
-;;; authentication, the page shell, POST /commands, and one SSE stream per
-;;; client (ADR 7, ADR 10).
+;;; Web transport (startup tier): the loopback HTTP server, the page shell,
+;;; ordered input over POST /commands, and the screen stream (ADR 7, ADR 10).
 ;;;
 ;;; POST /commands takes one input item: a keydown or a pointer item, each
-;;; with the tab's client id and sequence number, validated strictly into a
+;;; with its page-load sequence number, validated strictly into a
 ;;; key-event or a pointer-event. Each screen carries its revision as
 ;;; data-revision on its root element, and a pointer item names the screen
 ;;; it was computed on, which must be one this transport sent.
 prelude: :gerbil/core
 
-(import :std/crypto/random
-        :std/encoding/hex
+(import (only-in :gerbil/runtime/hash HashTable)
         :std/io
         :std/log
         :std/net/address
@@ -38,12 +36,11 @@ prelude: :gerbil/core
 (defclass web-server
   ((submit      : :procedure)   ; input item -> void; submits to the editor loop
    (port        : :fixnum)
-   (token       : :string)      ; in the launch URL
-   (session     : :string)      ; the cookie it is exchanged for
-   (cookie-name : :string)
    (host        : :string)      ; the only Host accepted
    (origin      : :string)      ; the only Origin accepted
-   (admission   : :mutex)       ; orders acknowledgement and enqueueing
+   (admission   : :mutex)       ; guards input ordering and submission
+   (next        : :fixnum)      ; next page-load sequence to submit
+   (pending     : HashTable)  ; sequence -> input item
    (mutex       : :mutex)       ; guards the fields below
    (changed     : :condvar)
    (screen      : :string)      ; the newest screen
@@ -52,9 +49,6 @@ prelude: :gerbil/core
    (server      : :t))
   final: #t)
 
-(def (new-secret) => :string
-  (hex-encode (random-bytes 32)))
-
 ;; Bind and release an ephemeral loopback port.
 (def (free-loopback-port) => :fixnum
   (using (socket (tcp-listen (string->address "inet4:127.0.0.1:0")) : ServerSocket)
@@ -62,12 +56,12 @@ prelude: :gerbil/core
       (socket.close)
       (:- (InetAddress-port address) :fixnum))))
 
-;; The launch URL, carrying the token, of the active web transport.
+;; The plain loopback URL of the active web transport.
 (def (web-transport-url) => (Maybe :string)
   (let (display (service-provider display-service))
     (and (web-server? display)
          (using (self display : web-server)
-           (string-append "http://" self.host "/?token=" self.token)))))
+           (string-append "http://" self.host "/")))))
 
 ;;; Screens
 
@@ -163,46 +157,11 @@ prelude: :gerbil/core
        (if (string-ci=? key name) value (lp more)))
       (else #f))))
 
-(def (cookie (request : Request) (name : :string)) => (Maybe :string)
-  (let (cookies (header request "Cookie"))
-    (and cookies
-         (let lp ((parts (string-split cookies #\;)))
-           (match parts
-             ([part . more]
-              (let* ((part (string-trim-spaces part))
-                     (equals (string-index part #\=)))
-                (if (and equals (string=? (substring part 0 equals) name))
-                  (substring part (fx1+ equals) (string-length part))
-                  (lp more))))
-             (else #f))))))
-
 (def (string-trim-spaces (text : :string)) => :string
   (let* ((end (string-length text))
          (start (let lp ((i 0)) (if (and (fx< i end) (char=? (string-ref text i) #\space)) (lp (fx1+ i)) i)))
          (stop (let lp ((i end)) (if (and (fx> i start) (char=? (string-ref text (fx1- i)) #\space)) (lp (fx1- i)) i))))
     (substring text start stop)))
-
-(def (query-token (request : Request)) => (Maybe :string)
-  (let (query (URL-query (Request-url request)))
-    (and query
-         (let lp ((parts (string-split query #\&)))
-           (match parts
-             ([part . more]
-              (if (string-prefix? "token=" part)
-                (substring part 6 (string-length part))
-                (lp more)))
-             (else #f))))))
-
-;; Compare secrets in time independent of where they differ.
-(def (secret=? (given : :string) (expected : :string)) => :boolean
-  (and (fx= (string-length given) (string-length expected))
-       (let lp ((i 0) (difference 0))
-         (if (fx< i (string-length given))
-           (lp (fx1+ i)
-               (fxior difference
-                      (fxxor (char->integer (string-ref given i))
-                             (char->integer (string-ref expected i)))))
-           (fxzero? difference)))))
 
 (def (respond-text (response : ResponseHandler) (status : Status) (text : :string)) => :void
   (ResponseHandler-write! response status
@@ -210,32 +169,16 @@ prelude: :gerbil/core
                             ("Cache-Control" . "no-store"))
                           (string->utf8 text)))
 
-;; Every request: Host and Origin first, then the launch token or the
-;; session cookie (ADR 10).
+;; Every route keeps the loopback Host/Origin boundary, without a sign-in.
 (def (handle-request (self : web-server) (request : Request) (response : ResponseHandler)) => :void
-  (let ((path (URL-path (Request-url request)))
-        (origin (header request "Origin"))
-        (token (query-token request)))
+  (let (origin (header request "Origin"))
     (cond
      ((not (equal? (header request "Host") self.host))
       (respond-text response Forbidden "Unexpected Host."))
      ((and origin (not (string=? origin self.origin)))
       (respond-text response Forbidden "Unexpected Origin."))
-     ((and token (string=? path "/") (string=? (Request-method request) "GET")
-           (secret=? token self.token))
-      ;; Exchange the token for the cookie and drop it from the address bar.
-      (ResponseHandler-write! response See-Other
-                              [(cons "Location" "/")
-                               (cons "Set-Cookie" (string-append self.cookie-name "=" self.session
-                                                                 "; Path=/; HttpOnly; SameSite=Strict"))
-                               (cons "Cache-Control" "no-store")
-                               (cons "Referrer-Policy" "no-referrer")]
-                              #u8()))
-     ((let (session (cookie request self.cookie-name))
-        (and session (secret=? session self.session)))
-      (route self request response path))
      (else
-      (respond-text response Forbidden "Open Tuna with the link it printed at startup.")))))
+      (route self request response (URL-path (Request-url request)))))))
 
 (def (route (self : web-server) (request : Request) (response : ResponseHandler) (path : :string))
   => :void
@@ -254,9 +197,7 @@ prelude: :gerbil/core
         (stream-screens self request response)
         (respond-text response Bad-Request "Expected a Datastar GET.")))
      ((string=? path "/commands")
-      (if (string=? method "POST")
-        (accept-event self request response)
-        (respond-text response Method-Not-Allowed "Use POST.")))
+      (accept-event self request response))
      ((and (string=? method "GET") (hash-get static-assets path))
       => (lambda ((asset : :pair))
            (ResponseHandler-write! response OK
@@ -268,6 +209,10 @@ prelude: :gerbil/core
 
 ;; One writer per client: send the newest screen whenever it changes.
 (def (stream-screens (self : web-server) (request : Request) (response : ResponseHandler)) => :void
+  ;; A page opening its stream starts numbering at 1 again. One tab only.
+  (do-with-lock self.admission
+    (set! self.next 1)
+    (hash-clear! self.pending))
   ;; A closed tab surfaces as a failed write; that ends this stream only.
   (with-catch
    void
@@ -291,53 +236,62 @@ prelude: :gerbil/core
                       "application/json"))))
 
 (def (accept-event (self : web-server) (request : Request) (response : ResponseHandler)) => :void
-  (cond
-   ((not (datastar-request? request))
-    (respond-text response Bad-Request "Expected a Datastar request."))
-   ((not (json-content-type? request))
-    (respond-text response Unsupported-Media-Type "Expected JSON."))
-   (else
-    (let (event (with-catch (lambda (e) #f)
+  ;; No command response carries feedback, even when its input is rejected.
+  (ResponseHandler-write! response No-Content [] #u8())
+  (let* ((value (and (string=? (Request-method request) "POST")
+                     (datastar-request? request)
+                     (json-content-type? request)
+                     (with-catch (lambda (e) #f) (lambda () (read-signals request)))))
+         (event (with-catch (lambda (e) #f)
                             (lambda ()
-                              (parse-input-item (read-signals request)
-                                                (do-with-lock self.mutex self.revision)))))
-      (if event
-        (do-with-lock self.admission
-          ;; Acknowledge, then enqueue, in arrival order across request threads.
-          (ResponseHandler-write! response No-Content [] #u8())
-          ((web-server-submit self) event))
-        (respond-text response Bad-Request "Invalid event."))))))
+                              (parse-input-item value (do-with-lock self.mutex self.revision))))))
+    (if event
+      (admit-event! self (hash-ref value "sequence") event)
+      (web-log.warnf "Dropped malformed input."))))
+
+;; HTTP handlers may arrive in any order. Submission stays under this lock
+;; so another handler cannot overtake an item while it is handed to the loop.
+(def (admit-event! (self : web-server) (sequence : :fixnum) (event : :t)) => :void
+  (do-with-lock self.admission
+    (cond
+     ((or (fx< sequence self.next) (hash-key? self.pending sequence))
+      (web-log.warnf "Ignored duplicate input %a." sequence))
+     (else
+      (hash-put! self.pending sequence event)
+      ;; A missing item that 64 later ones wait for is given up on, so
+      ;; input carries on from the earliest item that did arrive.
+      (when (fx> (hash-length self.pending) 64)
+        (web-log.warnf "Skipped missing input %a." self.next)
+        (set! self.next (apply min (hash-keys self.pending))))
+      (let lp ()
+        (let (next (hash-get self.pending self.next))
+          (when next
+            (hash-remove! self.pending self.next)
+            (set! self.next (fx1+ self.next))
+            ((web-server-submit self) next)
+            (lp))))))))
 
 (def (short-string? (value : :t)) => :boolean
   (and (string? value) (fx<= (string-length value) 64)))
-
-(def (client-id? (value : :t)) => :boolean
-  (and (string? value)
-       (fx<= 1 (string-length value) 64)
-       (andmap (lambda ((c : :char))
-                 (or (char-alphabetic? c) (char-numeric? c) (memv c '(#\- #\_))))
-               (string->list value))))
 
 ;; A validated keydown event, or #f.
 (def (parse-key-event (value : :t)) => (Maybe key-event)
   (and (hash-table? value)
        (eqv? (hash-get value "version") 1)
        (equal? (hash-get value "type") "keydown")
-       (let ((client (hash-get value "clientId"))
-             (sequence (hash-get value "sequence"))
+       (let ((sequence (hash-get value "sequence"))
              (key (hash-get value "key"))
              (code (hash-get value "code"))
              (location (hash-get value "location"))
              (flags (map (lambda ((name : :string)) (hash-ref value name 'missing))
                          '("repeat" "isComposing" "altKey" "ctrlKey" "metaKey" "shiftKey"
                            "isMac" "altLeft" "altRight" "altGraph"))))
-         (and (client-id? client)
-              (fixnum? sequence) (fx>= sequence 0)
+         (and (fixnum? sequence) (fx>= sequence 1)
               (short-string? key)
               (short-string? code)
               (fixnum? location) (fx<= 0 location 3)
               (andmap boolean? flags)
-              (apply make-key-event client sequence key code location flags)))))
+              (apply make-key-event sequence key code location flags)))))
 
 ;; Browser buttons (0 left, 1 middle, 2 right) as Emacs numbers them.
 (def browser-buttons '((0 . 1) (1 . 2) (2 . 3)))
@@ -366,16 +320,14 @@ prelude: :gerbil/core
        (eqv? (hash-get value "version") 1)
        (equal? (hash-get value "type") "pointer")
        (equal? (hash-get value "kind") "click")
-       (let ((client (hash-get value "clientId"))
-             (sequence (hash-get value "sequence"))
+       (let ((sequence (hash-get value "sequence"))
              (revision (hash-get value "revision"))
              (button (assv (hash-get value "button") browser-buttons))
              (clicks (hash-get value "clicks"))
              (modifiers (hash-get value "modifiers"))
              (part (parse-part (hash-get value "target")))
              (node (hash-ref value "node" (void))))
-         (and (client-id? client)
-              (fixnum? sequence) (fx>= sequence 0)
+         (and (fixnum? sequence) (fx>= sequence 1)
               (fixnum? revision) (fx<= 0 revision newest-revision)
               button
               (fixnum? clicks) (fx<= 1 clicks 255)
@@ -385,7 +337,7 @@ prelude: :gerbil/core
               (let (flags (map (lambda ((name : :string)) (hash-ref modifiers name 'missing))
                                '("alt" "ctrl" "meta" "shift")))
                 (and (andmap boolean? flags)
-                     (apply make-pointer-event client sequence (cdr button) clicks
+                     (apply make-pointer-event sequence (cdr button) clicks
                             (append flags
                                     [(make-posn (car part) (cdr part)
                                                 (and (fixnum? node) node) revision)]))))))))
@@ -416,12 +368,11 @@ prelude: :gerbil/core
          (host (string-append "127.0.0.1:" (number->string port)))
          (self (web-server submit: (input-submitter)
                               port: port
-                              token: (new-secret)
-                              session: (new-secret)
-                              cookie-name: (string-append "tuna-" (number->string port))
                               host: host
                               origin: (string-append "http://" host)
                               admission: (make-mutex 'tuna-admission)
+                              next: 1
+                              pending: (make-hash-table-eqv)
                               mutex: (make-mutex 'tuna-screen)
                               changed: (make-condition-variable 'tuna-screen)
                               screen: (stamp-revision "<main id=\"screen\"></main>" 0)
@@ -441,8 +392,8 @@ prelude: :gerbil/core
     (Server-start! server)
     (context-defer! ctx (lambda () (stop-web-transport! self)))
     (context-provide! ctx display-service self)
-    (web-log.infof "Tuna %a is running. Open http://%a/?token=%a"
-                   (tuna-version) host (web-server-token self))))
+    (web-log.infof "Tuna %a is running. Open http://%a/"
+                   (tuna-version) host)))
 
 (defplugin-options web-transport
   (port 0 "The loopback port to listen on; 0 picks a free one."

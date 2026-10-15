@@ -25,7 +25,7 @@
                        ((assoc name browser-keys) => cdr)
                        (else name))))
     ((input-submitter)
-     (make-key-event "test-client" sequence browser-key "" 0 #f #f alt? ctrl? #f shift? #f #f #f #f))))
+     (make-key-event sequence browser-key "" 0 #f #f alt? ctrl? #f shift? #f #f #f #f))))
 
 (def (type! . keys)
   (for-each press keys))
@@ -39,5 +39,5 @@
   => :void
   (set! sequence (+ sequence 1))
   ((input-submitter)
-   (make-pointer-event "test-client" sequence button clicks alt? ctrl? meta? shift?
+   (make-pointer-event sequence button clicks alt? ctrl? meta? shift?
                        (make-posn area part node revision))))
