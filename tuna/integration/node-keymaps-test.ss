@@ -94,6 +94,34 @@
 
 (def node-keymaps-test
   (test-suite "tuna/integration/node-keymaps"
+    (test-case "click resolvers run as their owner and disappear with its receipt"
+      (call-with-fresh-kernel lookup-plugins
+        (lambda ()
+          (activate-plugin! layered)
+          (show-tree!)
+          (let ((part (view-id (selected-view)))
+                (leaf (current-text-node))
+                (probe (new-service 'resolver-probe symbol? tier: 'live doc: "Resolver ownership probe."))
+                (seen #f))
+            (defplugin (resolver-provider ctx) "Only the resolver may query this service."
+              provides: [probe]
+              (context-provide! ctx probe 'owner-bound))
+            (defplugin (resolver-owner ctx) "Resolves a click under its own declarations."
+              requires: [input-service probe]
+              (context-set-click-resolver! ctx
+                (lambda ((p : posn))
+                  (set! seen (service-provider probe))
+                  leaf)))
+            (activate-plugin! leaf-binder)
+            (activate-plugin! resolver-provider)
+            ;; Declaration order, not registration time, chooses equal entries.
+            (activate-plugin! resolver-owner order: 10)
+            (check (resolve (pointer part)) => 'leaf-x)
+            (check seen => 'owner-bound)
+            (deactivate-plugin! resolver-owner)
+            (check (resolve (pointer part)) => 'view-click)
+            (deactivate-plugin! layout-plugin)
+            (check (resolve (pointer part)) => 'view-click)))))
     (test-case "where-is follows explicit focus, ancestor shadows and prefix shadows"
       (call-with-fresh-kernel lookup-plugins
         (lambda ()
