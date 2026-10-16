@@ -1,5 +1,7 @@
 # Stage 3 seam recommendation
 
+**Historical proposal, not an approved design.** The later compiled preservation check found the slot-only factory insufficient: Input-only wrapping hides Keys operations; Messages-only wrapping hides EchoArea operations. A hand-written complete-interface wrapper passes, but it needs more metadata than the slot declaration alone. The investigator proposes an explicit factory at provider registration; this is not approved or implemented, and the work is paused after owner concern. Corrected evidence/probes: `/home/jay/Code/workbench-gerbil/scratch/hooks-advice-stage3/seam-note.md` (preservation appendix) and its `service-preservation/` sibling. Review against Emacs's `add-function` place model before accepting a provider-wide wrapper design. The older command control identifiers below are also historical; current keyword protocol is in `stage-3a.md`.
+
 **Use use-site command routing and declaration-generated typed service decorators.** No demonstrated blocker. Predicate-only service declarations need explicit metadata; documented reflection cannot recover signatures. This note authorizes no implementation.
 
 **O** = observed; **D** = documented; **P** = proposed. Tuna: `8acd176`. Installed Gerbil: `v0.19-dev-63-g1cfb032c`; Gambit: `v4.9.8-19-gea114fc3`. Installed `core/contract.ss`, `std/interface.ss`, and cited interface documentation match commit `1cfb032c` byte-for-byte. `G:` below denotes `/home/jay/Code/workbench-gerbil/gerbil/`.
