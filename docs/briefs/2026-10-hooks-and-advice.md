@@ -28,7 +28,7 @@ Emacs's manual and the research agree on one more lesson: prefer declared extens
 
 ![Pressing Backspace with an advised command](../diagrams/advice-backspace.svg)
 
-**Status:** planned. Today nothing can be advised, and package functions are ordinary Gerbil functions.
+**Diagram status:** command/service advice and the walkthrough are planned. Open package functions and function advice are now built, including private targets; the remaining targets and inspection command are next.
 
 ## A walkthrough: a "hungry delete" plugin
 
@@ -84,7 +84,7 @@ The names are provisional; the forms are settled.
 - **Order:** lower depth is outermost. Equal depths go by the owners' order in `init.ss`, not by when the advice was added, so a reload can't reorder them.
 - **Errors:** an error inside advice propagates like an error in the function itself, and the report names the advice and its owner. Hooks are different: a failing callback is removed and the rest continue. Silently skipping advice would change what the function returns.
 - **Visible:** `describe-advice` lists everything wrapping a function or command.
-- **Cost:** advice is combined when it changes, not on every call. The earlier 1–5 ns measurement covered bare forwarding only, not full owned advice. The stage-2 candidate measured about 0.7 µs per owned around-advice call, including error attribution and context restoration; this is being profiled before acceptance. Calls with no advice retain the open-function fast path.
+- **Cost:** advice is combined when it changes, not on every call. The earlier 1–5 ns measurement covered bare forwarding only, not full owned advice. The accepted stage-2 library measured about 0.7 µs per owned around-advice call. Profiling traced the dominant cost to preserved exception handling and context restoration; one redundant named-callback forwarder was removed. Calls with no advice retain the open-function fast path.
 - **Not advisable:** hooks (adding a callback at a chosen depth already does before or after), Tuna's kernel and Gerbil's own libraries, and patterns like "every function matching `foo-*`". The profiler's "profile this plugin" will add a listed set of individual advice instead.
 
 **Redefinition.**

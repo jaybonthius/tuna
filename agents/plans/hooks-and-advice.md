@@ -20,7 +20,7 @@ Owner-approved brief: [`docs/briefs/2026-10-hooks-and-advice.md`](../../docs/bri
    - Tooling check: backtraces, `describe-function`-style lookups, and go-to-definition in `gerbil-lsp` (`/home/jay/Code/workbench-gerbil/gerbil-lsp`) on an open function. Report what breaks; fixing tools is out of scope.
    - Tests: callers in the same module and in other modules see `redefine`; a private function redefined through its module context; tail calls in a 10-million-step loop; recompiling one module keeps its compiled callers working.
    - Measure against `main`: clean build, `make test`, the 5k and 50k redraw cases, ms per key. Target: build at most +16%, the rest within noise.
-2. **The advice library and function targets. Next.** A small module outside the kernel:
+2. **The advice library and function targets. Library merged (2026-10-15), `e1c2672`; inspection command next.** Evidence: `agents/research/hooks-advice/stage-2a.md`. Parent review and capped `make test` passed; kernel delta zero. Actual owned around-advice costs about 0.7 µs/scalar call with exception/context guarantees retained; unadvised path unchanged. Retained-owner reorder is regression-tested through configuration reload. Library and prelude formed one coupled seam; the independent inspection UI is the next bounded task:
    - One composition model for the ten kinds. Combine when advice changes, not per call.
    - Owner, name, kind, depth. Same owner and name replaces. Order by depth, then the owners' `init.ss` order. Removal goes through the owner's receipt.
    - `redefine` while advised keeps the advice. Removing the last piece reveals the newest definition.

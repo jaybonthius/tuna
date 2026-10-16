@@ -118,13 +118,13 @@ When a command asks you to choose (a command, later a file or a buffer), it call
 
 ## Changing package code while Tuna runs
 
-**Status:** open functions and explicit redefinition are built (2026-10-15); advice and the `C-M-x` command are not yet built.
+**Status:** open functions, explicit redefinition and function advice are built (2026-10-15). Command/service advice, the inspection command and `C-M-x` are not yet built.
 
 In a module using `#lang :tuna/prelude`, a top-level procedure `def` or `def*` makes an **open function**: calls always reach its current implementation, even from already-compiled code or a reference saved earlier. `redefine` replaces that implementation. A private function can be changed by evaluating inside its module, the supported mechanism behind Gerbil's `enter!`; this does not reload the module or duplicate its state. Exports still decide which names a normal import brings into scope.
 
 Only Tuna-prelude modules change this way. Imported Gerbil libraries and Tuna's kernel stay ordinary. `def/closed` keeps normal Gerbil optimization for a measured hot spot. Values, local definitions, methods and structs are unchanged. There is a small measured cost: about one extra microsecond per typed character in the stage-1 comparison, plus longer builds and configuration evaluation. The [language decision](../agents/adr/0001-language-and-extension-surface.md) records the limits and evidence.
 
-Advice will build on the same entry point: one `advise!` for functions, commands and service operations, with named owners and removable layers. That part is still being implemented; `redefine` alone does not yet provide advice ownership or undo.
+`advise!` can wrap an imported open function, or a private one named by module and function. Advice has an owner and name, can run before/after/around a call or change its arguments/results, and is removed when its owner turns off. `redefine` replaces the underlying definition without discarding its advice. Changes are combined when registrations change, not on every call; configuration reload also refreshes their order. Source redefinition and function advice affect the shared package function, not just the editor context that installed them. Ownership determines cleanup. Owned around-advice measured about 0.7 microseconds per scalar call; the unadvised entry stays unchanged. Command and service targets and a `describe-advice` command are still being implemented.
 
 ## Plugins: how things get added and removed
 
