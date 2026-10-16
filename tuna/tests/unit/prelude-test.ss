@@ -101,9 +101,9 @@
          (check-exception (evaluate-in-target '(def (secret n) n)) syntax-error?)
          (finally
           ((evaluate-in-target '(lambda (replacement) (install-open! secret replacement))) original)))))
-    (test-case "proper tail calls survive ten million self and mutual calls"
-      (check (self-loop 10000000) => 0)
-      (check (mutual-a 10000000) => #t)
+    (test-case "source callers preserve tail calls (ten million compiled below)"
+      (check (self-loop 10000) => 0)
+      (check (mutual-a 10000) => #t)
       (check (tail-trace 1000000) => (tail-trace 1)))
     (test-case "compiled callers survive target-only recompilation"
       (check (string-contains (run-process ["sh" compiled-check]) "RECOMPILE-STABILITY-PASS") ? integer?))))
