@@ -9,7 +9,7 @@
 (def packages
   `(("tuna"
      "version"
-     "kernel/ids" "kernel/entries" "kernel/state" "kernel/tasks"
+     "kernel/ids" "kernel/entries" "kernel/state" "kernel/tasks" "kernel/service-interface"
      "kernel/plugins" "kernel/hooks" "kernel/loop" "kernel"
      "lib/timers" "lib/jobs" "lib/plugin-options" "lib/configuration" "lib/advice"
      "configuration" "prelude" "config" "plugin-use" "config-blocks"

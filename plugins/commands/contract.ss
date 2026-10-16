@@ -3,7 +3,7 @@ prelude: :gerbil/core
 
 (import :std/interface :tuna/kernel :tuna/lib/advice)
 (export (struct-out command)
-        (interface-out Commands)
+        (service-interface-out Commands)
         commands-service command-advice-target advised-commands context-define-command! define-command defcommand
         command-entry command-ref command-names call-command this-command last-command
         pre-command-hook post-command-hook)
@@ -21,7 +21,7 @@ prelude: :gerbil/core
 (def pre-command-hook (new-hook 'pre-command doc: "Before each command body; this-command identifies it."))
 (def post-command-hook (new-hook 'post-command doc: "After each command body, before the following redraw."))
 
-(interface Commands
+(service-interface Commands
   (define-command! (ctx : context) (c : command) (source :? :string)) => :void
   (add-advice! (ctx : context) (name : :symbol) (advice-name : :symbol)
                (kind : :symbol) (callback : :procedure)

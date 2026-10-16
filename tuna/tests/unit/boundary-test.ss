@@ -711,7 +711,11 @@
 (def noun-allowlist
   '(("tuna/kernel/entries.ss" "keys" 1)
     ("tuna/kernel/plugins.ss" "keys" 1)
-    ("tuna/kernel/plugins.ss" "position" 1)))
+    ("tuna/kernel/plugins.ss" "position" 1)
+    ;; Generic service facades, not editor layout vocabulary. Exact counts
+    ;; keep every other use of the forbidden term subject to this check.
+    ("tuna/kernel.ss" "view" 8)
+    ("tuna/kernel/service-interface.ss" "view" 11)))
 
 (def (noun-problems) => :list
   (let* ((index (term-index (forbidden-labels)))
