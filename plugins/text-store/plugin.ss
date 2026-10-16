@@ -141,7 +141,7 @@
                     ((_ after) (split rest (fx- end start))))
         (concat (concat before (string->rope text)) after))))
 
-(def (rope-for-each-chunk (r : rope) (start : :fixnum) (end : :fixnum) (proc : :procedure)) => :void
+(def/closed (rope-for-each-chunk (r : rope) (start : :fixnum) (end : :fixnum) (proc : :procedure)) => :void
   (when (fx< start end)
     (if (rope-leaf? r)
       (let (text (rope-leaf-text r))
@@ -207,7 +207,7 @@
 (def (rope-size (r : rope)) => :fixnum
   (rope-chars r))
 
-(def (rope-line-count (r : rope)) => :fixnum
+(def/closed (rope-line-count (r : rope)) => :fixnum
   (fx1+ (rope-newlines r)))
 
 (defstruct rope-store ()
