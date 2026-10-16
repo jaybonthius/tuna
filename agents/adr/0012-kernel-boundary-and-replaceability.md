@@ -81,6 +81,17 @@ No kernel change. Interactive evaluation belongs to one always-on owner, `sessio
 - `plugin?`: configuration validates declaration data without using a failing type cast as a predicate.
 - `context-plugin-name`: registration diagnostics name the owning plugin without creating a registration to learn it.
 
+### Complete service-interface descriptions (amendment, 2026-10-16, advice producer)
+
+The approved [hooks-and-advice brief](../../docs/briefs/2026-10-hooks-and-advice.md), with provider metadata chosen by the primary under the owner's delegated judgment, adds generic declaration machinery beneath the kernel's consumed seams. The implementation is `tuna/kernel/service-interface.ss`; the kernel imports only standard Gerbil interfaces, never a concept contract or the advice library.
+
+- `service-interface` emits the ordinary interface, typed wrapper constructor and explicit declaration metadata. `service-interface-out` exports the ordinary interface bindings, its description and its own `Type-service-signatures` companion. No undocumented Gerbil signature metadata is inspected. A library cannot own these declarations because Input, Display and Messages are defined below libraries.
+- The facade exports the `service-view` type, `make-service-view`, `service-view?`, `service-view-operations` and `service-view-build`. Its only fields are an operation-name list and a builder procedure, read-only by convention. They describe how to wrap a provider; they are not a provider, editor state or a registry. This common description must be understood below contracts so the later generic provider-cache mechanism can accept it without importing advice policy.
+- The facade also exports `Input-service-view`, `Display-service-view`, `Messages-service-view` and their three `*-service-signatures` companions. The descriptions let providers explicitly select a complete interface; companions let richer interfaces inherit from consumed seams without making the kernel know those richer interfaces. Existing dispatcher exports do not expand.
+- Each generated wrapper preserves its selected interface and every ancestor's qualified dispatch path, including different implementations, defaults and contracts of the same-spelling operation. The builder accepts `(operation, base-procedure) -> effective-procedure`; the same operation can be composed separately for different paths. Future advice records are shared by operation, not by collapsing distinct base procedures. Composition policy remains outside the kernel.
+
+This stage adds no kernel/provider/service runtime fields, registration argument or cache behavior. Ordinary dispatch is unchanged; descriptions are consumed in the next stage. Source delta is kernel +211 lines, production +212. Exact noun-check exceptions for generic service “view” identifiers are not permission for editor views/layout in the kernel; import and ownership checks remain unchanged.
+
 ## Consequences
 
 - "State management" is not a replaceable component: each plugin owns its state objects, the kernel enforces ownership, and saving state is the persistence plugin's job.
