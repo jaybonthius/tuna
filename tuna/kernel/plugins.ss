@@ -379,12 +379,10 @@ prelude: :gerbil/core
   final: #t)
 
 (def (remember-service! (k : kernel) (svc : service)) => service-slot
-  (let (slot (or (hash-get (kernel-services k) (service-name svc))
-                (let (new (service-slot definition: svc effective: #f decoration: #f opaque: #f))
-                  (hash-put! (kernel-services k) (service-name svc) new)
-                  new)))
-    (set! (service-slot-definition slot) svc)
-    slot))
+  (or (hash-get (kernel-services k) (service-name svc))
+      (let (new (service-slot definition: svc effective: #f decoration: #f opaque: #f))
+        (hash-put! (kernel-services k) (service-name svc) new)
+        new)))
 
 (def (decorate-provider (raw : :t) (description : service-view)
                         (builder :? :procedure)) => :t
@@ -472,6 +470,8 @@ prelude: :gerbil/core
            (effective (decorate-provider impl description (service-slot-decoration slot)))
            (new (context-add-entry! ctx (kernel-providers k) name
                   (make-provider-binding impl description) doc: (service-doc svc))))
+      ;; Registration, not state lookup through an older alias, owns metadata.
+      (set! (service-slot-definition slot) svc)
       (set! (service-slot-effective slot) effective)
       (refresh-cached-services! k)
       (context-defer! ctx

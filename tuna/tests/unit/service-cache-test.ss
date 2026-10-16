@@ -138,6 +138,8 @@ prelude: :gerbil/core
             (check (unbox descriptions) => [QualifiedBase-service-view QualifiedExtra-service-view QualifiedExtra-service-view])
             (check (unbox builds) => 3)
             (check (eq? state (service-decoration-state! qualified-service (lambda (_) (error "initialized twice")))) => #t)
+            (check (service-info-doc (car (describe-services))) => "Replacement metadata.")
+            (check (service-info-tier (car (describe-services))) => 'startup)
             (check initializations => 1)
             (install #f)
             (check (eq? (service-provider qualified-service) replacement-raw) => #t)))))
