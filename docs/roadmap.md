@@ -32,7 +32,7 @@ The skeleton let pieces of features creep into the kernel. The approved plan ([k
 1. *Done (2026-10-12).* Clean up the kernel to match the contract (no new features). See [how Tuna works](overview.md#a-small-kernel-and-a-lot-of-plugins).
 2. *Done (2026-10-13).* Buffers, views and layout: buffers really replaceable, views in a layout with splits and tabs, movable frames and frame marks, and the minibuffer and echo area as ordinary views ([brief](briefs/2026-10-buffers-views-layout.md), approved 2026-10-13). This brings forward the window part of "Later" item 3, except scrolling strips.
 3. *Done (2026-10-13).* Take the demo out of the default startup: the starter configuration declares only real plugins, and the demo runs with `--config demo/init.ss`.
-4. General-purpose hooks and advice, including redefining functions while Tuna runs (a brief first). *Partly done (2026-10-14, kernel cleanup with Cordis):* hooks with ownership and depth, and live redefinition; advice is not built. *In progress:* [brief](briefs/2026-10-hooks-and-advice.md) approved 2026-10-15 (open functions by default, one `advise!`); plan `agents/plans/hooks-and-advice.md`, stage 1 of 4.
+4. General-purpose hooks and advice, including redefining functions while Tuna runs (a brief first). *Partly done (2026-10-14, kernel cleanup with Cordis):* hooks with ownership and depth, and live redefinition; advice is not built. *In progress:* [brief](briefs/2026-10-hooks-and-advice.md) approved 2026-10-15 (open functions by default, one `advise!`); plan `agents/plans/hooks-and-advice.md`: stage 1 of 4 (open package functions) merged 2026-10-15; advice composition and targets are next.
 5. The optional [profiler plugin](briefs/2026-10-profiler.md).
 
 ## Research before windows and scrolling

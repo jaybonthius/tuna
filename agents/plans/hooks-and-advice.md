@@ -12,7 +12,7 @@ Owner-approved brief: [`docs/briefs/2026-10-hooks-and-advice.md`](../../docs/bri
 
 ## Stages
 
-1. **Open functions.** Productionize the spike-2 prelude, in this order, stopping at the first hack or idiom break:
+1. **Open functions. Done (2026-10-15), merged `3c64f87`.** Parent `make test` passed. Evidence: `agents/research/hooks-advice/stage-1.md`. Clean build +10.4%; controlled pairs measured +0.95 µs/self-insert and +0.34 µs/movement key, not zero overhead; unchanged-redraw ranges overlap. These costs are below the prior spike's accepted key overhead. Go-to-definition remains unverified because the available language server cannot build; no tool changes. Implemented scope:
    - Read an open function's current definition through a plain mechanism, not marker tokens passed through the function's name (spike-2 `install-query`/`definition-query`).
    - Cover `def*` and any other `def`-like core forms used in packages, or record why one stays closed.
    - Shrink interface (`.ssi`) growth: re-export the core prelude as one entry instead of enumerating it.
@@ -20,7 +20,7 @@ Owner-approved brief: [`docs/briefs/2026-10-hooks-and-advice.md`](../../docs/bri
    - Tooling check: backtraces, `describe-function`-style lookups, and go-to-definition in `gerbil-lsp` (`/home/jay/Code/workbench-gerbil/gerbil-lsp`) on an open function. Report what breaks; fixing tools is out of scope.
    - Tests: callers in the same module and in other modules see `redefine`; a private function redefined through its module context; tail calls in a 10-million-step loop; recompiling one module keeps its compiled callers working.
    - Measure against `main`: clean build, `make test`, the 5k and 50k redraw cases, ms per key. Target: build at most +16%, the rest within noise.
-2. **The advice library and function targets.** A small module outside the kernel:
+2. **The advice library and function targets. Next.** A small module outside the kernel:
    - One composition model for the ten kinds. Combine when advice changes, not per call.
    - Owner, name, kind, depth. Same owner and name replaces. Order by depth, then the owners' `init.ss` order. Removal goes through the owner's receipt.
    - `redefine` while advised keeps the advice. Removing the last piece reveals the newest definition.

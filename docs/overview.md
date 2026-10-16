@@ -116,6 +116,16 @@ When a command asks you to choose (a command, later a file or a buffer), it call
 
 `M-x` is itself a small plugin that asks the engine to choose a command. Turn off the annotations, the matching style or the list, and it keeps working with less. Commands have their own contract (listing them, their descriptions, running one by name), and `pre-command-hook` and `post-command-hook` run around every command.
 
+## Changing package code while Tuna runs
+
+**Status:** open functions and explicit redefinition are built (2026-10-15); advice and the `C-M-x` command are not yet built.
+
+In a module using `#lang :tuna/prelude`, a top-level procedure `def` or `def*` makes an **open function**: calls always reach its current implementation, even from already-compiled code or a reference saved earlier. `redefine` replaces that implementation. A private function can be changed by evaluating inside its module, the supported mechanism behind Gerbil's `enter!`; this does not reload the module or duplicate its state. Exports still decide which names a normal import brings into scope.
+
+Only Tuna-prelude modules change this way. Imported Gerbil libraries and Tuna's kernel stay ordinary. `def/closed` keeps normal Gerbil optimization for a measured hot spot. Values, local definitions, methods and structs are unchanged. There is a small measured cost: about one extra microsecond per typed character in the stage-1 comparison, plus longer builds and configuration evaluation. The [language decision](../agents/adr/0001-language-and-extension-surface.md) records the limits and evidence.
+
+Advice will build on the same entry point: one `advise!` for functions, commands and service operations, with named owners and removable layers. That part is still being implemented; `redefine` alone does not yet provide advice ownership or undo.
+
 ## Plugins: how things get added and removed
 
 ![How a plugin adds and removes things](diagrams/plugins.svg)

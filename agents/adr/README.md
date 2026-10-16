@@ -4,7 +4,7 @@ Each record covers one hard-to-reverse choice. Change a decision by amending its
 
 | # | Decision |
 |---|---|
-| [1](0001-language-and-extension-surface.md) | Plain Gerbil core; packages use a thin `:tuna` prelude, compile as `separate`, and are redefinable and advisable |
+| [1](0001-language-and-extension-surface.md) | Typed Gerbil core; Tuna-prelude package functions are open by default, with `def/closed` for hot spots; private module-context redefinition and planned owner-scoped advice |
 | [2](0002-plugins-contexts-and-services.md) | Everything is a plugin; receipts revert owner-tagged effects; manifests; replaceable services |
 | [3](0003-command-loop-and-jobs.md) | One editor loop with a baton; quit lane; tasks that suspend at documented yield points; jobs with validity policies |
 | [4](0004-state-ownership.md) | Owner-confined mutable objects, persistent text, split revisions, change journal, no rollback |
