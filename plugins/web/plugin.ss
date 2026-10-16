@@ -391,7 +391,7 @@
     (set! (web-server-server self) server)
     (Server-start! server)
     (context-defer! ctx (lambda () (stop-web-transport! self)))
-    (context-provide! ctx display-service self)
+    (context-provide! ctx display-service self view: Display-service-view)
     (web-log.infof "Tuna %a is running. Open http://%a/"
                    (tuna-version) host)))
 

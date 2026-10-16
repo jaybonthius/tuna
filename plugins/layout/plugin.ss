@@ -977,4 +977,4 @@
       (keymap-set "C-x w 3" 'wrap-part-horizontal)
       (keymap-set "C-x w k" 'toggle-container-kind)
       (keymap-set "C-x w d" 'toggle-container-direction)
-      (context-provide! ctx layout-service self))))
+      (context-provide! ctx layout-service self view: Layout-service-view))))

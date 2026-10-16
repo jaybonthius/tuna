@@ -122,7 +122,7 @@
   requires: [session-service]
   provides: [restart-state-service]
   (set! owned-value 10)
-  (context-provide! ctx restart-state-service 'old)
+  (context-provide! ctx restart-state-service 'old view: (make-service-view [] (lambda (raw compose) raw)))
   (context-add-session-slot! ctx 'restart-state version: 1
                              save: (lambda () owned-value)
                              restore: (lambda (data) (set! owned-value data)))
@@ -134,7 +134,7 @@
   requires: [session-service]
   provides: [restart-state-service]
   (set! owned-value 100)
-  (context-provide! ctx restart-state-service 'new)
+  (context-provide! ctx restart-state-service 'new view: (make-service-view [] (lambda (raw compose) raw)))
   (context-add-session-slot! ctx 'replacement-state version: 1 fallback: 'restart-state
                              save: (lambda () owned-value)
                              restore: (lambda (data)

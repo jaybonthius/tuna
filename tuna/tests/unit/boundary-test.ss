@@ -438,13 +438,13 @@
            (string-append "build.ss: lists development source " name)))
     names))
 
-;; Only the kernel's own two white-box tests and kernel-only support may
+;; Only the kernel's own white-box tests and kernel-only support may
 ;; reach its private modules. Plugin tests do not gain that privilege.
 (def (kernel-private-client? (file : :string)) => :boolean
   (or (equal? file "tuna/kernel.ss")
       (string-prefix? "tuna/kernel/" file)
       (and (member file '("tuna/tests/unit/loop-test.ss" "tuna/tests/unit/plugins-test.ss"
-                          "tuna/tests/support/kernel.ss"))
+                          "tuna/tests/unit/service-cache-test.ss" "tuna/tests/support/kernel.ss"))
            #t)))
 
 (def (kernel-reference-problems (file : :string) (names : :list)) => :list
@@ -714,6 +714,7 @@
     ("tuna/kernel/plugins.ss" "position" 1)
     ;; Generic service facades, not editor layout vocabulary. Exact counts
     ;; keep every other use of the forbidden term subject to this check.
+    ("tuna/kernel/plugins.ss" "view" 4)
     ("tuna/kernel.ss" "view" 8)
     ("tuna/kernel/service-interface.ss" "view" 11)))
 
@@ -857,6 +858,8 @@
       (check (length (kernel-reference-problems "plugins/keys/tests/unit/plugin-test.ss"
                        '(":tuna/kernel/state" "../../../../tuna/kernel/entries"))) => 2)
       (check (kernel-reference-problems "tuna/tests/unit/plugins-test.ss" '(":tuna/kernel/state")) => [])
+      (check (kernel-reference-problems "tuna/tests/unit/service-cache-test.ss"
+               '(":tuna/kernel/state" ":tuna/kernel/plugins")) => [])
       (check (length (kernel-reference-problems "tuna/tests/unit/jobs-test.ss" '(":tuna/kernel/state"))) => 1)
       (check (kernel-reference-problems "tuna/plugin-use.ss" '(":tuna/kernel/plugins")) => [])
       (check (length (kernel-reference-problems "tuna/plugin-use.ss" '(":tuna/kernel/state"))) => 1))

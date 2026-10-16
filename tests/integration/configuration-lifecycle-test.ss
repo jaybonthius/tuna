@@ -23,7 +23,7 @@ prelude: :gerbil/core
               (set! events (append events [event])))
             (defplugin (probe-provider ctx) "A service only the participant declares."
               provides: [probe]
-              (context-provide! ctx probe 'probe))
+              (context-provide! ctx probe 'probe view: (make-service-view [] (lambda (raw compose) raw))))
             (defplugin (participant ctx) "Joins a restart."
               requires: [configuration-service probe]
               (context-set-restart-wrapper! ctx

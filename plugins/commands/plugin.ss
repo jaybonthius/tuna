@@ -137,4 +137,4 @@
   "Defines, lists and invokes commands, independently of key bindings."
   provides: [commands-service]
   (context-provide! ctx commands-service
-                    (Commands (command-registry entries: (new-entry-table) targets: (make-hash-table) last: #f))))
+                    (Commands (command-registry entries: (new-entry-table) targets: (make-hash-table) last: #f)) view: Commands-service-view))

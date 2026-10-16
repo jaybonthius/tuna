@@ -1312,7 +1312,7 @@ prelude: :gerbil/core
       (eval '(import :tuna/config)))
     (context-provide! ctx configuration-service
                       (Configuration (configuration-provider owner: ctx environment: environment
-                                                              restart-wrappers: (new-entry-table))))))
+                                                              restart-wrappers: (new-entry-table))) view: Configuration-service-view)))
 
 ;; `tuna check`: load CHOICE's file without turning anything on. Returns
 ;; the problem, or #f when the file loads and its declarations are valid.

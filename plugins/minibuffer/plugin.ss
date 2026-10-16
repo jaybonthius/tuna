@@ -253,7 +253,7 @@
       (keymap-set-in self.keymap "M-n" 'next-minibuffer-history)
       (keymap-set-in self.keymap "RET" 'exit-minibuffer)
       (keymap-set-in self.keymap "C-g" 'abort-minibuffers)
-      (context-provide! ctx minibuffer-service (Minibuffer self))
+      (context-provide! ctx minibuffer-service (Minibuffer self) view: Minibuffer-service-view)
       ;; Prompts still waiting when the plugin goes are abandoned.
       (context-defer! ctx (lambda ()
                             (for-each (lambda ((p : prompt)) (resume-quit! p.waiting))

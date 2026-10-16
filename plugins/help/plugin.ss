@@ -68,4 +68,4 @@
     (context-defer! ctx (lambda ()
                           (let (b (live-help-buffer self))
                             (when b (kill-buffer b)))))
-    (context-provide! ctx help-service (Help self))))
+    (context-provide! ctx help-service (Help self) view: Help-service-view)))
