@@ -24,7 +24,7 @@ Owner-approved brief: [`docs/briefs/2026-10-hooks-and-advice.md`](../../docs/bri
    - One composition model for the ten kinds. Combine when advice changes, not per call.
    - Owner, name, kind, depth. Same owner and name replaces. Order by depth, then the owners' `init.ss` order. Removal goes through the owner's receipt.
    - `redefine` while advised keeps the advice. Removing the last piece reveals the newest definition.
-   - `advise!` with an imported name or `(function module name)`, private functions included.
+   - `advise!` with an imported name or `(function module name)`, private functions included. Named-function advice follows the shared module definition, like `redefine` and Emacs's `advice-add`; ownership controls removal, not per-editor copies. No runtime-membership API or scope-dispatch layer. See `agents/research/hooks-advice/advice-scope.md`.
    - Errors propagate with the advice and its owner named.
    - `describe-advice` command and its query.
    - Tests for each kind, stacking and ordering, a reload not reordering, owner removal, redefinition under advice.
