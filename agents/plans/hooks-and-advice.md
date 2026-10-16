@@ -20,7 +20,7 @@ Owner-approved brief: [`docs/briefs/2026-10-hooks-and-advice.md`](../../docs/bri
    - Tooling check: backtraces, `describe-function`-style lookups, and go-to-definition in `gerbil-lsp` (`/home/jay/Code/workbench-gerbil/gerbil-lsp`) on an open function. Report what breaks; fixing tools is out of scope.
    - Tests: callers in the same module and in other modules see `redefine`; a private function redefined through its module context; tail calls in a 10-million-step loop; recompiling one module keeps its compiled callers working.
    - Measure against `main`: clean build, `make test`, the 5k and 50k redraw cases, ms per key. Target: build at most +16%, the rest within noise.
-2. **The advice library and function targets. Library merged (2026-10-15), `e1c2672`; inspection command next.** Evidence: `agents/research/hooks-advice/stage-2a.md`. Parent review and capped `make test` passed; kernel delta zero. Actual owned around-advice costs about 0.7 µs/scalar call with exception/context guarantees retained; unadvised path unchanged. Retained-owner reorder is regression-tested through configuration reload. Library and prelude formed one coupled seam; the independent inspection UI is the next bounded task:
+2. **Done (2026-10-15): library `e1c2672`, inspection command `e7deaad`.** `advice-help` adds `M-x describe-advice` through public commands/completion/help contracts; six behavior tests and independent parent `make test` pass. Evidence: `agents/research/hooks-advice/stage-2b.md`. Evidence: `agents/research/hooks-advice/stage-2a.md`. Parent review and capped `make test` passed; kernel delta zero. Actual owned around-advice costs about 0.7 µs/scalar call with exception/context guarantees retained; unadvised path unchanged. Retained-owner reorder is regression-tested through configuration reload. Library/prelude and inspection UI were separate bounded tasks:
    - One composition model for the ten kinds. Combine when advice changes, not per call.
    - Owner, name, kind, depth. Same owner and name replaces. Order by depth, then the owners' `init.ss` order. Removal goes through the owner's receipt.
    - `redefine` while advised keeps the advice. Removing the last piece reveals the newest definition.
@@ -28,7 +28,7 @@ Owner-approved brief: [`docs/briefs/2026-10-hooks-and-advice.md`](../../docs/bri
    - Errors propagate with the advice and its owner named.
    - `describe-advice` command and its query.
    - Tests for each kind, stacking and ordering, a reload not reordering, owner removal, redefinition under advice.
-3. **Command and service targets.**
+3. **Command and service targets. Next.** Source-backed seam note: `agents/research/hooks-advice/target-seams.md` (proposals, not authority). Implement serially: shared target state/routing and neutral inspection first; commands registry second; service declaration/decorator and kernel-cache seam third (contract conversions must not overlap commands work); finish inspector integration. Preserve the approved one-form surface and boundary rules; no kernel identity query or undocumented interface reflection.
    - `(command name)`: the commands plugin keeps a command's advice; keys and `call-command` run the combined command; turning off the command's own plugin and back on keeps other owners' advice.
    - `(service svc operation)`: the kernel's advised view of a provider, handed out while advice exists; advice is not a provider and restarts nothing; it survives a provider swap. Amend ADR 12.
    - When function and service advice both apply, service advice is outermost.
