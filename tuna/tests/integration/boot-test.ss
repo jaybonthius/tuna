@@ -439,7 +439,7 @@
                         view-commands html-renderer buttons basic-editing
                         minibuffer completion-engine completion-vertical extended-command
                         orderless annotations
-                        echo-area help-buffer
+                        echo-area help-buffer advice-help
                         reload-config))
             (check (declaration-options (caddr (configuration-declarations loaded)))
                    => '((port . 0)))
