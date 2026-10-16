@@ -92,6 +92,18 @@ The approved [hooks-and-advice brief](../../docs/briefs/2026-10-hooks-and-advice
 
 This stage adds no kernel/provider/service runtime fields, registration argument or cache behavior. Ordinary dispatch is unchanged; descriptions are consumed in the next stage. Source delta is kernel +211 lines, production +212. Exact noun-check exceptions for generic service “view” identifiers are not permission for editor views/layout in the kernel; import and ownership checks remain unchanged.
 
+### Effective service cache (amendment, 2026-10-16, advice cache)
+
+Provider registration now requires `view: CompleteType-service-view`; every provider supplies its complete public interface description explicitly. `context-provide!` keeps one private `provider-binding` (`raw : :t`, `description : service-view`) inside the existing owner-tagged provider entry. Raw predicate validation, entry identity/provenance, one-provider enforcement, dependency queries and raw lifecycle payloads are unchanged. Registration alone updates a known slot's definition metadata; looking up state through an older same-name service object cannot overwrite the current provider's description/tier.
+
+The existing `kernel-services` table now holds private `service-slot` objects instead of service values, with four fields: `definition : service` for registry queries, `effective : :t` for the computed dispatch value, `decoration :? :procedure` for mutation-time reconstruction from raw provider/description, and `opaque :? :box` for library-owned state (the box distinguishes uninitialized from any initialized value, including #f). No kernel-object field or second provider/state-discovery table is added. These fields must follow the actual registry slot; the service object's existing `home`/`implementation` fields remain only its last-kernel fast cell.
+
+Two facade exports supply the required policy boundary. `service-decoration-state!` gets or initializes opaque state for a slot in the current registry. Its initializer receives `(install! builder-or-#f)`, bound privately to that actual kernel/slot; a builder receives raw provider and registration description. `service-decoration-states` enumerates initialized opaque values in the current registry without initializing others. Only the kernel owns those slots and provider mutations, so a library cannot supply this behavior without private kernel access or a new kernel-selection API. Neither API exposes kernel identity, membership or arbitrary extension keys.
+
+Initialization failure publishes no opaque state/decoration; subsequent build failure preserves the previous effective cache. No builder returns the exact raw provider; no provider returns #f while retaining the opaque state and pending builder. Decoration changes do not change provider entries, receipts, events, activation settlement or dependent lifetimes. Ordinary provider swaps retain those behaviors. New provider registrations rebuild from the new raw value/description, never old wrappers. Saved interfaces remain snapshots. Warm `service-provider`/typed dispatch are unchanged; advice composition, owner/order records and policy remain outside the kernel and are not implemented by this stage.
+
+Kernel net change is +68 lines; production net +68 including mechanical `view:` caller migrations. Exact additional generic `view` allowances in the noun test do not permit editor views; only the new named kernel white-box test gains private imports. Parent full tests cover the final source, including the registration-metadata lookup correction.
+
 ## Consequences
 
 - "State management" is not a replaceable component: each plugin owns its state objects, the kernel enforces ownership, and saving state is the persistence plugin's job.
