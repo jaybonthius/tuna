@@ -28,7 +28,7 @@ Emacs's manual and the research agree on one more lesson: prefer declared extens
 
 ![Pressing Backspace with an advised command](../diagrams/advice-backspace.svg)
 
-**Diagram status:** command/service advice and the walkthrough are planned. Open package functions, function advice and `describe-advice` are now built, including private targets; command/service targets are next.
+**Diagram status:** function and command advice are built, including private functions; service advice is planned. The Backspace path is supported, but the hungry-delete demo and its inspection walkthrough are still planned. `describe-advice` currently lists functions only.
 
 ## A walkthrough: a "hungry delete" plugin
 
