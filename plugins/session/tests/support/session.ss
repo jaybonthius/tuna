@@ -2,7 +2,7 @@
 ;;; register session slots (layouts require `session-service`) but
 ;;; that do not test the session.
 (import :tuna/kernel
-        (only-in :tuna/plugins/session/contract session-service))
+        (only-in :tuna/plugins/session/contract session-service Session-service-view))
 (export no-session)
 
 (defstruct empty-session ()
@@ -23,4 +23,4 @@
 (defplugin (no-session ctx)
   "Provides a session that keeps and saves nothing."
   provides: [session-service]
-  (context-provide! ctx session-service (make-empty-session)))
+  (context-provide! ctx session-service (make-empty-session) view: Session-service-view))

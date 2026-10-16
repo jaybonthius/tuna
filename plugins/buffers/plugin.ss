@@ -441,6 +441,6 @@
                         (make-node-kind-info 'text "Text that users edit."
                                              (lambda (n) (text-string (text-node-content n))))
                         doc: "Text that users edit.")
-    (context-provide! ctx buffers-service (Buffers registry))
+    (context-provide! ctx buffers-service (Buffers registry) view: Buffers-service-view)
     (context-add-setting-scope! ctx 'buffer
                                 (lambda (s) (buffer-setting (settings-buffer) s)))))

@@ -19,7 +19,7 @@ prelude: :gerbil/core
 
 (defclass kernel
   ((plugins   : HashTable)       ; plugin name -> plugin record
-   (services  : HashTable)       ; service name -> service
+   (services  : HashTable)       ; service name -> private service slot
    (providers : entry-table)     ; service name -> provider entries
    (cached-services : :list)     ; service objects whose dispatch cells were read
    (loop      : :t))             ; the editor loop object, owned by ./loop

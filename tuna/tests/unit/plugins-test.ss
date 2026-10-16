@@ -11,7 +11,7 @@
 (export plugins-test)
 (declare (separate))
 
-(interface Greeter
+(service-interface Greeter
   (greet) => :string)
 
 (defstruct greeter ((text : :string))
@@ -32,12 +32,12 @@
 (defplugin (greeter-a ctx)
   "Provides the greeter A."
   provides: [greeter-service]
-  (context-provide! ctx greeter-service (make-greeter "a")))
+  (context-provide! ctx greeter-service (make-greeter "a") view: Greeter-service-view))
 
 (defplugin (greeter-b ctx)
   "Provides the greeter B."
   provides: [greeter-service]
-  (context-provide! ctx greeter-service (make-greeter "b")))
+  (context-provide! ctx greeter-service (make-greeter "b") view: Greeter-service-view))
 
 (defplugin (greeting-user ctx)
   "Uses the greeter."
@@ -76,7 +76,7 @@
 (defplugin (greeter-then-fails ctx)
   "Provides a greeter that outranks A, then fails to activate."
   provides: [greeter-service]
-  (context-provide! ctx greeter-service (make-greeter "bad"))
+  (context-provide! ctx greeter-service (make-greeter "bad") view: Greeter-service-view)
   (error "activation failed"))
 
 (defplugin (lifecycle-breaker ctx)
@@ -110,7 +110,7 @@
     (and best (entry-value best))))
 
 ;; A stateful service whose providers hand their state over.
-(interface Counter
+(service-interface Counter
   (label) => :symbol
   (count) => :fixnum
   (set-count! (n : :fixnum)) => :void)
@@ -129,12 +129,12 @@
 (defplugin (counter-a ctx)
   "Provides the counter A."
   provides: [counter-service]
-  (context-provide! ctx counter-service (Counter (counter name: 'a n: 0))))
+  (context-provide! ctx counter-service (Counter (counter name: 'a n: 0)) view: Counter-service-view))
 
 (defplugin (counter-b ctx)
   "Provides the counter B, outranking A."
   provides: [counter-service]
-  (context-provide! ctx counter-service (Counter (counter name: 'b n: 100))))
+  (context-provide! ctx counter-service (Counter (counter name: 'b n: 100)) view: Counter-service-view))
 
 (defplugin (counter-user ctx)
   "Uses the counter; restarts when it is replaced."
@@ -147,7 +147,7 @@
 (defplugin (second-input ctx)
   "Tries to replace the input service."
   provides: [input-service]
-  (context-provide! ctx input-service (make-string-input (make-hash-table))))
+  (context-provide! ctx input-service (make-string-input (make-hash-table)) view: Input-service-view))
 
 ;; Call THUNK and return what it wrote to stdout and to stderr.
 (def (captured-output thunk)
@@ -195,7 +195,7 @@
         (lambda ()
           (defplugin (cached-failure ctx) "Provides, warms dispatch, then fails."
             provides: [greeter-service]
-            (context-provide! ctx greeter-service (make-greeter "bad"))
+            (context-provide! ctx greeter-service (make-greeter "bad") view: Greeter-service-view)
             (check (greeter-dispatch greeter-service) => "bad")
             (error "activation failed"))
           (check (with-catch exception-summary (lambda () (activate-plugin! cached-failure)))
@@ -247,7 +247,7 @@
         (lambda ()
           (defplugin (self-user ctx) "Provides and uses Greeter."
             provides: [greeter-service]
-            (context-provide! ctx greeter-service (make-greeter "self"))
+            (context-provide! ctx greeter-service (make-greeter "self") view: Greeter-service-view)
             (note! (Greeter-greet (Greeter (service-provider greeter-service)))))
           (take-log!)
           (activate-plugin! self-user)
@@ -258,8 +258,8 @@
         (lambda ()
           (defplugin (duplicate-provider ctx) "Registers twice."
             provides: [counter-service]
-            (context-provide! ctx counter-service (Counter (counter name: 'old n: 17)))
-            (context-provide! ctx counter-service (Counter (counter name: 'new n: 100))))
+            (context-provide! ctx counter-service (Counter (counter name: 'old n: 17)) view: Counter-service-view)
+            (context-provide! ctx counter-service (Counter (counter name: 'new n: 100)) view: Counter-service-view))
           (check (with-catch exception-summary (lambda () (activate-plugin! duplicate-provider)))
                  => "Service already has a provider counter duplicate-provider duplicate-provider")
           (check (service-provider counter-service) => #f))))

@@ -169,7 +169,7 @@ prelude: :gerbil/core
                           (def evaluation-service
                             (new-service 'evaluated (lambda (_) #t)
                                          tier: 'live doc: "Evaluated provider."))
-                          (context-provide! (current-context) evaluation-service 'live)))
+                          (context-provide! (current-context) evaluation-service 'live view: (make-service-view [] (lambda (raw compose) raw)))))
          (check (evaluate-form '(service-provider evaluation-service)) => 'live)
          (check (service-info-provider
                  (find (lambda ((info : service-info)) (eq? (service-info-name info) 'evaluated))

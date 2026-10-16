@@ -28,7 +28,7 @@
 (defplugin (test-display ctx)
   "Counts redisplays."
   provides: [display-service]
-  (context-provide! ctx display-service (make-counting-display)))
+  (context-provide! ctx display-service (make-counting-display) view: Display-service-view))
 
 ;; The tasks input items resolve to, each (name . thunk).
 (def test-tasks
@@ -101,7 +101,7 @@
   "Runs quitting-hook from an undo."
   (context-defer! ctx (lambda () (run-hook quitting-hook) (note! 'undo-finished))))
 
-(interface Dummy
+(service-interface Dummy
   (dummy-op) => :void)
 
 (defstruct dummy ()
@@ -116,7 +116,7 @@
 (defplugin (dummy-provider ctx)
   "Provides the dummy service."
   provides: [dummy-service]
-  (context-provide! ctx dummy-service (make-dummy)))
+  (context-provide! ctx dummy-service (make-dummy) view: Dummy-service-view))
 
 ;; Arrival classifies on a foreign thread without consulting any service.
 (def probe-arrived? #f)
@@ -130,7 +130,7 @@
 (defplugin (probing-input-provider ctx)
   "Classifies input without services."
   provides: [input-service]
-  (context-provide! ctx input-service (make-probing-input)))
+  (context-provide! ctx input-service (make-probing-input) view: Input-service-view))
 
 (defplugin (dummy-user ctx)
   "Requires the dummy service."
@@ -181,7 +181,7 @@
 (defplugin (failing-display ctx)
   "Provides a display that always fails."
   provides: [display-service]
-  (context-provide! ctx display-service (make-broken-display)))
+  (context-provide! ctx display-service (make-broken-display) view: Display-service-view))
 
 ;; Start a fresh loop with the test tasks and PLUGINS, run THUNK, and stop.
 (def (with-loop thunk quit-grace: (quit-grace 0.5) plugins: (plugins []))

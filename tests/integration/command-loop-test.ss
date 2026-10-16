@@ -17,7 +17,7 @@ prelude: :gerbil/core
   "Commands, command observers and a display that records redraws."
   provides: [display-service]
   requires: [commands-service input-service]
-  (context-provide! ctx display-service (recording-display))
+  (context-provide! ctx display-service (recording-display) view: Display-service-view)
   (defcommand (observed-action) "Record the action between its hooks."
     (note! ['body (this-command)]))
   (keymap-set "x" 'observed-action)

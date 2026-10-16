@@ -226,7 +226,7 @@
   optional: [completion-ui-service]
   (let (self (completion-state sessions: [] styles: (new-entry-table) annotators: (new-entry-table)
                                keymap: (new-keymap)))
-    (context-provide! ctx completion-service (Completion self))
+    (context-provide! ctx completion-service (Completion self) view: Completion-service-view)
     (keymap-set-in ctx (completion-state-keymap self) "RET" 'completion-accept-input)
     (keymap-set-in ctx (completion-state-keymap self) "M-RET" 'completion-accept-input)
     (context-define-completion-style! ctx

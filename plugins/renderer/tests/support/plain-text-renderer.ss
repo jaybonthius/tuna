@@ -96,4 +96,4 @@ prelude: :gerbil/core
   requires: [buffers-service layout-service settings-service]
   optional: [input-service]
   (context-define-node-renderer! ctx 'text 'plain-text text-node-runs)
-  (context-provide! ctx renderer-service (Renderer (make-plain-text-rendering))))
+  (context-provide! ctx renderer-service (Renderer (make-plain-text-rendering)) view: Renderer-service-view))

@@ -262,4 +262,4 @@
   requires: [buffers-service layout-service settings-service]
   optional: [input-service]
   (context-define-node-renderer! ctx 'text 'html render-text-node)
-  (context-provide! ctx renderer-service (Renderer (html-rendering views: (make-hash-table-eqv)))))
+  (context-provide! ctx renderer-service (Renderer (html-rendering views: (make-hash-table-eqv))) view: Renderer-service-view))

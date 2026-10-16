@@ -33,6 +33,8 @@ prelude: :gerbil/core
         (struct-out service)
         new-service
         service-provider
+        service-decoration-state!
+        service-decoration-states
         activate-plugin!
         deactivate-plugin!
         plugin-active?
@@ -365,8 +367,64 @@ prelude: :gerbil/core
     (raise-bad-argument new-service "tier startup or live" tier))
   (make-service name tier implements? doc #f #f))
 
-(def (remember-service! (k : kernel) (svc : service)) => :void
-  (hash-put! (kernel-services k) (service-name svc) svc))
+;; Per-registry state lives here, never in the service's last-kernel cell.
+(defclass service-slot ((definition : service)
+                        (effective : :t)
+                        (decoration :? :procedure)
+                        (opaque :? :box))
+  final: #t)
+
+;; One provider entry contains both the raw value and its complete description.
+(defstruct provider-binding ((raw : :t) (description : service-view))
+  final: #t)
+
+(def (remember-service! (k : kernel) (svc : service)) => service-slot
+  (or (hash-get (kernel-services k) (service-name svc))
+      (let (new (service-slot definition: svc effective: #f decoration: #f opaque: #f))
+        (hash-put! (kernel-services k) (service-name svc) new)
+        new)))
+
+(def (decorate-provider (raw : :t) (description : service-view)
+                        (builder :? :procedure)) => :t
+  (if builder (builder raw description) raw))
+
+(def (slot-effective (k : kernel) (slot : service-slot) (builder :? :procedure)) => :t
+  (let (best (entry-table-ref (kernel-providers k) (service-name slot.definition)))
+    (and best
+         (using (binding (entry-value best) : provider-binding)
+           (decorate-provider binding.raw binding.description builder)))))
+
+;; INITIALIZE receives (set-decoration! builder-or-#f). The capability stays
+;; bound to this registry/slot even when another kernel is current. During
+;; initialization it computes privately; failure publishes neither state nor
+;; decoration. A successful call afterwards replaces the cache, not a provider.
+(def (service-decoration-state! (svc : service) (initialize : :procedure)) => :t
+  (let (k (the-kernel))
+    (using (slot (remember-service! k svc) : service-slot)
+      (if slot.opaque (unbox slot.opaque)
+        (let ((live? #f) (builder slot.decoration) (effective slot.effective))
+          (let* ((install! (lambda ((next :? :procedure)) => :void
+                            (let (value (slot-effective k slot next))
+                              (if live?
+                                (begin
+                                  (set! slot.decoration next)
+                                  (set! slot.effective value)
+                                  (refresh-cached-services! k))
+                                (begin (set! builder next) (set! effective value))))))
+                 (state (initialize install!)))
+            (set! slot.opaque (box state))
+            (set! slot.decoration builder)
+            (set! slot.effective effective)
+            (set! live? #t)
+            (refresh-cached-services! k)
+            state))))))
+
+;; Only initialized opaque states in the current registry, including slots
+;; temporarily without a provider. Enumeration never creates state.
+(def (service-decoration-states) => :list
+  (map (lambda ((slot : service-slot)) (unbox slot.opaque))
+       (filter (lambda ((slot : service-slot)) slot.opaque)
+               (hash-values (kernel-services (the-kernel))))))
 
 ;; Update read cells on mutations, never during a warm dispatch. A service
 ;; keeps only its last kernel; other kernels rebuild that cell on next use.
@@ -376,9 +434,9 @@ prelude: :gerbil/core
             (kernel-cached-services k)))
 
 (def (refresh-service-cache! (k : kernel) (svc : service)) => :void
-  (let (best (entry-table-ref (kernel-providers k) (service-name svc)))
+  (let (slot (hash-get (kernel-services k) (service-name svc)))
     (set! (service-home svc) k)
-    (set! (service-implementation svc) (and best (entry-value best)))))
+    (set! (service-implementation svc) (and slot (service-slot-effective slot)))))
 
 (defrule (with-cached-service svc body ...)
   (let (k (current-kernel))
@@ -399,7 +457,8 @@ prelude: :gerbil/core
                                  (error "No plugin provides" (service-name slot)))))
       body ...)))
 
-(def (context-provide! (ctx : context) (svc : service) (impl : :t)) => :void
+(def (context-provide! (ctx : context) (svc : service) (impl : :t)
+                       view: (description : service-view)) => :void
   (unless ((service-implements? svc) impl)
     (raise-bad-argument context-provide! "an implementation of the service" (service-name svc) impl))
   (let* ((k (the-kernel))
@@ -407,12 +466,18 @@ prelude: :gerbil/core
          (current (entry-table-ref (kernel-providers k) name)))
     (when current
       (error "Service already has a provider" name (entry-owner current) (context-plugin-name ctx)))
-    (remember-service! k svc)
-    (let (new (context-add-entry! ctx (kernel-providers k) name impl doc: (service-doc svc)))
+    (let* ((slot (remember-service! k svc))
+           (effective (decorate-provider impl description (service-slot-decoration slot)))
+           (new (context-add-entry! ctx (kernel-providers k) name
+                  (make-provider-binding impl description) doc: (service-doc svc))))
+      ;; Registration, not state lookup through an older alias, owns metadata.
+      (set! (service-slot-definition slot) svc)
+      (set! (service-slot-effective slot) effective)
       (refresh-cached-services! k)
       (context-defer! ctx
         (lambda ()
           (entry-table-remove! (kernel-providers k) name new)
+          (set! (service-slot-effective slot) #f)
           (refresh-cached-services! k)
           (record-event! service-changed-hook svc impl #f))))
     (record-event! service-changed-hook svc #f impl)))
@@ -611,8 +676,9 @@ prelude: :gerbil/core
 
 (def (describe-services) => :list
   (let (k (the-kernel))
-    (map (lambda ((svc : service))
-           (let* ((name (service-name svc))
+    (map (lambda ((slot : service-slot))
+           (let* ((svc (service-slot-definition slot))
+                  (name (service-name svc))
                   (best (entry-table-ref (kernel-providers k) name))
                   (dependents (service-dependents k name))
                   (names (lambda (records)
@@ -624,9 +690,9 @@ prelude: :gerbil/core
                                 (and best (entry-owner best))
                                 (names dependents)
                                 (service-doc svc))))
-         (list-sort (lambda ((a : service) (b : service))
-                      (string<? (symbol->string (service-name a))
-                                (symbol->string (service-name b))))
+         (list-sort (lambda ((a : service-slot) (b : service-slot))
+                      (string<? (symbol->string (service-name (service-slot-definition a)))
+                                (symbol->string (service-name (service-slot-definition b)))))
                     (hash-values (kernel-services k))))))
 
 ;;; Messages

@@ -56,6 +56,8 @@ prelude: :gerbil/core
   service?                              ; start-up recognizes contract exports
   new-service
   service-provider
+  service-decoration-state!
+  service-decoration-states
   context-provide!
   deactivate-plugin!
   plugin-active?

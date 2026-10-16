@@ -38,8 +38,8 @@ prelude: :gerbil/core
 (defplugin (inspection-providers ctx)
   "Completion and help captures; no buffers, minibuffer or renderer."
   provides: [completion-service help-service]
-  (context-provide! ctx completion-service (Completion (inspection-completion)))
-  (context-provide! ctx help-service (Help (inspection-help output: #f))))
+  (context-provide! ctx completion-service (Completion (inspection-completion)) view: Completion-service-view)
+  (context-provide! ctx help-service (Help (inspection-help output: #f)) view: Help-service-view))
 
 (def (with-inspection (advisors : :list) (body : :procedure)) => :t
   (set! seen-table #f)
