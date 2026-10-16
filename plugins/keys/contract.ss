@@ -46,7 +46,7 @@ prelude: :gerbil/core
         keymap-clickable?
         keymap-generation
         report-stale-click
-        (interface-out Keys)
+        (service-interface-out Keys)
         keymap-set
         keymap-set!
         keymap-set-in
@@ -150,7 +150,7 @@ prelude: :gerbil/core
 (def (new-keymap) => entry-table
   (new-entry-table))
 
-(interface (Keys Input)
+(service-interface (Keys Input)
   ;; RESOLVE receives a posn and returns the starting node, or #f.
   (set-click-resolver! (ctx : context) (resolve : :procedure)) => :void
   ;; Reverse lookup in the maps active from FOCUS (#f: current focus), shortest first.

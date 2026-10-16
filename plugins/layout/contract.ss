@@ -45,7 +45,7 @@ prelude: :gerbil/core
         (only-in :tuna/plugins/keys/contract posn posn-part posn-node-id)
         :tuna/plugins/settings/contract
         :tuna/plugins/buffers/contract)
-(export (interface-out Layout)
+(export (service-interface-out Layout)
         layout-service
         (struct-out frame-target)
         saved-view-data
@@ -108,7 +108,7 @@ prelude: :gerbil/core
                          (start :? node))
   final: #t)
 
-(interface Layout
+(service-interface Layout
   ;; Every view of the layout, in order.
   (views) => :list
   (selected-view) => :t

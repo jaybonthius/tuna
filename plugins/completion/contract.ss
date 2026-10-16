@@ -4,7 +4,8 @@ prelude: :gerbil/core
 
 (import :std/interface :tuna/kernel :tuna/plugins/buffers/contract :tuna/plugins/minibuffer/contract)
 (export (struct-out candidate completion-table completion-style annotation-field)
-        (interface-out Completion CompletionSession CompletionUI)
+        (service-interface-out Completion CompletionUI)
+        (interface-out CompletionSession)
         completion-service completion-ui-service completing-read current-completion-session
         context-define-completion-style! context-define-annotator! strings->candidates)
 
@@ -42,7 +43,7 @@ prelude: :gerbil/core
   (session-annotations (c : candidate)) => :list
   (session-group (c : candidate)) => (Maybe :string))
 
-(interface Completion
+(service-interface Completion
   (completing-read (question : :string) (table : completion-table)
                    (require-match : :boolean) (initial : :string)
                    (history :? :symbol) (default :? :string)) => :t
@@ -50,7 +51,7 @@ prelude: :gerbil/core
   (styles) => entry-table
   (annotators) => entry-table)
 
-(interface CompletionUI
+(service-interface CompletionUI
   ;; Idempotently rebuild presentation from SESSION in PROMPT's buffer.
   ;; The engine calls on creation, revision changes and provider replacement.
   ;; A provider owns its nodes and key receipts and removes them on deactivation.

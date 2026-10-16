@@ -8,14 +8,14 @@ prelude: :gerbil/core
         :tuna/kernel
         :tuna/plugins/settings/contract
         :tuna/plugins/buffers/contract)
-(export (interface-out Renderer)
+(export (service-interface-out Renderer)
         renderer-service
         show-status-line
         face-remapping
         remapped-face
         status-line-text)
 
-(interface Renderer
+(service-interface Renderer
   ;; Render the current editor state as an HTML fragment whose root element
   ;; has the id "screen". Runs on the baton.
   (render-screen) => :string)

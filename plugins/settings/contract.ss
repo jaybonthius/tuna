@@ -9,7 +9,7 @@ prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel)
-(export (interface-out Settings)
+(export (service-interface-out Settings)
         settings-service
         (struct-out setting)
         defsetting
@@ -42,7 +42,7 @@ prelude: :gerbil/core
   ((_ ((s v) ...) body ...)
    (call-with-settings (list (cons s v) ...) (lambda () body ...))))
 
-(interface Settings
+(service-interface Settings
   ;; SETTING's value: from DYNAMIC (the dynamic layer), then the scopes,
   ;; best first, then the global value, then the default.
   (resolve (s : setting) (dynamic : :list)) => :t

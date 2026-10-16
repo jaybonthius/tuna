@@ -4,7 +4,7 @@ prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel)
-(export (interface-out Help)
+(export (service-interface-out Help)
         help-service
         (struct-out help-output)
         show-help
@@ -14,7 +14,7 @@ prelude: :gerbil/core
                         (lines : :list))      ; strings
   final: #t)
 
-(interface Help
+(service-interface Help
   (show-help! (output : help-output)) => :void
   ;; The help output shown last, or #f.
   (current-help) => :t)

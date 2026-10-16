@@ -4,6 +4,7 @@ prelude: :gerbil/core
 
 (import :std/error
         :std/interface
+        ./service-interface
         :std/list/list
         ./ids
         ./entries
@@ -39,7 +40,7 @@ prelude: :gerbil/core
         deactivate-all-plugins!
         (struct-out service-info)
         describe-services
-        (interface-out Messages)
+        (service-interface-out Messages)
         messages-service
         message
         (phi: +1 stx-source-string))
@@ -634,7 +635,7 @@ prelude: :gerbil/core
 ;; provides it). The kernel adds no other failure channel: its failures go
 ;; here, or to stderr while no plugin provides it; plugin and service
 ;; failures always go to stderr too.
-(interface Messages
+(service-interface Messages
   ;; Show MESSAGE to the user; "" clears the shown message.
   (message! (message : :string)) => :void)
 
