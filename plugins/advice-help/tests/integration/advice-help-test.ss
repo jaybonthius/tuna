@@ -1,7 +1,7 @@
 prelude: :gerbil/core
 (import :std/test :std/interface :std/list/list
         :tuna/kernel :tuna/lib/advice
-        (only-in :tuna/prelude advise! function-advice)
+        (only-in :tuna/prelude advise! advice-for)
         :tuna/plugins/advice-help/plugin
         :tuna/plugins/commands/contract
         :tuna/plugins/completion/contract
@@ -72,15 +72,15 @@ prelude: :gerbil/core
           (call-command 'describe-advice)
           (check read-count => 1)
           (check (completion-table-category seen-table) => 'function-advice)
-          (let* ((target (function-advice a-probe))
-                 (source (function-advice-info-source target))
-                 (records (function-advice-info-advice target))
+          (let* ((target (advice-for a-probe))
+                 (source (advice-target-info-source target))
+                 (records (advice-target-info-advice target))
                  (candidate (car (completion-table-items seen-table))))
             (check (map advice-info-name records) => '(outer replace inner))
             (check (string? source) => #t)
             (check (every (lambda ((record : advice-info)) (string? record.source)) records) => #t)
             (check (candidate-text candidate) => (string-append "probe — " source))
-            (check (candidate-key candidate) => (cons 'probe source))
+            (check (eq? (candidate-key candidate) (advice-target-info-identity target)) => #t)
             (check (help-lines)
               => [(string-append "Function: probe")
                   (string-append "Source: " source)
@@ -101,7 +101,7 @@ prelude: :gerbil/core
       (with-inspection [twins]
         (lambda ()
           (for-each
-           (lambda ((target : function-advice-info))
+           (lambda ((target : advice-target-info))
              (parameterize ((choose
                             (lambda ((table : completion-table))
                               (check (length table.items) => 2)
@@ -110,24 +110,24 @@ prelude: :gerbil/core
                                 (check (equal? (candidate-key first) (candidate-key second)) => #f))
                               (candidate-value
                                (find (lambda ((c : candidate))
-                                       (equal? (function-advice-info-source c.value) target.source))
+                                       (equal? (advice-target-info-source c.value) target.source))
                                      table.items)))))
                (call-command 'describe-advice)
                (check (cadr (help-lines)) => (string-append "Source: " target.source))
                (check (cadddr (help-lines))
                  => (string-append "Owner: twins  Name: "
-                                   (if (equal? target.source (function-advice-info-source (function-advice a-probe)))
+                                   (if (equal? target.source (advice-target-info-source (advice-for a-probe)))
                                      "from-a" "from-b")
                                    "  Kind: before  Depth: 0  Source: "
                                    (advice-info-source (car target.advice))))))
-           [(function-advice a-probe) (function-advice b-probe)]))))
+           [(advice-for a-probe) (advice-for b-probe)]))))
 
     (test-case "advice removed while prompting is not rendered from the old snapshot"
       (defplugin (temporary-owner ctx) "Removed by the prompt double."
         (advise! ctx a-probe 'temporary override: (lambda (n) 100)))
       (with-inspection [temporary-owner]
         (lambda ()
-          (let (source (function-advice-info-source (function-advice a-probe)))
+          (let (source (advice-target-info-source (advice-for a-probe)))
             (parameterize ((choose (lambda ((table : completion-table))
                                      (deactivate-plugin! temporary-owner)
                                      (candidate-value (car table.items)))))
@@ -147,7 +147,7 @@ prelude: :gerbil/core
                                    (activate-plugin! new-owner)
                                    (candidate-value (car table.items)))))
             (call-command 'describe-advice)
-            (let (record (cadr (function-advice-info-advice (function-advice a-probe))))
+            (let (record (cadr (advice-target-info-advice (advice-for a-probe))))
               (check (car (reverse (help-lines)))
                 => (string-append "Owner: new-owner  Name: new  Kind: after  Depth: 10  Source: "
                                   (advice-info-source record))))))))
@@ -162,7 +162,7 @@ prelude: :gerbil/core
           (check (plugin-optional advice-help) => [completion-ui-service])
           (deactivate-plugin! advice-help)
           (check (command-ref 'describe-advice) => #f)
-          (check (map advice-info-name (function-advice-info-advice (function-advice a-probe)))
+          (check (map advice-info-name (advice-target-info-advice (advice-for a-probe)))
                  => '(persistent))
           (check (a-probe 1) => 100)
           (activate-plugin! advice-help)

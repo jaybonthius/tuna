@@ -7,7 +7,7 @@
         :tuna/plugins/help/contract)
 (export advice-help)
 
-(def (function-label (target : function-advice-info)) => :string
+(def (function-label (target : advice-target-info)) => :string
   (string-append (symbol->string target.name) " — " (or target.source "unknown source")))
 
 (def (advice-line (record : advice-info)) => :string
@@ -17,13 +17,12 @@
                  "  Depth: " (number->string record.depth)
                  "  Source: " (or record.source "unknown source")))
 
-(def (function-description (selected : function-advice-info)) => :list
-  ;; A prompt yields: use its name/source identity, never its old advice snapshot.
-  (let* ((current (find (lambda ((target : function-advice-info))
-                          (and (eq? target.name selected.name)
-                               (equal? target.source selected.source)))
+(def (function-description (selected : advice-target-info)) => :list
+  ;; A prompt yields: match stable target identity, never its old advice snapshot.
+  (let* ((current (find (lambda ((target : advice-target-info))
+                          (eq? target.identity selected.identity))
                         (advised-functions)))
-         (records (if current (function-advice-info-advice current) [])))
+         (records (if current (advice-target-info-advice current) [])))
     (append [ (string-append "Function: " (symbol->string selected.name))
               (string-append "Source: " (or selected.source "unknown source")) ]
       (if (null? records)
@@ -43,9 +42,9 @@
       (if (null? targets)
         (show-help "Function advice" ["No function advice is currently installed."])
         (let* ((table (make-completion-table category: 'function-advice
-                        items: (map (lambda ((target : function-advice-info))
+                        items: (map (lambda ((target : advice-target-info))
                                       (make-candidate text: (function-label target) value: target
-                                                      key: (cons target.name target.source)))
+                                                      key: target.identity))
                                     targets)))
-               (selected (: (completing-read "Describe advice for function: " table) function-advice-info)))
+               (selected (: (completing-read "Describe advice for function: " table) advice-target-info)))
           (show-help "Function advice" (function-description selected)))))))
