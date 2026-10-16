@@ -7,7 +7,7 @@ prelude: :gerbil/core
         :tuna/kernel)
 (export open-function new-open-function open-function-base open-function-effective
         open-function-state replace-open-function! resolve-open-function
-        advice-state new-advice-state advice-state-records
+        advice-state new-advice-state advice-state-records advice-state-has-owners?
         register-advice! remove-advice! inspect-advice
         advised-functions compose-advice refresh-advice!
         advice-info advice-info-owner advice-info-name advice-info-kind
@@ -66,6 +66,11 @@ prelude: :gerbil/core
      (append-map (lambda ((e : entry))
                    (advice-owner-records (: (entry-value e) advice-owner)))
                  entries))))
+
+;; Explicit removal releases callbacks, but owner buckets and their cleanup
+;; notes remain until deactivation. Target caches must retain that live state.
+(def (advice-state-has-owners? (state : advice-state)) => :boolean
+  (and (entry-table-ref state.owners 'advice) #t))
 
 (def (inspect-advice (state : advice-state)) => advice-target-info
   ;; The state is an opaque, stable selection identity, independent of snapshots.
