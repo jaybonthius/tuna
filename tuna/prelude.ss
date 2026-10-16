@@ -189,7 +189,11 @@ prelude: :gerbil/core
        (with-syntax ((cell (function-target #'target))
                      (kind-name kind-name)
                      (source (stx-source-string stx))
-                     (procedure (if (identifier? #'callback)
+                     ;; Open callbacks already denote a stable, live facade. Only
+                     ;; ordinary bindings need an extra late-lookup forwarding layer.
+                     (procedure (if (and (identifier? #'callback)
+                                         (not (open-binding?
+                                               (syntax-local-value #'callback (lambda (_) #f)))))
                                   #'(lambda args (apply callback args)) #'callback)))
          #'(register-function-advice! ctx cell name 'kind-name procedure
                                      source: source option ...))))))

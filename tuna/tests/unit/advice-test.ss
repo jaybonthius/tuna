@@ -3,6 +3,7 @@
         (only-in :gerbil/expander current-expander-context import-module)
         (only-in :gerbil/runtime/syntax syntax-error?)
         :tuna/kernel
+        (only-in :tuna/lib/advice refresh-function-advice!)
         (only-in :tuna/prelude advise! unadvise! function-advice advised-functions
                  advice-info-owner advice-info-name advice-info-kind advice-info-depth
                  advice-info-source function-advice-info-name function-advice-info-source
@@ -16,6 +17,9 @@
 
 (def target-path
   (path-expand "../support/open-functions/target.ss" (this-source-directory)))
+(def ordinary-callback-log [])
+(def (ordinary-callback (n : :fixnum)) => :void
+  (set! ordinary-callback-log (cons ['old n] ordinary-callback-log)))
 (defrule (with-advice kind callback body ...)
   (let ()
     (defplugin (advisor ctx) "One composition layer."
@@ -124,6 +128,25 @@
             (check (names) => '(outer a z b))
             (advise! owner probe 'a before: (lambda args (void)))
             (check (names) => '(outer a z b))))))
+    (test-case "inspection stays with the installed chain until a rank batch refresh"
+      (let (log [])
+        (defplugin (first ctx) "First declaration."
+          (advise! ctx probe 'first before: (lambda args (set! log (append log '(first))))))
+        (defplugin (second ctx) "Second declaration."
+          (advise! ctx probe 'second before: (lambda args (set! log (append log '(second))))))
+        (call-with-fresh-kernel []
+          (lambda ()
+            (activate-plugin! first order: 1)
+            (activate-plugin! second order: 2)
+            (set-plugin-order! first 3)
+            (check (names) => '(first second))
+            (probe 1)
+            (check log => '(first second))
+            (refresh-function-advice!)
+            (check (names) => '(second first))
+            (set! log [])
+            (probe 1)
+            (check log => '(second first))))))
     (test-case "either deactivation order and explicit removal preserve other owners"
       (for-each
        (lambda (first?)
@@ -203,6 +226,20 @@
              (probe 1)
              (check callback-log => '(new (1)))))
          (finally (install-open! callback base)))))
+    (test-case "ordinary named callbacks keep the late-binding forwarding layer"
+      (let (original ordinary-callback)
+        (set! ordinary-callback-log [])
+        (defplugin (ordinary ctx) "An ordinary Gerbil callback."
+          (advise! ctx probe 'ordinary before: ordinary-callback))
+        (try
+         (call-with-fresh-kernel [ordinary]
+           (lambda ()
+             (probe 1)
+             (set! ordinary-callback
+               (lambda (n) (set! ordinary-callback-log (cons ['new n] ordinary-callback-log))))
+             (probe 2)
+             (check ordinary-callback-log => '((new 2) (old 1)))))
+         (finally (set! ordinary-callback original)))))
     (test-case "callbacks own effects; around-original restores caller context and task"
       (let ((advisor-ctx #f) (caller-ctx #f) (seen #f) (undone? #f))
         (defplugin (advisor ctx) "Own callback effects, not original execution."

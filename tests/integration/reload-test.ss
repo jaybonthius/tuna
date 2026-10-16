@@ -11,6 +11,8 @@
         :tuna/kernel
         :tuna/boot
         :tuna/control
+        (only-in :tuna/prelude function-advice function-advice-info-advice advice-info-owner)
+        (only-in "../../tuna/tests/support/open-functions/advice-target" probe callback-log)
         :tuna/plugins/session/contract
         :tuna/plugins/session/plugin
         "../../tuna/tests/support/kernel"
@@ -102,6 +104,42 @@
                (check (activation-count 'counted-block) => 1)
                (check (activation-count 'user) => 1)
                (check (probe-on? 'counted) => #t)))))))
+
+    (test-case "retained advice follows declaration reorder, including a failed init replacement"
+      (call-with-temporary-directory
+       (lambda (directory)
+         (let* ((target (path-expand "../../tuna/tests/support/open-functions/advice-target"
+                                     (this-source-directory)))
+                (imports (string-append "(import :tuna/kernel \"" target "\")"))
+                (good-line "(use-plugin good config: (note-activation! 'good-advice) (advise! (current-context) probe 'good before: (lambda args (set! callback-log (append callback-log '(good))))))")
+                (counted-line "(use-plugin counted config: (note-activation! 'counted-advice) (advise! (current-context) probe 'counted before: (lambda args (set! callback-log (append callback-log '(counted))))))")
+                (path (write-init directory imports good-line counted-line)))
+           (call-with-fresh-kernel []
+             (lambda ()
+               (start path)
+               (let ((good-count (activation-count 'good-advice))
+                     (counted-count (activation-count 'counted-advice)))
+                 (set! callback-log [])
+                 (probe 1)
+                 (check callback-log => '(good counted))
+                 (write-init directory imports counted-line good-line)
+                 (check (reload-succeeded? (reload)) => #t)
+                 (check (map advice-info-owner
+                             (function-advice-info-advice (function-advice probe)))
+                        => '(counted/config good/config))
+                 (set! callback-log [])
+                 (probe 1)
+                 (check callback-log => '(counted good))
+                 (write-init directory imports good-line counted-line "(error \"advice-rank-test\")")
+                 (check (reload-succeeded? (reload)) => #f)
+                 (check (map advice-info-owner
+                             (function-advice-info-advice (function-advice probe)))
+                        => '(good/config counted/config))
+                 (set! callback-log [])
+                 (probe 1)
+                 (check callback-log => '(good counted))
+                 (check (activation-count 'good-advice) => good-count)
+                 (check (activation-count 'counted-advice) => counted-count))))))))
 
     (test-case "a path through a link or .. counts init.ss as init.ss, not as a user module"
       (call-with-temporary-directory

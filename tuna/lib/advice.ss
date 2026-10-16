@@ -8,7 +8,7 @@ prelude: :gerbil/core
 (export open-function new-open-function open-function-base open-function-effective
         replace-open-function! resolve-open-function
         register-function-advice! remove-function-advice!
-        inspect-function-advice advised-functions compose-advice
+        inspect-function-advice advised-functions compose-advice refresh-function-advice!
         advice-info advice-info-owner advice-info-name advice-info-kind
         advice-info-depth advice-info-source
         function-advice-info function-advice-info-name function-advice-info-source
@@ -26,14 +26,15 @@ prelude: :gerbil/core
   final: #t)
 (defstruct advice-owner ((records : :list)) final: #t)
 (defstruct open-function ((base : :procedure) (effective : :procedure)
-                         (name : :symbol) (source :? :string) (owners : entry-table))
+                         (name : :symbol) (source :? :string) (owners : entry-table)
+                         (advice : :list))
   final: #t)
 
 ;; Only advised cells are enumerable; ordinary open functions are not registered.
 (def advised-cells [])
 
 (def (new-open-function (base : :procedure) (name : :symbol) (source :? :string)) => open-function
-  (make-open-function base base name source (new-entry-table)))
+  (make-open-function base base name source (new-entry-table) []))
 
 (def (ordered-advice (cell : open-function)) => :list
   ;; Earlier declarations are outermost; names break ties within one owner.
@@ -52,7 +53,8 @@ prelude: :gerbil/core
                  entries))))
 
 (def (inspect-function-advice (cell : open-function)) => function-advice-info
-  (make-function-advice-info cell.name cell.source (ordered-advice cell)))
+  ;; Inspection describes the installed chain, even between rank updates and refresh.
+  (make-function-advice-info cell.name cell.source cell.advice))
 
 (def (advised-functions) => :list
   (map inspect-function-advice advised-cells))
@@ -60,9 +62,14 @@ prelude: :gerbil/core
 (def (refresh-open-function! (cell : open-function)) => :void
   (let (records (ordered-advice cell))
     (set! cell.effective (compose-advice cell.base records))
+    (set! cell.advice records)
     (set! advised-cells
       (if (null? records) (remq cell advised-cells)
           (if (memq cell advised-cells) advised-cells (cons cell advised-cells))))))
+
+;; Configuration calls this once after a batch of owner declaration-rank updates.
+(def (refresh-function-advice!) => :void
+  (for-each refresh-open-function! advised-cells))
 
 (def (replace-open-function! (cell : open-function) (replacement : :procedure)) => :void
   (set! cell.base replacement)

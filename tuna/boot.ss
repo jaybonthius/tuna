@@ -23,6 +23,7 @@ prelude: :gerbil/core
         :tuna/kernel
         :tuna/lib/configuration
         :tuna/lib/plugin-options
+        (only-in :tuna/lib/advice refresh-function-advice!)
         (except-in :tuna/configuration activate-plugin!)
         (rename-in :tuna/plugin-use (activate-checked-plugin! activate-plugin!))
         :tuna/config-blocks)
@@ -876,16 +877,19 @@ prelude: :gerbil/core
              (else (record! entry))))))
         (drain! #f)))
 
-    ;; Supply file order before any activation, including blocks. Kept
-    ;; owners share this rank with their entries, so a reorder is immediate.
-    (let loop ((rest new-declarations) (rank 1))
-      (unless (null? rest)
-        (let (d (: (car rest) declaration))
-          (set-plugin-order! (declaration-target d) rank)
-          (when (declaration-block d)
-            (set-plugin-order! (declaration-block d) rank)))
-        (loop (cdr rest) (fx1+ rank))))
-    (set-plugin-order! (configuration-user-code config) (fx1+ (length new-declarations)))
+    ;; Update retained owners before any activation, including blocks. Advice
+    ;; caches compositions, so refresh after the batch, also on a partial unwind.
+    (unwind-protect
+      (begin
+        (let loop ((rest new-declarations) (rank 1))
+          (unless (null? rest)
+            (let (d (: (car rest) declaration))
+              (set-plugin-order! (declaration-target d) rank)
+              (when (declaration-block d)
+                (set-plugin-order! (declaration-block d) rank)))
+            (loop (cdr rest) (fx1+ rank))))
+        (set-plugin-order! (configuration-user-code config) (fx1+ (length new-declarations))))
+      (refresh-function-advice!))
     (unwind-protect
       (begin
         (when follower
