@@ -132,19 +132,27 @@ Only Tuna-prelude modules change this way. Imported Gerbil libraries and Tuna's 
 
 When a plugin is turned on, everything it adds goes through its **receipt**: a running list of what it added and how to undo each item. Turning the plugin off walks the receipt backwards and removes everything. Each key binding or setting a plugin makes is labeled with that plugin, so turning one plugin off never erases a binding another plugin made for the same key. Reloading a plugin is just "save its state, off, load the new code, on, restore its state". That means you can fix a plugin and reload it without restarting, and you never end up with leftover keys or hooks from an old version. Emacs has no equivalent; its `unload-feature` is best-effort.
 
-A plugin file looks like ordinary Emacs-style code. Everything at the top level belongs to that file's plugin:
+Hooks run by depth (an ordering number), then the owners' order in `init.ss`; callbacks within one owner keep registration order. Reordering retained owners takes effect on the next run. A callback that errors is removed with its cleanup note and a notice; the others continue. Ordinary Emacs hooks instead abort and keep the failing function; Emacs's pre/post-command hooks are the exception.
+
+A package uses Tuna's prelude and defines a named plugin. Commands, bindings and hooks are registered inside its activation body, not merely by importing the file:
 
 ```scheme
-#lang :tuna
+#lang :tuna/prelude
+(import :tuna/kernel
+        :tuna/plugins/commands/contract
+        :tuna/plugins/keys/contract
+        :tuna/plugins/buffers/contract)
+(export sample-editing)
 
-(defcommand (forward-char (count 1))
-  "Move the cursor COUNT characters forward."
-  (goto-char (+ (point) count)))
-
-(keymap-set global-map "C-f" forward-char)
-
-(add-hook after-save-hook 'announce
-  (lambda () (message "Saved")))
+(defplugin (sample-editing ctx)
+  "One command, its binding, and a hook."
+  requires: [commands-service input-service buffers-service]
+  (defcommand (forward-one-char) "Move right unless already at the end."
+    (when (fx< (point) (point-max))
+      (goto-char (fx1+ (point)))))
+  (keymap-set "C-c f" 'forward-one-char)
+  (context-add-hook! ctx post-command-hook 'announce
+    (lambda () (message "Command finished"))))
 ```
 
 Your own configuration file, `init.ss`, declares which plugins to turn on, and the rest of its code becomes one more plugin, turned on last (built, including reload):

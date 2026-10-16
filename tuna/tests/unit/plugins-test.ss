@@ -417,6 +417,53 @@
           (check (take-log!) => '("a" off "b"))
           (check (plugin-active? greeting-user) => #t))))
 
+    (test-case "failed hook callbacks release their cleanup notes"
+      (call-with-fresh-kernel []
+        (lambda ()
+          (let ((owner #f) (h (new-hook 'receipt-failure)))
+            (defplugin (failure-owner ctx) "Owns a failing callback." (set! owner ctx))
+            (activate-plugin! failure-owner)
+            (for-each
+              (lambda (cycle)
+                (context-add-hook! owner h 'broken (lambda () (error "callback failed")))
+                (check (length (slot-ref owner 'receipt)) => 1)
+                (run-hook h)
+                (check (hook-callback-names h) => [])
+                (check (slot-ref owner 'receipt) => []))
+              '(1 2 3))
+            (deactivate-plugin! failure-owner)
+            (check (slot-ref owner 'receipt) => [])))))
+
+    (test-case "equal-depth hook order follows retained declaration ranks, not registration"
+      (call-with-fresh-kernel []
+        (lambda ()
+          (let ((h (new-hook 'declaration-order)) (seen []) (early-context #f))
+            (defplugin (early-order ctx) "Earlier declaration, registered later."
+              (set! early-context ctx)
+              (context-add-hook! ctx h 'first (lambda () (set! seen (append seen '(first)))))
+              (context-add-hook! ctx h 'second (lambda () (set! seen (append seen '(second))))))
+            (defplugin (late-order ctx) "Later declaration, registered first."
+              (context-add-hook! ctx h 'later (lambda () (set! seen (append seen '(later))))))
+            (activate-plugin! late-order order: 2)
+            (activate-plugin! early-order order: 1)
+            (check (hook-callback-names h) => '(first second later))
+            (run-hook h)
+            (check seen => '(first second later))
+            (set-plugin-order! early-order 3)
+            (set! seen [])
+            (run-hook h)
+            (check seen => '(later first second))
+            (context-add-hook! early-context h 'first
+              (lambda () (set! seen (append seen '(replacement)))))
+            (set! seen [])
+            (run-hook h)
+            (check seen => '(later replacement second))
+            (deactivate-plugin! late-order)
+            (activate-plugin! late-order order: 2)
+            (set! seen [])
+            (run-hook h)
+            (check seen => '(later replacement second))))))
+
     (test-case "hooks run by depth, drop a failing callback, and go with their plugin"
       (call-with-fresh-kernel []
        (lambda ()

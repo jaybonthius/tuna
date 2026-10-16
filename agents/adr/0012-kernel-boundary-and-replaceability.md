@@ -104,6 +104,12 @@ Initialization failure publishes no opaque state/decoration; subsequent build fa
 
 Kernel net change is +68 lines; production net +68 including mechanical `view:` caller migrations. Exact additional generic `view` allowances in the noun test do not permit editor views; only the new named kernel white-box test gains private imports. Parent full tests cover the final source, including the registration-metadata lookup correction.
 
+### Hook receipt cleanup and declaration order (amendment, 2026-10-16)
+
+The approved hook fixes reuse the callback's existing undo identity to remove both a failing callback and its exact context receipt note. Owner cleanup and same-name replacement keep their identity semantics; quits retain their prior separate handling. No generic receipt-removal API is added.
+
+A private `hook-callback.order : owner-order` field shares the context's existing mutable declaration rank. Only the kernel owns callbacks/contexts, so a plugin/library cannot enforce this ordering or cleanup. Equal-depth callbacks compare owner rank, then plugin name for equal-ranked different owners, and original serial within one owner. Reads sort one current-kernel snapshot against current ranks, like entry reads: this accepts per-run sorting rather than introducing a global hook registry or cache-invalidation mechanism. Adding/removing a callback still affects only subsequent snapshots. No facade export or kernel-object field is added; source kernel net +9 lines. Tests reproduce both original failures, cover retained-rank changes/reload/replacement, and keep the lifecycle-quit proof explicitly ordered with the quitter first.
+
 ## Consequences
 
 - "State management" is not a replaceable component: each plugin owns its state objects, the kernel enforces ownership, and saving state is the persistence plugin's job.
