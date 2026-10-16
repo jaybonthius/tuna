@@ -3,7 +3,8 @@ prelude: :gerbil/core
 
 (import :gerbil/core
         :tuna/kernel
-        :tuna/lib/advice)
+        :tuna/lib/advice
+        :tuna/lib/service-advice)
 ;; Keep the core re-export last: a prelude imports exports weakly, in reverse
 ;; order, so the package definitions must win over the core's def and def*.
 (export (rename: def/open def)
@@ -11,7 +12,7 @@ prelude: :gerbil/core
         (rename: def*/open def*)
         redefine
         install-open! open-definition open-function-cell
-        advise! unadvise! advice-for advised-functions
+        advise! unadvise! advice-for advised-functions advised-service-operations
         advice-info advice-info-owner advice-info-name advice-info-kind
         advice-info-depth advice-info-source
         advice-target-info advice-target-info-kind advice-target-info-name
@@ -180,6 +181,15 @@ prelude: :gerbil/core
   ;; The prelude owns normalization, never imports a concept or discovers it at runtime.
   (def (route-advice (target : :t) (action : :symbol) (arguments : :t)) => :t
     (syntax-case target ()
+      ((tag svc operation)
+       (and (eq? (syntax-e #'tag) 'service) (identifier? #'operation))
+       (case action
+         ((inspect) #'(service-operation-advice svc 'operation))
+         (else
+          (with-syntax ((route (if (eq? action 'add) #'add-service-advice! #'remove-service-advice!)))
+            (syntax-case arguments ()
+              ((ctx argument ...)
+               #'(route ctx svc 'operation argument ...)))))))
       ((tag name)
        (and (eq? (syntax-e #'tag) 'command) (identifier? #'name))
        (let (router (stx-identifier #'tag "command-advice-target"))
