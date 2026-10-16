@@ -118,7 +118,7 @@ When a command asks you to choose (a command, later a file or a buffer), it call
 
 ## Changing package code while Tuna runs
 
-**Status:** open functions, explicit redefinition and function/command advice are built (2026-10-15). `M-x describe-advice` currently lists functions; service advice, broader inspection and `C-M-x` are not yet built. Typed service wrappers are built, but provider registration and advice routing are not wired to them yet.
+**Status:** open functions, explicit redefinition and function/command advice are built (2026-10-15). `M-x describe-advice` currently lists functions; service advice, broader inspection and `C-M-x` are not yet built. Typed service wrappers and their provider cache are built; service advice registration and routing are not wired to them yet.
 
 In a module using `#lang :tuna/prelude`, a top-level procedure `def` or `def*` makes an **open function**: calls always reach its current implementation, even from already-compiled code or a reference saved earlier. `redefine` replaces that implementation. A private function can be changed by evaluating inside its module, the supported mechanism behind Gerbil's `enter!`; this does not reload the module or duplicate its state. Exports still decide which names a normal import brings into scope.
 
