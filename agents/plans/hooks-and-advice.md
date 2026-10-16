@@ -2,7 +2,7 @@
 
 Owner-approved brief: [`docs/briefs/2026-10-hooks-and-advice.md`](../../docs/briefs/2026-10-hooks-and-advice.md) (2026-10-15): open functions by default, one `advise!` with function, command and service targets, `redefine`, `describe-advice`, three hook fixes. Evidence: [`agents/research/hooks-advice/`](../research/hooks-advice/) (Emacs, prior art, Gerbil audit, spikes 1–3). Spike code: commit `7d2c5ed` (open-function prelude) and `17eccc1` (private-function probes) on branch `open-def-spike`. Read it; never merge it.
 
-**Paused (2026-10-15):** the owner raised serious complexity/code-quality concerns, delegated judgment and expects a later Opus review. Primary decision: keep the tested function/command checkpoint and stop before new service/provider API changes. Implemented source review range: `c345a96..3ffd7f5`; handoff in `agents/STATUS.md`. Service advice and the remaining stages below remain goals, not authorization to bypass that review.
+**Active (owner clarification, 2026-10-15):** finish the effort; the later Opus review is not a gate. The primary had misunderstood. The owner delegates implementation choices. Service choice: explicit generated metadata for the provider's complete public interface, preserving inherited dispatch paths; no private reflection or runtime discovery. Keep declaration generation, kernel cache and library policy as serial component tasks with tested handoffs. Pre-service review range `c345a96..3ffd7f5` remains available in `agents/STATUS.md`.
 
 ## Invariants (every stage)
 

@@ -98,6 +98,8 @@ The names are provisional; the forms are settled.
 - `advise!` routes command advice to the commands plugin, which keeps it with the command.
 - Service methods need the only kernel change: alongside each service's provider, the kernel keeps an "advised view" of it and hands that out while advice exists. Advice never counts as a new provider, so it doesn't restart anything.
 
+**Service implementation choice (2026-10-15, delegated to the primary agent).** A provider supplies its raw implementation and a generated description of its complete public interface. Tuna uses that description to build an advised wrapper preserving the interface and its parents: wrapping only Input would otherwise hide Keys operations, and wrapping only Messages would hide EchoArea operations. With no advice, callers still receive the original provider. The description comes from ordinary interface declarations, not hidden Gerbil metadata; composition stays in the library, and the kernel only stores the provider metadata and caches its advised view. This is implementation work still to do, not a new provider registry. The owner clarified that the effort should finish now and the later Opus review is not a gate.
+
 **Hooks: three fixes, nothing new.**
 - A callback removed for failing leaves its clean-up note behind. This is the same leak shape as the one just fixed. Remove the note with the callback.
 - Equal-depth callbacks run in registration order, so a reload can reorder them (a `TODO.md` item). Order them by their owners' place in `init.ss`, as entries and advice are ordered.
