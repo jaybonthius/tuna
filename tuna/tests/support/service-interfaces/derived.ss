@@ -1,8 +1,8 @@
 prelude: :gerbil/core
 package: tuna/tests/support/service-interfaces
 (import :std/interface :tuna/kernel "./base")
-(export (service-interface-out Extra Diamond)
-        new-provider events reset-events!)
+(export (service-interface-out Extra Diamond QualifiedExtra)
+        new-provider new-qualified-provider events reset-events!)
 
 (service-interface (Extra Base Auxiliary) (extra) => :fixnum)
 ;; Diamond inheritance must not install the Base path twice.
@@ -37,3 +37,24 @@ package: tuna/tests/support/service-interfaces
 (defmethod {loose provider} (lambda (self value) value))
 
 (def (new-provider) => Diamond (Diamond (provider state: 0)))
+
+(service-interface (QualifiedExtra QualifiedBase QualifiedSibling)
+  (widen (value : :t)) => :symbol
+  (choose (value :~ negative? : :fixnum := -2)) => :fixnum
+  (special) => :fixnum)
+
+(defclass qualified-provider () final: #t)
+(implement QualifiedBase qualified-provider
+  (run (lambda (self) 'base))
+  (widen (lambda (self value) 'base-value))
+  (choose (lambda (self value) (fx+ value 100))))
+(implement QualifiedSibling qualified-provider
+  (run (lambda (self) 'sibling))
+  (choose (lambda (self value) value)))
+(implement QualifiedExtra qualified-provider
+  (run (lambda (self) 'extra-run))
+  (widen (lambda (self value) 'extra-value))
+  (choose (lambda (self value) (fx- value 100)))
+  (special (lambda (self) 7)))
+(def (new-qualified-provider) => QualifiedExtra
+  (QualifiedExtra (qualified-provider)))

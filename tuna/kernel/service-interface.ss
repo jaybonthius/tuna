@@ -73,37 +73,44 @@ prelude: :gerbil/core
         ((Maybe type) #'(:? call type))
         (_ #'(: call return-type)))))
 
-  (def (operation-field (klass : :t) (operation : :t)) => :t
-    (stx-identifier klass "chain-" operation))
+  (def (operation-accessor (klass : :t) (field : :t)) => :t
+    (stx-identifier klass klass "-" field))
 
-  (def (operation-accessor (klass : :t) (operation : :t)) => :t
-    (stx-identifier klass klass "-chain-" operation))
-
-  (def (make-implementation (klass : :t) (signature : :t)) => :t
+  (def (make-implementation (klass : :t) (field : :t) (signature : :t)) => :t
     (syntax-case signature ()
-      ((operation arguments result)
+      ((operation arguments result dispatch)
        (let-values (((out tail) (forward-arguments #'arguments)))
          (with-syntax ((arguments (if tail
                                    (with-syntax (((out ...) out) (tail tail)) #'(out ... . tail))
                                    out))
                        (body (checked-result
                                (forward-call
-                                 (with-syntax ((accessor (operation-accessor klass #'operation)))
+                                 (with-syntax ((accessor (operation-accessor klass field)))
                                    #'(accessor self))
                                  #'arguments)
                                #'result)))
            #'(operation (lambda (self . arguments) body)))))))
 
-  (def (make-chain (interface : :t) (signature : :t)) => :t
+  (def (make-chain (signature : :t)) => :t
     (syntax-case signature ()
-      ((operation arguments result)
+      ((operation arguments result dispatch)
        (let-values (((out tail) (forward-arguments #'arguments)))
-         (with-syntax ((dispatch (stx-identifier interface interface "-" #'operation))
-                       ((out ...) out))
+         (with-syntax (((out ...) out))
            (with-syntax ((call (if tail
                                 (with-syntax ((tail tail)) #'(apply dispatch raw out ... tail))
                                 #'(dispatch raw out ...))))
              #'(: (compose 'operation (lambda arguments => result call)) :procedure)))))))
+
+  (def (quote-path (path : :t)) => :t
+    (with-syntax ((parent (stx-car path))
+                  ((signature ...)
+                   (map (lambda (signature)
+                          (syntax-case signature ()
+                            ((operation arguments result dispatch)
+                             #'(list (syntax operation) (syntax arguments)
+                                     (syntax result) (quote-syntax dispatch)))))
+                        (syntax->list (stx-cdr path)))))
+      #'(list (quote-syntax parent) signature ...)))
 
   (def (expand-service-interface (stx : :t) (head : :t) (specs : :t)) => :t
     (let* ((name (if (identifier? head) head (stx-car head)))
@@ -114,7 +121,21 @@ prelude: :gerbil/core
                                  (apply append (map (lambda (path) (syntax->list (stx-cdr path)))
                                                     inherited)))))
            (klass (stx-identifier name name "::service-view"))
-           (paths (cons (cons name signatures) inherited)))
+           ;; Capture dispatch bindings here, before crossing a public facade.
+           (own-signatures
+            (map (lambda (signature)
+                   (let (parts (syntax->list signature))
+                     [(car parts) (cadr parts) (caddr parts)
+                      (stx-identifier name name "-" (car parts))]))
+                 signatures))
+           (paths (cons (cons name own-signatures) inherited))
+           ;; Equal operation names can dispatch to distinct implementations.
+           ;; Give every qualified path its own base, contract and chain.
+           (path-fields
+            (map (lambda (path)
+                   (gentemps (map stx-car (syntax->list (stx-cdr path)))))
+                 paths))
+           (fields (apply append path-fields)))
       (with-syntax ((head head)
                     (name name)
                     ((spec ...) specs)
@@ -123,29 +144,34 @@ prelude: :gerbil/core
                     (klass klass)
                     (builder (stx-identifier name "build-" name "-service-view"))
                     (constructor (stx-identifier klass "make-" klass))
-                    ((paths ...) paths)
+                    ((quoted-path ...) (map quote-path paths))
                     ((operation ...) (map stx-car signatures))
-                    ((field ...) (map (cut operation-field klass <>) (map stx-car signatures)))
-                    ((chain ...) (map (cut make-chain name <>) signatures))
+                    ((field ...) fields)
+                    ((chain ...) (apply append
+                                        (map (lambda (path)
+                                               (map make-chain (syntax->list (stx-cdr path))))
+                                             paths)))
                     ((init ...) (apply append
-                                       (map (lambda (signature)
-                                              (let (field (operation-field klass (stx-car signature)))
-                                                [(make-keyword (stx-e field)) field]))
-                                            signatures)))
+                                       (map (lambda (field)
+                                              [(make-keyword (stx-e field)) field])
+                                            fields)))
                     ((implementation ...)
-                     (map (lambda (path)
+                     (map (lambda (path path-fields)
                             (with-syntax ((parent (stx-car path))
                                           (target klass)
-                                          ((method ...) (map (cut make-implementation klass <>)
-                                                             (syntax->list (stx-cdr path)))))
+                                          ((method ...)
+                                           (map (lambda (field signature)
+                                                  (make-implementation klass field signature))
+                                                path-fields
+                                                (syntax->list (stx-cdr path)))))
                               #'(implement parent target method ...)))
-                          paths)))
+                          paths path-fields)))
         (syntax/loc stx
           (begin
             (interface head spec ...)
             (defsyntax metadata
               (make-service-declaration
-                paths: (syntax (paths ...))
+                paths: (list quoted-path ...)
                 macro: (lambda (use)
                          (raise-syntax-error #f "Service signatures are declaration metadata" use))))
             (defclass klass ((field : :procedure) ...) final: #t)

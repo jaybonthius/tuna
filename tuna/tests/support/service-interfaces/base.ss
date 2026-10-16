@@ -1,7 +1,7 @@
 prelude: :gerbil/core
 package: tuna/tests/support/service-interfaces
 (import :tuna/kernel)
-(export (service-interface-out Base Auxiliary)
+(export (service-interface-out Base Auxiliary QualifiedBase QualifiedSibling)
         payload new-payload payload-value default-count reset-defaults! next-default)
 
 ;; Ordinary interface inheritance requires its signature types in scope.
@@ -27,3 +27,12 @@ package: tuna/tests/support/service-interfaces
   (loose value))
 
 (service-interface Auxiliary (side) => :string)
+
+;; Same spelling, independent interface-qualified implementations.
+(service-interface QualifiedBase
+  (run) => :symbol
+  (widen (value : :fixnum)) => :symbol
+  (choose (value :~ positive? : :fixnum := 1)) => :fixnum)
+(service-interface QualifiedSibling
+  (run) => :symbol
+  (choose (value :~ zero? : :fixnum := 0)) => :fixnum)
