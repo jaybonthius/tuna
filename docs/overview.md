@@ -1,6 +1,6 @@
 # How Tuna works
 
-**Status (2026-10-14):** the architecture skeleton, the buffers, views and layout work, the kernel's alignment with Cordis, and the split into one package per concept are complete. Built: the small kernel (plugins with receipts, one plugin per service, swapping a service's plugin by restarting and restoring saved data, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the loopback browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML; a toy plain-text renderer proves the slot can be swapped), buffers as a replaceable service (editing, undo and highlights live in the buffers plugin; a toy buffers plugin proves the slot), the layout (splits, tabs, a movable frame with frame marks, pinning, and the minibuffer and echo area as ordinary views; a toy two-view layout proves the slot), saving your session and unsaved text across restarts, and starting from and reloading your `init.ss` (stages 1 and 2 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, `tuna check`, reloading with `reload-config` or `tuna reload`, and, from stage 3, plugin options and the `show-config-report` command). Also built: clicks and buttons, nested containers, `M-x` with completion (a vertical list, any-order matching, and annotations), plugins that may use only the services they declare, and evaluating code into the running session (the entry points; the `eval-buffer` and `M-:` commands come later). Not built yet: files, modes, scrolling strips, and drawing only what is in view. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
+**Status (2026-10-16):** the architecture skeleton, the buffers, views and layout work, the kernel's alignment with Cordis, and the split into one package per concept are complete. Built: the small kernel (plugins with receipts, one plugin per service, swapping a service's plugin by restarting and restoring saved data, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the loopback browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML; a toy plain-text renderer proves the slot can be swapped), buffers as a replaceable service (editing, undo and highlights live in the buffers plugin; a toy buffers plugin proves the slot), the layout (splits, tabs, a movable frame with frame marks, pinning, and the minibuffer and echo area as ordinary views; a toy two-view layout proves the slot), saving your session and unsaved text across restarts, and starting from and reloading your `init.ss` (stages 1 and 2 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, `tuna check`, reloading with `reload-config` or `tuna reload`, and, from stage 3, plugin options and the `show-config-report` command). Also built: open package functions, owned advice and its inspection, clicks and buttons, nested containers, `M-x` with completion (a vertical list, any-order matching, and annotations), plugins that may use only the services they declare, and evaluating code into the running session (the entry points; the `eval-buffer` and `M-:` commands come later). Not built yet: files, modes, scrolling strips, and drawing only what is in view. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
 
 ## The idea
 
@@ -118,13 +118,29 @@ When a command asks you to choose (a command, later a file or a buffer), it call
 
 ## Changing package code while Tuna runs
 
-**Status:** open functions, explicit redefinition and function/command/service advice are built (2026-10-16). `M-x describe-advice` currently lists functions; broader inspection and `C-M-x` are not yet built.
+**Status:** open functions, explicit redefinition, function/command/service advice and all-kind inspection are built (2026-10-16). The demo and command-inspection walkthrough passed in the browser. The interactive `eval-defun`/`C-M-x` command comes later.
 
 In a module using `#lang :tuna/prelude`, a top-level procedure `def` or `def*` makes an **open function**: calls always reach its current implementation, even from already-compiled code or a reference saved earlier. `redefine` replaces that implementation. A private function can be changed by evaluating inside its module, the supported mechanism behind Gerbil's `enter!`; this does not reload the module or duplicate its state. Exports still decide which names a normal import brings into scope.
 
 Only Tuna-prelude modules change this way. Imported Gerbil libraries and Tuna's kernel stay ordinary. `def/closed` keeps normal Gerbil optimization for a measured hot spot. Values, local definitions, methods and structs are unchanged. There is a small measured cost: about one extra microsecond per typed character in the stage-1 comparison, plus longer builds and configuration evaluation. The [language decision](../agents/adr/0001-language-and-extension-surface.md) records the limits and evidence.
 
-`advise!` can wrap an imported open function, or a private one named by module and function. Advice has an owner and name, can run before/after/around a call or change its arguments/results, and is removed when its owner turns off. `redefine` replaces the underlying definition without discarding its advice. Changes are combined when registrations change, not on every call; configuration reload also refreshes their order. Source redefinition and function advice affect the shared package function, not just the editor context that installed them. Ownership determines cleanup. Owned around-advice measured about 0.7 microseconds per scalar call; the unadvised entry stays unchanged. `M-x describe-advice` chooses among advised functions and shows their current layers, owners, kinds, depths and source locations in Help, explicitly outermost first. Functions with the same spelling are distinguished by their sources. An override is flagged because it skips the inner chain. This is a separate `advice-help` plugin; turning it off removes the command, not the advice. Command advice is also built: `(command name)` wraps a command reached through keys or `call-command`, and survives its defining plugin being turned off and back on. Stopping that plugin also cancels a command waiting inside advice. Service advice wraps an operation of whichever plugin currently provides it, preserving all declared public operations and inherited interfaces. It survives provider replacement without itself counting as a provider or restarting dependents; function advice runs inside it. Saved interfaces are snapshots, and provider self-calls bypass service advice. The command/service picker for `describe-advice` is still being implemented.
+`advise!` wraps an imported open function, a private one named by module and function, a `(command name)`, or a `(service service operation)`. Advice has an owner and name, can run before/after/around a call or change its arguments/results, and disappears when its owner turns off. `redefine` replaces the underlying function without discarding its advice. Layers are combined when registrations change, not on every call; configuration reload refreshes their order. Function advice affects the shared module definition. Owned around-advice measured about 0.7 microseconds per scalar call; an unadvised open function keeps its existing fast path.
+
+Command advice lives with the command registry. Keys and `call-command` run it, and another owner's advice survives the defining plugin being turned off and back on. Turning off the command owner also cancels a command waiting inside advice.
+
+Service advice wraps an operation of whichever plugin currently fills its slot. It survives provider replacement without counting as a provider or restarting dependents. A provider describes all the operations it exposes, including extras beyond the slot's minimum contract, so advising input does not hide its key binding operations. Generated wrappers preserve that complete public interface. Without advice, callers get the original provider. Saved interfaces are snapshots; provider self-calls bypass service advice. If function advice also applies, it runs inside the service advice.
+
+![What advice can wrap](diagrams/advice-targets.svg)
+
+*Built today:* function layers follow the shared module definition; command and service layers follow their registries. Gerbil libraries, closed functions and kernel procedures remain ordinary.
+
+`M-x describe-advice` chooses among all three target kinds and shows their current layers, outermost first: owner, name, kind, depth and source when known. It rechecks after the prompt, distinguishes target kinds/sources, and flags overrides that skip the inner chain. Unknown source locations are shown honestly. Turning off its separate `advice-help` plugin removes inspection, not the advice.
+
+The demo configuration enables `hungry-delete`: Backspace removes consecutive literal spaces in one edit, or calls the original command when there are none. One Undo restores the run. `C-c h` turns the plugin off or on; off restores ordinary single-character Backspace. The starter does not enable this demo.
+
+![Backspace with hungry delete enabled](diagrams/advice-backspace.svg)
+
+*Built and checked in the browser:* this is the enabled path; the combined command is prepared when advice changes. The interactive `C-M-x` command is still planned.
 
 ## Plugins: how things get added and removed
 
@@ -147,10 +163,10 @@ A package uses Tuna's prelude and defines a named plugin. Commands, bindings and
 (defplugin (sample-editing ctx)
   "One command, its binding, and a hook."
   requires: [commands-service input-service buffers-service]
-  (defcommand (forward-one-char) "Move right unless already at the end."
+  (define-command ctx (forward-one-char) "Move right unless already at the end."
     (when (fx< (point) (point-max))
       (goto-char (fx1+ (point)))))
-  (keymap-set "C-c f" 'forward-one-char)
+  (keymap-set ctx "C-c f" 'forward-one-char)
   (context-add-hook! ctx post-command-hook 'announce
     (lambda () (message "Command finished"))))
 ```
@@ -288,6 +304,10 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 - **Contract**: what a service slot promises, written down so another plugin can fill it.
 - **Shared library**: convenience code, such as timers and jobs, built only from the kernel's public parts.
 - **Hook**: a named list of callbacks that run when something happens, such as a buffer changing or a plugin turning on.
+- **Open function**: a named package function whose ordinary callers follow its current definition.
+- **Advice**: a removable, owned layer around an open function, command or service operation.
+- **Advice kind**: what a layer does, such as running before, after or around a call, or filtering its arguments/results.
+- **Depth**: an ordering number; lower hook depths run first, and lower advice depths wrap higher ones.
 - **Input item**: one unit of input from a browser tab, such as a key press; the kernel queues it without looking inside.
 - **Package**: a directory with its own `gerbil.pkg`; Gerbil names and builds its modules together. **Concept package**: one concept's contract and default plugin, under `plugins/<concept>/`.
 - **Session slot**: a named piece of one plugin's state that the session plugin saves while Tuna is idle and on exit, and hands back on the next start.

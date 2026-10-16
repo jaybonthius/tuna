@@ -31,14 +31,14 @@ classes: {
 
 plugin: "Your plugin\nadds advice; turning it off removes it" {class: yes}
 
-can: "Can be advised and redefined" {
-  cmd: "A command\nkept by the commands plugin" {class: yes}
-  svc: "A service method\nkept by the kernel's service list" {class: yes}
-  decl: "Any function in a Tuna package, private ones too\nnamed by module and function" {class: yes}
+can: "Built: can be advised" {
+  cmd: "A command\nlayers kept by the commands plugin" {class: yes}
+  svc: "A service operation\nlayers live with its service slot" {class: yes}
+  decl: "An open package function, private too\nshared by module and name; also supports redefine" {class: yes}
 }
 
 cannot: "Cannot be advised" {
-  plain: "Gerbil's own libraries\nand functions marked def/closed" {class: no}
+  plain: "Ordinary Gerbil modules\nand functions marked def/closed" {class: no}
   kernel: "Tuna's kernel\nchange it through hooks and services" {class: no}
 }
 
