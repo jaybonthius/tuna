@@ -12,7 +12,7 @@
                               (retiring-task : :box)) final: #t)
 
 (def (prune-target! (self : command-registry) (name : :symbol) (target : command-target)) => :void
-  (when (and (null? target.definitions) (null? (advice-state-records target.state))
+  (when (and (null? target.definitions) (not (advice-state-has-owners? target.state))
              (eq? (hash-get self.targets name) target))
     (hash-remove! self.targets name)))
 

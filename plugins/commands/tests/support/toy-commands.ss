@@ -12,7 +12,7 @@ prelude: :gerbil/core
                               (retiring-task : :box)) final: #t)
 
 (def (toy-prune! (self : toy-command-registry) (name : :symbol) (target : toy-target)) => :void
-  (when (and (null? target.definitions) (null? (advice-state-records target.state))
+  (when (and (null? target.definitions) (not (advice-state-has-owners? target.state))
              (eq? (cond ((assq name self.targets) => cdr) (else #f)) target))
     (set! self.targets (filter (lambda (row) (not (eq? (cdr row) target))) self.targets))))
 

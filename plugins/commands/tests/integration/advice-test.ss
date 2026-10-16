@@ -1,5 +1,5 @@
 #lang :tuna/prelude
-(import :std/test :std/error (only-in :tuna/lib/advice refresh-advice!) :tuna/kernel :tuna/plugins/commands/contract
+(import :std/test :std/error (only-in :gerbil/runtime/mop slot-ref) (only-in :tuna/lib/advice refresh-advice!) :tuna/kernel :tuna/plugins/commands/contract
         :tuna/plugins/commands/plugin "../support/toy-commands" "../support/advice-client"
         "../../../../tuna/tests/support/kernel" "../../../../tuna/tests/support/string-input")
 (export advice-test)
@@ -238,25 +238,48 @@
            (check (call-command 'action) => 'base)
            (check (advice-target-info-advice (client-advice)) => [])))))
 
-    (test-case "no empty name cache after removal, cleanup or a rejected registration"
+    (test-case "absent targets reuse owner receipt buckets across three add/remove cycles"
+      (with-provider
+       (lambda ()
+         (let ((ctx #f) (identity #f))
+           (defplugin (advisor owner) "Owns absent-target advice." requires: [commands-service]
+             (set! ctx owner))
+           (activate-plugin! advisor)
+           (check (length (slot-ref ctx 'receipt)) => 0)
+           (for-each
+            (lambda (cycle)
+              (advise! ctx (command action) 'one before: void)
+              (unless identity
+                (set! identity (advice-target-info-identity (advice-for (command action)))))
+              (check (eq? identity (advice-target-info-identity (advice-for (command action)))) => #t)
+              (check (length (slot-ref ctx 'receipt)) => 2)
+              (unadvise! ctx (command action) 'one)
+              (check (layers) => [])
+              (check (advised-commands) => [])
+              ;; Empty records still have a live owner's two cleanup notes.
+              (check (eq? identity (advice-target-info-identity (advice-for (command action)))) => #t)
+              (check (length (slot-ref ctx 'receipt)) => 2))
+            '(1 2 3))
+           (deactivate-plugin! advisor)
+           (check (length (slot-ref ctx 'receipt)) => 0)
+           (check (advised-commands) => [])
+           (check (eq? (advice-target-info-identity (advice-for (command action)))
+                       (advice-target-info-identity (advice-for (command action)))) => #f)))))
+
+    (test-case "inspection and rejected registration do not cache possible targets"
       (with-provider
        (lambda ()
          (let (ctx #f)
-           (defplugin (advisor owner) "Removable absent-target advice." requires: [commands-service]
-             (set! ctx owner)
-             (advise! ctx (command action) 'one before: void))
+           (defplugin (advisor owner) "Owns no installed advice." requires: [commands-service]
+             (set! ctx owner))
            (activate-plugin! advisor)
-           (unadvise! ctx (command action) 'one)
            (check (eq? (advice-target-info-identity (advice-for (command action)))
                        (advice-target-info-identity (advice-for (command action)))) => #f)
            (check-exception (command-advice-target add: ctx 'action 'invalid 'invalid void) Error?)
            (check (eq? (advice-target-info-identity (advice-for (command action)))
                        (advice-target-info-identity (advice-for (command action)))) => #f)
-           (advise! ctx (command action) 'one before: void)
-           (deactivate-plugin! advisor)
-           (check (advised-commands) => [])
-           (check (eq? (advice-target-info-identity (advice-for (command action)))
-                       (advice-target-info-identity (advice-for (command action)))) => #f)))))
+           (check (length (slot-ref ctx 'receipt)) => 0)
+           (check (advised-commands) => [])))))
 
     (test-case "an advised command restarting its own owner retires quietly"
       (with-provider
