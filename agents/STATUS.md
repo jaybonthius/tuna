@@ -1,6 +1,14 @@
 # Status and handoff
 
-Read this first when resuming work. Last updated 2026-10-14. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
+Read this first when resuming work. Last updated 2026-10-15. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
+
+## Current work: hooks and advice
+
+Approved brief: `docs/briefs/2026-10-hooks-and-advice.md`; four-stage plan: `agents/plans/hooks-and-advice.md`. Owner chose open functions by default only in Tuna-prelude modules (private functions included), `def/closed` for measured hot spots, and one `advise!` with function, command and service targets. Gerbil libraries and Tuna's kernel stay ordinary. Module-context evaluation uses the supported `enter!` mechanism. Fall back to explicit `defadvisable` only after reporting a genuine complexity or idiom problem to the owner. Gerbil return-type issues are deferred in `TODO.md`, not prerequisites.
+
+Stage 1 is **not merged**: branch `open-functions`, worktree `/home/jay/Code/workbench-gerbil/tuna__open-functions`, candidate commits `95106e2` and `db09673`. Parent code review found no blocker yet; performance acceptance is incomplete. Follow-up worker run `270a56dd-c187-4789-a4fb-129f9aaddb9a` is diagnosing the remaining gaps with paired measurements, not another clean-build series. Report: `/home/jay/Code/workbench-gerbil/scratch/hooks-advice-stage1/report.md`. Both variants had the same unchanged web-test failure once and passed on retry; report retries honestly. The gerbil-lsp tooling check is blocked by its missing `:std/text/json` import; tool fixes are out of scope. The approved compile-time metadata solution is a small `setq-macro` subclass read by `syntax-local-value`, not marker arguments or a runtime registry.
+
+The primary agent is now Sol (owner request after Anthropic quota exhaustion). Leave active workers running, use OpenAI agents for remaining work, and review/test each stage before local merge. Next: finish stage-1 performance gate and parent test, then advice composition/function targets, command/service targets, hook fixes and records/browser demo. `eval-defun`/`C-M-x`, the profiler and Gerbil fixes are not part of this effort. The older milestone notes below are historical where they conflict with this section.
 
 ## Where things stand
 
