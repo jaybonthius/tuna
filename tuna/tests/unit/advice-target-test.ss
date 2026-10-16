@@ -1,5 +1,5 @@
 prelude: :gerbil/core
-(import :std/test :std/error :std/list/list
+(import :std/test :std/error :std/list/list :std/source
         (only-in :gerbil/expander current-expander-context import-module)
         (only-in :gerbil/runtime/syntax syntax-error?)
         :tuna/kernel :tuna/lib/advice
@@ -45,6 +45,36 @@ prelude: :gerbil/core
         (check (fixture-result 3) => 3)
         (check (eq? (advice-target-info-identity selected)
                     (advice-target-info-identity (fixture-advice))) => #t)))
+    (test-case "local add/remove/inspect bindings cannot capture source route controls"
+      (parameterize ((current-expander-context
+                      (import-module
+                       (path-expand "../support/open-functions/command-caller.ss"
+                                    (this-source-directory)) #f #t)))
+        (let* ((forms
+                '((lambda (ctx)
+                    (let ((add #f) (remove #f) (inspect #f))
+                      (advise! ctx (command fixture) 'shadowed
+                        around: (lambda (original n) (+ 20 (original n))))))
+                  (lambda (ctx)
+                    (let ((add #f) (remove #f) (inspect #f))
+                      (advice-for (command fixture))))
+                  (lambda (ctx)
+                    (let ((add #f) (remove #f) (inspect #f))
+                      (unadvise! ctx (command fixture) 'shadowed)))))
+               (routes (map (lambda (form) (with-catch values (lambda () (eval form)))) forms)))
+          (check (map procedure? routes) => '(#t #t #t))
+          (when (every procedure? routes)
+            (let (owner #f)
+              (defplugin (shadowed-source-owner ctx) "Source routes under colliding local bindings."
+                (set! owner ctx))
+              (call-with-fresh-kernel [shadowed-source-owner]
+                (lambda ()
+                  ((car routes) owner)
+                  (check (fixture-result 2) => 22)
+                  (check (map advice-info-name
+                              (advice-target-info-advice ((cadr routes) owner))) => '(shadowed))
+                  ((caddr routes) owner)
+                  (check (fixture-result 2) => 2))))))))
     (test-case "missing commands contract fails clearly for every route"
       (parameterize ((current-expander-context (import-module ':tuna/prelude #f #t)))
         (for-each
@@ -52,7 +82,7 @@ prelude: :gerbil/core
            (let (failure (with-catch values (lambda () (eval form) #f)))
              (check failure ? syntax-error?)
              (check (string-contains (error-message failure)
-                      "Command advice requires importing command-advice-target") ? integer?)))
+                      "Command advice requires importing command-advice-target without renaming") ? integer?)))
          '((advise! #f (command fixture) 'missing before: (lambda args (void)))
            (unadvise! #f (command fixture) 'missing)
            (advice-for (command fixture))))))

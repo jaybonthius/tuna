@@ -17,10 +17,10 @@ package: tuna/tests/support/open-functions
   (:- (apply effective args) :values))
 
 ;; Private helpers must stay hygienic in separately compiled consumers.
-(defrules command-advice-target (add remove inspect)
-  ((_ add ctx target name kind callback option ...)
+(defrules command-advice-target ()
+  ((_ add: ctx target name kind callback option ...)
    (register-advice! ctx (fixture-state target) name kind callback option ...))
-  ((_ remove ctx target name)
+  ((_ remove: ctx target name)
    (remove-advice! ctx (fixture-state target) name))
-  ((_ inspect target)
+  ((_ inspect: target)
    (inspect-advice (fixture-state target))))

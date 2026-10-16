@@ -175,7 +175,8 @@ prelude: :gerbil/core
       (name (identifier? #'name) (open-binding-cell-for #'name))
       (_ (raise-syntax-error #f "Expected an open function or (function module name)" target))))
 
-  ;; Concept contracts provide the router in the target head's use-site context.
+  ;; The contract router must be imported as command-advice-target at the use site.
+  ;; Keyword controls cannot be captured by callers' add/remove/inspect bindings.
   ;; The prelude owns normalization, never imports a concept or discovers it at runtime.
   (def (route-advice (target : :t) (action : :symbol) (arguments : :t)) => :t
     (syntax-case target ()
@@ -184,8 +185,12 @@ prelude: :gerbil/core
        (let (router (stx-identifier #'tag "command-advice-target"))
          (unless (syntax-local-value router (lambda (_) #f))
            (raise-syntax-error #f
-             "Command advice requires importing command-advice-target from the commands contract" target))
-         (with-syntax ((router router) (route-action (datum->syntax #'tag action)))
+             "Command advice requires importing command-advice-target without renaming from the commands contract" target))
+         (with-syntax ((router router)
+                       (route-action (case action
+                                       ((add) #'add:)
+                                       ((remove) #'remove:)
+                                       ((inspect) #'inspect:))))
            (if (eq? action 'inspect)
              #'(router route-action 'name)
              (syntax-case arguments ()
