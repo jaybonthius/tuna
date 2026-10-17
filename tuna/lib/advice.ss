@@ -1,4 +1,6 @@
-;;; Module-wide function composition; receipts own contributions, not scope.
+;;; Owned advice on targets: open functions here, and any registry that
+;;; holds an advice-target (the commands plugin does). Receipts own each
+;;; contribution; the target decides what its composition replaces.
 prelude: :gerbil/core
 
 (import :std/error
@@ -6,13 +8,14 @@ prelude: :gerbil/core
         (only-in :gerbil/expander import-module current-expander-context)
         :tuna/kernel)
 (export open-function new-open-function open-function-base open-function-effective
-        replace-open-function! resolve-open-function
-        register-function-advice! remove-function-advice!
-        inspect-function-advice advised-functions compose-advice refresh-function-advice!
+        open-function-target replace-open-function! resolve-open-function
+        advice-target new-advice-target advice-target? advice-target-records
+        register-advice! remove-advice! inspect-advice advised-targets
+        compose-advice refresh-advice!
         advice-info advice-info-owner advice-info-name advice-info-kind
         advice-info-depth advice-info-source
-        function-advice-info function-advice-info-name function-advice-info-source
-        function-advice-info-advice
+        advice-target-info advice-target-info-kind advice-target-info-name
+        advice-target-info-source advice-target-info-advice advice-target-info-target
         advice-error?)
 
 (deferror-class AdviceError () advice-error?)
@@ -22,24 +25,40 @@ prelude: :gerbil/core
                        (depth : :fixnum) (source :? :string)
                        (ctx : context) (callback : :procedure))
   final: #t)
-(defstruct function-advice-info ((name : :symbol) (source :? :string) (advice : :list))
-  final: #t)
 (defstruct advice-owner ((records : :list)) final: #t)
+;; CHANGED receives the installed records, outermost first, after every
+;; change, and rebuilds whatever the target composes. KIND, NAME and SOURCE
+;; only describe the target to people.
+(defstruct advice-target ((kind : :symbol) (name : :symbol) (source :? :string)
+                         (owners : entry-table) (records : :list)
+                         (changed : :procedure))
+  final: #t)
+(defstruct advice-target-info ((kind : :symbol) (name : :symbol) (source :? :string)
+                              (advice : :list) (target : advice-target))
+  final: #t)
 (defstruct open-function ((base : :procedure) (effective : :procedure)
-                         (name : :symbol) (source :? :string) (owners : entry-table)
-                         (advice : :list))
+                         (target : advice-target))
   final: #t)
 
-;; Only advised cells are enumerable; ordinary open functions are not registered.
-(def advised-cells [])
+;; Only targets with installed advice are listed; refreshing ranks visits them.
+(def advised [])
+
+(def (new-advice-target (kind : :symbol) (name : :symbol) (source :? :string)
+                        (changed : :procedure)) => advice-target
+  (make-advice-target kind name source (new-entry-table) [] changed))
 
 (def (new-open-function (base : :procedure) (name : :symbol) (source :? :string)) => open-function
-  (make-open-function base base name source (new-entry-table) []))
+  (letrec ((target (new-advice-target 'function name source
+                     (lambda (records)
+                       (set! (open-function-effective cell)
+                         (compose-advice (open-function-base cell) records)))))
+           (cell (make-open-function base base target)))
+    cell))
 
-(def (ordered-advice (cell : open-function)) => :list
+(def (ordered-advice (target : advice-target)) => :list
   ;; Earlier declarations are outermost; names break ties within one owner.
-  ;; All ordering work happens on changes, never on function calls.
-  (let* ((entries (reverse (entry-table-entries cell.owners 'advice)))
+  ;; All ordering work happens on changes, never on calls.
+  (let* ((entries (reverse (entry-table-entries target.owners 'advice)))
          (owners (map entry-owner entries)))
     (list-sort
      (lambda ((a : advice-info) (b : advice-info))
@@ -52,67 +71,68 @@ prelude: :gerbil/core
                    (advice-owner-records (: (entry-value e) advice-owner)))
                  entries))))
 
-(def (inspect-function-advice (cell : open-function)) => function-advice-info
+(def (inspect-advice (target : advice-target)) => advice-target-info
   ;; Inspection describes the installed chain, even between rank updates and refresh.
-  (make-function-advice-info cell.name cell.source cell.advice))
+  (make-advice-target-info target.kind target.name target.source target.records target))
 
-(def (advised-functions) => :list
-  (map inspect-function-advice advised-cells))
+(def (advised-targets) => :list
+  (map inspect-advice advised))
 
-(def (refresh-open-function! (cell : open-function)) => :void
-  (let (records (ordered-advice cell))
-    (set! cell.effective (compose-advice cell.base records))
-    (set! cell.advice records)
-    (set! advised-cells
-      (if (null? records) (remq cell advised-cells)
-          (if (memq cell advised-cells) advised-cells (cons cell advised-cells))))))
+(def (refresh-target! (target : advice-target)) => :void
+  (let (records (ordered-advice target))
+    (set! target.records records)
+    (set! advised
+      (cond ((null? records) (remq target advised))
+            ((memq target advised) advised)
+            (else (cons target advised))))
+    (target.changed records)))
 
 ;; Configuration calls this once after a batch of owner declaration-rank updates.
-(def (refresh-function-advice!) => :void
-  (for-each refresh-open-function! advised-cells))
+(def (refresh-advice!) => :void
+  (for-each refresh-target! advised))
 
 (def (replace-open-function! (cell : open-function) (replacement : :procedure)) => :void
   (set! cell.base replacement)
-  (refresh-open-function! cell))
+  (refresh-target! cell.target))
 
 (def (resolve-open-function (module : :t) (name : :symbol)) => open-function
   ;; The documented enter! path uses the existing module instance, never reloads.
   (parameterize ((current-expander-context (import-module module #f #t)))
     (: (eval (list 'open-function-cell name)) open-function)))
 
-(def (find-advice-owner (cell : open-function) (ctx : context)) => (Maybe advice-owner)
+(def (find-advice-owner (target : advice-target) (ctx : context)) => (Maybe advice-owner)
   (let (found (find (lambda ((e : entry))
                      (eq? (entry-owner e) (context-plugin-name ctx)))
-                   (entry-table-entries cell.owners 'advice)))
+                   (entry-table-entries target.owners 'advice)))
     (and found (: (entry-value found) advice-owner))))
 
-(def (register-function-advice! (ctx : context) (cell : open-function)
-                                (name : :symbol) (kind : :symbol) (callback : :procedure)
-                                depth: (depth : :fixnum := 0)
-                                source: (source :? :string := #f)) => :void
+(def (register-advice! (ctx : context) (target : advice-target)
+                       (name : :symbol) (kind : :symbol) (callback : :procedure)
+                       depth: (depth : :fixnum := 0)
+                       source: (source :? :string := #f)) => :void
   (unless (memq kind '(before after around override filter-args filter-return
                       before-while before-until after-while after-until))
     (error "Unknown advice kind" kind))
-  (let* ((bucket (or (find-advice-owner cell ctx)
+  (let* ((bucket (or (find-advice-owner target ctx)
                      (let (new (make-advice-owner []))
                        ;; Receipt order matters: remove the entry, then recompose.
                        ;; One pair per owner/target; replacements add no inverses.
-                       (context-defer! ctx (lambda () (refresh-open-function! cell)))
-                       (context-add-entry! ctx cell.owners 'advice new)
+                       (context-defer! ctx (lambda () (refresh-target! target)))
+                       (context-add-entry! ctx target.owners 'advice new)
                        new)))
          (record (make-advice-info (context-plugin-name ctx) name kind depth source ctx callback)))
     (set! (advice-owner-records bucket)
       (cons record (filter (lambda ((old : advice-info)) (not (eq? old.name name)))
                            (advice-owner-records bucket))))
-    (refresh-open-function! cell)))
+    (refresh-target! target)))
 
-(def (remove-function-advice! (ctx : context) (cell : open-function) (name : :symbol)) => :void
-  (let (bucket (find-advice-owner cell ctx))
+(def (remove-advice! (ctx : context) (target : advice-target) (name : :symbol)) => :void
+  (let (bucket (find-advice-owner target ctx))
     (when bucket
       (set! (advice-owner-records bucket)
         (filter (lambda ((old : advice-info)) (not (eq? old.name name)))
                 (advice-owner-records bucket)))
-      (refresh-open-function! cell))))
+      (refresh-target! target))))
 
 (def (raise-advice-failure (record : advice-info) (cause : :t)) => :void
   (raise (AdviceError "Advice failed (owner, name, cause)"

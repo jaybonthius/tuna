@@ -23,7 +23,7 @@ prelude: :gerbil/core
         :tuna/kernel
         :tuna/lib/configuration
         :tuna/lib/plugin-options
-        (only-in :tuna/lib/advice refresh-function-advice!)
+        (only-in :tuna/lib/advice refresh-advice!)
         (except-in :tuna/configuration activate-plugin!)
         (rename-in :tuna/plugin-use (activate-checked-plugin! activate-plugin!))
         :tuna/config-blocks)
@@ -889,7 +889,7 @@ prelude: :gerbil/core
                 (set-plugin-order! (declaration-block d) rank)))
             (loop (cdr rest) (fx1+ rank))))
         (set-plugin-order! (configuration-user-code config) (fx1+ (length new-declarations))))
-      (refresh-function-advice!))
+      (refresh-advice!))
     (unwind-protect
       (begin
         (when follower

@@ -1,13 +1,12 @@
 (import :std/test :std/error :std/source :std/list/list
         (only-in :gerbil/runtime/mop slot-ref)
         (only-in :gerbil/expander current-expander-context import-module)
-        (only-in :gerbil/runtime/syntax syntax-error?)
         :tuna/kernel
-        (only-in :tuna/lib/advice refresh-function-advice!)
-        (only-in :tuna/prelude advise! unadvise! function-advice advised-functions
+        (only-in :tuna/lib/advice refresh-advice!)
+        (only-in :tuna/prelude advise! unadvise! advice-for advised-targets
                  advice-info-owner advice-info-name advice-info-kind advice-info-depth
-                 advice-info-source function-advice-info-name function-advice-info-source
-                 function-advice-info-advice advice-error? open-definition install-open! redefine)
+                 advice-info-source advice-target-info-name advice-target-info-source
+                 advice-target-info-advice advice-error? open-definition install-open! redefine)
         "../support/kernel"
         "../support/open-functions/advice-target"
         "../support/open-functions/target"
@@ -30,7 +29,7 @@
 (def (caught (thunk : :procedure)) => :t
   (with-catch values (lambda () (thunk) #f)))
 (def (names) => :list
-  (map advice-info-name (function-advice-info-advice (function-advice probe))))
+  (map advice-info-name (advice-target-info-advice (advice-for probe))))
 
 (def advice-test
   (test-suite "tuna/lib/advice"
@@ -120,7 +119,7 @@
             (activate-plugin! earlier order: 10)
             (check (names) => '(outer a z b))
             (check (advice-info-source
-                    (car (function-advice-info-advice (function-advice probe)))) ? string?)
+                    (car (advice-target-info-advice (advice-for probe)))) ? string?)
             (probe 1)
             (check log => '(outer a z b))
             (deactivate-plugin! earlier)
@@ -142,7 +141,7 @@
             (check (names) => '(first second))
             (probe 1)
             (check log => '(first second))
-            (refresh-function-advice!)
+            (refresh-advice!)
             (check (names) => '(second first))
             (set! log [])
             (probe 1)
@@ -189,7 +188,7 @@
             (check (length (slot-ref owner 'receipt)) => 2)
             (unadvise! owner probe 'same)
             (check (probe 100) => 100)
-            (check (advised-functions) => '())
+            (check (advised-targets) => '())
             (advise! owner probe 'same override: (lambda args 'new))
             (check (length (slot-ref owner 'receipt)) => 2)
             (check (probe) => 'new))))
@@ -294,15 +293,17 @@
           (lambda ()
             (check (outside-private 1) => 15)
             (check (eq? context (current-expander-context)) => #t)
-            (let* ((info (car (advised-functions)))
-                   (record (car (function-advice-info-advice info))))
-              (check (function-advice-info-name info) => 'secret)
-              (check (function-advice-info-source info) ? string?)
+            (let* ((info (car (advised-targets)))
+                   (record (car (advice-target-info-advice info))))
+              (check (advice-target-info-name info) => 'secret)
+              (check (advice-target-info-source info) ? string?)
               (check (advice-info-owner record) => 'private-path)
               (check (advice-info-name record) => 'private)
               (check (advice-info-kind record) => 'around)
               (check (advice-info-depth record) => -2))
             (parameterize ((current-expander-context (import-module target-path #f #t)))
               (check (eq? token (eval 'token)) => #t)
-              (check-exception (eval '(function-advice closed)) syntax-error?)))))
-      (check (advised-functions) => '()))))
+              (check-exception (eval '(advice-for closed))
+                               (lambda (e) (and (error? e)
+                                                (string-prefix? "Not an advice target" (error-message e)))))))))
+      (check (advised-targets) => '()))))

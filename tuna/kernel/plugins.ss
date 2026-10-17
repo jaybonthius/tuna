@@ -185,8 +185,11 @@ prelude: :gerbil/core
          (old (find (lambda ((c : hook-callback))
                       (and (eq? (hook-callback-owner c) owner) (eq? (hook-callback-name c) name)))
                     (current-hook-callbacks h)))
-         (callback (add-hook-callback! h name owner depth (context-bind ctx procedure)))
-         (undo (lambda () (remove-hook-callback! h callback))))
+         (callback (add-hook-callback! h name owner (context-order ctx) depth (context-bind ctx procedure)))
+         (undo (lambda ()
+                 (remove-hook-callback! h callback)
+                 (set! (context-receipt ctx)
+                   (remq (hook-callback-undo callback) (context-receipt ctx))))))
     (when old
       (set! (context-receipt ctx) (remq (hook-callback-undo old) (context-receipt ctx))))
     (set! (hook-callback-undo callback) undo)
@@ -216,8 +219,10 @@ prelude: :gerbil/core
          (cond
           ((hold-quit! e) (void))
           ((and (quit-condition? e) (current-task)) (raise e))
-          (else (remove-hook-callback! h callback)
-         (report-failure-message! (string-append "Hook " (symbol->string (hook-name h)) " callback "
+          (else
+           (let (undo (hook-callback-undo callback))
+             (if undo (undo) (remove-hook-callback! h callback)))
+           (report-failure-message! (string-append "Hook " (symbol->string (hook-name h)) " callback "
                                  (symbol->string (hook-callback-name callback)) " (from "
                                  (symbol->string (hook-callback-owner callback))
                                  ") failed and was removed: " (exception-summary e))))))

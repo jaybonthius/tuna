@@ -1,9 +1,40 @@
 #lang :tuna/prelude
 ;;; Command registry and thread-scoped activations (ADR 8, ADR 14).
-(import :std/interface :tuna/kernel :tuna/plugins/commands/contract)
+(import :std/interface (only-in :gerbil/runtime/hash HashTable)
+        :tuna/kernel :tuna/lib/advice :tuna/plugins/commands/contract)
 (export commands)
 
-(defclass command-registry ((entries : entry-table) (last :? :symbol)) final: #t)
+(defclass command-registry ((entries : entry-table) (advice : HashTable) (last :? :symbol)) final: #t)
+;; A command's advice and its composition, cached for the definition it was
+;; built from: redefining the command or changing the advice rebuilds it.
+(defclass command-advice ((target : advice-target) (base :? :procedure) (effective :? :procedure))
+  final: #t)
+
+(def (command-advice-for (self : command-registry) (name : :symbol)) => command-advice
+  (or (hash-get self.advice name)
+      (letrec ((state (command-advice
+                       target: (new-advice-target 'command name #f
+                                 (lambda (records)
+                                   (set! (command-advice-base state) #f)
+                                   (set! (command-advice-effective state) #f)))
+                       base: #f effective: #f)))
+        (hash-put! self.advice name state)
+        state)))
+
+;; BASE itself while NAME has no advice, so unadvised commands pay nothing.
+(def (advised-procedure (self : command-registry) (name : :symbol) (base : :procedure)) => :procedure
+  (let (found (hash-get self.advice name))
+    (if (not found) base
+      (using (state found : command-advice)
+        (let (records (advice-target-records state.target))
+          (cond
+           ((null? records) base)
+           ((eq? state.base base) (:- state.effective :procedure))
+           (else
+            (let (effective (compose-advice base records))
+              (set! state.base base)
+              (set! state.effective effective)
+              effective))))))))
 (defclass activation ((registry : command-registry)
                       (name : :symbol)
                       (previous :? :symbol)
@@ -27,7 +58,8 @@
           (unwind-protect
             (begin
               (run-hook pre-command-hook)
-              (unwind-protect (c.procedure) (run-hook post-command-hook)))
+              (unwind-protect ((advised-procedure self name c.procedure))
+                (run-hook post-command-hook)))
             ;; A nested programmatic invocation replaces the wrapper for
             ;; repetition (e.g. M-x). Prompt keystrokes run in other tasks.
             (begin
@@ -41,6 +73,8 @@
                      (context-add-entry! ctx self.entries (command-name c) c
                                          doc: (command-doc c) source: source)
                      (void)))
+  (advice-target (lambda (self name)
+                   (using (state (command-advice-for self name) : command-advice) state.target)))
   (command-entry (lambda (self name) (entry-table-ref self.entries name)))
   (command-names (lambda (self) (entry-table-names self.entries)))
   (call-command (lambda (self name) (invoke! self name)))
@@ -54,4 +88,4 @@
   "Defines, lists and invokes commands, independently of key bindings."
   provides: [commands-service]
   (context-provide! ctx commands-service
-                    (Commands (command-registry entries: (new-entry-table) last: #f))))
+                    (Commands (command-registry entries: (new-entry-table) advice: (make-hash-table-eq) last: #f))))

@@ -86,7 +86,7 @@
 (use-plugin annotations)
 (use-plugin echo-area)           ; in the bar, under the minibuffer
 (use-plugin help-buffer)         ; *Help*; C-h q closes it
-(use-plugin advice-help)         ; M-x describe-advice: current function advice
+(use-plugin advice-help)         ; M-x describe-advice: function and command advice
 (use-plugin reload-config        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)
           (keymap-set "C-c C-r" 'show-config-report))
