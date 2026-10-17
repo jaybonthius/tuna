@@ -377,4 +377,4 @@
                : global-keys)
     (context-define-command! ctx 'keyboard-quit signal-quit
                              doc: "Cancel the current key sequence or command." source: (this-source))
-    (context-provide! ctx input-service (Keys self) view: Keys-service-view)))
+    (context-provide! ctx input-service (Keys self))))

@@ -1,10 +1,10 @@
 ;;; Named commands, independent of the input provider (ADR 8, ADR 14).
 prelude: :gerbil/core
 
-(import :std/interface :tuna/kernel :tuna/lib/advice)
+(import :std/interface :tuna/kernel)
 (export (struct-out command)
-        (service-interface-out Commands)
-        commands-service command-advice-target advised-commands context-define-command! define-command defcommand
+        (interface-out Commands)
+        commands-service context-define-command! define-command defcommand
         command-entry command-ref command-names call-command this-command last-command
         pre-command-hook post-command-hook)
 
@@ -21,14 +21,8 @@ prelude: :gerbil/core
 (def pre-command-hook (new-hook 'pre-command doc: "Before each command body; this-command identifies it."))
 (def post-command-hook (new-hook 'post-command doc: "After each command body, before the following redraw."))
 
-(service-interface Commands
+(interface Commands
   (define-command! (ctx : context) (c : command) (source :? :string)) => :void
-  (add-advice! (ctx : context) (name : :symbol) (advice-name : :symbol)
-               (kind : :symbol) (callback : :procedure)
-               source: (source :? :string := #f) depth: (depth : :fixnum := 0)) => :void
-  (remove-advice! (ctx : context) (name : :symbol) (advice-name : :symbol)) => :void
-  (inspect-advice (name : :symbol)) => advice-target-info
-  (advised-commands) => :list
   (command-entry (name : :symbol)) => (Maybe entry)
   (command-names) => :list
   (call-command (name : :symbol)) => :t
@@ -42,27 +36,22 @@ prelude: :gerbil/core
                               doc: (doc : :string := "")
                               visible?: (visible? : :procedure := (lambda (c origin) #t))
                               source: (source :? :string := #f)) => :void
-  (:- (with-service-provider (provider commands-service Commands)
-        (Commands-define-command! provider ctx
-          (make-command name: name procedure: procedure doc: doc visible?: visible?) source)) :void))
-
-;; The prelude supplies normalized callbacks and source. Keyword controls and
-;; definition-site operation bindings cannot capture the caller's identifiers.
-(defrules command-advice-target ()
-  ((_ add: ctx name advice-name kind callback option ...)
-   (with-service-provider (provider commands-service Commands)
-     (Commands-add-advice! provider ctx name advice-name kind callback option ...)))
-  ((_ remove: ctx name advice-name)
-   (with-service-provider (provider commands-service Commands)
-     (Commands-remove-advice! provider ctx name advice-name)))
-  ((_ inspect: name)
-   (with-service-provider (provider commands-service Commands)
-     (Commands-inspect-advice provider name))))
-
-;; Installed advice, including names whose defining plugin is currently absent.
-(def (advised-commands) => :list
-  (:- (with-service-provider (provider commands-service Commands)
-        (Commands-advised-commands provider)) :list))
+  ;; A command may restart its own owner through swap/reload. Its receipt
+  ;; cancels that same task after the operation finishes; end quietly then,
+  ;; but keep quits from another task (including suspended commands) visible.
+  (let (retiring-task #f)
+    (context-defer! ctx (lambda () (set! retiring-task (current-task-id))))
+    (:- (with-service-provider (provider commands-service Commands)
+      (Commands-define-command! provider ctx
+        (make-command name: name
+          procedure: (lambda ()
+                       (with-catch
+                        (lambda (e)
+                          (unless (and (quit-condition? e) retiring-task
+                                       (eqv? retiring-task (current-task-id)))
+                            (raise e)))
+                        (lambda () (call-with-task-owner ctx procedure))))
+          doc: doc visible?: visible?) source)) :void)))
 
 (defsyntax (define-command stx)
   (syntax-case stx ()

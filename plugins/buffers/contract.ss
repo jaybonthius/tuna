@@ -41,7 +41,7 @@ prelude: :gerbil/core
         :tuna/kernel
         :tuna/plugins/text-store/contract
         :tuna/plugins/settings/contract)
-(export (service-interface-out Buffers)
+(export (interface-out Buffers)
         buffers-service
         ;; changes and the rule positions follow through them
         (struct-out change) (struct-out span)
@@ -195,7 +195,7 @@ prelude: :gerbil/core
 ;;; buffers. Positions are 1-based; child indexes count from 0, and child
 ;;; ranges are end-exclusive.
 
-(service-interface Buffers
+(interface Buffers
   ;; Texts
   (make-text (initial : :string)) => :t
   (text-snapshot (t : text)) => :t

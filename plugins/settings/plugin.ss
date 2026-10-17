@@ -39,4 +39,4 @@
   provides: [settings-service]
   (context-provide! ctx settings-service
                     (Settings (setting-registry globals: (new-entry-table)
-                                                scopes: (new-entry-table))) view: Settings-service-view))
+                                                scopes: (new-entry-table)))))

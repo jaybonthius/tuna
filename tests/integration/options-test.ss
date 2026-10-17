@@ -84,7 +84,7 @@
 (defplugin (stub-configuration ctx)
   "Provides the configuration service with a stub."
   provides: [configuration-service]
-  (context-provide! ctx configuration-service (Configuration the-stub) view: Configuration-service-view))
+  (context-provide! ctx configuration-service (Configuration the-stub)))
 
 (def (run-command (name : :symbol)) => :void
   ((command-procedure (: (command-ref name) command))))

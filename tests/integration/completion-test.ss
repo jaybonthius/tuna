@@ -48,7 +48,7 @@ prelude: :gerbil/core
   "Reads, commands and a redraw observer for completion integration tests."
   provides: [display-service]
   requires: [commands-service input-service completion-service minibuffer-service buffers-service]
-  (context-provide! ctx display-service (completion-display) view: Display-service-view)
+  (context-provide! ctx display-service (completion-display))
   (define-command ctx (test-alpha) "An alpha action.\nMore details on the next line." (set! results (cons 'alpha results)))
   (define-command ctx (test-beta) "A beta action." (set! results (cons 'beta results)))
   (context-define-command! ctx 'test-hidden void visible?: (lambda (c origin) #f))

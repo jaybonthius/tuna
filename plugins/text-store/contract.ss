@@ -7,11 +7,11 @@ prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel)
-(export (service-interface-out TextStore)
+(export (interface-out TextStore)
         text-store-service
         current-text-store)
 
-(service-interface TextStore
+(interface TextStore
   ;; A version holding TEXT.
   (from-string (text : :string)) => :t
   ;; The number of characters in VERSION.

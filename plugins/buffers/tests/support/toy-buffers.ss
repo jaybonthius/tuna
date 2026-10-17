@@ -364,6 +364,6 @@ prelude: :gerbil/core
                         (make-node-kind-info 'text "Text that users edit."
                                              (lambda (n) (text-string (text-node-content n))))
                         doc: "Text that users edit.")
-    (context-provide! ctx buffers-service (Buffers self) view: Buffers-service-view)
+    (context-provide! ctx buffers-service (Buffers self))
     (context-add-setting-scope! ctx 'buffer
                                 (lambda (s) (buffer-setting (settings-buffer) s)))))

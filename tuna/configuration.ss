@@ -6,7 +6,7 @@ prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel)
-(export (service-interface-out Configuration)
+(export (interface-out Configuration)
         configuration-service
         reload-configuration-report
         last-configuration-report
@@ -21,7 +21,7 @@ prelude: :gerbil/core
         context-set-restart-wrapper!
         call-with-configuration-restart)
 
-(service-interface Configuration
+(interface Configuration
   ;; Checked package activation; raw runtime activation is not public.
   (activate! (target : plugin) (order :? :fixnum)) => :void
   ;; Load init.ss again as a trial, apply what changed, and return the

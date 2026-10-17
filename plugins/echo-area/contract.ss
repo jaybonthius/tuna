@@ -8,12 +8,12 @@ prelude: :gerbil/core
 (import :std/interface
         :tuna/kernel
         :tuna/plugins/buffers/contract)
-(export (service-interface-out EchoArea)
+(export (interface-out EchoArea)
         echo-area-node-kind
         echo-area-view?
         current-message)
 
-(service-interface (EchoArea Messages)
+(interface (EchoArea Messages)
   ;; The message shown last, or "".
   (current-message) => :string)
 

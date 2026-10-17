@@ -13,7 +13,7 @@ prelude: :gerbil/core
 (import :std/interface
         :tuna/kernel
         :tuna/plugins/buffers/contract)
-(export (service-interface-out Minibuffer)
+(export (interface-out Minibuffer)
         (interface-out Prompt)
         read-from-minibuffer minibuffer-history
         prompt-buffer prompt-answer-node prompt-keymap prompt-input prompt-set-exit-check! prompt-exit!
@@ -37,7 +37,7 @@ prelude: :gerbil/core
 (def (minibuffer-view? (v : view)) => :boolean
   (eq? (node-kind (buffer-root (view-showing v))) minibuffer-node-kind))
 
-(service-interface Minibuffer
+(interface Minibuffer
   ;; SETUP receives a Prompt handle on the baton, before yielding.
   ;; HISTORY is a named string history or #f. Return the exit value.
   (read-from-minibuffer (question : :string) (initial : :string)

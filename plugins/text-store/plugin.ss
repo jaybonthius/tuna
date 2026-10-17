@@ -236,4 +236,4 @@
 (defplugin (rope-text-store ctx)
   "Stores text in a persistent rope (the default text store)."
   provides: [text-store-service]
-  (context-provide! ctx text-store-service rope-store-instance view: TextStore-service-view))
+  (context-provide! ctx text-store-service rope-store-instance))

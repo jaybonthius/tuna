@@ -28,7 +28,7 @@
 (defplugin (test-display ctx)
   "Counts redisplays."
   provides: [display-service]
-  (context-provide! ctx display-service (make-counting-display) view: Display-service-view))
+  (context-provide! ctx display-service (make-counting-display)))
 
 ;; The tasks input items resolve to, each (name . thunk).
 (def test-tasks
@@ -101,7 +101,7 @@
   "Runs quitting-hook from an undo."
   (context-defer! ctx (lambda () (run-hook quitting-hook) (note! 'undo-finished))))
 
-(service-interface Dummy
+(interface Dummy
   (dummy-op) => :void)
 
 (defstruct dummy ()
@@ -116,7 +116,7 @@
 (defplugin (dummy-provider ctx)
   "Provides the dummy service."
   provides: [dummy-service]
-  (context-provide! ctx dummy-service (make-dummy) view: Dummy-service-view))
+  (context-provide! ctx dummy-service (make-dummy)))
 
 ;; Arrival classifies on a foreign thread without consulting any service.
 (def probe-arrived? #f)
@@ -130,7 +130,7 @@
 (defplugin (probing-input-provider ctx)
   "Classifies input without services."
   provides: [input-service]
-  (context-provide! ctx input-service (make-probing-input) view: Input-service-view))
+  (context-provide! ctx input-service (make-probing-input)))
 
 (defplugin (dummy-user ctx)
   "Requires the dummy service."
@@ -181,7 +181,7 @@
 (defplugin (failing-display ctx)
   "Provides a display that always fails."
   provides: [display-service]
-  (context-provide! ctx display-service (make-broken-display) view: Display-service-view))
+  (context-provide! ctx display-service (make-broken-display)))
 
 ;; Start a fresh loop with the test tasks and PLUGINS, run THUNK, and stop.
 (def (with-loop thunk quit-grace: (quit-grace 0.5) plugins: (plugins []))
@@ -518,15 +518,11 @@
       (with-loop
        (lambda ()
          (set! log [])
-         (call-on-editor-loop
-           (lambda ()
-             (set-plugin-order! provider-quitter 1)
-             (set-plugin-order! lifecycle-recorder 2)))
          (spawn-task! 'activate-provider
                       (lambda () (activate-plugin! dummy-provider) (note! 'after)))
          (check (settled-message) => "Quit")
-         ;; Declaration order puts the quitter first; the recorder must still
-         ;; see every event, including the dependent activated by the operation.
+         ;; The quitter's callback runs first; the recorder still sees every
+         ;; event, including the dependent activated by the same operation.
          (check (reverse log) => [['changed 'dummy] ['activated 'dummy-provider]
                                   ['activated 'dummy-user]])
          (check (call-on-editor-loop

@@ -1,7 +1,6 @@
 ;;; Hooks: named, ordered lists of named callbacks (ADR 2, ADR 12). Each
 ;;; hook object holds its own callbacks; the kernel keeps no table of hooks.
-;;; Callbacks run by depth, then owner declaration order; callbacks within
-;;; one owner retain their registration order.
+;;; Callbacks run in depth order, then in the order they were added.
 ;;; Plugins add callbacks with context-add-hook! and call them with run-hook,
 ;;; both in ./plugins, which reports failing callbacks.
 ;;;
@@ -17,7 +16,6 @@
 prelude: :gerbil/core
 
 (import ./ids
-        ./entries
         ./state)
 (export hook
         hook-name
@@ -36,13 +34,12 @@ prelude: :gerbil/core
 (defclass hook ((name      : :symbol)
                 (doc       : :string)
                 (lock      : :mutex)
-                (callbacks : :list))       ; membership across kernels; reads order a snapshot
+                (callbacks : :list))       ; every kernel's, in calling order
   final: #t)
 
 (defclass hook-callback ((name      : :symbol)
                          (owner     : :symbol)       ; plugin name
                          (home      : kernel)        ; the kernel whose plugin added it
-                         (order     : owner-order)   ; shared with its retained owner's entries
                          (depth     : :fixnum)
                          (serial    : :fixnum)
                          (procedure : :procedure)
@@ -54,19 +51,12 @@ prelude: :gerbil/core
 
 (def (runs-before? (a : hook-callback) (b : hook-callback)) => :boolean
   (or (fx< a.depth b.depth)
-      (and (fx= a.depth b.depth)
-           (let ((a-rank (owner-order-rank a.order))
-                 (b-rank (owner-order-rank b.order)))
-             (or (fx< a-rank b-rank)
-                 (and (fx= a-rank b-rank)
-                      (if (eq? a.owner b.owner)
-                        (fx< a.serial b.serial)
-                        (string<? (symbol->string a.owner) (symbol->string b.owner)))))))))
+      (and (fx= a.depth b.depth) (fx< a.serial b.serial))))
 
 ;; Add PROCEDURE to H under NAME for the current kernel's plugin OWNER, and
 ;; return the new callback.
-(def (add-hook-callback! (h : hook) (name : :symbol) (owner : :symbol)
-                         (order : owner-order) (depth : :fixnum) (procedure : :procedure))
+(def (add-hook-callback! (h : hook) (name : :symbol) (owner : :symbol) (depth : :fixnum)
+                         (procedure : :procedure))
   => hook-callback
   (with-lock h.lock
     (lambda ()
@@ -74,22 +64,28 @@ prelude: :gerbil/core
                            (and (eq? old.home (the-kernel))
                                 (eq? old.owner owner) (eq? old.name name)))
                          h.callbacks))
-             (new (hook-callback name: name owner: owner home: (the-kernel) order: order depth: depth
+             (new (hook-callback name: name owner: owner home: (the-kernel) depth: depth
                                  serial: (if same (hook-callback-serial same) (next-id!))
                                  procedure: procedure undo: #f)))
-        (set! h.callbacks (cons new (if same (remq same h.callbacks) h.callbacks)))
+        (set! h.callbacks
+          (let insert ((rest (if same (remq same h.callbacks) h.callbacks)))
+            (match rest
+              ([] [new])
+              ([first . more]
+               (if (runs-before? new first)
+                 (cons new rest)
+                 (cons first (insert more)))))))
         new))))
 
 (def (remove-hook-callback! (h : hook) (old : hook-callback)) => :void
   (with-lock h.lock
     (lambda () (set! h.callbacks (remq old h.callbacks)))))
 
-;; Read current ranks so retained owners can be reordered without a hook registry.
+;; The current kernel's callbacks of H, in calling order.
 (def (current-hook-callbacks (h : hook)) => :list
   (let (k (the-kernel))
-    (list-sort runs-before?
-      (filter (lambda ((callback : hook-callback)) (eq? callback.home k))
-              h.callbacks))))
+    (filter (lambda ((callback : hook-callback)) (eq? callback.home k))
+            h.callbacks)))
 
 ;; The names of H's callbacks in the current kernel, in calling order.
 (def (hook-callback-names (h : hook)) => :list

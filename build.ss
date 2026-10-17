@@ -9,9 +9,9 @@
 (def packages
   `(("tuna"
      "version"
-     "kernel/ids" "kernel/entries" "kernel/state" "kernel/tasks" "kernel/service-interface"
+     "kernel/ids" "kernel/entries" "kernel/state" "kernel/tasks"
      "kernel/plugins" "kernel/hooks" "kernel/loop" "kernel"
-     "lib/timers" "lib/jobs" "lib/plugin-options" "lib/configuration" "lib/advice" "lib/service-advice"
+     "lib/timers" "lib/jobs" "lib/plugin-options" "lib/configuration" "lib/advice"
      "configuration" "prelude" "config" "plugin-use" "config-blocks"
      (gxc: "boot" (extra-inputs: ("../starter/init.ss")))
      "control"
@@ -28,7 +28,6 @@
     ("plugins/help" "contract" "plugin")
     ("plugins/buttons" "contract" "plugin")
     ("plugins/basic-editing" "plugin")
-    ("plugins/hungry-delete" "plugin")
     ("plugins/minibuffer" "contract" "plugin")
     ("plugins/completion" "contract" "plugin")
     ("plugins/completion-vertical" "plugin")

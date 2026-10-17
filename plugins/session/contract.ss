@@ -10,7 +10,7 @@ prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel)
-(export (service-interface-out Session)
+(export (interface-out Session)
         (struct-out session-slot)
         session-service
         context-add-session-slot!
@@ -30,7 +30,7 @@ prelude: :gerbil/core
                          (fallback :? :symbol))   ; plain data -> void
   final: #t)
 
-(service-interface Session
+(interface Session
   ;; Register SLOT for CTX's plugin until it is deactivated. If registrations
   ;; share a name, the highest PRIORITY is effective, then declaration order.
   ;; CTX's plugin must require session-service

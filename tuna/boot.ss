@@ -23,7 +23,7 @@ prelude: :gerbil/core
         :tuna/kernel
         :tuna/lib/configuration
         :tuna/lib/plugin-options
-        (only-in :tuna/lib/advice refresh-advice!)
+        (only-in :tuna/lib/advice refresh-function-advice!)
         (except-in :tuna/configuration activate-plugin!)
         (rename-in :tuna/plugin-use (activate-checked-plugin! activate-plugin!))
         :tuna/config-blocks)
@@ -889,7 +889,7 @@ prelude: :gerbil/core
                 (set-plugin-order! (declaration-block d) rank)))
             (loop (cdr rest) (fx1+ rank))))
         (set-plugin-order! (configuration-user-code config) (fx1+ (length new-declarations))))
-      (refresh-advice!))
+      (refresh-function-advice!))
     (unwind-protect
       (begin
         (when follower
@@ -1312,7 +1312,7 @@ prelude: :gerbil/core
       (eval '(import :tuna/config)))
     (context-provide! ctx configuration-service
                       (Configuration (configuration-provider owner: ctx environment: environment
-                                                              restart-wrappers: (new-entry-table))) view: Configuration-service-view)))
+                                                              restart-wrappers: (new-entry-table))))))
 
 ;; `tuna check`: load CHOICE's file without turning anything on. Returns
 ;; the problem, or #f when the file loads and its declarations are valid.

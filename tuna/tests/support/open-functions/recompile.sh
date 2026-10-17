@@ -5,8 +5,7 @@ fixtures=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 root=$(CDPATH= cd -- "$fixtures/../../../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT HUP INT TERM
-cp "$fixtures/target.ss" "$fixtures/caller.ss" "$fixtures/foreign-macro.ss" \
-   "$fixtures/command-advice.ss" "$fixtures/command-caller.ss" "$work/"
+cp "$fixtures/target.ss" "$fixtures/caller.ss" "$fixtures/foreign-macro.ss" "$work/"
 mkdir "$work/lib" "$work/runtime"
 export GERBIL_PATH="$root/.gerbil" GERBIL_LOADPATH="$work/lib:$root/.gerbil/lib"
 cd "$work"
@@ -19,27 +18,9 @@ compiled_eval() {
    systemd-run --user --scope -p MemoryMax=4G -p MemorySwapMax=0 timeout 2400 \
      gxi -e "$1")
 }
-for module in foreign-macro target caller command-advice command-caller; do compile "$module"; done
-compiled_eval '(import :tuna/tests/support/open-functions/command-advice
-  :tuna/tests/support/open-functions/command-caller
-  :tuna/kernel :tuna/lib/advice (only-in :tuna/kernel/plugins activate-plugin!))
-  (def owner #f)
-  (def selected (advice-target-info-identity (fixture-advice)))
-  (defplugin (compiled-command-advisor ctx) "Compiled contract routing."
-    (set! owner ctx) (install-fixture-advice! ctx))
-  (activate-plugin! compiled-command-advisor)
-  (unless (= (fixture-result 2) 12) (error "compiled add route"))
-  (unless (eq? selected (advice-target-info-identity (fixture-advice))) (error "unstable identity"))
-  (unless (equal? (map advice-info-name (advice-target-info-advice (fixture-advice))) (quote (compiled)))
-    (error "compiled inspect route"))
-  (unless (eq? (command-name (make-command (quote record))) (quote record)) (error "command collision"))
-  (remove-fixture-advice! owner)
-  (unless (= (fixture-result 2) 2) (error "compiled remove route"))
-  (install-fixture-advice! owner)
-  (deactivate-plugin! compiled-command-advisor)
-  (unless (= (fixture-result 2) 2) (error "compiled routed cleanup"))'
+for module in foreign-macro target caller; do compile "$module"; done
 compiled_eval '(import :tuna/tests/support/open-functions/caller :tuna/tests/support/open-functions/target
-  (only-in :tuna/prelude redefine open-definition advise! unadvise! advice-for)
+  (only-in :tuna/prelude redefine open-definition advise! unadvise! function-advice)
   :tuna/kernel (only-in :tuna/kernel/plugins activate-plugin!) :gerbil/expander)
   (def owner #f)
   (def saved typed)

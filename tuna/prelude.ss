@@ -3,8 +3,7 @@ prelude: :gerbil/core
 
 (import :gerbil/core
         :tuna/kernel
-        :tuna/lib/advice
-        :tuna/lib/service-advice)
+        :tuna/lib/advice)
 ;; Keep the core re-export last: a prelude imports exports weakly, in reverse
 ;; order, so the package definitions must win over the core's def and def*.
 (export (rename: def/open def)
@@ -12,11 +11,11 @@ prelude: :gerbil/core
         (rename: def*/open def*)
         redefine
         install-open! open-definition open-function-cell
-        advise! unadvise! advice-for advised-functions advised-service-operations
+        advise! unadvise! function-advice advised-functions
         advice-info advice-info-owner advice-info-name advice-info-kind
         advice-info-depth advice-info-source
-        advice-target-info advice-target-info-kind advice-target-info-name
-        advice-target-info-source advice-target-info-identity advice-target-info-advice advice-error?
+        function-advice-info function-advice-info-name function-advice-info-source
+        function-advice-info-advice advice-error?
         defplugin
         (phi: +1 read-module-body)
         (import: :gerbil/core))
@@ -174,47 +173,7 @@ prelude: :gerbil/core
        (and (eq? (syntax-e #'tag) 'function) (identifier? #'name))
        #'(resolve-open-function 'module 'name))
       (name (identifier? #'name) (open-binding-cell-for #'name))
-      (_ (raise-syntax-error #f "Expected an open function or (function module name)" target))))
-
-  ;; The contract router must be imported as command-advice-target at the use site.
-  ;; Keyword controls cannot be captured by callers' add/remove/inspect bindings.
-  ;; The prelude owns normalization, never imports a concept or discovers it at runtime.
-  (def (route-advice (target : :t) (action : :symbol) (arguments : :t)) => :t
-    (syntax-case target ()
-      ((tag svc operation)
-       (and (eq? (syntax-e #'tag) 'service) (identifier? #'operation))
-       (case action
-         ((inspect) #'(service-operation-advice svc 'operation))
-         (else
-          (with-syntax ((route (if (eq? action 'add) #'add-service-advice! #'remove-service-advice!)))
-            (syntax-case arguments ()
-              ((ctx argument ...)
-               #'(route ctx svc 'operation argument ...)))))))
-      ((tag name)
-       (and (eq? (syntax-e #'tag) 'command) (identifier? #'name))
-       (let (router (stx-identifier #'tag "command-advice-target"))
-         (unless (syntax-local-value router (lambda (_) #f))
-           (raise-syntax-error #f
-             "Command advice requires importing command-advice-target without renaming from the commands contract" target))
-         (with-syntax ((router router)
-                       (route-action (case action
-                                       ((add) #'add:)
-                                       ((remove) #'remove:)
-                                       ((inspect) #'inspect:))))
-           (if (eq? action 'inspect)
-             #'(router route-action 'name)
-             (syntax-case arguments ()
-               ((ctx argument ...)
-                #'(router route-action ctx 'name argument ...)))))))
-      (_
-       (with-syntax ((cell (function-target target)))
-         (case action
-           ((inspect) #'(inspect-advice (open-function-state cell)))
-           (else
-            (with-syntax ((operation (if (eq? action 'add) #'register-advice! #'remove-advice!)))
-              (syntax-case arguments ()
-                ((ctx argument ...)
-                 #'(operation ctx (open-function-state cell) argument ...)))))))))))
+      (_ (raise-syntax-error #f "Expected an open function or (function module name)" target)))))
 
 (defsyntax (advise! stx)
   (syntax-case stx ()
@@ -227,7 +186,8 @@ prelude: :gerbil/core
               ((before-until:) 'before-until) ((after-while:) 'after-while)
               ((after-until:) 'after-until)
               (else (raise-syntax-error #f "Unknown advice kind" stx #'kind))))
-       (with-syntax ((kind-name kind-name)
+       (with-syntax ((cell (function-target #'target))
+                     (kind-name kind-name)
                      (source (stx-source-string stx))
                      ;; Open callbacks already denote a stable, live facade. Only
                      ;; ordinary bindings need an extra late-lookup forwarding layer.
@@ -235,18 +195,20 @@ prelude: :gerbil/core
                                          (not (open-binding?
                                                (syntax-local-value #'callback (lambda (_) #f)))))
                                   #'(lambda args (apply callback args)) #'callback)))
-         (route-advice #'target 'add
-           #'(ctx name 'kind-name procedure source: source option ...)))))))
+         #'(register-function-advice! ctx cell name 'kind-name procedure
+                                     source: source option ...))))))
 
 (defsyntax (unadvise! stx)
   (syntax-case stx ()
     ((_ ctx target name)
-     (route-advice #'target 'remove #'(ctx name)))))
+     (with-syntax ((cell (function-target #'target)))
+       #'(remove-function-advice! ctx cell name)))))
 
-(defsyntax (advice-for stx)
+(defsyntax (function-advice stx)
   (syntax-case stx ()
     ((_ target)
-     (route-advice #'target 'inspect #'()))))
+     (with-syntax ((cell (function-target #'target)))
+       #'(inspect-function-advice cell)))))
 
 (begin-syntax
   (def (read-module-body (port :~ input-port?)) => :list

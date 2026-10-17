@@ -12,14 +12,13 @@ prelude: :gerbil/core
 (import (only-in :gerbil/runtime/thread spawn-thread)
         :std/error
         :std/interface
-        ./service-interface
         :std/sync/completion
         ./ids
         ./state
         ./tasks
         ./plugins
         (only-in ./hooks new-hook))
-(export (service-interface-out Input Display)
+(export (interface-out Input Display)
         input-service
         display-service
         start-editor-loop!
@@ -45,7 +44,7 @@ prelude: :gerbil/core
 
 ;; Command-loop policy (ADR 8, ADR 12). Input items are opaque to the
 ;; kernel: only the provider and whoever submits items know their shape.
-(service-interface Input
+(interface Input
   ;; How ITEM is handled on arrival: 'queue to resolve it in order, or
   ;; 'interrupt to request a quit (ADR 3). Called on the submitting thread,
   ;; before queuing, so it must not touch editor state.
@@ -54,7 +53,7 @@ prelude: :gerbil/core
   ;; task's name and its thunk, or to #f when it starts none.
   (resolve! (item : :t)) => (Maybe :pair))
 
-(service-interface Display
+(interface Display
   ;; Bring what the user sees up to date with the current editor state.
   ;; Runs on the baton.
   (redisplay!) => :void)

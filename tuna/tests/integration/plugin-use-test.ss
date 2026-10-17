@@ -18,7 +18,7 @@
      (write-file-string (path-expand "private/helper.ss" directory)
        "(import (only-in \"../vocabulary\" token))\n(export helper)\n(def (helper) token)")
      (write-file-string (path-expand "extension.ss" directory)
-       "(import :tuna/kernel (only-in \"vocabulary\" ledger-service) \"private/helper\")\n(export wrong correct required provider new-wrong)\n(def (new-wrong) (defplugin made-wrong \"Factory plugin\") made-wrong)\n(defplugin wrong \"Missing ledger\")\n(defplugin correct \"Declared ledger\" optional: [ledger-service] (helper))\n(defplugin required \"Required ledger\" requires: [ledger-service])\n(defplugin provider \"Provided ledger\" provides: [ledger-service] (context-provide! (current-context) ledger-service 'ledger view: (make-service-view [] (lambda (raw compose) raw))))")
+       "(import :tuna/kernel (only-in \"vocabulary\" ledger-service) \"private/helper\")\n(export wrong correct required provider new-wrong)\n(def (new-wrong) (defplugin made-wrong \"Factory plugin\") made-wrong)\n(defplugin wrong \"Missing ledger\")\n(defplugin correct \"Declared ledger\" optional: [ledger-service] (helper))\n(defplugin required \"Required ledger\" requires: [ledger-service])\n(defplugin provider \"Provided ledger\" provides: [ledger-service] (context-provide! (current-context) ledger-service 'ledger))")
      ;; This module's direct imports contain no service contract.
      (write-file-string (path-expand "indirect.ss" directory)
        "(import :tuna/kernel \"private/helper\")\n(export indirect)\n(defplugin indirect \"Private imports count\" (helper))")

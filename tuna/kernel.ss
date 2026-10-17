@@ -4,8 +4,7 @@
 ;;; private, so nothing outside the kernel selects or holds a kernel.
 prelude: :gerbil/core
 
-(import ./kernel/service-interface
-        ./kernel/ids
+(import ./kernel/ids
         ./kernel/entries
         ./kernel/state
         ./kernel/tasks
@@ -44,20 +43,11 @@ prelude: :gerbil/core
   entry-table-ref
   entry-table-entries
   entry-table-names
-  service-interface
-  service-interface-out
-  service-view
-  make-service-view
-  service-view?
-  service-view-operations
-  service-view-build
   service                               ; the type, for annotations
   service-name                          ; service-changed-hook passes services
   service?                              ; start-up recognizes contract exports
   new-service
   service-provider
-  service-decoration-state!
-  service-decoration-states
   context-provide!
   deactivate-plugin!
   plugin-active?
@@ -110,18 +100,12 @@ prelude: :gerbil/core
 
   ;; 4. Consumed seams: the services the kernel calls.
   Input
-  Input-service-view
-  Input-service-signatures
-  Display
-  Display-service-view
-  Display-service-signatures
-  Messages
-  Messages-service-view
-  Messages-service-signatures
   Input-arrival
   Input-resolve!
   input-service
+  Display
   display-service
+  Messages
   messages-service
   message
   exception-summary)

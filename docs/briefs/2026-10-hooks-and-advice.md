@@ -2,8 +2,6 @@
 
 **Date:** 2026-10-15 (revised after three spikes). **Status:** approved 2026-10-15: option (d), open by default, with one `advise!` for functions, commands and services. Plan: [`agents/plans/hooks-and-advice.md`](../../agents/plans/hooks-and-advice.md). Roadmap item 4 of "getting the core back to its intended shape". Research: [`agents/research/hooks-advice/`](../../agents/research/hooks-advice/) ([Emacs](../../agents/research/hooks-advice/emacs.md), [other systems](../../agents/research/hooks-advice/prior-art.md), [Gerbil and Tuna's hooks](../../agents/research/hooks-advice/gerbil-and-tuna.md), spikes [1](../../agents/research/hooks-advice/open-def-spike.md), [2](../../agents/research/hooks-advice/open-def-spike-2.md) and [3](../../agents/research/hooks-advice/open-def-spike-3.md)). Changes [ADR 1](../../agents/adr/0001-language-and-extension-surface.md) and [ADR 2](../../agents/adr/0002-plugins-contexts-and-services.md).
 
-**Completion (2026-10-16):** all four approved stages are implemented; the final demo passed the browser walkthrough. The [overview](../overview.md#changing-package-code-while-tuna-runs) describes what exists now. The proposal and spike measurements below are historical, including their “not built” wording; final measurements and limits are recorded with the implementation. The `redefine` mechanism and module-context evaluation are built; the interactive `eval-defun`/`C-M-x` command is still a later milestone.
-
 ## What we're building and why
 
 Tuna gives plugins and your configuration three ways to change other code's behavior while it runs:
@@ -30,7 +28,7 @@ Emacs's manual and the research agree on one more lesson: prefer declared extens
 
 ![Pressing Backspace with an advised command](../diagrams/advice-backspace.svg)
 
-**Diagram status (2026-10-16):** both diagrams describe built behavior. Function, command and service advice, all-kind inspection and the hungry-delete walkthrough are complete. `C-c h` toggles the demo off/on; one Undo restores a deleted run. The library keeps service layers with the slot, while the kernel stores the opaque state and caches the wrapped provider.
+**Diagram status:** command/service advice and the walkthrough are planned. Open package functions and function advice are now built, including private targets; the remaining targets and inspection command are next.
 
 ## A walkthrough: a "hungry delete" plugin
 
@@ -39,7 +37,7 @@ Emacs's manual and the research agree on one more lesson: prefer declared extens
 3. You press Backspace. The key handling plugin runs `delete-backward-char`, and the commands plugin calls the combined command.
 4. The `hungry` advice runs first. If there are spaces before point, it deletes them all and stops (4a). Otherwise it calls the original command (4b).
 5. `M-x describe-advice` on `delete-backward-char` lists the advice in calling order: `hungry`, around, from `hungry-delete`, with the place in its source where it was defined.
-6. **Later REPL milestone, not part of this implementation:** you open `basic-editing`'s source, change `delete-backward-char`, and press `C-M-x`. Tuna evaluates the new definition inside that package's module and replaces the original *under* the advice, so Backspace is still hungry.
+6. You open `basic-editing`'s source, change `delete-backward-char`, and press `C-M-x`. Tuna evaluates the new definition inside that package's module and replaces the original *under* the advice, so Backspace is still hungry.
 7. You turn `hungry-delete` off. Its clean-up removes the advice, and Backspace runs the newest `delete-backward-char` directly.
 
 ## What a package author writes
@@ -99,8 +97,6 @@ The names are provisional; the forms are settled.
 - Combining advice is a small library outside the kernel.
 - `advise!` routes command advice to the commands plugin, which keeps it with the command.
 - Service methods need the only kernel change: alongside each service's provider, the kernel keeps an "advised view" of it and hands that out while advice exists. Advice never counts as a new provider, so it doesn't restart anything.
-
-**Service implementation choice (2026-10-15, delegated to the primary agent).** A provider supplies its raw implementation and a generated description of its complete public interface. Tuna uses that description to build an advised wrapper preserving the interface and its parents: wrapping only Input would otherwise hide Keys operations, and wrapping only Messages would hide EchoArea operations. With no advice, callers still receive the original provider. The description comes from ordinary interface declarations, not hidden Gerbil metadata; composition stays in the library, and the kernel only stores the provider metadata and caches its advised view. This is implementation work still to do, not a new provider registry. The owner clarified that the effort should finish now and the later Opus review is not a gate.
 
 **Hooks: three fixes, nothing new.**
 - A callback removed for failing leaves its clean-up note behind. This is the same leak shape as the one just fixed. Remove the note with the callback.

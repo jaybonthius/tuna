@@ -154,4 +154,4 @@
           (when (and (eq? svc completion-ui-service) (eq? outgoing provider)) (clear!)))
         depth: -10)
       (context-defer! ctx clear!)
-      (context-provide! ctx completion-ui-service provider view: CompletionUI-service-view))))
+      (context-provide! ctx completion-ui-service provider))))

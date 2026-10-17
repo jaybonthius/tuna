@@ -11,7 +11,7 @@
 (export plugins-test)
 (declare (separate))
 
-(service-interface Greeter
+(interface Greeter
   (greet) => :string)
 
 (defstruct greeter ((text : :string))
@@ -32,12 +32,12 @@
 (defplugin (greeter-a ctx)
   "Provides the greeter A."
   provides: [greeter-service]
-  (context-provide! ctx greeter-service (make-greeter "a") view: Greeter-service-view))
+  (context-provide! ctx greeter-service (make-greeter "a")))
 
 (defplugin (greeter-b ctx)
   "Provides the greeter B."
   provides: [greeter-service]
-  (context-provide! ctx greeter-service (make-greeter "b") view: Greeter-service-view))
+  (context-provide! ctx greeter-service (make-greeter "b")))
 
 (defplugin (greeting-user ctx)
   "Uses the greeter."
@@ -76,7 +76,7 @@
 (defplugin (greeter-then-fails ctx)
   "Provides a greeter that outranks A, then fails to activate."
   provides: [greeter-service]
-  (context-provide! ctx greeter-service (make-greeter "bad") view: Greeter-service-view)
+  (context-provide! ctx greeter-service (make-greeter "bad"))
   (error "activation failed"))
 
 (defplugin (lifecycle-breaker ctx)
@@ -110,7 +110,7 @@
     (and best (entry-value best))))
 
 ;; A stateful service whose providers hand their state over.
-(service-interface Counter
+(interface Counter
   (label) => :symbol
   (count) => :fixnum
   (set-count! (n : :fixnum)) => :void)
@@ -129,12 +129,12 @@
 (defplugin (counter-a ctx)
   "Provides the counter A."
   provides: [counter-service]
-  (context-provide! ctx counter-service (Counter (counter name: 'a n: 0)) view: Counter-service-view))
+  (context-provide! ctx counter-service (Counter (counter name: 'a n: 0))))
 
 (defplugin (counter-b ctx)
   "Provides the counter B, outranking A."
   provides: [counter-service]
-  (context-provide! ctx counter-service (Counter (counter name: 'b n: 100)) view: Counter-service-view))
+  (context-provide! ctx counter-service (Counter (counter name: 'b n: 100))))
 
 (defplugin (counter-user ctx)
   "Uses the counter; restarts when it is replaced."
@@ -147,7 +147,7 @@
 (defplugin (second-input ctx)
   "Tries to replace the input service."
   provides: [input-service]
-  (context-provide! ctx input-service (make-string-input (make-hash-table)) view: Input-service-view))
+  (context-provide! ctx input-service (make-string-input (make-hash-table))))
 
 ;; Call THUNK and return what it wrote to stdout and to stderr.
 (def (captured-output thunk)
@@ -195,7 +195,7 @@
         (lambda ()
           (defplugin (cached-failure ctx) "Provides, warms dispatch, then fails."
             provides: [greeter-service]
-            (context-provide! ctx greeter-service (make-greeter "bad") view: Greeter-service-view)
+            (context-provide! ctx greeter-service (make-greeter "bad"))
             (check (greeter-dispatch greeter-service) => "bad")
             (error "activation failed"))
           (check (with-catch exception-summary (lambda () (activate-plugin! cached-failure)))
@@ -247,7 +247,7 @@
         (lambda ()
           (defplugin (self-user ctx) "Provides and uses Greeter."
             provides: [greeter-service]
-            (context-provide! ctx greeter-service (make-greeter "self") view: Greeter-service-view)
+            (context-provide! ctx greeter-service (make-greeter "self"))
             (note! (Greeter-greet (Greeter (service-provider greeter-service)))))
           (take-log!)
           (activate-plugin! self-user)
@@ -258,8 +258,8 @@
         (lambda ()
           (defplugin (duplicate-provider ctx) "Registers twice."
             provides: [counter-service]
-            (context-provide! ctx counter-service (Counter (counter name: 'old n: 17)) view: Counter-service-view)
-            (context-provide! ctx counter-service (Counter (counter name: 'new n: 100)) view: Counter-service-view))
+            (context-provide! ctx counter-service (Counter (counter name: 'old n: 17)))
+            (context-provide! ctx counter-service (Counter (counter name: 'new n: 100))))
           (check (with-catch exception-summary (lambda () (activate-plugin! duplicate-provider)))
                  => "Service already has a provider counter duplicate-provider duplicate-provider")
           (check (service-provider counter-service) => #f))))
@@ -416,53 +416,6 @@
           (activate-plugin! greeter-b)
           (check (take-log!) => '("a" off "b"))
           (check (plugin-active? greeting-user) => #t))))
-
-    (test-case "failed hook callbacks release their cleanup notes"
-      (call-with-fresh-kernel []
-        (lambda ()
-          (let ((owner #f) (h (new-hook 'receipt-failure)))
-            (defplugin (failure-owner ctx) "Owns a failing callback." (set! owner ctx))
-            (activate-plugin! failure-owner)
-            (for-each
-              (lambda (cycle)
-                (context-add-hook! owner h 'broken (lambda () (error "callback failed")))
-                (check (length (slot-ref owner 'receipt)) => 1)
-                (run-hook h)
-                (check (hook-callback-names h) => [])
-                (check (slot-ref owner 'receipt) => []))
-              '(1 2 3))
-            (deactivate-plugin! failure-owner)
-            (check (slot-ref owner 'receipt) => [])))))
-
-    (test-case "equal-depth hook order follows retained declaration ranks, not registration"
-      (call-with-fresh-kernel []
-        (lambda ()
-          (let ((h (new-hook 'declaration-order)) (seen []) (early-context #f))
-            (defplugin (early-order ctx) "Earlier declaration, registered later."
-              (set! early-context ctx)
-              (context-add-hook! ctx h 'first (lambda () (set! seen (append seen '(first)))))
-              (context-add-hook! ctx h 'second (lambda () (set! seen (append seen '(second))))))
-            (defplugin (late-order ctx) "Later declaration, registered first."
-              (context-add-hook! ctx h 'later (lambda () (set! seen (append seen '(later))))))
-            (activate-plugin! late-order order: 2)
-            (activate-plugin! early-order order: 1)
-            (check (hook-callback-names h) => '(first second later))
-            (run-hook h)
-            (check seen => '(first second later))
-            (set-plugin-order! early-order 3)
-            (set! seen [])
-            (run-hook h)
-            (check seen => '(later first second))
-            (context-add-hook! early-context h 'first
-              (lambda () (set! seen (append seen '(replacement)))))
-            (set! seen [])
-            (run-hook h)
-            (check seen => '(later replacement second))
-            (deactivate-plugin! late-order)
-            (activate-plugin! late-order order: 2)
-            (set! seen [])
-            (run-hook h)
-            (check seen => '(later replacement second))))))
 
     (test-case "hooks run by depth, drop a failing callback, and go with their plugin"
       (call-with-fresh-kernel []

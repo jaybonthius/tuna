@@ -121,7 +121,7 @@
                 (seen #f))
             (defplugin (resolver-provider ctx) "Only the resolver may query this service."
               provides: [probe]
-              (context-provide! ctx probe 'owner-bound view: (make-service-view [] (lambda (raw compose) raw))))
+              (context-provide! ctx probe 'owner-bound))
             (defplugin (resolver-owner ctx) "Resolves a click under its own declarations."
               requires: [input-service probe]
               (context-set-click-resolver! ctx

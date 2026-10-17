@@ -118,4 +118,4 @@ prelude: :gerbil/core
       (context-add-session-slot! ctx 'layout-two-views version: 1 fallback: 'layout
                                  save: (lambda () (saved-layout self))
                                  restore: (lambda (data) (restore-layout! self data)))
-      (context-provide! ctx layout-service (Layout self) view: Layout-service-view))))
+      (context-provide! ctx layout-service (Layout self)))))

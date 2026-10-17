@@ -70,21 +70,21 @@
 (defplugin provider "Provides the probe service."
   optional: [session-service]
   provides: [probe-service]
-  (context-provide! (current-context) probe-service 'probe view: (make-service-view [] (lambda (raw compose) raw)))
+  (context-provide! (current-context) probe-service 'probe)
   (probe-on! 'provider))
 
 ;; Outranks provider, so its dependents restart when it comes on.
 (defplugin better-provider "Provides the probe service as an alternative."
   optional: [session-service]
   provides: [probe-service]
-  (context-provide! (current-context) probe-service 'probe view: (make-service-view [] (lambda (raw compose) raw))))
+  (context-provide! (current-context) probe-service 'probe))
 
 ;; Provides the probe service, then ignores being asked to stop for about
 ;; a second, then fails.
 (defplugin stubborn-provider "Provides the probe service, ignores being stopped, then fails."
   optional: [session-service]
   provides: [probe-service]
-  (context-provide! (current-context) probe-service 'probe view: (make-service-view [] (lambda (raw compose) raw)))
+  (context-provide! (current-context) probe-service 'probe)
   (probe-on! 'stubborn)
   (let (deadline (+ (time->seconds (current-time)) 1.))
     (let spin ()
@@ -96,7 +96,7 @@
 (defplugin failing-provider "Provides the probe service, then fails."
   optional: [session-service]
   provides: [probe-service]
-  (context-provide! (current-context) probe-service 'probe view: (make-service-view [] (lambda (raw compose) raw)))
+  (context-provide! (current-context) probe-service 'probe)
   (probe-on! 'failing-provider)
   (error "failing-provider fails on purpose"))
 
@@ -134,13 +134,13 @@
 (defplugin fixed-provider "Provides the startup-tier service fixed."
   optional: [session-service]
   provides: [fixed-service]
-  (context-provide! (current-context) fixed-service 'fixed view: (make-service-view [] (lambda (raw compose) raw)))
+  (context-provide! (current-context) fixed-service 'fixed)
   (probe-on! 'fixed))
 
 (defplugin better-fixed-provider "Provides fixed as an alternative."
   optional: [session-service]
   provides: [fixed-service]
-  (context-provide! (current-context) fixed-service 'fixed view: (make-service-view [] (lambda (raw compose) raw)))
+  (context-provide! (current-context) fixed-service 'fixed)
   (probe-on! 'better-fixed))
 
 ;; Slot name -> the data its last restore received; never undone.
@@ -171,7 +171,7 @@
   optional: [session-service]
   provides: [fixed-service]
   requires: [probe-service]
-  (context-provide! (current-context) fixed-service 'fixed view: (make-service-view [] (lambda (raw compose) raw)))
+  (context-provide! (current-context) fixed-service 'fixed)
   (probe-on! 'fixed-needs-probe))
 
 ;; Name -> a procedure a plugin left for the test to call; never undone.
@@ -223,7 +223,7 @@
 (defplugin fixed-optioned "Provides fixed; takes the option n."
   optional: [session-service]
   provides: [fixed-service]
-  (context-provide! (current-context) fixed-service 'fixed view: (make-service-view [] (lambda (raw compose) raw)))
+  (context-provide! (current-context) fixed-service 'fixed)
   (set! current-fixed-n (plugin-option fixed-optioned 'n)))
 
 (defplugin-options fixed-optioned

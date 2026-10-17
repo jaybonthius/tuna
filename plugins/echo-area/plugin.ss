@@ -54,4 +54,4 @@
     (set-buffer-setting! home no-other-view #t)
     (context-add-buffer! ctx home)
     (add-locked-view home side: 'bottom size: 'content)
-    (context-provide! ctx messages-service (EchoArea (echo-area-state text: "" home: home)) view: EchoArea-service-view)))
+    (context-provide! ctx messages-service (EchoArea (echo-area-state text: "" home: home)))))

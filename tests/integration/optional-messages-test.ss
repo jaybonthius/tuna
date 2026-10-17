@@ -34,7 +34,7 @@ prelude: :gerbil/core
 (defplugin (configuration-fixture ctx)
   "A configuration provider independent of any message display."
   provides: [configuration-service]
-  (context-provide! ctx configuration-service (Configuration (silent-configuration)) view: Configuration-service-view))
+  (context-provide! ctx configuration-service (Configuration (silent-configuration))))
 
 (def silent-plugins
   [commands keys rope-text-store settings session

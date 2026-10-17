@@ -287,4 +287,4 @@
       (context-run-with-timer! ctx save-interval save-interval
                                (lambda () (unless (input-pending?) (save! self)))
                                name: 'save-session)
-      (context-provide! ctx session-service (Session self) view: Session-service-view))))
+      (context-provide! ctx session-service (Session self)))))

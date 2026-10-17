@@ -11,7 +11,7 @@
         :tuna/kernel
         :tuna/boot
         :tuna/control
-        (only-in :tuna/prelude advice-for advice-target-info-advice advice-info-owner)
+        (only-in :tuna/prelude function-advice function-advice-info-advice advice-info-owner)
         (only-in "../../tuna/tests/support/open-functions/advice-target" probe callback-log)
         :tuna/plugins/session/contract
         :tuna/plugins/session/plugin
@@ -125,7 +125,7 @@
                  (write-init directory imports counted-line good-line)
                  (check (reload-succeeded? (reload)) => #t)
                  (check (map advice-info-owner
-                             (advice-target-info-advice (advice-for probe)))
+                             (function-advice-info-advice (function-advice probe)))
                         => '(counted/config good/config))
                  (set! callback-log [])
                  (probe 1)
@@ -133,7 +133,7 @@
                  (write-init directory imports good-line counted-line "(error \"advice-rank-test\")")
                  (check (reload-succeeded? (reload)) => #f)
                  (check (map advice-info-owner
-                             (advice-target-info-advice (advice-for probe)))
+                             (function-advice-info-advice (function-advice probe)))
                         => '(good/config counted/config))
                  (set! callback-log [])
                  (probe 1)
@@ -364,7 +364,7 @@
       (call-with-temporary-directory
        (lambda (directory)
          (let (path (write-init directory "(import :tuna/kernel)"
-                                "(context-provide! (current-context) fixed-service 'fixed view: (make-service-view [] (lambda (raw compose) raw)))"
+                                "(context-provide! (current-context) fixed-service 'fixed)"
                                 "(probe-on! 'user-1)"))
            (call-with-fresh-kernel []
              (lambda ()
@@ -373,7 +373,7 @@
                (start-editor-loop!)
                ;; X6: the running code stays, on every reload until the next start.
                (write-init directory "(import :tuna/kernel)"
-                           "(context-provide! (current-context) fixed-service 'fixed view: (make-service-view [] (lambda (raw compose) raw)))"
+                           "(context-provide! (current-context) fixed-service 'fixed)"
                            "(probe-on! 'user-2)")
                (for-each
                 (lambda (_)
@@ -389,14 +389,14 @@
       (call-with-temporary-directory
        (lambda (directory)
          (let (path (write-init directory "(import :tuna/kernel)"
-                                "(use-plugin good config: (context-provide! (current-context) fixed-service 'fixed view: (make-service-view [] (lambda (raw compose) raw))) (probe-on! 'block-1))"))
+                                "(use-plugin good config: (context-provide! (current-context) fixed-service 'fixed) (probe-on! 'block-1))"))
            (call-with-fresh-kernel []
              (lambda ()
                (start path)
                (activate-plugin! test-input)
                (start-editor-loop!)
                (write-init directory "(import :tuna/kernel)"
-                           "(use-plugin good config: (context-provide! (current-context) fixed-service 'fixed view: (make-service-view [] (lambda (raw compose) raw))) (probe-on! 'block-2))")
+                           "(use-plugin good config: (context-provide! (current-context) fixed-service 'fixed) (probe-on! 'block-2))")
                (let (report (call-on-editor-loop reload))
                  (check (changes report) => '(("config: block of good" deferred)))
                  (check (detail report "config: block of good")
@@ -407,7 +407,7 @@
     (test-case "a new version of what a startup-tier provider needs waits for the next start"
       (call-with-temporary-directory
        (lambda (directory)
-         (write-mine directory "(context-provide! (current-context) probe-service 'probe view: (make-service-view [] (lambda (raw compose) raw))) (probe-on! 'mine-1)")
+         (write-mine directory "(context-provide! (current-context) probe-service 'probe) (probe-on! 'mine-1)")
          (let (path (write-init directory "(use-plugin mine)" "(use-plugin fixed-needs-probe)"))
            (call-with-fresh-kernel []
              (lambda ()
@@ -415,7 +415,7 @@
                (activate-plugin! test-input)
                (start-editor-loop!)
                ;; X24: the provider's module changed.
-               (write-mine directory "(context-provide! (current-context) probe-service 'probe view: (make-service-view [] (lambda (raw compose) raw))) (probe-on! 'mine-2)")
+               (write-mine directory "(context-provide! (current-context) probe-service 'probe) (probe-on! 'mine-2)")
                (let (report (call-on-editor-loop reload))
                  (check (assoc "mine" (changes report)) => '("mine" deferred))
                  (check (detail report "mine")
@@ -427,13 +427,13 @@
     (test-case "a plugin that failed at start-up comes up once fixed, with what needs it"
       (call-with-temporary-directory
        (lambda (directory)
-         (write-mine directory "(context-provide! (current-context) probe-service 'probe view: (make-service-view [] (lambda (raw compose) raw))) (error \"broken\")")
+         (write-mine directory "(context-provide! (current-context) probe-service 'probe) (error \"broken\")")
          (let (path (write-init directory "(use-plugin mine)" "(use-plugin dependent)"))
            (call-with-fresh-kernel []
              (lambda ()
                (check (statuses (startup-report-entries (start path)))
                       => [["mine" 'failed] ["dependent" 'skipped] [user-code 'on]])
-               (write-mine directory "(context-provide! (current-context) probe-service 'probe view: (make-service-view [] (lambda (raw compose) raw)))")
+               (write-mine directory "(context-provide! (current-context) probe-service 'probe)")
                (let (report (reload))
                  (check (assoc "mine" (changes report)) => '("mine" on))
                  (check (assoc "dependent" (changes report)) => '("dependent" on)))
@@ -512,12 +512,12 @@
     (test-case "a dependent the kernel restarts for a replaced provider is listed"
       (call-with-temporary-directory
        (lambda (directory)
-         (write-mine directory "(context-provide! (current-context) probe-service 'probe view: (make-service-view [] (lambda (raw compose) raw))) (probe-on! 'mine-1)")
+         (write-mine directory "(context-provide! (current-context) probe-service 'probe) (probe-on! 'mine-1)")
          (let (path (write-init directory "(use-plugin mine)" "(use-plugin dependent)"))
            (call-with-fresh-kernel []
              (lambda ()
                (start path)
-               (write-mine directory "(context-provide! (current-context) probe-service 'probe view: (make-service-view [] (lambda (raw compose) raw))) (probe-on! 'mine-2)")
+               (write-mine directory "(context-provide! (current-context) probe-service 'probe) (probe-on! 'mine-2)")
                (let (report (reload))
                  (check (changes report)
                         => [["mine" 'replaced] [user-code 'replaced] ["dependent" 'restarted]])
