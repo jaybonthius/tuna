@@ -155,14 +155,15 @@
                             (cons "target" (string-append "\"" target "\""))
                             (cons "node" (if node (number->string node) "null")))))
 
-;; The revision of the screen GET / shows.
+;; The revision of the screen GET / shows. Loading the page starts its
+;; input numbering again, as a browser reload does.
 (def (page-revision)
+  (set! sequence 0)
   (let* ((page (reply-body (http "GET" "/")))
          (start (+ (string-search "data-revision=\"" page) 15)))
     (string->number (substring page start (string-index page #\" start)))))
 
 (def (open-screen-stream)
-  (set! sequence 0)
   (let (socket (connect port))
     (send! socket (request-text "GET" "/screen"
                                 [(cons "Host" (host))
@@ -172,8 +173,9 @@
 
 
 ;; Activate PLUGINS, which include the web transport, in a fresh kernel;
-;; start the editor loop; then call THUNK at its plain loopback URL.
-(def (with-web-tuna plugins thunk)
+;; start the editor loop; load the page unless LOAD-PAGE? is #f (a page
+;; left open across a server restart); then call THUNK at its plain URL.
+(def (with-web-tuna plugins thunk load-page?: (load-page? #t))
   (call-with-fresh-kernel plugins
     (lambda ()
       (start-editor-loop! quit-grace: 0.3)
@@ -182,5 +184,6 @@
              (slash (string-index url #\/ colon)))
         (set! port (string->number (substring url (+ colon 1) slash))))
       (set! sequence 0)
+      (when load-page? (http "GET" "/"))
       (thunk))))
 

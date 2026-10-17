@@ -29,7 +29,7 @@ Two rules stay as they are and get stricter:
 
 ## How it works (for the implementer, briefly)
 
-- **Numbering.** The page numbers its input 1, 2, 3, … from the moment it loads. When a page opens its screen stream, the server starts expecting 1 again, so a reload or a server restart needs nothing special. One tab is assumed; nothing here plans for several.
+- **Numbering.** The page numbers its input 1, 2, 3, … from the moment it loads. When a page opens its screen stream, the server starts expecting 1 again, so a reload or a server restart needs nothing special. *Corrected 2026-10-16 (ADR 7): the reset happens when the page is served, because the stream can reopen without a reload.* One tab is assumed; nothing here plans for several.
 - **Server.** The web plugin keeps the next number it expects and the items that arrived early. It hands items to the editor's input queue strictly in order. The kernel does not change.
 - **Lost requests.** The browser keeps each item until it gets *any* answer, and resends it with the same number if the network failed. The server ignores a number it has already seen. If 64 later items are waiting for one that never came, the server gives up on that one (a line in the log, nothing shown) and carries on with the rest.
 - **Unchanged:** keys and clicks share one numbering, so "type, click, type" stays in order (ADR 7); Datastar's screen stream is untouched.

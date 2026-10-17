@@ -121,21 +121,42 @@
            (check (pointer-event? (cadr items)) => #t)
            (check (key-event-key (caddr items)) => "c")))))
 
-    (test-case "a new screen stream resets numbering and drops early items"
+    (test-case "a page reload restarts numbering and drops the old page's early items"
       (set! (input-recorder-items recorded) [])
       (with-web-tuna [test-messages recording-input web-transport]
        (lambda ()
          (check (post-json (keydown-json "a" #f 1)) => 204)
          (check (post-json (keydown-json "old" #f 3)) => 204)
-         (let (stream (open-screen-stream))
+         (check (reply-status (http "GET" "/")) => 200)
+         (check (post-json (keydown-json "b" #f 1)) => 204)
+         (check (post-json (keydown-json "c" #f 2)) => 204)
+         (check (map key-event-key (recorded-items 3)) => ["a" "b" "c"]))))
+
+    (test-case "a screen stream that reconnects without a reload keeps the numbering"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (let (first (open-screen-stream))
+           (check (post-json (keydown-json "a" #f 1)) => 204)
+           (check (post-json (keydown-json "b" #f 2)) => 204)
+           (Socket-close first))
+         (let (second (open-screen-stream))
            (check (and (string-search "datastar-patch-elements"
-                                     (read-until stream (lambda (text)
+                                     (read-until second (lambda (text)
                                                           (string-search "datastar-patch-elements" text)))) #t)
                   => #t)
-           (check (post-json (keydown-json "b" #f 1)) => 204)
-           (check (post-json (keydown-json "c" #f 2)) => 204)
-           (Socket-close stream))
-         (check (map key-event-key (recorded-items 3)) => ["a" "b" "c"]))))
+           (check (post-json (keydown-json "c" #f 3)) => 204)
+           (check (map key-event-key (recorded-items 3)) => ["a" "b" "c"])
+           (Socket-close second)))))
+
+    (test-case "after a server restart, the open page's next number is taken as the start"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (check (post-json (keydown-json "x" #f 57)) => 204)
+         (check (post-json (keydown-json "y" #f 58)) => 204)
+         (check (map key-event-key (recorded-items 2)) => ["x" "y"]))
+       load-page?: #f))
 
     (test-case "a missing item that 64 later ones wait for is skipped; input carries on"
       (set! (input-recorder-items recorded) [])
