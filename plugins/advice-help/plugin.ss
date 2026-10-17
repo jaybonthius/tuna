@@ -14,8 +14,14 @@
                    (else (string-append (symbol->string info.kind) ": ")))
                  (symbol->string info.name)))
 
+;; A command target describes a name, so its source is the current definition's.
+(def (target-source (info : advice-target-info)) => (Maybe :string)
+  (or info.source
+      (and (eq? info.kind 'command)
+           (let (e (command-entry info.name)) (and e (entry-source e))))))
+
 (def (target-label (info : advice-target-info)) => :string
-  (string-append (target-heading info) " — " (or info.source "unknown source")))
+  (string-append (target-heading info) " — " (or (target-source info) "unknown source")))
 
 (def (advice-line (record : advice-info)) => :string
   (string-append "Owner: " (symbol->string record.owner)
@@ -28,7 +34,7 @@
   ;; A prompt yields: describe the target's advice now, not the old snapshot.
   (let (records (advice-target-records (advice-target-info-target selected)))
     (append [ (target-heading selected)
-              (string-append "Source: " (or selected.source "unknown source")) ]
+              (string-append "Source: " (or (target-source selected) "unknown source")) ]
       (if (null? records)
         ["No advice is currently installed."]
         (append ["Advice layers (outermost first):"]

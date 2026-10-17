@@ -152,6 +152,19 @@ prelude: :gerbil/core
                 => (string-append "Owner: new-owner  Name: new  Kind: after  Depth: 10  Source: "
                                   (advice-info-source record))))))))
 
+    (test-case "a command target shows the command and its current definition's source"
+      (defplugin (greeting ctx) "Defines and advises a command." requires: [commands-service]
+        (defcommand (greet) "Say hello." 'hello)
+        (advise! ctx (command-target 'greet) 'loud filter-return: (lambda (word) 'HELLO)))
+      (with-inspection [greeting]
+        (lambda ()
+          (call-command 'describe-advice)
+          (let (source (entry-source (command-entry 'greet)))
+            (check (string? source) => #t)
+            (check (take (help-lines) 2)
+                   => ["Command: greet" (string-append "Source: " source)])
+            (check (call-command 'greet) => 'HELLO)))))
+
     (test-case "deactivation removes only the inspection command, not another owner's advice"
       (defplugin (persistent-owner ctx) "Outlives the inspection plugin."
         (advise! ctx a-probe 'persistent override: (lambda (n) 100)))
