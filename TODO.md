@@ -12,6 +12,7 @@
 
 ## Tuna
 
+- [ ] **Keys freeze when the screen stream reconnects without a page reload** (seen 2026-10-16 in the demo, under agent-browser). The server log shows a second `GET /screen` from the same page a few seconds after load; every key after it was received (`POST /commands`) but never run. Likely cause, from the input-without-waiting brief: opening a stream resets the server's expected input number to 1, while the page keeps numbering from where it was, so the server holds every later item waiting for a 1 that never comes. A real user would hit this whenever Datastar reopens the stream (for example after the tab was hidden). Reloading the page recovers. Fix in the web plugin and frontend; add a test that reopens the stream mid-session.
 - [ ] **Jobs that post several results** (carry-over from stage 3). A job's `run` returns one result. Posting partial results (for example a highlighter coloring a large text in chunks) needs a way for `run` to post through the job's validity check without finishing; deferred until a job needs it.
 - [ ] **Autosave runs on the baton.** Each changed text is written synchronously while idle. Texts are persistent, so a large text could be written from a job over a snapshot instead.
 - [ ] **No `fsync` before the atomic rename** of session and autosave files: a crash of the machine (not of Tuna) shortly after a save could leave an empty file on some file systems. Gambit has no portable `fsync`.
