@@ -1,6 +1,6 @@
 # Brief: hooks and advice
 
-**Date:** 2026-10-15 (revised after three spikes). **Status:** approved 2026-10-15: option (d), open by default, with one `advise!` for functions, commands and services. Plan: [`agents/plans/hooks-and-advice.md`](../../agents/plans/hooks-and-advice.md). Roadmap item 4 of "getting the core back to its intended shape". Research: [`agents/research/hooks-advice/`](../../agents/research/hooks-advice/) ([Emacs](../../agents/research/hooks-advice/emacs.md), [other systems](../../agents/research/hooks-advice/prior-art.md), [Gerbil and Tuna's hooks](../../agents/research/hooks-advice/gerbil-and-tuna.md), spikes [1](../../agents/research/hooks-advice/open-def-spike.md), [2](../../agents/research/hooks-advice/open-def-spike-2.md) and [3](../../agents/research/hooks-advice/open-def-spike-3.md)). Changes [ADR 1](../../agents/adr/0001-language-and-extension-surface.md) and [ADR 2](../../agents/adr/0002-plugins-contexts-and-services.md).
+**Date:** 2026-10-15 (revised after three spikes). **Status:** approved 2026-10-15: option (d), open by default, with one `advise!` for functions, commands and services. Plan: [`agents/plans/hooks-and-advice.md`](../../agents/plans/hooks-and-advice.md). **Built 2026-10-16, with two changes from the owner-approved audit plan:** commands are targeted with `(command-target 'name)` from the commands contract, so the prelude knows no plugin; and service-operation advice is deferred to the profiler milestone, its only planned user. The [overview](../overview.md#changing-package-code-while-tuna-runs) describes what exists. Roadmap item 4 of "getting the core back to its intended shape". Research: [`agents/research/hooks-advice/`](../../agents/research/hooks-advice/) ([Emacs](../../agents/research/hooks-advice/emacs.md), [other systems](../../agents/research/hooks-advice/prior-art.md), [Gerbil and Tuna's hooks](../../agents/research/hooks-advice/gerbil-and-tuna.md), spikes [1](../../agents/research/hooks-advice/open-def-spike.md), [2](../../agents/research/hooks-advice/open-def-spike-2.md) and [3](../../agents/research/hooks-advice/open-def-spike-3.md)). Changes [ADR 1](../../agents/adr/0001-language-and-extension-surface.md) and [ADR 2](../../agents/adr/0002-plugins-contexts-and-services.md).
 
 ## What we're building and why
 
@@ -28,7 +28,7 @@ Emacs's manual and the research agree on one more lesson: prefer declared extens
 
 ![Pressing Backspace with an advised command](../diagrams/advice-backspace.svg)
 
-**Diagram status:** command/service advice and the walkthrough are planned. Open package functions and function advice are now built, including private targets; the remaining targets and inspection command are next.
+**Diagram status (2026-10-16):** both diagrams describe built behavior. Service-operation advice, once shown here, is deferred to the profiler.
 
 ## A walkthrough: a "hungry delete" plugin
 
@@ -49,7 +49,7 @@ The names are provisional; the forms are settled.
 (defplugin (hungry-delete ctx)
   "Backspace deletes all the spaces before point at once."
   requires: [commands-service]
-  (advise! ctx (command delete-backward-char) 'hungry
+  (advise! ctx (command-target 'delete-backward-char) 'hungry
     around: (lambda (original)
               (if (spaces-before-point?)
                 (delete-spaces-before-point!)
@@ -59,10 +59,6 @@ The names are provisional; the forms are settled.
 ;; An imported function can be named directly: (advise! ctx find-node ...).
 (advise! ctx (function :tuna/plugins/layout/plugin find-node) 'log-lookups
   before: (lambda (tree id) (log-lookup id)))
-
-;; An operation of a service, whichever plugin provides it.
-(advise! ctx (service text-store-service insert!) 'timing
-  around: (lambda (original . args) (time-it (lambda () (apply original args)))))
 
 ;; A hot inner loop opts out, like Emacs's defsubst.
 (def/closed (rope-for-each-chunk f rope) …)
@@ -79,7 +75,7 @@ The names are provisional; the forms are settled.
 **Advice.**
 - Each piece of advice has an owner (a plugin, a block of your configuration, or your session for code you evaluate), a name, a kind and a depth. Adding advice with the same owner and name replaces it. Turning the owner off removes it.
 - **Scope follows the target, not the registering owner.** Function advice changes the shared package function, just as `redefine` does and Emacs's `advice-add` does. Command and service advice follow their existing registries. Ownership supplies cleanup, not a second copy of the function per editor instance. No new kernel isolation query is needed; [scope evidence](../../agents/research/hooks-advice/advice-scope.md).
-- **One form, three targets:** `advise!` takes a function (an imported name, or `(function module name)` for any open function, private ones included), a command (`(command name)`), or a service operation (`(service service operation)`). Service advice wraps the operation for whichever plugin provides the service and survives a swap; function advice wraps one specific piece of code. Both can apply at once; service advice is then outermost. Function targets reach named top-level functions only, so an operation a provider implements inline is reachable only through its service.
+- **One form, three targets:** `advise!` takes a function (an imported name, or `(function module name)` for any open function, private ones included), or a command (`(command-target 'name)`, from the commands contract). *Deferred to the profiler milestone:* service operations, wrapping an operation for whichever plugin provides the service.
 - **Kinds:** ADR 1's ten Emacs kinds (`before`, `after`, `around`, `override`, `filter-args`, `filter-return`, and the four `before-while`-style variants). Emacs's newer eleventh kind, which changes only how a command reads its arguments, isn't needed: Tuna commands read their arguments inside their body.
 - **Order:** lower depth is outermost. Equal depths go by the owners' order in `init.ss`, not by when the advice was added, so a reload can't reorder them.
 - **Errors:** an error inside advice propagates like an error in the function itself, and the report names the advice and its owner. Hooks are different: a failing callback is removed and the rest continue. Silently skipping advice would change what the function returns.

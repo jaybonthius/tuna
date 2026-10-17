@@ -33,7 +33,6 @@ plugin: "Your plugin\nadds advice; turning it off removes it" {class: yes}
 
 can: "Can be advised and redefined" {
   cmd: "A command\nkept by the commands plugin" {class: yes}
-  svc: "A service method\nkept by the kernel's service list" {class: yes}
   decl: "Any function in a Tuna package, private ones too\nnamed by module and function" {class: yes}
 }
 
@@ -43,5 +42,4 @@ cannot: "Cannot be advised" {
 }
 
 plugin -> can.cmd: "advise"
-plugin -> can.svc: "advise"
 plugin -> can.decl: "advise"

@@ -15,7 +15,7 @@ original: "delete-backward-char\n(from basic-editing)"
 
 you -> keys: "1. Backspace"
 keys -> commands: "2. run delete-backward-char"
-commands -> hungry: "3. call the combined command, built once when the advice was added"
+commands -> hungry: "3. call the combined command, rebuilt only when the advice or the command changes"
 hungry -> hungry: "4a. spaces before point: delete them all, done"
 hungry -> original: "4b. otherwise: call the original"
 original -> you: "5. either way, the screen redraws"
