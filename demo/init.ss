@@ -22,6 +22,7 @@
         :tuna/plugins/renderer/plugin
         :tuna/plugins/buttons/plugin
         :tuna/plugins/basic-editing/plugin
+        :tuna/plugins/hungry-delete/plugin
         :tuna/plugins/minibuffer/plugin
         :tuna/plugins/completion/plugin
         :tuna/plugins/completion-vertical/plugin
@@ -57,6 +58,7 @@
 (use-plugin html-renderer)
 (use-plugin buttons)             ; buttons in buffers: a click runs their action
 (use-plugin basic-editing)
+(use-plugin hungry-delete)       ; Backspace deletes the spaces before point in one edit
 (use-plugin minibuffer)
 (use-plugin completion-engine
   config: (context-set-setting! (current-context) completion-styles '(orderless substring)))
@@ -66,7 +68,7 @@
 (use-plugin annotations)
 (use-plugin echo-area)           ; in the bar, under the minibuffer
 (use-plugin help-buffer)         ; *Help*; C-h q closes it
-(use-plugin advice-help)         ; M-x describe-advice: current function advice
+(use-plugin advice-help)         ; M-x describe-advice: function and command advice
 (use-plugin endless-commands)    ; C-c l and C-c L: loops to quit with C-g
 (use-plugin services-help)       ; C-h s: describe-services
 (use-plugin rename-command)      ; C-c r: rename the buffer in the minibuffer
@@ -77,7 +79,7 @@
                                html-renderer layout buffers))
 (use-plugin digit-highlighter)   ; colors digits from a slow job
 (use-plugin tree-buffer)         ; C-c b: the *welcome* buffer, built as a tree
-(use-plugin demo)                ; C-c s text store, C-c p basic editing
+(use-plugin demo)                ; C-c s text store, C-c p basic editing, C-c h hungry delete
 (use-plugin sidebar-demo)        ; C-c d: a sidebar of buffer buttons pinned to the left, or killed
 (use-plugin reload-config        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)
