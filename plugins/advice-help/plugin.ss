@@ -1,5 +1,5 @@
 #lang :tuna/prelude
-;;; Function advice inspection, independent of the help/completion providers.
+;;; Advice inspection, independent of the help/completion providers.
 (import :std/list/list
         :tuna/kernel
         :tuna/plugins/commands/contract
@@ -7,8 +7,15 @@
         :tuna/plugins/help/contract)
 (export advice-help)
 
-(def (function-label (target : function-advice-info)) => :string
-  (string-append (symbol->string target.name) " — " (or target.source "unknown source")))
+(def (target-heading (info : advice-target-info)) => :string
+  (string-append (case info.kind
+                   ((function) "Function: ")
+                   ((command) "Command: ")
+                   (else (string-append (symbol->string info.kind) ": ")))
+                 (symbol->string info.name)))
+
+(def (target-label (info : advice-target-info)) => :string
+  (string-append (target-heading info) " — " (or info.source "unknown source")))
 
 (def (advice-line (record : advice-info)) => :string
   (string-append "Owner: " (symbol->string record.owner)
@@ -17,35 +24,31 @@
                  "  Depth: " (number->string record.depth)
                  "  Source: " (or record.source "unknown source")))
 
-(def (function-description (selected : function-advice-info)) => :list
-  ;; A prompt yields: use its name/source identity, never its old advice snapshot.
-  (let* ((current (find (lambda ((target : function-advice-info))
-                          (and (eq? target.name selected.name)
-                               (equal? target.source selected.source)))
-                        (advised-functions)))
-         (records (if current (function-advice-info-advice current) [])))
-    (append [ (string-append "Function: " (symbol->string selected.name))
+(def (target-description (selected : advice-target-info)) => :list
+  ;; A prompt yields: describe the target's advice now, not the old snapshot.
+  (let (records (advice-target-records (advice-target-info-target selected)))
+    (append [ (target-heading selected)
               (string-append "Source: " (or selected.source "unknown source")) ]
       (if (null? records)
-        ["No advice is currently installed for this function."]
+        ["No advice is currently installed."]
         (append ["Advice layers (outermost first):"]
                 (map advice-line records)
                 (if (ormap (lambda ((record : advice-info)) (eq? record.kind 'override)) records)
-                  ["WARNING: override advice suppresses all inner advice and the original function."]
+                  ["WARNING: override advice suppresses all inner advice and the original."]
                   []))))))
 
 (defplugin (advice-help ctx)
-  "Inspect the advice currently wrapping a package function."
+  "Inspect the advice currently wrapping functions and commands."
   requires: [commands-service completion-service help-service]
   optional: [completion-ui-service]
-  (define-command ctx (describe-advice) "Choose an advised function and show its current advice, outermost first."
-    (let (targets (advised-functions))
+  (define-command ctx (describe-advice) "Choose an advised function or command and show its advice, outermost first."
+    (let (targets (advised-targets))
       (if (null? targets)
-        (show-help "Function advice" ["No function advice is currently installed."])
-        (let* ((table (make-completion-table category: 'function-advice
-                        items: (map (lambda ((target : function-advice-info))
-                                      (make-candidate text: (function-label target) value: target
-                                                      key: (cons target.name target.source)))
+        (show-help "Advice" ["No advice is currently installed."])
+        (let* ((table (make-completion-table category: 'advice-target
+                        items: (map (lambda ((info : advice-target-info))
+                                      (make-candidate text: (target-label info) value: info
+                                                      key: (advice-target-info-target info)))
                                     targets)))
-               (selected (: (completing-read "Describe advice for function: " table) function-advice-info)))
-          (show-help "Function advice" (function-description selected)))))))
+               (selected (: (completing-read "Describe advice for: " table) advice-target-info)))
+          (show-help "Advice" (target-description selected)))))))

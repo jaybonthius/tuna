@@ -1,10 +1,10 @@
 ;;; Named commands, independent of the input provider (ADR 8, ADR 14).
 prelude: :gerbil/core
 
-(import :std/interface :tuna/kernel)
+(import :std/interface :tuna/kernel :tuna/lib/advice)
 (export (struct-out command)
         (interface-out Commands)
-        commands-service context-define-command! define-command defcommand
+        commands-service context-define-command! define-command defcommand command-target
         command-entry command-ref command-names call-command this-command last-command
         pre-command-hook post-command-hook)
 
@@ -23,6 +23,8 @@ prelude: :gerbil/core
 
 (interface Commands
   (define-command! (ctx : context) (c : command) (source :? :string)) => :void
+  ;; Advice on command NAME wraps whichever definition is current.
+  (advice-target (name : :symbol)) => advice-target
   (command-entry (name : :symbol)) => (Maybe entry)
   (command-names) => :list
   (call-command (name : :symbol)) => :t
@@ -52,6 +54,12 @@ prelude: :gerbil/core
                             (raise e)))
                         (lambda () (call-with-task-owner ctx procedure))))
           doc: doc visible?: visible?) source)) :void)))
+
+;; The advice target of command NAME, for advise!. It exists before the
+;; command is defined and outlives its definitions, as Emacs advice does.
+(def (command-target (name : :symbol)) => advice-target
+  (:- (with-service-provider (provider commands-service Commands)
+        (Commands-advice-target provider name)) advice-target))
 
 (defsyntax (define-command stx)
   (syntax-case stx ()

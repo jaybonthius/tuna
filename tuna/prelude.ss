@@ -11,11 +11,13 @@ prelude: :gerbil/core
         (rename: def*/open def*)
         redefine
         install-open! open-definition open-function-cell
-        advise! unadvise! function-advice advised-functions
+        advise! unadvise! advice-for advised-targets
+        advice-target advice-target? new-advice-target advice-target-records compose-advice
         advice-info advice-info-owner advice-info-name advice-info-kind
         advice-info-depth advice-info-source
-        function-advice-info function-advice-info-name function-advice-info-source
-        function-advice-info-advice advice-error?
+        advice-target-info advice-target-info-kind advice-target-info-name
+        advice-target-info-source advice-target-info-advice advice-target-info-target
+        advice-error?
         defplugin
         (phi: +1 read-module-body)
         (import: :gerbil/core))
@@ -167,13 +169,25 @@ prelude: :gerbil/core
     ((_ name) (open-binding-cell-for #'name))))
 
 (begin-syntax
-  (def (function-target (target : :t)) => :t
+  ;; An open function's name, (function module name) for any open function,
+  ;; private ones included, or an expression yielding an advice target, such
+  ;; as (command-target 'name) from the commands contract.
+  (def (advice-target-expression (target : :t)) => :t
     (syntax-case target ()
       ((tag module name)
-       (and (eq? (syntax-e #'tag) 'function) (identifier? #'name))
-       #'(resolve-open-function 'module 'name))
-      (name (identifier? #'name) (open-binding-cell-for #'name))
-      (_ (raise-syntax-error #f "Expected an open function or (function module name)" target)))))
+       (and (identifier? #'tag) (eq? (syntax-e #'tag) 'function) (identifier? #'name))
+       #'(open-function-target (resolve-open-function 'module 'name)))
+      (name
+       (and (identifier? #'name)
+            (open-binding? (syntax-local-value #'name (lambda (_) #f))))
+       (with-syntax ((cell (open-binding-cell-for #'name)))
+         #'(open-function-target cell)))
+      (expression #'(the-advice-target expression)))))
+
+;; Raise a clear error for a closed function or any other non-target.
+(def (the-advice-target (target : :t)) => advice-target
+  (if (advice-target? target) target
+      (error "Not an advice target: expected an open function, (function module name), or an advice target" target)))
 
 (defsyntax (advise! stx)
   (syntax-case stx ()
@@ -186,7 +200,7 @@ prelude: :gerbil/core
               ((before-until:) 'before-until) ((after-while:) 'after-while)
               ((after-until:) 'after-until)
               (else (raise-syntax-error #f "Unknown advice kind" stx #'kind))))
-       (with-syntax ((cell (function-target #'target))
+       (with-syntax ((target (advice-target-expression #'target))
                      (kind-name kind-name)
                      (source (stx-source-string stx))
                      ;; Open callbacks already denote a stable, live facade. Only
@@ -195,20 +209,20 @@ prelude: :gerbil/core
                                          (not (open-binding?
                                                (syntax-local-value #'callback (lambda (_) #f)))))
                                   #'(lambda args (apply callback args)) #'callback)))
-         #'(register-function-advice! ctx cell name 'kind-name procedure
-                                     source: source option ...))))))
+         #'(register-advice! ctx target name 'kind-name procedure
+                             source: source option ...))))))
 
 (defsyntax (unadvise! stx)
   (syntax-case stx ()
     ((_ ctx target name)
-     (with-syntax ((cell (function-target #'target)))
-       #'(remove-function-advice! ctx cell name)))))
+     (with-syntax ((target (advice-target-expression #'target)))
+       #'(remove-advice! ctx target name)))))
 
-(defsyntax (function-advice stx)
+(defsyntax (advice-for stx)
   (syntax-case stx ()
     ((_ target)
-     (with-syntax ((cell (function-target #'target)))
-       #'(inspect-function-advice cell)))))
+     (with-syntax ((target (advice-target-expression #'target)))
+       #'(inspect-advice target)))))
 
 (begin-syntax
   (def (read-module-body (port :~ input-port?)) => :list

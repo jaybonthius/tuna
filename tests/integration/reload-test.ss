@@ -11,7 +11,7 @@
         :tuna/kernel
         :tuna/boot
         :tuna/control
-        (only-in :tuna/prelude function-advice function-advice-info-advice advice-info-owner)
+        (only-in :tuna/prelude advice-for advice-target-info-advice advice-info-owner)
         (only-in "../../tuna/tests/support/open-functions/advice-target" probe callback-log)
         :tuna/plugins/session/contract
         :tuna/plugins/session/plugin
@@ -125,7 +125,7 @@
                  (write-init directory imports counted-line good-line)
                  (check (reload-succeeded? (reload)) => #t)
                  (check (map advice-info-owner
-                             (function-advice-info-advice (function-advice probe)))
+                             (advice-target-info-advice (advice-for probe)))
                         => '(counted/config good/config))
                  (set! callback-log [])
                  (probe 1)
@@ -133,7 +133,7 @@
                  (write-init directory imports good-line counted-line "(error \"advice-rank-test\")")
                  (check (reload-succeeded? (reload)) => #f)
                  (check (map advice-info-owner
-                             (function-advice-info-advice (function-advice probe)))
+                             (advice-target-info-advice (advice-for probe)))
                         => '(good/config counted/config))
                  (set! callback-log [])
                  (probe 1)

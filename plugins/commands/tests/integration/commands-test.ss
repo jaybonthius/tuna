@@ -1,6 +1,8 @@
 ;;; Registry behavior without a Keys provider; package macros use Commands.
 prelude: :gerbil/core
 (import :std/test :std/error :tuna/kernel :tuna/plugins/commands/contract
+        (only-in :tuna/prelude advise! advice-for advised-targets
+                 advice-target-info-advice advice-info-name)
         :tuna/plugins/commands/plugin "../../../../tuna/tests/support/kernel" "../support/toy-commands")
 (export commands-test)
 
@@ -45,6 +47,32 @@ prelude: :gerbil/core
               (check (call-command 'same) => 'new)
               (deactivate-plugin! repeated)
               (check (command-entry 'same) => #f))))
+        [commands toy-commands]))
+
+    (test-case "command advice follows the name across definitions and owner removal"
+      (for-each
+        (lambda ((provider : plugin))
+          (call-with-fresh-kernel [provider]
+            (lambda ()
+              (defplugin (doubler ctx) "Runs the greeting twice."
+                requires: [commands-service]
+                (advise! ctx (command-target 'greet) 'twice
+                  around: (lambda (original) (list (original) (original)))))
+              (defplugin (greeter ctx) "Defines the greeting."
+                requires: [commands-service]
+                (context-define-command! ctx 'greet (lambda () 'hello)))
+              ;; Advice may come before the command exists, as in Emacs.
+              (activate-plugin! doubler)
+              (activate-plugin! greeter)
+              (check (call-command 'greet) => '(hello hello))
+              (check (map advice-info-name (advice-target-info-advice (advice-for (command-target 'greet))))
+                     => '(twice))
+              (deactivate-plugin! greeter)
+              (activate-plugin! greeter)
+              (check (call-command 'greet) => '(hello hello))
+              (deactivate-plugin! doubler)
+              (check (call-command 'greet) => 'hello)
+              (check (advised-targets) => '()))))
         [commands toy-commands]))
 
     (test-case "named calls run command hooks even without an input provider"
