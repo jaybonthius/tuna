@@ -41,6 +41,7 @@
    (admission   : :mutex)       ; guards input ordering and submission
    (next        : :fixnum)      ; next page-load sequence to submit
    (pending     : HashTable)  ; sequence -> input item
+   (numbered?   : :boolean)     ; whether a page load or first item set NEXT
    (mutex       : :mutex)       ; guards the fields below
    (changed     : :condvar)
    (screen      : :string)      ; the newest screen
@@ -186,11 +187,13 @@
     (cond
      ((string=? path "/")
       (if (string=? method "GET")
-        (ResponseHandler-write! response OK
+        (begin
+         (restart-numbering! self)
+         (ResponseHandler-write! response OK
                                 '(("Content-Type" . "text/html; charset=utf-8")
                                   ("Cache-Control" . "no-store")
                                   ("Referrer-Policy" . "no-referrer"))
-                                (string->utf8 (page-html (current-screen self))))
+                                (string->utf8 (page-html (current-screen self)))))
         (respond-text response Method-Not-Allowed "Use GET.")))
      ((string=? path "/screen")
       (if (and (string=? method "GET") (datastar-request? request))
@@ -207,12 +210,17 @@
      (else
       (respond-text response Not-Found (string-append "Not found: " path))))))
 
-;; One writer per client: send the newest screen whenever it changes.
-(def (stream-screens (self : web-server) (request : Request) (response : ResponseHandler)) => :void
-  ;; A page opening its stream starts numbering at 1 again. One tab only.
+;; A page numbers its input from 1 when it loads, so serving the page starts
+;; numbering again. A stream that reconnects without a reload keeps it: the
+;; page's count goes on. One tab only.
+(def (restart-numbering! (self : web-server)) => :void
   (do-with-lock self.admission
     (set! self.next 1)
-    (hash-clear! self.pending))
+    (set! self.numbered? #t)
+    (hash-clear! self.pending)))
+
+;; One writer per client: send the newest screen whenever it changes.
+(def (stream-screens (self : web-server) (request : Request) (response : ResponseHandler)) => :void
   ;; A closed tab surfaces as a failed write; that ends this stream only.
   (with-catch
    void
@@ -253,6 +261,11 @@
 ;; so another handler cannot overtake an item while it is handed to the loop.
 (def (admit-event! (self : web-server) (sequence : :fixnum) (event : :t)) => :void
   (do-with-lock self.admission
+    ;; After a server restart the open page keeps its count and loads no new
+    ;; page, so the first item seen sets the numbering.
+    (unless self.numbered?
+      (set! self.next sequence)
+      (set! self.numbered? #t))
     (cond
      ((or (fx< sequence self.next) (hash-key? self.pending sequence))
       (web-log.warnf "Ignored duplicate input %a." sequence))
@@ -373,6 +386,7 @@
                               admission: (make-mutex 'tuna-admission)
                               next: 1
                               pending: (make-hash-table-eqv)
+                              numbered?: #f
                               mutex: (make-mutex 'tuna-screen)
                               changed: (make-condition-variable 'tuna-screen)
                               screen: (stamp-revision "<main id=\"screen\"></main>" 0)
