@@ -518,11 +518,15 @@
       (with-loop
        (lambda ()
          (set! log [])
+         (call-on-editor-loop
+           (lambda ()
+             (set-plugin-order! provider-quitter 1)
+             (set-plugin-order! lifecycle-recorder 2)))
          (spawn-task! 'activate-provider
                       (lambda () (activate-plugin! dummy-provider) (note! 'after)))
          (check (settled-message) => "Quit")
-         ;; The quitter's callback runs first; the recorder still sees every
-         ;; event, including the dependent activated by the same operation.
+         ;; Declaration order puts the quitter first; the recorder must still
+         ;; see every event, including the dependent activated by the operation.
          (check (reverse log) => [['changed 'dummy] ['activated 'dummy-provider]
                                   ['activated 'dummy-user]])
          (check (call-on-editor-loop
