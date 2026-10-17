@@ -12,7 +12,7 @@ prelude: :gerbil/core
         redefine
         install-open! open-definition open-function-cell
         advise! unadvise! advice-for advised-targets
-        advice-target advice-target? new-advice-target advice-target-records compose-advice
+        advice-target advice-target-records
         advice-info advice-info-owner advice-info-name advice-info-kind
         advice-info-depth advice-info-source
         advice-target-info advice-target-info-kind advice-target-info-name

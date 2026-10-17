@@ -67,6 +67,22 @@ prelude: :gerbil/core
               (check (call-command 'greet) => '(hello hello))
               (check (map advice-info-name (advice-target-info-advice (advice-for (command-target 'greet))))
                      => '(twice))
+              ;; Changing the advice and redefining the command both rebuild the cached chain.
+              (defplugin (marker ctx) "Replaces the doubling with a marker."
+                requires: [commands-service]
+                (advise! ctx (command-target 'greet) 'twice
+                  around: (lambda (original) (list 'marked (original)))))
+              (deactivate-plugin! doubler)
+              (activate-plugin! marker)
+              (check (call-command 'greet) => '(marked hello))
+              (defplugin (new-greeter ctx) "Defines the greeting differently."
+                requires: [commands-service]
+                (context-define-command! ctx 'greet (lambda () 'howdy)))
+              (activate-plugin! new-greeter order: 100)
+              (check (call-command 'greet) => '(marked howdy))
+              (deactivate-plugin! new-greeter)
+              (deactivate-plugin! marker)
+              (activate-plugin! doubler)
               (deactivate-plugin! greeter)
               (activate-plugin! greeter)
               (check (call-command 'greet) => '(hello hello))

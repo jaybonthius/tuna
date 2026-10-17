@@ -1,7 +1,6 @@
 ;;; The demo plugin, for development only (`tuna --config demo/init.ss`):
 ;;; swapping the text store (C-c s), basic editing (C-c p) and hungry
-;;; delete (C-c h) while Tuna
-;;; runs. The demo's other commands (the *welcome* tree buffer, endless
+;;; delete (C-c h) while Tuna runs. The demo's other commands (the *welcome* tree buffer, endless
 ;;; loops, describe-services, renaming, renderer and layout swaps,
 ;;; the slow digit highlighter) are test fixtures from tuna/test-support/
 ;;; that demo/init.ss declares beside it. The demo turns other plugins on

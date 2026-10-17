@@ -14,7 +14,9 @@
   (or (hash-get self.advice name)
       (letrec ((state (command-advice
                        target: (new-advice-target 'command name #f
-                                 (lambda (records) (set! (command-advice-base state) #f)))
+                                 (lambda (records)
+                                   (set! (command-advice-base state) #f)
+                                   (set! (command-advice-effective state) #f)))
                        base: #f effective: #f)))
         (hash-put! self.advice name state)
         state)))

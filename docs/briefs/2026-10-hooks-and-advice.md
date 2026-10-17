@@ -74,8 +74,8 @@ The names are provisional; the forms are settled.
 
 **Advice.**
 - Each piece of advice has an owner (a plugin, a block of your configuration, or your session for code you evaluate), a name, a kind and a depth. Adding advice with the same owner and name replaces it. Turning the owner off removes it.
-- **Scope follows the target, not the registering owner.** Function advice changes the shared package function, just as `redefine` does and Emacs's `advice-add` does. Command and service advice follow their existing registries. Ownership supplies cleanup, not a second copy of the function per editor instance. No new kernel isolation query is needed; [scope evidence](../../agents/research/hooks-advice/advice-scope.md).
-- **One form, three targets:** `advise!` takes a function (an imported name, or `(function module name)` for any open function, private ones included), or a command (`(command-target 'name)`, from the commands contract). *Deferred to the profiler milestone:* service operations, wrapping an operation for whichever plugin provides the service.
+- **Scope follows the target, not the registering owner.** Function advice changes the shared package function, just as `redefine` does and Emacs's `advice-add` does. Command advice follows the command registry. Ownership supplies cleanup, not a second copy of the function per editor instance. No new kernel isolation query is needed; [scope evidence](../../agents/research/hooks-advice/advice-scope.md).
+- **One form, two targets:** `advise!` takes a function (an imported name, or `(function module name)` for any open function, private ones included), or a command (`(command-target 'name)`, from the commands contract). *Deferred to the profiler milestone:* service operations, wrapping an operation for whichever plugin provides the service.
 - **Kinds:** ADR 1's ten Emacs kinds (`before`, `after`, `around`, `override`, `filter-args`, `filter-return`, and the four `before-while`-style variants). Emacs's newer eleventh kind, which changes only how a command reads its arguments, isn't needed: Tuna commands read their arguments inside their body.
 - **Order:** lower depth is outermost. Equal depths go by the owners' order in `init.ss`, not by when the advice was added, so a reload can't reorder them.
 - **Errors:** an error inside advice propagates like an error in the function itself, and the report names the advice and its owner. Hooks are different: a failing callback is removed and the rest continue. Silently skipping advice would change what the function returns.
@@ -91,8 +91,8 @@ The names are provisional; the forms are settled.
 **Where it lives.**
 - The open-function macros live in Tuna's package prelude, not the kernel.
 - Combining advice is a small library outside the kernel.
-- `advise!` routes command advice to the commands plugin, which keeps it with the command.
-- Service methods need the only kernel change: alongside each service's provider, the kernel keeps an "advised view" of it and hands that out while advice exists. Advice never counts as a new provider, so it doesn't restart anything.
+- The commands plugin keeps each command's advice and composes it over the current definition; the commands contract hands out the target.
+- *Proposed here, then deferred to the profiler:* service-operation advice through an "advised view" of each provider. Its first implementation needed a parallel interface system in the kernel.
 
 **Hooks: three fixes, nothing new.**
 - A callback removed for failing leaves its clean-up note behind. This is the same leak shape as the one just fixed. Remove the note with the callback.

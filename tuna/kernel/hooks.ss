@@ -1,7 +1,8 @@
 ;;; Hooks: named, ordered lists of named callbacks (ADR 2, ADR 12). Each
 ;;; hook object holds its own callbacks; the kernel keeps no table of hooks.
-;;; Callbacks run by depth, then owner declaration order; callbacks within
-;;; one owner retain their registration order.
+;;; Callbacks run by depth, then owner declaration order, then owner name
+;;; (plugins not declared in init.ss share rank 0); callbacks within one
+;;; owner retain their registration order.
 ;;; Plugins add callbacks with context-add-hook! and call them with run-hook,
 ;;; both in ./plugins, which reports failing callbacks.
 ;;;

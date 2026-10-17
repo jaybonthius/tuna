@@ -303,5 +303,7 @@
               (check (advice-info-depth record) => -2))
             (parameterize ((current-expander-context (import-module target-path #f #t)))
               (check (eq? token (eval 'token)) => #t)
-              (check-exception (eval '(advice-for closed)) error?)))))
+              (check-exception (eval '(advice-for closed))
+                               (lambda (e) (and (error? e)
+                                                (string-prefix? "Not an advice target" (error-message e)))))))))
       (check (advised-targets) => '()))))
