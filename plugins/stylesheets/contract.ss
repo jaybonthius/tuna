@@ -38,10 +38,10 @@ prelude: :gerbil/core
         :tuna/kernel)
 (export add-stylesheet
         replace-stylesheet
-        stylesheet? stylesheet-owner stylesheet-name stylesheet-path
+        stylesheet stylesheet? stylesheet-owner stylesheet-name stylesheet-path
         stylesheet-text stylesheet-digest stylesheet-replaced-by stylesheet-warning
         stylesheets
-        stylesheet-replacement? stylesheet-replacement-owner stylesheet-replacement-name
+        stylesheet-replacement stylesheet-replacement? stylesheet-replacement-owner stylesheet-replacement-name
         stylesheet-replacement-replaced-by stylesheet-replacement-path
         stylesheet-replacement-target
         stylesheet-replacements

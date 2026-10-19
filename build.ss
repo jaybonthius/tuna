@@ -35,6 +35,7 @@
     ("plugins/completion-vertical" "plugin")
     ("plugins/extended-command" "plugin")
     ("plugins/advice-help" "plugin")
+    ("plugins/stylesheets-help" "plugin")
     ("plugins/orderless" "plugin")
     ("plugins/command-annotations" "plugin")
     ("plugins/view-commands" "plugin")
