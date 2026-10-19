@@ -18,6 +18,7 @@
      (exe: "main" bin: "tuna"))
     ("plugins/commands" "contract" "plugin")
     ("plugins/stylesheets" "contract")
+    ("plugins/design-tokens" "plugin")
     ("plugins/settings" "contract" "plugin")
     ("plugins/text-store" "contract" "plugin")
     ("plugins/session" "contract" "plugin")
