@@ -131,8 +131,13 @@
              (for-each (lambda (step) (if (pair? step) (post-click (car step) revision: revision) (post-key step)))
                        ["1" "2" [(tab one)] "3" "4" [(tab two)] "5"
                         [(string-append "view:" (number->string (view-id left)))] "6"])
-             (check (call-on-editor-loop (lambda () (map buffer-string ["left" "one" "two"])))
-                    => ["126" "34" "5"])
+             ;; A key's 204 arrives before the key runs, so wait for the last one.
+             (check (wait-until
+                     (lambda ()
+                       (equal? (call-on-editor-loop
+                                (lambda () (map buffer-string ["left" "one" "two"])))
+                               ["126" "34" "5"])))
+                    => #t)
              ;; Close tab two, then click it on the screen that still showed it.
              (post-click (tab two) revision: revision)
              (post-key "x" ctrl?: #t)
