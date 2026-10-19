@@ -30,7 +30,7 @@ html, body { margin: 0; height: 100%; overscroll-behavior: none; }
       data-init="@get('/screen?c={{C}}')"
       data-on:resize__window__debounce.100ms="$w = document.getElementById('scroller').clientWidth; $h = document.getElementById('scroller').clientHeight; @post('/resize?c={{C}}')">
 {{SCREEN}}
-<div id="hud" data-text="'scrollTop ' + Math.round($y) + ' · last report: node ' + $top"></div>
+<div id="hud" data-text="'scrollTop ' + Math.round($y) + ' · last report: node ' + $top + ' · anchoring ' + (CSS.supports('overflow-anchor', 'auto') ? 'yes' : 'NO') + ' · ' + (navigator.userAgent.match(/OS (\d+)_(\d+)/)?.slice(1).join('.') ?? '')"></div>
 <div data-init="$w = document.getElementById('scroller').clientWidth; $h = document.getElementById('scroller').clientHeight; @post('/resize?c={{C}}')"></div>
 </body>
 </html>
