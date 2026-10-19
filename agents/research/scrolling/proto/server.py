@@ -17,6 +17,12 @@ the window relative to what the browser actually has on screen:
   from the nearest edge of the rendered window by estimates, then put the
   node found exactly at the viewport.
 
+Like hyperlith's batch loop, the stream re-renders the page's view every
+50 ms tick and sends it once the previous screen has been written, whether
+or not anything changed. Reports only update the view. A screen that is
+lost or stuck therefore costs at most one tick: the next one replaces it
+and puts back the data-effect the browser removed when it reported.
+
 The browser side is two Datastar attributes on the scroller (see render()).
 
 Run: python3 server.py [--host ADDR] [--port N] [--latency MS]
@@ -84,7 +90,7 @@ class Page:
     top), its viewport size, and its screen stream."""
     def __init__(self, cid):
         self.cid = cid
-        self.lock = threading.Condition()
+        self.lock = threading.Lock()
         self.anchor, self.pos = 0, 0.0
         self.w, self.h = 800, 800
         self.revision, self.screen = 0, ""
@@ -128,7 +134,7 @@ class Page:
         hi = b - 1
         while hi > t and est(hi, b) < h + AFTER / 2: hi -= 1
         self.revision += 1
-        self.last = f"rev {self.revision} anchor {t}@{self.pos:.0f} window {a}..{b} top-spacer {top:.0f} lo/hi {lo}/{hi} h {h}"
+        self.last = f"anchor {t}@{self.pos:.0f} window {a}..{b} top-spacer {top:.0f} lo/hi {lo}/{hi} h {h}"
         body = "".join(node_html(i) for i in range(a, b))
         # The report rides in the URL, not in signals: writing signals here
         # and then posting (which reads every signal) re-runs the effect once
@@ -150,7 +156,6 @@ class Page:
             f'<div id="scroller" data-on:scroll="$y = el.scrollTop" data-effect="{esc_attr(effect)}">'
             f'<div id="sp-top" class="spacer" style="height:{top:.0f}px"></div>{body}'
             f'<div id="sp-bot" class="spacer" style="height:{bottom:.0f}px"></div></div></main>')
-        self.lock.notify_all()
 
 def esc_attr(s):
     return s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
@@ -162,6 +167,7 @@ def log(page, *msg):
 PAGES = {}
 ARGS = None
 POSTS = [0]   # for tests: total scroll/resize posts
+TICK = 0.05   # s; hyperlith's default batch-tick-ms is 50
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -205,21 +211,24 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-store")
+            self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
-            sent = -1
             log(page, "stream open")
             try:
-                while True:
-                    with page.lock:                 # send only the newest screen
-                        while page.revision == sent:
-                            page.lock.wait(15)
-                        sent, screen = page.revision, page.screen
+                while True:                          # hyperlith's batch loop, one page
+                    next_tick = time.monotonic() + TICK
+                    with page.lock:
+                        page.render()
+                        screen = page.screen
                     if ARGS.latency: time.sleep(ARGS.latency / 1000)
                     # Every line of the HTML needs its own "data: elements" prefix.
                     data = "".join(f"data: elements {line}\n" for line in screen.split("\n"))
-                    self.wfile.write(f"event: datastar-patch-elements\n{data}\n".encode())
+                    event = f"event: datastar-patch-elements\n{data}\n".encode()
+                    # Blocks until written: the next screen is rendered only
+                    # after this one went out (hyperlith's backpressure).
+                    self.wfile.write(b"%x\r\n%s\r\n" % (len(event), event))
                     self.wfile.flush()
-                    log(page, "sent rev", sent)
+                    time.sleep(max(0.0, next_tick - time.monotonic()))
             except (BrokenPipeError, ConnectionResetError) as e:
                 log(page, "stream closed:", type(e).__name__)
         else:
@@ -229,10 +238,6 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(n)
         page = self.page()
-        if urlparse(self.path).path == "/log":     # diagnostics from the page
-            self.send_response(204); self.send_header("Content-Length", "0"); self.end_headers()
-            log(page, "browser:", raw.decode(errors="replace"))
-            return
         signals = json.loads(raw or b"{}")
         self.send_response(204 if page else 404); self.send_header("Content-Length", "0"); self.end_headers()
         if not page: return
@@ -243,12 +248,11 @@ class Handler(BaseHTTPRequestHandler):
             page.w, page.h = signals.get("w") or page.w, signals.get("h") or page.h
             if urlparse(self.path).path == "/scroll":
                 page.place(q)
+                page.render()
                 log(page, f"scroll report: top {q['top']} off {float(q['off']):.0f} at {float(q['at']):.0f} "
-                          f"end {float(q['end']):.0f} (window {q['a']}..{q['b']} spacer {q['s']})")
+                          f"end {float(q['end']):.0f} (window {q['a']}..{q['b']} spacer {q['s']}) -> {page.last}")
             else:
                 log(page, f"resize {page.w}x{page.h}")
-            page.render()
-            log(page, "  ->", page.last)
 
 def main():
     global ARGS

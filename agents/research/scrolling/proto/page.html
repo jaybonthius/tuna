@@ -28,8 +28,6 @@ html, body { margin: 0; height: 100%; overscroll-behavior: none; }
 </head>
 <body data-signals="{y: 0, w: 0, h: 0}"
       data-init="@get('/screen?c={{C}}')"
-      data-on:datastar-fetch__document="navigator.sendBeacon('/log?c={{C}}', 'fetch ' + evt.detail.type + ' ' + (evt.detail.el?.id || evt.detail.el?.tagName))"
-      data-on:error__window="navigator.sendBeacon('/log?c={{C}}', 'js error ' + evt.message)"
       data-on:resize__window__debounce.100ms="$w = document.getElementById('scroller').clientWidth; $h = document.getElementById('scroller').clientHeight; @post('/resize?c={{C}}')">
 {{SCREEN}}
 <div id="hud" data-text="'scrollTop ' + Math.round($y) + ' · anchoring ' + (CSS.supports('overflow-anchor', 'auto') ? 'yes' : 'NO') + ' · ' + (navigator.userAgent.match(/OS (\d+)_(\d+)/)?.slice(1).join('.') ?? '')"></div>
