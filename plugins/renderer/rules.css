@@ -2,9 +2,10 @@
    status lines.
 
    These classes and data attributes are a published styling surface:
-   .screen, .view, .buffer, .text, .line, .cursor, .inactive-cursor,
-   .status-line, .face-NAME, [data-view], [data-selected], [data-part],
-   [data-node] and [data-clickable]. Other plugins may select on them,
+   .screen, .view, .buffer, .text, .line, .spacer, .cursor,
+   .inactive-cursor, .status-line, .face-NAME, [data-view], [data-selected],
+   [data-part], [data-node], [data-clickable], and, on the lines of a
+   view's windowed text, [data-line] and [data-window]. Other plugins may select on them,
    for example to style their own nodes inside a buffer. Rules here are
    wrapped in :where() so that any other plugin's or theme's rule wins
    whatever its place on the page; the cursor is the exception. */
@@ -40,6 +41,29 @@
 
 :where(.line) {
   min-block-size: 1lh;
+}
+
+/* Windowed text (the view's anchor node): its lines and spacers must touch,
+   with no margin between them, so the point at the top of the view is
+   always on a line or a spacer, which is how the page tells what to
+   report. Real specificity, so no other rule gives them a margin. */
+.text > .line,
+.text > .spacer {
+  margin-block: 0;
+}
+
+/* A spacer stands in for lines not drawn. It must never be the browser's
+   scroll anchor, or the browser would hold a spacer still instead of the
+   text being read; its faint lines read as "text coming" while a fast
+   scroll outruns the drawn lines. */
+.text > .spacer {
+  overflow-anchor: none;
+}
+
+:where(.spacer) {
+  background: repeating-linear-gradient(transparent 0 0.25lh,
+                                        var(--spacer-placeholder) 0.25lh 0.75lh,
+                                        transparent 0.75lh 1lh);
 }
 
 /* Point in the view that receives typing. Two classes, so it beats a face

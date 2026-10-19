@@ -2,11 +2,19 @@
 ;;; Web transport (startup tier): the loopback HTTP server, the page shell,
 ;;; ordered input over POST /commands, and the screen stream (ADR 7, ADR 10).
 ;;;
-;;; POST /commands takes one input item: a keydown or a pointer item, each
-;;; with its page-load sequence number, validated strictly into a
-;;; key-event or a pointer-event. Each screen carries its revision as
-;;; data-revision on its root element, and a pointer item names the screen
-;;; it was computed on, which must be one this transport sent.
+;;; POST /commands takes one input item: a keydown, a pointer or a scroll
+;;; item, each with its page-load sequence number, validated strictly into
+;;; a key-event, a pointer-event or a scroll-event. Each screen carries its
+;;; revision as data-revision on its root element, and pointer and scroll
+;;; items name the screen they were computed on, which must be one this
+;;; transport sent.
+;;;
+;;; Each page's stream sends the newest screen as soon as there is one, and
+;;; sends it again every `screen-interval` ms whether or not it changed, as
+;;; hyperlith does, one write at a time. A screen the page missed or
+;;; could not apply then costs one interval; and the page puts back what it
+;;; changed itself, such as the scroll report trigger it removes while a
+;;; report is on its way. Rendering still happens only when state changes.
 ;;;
 ;;; The page's <head> links every registered stylesheet (the stylesheets
 ;;; contract), each served at /css/<n>/<hash>/<file>; files beside a
@@ -30,7 +38,8 @@
         :tuna/kernel
         :tuna/version
         :tuna/lib/plugin-options
-        (only-in :tuna/plugins/keys/contract key-event make-key-event pointer-event make-pointer-event make-posn)
+        (only-in :tuna/plugins/keys/contract key-event make-key-event pointer-event make-pointer-event
+                 scroll-event make-scroll-event make-posn)
         :tuna/plugins/renderer/contract
         :tuna/plugins/stylesheets/contract
         :tuna/plugins/web/embed)
@@ -38,9 +47,6 @@
         web-transport-url)
 
 (deflogger web-log name: "tuna/web")
-
-;; Seconds between keep-alive events, which also detect closed tabs.
-(def heartbeat-seconds 15.)
 
 (def static-assets (embed-directory "web" "/static"))
 
@@ -62,6 +68,7 @@
    (screen      : :string)      ; the newest screen
    (revision    : :fixnum)
    (stopped?    : :boolean)
+   (interval    : :real)        ; seconds between re-sends of the newest screen
    (server      : :t))
   final: #t)
 
@@ -128,26 +135,28 @@
           (set! self.revision revision)
           (condition-variable-broadcast! self.changed))))))
 
-;; The newest screen as [revision head screen] once it is newer than SENT;
-;; 'heartbeat after TIMEOUT seconds; #f once stopped. Never touches editor
-;; state, so a slow client never holds up the editor loop.
-(def (await-screen (self : web-server) (sent : :fixnum) (timeout : :real)) => :t
-  (let (deadline (+ (time->seconds (current-time)) timeout))
+;; The newest screen as [revision head screen], as soon as it is newer
+;; than SENT and otherwise after SELF's interval; #f once stopped. Never
+;; touches editor state, so a slow client never holds up the editor loop.
+(def (await-screen (self : web-server) (sent : :fixnum)) => :t
+  (let (deadline (+ (time->seconds (current-time)) self.interval))
     (mutex-lock! self.mutex)
-    (let lp ()
+    (let lp ((due? #f))
       (cond
        (self.stopped?
         (mutex-unlock! self.mutex)
         #f)
-       ((fx> self.revision sent)
+       ((or due? (fx> self.revision sent))
         (let (newest [self.revision self.head self.screen])
           (mutex-unlock! self.mutex)
           newest))
        ((mutex-unlock! self.mutex self.changed
                        (max 0. (- deadline (time->seconds (current-time)))))
         (mutex-lock! self.mutex)
-        (lp))
-       (else 'heartbeat)))))
+        (lp #f))
+       (else
+        (mutex-lock! self.mutex)
+        (lp #t))))))
 
 (def (current-page (self : web-server)) => :string
   (do-with-lock self.mutex
@@ -364,9 +373,10 @@
     (set! self.numbered? #t)
     (hash-clear! self.pending)))
 
-;; One writer per client: send the newest screen whenever it changes,
-;; preceded by the head whenever it differs from the head this stream last
-;; sent, so a new stream gets the head first.
+;; One writer per client: send the newest screen whenever it changes, and
+;; again every interval, preceded by the head whenever it differs from the
+;; head this stream last sent, so a new stream gets the head first. Each
+;; write finishes before the next screen is taken.
 (def (stream-screens (self : web-server) (request : Request) (response : ResponseHandler)) => :void
   ;; A closed tab surfaces as a failed write; that ends this stream only.
   (with-catch
@@ -375,15 +385,12 @@
      (call-with-datastar-sse request response
        (lambda (session)
          (let lp ((sent -1) (sent-head ""))
-           (match (await-screen self sent heartbeat-seconds)
+           (match (await-screen self sent)
              ([revision head screen]
               (unless (string=? head sent-head)
                 (patch-elements session head))
               (patch-elements session screen)
               (lp revision head))
-             ('heartbeat
-              (patch-signals session "{}")
-              (lp sent sent-head))
              (else (void)))))))))
 
 (def (json-content-type? (request : Request)) => :boolean
@@ -504,13 +511,61 @@
                                     [(make-posn (car part) (cdr part)
                                                 (and (fixnum? node) node) revision)]))))))))
 
-;; A validated keydown or pointer item, or #f.
+;; A pixel position or size no further than 10^9 px from 0, as a flonum,
+;; or #f.
+(def (parse-pixels (value : :t)) => (Maybe :flonum)
+  (and (real? value) (<= -1e9 value 1e9) (exact->inexact value)))
+
+(def (line-number? (value : :t)) => :boolean
+  (and (fixnum? value) (fx>= value 1)))
+
+;; A validated scroll item computed on a screen no newer than
+;; NEWEST-REVISION, or #f. TOP and LAST are null when no line is there,
+;; but never missing.
+(def (parse-scroll-event (value : :t) (newest-revision : :fixnum)) => (Maybe scroll-event)
+  (and (hash-table? value)
+       (eqv? (hash-get value "version") 1)
+       (equal? (hash-get value "type") "scroll")
+       (hash-key? value "top")
+       (hash-key? value "last")
+       (let ((sequence (hash-get value "sequence"))
+             (revision (hash-get value "revision"))
+             (view (hash-get value "view"))
+             (node (hash-get value "node"))
+             (top (hash-get value "top"))
+             (last (hash-get value "last"))
+             (offset (parse-pixels (hash-get value "offset")))
+             (at (parse-pixels (hash-get value "at")))
+             (drawn-start (parse-pixels (hash-get value "drawnStart")))
+             (drawn-end (parse-pixels (hash-get value "drawnEnd")))
+             (drawn-first (hash-get value "drawnFirst"))
+             (drawn-last (hash-get value "drawnLast"))
+             (height (hash-get value "height"))
+             (request (hash-get value "request")))
+         (and (fixnum? sequence) (fx>= sequence 1)
+              (fixnum? revision) (fx<= 0 revision newest-revision)
+              (fixnum? view) (fx>= view 0)
+              (fixnum? node) (fx>= node 0)
+              (or (void? top) (line-number? top))
+              (or (void? last) (line-number? last))
+              offset at drawn-start drawn-end
+              (fl<= drawn-start drawn-end)
+              (line-number? drawn-first) (line-number? drawn-last)
+              (fx<= drawn-first drawn-last)
+              (fixnum? height) (fx<= 0 height 1000000)
+              (fixnum? request) (fx>= request 0)
+              (make-scroll-event sequence (make-posn 'view view node revision)
+                                 (and (fixnum? top) top) offset (and (fixnum? last) last)
+                                 at drawn-start drawn-end drawn-first drawn-last height request)))))
+
+;; A validated keydown, pointer or scroll item, or #f.
 (def (parse-input-item (value : :t) (newest-revision : :fixnum)) => :t
   (and (hash-table? value)
        (let (type (hash-get value "type"))
          (cond
           ((equal? type "keydown") (parse-key-event value))
           ((equal? type "pointer") (parse-pointer-event value newest-revision))
+          ((equal? type "scroll") (parse-scroll-event value newest-revision))
           (else #f)))))
 
 ;;; The plugin
@@ -548,6 +603,7 @@
                               screen: (stamp-revision "<main id=\"screen\"></main>" 0)
                               revision: 0
                               stopped?: #f
+                              interval: (/ (plugin-option web-transport 'screen-interval) 1000.)
                               server: #f))
          (server (new-http-server
                   (ServerConfig
@@ -567,4 +623,6 @@
 
 (defplugin-options web-transport
   (port 0 "The loopback port to listen on; 0 picks a free one."
-        (integer-type 0 65535) flag: "--port"))
+        (integer-type 0 65535) flag: "--port")
+  (screen-interval 50 "Milliseconds between re-sends of the newest screen to each page, changed or not."
+                   (integer-type 1 60000)))

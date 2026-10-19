@@ -40,6 +40,7 @@
     ("plugins/orderless" "plugin")
     ("plugins/command-annotations" "plugin")
     ("plugins/view-commands" "plugin")
+    ("plugins/scrolling" "plugin")
     ("plugins/autosave" "plugin")
     ("plugins/reload-config" "plugin")
     ("plugins/web" "embed"

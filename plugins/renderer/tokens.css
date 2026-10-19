@@ -11,6 +11,8 @@
   --status-line-selected-foreground: var(--neutral-12, CanvasText);
   --status-line-border: var(--neutral-4, ButtonBorder);
   --status-line-padding: 0.25rem 0.5rem;
+  /* The faint lines of a spacer standing in for text not drawn yet. */
+  --spacer-placeholder: color-mix(in srgb, var(--neutral-12, CanvasText) 6%, transparent);
   /* Overlays for a clickable part under the pointer, and while pressed. */
   --clickable-hover: color-mix(in srgb, var(--neutral-12, CanvasText) 8%, transparent);
   --clickable-pressed: color-mix(in srgb, var(--neutral-12, CanvasText) 16%, transparent);
