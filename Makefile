@@ -1,4 +1,4 @@
-.PHONY: all assets build deps test test-frontend demo-check run
+.PHONY: all assets build deps test test-frontend demo-check run tokens
 
 ESBUILD ?= esbuild
 
@@ -29,6 +29,16 @@ test-frontend: assets
 
 run: all
 	gerbil env tuna --config starter/init.ss
+
+# Regenerate the design tokens from their Stellar config with the owner's
+# licensed Stellar binary: make tokens STELLAR=/absolute/path/to/stellar.
+# The binary and its key are not in this repository, and nothing else
+# needs them: the generated CSS is committed, and building, testing and
+# running Tuna only read it.
+STELLAR ?= stellar
+
+tokens:
+	cd plugins/design-tokens/tokens && $(STELLAR) gen --input stellar.config.json
 
 # The demo configuration loads and its declarations are valid. demo/ is not
 # built into the package, so this is what keeps it from rotting.

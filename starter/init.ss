@@ -34,6 +34,7 @@
 ;;; change the editor, since nothing could undo it.
 
 (import :tuna/plugins/commands/contract
+        :tuna/plugins/design-tokens/plugin
         :tuna/plugins/keys/contract
         :tuna/plugins/commands/plugin
         :tuna/plugins/keys/plugin
@@ -62,6 +63,8 @@
         (only-in :tuna/kernel current-context)
         :tuna/plugins/reload-config/plugin)
 
+(use-plugin design-tokens        ; colours, sizes and fonts other stylesheets use;
+  variant: stellar-default)      ; first, so later stylesheets can redefine them
 (use-plugin commands)
 (use-plugin keys)
 (use-plugin web-transport        ; the browser page; `tuna --port N` overrides port:

@@ -434,14 +434,16 @@
           (let (loaded (load-configuration (path-expand "starter/init.ss" repository-directory)))
             (check (map (lambda ((d : declaration)) (plugin-name (declaration-target d)))
                         (configuration-declarations loaded))
-                   => '(commands keys web-transport settings session
+                   => '(design-tokens commands keys web-transport settings session
                         rope-text-store buffers autosave layout
                         view-commands html-renderer buttons basic-editing
                         minibuffer completion-engine completion-vertical extended-command
                         orderless annotations
                         echo-area help-buffer advice-help stylesheets-help
                         reload-config))
-            (check (declaration-options (caddr (configuration-declarations loaded)))
+            (check (declaration-options (car (configuration-declarations loaded)))
+                   => '((variant . stellar-default)))
+            (check (declaration-options (list-ref (configuration-declarations loaded) 3))
                    => '((port . 0)))
             (check (describe-services) => [])))))
 
