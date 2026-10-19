@@ -128,20 +128,23 @@ class Page:
         hi = b - 1
         while hi > t and est(hi, b) < h + AFTER / 2: hi -= 1
         self.revision += 1
+        self.last = f"rev {self.revision} anchor {t}@{self.pos:.0f} window {a}..{b} top-spacer {top:.0f} lo/hi {lo}/{hi} h {h}"
         body = "".join(node_html(i) for i in range(a, b))
-        post = f"@post('/scroll?c={self.cid}&a={a}&b={b}&s={top:.0f}', {{retryMaxCount: Infinity}})"
+        # The report rides in the URL, not in signals: writing signals here
+        # and then posting (which reads every signal) re-runs the effect once
+        # Datastar flushes its batch, which would post twice.
+        post = (f"@post(`/scroll?c={self.cid}&a={a}&b={b}&s={top:.0f}"
+                "&top=${i}&off=${n ? r.top - n.getBoundingClientRect().top : 0}"
+                "&at=${el.scrollTop}&end=${el.lastElementChild.offsetTop}`, {retryMaxCount: Infinity})")
         # data-on:scroll records the offset; data-effect runs on every scroll
         # and once after each morph, finds the node at the top of the viewport,
-        # and posts only if it is outside [lo, hi]. It removes itself after
-        # posting, so one request is in flight until the next screen puts it
-        # back (hyperlith's pattern).
+        # and posts only if it is outside [lo, hi]. It removes itself, so one
+        # request is in flight until the next screen puts it back (hyperlith's
+        # pattern).
         effect = ("$y; const r = el.getBoundingClientRect(); "
                   "const n = document.elementFromPoint(r.left + r.width / 2, r.top + 1)?.closest('#scroller > [data-i]'); "
                   "const i = n ? +n.dataset.i : -1; "
-                  f"if (i < {lo} || i > {hi}) {{ "
-                  "$top = i; $off = n ? r.top - n.getBoundingClientRect().top : 0; "
-                  "$at = el.scrollTop; $end = el.lastElementChild.offsetTop; "
-                  f"{post}; el.removeAttribute('data-effect') }}")
+                  f"if (i < {lo} || i > {hi}) {{ el.removeAttribute('data-effect'); {post} }}")
         self.screen = (
             f'<main id="screen" data-revision="{self.revision}">'
             f'<div id="scroller" data-on:scroll="$y = el.scrollTop" data-effect="{esc_attr(effect)}">'
@@ -151,6 +154,10 @@ class Page:
 
 def esc_attr(s):
     return s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+
+def log(page, *msg):
+    """Diagnostics: one line per event, to stdout."""
+    print(f"{time.strftime('%H:%M:%S')}.{int(time.time() * 1000) % 1000:03d} {page.cid if page else '-'}", *msg, flush=True)
 
 PAGES = {}
 ARGS = None
@@ -200,6 +207,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             sent = -1
+            log(page, "stream open")
             try:
                 while True:
                     with page.lock:                 # send only the newest screen
@@ -211,15 +219,21 @@ class Handler(BaseHTTPRequestHandler):
                     data = "".join(f"data: elements {line}\n" for line in screen.split("\n"))
                     self.wfile.write(f"event: datastar-patch-elements\n{data}\n".encode())
                     self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
+                    log(page, "sent rev", sent)
+            except (BrokenPipeError, ConnectionResetError) as e:
+                log(page, "stream closed:", type(e).__name__)
         else:
             self.send_body("text/plain", b"not found", 404)
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length", 0))
-        signals = json.loads(self.rfile.read(n) or b"{}")
+        raw = self.rfile.read(n)
         page = self.page()
+        if urlparse(self.path).path == "/log":     # diagnostics from the page
+            self.send_response(204); self.send_header("Content-Length", "0"); self.end_headers()
+            log(page, "browser:", raw.decode(errors="replace"))
+            return
+        signals = json.loads(raw or b"{}")
         self.send_response(204 if page else 404); self.send_header("Content-Length", "0"); self.end_headers()
         if not page: return
         POSTS[0] += 1
@@ -228,8 +242,13 @@ class Handler(BaseHTTPRequestHandler):
         with page.lock:
             page.w, page.h = signals.get("w") or page.w, signals.get("h") or page.h
             if urlparse(self.path).path == "/scroll":
-                page.place({**signals, **q})
+                page.place(q)
+                log(page, f"scroll report: top {q['top']} off {float(q['off']):.0f} at {float(q['at']):.0f} "
+                          f"end {float(q['end']):.0f} (window {q['a']}..{q['b']} spacer {q['s']})")
+            else:
+                log(page, f"resize {page.w}x{page.h}")
             page.render()
+            log(page, "  ->", page.last)
 
 def main():
     global ARGS
