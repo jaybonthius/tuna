@@ -1,7 +1,8 @@
 // Throwaway client for the scrolling prototype. Datastar opens the screen
 // stream and morphs #screen; this file reports layout facts and input.
 const P = (window.__proto = { latencies: [], applied: 0, reports: 0 });
-const post = (path, body) => fetch(path, {
+const CLIENT = document.documentElement.dataset.client;
+const post = (path, body) => fetch(`${path}?c=${CLIENT}`, {
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
 });
 const scroller = () => document.getElementById("scroller");
@@ -38,10 +39,21 @@ function measured(sc) {
 // At most one report waits for its screen; while it waits, only the
 // newest facts are kept (the next report reads them fresh).
 let waitingFor = 0, wanted = false, appliedReq = 0;
+// Scroll velocity in px/s, smoothed, so the server can draw further ahead.
+let lastTop = 0, lastT = 0, velocity = 0;
+function trackVelocity(sc) {
+  const t = performance.now(), dt = t - lastT;
+  if (lastT && dt > 0 && dt < 200) velocity = 0.7 * velocity + 0.3 * ((sc.scrollTop - lastTop) / dt) * 1000;
+  else velocity = 0;
+  lastTop = sc.scrollTop; lastT = t;
+}
 function send(facts) {
   const s = ++seq;
+  facts.v = performance.now() - lastT > 120 ? 0 : Math.round(velocity);   // stale means stopped
   waitingFor = s; P.reports++;
   post("/facts", { ...facts, seq: s });
+  // A lost report must never freeze the view: give up waiting after a second.
+  setTimeout(() => { if (waitingFor === s) { waitingFor = 0; report(true); } }, 1000);
 }
 function report(force) {
   const sc = scroller();
@@ -70,19 +82,25 @@ function applyLocal() {
   const c = document.getElementById("content");
   if (c) c.style.transform = `translateY(${-(serverY() + local)}px)`;
 }
+// Like go-web-terminal: deltas are summed, and at most one is in flight.
+// While it waits for its screen, new deltas only add to the pending sum,
+// so the server always gets the newest total, never a backlog.
+let dyInFlight = 0;
+function flushDy() {
+  if (dyInFlight || !pendingDy) return;
+  const s = ++seq, sc = scroller();
+  sentAt.set(s, performance.now());
+  unacked.push([s, pendingDy]);
+  dyInFlight = s;
+  post("/facts", { dy: pendingDy, seq: s, h: sc.clientHeight, w: sc.clientWidth });
+  pendingDy = 0;
+  setTimeout(() => { if (dyInFlight === s) { dyInFlight = 0; flushDy(); } }, 1000);
+}
 function queueDy(dy) {
   pendingDy += dy;
   applyLocal();
   if (dyFrame) return;
-  dyFrame = requestAnimationFrame(() => {
-    dyFrame = 0;
-    if (!pendingDy) return;
-    const s = ++seq, sc = scroller();
-    sentAt.set(s, performance.now());
-    unacked.push([s, pendingDy]);
-    post("/facts", { dy: pendingDy, seq: s, h: sc.clientHeight, w: sc.clientWidth });
-    pendingDy = 0;
-  });
+  dyFrame = requestAnimationFrame(() => { dyFrame = 0; flushDy(); });
 }
 let momentum = 0;
 function bindOwned(sc) {
@@ -129,7 +147,7 @@ function onScreen() {
   if (sc && !bound.has(sc)) {
     bound.add(sc);
     if (mode() === "native") {
-      sc.addEventListener("scroll", scheduleReport, { passive: true });
+      sc.addEventListener("scroll", () => { trackVelocity(sc); scheduleReport(); }, { passive: true });
       sc.addEventListener("scrollend", () => report(true));
       new ResizeObserver(() => report(true)).observe(sc);
     } else {
@@ -138,6 +156,7 @@ function onScreen() {
     }
   }
   if (waitingFor && ack >= waitingFor) waitingFor = 0;
+  if (dyInFlight && ack >= dyInFlight) { dyInFlight = 0; flushDy(); }
   // A command moved the anchor: apply it once, instantly (never smooth,
   // or the animation sweeps through the thresholds and posts reports).
   if (sc && mode() === "native" && Number(sc.dataset.req) > appliedReq) {

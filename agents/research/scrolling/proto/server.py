@@ -27,7 +27,7 @@ phone); --latency MS adds one-way delay to every screen; --bad-estimates
 makes every estimate one line, to stress correction; --ack sends a screen
 only after the client reports the previous one applied.
 """
-import argparse, json, math, random, threading, time
+import argparse, json, math, random, secrets, socket, threading, time, traceback
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -68,6 +68,7 @@ class View:
         self.h, self.w = 800, 800
         self.measured = {}          # node index -> measured px, for width self.w
         self.bad = bad
+        self.velocity = 0.0         # px/s reported by the browser; + is down
 
     def estimate(self, i):
         kind, v = NODES[i]
@@ -82,12 +83,13 @@ class View:
     def height(self, i):
         return self.measured.get(i) or self.estimate(i)
 
-    def window(self, overscan):
+    def window(self, before, after=None):
+        after = before if after is None else after
         a, acc = self.anchor, self.offset
-        while a > 0 and acc < overscan:
+        while a > 0 and acc < before:
             a -= 1; acc += self.height(a)
         b, acc2 = self.anchor, -self.offset
-        while b < N and acc2 < self.h + overscan:
+        while b < N and acc2 < self.h + after:
             acc2 += self.height(b); b += 1
         return a, b
 
@@ -160,7 +162,10 @@ class App:
         v = self.view
         self.revision += 1
         if self.mode == "native":
-            a, b = v.window(1500)
+            # Overscan grows with scroll speed (about 0.4 s of travel) and
+            # leans toward the direction of travel, as CodeMirror's does.
+            lead = 3000 + min(15000, abs(v.velocity) * 0.4)
+            a, b = v.window(1000, lead) if v.velocity >= 0 else v.window(lead, 1000)
             top = sum(v.height(k) for k in range(a))       # a real height map is a sum tree
             bottom = sum(v.height(k) for k in range(b, N))
             mid_lo = (a + v.anchor) // 2 if a > 0 else -1
@@ -241,6 +246,7 @@ class App:
                 self.follow_point()
             stale = int(f.get("req", self.request)) < self.request
             if "pixel" in f and stale: del f["pixel"]
+            if "v" in f: v.velocity = float(f["v"])
             if "anchor" in f and not stale:        # native: the browser scrolled
                 v.anchor, v.offset = int(f["anchor"]), float(f["offset"])
                 self.follow_point(int(f["last"]) if "last" in f else None)
@@ -251,11 +257,22 @@ class App:
                 self.ack_input = max(self.ack_input, int(f["seq"]))
             self.render()
 
-APP = None
+ARGS = None
+CLIENTS = {}    # page id -> App: every page load is its own client and view
+
+def query(path, key):
+    for part in path.split("?", 1)[-1].split("&"):
+        if part.startswith(key + "="): return part[len(key) + 1:]
+    return None
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     def log_message(self, *a): pass
+
+    def setup(self):
+        super().setup()
+        # Small SSE writes must not wait for Nagle + delayed ACK (~40 ms).
+        self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
     def send_body(self, ctype, data, status=200):
         self.send_response(status)
@@ -265,31 +282,36 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def client(self):
+        return CLIENTS.get(query(self.path, "c") or "")
+
     def do_GET(self):
         path = self.path.split("?")[0]
         if path == "/":
-            mode = "native"
-            if "mode=" in self.path:
-                mode = self.path.split("mode=")[1].split("&")[0]
-            with APP.lock:
-                APP.mode = mode
-                APP.follow = "point=stay" not in self.path
-                APP.point = 0
-                APP.view.anchor, APP.view.offset = 0, 0.0
-                APP.render()
-                screen = APP.screen
-            page = (HERE / "page.html").read_text().replace("{{SCREEN}}", screen)
+            app = App(ARGS)
+            app.mode = query(self.path, "mode") or "native"
+            app.follow = query(self.path, "point") != "stay"
+            cid = secrets.token_hex(6)
+            CLIENTS[cid] = app
+            with app.lock:
+                app.render()
+                screen = app.screen
+            page = (HERE / "page.html").read_text().replace("{{SCREEN}}", screen).replace("{{CLIENT}}", cid)
             self.send_body("text/html; charset=utf-8", page.encode())
         elif path == "/datastar.js":
             self.send_body("text/javascript", DATASTAR.read_bytes())
         elif path == "/client.js":
             self.send_body("text/javascript", (HERE / "client.js").read_bytes())
         elif path == "/stats":
-            with APP.lock:
-                s = {"renders": APP.render_count, "render_ms_avg": APP.render_ms / max(1, APP.render_count),
-                     "measured": len(APP.view.measured), "anchor": APP.view.anchor, "offset": APP.view.offset}
+            app = self.client()
+            if not app: return self.send_body("text/plain", b"no such client", 404)
+            with app.lock:
+                s = {"renders": app.render_count, "render_ms_avg": app.render_ms / max(1, app.render_count),
+                     "measured": len(app.view.measured), "anchor": app.view.anchor, "offset": app.view.offset}
             self.send_body("application/json", json.dumps(s).encode())
         elif path == "/screen":
+            app = self.client()
+            if not app: return self.send_body("text/plain", b"no such client", 404)
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-store")
@@ -297,12 +319,14 @@ class Handler(BaseHTTPRequestHandler):
             sent = -1
             try:
                 while True:
-                    with APP.lock:
-                        while not (APP.revision > sent and (not APP.args.ack or APP.applied >= sent)):
-                            APP.lock.wait(15)
-                        sent, screen = APP.revision, APP.screen
-                    if APP.args.latency:
-                        time.sleep(APP.args.latency / 1000)
+                    with app.lock:
+                        # Only the newest screen is sent; with --ack, only once the
+                        # browser has applied the previous one.
+                        while not (app.revision > sent and (not ARGS.ack or app.applied >= sent)):
+                            app.lock.wait(15)
+                        sent, screen = app.revision, app.screen
+                    if ARGS.latency:
+                        time.sleep(ARGS.latency / 1000)
                     data = "".join(f"data: elements {line}\n" for line in screen.split("\n"))
                     self.wfile.write(f"event: datastar-patch-elements\n{data}\n".encode())
                     self.wfile.flush()
@@ -314,20 +338,26 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length", 0))
         f = json.loads(self.rfile.read(n) or b"{}")
-        self.send_response(204); self.send_header("Content-Length", "0"); self.end_headers()
-        if APP.args.latency:
-            time.sleep(APP.args.latency / 1000)
-        if self.path == "/cmd":
-            APP.command(f)
-        elif self.path == "/applied":
-            with APP.lock:
-                APP.applied = max(APP.applied, int(f["revision"]))
-                APP.lock.notify_all()
-        else:
-            APP.facts(f)
+        app = self.client()
+        self.send_response(204 if app else 404); self.send_header("Content-Length", "0"); self.end_headers()
+        if not app: return
+        if ARGS.latency:
+            time.sleep(ARGS.latency / 1000)
+        path = self.path.split("?")[0]
+        try:
+            if path == "/cmd":
+                app.command(f)
+            elif path == "/applied":
+                with app.lock:
+                    app.applied = max(app.applied, int(f["revision"]))
+                    app.lock.notify_all()
+            else:
+                app.facts(f)
+        except Exception:
+            traceback.print_exc()
 
 def main():
-    global APP
+    global ARGS
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--host", default="127.0.0.1")
@@ -335,7 +365,7 @@ def main():
     p.add_argument("--bad-estimates", action="store_true")
     p.add_argument("--ack", action="store_true")
     args = p.parse_args()
-    APP = App(args)
+    ARGS = args
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
     srv.daemon_threads = True
     print(f"http://{args.host}:{args.port}/?mode=native|backend|hybrid&point=follow|stay", flush=True)

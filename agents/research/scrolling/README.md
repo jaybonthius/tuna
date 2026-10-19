@@ -185,6 +185,17 @@ Research report, 2026-10-17. Read-only on every repository; the only files writt
 
 **How the owner can feel it:** run `python3 server.py --port 8765 [--host <tailscale-ip>] [--latency 80] [--bad-estimates]` and open `/?mode=native`, `/?mode=hybrid` or `/?mode=backend`, optionally with `&point=stay`. The bottom bar has server-side commands (page up/down, move point, type) and a toggle between "point follows scroll" (Emacs) and "point stays put". Arrow keys, PageUp/PageDown and letters do the same on a keyboard; tapping a node puts point there.
 
+### Corrections after the owner's first try (2026-10-17)
+
+The first prototype went blank partway down on the owner's phone. Causes and fixes (all in `proto/`):
+
+- **Shared state.** One global view and one global acknowledgement counter served every open page, so a second tab (or the page being replaced) moved the anchor under the other and a report could wait forever for its screen. Now every page load is its own client with its own view, numbering and stream. Reproduced in phone emulation before the fix (blank, reports stuck at 1); 0 blank frames after, with two tabs open.
+- **No escape from a lost report.** A report that was never acknowledged froze the view. Reports now give up after one second and resend.
+- **Backend mode posted every frame.** It now does what go-web-terminal does (`assets/go-web-terminal.js:171-208`): deltas are summed and only one is in flight; while it waits, new deltas only add to the pending sum. At 80 ms each way, input-to-screen latency is p50 90 ms, p95 129 ms (was 827 / 1,376 ms). Motion still updates only once per round trip, which is the inherent limit of backend scrolling.
+- **Nagle's algorithm.** The Python server lacked `TCP_NODELAY`, adding ~40 ms to some small SSE writes (loopback p95 40 ms → 10 ms after the fix). Tuna's transport must set it too.
+- **Overscan by speed.** Native mode now sends its scroll speed with each report; the server draws `3000 px + 0.4 s × speed` ahead and 1,000 px behind (CodeMirror-style direction bias), and the spacers show a faint line pattern instead of white. At 80 ms each way (phone emulation, synthetic scrolling): 2,400 and 7,200 px/s, 0 blank frames; an 18,000 px/s fling, 2 blank frames of 80; a decaying fling from 24,000 px/s, 2 of 200. Before this change the 18,000 px/s fling was blank on 68 of 80 frames.
+- **Point.** The prototype now has a cursor and two policies (`?point=follow`, Emacs; `?point=stay`, VS Code) and server-side page up/down commands that move the anchor through a scroll request.
+
 ## 5. Candidate designs compared
 
 | | **A. Pure backend** (Emacs-like; client sends wheel/touch deltas, server moves anchor and re-renders; `touch-action: none`) | **B. Native scroller + server windowing** (recommended) | **C. Hybrid** (server-owned position, client moves rendered content locally, own touch physics) |
