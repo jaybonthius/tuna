@@ -1,39 +1,35 @@
 #!/usr/bin/env python3
 """Throwaway prototype for the Tuna scrolling research (not Tuna code).
 
-One view over a 20,000-node "rich buffer" whose node heights the server
-cannot know (wrapped paragraphs, code blocks, tall boxes). The server
-owns the scroll anchor and renders only a window of nodes; every screen
-is one Datastar fat morph over SSE, as in Tuna.
+Native scrolling with server-side windowing, after hyperlith's
+virtual_scroll.clj. The browser scrolls; the server renders only the nodes
+near the viewport, between two spacers, as one Datastar morph on the page's
+screen stream.
 
-Modes (?mode=...):
-  native   native scroll container; server windows the content with
-           top/bottom spacers sized from a height map (estimates corrected
-           by measurements the client reports); browser scroll anchoring
-           keeps the view still when spacers change.
-  backend  no native scrolling; wheel/touch deltas go to the server, which
-           moves the anchor and re-renders (pure server-side scrolling).
-  hybrid   like backend, but the client moves already-rendered content
-           locally (CSS transform) until the server's screen catches up,
-           and runs its own touch momentum.
+Unlike hyperlith, node heights are unknown (wrapped paragraphs, code, tall
+boxes), so the server only estimates them. To stay robust it never maps a
+raw scroll offset through its estimates of the whole document; it places
+the window relative to what the browser actually has on screen:
 
-Point (?point=follow|stay): the server keeps a cursor on one node. With
-"follow", scrolling moves point into view, as Emacs does; with "stay",
-point stays put and the next command that uses it brings it back into
-view. Commands (keys or the toolbar) are server-side, like C-v in Emacs.
+- a node is at the top of the viewport: keep that node exactly where it is
+  (browser scroll anchoring absorbs estimate errors above it);
+- the viewport is inside a spacer (a fast fling or a scrollbar drag): walk
+  from the nearest edge of the rendered window by estimates, then put the
+  node found exactly at the viewport.
 
-Options: --host ADDR binds another address (e.g. a Tailscale IP for a
-phone); --latency MS adds one-way delay to every screen; --bad-estimates
-makes every estimate one line, to stress correction; --ack sends a screen
-only after the client reports the previous one applied.
+The browser side is two Datastar attributes on the scroller (see render()).
+
+Run: python3 server.py [--host ADDR] [--port N] [--latency MS]
 """
-import argparse, json, math, random, secrets, socket, threading, time, traceback
+import argparse, itertools, json, math, random, secrets, socket, threading, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 HERE = Path(__file__).parent
 DATASTAR = Path("/home/jay/Code/workbench-gerbil/tuna/plugins/web/web/datastar-v1.0.2.js")
 N = 20000
+BEFORE, AFTER = 3000, 4000   # px rendered above / below the viewport (hyperlith uses 4000)
 
 WORDS = ("tuna buffer node view layout scroll anchor height estimate measure "
          "browser server morph frame window emacs redisplay point mark region "
@@ -60,210 +56,105 @@ NODES = make_nodes()
 def esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-class View:
-    """The server's per-view scroll state: an anchor (node index plus a
-    pixel offset into it), the viewport size, and a height map."""
-    def __init__(self, bad):
-        self.anchor, self.offset = 0, 0.0
-        self.h, self.w = 800, 800
-        self.measured = {}          # node index -> measured px, for width self.w
-        self.bad = bad
-        self.velocity = 0.0         # px/s reported by the browser; + is down
-
-    def estimate(self, i):
-        kind, v = NODES[i]
-        if self.bad:
-            return 24
-        cpl = max(20, (self.w - 48) / 8.6)
-        if kind == "h": return 44
-        if kind == "pre": return 16 + 20 * (v.count("\n") + 1)
-        if kind == "box": return v + 16
-        return 12 + 24 * math.ceil(len(v) / cpl)
-
-    def height(self, i):
-        return self.measured.get(i) or self.estimate(i)
-
-    def window(self, before, after=None):
-        after = before if after is None else after
-        a, acc = self.anchor, self.offset
-        while a > 0 and acc < before:
-            a -= 1; acc += self.height(a)
-        b, acc2 = self.anchor, -self.offset
-        while b < N and acc2 < self.h + after:
-            acc2 += self.height(b); b += 1
-        return a, b
-
-    def last_visible(self):
-        """The last node at least partly in the viewport, from the height map."""
-        b, acc = self.anchor, -self.offset
-        while b < N - 1:
-            acc += self.height(b)
-            if acc >= self.h: break
-            b += 1
-        return b
-
-    def first_visible(self):
-        """The first node whose top is in the viewport."""
-        return self.anchor if self.offset <= 0.5 else min(N - 1, self.anchor + 1)
-
-    def show(self, i):
-        """Scroll as little as possible so node I is in view (Emacs keeps
-        point visible). Returns True if the anchor moved."""
-        if self.first_visible() <= i < self.last_visible() or (i == self.anchor and self.offset <= 0.5):
-            return False
-        if i < self.first_visible():
-            self.anchor, self.offset = i, 0.0
-        else:                                    # put node I at the bottom
-            a, acc = i, self.height(i)
-            while a > 0 and acc + self.height(a - 1) <= self.h:
-                a -= 1; acc += self.height(a)
-            self.anchor, self.offset = a, 0.0
-        return True
-
-    def move(self, dy):
-        """Scroll by DY pixels through the height map (backend modes)."""
-        self.offset += dy
-        while self.offset < 0 and self.anchor > 0:
-            self.anchor -= 1; self.offset += self.height(self.anchor)
-        if self.offset < 0: self.offset = 0
-        while self.anchor < N - 1 and self.offset >= self.height(self.anchor):
-            self.offset -= self.height(self.anchor); self.anchor += 1
-
-TYPED = {}                          # node index -> text typed at its end
-
-def node_html(i, est, point):
+def node_html(i):
     kind, v = NODES[i]
-    cls = "n point" if i == point else "n"
-    attrs = f'id="n{i}" data-i="{i}" data-est="{est}"'
-    t = esc(TYPED.get(i, ""))
-    if kind == "h": return f'<h2 {attrs} class="{cls}">{esc(v)}{t}</h2>'
-    if kind == "pre": return f'<pre {attrs} class="{cls}">{esc(v)}{t}</pre>'
-    if kind == "box": return f'<div {attrs} class="{cls} box" style="height:{v}px">image {i}{t}</div>'
-    return f'<p {attrs} class="{cls}">{i}: {esc(v)}{t}</p>'
+    a = f'id="n{i}" data-i="{i}" class="n {kind}"'
+    if kind == "h": return f'<h2 {a}>{esc(v)}</h2>'
+    if kind == "pre": return f'<pre {a}>{esc(v)}</pre>'
+    if kind == "box": return f'<div {a} style="height:{v}px">image {i}</div>'
+    return f'<p {a}>{i}: {esc(v)}</p>'
 
-class App:
-    def __init__(self, args):
-        self.args = args
+_prefix = {}
+def prefix(w):
+    """Prefix sums of estimated node heights for a viewport width W.
+    prefix(w)[i] is the estimated height of nodes 0..i-1."""
+    w = int(w) // 10 * 10
+    if w not in _prefix:
+        cpl = max(20, (w - 32) / 8.6)            # characters per line, roughly
+        def est(kind, v):
+            if kind == "h": return 44
+            if kind == "pre": return 16 + 20 * (v.count("\n") + 1)
+            if kind == "box": return v
+            return 12 + 24 * math.ceil(len(v) / cpl)
+        _prefix[w] = [0] + list(itertools.accumulate(est(k, v) for k, v in NODES))
+    return _prefix[w]
+
+class Page:
+    """One browser page: its view's anchor (a node and the content y of its
+    top), its viewport size, and its screen stream."""
+    def __init__(self, cid):
+        self.cid = cid
         self.lock = threading.Condition()
-        self.view = View(args.bad_estimates)
-        self.mode = "native"
-        self.revision = 0
-        self.screen = ""
-        self.ack_input = 0       # newest input sequence folded into the state
-        self.applied = 0         # newest revision the client says it applied
-        self.point = 0           # the cursor: a node index
-        self.follow = True       # scrolling moves point into view (Emacs)
-        self.request = 0         # bumped when a command moves the anchor
-        self.render_count = 0
-        self.render_ms = 0.0
+        self.anchor, self.pos = 0, 0.0
+        self.w, self.h = 800, 800
+        self.revision, self.screen = 0, ""
+
+    def place(self, s):
+        """Set the anchor from what the browser reports it has on screen."""
+        P = prefix(self.w)
+        est = lambda i, j: P[j] - P[i]            # estimated height of nodes i..j-1
+        y, top = float(s["at"]), int(s["top"])
+        if top >= 0:                              # a node is at the viewport top
+            self.anchor, self.pos = top, y - float(s["off"])
+            return
+        a, b, start, end = int(s["a"]), int(s["b"]), float(s["s"]), float(s["end"])
+        if y < start:                             # above the window: walk back from a
+            i, d = a, start - y
+            while i > 0 and d > 0:
+                i -= 1; d -= est(i, i + 1)
+            self.anchor, self.pos = i, (y if d > 0 else y + d)
+        else:                                     # below the window: walk on from b
+            i, d = min(b, N - 1), max(0.0, y - end)
+            while i < N - 1 and d >= est(i, i + 1):
+                d -= est(i, i + 1); i += 1
+            self.anchor, self.pos = i, y - d
 
     def render(self):
-        t0 = time.perf_counter()
-        v = self.view
+        P = prefix(self.w)
+        est = lambda i, j: P[j] - P[i]
+        t, h = self.anchor, self.h
+        a = t
+        while a > 0 and est(a, t) < BEFORE: a -= 1
+        b = t
+        while b < N and est(t, b) < h + AFTER: b += 1
+        # Top spacer: put the anchor node where the browser has it, but leave
+        # at least the estimated room for everything above the window.
+        top = 0 if a == 0 else max(self.pos - est(a, t), P[a])
+        bottom = est(b, N)
+        # Re-post when the top node leaves [lo, hi]: half the margin above,
+        # or less than a viewport plus half the margin left below.
+        lo = t
+        while lo > a and est(lo, t) < BEFORE / 2: lo -= 1
+        hi = b - 1
+        while hi > t and est(hi, b) < h + AFTER / 2: hi -= 1
         self.revision += 1
-        if self.mode == "native":
-            # Overscan grows with scroll speed (about 0.4 s of travel) and
-            # leans toward the direction of travel, as CodeMirror's does.
-            lead = 3000 + min(15000, abs(v.velocity) * 0.4)
-            a, b = v.window(1000, lead) if v.velocity >= 0 else v.window(lead, 1000)
-            top = sum(v.height(k) for k in range(a))       # a real height map is a sum tree
-            bottom = sum(v.height(k) for k in range(b, N))
-            mid_lo = (a + v.anchor) // 2 if a > 0 else -1
-            last = b - 1
-            hi = (v.anchor + last) // 2 + 1 if b < N else N + 1
-            body = "".join(node_html(i, v.height(i), self.point) for i in range(a, b))
-            html = (f'<main id="screen" data-revision="{self.revision}" data-mode="native" data-ack="{self.ack_input}" {self.status()}>'
-                    f'<div id="scroller" class="scroller" data-lo="{mid_lo}" data-hi="{hi}" '
-                    f'data-req="{self.request}" data-req-anchor="{v.anchor}" data-req-offset="{v.offset:.1f}">'
-                    f'<div id="sp-top" style="height:{top:.0f}px"></div>{body}'
-                    f'<div id="sp-bot" style="height:{bottom:.0f}px"></div></div></main>')
-        else:
-            a, b = v.window(600)
-            y = sum(v.height(k) for k in range(a, v.anchor)) + v.offset
-            total = sum(v.height(k) for k in range(N))
-            above = sum(v.height(k) for k in range(v.anchor)) + v.offset
-            body = "".join(node_html(i, v.height(i), self.point) for i in range(a, b))
-            html = (f'<main id="screen" data-revision="{self.revision}" data-mode="{self.mode}" data-ack="{self.ack_input}" data-y="{y:.1f}" {self.status()}>'
-                    f'<div id="scroller" class="scroller owned">'
-                    f'<div id="content" style="transform:translateY({-y:.1f}px)">{body}</div>'
-                    f'<div id="thumb" style="top:{100 * above / max(1, total):.3f}%"></div></div></main>')
-        self.screen = html
-        self.render_count += 1
-        self.render_ms += (time.perf_counter() - t0) * 1000
+        body = "".join(node_html(i) for i in range(a, b))
+        post = f"@post('/scroll?c={self.cid}&a={a}&b={b}&s={top:.0f}', {{retryMaxCount: Infinity}})"
+        # data-on:scroll records the offset; data-effect runs on every scroll
+        # and once after each morph, finds the node at the top of the viewport,
+        # and posts only if it is outside [lo, hi]. It removes itself after
+        # posting, so one request is in flight until the next screen puts it
+        # back (hyperlith's pattern).
+        effect = ("$y; const r = el.getBoundingClientRect(); "
+                  "const n = document.elementFromPoint(r.left + r.width / 2, r.top + 1)?.closest('#scroller > [data-i]'); "
+                  "const i = n ? +n.dataset.i : -1; "
+                  f"if (i < {lo} || i > {hi}) {{ "
+                  "$top = i; $off = n ? r.top - n.getBoundingClientRect().top : 0; "
+                  "$at = el.scrollTop; $end = el.lastElementChild.offsetTop; "
+                  f"{post}; el.removeAttribute('data-effect') }}")
+        self.screen = (
+            f'<main id="screen" data-revision="{self.revision}">'
+            f'<div id="scroller" data-on:scroll="$y = el.scrollTop" data-effect="{esc_attr(effect)}">'
+            f'<div id="sp-top" class="spacer" style="height:{top:.0f}px"></div>{body}'
+            f'<div id="sp-bot" class="spacer" style="height:{bottom:.0f}px"></div></div></main>')
         self.lock.notify_all()
 
-    def status(self):
-        return f'data-point="{self.point}" data-follow="{int(self.follow)}"'
+def esc_attr(s):
+    return s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
 
-    def follow_point(self, last=None):
-        """After a scroll: with "follow", move point into the viewport."""
-        if not self.follow: return
-        v = self.view
-        first, last = v.first_visible(), (last if last is not None else v.last_visible())
-        if self.point < first: self.point = min(first, last)
-        elif self.point > last: self.point = last
-
-    def command(self, f):
-        """Server-side commands, like Emacs commands bound to keys."""
-        with self.lock:
-            v, c = self.view, f["cmd"]
-            scrolled = False
-            if c == "down": self.point = min(N - 1, self.point + 1)
-            elif c == "up": self.point = max(0, self.point - 1)
-            elif c == "set": self.point = int(f["i"])
-            elif c == "type":
-                TYPED[self.point] = TYPED.get(self.point, "") + f.get("text", " typed")
-                v.measured.pop(self.point, None)
-            elif c == "follow": self.follow = not self.follow
-            elif c == "pgdn":                       # C-v: the last visible node goes to the top
-                v.anchor, v.offset = max(v.anchor + 1, v.last_visible()), 0.0; scrolled = True
-            elif c == "pgup":                       # M-v: the first visible node goes to the bottom
-                a, acc = v.anchor, 0.0
-                while a > 0 and acc + v.height(a - 1) <= v.h:
-                    a -= 1; acc += v.height(a)
-                v.anchor, v.offset = a, 0.0; scrolled = True
-            if scrolled:
-                self.follow_point()                 # with "stay", point may now be off screen
-            elif c in ("down", "up", "type", "set"):
-                scrolled = v.show(self.point)       # commands that use point bring it into view
-            if scrolled: self.request += 1
-            self.render()
-
-    def facts(self, f):
-        with self.lock:
-            v = self.view
-            if "w" in f and abs(f["w"] - v.w) > 0.5:
-                v.measured.clear()                 # wrapping changed: measurements are stale
-            for k in ("h", "w"):
-                if k in f: setattr(v, k, f[k])
-            for i, px in f.get("measured", {}).items():
-                v.measured[int(i)] = px
-            if "pixel" in f:                       # native: scrolled past the window
-                y, i = float(f["pixel"]), 0
-                while i < N - 1 and y >= v.height(i):
-                    y -= v.height(i); i += 1
-                v.anchor, v.offset = i, y
-                self.follow_point()
-            stale = int(f.get("req", self.request)) < self.request
-            if "pixel" in f and stale: del f["pixel"]
-            if "v" in f: v.velocity = float(f["v"])
-            if "anchor" in f and not stale:        # native: the browser scrolled
-                v.anchor, v.offset = int(f["anchor"]), float(f["offset"])
-                self.follow_point(int(f["last"]) if "last" in f else None)
-            if "dy" in f:                          # backend/hybrid: a scroll delta
-                v.move(float(f["dy"]))
-                self.follow_point()
-            if "seq" in f:
-                self.ack_input = max(self.ack_input, int(f["seq"]))
-            self.render()
-
+PAGES = {}
 ARGS = None
-CLIENTS = {}    # page id -> App: every page load is its own client and view
-
-def query(path, key):
-    for part in path.split("?", 1)[-1].split("&"):
-        if part.startswith(key + "="): return part[len(key) + 1:]
-    return None
+POSTS = [0]   # for tests: total scroll/resize posts
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -282,36 +173,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def client(self):
-        return CLIENTS.get(query(self.path, "c") or "")
+    def page(self):
+        return PAGES.get(parse_qs(urlparse(self.path).query).get("c", [""])[0])
 
     def do_GET(self):
-        path = self.path.split("?")[0]
+        path = urlparse(self.path).path
         if path == "/":
-            app = App(ARGS)
-            app.mode = query(self.path, "mode") or "native"
-            app.follow = query(self.path, "point") != "stay"
             cid = secrets.token_hex(6)
-            CLIENTS[cid] = app
-            with app.lock:
-                app.render()
-                screen = app.screen
-            page = (HERE / "page.html").read_text().replace("{{SCREEN}}", screen).replace("{{CLIENT}}", cid)
-            self.send_body("text/html; charset=utf-8", page.encode())
+            page = PAGES[cid] = Page(cid)
+            with page.lock:
+                page.render()
+                screen = page.screen
+            html = (HERE / "page.html").read_text().replace("{{SCREEN}}", screen).replace("{{C}}", cid)
+            self.send_body("text/html; charset=utf-8", html.encode())
+        elif path == "/stats":
+            self.send_body("application/json", json.dumps({"posts": POSTS[0]}).encode())
+        elif path == "/check.js":                    # for tests: see check.js
+            self.send_body("text/javascript", (HERE / "check.js").read_bytes())
         elif path == "/datastar.js":
             self.send_body("text/javascript", DATASTAR.read_bytes())
-        elif path == "/client.js":
-            self.send_body("text/javascript", (HERE / "client.js").read_bytes())
-        elif path == "/stats":
-            app = self.client()
-            if not app: return self.send_body("text/plain", b"no such client", 404)
-            with app.lock:
-                s = {"renders": app.render_count, "render_ms_avg": app.render_ms / max(1, app.render_count),
-                     "measured": len(app.view.measured), "anchor": app.view.anchor, "offset": app.view.offset}
-            self.send_body("application/json", json.dumps(s).encode())
         elif path == "/screen":
-            app = self.client()
-            if not app: return self.send_body("text/plain", b"no such client", 404)
+            page = self.page()
+            if not page: return self.send_body("text/plain", b"reload the page", 404)
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-store")
@@ -319,14 +202,12 @@ class Handler(BaseHTTPRequestHandler):
             sent = -1
             try:
                 while True:
-                    with app.lock:
-                        # Only the newest screen is sent; with --ack, only once the
-                        # browser has applied the previous one.
-                        while not (app.revision > sent and (not ARGS.ack or app.applied >= sent)):
-                            app.lock.wait(15)
-                        sent, screen = app.revision, app.screen
-                    if ARGS.latency:
-                        time.sleep(ARGS.latency / 1000)
+                    with page.lock:                 # send only the newest screen
+                        while page.revision == sent:
+                            page.lock.wait(15)
+                        sent, screen = page.revision, page.screen
+                    if ARGS.latency: time.sleep(ARGS.latency / 1000)
+                    # Every line of the HTML needs its own "data: elements" prefix.
                     data = "".join(f"data: elements {line}\n" for line in screen.split("\n"))
                     self.wfile.write(f"event: datastar-patch-elements\n{data}\n".encode())
                     self.wfile.flush()
@@ -337,38 +218,29 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length", 0))
-        f = json.loads(self.rfile.read(n) or b"{}")
-        app = self.client()
-        self.send_response(204 if app else 404); self.send_header("Content-Length", "0"); self.end_headers()
-        if not app: return
-        if ARGS.latency:
-            time.sleep(ARGS.latency / 1000)
-        path = self.path.split("?")[0]
-        try:
-            if path == "/cmd":
-                app.command(f)
-            elif path == "/applied":
-                with app.lock:
-                    app.applied = max(app.applied, int(f["revision"]))
-                    app.lock.notify_all()
-            else:
-                app.facts(f)
-        except Exception:
-            traceback.print_exc()
+        signals = json.loads(self.rfile.read(n) or b"{}")
+        page = self.page()
+        self.send_response(204 if page else 404); self.send_header("Content-Length", "0"); self.end_headers()
+        if not page: return
+        POSTS[0] += 1
+        if ARGS.latency: time.sleep(ARGS.latency / 1000)
+        q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+        with page.lock:
+            page.w, page.h = signals.get("w") or page.w, signals.get("h") or page.h
+            if urlparse(self.path).path == "/scroll":
+                page.place({**signals, **q})
+            page.render()
 
 def main():
     global ARGS
     p = argparse.ArgumentParser()
-    p.add_argument("--port", type=int, default=8765)
     p.add_argument("--host", default="127.0.0.1")
-    p.add_argument("--latency", type=float, default=0)
-    p.add_argument("--bad-estimates", action="store_true")
-    p.add_argument("--ack", action="store_true")
-    args = p.parse_args()
-    ARGS = args
-    srv = ThreadingHTTPServer((args.host, args.port), Handler)
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--latency", type=float, default=0, help="one-way delay added to every screen and post (ms)")
+    ARGS = p.parse_args()
+    srv = ThreadingHTTPServer((ARGS.host, ARGS.port), Handler)
     srv.daemon_threads = True
-    print(f"http://{args.host}:{args.port}/?mode=native|backend|hybrid&point=follow|stay", flush=True)
+    print(f"http://{ARGS.host}:{ARGS.port}/", flush=True)
     srv.serve_forever()
 
 if __name__ == "__main__":

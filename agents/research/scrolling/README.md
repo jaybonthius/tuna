@@ -185,16 +185,18 @@ Research report, 2026-10-17. Read-only on every repository; the only files writt
 
 **How the owner can feel it:** run `python3 server.py --port 8765 [--host <tailscale-ip>] [--latency 80] [--bad-estimates]` and open `/?mode=native`, `/?mode=hybrid` or `/?mode=backend`, optionally with `&point=stay`. The bottom bar has server-side commands (page up/down, move point, type) and a toggle between "point follows scroll" (Emacs) and "point stays put". Arrow keys, PageUp/PageDown and letters do the same on a keyboard; tapping a node puts point there.
 
-### Corrections after the owner's first try (2026-10-17)
+### The prototype as rebuilt (2026-10-17, supersedes the measurements above)
 
-The first prototype went blank partway down on the owner's phone. Causes and fixes (all in `proto/`):
+The owner chose native scrolling. Two earlier versions went blank: first because every open page shared one view; then, after scrolling far down and far up, because the server converted a raw scroll offset to a node through its estimates of the whole document, and those estimates drift away from the browser's real positions over a long scroll. The prototype is now native-only, with no client JavaScript file, following hyperlith's `virtual_scroll.clj`:
 
-- **Shared state.** One global view and one global acknowledgement counter served every open page, so a second tab (or the page being replaced) moved the anchor under the other and a report could wait forever for its screen. Now every page load is its own client with its own view, numbering and stream. Reproduced in phone emulation before the fix (blank, reports stuck at 1); 0 blank frames after, with two tabs open.
-- **No escape from a lost report.** A report that was never acknowledged froze the view. Reports now give up after one second and resend.
-- **Backend mode posted every frame.** It now does what go-web-terminal does (`assets/go-web-terminal.js:171-208`): deltas are summed and only one is in flight; while it waits, new deltas only add to the pending sum. At 80 ms each way, input-to-screen latency is p50 90 ms, p95 129 ms (was 827 / 1,376 ms). Motion still updates only once per round trip, which is the inherent limit of backend scrolling.
-- **Nagle's algorithm.** The Python server lacked `TCP_NODELAY`, adding ~40 ms to some small SSE writes (loopback p95 40 ms → 10 ms after the fix). Tuna's transport must set it too.
-- **Overscan by speed.** Native mode now sends its scroll speed with each report; the server draws `3000 px + 0.4 s × speed` ahead and 1,000 px behind (CodeMirror-style direction bias), and the spacers show a faint line pattern instead of white. At 80 ms each way (phone emulation, synthetic scrolling): 2,400 and 7,200 px/s, 0 blank frames; an 18,000 px/s fling, 2 blank frames of 80; a decaying fling from 24,000 px/s, 2 of 200. Before this change the 18,000 px/s fling was blank on 68 of 80 frames.
-- **Point.** The prototype now has a cursor and two policies (`?point=follow`, Emacs; `?point=stay`, VS Code) and server-side page up/down commands that move the anchor through a scroll request.
+- **Browser:** two Datastar attributes on the scroller. `data-on:scroll="$y = el.scrollTop"`. `data-effect` runs on every scroll and after every morph, finds the node at the top of the viewport with `elementFromPoint`, and, only when that node is outside the server-written range `[lo, hi]`, posts what it sees (`top`, `off`, `at`, `end`) and removes itself, so one request is in flight until the next screen puts it back. Size is posted on load and on a debounced window resize.
+- **Server:** stores per page an anchor (node, content y). It never maps a pixel through whole-document estimates. If a node is at the top, it keeps that node exactly where the browser has it, and browser scroll anchoring absorbs estimate errors in the nodes drawn above it. If the viewport is in a spacer, it walks by estimates from the nearest edge of what was drawn (the post says which nodes and where the window ends), then puts the node found at the viewport. The top spacer is `max(anchor y − estimated height of the nodes above it in the window, estimated height of everything above the window)`, so there is always room for the rest of the document above.
+- **CSS:** nodes touch (padding, no margins), so the top of the viewport is always on a node or a spacer; spacers have `overflow-anchor: none`, so the browser never holds a spacer still instead of the text.
+- **No measurement reports.** Heights stay estimates; only the scrollbar thumb is approximate.
+
+`proto/check.js` (served at `/check.js`) scrolls like a person: 9,000 px/s down for 300 frames, a decaying 24,000 px/s fling, 9,000 px/s up for 600 frames to the top, a fling up, 3,000 px/s down, 15 random scrollbar jumps, then 2 s idle. Desktop Chrome at 0 and 80 ms round trip, and iPhone 15 emulation at 80 ms: 0 blank frames, 0 visible jumps, content after every scrollbar jump, node 0 at the top, 0 posts while idle. Real mouse-wheel input (270,000 px down, back to the top, down again) settled on content every time. Not yet tested on a real phone.
+
+The rest of this report describes the first design (measured heights, report pacing in a client script). Where they differ, this section wins.
 
 ## 5. Candidate designs compared
 
