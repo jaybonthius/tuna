@@ -261,8 +261,7 @@ prelude: :gerbil/core
   ;; by the layout.
   (selected-view) => :t
   (set-selected-view! (v : view)) => :void
-  ;; Entry tables of node kinds (by name) and node renderers (by kind and
-  ;; render target).
+  ;; Entry tables of node kinds (by name) and node renderers (by kind).
   (node-kinds) => :t
   (node-renderers) => :t
 )
@@ -510,16 +509,15 @@ prelude: :gerbil/core
                         doc: doc)
     (void)) :void))
 
-;; Render nodes of KIND for TARGET (such as 'html) with RENDER, called with
-;; the node and its children already rendered.
+;; Render nodes of KIND to HTML with RENDER, called with the node and its
+;; children already rendered, and returning SXML (ADR 7).
 (def (context-define-node-renderer! (ctx    : context)
                                     (kind   : :symbol)
-                                    (target : :symbol)
                                     (render : :procedure))
   => :void
   (:- (with-service-provider (provider buffers-service Buffers)
     (context-add-entry! ctx (: (Buffers-node-renderers provider) entry-table)
-                        [kind target] render)
+                        kind render)
     (void)) :void))
 
 (def (node-kind-ref (kind : :symbol)) => (Maybe node-kind-info)
@@ -527,10 +525,9 @@ prelude: :gerbil/core
     (let (best (entry-table-ref (: (Buffers-node-kinds provider) entry-table) kind))
       (and best (entry-value best)))) node-kind-info))
 
-(def (node-renderer (kind : :symbol) (target : :symbol)) => (Maybe :procedure)
+(def (node-renderer (kind : :symbol)) => (Maybe :procedure)
   (:? (with-service-provider (provider buffers-service Buffers)
-    (let (best (entry-table-ref (: (Buffers-node-renderers provider) entry-table)
-                                [kind target]))
+    (let (best (entry-table-ref (: (Buffers-node-renderers provider) entry-table) kind))
       (and best (entry-value best)))) :procedure))
 
 ;; N as plain text: a text node's text, the kind's projection, or the

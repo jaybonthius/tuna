@@ -4,8 +4,7 @@
 ;;; the echo area and help are buffers in views like any other (ADR 13).
 ;;; For each view the renderer walks its buffer's tree, from where the
 ;;; frame points, and renders each node through the procedure registered
-;;; for its kind and the `html` target. A kind without one is shown as its
-;;; text projection. Text nodes show their highlights as face classes,
+;;; for its kind. A kind without one is shown as its text projection. Text nodes show their highlights as face classes,
 ;;; through the buffer's face-remapping, and each view's point as a cursor:
 ;;; solid in the selected view, hollow in others. A view's status line
 ;;; shows unless its buffer's show-status-line is off.
@@ -97,7 +96,7 @@
 ;; N's HTML as a fragment, kept or drawn again.
 (def (render-node (d : drawing) (n : node)) => :list
   (let* ((kind (node-kind n))
-         (render (node-renderer kind 'html))
+         (render (node-renderer kind))
          (how (or render (node-kind-ref kind)))
          (view-state (and (memq n (drawing-focus-path d)) (drawing-view-state d)))
          (revision (node-revision n))
@@ -261,5 +260,5 @@
   provides: [renderer-service]
   requires: [buffers-service layout-service settings-service]
   optional: [input-service]
-  (context-define-node-renderer! ctx 'text 'html render-text-node)
+  (context-define-node-renderer! ctx 'text render-text-node)
   (context-provide! ctx renderer-service (Renderer (html-rendering views: (make-hash-table-eqv)))))

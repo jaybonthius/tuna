@@ -83,7 +83,7 @@
          (call-on-editor-loop
           (lambda ()
             (let (b (new-button "Go" void))
-              (check ((node-renderer button-node-kind 'html) b []) 
+              (check ((node-renderer button-node-kind) b []) 
                      => '(button (@ (type "button") (class "button") (tabindex "-1")) "Go"))
               (check (node-text-projection b) => "Go")
               (check (eq? (node-keymap b) button-keymap) => #t)))))))

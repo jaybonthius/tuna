@@ -109,14 +109,14 @@
   requires: [commands-service completion-service input-service buffers-service settings-service layout-service minibuffer-service]
   (for-each (lambda (kind) (context-define-node-kind! ctx kind))
             '(completion-counter completion-list completion-row completion-group))
-  (context-define-node-renderer! ctx 'completion-counter 'html
+  (context-define-node-renderer! ctx 'completion-counter
     (lambda (n children) `(span (@ (class "completion-counter") (aria-label "Selection index"))
                                ,(node-attribute n 'content))))
-  (context-define-node-renderer! ctx 'completion-list 'html
+  (context-define-node-renderer! ctx 'completion-list
     (lambda (n children) `(ul (@ (class "completion-list") (aria-label "Completions")) ,@children)))
-  (context-define-node-renderer! ctx 'completion-group 'html
+  (context-define-node-renderer! ctx 'completion-group
     (lambda (n children) `(li (@ (class "completion-group")) ,(node-attribute n 'content))))
-  (context-define-node-renderer! ctx 'completion-row 'html draw-row)
+  (context-define-node-renderer! ctx 'completion-row draw-row)
   (let (self (vertical-ui displays: (make-hash-table-eq) keymap: (new-keymap)))
     (for-each (lambda (definition)
                 (context-define-command! ctx (car definition) (cdr definition)

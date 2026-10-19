@@ -33,7 +33,7 @@
   (context-define-node-kind! ctx button-node-kind
                              doc: "A button: a label, and an action run when it is clicked."
                              project: (lambda (n) (node-attribute n 'label)))
-  (context-define-node-renderer! ctx button-node-kind 'html
+  (context-define-node-renderer! ctx button-node-kind
                                  (lambda (n children)
                                    `(button (@ (type "button") (class "button") (tabindex "-1"))
                                             ,(node-attribute n 'label))))

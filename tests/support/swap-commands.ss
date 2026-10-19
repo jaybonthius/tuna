@@ -1,5 +1,5 @@
 ;;; C-c v, C-c w, and C-c B: swap the renderer, the layout, and the buffers
-;;; provider for the contract doubles (plain-text-renderer.ss, two-views.ss,
+;;; provider for the contract doubles (bare-renderer.ss, two-views.ss,
 ;;; toy-buffers.ss) while Tuna runs, for tests that swap a live slot through
 ;;; the editor.
 prelude: :gerbil/core
@@ -8,7 +8,7 @@ prelude: :gerbil/core
         :tuna/kernel
         :tuna/plugins/keys/contract
         (except-in :tuna/configuration activate-plugin!)
-        "../../plugins/renderer/tests/support/plain-text-renderer"
+        "../../plugins/renderer/tests/support/bare-renderer"
         "../../plugins/layout/tests/support/two-views"
         "../../plugins/buffers/tests/support/toy-buffers")
 (export swap-commands
@@ -30,10 +30,10 @@ prelude: :gerbil/core
 (defplugin (swap-commands ctx)
   "C-c v swaps the renderer, C-c w the layout, C-c B the buffers provider, for their doubles."
   requires: [commands-service input-service configuration-service]
-  (define-command ctx (swap-renderer) "Switch between the HTML and the plain-text renderer."
-    (swap-double! 'renderer plain-text-renderer)
-    (message (if (plugin-active? plain-text-renderer)
-               "Renderer: plain text"
+  (define-command ctx (swap-renderer) "Switch between the HTML and the bare HTML renderer."
+    (swap-double! 'renderer bare-renderer)
+    (message (if (plugin-active? bare-renderer)
+               "Renderer: bare"
                "Renderer: HTML")))
   (define-command ctx (swap-layout) "Switch between one view and two side by side."
     (swap-double! 'layout two-views)

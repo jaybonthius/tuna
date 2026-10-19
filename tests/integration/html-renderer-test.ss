@@ -33,9 +33,9 @@
   (context-define-node-kind! ctx 'column doc: "Children stacked vertically.")
   (context-define-node-kind! ctx 'heading doc: "A heading."
                              project: (lambda (n) (node-attribute n 'content)))
-  (context-define-node-renderer! ctx 'column 'html
+  (context-define-node-renderer! ctx 'column
                                  (lambda (n children) `(div (@ (class "column")) ,@children)))
-  (context-define-node-renderer! ctx 'heading 'html
+  (context-define-node-renderer! ctx 'heading
                                  (lambda (n children) `(h1 (@ (class "heading")) ,(node-attribute n 'content))))
   (context-add-buffer! ctx
                        (new-buffer "*welcome*"
@@ -64,7 +64,7 @@
   "Defines the counted kind, whose HTML renderer counts its calls, and buffers a and b."
   requires: [buffers-service]
   (context-define-node-kind! ctx 'counted)
-  (context-define-node-renderer! ctx 'counted 'html
+  (context-define-node-renderer! ctx 'counted
                                  (lambda (n children)
                                    (hash-update! renders (node-buffer-name n) 1+ 0)
                                    `(div (@ (class "counted")) ,(or (node-attribute n 'label) "") ,@children)))

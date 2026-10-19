@@ -46,7 +46,7 @@
   optional: [renderer-service]
   (context-define-node-kind! ctx echo-area-node-kind doc: "A message."
                              project: (lambda (n) (node-attribute n 'content)))
-  (context-define-node-renderer! ctx echo-area-node-kind 'html
+  (context-define-node-renderer! ctx echo-area-node-kind
                                  (lambda (n children)
                                    `(p (@ (class "echo-area") (role "status")) ,(node-attribute n 'content))))
   (let (home (new-buffer " *Echo Area*" (new-node echo-area-node-kind attributes: [['content . ""]])))
