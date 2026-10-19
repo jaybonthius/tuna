@@ -10,6 +10,7 @@ Most documents were written by agents against earlier Gerbil (v0.18/early v0.19)
 |---|---|
 | What Tuna must eventually support, and which decisions changed because of it | [`capability-audit/README.md`](capability-audit/README.md) |
 | What earlier attempts tried and why they stalled | [`editor-corpus/prior-attempts-audit.md`](editor-corpus/prior-attempts-audit.md) |
+| Scrolling a view and reporting layout facts (native vs server-side scrolling, height maps, frame pacing; 2026-10-17, with a prototype) | [`scrolling/README.md`](scrolling/README.md) |
 | Open editor-model questions | [`editor-corpus/research-gaps.md`](editor-corpus/research-gaps.md) |
 | How Emacs extensibility actually works | [`live-extensibility-racket/research/emacs-extension-architecture.md`](live-extensibility-racket/research/emacs-extension-architecture.md) |
 | Emacs command loop | [`editor-corpus/prior-art/workbench-gerbil/research/emacs-command-loop-runtime-architecture.md`](editor-corpus/prior-art/workbench-gerbil/research/emacs-command-loop-runtime-architecture.md), [`editor-corpus/prior-art/tuna/docs/research/emacs-command-loop.md`](editor-corpus/prior-art/tuna/docs/research/emacs-command-loop.md) |
