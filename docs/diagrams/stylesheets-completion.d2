@@ -1,0 +1,43 @@
+# Where does the selected completion row's colour come from?
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+direction: right
+
+classes: {
+  sheet: {
+    style: {
+      fill: "#eef3fb"
+      stroke: "#355c96"
+      font-color: "#172b4d"
+      border-radius: 8
+      font-size: 16
+    }
+  }
+  yours: {
+    style: {
+      fill: "#fff8e1"
+      stroke: "#8d6e00"
+      font-color: "#3e2f00"
+      border-radius: 8
+      stroke-dash: 4
+      font-size: 16
+    }
+  }
+}
+
+design: "design-tokens plugin\nStellar file\n--primary-3: …" {class: sheet}
+semantic: "completion plugin: tokens\n--completion-selected-background:\nvar(--primary-3)" {class: sheet}
+rules: "completion plugin: rules\nselected row's background:\nvar(--completion-selected-background)" {class: sheet}
+mine: "your init.ss (optional)\nreplaces completion's tokens\nwith your own file" {class: yours}
+page: "the page\nweb transport links each stylesheet\nin order: design tokens, plugins, yours" {class: sheet}
+
+semantic -> design: "1. uses"
+rules -> semantic: "2. uses"
+mine -> semantic: "3. replaces" {style.stroke-dash: 4}
+design -> page: "4. linked"
+semantic -> page
+rules -> page
