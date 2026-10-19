@@ -809,10 +809,12 @@
       (check (re-exports? '(export (phi: +1 (import: :tuna/plugins/commands/contract)))) => #t)
       (check (re-exports? '(export own-name)) => #f))
     (test-case "plugin implementations use the live-redefinition prelude"
+      ;; A contract-only package, such as stylesheets, has no plugin.ss.
       (for-each
        (lambda ((directory : :string))
-         (check (string-prefix? "#lang :tuna/prelude\n"
-                  (read-file-string (source-path (string-append directory "/plugin.ss")))) => #t))
+         (let (plugin (source-path (string-append directory "/plugin.ss")))
+           (when (file-exists? plugin)
+             (check (string-prefix? "#lang :tuna/prelude\n" (read-file-string plugin)) => #t))))
        (plugin-package-directories)))
     (test-case "build.ss lists every plugin package"
       (check (unbuilt-packages (plugin-package-directories) (built-package-directories)) => [])
