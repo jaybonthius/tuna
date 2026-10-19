@@ -1,0 +1,24 @@
+# What happens when you fling down a 50,000-line buffer? (planned; proven in a prototype)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: You
+page: "Page in your browser tab"
+server: "Tuna (editor thread)"
+scrolling: "Scrolling plugin"
+renderer: "Renderer plugin"
+web: "Web plugin (screen stream)"
+
+you -> page: "1. fling down"
+page -> page: "2. the browser scrolls natively\n(wheel, finger, momentum)"
+page -> server: "3. near the edge of what is drawn:\n'view 4: line 1,210 at the top, 8 px in'\n(same queue as keys)"
+server -> scrolling: "4. run view-scrolled"
+scrolling -> scrolling: "5. the view's anchor := line 1,210, 8 px"
+renderer -> renderer: "6. draw lines ~1,090 to ~1,420\nwith spacers above and below"
+web -> page: "7. the newest screen, again every 50 ms"
+page -> you: "8. line 1,210 stays put (scroll anchoring);\nnew lines are ready ahead of you"

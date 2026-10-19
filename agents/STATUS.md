@@ -2,7 +2,11 @@
 
 Read this first when resuming work. Last updated 2026-10-17. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: HTML and stylesheets
+## Current work: scrolling a view
+
+Brief `docs/briefs/2026-10-scrolling.md` and plan `agents/plans/scrolling.md` proposed 2026-10-17, awaiting owner approval. Owner decisions: native scrolling for views (after trying server-moved, hybrid and native prototypes on desktop and iPhone); re-send the newest screen every tick as hyperlith does (interval configurable, 50 ms default; Brotli later makes it cheap). Research and the working prototype: `agents/research/scrolling/`.
+
+## Previous work: HTML and stylesheets
 
 Done 2026-10-17 on branch `stylesheets-split` (stages 6-7; stages 1-5 merged earlier); see `agents/plans/stylesheets.md` and the brief `docs/briefs/2026-10-stylesheets.md`. `plugins/web/web/tuna.css` is gone: every plugin that renders HTML adds its own `tokens.css` and `rules.css` (convention in `agents/guides/html-css.md`), fixtures and doubles bring support stylesheets, and `tests/integration/stylesheets-test.ss` checks the starter and demo pages and a theme plus `init.ss` replacement. The demo's terminal theme (`tests/support/theme-terminal.ss`) toggles with `C-c T`. Report with screenshots: `/home/jay/Code/workbench-gerbil/scratch/stylesheets/stage-6-7-report.md`. Pending: the primary agent's review and merge. Open follow-ups: narrow-screen layout (sidebar and split panes on phones) belongs to the layout-facts research; the input proxy is still needed before phones can type.
 

@@ -1,0 +1,29 @@
+# What does a view draw? (planned; proven in a prototype)
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 0
+  }
+}
+
+view: "One view's scroller: the browser scrolls it natively" {
+  grid-columns: 1
+  grid-gap: 0
+  sp1: "Spacer standing in for lines 1 to 1,089\n(height = lines × average line height)" {
+    style.fill: "#f4f4f4"
+    style.stroke-dash: 3
+    width: 520
+  }
+  above: "Drawn: lines 1,090 to 1,209 (about 3,000 px above)\nscrolling up past line ~1,150 sends a report" {width: 520}
+  visible: "Drawn and on screen: lines 1,210 to 1,240\nanchor = line 1,210, 8 px in" {
+    style.fill: "#d8e8ff"
+    style.bold: true
+    width: 520
+  }
+  below: "Drawn: lines 1,241 to 1,420 (a screen plus about 4,000 px below)\nscrolling down past line ~1,300 sends a report" {width: 520}
+  sp2: "Spacer standing in for lines 1,421 to 50,000" {
+    style.fill: "#f4f4f4"
+    style.stroke-dash: 3
+    width: 520
+  }
+}
