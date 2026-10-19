@@ -37,7 +37,7 @@ function measured(sc) {
 }
 // At most one report waits for its screen; while it waits, only the
 // newest facts are kept (the next report reads them fresh).
-let waitingFor = 0, wanted = false;
+let waitingFor = 0, wanted = false, appliedReq = 0;
 function send(facts) {
   const s = ++seq;
   waitingFor = s; P.reports++;
@@ -49,14 +49,14 @@ function report(force) {
   if (waitingFor) { wanted = true; return; }
   const { first, last, top } = visible(sc);
   if (!first) {                      // inside a spacer: only the pixel offset is known
-    send({ pixel: top, h: sc.clientHeight, w: sc.clientWidth });
+    send({ pixel: top, h: sc.clientHeight, w: sc.clientWidth, req: appliedReq });
     return;
   }
   const m = measured(sc);
   const outside = Number(first.dataset.i) < Number(sc.dataset.lo) || Number(last.dataset.i) > Number(sc.dataset.hi);
   if (force || outside || Object.keys(m).length) {
-    send({ anchor: Number(first.dataset.i), offset: top - first.offsetTop,
-           h: sc.clientHeight, w: sc.clientWidth, measured: m });
+    send({ anchor: Number(first.dataset.i), offset: top - first.offsetTop, last: Number(last.dataset.i),
+           h: sc.clientHeight, w: sc.clientWidth, measured: m, req: appliedReq });
   }
 }
 let reportFrame = 0;
@@ -138,9 +138,19 @@ function onScreen() {
     }
   }
   if (waitingFor && ack >= waitingFor) waitingFor = 0;
+  // A command moved the anchor: apply it once, instantly (never smooth,
+  // or the animation sweeps through the thresholds and posts reports).
+  if (sc && mode() === "native" && Number(sc.dataset.req) > appliedReq) {
+    const el = document.getElementById("n" + sc.dataset.reqAnchor);
+    if (el) sc.scrollTop = el.offsetTop + Number(sc.dataset.reqOffset);
+    appliedReq = Number(sc.dataset.req);
+    wanted = true;
+  }
   if (mode() === "native") requestAnimationFrame(() => { const w = wanted; wanted = false; report(w); });
   document.getElementById("hud").textContent =
-    `${mode()} rev ${screen.dataset.revision} reports ${P.reports} last ${P.latencies.length ? P.latencies.at(-1).toFixed(1) : "-"} ms`;
+    `${mode()} · point ${screen.dataset.point} · rev ${screen.dataset.revision} · reports ${P.reports}`;
+  document.getElementById("follow").textContent =
+    screen.dataset.follow === "1" ? "point: follows scroll" : "point: stays put";
 }
 let lastRev = 0;
 new MutationObserver(() => {
@@ -191,3 +201,24 @@ P.latencySummary = () => {
   const q = (p) => l[Math.min(l.length - 1, Math.floor(l.length * p))];
   return { n: l.length, p50: q(0.5), p95: q(0.95), max: l.at(-1) };
 };
+
+// ---- point and commands (server-side, like Emacs commands) -----------------
+const cmd = (body) => post("/cmd", body);
+document.getElementById("bar").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-cmd]");
+  if (b) { e.preventDefault(); cmd({ cmd: b.dataset.cmd }); }
+});
+const keys = { ArrowDown: "down", ArrowUp: "up", PageDown: "pgdn", PageUp: "pgup" };
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (keys[e.key]) { e.preventDefault(); cmd({ cmd: keys[e.key] }); }
+  else if (e.key.length === 1) { e.preventDefault(); cmd({ cmd: "type", text: e.key }); }
+});
+// A tap (not a drag) on a node puts point there.
+let downAt = null;
+document.addEventListener("pointerdown", (e) => { downAt = [e.clientX, e.clientY]; }, true);
+document.addEventListener("pointerup", (e) => {
+  if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 8) return;
+  const n = document.elementFromPoint(e.clientX, e.clientY)?.closest(".n");
+  if (n && !e.target.closest("#bar")) cmd({ cmd: "set", i: Number(n.dataset.i) });
+}, true);

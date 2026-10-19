@@ -17,7 +17,13 @@ Modes (?mode=...):
            locally (CSS transform) until the server's screen catches up,
            and runs its own touch momentum.
 
-Options: --latency MS adds one-way delay to every screen; --bad-estimates
+Point (?point=follow|stay): the server keeps a cursor on one node. With
+"follow", scrolling moves point into view, as Emacs does; with "stay",
+point stays put and the next command that uses it brings it back into
+view. Commands (keys or the toolbar) are server-side, like C-v in Emacs.
+
+Options: --host ADDR binds another address (e.g. a Tailscale IP for a
+phone); --latency MS adds one-way delay to every screen; --bad-estimates
 makes every estimate one line, to stress correction; --ack sends a screen
 only after the client reports the previous one applied.
 """
@@ -85,6 +91,33 @@ class View:
             acc2 += self.height(b); b += 1
         return a, b
 
+    def last_visible(self):
+        """The last node at least partly in the viewport, from the height map."""
+        b, acc = self.anchor, -self.offset
+        while b < N - 1:
+            acc += self.height(b)
+            if acc >= self.h: break
+            b += 1
+        return b
+
+    def first_visible(self):
+        """The first node whose top is in the viewport."""
+        return self.anchor if self.offset <= 0.5 else min(N - 1, self.anchor + 1)
+
+    def show(self, i):
+        """Scroll as little as possible so node I is in view (Emacs keeps
+        point visible). Returns True if the anchor moved."""
+        if self.first_visible() <= i < self.last_visible() or (i == self.anchor and self.offset <= 0.5):
+            return False
+        if i < self.first_visible():
+            self.anchor, self.offset = i, 0.0
+        else:                                    # put node I at the bottom
+            a, acc = i, self.height(i)
+            while a > 0 and acc + self.height(a - 1) <= self.h:
+                a -= 1; acc += self.height(a)
+            self.anchor, self.offset = a, 0.0
+        return True
+
     def move(self, dy):
         """Scroll by DY pixels through the height map (backend modes)."""
         self.offset += dy
@@ -94,13 +127,17 @@ class View:
         while self.anchor < N - 1 and self.offset >= self.height(self.anchor):
             self.offset -= self.height(self.anchor); self.anchor += 1
 
-def node_html(i, est):
+TYPED = {}                          # node index -> text typed at its end
+
+def node_html(i, est, point):
     kind, v = NODES[i]
+    cls = "n point" if i == point else "n"
     attrs = f'id="n{i}" data-i="{i}" data-est="{est}"'
-    if kind == "h": return f'<h2 {attrs} class="n">{esc(v)}</h2>'
-    if kind == "pre": return f'<pre {attrs} class="n">{esc(v)}</pre>'
-    if kind == "box": return f'<div {attrs} class="n box" style="height:{v}px">image {i}</div>'
-    return f'<p {attrs} class="n">{i}: {esc(v)}</p>'
+    t = esc(TYPED.get(i, ""))
+    if kind == "h": return f'<h2 {attrs} class="{cls}">{esc(v)}{t}</h2>'
+    if kind == "pre": return f'<pre {attrs} class="{cls}">{esc(v)}{t}</pre>'
+    if kind == "box": return f'<div {attrs} class="{cls} box" style="height:{v}px">image {i}{t}</div>'
+    return f'<p {attrs} class="{cls}">{i}: {esc(v)}{t}</p>'
 
 class App:
     def __init__(self, args):
@@ -112,6 +149,9 @@ class App:
         self.screen = ""
         self.ack_input = 0       # newest input sequence folded into the state
         self.applied = 0         # newest revision the client says it applied
+        self.point = 0           # the cursor: a node index
+        self.follow = True       # scrolling moves point into view (Emacs)
+        self.request = 0         # bumped when a command moves the anchor
         self.render_count = 0
         self.render_ms = 0.0
 
@@ -126,9 +166,10 @@ class App:
             mid_lo = (a + v.anchor) // 2 if a > 0 else -1
             last = b - 1
             hi = (v.anchor + last) // 2 + 1 if b < N else N + 1
-            body = "".join(node_html(i, v.height(i)) for i in range(a, b))
-            html = (f'<main id="screen" data-revision="{self.revision}" data-mode="native" data-ack="{self.ack_input}">'
-                    f'<div id="scroller" class="scroller" data-lo="{mid_lo}" data-hi="{hi}">'
+            body = "".join(node_html(i, v.height(i), self.point) for i in range(a, b))
+            html = (f'<main id="screen" data-revision="{self.revision}" data-mode="native" data-ack="{self.ack_input}" {self.status()}>'
+                    f'<div id="scroller" class="scroller" data-lo="{mid_lo}" data-hi="{hi}" '
+                    f'data-req="{self.request}" data-req-anchor="{v.anchor}" data-req-offset="{v.offset:.1f}">'
                     f'<div id="sp-top" style="height:{top:.0f}px"></div>{body}'
                     f'<div id="sp-bot" style="height:{bottom:.0f}px"></div></div></main>')
         else:
@@ -136,8 +177,8 @@ class App:
             y = sum(v.height(k) for k in range(a, v.anchor)) + v.offset
             total = sum(v.height(k) for k in range(N))
             above = sum(v.height(k) for k in range(v.anchor)) + v.offset
-            body = "".join(node_html(i, v.height(i)) for i in range(a, b))
-            html = (f'<main id="screen" data-revision="{self.revision}" data-mode="{self.mode}" data-ack="{self.ack_input}" data-y="{y:.1f}">'
+            body = "".join(node_html(i, v.height(i), self.point) for i in range(a, b))
+            html = (f'<main id="screen" data-revision="{self.revision}" data-mode="{self.mode}" data-ack="{self.ack_input}" data-y="{y:.1f}" {self.status()}>'
                     f'<div id="scroller" class="scroller owned">'
                     f'<div id="content" style="transform:translateY({-y:.1f}px)">{body}</div>'
                     f'<div id="thumb" style="top:{100 * above / max(1, total):.3f}%"></div></div></main>')
@@ -145,6 +186,43 @@ class App:
         self.render_count += 1
         self.render_ms += (time.perf_counter() - t0) * 1000
         self.lock.notify_all()
+
+    def status(self):
+        return f'data-point="{self.point}" data-follow="{int(self.follow)}"'
+
+    def follow_point(self, last=None):
+        """After a scroll: with "follow", move point into the viewport."""
+        if not self.follow: return
+        v = self.view
+        first, last = v.first_visible(), (last if last is not None else v.last_visible())
+        if self.point < first: self.point = min(first, last)
+        elif self.point > last: self.point = last
+
+    def command(self, f):
+        """Server-side commands, like Emacs commands bound to keys."""
+        with self.lock:
+            v, c = self.view, f["cmd"]
+            scrolled = False
+            if c == "down": self.point = min(N - 1, self.point + 1)
+            elif c == "up": self.point = max(0, self.point - 1)
+            elif c == "set": self.point = int(f["i"])
+            elif c == "type":
+                TYPED[self.point] = TYPED.get(self.point, "") + f.get("text", " typed")
+                v.measured.pop(self.point, None)
+            elif c == "follow": self.follow = not self.follow
+            elif c == "pgdn":                       # C-v: the last visible node goes to the top
+                v.anchor, v.offset = max(v.anchor + 1, v.last_visible()), 0.0; scrolled = True
+            elif c == "pgup":                       # M-v: the first visible node goes to the bottom
+                a, acc = v.anchor, 0.0
+                while a > 0 and acc + v.height(a - 1) <= v.h:
+                    a -= 1; acc += v.height(a)
+                v.anchor, v.offset = a, 0.0; scrolled = True
+            if scrolled:
+                self.follow_point()                 # with "stay", point may now be off screen
+            elif c in ("down", "up", "type", "set"):
+                scrolled = v.show(self.point)       # commands that use point bring it into view
+            if scrolled: self.request += 1
+            self.render()
 
     def facts(self, f):
         with self.lock:
@@ -160,10 +238,15 @@ class App:
                 while i < N - 1 and y >= v.height(i):
                     y -= v.height(i); i += 1
                 v.anchor, v.offset = i, y
-            if "anchor" in f:                      # native: the browser scrolled
+                self.follow_point()
+            stale = int(f.get("req", self.request)) < self.request
+            if "pixel" in f and stale: del f["pixel"]
+            if "anchor" in f and not stale:        # native: the browser scrolled
                 v.anchor, v.offset = int(f["anchor"]), float(f["offset"])
+                self.follow_point(int(f["last"]) if "last" in f else None)
             if "dy" in f:                          # backend/hybrid: a scroll delta
                 v.move(float(f["dy"]))
+                self.follow_point()
             if "seq" in f:
                 self.ack_input = max(self.ack_input, int(f["seq"]))
             self.render()
@@ -190,6 +273,8 @@ class Handler(BaseHTTPRequestHandler):
                 mode = self.path.split("mode=")[1].split("&")[0]
             with APP.lock:
                 APP.mode = mode
+                APP.follow = "point=stay" not in self.path
+                APP.point = 0
                 APP.view.anchor, APP.view.offset = 0, 0.0
                 APP.render()
                 screen = APP.screen
@@ -232,7 +317,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(204); self.send_header("Content-Length", "0"); self.end_headers()
         if APP.args.latency:
             time.sleep(APP.args.latency / 1000)
-        if self.path == "/applied":
+        if self.path == "/cmd":
+            APP.command(f)
+        elif self.path == "/applied":
             with APP.lock:
                 APP.applied = max(APP.applied, int(f["revision"]))
                 APP.lock.notify_all()
@@ -243,14 +330,15 @@ def main():
     global APP
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--latency", type=float, default=0)
     p.add_argument("--bad-estimates", action="store_true")
     p.add_argument("--ack", action="store_true")
     args = p.parse_args()
     APP = App(args)
-    srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    srv = ThreadingHTTPServer((args.host, args.port), Handler)
     srv.daemon_threads = True
-    print(f"http://127.0.0.1:{args.port}/?mode=native|backend|hybrid", flush=True)
+    print(f"http://{args.host}:{args.port}/?mode=native|backend|hybrid&point=follow|stay", flush=True)
     srv.serve_forever()
 
 if __name__ == "__main__":

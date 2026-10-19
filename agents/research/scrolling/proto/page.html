@@ -6,7 +6,7 @@
 <title>Tuna scrolling prototype</title>
 <style>
 html, body { margin: 0; height: 100%; overscroll-behavior: none; }
-#screen { height: 100dvh; display: flex; flex-direction: column; }
+#screen { height: calc(100dvh - 48px); display: flex; flex-direction: column; }
 .scroller { flex: 1; position: relative; overflow: auto; overscroll-behavior: contain;
             padding: 0 16px; font: 16px/24px system-ui, sans-serif; }
 .scroller.owned { overflow: hidden; touch-action: none; }
@@ -15,11 +15,24 @@ h2.n { font-size: 22px; line-height: 32px; }
 pre.n { font: 14px/20px monospace; background: #f3f3f3; padding: 8px; white-space: pre-wrap; }
 .box { background: linear-gradient(#cde, #9bd); box-sizing: border-box; margin: 8px 0; }
 #thumb { position: absolute; right: 2px; width: 6px; height: 40px; background: #888; border-radius: 3px; }
-#hud { position: fixed; right: 8px; bottom: 8px; font: 12px monospace; background: #ffffe0; padding: 4px; }
+.n.point { box-shadow: inset 4px 0 #d33; background: #fff0f0; }
+#bar { position: fixed; left: 0; right: 0; bottom: 0; height: 48px; display: flex; gap: 4px; align-items: center;
+       padding: 0 6px; background: #eee; border-top: 1px solid #ccc; overflow-x: auto; font: 14px system-ui; }
+#bar button, #bar a { flex: none; padding: 6px 8px; font: inherit; }
+#hud { position: fixed; right: 8px; top: 8px; font: 12px monospace; background: #ffffe0; padding: 4px; }
 </style>
 <script type="importmap">{"imports":{"datastar":"/datastar.js"}}</script>
 <script type="module" src="/datastar.js"></script>
 <script type="module" src="/client.js"></script>
 </head>
-<body>{{SCREEN}}<div id="hud"></div></body>
+<body>{{SCREEN}}<div id="hud"></div>
+<nav id="bar">
+  <button data-cmd="pgup" title="M-v / PageUp">page up</button>
+  <button data-cmd="pgdn" title="C-v / PageDown">page down</button>
+  <button data-cmd="up" title="ArrowUp">point ↑</button>
+  <button data-cmd="down" title="ArrowDown">point ↓</button>
+  <button data-cmd="type" title="any letter">type</button>
+  <button data-cmd="follow" id="follow">point</button>
+  <a href="/?mode=native">native</a> <a href="/?mode=backend">backend</a> <a href="/?mode=hybrid">hybrid</a>
+</nav></body>
 </html>

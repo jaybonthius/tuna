@@ -183,7 +183,7 @@ Research report, 2026-10-17. Read-only on every repository; the only files writt
 - The 8 px deviations are my measurement's treatment of collapsed box margins.
 - Server render cost (Python, ~40 nodes) was 4–7 ms per screen.
 
-**How the owner can feel it:** run `python3 server.py --port 8765 [--latency 80] [--bad-estimates]` and open `/?mode=native`, `/?mode=hybrid` or `/?mode=backend`. Ideally do this on a phone, through an SSH port forward, since the server binds 127.0.0.1 only.
+**How the owner can feel it:** run `python3 server.py --port 8765 [--host <tailscale-ip>] [--latency 80] [--bad-estimates]` and open `/?mode=native`, `/?mode=hybrid` or `/?mode=backend`, optionally with `&point=stay`. The bottom bar has server-side commands (page up/down, move point, type) and a toggle between "point follows scroll" (Emacs) and "point stays put". Arrow keys, PageUp/PageDown and letters do the same on a keyboard; tapping a node puts point there.
 
 ## 5. Candidate designs compared
 
