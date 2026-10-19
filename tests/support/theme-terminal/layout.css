@@ -1,0 +1,104 @@
+/* theme-terminal's (layout rules): the layout plugin's rules rewritten
+   flat. Parts are divided by single lines, tabs are bracketed labels with
+   the selected one in reverse video, and the selected part is dashed. The
+   flexbox geometry is the layout plugin's own: a replacement takes over
+   the whole file. */
+:where(.layout) {
+  display: flex;
+  flex: 1;
+  min-block-size: 0;
+}
+
+:where(.layout, .container.fit, .tab-panel) > * {
+  flex: var(--tuna-size, 1) 1 0;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+:where(.layout, .container.fit, .tab-panel) > :where([data-size="content"]) {
+  flex: none;
+}
+
+:where([data-selected-part]) {
+  outline: 1px dashed CanvasText;
+  outline-offset: -1px;
+}
+
+:where(.container) {
+  display: flex;
+}
+
+:where(.container.fit.horizontal) {
+  flex-direction: row;
+}
+
+:where(.container.fit.vertical) {
+  flex-direction: column;
+}
+
+:where(.layout, .container.fit.horizontal) > :where(* + *) {
+  border-inline-start: 1px solid CanvasText;
+}
+
+:where(.container.fit.vertical) > :where(* + *) {
+  border-block-start: 1px solid CanvasText;
+}
+
+:where(.container.tabbed.horizontal) {
+  flex-direction: column;
+}
+
+:where(.container.tabbed.vertical) {
+  flex-direction: row;
+}
+
+:where(.tabs) {
+  display: flex;
+  flex: none;
+  gap: 1ch;
+  margin: 0;
+  padding: 0 1ch;
+  list-style: none;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+:where(.container.tabbed.horizontal > .tabs) {
+  border-block-end: 1px solid CanvasText;
+}
+
+:where(.container.tabbed.vertical > .tabs) {
+  flex-direction: column;
+  border-inline-end: 1px solid CanvasText;
+}
+
+:where(.tab) {
+  white-space: nowrap;
+}
+
+:where(.tab)::before {
+  content: "[";
+}
+
+:where(.tab)::after {
+  content: "]";
+}
+
+:where(.tab[aria-selected="true"]) {
+  background: CanvasText;
+  color: Canvas;
+}
+
+@media (pointer: coarse) {
+  :where(.tab) {
+    min-block-size: 2.75rem;
+    align-content: center;
+  }
+}
+
+:where(.tab-panel) {
+  display: flex;
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+}

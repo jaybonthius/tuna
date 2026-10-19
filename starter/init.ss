@@ -60,6 +60,7 @@
         :tuna/plugins/orderless/plugin
         :tuna/plugins/command-annotations/plugin
         :tuna/plugins/settings/contract
+        :tuna/plugins/stylesheets/contract
         (only-in :tuna/kernel current-context)
         :tuna/plugins/reload-config/plugin)
 
@@ -95,3 +96,12 @@
 (use-plugin reload-config        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)
           (keymap-set "C-c C-r" 'show-config-report))
+
+;; Restyle Tuna with CSS. Each plugin's look is in its own stylesheets,
+;; usually (PLUGIN tokens), its colours and sizes as CSS custom properties,
+;; and (PLUGIN rules); M-x describe-stylesheets lists them. Add your own
+;; file, which comes after every plugin's, to redefine a few properties, or
+;; replace a plugin's file to rewrite it. Paths are relative to this file;
+;; M-x reload-stylesheets reads them again after you edit them.
+;; (add-stylesheet 'mine "my.css")
+;; (replace-stylesheet 'completion-vertical 'tokens "my-completion-tokens.css")

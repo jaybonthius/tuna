@@ -1,0 +1,24 @@
+/* theme-terminal's (buttons rules): a button is its label in brackets. */
+:where(.button) {
+  padding: 0 1ch;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+:where(.button)::before {
+  content: "[ ";
+}
+
+:where(.button)::after {
+  content: " ]";
+}
+
+@media (pointer: coarse) {
+  :where(.button) {
+    min-block-size: 2.75rem;
+  }
+}

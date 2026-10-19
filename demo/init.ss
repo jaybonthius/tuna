@@ -84,7 +84,8 @@
                                html-renderer layout buffers))
 (use-plugin digit-highlighter)   ; colors digits from a slow job
 (use-plugin tree-buffer)         ; C-c b: the *welcome* buffer, built as a tree
-(use-plugin demo)                ; C-c s text store, C-c p basic editing, C-c h hungry delete
+(use-plugin demo)                ; C-c s text store, C-c p basic editing, C-c h hungry delete,
+                                 ; C-c T the terminal theme (tests/support/theme-terminal.ss)
 (use-plugin sidebar-demo)        ; C-c d: a sidebar of buffer buttons pinned to the left, or killed
 (use-plugin reload-config        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)

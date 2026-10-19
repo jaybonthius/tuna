@@ -1,0 +1,8 @@
+/* theme-terminal's (web-transport tokens): the page in the terminal's
+   own two colours, Canvas and CanvasText, which follow the light or dark
+   scheme. */
+:root {
+  --page-background: Canvas;
+  --page-foreground: CanvasText;
+  --page-font: ui-monospace, "DejaVu Sans Mono", "Liberation Mono", monospace;
+}

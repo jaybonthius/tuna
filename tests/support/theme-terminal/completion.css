@@ -1,0 +1,15 @@
+/* theme-terminal's (completion-vertical tokens): the selected candidate in
+   reverse video, matches underlined in the text's own colour, square
+   rows. */
+:root {
+  --completion-muted: GrayText;
+  --completion-selected-background: CanvasText;
+  --completion-selected-foreground: Canvas;
+  --completion-selected-border: CanvasText;
+  --completion-focus-ring: CanvasText;
+  --completion-match-foreground: currentColor;
+  --completion-row-radius: 0;
+  --completion-row-padding: 0 1ch;
+  --completion-group-font: inherit;
+  --completion-list-max-size: 60dvh;
+}
