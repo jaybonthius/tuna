@@ -1,18 +1,18 @@
 # Brief: HTML and stylesheets
 
-**Date:** 2026-10-16. **Status:** proposed. Research: [`agents/research/presentation/`](../../agents/research/presentation/) (design systems, naming, audit of today's CSS, mobile). Changes [ADR 7](../../agents/adr/0007-rendering-and-transport.md).
+**Date:** 2026-10-16. **Status:** approved 2026-10-16 (owner: ship Stellar's default output, core sections only; committing it is fine); revised after an independent review (`/home/jay/Code/workbench-gerbil/scratch/stylesheets-review/review.md`). Research: [`agents/research/presentation/`](../../agents/research/presentation/) (design systems, naming, audit of today's CSS, mobile). Changes [ADR 7](../../agents/adr/0007-rendering-and-transport.md).
 
 ## What we're building and why
 
 **Tuna is a hypermedia application** (owner decision, 2026-10-16). HTML is the only presentation language: plugins render their nodes to HTML, and the browser draws them. Buffers stay trees of nodes with text and positions; HTML is how they are shown, never how they are stored.
 
-**CSS stays CSS.** Gerbil does not define colours, tokens or styles. It only decides which stylesheets are on the page, in what order, and lets anyone replace any of them.
+**CSS stays CSS.** Gerbil does not define colours, tokens or styles. It only knows which CSS files are on the page, in what order, and lets anyone replace any of them.
 
 Today one 368-line `tuna.css`, owned by the web transport, styles every plugin. Turning a plugin off leaves its styles behind, a new plugin cannot add any, and nobody can restyle one plugin without editing that file. This brief fixes that:
 
-- **Each plugin ships its own stylesheets**, usually two: a **semantic tokens** file naming what its parts mean (`--completion-selected-background: var(--primary-3)`), and a **rules** file styling its HTML with those names.
-- **A `design-tokens` plugin ships the raw scale**: pregenerated Stellar files (palettes, fluid sizes, fonts, radii, shadows, motion). An option picks which file.
-- **Anyone can replace any stylesheet**: a theme plugin, or you in `init.ss`. Swap the design tokens for Open Props and replace each plugin's small semantic tokens file; the rules files stay as they are.
+- **Each plugin ships its own CSS files**, usually two: **semantic tokens** naming what its parts mean (`--completion-selected-background: var(--primary-3, Highlight)`), and **rules** styling its HTML with those names.
+- **A `design-tokens` plugin ships the raw scale**: pregenerated Stellar files (palettes, fluid sizes, fonts, radii, shadows, motion). An option picks one.
+- **Anyone can add CSS or replace any file**: a theme plugin, or you in `init.ss`. Swapping Stellar for Open Props means replacing the design tokens file and the plugins' small semantic-tokens files; the rules files stay.
 
 ## The picture
 
@@ -20,60 +20,73 @@ Today one 368-line `tuna.css`, owned by the web transport, styles every plugin. 
 
 **Status:** planned. Today the web transport's single `tuna.css` styles everything.
 
-## A walkthrough: restyling the selected completion row
+## A walkthrough: changing the selected completion row's colour
 
-1. Tuna starts. The web page links the `design-tokens` plugin's Stellar file, then each active plugin's stylesheets in `init.ss` order.
-2. The completion plugin's `tokens` stylesheet says `--completion-selected-background: var(--primary-3)`. Its `rules` stylesheet colours the selected row with `--completion-selected-background`.
-3. You want the selected row in your accent colour. In `init.ss` you replace completion's `tokens` stylesheet with your own file, which points the same name at another colour.
-4. You run `reload-config`. Tuna swaps one `<link>` on the page; the browser fetches only that file. Nothing else changes.
-5. Later you switch the design tokens to Open Props. `M-x describe-stylesheets` warns that `buffers/tokens` uses `--primary-6`, which no loaded stylesheet defines. You replace that file too.
+1. Tuna starts. The page's `<head>` links every registered stylesheet, in `init.ss` order: `design-tokens` first because the starter `init.ss` declares it first, then each plugin's files, then yours.
+2. The completion plugin's `tokens` file says `--completion-selected-background: var(--primary-3, Highlight)`. Its `rules` file colours the selected row with that name.
+3. You want your accent colour. You add a stylesheet in `init.ss` that sets `--completion-selected-background` to it. Yours comes last, so it wins, and any token the plugin adds later still has its default.
+4. You edit your CSS file and run `M-x reload-stylesheets`. Tuna reads the registered files again; the browser fetches only the one that changed.
+5. Later you swap the design tokens for Open Props. `M-x describe-stylesheets` lists every `var(--x)` without a fallback that nothing defines, so you know what to map.
 
 ## What a package author writes
 
 The names are provisional.
 
 ```scheme
-;; plugins/completion-vertical/plugin.ss: the files sit next to the module.
+;; A plugin: the files sit next to plugin.ss.
 (defplugin (completion-vertical ctx) "…"
-  (context-add-stylesheet! ctx 'tokens (stylesheet "tokens.css"))
-  (context-add-stylesheet! ctx 'rules  (stylesheet "rules.css"))
+  (add-stylesheet 'tokens "tokens.css")
+  (add-stylesheet 'rules  "rules.css")
   …)
 
-;; a theme plugin: replaces other plugins' stylesheets by plugin and name.
+;; A theme: replaces other plugins' files, by plugin name and stylesheet name.
 (defplugin (theme-terminal ctx) "A flat, monospace look."
-  (context-replace-stylesheet! ctx 'design-tokens 'tokens (stylesheet "tokens.css"))
-  (context-replace-stylesheet! ctx 'completion-vertical 'rules (stylesheet "completion.css"))
-  (context-replace-stylesheet! ctx 'layout 'rules (stylesheet "layout.css")))
+  (replace-stylesheet 'design-tokens 'tokens "tokens.css")
+  (replace-stylesheet 'completion-vertical 'rules "completion.css")
+  (replace-stylesheet 'layout 'rules "layout.css"))
 ```
 
 ```scheme
 ;; init.ss
-(use-plugin design-tokens file: "stellar-default")
+(use-plugin design-tokens variant: stellar-default)
 (use-plugin theme-terminal)
-(replace-stylesheet 'completion-vertical 'tokens (stylesheet "my-completion-tokens.css"))
-(add-stylesheet 'mine (stylesheet "user.css"))       ; extra CSS, last on the page
+(replace-stylesheet 'buffers 'rules "my-buffers.css")   ; a whole file
+(add-stylesheet 'mine "user.css")                       ; overrides, last on the page
 ```
 
 ## The rules
 
-- **A stylesheet is identified by its owner and a name**: `completion-vertical/tokens`. Names are symbols the plugin chooses, so renaming a file does not break the themes that replace it.
-- **`(stylesheet "file.css")` reads the file next to the code that names it.** In a plugin it is read when the plugin is compiled, so installed plugins carry their CSS; editing a plugin's CSS needs a rebuild. In `init.ss` it is read when the configuration loads, so `reload-config` picks up your edits.
-- **Replacing beats adding; among replacements, the latest in `init.ss` wins**, so your `init.ss` beats every theme. Replacing with `#f` removes a stylesheet. Turning a theme off restores what it replaced.
-- **Page order:** the design tokens first, then each plugin's stylesheets in `init.ss` order and registration order, then stylesheets you add. A replacement takes the place of what it replaces. There are no cascade layers yet; plugins keep specificity low (`:where()`), so later files win.
-- **Naming convention:** a plugin's semantic tokens are prefixed with its name (`--completion-…`, `--buffers-…`), so nothing collides with a design system or another plugin.
-- **Checks, reported by `reload-config` and `M-x describe-stylesheets`, never fatal:** a replacement whose target the active plugin does not register; a `var(--x)` without a fallback that no loaded stylesheet defines. The second is a text scan, not a CSS parser.
-- **Delivery:** each stylesheet is served at `/css/<owner>/<name>?v=<hash of its text>`, cacheable forever. The page's `<head>` holds one `<link>` per stylesheet, with a stable id; when the set changes, the server patches only the links that changed. A redraw never touches CSS. A plugin turned on over a slow connection may show its HTML unstyled for a moment.
-- **Where it lives:** a small `stylesheets` contract and plugin hold the registrations and the checks; the web transport serves and links them. The kernel knows nothing about CSS.
-- **Mobile:** the split of `tuna.css` also fixes what the audit found: dynamic viewport units instead of `100vh`, touch-sized targets, safe areas. Narrow-screen layout belongs to the layout-facts research.
+**API.** Two forms, the same in plugins, themes and `init.ss`: `add-stylesheet` and `replace-stylesheet`. Replacing with `#f` removes a file. Like `defcommand` and `keymap-set`, they register through the current plugin's context, so turning the plugin off undoes them; an optional leading context argument covers callbacks.
+
+**Files.** A literal path resolves relative to the file containing the form; for code evaluated interactively, relative to `init.ss`. The text is read when the stylesheet is registered, and again by `M-x reload-stylesheets`. No rebuild or restart is needed to edit CSS. A missing file is a warning, never an error, so a typo cannot turn off your whole `init.ss`.
+
+**Identity and precedence.** A stylesheet is named by its owner and a symbol, `(completion-vertical rules)`, so renaming a file breaks no theme. Replacements beat the owner's own file; among replacements, the latest in `init.ss` wins, so your `init.ss` beats every theme. Turning a theme off restores what it replaced. A replacement for a plugin that is off is simply dormant.
+
+**Order.** By the owner's place in `init.ss`, then by registration within a plugin. Nothing is special about design tokens: custom properties are resolved when values are computed, so a tokens file only needs to come before files that redefine the same names. No cascade layers yet; plugins keep specificity low (`:where()`).
+
+**Conventions.**
+- Semantic tokens use the plugin's class prefix (`--completion-…` for the `completion-…` classes) and a fallback to a system colour or plain value, so a design-token swap degrades to readable defaults.
+- Plugins use only a documented subset of design tokens (a few palettes, sizes, fonts, radii, shadows), so moving to another design system means mapping that subset in one file.
+- To change a few tokens, add a sheet that redefines them. Replace a file when you rewrite it.
+
+**Checks.** `M-x describe-stylesheets` lists every stylesheet in order, with its owner, file and any replacement, and two warnings: a replacement whose active target does not register that name, and a `var(--x)` without a fallback that no loaded stylesheet defines (a text scan that skips comments and fallbacks, not a CSS parser). A failing check also shows one line in the echo area.
+
+**Fonts and images.** A stylesheet's `url(fonts/x.woff2)` resolves against its own directory, which Tuna serves beside it; paths outside that directory are refused.
+
+**Delivery.** Each stylesheet is served at `/css/<n>/<hash>/<file>`, cacheable forever, with `text/css`; a stale hash gets 404. The `<head>`'s links are rendered from the current registrations by the same code as the first page, and sent as one morph whenever they change, always before the screen, including when a stream reconnects. That keeps the immediate-mode rule: the server never patches individual links, and stable ids still mean the browser re-fetches only changed files.
+
+**Where it lives.** A `stylesheets` contract holds the registry, one per editor, registered through contexts like hooks. It has no service, so plugins that style themselves declare nothing new and no activation cycle can arise. A small `stylesheets-help` plugin provides `describe-stylesheets` and `reload-stylesheets`. The web transport serves the files and renders the links. The kernel knows nothing about CSS.
+
+**Mobile.** Splitting `tuna.css` also fixes what the audit found: dynamic viewport units instead of `100vh`, touch-sized targets, safe areas. Narrow-screen layout belongs to the layout-facts research.
 
 ## Decisions for you
 
-1. **Which Stellar files ship at first.** *Recommended:* one, `stellar-default`, generated from your current `stellar.config.json` without named colours, charts, gradients, decorative borders or font downloads (about 61 KB unminified, light and dark automatic). Add others (a high-contrast one, a forced-dark one) when you want them.
-2. **Cascade layers.** *Recommended:* none for now; file order and low specificity are enough while each plugin styles only its own classes. Wrapping each plugin's CSS in its own `@layer` can come later without changing any API.
+1. **Which Stellar files ship at first.** *Decided:* one, `stellar-default`, generated from Stellar's built-in default config without named colours, charts, gradients, decorative borders or font downloads (about 61 KB unminified; light and dark follow the system). Add others (high contrast, forced dark) when you want them.
+2. **Shipping Stellar's output in Tuna's repository.** Users never need the binary; only regenerating does. Is redistributing the generated CSS fine?
 
 ## New terms
 
-- **Stylesheet:** a CSS file on the page, owned by a plugin (or by your `init.ss`) and named, such as `completion-vertical/rules`.
+- **Stylesheet:** a CSS file on the page, owned by a plugin or by your `init.ss`, and named, such as `(completion-vertical rules)`.
 - **Design tokens:** the raw scale (palette steps, sizes, fonts), from the `design-tokens` plugin.
 - **Semantic tokens:** a plugin's own CSS custom properties naming what its parts mean, defined with design tokens.
 - **Theme:** a plugin that replaces other plugins' stylesheets.
