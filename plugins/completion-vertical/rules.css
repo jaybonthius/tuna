@@ -26,6 +26,7 @@
   padding: 0;
   max-block-size: var(--completion-list-max-size);
   overflow: auto;
+  container-type: inline-size;
 }
 
 :where(.completion-row) {
@@ -71,6 +72,18 @@
    command annotations' key and doc fields get columns of their own. */
 :where(.completion-row:has(> .completion-doc)) {
   grid-template-columns: minmax(0, 2fr) minmax(0, 22ch) minmax(0, 3fr);
+}
+
+/* Too narrow for three columns, as on a phone: the label and the key,
+   without the documentation. */
+@container (inline-size < 48ch) {
+  :where(.completion-row:has(> .completion-doc)) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  :where(.completion-doc) {
+    display: none;
+  }
 }
 
 :where(.completion-key) {
