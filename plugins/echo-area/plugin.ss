@@ -5,6 +5,7 @@
 ;;; or to this plugin's buffer when no echo area view is visible.
 
 (import :tuna/kernel
+        :tuna/plugins/stylesheets/contract
         :tuna/plugins/buffers/contract
         :tuna/plugins/renderer/contract
         :tuna/plugins/layout/contract
@@ -44,6 +45,7 @@
   provides: [messages-service]
   requires: [buffers-service layout-service]
   optional: [renderer-service]
+  (add-stylesheet 'rules "rules.css")
   (context-define-node-kind! ctx echo-area-node-kind doc: "A message."
                              project: (lambda (n) (node-attribute n 'content)))
   (context-define-node-renderer! ctx echo-area-node-kind

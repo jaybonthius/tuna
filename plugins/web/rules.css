@@ -1,0 +1,17 @@
+/* Page-wide basics only. Every plugin styles its own HTML in its own
+   stylesheets; this file styles the page the web transport serves. */
+:where(:root) {
+  color-scheme: light dark;
+  /* Mobile browsers must not inflate text: monospace columns stay aligned. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* A stray pull-to-refresh would reload the page. */
+  overscroll-behavior: none;
+}
+
+:where(body) {
+  margin: 0;
+  background: var(--page-background);
+  color: var(--page-foreground);
+  font-family: var(--page-font);
+}

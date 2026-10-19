@@ -203,16 +203,18 @@
                 (string->list text))))
   (string-append "css__" (escape (symbol->string owner)) "__" (escape (symbol->string name))))
 
-;; The page's <head>, linking SERVED in order after tuna.css. The first page
-;; and every head morph use it, so the scripts it holds stay identical and
-;; a morph leaves them alone.
+;; The page's <head>, linking SERVED in order. The first page and every
+;; head morph use it, so the scripts it holds stay identical and a morph
+;; leaves them alone. The viewport lets a phone's soft keyboard shrink the
+;; page, and lets the page reach the screen's edges; the renderer's screen
+;; pads itself out of the safe-area insets.
 (def (render-head (served : :list)) => :string
   (html-string
    `(head
      (meta (@ (charset "utf-8")))
-     (meta (@ (name "viewport") (content "width=device-width, initial-scale=1")))
+     (meta (@ (name "viewport")
+              (content "width=device-width, initial-scale=1, interactive-widget=resizes-content, viewport-fit=cover")))
      (title "Tuna")
-     (link (@ (id "tuna-css") (rel "stylesheet") (href "/static/tuna.css")))
      ,@(map (lambda ((s : served-stylesheet))
               `(link (@ (id ,(served-stylesheet-id s)) (rel "stylesheet")
                         (href ,(string-append (served-stylesheet-prefix s)
@@ -523,6 +525,8 @@
   "Serves screens to browser tabs on loopback and receives their input."
   provides: [display-service]
   optional: [renderer-service]
+  (add-stylesheet 'tokens "tokens.css")
+  (add-stylesheet 'rules "rules.css")
   (let* ((port (let (configured (plugin-option web-transport 'port))
                  (if (zero? configured) (free-loopback-port) configured)))
          (host (string-append "127.0.0.1:" (number->string port)))

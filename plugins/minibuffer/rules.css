@@ -1,0 +1,33 @@
+/* The minibuffer: a prompt, then the answer's text, on one line in its
+   view in the bar. It selects on the renderer's published classes (.view,
+   .buffer, .text), so it also owns the rules that combine them with its
+   own. */
+:root {
+  --minibuffer-padding: 0.25rem 0.5rem;
+  --prompt-foreground: var(--neutral-7, GrayText);
+}
+
+:where(.minibuffer) {
+  display: flex;
+  gap: 0.5ch;
+  margin: 0;
+  padding: var(--minibuffer-padding);
+}
+
+.minibuffer .text {
+  flex: 1;
+}
+
+:where(.prompt) {
+  color: var(--prompt-foreground);
+}
+
+/* The idle minibuffer's view takes no space. */
+.view:has(> .buffer > .minibuffer:empty) {
+  display: none;
+}
+
+/* The minibuffer pads itself; its buffer does not. */
+.buffer:has(> .minibuffer) {
+  padding: 0;
+}

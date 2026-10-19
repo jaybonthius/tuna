@@ -1,0 +1,17 @@
+/* The renderer's semantic tokens: buffers, cursors, status lines and the
+   overlay on clickable parts. Each is a design token (design-tokens
+   plugin) with a fallback, so the page stays readable without one. */
+:root {
+  --buffer-padding: 0.5rem;
+  --cursor-background: var(--neutral-12, CanvasText);
+  --cursor-foreground: var(--neutral-1, Canvas);
+  --inactive-cursor-outline: var(--neutral-7, GrayText);
+  --status-line-background: var(--neutral-3, Canvas);
+  --status-line-foreground: var(--neutral-7, GrayText);
+  --status-line-selected-foreground: var(--neutral-12, CanvasText);
+  --status-line-border: var(--neutral-4, ButtonBorder);
+  --status-line-padding: 0.25rem 0.5rem;
+  /* Overlays for a clickable part under the pointer, and while pressed. */
+  --clickable-hover: color-mix(in srgb, var(--neutral-12, CanvasText) 8%, transparent);
+  --clickable-pressed: color-mix(in srgb, var(--neutral-12, CanvasText) 16%, transparent);
+}

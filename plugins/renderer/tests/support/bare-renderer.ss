@@ -11,7 +11,8 @@ prelude: :gerbil/core
         :tuna/plugins/settings/contract
         :tuna/plugins/renderer/contract
         :tuna/plugins/buffers/contract
-        :tuna/plugins/layout/contract)
+        :tuna/plugins/layout/contract
+        :tuna/plugins/stylesheets/contract)
 (export bare-renderer)
 
 (defstruct bare-rendering ()
@@ -71,5 +72,6 @@ prelude: :gerbil/core
   "Renders the screen as HTML without reuse (a toy)."
   provides: [renderer-service]
   requires: [buffers-service layout-service settings-service]
+  (add-stylesheet 'rules "bare-renderer.css")
   (context-define-node-renderer! ctx 'text render-text-node)
   (context-provide! ctx renderer-service (Renderer (make-bare-rendering))))

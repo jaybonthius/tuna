@@ -1,0 +1,16 @@
+/* The two-views layout double brings the little CSS its layout needs: the
+   layout plugin's stylesheets go away when it is swapped out. */
+:where(.layout) {
+  display: flex;
+  flex: 1;
+  min-block-size: 0;
+}
+
+:where(.layout) > * {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+
+:where(.layout) > :where(* + *) {
+  border-inline-start: 1px solid currentColor;
+}

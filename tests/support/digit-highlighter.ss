@@ -6,7 +6,8 @@ prelude: :gerbil/core
 (import :tuna/kernel
         :tuna/lib/jobs
         :tuna/plugins/buffers/contract
-        :tuna/plugins/settings/contract)
+        :tuna/plugins/settings/contract
+        :tuna/plugins/stylesheets/contract)
 (export digit-highlighter
         digit-spans
         digit-highlight-delay)
@@ -69,6 +70,7 @@ prelude: :gerbil/core
 (defplugin (digit-highlighter ctx)
   "Colors digits from a slow job after each change."
   requires: [buffers-service settings-service]
+  (add-stylesheet 'rules "digit-highlighter.css")
   (let (jobs (new-job-group ctx))
     (context-add-hook! ctx after-change-hook 'slow-digit-highlighter
                        (lambda (t c) (highlight-digits-later! jobs t)))))

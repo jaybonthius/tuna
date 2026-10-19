@@ -15,7 +15,8 @@
         :tuna/plugins/commands/contract
         :tuna/plugins/help/contract
         :tuna/plugins/stylesheets/contract)
-(export stylesheets-help)
+(export stylesheets-help
+        stylesheet-warnings)
 
 (def (slot-label (owner : :symbol) (name : :symbol)) => :string
   (string-append "(" (symbol->string owner) " " (symbol->string name) ")"))
@@ -107,7 +108,8 @@
                   names
                   (cons name names)))))))))
 
-;; One line per failing check, in page order.
+;; One line per failing check, in page order: what describe-stylesheets
+;; lists under "Warnings:".
 (def (stylesheet-warnings) => :list
   (let* ((sheets (stylesheets))
          (texts (map (lambda ((s : stylesheet))

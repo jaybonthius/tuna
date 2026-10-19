@@ -1,0 +1,104 @@
+/* The layout draws from the frame's target. Containers lay out their
+   children with flexbox; a child's weight on its link to the parent comes
+   from the server as --tuna-size, and the browser computes the geometry.
+   Rules are wrapped in :where() so a theme's or init.ss's rule wins. */
+:where(.layout) {
+  display: flex;
+  flex: 1;
+  min-block-size: 0;
+}
+
+:where(.layout, .container.fit, .tab-panel) > * {
+  flex: var(--tuna-size, 1) 1 0;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+/* A part as big as its content, such as the bar at the bottom. */
+:where(.layout, .container.fit, .tab-panel) > :where([data-size="content"]) {
+  flex: none;
+}
+
+/* The selected part, when it is a container (C-x w a). */
+:where([data-selected-part]) {
+  outline: 2px solid var(--selected-part-outline);
+  outline-offset: -2px;
+}
+
+:where(.container) {
+  display: flex;
+}
+
+:where(.container.fit.horizontal) {
+  flex-direction: row;
+}
+
+:where(.container.fit.vertical) {
+  flex-direction: column;
+}
+
+:where(.layout, .container.fit.horizontal) > :where(* + *) {
+  border-inline-start: 1px solid var(--container-rule);
+}
+
+:where(.container.fit.vertical) > :where(* + *) {
+  border-block-start: 1px solid var(--container-rule);
+}
+
+/* Tabbed: the tab strip on top when horizontal, down the side when
+   vertical, then the active child. */
+:where(.container.tabbed.horizontal) {
+  flex-direction: column;
+}
+
+:where(.container.tabbed.vertical) {
+  flex-direction: row;
+}
+
+:where(.tabs) {
+  display: flex;
+  flex: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* More tabs than fit scroll, rather than spill over the next part. */
+  overflow: auto;
+  scrollbar-width: thin;
+  background: var(--tabs-background);
+  color: var(--tab-foreground);
+}
+
+:where(.container.tabbed.horizontal > .tabs) {
+  border-block-end: 1px solid var(--container-rule);
+}
+
+:where(.container.tabbed.vertical > .tabs) {
+  flex-direction: column;
+  border-inline-end: 1px solid var(--container-rule);
+}
+
+:where(.tab) {
+  padding: var(--tab-padding);
+  white-space: nowrap;
+}
+
+:where(.tab[aria-selected="true"]) {
+  background: var(--tab-selected-background);
+  color: var(--tab-selected-foreground);
+  font-weight: bold;
+}
+
+/* Tabs are touch-sized targets on a coarse pointer. */
+@media (pointer: coarse) {
+  :where(.tab) {
+    min-block-size: 2.75rem;
+    align-content: center;
+  }
+}
+
+:where(.tab-panel) {
+  display: flex;
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+}

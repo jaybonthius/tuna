@@ -33,6 +33,7 @@
 (import (only-in :gerbil/runtime/hash HashTable)
         :std/text/markup/sxml/print
         :tuna/kernel
+        :tuna/plugins/stylesheets/contract
         (only-in :tuna/plugins/keys/contract part-clickable? keymap-clickable? keymap-generation)
         :tuna/plugins/settings/contract
         :tuna/plugins/renderer/contract
@@ -260,5 +261,7 @@
   provides: [renderer-service]
   requires: [buffers-service layout-service settings-service]
   optional: [input-service]
+  (add-stylesheet 'tokens "tokens.css")
+  (add-stylesheet 'rules "rules.css")
   (context-define-node-renderer! ctx 'text render-text-node)
   (context-provide! ctx renderer-service (Renderer (html-rendering views: (make-hash-table-eqv)))))

@@ -1,0 +1,8 @@
+/* The digit highlighter fixture's face. */
+:root {
+  --face-digit-foreground: var(--primary-7, LinkText);
+}
+
+:where(.face-digit) {
+  color: var(--face-digit-foreground);
+}
