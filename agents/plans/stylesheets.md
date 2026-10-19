@@ -1,28 +1,25 @@
 # Plan: HTML and stylesheets
 
-Brief: [`docs/briefs/2026-10-stylesheets.md`](../../docs/briefs/2026-10-stylesheets.md) (proposed 2026-10-16). Evidence: [`agents/research/presentation/`](../research/presentation/).
+Brief: [`docs/briefs/2026-10-stylesheets.md`](../../docs/briefs/2026-10-stylesheets.md) (proposed 2026-10-16). Evidence: [`agents/research/presentation/`](../research/presentation/) and the design review in `/home/jay/Code/workbench-gerbil/scratch/stylesheets-review/review.md`.
 
 ## Invariants
 
 - The kernel gains nothing. Registrations go through contexts; turning a plugin off removes its stylesheets and restores what it replaced.
-- No colours, tokens or styles in Gerbil. Gerbil holds stylesheet identities, sources and order only.
-- Plugins import only contracts; a theme names other plugins' stylesheets by symbol, never by importing their modules.
-- `make test` green under the memory cap after each stage; the last stage is checked in a real browser, on a phone-sized viewport too.
+- No colours, tokens or styles in Gerbil: only stylesheet identities, paths and order.
+- The stylesheets contract exports no service, so styled plugins need no new `requires:`.
+- Rendering stays immediate mode: the `<head>` links are rendered from state and sent whole, never patched link by link.
+- `make test` green under the memory cap after each stage; the last stage is checked in a real browser at desktop and phone widths.
 
 ## Stages
 
-1. **HTML is the presentation language.** Amend ADR 7. Remove the per-target argument of node renderers (`'html`) and the plain-text test renderer; the renderer contract says it returns HTML.
-2. **The `stylesheets` contract and plugin.**
-   - `(stylesheet "file.css")`: a macro reading the file next to the source that names it; at compile time in plugins, at configuration load in `init.ss`.
-   - `context-add-stylesheet!`, `context-replace-stylesheet!` (with `#f` to remove), and the `init.ss` forms `add-stylesheet` and `replace-stylesheet`, which run as the `init` plugin's code.
-   - One winner per `(owner name)` slot, through owner-tagged entry tables: replacements outrank the owner's own sheet; later in `init.ss` wins.
-   - Page order as the brief states. Checks: missing replacement targets; undefined `var(--x)` without a fallback. `M-x describe-stylesheets`; the same warnings in the reload report.
-   - Tests: add, replace, remove, restore on theme deactivation, order, both checks.
-3. **Delivery in the web transport.** Serve `/css/<owner>/<name>?v=<hash>` with an immutable cache header; link each in `<head>` with a stable id; on a change, patch only changed links. Verify against Datastar's head morph (`agents/research/presentation/audit-and-mobile.md`, part c) that scripts in `<head>` are untouched.
-4. **The `design-tokens` plugin.** The Stellar core output generated from the owner's `stellar.config.json` (no named colours, charts, gradients, decorative borders or font imports); a `file:` option; the config and a `make tokens` target for regenerating with the owner's binary (not part of the normal build).
-5. **Split `tuna.css`.** Each plugin gets `tokens.css` (semantic tokens, prefixed with its name, defined with Stellar tokens) and `rules.css`, following the audit's ownership table. Delete `plugins/web/web/tuna.css`. Fix the mobile items: dynamic viewport units, touch targets, safe areas.
-6. **Proof and records.** A small theme in the demo (`theme-terminal`: flat, monospace) replacing a few stylesheets; an `init.ss` replacement in a test; a browser check, desktop and phone width. Update the overview, the Emacs-equivalents table (faces and themes) and the HTML/CSS guide.
+1. **HTML is the presentation language.** Amend ADR 7. Remove the per-target argument of node renderers (`'html`) and the plain-text test renderer.
+2. **The stylesheets contract.** A per-editor registry of `(owner name)` slots in owner-tagged entry tables: the owner's file at priority 0, replacements at 1, ties by `init.ss` rank, read at use time. `add-stylesheet`, `replace-stylesheet` (`#f` removes), optional leading context. Literal paths resolve against the naming file (`this-source-path`); interactive code against `init.ss`. Text read on registration; missing file is a warning. A change counter. Tests: add, replace, remove, restore, dormant replacement, order after reordering `init.ss`, missing file.
+3. **The `stylesheets-help` plugin.** `describe-stylesheets` (order, owners, replacements, both checks) and `reload-stylesheets`; one echo-area line when a check fails. Tests for both checks.
+4. **Delivery in the web transport.** `/css/<n>/<hash>/<file>` with a real digest, `immutable`, `text/css`, 404 for stale hashes; assets beside each stylesheet with validators, `..` refused. Head links rendered from the registry and sent as one morph on change and first on each stream open. Browser check that `<head>` scripts are untouched and only changed files are fetched.
+5. **The `design-tokens` plugin.** Stellar core output from the owner's config; a `variant:` option accepting only shipped names; the config and a `make tokens` target using the owner's binary, outside the normal build. Document the subset of tokens plugins may use.
+6. **Split `tuna.css`.** Each plugin gets `tokens.css` (class-prefixed names with fallbacks, built on the subset) and `rules.css`, per the audit's ownership table. Delete `plugins/web/web/tuna.css`. Mobile fixes: dynamic viewport units, touch targets, safe areas.
+7. **Proof and records.** A demo theme (`theme-terminal`: flat, monospace) replacing a few stylesheets; an `init.ss` override in a test; browser check at desktop and phone widths. Update the overview, the Emacs-equivalents table (faces and themes), the HTML/CSS guide, and the starter `init.ss`.
 
 ## Not in this plan
 
-Cascade layers; restoring a plugin's own stylesheet from `init.ss` while a theme replaces it; scoping mixed token systems; layout facts and narrow-screen layout (separate research); a settings screen for tokens.
+Cascade layers; restoring a plugin's own file from `init.ss` while a theme replaces it; scoping mixed token systems; source-less plugin distribution (embedding); layout facts and narrow-screen layout.
