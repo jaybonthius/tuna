@@ -32,6 +32,7 @@
 (import :std/interface
         :tuna/plugins/commands/contract
         :tuna/kernel
+        :tuna/plugins/stylesheets/contract
         :tuna/plugins/keys/contract
         :tuna/plugins/buffers/contract
         :tuna/plugins/session/contract
@@ -899,6 +900,8 @@
   "Arranges views in fit and tabbed containers, with pins, a movable frame and frame marks."
   provides: [layout-service]
   requires: [commands-service buffers-service session-service input-service settings-service]
+  (add-stylesheet 'tokens "tokens.css")
+  (add-stylesheet 'rules "rules.css")
   (let (v (selected-view))
     (using (self (tree-layout root: (make-leaf v #f) frame: (make-frame-state #f #f v) level: 0
                               marks: [] locked: [] kinds: (new-entry-table))

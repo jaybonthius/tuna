@@ -1,0 +1,18 @@
+/* The echo area: one message line in its view in the bar, kept even when
+   empty. */
+:root {
+  --echo-area-padding: 0.25rem 0.5rem;
+}
+
+:where(.echo-area) {
+  margin: 0;
+  padding: var(--echo-area-padding);
+  min-block-size: 1.5em;
+  /* Multi-line messages, such as the reload report, keep their lines. */
+  white-space: pre-wrap;
+}
+
+/* The echo area pads itself; its buffer (the renderer's .buffer) does not. */
+.buffer:has(> .echo-area) {
+  padding: 0;
+}

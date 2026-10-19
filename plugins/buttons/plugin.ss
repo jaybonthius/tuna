@@ -13,6 +13,7 @@
 
 (import :tuna/plugins/commands/contract
         :tuna/kernel
+        :tuna/plugins/stylesheets/contract
         :tuna/plugins/keys/contract
         :tuna/plugins/buffers/contract
         :tuna/plugins/layout/contract
@@ -30,6 +31,7 @@
 (defplugin (buttons ctx)
   "Buttons in buffers: a click on one runs its action."
   requires: [commands-service input-service buffers-service layout-service]
+  (add-stylesheet 'rules "rules.css")
   (context-define-node-kind! ctx button-node-kind
                              doc: "A button: a label, and an action run when it is clicked."
                              project: (lambda (n) (node-attribute n 'label)))

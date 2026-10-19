@@ -51,8 +51,17 @@
 (def (style-prefix (text : :string) (n : :fixnum))
   (string-append "/css/" (number->string n) "/" (hex-encode (sha256 (string->utf8 text))) "/"))
 
+;; The slot number the page links the test's stylesheet under. The web
+;; transport's own stylesheets take slots too, in an order this test does
+;; not fix.
+(def (style-slot)
+  (let* ((page (reply-body (http "GET" "/")))
+         (marker (string-append "id=\"" link-id "\" rel=\"stylesheet\" href=\"/css/"))
+         (start (+ (string-search marker page) (string-length marker))))
+    (string->number (substring page start (string-index page #\/ start)))))
+
 (def (style-href (text : :string))
-  (string-append (style-prefix text 1) "style.css"))
+  (string-append (style-prefix text (style-slot)) "style.css"))
 
 ;; The <head>…</head> of TEXT.
 (def (head-of text)
@@ -67,7 +76,7 @@
 
 (def web-stylesheets-test
   (test-suite "tuna/plugins/web: stylesheets"
-    (test-case "the head links each stylesheet after tuna.css, by a stable id"
+    (test-case "the head links each stylesheet by a stable id, before the scripts"
       (with-styled-tuna
        (lambda ()
          (let* ((page (reply-body (http "GET" "/")))
@@ -78,7 +87,7 @@
                                       head)
                        #t)
                   => #t)
-           (check (< (string-search "/static/tuna.css" head) (string-search href head)) => #t)
+           (check (string-search "/static/tuna.css" head) => #f)
            (check (< (string-search href head) (string-search "<script" head)) => #t)))))
 
     (test-case "a stylesheet URL serves its text as immutable CSS; other hashes get 404"
@@ -91,13 +100,13 @@
            (check (reply-header reply "Content-Type") => "text/css; charset=utf-8")
            (check (reply-header reply "Cache-Control") => "public, max-age=31536000, immutable"))
          (check (reply-status (http "GET" (style-href "stale"))) => 404)
-         (check (reply-status (http "GET" (string-append (style-prefix first-text 2) "style.css"))) => 404)
+         (check (reply-status (http "GET" (string-append (style-prefix first-text (+ (style-slot) 100)) "style.css"))) => 404)
          (check (reply-status (http "GET" "/css/")) => 404))))
 
     (test-case "files beside a stylesheet are served with an ETag; .. and other types are refused"
       (with-styled-tuna
        (lambda ()
-         (let* ((prefix (style-prefix first-text 1))
+         (let* ((prefix (style-prefix first-text (style-slot)))
                 (font (http "GET" (string-append prefix "fonts/x.woff2")))
                 (etag (reply-header font "ETag")))
            (check (reply-status font) => 200)

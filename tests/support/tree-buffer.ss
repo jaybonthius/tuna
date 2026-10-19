@@ -8,7 +8,8 @@ prelude: :gerbil/core
 (import :tuna/plugins/commands/contract
         :tuna/kernel
         :tuna/plugins/keys/contract
-        :tuna/plugins/buffers/contract)
+        :tuna/plugins/buffers/contract
+        :tuna/plugins/stylesheets/contract)
 (export tree-buffer
         welcome-buffer)
 
@@ -29,6 +30,7 @@ prelude: :gerbil/core
 (defplugin (tree-buffer ctx)
   "Defines the column and heading kinds, adds *welcome*, and binds C-c b to switch to it."
   requires: [commands-service input-service buffers-service]
+  (add-stylesheet 'rules "tree-buffer.css")
   (def previous-buffer #f)              ; where C-c b returns from *welcome*
   (context-define-node-kind! ctx 'column doc: "Children stacked vertically.")
   (context-define-node-kind! ctx 'heading doc: "A heading."

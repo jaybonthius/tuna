@@ -21,6 +21,7 @@
         :std/interface
         (only-in :gerbil/runtime/hash HashTable)
         :tuna/kernel
+        :tuna/plugins/stylesheets/contract
         :tuna/plugins/keys/contract
         :tuna/plugins/buffers/contract
         :tuna/plugins/renderer/contract
@@ -211,6 +212,7 @@
   provides: [minibuffer-service]
   requires: [commands-service input-service buffers-service layout-service settings-service session-service]
   optional: [renderer-service]
+  (add-stylesheet 'rules "rules.css")
   (context-define-node-kind! ctx minibuffer-node-kind doc: "A prompt's question and answer, or nothing.")
   (context-define-node-kind! ctx 'minibuffer-prompt doc: "A prompt's question."
                              project: (lambda (n) (node-attribute n 'content)))

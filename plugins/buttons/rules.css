@@ -1,0 +1,24 @@
+/* A button node: an action in a buffer. Plain until the design pass;
+   hover and pressed come from the renderer's [data-clickable]. */
+:root {
+  --button-border: var(--neutral-4, ButtonBorder);
+  --button-radius: var(--border-radius-0, 0.25rem);
+  --button-padding: 0.25rem 0.5rem;
+}
+
+:where(.button) {
+  padding: var(--button-padding);
+  border: 1px solid var(--button-border);
+  border-radius: var(--button-radius);
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+/* A touch-sized target on a coarse pointer. */
+@media (pointer: coarse) {
+  :where(.button) {
+    min-block-size: 2.75rem;
+  }
+}

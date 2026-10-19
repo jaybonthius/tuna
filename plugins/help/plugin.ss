@@ -6,6 +6,7 @@
 (import :tuna/plugins/commands/contract
         :std/interface
         :tuna/kernel
+        :tuna/plugins/stylesheets/contract
         :tuna/plugins/keys/contract
         :tuna/plugins/buffers/contract
         :tuna/plugins/layout/contract
@@ -51,6 +52,7 @@
   "Shows help output in the *Help* buffer; C-h q closes it."
   provides: [help-service]
   requires: [commands-service input-service buffers-service layout-service]
+  (add-stylesheet 'rules "rules.css")
   (context-define-node-kind! ctx 'help doc: "Help output: a title, then text.")
   (context-define-node-kind! ctx 'help-title doc: "The title of help output."
                              project: (lambda (n) (node-attribute n 'content)))

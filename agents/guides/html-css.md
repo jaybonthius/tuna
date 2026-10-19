@@ -49,6 +49,55 @@ Build with the web platform first:
   available to keyboard and touch users.
 - Respect `prefers-reduced-motion` for application motion.
 
+## Stylesheets in Tuna
+
+Each plugin styles only the HTML it renders, with CSS files beside its
+`plugin.ss`, registered when it turns on (stylesheets contract,
+`plugins/stylesheets/contract.ss`):
+
+```scheme
+(add-stylesheet 'tokens "tokens.css")
+(add-stylesheet 'rules "rules.css")
+```
+
+- **`tokens.css`** defines the plugin's semantic tokens on `:root`. A plugin
+  with only a few rules may define them at the top of `rules.css` instead.
+- **Names** use the plugin's class prefix: `--completion-selected-background`
+  for `.completion-…`, `--tab-padding` for `.tab`, `--status-line-…` for
+  `.status-line`. One name per meaning; never reuse a token for two roles.
+- **Values** are a design token from the documented subset
+  ([design-tokens.md](design-tokens.md)) with a fallback: a CSS system colour
+  (`Canvas`, `CanvasText`, `Highlight`, `HighlightText`, `GrayText`, `Mark`,
+  `ButtonBorder`, `LinkText`) or a plain value:
+  `--completion-selected-background: var(--primary-3, Highlight);`.
+  Spacing may be a plain value; the fluid Stellar sizes are too coarse for
+  editor chrome.
+- **`rules.css`** uses only the plugin's own semantic tokens, never a design
+  token or a hard-coded colour.
+- **Specificity:** wrap selectors in `:where()` so a theme's or `init.ss`'s
+  rule wins wherever it sits on the page. Keep real specificity only where a
+  rule must beat another plugin's whatever the page order, and say why in a
+  comment (the renderer's cursor beats face classes; completion's grid beats
+  the minibuffer's flex).
+- **Cross-plugin selectors** belong to the plugin that adds the coupling:
+  the minibuffer's rules may select `.view` and `.buffer`; completion's may
+  select `.minibuffer`. The renderer's classes and attributes (`.screen`,
+  `.view`, `.buffer`, `.text`, `.line`, `.cursor`, `.inactive-cursor`,
+  `.status-line`, `.face-NAME`, `data-view`, `data-selected`, `data-part`,
+  `data-node`, `data-clickable`) are a published styling surface.
+- **Test fixtures and doubles** bring their own support stylesheets in their
+  `tests/support/` directory; production CSS never styles them.
+- **Mobile:** dynamic viewport units (`dvh`), safe-area insets, and touch
+  targets of at least 2.75rem under `@media (pointer: coarse)` for clickable
+  chrome; hover effects only under `@media (hover: hover)`.
+- **Check** with `M-x describe-stylesheets`; `tests/integration/stylesheets-test.ss`
+  fails if the starter or demo page has an unreadable file or an undefined
+  `var()` without a fallback.
+
+A theme is a plugin that calls `replace-stylesheet` on other plugins'
+files; replace a file to rewrite it, and add a later file to change a few
+tokens.
+
 ## Server-driven enhancement
 
 When a repository uses Datastar, SSE, or another server-driven enhancement

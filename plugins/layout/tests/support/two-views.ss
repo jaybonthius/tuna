@@ -12,7 +12,8 @@ prelude: :gerbil/core
         :tuna/plugins/buffers/contract
         :tuna/plugins/layout/contract
         :tuna/plugins/keys/contract
-        :tuna/plugins/session/contract)
+        :tuna/plugins/session/contract
+        :tuna/plugins/stylesheets/contract)
 (export two-views)
 
 (defclass two-view-layout ((left     : view)
@@ -106,6 +107,7 @@ prelude: :gerbil/core
   provides: [layout-service]
   requires: [buffers-service session-service]
   optional: [input-service]
+  (add-stylesheet 'rules "two-views.css")
   (let* ((left (selected-view))
          (right (copy-view left)))
     (using (self (two-view-layout left: left right: right selected: left marks: []) : two-view-layout)

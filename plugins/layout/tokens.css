@@ -1,0 +1,12 @@
+/* The layout's semantic tokens: the rules between parts, the tab strip
+   and the selected part. Each is a design token (design-tokens plugin)
+   with a fallback, so the page stays readable without one. */
+:root {
+  --container-rule: var(--neutral-4, ButtonBorder);
+  --tabs-background: var(--neutral-3, Canvas);
+  --tab-foreground: var(--neutral-7, GrayText);
+  --tab-selected-background: var(--neutral-1, Canvas);
+  --tab-selected-foreground: var(--neutral-12, CanvasText);
+  --tab-padding: 0.25rem 0.75rem;
+  --selected-part-outline: var(--neutral-7, Highlight);
+}

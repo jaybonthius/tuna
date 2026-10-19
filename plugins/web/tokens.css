@@ -1,0 +1,8 @@
+/* The page's semantic tokens: the colours and font every part sits on.
+   Each is a design token (design-tokens plugin) with a fallback, so the
+   page stays readable without one. */
+:root {
+  --page-background: var(--neutral-1, Canvas);
+  --page-foreground: var(--neutral-12, CanvasText);
+  --page-font: var(--font-mono, monospace);
+}

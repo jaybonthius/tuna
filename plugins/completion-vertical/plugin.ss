@@ -5,7 +5,7 @@
         :std/interface (only-in :gerbil/runtime/hash HashTable)
         :tuna/kernel :tuna/plugins/keys/contract :tuna/plugins/buffers/contract
         :tuna/plugins/layout/contract :tuna/plugins/minibuffer/contract :tuna/plugins/settings/contract
-        :tuna/plugins/completion/contract)
+        :tuna/plugins/completion/contract :tuna/plugins/stylesheets/contract)
 (export completion-vertical completion-count)
 
 (defsetting completion-count 10 "Maximum visible completion rows; a positive integer.")
@@ -107,6 +107,8 @@
   "A vertical completion list with keyboard navigation and clickable rows."
   provides: [completion-ui-service]
   requires: [commands-service completion-service input-service buffers-service settings-service layout-service minibuffer-service]
+  (add-stylesheet 'tokens "tokens.css")
+  (add-stylesheet 'rules "rules.css")
   (for-each (lambda (kind) (context-define-node-kind! ctx kind))
             '(completion-counter completion-list completion-row completion-group))
   (context-define-node-renderer! ctx 'completion-counter

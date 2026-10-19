@@ -1,6 +1,6 @@
 # How Tuna works
 
-**Status (2026-10-14):** the architecture skeleton, the buffers, views and layout work, the kernel's alignment with Cordis, and the split into one package per concept are complete. Built: the small kernel (plugins with receipts, one plugin per service, swapping a service's plugin by restarting and restoring saved data, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the loopback browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML, the only presentation language; a bare second HTML renderer proves the slot can be swapped), buffers as a replaceable service (editing, undo and highlights live in the buffers plugin; a toy buffers plugin proves the slot), the layout (splits, tabs, a movable frame with frame marks, pinning, and the minibuffer and echo area as ordinary views; a toy two-view layout proves the slot), saving your session and unsaved text across restarts, and starting from and reloading your `init.ss` (stages 1 and 2 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, `tuna check`, reloading with `reload-config` or `tuna reload`, and, from stage 3, plugin options and the `show-config-report` command). Also built: clicks and buttons, nested containers, `M-x` with completion (a vertical list, any-order matching, and annotations), plugins that may use only the services they declare, and evaluating code into the running session (the entry points; the `eval-buffer` and `M-:` commands come later). Not built yet: files, modes, scrolling strips, and drawing only what is in view. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
+**Status (2026-10-17):** the architecture skeleton, the buffers, views and layout work, the kernel's alignment with Cordis, and the split into one package per concept are complete. Built: the small kernel (plugins with receipts, one plugin per service, swapping a service's plugin by restarting and restoring saved data, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the loopback browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML, the only presentation language; a bare second HTML renderer proves the slot can be swapped), buffers as a replaceable service (editing, undo and highlights live in the buffers plugin; a toy buffers plugin proves the slot), the layout (splits, tabs, a movable frame with frame marks, pinning, and the minibuffer and echo area as ordinary views; a toy two-view layout proves the slot), saving your session and unsaved text across restarts, and starting from and reloading your `init.ss` (stages 1 and 2 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, `tuna check`, reloading with `reload-config` or `tuna reload`, and, from stage 3, plugin options and the `show-config-report` command). Also built: each plugin styling its own HTML with its own stylesheets, which themes and `init.ss` can replace ([below](#how-it-looks-html-and-stylesheets)), clicks and buttons, nested containers, `M-x` with completion (a vertical list, any-order matching, and annotations), plugins that may use only the services they declare, and evaluating code into the running session (the entry points; the `eval-buffer` and `M-:` commands come later). Not built yet: files, modes, scrolling strips, and drawing only what is in view. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
 
 ## The idea
 
@@ -41,7 +41,7 @@ Where the parts that once crept into the kernel live now:
 `plugins/` holds only real plugins, the ones a configuration might use. Two other places hold plugins that are not part of Tuna:
 
 - **Test doubles** (in each concept's `tests/support/`, shared ones in `tests/support/`): deliberately small second plugins that prove a contract can be filled by more than one plugin (a plain-string text store, a bare HTML renderer, a toy buffers plugin, a two-view layout), and small command fixtures for tests (endless loops to stop with `C-g`, a slow background job, a prompt, swapping a slot). Only tests and the demo use them; Tuna's program does not include them.
-- **The demo** (`demo/`, development only): run `.gerbil/bin/tuna --config demo/init.ss` after `make` (add `--port N` for a fixed port) for the starter's plugins plus demo commands: a slow digit highlighter, `C-c l` (a loop to stop with `C-g`), `C-c w` (swap the layout), `C-c B` (swap the buffers plugin), `C-c d` (a sidebar pinned on the left), and `C-h s` (`describe-services`). The starter configuration does not include it, and nothing in `tuna/` or `starter/` may use it. `make run` starts the starter.
+- **The demo** (`demo/`, development only): run `.gerbil/bin/tuna --config demo/init.ss` after `make` (add `--port N` for a fixed port) for the starter's plugins plus demo commands: a slow digit highlighter, `C-c l` (a loop to stop with `C-g`), `C-c w` (swap the layout), `C-c B` (swap the buffers plugin), `C-c d` (a sidebar pinned on the left), `C-c T` (a terminal-like theme), and `C-h s` (`describe-services`). The starter configuration does not include it, and nothing in `tuna/` or `starter/` may use it. `make run` starts the starter.
 
 Most tests test one plugin with only the plugins it needs. Tests that exercise many plugins together (typing, rendering, swapping slots, a restart, the browser over HTTP) are in the top-level `tests/integration/`; every other test sits in a `tests/` directory beside what it tests.
 
@@ -230,6 +230,32 @@ root (top to bottom)                       zoomed onto main.ss:
 
 The minibuffer and echo area are ordinary buffers in views in that locked, pinned bar, put there by their plugins; a locked part can't be unpinned or deleted by you. A question appears in the minibuffer nearest the view you're in, so a pinned minibuffer inside one split serves just that split. Splits are `C-x 2` and `C-x 3`, `C-x 0` deletes a view, Shift-arrows move between visible views, and tabs use Emacs's `C-x t` keys. `C-x w p` and `C-x w u` pin and unpin the selected part, `C-x w a` and `C-x w c` widen the selection to the surrounding container and back, and `C-x w` followed by an arrow moves a part past its siblings or into a neighboring container. The layout, frame, marks and pins are saved with your session.
 
+## How it looks: HTML and stylesheets
+
+**Status:** built.
+
+![Where the selected completion row's colour comes from](diagrams/stylesheets-completion.svg)
+
+*Built as drawn. The dashed box is optional: your own file in `init.ss`.*
+
+Every plugin draws its nodes as HTML and styles that HTML with its own CSS files, which it adds when it turns on and which go away when it turns off. Usually there are two:
+
+- `tokens.css`, the plugin's **semantic tokens**: CSS custom properties that say what its parts mean, named after its classes, such as `--completion-selected-background`. Each is defined with a **design token** from the `design-tokens` plugin (Stellar's palettes, sizes and fonts) and a fallback, such as a system colour, so the page stays readable without design tokens.
+- `rules.css`, which styles the plugin's HTML using only those names.
+
+Follow the numbers in the picture: (1) completion's tokens use a design token; (2) its rules use its tokens; (3) your `init.ss` may replace its tokens file with your own; (4) the web transport links every stylesheet in the page's head, in `init.ss` order, so design tokens come first and your own files last.
+
+Gerbil code holds no colours or styles. It knows only which files are on the page, who owns each, and their order. A stylesheet is named by its owner and a name, such as `(completion-vertical rules)`, so renaming a file breaks nothing. The renderer's classes and attributes (`.view`, `.buffer`, `.text`, `.line`, `.cursor`, `.status-line`, `data-clickable` and so on) are a published surface that other plugins may style; a rule that combines two plugins' HTML belongs to the plugin that adds the link, such as completion's rule for a minibuffer holding a completion list.
+
+To restyle Tuna:
+
+- **Change a few things:** add your own file in `init.ss` that redefines some tokens or rules: `(add-stylesheet 'mine "my.css")`. It comes after every plugin's, so it wins.
+- **Rewrite a plugin's file:** `(replace-stylesheet 'layout 'rules "my-layout.css")`. Replacing with `#f` removes the file.
+- **Use a theme:** a plugin that replaces other plugins' stylesheets. Turning it off restores what it replaced, and your `init.ss` beats any theme. The demo's `theme-terminal` (`C-c T`) is one: flat, monospace, reverse video.
+- **Check:** `M-x describe-stylesheets` lists the page's stylesheets in order, and warns about a replacement for a file its plugin does not add and about any `var(--x)` without a fallback that nothing defines. After editing a file, `M-x reload-stylesheets` reads them again; the browser fetches only the files that changed.
+
+The default look follows the system's light or dark setting, keeps the cursor visible in forced-colours (high contrast) mode, fills a phone's screen above its browser toolbar, and gives tabs, buttons, completion rows and clickable status lines finger-sized targets on touch screens.
+
 ## Where things are saved
 
 | What | Where | When |
@@ -284,4 +310,8 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 - **Hook**: a named list of callbacks that run when something happens, such as a buffer changing or a plugin turning on.
 - **Input item**: one unit of input from a browser tab, such as a key press; the kernel queues it without looking inside.
 - **Package**: a directory with its own `gerbil.pkg`; Gerbil names and builds its modules together. **Concept package**: one concept's contract and default plugin, under `plugins/<concept>/`.
+- **Stylesheet**: a CSS file on the page, owned by a plugin or by your `init.ss` and named, such as `(completion-vertical rules)`.
+- **Design tokens**: the raw design scale (palette steps, sizes, fonts) as CSS custom properties, from the `design-tokens` plugin.
+- **Semantic tokens**: a plugin's own CSS custom properties naming what its parts mean, such as `--completion-selected-background`, defined with design tokens.
+- **Theme**: a plugin that replaces other plugins' stylesheets.
 - **Session slot**: a named piece of one plugin's state that the session plugin saves while Tuna is idle and on exit, and hands back on the next start.

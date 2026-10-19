@@ -1,0 +1,111 @@
+/* The renderer's HTML: the screen, views, buffers, text, cursors and
+   status lines.
+
+   These classes and data attributes are a published styling surface:
+   .screen, .view, .buffer, .text, .line, .cursor, .inactive-cursor,
+   .status-line, .face-NAME, [data-view], [data-selected], [data-part],
+   [data-node] and [data-clickable]. Other plugins may select on them,
+   for example to style their own nodes inside a buffer. Rules here are
+   wrapped in :where() so that any other plugin's or theme's rule wins
+   whatever its place on the page; the cursor is the exception. */
+
+/* The screen is the layout, and fills the browser window; views scroll
+   inside it. Dynamic viewport units follow a phone's browser toolbar, and
+   the padding keeps the screen out of notches and rounded corners. */
+:where(.screen) {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  block-size: 100dvh;
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0)
+           env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+}
+
+:where(.view) {
+  display: flex;
+  flex-direction: column;
+}
+
+:where(.buffer) {
+  flex: 1;
+  padding: var(--buffer-padding);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+:where(.text) {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+:where(.line) {
+  min-block-size: 1lh;
+}
+
+/* Point in the view that receives typing. Two classes, so it beats a face
+   class (.face-NAME) on the same character wherever that face's
+   stylesheet sits on the page. Forced-colours mode overrides background
+   and colour, which would hide it, so it uses system colours there. */
+.text .cursor {
+  background: var(--cursor-background);
+  color: var(--cursor-foreground);
+}
+
+@media (forced-colors: active) {
+  .text .cursor {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
+/* Point in a view that does not receive typing, as Emacs's hollow box. */
+.text .inactive-cursor {
+  outline: 1px solid var(--inactive-cursor-outline);
+  outline-offset: -1px;
+}
+
+/* One line, so the status lines of views side by side stay aligned. */
+:where(.status-line) {
+  margin: 0;
+  padding: var(--status-line-padding);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-block: 1px solid var(--status-line-border);
+  background: var(--status-line-background);
+  color: var(--status-line-foreground);
+}
+
+:where(.view[data-selected] > .status-line) {
+  color: var(--status-line-selected-foreground);
+}
+
+/* Parts the server marks clickable (data-clickable): a click on them has a
+   binding. Hover and pressed are an overlay, so the part keeps its own
+   background (a status line's bar, the active tab's). The click itself goes
+   to the server; nothing here changes state. Hover only where a pointer
+   can hover: on a touch screen it would stick after a tap. */
+:where([data-clickable]) {
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+@media (hover: hover) {
+  :where([data-clickable]:hover) {
+    background-image: linear-gradient(var(--clickable-hover), var(--clickable-hover));
+  }
+}
+
+:where([data-clickable]:active) {
+  background-image: linear-gradient(var(--clickable-pressed), var(--clickable-pressed));
+}
+
+/* A clickable status line is a touch-sized target on a coarse pointer. */
+@media (pointer: coarse) {
+  :where(.status-line[data-clickable]) {
+    min-block-size: 2.75rem;
+    align-content: center;
+  }
+}

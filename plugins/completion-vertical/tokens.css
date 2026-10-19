@@ -1,0 +1,15 @@
+/* Vertical completion's semantic tokens. Each is a design token
+   (design-tokens plugin) with a fallback, so the list stays readable
+   without one. */
+:root {
+  --completion-muted: var(--neutral-7, GrayText);
+  --completion-selected-background: var(--primary-3, Highlight);
+  --completion-selected-foreground: var(--primary-3-on, HighlightText);
+  --completion-selected-border: var(--primary-4, Highlight);
+  --completion-focus-ring: var(--primary-6, Highlight);
+  --completion-match-foreground: var(--primary-7, LinkText);
+  --completion-row-radius: var(--border-radius-0, 0.25rem);
+  --completion-row-padding: 0.3rem 0.5rem;
+  --completion-group-font: var(--font-sans, system-ui, sans-serif);
+  --completion-list-max-size: 60dvh;
+}

@@ -1,0 +1,16 @@
+/* theme-terminal's (html-renderer tokens): status lines in reverse video,
+   as a terminal Emacs draws its mode lines; a block cursor; no padding
+   beyond one character's width. */
+:root {
+  --buffer-padding: 0 1ch;
+  --cursor-background: CanvasText;
+  --cursor-foreground: Canvas;
+  --inactive-cursor-outline: CanvasText;
+  --status-line-background: CanvasText;
+  --status-line-foreground: color-mix(in srgb, Canvas 65%, CanvasText);
+  --status-line-selected-foreground: Canvas;
+  --status-line-border: CanvasText;
+  --status-line-padding: 0 1ch;
+  --clickable-hover: color-mix(in srgb, CanvasText 12%, transparent);
+  --clickable-pressed: color-mix(in srgb, CanvasText 24%, transparent);
+}

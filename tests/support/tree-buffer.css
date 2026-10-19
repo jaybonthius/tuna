@@ -1,0 +1,16 @@
+/* The *welcome* fixture's kinds: a column of children and a heading. */
+:root {
+  --heading-font: var(--font-sans, system-ui, sans-serif);
+}
+
+:where(.column) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+:where(.heading) {
+  margin: 0;
+  font-family: var(--heading-font);
+  font-size: 1.25rem;
+}

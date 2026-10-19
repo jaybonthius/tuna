@@ -1,0 +1,38 @@
+/* The bare renderer double brings the little CSS its screen needs: the
+   HTML renderer's stylesheets go away when it is swapped out. */
+:where(.screen[data-renderer="bare"]) {
+  display: flex;
+  flex-direction: column;
+  block-size: 100dvh;
+}
+
+:where([data-renderer="bare"] .view) {
+  display: flex;
+  flex-direction: column;
+}
+
+:where([data-renderer="bare"] .buffer) {
+  flex: 1;
+  padding: 0.5rem;
+  overflow: auto;
+}
+
+:where([data-renderer="bare"] pre.text) {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+}
+
+:where([data-renderer="bare"] .cursor) {
+  outline: 2px solid currentColor;
+}
+
+:where([data-renderer="bare"] .inactive-cursor) {
+  outline: 1px dotted currentColor;
+}
+
+:where([data-renderer="bare"] .status-line) {
+  margin: 0;
+  padding: 0.25rem 0.5rem;
+  border-block-start: 1px solid currentColor;
+}

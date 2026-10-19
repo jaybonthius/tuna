@@ -1,6 +1,6 @@
 # Brief: HTML and stylesheets
 
-**Date:** 2026-10-16. **Status:** approved 2026-10-16 (owner: ship Stellar's default output, core sections only; committing it is fine); revised after an independent review (`/home/jay/Code/workbench-gerbil/scratch/stylesheets-review/review.md`). Research: [`agents/research/presentation/`](../../agents/research/presentation/) (design systems, naming, audit of today's CSS, mobile). Changes [ADR 7](../../agents/adr/0007-rendering-and-transport.md).
+**Date:** 2026-10-16. **Status:** built 2026-10-17 (see [how Tuna works](../overview.md#how-it-looks-html-and-stylesheets)); approved 2026-10-16 (owner: ship Stellar's default output, core sections only; committing it is fine); revised after an independent review (`/home/jay/Code/workbench-gerbil/scratch/stylesheets-review/review.md`). Research: [`agents/research/presentation/`](../../agents/research/presentation/) (design systems, naming, audit of today's CSS, mobile). Changes [ADR 7](../../agents/adr/0007-rendering-and-transport.md).
 
 ## What we're building and why
 
@@ -18,7 +18,7 @@ Today one 368-line `tuna.css`, owned by the web transport, styles every plugin. 
 
 ![Where completion's CSS comes from](../diagrams/stylesheets-completion.svg)
 
-**Status:** planned. Today the web transport's single `tuna.css` styles everything.
+**Status:** built 2026-10-17. When this brief was written, the web transport's single `tuna.css` styled everything.
 
 ## A walkthrough: changing the selected completion row's colour
 

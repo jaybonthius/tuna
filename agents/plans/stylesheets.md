@@ -1,6 +1,8 @@
 # Plan: HTML and stylesheets
 
-Brief: [`docs/briefs/2026-10-stylesheets.md`](../../docs/briefs/2026-10-stylesheets.md) (proposed 2026-10-16). Evidence: [`agents/research/presentation/`](../research/presentation/) and the design review in `/home/jay/Code/workbench-gerbil/scratch/stylesheets-review/review.md`.
+**Status: done (2026-10-17).** All seven stages are built; reports in `agents/research/presentation/stage-1-3.md`, `stage-4-5.md`, and `/home/jay/Code/workbench-gerbil/scratch/stylesheets/stage-6-7-report.md`.
+
+Brief: [`docs/briefs/2026-10-stylesheets.md`](../../docs/briefs/2026-10-stylesheets.md) (approved 2026-10-16). Evidence: [`agents/research/presentation/`](../research/presentation/) and the design review in `/home/jay/Code/workbench-gerbil/scratch/stylesheets-review/review.md`.
 
 ## Invariants
 
