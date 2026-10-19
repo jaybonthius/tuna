@@ -80,7 +80,7 @@ make run           # build, then run .gerbil/bin/tuna with starter/init.ss
 
 ## HTML and CSS
 
-Follow `agents/guides/html-css.md`. Stellar is not used; design values come from CSS custom properties.
+Follow `agents/guides/html-css.md`: each plugin styles its own HTML in its own `tokens.css` and `rules.css`, registered with `add-stylesheet`; semantic tokens are named after the plugin's classes and defined with the design-token subset (`agents/guides/design-tokens.md`) and a fallback. No colours or styles in Gerbil.
 
 ## README scope
 

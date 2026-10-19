@@ -34,6 +34,10 @@ The skeleton let pieces of features creep into the kernel. The approved plan ([k
 3. *Done (2026-10-13).* Take the demo out of the default startup: the starter configuration declares only real plugins, and the demo runs with `--config demo/init.ss`.
 4. General-purpose hooks and advice, including redefining functions while Tuna runs (a brief first). *Partly done (2026-10-14, kernel cleanup with Cordis):* hooks with ownership and depth, and live redefinition; advice is not built. *Done (2026-10-16):* [brief](briefs/2026-10-hooks-and-advice.md): open package functions, `redefine`, function and command advice, `describe-advice`, the hook fixes, and the hungry-delete demo. Service-operation advice moves to the profiler ("Later").
 
+## Done: HTML and stylesheets (2026-10-17)
+
+Brief: [briefs/2026-10-stylesheets.md](briefs/2026-10-stylesheets.md). HTML is Tuna's only presentation language. Each plugin styles its own HTML with its own stylesheets on top of shipped design tokens; themes and `init.ss` replace any of them, and turning a plugin off takes its styles away. `describe-stylesheets` and `reload-stylesheets` inspect and reread them. The default look works on phones (dynamic viewport, safe areas, touch-sized targets) and in forced-colours mode. See [how Tuna works](overview.md#how-it-looks-html-and-stylesheets).
+
 ## Research before windows and scrolling
 
 How the server learns layout facts from the browser (event-attached facts, measurement requests, Rocket components for local-only behavior). See [the capability-audit brief](briefs/2026-10-capability-audit.md).
