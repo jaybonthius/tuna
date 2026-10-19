@@ -54,9 +54,9 @@
   (context-define-node-kind! ctx 'help doc: "Help output: a title, then text.")
   (context-define-node-kind! ctx 'help-title doc: "The title of help output."
                              project: (lambda (n) (node-attribute n 'content)))
-  (context-define-node-renderer! ctx 'help 'html
+  (context-define-node-renderer! ctx 'help
                                  (lambda (n children) `(div (@ (class "help")) ,@children)))
-  (context-define-node-renderer! ctx 'help-title 'html
+  (context-define-node-renderer! ctx 'help-title
                                  (lambda (n children) `(h1 ,(node-attribute n 'content))))
   (using (self (buffer-help output: #f shown: #f) : buffer-help)
     (defcommand (quit-help) "Kill *Help*; a view made for it closes."

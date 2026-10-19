@@ -214,9 +214,9 @@
   (context-define-node-kind! ctx minibuffer-node-kind doc: "A prompt's question and answer, or nothing.")
   (context-define-node-kind! ctx 'minibuffer-prompt doc: "A prompt's question."
                              project: (lambda (n) (node-attribute n 'content)))
-  (context-define-node-renderer! ctx minibuffer-node-kind 'html
+  (context-define-node-renderer! ctx minibuffer-node-kind
                                  (lambda (n children) `(div (@ (class "minibuffer")) ,@children)))
-  (context-define-node-renderer! ctx 'minibuffer-prompt 'html
+  (context-define-node-renderer! ctx 'minibuffer-prompt
                                  (lambda (n children) `(span (@ (class "prompt")) ,(node-attribute n 'content))))
   (let (idle (minibuffer-buffer " *Minibuf-0*" [] #f))
     (set-buffer-setting! idle no-other-view #t)

@@ -1,5 +1,5 @@
-;;; Integration: the renderer slot swapped live (C-c v) to the plain-text
-;;; contract double (tuna/test-support/plain-text-renderer.ss) and back
+;;; Integration: the renderer slot swapped live (C-c v) to the bare HTML
+;;; contract double (plugins/renderer/tests/support/bare-renderer.ss) and back
 ;;; while editing, with tree buffers, two views, and a prompt, driven by
 ;;; keys through the real editor loop.
 (import (only-in :tuna/boot session-owner restart-plugin!)
@@ -22,7 +22,7 @@
         "../../tuna/tests/support/kernel"
         "../../plugins/keys/tests/support/keys"
         "../../plugins/session/tests/support/session"
-        "../../plugins/renderer/tests/support/plain-text-renderer"
+        "../../plugins/renderer/tests/support/bare-renderer"
         "../../plugins/layout/tests/support/two-views"
         "../support/swap-commands"
         "../support/rename-command"
@@ -51,21 +51,22 @@
 
 (def renderer-swap-test
   (test-suite "integration: swapping the renderer live"
-    (test-case "C-c v swaps to plain text and back without losing text or point"
+    (test-case "C-c v swaps to the bare renderer and back without losing text or point"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (start-editor-loop!)
          (type! "a" "<" "b" "RET" "c" "C-p")
-         (check (contains? (screen) "class=\"text\"") => #t)
+         (check (contains? (screen) "class=\"line\"") => #t)
          (type! "C-c" "v")
-         (check (on-baton (lambda () (plugin-active? plain-text-renderer))) => #t)
+         (check (on-baton (lambda () (plugin-active? bare-renderer))) => #t)
          (let (html (screen))
-           (check (contains? html "data-renderer=\"plain-text\"") => #t)
-           (check (contains? html "class=\"text\"") => #f)
-           (check (contains? html "<pre class=\"plain-text\" aria-label=\"*scratch*\">a<span class=\"cursor\">&lt;</span>b\nc\n── Tuna · *scratch* · line 1, column 1")
+           (check (contains? html "data-renderer=\"bare\"") => #t)
+           (check (contains? html "class=\"line\"") => #f)
+           (check (contains? html "<pre class=\"text\">a<span class=\"cursor\">&lt;</span>b\nc</pre>")
                   => #t)
-           (check (contains? html "Renderer: plain text") => #t))
-         ;; Editing goes on under the plain-text renderer.
+           (check (contains? html "<p class=\"status-line\">Tuna · *scratch* · line 1, column 1") => #t)
+           (check (contains? html "Renderer: bare") => #t))
+         ;; Editing goes on under the bare renderer.
          (type! "C-e" "!")
          (check (contains? (screen) "a&lt;b!<span class=\"cursor\"> </span>\nc") => #t)
          (type! "C-c" "v")
@@ -75,12 +76,12 @@
            (check (contains? html "line 1, column 4") => #t)
            (check (contains? html "Renderer: HTML") => #t)))))
 
-    (test-case "kinds render through their plain-text procedures, or their children"
+    (test-case "kinds render through their node renderers, or their children"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (start-editor-loop!)
          (type! "C-c" "v" "C-c" "b")
-         (check (contains? (screen) "Welcome to Tuna\n===============\n<span class=\"cursor\">T</span>his buffer")
+         (check (contains? (screen) "<div class=\"column\"><h1 class=\"heading\">Welcome to Tuna</h1><pre class=\"text\"><span class=\"cursor\">T</span>his buffer")
                 => #t))))
 
     (test-case "two views render side by side, each with its cursor"
@@ -98,7 +99,7 @@
        (lambda ()
          (start-editor-loop!)
          (type! "C-c" "v" "C-c" "r" "o" "k")
-         (check (contains? (screen) "New name: \nok<span class=\"cursor\"> </span></pre>") => #t)
+         (check (contains? (screen) "<span class=\"prompt\">New name: </span><pre class=\"text\">ok<span class=\"cursor\"> </span></pre></div></article></section>") => #t)
          (type! "C-g")
          (check (contains? (screen) "New name: ") => #f)
-         (check (contains? (screen) "Quit</pre>") => #t))))))
+         (check (contains? (screen) "Quit</p></article></section>") => #t))))))

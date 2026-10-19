@@ -200,17 +200,6 @@ body {
   outline-offset: -1px;
 }
 
-/* The plain-text renderer's screens. */
-.plain-text {
-  flex: 1;
-  margin: 0;
-  padding: 0.5rem;
-  font-family: inherit;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  min-block-size: 1lh;
-}
-
 .status-line,
 .minibuffer,
 .echo-area {

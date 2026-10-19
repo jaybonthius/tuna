@@ -28,6 +28,7 @@
         :tuna/plugins/completion-vertical/plugin
         :tuna/plugins/extended-command/plugin
         :tuna/plugins/advice-help/plugin
+        :tuna/plugins/stylesheets-help/plugin
         :tuna/plugins/orderless/plugin
         :tuna/plugins/command-annotations/plugin
         :tuna/plugins/settings/contract
@@ -69,6 +70,7 @@
 (use-plugin echo-area)           ; in the bar, under the minibuffer
 (use-plugin help-buffer)         ; *Help*; C-h q closes it
 (use-plugin advice-help)         ; M-x describe-advice: function and command advice
+(use-plugin stylesheets-help)    ; M-x describe-stylesheets, M-x reload-stylesheets
 (use-plugin endless-commands)    ; C-c l and C-c L: loops to quit with C-g
 (use-plugin services-help)       ; C-h s: describe-services
 (use-plugin rename-command)      ; C-c r: rename the buffer in the minibuffer
