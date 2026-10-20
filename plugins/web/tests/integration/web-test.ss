@@ -337,13 +337,44 @@
              ("request" . "-1") ("request" . "null")))
          (check (length (recorded-items 1)) => 1))))
 
-    (test-case "the stream sends the newest screen again while nothing changes"
+    (test-case "a page gets a newer screen once it confirms the last, or after the timeout"
       (with-tuna
        (lambda ()
          (let* ((stream (open-screen-stream))
-                (text (read-until stream (lambda (text) (>= (length (screen-revisions text)) 4))))
-                (revisions (screen-revisions text)))
-           (Socket-close stream)
-           (check (>= (length revisions) 4) => #t)
-           ;; Every screen after the first is the same one, sent again.
-           (check (length (filter (cut = (car (reverse revisions)) <>) revisions)) ? (cut >= <> 3))))))))
+                (first (read-until stream (lambda (text) (pair? (screen-revisions text)))))
+                (revision (car (screen-revisions first)))
+                (newer? (lambda (text) (any (cut > <> revision) (screen-revisions text))))
+                (started (time->seconds (current-time))))
+           ;; Unconfirmed: the newer screen waits for the timeout (1 s).
+           (call-on-editor-loop redisplay)
+           (let (text (read-until stream newer?))
+             (check (newer? text) => #t)
+             (check (> (- (time->seconds (current-time)) started) 0.8) => #t)
+             ;; Confirmed: the next newer screen comes at once.
+             (set! revision (apply max (screen-revisions text)))
+             (check (reply-status (http "POST" (applied-path text))) => 204)
+             (let (confirmed (time->seconds (current-time)))
+               (call-on-editor-loop redisplay)
+               (check (newer? (read-until stream newer?)) => #t)
+               (check (< (- (time->seconds (current-time)) confirmed) 0.5) => #t)))
+           (Socket-close stream)))))))
+
+;; The /applied path of the last screen in TEXT, as its data-init posts it.
+(def (applied-path text)
+  (let lp ((at 0) (last #f))
+    (let (found (string-search-from "/applied?stream=" text at))
+      (if found
+        (lp (+ found 1) found)
+        (let (end (string-index text #\' last))
+          (unescape-ampersands (substring text last end)))))))
+
+(def (unescape-ampersands text)
+  (let (at (string-search "&amp;" text))
+    (if at
+      (string-append (substring text 0 (+ at 1))
+                     (unescape-ampersands (substring text (+ at 5) (string-length text))))
+      text)))
+
+(def (string-search-from needle text start)
+  (let (at (string-search needle (substring text start (string-length text))))
+    (and at (+ start at))))

@@ -9,12 +9,14 @@
 ;;; items name the screen they were computed on, which must be one this
 ;;; transport sent.
 ;;;
-;;; Each page's stream sends the newest screen as soon as there is one, and
-;;; sends it again every `screen-interval` ms whether or not it changed, as
-;;; hyperlith does, one write at a time. A screen the page missed or
-;;; could not apply then costs one interval; and the page puts back what it
-;;; changed itself, such as the scroll report trigger it removes while a
-;;; report is on its way. Rendering still happens only when state changes.
+;;; Each page's stream sends a screen only once the page has applied the
+;;; previous one: every screen carries a data-init that posts /applied when
+;;; it is morphed in. So a slow phone or link gets the newest screen, never
+;;; a backlog. When the page does not confirm a screen within
+;;; `screen-timeout` ms, the newest is sent again, in case it was lost; the
+;;; page also needs a screen to put back what it changed itself, such as the
+;;; scroll report trigger it removes while a report is on its way.
+;;; Rendering still happens only when state changes.
 ;;;
 ;;; The page's <head> links every registered stylesheet (the stylesheets
 ;;; contract), each served at /css/<n>/<hash>/<file>; files beside a
@@ -48,6 +50,10 @@
 
 (deflogger web-log name: "tuna/web")
 
+;; Seconds between keep-alive events while there is nothing to send; they
+;; also detect closed tabs.
+(def heartbeat-seconds 15.)
+
 (def static-assets (embed-directory "web" "/static"))
 
 (defclass web-server
@@ -68,7 +74,9 @@
    (screen      : :string)      ; the newest screen
    (revision    : :fixnum)
    (stopped?    : :boolean)
-   (interval    : :real)        ; seconds between re-sends of the newest screen
+   (streams     : :fixnum)      ; streams opened so far, to number them
+   (applied     : HashTable)    ; stream -> last screen count its page applied
+   (timeout     : :real)        ; seconds a page may take to confirm a screen
    (server      : :t))
   final: #t)
 
@@ -106,6 +114,18 @@
 ;; SCREEN with REVISION as data-revision on its root element, so that
 ;; pointer items can name the screen they were computed on (ADR 7).
 (def (stamp-revision (screen : :string) (revision : :fixnum)) => :string
+  (add-root-attributes screen (string-append " data-revision=\"" (number->string revision) "\"")))
+
+;; SCREEN, as the COUNTth screen sent on STREAM, telling the page to
+;; confirm it once applied (go-latest-frame-spike's /next).
+(def (stamp-applied (screen : :string) (stream : :fixnum) (count : :fixnum)) => :string
+  (add-root-attributes
+   screen
+   (string-append " data-init=\"@post('/applied?stream=" (number->string stream)
+                  "&amp;count=" (number->string count) "'); el.removeAttribute('data-init')\"")))
+
+;; SCREEN with ATTRIBUTES (text with a leading space) after its root tag name.
+(def (add-root-attributes (screen : :string) (attributes : :string)) => :string
   (let* ((size (string-length screen))
          (end (let lp ((i 1))
                 (if (and (fx< i size)
@@ -113,9 +133,7 @@
                   (lp (fx1+ i))
                   i))))
     (if (and (fx> size 1) (char=? (string-ref screen 0) #\<))
-      (string-append (substring screen 0 end)
-                     " data-revision=\"" (number->string revision) "\""
-                     (substring screen end size))
+      (string-append (substring screen 0 end) attributes (substring screen end size))
       screen)))
 
 ;; Only the editor loop redisplays, so revisions are assigned in order.
@@ -135,28 +153,34 @@
           (set! self.revision revision)
           (condition-variable-broadcast! self.changed))))))
 
-;; The newest screen as [revision head screen], as soon as it is newer
-;; than SENT and otherwise after SELF's interval; #f once stopped. Never
+;; The newest screen as [revision head screen] once STREAM's page has
+;; applied its COUNTth screen and one newer than SENT exists; the newest
+;; again when the page has not confirmed within SELF's timeout; 'heartbeat
+;; after heartbeat-seconds of nothing to send; #f once stopped. Never
 ;; touches editor state, so a slow client never holds up the editor loop.
-(def (await-screen (self : web-server) (sent : :fixnum)) => :t
-  (let (deadline (+ (time->seconds (current-time)) self.interval))
+(def (await-screen (self : web-server) (stream : :fixnum) (sent : :fixnum) (count : :fixnum)) => :t
+  (let (start (time->seconds (current-time)))
     (mutex-lock! self.mutex)
-    (let lp ((due? #f))
-      (cond
-       (self.stopped?
-        (mutex-unlock! self.mutex)
-        #f)
-       ((or due? (fx> self.revision sent))
-        (let (newest [self.revision self.head self.screen])
+    (let lp ()
+      (let* ((applied? (fx>= (: (hash-ref self.applied stream 0) :fixnum) count))
+             (deadline (+ start (if applied? heartbeat-seconds self.timeout)))
+             (newest (lambda () (let (newest [self.revision self.head self.screen])
+                                  (mutex-unlock! self.mutex)
+                                  newest))))
+        (cond
+         (self.stopped?
           (mutex-unlock! self.mutex)
-          newest))
-       ((mutex-unlock! self.mutex self.changed
-                       (max 0. (- deadline (time->seconds (current-time)))))
-        (mutex-lock! self.mutex)
-        (lp #f))
-       (else
-        (mutex-lock! self.mutex)
-        (lp #t))))))
+          #f)
+         ((and applied? (fx> self.revision sent))
+          (newest))
+         ((>= (time->seconds (current-time)) deadline)
+          (if applied?
+            (begin (mutex-unlock! self.mutex) 'heartbeat)
+            (newest)))
+         (else
+          (mutex-unlock! self.mutex self.changed (max 0. (- deadline (time->seconds (current-time)))))
+          (mutex-lock! self.mutex)
+          (lp)))))))
 
 (def (current-page (self : web-server)) => :string
   (do-with-lock self.mutex
@@ -353,6 +377,8 @@
         (respond-text response Bad-Request "Expected a Datastar GET.")))
      ((string=? path "/commands")
       (accept-event self request response))
+     ((and (string=? path "/applied") (string=? method "POST"))
+      (accept-applied self request response))
      ((and (string=? method "GET") (string-prefix? "/css/" path))
       (serve-css self request response path))
      ((and (string=? method "GET") (hash-get static-assets path))
@@ -373,25 +399,46 @@
     (set! self.numbered? #t)
     (hash-clear! self.pending)))
 
-;; One writer per client: send the newest screen whenever it changes, and
-;; again every interval, preceded by the head whenever it differs from the
-;; head this stream last sent, so a new stream gets the head first. Each
-;; write finishes before the next screen is taken.
+;; One writer per client: send the newest screen once the page applied the
+;; last one, preceded by the head whenever it differs from the head this
+;; stream last sent, so a new stream gets the head first.
 (def (stream-screens (self : web-server) (request : Request) (response : ResponseHandler)) => :void
-  ;; A closed tab surfaces as a failed write; that ends this stream only.
-  (with-catch
-   void
-   (lambda ()
-     (call-with-datastar-sse request response
-       (lambda (session)
-         (let lp ((sent -1) (sent-head ""))
-           (match (await-screen self sent)
-             ([revision head screen]
-              (unless (string=? head sent-head)
-                (patch-elements session head))
-              (patch-elements session screen)
-              (lp revision head))
-             (else (void)))))))))
+  (let (stream (do-with-lock self.mutex
+                 (set! self.streams (fx1+ self.streams))
+                 self.streams))
+    ;; A closed tab surfaces as a failed write; that ends this stream only.
+    (with-catch
+     void
+     (lambda ()
+       (call-with-datastar-sse request response
+         (lambda (session)
+           (let lp ((sent -1) (sent-head "") (count 0))
+             (match (await-screen self stream sent count)
+               ([revision head screen]
+                (unless (string=? head sent-head)
+                  (patch-elements session head))
+                (patch-elements session (stamp-applied screen stream (fx1+ count)))
+                (lp revision head (fx1+ count)))
+               ('heartbeat
+                (patch-signals session "{}")
+                (lp sent sent-head count))
+               (else (void))))))))
+    (do-with-lock self.mutex (hash-remove! self.applied stream))))
+
+;; POST /applied?stream=S&count=N: the page applied stream S's Nth screen.
+(def (accept-applied (self : web-server) (request : Request) (response : ResponseHandler)) => :void
+  (ResponseHandler-write! response No-Content [] #u8())
+  (let* ((query (form-url-decode (or (URL-query (Request-url request)) "")))
+         (number (lambda (name)
+                   (let (pair (assoc name query))
+                     (and pair (cdr pair) (string->number (cdr pair))))))
+         (stream (number "stream"))
+         (count (number "count")))
+    (when (and (fixnum? stream) (fixnum? count))
+      (do-with-lock self.mutex
+        (when (fx> count (: (hash-ref self.applied stream 0) :fixnum))
+          (hash-put! self.applied stream count)
+          (condition-variable-broadcast! self.changed))))))
 
 (def (json-content-type? (request : Request)) => :boolean
   (let (type (header request "Content-Type"))
@@ -603,7 +650,9 @@
                               screen: (stamp-revision "<main id=\"screen\"></main>" 0)
                               revision: 0
                               stopped?: #f
-                              interval: (/ (plugin-option web-transport 'screen-interval) 1000.)
+                              streams: 0
+                              applied: (make-hash-table-eqv)
+                              timeout: (/ (plugin-option web-transport 'screen-timeout) 1000.)
                               server: #f))
          (server (new-http-server
                   (ServerConfig
@@ -624,5 +673,5 @@
 (defplugin-options web-transport
   (port 0 "The loopback port to listen on; 0 picks a free one."
         (integer-type 0 65535) flag: "--port")
-  (screen-interval 50 "Milliseconds between re-sends of the newest screen to each page, changed or not."
-                   (integer-type 1 60000)))
+  (screen-timeout 1000 "Milliseconds a page may take to confirm a screen before the newest is sent again."
+                  (integer-type 1 60000)))

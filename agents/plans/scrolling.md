@@ -5,7 +5,7 @@
 ## Invariants
 
 - The kernel gains nothing. Reports are ordinary numbered input items; the anchor is view state in the buffers contract.
-- Immediate mode stays: every screen is the whole visible UI as one morph. The stream re-sends the newest screen every tick, whether or not it changed; rendering still happens only when state changes.
+- Immediate mode stays: every screen is the whole visible UI as one morph. The stream sends a screen only after the page confirms it applied the previous one (each screen's `data-init` posts `/applied`, as in `/home/jay/Code/go-latest-frame-spike`), and sends the newest again if no confirmation comes within `screen-timeout` (1 s), in case it was lost. Rendering still happens only when state changes. (Changed 2026-10-17 after the iPhone test: stage 1's 50 ms re-send of unchanged screens built a multi-second backlog on the phone.)
 - The browser owns only motion. It reports what it sees: the line at the top, its offset, the last visible line, `scrollTop`, where the drawn lines start and end, the viewport height, and the scroll request it last applied. It never computes positions for the server.
 - Front-end code is Datastar attributes the renderer writes, plus one small action, `tunaScroll`, that sends a report through `input-sender.ts`, as `tunaPointer` does.
 - The server never maps a raw pixel offset through estimates of the whole buffer. It places the anchor from the reported top line. In a spacer, it counts from the nearest edge of the drawn lines using the average line height measured from the drawn ones.
