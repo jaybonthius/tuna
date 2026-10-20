@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Server-side scrolling prototype</title>
+<style>
+html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+#frame { height: 100dvh; }
+/* The browser never scrolls: the server places the content. */
+#view { position: relative; height: 100%; overflow: hidden; touch-action: none;
+        font: 16px/24px system-ui, sans-serif; }
+#preview { position: absolute; inset: 0; will-change: transform; }
+#content { position: absolute; left: 16px; right: 16px; }
+/* Blocks above the anchor stack upward from it, so the anchor block sits
+   exactly where the server put it whatever their real heights. */
+#above { position: absolute; left: 0; right: 0; bottom: 100%; }
+/* No margins: a block's height is all of the space it takes. */
+.b { margin: 0; padding: 6px 0; box-sizing: border-box; }
+.h { font-size: 22px; line-height: 32px; }
+.pre { font: 14px/20px monospace; background: #f3f3f3; padding: 12px 8px; white-space: pre-wrap; }
+.box { border: 8px solid #fff; background: linear-gradient(#cde, #9bd); }
+#hud { position: fixed; right: 6px; top: 6px; font: 12px monospace; background: #ffffe0;
+       padding: 4px 6px; pointer-events: none; z-index: 1; white-space: pre; }
+#modes { position: fixed; right: 6px; bottom: 6px; font: 14px system-ui; background: #eee;
+         padding: 6px; z-index: 1; }
+</style>
+<script type="module" src="/datastar.js"></script>
+<script type="module" src="/input.js"></script>
+</head>
+<body data-init="@get('/stream?c={{C}}&gz={{GZ}}')" data-client="{{C}}" data-mode="{{MODE}}">
+<main id="frame"><div id="view"><div id="preview" data-preserve-attr="style"><div id="content"></div></div></div></main>
+<div id="hud">connecting…</div>
+<div id="modes">mode {{MODE}}: <a href="/?mode=a">a</a> <a href="/?mode=b">b</a> <a href="/?mode=c">c</a></div>
+</body>
+</html>

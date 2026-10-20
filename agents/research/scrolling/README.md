@@ -198,6 +198,20 @@ The owner chose native scrolling. Two earlier versions went blank: first because
 
 The rest of this report describes the first design (measured heights, report pacing in a client script). Where they differ, this section wins.
 
+### Server-side scrolling, second attempt (2026-10-17)
+
+`backend/` is a second, server-only prototype built on what the native attempts taught. Content is generic blocks of unknown height (no lines). The browser never scrolls; it sends pixel deltas (wheel, finger, and a fling's momentum), which add up, so order and loss do not matter, with up to three posts in flight. The server places the block at the top exactly and stacks the blocks above it upward from it, so estimate errors never move what is shown; each frame's confirmation reports real heights that differ from the guess. Frames go out on one gzip-compressed SSE stream with up to 8 in flight (confirmed per frame, as in go-latest-frame-spike); consecutive frames compress to about 160 bytes each. Modes: a (each delta moves the view at once), b (the server animates toward the input's target and streams intermediate frames, like `pixel-scroll-precision` interpolation), c (b plus a local preview that slides the current frame by input not yet shown).
+
+Measured in desktop Chrome with 40 ms added each way (80 ms round trip), continuous input for 120 display frames at 1,200 and 6,000 px/s:
+
+| mode | server frames shown | display frames without movement | input to screen p50 / p95 |
+|---|---|---|---|
+| a | 80–90 | 31–41 | 84 / 94 ms |
+| b | 113 | 8 | 92 / 101 ms |
+| c | 70 | 0 (local preview) | 97–100 / 120 ms |
+
+With only 3 frames in flight, b showed 71 frames and 50 frames without movement: the confirmation window must cover the round trip. Not yet tried on a phone.
+
 ## 5. Candidate designs compared
 
 | | **A. Pure backend** (Emacs-like; client sends wheel/touch deltas, server moves anchor and re-renders; `touch-action: none`) | **B. Native scroller + server windowing** (recommended) | **C. Hybrid** (server-owned position, client moves rendered content locally, own touch physics) |
