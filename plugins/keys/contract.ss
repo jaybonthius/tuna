@@ -38,7 +38,11 @@
 ;;; the keymaps from the node the scroller draws from up, then the
 ;;; innermost input target's and the global keymap, so the commands that
 ;;; handle them can be rebound or advised. They neither end nor join a
-;;; pending key sequence, and an unbound one is ignored quietly.
+;;; pending key sequence, and an unbound one is ignored quietly. A scroll
+;;; report is a special event (Emacs's special-event-map): not something
+;;; the user did, so its binding runs as a special command (the commands
+;;; contract's `call-special-command`), never becoming this-command or
+;;; last-command and running no command hooks.
 ;;;
 ;;; The keymap generation (`keymap-generation`) changes whenever any
 ;;; binding is added or removed, so renderers that reuse HTML marked from

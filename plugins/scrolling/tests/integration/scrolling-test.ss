@@ -318,6 +318,10 @@
          (goto-line! 310)
          (keys! "C-l")
          (check (placed-at v) => [310 'center])
+         ;; The browser's report in between is not a command: the next C-l
+         ;; still follows the last.
+         (placed! v 295 325)
+         (check (on-baton last-command) => 'recenter-top-bottom)
          (keys! "C-l")
          (check (placed-at v) => [310 'top])
          (keys! "C-l")
@@ -356,6 +360,19 @@
          (placed! v 290 320)
          (goto-line! 2000)
          (check (placed-at v) => [2000 'center]))))
+
+    (test-case "a placement for point that the browser could not make is not made again"
+      (with-scrolling
+       (lambda (v)
+         (measured! v)
+         (goto-line! 2000)
+         (check (placed-at v) => [2000 'center])
+         (let (before (placement-of v))
+           ;; Measured under that placement, but the view is where it was.
+           (placed! v 1 31)
+           (check (placement-of v) => (match before ([number _ _ _] [number 1 'top 0.])))
+           (goto-line! 2001)
+           (check (placed-at v) => [2001 'center])))))
 
     (test-case "scrolling by hand moves point into view, keeping its column"
       (with-scrolling

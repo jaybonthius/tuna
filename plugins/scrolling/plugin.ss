@@ -8,7 +8,9 @@
 ;;; measured or from a placement.
 ;;;
 ;;; `view-scrolled`, bound to scroll reports (the keys contract's
-;;; `scroll-key`), ignores a report measured before the view's newest
+;;; `scroll-key`, a special event: it is not what the user did, so it
+;;; becomes no one's last command and runs no command hooks), ignores a
+;;; report measured before the view's newest
 ;;; placement, adopts the item the browser found at the view's top edge,
 ;;; and how far above the edge it is, as the view's scroll state, keeps
 ;;; what else it measured (the last item wholly in view, the view's size),
@@ -79,10 +81,10 @@
 (def edge-tolerance .5)
 
 ;; Commands that move a view themselves, after which point follows the
-;; view (or is the item they placed), not the view point.
+;; view (or is the item they placed), not the view point. (view-scrolled
+;; runs as a special event, outside the command hooks.)
 (def view-moving-commands
-  '(view-scrolled scroll-bar-drag scroll-bar-page scroll-up-command scroll-down-command
-    recenter-top-bottom))
+  '(scroll-bar-drag scroll-bar-page scroll-up-command scroll-down-command recenter-top-bottom))
 
 ;; The setting S's px.
 (def (setting-pixels (s : setting)) => :flonum
@@ -109,18 +111,21 @@
 ;;; What the plugin keeps
 
 ;; For each view: which moved last, its point or the view ('point or
-;; 'view; 'point until the view first moves), and the scroll it owes. The
+;; 'view; 'point until the view first moves), the scroll it owes, and the
+;; last placement made to show its point's item, as (NUMBER . ITEM). The
 ;; points of the views commands run in, innermost command first, as they
 ;; were before it. Where C-l last put point's item.
-(defclass scrolling-state ((moved-last : HashTable)
-                           (owed       : HashTable)
-                           (before     : :list)
-                           (recentered : :symbol))
+(defclass scrolling-state ((moved-last       : HashTable)
+                           (owed             : HashTable)
+                           (point-placements : HashTable)
+                           (before           : :list)
+                           (recentered       : :symbol))
   final: #t)
 
 (def (new-scrolling-state) => scrolling-state
   (scrolling-state moved-last: (make-hash-table test: eq? weak-keys: #t)
                    owed: (make-hash-table test: eq? weak-keys: #t)
+                   point-placements: (make-hash-table test: eq? weak-keys: #t)
                    before: [] recentered: 'bottom))
 
 (def (moved-last (state : scrolling-state) (v : view)) => :symbol
@@ -184,18 +189,35 @@
 
 ;; Place V's point's item in V when it is known to be out of V: at the
 ;; edge it lies beyond, or at the centre when more than a screen beyond.
-(def (show-point-item! (v : view)) => :void
+(def (show-point-item! (state : scrolling-state) (v : view)) => :void
   (let (s (view-shown v))
     (when s
       (using (s : shown)
         (let (p (point-index v s.root))
           (when p
-            (let ((index (car p)) (it (cdr p)))
-              (cond
-               ((and s.first (fx< index s.first))
-                (place-view! v it (if (fx<= (fx- s.first index) s.count) 'top 'center)))
-               ((and s.last (fx> index s.last))
-                (place-view! v it (if (fx<= (fx- index s.last) s.count) 'bottom 'center)))))))))))
+            (let* ((index (car p))
+                   (it (cdr p))
+                   (align (cond
+                           ((and s.first (fx< index s.first))
+                            (if (fx<= (fx- s.first index) s.count) 'top 'center))
+                           ((and s.last (fx> index s.last))
+                            (if (fx<= (fx- index s.last) s.count) 'bottom 'center))
+                           (else #f))))
+              (when align
+                (place-view! v it align)
+                (hash-put! (scrolling-state-point-placements state) v
+                           (cons (placement-number (view-placement v)) it))))))))))
+
+;; Whether the browser has just measured V under the placement last made
+;; to show its point's item, and point is in that item still: then placing
+;; it again would not show it either (the browser could not put it there).
+(def (point-placement-measured? (state : scrolling-state) (v : view)) => :boolean
+  (let ((placed (hash-get (scrolling-state-point-placements state) v))
+        (facts (current-facts v)))
+    (and placed facts
+         (fx= (car placed) (scroll-facts-placement facts))
+         (let (p (point-index v (scroll-facts-root facts)))
+           (and p (item=? (cdr p) (cdr placed)))))))
 
 ;; Move V's point into V when it is known to be out of V and its text's
 ;; lines are among V's items: to the first line of its text known to be in
@@ -225,7 +247,7 @@
 ;; scroll-moves-point is off for V's buffer.
 (def (settle-point! (state : scrolling-state) (v : view)) => :void
   (if (eq? (moved-last state v) 'point)
-    (show-point-item! v)
+    (show-point-item! state v)
     (when (buffer-local-value scroll-moves-point (view-showing v))
       (move-point-into-view! v))))
 
@@ -295,16 +317,18 @@
 
 ;; After a report adopted by view-scrolled!: a view that moved by hand
 ;; moved last; then V runs the scroll it owes, or V and its point are
-;; brought together.
+;; brought together, unless this report measured the placement made to
+;; show point's item and point is still in it.
 (def (after-report! (state : scrolling-state) (v : view) (how : :symbol)) => :void
   (when (eq? how 'moved)
     (set-moved-last! state v 'view))
   (let (owed (hash-get (scrolling-state-owed state) v))
-    (if owed
-      (begin
-        (hash-remove! (scrolling-state-owed state) v)
-        (owed))
-      (settle-point! state v))))
+    (cond
+     (owed
+      (hash-remove! (scrolling-state-owed state) v)
+      (owed))
+     ((and (eq? how 'placed) (point-placement-measured? state v)) (void))
+     (else (settle-point! state v)))))
 
 ;;; Scroll commands
 
@@ -409,7 +433,7 @@
          ([(? (cut eq? <> v)) before-n before-position before-revision]
           (unless (and (eq? n before-n) (eqv? position before-position) (eqv? revision before-revision))
             (set-moved-last! state v 'point)
-            (show-point-item! v)))
+            (show-point-item! state v)))
          (else (void)))))))
 
 (defplugin (scrolling ctx)

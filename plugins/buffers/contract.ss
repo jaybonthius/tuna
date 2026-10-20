@@ -787,10 +787,12 @@ prelude: :gerbil/core
                       (and place
                            (up parent (fx+ index (vector-ref (children-items-starts counted) place))))))))))))
 
-;; The line of text node N holding POSITION, as an item.
+;; The line of text node N holding POSITION, as an item: named by where
+;; the line starts, as every line item is (item-token).
 (def (node-line-item (n : node) (position : :fixnum)) => item
   (let (t (text-node-content n))
-    (make-item n (fxmax 1 (fxmin position (fx1+ (text-size t)))) (text-chars-revision t))))
+    (make-item n (text-line-start t (text-line-at t (fxmax 1 (fxmin position (fx1+ (text-size t))))))
+               (text-chars-revision t))))
 
 ;; IT's token (see Items).
 (def (item-token (it : item)) => :string
@@ -1051,7 +1053,7 @@ prelude: :gerbil/core
 (def (view-point-item (v : view) (root : node)) => (Maybe item)
   (let (n v.focus)
     (and n
-         (let up ((m n) (it (make-item n (view-point v) (node-chars-revision n))))
+         (let up ((m n) (it (node-line-item n (view-point v))))
            (if (eq? m root)
              it
              (let (parent (node-parent m))

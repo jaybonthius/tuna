@@ -12,7 +12,13 @@
 ;;; Scroll reports and scroll bar events resolve under their keys
 ;;; ("<scroll>", "<vertical-scroll-bar> <drag-mouse-1>") from the node
 ;;; their view's scroller draws from, leaving a pending prefix, the echo
-;;; area and the last command event as they were.
+;;; area and the last command event as they were. A scroll report is a
+;;; special event (Emacs's special-event-map): the browser telling the
+;;; server what it measured, not something the user did, so its binding
+;;; runs outside the command loop's bookkeeping (call-special-command): it
+;;; becomes neither this-command nor last-command and runs no command
+;;; hooks. Scroll bar events are the user's, ordinary commands, as in
+;;; Emacs.
 
 (import :tuna/kernel
         :tuna/plugins/keys/contract
@@ -282,23 +288,27 @@
 ;; A scroll report or scroll bar event, EVENT, at P, looked up under KEYS.
 ;; Reports arrive whenever the browser needs a redraw, and a scroll bar
 ;; drag sends many, between the keys of a sequence too, so they change no
-;; key state.
-(def (resolve-scroll! (self : global-keys) (event : :t) (p : posn) (keys : :string)) => (Maybe :pair)
+;; key state. A special event's binding runs as one (call-special-command).
+(def (resolve-scroll! (self : global-keys) (event : :t) (p : posn) (keys : :string)
+                      (special? : :boolean))
+  => (Maybe :pair)
   (let (found (find-binding (active-keymaps self (clicked-node self p)) keys #f))
     (and found (not (eq? found 'prefix))
          (let (name (entry-value found))
            (and (command-entry name)
                 (cons name (lambda ()
                              (parameterize ((activation-event event))
-                               (call-command name)))))))))
+                               (if special?
+                                 (call-special-command name)
+                                 (call-command name))))))))))
 
 (defmethod {resolve! global-keys}
   (lambda (self event)
     (cond
      ((pointer-event? event) (resolve-pointer! self event))
-     ((scroll-event? event) (resolve-scroll! self event (scroll-event-start event) scroll-key))
+     ((scroll-event? event) (resolve-scroll! self event (scroll-event-start event) scroll-key #t))
      ((scroll-bar-event? event)
-      (resolve-scroll! self event (scroll-bar-event-start event) (scroll-bar-event-keys event)))
+      (resolve-scroll! self event (scroll-bar-event-start event) (scroll-bar-event-keys event) #f))
      (else (resolve-key! self event)))))
 
 ;; The quit key interrupts; every other key, pointer, scroll or scroll bar

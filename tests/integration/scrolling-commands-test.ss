@@ -97,6 +97,23 @@
          (check (point-at v) => [2 0])
          (check (placed-at v) => [2 'top]))))
 
+    (test-case "a report between keys keeps the goal column and a pending prefix"
+      (with-scrolling
+       (lambda (v)
+         (report! v 1 31)
+         ;; From the end of line 10, "10", through line 9, "9", and back.
+         (on-baton (lambda () (goto-char (text-line-end (current-text) 10))))
+         (keys! "C-p")
+         (check (point-at v) => [9 1])
+         (report! v 1 31)
+         (keys! "C-n")
+         (check (point-at v) => [10 2])
+         (keys! "C-x")
+         (report! v 1 31)
+         (keys! "2")
+         (check (on-baton (lambda () (length (filter (lambda (w) (eq? (view-showing w) (view-showing v))) (view-list)))))
+                => 2))))
+
     (test-case "M-> and M-< from afar put the end and the start in the centre, which is as far as the view goes"
       (with-scrolling
        (lambda (v)
@@ -104,6 +121,9 @@
          (keys! "M->")
          (check (point-at v) => [5000 4])
          (check (placed-at v) => [5000 'center])
+         ;; The placement names the line as the renderer draws it, by its start.
+         (check (on-baton (lambda () (item-token (placement-target (view-placement v)))))
+                => (on-baton (lambda () (item-token (node-item-at (view-node v) 4999)))))
          (report! v 4970 5000)
          (keys! "M-<")
          (check (placed-at v) => [1 'center])
