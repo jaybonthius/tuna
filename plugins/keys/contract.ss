@@ -38,7 +38,11 @@
 ;;; the keymaps from the node the scroller draws from up, then the
 ;;; innermost input target's and the global keymap, so the commands that
 ;;; handle them can be rebound or advised. They neither end nor join a
-;;; pending key sequence, and an unbound one is ignored quietly.
+;;; pending key sequence, and an unbound one is ignored quietly. A scroll
+;;; report is a special event (Emacs's special-event-map): not something
+;;; the user did, so its binding runs as a special command (the commands
+;;; contract's `call-special-command`), never becoming this-command or
+;;; last-command and running no command hooks.
 ;;;
 ;;; The keymap generation (`keymap-generation`) changes whenever any
 ;;; binding is added or removed, so renderers that reuse HTML marked from
@@ -123,7 +127,7 @@ prelude: :gerbil/core
 ;; are named by their tokens (the buffers contract's `item-token`); every
 ;; pixel quantity is measured. TOP-ITEM is the item at the top edge, with
 ;; TOP-OFFSET px of it above the edge, and LAST-VISIBLE-ITEM the last item
-;; in view (#f when no item is there); DRAWN-BEFORE and DRAWN-AFTER count
+;; wholly in view, or TOP-ITEM when none is (#f when no item is there); DRAWN-BEFORE and DRAWN-AFTER count
 ;; the items drawn before and after TOP-ITEM; PX-ABOVE and PX-BELOW are
 ;; the px drawn above and below the view; PLACEMENT is the number of the
 ;; last placement the page applied to the view.

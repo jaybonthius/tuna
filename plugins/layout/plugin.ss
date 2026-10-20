@@ -488,7 +488,8 @@
 ;;;   ((tree PART)
 ;;;    (frame PART-ID NODE-ID SELECTED-VIEW-ID)
 ;;;    (marks (NAME PART-ID NODE-ID) ...))
-;;; PART is (view ID BUFFER-NAME POINT DEDICATED?) or
+;;; PART is (view VIEW DEDICATED?), VIEW as the layout contract saves it
+;;; (`saved-view-data`), or
 ;;; (container ID KIND DIRECTION FOCUS-ID ((SIZE FLAGS PART) ...)), where
 ;;; SIZE is a weight or `content` and FLAGS lists `pinned` and `locked`.
 ;;; Ids are renumbered on restore; PART-ID #f is the whole layout.
@@ -524,7 +525,7 @@
 ;; The part DATA describes, or #f when it shows no existing buffer.
 (def (data->part (data : :t) (ids : :t) (kind-of : :procedure)) => :t
   (match data
-    (['view (and saved [(? fixnum? id) _ _ _]) (? boolean? dedicated?)]
+    (['view (and saved [(? fixnum? id) _ _ _ _]) (? boolean? dedicated?)]
      (let (v (restore-view-data saved))
        (and v (begin (hash-put! ids id (view-id v)) (make-leaf v dedicated?)))))
     (['container (? fixnum? id) (? symbol? kind) (? symbol? direction) (? fixnum? focus) (? list? entries)]
@@ -910,9 +911,9 @@
       (context-add-entry! ctx self.kinds 'fit fit-kind doc: (layout-kind-doc fit-kind))
       (context-add-entry! ctx self.kinds 'tabbed tabbed-kind doc: (layout-kind-doc tabbed-kind))
       (context-add-hook! ctx kill-buffer-hook 'layout (lambda (b) (buffer-killed! self b)))
-      (context-add-session-slot! ctx 'layout version: 1
+      (context-add-session-slot! ctx 'layout version: 2
                                  save: (lambda () (neutral-data self)) restore: void)
-      (context-add-session-slot! ctx 'layout-tree version: 1 fallback: 'layout
+      (context-add-session-slot! ctx 'layout-tree version: 2 fallback: 'layout
                                  save: (lambda () (layout->data self))
                                  restore: (lambda (data)
                                             (if (assq 'tree data) (restore! self data)

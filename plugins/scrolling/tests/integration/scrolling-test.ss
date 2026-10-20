@@ -1,11 +1,16 @@
 ;;; The scrolling plugin: scroll reports, resolved through the keys plugin
 ;;; to view-scrolled, become the scroll state of the view they name, and
 ;;; set how many items it draws; scroll bar events, resolved to
-;;; scroll-bar-drag and scroll-bar-page, place items. The layout is the
+;;; scroll-bar-drag and scroll-bar-page, and the keys C-v, M-v and C-l
+;;; place items; a view and its point are kept together. The layout is the
 ;;; two-views double; a text of 5,000 lines is shown in its left view.
+;;; Point moves by a command of this test's (`goto-test-line`), standing in
+;;; for editing commands.
 (import :std/test
         :tuna/kernel
+        :tuna/plugins/commands/contract
         :tuna/plugins/keys/contract
+        :tuna/plugins/settings/contract
         :tuna/plugins/buffers/contract
         :tuna/plugins/layout/contract
         :tuna/plugins/commands/plugin
@@ -16,11 +21,39 @@
         :tuna/plugins/scrolling/plugin
         "../../../../tuna/tests/support/kernel"
         "../../../session/tests/support/session"
-        "../../../layout/tests/support/two-views")
+        "../../../layout/tests/support/two-views"
+        "../../../keys/tests/support/keys")
 (export scrolling-test)
 
+;; The line goto-test-line moves point to, in the focused text.
+(def test-line 1)
+
+(defplugin (test-motion ctx)
+  "goto-test-line: point to test-line, as editing commands move it."
+  requires: [commands-service buffers-service]
+  (defcommand (goto-test-line) "Move point to the start of test-line."
+    (goto-char (text-line-start (current-text) test-line)))
+  (defcommand (insert-test-text) "Insert x at point."
+    (insert "x")))
+
+(defplugin (test-rows ctx)
+  "Row nodes: each one item, under a node opening into their items."
+  requires: [buffers-service]
+  (context-define-node-kind! ctx 'rows items: 'children)
+  (context-define-node-kind! ctx 'row items: 'whole))
+
 (def scrolling-plugins
-  [commands keys rope-text-store settings no-session buffers two-views scrolling])
+  [commands keys rope-text-store settings no-session buffers two-views scrolling test-motion test-rows])
+
+;; Press KEYS, then wait until the editor loop has handled them.
+(def (keys! . keys)
+  (apply type! keys)
+  (on-baton void))
+
+;; Move point to the start of LINE by a command.
+(def (goto-line! line)
+  (set! test-line line)
+  (on-baton (lambda () (call-command 'goto-test-line))))
 
 (def line-count 5000)
 
@@ -34,9 +67,10 @@
 (def (long-view!)
   (on-baton (lambda () (insert (numbered-lines)) (goto-char 1) (selected-view))))
 
-;; The token of line LINE of V's text.
-(def (line-token v line)
-  (on-baton (lambda () (item-token (node-item-at (view-node v) (- line 1))))))
+;; The token of item K, from 1, of ROOT's items: by default V's text's
+;; lines.
+(def (line-token v line root: (root (view-node v)))
+  (on-baton (lambda () (item-token (node-item-at root (- line 1))))))
 
 (def sequence 0)
 
@@ -55,19 +89,61 @@
 ;; lines below TOP, is the last in view.
 (def (report! v top: (top 300) offset: (offset 0.) last: (last #f)
               before: (before 100) after: (after 400) above: (above 20000.) below: (below 20000.)
-              placement: (placement 0) node: (node (node-id (view-node v))))
+              placement: (placement 0) root: (root (view-node v)) node: (node (node-id root)))
   (submit! (make-scroll-event (next-sequence!) (make-posn 'view (view-id v) node 0) placement
-                              (and top (line-token v top)) offset (line-token v (or last (+ top 30)))
+                              (and top (line-token v top root: root)) offset
+                              (line-token v (or last (+ top 30)) root: root)
                               before after above below 800 744)))
+
+;; Report what the browser measured of V's newest placement: TOP and LAST
+;; as report! takes them.
+(def (placed! v top last root: (root (view-node v)))
+  (report! v top: top last: last root: root placement: (placement-number (view-placement v))))
 
 (def (scroll-bar! v part fraction)
   (submit! (make-scroll-bar-event (next-sequence!)
                                   (make-posn 'vertical-scroll-bar (view-id v) (node-id (view-node v)) 0)
                                   part fraction)))
 
+;; The browser has placed V at its start and measured it there, so later
+;; reports are V scrolled by hand.
+(def (measured! v)
+  (report! v top: 1 last: 31 placement: (placement-number (view-placement v))))
+
 ;; The line of IT, or #f.
 (def (line-of it)
   (on-baton (lambda () (and it (item-line it)))))
+
+;; V's newest placement: its number, item's line, alignment and offset.
+(def (placement-of v)
+  (let (p (view-placement v))
+    [(placement-number p) (line-of (placement-target p)) (placement-align p) (placement-offset p)]))
+
+;; V's newest placement's item's line and alignment.
+(def (placed-at v)
+  (match (placement-of v) ([_ line align _] [line align])))
+
+;; The line and column of V's point.
+(def (point-at v)
+  (on-baton (lambda ()
+              (let ((t (text-node-content (view-node v))) (p (view-point v)))
+                [(text-line-at t p) (text-column t p)]))))
+
+;; A buffer of 2,000 row nodes, each one item, under a node opening into
+;; their items; row 1,000 holds a text node, the buffer's only one, so
+;; point is in it. Returned with its root and the row holding the text.
+(def (rows-with-text!)
+  (on-baton
+   (lambda ()
+     (let* ((rows (let lp ((k 2000) (out []))
+                    (if (zero? k) out
+                        (lp (- k 1) (cons (new-node 'row children: (if (= k 1000) [(new-text-node (new-text "row text"))] []))
+                                          out)))))
+            (root (new-node 'rows children: rows))
+            (b (new-buffer "rows" root)))
+       (add-buffer! b)
+       [b root (list-ref rows 999)]))))
+
 
 ;; V's scroll state: the line at its top and the px of it above the edge.
 (def (scroll-state v)
@@ -89,12 +165,13 @@
        (lambda (v)
          (check (scroll-state v) => [#f 0.])
          (check (view-facts v) => #f)
-         (check (drawn v) => [0 initial-drawn-after]))))
+         (check (drawn v) => [initial-drawn-items initial-drawn-items]))))
 
     (test-case "a report's top item becomes the scroll state, where the browser has it"
       (with-scrolling
        (lambda (v)
          (let (number (placement-number (view-placement v)))
+           (measured! v)
            (report! v top: 300 offset: 5.)
            (check (scroll-state v) => [300 5.])
            (let (facts (view-facts v))
@@ -111,6 +188,7 @@
     (test-case "the scroll item stays with its text through edits above it"
       (with-scrolling
        (lambda (v)
+         (measured! v)
          (report! v top: 300 offset: 5.)
          (on-baton (lambda () (goto-char 1) (insert "0\n")))
          (check (scroll-state v) => [301 5.]))))
@@ -120,12 +198,14 @@
        (lambda (v)
          ;; 51 items in 240 + 744 + 200 px: 20,000 - 240 px more above need
          ;; 852 more items, and 20,000 - 200 below need 853.
+         (measured! v)
          (report! v top: 2500 before: 10 after: 40 above: 240. below: 200.)
          (check (drawn v) => [862 893]))))
 
     (test-case "the counts stop at the first and the last item"
       (with-scrolling
        (lambda (v)
+         (measured! v)
          (report! v top: 20 before: 10 after: 40 above: 240. below: 200.)
          (check (car (drawn v)) => 19)
          (report! v top: 4990 last: 5000 before: 10 after: 9 above: 240. below: 200.)
@@ -147,7 +227,9 @@
     (test-case "a report measured before the view's newest placement is ignored"
       (with-scrolling
        (lambda (v)
-         (on-baton (lambda () (place-view! v (node-item-at (view-node v) 99) 'top)))
+         ;; Point in what the report finds in view, so the view stays there.
+         (on-baton (lambda () (goto-char (text-line-start (current-text) 310))
+                      (place-view! v (node-item-at (view-node v) 99) 'top)))
          (let (number (placement-number (view-placement v)))
            (check (scroll-state v) => [100 0.])
            (report! v top: 300 offset: 5. placement: (- number 1))
@@ -180,6 +262,7 @@
     (test-case "clicking the scroll bar's track pages: the last item in view to the top, or the top one to the bottom"
       (with-scrolling
        (lambda (v)
+         (measured! v)
          (report! v top: 300 last: 330)
          (scroll-bar! v 'below-handle .9)
          (let (p (view-placement v))
@@ -187,4 +270,175 @@
          (report! v top: 330 last: 360 placement: (placement-number (view-placement v)))
          (scroll-bar! v 'above-handle .1)
          (let (p (view-placement v))
-           (check [(line-of (placement-target p)) (placement-align p)] => [330 'bottom])))))))
+           (check [(line-of (placement-target p)) (placement-align p)] => [330 'bottom])))))
+
+    (test-case "C-v puts the last two items wholly in view at the top, and point there when it was above"
+      (with-scrolling
+       (lambda (v)
+         (measured! v)
+         (on-baton (lambda () (goto-char 3)))
+         (keys! "C-v")
+         ;; Lines 1 to 31 were wholly in view: 30 and 31 stay in view.
+         (check (placed-at v) => [30 'top])
+         (check (point-at v) => [30 0])
+         ;; Pressed again before the browser measured that, C-v waits for it.
+         (let (number (placement-number (view-placement v)))
+           (keys! "C-v")
+           (check (placement-number (view-placement v)) => number)
+           (placed! v 30 60)
+           (check (placed-at v) => [59 'top])))))
+
+    (test-case "C-v with the last item in view, and M-v at the start, scroll nothing"
+      (with-scrolling
+       (lambda (v)
+         (measured! v)
+         (let (before (placement-of v))
+           (keys! "M-v")
+           (check (placement-of v) => before))
+         (report! v top: 4970 last: 5000)
+         (let (before (placement-of v))
+           (keys! "C-v")
+           (check (placement-of v) => before)))))
+
+    (test-case "M-v puts the first two items in view at the bottom, and point there when it was below"
+      (with-scrolling
+       (lambda (v)
+         (measured! v)
+         (report! v top: 300 last: 330)
+         (goto-line! 320)
+         (keys! "M-v")
+         (check (placed-at v) => [301 'bottom])
+         (check (point-at v) => [301 0]))))
+
+    (test-case "C-l puts point's item at the centre, then the top, then the bottom"
+      (with-scrolling
+       (lambda (v)
+         (measured! v)
+         (report! v top: 300 last: 330)
+         (goto-line! 310)
+         (keys! "C-l")
+         (check (placed-at v) => [310 'center])
+         ;; The browser's report in between is not a command: the next C-l
+         ;; still follows the last.
+         (placed! v 295 325)
+         (check (on-baton last-command) => 'recenter-top-bottom)
+         (keys! "C-l")
+         (check (placed-at v) => [310 'top])
+         (keys! "C-l")
+         (check (placed-at v) => [310 'bottom])
+         (keys! "C-l")
+         (check (placed-at v) => [310 'center])
+         (goto-line! 311)
+         (keys! "C-l")
+         (check (placed-at v) => [311 'center]))))
+
+    (test-case "point moved out of view brings the view: to the edge it passed, or the centre from afar"
+      (with-scrolling
+       (lambda (v)
+         (measured! v)
+         (report! v top: 300 last: 330)
+         (goto-line! 300)
+         (let (before (placement-of v))
+           (goto-line! 330)
+           (check (placement-of v) => before))
+         (goto-line! 335)
+         (check (placed-at v) => [335 'bottom])
+         ;; Until the browser measures that, what lies below line 335 is
+         ;; known to be out of view, and what lies above it is not known.
+         (goto-line! 336)
+         (check (placed-at v) => [336 'bottom])
+         (let (before (placement-of v))
+           (goto-line! 320)
+           (check (placement-of v) => before)
+           ;; The browser's measure decides: with lines taller than before,
+           ;; line 320 is out of view.
+           (placed! v 325 336)
+           (check (placed-at v) => [320 'top]))
+         (placed! v 320 350)
+         (goto-line! 290)
+         (check (placed-at v) => [290 'top])
+         (placed! v 290 320)
+         (goto-line! 2000)
+         (check (placed-at v) => [2000 'center]))))
+
+    (test-case "a placement for point that the browser could not make is not made again"
+      (with-scrolling
+       (lambda (v)
+         (measured! v)
+         (goto-line! 2000)
+         (check (placed-at v) => [2000 'center])
+         (let (before (placement-of v))
+           ;; Measured under that placement, but the view is where it was.
+           (placed! v 1 31)
+           (check (placement-of v) => (match before ([number _ _ _] [number 1 'top 0.])))
+           (goto-line! 2001)
+           (check (placed-at v) => [2001 'center])))))
+
+    (test-case "scrolling by hand moves point into view, keeping its column"
+      (with-scrolling
+       (lambda (v)
+         (measured! v)
+         (on-baton (lambda () (goto-char 3)))
+         (report! v top: 300 last: 330)
+         (check (point-at v) => [300 0])
+         (on-baton (lambda () (goto-char (+ 2 (text-line-start (current-text) 1000)))))
+         (report! v top: 400 last: 430)
+         (check (point-at v) => [430 2])
+         ;; A top item partly above the edge is not wholly in view.
+         (report! v top: 500 offset: 3. last: 530)
+         (check (point-at v) => [501 2]))))
+
+    (test-case "with scroll-moves-point off, point stays out of view until a command moves it"
+      (with-scrolling
+       (lambda (v)
+         (on-baton (lambda () (set-buffer-setting! (view-showing v) scroll-moves-point #f)))
+         (measured! v)
+         (report! v top: 300 last: 330)
+         (check (point-at v) => [1 0])
+         (keys! "C-v")
+         (check (point-at v) => [1 0])
+         (placed! v 330 360)
+         (check (point-at v) => [1 0])
+         (goto-line! 2)
+         (check (placed-at v) => [2 'center]))))
+
+    (test-case "the scroll bar moves point into view"
+      (with-scrolling
+       (lambda (v)
+         (measured! v)
+         (scroll-bar! v 'handle .5)
+         (check (point-at v) => [2501 0])
+         (on-baton (lambda () (goto-char 1)))
+         (placed! v 2501 2531)
+         (check (point-at v) => [2501 0]))))
+
+    (test-case "items that are nodes: the view goes to the row holding point, and scroll commands page rows"
+      (with-scrolling
+       (lambda (v)
+         (match (rows-with-text!)
+           ([b root row]
+            (let (row-item (lambda () (on-baton (lambda () (node-item-index root (view-point-item v root))))))
+              (on-baton (lambda () (set-view-buffer v b)))
+              ;; Showing a buffer places point's item, the row, at the centre.
+              (check (row-item) => 999)
+              (let (p (view-placement v))
+                (check [(eq? (item-node (placement-target p)) row) (placement-align p)] => [#t 'center]))
+              (placed! v 985 1015 root: root)
+              (keys! "C-l")
+              (check (placement-align (view-placement v)) => 'center)
+              (keys! "C-l")
+              (check (placement-align (view-placement v)) => 'top)
+              (placed! v 1000 1030 root: root)
+              (check (row-item) => 999)
+              ;; C-v pages rows, and leaves point in the row it cannot leave.
+              (keys! "C-v")
+              (let (p (view-placement v))
+                (check [(on-baton (lambda () (node-item-index root (placement-target p)))) (placement-align p)]
+                       => [1028 'top]))
+              (placed! v 1029 1059 root: root)
+              (check (row-item) => 999)
+              ;; Editing point's text brings its row back into view.
+              (on-baton (lambda () (call-command 'insert-test-text)))
+              (let (p (view-placement v))
+                (check [(eq? (item-node (placement-target p)) row) (placement-align p)] => [#t 'top]))))))))))
+

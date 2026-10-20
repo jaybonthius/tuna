@@ -73,22 +73,47 @@ prelude: :gerbil/core
         render-layout
         replace-buffer-in-views)
 
-;; Neutral session slot `layout`, version 1:
-;; ((views (VIEW-ID BUFFER-NAME NODE-ID POINT) ...) (selected VIEW-ID)
-;;  (marks (NAME VIEW-ID-OR-#f NODE-ID-OR-#f) ...)).
-;; Locked views are rebuilt by their owning plugins. A mark on a container
-;; becomes a whole-layout mark (#f); containers are provider-private.
+;; Neutral session slot `layout`, version 2:
+;; ((views (VIEW-ID BUFFER-NAME NODE-ID POINT PLACEMENT) ...)
+;;  (selected VIEW-ID) (marks (NAME VIEW-ID-OR-#f NODE-ID-OR-#f) ...)).
+;; PLACEMENT is the view's newest placement, which names its scroll state
+;; once the browser has measured it: (ITEM-NODE-ID LINE-START ALIGN
+;; OFFSET), LINE-START being the position where the item's line starts for
+;; a line of a text node and #f for a node that is one item; or #f for the
+;; view's first item at its top. Locked views are rebuilt by their owning
+;; plugins. A mark on a container becomes a whole-layout mark (#f);
+;; containers are provider-private.
 (def (saved-view-data (v : view)) => :list
   [(view-id v) (buffer-name (view-showing v))
-   (let (n (view-node v)) (and n (node-id n))) (view-point v)])
+   (let (n (view-node v)) (and n (node-id n))) (view-point v)
+   (let* ((p (view-placement v))
+          (it (placement-target p)))
+     (and it
+          (let* ((n (item-node it))
+                 (line (item-line it)))
+            [(node-id n) (and line (text-line-start (text-node-content n) line))
+             (placement-align p) (placement-offset p)])))])
+
+;; The item saved as ITEM-NODE-ID and LINE-START (see saved-view-data) in
+;; the tree at ROOT, or #f. As for a view's node, an id the rebuilt tree
+;; does not have means its root.
+(def (saved-item (root : node) (id : :fixnum) (line-start : :t)) => (Maybe item)
+  (let (n (or (saved-node root id) root))
+    (and n
+         (cond
+          ((and (fixnum? line-start) (text-node? n)) (node-line-item n line-start))
+          ((and (not line-start) (not (text-node? n))) (node-item n))
+          (else #f)))))
 
 (def (saved-node (root : node) (id : :fixnum)) => (Maybe node)
   (if (eqv? (node-id root) id) root
     (ormap (lambda ((child : node)) (saved-node child id)) (node-children root))))
 
+;; The view DATA saves (saved-view-data), placed where it was, or #f when
+;; its buffer is gone. A placement whose item is gone places point's item.
 (def (restore-view-data (data : :t)) => (Maybe view)
   (match data
-    ([(? fixnum?) (? string? name) node-id (? fixnum? position)]
+    ([(? fixnum?) (? string? name) node-id (? fixnum? position) placement]
      (let (b (get-buffer name))
        (and b
             (let* ((root (buffer-root b))
@@ -97,6 +122,14 @@ prelude: :gerbil/core
               (when (text-node? n)
                 (reset-view! v b n 1 (text-chars-revision (text-node-content n))))
               (set-view-point! v position)
+              (match placement
+                ([(? fixnum? id) line-start (? symbol? align) (? flonum? offset)]
+                 (let (it (saved-item root id line-start))
+                   (if (and it (memq align '(top center bottom)))
+                     (place-view! v it align offset: offset)
+                     (let (it (view-point-item v root))
+                       (when it (place-view! v it 'center))))))
+                (else (void)))
               v))))
     (else #f)))
 

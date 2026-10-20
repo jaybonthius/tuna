@@ -5,7 +5,8 @@ prelude: :gerbil/core
 (export (struct-out command)
         (interface-out Commands)
         commands-service context-define-command! define-command defcommand command-target
-        command-entry command-ref command-names call-command this-command last-command
+        command-entry command-ref command-names call-command call-special-command
+        this-command last-command
         pre-command-hook post-command-hook)
 
 ;; Visibility receives this command and the caller's origin (usually a
@@ -28,6 +29,11 @@ prelude: :gerbil/core
   (command-entry (name : :symbol)) => (Maybe entry)
   (command-names) => :list
   (call-command (name : :symbol)) => :t
+  ;; Run command NAME, with its advice, as the binding of a special event
+  ;; (Emacs's special-event-map): outside the command loop's bookkeeping,
+  ;; so it becomes neither this-command nor last-command, and no pre- or
+  ;; post-command hook runs for it.
+  (call-special-command (name : :symbol)) => :t
   (this-command) => (Maybe :symbol)
   (last-command) => (Maybe :symbol))
 
@@ -90,6 +96,13 @@ prelude: :gerbil/core
 ;; procedure's value; missing names raise rather than silently doing nothing.
 (def (call-command (name : :symbol)) => :t
   (with-service-provider (provider commands-service Commands) (Commands-call-command provider name)))
+
+;; Run command NAME as a special event's binding: what the user did last
+;; stays the last command, and the command hooks do not run. Input
+;; providers call this for events the user did not make, such as the
+;; browser reporting what it measured.
+(def (call-special-command (name : :symbol)) => :t
+  (with-service-provider (provider commands-service Commands) (Commands-call-special-command provider name)))
 
 (def (this-command) => (Maybe :symbol)
   (:? (with-service-provider (provider commands-service Commands) (Commands-this-command provider)) :symbol))

@@ -85,7 +85,7 @@ prelude: :gerbil/core
         ;; items
         item item? item-node node-opening item-line item=?
         node-item node-item-count node-item-at node-item-index node-child-items
-        item-token token-item
+        item-token token-item node-line-item
         ;; buffers
         buffer buffer? buffer-id buffer-name buffer-root new-buffer rename-buffer!
         buffer-setting set-buffer-setting! buffer-local-value settings-buffer
@@ -97,11 +97,11 @@ prelude: :gerbil/core
         ;; views
         view view? view-id view-showing view-node view-position view-revision
         new-view new-view-at copy-view reset-view!
-        view-point set-view-point! set-view-showing!
+        view-point set-view-point! set-view-showing! view-point-item
         view-scroll-item view-scroll-offset set-view-scroll!
         (struct-out placement) view-placement place-view!
         (struct-out scroll-facts) view-facts set-view-facts! view-last-visible-item
-        view-drawn-before view-drawn-after set-view-drawn-items! initial-drawn-after
+        view-drawn-before view-drawn-after set-view-drawn-items! initial-drawn-items
         drawn-above drawn-below
         selected-view set-selected-view!
         current-buffer switch-to-buffer
@@ -227,10 +227,14 @@ prelude: :gerbil/core
                       (offset : :flonum))
   final: #t)
 
-;; What the browser last measured of a view: the last item in view, how
-;; many items there are from the item at the top to it, and the view's
-;; width and height in px.
-(defstruct scroll-facts ((last-visible  :? item)
+;; What the browser last measured of a view: under which placement (its
+;; number), drawing which node's items (ROOT), the last item wholly in
+;; view, how many items there are from the item at the top to it, and the
+;; view's width and height in px. Facts measured under an older placement
+;; than the view's newest describe where the view was before it.
+(defstruct scroll-facts ((placement     : :fixnum)
+                         (root          : node)
+                         (last-visible  :? item)
                          (visible-count : :fixnum)
                          (width         : :fixnum)
                          (height        : :fixnum))
@@ -258,9 +262,9 @@ prelude: :gerbil/core
                 (drawn-after   : :fixnum))
   final: #t)
 
-;; How many items a view draws after its scroll item before the browser
-;; has measured anything.
-(def initial-drawn-after 200)
+;; How many items a view draws on each side of its scroll item before the
+;; browser has measured anything.
+(def initial-drawn-items 200)
 
 ;; How much a view keeps drawn beyond what is in view, in pixels as the
 ;; browser measures them: it asks for more when less than half of this is
@@ -783,6 +787,13 @@ prelude: :gerbil/core
                       (and place
                            (up parent (fx+ index (vector-ref (children-items-starts counted) place))))))))))))
 
+;; The line of text node N holding POSITION, as an item: named by where
+;; the line starts, as every line item is (item-token).
+(def (node-line-item (n : node) (position : :fixnum)) => item
+  (let (t (text-node-content n))
+    (make-item n (text-line-start t (text-line-at t (fxmax 1 (fxmin position (fx1+ (text-size t))))))
+               (text-chars-revision t))))
+
 ;; IT's token (see Items).
 (def (item-token (it : item)) => :string
   (let ((id (number->string (node-id (item-node it))))
@@ -949,7 +960,7 @@ prelude: :gerbil/core
 (def (new-view-at (b : buffer) (n :? node) (position : :fixnum) (revision : :fixnum)) => view
   (view id: (next-id!) showing: b focus: n position: position revision: revision goal-column: #f
         top-item: #f scroll-offset: 0. last-placement: (make-placement 0 #f 'top 0.)
-        facts: #f drawn-before: 0 drawn-after: initial-drawn-after))
+        facts: #f drawn-before: initial-drawn-items drawn-after: initial-drawn-items))
 
 ;; Point V, keeping its identity, at B with its point at POSITION in N,
 ;; valid at N's text revision REVISION, scrolled to the top. For buffers
@@ -960,27 +971,43 @@ prelude: :gerbil/core
   (set! v.focus n)
   (set! v.position position)
   (set! v.revision revision)
-  (scroll-to-top! v))
-
-;; Place V's first item at its top, forgetting what the browser measured
-;; of what V showed before.
-(def (scroll-to-top! (v : view)) => :void
-  (place-view! v #f 'top)
   (set! v.facts #f)
-  (set-view-drawn-items! v 0 initial-drawn-after))
+  (set-view-drawn-items! v initial-drawn-items initial-drawn-items)
+  (place-view! v #f 'top))
+
+;; Forget what the browser measured of what V showed before, and place
+;; V's point's item, among the items of the root of the buffer V shows, at
+;; its centre (Emacs recomputes a window's start so that point shows),
+;; which the browser's scroll range turns into the top or the bottom near
+;; either end; or, without a point, V's first item at its top.
+(def (show-point! (v : view)) => :void
+  (set! v.facts #f)
+  (set-view-drawn-items! v initial-drawn-items initial-drawn-items)
+  (let (it (view-point-item v (buffer-root v.showing)))
+    (if it
+      (place-view! v it 'center)
+      (place-view! v #f 'top))))
 
 ;; The character revision of N's text, or 0 without one.
 (def (node-chars-revision (n :? node)) => :fixnum
   (if n (text-chars-revision (text-node-content n)) 0))
 
-;; A view of B at B's point.
+;; A view of B at B's point, which it shows (show-point!).
 (def (new-view (b : buffer)) => view
-  (let (n (buffer-point-node b))
-    (new-view-at b n (buffer-point b) (node-chars-revision n))))
+  (let* ((n (buffer-point-node b))
+         (v (new-view-at b n (buffer-point b) (node-chars-revision n))))
+    (show-point! v)
+    v))
 
-;; A new view of V's buffer at V's point, as when a view is split.
+;; A new view of V's buffer at V's point, placed where V's newest placement
+;; puts V, and drawing as much: when a view is split, both halves start
+;; where it was (Emacs keeps the window start).
 (def (copy-view (v : view)) => view
-  (new-view-at v.showing v.focus (view-point v) (node-chars-revision v.focus)))
+  (let ((new (new-view-at v.showing v.focus (view-point v) (node-chars-revision v.focus)))
+        (p v.last-placement))
+    (place-view! new (placement-target p) (placement-align p) offset: (placement-offset p))
+    (set-view-drawn-items! new v.drawn-before v.drawn-after)
+    new))
 
 ;; The text node V's point is in, or #f.
 (def (view-node (v : view)) => (Maybe node)
@@ -1018,7 +1045,20 @@ prelude: :gerbil/core
           (set! v.position (Buffers-buffer-point bs b))
           (set! v.revision (node-chars-revision n))
           (set! v.goal-column #f)
-          (scroll-to-top! v))))) :void))
+          (show-point! v))))) :void))
+
+;; The item among ROOT's items that holds V's point: the line of V's
+;; focused text node holding it, or the node above that line that is one
+;; of ROOT's items. #f when V has no point or its text is not under ROOT.
+(def (view-point-item (v : view) (root : node)) => (Maybe item)
+  (let (n v.focus)
+    (and n
+         (let up ((m n) (it (node-line-item n (view-point v))))
+           (if (eq? m root)
+             it
+             (let (parent (node-parent m))
+               (and parent
+                    (up parent (if (eq? (node-opening parent) 'children) it (node-item parent))))))))))
 
 ;; IT as it is now: a line item moved to the start of the line its
 ;; position relocated into, valid at its text's current revision.
@@ -1057,19 +1097,25 @@ prelude: :gerbil/core
 
 ;; Ask the browser to put IT (#f: the first item V draws) at V's top,
 ;; centre or bottom (ALIGN 'top, 'center or 'bottom); with 'top, OFFSET px
-;; of it above the edge. Until the browser reports, V draws around IT.
+;; of it above the edge. Until the browser reports, V draws around IT, as
+;; many items on each side as it draws on its longer side now: the target
+;; may lie anywhere, and a side cut short by an end of the buffer says
+;; nothing about how many items fill the view elsewhere.
 (def (place-view! (v : view) (it :? item) (align : :symbol) offset: (offset : :flonum := 0.)) => :void
   (unless (memq align '(top center bottom))
     (error "Place an item at the top, center or bottom, not" align))
   (set! v.last-placement (make-placement (fx1+ (placement-number v.last-placement)) it align
                                     (if (eq? align 'top) offset 0.)))
   (set! v.top-item it)
-  (set! v.scroll-offset (if (eq? align 'top) offset 0.)))
+  (set! v.scroll-offset (if (eq? align 'top) offset 0.))
+  (let (drawn (fxmax v.drawn-before v.drawn-after))
+    (set-view-drawn-items! v drawn drawn)))
 
 (def (set-view-facts! (v : view) (facts : scroll-facts)) => :void
   (set! v.facts facts))
 
-;; The last item in V, as last measured, moved with edits since; or #f.
+;; The last item wholly in V, as last measured, moved with edits since;
+;; or #f.
 (def (view-last-visible-item (v : view)) => (Maybe item)
   (let* ((facts v.facts)
          (it (and facts (scroll-facts-last-visible facts))))

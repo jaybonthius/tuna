@@ -34,7 +34,7 @@
 ;;; (tunaPlace); the marker's other attributes name the current scroll
 ;;; state between placements. Beside the scroller is the view's scroll
 ;;; bar, drawn once the browser has measured that not every item is in
-;;; view: its handle runs from the scroll item to the last item in view,
+;;; view: its handle runs from the scroll item to the last item wholly in view,
 ;;; over the item count. Views and status lines are parts a click can name
 ;;; (data-part "view:V", "status-line:V"); a status line is marked
 ;;; clickable while a click on one has a binding, and so is a node whose
@@ -74,8 +74,10 @@
                       (html       : :string))
   final: #t)
 
-;; Where a view's line ids are pinned in one text node: the line starting
-;; at POSITION, at character revision REVISION, had id ID.
+;; Where a view's line ids are pinned in one text node: the line ending
+;; at POSITION, at character revision REVISION, had id ID. A line's end
+;; moves with its text when a line is inserted where it starts, so its id
+;; does too.
 (defstruct line-ids ((position : :fixnum)
                      (revision : :fixnum)
                      (id       : :fixnum))
@@ -212,7 +214,7 @@
                           (text-line-at t (relocate-position t pinned.position pinned.revision))))
                    0)))
     (hash-put! (drawing-pinning d) (node-id n)
-               (make-line-ids (text-line-start t first) (text-chars-revision t) (fx+ first offset)))
+               (make-line-ids (text-line-end t first) (text-chars-revision t) (fx+ first offset)))
     (make-line-run n first last offset)))
 
 ;; A text node: one element per line, with the cursor when the node has
