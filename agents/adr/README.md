@@ -18,3 +18,4 @@ Each record covers one hard-to-reverse choice. Change a decision by amending its
 | [12](0012-kernel-boundary-and-replaceability.md) | A small fixed kernel (plugin runtime, execution rules, hooks and identities, consumed seams); every editor feature is a plugin, replaceable at startup or live |
 | [13](0013-views-layout-and-frames.md) | Buffers are UI; views (not windows) in a layout owned by a plugin; buffers changed in place with revisions; movable frames and frame marks; the buffers contract covers editing and undo |
 | [14](0014-completion.md) | Completion: typed candidates, a session object, engine and UI slots, style and annotator registries, a commands contract split from keys; no advice |
+| [15](0015-scroll-state.md) | Scroll state on items: the browser scrolls natively and reports what it measured; the server places items; nothing is guessed; Tuna draws the scroll bar; scroll reports are special events |

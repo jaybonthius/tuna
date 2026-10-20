@@ -2,9 +2,9 @@
 
 Read this first when resuming work. Last updated 2026-10-17. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: scrolling
+## Current work: none in progress; scrolling just finished
 
-Model: `docs/briefs/2026-10-scroll-state.md` (approved 2026-10-17, owner: "keep this philosophically beautiful"; details delegated). Plan: `agents/plans/scrolling.md` (three stages: scroll state on items; commands, point and persistence; records). Owner decisions: native scrolling (after trying server-moved, hybrid and native prototypes on desktop and iPhone); nothing guessed (no spacers, no height estimates); a server-drawn scrollbar counting items; 20,000 px drawn each way felt right on the phone. On main from the first attempt and kept: windowed drawing, one report in flight, screens sent only once applied, input bodies read before answering. Research and prototypes: `agents/research/scrolling/`.
+**Scrolling: done 2026-10-17** (`agents/plans/scrolling.md`, ADR 15, briefs `docs/briefs/2026-10-scroll-state.md` and `2026-10-scrolling.md`). Views scroll natively over drawn items only; scroll state is (item, measured offset) on the view; the server places items; nothing is guessed; Tuna's scroll bar counts items; scroll reports are special events; `C-v`/`M-v`/`C-l`/`M-<`/`M->`, point following, `scroll-moves-point`, saved scroll state. Owner decisions: native scrolling (after trying server-moved, hybrid and native prototypes on desktop and iPhone, including over 80 ms); nothing guessed; 20,000 px drawn each way. Open follow-ups in `TODO.md`: per-item HTML reuse (a key costs ~39 ms and 370 KB at 20,000 px), the restart-without-an-editable-view bug, input floods breaking ordering. Stage reports and prototypes: `agents/research/scrolling/`.
 
 ## Previous work: HTML and stylesheets
 
