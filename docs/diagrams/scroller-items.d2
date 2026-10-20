@@ -1,0 +1,33 @@
+# What does a scroller hold? (planned)
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 0
+  }
+}
+direction: right
+
+scroller: "A scroller: a view showing a 50,000-item buffer (the browser scrolls it natively)" {
+  grid-columns: 1
+  grid-gap: 0
+  above: "Drawn: items 24,190 to 24,999\nabout 20,000 px, as the browser measured" {width: 560}
+  visible: "On screen: items 25,000 to 25,031\nscroll state = item 25,000, 8 px above the top edge" {
+    style.fill: "#d8e8ff"
+    style.bold: true
+    width: 560
+  }
+  below: "Drawn: items 25,032 to 25,840\nabout 20,000 px, as the browser measured" {width: 560}
+}
+
+bar: "Scrollbar, drawn by the server:\nthumb at item 25,000 of 50,000" {
+  shape: rectangle
+  style.fill: "#eeeeee"
+}
+
+nothing: "Items 1 to 24,189 and 25,841 to 50,000:\nnot drawn, not sized, nothing stands in for them" {
+  style.stroke-dash: 3
+  style.fill: "#ffffff"
+}
+
+scroller -> bar: "position in items, not pixels" {style.stroke-dash: 3}
+scroller -> nothing: "the scroller ends where drawing ends" {style.stroke-dash: 3}

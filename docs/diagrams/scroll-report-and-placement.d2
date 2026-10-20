@@ -1,0 +1,24 @@
+# How does scroll state move? (planned)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: You
+page: "Page in your browser tab"
+scrolling: "Scrolling plugin"
+renderer: "Renderer plugin"
+
+you -> page: "1. flick down"
+page -> page: "2. the browser scrolls natively"
+page -> scrolling: "3. report, as measured: item 25,000 at the top, 8 px in;\n9,000 px drawn above, 31,000 below"
+scrolling -> scrolling: "4. scroll state := item 25,000 @ 8 px;\ndraw more above, fewer below"
+renderer -> page: "5. the items around item 25,000"
+page -> page: "6. the browser keeps item 25,000 still\nwhile items come and go around it"
+you -> scrolling: "7. C-v"
+scrolling -> scrolling: "8. place item 25,031 at the top"
+renderer -> page: "9. its items, and one placement"
+page -> page: "10. the browser measures where item 25,031 is\nand moves it to the top; its next report confirms"

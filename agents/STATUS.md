@@ -2,9 +2,9 @@
 
 Read this first when resuming work. Last updated 2026-10-17. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: scrolling a view
+## Current work: scrolling
 
-Brief `docs/briefs/2026-10-scrolling.md` and plan `agents/plans/scrolling.md` approved 2026-10-17; stage 1 merged 2026-10-17 (5 ms and 46 KB per key in a 50,000-line buffer, was 489 ms and 3.35 MB); awaiting the owner's iPhone test, then stage 2. Owner decisions: native scrolling for views (after trying server-moved, hybrid and native prototypes on desktop and iPhone); re-send the newest screen every tick as hyperlith does (interval configurable, 50 ms default; Brotli later makes it cheap). Research and the working prototype: `agents/research/scrolling/`.
+Model: `docs/briefs/2026-10-scroll-state.md` (approved 2026-10-17, owner: "keep this philosophically beautiful"; details delegated). Plan: `agents/plans/scrolling.md` (three stages: scroll state on items; commands, point and persistence; records). Owner decisions: native scrolling (after trying server-moved, hybrid and native prototypes on desktop and iPhone); nothing guessed (no spacers, no height estimates); a server-drawn scrollbar counting items; 20,000 px drawn each way felt right on the phone. On main from the first attempt and kept: windowed drawing, one report in flight, screens sent only once applied, input bodies read before answering. Research and prototypes: `agents/research/scrolling/`.
 
 ## Previous work: HTML and stylesheets
 

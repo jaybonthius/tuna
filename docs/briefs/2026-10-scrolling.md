@@ -1,6 +1,6 @@
 # Brief: scrolling a view
 
-**Date:** 2026-10-17. **Status:** approved 2026-10-17. Research and the working prototype: [`agents/research/scrolling/`](../../agents/research/scrolling/README.md). Plan: [`agents/plans/scrolling.md`](../../agents/plans/scrolling.md).
+**Date:** 2026-10-17. **Status:** approved 2026-10-17; its spacer and height-guess design is superseded by [scroll state](2026-10-scroll-state.md). Research and the working prototype: [`agents/research/scrolling/`](../../agents/research/scrolling/README.md). Plan: [`agents/plans/scrolling.md`](../../agents/plans/scrolling.md).
 
 ## What we're building and why
 
