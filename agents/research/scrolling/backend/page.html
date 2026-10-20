@@ -20,7 +20,26 @@ html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: non
 .h { font-size: 22px; line-height: 32px; }
 .pre { font: 14px/20px monospace; background: #f3f3f3; padding: 12px 8px; white-space: pre-wrap; }
 .box { border: 8px solid #fff; background: linear-gradient(#cde, #9bd); }
-#hud { position: fixed; right: 6px; top: 6px; font: 12px monospace; background: #ffffe0;
+/* The scrollbar the server draws. While you drag, the page hides it and
+   shows its own preview thumb (#drag-thumb) under the pointer. */
+#frame { position: relative; }
+#bar { position: absolute; top: 0; right: 0; bottom: 0; width: 12px; background: #f2f2f2;
+       touch-action: none; z-index: 2; }
+#thumb { position: absolute; left: 2px; right: 2px; min-height: 28px; border-radius: 4px; background: #b8b8b8; }
+#bar:hover #thumb { background: #999; }
+#drag-thumb { position: fixed; right: 2px; width: 8px; min-height: 28px; border-radius: 4px;
+              background: #888; display: none; z-index: 3; pointer-events: none; }
+body.dragging #thumb { visibility: hidden; }
+body.dragging #drag-thumb { display: block; }
+#content { right: 28px; }
+/* Phones: a thin indicator that shows while you scroll, like iOS's. */
+@media (pointer: coarse) {
+  #bar { width: 6px; background: none; opacity: 0; transition: opacity .4s; }
+  #thumb { left: 1px; right: 1px; background: #999; }
+  body.scrolling #bar { opacity: 1; transition: none; }
+  #content { right: 16px; }
+}
+#hud { position: fixed; right: 18px; top: 6px; font: 12px monospace; background: #ffffe0;
        padding: 4px 6px; pointer-events: none; z-index: 1; white-space: pre; }
 #modes { position: fixed; right: 6px; bottom: 6px; font: 14px system-ui; background: #eee;
          padding: 6px; z-index: 1; }
@@ -31,6 +50,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: non
 <body data-init="@get('/stream?c={{C}}&gz={{GZ}}')" data-client="{{C}}" data-mode="{{MODE}}">
 <main id="frame"><div id="view"><div id="preview" data-preserve-attr="style"><div id="content"></div></div></div></main>
 <div id="hud">connecting…</div>
+<div id="drag-thumb"></div>
 <div id="modes">mode {{MODE}}: <a href="/?mode=a">a</a> <a href="/?mode=b">b</a> <a href="/?mode=c">c</a></div>
 </body>
 </html>

@@ -28,7 +28,7 @@ Run: python3 server.py [--host ADDR] [--port N] [--latency MS]
 --latency adds MS one way to every frame and every post, without limiting
 how many are in flight (a 2,000-mile link is ~40 ms each way).
 """
-import argparse, heapq, itertools, json, math, random, secrets, socket, threading, time, zlib
+import argparse, bisect, heapq, itertools, json, math, random, secrets, socket, threading, time, zlib
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -61,6 +61,22 @@ def make_blocks():
 
 BLOCKS = make_blocks()
 
+_prefix = {}
+def guess(i, w):
+    kind, v = BLOCKS[i]
+    cpl = max(20, (w - 32) / 8.6)
+    if kind == "h": return 44
+    if kind == "pre": return 24 + 20 * (v.count("\n") + 1)
+    if kind == "box": return v
+    return 12 + 24 * math.ceil(len(v) / cpl)
+
+def prefix(w):
+    """prefix(w)[i]: the guessed height of blocks 0..i-1 at width W."""
+    w = int(w)
+    if w not in _prefix:
+        _prefix[w] = [0] + list(itertools.accumulate(guess(i, w) for i in range(N)))
+    return _prefix[w]
+
 def esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -81,17 +97,33 @@ class Page:
         self.heights = {}                       # block -> measured px
         self.w, self.h = 400, 700
         self.input_seq = 0                      # newest input folded into the position
+        self.goto_seq = 0                       # newest scrollbar position applied
         self.frame, self.acked, self.last_ack = 0, 0, time.monotonic()
         self.dirty = True
 
     def est(self, i):
         if i in self.heights: return self.heights[i]
-        kind, v = BLOCKS[i]
-        cpl = max(20, (self.w - 32) / 8.6)
-        if kind == "h": return 44
-        if kind == "pre": return 24 + 20 * (v.count("\n") + 1)
-        if kind == "box": return v
-        return 12 + 24 * math.ceil(len(v) / cpl)
+        return guess(i, self.w)
+
+    def position(self):
+        """(px above the view's top, total px): measured heights where known,
+        guesses elsewhere. Drives the scrollbar."""
+        p = prefix(self.w)
+        fix_above = sum(px - guess(i, self.w) for i, px in self.heights.items() if i < self.anchor)
+        fix_all = sum(px - guess(i, self.w) for i, px in self.heights.items())
+        return p[self.anchor] + fix_above + self.offset, p[N] + fix_all
+
+    def go_to(self, seq, fraction):
+        """Scrollbar drag: show the block FRACTION of the way down. A drag
+        sends several; one that arrives late is ignored."""
+        if seq < self.goto_seq: return
+        self.goto_seq = seq
+        self.input_seq = max(self.input_seq, seq)
+        p = prefix(self.w)
+        y = max(0.0, min(1.0, fraction)) * max(0, p[N] - self.h)
+        i = max(0, bisect.bisect_right(p, y) - 1)
+        self.anchor, self.offset, self.remaining = min(i, N - 1), y - p[min(i, N - 1)], 0.0
+        self.dirty = True
 
     def move(self, dy):
         self.offset += dy
@@ -144,7 +176,16 @@ class Page:
                 f'<div id="content" style="top:{-self.offset:.1f}px">'
                 f'<div id="above">{"".join(block_html(i, heights(i)) for i in reversed(above))}</div>'
                 f'{"".join(block_html(i, heights(i)) for i in below)}'
-                f'</div></div></div></main>')
+                f'</div></div></div>{self.scrollbar()}</main>')
+
+    def scrollbar(self):
+        """The scrollbar: the server draws it like any other part. The page
+        only previews the thumb while you drag it."""
+        above, total = self.position()
+        size = min(1.0, self.h / max(1.0, total))
+        top = above / max(1.0, total - self.h) * (1 - size) if total > self.h else 0
+        return (f'<div id="bar" data-size="{size:.6f}">'
+                f'<div id="thumb" style="top:{top * 100:.4f}%;height:{size * 100:.4f}%"></div></div>')
 
 def esc_attr(s):
     return s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
@@ -264,6 +305,8 @@ class Handler(BaseHTTPRequestHandler):
                     page.w, page.h = f["w"], f["h"]
                 if f.get("dy"):
                     page.input(int(f["seq"]), float(f["dy"]))
+                if "to" in f:
+                    page.go_to(int(f["seq"]), float(f["to"]))
                 page.dirty = True
                 page.lock.notify_all()
         elif page and url.path == "/applied":

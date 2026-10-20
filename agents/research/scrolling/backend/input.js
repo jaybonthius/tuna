@@ -12,7 +12,7 @@ const post = (path, body) => fetch(`${path}?c=${C}`, {
 // ---- input ------------------------------------------------------------------
 let pending = 0, seq = 0, inFlight = 0;
 const unshown = [];        // [seq, dy, sentAt] the server has not shown yet
-function add(dy) { pending += dy; preview(); }
+function add(dy) { pending += dy; preview(); scrolled(); }
 function flush() {
   if (pending && inFlight < 3) {
     const s = ++seq, dy = pending;
@@ -35,6 +35,7 @@ addEventListener("wheel", (e) => {
 // at what the screen will show.
 let lastY = null, samples = [], fling = 0;
 addEventListener("pointerdown", (e) => {
+  if (e.target.closest("#bar")) return;
   if (e.pointerType === "mouse") return;
   cancelAnimationFrame(fling); lastY = e.clientY; samples = [[e.timeStamp, e.clientY]];
 });
@@ -107,3 +108,56 @@ setInterval(() => {
 
 // For checks driven from agent_browser.
 window.__proto = { add, latencies, frameTimes };
+
+// ---- the scrollbar ----------------------------------------------------------
+// The server draws it. Dragging the thumb previews a thumb under the
+// pointer at once and sends "go to this fraction" each animation frame;
+// the content follows about one round trip later. A click on the track
+// pages up or down.
+let drag = null, goTo = null;
+const dragThumb = document.getElementById("drag-thumb");
+addEventListener("pointerdown", (e) => {
+  const bar = e.target.closest("#bar");
+  if (!bar) return;
+  e.preventDefault();
+  const thumb = document.getElementById("thumb");
+  const t = thumb.getBoundingClientRect(), b = bar.getBoundingClientRect();
+  if (e.clientY < t.top || e.clientY > t.bottom) {      // the track: a page
+    add((e.clientY < t.top ? -1 : 1) * 0.9 * view().clientHeight);
+    return;
+  }
+  drag = { grab: e.clientY - t.top, height: t.height, barTop: b.top, barHeight: b.height };
+  dragThumb.style.height = `${t.height}px`;
+  moveThumb(e.clientY);
+  document.body.classList.add("dragging");
+}, true);
+function moveThumb(y) {
+  const room = drag.barHeight - drag.height;
+  const top = Math.max(0, Math.min(room, y - drag.grab - drag.barTop));
+  dragThumb.style.top = `${drag.barTop + top}px`;
+  goTo = room > 0 ? top / room : 0;
+  scrolled();
+}
+addEventListener("pointermove", (e) => { if (drag) moveThumb(e.clientY); }, true);
+addEventListener("pointerup", () => {
+  if (!drag) return;
+  drag = null;
+  document.body.classList.remove("dragging");
+}, true);
+(function sendGoTo() {
+  if (goTo !== null && inFlight < 3) {
+    const s = ++seq, to = goTo;
+    goTo = null; inFlight++;
+    unshown.push([s, 0, performance.now()]);
+    post("/input", { seq: s, to }).finally(() => { inFlight--; });
+  }
+  requestAnimationFrame(sendGoTo);
+})();
+
+// Phones show the indicator while you scroll.
+let hideBar = 0;
+function scrolled() {
+  document.body.classList.add("scrolling");
+  clearTimeout(hideBar);
+  hideBar = setTimeout(() => document.body.classList.remove("scrolling"), 800);
+}
