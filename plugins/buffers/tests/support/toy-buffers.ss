@@ -362,7 +362,8 @@ prelude: :gerbil/core
                             kinds: (new-entry-table) renderers: (new-entry-table))))
     (context-add-entry! ctx (toy-buffer-registry-kinds self) 'text
                         (make-node-kind-info 'text "Text that users edit."
-                                             (lambda (n) (text-string (text-node-content n))))
+                                             (lambda (n) (text-string (text-node-content n)))
+                                             #f)
                         doc: "Text that users edit.")
     (context-provide! ctx buffers-service (Buffers self))
     (context-add-setting-scope! ctx 'buffer

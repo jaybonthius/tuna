@@ -1,7 +1,7 @@
 ;;; The web transport over real loopback HTTP on an ephemeral port: the
-;;; plain URL, Host and Origin checks, event requests (keydowns, pointer
-;;; and scroll items, validated strictly, and the screen revision pointer
-;;; and scroll items name), and the screen stream's re-sends. A stand-in provides the input the
+;;; plain URL, Host and Origin checks, event requests (keydowns, pointer,
+;;; scroll and scroll bar items, validated strictly, and the screen
+;;; revision they name), and the screen stream's re-sends. A stand-in provides the input the
 ;;; editor loop needs; another records the items it resolves.
 (import :std/io
         :std/net/address
@@ -52,19 +52,32 @@
                                 (cons "Content-Type" "application/json")]
                       body: body)))
 
-;; A scroll item as JSON: view 12's text node 4 on screen 0, line 30 at
-;; the top, with the fields in CHANGES, each (name . raw-json), or (name .
-;; #f) to leave the field out.
-(def (scroll-json . changes)
-  (let* ((fields '(("version" . "1") ("type" . "\"scroll\"") ("sequence" . "1") ("revision" . "0")
-                   ("view" . "12") ("node" . "4") ("top" . "30") ("offset" . "5.5") ("last" . "61")
-                   ("at" . "700.25") ("drawnStart" . "0") ("drawnEnd" . "9600")
-                   ("drawnFirst" . "1") ("drawnLast" . "400") ("height" . "744") ("request" . "0")))
-         (merged (filter cdr (map (lambda (field) (or (assoc (car field) changes) field)) fields))))
+;; An item as JSON, from FIELDS with the fields in CHANGES, each (name .
+;; raw-json), or (name . #f) to leave the field out.
+(def (item-json fields changes)
+  (let (merged (filter cdr (map (lambda (field) (or (assoc (car field) changes) field)) fields)))
     (string-append
      "{"
      (string-join (map (lambda (field) (string-append "\"" (car field) "\":" (cdr field))) merged) ",")
      "}")))
+
+;; A scroll item as JSON: view 12's scroller drawing node 4, measured on
+;; screen 0 after placement 2: line item "4.61.0" at the top, 5.5 px
+;; above the edge, and "4.95.0" the last in view.
+(def (scroll-json . changes)
+  (item-json '(("version" . "1") ("type" . "\"scroll\"") ("sequence" . "1") ("revision" . "0")
+               ("view" . "12") ("node" . "4") ("placement" . "2")
+               ("top" . "\"4.61.0\"") ("offset" . "5.5") ("lastVisible" . "\"4.95.0\"")
+               ("before" . "100") ("after" . "400") ("above" . "20000.25") ("below" . "19000")
+               ("width" . "800") ("height" . "744"))
+             changes))
+
+;; A scroll bar item as JSON: view 12's handle, over a scroller drawing
+;; node 4, dragged to a quarter of the track on screen 0.
+(def (scroll-bar-json . changes)
+  (item-json '(("version" . "1") ("type" . "\"scroll-bar\"") ("sequence" . "1") ("revision" . "0")
+               ("view" . "12") ("node" . "4") ("part" . "\"handle\"") ("fraction" . "0.25"))
+             changes))
 
 ;; The data-revision of each screen event in TEXT, oldest first.
 (def (screen-revisions text)
@@ -293,14 +306,14 @@
              ("node" . "\"4\"") ("node" . "-4") ("node" . "4.5")))
          (check (length (recorded-items 1)) => 1))))
 
-    (test-case "a scroll item becomes a scroll event naming its view, text node and screen"
+    (test-case "a scroll item becomes a scroll event naming its view, scroller and screen"
       (set! (input-recorder-items recorded) [])
       (with-web-tuna [test-messages recording-input web-transport]
        (lambda ()
          (let (revision (page-revision))
            (check (post-json (scroll-json (cons "revision" (number->string revision)))) => 204)
-           (check (post-json (scroll-json (cons "sequence" "2") (cons "top" "null") (cons "last" "null")
-                                          (cons "request" "3"))) => 204)
+           (check (post-json (scroll-json (cons "sequence" "2") (cons "top" "null") (cons "lastVisible" "null")
+                                          (cons "placement" "0"))) => 204)
            (let (items (recorded-items 2))
              (check (length items) => 2)
              (let ((e (car items))
@@ -308,15 +321,16 @@
                (let (p (scroll-event-start e))
                  (check [(posn-area p) (posn-part p) (posn-node-id p) (posn-revision p)]
                         => ['view 12 4 revision]))
-               (check [(scroll-event-top-line e) (scroll-event-top-offset e) (scroll-event-last-line e)]
-                      => [30 5.5 61])
-               (check [(scroll-event-viewport-top e) (scroll-event-drawn-start e) (scroll-event-drawn-end e)]
-                      => [700.25 0. 9600.])
-               (check [(scroll-event-drawn-first e) (scroll-event-drawn-last e)
-                       (scroll-event-viewport-height e) (scroll-event-request e)]
-                      => [1 400 744 0])
-               (check [(scroll-event-top-line bare) (scroll-event-last-line bare) (scroll-event-request bare)]
-                      => [#f #f 3])))))))
+               (check [(scroll-event-placement e) (scroll-event-top-item e) (scroll-event-top-offset e)
+                       (scroll-event-last-visible-item e)]
+                      => [2 "4.61.0" 5.5 "4.95.0"])
+               (check [(scroll-event-drawn-before e) (scroll-event-drawn-after e)
+                       (scroll-event-px-above e) (scroll-event-px-below e)]
+                      => [100 400 20000.25 19000.])
+               (check [(scroll-event-viewport-width e) (scroll-event-viewport-height e)] => [800 744])
+               (check [(scroll-event-top-item bare) (scroll-event-last-visible-item bare)
+                       (scroll-event-placement bare)]
+                      => [#f #f 0])))))))
 
     (test-case "malformed and forged scroll items get 204 without being submitted"
       (set! (input-recorder-items recorded) [])
@@ -331,12 +345,48 @@
              ;; A screen the transport never sent.
              ("revision" . "999999") ("revision" . "-1")
              ("view" . "-1") ("view" . "\"12\"") ("view" . #f) ("node" . "1.5") ("node" . #f)
-             ("top" . "0") ("top" . "2.5") ("top" . #f) ("last" . "-3") ("last" . #f)
+             ("placement" . "-1") ("placement" . "null") ("placement" . #f)
+             ("top" . "61") ("top" . "\"\"") ("top" . "\"4-61\"") ("top" . "\"4.61.0;\"")
+             ("top" . "\"11111111111111111111111111111111111111111111111111111111111111111\"")
+             ("top" . #f) ("lastVisible" . "4") ("lastVisible" . #f)
              ("offset" . "\"5\"") ("offset" . "null") ("offset" . "1e12")
-             ("at" . "true") ("at" . #f) ("drawnStart" . "9601") ("drawnEnd" . "[]")
-             ("drawnFirst" . "0") ("drawnFirst" . "401") ("drawnLast" . "1.5")
-             ("height" . "-1") ("height" . "744.5") ("height" . "2000000")
-             ("request" . "-1") ("request" . "null")))
+             ("before" . "-1") ("before" . "1.5") ("after" . "\"4\"") ("after" . #f)
+             ("above" . "true") ("above" . #f) ("below" . "[]")
+             ("width" . "-1") ("width" . #f)
+             ("height" . "-1") ("height" . "744.5") ("height" . "2000000")))
+         (check (length (recorded-items 1)) => 1))))
+
+    (test-case "a scroll bar item becomes a scroll bar event naming its view, scroller and part"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (check (post-json (scroll-bar-json)) => 204)
+         (check (post-json (scroll-bar-json (cons "sequence" "2") (cons "part" "\"below-handle\"")
+                                            (cons "fraction" "1"))) => 204)
+         (let (items (recorded-items 2))
+           (check (length items) => 2)
+           (let ((drag (car items))
+                 (click (cadr items)))
+             (let (p (scroll-bar-event-start drag))
+               (check [(posn-area p) (posn-part p) (posn-node-id p) (posn-revision p)]
+                      => ['vertical-scroll-bar 12 4 0]))
+             (check [(scroll-bar-event-part drag) (scroll-bar-event-fraction drag)] => ['handle .25])
+             (check (scroll-bar-event-keys drag) => "<vertical-scroll-bar> <drag-mouse-1>")
+             (check [(scroll-bar-event-part click) (scroll-bar-event-fraction click)] => ['below-handle 1.])
+             (check (scroll-bar-event-keys click) => "<vertical-scroll-bar> <mouse-1>"))))))
+
+    (test-case "malformed and forged scroll bar items get 204 without being submitted"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (check (post-json (scroll-bar-json)) => 204)
+         (for-each
+           (lambda (change)
+             (check [change (post-json (scroll-bar-json change (cons "sequence" "2")))] => [change 204]))
+           '(("version" . "2") ("type" . "\"scrollbar\"") ("sequence" . "0")
+             ("revision" . "999999") ("view" . "-1") ("node" . #f)
+             ("part" . "\"thumb\"") ("part" . "1") ("part" . #f)
+             ("fraction" . "-0.1") ("fraction" . "1.5") ("fraction" . "\"0.5\"") ("fraction" . #f)))
          (check (length (recorded-items 1)) => 1))))
 
     (test-case "a rejected item does not hold up the items after it"

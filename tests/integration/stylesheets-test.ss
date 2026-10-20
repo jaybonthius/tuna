@@ -115,7 +115,7 @@
       (with-configuration (path-expand "demo/init.ss" repository-directory)
         (lambda ()
           (check (page) => (append starter-page
-                                   '((digit-highlighter rules) (tree-buffer rules))))
+                                   '((digit-highlighter rules) (tree-buffer rules) (rows-demo rules))))
           (check-clean-page))))
 
     (test-case "init.ss and a theme replace real plugins' files; turning the theme off restores them"

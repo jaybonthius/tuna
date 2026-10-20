@@ -11,8 +11,6 @@ prelude: :gerbil/core
 (export (interface-out Renderer)
         renderer-service
         show-status-line
-        drawn-above
-        drawn-below
         face-remapping
         remapped-face
         status-line-text)
@@ -30,12 +28,6 @@ prelude: :gerbil/core
 ;; and the echo area's views have no status line.
 (defsetting show-status-line #t
   "Whether views of this buffer show a status line under it.")
-
-;; How far beyond the visible part a long text is drawn, in pixels. More
-;; costs drawing time and page size, and spares a fast scroll from running
-;; past what is drawn before the next screen arrives.
-(defsetting drawn-above 3000. "Pixels of a long text drawn above the top of its view.")
-(defsetting drawn-below 4000. "Pixels of a long text drawn below the bottom of its view.")
 
 ;; Emacs's `face-remapping-alist`.
 (defsetting face-remapping []

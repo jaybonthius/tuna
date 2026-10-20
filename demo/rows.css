@@ -1,0 +1,12 @@
+/* The rows demo's kinds: rows one under another, each a padded label.
+   Rows are items, so they are spaced with padding, never margins. */
+:root {
+  --row-padding: 0.25rem 0.5rem;
+  --row-border: color-mix(in srgb, var(--neutral-12, CanvasText) 12%, transparent);
+}
+
+:where(.row) {
+  padding: var(--row-padding);
+  border-block-end: 1px solid var(--row-border);
+  white-space: pre-wrap;
+}

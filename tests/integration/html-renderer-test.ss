@@ -1,6 +1,6 @@
 ;;; The HTML renderer: nodes, highlights and cursors, element ids, the
 ;;; parts a click can name, the layout drawn from the frame, HTML reuse, and
-;;; windowing the text that holds a view's anchor.
+;;; drawing only the run of a view's items around its scroll state.
 (import (only-in :gerbil/runtime/mop slot-ref)
         (only-in :gerbil/runtime/interface interface-instance-object)
         :std/test
@@ -94,6 +94,23 @@
 ;; Position of NEEDLE in HAYSTACK, or #f.
 (def (offset needle haystack)
   (string-contains haystack needle))
+
+(def (has? haystack needle)
+  (and (offset needle haystack) #t))
+
+;; Rows, a node opening into its children, each one item: the buffer
+;; "rows" holds 1,000 of them.
+(defplugin (row-kinds ctx)
+  "Defines the rows and row kinds and adds the buffer rows."
+  requires: [buffers-service]
+  (context-define-node-kind! ctx 'rows items: 'children)
+  (context-define-node-kind! ctx 'row items: 'whole)
+  (context-define-node-renderer! ctx 'rows (lambda (n children) `(div (@ (class "rows")) ,@children)))
+  (context-define-node-renderer! ctx 'row (lambda (n children) `(div (@ (class "row")) ,(node-attribute n 'label))))
+  (context-add-buffer! ctx (new-buffer "rows"
+                                       (new-node 'rows
+                                                 children: (map (lambda (k) (new-node 'row attributes: [(cons 'label (number->string k))]))
+                                                                (iota 1000))))))
 
 (def html-renderer-test
   (test-suite "tuna/plugins/html-renderer"
@@ -358,64 +375,101 @@
          (check (and (string-contains (screen) "face-digit") #t) => #t)
          (check [(renders-of "a") (renders-of "b")] => [2 3]))))
 
-    (test-case "windowing: a view draws only the lines around its anchor, between spacers"
+    (test-case "scrolling: a new view draws its first items, from its start"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (insert (fifty-thousand-lines))
          (goto-char 1)
          (let* ((v (selected-view))
                 (n (view-node v))
-                (t (current-text))
-                (has? (lambda (html needle) (and (offset needle html) #t))))
-           ;; Before any report: 24 px lines and a 1,000 px view, from line 1.
-           (let (html (screen))
-             (check (has? html "data-line=\"1\"") => #t)
-             (check (has? html "data-line=\"209\"") => #t)
-             (check (has? html "data-line=\"210\"") => #f)
-             (check (has? html "-above\"") => #f)
-             (check (has? html "block-size: 1194984px") => #t)
-             (check (has? html "@tunaScroll('moved', 1, 85, -1, 0)") => #t))
-           ;; Line 25,000 at the top, 5 px into it, as the browser has it at
-           ;; 600,000 px; 20 px lines in a 744 px view.
-           (set-view-anchor! v n (text-line-start t 25000) 5.)
-           (set-view-facts! v (make-scroll-facts 25000 25037 600000. 744 20. 24800 25200))
-           (let (html (screen))
-             (check (has? html "data-line=\"24849\"") => #f)
-             (check (has? html "data-line=\"24850\"") => #t)
-             (check (has? html "data-line=\"25237\"") => #t)
-             (check (has? html "data-line=\"25238\"") => #f)
-             ;; The anchor line's top stays at 599,995 px: 150 lines above it.
-             (check (has? html "block-size: 596995px") => #t)
-             (check (has? html "block-size: 495260px") => #t)
-             (check (has? html "@tunaScroll('moved', 24925, 25100, 744, 0)") => #t)
-             (check (has? html "@tunaScroll('rest', 24925, 25100, 744, 0)") => #t))
-           ;; A report that leaves the anchor line within 24,925 to 25,100
-           ;; keeps the window as drawn.
-           (set-view-anchor! v n (text-line-start t 25050) 0.)
-           (set-view-facts! v (make-scroll-facts 25050 25087 1000. 744 20. 24850 25237))
-           (check (has? (screen) "block-size: 596995px") => #t)
-           ;; Drawn again (here for another view height), where the browser
-           ;; has the anchor line too high for the lines above, the top
-           ;; spacer keeps their estimated room.
-           (set-view-anchor! v n (text-line-start t 25000) 0.)
-           (set-view-facts! v (make-scroll-facts 25000 25037 1000. 745 20. 24850 25237))
-           (check (has? (screen) "block-size: 496980px") => #t)))))
+                (line (lambda (k) (string-append "data-item=\"" (item-token (node-item-at n (- k 1))) "\"")))
+                (html (screen)))
+           (check (has? html (line 1)) => #t)
+           (check (has? html (line (+ 1 initial-drawn-after))) => #t)
+           (check (has? html (line (+ 2 initial-drawn-after))) => #f)
+           (check (has? html "spacer") => #f)
+           (check (has? html "data-run-at-start") => #t)
+           (check (has? html "data-run-at-end") => #f)
+           (check (has? html "data-measured-height") => #f)
+           (check (has? html "@tunaScroll('moved')") => #t)
+           (check (has? html (string-append "data-scroll-root=\"" (number->string (node-id n)) "\"")) => #t)
+           (check (has? html "data-drawn-above=\"20000\" data-drawn-below=\"20000\"") => #t)
+           ;; The placement marker names no item: the view stays at its start.
+           (check (has? html (string-append "id=\"view-" (number->string (view-id v)) "-placement-0\"")) => #t)
+           (check (has? html "data-target") => #f)
+           ;; No scroll bar until the browser has measured the view.
+           (check (has? html "scroll-bar") => #f)))))
 
-    (test-case "windowing: line ids stay with their text through an edit above"
+    (test-case "scrolling: a view draws its counts of items around its scroll item, and its scroll bar"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (insert (fifty-thousand-lines))
          (let* ((v (selected-view))
                 (n (view-node v))
-                (t (current-text))
+                (item (lambda (k) (node-item-at n (- k 1))))
+                (line (lambda (k) (string-append "data-item=\"" (item-token (item k)) "\""))))
+           (set-view-scroll! v (item 25000) 5.)
+           (set-view-drawn-items! v 100 300)
+           (set-view-facts! v (make-scroll-facts (item 25030) 31 800 744))
+           (let (html (screen))
+             (check (has? html (line 24899)) => #f)
+             (check (has? html (line 24900)) => #t)
+             (check (has? html (line 25300)) => #t)
+             (check (has? html (line 25301)) => #f)
+             (check (has? html "data-run-at-start") => #f)
+             (check (has? html "data-measured-width=\"800\" data-measured-height=\"744\"") => #t)
+             ;; Between placements the marker names the scroll state.
+             (check (has? html (string-append "data-target=\"" (item-token (item 25000))
+                                              "\" data-align=\"top\" data-offset=\"5.\""))
+                    => #t)
+             ;; The handle runs from item 24,999 (from 0) over 31 of 50,000.
+             (check (has? html "--scroll-bar-handle-start: 49.9980%; --scroll-bar-handle-size: 0.0620%") => #t))
+           ;; A placement is a new marker, with a larger number.
+           (let (number (placement-number (view-placement v)))
+             (place-view! v (item 100) 'center)
+             (let (html (screen))
+               (check (has? html (string-append "-placement-" (number->string (+ number 1)) "\"")) => #t)
+               (check (has? html (string-append "data-target=\"" (item-token (item 100))
+                                                "\" data-align=\"center\""))
+                      => #t)
+               (check (has? html (line 100)) => #t)))))))
+
+    (test-case "scrolling: a node opening into children is drawn with only the children holding drawn items"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (activate-plugin! row-kinds)
+         (let* ((v (selected-view))
+                (b (get-buffer "rows")))
+           (set-view-buffer v b)
+           (let* ((root (buffer-root b))
+                  (rows (node-children root))
+                  (row-id (lambda (k) (string-append "id=\"view-" (number->string (view-id v)) "-node-"
+                                                     (number->string (node-id (list-ref rows k))) "\""))))
+             (set-view-scroll! v (node-item (list-ref rows 500)) 0.)
+             (set-view-drawn-items! v 10 10)
+             (let (html (screen))
+               (check (has? html (string-append "class=\"rows\"")) => #t)
+               (check (has? html (row-id 489)) => #f)
+               (check (has? html (row-id 490)) => #t)
+               (check (has? html (row-id 510)) => #t)
+               (check (has? html (row-id 511)) => #f)
+               ;; Each row is one item, named by its node.
+               (check (has? html (string-append "data-item=\"" (number->string (node-id (list-ref rows 500))) "\""))
+                      => #t)))))))
+
+    (test-case "scrolling: line ids stay with their text through an edit above"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (insert (fifty-thousand-lines))
+         (let* ((v (selected-view))
+                (n (view-node v))
                 (prefix (string-append "id=\"view-" (number->string (view-id v))
                                        "-node-" (number->string (node-id n)) "-line-")))
-           (set-view-anchor! v n (text-line-start t 25000) 0.)
-           (check (and (offset (string-append prefix "25000\" data-line=\"25000\">25000<") (screen)) #t) => #t)
+           (set-view-scroll! v (node-item-at n 24999) 0.)
+           (check (has? (screen) (string-append prefix "25000\">25000<")) => #t)
            ;; Two lines inserted at the top: the text "25000" is line 25002 now,
            ;; and keeps its element.
            (goto-char 1)
            (insert "a\nb\n")
-           (let (html (screen))
-             (check (and (offset (string-append prefix "25000\" data-line=\"25002\">25000<") html) #t) => #t))))))))
-
+           (check (has? (screen) (string-append prefix "25000\">25000<")) => #t)
+           (check (has? (screen) (string-append prefix "25002\">25000<")) => #f)))))))

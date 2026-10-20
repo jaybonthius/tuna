@@ -439,7 +439,8 @@
     ;; Into this provider's own table: another provider may be current.
     (context-add-entry! ctx (buffer-registry-kinds registry) 'text
                         (make-node-kind-info 'text "Text that users edit."
-                                             (lambda (n) (text-string (text-node-content n))))
+                                             (lambda (n) (text-string (text-node-content n)))
+                                             #f)
                         doc: "Text that users edit.")
     (context-provide! ctx buffers-service (Buffers registry))
     (context-add-setting-scope! ctx 'buffer
