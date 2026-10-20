@@ -14,7 +14,7 @@ type ScrollFacts = Readonly<{
   placement: number;           // the last placement applied to the scroller
   top: string | null;          // the item at the top edge
   offset: number;              // px of it above the edge
-  lastVisible: string | null;  // the last item in view
+  lastVisible: string | null;  // the last item wholly in view
   before: number;              // items drawn before the top item
   after: number;               // items drawn after it
   above: number;               // px drawn above the view
@@ -57,16 +57,9 @@ function firstEndingBelow(items: ArrayLike<Element>, y: number): number {
   return low;
 }
 
-// The index of the last of ITEMS whose top is above Y; -1 if none is.
-function lastStartingAbove(items: ArrayLike<Element>, y: number): number {
-  let low = -1;
-  let high = items.length - 1;
-  while (low < high) {
-    const middle = (low + high + 1) >> 1;
-    if (items[middle].getBoundingClientRect().top < y) low = middle; else high = middle - 1;
-  }
-  return low;
-}
+// How many px of an item may lie beyond the view's edge for it still to
+// count as wholly in view: what the browser rounds to a device pixel.
+const edgeTolerance = 0.5;
 
 // Put the item HELD names back OFFSET px above SCROLLER's top edge, if
 // the scroller has not moved since and the item is drawn: then a screen
@@ -149,7 +142,7 @@ action({
     const node = count(el, "data-scroll-root");
     if (!due || revision === null || view === null || node === null) return;
     const topIndex = Math.min(firstEndingBelow(items, viewTop), items.length - 1);
-    const lastIndex = Math.max(lastStartingAbove(items, viewBottom), topIndex);
+    const lastIndex = Math.max(firstEndingBelow(items, viewBottom + edgeTolerance) - 1, topIndex);
     const top = items[topIndex];
     const token = top?.getAttribute("data-item") ?? null;
     const offset = top ? viewTop - top.getBoundingClientRect().top : 0;

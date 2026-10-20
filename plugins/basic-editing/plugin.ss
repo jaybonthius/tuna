@@ -1,6 +1,6 @@
 #lang :tuna/prelude
-;;; Basic editing: typing, deleting, moving by characters and lines, and
-;;; undo. Every command acts on the current view's focused text node, so it
+;;; Basic editing: typing, deleting, moving by characters and lines and
+;;; to either end, and undo. Every command acts on the current view's focused text node, so it
 ;;; works the same in a one-text buffer and in a tree with other nodes.
 (import :tuna/plugins/commands/contract
         :tuna/kernel
@@ -42,7 +42,7 @@
   (text-line-at (current-text) (point)))
 
 (defplugin basic-editing
-  "Typing, deleting, moving by characters and lines, and undo."
+  "Typing, deleting, moving by characters and lines and to either end, and undo."
   requires: [commands-service input-service buffers-service]
   (defcommand (self-insert-command) "Insert the character typed."
     ;; Consecutive self-inserts undo together, up to 20 (as in Emacs).
@@ -73,6 +73,10 @@
     (goto-char (text-line-start (current-text) (current-line))))
   (defcommand (move-end-of-line) "Move to the end of the line."
     (goto-char (text-line-end (current-text) (current-line))))
+  (defcommand (beginning-of-buffer) "Move point to the beginning of the text."
+    (goto-char (point-min)))
+  (defcommand (end-of-buffer) "Move point to the end of the text."
+    (goto-char (point-max)))
   (defcommand (undo) "Undo the last command's changes; repeat to undo earlier ones."
     (goto-char (text-undo! (current-text) (eq? (last-command) 'undo)))
     (message "Undo"))
@@ -94,5 +98,7 @@
   (keymap-set "<home>" 'move-beginning-of-line)
   (keymap-set "C-e" 'move-end-of-line)
   (keymap-set "<end>" 'move-end-of-line)
+  (keymap-set "M-<" 'beginning-of-buffer)
+  (keymap-set "M->" 'end-of-buffer)
   (keymap-set "C-/" 'undo)
   (keymap-set "C-_" 'undo))

@@ -116,8 +116,8 @@ prelude: :gerbil/core
           (context-set-click-resolver! ctx posn-start-node)))
       (context-add-hook! ctx kill-buffer-hook 'replace-buffer-in-views
                          (lambda (b) (replace-buffer-in-views (own-views self) b)))
-      (context-add-session-slot! ctx 'layout version: 1 save: (lambda () (saved-layout self)) restore: void)
-      (context-add-session-slot! ctx 'layout-two-views version: 1 fallback: 'layout
+      (context-add-session-slot! ctx 'layout version: 2 save: (lambda () (saved-layout self)) restore: void)
+      (context-add-session-slot! ctx 'layout-two-views version: 2 fallback: 'layout
                                  save: (lambda () (saved-layout self))
                                  restore: (lambda (data) (restore-layout! self data)))
       (context-provide! ctx layout-service (Layout self)))))

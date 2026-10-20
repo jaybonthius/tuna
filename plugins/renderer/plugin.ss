@@ -34,7 +34,7 @@
 ;;; (tunaPlace); the marker's other attributes name the current scroll
 ;;; state between placements. Beside the scroller is the view's scroll
 ;;; bar, drawn once the browser has measured that not every item is in
-;;; view: its handle runs from the scroll item to the last item in view,
+;;; view: its handle runs from the scroll item to the last item wholly in view,
 ;;; over the item count. Views and status lines are parts a click can name
 ;;; (data-part "view:V", "status-line:V"); a status line is marked
 ;;; clickable while a click on one has a binding, and so is a node whose

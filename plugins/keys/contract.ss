@@ -123,7 +123,7 @@ prelude: :gerbil/core
 ;; are named by their tokens (the buffers contract's `item-token`); every
 ;; pixel quantity is measured. TOP-ITEM is the item at the top edge, with
 ;; TOP-OFFSET px of it above the edge, and LAST-VISIBLE-ITEM the last item
-;; in view (#f when no item is there); DRAWN-BEFORE and DRAWN-AFTER count
+;; wholly in view, or TOP-ITEM when none is (#f when no item is there); DRAWN-BEFORE and DRAWN-AFTER count
 ;; the items drawn before and after TOP-ITEM; PX-ABOVE and PX-BELOW are
 ;; the px drawn above and below the view; PLACEMENT is the number of the
 ;; last placement the page applied to the view.

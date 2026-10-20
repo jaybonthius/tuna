@@ -170,10 +170,10 @@
              (on-baton save-session)))
          (check (match (assq 'layout-tree (cddr (read-session-datum directory)))
                   ;; The bar at the bottom: content-sized, pinned and locked.
-                 (['layout-tree 1 [['tree ['container _ 'fit 'vertical _
+                 (['layout-tree 2 [['tree ['container _ 'fit 'vertical _
                                       [[1 [] ['container _ 'fit 'horizontal _
                                               [[1 [] ['container _ 'tabbed 'horizontal _ _]]
-                                               [1 [] ['view [_ "*scratch*" _ 4] #f]]]]]
+                                               [1 [] ['view [_ "*scratch*" _ 4 _] #f]]]]]
                                        ['content ['pinned 'locked] _]]]]
                                ['frame (? fixnum?) #f (? fixnum?)]
                                ['marks ["m" #f #f]]]]
@@ -194,6 +194,37 @@
              (check (count-of "<section class=\"view\"" (screen)) => 4)
              (check (count-of "class=\"tab\"" (screen)) => 2)
              (check (buffer-text "*scratch*") => "abc"))))))
+
+    (test-case "each view comes back where it was scrolled, as a placement with its offset"
+      (call-with-state-directory
+       (lambda (directory)
+         (let ((line-item (lambda (v line) (node-item-at (view-node v) (- line 1))))
+               (placed (lambda (v)
+                         (let (p (view-placement v))
+                           [(item-line (placement-target p)) (placement-align p) (placement-offset p)]))))
+           (run-tuna directory
+             (lambda ()
+               (on-baton (lambda ()
+                           (insert (string-join (map number->string (iota 1000 1)) "\n"))
+                           (goto-char (text-line-start (current-text) 310))
+                           ;; Measured: line 300 at the top, 5.5 px of it above the edge.
+                           (set-view-scroll! (selected-view) (line-item (selected-view) 300) 5.5)))
+               (type! "C-x" "3")
+               ;; The new view is placed, not yet measured: line 700 at its centre.
+               (on-baton (lambda ()
+                           (let (v (cadr (own-views)))
+                             (place-view! v (line-item v 700) 'center))))
+               (on-baton save-session)))
+           (run-tuna directory
+             (lambda ()
+               (match (own-views)
+                 ([left right]
+                  (check (on-baton (lambda () (placed left))) => [300 'top 5.5])
+                  (check (on-baton (lambda () (placed right))) => [700 'center 0.])
+                  (let (start (on-baton (lambda () (text-line-start (current-text) 310))))
+                    (check (views-state) => [["*scratch*" start] ["*scratch*" start]]))
+                  (check (and (string-contains (screen) "data-align=\"top\" data-offset=\"5.5\"") #t) => #t))
+                 (else (check (length (own-views)) => 2)))))))))
 
     (test-case "swapping the buffers provider keeps live text and every view's point"
       (call-with-state-directory

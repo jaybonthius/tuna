@@ -453,9 +453,9 @@ test("tunaScroll reports nothing before a placement, then what it measured, once
   assert.equal(h.posts.length, 1);
   assert.deepEqual(h.posts[0].body, {
     version: 1, type: "scroll", sequence: 1, revision: 7, view: 12, node: 4, placement: 3,
-    top: "4.51.0", offset: 5, lastVisible: "4.61.0", before: 50, after: 49,
+    top: "4.51.0", offset: 5, lastVisible: "4.60.0", before: 50, after: 49,
     above: 1005, below: 795, width: 300, height: 200,
-  });
+  }, "item 61 ends 15 px below the view, so item 60 is the last wholly in view");
   assert.equal(v.scroller.getAttribute("data-effect"), null, "one report is on its way at a time");
   h.scroll(v.scroller, "moved");
   assert.equal(h.posts.length, 1);
