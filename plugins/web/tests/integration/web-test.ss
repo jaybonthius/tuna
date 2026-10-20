@@ -346,6 +346,16 @@
          (check (post-json (scroll-json (cons "sequence" "3"))) => 204)
          (check (length (recorded-items 2)) => 2))))
 
+    (test-case "an item that never arrives is given up on after half a second"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (check (post-json (scroll-json)) => 204)
+         (check (post-json (scroll-json (cons "sequence" "3"))) => 204)
+         (thread-sleep! 0.6)
+         (check (post-json (scroll-json (cons "sequence" "4"))) => 204)
+         (check (length (recorded-items 3)) => 3))))
+
     (test-case "a page gets a newer screen once it confirms the last, or after the timeout"
       (with-tuna
        (lambda ()
