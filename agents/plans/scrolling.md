@@ -1,6 +1,6 @@
 # Plan: scrolling a view
 
-**Status: approved 2026-10-17; stage 1 in progress.** Brief: [`docs/briefs/2026-10-scrolling.md`](../../docs/briefs/2026-10-scrolling.md). Evidence: [`agents/research/scrolling/README.md`](../research/scrolling/README.md), section "The prototype as rebuilt", and the prototype in `agents/research/scrolling/proto/` (`server.py` holds the placement and windowing arithmetic to port; `check.js` is the browser check).
+**Status: approved 2026-10-17; stage 1 merged 2026-10-17 (report `/home/jay/Code/workbench-gerbil/scratch/tuna-scrolling/stage1-report.md`); stage 2 next.** Brief: [`docs/briefs/2026-10-scrolling.md`](../../docs/briefs/2026-10-scrolling.md). Evidence: [`agents/research/scrolling/README.md`](../research/scrolling/README.md), section "The prototype as rebuilt", and the prototype in `agents/research/scrolling/proto/` (`server.py` holds the placement and windowing arithmetic to port; `check.js` is the browser check).
 
 ## Invariants
 
