@@ -48,6 +48,7 @@
         :tuna/plugins/autosave/plugin
         :tuna/plugins/layout/plugin
         :tuna/plugins/view-commands/plugin
+        :tuna/plugins/scrolling/plugin
         :tuna/plugins/renderer/plugin
         :tuna/plugins/buttons/plugin
         :tuna/plugins/basic-editing/plugin
@@ -79,6 +80,7 @@
 (use-plugin autosave)
 (use-plugin layout)
 (use-plugin view-commands)
+(use-plugin scrolling)           ; views scroll natively; the server draws what is near
 (use-plugin html-renderer)
 (use-plugin buttons)             ; buttons in buffers: a click runs their action
 (use-plugin basic-editing)

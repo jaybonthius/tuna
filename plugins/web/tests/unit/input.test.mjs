@@ -52,7 +52,8 @@ class Element {
 }
 
 // Each harness is one page load, with no browser storage or identity.
-async function harness(screen = new Element({ "data-revision": 7 }), platform = "Linux x86_64") {
+async function harness(screen = new Element({ "data-revision": 7 }), platform = "Linux x86_64",
+                       elementFromPoint = () => null) {
   const posts = [];
   const errors = [];
   const retries = [];
@@ -65,7 +66,7 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
     KeyboardEvent,
     MouseEvent,
     Element,
-    document: { getElementById: (id) => (id === "screen" ? screen : null) },
+    document: { getElementById: (id) => (id === "screen" ? screen : null), elementFromPoint },
     setTimeout(callback, delay) { retries.push({ callback, delay }); },
     fetch(url, options) {
       return new Promise((resolve, reject) => {
@@ -83,12 +84,13 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
     return datastar;
   });
   await module.evaluate();
-  assert.deepEqual(Object.keys(actions).sort(), ["tunaKeyboard", "tunaPointer"]);
+  assert.deepEqual(Object.keys(actions).sort(), ["tunaKeyboard", "tunaPointer", "tunaScroll"]);
   return {
     posts, errors, retries,
     fire,
     send: (evt) => { if (evt instanceof KeyboardEvent) fire(evt); actions.tunaKeyboard.apply({ evt }); },
     point: (evt) => actions.tunaPointer.apply({ evt }),
+    scroll: (el, ...args) => actions.tunaScroll.apply({ el }, ...args),
   };
 }
 
@@ -331,3 +333,75 @@ test("pressing on a node marked clickable, such as a button, keeps focus; its cl
   assert.equal(h.posts[0].body.target, "view:12");
   assert.equal(h.posts[0].body.node, 9);
 });
+
+// A laid-out element for the scroll action: a box TOP px below the
+// viewport's top and HEIGHT px tall, with element children.
+class Box extends Element {
+  constructor(attributes, parent, top, height) {
+    super(attributes, parent);
+    Object.assign(this, { top, height, children: [], clientTop: 0, clientHeight: height });
+    parent?.children.push(this);
+  }
+  getBoundingClientRect() { return { top: this.top, bottom: this.top + this.height, left: 0, width: 300 }; }
+  hasAttribute(name) { return name in this.attributes; }
+  removeAttribute(name) { delete this.attributes[name]; }
+  querySelector(selector) {
+    for (const child of this.children) {
+      const found = child.closest(selector) === child ? child : child.querySelector(selector);
+      if (found) return found;
+    }
+    return null;
+  }
+  get firstElementChild() { return this.children[0] ?? null; }
+  get lastElementChild() { return this.children.at(-1) ?? null; }
+  get nextElementSibling() { const s = this.parent.children; return s[s.indexOf(this) + 1] ?? null; }
+  get previousElementSibling() { const s = this.parent.children; return s[s.indexOf(this) - 1] ?? null; }
+}
+
+// View 12's 200 px scroller over text node 4, whose element starts 1,000
+// px above the view's top: a 960 px spacer, lines 41 to 50 of 24 px from
+// -40 px, then a spacer. Line 42 is at the top, 16 px of it above.
+function scrolledView() {
+  const view = new Box({ "data-view": 12 }, null, 0, 200);
+  const scroller = new Box({ "data-effect": "..." }, view, 0, 200);
+  const text = new Box({ "data-window": "", "data-node": 4 }, scroller, -1000, 2000);
+  new Box({}, text, -1000, 960);
+  const lines = [];
+  for (let line = 41; line <= 50; line++) {
+    lines.push(new Box({ "data-line": line }, text, -40 + 24 * (line - 41), 24));
+  }
+  new Box({}, text, 200, 800);
+  const at = (x, y) => lines.find((l) => l.top <= y && y < l.top + l.height) ?? text.children[0];
+  return { scroller, at };
+}
+
+test("scrolling reports only when the top line leaves the range or the height changed", async () => {
+  const view = scrolledView();
+  const h = await harness(new Element({ "data-revision": 7 }), "Linux x86_64", view.at);
+  h.scroll(view.scroller, "moved", 41, 45, 200, 0);
+  assert.equal(h.posts.length, 0);
+  assert.equal(view.scroller.getAttribute("data-effect"), "...");
+  h.scroll(view.scroller, "moved", 43, 45, 200, 0);
+  assert.equal(h.posts.length, 1);
+  assert.equal(view.scroller.getAttribute("data-effect"), null, "one report is on its way at a time");
+  assert.deepEqual(h.posts[0].body, {
+    version: 1, type: "scroll", sequence: 1, revision: 7, view: 12, node: 4,
+    top: 42, offset: 16, last: 50, at: 1000, drawnStart: 960, drawnEnd: 1200,
+    drawnFirst: 41, drawnLast: 50, height: 200, request: 0,
+  });
+  const other = scrolledView();
+  const resized = await harness(new Element({ "data-revision": 7 }), "Linux x86_64", other.at);
+  resized.scroll(other.scroller, "moved", 41, 45, 744, 3);
+  assert.equal(resized.posts.length, 1);
+  assert.equal(resized.posts[0].body.request, 3);
+});
+
+test("scrolling always reports when it ends, keeping the trigger", async () => {
+  const view = scrolledView();
+  const h = await harness(new Element({ "data-revision": 7 }), "Linux x86_64", view.at);
+  h.scroll(view.scroller, "rest", 41, 45, 200, 0);
+  assert.equal(h.posts.length, 1);
+  assert.equal(h.posts[0].body.top, 42);
+  assert.equal(view.scroller.getAttribute("data-effect"), "...");
+});
+

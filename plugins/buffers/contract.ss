@@ -18,7 +18,14 @@
 ;;; to or removed from a keymap are not, the keymap generation tracks them
 ;;; (keys contract). A view is one
 ;;; place in the layout showing a buffer: the focused text node, point, and
-;;; the goal column, so two views of one buffer have their own points.
+;;; the goal column, so two views of one buffer have their own points. A
+;;; view also has an anchor, where it is scrolled to (Emacs's window-start
+;;; plus vscroll): the start of the line at its top, in one text node, and
+;;; how many pixels of that line are above the view's top. The anchor moves
+;;; with edits as point does. Beside it are the facts the browser last
+;;; reported about the view (`scroll-facts`), and the number of the last
+;;; request to move the view, which reports name so that stale ones can
+;;; be told apart.
 ;;; Editing primitives act on the selected view's focused text node. Positions are 1-based character positions within that node's
 ;;; text.
 ;;;
@@ -82,6 +89,10 @@ prelude: :gerbil/core
         view view? view-id view-showing view-node view-position view-revision
         new-view new-view-at copy-view reset-view!
         view-point set-view-point! set-view-showing!
+        view-anchor view-anchor-node view-anchor-offset set-view-anchor!
+        (struct-out scroll-facts) view-facts set-view-facts!
+        view-first-visible-line view-last-visible-line
+        view-scroll-request set-view-scroll-request!
         selected-view set-selected-view!
         current-buffer switch-to-buffer
         current-text-node current-text
@@ -178,12 +189,31 @@ prelude: :gerbil/core
 
 ;;; Views
 
-(defclass view ((id          : :fixnum)
-                (showing     : buffer)
-                (focus       :? node)             ; the focused text node
-                (position    : :fixnum)           ; point, valid at REVISION
-                (revision    : :fixnum)           ; of the node's text
-                (goal-column :? :fixnum))
+;; What the browser last reported about a view's scrolling. Lines count
+;; from 1 in the anchor's text node; pixel positions are measured down
+;; from the top of that node's element, so they do not depend on what the
+;; buffer draws above it.
+(defstruct scroll-facts ((first-visible-line :? :fixnum)   ; the line at the view's top, if any
+                         (last-visible-line  :? :fixnum)   ; the last line in view, if any
+                         (viewport-top       : :flonum)    ; px from the text's top to the view's
+                         (viewport-height    : :fixnum)    ; px
+                         (line-height        : :flonum)    ; average px per drawn line
+                         (drawn-first        : :fixnum)    ; the lines drawn, first and last
+                         (drawn-last         : :fixnum))
+  final: #t)
+
+(defclass view ((id              : :fixnum)
+                (showing         : buffer)
+                (focus           :? node)         ; the focused text node
+                (position        : :fixnum)       ; point, valid at REVISION
+                (revision        : :fixnum)       ; of the node's text
+                (goal-column     :? :fixnum)
+                (anchor-node     :? node)         ; the text node the anchor is in
+                (anchor-position : :fixnum)       ; its line's start, valid at ANCHOR-REVISION
+                (anchor-revision : :fixnum)       ; of the anchor node's text
+                (anchor-offset   : :flonum)       ; px of the anchor line above the view's top
+                (facts           :? scroll-facts)
+                (scroll-request  : :fixnum))
   final: #t)
 
 ;; Neutral saved buffers (the autosave slot `buffers`, version 1):
@@ -655,20 +685,31 @@ prelude: :gerbil/core
 ;;; Views
 
 ;; A view of B with its point at POSITION in text node N, valid at N's
-;; text revision REVISION. For buffers providers, which must not call the
-;; dispatchers before they provide the service.
+;; text revision REVISION, scrolled to the top of N. For buffers
+;; providers, which must not call the dispatchers before they provide the
+;; service.
 (def (new-view-at (b : buffer) (n :? node) (position : :fixnum) (revision : :fixnum)) => view
-  (view id: (next-id!) showing: b focus: n position: position revision: revision goal-column: #f))
+  (view id: (next-id!) showing: b focus: n position: position revision: revision goal-column: #f
+        anchor-node: n anchor-position: 1 anchor-revision: revision anchor-offset: 0.
+        facts: #f scroll-request: 0))
 
 ;; Point V, keeping its identity, at B with its point at POSITION in N,
-;; valid at N's text revision REVISION. For buffers providers adopting the
-;; selected view when rebuilding state.
+;; valid at N's text revision REVISION, scrolled to the top of N. For
+;; buffers providers adopting the selected view when rebuilding state.
 (def (reset-view! (v : view) (b : buffer) (n :? node) (position : :fixnum) (revision : :fixnum))
   => :void
   (set! v.showing b)
   (set! v.focus n)
   (set! v.position position)
-  (set! v.revision revision))
+  (set! v.revision revision)
+  (scroll-to-top! v n revision))
+
+;; Anchor V at the top of N, whose text is at character revision REVISION.
+(def (scroll-to-top! (v : view) (n :? node) (revision : :fixnum)) => :void
+  (set! v.anchor-node n)
+  (set! v.anchor-position 1)
+  (set! v.anchor-revision revision)
+  (set! v.anchor-offset 0.))
 
 ;; The character revision of N's text, or 0 without one.
 (def (node-chars-revision (n :? node)) => :fixnum
@@ -718,7 +759,51 @@ prelude: :gerbil/core
           (set! v.focus n)
           (set! v.position (Buffers-buffer-point bs b))
           (set! v.revision (node-chars-revision n))
-          (set! v.goal-column #f))))) :void))
+          (set! v.goal-column #f)
+          (scroll-to-top! v n v.revision))))) :void))
+
+;; The start of the line at V's top, relocated through the changes made
+;; since V last looked, or #f when V has no anchor node. An edit that
+;; leaves the anchor inside a line moves it to that line's start.
+(def (view-anchor (v : view)) => (Maybe :fixnum)
+  (let (n v.anchor-node)
+    (and n
+         (let* ((t (text-node-content n))
+                (revision (text-chars-revision t)))
+           (unless (fx= v.anchor-revision revision)
+             (let (moved (relocate-position t v.anchor-position v.anchor-revision))
+               (set! v.anchor-position (text-line-start t (text-line-at t moved)))
+               (set! v.anchor-revision revision)))
+           v.anchor-position))))
+
+;; Anchor V at the start of the line holding POSITION in text node N,
+;; OFFSET px of that line above V's top.
+(def (set-view-anchor! (v : view) (n : node) (position : :fixnum) (offset : :flonum)) => :void
+  (let* ((t (text-node-content n))
+         (s (text-snapshot t)))
+    (set! v.anchor-node n)
+    (set! v.anchor-position
+      (text-line-start t (text-line-at t (fxmax 1 (fxmin position (fx1+ (snapshot-size s)))))))
+    (set! v.anchor-revision (snapshot-revision s))
+    (set! v.anchor-offset offset)))
+
+(def (set-view-facts! (v : view) (facts : scroll-facts)) => :void
+  (set! v.facts facts))
+
+;; The line at V's top, as last reported, or #f.
+(def (view-first-visible-line (v : view)) => (Maybe :fixnum)
+  (let (facts v.facts)
+    (and facts (scroll-facts-first-visible-line facts))))
+
+;; The last line in V, as last reported, or #f.
+(def (view-last-visible-line (v : view)) => (Maybe :fixnum)
+  (let (facts v.facts)
+    (and facts (scroll-facts-last-visible-line facts))))
+
+;; Number a new request to move V. Reports naming an older request are
+;; stale.
+(def (set-view-scroll-request! (v : view) (request : :fixnum)) => :void
+  (set! v.scroll-request request))
 
 (def (selected-view) => view
   (:- (with-service-provider (provider buffers-service Buffers) (: (Buffers-selected-view provider) view)) view))

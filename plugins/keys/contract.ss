@@ -29,6 +29,13 @@
 ;;; contract finds the view and node a posn names (`posn-view`,
 ;;; `posn-node`).
 ;;;
+;;; A scroll report (`scroll-event`) is what the browser saw after a view
+;;; scrolled. It is looked up like a click, under `scroll-key` ("<scroll>"),
+;;; in the keymaps from the root of the scrolled view's buffer up, then the
+;;; innermost input target's and the global keymap, so the command that
+;;; handles it can be rebound or advised. It neither ends nor joins a
+;;; pending key sequence, and an unbound one is ignored quietly.
+;;;
 ;;; The keymap generation (`keymap-generation`) changes whenever any
 ;;; binding is added or removed, so renderers that reuse HTML marked from
 ;;; bindings (`data-clickable`) know to draw it again.
@@ -39,8 +46,9 @@ prelude: :gerbil/core
         (only-in :tuna/plugins/buffers/contract node))
 (export context-set-click-resolver!
         where-is
-        (struct-out key-event posn pointer-event)
+        (struct-out key-event posn pointer-event scroll-event)
         pointer-event-names
+        scroll-key
         event-start
         part-clickable?
         keymap-clickable?
@@ -104,6 +112,28 @@ prelude: :gerbil/core
                           (start    : posn))
   final: #t)
 
+;; What the browser reports after view (START's part) scrolled, with its
+;; page-load sequence number (ADR 7, ADR 10). START names the view, its
+;; windowed text node, and the screen the report was computed on. Lines
+;; count from 1 in that text; pixel positions are measured down from the
+;; top of its element. REQUEST is the last scroll request the page applied.
+(defstruct scroll-event ((sequence        : :fixnum)
+                         (start           : posn)
+                         (top-line        :? :fixnum)   ; the line at the view's top, if any
+                         (top-offset      : :flonum)    ; px of that line above the view's top
+                         (last-line       :? :fixnum)   ; the last line in view, if any
+                         (viewport-top    : :flonum)
+                         (drawn-start     : :flonum)    ; the top of the first line drawn
+                         (drawn-end       : :flonum)    ; the bottom of the last line drawn
+                         (drawn-first     : :fixnum)    ; the first and last lines drawn
+                         (drawn-last      : :fixnum)
+                         (viewport-height : :fixnum)
+                         (request         : :fixnum))
+  final: #t)
+
+;; The key scroll events are looked up under.
+(def scroll-key "<scroll>")
+
 ;; The names EVENT is looked up under, most specific first: modifiers,
 ;; then `double-` or `triple-`, then `mouse-BUTTON`; a triple click falls
 ;; back to the double one and a double to the single one, as in Emacs:
@@ -121,10 +151,13 @@ prelude: :gerbil/core
             ((fx= event.clicks 2) ["double-" ""])
             (else [""]))))))
 
-;; Where EVENT happened: a pointer event's posn, or #f for a key event,
-;; which has no position (Emacs gives point in the selected window).
+;; Where EVENT happened: a pointer or scroll event's posn, or #f for a key
+;; event, which has no position (Emacs gives point in the selected window).
 (def (event-start (event : :t)) => (Maybe posn)
-  (and (pointer-event? event) (pointer-event-start event)))
+  (cond
+   ((pointer-event? event) (pointer-event-start event))
+   ((scroll-event? event) (scroll-event-start event))
+   (else #f)))
 
 ;; Report in the echo area that the part P names is gone, naming the
 ;; screen it was clicked on; the click does nothing else. WHAT names the
@@ -168,8 +201,8 @@ prelude: :gerbil/core
   (remove-input-target! (target : input-target)) => :void
   ;; The effective binding entry for KEYS, or #f.
   (key-binding (keys : :string)) => :t
-  ;; The key or pointer event that completed the running command's keys,
-  ;; or #f (Emacs `last-command-event`).
+  ;; The key, pointer or scroll event that completed the running
+  ;; command's keys, or #f (Emacs `last-command-event`).
   (last-command-event) => :t
   ;; A number that changes whenever a binding is added to or removed from
   ;; any keymap.
@@ -221,7 +254,7 @@ prelude: :gerbil/core
 (def (key-binding (keys : :string)) => :t
   (with-service-provider (provider input-service Keys) (Keys-key-binding provider keys)))
 
-;; A key-event, a pointer-event, or #f.
+;; A key-event, a pointer-event, a scroll-event, or #f.
 (def (last-command-event) => :t
   (with-service-provider (provider input-service Keys) (Keys-last-command-event provider)))
 

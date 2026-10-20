@@ -12,7 +12,10 @@
 (def some-buffer (buffer id: 0))
 
 (def (leaf-of id)
-  (make-leaf (view id: id showing: some-buffer focus: #f position: 1 revision: 0 goal-column: #f) #f))
+  (make-leaf (view id: id showing: some-buffer focus: #f position: 1 revision: 0 goal-column: #f
+                   anchor-node: #f anchor-position: 1 anchor-revision: 0 anchor-offset: 0.
+                   facts: #f scroll-request: 0)
+             #f))
 
 (def (ids parts) (map part-id parts))
 

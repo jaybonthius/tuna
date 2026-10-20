@@ -11,6 +11,7 @@
   --status-line-selected-foreground: Canvas;
   --status-line-border: CanvasText;
   --status-line-padding: 0 1ch;
+  --spacer-placeholder: color-mix(in srgb, CanvasText 8%, transparent);
   --clickable-hover: color-mix(in srgb, CanvasText 12%, transparent);
   --clickable-pressed: color-mix(in srgb, CanvasText 24%, transparent);
 }

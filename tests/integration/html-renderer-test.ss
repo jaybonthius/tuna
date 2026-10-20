@@ -1,5 +1,6 @@
 ;;; The HTML renderer: nodes, highlights and cursors, element ids, the
-;;; parts a click can name, the layout drawn from the frame, and HTML reuse.
+;;; parts a click can name, the layout drawn from the frame, HTML reuse, and
+;;; windowing the text that holds a view's anchor.
 (import (only-in :gerbil/runtime/mop slot-ref)
         (only-in :gerbil/runtime/interface interface-instance-object)
         :std/test
@@ -84,6 +85,11 @@
   (let (right (split-view (selected-view) 'right))
     (set-view-buffer (selected-view) (get-buffer "a"))
     (set-view-buffer right (get-buffer "b"))))
+
+;; "1\n2\n...50000".
+(def (fifty-thousand-lines)
+  (string-join (let lp ((n 50000) (out [])) (if (zero? n) out (lp (- n 1) (cons (number->string n) out))))
+               "\n"))
 
 ;; Position of NEEDLE in HAYSTACK, or #f.
 (def (offset needle haystack)
@@ -350,4 +356,66 @@
          (hash-clear! renders)
          (deactivate-plugin! remapping)
          (check (and (string-contains (screen) "face-digit") #t) => #t)
-         (check [(renders-of "a") (renders-of "b")] => [2 3]))))))
+         (check [(renders-of "a") (renders-of "b")] => [2 3]))))
+
+    (test-case "windowing: a view draws only the lines around its anchor, between spacers"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (insert (fifty-thousand-lines))
+         (goto-char 1)
+         (let* ((v (selected-view))
+                (n (view-node v))
+                (t (current-text))
+                (has? (lambda (html needle) (and (offset needle html) #t))))
+           ;; Before any report: 24 px lines and a 1,000 px view, from line 1.
+           (let (html (screen))
+             (check (has? html "data-line=\"1\"") => #t)
+             (check (has? html "data-line=\"209\"") => #t)
+             (check (has? html "data-line=\"210\"") => #f)
+             (check (has? html "-above\"") => #f)
+             (check (has? html "block-size: 1194984px") => #t)
+             (check (has? html "@tunaScroll('moved', 1, 85, -1, 0)") => #t))
+           ;; Line 25,000 at the top, 5 px into it, as the browser has it at
+           ;; 600,000 px; 20 px lines in a 744 px view.
+           (set-view-anchor! v n (text-line-start t 25000) 5.)
+           (set-view-facts! v (make-scroll-facts 25000 25037 600000. 744 20. 24800 25200))
+           (let (html (screen))
+             (check (has? html "data-line=\"24849\"") => #f)
+             (check (has? html "data-line=\"24850\"") => #t)
+             (check (has? html "data-line=\"25237\"") => #t)
+             (check (has? html "data-line=\"25238\"") => #f)
+             ;; The anchor line's top stays at 599,995 px: 150 lines above it.
+             (check (has? html "block-size: 596995px") => #t)
+             (check (has? html "block-size: 495260px") => #t)
+             (check (has? html "@tunaScroll('moved', 24925, 25100, 744, 0)") => #t)
+             (check (has? html "@tunaScroll('rest', 24925, 25100, 744, 0)") => #t))
+           ;; A report that leaves the anchor line within 24,925 to 25,100
+           ;; keeps the window as drawn.
+           (set-view-anchor! v n (text-line-start t 25050) 0.)
+           (set-view-facts! v (make-scroll-facts 25050 25087 1000. 744 20. 24850 25237))
+           (check (has? (screen) "block-size: 596995px") => #t)
+           ;; Drawn again (here for another view height), where the browser
+           ;; has the anchor line too high for the lines above, the top
+           ;; spacer keeps their estimated room.
+           (set-view-anchor! v n (text-line-start t 25000) 0.)
+           (set-view-facts! v (make-scroll-facts 25000 25037 1000. 745 20. 24850 25237))
+           (check (has? (screen) "block-size: 496980px") => #t)))))
+
+    (test-case "windowing: line ids stay with their text through an edit above"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (insert (fifty-thousand-lines))
+         (let* ((v (selected-view))
+                (n (view-node v))
+                (t (current-text))
+                (prefix (string-append "id=\"view-" (number->string (view-id v))
+                                       "-node-" (number->string (node-id n)) "-line-")))
+           (set-view-anchor! v n (text-line-start t 25000) 0.)
+           (check (and (offset (string-append prefix "25000\" data-line=\"25000\">25000<") (screen)) #t) => #t)
+           ;; Two lines inserted at the top: the text "25000" is line 25002 now,
+           ;; and keeps its element.
+           (goto-char 1)
+           (insert "a\nb\n")
+           (let (html (screen))
+             (check (and (offset (string-append prefix "25000\" data-line=\"25002\">25000<") html) #t) => #t))))))))
+

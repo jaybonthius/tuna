@@ -9,6 +9,9 @@
 ;;; without it, each from the most specific event name down
 ;;; (`pointer-event-names`), before the next keymap. A click does not clear
 ;;; the echo area, so clicking it to read a message keeps the message.
+;;; Scroll reports resolve under "<scroll>" from the root of the scrolled
+;;; view's buffer, leaving a pending prefix, the echo area and the last
+;;; command event as they were.
 
 (import :tuna/kernel
         :tuna/plugins/keys/contract
@@ -275,13 +278,27 @@
         (message (string-append (car sequences) " is undefined"))
         #f))))
 
+;; A scroll report arrives whenever the browser needs a redraw, between
+;; the keys of a sequence too, so it changes no key state.
+(def (resolve-scroll! (self : global-keys) (event : scroll-event)) => (Maybe :pair)
+  (let (found (find-binding (active-keymaps self (clicked-node self (scroll-event-start event)))
+                            scroll-key #f))
+    (and found (not (eq? found 'prefix))
+         (let (name (entry-value found))
+           (and (command-entry name)
+                (cons name (lambda ()
+                             (parameterize ((activation-event event))
+                               (call-command name)))))))))
+
 (defmethod {resolve! global-keys}
   (lambda (self event)
-    (if (pointer-event? event)
-      (resolve-pointer! self event)
-      (resolve-key! self event))))
+    (cond
+     ((pointer-event? event) (resolve-pointer! self event))
+     ((scroll-event? event) (resolve-scroll! self event))
+     (else (resolve-key! self event)))))
 
-;; The quit key interrupts; every other key or pointer event is queued.
+;; The quit key interrupts; every other key, pointer or scroll event is
+;; queued.
 (defmethod {arrival global-keys}
   (lambda (self event)
     ;; Alt can never produce the quit key. In particular, Mac Option

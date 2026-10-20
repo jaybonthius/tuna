@@ -1,7 +1,7 @@
 ;;; The web transport over real loopback HTTP on an ephemeral port: the
-;;; plain URL, Host and Origin checks, and event
-;;; requests: keydowns and pointer items, validated strictly, and the
-;;; screen revision pointer items name. A stand-in provides the input the
+;;; plain URL, Host and Origin checks, event requests (keydowns, pointer
+;;; and scroll items, validated strictly, and the screen revision pointer
+;;; and scroll items name), and the screen stream's re-sends. A stand-in provides the input the
 ;;; editor loop needs; another records the items it resolves.
 (import :std/io
         :std/test
@@ -49,6 +49,31 @@
                       headers: [(cons "Datastar-Request" "true")
                                 (cons "Content-Type" "application/json")]
                       body: body)))
+
+;; A scroll item as JSON: view 12's text node 4 on screen 0, line 30 at
+;; the top, with the fields in CHANGES, each (name . raw-json), or (name .
+;; #f) to leave the field out.
+(def (scroll-json . changes)
+  (let* ((fields '(("version" . "1") ("type" . "\"scroll\"") ("sequence" . "1") ("revision" . "0")
+                   ("view" . "12") ("node" . "4") ("top" . "30") ("offset" . "5.5") ("last" . "61")
+                   ("at" . "700.25") ("drawnStart" . "0") ("drawnEnd" . "9600")
+                   ("drawnFirst" . "1") ("drawnLast" . "400") ("height" . "744") ("request" . "0")))
+         (merged (filter cdr (map (lambda (field) (or (assoc (car field) changes) field)) fields))))
+    (string-append
+     "{"
+     (string-join (map (lambda (field) (string-append "\"" (car field) "\":" (cdr field))) merged) ",")
+     "}")))
+
+;; The data-revision of each screen event in TEXT, oldest first.
+(def (screen-revisions text)
+  (let lp ((rest text) (out []))
+    (let (at (string-search "data-revision=\"" rest))
+      (if at
+        (let* ((from (+ at 15))
+               (to (string-index rest #\" from)))
+          (lp (substring rest to (string-length rest))
+              (cons (string->number (substring rest from to)) out)))
+        (reverse out)))))
 
 (def web-test
   (test-suite "tuna/plugins/web"
@@ -264,4 +289,61 @@
              ("target" . "\"tab-line:3x\"") ("target" . "\"1tab-line:30\"") ("target" . "30") ("target" . #f)
              ("target" . "\"tab-line:1234567890123456\"")
              ("node" . "\"4\"") ("node" . "-4") ("node" . "4.5")))
-         (check (length (recorded-items 1)) => 1))))))
+         (check (length (recorded-items 1)) => 1))))
+
+    (test-case "a scroll item becomes a scroll event naming its view, text node and screen"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (let (revision (page-revision))
+           (check (post-json (scroll-json (cons "revision" (number->string revision)))) => 204)
+           (check (post-json (scroll-json (cons "sequence" "2") (cons "top" "null") (cons "last" "null")
+                                          (cons "request" "3"))) => 204)
+           (let (items (recorded-items 2))
+             (check (length items) => 2)
+             (let ((e (car items))
+                   (bare (cadr items)))
+               (let (p (scroll-event-start e))
+                 (check [(posn-area p) (posn-part p) (posn-node-id p) (posn-revision p)]
+                        => ['view 12 4 revision]))
+               (check [(scroll-event-top-line e) (scroll-event-top-offset e) (scroll-event-last-line e)]
+                      => [30 5.5 61])
+               (check [(scroll-event-viewport-top e) (scroll-event-drawn-start e) (scroll-event-drawn-end e)]
+                      => [700.25 0. 9600.])
+               (check [(scroll-event-drawn-first e) (scroll-event-drawn-last e)
+                       (scroll-event-viewport-height e) (scroll-event-request e)]
+                      => [1 400 744 0])
+               (check [(scroll-event-top-line bare) (scroll-event-last-line bare) (scroll-event-request bare)]
+                      => [#f #f 3])))))))
+
+    (test-case "malformed and forged scroll items get 204 without being submitted"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (check (post-json (scroll-json)) => 204)
+         (for-each
+           (lambda (change)
+             (check [change (post-json (scroll-json change (cons "sequence" "2")))] => [change 204]))
+           '(("version" . "2") ("type" . "\"scrolled\"")
+             ("sequence" . "0") ("sequence" . "\"2\"")
+             ;; A screen the transport never sent.
+             ("revision" . "999999") ("revision" . "-1")
+             ("view" . "-1") ("view" . "\"12\"") ("view" . #f) ("node" . "1.5") ("node" . #f)
+             ("top" . "0") ("top" . "2.5") ("top" . #f) ("last" . "-3") ("last" . #f)
+             ("offset" . "\"5\"") ("offset" . "null") ("offset" . "1e12")
+             ("at" . "true") ("at" . #f) ("drawnStart" . "9601") ("drawnEnd" . "[]")
+             ("drawnFirst" . "0") ("drawnFirst" . "401") ("drawnLast" . "1.5")
+             ("height" . "-1") ("height" . "744.5") ("height" . "2000000")
+             ("request" . "-1") ("request" . "null")))
+         (check (length (recorded-items 1)) => 1))))
+
+    (test-case "the stream sends the newest screen again while nothing changes"
+      (with-tuna
+       (lambda ()
+         (let* ((stream (open-screen-stream))
+                (text (read-until stream (lambda (text) (>= (length (screen-revisions text)) 4))))
+                (revisions (screen-revisions text)))
+           (Socket-close stream)
+           (check (>= (length revisions) 4) => #t)
+           ;; Every screen after the first is the same one, sent again.
+           (check (length (filter (cut = (car (reverse revisions)) <>) revisions)) ? (cut >= <> 3))))))))
