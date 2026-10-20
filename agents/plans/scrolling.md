@@ -1,6 +1,6 @@
 # Plan: scrolling
 
-**Status: approved 2026-10-17.** Briefs: [`docs/briefs/2026-10-scroll-state.md`](../../docs/briefs/2026-10-scroll-state.md) (the model; it supersedes the spacer and height-guess parts of [`2026-10-scrolling.md`](../../docs/briefs/2026-10-scrolling.md)). Evidence: [`agents/research/scrolling/README.md`](../research/scrolling/README.md). Already on `main` and kept: windowed drawing, one report in flight, screens sent only once the page applied the last (`/applied`), input bodies read before answering, the `drawn-above`/`drawn-below` settings, the `*long*` demo.
+**Status: approved 2026-10-17; stage 1 merged 2026-10-17 (report `agents/research/scrolling/stage1-scroll-state-report.md`); stage 2 next.** Briefs: [`docs/briefs/2026-10-scroll-state.md`](../../docs/briefs/2026-10-scroll-state.md) (the model; it supersedes the spacer and height-guess parts of [`2026-10-scrolling.md`](../../docs/briefs/2026-10-scrolling.md)). Evidence: [`agents/research/scrolling/README.md`](../research/scrolling/README.md). Already on `main` and kept: windowed drawing, one report in flight, screens sent only once the page applied the last (`/applied`), input bodies read before answering, the `drawn-above`/`drawn-below` settings, the `*long*` demo.
 
 ## Invariants
 
