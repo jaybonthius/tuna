@@ -2,12 +2,15 @@
 ;;; Web transport (startup tier): the loopback HTTP server, the page shell,
 ;;; ordered input over POST /commands, and the screen stream (ADR 7, ADR 10).
 ;;;
-;;; POST /commands takes one input item: a keydown, a pointer or a scroll
-;;; item, each with its page-load sequence number, validated strictly into
-;;; a key-event, a pointer-event or a scroll-event. Each screen carries its
-;;; revision as data-revision on its root element, and pointer and scroll
-;;; items name the screen they were computed on, which must be one this
-;;; transport sent.
+;;; POST /commands takes one input item: a keydown, a pointer, a scroll or
+;;; a scroll bar item, each with its page-load sequence number, validated
+;;; strictly into a key-event, a pointer-event, a scroll-event or a
+;;; scroll-bar-event. Each screen carries its revision as data-revision on
+;;; its root element, and pointer, scroll and scroll bar items name the
+;;; screen they were computed on, which must be one this transport sent.
+;;; The page's actions (frontend/) measure and report scrolling
+;;; (tunaScroll), place a view where the server asks (tunaPlace), and drag
+;;; and click a view's scroll bar (tunaScrollBar).
 ;;;
 ;;; Each page's stream sends a screen only once the page has applied the
 ;;; previous one: every screen carries a data-init that posts /applied when
@@ -41,7 +44,8 @@
         :tuna/version
         :tuna/lib/plugin-options
         (only-in :tuna/plugins/keys/contract key-event make-key-event pointer-event make-pointer-event
-                 scroll-event make-scroll-event make-posn)
+                 scroll-event make-scroll-event scroll-bar-event make-scroll-bar-event
+                 posn make-posn)
         :tuna/plugins/renderer/contract
         :tuna/plugins/stylesheets/contract
         :tuna/plugins/web/embed)
@@ -577,49 +581,82 @@
 (def (parse-pixels (value : :t)) => (Maybe :flonum)
   (and (real? value) (<= -1e9 value 1e9) (exact->inexact value)))
 
-(def (line-number? (value : :t)) => :boolean
-  (and (fixnum? value) (fx>= value 1)))
+(def (count? (value : :t)) => :boolean
+  (and (fixnum? value) (fx>= value 0)))
+
+;; An item token (the buffers contract's item-token: digits and dots), or
+;; null for none: (VALID? . TOKEN), TOKEN #f for null.
+(def (parse-token (value : :t)) => :pair
+  (cond
+   ((void? value) (cons #t #f))
+   ((and (string? value)
+         (fx<= 1 (string-length value) 64)
+         (andmap (lambda ((c : :char)) (or (char-numeric? c) (char=? c #\.))) (string->list value)))
+    (cons #t value))
+   (else (cons #f #f))))
+
+;; The posn of an item about view VIEW's scroller drawing from node NODE
+;; (area AREA) on screen REVISION, no newer than NEWEST-REVISION, or #f.
+(def (scroller-posn (area : :symbol) (value : HashTable) (newest-revision : :fixnum)) => (Maybe posn)
+  (let ((revision (hash-get value "revision"))
+        (view (hash-get value "view"))
+        (node (hash-get value "node")))
+    (and (fixnum? revision) (fx<= 0 revision newest-revision)
+         (count? view) (count? node)
+         (make-posn area view node revision))))
 
 ;; A validated scroll item computed on a screen no newer than
-;; NEWEST-REVISION, or #f. TOP and LAST are null when no line is there,
-;; but never missing.
+;; NEWEST-REVISION, or #f. TOP and LASTVISIBLE are null when no item is
+;; there, but never missing.
 (def (parse-scroll-event (value : :t) (newest-revision : :fixnum)) => (Maybe scroll-event)
   (and (hash-table? value)
        (eqv? (hash-get value "version") 1)
        (equal? (hash-get value "type") "scroll")
        (hash-key? value "top")
-       (hash-key? value "last")
+       (hash-key? value "lastVisible")
        (let ((sequence (hash-get value "sequence"))
-             (revision (hash-get value "revision"))
-             (view (hash-get value "view"))
-             (node (hash-get value "node"))
-             (top (hash-get value "top"))
-             (last (hash-get value "last"))
+             (start (scroller-posn 'view value newest-revision))
+             (placement (hash-get value "placement"))
+             (top (parse-token (hash-get value "top")))
              (offset (parse-pixels (hash-get value "offset")))
-             (at (parse-pixels (hash-get value "at")))
-             (drawn-start (parse-pixels (hash-get value "drawnStart")))
-             (drawn-end (parse-pixels (hash-get value "drawnEnd")))
-             (drawn-first (hash-get value "drawnFirst"))
-             (drawn-last (hash-get value "drawnLast"))
-             (height (hash-get value "height"))
-             (request (hash-get value "request")))
+             (last-visible (parse-token (hash-get value "lastVisible")))
+             (before (hash-get value "before"))
+             (after (hash-get value "after"))
+             (above (parse-pixels (hash-get value "above")))
+             (below (parse-pixels (hash-get value "below")))
+             (width (hash-get value "width"))
+             (height (hash-get value "height")))
          (and (fixnum? sequence) (fx>= sequence 1)
-              (fixnum? revision) (fx<= 0 revision newest-revision)
-              (fixnum? view) (fx>= view 0)
-              (fixnum? node) (fx>= node 0)
-              (or (void? top) (line-number? top))
-              (or (void? last) (line-number? last))
-              offset at drawn-start drawn-end
-              (fl<= drawn-start drawn-end)
-              (line-number? drawn-first) (line-number? drawn-last)
-              (fx<= drawn-first drawn-last)
+              start
+              (count? placement)
+              (car top) offset (car last-visible)
+              (count? before) (count? after)
+              above below
+              (fixnum? width) (fx<= 0 width 1000000)
               (fixnum? height) (fx<= 0 height 1000000)
-              (fixnum? request) (fx>= request 0)
-              (make-scroll-event sequence (make-posn 'view view node revision)
-                                 (and (fixnum? top) top) offset (and (fixnum? last) last)
-                                 at drawn-start drawn-end drawn-first drawn-last height request)))))
+              (make-scroll-event sequence start placement (cdr top) offset (cdr last-visible)
+                                 before after above below width height)))))
 
-;; A validated keydown, pointer or scroll item, or #f.
+;; The parts of a scroll bar a scroll bar item names.
+(def scroll-bar-parts '(("handle" . handle) ("above-handle" . above-handle) ("below-handle" . below-handle)))
+
+;; A validated scroll bar item computed on a screen no newer than
+;; NEWEST-REVISION, or #f.
+(def (parse-scroll-bar-event (value : :t) (newest-revision : :fixnum)) => (Maybe scroll-bar-event)
+  (and (hash-table? value)
+       (eqv? (hash-get value "version") 1)
+       (equal? (hash-get value "type") "scroll-bar")
+       (let ((sequence (hash-get value "sequence"))
+             (start (scroller-posn 'vertical-scroll-bar value newest-revision))
+             (part (assoc (hash-get value "part") scroll-bar-parts))
+             (fraction (hash-get value "fraction")))
+         (and (fixnum? sequence) (fx>= sequence 1)
+              start
+              part
+              (real? fraction) (<= 0 fraction 1)
+              (make-scroll-bar-event sequence start (cdr part) (exact->inexact fraction))))))
+
+;; A validated keydown, pointer, scroll or scroll bar item, or #f.
 (def (parse-input-item (value : :t) (newest-revision : :fixnum)) => :t
   (and (hash-table? value)
        (let (type (hash-get value "type"))
@@ -627,6 +664,7 @@
           ((equal? type "keydown") (parse-key-event value))
           ((equal? type "pointer") (parse-pointer-event value newest-revision))
           ((equal? type "scroll") (parse-scroll-event value newest-revision))
+          ((equal? type "scroll-bar") (parse-scroll-bar-event value newest-revision))
           (else #f)))))
 
 ;;; The plugin

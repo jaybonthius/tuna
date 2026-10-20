@@ -18,14 +18,18 @@
 ;;; to or removed from a keymap are not, the keymap generation tracks them
 ;;; (keys contract). A view is one
 ;;; place in the layout showing a buffer: the focused text node, point, and
-;;; the goal column, so two views of one buffer have their own points. A
-;;; view also has an anchor, where it is scrolled to (Emacs's window-start
-;;; plus vscroll): the start of the line at its top, in one text node, and
-;;; how many pixels of that line are above the view's top. The anchor moves
-;;; with edits as point does. Beside it are the facts the browser last
-;;; reported about the view (`scroll-facts`), and the number of the last
-;;; request to move the view, which reports name so that stale ones can
-;;; be told apart.
+;;; the goal column, so two views of one buffer have their own points.
+;;;
+;;; A view is a scroller: it lays out the items of the node it draws from
+;;; one after another (see Items below), and the browser scrolls it. Its
+;;; scroll state (Emacs's window-start plus vscroll) is the item at its top
+;;; edge and how many pixels of that item are above the edge, as the
+;;; browser measured: never a size or position the server worked out. The
+;;; item moves with edits as point does. Beside it are what the browser
+;;; last measured of the view (`scroll-facts`), and the view's placement:
+;;; the server asking the browser, once, to put an item at the top, centre
+;;; or bottom of the view. Each placement has a larger number than the
+;;; last, and reports measured before the newest placement are stale.
 ;;; Editing primitives act on the selected view's focused text node. Positions are 1-based character positions within that node's
 ;;; text.
 ;;;
@@ -44,7 +48,8 @@
 ;;; renamed through this contract (Emacs `buffer-list-update-hook`).
 prelude: :gerbil/core
 
-(import :std/interface
+(import (only-in :gerbil/runtime/hash HashTable)
+        :std/interface
         :tuna/kernel
         :tuna/plugins/text-store/contract
         :tuna/plugins/settings/contract)
@@ -77,6 +82,10 @@ prelude: :gerbil/core
         (struct-out node-kind-info)
         context-define-node-kind! context-define-node-renderer!
         node-kind-ref node-renderer node-text-projection
+        ;; items
+        item item? item-node node-opening item-line item=?
+        node-item node-item-count node-item-at node-item-index node-child-items
+        item-token token-item
         ;; buffers
         buffer buffer? buffer-id buffer-name buffer-root new-buffer rename-buffer!
         buffer-setting set-buffer-setting! buffer-local-value settings-buffer
@@ -89,10 +98,11 @@ prelude: :gerbil/core
         view view? view-id view-showing view-node view-position view-revision
         new-view new-view-at copy-view reset-view!
         view-point set-view-point! set-view-showing!
-        view-anchor view-anchor-node view-anchor-offset set-view-anchor!
-        (struct-out scroll-facts) view-facts set-view-facts!
-        view-first-visible-line view-last-visible-line
-        view-scroll-request set-view-scroll-request!
+        view-scroll-item view-scroll-offset set-view-scroll!
+        (struct-out placement) view-placement place-view!
+        (struct-out scroll-facts) view-facts set-view-facts! view-last-visible-item
+        view-drawn-before view-drawn-after set-view-drawn-items! initial-drawn-after
+        drawn-above drawn-below
         selected-view set-selected-view!
         current-buffer switch-to-buffer
         current-text-node current-text
@@ -172,6 +182,17 @@ prelude: :gerbil/core
 (defclass node ((id : :fixnum)))
 (defclass buffer ((id : :fixnum)))
 
+;; An item (see Items): NODE when it is one item; or the line of text
+;; node NODE holding POSITION, valid at its text's character revision
+;; REVISION.
+(defstruct item ((of       : node)    ; `item-node`
+                 (position :? :fixnum)
+                 (revision : :fixnum))
+  final: #t)
+
+(def (item-node (it : item)) => node
+  (item-of it))
+
 ;; A text's content at one character revision: plain, immutable data that
 ;; jobs may read on any thread, because store versions are persistent and
 ;; store operations are pure.
@@ -181,40 +202,74 @@ prelude: :gerbil/core
   final: #t)
 
 ;; A node kind: PROJECT returns a node's text projection (for search, copy,
-;; and renderers without a procedure of their own for the kind).
+;; and renderers without a procedure of their own for the kind); ITEMS
+;; says how its nodes open into items (see Items): 'children or 'whole,
+;; or #f to open a node with children into theirs and make one without
+;; children one item.
 (defstruct node-kind-info ((name    : :symbol)
                            (doc     : :string)
-                           (project :? :procedure))
+                           (project :? :procedure)
+                           (items   :? :symbol))
   final: #t)
 
 ;;; Views
 
-;; What the browser last reported about a view's scrolling. Lines count
-;; from 1 in the anchor's text node; pixel positions are measured down
-;; from the top of that node's element, so they do not depend on what the
-;; buffer draws above it.
-(defstruct scroll-facts ((first-visible-line :? :fixnum)   ; the line at the view's top, if any
-                         (last-visible-line  :? :fixnum)   ; the last line in view, if any
-                         (viewport-top       : :flonum)    ; px from the text's top to the view's
-                         (viewport-height    : :fixnum)    ; px
-                         (line-height        : :flonum)    ; average px per drawn line
-                         (drawn-first        : :fixnum)    ; the lines drawn, first and last
-                         (drawn-last         : :fixnum))
+;; A placement: the server asking the browser, once, to put item TARGET
+;; (#f: the first item the view draws) at the view's top, centre or
+;; bottom (ALIGN 'top, 'center or 'bottom); with 'top, OFFSET px of it
+;; above the top edge. NUMBER is larger than every earlier placement's in
+;; the view. Once the browser confirms it, the placement names where the
+;; view is (`set-view-scroll!`), so a page loaded later puts the view
+;; there again.
+(defstruct placement ((number : :fixnum)
+                      (target :? item)
+                      (align  : :symbol)
+                      (offset : :flonum))
   final: #t)
 
-(defclass view ((id              : :fixnum)
-                (showing         : buffer)
-                (focus           :? node)         ; the focused text node
-                (position        : :fixnum)       ; point, valid at REVISION
-                (revision        : :fixnum)       ; of the node's text
-                (goal-column     :? :fixnum)
-                (anchor-node     :? node)         ; the text node the anchor is in
-                (anchor-position : :fixnum)       ; its line's start, valid at ANCHOR-REVISION
-                (anchor-revision : :fixnum)       ; of the anchor node's text
-                (anchor-offset   : :flonum)       ; px of the anchor line above the view's top
-                (facts           :? scroll-facts)
-                (scroll-request  : :fixnum))
+;; What the browser last measured of a view: the last item in view, how
+;; many items there are from the item at the top to it, and the view's
+;; width and height in px.
+(defstruct scroll-facts ((last-visible  :? item)
+                         (visible-count : :fixnum)
+                         (width         : :fixnum)
+                         (height        : :fixnum))
   final: #t)
+
+;; DRAWN-BEFORE and DRAWN-AFTER are how many items the renderer draws
+;; before and after the scroll item. They are derived state, never saved
+;; with the session: only a fetching step, which the scrolling plugin
+;; works out from what the browser last measured (its `view-scrolled`
+;; writes them; a placement or a new buffer starts them again), and which
+;; the next report corrects. They live on the view, beside the scroll
+;; state they count from, so the renderer can read them without a service
+;; of their own (primary agent, 2026-10-17).
+(defclass view ((id            : :fixnum)
+                (showing       : buffer)
+                (focus         :? node)         ; the focused text node
+                (position      : :fixnum)       ; point, valid at REVISION
+                (revision      : :fixnum)       ; of the node's text
+                (goal-column   :? :fixnum)
+                (top-item      :? item)         ; the item at the top edge; #f: the first
+                (scroll-offset : :flonum)       ; px of it above the edge
+                (last-placement : placement)    ; the newest
+                (facts         :? scroll-facts)
+                (drawn-before  : :fixnum)
+                (drawn-after   : :fixnum))
+  final: #t)
+
+;; How many items a view draws after its scroll item before the browser
+;; has measured anything.
+(def initial-drawn-after 200)
+
+;; How much a view keeps drawn beyond what is in view, in pixels as the
+;; browser measures them: it asks for more when less than half of this is
+;; left, and for less when more than twice this is drawn. More costs
+;; drawing time and page size, and spares a fast scroll from running past
+;; what is drawn before the next screen arrives. The scrolling plugin turns
+;; these into how many items to draw (drawn-before and drawn-after).
+(defsetting drawn-above 20000 "Pixels a view keeps drawn above its top edge.")
+(defsetting drawn-below 20000 "Pixels a view keeps drawn below its bottom edge.")
 
 ;; Neutral saved buffers (the autosave slot `buffers`, version 1):
 ;; (NAME POINT AUTOSAVE-FILE ROOT-NODE-ID), oldest first. Only ordinary
@@ -531,11 +586,14 @@ prelude: :gerbil/core
 (def (context-define-node-kind! (ctx : context)
                                 (name : :symbol)
                                 doc:     (doc     : :string := "")
-                                project: (project :? :procedure := #f))
+                                project: (project :? :procedure := #f)
+                                items:   (items   :? :symbol := #f))
   => :void
+  (unless (memq items '(#f children whole))
+    (error "A kind's nodes open into their children's items or are one item, not" items))
   (:- (with-service-provider (provider buffers-service Buffers)
     (context-add-entry! ctx (: (Buffers-node-kinds provider) entry-table) name
-                        (make-node-kind-info name doc project)
+                        (make-node-kind-info name doc project items)
                         doc: doc)
     (void)) :void))
 
@@ -569,6 +627,207 @@ prelude: :gerbil/core
       (and kind (node-kind-info-project kind)))
     => (lambda ((project : :procedure)) (project n)))
    (else (string-join (map node-text-projection (node-children n)) "\n"))))
+
+;;; Items
+;;;
+;;; A scroller lays out items one after another. How a node opens into
+;;; items depends on it: a text node's items are its lines; a node whose
+;;; kind says 'children, or whose kind does not say and which has children,
+;;; opens into its children's items, in order; any other node is one item.
+;;; Items count from 0 within the node they are counted in. An item keeps
+;;; its identity through edits around it: a node that is one item is
+;;; itself, and a line is a text position on it that relocates as point
+;;; does.
+;;;
+;;; An item's token names it in HTML and in what the browser reports: "N"
+;;; for node N, "N.P.R" for the line holding position P of text node N's
+;;; text at character revision R, so a report about a screen drawn before
+;;; an edit still finds its line.
+;;;
+;;; Counting a node's children's items is kept per node and revision (a
+;;; change to a node or below it gives it a new revision), so counting
+;;; them again, or finding an item by index, does not walk every child. A
+;;; kept count holds no node, so a tree it counted can still be collected.
+;;; On the baton only.
+
+;; How a node opening into its children did at REVISION: the index of each
+;; child's first item, then the item count (STARTS), and each child's
+;; place among its siblings by node id (PLACES).
+(defstruct children-items ((revision : :fixnum)
+                           (starts   : :vector)
+                           (places   : HashTable))
+  final: #t)
+
+(def children-items-kept (make-hash-table test: eq? weak-keys: #t))
+
+;; How N opens into items: 'lines, 'children or 'whole.
+(def (node-opening (n : node)) => :symbol
+  (if (text-node? n)
+    'lines
+    (let* ((kind (node-kind-ref (node-kind n)))
+           (items (and kind (node-kind-info-items kind))))
+      (cond
+       (items items)
+       ((fx> (node-child-count n) 0) 'children)
+       (else 'whole)))))
+
+(def (children-items-of (n : node)) => children-items
+  (let ((revision (node-revision n))
+        (kept (hash-get children-items-kept n)))
+    (if (and kept (fx= (children-items-revision kept) revision))
+      kept
+      (let* ((children (node-children n))
+             (starts (make-vector (fx1+ (length children)) 0))
+             (places (make-hash-table-eqv)))
+        (let lp ((rest children) (place 0) (start 0))
+          (vector-set! starts place start)
+          (match rest
+            ([child . more]
+             (hash-put! places (node-id child) place)
+             (lp more (fx1+ place) (fx+ start (node-item-count child))))
+            ([] (void))))
+        (let (counted (make-children-items revision starts places))
+          (hash-put! children-items-kept n counted)
+          counted)))))
+
+;; How many items N opens into.
+(def (node-item-count (n : node)) => :fixnum
+  (case (node-opening n)
+    ((lines) (text-line-count (text-node-content n)))
+    ((children) (let (starts (children-items-starts (children-items-of n)))
+                  (vector-ref starts (fx1- (vector-length starts)))))
+    (else 1)))
+
+;; N as one item.
+(def (node-item (n : node)) => item
+  (make-item n #f 0))
+
+;; The item at INDEX among N's items.
+(def (node-item-at (n : node) (index : :fixnum)) => item
+  (unless (fx< -1 index (node-item-count n))
+    (error "Item index out of range" index))
+  (case (node-opening n)
+    ((lines)
+     (let (t (text-node-content n))
+       (make-item n (text-line-start t (fx1+ index)) (text-chars-revision t))))
+    ((children)
+     (let* ((starts (children-items-starts (children-items-of n)))
+            (place (child-place starts index)))
+       (node-item-at (car (node-children n place (fx1+ place)))
+                     (fx- index (vector-ref starts place)))))
+    (else (node-item n))))
+
+;; The place of the child whose items hold INDEX, by STARTS: the last
+;; child starting at or before INDEX, which skips children with no items.
+(def (child-place (starts : :vector) (index : :fixnum)) => :fixnum
+  (let lp ((low 0) (high (fx- (vector-length starts) 2)))
+    (if (fx>= low high)
+      low
+      (let (middle (fxquotient (fx+ low high 1) 2))
+        (if (fx<= (vector-ref starts middle) index)
+          (lp middle high)
+          (lp low (fx1- middle)))))))
+
+;; The children of N whose items overlap N's items FIRST to LAST, with
+;; the index among N's items of each one's first item: ((CHILD . START)
+;; ...), in order. For drawing a run of N's items inside N.
+(def (node-child-items (n : node) (first : :fixnum) (last : :fixnum)) => :list
+  (let* ((starts (children-items-starts (children-items-of n)))
+         (from (child-place starts (fxmax first 0)))
+         (to (child-place starts (fxmax first last))))
+    (if (fx> first last)
+      []
+      (let lp ((children (node-children n from (fx1+ to))) (place from) (out []))
+        (match children
+          ([child . more]
+           (let (start (vector-ref starts place))
+             (lp more (fx1+ place)
+                 (if (fx< start (vector-ref starts (fx1+ place)))
+                   (cons (cons child start) out)
+                   out))))
+          ([] (reverse out)))))))
+
+;; The line IT stands for now, or #f when IT is a node.
+(def (item-line (it : item)) => (Maybe :fixnum)
+  (let (position (item-position it))
+    (and position
+         (let (t (text-node-content (item-node it)))
+           (text-line-at t (relocated-position t position (item-revision it)))))))
+
+;; POSITION, valid at T's character revision REVISION, where it is now,
+;; within T. Positions from a revision T never had (a forged token) stay
+;; in range.
+(def (relocated-position (t : text) (position : :fixnum) (revision : :fixnum)) => :fixnum
+  (fxmax 1 (fxmin (relocate-position t position revision) (fx1+ (text-size t)))))
+
+;; Whether A and B are the same item now.
+(def (item=? (a : item) (b : item)) => :boolean
+  (and (eq? (item-node a) (item-node b))
+       (eqv? (item-line a) (item-line b))))
+
+;; Where IT is among ROOT's items, or #f when it is not one of them: its
+;; node is not under ROOT, or a node on the way opens no further.
+(def (node-item-index (root : node) (it : item)) => (Maybe :fixnum)
+  (let* ((n (item-node it))
+         (line (item-line it))
+         (opening (node-opening n)))
+    (and (if line (eq? opening 'lines) (eq? opening 'whole))
+         (let up ((n n) (index (if line (fx1- line) 0)))
+           (if (eq? n root)
+             index
+             (let (parent (node-parent n))
+               (and parent
+                    (eq? (node-opening parent) 'children)
+                    (let* ((counted (children-items-of parent))
+                           (place (hash-get (children-items-places counted) (node-id n))))
+                      (and place
+                           (up parent (fx+ index (vector-ref (children-items-starts counted) place))))))))))))
+
+;; IT's token (see Items).
+(def (item-token (it : item)) => :string
+  (let ((id (number->string (node-id (item-node it))))
+        (position (item-position it)))
+    (if position
+      (let* ((t (text-node-content (item-node it)))
+             (revision (text-chars-revision t))
+             ;; A line item's position is its line's start at its revision.
+             (start (if (fx= revision (item-revision it))
+                      position
+                      (text-line-start t (text-line-at t (relocated-position t position (item-revision it)))))))
+        (string-append id "." (number->string start) "." (number->string revision)))
+      id)))
+
+;; The item of ROOT's items that TOKEN names, or #f.
+(def (token-item (root : node) (token : :string)) => (Maybe item)
+  (let (numbers (map (lambda ((part : :string))
+                       (and (fx< 0 (string-length part) 16)
+                            (andmap char-numeric? (string->list part))
+                            (string->number part)))
+                     (string-split token #\.)))
+    (match numbers
+      ([(? fixnum? id)]
+       (let (n (node-under root id))
+         (and n
+              (let (it (node-item n))
+                (and (node-item-index root it) it)))))
+      ([(? fixnum? id) (? fixnum? position) (? fixnum? revision)]
+       (let (n (node-under root id))
+         (and n (eq? (node-opening n) 'lines)
+              (let (it (make-item n position revision))
+                (and (node-item-index root it) it)))))
+      (else #f))))
+
+;; The node with id ID in the tree at ROOT, or #f.
+(def (node-under (root : node) (id : :fixnum)) => (Maybe node)
+  (cond
+   ((fx= (node-id root) id) root)
+   ((eq? (node-opening root) 'children)
+    (let (place (hash-get (children-items-places (children-items-of root)) id))
+      (if place
+        (car (node-children root place (fx1+ place)))
+        (ormap (cut node-under <> id) (node-children root)))))
+   (else
+    (ormap (cut node-under <> id) (node-children root)))))
 
 ;;; Buffers
 
@@ -685,31 +944,30 @@ prelude: :gerbil/core
 ;;; Views
 
 ;; A view of B with its point at POSITION in text node N, valid at N's
-;; text revision REVISION, scrolled to the top of N. For buffers
-;; providers, which must not call the dispatchers before they provide the
-;; service.
+;; text revision REVISION, scrolled to the top. For buffers providers,
+;; which must not call the dispatchers before they provide the service.
 (def (new-view-at (b : buffer) (n :? node) (position : :fixnum) (revision : :fixnum)) => view
   (view id: (next-id!) showing: b focus: n position: position revision: revision goal-column: #f
-        anchor-node: n anchor-position: 1 anchor-revision: revision anchor-offset: 0.
-        facts: #f scroll-request: 0))
+        top-item: #f scroll-offset: 0. last-placement: (make-placement 0 #f 'top 0.)
+        facts: #f drawn-before: 0 drawn-after: initial-drawn-after))
 
 ;; Point V, keeping its identity, at B with its point at POSITION in N,
-;; valid at N's text revision REVISION, scrolled to the top of N. For
-;; buffers providers adopting the selected view when rebuilding state.
+;; valid at N's text revision REVISION, scrolled to the top. For buffers
+;; providers adopting the selected view when rebuilding state.
 (def (reset-view! (v : view) (b : buffer) (n :? node) (position : :fixnum) (revision : :fixnum))
   => :void
   (set! v.showing b)
   (set! v.focus n)
   (set! v.position position)
   (set! v.revision revision)
-  (scroll-to-top! v n revision))
+  (scroll-to-top! v))
 
-;; Anchor V at the top of N, whose text is at character revision REVISION.
-(def (scroll-to-top! (v : view) (n :? node) (revision : :fixnum)) => :void
-  (set! v.anchor-node n)
-  (set! v.anchor-position 1)
-  (set! v.anchor-revision revision)
-  (set! v.anchor-offset 0.))
+;; Place V's first item at its top, forgetting what the browser measured
+;; of what V showed before.
+(def (scroll-to-top! (v : view)) => :void
+  (place-view! v #f 'top)
+  (set! v.facts #f)
+  (set-view-drawn-items! v 0 initial-drawn-after))
 
 ;; The character revision of N's text, or 0 without one.
 (def (node-chars-revision (n :? node)) => :fixnum
@@ -760,50 +1018,67 @@ prelude: :gerbil/core
           (set! v.position (Buffers-buffer-point bs b))
           (set! v.revision (node-chars-revision n))
           (set! v.goal-column #f)
-          (scroll-to-top! v n v.revision))))) :void))
+          (scroll-to-top! v))))) :void))
 
-;; The start of the line at V's top, relocated through the changes made
-;; since V last looked, or #f when V has no anchor node. An edit that
-;; leaves the anchor inside a line moves it to that line's start.
-(def (view-anchor (v : view)) => (Maybe :fixnum)
-  (let (n v.anchor-node)
-    (and n
-         (let* ((t (text-node-content n))
-                (revision (text-chars-revision t)))
-           (unless (fx= v.anchor-revision revision)
-             (let (moved (relocate-position t v.anchor-position v.anchor-revision))
-               (set! v.anchor-position (text-line-start t (text-line-at t moved)))
-               (set! v.anchor-revision revision)))
-           v.anchor-position))))
+;; IT as it is now: a line item moved to the start of the line its
+;; position relocated into, valid at its text's current revision.
+(def (current-item (it : item)) => item
+  (let (position (item-position it))
+    (if position
+      (let* ((n (item-node it))
+             (t (text-node-content n))
+             (revision (text-chars-revision t)))
+        (if (fx= revision (item-revision it))
+          it
+          (make-item n (text-line-start t (text-line-at t (relocated-position t position (item-revision it))))
+                     revision)))
+      it)))
 
-;; Anchor V at the start of the line holding POSITION in text node N,
-;; OFFSET px of that line above V's top.
-(def (set-view-anchor! (v : view) (n : node) (position : :fixnum) (offset : :flonum)) => :void
-  (let* ((t (text-node-content n))
-         (s (text-snapshot t)))
-    (set! v.anchor-node n)
-    (set! v.anchor-position
-      (text-line-start t (text-line-at t (fxmax 1 (fxmin position (fx1+ (snapshot-size s)))))))
-    (set! v.anchor-revision (snapshot-revision s))
-    (set! v.anchor-offset offset)))
+;; The item at V's top edge, moved with edits since, or #f for the first
+;; item V draws.
+(def (view-scroll-item (v : view)) => (Maybe item)
+  (let (it v.top-item)
+    (and it
+         (let (now (current-item it))
+           (set! v.top-item now)
+           now))))
+
+;; Adopt what the browser measured of V: IT at the top edge, OFFSET px of
+;; it above the edge. V's placement names it from now on, keeping its
+;; number, so a page loaded later puts V where it is.
+(def (set-view-scroll! (v : view) (it : item) (offset : :flonum)) => :void
+  (set! v.top-item it)
+  (set! v.scroll-offset offset)
+  (set! v.last-placement (make-placement (placement-number v.last-placement) it 'top offset)))
+
+;; V's newest placement.
+(def (view-placement (v : view)) => placement
+  v.last-placement)
+
+;; Ask the browser to put IT (#f: the first item V draws) at V's top,
+;; centre or bottom (ALIGN 'top, 'center or 'bottom); with 'top, OFFSET px
+;; of it above the edge. Until the browser reports, V draws around IT.
+(def (place-view! (v : view) (it :? item) (align : :symbol) offset: (offset : :flonum := 0.)) => :void
+  (unless (memq align '(top center bottom))
+    (error "Place an item at the top, center or bottom, not" align))
+  (set! v.last-placement (make-placement (fx1+ (placement-number v.last-placement)) it align
+                                    (if (eq? align 'top) offset 0.)))
+  (set! v.top-item it)
+  (set! v.scroll-offset (if (eq? align 'top) offset 0.)))
 
 (def (set-view-facts! (v : view) (facts : scroll-facts)) => :void
   (set! v.facts facts))
 
-;; The line at V's top, as last reported, or #f.
-(def (view-first-visible-line (v : view)) => (Maybe :fixnum)
-  (let (facts v.facts)
-    (and facts (scroll-facts-first-visible-line facts))))
+;; The last item in V, as last measured, moved with edits since; or #f.
+(def (view-last-visible-item (v : view)) => (Maybe item)
+  (let* ((facts v.facts)
+         (it (and facts (scroll-facts-last-visible facts))))
+    (and it (current-item it))))
 
-;; The last line in V, as last reported, or #f.
-(def (view-last-visible-line (v : view)) => (Maybe :fixnum)
-  (let (facts v.facts)
-    (and facts (scroll-facts-last-visible-line facts))))
-
-;; Number a new request to move V. Reports naming an older request are
-;; stale.
-(def (set-view-scroll-request! (v : view) (request : :fixnum)) => :void
-  (set! v.scroll-request request))
+;; Draw BEFORE items before V's scroll item and AFTER after it.
+(def (set-view-drawn-items! (v : view) (before : :fixnum) (after : :fixnum)) => :void
+  (set! v.drawn-before (fxmax 0 before))
+  (set! v.drawn-after (fxmax 0 after)))
 
 (def (selected-view) => view
   (:- (with-service-provider (provider buffers-service Buffers) (: (Buffers-selected-view provider) view)) view))

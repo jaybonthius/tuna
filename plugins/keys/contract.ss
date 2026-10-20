@@ -29,11 +29,15 @@
 ;;; contract finds the view and node a posn names (`posn-view`,
 ;;; `posn-node`).
 ;;;
-;;; A scroll report (`scroll-event`) is what the browser saw after a view
-;;; scrolled. It is looked up like a click, under `scroll-key` ("<scroll>"),
-;;; in the keymaps from the root of the scrolled view's buffer up, then the
-;;; innermost input target's and the global keymap, so the command that
-;;; handles it can be rebound or advised. It neither ends nor joins a
+;;; A scroll report (`scroll-event`) is what the browser measured of a
+;;; view's scroller. A scroll bar event (`scroll-bar-event`) is a drag of a
+;;; view's scroll bar handle or a click on its track, as Emacs's scroll bar
+;;; events are. Both are looked up like a click, a scroll report under
+;;; `scroll-key` ("<scroll>") and a scroll bar event under its
+;;; `scroll-bar-event-keys` ("<vertical-scroll-bar> <drag-mouse-1>"), in
+;;; the keymaps from the node the scroller draws from up, then the
+;;; innermost input target's and the global keymap, so the commands that
+;;; handle them can be rebound or advised. They neither end nor join a
 ;;; pending key sequence, and an unbound one is ignored quietly.
 ;;;
 ;;; The keymap generation (`keymap-generation`) changes whenever any
@@ -46,9 +50,10 @@ prelude: :gerbil/core
         (only-in :tuna/plugins/buffers/contract node))
 (export context-set-click-resolver!
         where-is
-        (struct-out key-event posn pointer-event scroll-event)
+        (struct-out key-event posn pointer-event scroll-event scroll-bar-event)
         pointer-event-names
         scroll-key
+        scroll-bar-event-keys
         event-start
         part-clickable?
         keymap-clickable?
@@ -112,27 +117,51 @@ prelude: :gerbil/core
                           (start    : posn))
   final: #t)
 
-;; What the browser reports after view (START's part) scrolled, with its
-;; page-load sequence number (ADR 7, ADR 10). START names the view, its
-;; windowed text node, and the screen the report was computed on. Lines
-;; count from 1 in that text; pixel positions are measured down from the
-;; top of its element. REQUEST is the last scroll request the page applied.
-(defstruct scroll-event ((sequence        : :fixnum)
-                         (start           : posn)
-                         (top-line        :? :fixnum)   ; the line at the view's top, if any
-                         (top-offset      : :flonum)    ; px of that line above the view's top
-                         (last-line       :? :fixnum)   ; the last line in view, if any
-                         (viewport-top    : :flonum)
-                         (drawn-start     : :flonum)    ; the top of the first line drawn
-                         (drawn-end       : :flonum)    ; the bottom of the last line drawn
-                         (drawn-first     : :fixnum)    ; the first and last lines drawn
-                         (drawn-last      : :fixnum)
-                         (viewport-height : :fixnum)
-                         (request         : :fixnum))
+;; What the browser measured of a view's scroller, with its page-load
+;; sequence number (ADR 7, ADR 10). START names the view (its part), the
+;; node the scroller draws from (its node) and the screen measured. Items
+;; are named by their tokens (the buffers contract's `item-token`); every
+;; pixel quantity is measured. TOP-ITEM is the item at the top edge, with
+;; TOP-OFFSET px of it above the edge, and LAST-VISIBLE-ITEM the last item
+;; in view (#f when no item is there); DRAWN-BEFORE and DRAWN-AFTER count
+;; the items drawn before and after TOP-ITEM; PX-ABOVE and PX-BELOW are
+;; the px drawn above and below the view; PLACEMENT is the number of the
+;; last placement the page applied to the view.
+(defstruct scroll-event ((sequence          : :fixnum)
+                         (start             : posn)
+                         (placement         : :fixnum)
+                         (top-item          :? :string)
+                         (top-offset        : :flonum)
+                         (last-visible-item :? :string)
+                         (drawn-before      : :fixnum)
+                         (drawn-after       : :fixnum)
+                         (px-above          : :flonum)
+                         (px-below          : :flonum)
+                         (viewport-width    : :fixnum)
+                         (viewport-height   : :fixnum))
   final: #t)
 
 ;; The key scroll events are looked up under.
 (def scroll-key "<scroll>")
+
+;; A drag of a view's scroll bar handle or a click on its track, with its
+;; page-load sequence number (ADR 7, ADR 10), as Emacs's scroll bar
+;; events: START names the view (area vertical-scroll-bar, part the view's
+;; id, node the node its scroller draws from); PART is 'handle (dragged),
+;; or 'above-handle or 'below-handle (the track clicked there); FRACTION is
+;; how far down the track the handle's top was dragged, from 0 to 1.
+(defstruct scroll-bar-event ((sequence : :fixnum)
+                             (start    : posn)
+                             (part     : :symbol)
+                             (fraction : :flonum))
+  final: #t)
+
+;; The keys EVENT is looked up under: "<vertical-scroll-bar>
+;; <drag-mouse-1>" for a drag of the handle, "<vertical-scroll-bar>
+;; <mouse-1>" for a click on the track.
+(def (scroll-bar-event-keys (event : scroll-bar-event)) => :string
+  (string-append "<" (symbol->string (posn-area (scroll-bar-event-start event))) "> "
+                 (if (eq? (scroll-bar-event-part event) 'handle) "<drag-mouse-1>" "<mouse-1>")))
 
 ;; The names EVENT is looked up under, most specific first: modifiers,
 ;; then `double-` or `triple-`, then `mouse-BUTTON`; a triple click falls
@@ -151,12 +180,14 @@ prelude: :gerbil/core
             ((fx= event.clicks 2) ["double-" ""])
             (else [""]))))))
 
-;; Where EVENT happened: a pointer or scroll event's posn, or #f for a key
-;; event, which has no position (Emacs gives point in the selected window).
+;; Where EVENT happened: a pointer, scroll or scroll bar event's posn, or
+;; #f for a key event, which has no position (Emacs gives point in the
+;; selected window).
 (def (event-start (event : :t)) => (Maybe posn)
   (cond
    ((pointer-event? event) (pointer-event-start event))
    ((scroll-event? event) (scroll-event-start event))
+   ((scroll-bar-event? event) (scroll-bar-event-start event))
    (else #f)))
 
 ;; Report in the echo area that the part P names is gone, naming the
@@ -201,7 +232,7 @@ prelude: :gerbil/core
   (remove-input-target! (target : input-target)) => :void
   ;; The effective binding entry for KEYS, or #f.
   (key-binding (keys : :string)) => :t
-  ;; The key, pointer or scroll event that completed the running
+  ;; The key, pointer, scroll or scroll bar event that completed the running
   ;; command's keys, or #f (Emacs `last-command-event`).
   (last-command-event) => :t
   ;; A number that changes whenever a binding is added to or removed from
@@ -254,7 +285,7 @@ prelude: :gerbil/core
 (def (key-binding (keys : :string)) => :t
   (with-service-provider (provider input-service Keys) (Keys-key-binding provider keys)))
 
-;; A key-event, a pointer-event, a scroll-event, or #f.
+;; A key-event, a pointer-event, a scroll-event, a scroll-bar-event, or #f.
 (def (last-command-event) => :t
   (with-service-provider (provider input-service Keys) (Keys-last-command-event provider)))
 

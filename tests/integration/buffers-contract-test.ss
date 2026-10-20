@@ -382,7 +382,66 @@
          (check (text-node? (first-text-node tree)) => #t)
          (deactivate-plugin! box-kind)
          (check (node-kind-ref 'box) => #f)
-         (check (node-text-projection tree) => "\ntext"))))))
+         (check (node-text-projection tree) => "\ntext")))))
+
+  (test-case "items: a text opens into its lines, a node with children into theirs, any other node is one"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (defplugin (item-kinds ctx)
+         "Defines a kind whose nodes are one item even with children."
+         requires: [buffers-service]
+         (context-define-node-kind! ctx 'card items: 'whole))
+       (activate-plugin! item-kinds)
+       (let* ((text (new-text-node (new-text "a\nb\nc")))
+              (box (new-node 'box))
+              (card (new-node 'card children: [(new-text-node (new-text "inside"))]))
+              (empty (new-node 'column))
+              (root (new-node 'column children: [box text empty card]))
+              (index (lambda (it) (node-item-index root it))))
+         (check (map node-opening [text box card empty root]) => '(lines whole whole whole children))
+         (check (map node-item-count [text box card root]) => [3 1 1 6])
+         (check (item-node (node-item-at root 0)) => box)
+         (check (item-line (node-item-at root 2)) => 2)
+         (check (item-node (node-item-at root 5)) => card)
+         (check (raises? (lambda () (node-item-at root 6))) => #t)
+         (check (map (lambda (i) (index (node-item-at root i))) [0 1 2 3 4 5]) => [0 1 2 3 4 5])
+         (check (map (lambda (it) (node-item-index text it)) [(node-item-at text 2) (node-item box)]) => [2 #f])
+         ;; A node inside a node that is one item is not an item.
+         (check (index (node-item (car (node-children card)))) => #f)
+         (check (map (lambda (child-start) [(node-id (car child-start)) (cdr child-start)])
+                     (node-child-items root 2 5))
+                => [[(node-id text) 1] [(node-id empty) 4] [(node-id card) 5]])))))
+
+  (test-case "items keep their identity through edits around them; tokens name them"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let* ((t (new-text "one\ntwo\nthree"))
+              (text (new-text-node t))
+              (row (new-node 'box))
+              (root (new-node 'column children: [row text]))
+              (three (node-item-at root 3))
+              (token (item-token three)))
+         (check (item-line three) => 3)
+         (check (item=? (token-item root (item-token (node-item row))) (node-item row)) => #t)
+         ;; Two lines inserted above: the item is line 5 now, and so is the
+         ;; item the old token names.
+         (text-replace! t 1 1 "zero\nhalf\n")
+         (check (item-line three) => 5)
+         (check (node-item-index root three) => 5)
+         (check (item-line (token-item root token)) => 5)
+         (check (item=? (token-item root token) three) => #t)
+         (check (item=? (token-item root (item-token three)) three) => #t)
+         ;; Deleting from inside the line before into it moves it to that
+         ;; line's start, as a point there would.
+         (text-replace! t (fx1+ (text-line-start t 4)) (fx1+ (text-line-start t 5)) "")
+         (check (item-line three) => 4)
+         (check (map (lambda (bad) (token-item root bad)) ["" "x" "1.2" "99999" "1.2.3.4" (item-token (node-item root))])
+                => [#f #f #f #f #f #f])
+         ;; A node no longer under the root is no item of it.
+         (set-node-children! root [text])
+         (check (node-item-index root (node-item row)) => #f)
+         (check (token-item root (item-token (node-item row))) => #f)
+         (check (node-item-count root) => 4))))))
 
 (def buffers-test
   (test-suite "tuna/services/buffers: the default provider"

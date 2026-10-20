@@ -9,9 +9,10 @@
 ;;; without it, each from the most specific event name down
 ;;; (`pointer-event-names`), before the next keymap. A click does not clear
 ;;; the echo area, so clicking it to read a message keeps the message.
-;;; Scroll reports resolve under "<scroll>" from the root of the scrolled
-;;; view's buffer, leaving a pending prefix, the echo area and the last
-;;; command event as they were.
+;;; Scroll reports and scroll bar events resolve under their keys
+;;; ("<scroll>", "<vertical-scroll-bar> <drag-mouse-1>") from the node
+;;; their view's scroller draws from, leaving a pending prefix, the echo
+;;; area and the last command event as they were.
 
 (import :tuna/kernel
         :tuna/plugins/keys/contract
@@ -278,11 +279,12 @@
         (message (string-append (car sequences) " is undefined"))
         #f))))
 
-;; A scroll report arrives whenever the browser needs a redraw, between
-;; the keys of a sequence too, so it changes no key state.
-(def (resolve-scroll! (self : global-keys) (event : scroll-event)) => (Maybe :pair)
-  (let (found (find-binding (active-keymaps self (clicked-node self (scroll-event-start event)))
-                            scroll-key #f))
+;; A scroll report or scroll bar event, EVENT, at P, looked up under KEYS.
+;; Reports arrive whenever the browser needs a redraw, and a scroll bar
+;; drag sends many, between the keys of a sequence too, so they change no
+;; key state.
+(def (resolve-scroll! (self : global-keys) (event : :t) (p : posn) (keys : :string)) => (Maybe :pair)
+  (let (found (find-binding (active-keymaps self (clicked-node self p)) keys #f))
     (and found (not (eq? found 'prefix))
          (let (name (entry-value found))
            (and (command-entry name)
@@ -294,11 +296,13 @@
   (lambda (self event)
     (cond
      ((pointer-event? event) (resolve-pointer! self event))
-     ((scroll-event? event) (resolve-scroll! self event))
+     ((scroll-event? event) (resolve-scroll! self event (scroll-event-start event) scroll-key))
+     ((scroll-bar-event? event)
+      (resolve-scroll! self event (scroll-bar-event-start event) (scroll-bar-event-keys event)))
      (else (resolve-key! self event)))))
 
-;; The quit key interrupts; every other key, pointer or scroll event is
-;; queued.
+;; The quit key interrupts; every other key, pointer, scroll or scroll bar
+;; event is queued.
 (defmethod {arrival global-keys}
   (lambda (self event)
     ;; Alt can never produce the quit key. In particular, Mac Option
