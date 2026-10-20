@@ -472,4 +472,23 @@
            (goto-char 1)
            (insert "a\nb\n")
            (check (has? (screen) (string-append prefix "25000\">25000<")) => #t)
-           (check (has? (screen) (string-append prefix "25002\">25000<")) => #f)))))))
+           (check (has? (screen) (string-append prefix "25002\">25000<")) => #f)))))
+
+    (test-case "scrolling: line ids stay with their text through a line inserted where drawing starts"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (insert (fifty-thousand-lines))
+         (let* ((v (selected-view))
+                (n (view-node v))
+                (prefix (string-append "id=\"view-" (number->string (view-id v))
+                                       "-node-" (number->string (node-id n)) "-line-")))
+           (set-view-scroll! v (node-item-at n 9) 0.)
+           (check (has? (screen) "data-run-at-start") => #t)
+           (check (has? (screen) (string-append prefix "10\">10<")) => #t)
+           ;; A line inserted before the first line drawn: the text "5" is
+           ;; line 6 now, and keeps its element, as "10" does.
+           (goto-char 1)
+           (insert "\n")
+           (let (html (screen))
+             (check (has? html (string-append prefix "5\">5<")) => #t)
+             (check (has? html (string-append prefix "10\">10<")) => #t))))))))

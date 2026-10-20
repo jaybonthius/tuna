@@ -74,8 +74,10 @@
                       (html       : :string))
   final: #t)
 
-;; Where a view's line ids are pinned in one text node: the line starting
-;; at POSITION, at character revision REVISION, had id ID.
+;; Where a view's line ids are pinned in one text node: the line ending
+;; at POSITION, at character revision REVISION, had id ID. A line's end
+;; moves with its text when a line is inserted where it starts, so its id
+;; does too.
 (defstruct line-ids ((position : :fixnum)
                      (revision : :fixnum)
                      (id       : :fixnum))
@@ -212,7 +214,7 @@
                           (text-line-at t (relocate-position t pinned.position pinned.revision))))
                    0)))
     (hash-put! (drawing-pinning d) (node-id n)
-               (make-line-ids (text-line-start t first) (text-chars-revision t) (fx+ first offset)))
+               (make-line-ids (text-line-end t first) (text-chars-revision t) (fx+ first offset)))
     (make-line-run n first last offset)))
 
 ;; A text node: one element per line, with the cursor when the node has
