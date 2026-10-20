@@ -67,24 +67,6 @@
                       (html       : :string))
   final: #t)
 
-;; Where a view's line ids are pinned: the line starting at POSITION of
-;; TEXT-NODE, at character revision REVISION, had id ID.
-(defstruct line-ids ((text-node : node)
-                     (position : :fixnum)
-                     (revision : :fixnum)
-                     (id       : :fixnum))
-  final: #t)
-
-;; What one view keeps: the node it was drawn from, node id -> kept-html,
-;; and where its line ids are pinned.
-(defclass view-html ((start      : node)
-                     (nodes      : HashTable)
-                     (pinned-ids :? line-ids))
-  final: #t)
-
-(defclass html-rendering ((views : HashTable))    ; view id -> view-html
-  final: #t)
-
 ;; The lines of a view's anchor node that it draws, FIRST to LAST, with
 ;; spacers of TOP-SPACER and BOTTOM-SPACER px for the rest; and when the
 ;; page reports (tunaScroll): when the line at the view's top is outside
@@ -98,6 +80,33 @@
                         (high          : :fixnum)
                         (height        : :fixnum)
                         (line-id-offset : :fixnum))
+  final: #t)
+
+;; A window drawn in TEXT-NODE when it had LINE-COUNT lines and the
+;; view's FACTS were these.
+(defstruct drawn-window ((text-node  : node)
+                         (line-count : :fixnum)
+                         (facts      :? scroll-facts)
+                         (window     : text-window))
+  final: #t)
+
+;; Where a view's line ids are pinned: the line starting at POSITION of
+;; TEXT-NODE, at character revision REVISION, had id ID.
+(defstruct line-ids ((text-node : node)
+                     (position : :fixnum)
+                     (revision : :fixnum)
+                     (id       : :fixnum))
+  final: #t)
+
+;; What one view keeps: the node it was drawn from, node id -> kept-html,
+;; where its line ids are pinned, and the window it drew last.
+(defclass view-html ((start      : node)
+                     (nodes      : HashTable)
+                     (pinned-ids :? line-ids)
+                     (drawn      :? drawn-window))
+  final: #t)
+
+(defclass html-rendering ((views : HashTable))    ; view id -> view-html
   final: #t)
 
 ;; Drawing one view: its kept HTML, the nodes from its buffer's root down
@@ -327,7 +336,7 @@
   (let (kept (hash-get (html-rendering-views self) (view-id v)))
     (if (and kept (eq? (view-html-start kept) start))
       kept
-      (let (fresh (view-html start: start nodes: (make-hash-table-eqv) pinned-ids: #f))
+      (let (fresh (view-html start: start nodes: (make-hash-table-eqv) pinned-ids: #f drawn: #f))
         (hash-put! (html-rendering-views self) (view-id v) fresh)
         fresh))))
 
@@ -343,19 +352,50 @@
            (text-line-at t (relocate-position t (line-ids-position pinned) (line-ids-revision pinned))))
       0)))
 
+;; The window KEPT drew last, if it still serves anchor line LINE of N,
+;; which has LINE-COUNT lines and line ids offset by LINE-ID-OFFSET, with
+;; FACTS: the line is within the range that asks for no report, and
+;; nothing else the window was drawn from changed.
+(def (reusable-window (kept : view-html) (n : node) (line : :fixnum) (line-count : :fixnum)
+                      (line-id-offset : :fixnum) (facts :? scroll-facts))
+  => (Maybe text-window)
+  (let (drawn (view-html-drawn kept))
+    (and drawn
+         (using (drawn : drawn-window)
+           (let (window drawn.window)
+             (and (eq? drawn.text-node n)
+                  (fx= drawn.line-count line-count)
+                  (fx<= (text-window-low window) line (text-window-high window))
+                  (fx= (text-window-line-id-offset window) line-id-offset)
+                  (let (old drawn.facts)
+                    (if (and old facts)
+                      (and (fx= (scroll-facts-viewport-height old) (scroll-facts-viewport-height facts))
+                           (fl= (scroll-facts-line-height old) (scroll-facts-line-height facts)))
+                      (eq? old facts)))
+                  window))))))
+
 ;; V's anchor node and its window, as (node . text-window), when V draws
 ;; it from START; otherwise #f. Pins KEPT's line ids at the anchor line.
+;; While the anchor line stays within the range that asks for no report,
+;; V keeps the window it drew: every redrawn window moves the lines by
+;; the error in the estimates above the anchor, which scroll anchoring
+;; hides but which adds up in the scroll position, and reports that only
+;; say where the view came to rest arrive after every scroll.
 (def (view-window (v : view) (start : node) (kept : view-html)) => (Maybe :pair)
   (let* ((anchor (view-anchor v))
          (n (view-anchor-node v)))
     (and anchor n (memq start (node-ancestors n))
          (let* ((t (text-node-content n))
                 (line (text-line-at t anchor))
-                (offset (line-id-offset kept n t)))
+                (line-count (text-line-count t))
+                (offset (line-id-offset kept n t))
+                (facts (view-facts v))
+                (window (or (reusable-window kept n line line-count offset facts)
+                            (text-window-around line-count line (view-anchor-offset v) facts offset))))
            (set! (view-html-pinned-ids kept)
              (make-line-ids n anchor (text-chars-revision t) (fx+ line offset)))
-           (cons n (text-window-around (text-line-count t) line
-                                       (view-anchor-offset v) (view-facts v) offset))))))
+           (set! (view-html-drawn kept) (make-drawn-window n line-count facts window))
+           (cons n window)))))
 
 ;; The attributes of a view's scroller that ask the page for scroll
 ;; reports for WINDOW (see the header). The scroll handler only counts

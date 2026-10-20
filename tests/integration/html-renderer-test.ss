@@ -389,9 +389,16 @@
              (check (has? html "block-size: 495260px") => #t)
              (check (has? html "@tunaScroll('moved', 24925, 25100, 744, 0)") => #t)
              (check (has? html "@tunaScroll('rest', 24925, 25100, 744, 0)") => #t))
-           ;; Where the browser has the anchor line too high for the lines
-           ;; above, the top spacer keeps their estimated room.
-           (set-view-facts! v (make-scroll-facts 25000 25037 1000. 744 20. 24800 25200))
+           ;; A report that leaves the anchor line within 24,925 to 25,100
+           ;; keeps the window as drawn.
+           (set-view-anchor! v n (text-line-start t 25050) 0.)
+           (set-view-facts! v (make-scroll-facts 25050 25087 1000. 744 20. 24850 25237))
+           (check (has? (screen) "block-size: 596995px") => #t)
+           ;; Drawn again (here for another view height), where the browser
+           ;; has the anchor line too high for the lines above, the top
+           ;; spacer keeps their estimated room.
+           (set-view-anchor! v n (text-line-start t 25000) 0.)
+           (set-view-facts! v (make-scroll-facts 25000 25037 1000. 745 20. 24850 25237))
            (check (has? (screen) "block-size: 496980px") => #t)))))
 
     (test-case "windowing: line ids stay with their text through an edit above"

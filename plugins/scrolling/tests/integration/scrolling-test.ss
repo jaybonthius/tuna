@@ -79,7 +79,11 @@
            (check (scroll-facts-viewport-top facts) => 7181.)
            (check (scroll-facts-viewport-height facts) => 744)
            (check (scroll-facts-line-height facts) => 24.)
-           (check [(scroll-facts-drawn-first facts) (scroll-facts-drawn-last facts)] => [101 500])))))
+           (check [(scroll-facts-drawn-first facts) (scroll-facts-drawn-last facts)] => [101 500]))
+         ;; While a line is at the top, the line height measured first stays.
+         (report! v top: 310 offset: 0. at: 7400. drawn-end: 14000.)
+         (check (anchor v) => [310 0.])
+         (check (scroll-facts-line-height (view-facts v)) => 24.))))
 
     (test-case "in the spacer above, count back from the first line drawn"
       (with-scrolling
@@ -88,7 +92,10 @@
          ;; 984 px, 16 px above the view's top.
          (report! v at: 1000.)
          (check (anchor v) => [42 16.])
-         (check (view-first-visible-line v) => #f))))
+         (check (view-first-visible-line v) => #f)
+         ;; Placing from a spacer measures the line height again.
+         (report! v at: 1000. drawn-end: 14000.)
+         (check (scroll-facts-line-height (view-facts v)) => 29.))))
 
     (test-case "counting back stops at line 1, which goes to the view's top"
       (with-scrolling

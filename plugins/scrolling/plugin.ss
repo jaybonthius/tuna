@@ -13,6 +13,14 @@
 ;;;   drawn line by the average height of the drawn lines, put at the top.
 ;;; It never maps a scroll offset through estimates of the whole text,
 ;;; which drift away from the browser's real positions over a long scroll.
+;;;
+;;; The average line height it records is measured when the view is
+;;; placed from a spacer (and on the first report), and kept while a line
+;;; is at the top. The renderer's room for the lines above the window is
+;;; that height times their count, tens of thousands deep in a long text;
+;;; re-measuring it on every report would swing that room by thousands of
+;;; pixels as the lines drawn vary, more than the browser's scroll
+;;; anchoring absorbs while scrolling up fast.
 (import :tuna/kernel
         :tuna/plugins/commands/contract
         :tuna/plugins/keys/contract
@@ -72,8 +80,10 @@
       (let* ((t (text-node-content n))
              (line-count (text-line-count t))
              (facts (view-facts v))
-             (line-height (or (drawn-line-height event)
-                              (and facts (scroll-facts-line-height facts)))))
+             (kept (and facts (scroll-facts-line-height facts)))
+             (line-height (if (and kept (scroll-event-top-line event))
+                            kept
+                            (or (drawn-line-height event) kept))))
         (when line-height
           (let (placement (anchor-placement event line-count line-height))
             (when placement
