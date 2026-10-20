@@ -24,9 +24,13 @@ type ScrollFacts = Readonly<{
 }>;
 
 // What the page keeps of each scroller, all of it presentation: the last
-// placement it applied, whether it owes the server a report, and when it
-// last moved (for the scroll bar shown while scrolling).
-type ScrollerState = { placed: number; owed: boolean; scrollTop: number; still?: ReturnType<typeof setTimeout> };
+// placement it applied, whether it owes the server a report, the item it
+// holds still through the next screen (see tunaScroll), and when it last
+// moved (for the scroll bar shown while scrolling).
+type Held = { token: string; offset: number; scrollTop: number };
+type ScrollerState = {
+  placed: number; owed: boolean; held?: Held; scrollTop: number; still?: ReturnType<typeof setTimeout>;
+};
 const scrollers = new WeakMap<Element, ScrollerState>();
 
 // A non-negative integer attribute's value, or null.
@@ -64,6 +68,18 @@ function lastStartingAbove(items: ArrayLike<Element>, y: number): number {
   return low;
 }
 
+// Put the item HELD names back OFFSET px above SCROLLER's top edge, if
+// the scroller has not moved since and the item is drawn: then a screen
+// moved the item, and the browser's scroll anchoring did not.
+function holdStill(scroller: Element, held: Held): void {
+  if (scroller.scrollTop !== held.scrollTop) return;
+  const item = Array.from(scroller.querySelectorAll("[data-item]")).find((e) => e.getAttribute("data-item") === held.token);
+  if (item === undefined) return;
+  const viewTop = scroller.getBoundingClientRect().top + scroller.clientTop;
+  const moved = item.getBoundingClientRect().top - (viewTop - held.offset);
+  if (Math.abs(moved) >= 0.5) scroller.scrollTop += moved;
+}
+
 // Show SCROLLER's scroll bar while it moves (a class the renderer's
 // stylesheet shows the bar by on a touch screen), and hide it again once
 // it has been still for a moment.
@@ -87,6 +103,11 @@ function showMoving(scroller: Element, state: ScrollerState): void {
 // its way until the next screen puts it back: over a slow link, reports
 // sent faster than screens return would queue up and describe the past.
 // A report that could not go then is owed, and goes with the next screen.
+// The browser's scroll anchoring keeps what is in view still when a screen
+// draws more above it, but not always: Chrome leaves the view where it is
+// while the first item drawn is in view. So a report holds its top item
+// still through the next screen when the scroller has not moved since.
+// A new placement marker is the placement's to apply first (tunaPlace).
 action({
   name: "tunaScroll",
   apply({ el }: { el: HTMLElement }, reason: "moved" | "rest"): void {
@@ -96,6 +117,11 @@ action({
     if (!el.hasAttribute("data-effect")) {
       if (reason === "rest") state.owed = true;
       return;
+    }
+    if (count(el.querySelector(".placement"), "data-placement") !== state.placed) return;
+    if (state.held !== undefined) {
+      holdStill(el, state.held);
+      state.held = undefined;
     }
     const wantAbove = pixels(el, "data-drawn-above");
     const wantBelow = pixels(el, "data-drawn-below");
@@ -125,16 +151,19 @@ action({
     const topIndex = Math.min(firstEndingBelow(items, viewTop), items.length - 1);
     const lastIndex = Math.max(lastStartingAbove(items, viewBottom), topIndex);
     const top = items[topIndex];
+    const token = top?.getAttribute("data-item") ?? null;
+    const offset = top ? viewTop - top.getBoundingClientRect().top : 0;
     el.removeAttribute("data-effect");
     state.owed = false;
+    state.held = token === null ? undefined : { token, offset, scrollTop: el.scrollTop };
     void send<ScrollFacts>({
       type: "scroll",
       revision,
       view,
       node,
       placement: state.placed,
-      top: top?.getAttribute("data-item") ?? null,
-      offset: top ? viewTop - top.getBoundingClientRect().top : 0,
+      top: token,
+      offset,
       lastVisible: items[lastIndex]?.getAttribute("data-item") ?? null,
       before: Math.max(topIndex, 0),
       after: Math.max(items.length - 1 - topIndex, 0),
@@ -150,7 +179,8 @@ action({
 // the marker is new: on a new placement, and on a freshly loaded page. It
 // scrolls the marker's scroller so that the item the marker names is at
 // the top (data-offset px of it above the edge), centre or bottom
-// (data-align), then has the scroller report where it is.
+// (data-align), or, when it names none, to the scroller's start; then has
+// the scroller report where it is.
 action({
   name: "tunaPlace",
   apply({ el }: { el: HTMLElement }): void {
@@ -160,7 +190,9 @@ action({
     const target = el.getAttribute("data-target");
     const item = target === null ? undefined
       : Array.from(scroller.querySelectorAll("[data-item]")).find((e) => e.getAttribute("data-item") === target);
-    if (item !== undefined) {
+    if (target === null) {
+      scroller.scrollTop = 0;
+    } else if (item !== undefined) {
       const box = item.getBoundingClientRect();
       const top = box.top - (scroller.getBoundingClientRect().top + scroller.clientTop) + scroller.scrollTop;
       switch (el.getAttribute("data-align")) {
@@ -171,7 +203,7 @@ action({
     }
     const state = scrollers.get(scroller);
     if (state === undefined) scrollers.set(scroller, { placed: number, owed: true, scrollTop: scroller.scrollTop });
-    else Object.assign(state, { placed: number, owed: true, scrollTop: scroller.scrollTop });
+    else Object.assign(state, { placed: number, owed: true, held: undefined, scrollTop: scroller.scrollTop });
     placementApplied(scroller);
     // Run the scroller's report trigger, which reports what is owed.
     scroller.dispatchEvent(new Event("scroll"));

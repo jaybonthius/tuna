@@ -36,7 +36,8 @@ class MouseEvent extends Event {
 // closest() for [data-name] selectors, and contains().
 class Element {
   constructor(attributes = {}, parent = null) {
-    this.attributes = attributes;
+    // An attribute given as undefined is left out.
+    this.attributes = Object.fromEntries(Object.entries(attributes).filter(([, value]) => value !== undefined));
     this.parent = parent;
   }
   getAttribute(name) { return name in this.attributes ? String(this.attributes[name]) : null; }
@@ -406,7 +407,7 @@ function scrolledView(attributes = {}, marker = {}) {
     "data-effect": "...", "data-scroll-root": 4, "data-drawn-above": 600, "data-drawn-below": 600,
     "data-measured-width": 300, "data-measured-height": 200, ...attributes,
   }, view, 200, 2000);
-  const placement = new Box({ "data-placement": 3, "data-target": "4.51.0", "data-align": "top",
+  const placement = new Box({ class: "placement", "data-placement": 3, "data-target": "4.51.0", "data-align": "top",
                               "data-offset": "5.", ...marker }, scroller, 0, 0);
   const text = new Box({ "data-node": 4 }, scroller, 0, 2000);
   const items = [];
@@ -425,10 +426,16 @@ test("tunaPlace puts the marker's item at the top, centre or bottom of its scrol
   assert.equal(at({ "data-align": "bottom", "data-offset": "0" }), 1000 + 20 - 200);
   // Beyond the content, the browser stops at its end.
   assert.equal(at({ "data-target": "4.100.0" }), 1800);
-  // Without a target (the start of the view) or with one not drawn, the
-  // view stays where it is.
-  assert.equal(at({ "data-target": undefined }), 0);
-  assert.equal(at({ "data-target": "4.999.0" }), 0);
+  // Without a target, to the start of the view, wherever it was; with one
+  // not drawn, the view stays where it is.
+  const moved = scrolledView({}, { "data-target": undefined });
+  moved.scroller.scrollTop = 300;
+  h.place(moved.placement);
+  assert.equal(moved.scroller.scrollTop, 0);
+  const missing = scrolledView({}, { "data-target": "4.999.0" });
+  missing.scroller.scrollTop = 300;
+  h.place(missing.placement);
+  assert.equal(missing.scroller.scrollTop, 300);
   const v = scrolledView();
   h.place(v.placement);
   assert.deepEqual(v.scroller.events, ["scroll"], "the scroller's report trigger runs");
@@ -507,6 +514,48 @@ test("an end of scrolling while a report is on its way is owed, and goes with th
   v.scroller.attributes["data-effect"] = "...";
   h.scroll(v.scroller, "moved");
   assert.equal(h.posts.length, 2);
+});
+
+test("a report holds its top item still through the next screen, unless the view moved since", async () => {
+  const h = await harness(new Element({ "data-revision": 7 }));
+  const v = scrolledView({}, { "data-target": "4.1.0", "data-offset": "0" });
+  h.place(v.placement);
+  h.scroll(v.scroller, "moved");
+  assert.equal(h.posts[0].body.top, "4.1.0");
+  assert.equal(h.posts[0].body.above, 0);
+  // The next screen draws ten items above, which pushes the first one
+  // down by 200 px, and the browser did not anchor.
+  const drawAbove = () => {
+    for (const item of v.items) item.top += 200;
+    v.scroller.scrollHeight += 200;
+    v.scroller.attributes["data-effect"] = "...";
+  };
+  drawAbove();
+  h.scroll(v.scroller, "moved");
+  assert.equal(v.scroller.scrollTop, 200);
+  assert.equal(h.posts.length, 2, "it reports from where it holds the item");
+  // The view moved after that report: the screen is left as the browser has it.
+  v.scroller.scrollTop = 250;
+  drawAbove();
+  h.scroll(v.scroller, "moved");
+  assert.equal(v.scroller.scrollTop, 250);
+});
+
+test("a new placement marker is applied before anything is reported", async () => {
+  const h = await harness(new Element({ "data-revision": 7 }));
+  const v = scrolledView();
+  h.place(v.placement);
+  h.scroll(v.scroller, "moved");
+  assert.equal(h.posts.length, 1);
+  // The next screen carries placement 4: its marker's data-init has not run yet.
+  v.placement.attributes["data-placement"] = 4;
+  v.scroller.attributes["data-effect"] = "...";
+  h.scroll(v.scroller, "rest");
+  assert.equal(h.posts.length, 1);
+  h.place(v.placement);
+  h.scroll(v.scroller, "moved");
+  assert.equal(h.posts.length, 2);
+  assert.equal(h.posts[1].body.placement, 4);
 });
 
 test("a click on the scroll bar's track pages toward it, and is the bar's alone", async () => {

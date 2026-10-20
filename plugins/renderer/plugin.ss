@@ -359,7 +359,7 @@
 ;; V's placement marker, in its scroller drawing START's items: its id
 ;; carries the placement's number, so the browser runs its constant
 ;; data-init (tunaPlace) once per placement and on a freshly loaded page.
-;; Without a target among START's items, the view stays at its start.
+;; Without a target among START's items, the view goes to its start.
 (def (placement-marker (v : view) (start : node)) => :list
   (let* ((p (view-placement v))
          (number (number->string (placement-number p)))
