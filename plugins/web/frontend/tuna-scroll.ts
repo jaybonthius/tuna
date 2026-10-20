@@ -47,8 +47,10 @@ function lineAt(text: Element, x: number, y: number): Element | null {
 // and after each screen that changes the window, and "rest" when scrolling
 // ends. A "moved" report is sent only when the line at the top has left
 // LOW..HIGH, the top is in a spacer, or the view's height is not the
-// HEIGHT the server drew for; it then removes the scroller's data-effect,
-// so one report is on its way until the next screen puts it back.
+// HEIGHT the server drew for. Either report removes the scroller's
+// data-effect, and none is sent while it is missing, so one report is on its
+// way until the next screen puts it back: over a slow link, reports sent
+// faster than screens return would queue up and describe the past.
 action({
   name: "tunaScroll",
   apply({ el }: { el: HTMLElement }, reason: "moved" | "rest", low: number, high: number,
@@ -73,14 +75,15 @@ action({
     const drawnStart = first.getBoundingClientRect().top - textTop;
     const drawnEnd = lastDrawn.getBoundingClientRect().bottom - textTop;
     const topLine = count(top, "data-line");
+    if (!el.hasAttribute("data-effect")) return;
     if (reason === "moved") {
       const outside = topLine !== null
         ? topLine < low || topLine > high
         : (at < drawnStart && first.previousElementSibling !== null)
           || (at >= drawnEnd && lastDrawn.nextElementSibling !== null);
       if (!outside && el.clientHeight === height) return;
-      el.removeAttribute("data-effect");
     }
+    el.removeAttribute("data-effect");
     send<ScrollFacts>({
       type: "scroll",
       revision,

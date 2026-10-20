@@ -396,12 +396,15 @@ test("scrolling reports only when the top line leaves the range or the height ch
   assert.equal(resized.posts[0].body.request, 3);
 });
 
-test("scrolling always reports when it ends, keeping the trigger", async () => {
+test("scrolling reports when it ends, unless a report is on its way", async () => {
   const view = scrolledView();
   const h = await harness(new Element({ "data-revision": 7 }), "Linux x86_64", view.at);
   h.scroll(view.scroller, "rest", 41, 45, 200, 0);
   assert.equal(h.posts.length, 1);
   assert.equal(h.posts[0].body.top, 42);
-  assert.equal(view.scroller.getAttribute("data-effect"), "...");
+  assert.equal(view.scroller.getAttribute("data-effect"), null, "one report is on its way at a time");
+  h.scroll(view.scroller, "rest", 41, 45, 200, 0);
+  h.scroll(view.scroller, "moved", 43, 45, 200, 0);
+  assert.equal(h.posts.length, 1, "nothing more until the next screen puts the trigger back");
 });
 

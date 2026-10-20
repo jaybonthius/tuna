@@ -87,6 +87,7 @@
 (defstruct drawn-window ((text-node  : node)
                          (line-count : :fixnum)
                          (facts      :? scroll-facts)
+                         (margins    : :pair)          ; (above . below) px
                          (window     : text-window))
   final: #t)
 
@@ -128,9 +129,10 @@
 (def rendering-window (make-parameter #f))
 
 ;; Pixels drawn above the anchor line, and below it besides the view's
-;; height (hyperlith's virtual scroll draws 4,000 px around the view).
-(def drawn-above 3000.)
-(def drawn-below 4000.)
+;; height: the drawn-above and drawn-below settings.
+(def (margin (s : setting)) => :flonum
+  (let (px (setting-value s))
+    (if (and (real? px) (>= px 0)) (exact->inexact px) (exact->inexact (setting-default s)))))
 
 ;; Estimates until the browser has reported on the view.
 (def default-line-height 24.)
@@ -152,13 +154,15 @@
 (def (text-window-around (line-count : :fixnum) (anchor : :fixnum) (offset : :flonum)
                          (facts :? scroll-facts) (line-id-offset : :fixnum))
   => text-window
-  (let* ((line-height (if facts (scroll-facts-line-height facts) default-line-height))
+  (let* ((above (margin drawn-above))
+         (below (margin drawn-below))
+         (line-height (if facts (scroll-facts-line-height facts) default-line-height))
          (viewport (if facts (scroll-facts-viewport-height facts) default-viewport-height))
          (viewport-px (exact->inexact viewport))
          (anchor-y (if facts (fl- (scroll-facts-viewport-top facts) offset) 0.))
-         (first (fxmax 1 (fx- anchor (lines-filling drawn-above line-height))))
+         (first (fxmax 1 (fx- anchor (lines-filling above line-height))))
          (last (fxmin line-count
-                      (fx+ anchor (fx1- (lines-filling (fl+ viewport-px drawn-below) line-height)))))
+                      (fx+ anchor (fx1- (lines-filling (fl+ viewport-px below) line-height)))))
          (above-px (lambda ((lines : :fixnum)) (fl* (exact->inexact lines) line-height))))
     (make-text-window
      first last
@@ -168,10 +172,10 @@
      (whole-pixels (above-px (fx- line-count last)))
      (if (fx= first 1)
        1
-       (fxmax first (fx- anchor (lines-filling (fl/ drawn-above 2.) line-height))))
+       (fxmax first (fx- anchor (lines-filling (fl/ above 2.) line-height))))
      (if (fx= last line-count)
        line-count
-       (fxmax anchor (fx- (fx1+ last) (lines-filling (fl+ viewport-px (fl/ drawn-below 2.)) line-height))))
+       (fxmax anchor (fx- (fx1+ last) (lines-filling (fl+ viewport-px (fl/ below 2.)) line-height))))
      (if facts viewport -1)
      line-id-offset)))
 
@@ -367,6 +371,7 @@
                   (fx= drawn.line-count line-count)
                   (fx<= (text-window-low window) line (text-window-high window))
                   (fx= (text-window-line-id-offset window) line-id-offset)
+                  (equal? drawn.margins (cons (margin drawn-above) (margin drawn-below)))
                   (let (old drawn.facts)
                     (if (and old facts)
                       (and (fx= (scroll-facts-viewport-height old) (scroll-facts-viewport-height facts))
@@ -394,7 +399,8 @@
                             (text-window-around line-count line (view-anchor-offset v) facts offset))))
            (set! (view-html-pinned-ids kept)
              (make-line-ids n anchor (text-chars-revision t) (fx+ line offset)))
-           (set! (view-html-drawn kept) (make-drawn-window n line-count facts window))
+           (set! (view-html-drawn kept)
+             (make-drawn-window n line-count facts (cons (margin drawn-above) (margin drawn-below)) window))
            (cons n window)))))
 
 ;; The attributes of a view's scroller that ask the page for scroll
