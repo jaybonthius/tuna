@@ -456,12 +456,20 @@
          (event (with-catch (lambda (e) #f)
                             (lambda ()
                               (parse-input-item value (do-with-lock self.mutex self.revision))))))
-    (if event
-      (admit-event! self (hash-ref value "sequence") event)
-      (web-log.warnf "Dropped malformed input."))))
+    (cond
+     (event
+      (admit-event! self (hash-ref value "sequence") event))
+     ;; A rejected item still takes its place in the order, so the items
+     ;; after it are not left waiting for it.
+     ((and (hash-table? value) (fixnum? (hash-get value "sequence")) (fx>= (hash-get value "sequence") 1))
+      (web-log.warnf "Dropped malformed %a input %a." (hash-get value "type") (hash-get value "sequence"))
+      (admit-event! self (hash-get value "sequence") 'dropped))
+     (else
+      (web-log.warnf "Dropped malformed input.")))))
 
 ;; HTTP handlers may arrive in any order. Submission stays under this lock
 ;; so another handler cannot overtake an item while it is handed to the loop.
+;; EVENT is 'dropped for a rejected item, which is skipped in its turn.
 (def (admit-event! (self : web-server) (sequence : :fixnum) (event : :t)) => :void
   (do-with-lock self.admission
     ;; After a server restart the open page keeps its count and loads no new
@@ -484,7 +492,8 @@
           (when next
             (hash-remove! self.pending self.next)
             (set! self.next (fx1+ self.next))
-            ((web-server-submit self) next)
+            (unless (eq? next 'dropped)
+              ((web-server-submit self) next))
             (lp))))))))
 
 (def (short-string? (value : :t)) => :boolean

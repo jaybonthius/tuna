@@ -337,6 +337,15 @@
              ("request" . "-1") ("request" . "null")))
          (check (length (recorded-items 1)) => 1))))
 
+    (test-case "a rejected item does not hold up the items after it"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (check (post-json (scroll-json)) => 204)
+         (check (post-json (scroll-json (cons "sequence" "2") (cons "height" "-1"))) => 204)
+         (check (post-json (scroll-json (cons "sequence" "3"))) => 204)
+         (check (length (recorded-items 2)) => 2))))
+
     (test-case "a page gets a newer screen once it confirms the last, or after the timeout"
       (with-tuna
        (lambda ()
