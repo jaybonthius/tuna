@@ -4,6 +4,8 @@
 ;;; and scroll items name), and the screen stream's re-sends. A stand-in provides the input the
 ;;; editor loop needs; another records the items it resolves.
 (import :std/io
+        :std/net/address
+        :std/time/timeout
         :std/test
         :tuna/kernel
         :tuna/plugins/keys/contract
@@ -346,15 +348,29 @@
          (check (post-json (scroll-json (cons "sequence" "3"))) => 204)
          (check (length (recorded-items 2)) => 2))))
 
-    (test-case "an item that never arrives is given up on after half a second"
+    (test-case "an input request is answered only once its body has arrived"
       (set! (input-recorder-items recorded) [])
       (with-web-tuna [test-messages recording-input web-transport]
        (lambda ()
-         (check (post-json (scroll-json)) => 204)
-         (check (post-json (scroll-json (cons "sequence" "3"))) => 204)
-         (thread-sleep! 0.6)
-         (check (post-json (scroll-json (cons "sequence" "4"))) => 204)
-         (check (length (recorded-items 3)) => 3))))
+         (let* ((body (scroll-json))
+                (socket (tcp-connect (string->address (string-append "inet4:" (host)))))
+                (send (lambda (text) (Writer-write (StreamSocket-writer socket) (string->utf8 text)))))
+           ;; Safari often sends the headers and the body in separate
+           ;; packets; an answer before the body would close the connection
+           ;; on it.
+           (send (string-append "POST /commands HTTP/1.1\r\nHost: " (host) "\r\n"
+                                "Datastar-Request: true\r\nContent-Type: application/json\r\n"
+                                "Content-Length: " (number->string (u8vector-length (string->utf8 body)))
+                                "\r\nConnection: close\r\n\r\n"))
+           (Socket-set-input-timeout! socket (IOTimeout 0.3))
+           (check (with-catch (lambda (e) 'no-answer)
+                              (lambda () (Reader-read (StreamSocket-reader socket) (make-u8vector 64) 0 64 1)))
+                  => 'no-answer)
+           (Socket-set-input-timeout! socket (IOTimeout 5))
+           (send body)
+           (check (string-prefix? "HTTP/1.1 204" (read-until socket (lambda (text) #f))) => #t)
+           (Socket-close socket)
+           (check (length (recorded-items 1)) => 1)))))
 
     (test-case "a page gets a newer screen once it confirms the last, or after the timeout"
       (with-tuna

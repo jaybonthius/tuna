@@ -50,9 +50,6 @@
 
 (deflogger web-log name: "tuna/web")
 
-;; Seconds later items wait for a missing one before it is given up on.
-(def missing-input-seconds .5)
-
 ;; Seconds between keep-alive events while there is nothing to send; they
 ;; also detect closed tabs.
 (def heartbeat-seconds 15.)
@@ -67,7 +64,6 @@
    (admission   : :mutex)       ; guards input ordering and submission
    (next        : :fixnum)      ; next page-load sequence to submit
    (pending     : HashTable)  ; sequence -> input item
-   (waiting-since : :real)      ; when the earliest pending item began waiting
    (numbered?   : :boolean)     ; whether a page load or first item set NEXT
    (slot-numbers : HashTable)   ; (owner . name) -> n in /css/<n>/; editor thread only
    (stylesheets-seen : :fixnum) ; the stylesheets generation HEAD shows; editor thread only
@@ -431,6 +427,8 @@
 
 ;; POST /applied?stream=S&count=N: the page applied stream S's Nth screen.
 (def (accept-applied (self : web-server) (request : Request) (response : ResponseHandler)) => :void
+  ;; Read the signals Datastar posts before answering, as accept-event does.
+  (with-catch void (lambda () (read-signals request)))
   (ResponseHandler-write! response No-Content [] #u8())
   (let* ((query (form-url-decode (or (URL-query (Request-url request)) "")))
          (number (lambda (name)
@@ -451,12 +449,15 @@
                       "application/json"))))
 
 (def (accept-event (self : web-server) (request : Request) (response : ResponseHandler)) => :void
-  ;; No command response carries feedback, even when its input is rejected.
-  (ResponseHandler-write! response No-Content [] #u8())
   (let* ((value (and (string=? (Request-method request) "POST")
                      (datastar-request? request)
                      (json-content-type? request)
                      (with-catch (lambda (e) #f) (lambda () (read-signals request)))))
+         ;; Answer only once the body is read: the answer closes the
+         ;; connection, and a body still on its way would be lost with it.
+         ;; No command response carries feedback, even when its input is
+         ;; rejected.
+         (_ (ResponseHandler-write! response No-Content [] #u8()))
          (event (with-catch (lambda (e) #f)
                             (lambda ()
                               (parse-input-item value (do-with-lock self.mutex self.revision))))))
@@ -485,19 +486,12 @@
      ((or (fx< sequence self.next) (hash-key? self.pending sequence))
       (web-log.warnf "Ignored duplicate input %a." sequence))
      (else
-      (let (now (time->seconds (current-time)))
-        (when (zero? (hash-length self.pending))
-          (set! self.waiting-since now))
-        (hash-put! self.pending sequence event)
-        ;; A missing item that later ones have waited half a second for, or
-        ;; that 64 later ones wait for, is given up on, so input carries on
-        ;; from the earliest item that did arrive: a request that could not
-        ;; be read at all has no number to keep its place.
-        (when (and (not (hash-key? self.pending self.next))
-                   (or (fx> (hash-length self.pending) 64)
-                       (> (- now self.waiting-since) missing-input-seconds)))
-          (web-log.warnf "Skipped missing input %a." self.next)
-          (set! self.next (apply min (hash-keys self.pending)))))
+      (hash-put! self.pending sequence event)
+      ;; A missing item that 64 later ones wait for is given up on, so
+      ;; input carries on from the earliest item that did arrive.
+      (when (fx> (hash-length self.pending) 64)
+        (web-log.warnf "Skipped missing input %a." self.next)
+        (set! self.next (apply min (hash-keys self.pending))))
       (let lp ()
         (let (next (hash-get self.pending self.next))
           (when next
@@ -505,7 +499,6 @@
             (set! self.next (fx1+ self.next))
             (unless (eq? next 'dropped)
               ((web-server-submit self) next))
-            (set! self.waiting-since (time->seconds (current-time)))
             (lp))))))))
 
 (def (short-string? (value : :t)) => :boolean
@@ -660,7 +653,6 @@
                               admission: (make-mutex 'tuna-admission)
                               next: 1
                               pending: (make-hash-table-eqv)
-                              waiting-since: 0.
                               numbered?: #f
                               slot-numbers: (make-hash-table)
                               ;; The first redisplay reads the registry.
