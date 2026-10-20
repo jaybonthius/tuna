@@ -392,5 +392,23 @@
            ;; Where the browser has the anchor line too high for the lines
            ;; above, the top spacer keeps their estimated room.
            (set-view-facts! v (make-scroll-facts 25000 25037 1000. 744 20. 24800 25200))
-           (check (has? (screen) "block-size: 496980px") => #t)))))))
+           (check (has? (screen) "block-size: 496980px") => #t)))))
+
+    (test-case "windowing: line ids stay with their text through an edit above"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (insert (fifty-thousand-lines))
+         (let* ((v (selected-view))
+                (n (view-node v))
+                (t (current-text))
+                (prefix (string-append "id=\"view-" (number->string (view-id v))
+                                       "-node-" (number->string (node-id n)) "-line-")))
+           (set-view-anchor! v n (text-line-start t 25000) 0.)
+           (check (and (offset (string-append prefix "25000\" data-line=\"25000\">25000<") (screen)) #t) => #t)
+           ;; Two lines inserted at the top: the text "25000" is line 25002 now,
+           ;; and keeps its element.
+           (goto-char 1)
+           (insert "a\nb\n")
+           (let (html (screen))
+             (check (and (offset (string-append prefix "25000\" data-line=\"25002\">25000<") html) #t) => #t))))))))
 

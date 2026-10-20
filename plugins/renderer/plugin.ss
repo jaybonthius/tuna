@@ -20,7 +20,8 @@
 ;;; stand in for the lines above and below, so the scrollbar covers the
 ;;; whole text; the top one leaves the anchor line where the browser last
 ;;; had it, unless the lines above need more room. Each drawn line carries
-;;; its number (data-line) and an id, so a morph moves lines rather than
+;;; its number (data-line) and an id that stays with its text, through
+;;; scrolling and through edits above it, so a morph moves lines rather than
 ;;; rewriting them and the browser's scroll anchoring holds what you read
 ;;; still. The view's scroller asks the page (the web transport's
 ;;; tunaScroll action) to report when the line at its top leaves the range
@@ -66,10 +67,19 @@
                       (html       : :string))
   final: #t)
 
-;; What one view keeps: the node it was drawn from, and node id ->
-;; kept-html.
-(defclass view-html ((start : node)
-                     (nodes : HashTable))
+;; Where a view's line ids are pinned: the line starting at POSITION of
+;; TEXT-NODE, at character revision REVISION, had id ID.
+(defstruct line-ids ((text-node : node)
+                     (position : :fixnum)
+                     (revision : :fixnum)
+                     (id       : :fixnum))
+  final: #t)
+
+;; What one view keeps: the node it was drawn from, node id -> kept-html,
+;; and where its line ids are pinned.
+(defclass view-html ((start      : node)
+                     (nodes      : HashTable)
+                     (pinned-ids :? line-ids))
   final: #t)
 
 (defclass html-rendering ((views : HashTable))    ; view id -> view-html
@@ -79,13 +89,15 @@
 ;; spacers of TOP-SPACER and BOTTOM-SPACER px for the rest; and when the
 ;; page reports (tunaScroll): when the line at the view's top is outside
 ;; LOW..HIGH, or the view's height is not HEIGHT (-1 before any report).
+;; A line's element id is its number plus LINE-ID-OFFSET.
 (defstruct text-window ((first         : :fixnum)
                         (last          : :fixnum)
                         (top-spacer    : :fixnum)
                         (bottom-spacer : :fixnum)
                         (low           : :fixnum)
                         (high          : :fixnum)
-                        (height        : :fixnum))
+                        (height        : :fixnum)
+                        (line-id-offset : :fixnum))
   final: #t)
 
 ;; Drawing one view: its kept HTML, the nodes from its buffer's root down
@@ -129,7 +141,7 @@
 ;; the lines drawn above it, and never makes less room than the estimate
 ;; of everything above the window.
 (def (text-window-around (line-count : :fixnum) (anchor : :fixnum) (offset : :flonum)
-                         (facts :? scroll-facts))
+                         (facts :? scroll-facts) (line-id-offset : :fixnum))
   => text-window
   (let* ((line-height (if facts (scroll-facts-line-height facts) default-line-height))
          (viewport (if facts (scroll-facts-viewport-height facts) default-viewport-height))
@@ -151,7 +163,8 @@
      (if (fx= last line-count)
        line-count
        (fxmax anchor (fx- (fx1+ last) (lines-filling (fl+ viewport-px (fl/ drawn-below 2.)) line-height))))
-     (if facts viewport -1))))
+     (if facts viewport -1)
+     line-id-offset)))
 
 ;; The element id of view V.
 (def (view-element-id (v : view)) => :string
@@ -253,9 +266,10 @@
                                          (and (eqv? line cursor-line) cursor-column)
                                          cursor-class
                                          (if window
-                                           (let (number (number->string line))
-                                             [['id (string-append line-id-prefix "-line-" number)]
-                                              ['data-line number]])
+                                           [['id (string-append line-id-prefix "-line-"
+                                                                (number->string
+                                                                 (fx+ line (text-window-line-id-offset window))))]
+                                            ['data-line (number->string line)]]
                                            []))
                             out))))))))
 
@@ -313,19 +327,35 @@
   (let (kept (hash-get (html-rendering-views self) (view-id v)))
     (if (and kept (eq? (view-html-start kept) start))
       kept
-      (let (fresh (view-html start: start nodes: (make-hash-table-eqv)))
+      (let (fresh (view-html start: start nodes: (make-hash-table-eqv) pinned-ids: #f))
         (hash-put! (html-rendering-views self) (view-id v) fresh)
         fresh))))
 
+;; What to add to a line's number in N's text T for its element id in
+;; KEPT's view. Ids follow lines of text: an edit above them leaves their
+;; ids alone, though it changes their numbers. Otherwise the morph would
+;; move text between line elements, and the browser's scroll anchoring,
+;; which holds an element still, would show other text there.
+(def (line-id-offset (kept : view-html) (n : node) (t : text)) => :fixnum
+  (let (pinned (view-html-pinned-ids kept))
+    (if (and pinned (eq? (line-ids-text-node pinned) n))
+      (fx- (line-ids-id pinned)
+           (text-line-at t (relocate-position t (line-ids-position pinned) (line-ids-revision pinned))))
+      0)))
+
 ;; V's anchor node and its window, as (node . text-window), when V draws
-;; it from START; otherwise #f.
-(def (view-window (v : view) (start : node)) => (Maybe :pair)
+;; it from START; otherwise #f. Pins KEPT's line ids at the anchor line.
+(def (view-window (v : view) (start : node) (kept : view-html)) => (Maybe :pair)
   (let* ((anchor (view-anchor v))
          (n (view-anchor-node v)))
     (and anchor n (memq start (node-ancestors n))
-         (let (t (text-node-content n))
-           (cons n (text-window-around (text-line-count t) (text-line-at t anchor)
-                                       (view-anchor-offset v) (view-facts v)))))))
+         (let* ((t (text-node-content n))
+                (line (text-line-at t anchor))
+                (offset (line-id-offset kept n t)))
+           (set! (view-html-pinned-ids kept)
+             (make-line-ids n anchor (text-chars-revision t) (fx+ line offset)))
+           (cons n (text-window-around (text-line-count t) line
+                                       (view-anchor-offset v) (view-facts v) offset))))))
 
 ;; The attributes of a view's scroller that ask the page for scroll
 ;; reports for WINDOW (see the header). The scroll handler only counts
@@ -349,7 +379,7 @@
          (id (number->string (view-id v)))
          (focus (view-node v))
          (kept (view-html-for self v start))
-         (windowed (view-window v start))
+         (windowed (view-window v start kept))
          (d (make-drawing (view-html-nodes kept)
                           (node-ancestors focus)
                           (and focus (cons (view-point v) selected?))
