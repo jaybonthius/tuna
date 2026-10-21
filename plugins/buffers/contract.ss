@@ -26,7 +26,8 @@
 ;;; edge and how many pixels of that item are above the edge, as the
 ;;; browser measured: never a size or position the server worked out. The
 ;;; item moves with edits as point does. Beside it are what the browser
-;;; last measured of the view (`scroll-facts`), and the view's placement:
+;;; last measured of the view (`scroll-facts`) and the average height of
+;;; its items, and the view's placement:
 ;;; the server asking the browser, once, to put an item at the top, centre
 ;;; or bottom of the view. Each placement has a larger number than the
 ;;; last, and reports measured before the newest placement are stale.
@@ -101,8 +102,9 @@ prelude: :gerbil/core
         view-scroll-item view-scroll-offset set-view-scroll!
         (struct-out placement) view-placement place-view!
         (struct-out scroll-facts) view-facts set-view-facts! view-last-visible-item
+        view-average-item-height set-view-average-item-height!
         view-drawn-before view-drawn-after set-view-drawn-items! initial-drawn-items
-        drawn-above drawn-below
+        drawn-screens
         selected-view set-selected-view!
         current-buffer switch-to-buffer
         current-text-node current-text
@@ -241,13 +243,19 @@ prelude: :gerbil/core
   final: #t)
 
 ;; DRAWN-BEFORE and DRAWN-AFTER are how many items the renderer draws
-;; before and after the scroll item. They are derived state, never saved
-;; with the session: only a fetching step, which the scrolling plugin
-;; works out from what the browser last measured (its `view-scrolled`
-;; writes them; a placement or a new buffer starts them again), and which
-;; the next report corrects. They live on the view, beside the scroll
-;; state they count from, so the renderer can read them without a service
-;; of their own (primary agent, 2026-10-17).
+;; before and after the scroll item, and AVERAGE-ITEM-HEIGHT the px an
+;; item of the view takes on average, as the browser measured what was
+;; drawn (#f before it has). All three are derived state, never saved with
+;; the session, which the scrolling plugin works out from what the browser
+;; measured (its `view-scrolled` writes them; a new buffer starts them
+;; again). The counts are only a fetching step, which the next report
+;; corrects. The average is the only estimate of a size anywhere: the
+;; renderer sizes the spacers standing in for the items it does not draw
+;; by it, so that the browser's own scroll bar covers the whole buffer,
+;; and the scrolling plugin counts items across a spacer by it. No
+;; position is ever worked out from it. They live on the view, beside the
+;; scroll state they count from, so the renderer can read them without a
+;; service of their own (primary agent, 2026-10-17).
 (defclass view ((id            : :fixnum)
                 (showing       : buffer)
                 (focus         :? node)         ; the focused text node
@@ -258,6 +266,7 @@ prelude: :gerbil/core
                 (scroll-offset : :flonum)       ; px of it above the edge
                 (last-placement : placement)    ; the newest
                 (facts         :? scroll-facts)
+                (average-item-height :? :flonum)
                 (drawn-before  : :fixnum)
                 (drawn-after   : :fixnum))
   final: #t)
@@ -266,14 +275,14 @@ prelude: :gerbil/core
 ;; browser has measured anything.
 (def initial-drawn-items 200)
 
-;; How much a view keeps drawn beyond what is in view, in pixels as the
-;; browser measures them: it asks for more when less than half of this is
-;; left, and for less when more than twice this is drawn. More costs
-;; drawing time and page size, and spares a fast scroll from running past
-;; what is drawn before the next screen arrives. The scrolling plugin turns
-;; these into how many items to draw (drawn-before and drawn-after).
-(defsetting drawn-above 20000 "Pixels a view keeps drawn above its top edge.")
-(defsetting drawn-below 20000 "Pixels a view keeps drawn below its bottom edge.")
+;; How much a view keeps drawn beyond what is in view, in heights of the
+;; view as the browser measures them, on each side: it asks for more when
+;; less than half of this is left, and for less when more than twice this
+;; is drawn. More costs drawing time and page size, and spares a fast
+;; scroll from running past what is drawn before the next screen arrives.
+;; The scrolling plugin turns this into how many items to draw
+;; (drawn-before and drawn-after).
+(defsetting drawn-screens 2 "Heights of the view a view keeps drawn above and below what is visible.")
 
 ;; Neutral saved buffers (the autosave slot `buffers`, version 1):
 ;; (NAME POINT AUTOSAVE-FILE ROOT-NODE-ID), oldest first. Only ordinary
@@ -960,7 +969,8 @@ prelude: :gerbil/core
 (def (new-view-at (b : buffer) (n :? node) (position : :fixnum) (revision : :fixnum)) => view
   (view id: (next-id!) showing: b focus: n position: position revision: revision goal-column: #f
         top-item: #f scroll-offset: 0. last-placement: (make-placement 0 #f 'top 0.)
-        facts: #f drawn-before: initial-drawn-items drawn-after: initial-drawn-items))
+        facts: #f average-item-height: #f
+        drawn-before: initial-drawn-items drawn-after: initial-drawn-items))
 
 ;; Point V, keeping its identity, at B with its point at POSITION in N,
 ;; valid at N's text revision REVISION, scrolled to the top. For buffers
@@ -971,9 +981,15 @@ prelude: :gerbil/core
   (set! v.focus n)
   (set! v.position position)
   (set! v.revision revision)
-  (set! v.facts #f)
-  (set-view-drawn-items! v initial-drawn-items initial-drawn-items)
+  (forget-measured! v)
   (place-view! v #f 'top))
+
+;; Forget what the browser measured of what V showed, and what was worked
+;; out from it.
+(def (forget-measured! (v : view)) => :void
+  (set! v.facts #f)
+  (set! v.average-item-height #f)
+  (set-view-drawn-items! v initial-drawn-items initial-drawn-items))
 
 ;; Forget what the browser measured of what V showed before, and place
 ;; V's point's item, among the items of the root of the buffer V shows, at
@@ -981,8 +997,7 @@ prelude: :gerbil/core
 ;; which the browser's scroll range turns into the top or the bottom near
 ;; either end; or, without a point, V's first item at its top.
 (def (show-point! (v : view)) => :void
-  (set! v.facts #f)
-  (set-view-drawn-items! v initial-drawn-items initial-drawn-items)
+  (forget-measured! v)
   (let (it (view-point-item v (buffer-root v.showing)))
     (if it
       (place-view! v it 'center)
@@ -1000,13 +1015,14 @@ prelude: :gerbil/core
     v))
 
 ;; A new view of V's buffer at V's point, placed where V's newest placement
-;; puts V, and drawing as much: when a view is split, both halves start
-;; where it was (Emacs keeps the window start).
+;; puts V, drawing as much, with spacers as high: when a view is split,
+;; both halves start where it was (Emacs keeps the window start).
 (def (copy-view (v : view)) => view
   (let ((new (new-view-at v.showing v.focus (view-point v) (node-chars-revision v.focus)))
         (p v.last-placement))
     (place-view! new (placement-target p) (placement-align p) offset: (placement-offset p))
     (set-view-drawn-items! new v.drawn-before v.drawn-after)
+    (set! (view-average-item-height new) v.average-item-height)
     new))
 
 ;; The text node V's point is in, or #f.
@@ -1120,6 +1136,10 @@ prelude: :gerbil/core
   (let* ((facts v.facts)
          (it (and facts (scroll-facts-last-visible facts))))
     (and it (current-item it))))
+
+;; Keep PX as the px an item of V takes on average (see view).
+(def (set-view-average-item-height! (v : view) (px : :flonum)) => :void
+  (set! v.average-item-height px))
 
 ;; Draw BEFORE items before V's scroll item and AFTER after it.
 (def (set-view-drawn-items! (v : view) (before : :fixnum) (after : :fixnum)) => :void

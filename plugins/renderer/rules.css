@@ -1,15 +1,16 @@
-/* The renderer's HTML: the screen, views, buffers, text, cursors, scroll
-   bars and status lines.
+/* The renderer's HTML: the screen, views, buffers, text, spacers, cursors
+   and status lines.
 
    These classes and data attributes are a published styling surface:
-   .screen, .view, .buffer, .text, .line, .cursor, .inactive-cursor,
-   .placement, .scroll-bar, .scroll-bar-handle, .status-line, .face-NAME,
-   [data-view], [data-selected], [data-part], [data-node],
-   [data-clickable], and [data-item] on each drawn item of a view. Other
+   .screen, .view, .buffer, .text, .line, .spacer, .cursor,
+   .inactive-cursor, .placement, .status-line, .face-NAME, [data-view],
+   [data-selected], [data-part], [data-node], [data-clickable],
+   [data-spacer], and [data-item] on each drawn item of a view. Other
    plugins may select on them, for example to style their own nodes
    inside a buffer. Rules here are wrapped in :where() so that any other
    plugin's or theme's rule wins whatever its place on the page; the
-   cursor and the items' margins are the exceptions. */
+   cursor, the items' margins and the spacers' scrolling rules are the
+   exceptions. */
 
 /* The screen is the layout, and fills the browser window; views scroll
    inside it. Dynamic viewport units follow a phone's browser toolbar, and
@@ -23,26 +24,18 @@
            env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
 }
 
-/* A view: its buffer, with its scroll bar over the buffer's inline end,
-   then its status line. */
+/* A view: its buffer, then its status line. */
 :where(.view) {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* The buffer is the view's scroller. The browser scrolls it; the scroll
-   bar beside it is the renderer's own, so the browser's is hidden. */
+/* The buffer is the view's scroller, with the browser's own scroll bar. */
 :where(.buffer) {
-  grid-area: 1 / 1;
   padding: var(--buffer-padding);
   overflow: auto;
   overscroll-behavior: contain;
-  scrollbar-width: none;
-}
-
-:where(.buffer)::-webkit-scrollbar {
-  display: none;
 }
 
 :where(.text) {
@@ -68,58 +61,23 @@
   display: none;
 }
 
-/* The scroll bar shows where the view is among its items: the handle
-   runs from the item at the top to the last in view, over the item count.
-   Its geometry comes from the server as --scroll-bar-handle-start and
-   --scroll-bar-handle-size; while the handle is dragged, the page places
-   it by --scroll-bar-drag-start. */
-:where(.scroll-bar) {
-  grid-area: 1 / 1;
-  justify-self: end;
-  position: relative;
-  inline-size: var(--scroll-bar-width);
-  background: var(--scroll-bar-track);
-  touch-action: none;
-  user-select: none;
+/* A spacer stands in for items not drawn, as high as the server says
+   (--spacer-block-size). It must never be the browser's scroll anchor,
+   or the browser would hold a spacer still instead of the items being
+   read, and it has no margins, which would fall outside what the page
+   measures. Real specificity, so no other rule changes either. */
+.buffer > .spacer {
+  margin-block: 0;
+  overflow-anchor: none;
 }
 
-:where(.scroll-bar-handle) {
-  position: absolute;
-  inset-inline: 0;
-  --scroll-bar-handle-length: max(var(--scroll-bar-handle-size, 100%), var(--scroll-bar-handle-minimum));
-  inset-block-start: var(--scroll-bar-drag-start,
-                         min(var(--scroll-bar-handle-start, 0%), 100% - var(--scroll-bar-handle-length)));
-  block-size: var(--scroll-bar-handle-length);
-  border-radius: var(--scroll-bar-handle-radius);
-  background: var(--scroll-bar-handle);
-  cursor: grab;
-}
-
-:where(.scroll-bar-handle:active) {
-  background: var(--scroll-bar-handle-active);
-  cursor: grabbing;
-}
-
-/* On a touch screen the bar is a thin indicator, shown while the view
-   moves (the page sets .scrolling). */
-@media (pointer: coarse) {
-  :where(.scroll-bar) {
-    inline-size: var(--scroll-bar-touch-width);
-    background: none;
-    opacity: 0;
-    transition: opacity 0.3s;
-  }
-
-  :where(.scroll-bar.scrolling) {
-    opacity: 1;
-    transition: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :where(.scroll-bar) {
-    transition: none;
-  }
+/* Its faint lines read as "content coming" while a fast scroll outruns
+   what is drawn. */
+:where(.spacer) {
+  block-size: var(--spacer-block-size, 0);
+  background: repeating-linear-gradient(transparent 0 0.25lh,
+                                        var(--spacer-line) 0.25lh 0.75lh,
+                                        transparent 0.75lh 1lh);
 }
 
 /* Point in the view that receives typing. Two classes, so it beats a face

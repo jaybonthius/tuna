@@ -19,24 +19,26 @@
 ;;; scroll item to its drawn-after items after it, inside as much of the
 ;;; tree as holds them: a node opening into children is drawn with only
 ;;; the children holding drawn items, and a text node with only its drawn
-;;; lines. Nothing stands in for what is not drawn, so the browser's scroll
-;;; range is exactly what is drawn, and nothing here knows a size in
-;;; pixels. Each drawn item's element carries its token (data-item); a
-;;; line's id stays with its text, through scrolling and through edits
-;;; above it, so a morph moves lines rather than rewriting them and the
-;;; browser's scroll anchoring holds what you read still. The scroller
-;;; carries what its report trigger needs (the web transport's tunaScroll
-;;; action): the drawn-above and drawn-below settings, whether the run
-;;; starts at the first item and ends at the last, the view size last
-;;; measured and the node drawn from. It also holds the view's placement
-;;; marker, whose element id carries the placement's number, so only a new
+;;; lines. A spacer stands in for the items before the run and another for
+;;; those after it, each as high as the items it stands for would be at
+;;; the view's average item height, which the browser measured; so the
+;;; browser's own scroll bar covers the whole buffer. That height is the
+;;; only size here, and only spacers use it: every position comes from what
+;;; the browser measures. Until it has measured the view there are no
+;;; spacers. A spacer in view asks the page to report (data-on-intersect),
+;;; whatever brought it there. Each drawn item's element carries its token
+;;; (data-item); a line's id stays with its text, through scrolling and
+;;; through edits above it, so a morph moves lines rather than rewriting
+;;; them and the browser's scroll anchoring holds what you read still. The
+;;; scroller carries what its report trigger needs (the web transport's
+;;; tunaScroll action): the drawn-screens setting, whether the run starts
+;;; at the first item and ends at the last, the view size last measured
+;;; and the node drawn from. It also holds the view's placement marker,
+;;; whose element id carries the placement's number, so only a new
 ;;; placement, or a freshly loaded page, makes the browser place the view
 ;;; (tunaPlace); the marker's other attributes name the current scroll
-;;; state between placements. Beside the scroller is the view's scroll
-;;; bar, drawn once the browser has measured that not every item is in
-;;; view: its handle runs from the scroll item to the last item wholly in view,
-;;; over the item count. Views and status lines are parts a click can name
-;;; (data-part "view:V", "status-line:V"); a status line is marked
+;;; state between placements. Views and status lines are parts a click can
+;;; name (data-part "view:V", "status-line:V"); a status line is marked
 ;;; clickable while a click on one has a binding, and so is a node whose
 ;;; own keymap binds a plain click (data-clickable). Unprefixed global
 ;;; click bindings, which every part falls back to, mark nothing.
@@ -326,10 +328,10 @@
         (hash-put! (html-rendering-views self) (view-id v) fresh)
         fresh))))
 
-;; Px, from a drawn-above or drawn-below setting.
-(def (setting-pixels (s : setting)) => :fixnum
-  (let (px (setting-value s))
-    (inexact->exact (round (if (and (real? px) (>= px 0)) px (setting-default s))))))
+;; The drawn-screens setting for B: a positive number of view heights.
+(def (drawn-screens-value (b : buffer)) => :number
+  (let (screens (buffer-local-value drawn-screens b))
+    (exact->inexact (if (and (real? screens) (> screens 0)) screens (setting-default drawn-screens)))))
 
 ;; Where IT is among START's items, or #f.
 (def (index-in (start : node) (it :? item)) => (Maybe :fixnum)
@@ -349,8 +351,7 @@
       ['data-effect "$_tunaScrolls; @tunaScroll('moved')"]
       ['data-on:scrollend "@tunaScroll('rest')"]
       ['data-scroll-root (number->string (node-id start))]
-      ['data-drawn-above (number->string (setting-pixels drawn-above))]
-      ['data-drawn-below (number->string (setting-pixels drawn-below))]]
+      ['data-drawn-screens (number->string (drawn-screens-value (view-showing v)))]]
      (if (fx<= first 0) [['data-run-at-start ""]] [])
      (if (fx>= last (fx1- count)) [['data-run-at-end ""]] [])
      (if facts
@@ -375,37 +376,31 @@
              (data-align ,(symbol->string (placement-align p)))
              (data-offset ,(number->string (placement-offset p)))))))
 
-;; ITEMS as a percentage of COUNT, to four decimals: "12.5000%".
-(def (percent-of (items : :fixnum) (count : :fixnum)) => :string
-  (let* ((scaled (quotient (* items 1000000) count))
-         (fraction (number->string (remainder scaled 10000))))
-    (string-append (number->string (quotient scaled 10000)) "."
-                   (make-string (fx- 4 (string-length fraction)) #\0) fraction "%")))
-
-;; V's scroll bar, once the browser has measured that not all COUNT items
-;; of START are in view; TOP is the index of the scroll item. The handle
-;; runs from TOP over the items in view, as fractions of the track; the
-;; browser keeps its own class and style through morphs, for showing the
-;; bar while scrolling on a touch screen and the handle's drag preview.
-(def (scroll-bar (v : view) (count : :fixnum) (top : :fixnum)) => :list
-  (let (facts (view-facts v))
-    (if (and facts (fx> count 0)
-             (or (fx> top 0) (fx< (scroll-facts-visible-count facts) count)))
-      (let ((percent (cut percent-of <> count))
-            (id (string-append (view-element-id v) "-scroll-bar")))
-        [`(div (@ (class "scroll-bar") (id ,id) (aria-hidden "true")
-                  (data-preserve-attr "class style")
-                  (data-on:click "@tunaScrollBar()"))
-               (div (@ (class "scroll-bar-handle") (id ,(string-append id "-handle"))
-                       (style ,(string-append "--scroll-bar-handle-start: " (percent top)
-                                              "; --scroll-bar-handle-size: "
-                                              (percent (fxmax 1 (scroll-facts-visible-count facts)))))
-                       (data-on:pointerdown "@tunaScrollBar()"))))])
+;; V's spacer standing in for ITEMS undrawn items on SIDE ("above" or
+;; "below" the drawn run of items FIRST to LAST), at V's average item
+;; height; none before the browser has measured it, or without items.
+;; Whenever it is in view, the page reports (data-on-intersect, an
+;; IntersectionObserver), however the view got there: a fling, a drag of
+;; the scroll bar, or a report that was already on its way when scrolling
+;; stopped. Its arguments change with the run, so a new run observes
+;; afresh and asks again while the spacer is in view. It is not the
+;; browser's scroll anchor (the renderer's stylesheet), so the browser
+;; holds drawn items still, never a spacer.
+(def (spacer (v : view) (side : :string) (items : :fixnum) (first : :fixnum) (last : :fixnum)) => :list
+  (let (average (view-average-item-height v))
+    (if (and average (fx> items 0))
+      [`(div (@ (class "spacer") (aria-hidden "true")
+                (id ,(string-append (view-element-id v) "-spacer-" side))
+                (data-spacer ,side)
+                (style ,(string-append "--spacer-block-size: "
+                                       (number->string (inexact->exact (flround (fl* average (exact->inexact items)))))
+                                       "px"))
+                (data-on-intersect ,(string-append "@tunaScroll('spacer', " (number->string first) ", "
+                                                   (number->string last) ")"))))]
       [])))
 
 ;; V: its buffer from node START (the root, or where the frame points),
-;; with its scroll bar, then its status line unless its buffer turns it
-;; off.
+;; then its status line unless its buffer turns it off.
 (def (render-view (self : html-rendering) (v : view) (selected? : :boolean) (start : node)) => :list
   (let* ((b (view-showing v))
          (id (number->string (view-id v)))
@@ -432,8 +427,9 @@
            (article (@ (class "buffer") (aria-label ,(buffer-name b))
                        ,@(scroller-attributes v start first last count))
                     ,(placement-marker v start)
-                    ,(render-node d start run))
-           ,@(scroll-bar v count top)
+                    ,@(spacer v "above" first first last)
+                    ,(render-node d start run)
+                    ,@(spacer v "below" (fx- count (fx1+ last)) first last))
            ,@(if (buffer-local-value show-status-line b)
                [`(p (@ (class "status-line")
                        (data-part ,(string-append "status-line:" id))

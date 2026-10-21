@@ -1,6 +1,5 @@
 import { action } from "datastar";
 import { send } from "./input-sender";
-import { placementApplied } from "./tuna-scroll-bar";
 
 // What the browser measured of a view's scroller, never what it means
 // (ADR 7): the server's scroll state comes from this report, and every
@@ -12,25 +11,35 @@ type ScrollFacts = Readonly<{
   view: number;
   node: number;                // the node the scroller draws from
   placement: number;           // the last placement applied to the scroller
-  top: string | null;          // the item at the top edge
+  top: string | null;          // the item at the top edge, or next to the spacer it is in
   offset: number;              // px of it above the edge
   lastVisible: string | null;  // the last item wholly in view
+  spacer: "above" | "below" | null;  // the spacer the top edge is in
+  spacerDistance: number;      // px from the drawn item next to it to the edge
   before: number;              // items drawn before the top item
   after: number;               // items drawn after it
-  above: number;               // px drawn above the view
-  below: number;               // px drawn below the view
+  drawnHeight: number;         // px from the first drawn item's top to the last one's bottom
+  above: number;               // px of them above the view
+  below: number;               // px of them below the view
   width: number;               // the view's size, px
   height: number;
 }>;
 
-// What the page keeps of each scroller, all of it presentation: the last
-// placement it applied, whether it owes the server a report, the item it
-// holds still through the next screen (see tunaScroll), and when it last
-// moved (for the scroll bar shown while scrolling).
-type Held = { token: string; offset: number; scrollTop: number };
-type ScrollerState = {
-  placed: number; owed: boolean; held?: Held; scrollTop: number; still?: ReturnType<typeof setTimeout>;
+// What the page holds still through the next screen after a report (see
+// tunaScroll): the item it reported, at the top edge or next to the spacer
+// that edge was in, OFFSET px of it above the edge when the scroller was
+// SCROLLTOP px down. When nothing drawn was in view, also what the
+// placement marker named then (COUNTED), to tell the server's answer, the
+// item it counted across the spacer, from a screen sent before it.
+type Held = {
+  token: string; offset: number; scrollTop: number;
+  counted?: { target: string | null; offset: string | null };
 };
+
+// What the page keeps of each scroller, all of it presentation: the last
+// placement it applied, whether it owes the server a report, and what it
+// holds still through the next screen.
+type ScrollerState = { placed: number; owed: boolean; held?: Held };
 const scrollers = new WeakMap<Element, ScrollerState>();
 
 // A non-negative integer attribute's value, or null.
@@ -61,52 +70,75 @@ function firstEndingBelow(items: ArrayLike<Element>, y: number): number {
 // count as wholly in view: what the browser rounds to a device pixel.
 const edgeTolerance = 0.5;
 
-// Put the item HELD names back OFFSET px above SCROLLER's top edge, if
-// the scroller has not moved since and the item is drawn: then a screen
-// moved the item, and the browser's scroll anchoring did not.
-function holdStill(scroller: Element, held: Held): void {
-  if (scroller.scrollTop !== held.scrollTop) return;
-  const item = Array.from(scroller.querySelectorAll("[data-item]")).find((e) => e.getAttribute("data-item") === held.token);
-  if (item === undefined) return;
+// SCROLLER's drawn item whose token is TOKEN.
+function drawnItem(scroller: Element, token: string): Element | undefined {
+  return Array.from(scroller.querySelectorAll("[data-item]")).find((e) => e.getAttribute("data-item") === token);
+}
+
+// SCROLLER's spacer on SIDE of the drawn items, if it has one.
+function spacerOn(scroller: Element, side: "above" | "below"): Element | undefined {
+  return Array.from(scroller.querySelectorAll(".spacer")).find((e) => e.getAttribute("data-spacer") === side);
+}
+
+// Scroll SCROLLER so that ITEM's top is OFFSET px above its top edge.
+function putAtTop(scroller: Element, item: Element, offset: number): void {
   const viewTop = scroller.getBoundingClientRect().top + scroller.clientTop;
-  const moved = item.getBoundingClientRect().top - (viewTop - held.offset);
+  const moved = item.getBoundingClientRect().top - (viewTop - offset);
   if (Math.abs(moved) >= 0.5) scroller.scrollTop += moved;
 }
 
-// Show SCROLLER's scroll bar while it moves (a class the renderer's
-// stylesheet shows the bar by on a touch screen), and hide it again once
-// it has been still for a moment.
-function showMoving(scroller: Element, state: ScrollerState): void {
-  const bar = scroller.parentElement?.querySelector(".scroll-bar");
-  if (!bar || scroller.scrollTop === state.scrollTop) return;
-  state.scrollTop = scroller.scrollTop;
-  bar.classList.add("scrolling");
-  clearTimeout(state.still);
-  state.still = setTimeout(() => { bar.classList.remove("scrolling"); }, 800);
+// After the screen that answers a report: when nothing drawn was in view
+// and SCROLLER has not moved since, put the item the server counted
+// across the spacer at the top, at the offset it counted. Otherwise put
+// the item HELD names back where it was, when the screen moved it and
+// the browser's scroll anchoring did not: if SCROLLER has not moved since
+// it reported, or is at its top, where Chrome does not anchor and the item
+// goes where the scrolling since the report took it (nothing else moved
+// it: no screen came in between). A view that moved on is left as the
+// browser has it; its next report says where it is.
+function holdStill(scroller: Element, held: Held): void {
+  const scrollTop = scroller.scrollTop;
+  const marker = scroller.querySelector(".placement");
+  const target = marker?.getAttribute("data-target") ?? null;
+  if (held.counted !== undefined && scrollTop === held.scrollTop && marker != null && target !== null
+      && (target !== held.counted.target || marker.getAttribute("data-offset") !== held.counted.offset)) {
+    const item = drawnItem(scroller, target);
+    if (item !== undefined) putAtTop(scroller, item, pixels(marker, "data-offset"));
+    return;
+  }
+  if (scrollTop !== held.scrollTop && scrollTop !== 0) return;
+  const item = drawnItem(scroller, held.token);
+  if (item !== undefined) putAtTop(scroller, item, held.offset + scrollTop - held.scrollTop);
 }
 
 // The renderer calls this from a view's scroller (the element with
 // data-effect and data-on:scrollend): with REASON "moved" on every scroll
 // and whenever a screen puts the data-effect back, and "rest" when
-// scrolling ends. It reports when what is drawn runs short or long on
-// either side against the drawn-above and drawn-below px the server asks
-// for, when the view's size is not the one the server last heard, when
-// scrolling ends, and after a placement. A report removes the scroller's
-// data-effect, and none is sent while it is missing, so one report is on
-// its way until the next screen puts it back: over a slow link, reports
-// sent faster than screens return would queue up and describe the past.
-// A report that could not go then is owed, and goes with the next screen.
-// The browser's scroll anchoring keeps what is in view still when a screen
-// draws more above it, but not always: Chrome leaves the view where it is
-// while the first item drawn is in view. So a report holds its top item
-// still through the next screen when the scroller has not moved since.
-// A new placement marker is the placement's to apply first (tunaPlace).
+// scrolling ends; and from a spacer inside it, with "spacer", when the
+// spacer comes into view. It reports when what is drawn runs short or
+// long on either side against the drawn-screens view heights the server
+// asks for, when the view's size is not the one the server last heard,
+// when scrolling ends, when a spacer is in view, and after a placement. A
+// report removes the scroller's data-effect, and none is sent while it is
+// missing, so one report is on its way until the next screen puts it
+// back: over a slow link, reports sent faster than screens return would
+// queue up and describe the past. A scrolling end that could not go then
+// is owed, and goes with the next screen; a spacer that could not is
+// observed again by the next screen. When the top edge is in a spacer,
+// the report names the drawn item next to it and how far the edge is from
+// it, and the server counts the item there. The browser's scroll
+// anchoring keeps what is in view still when a screen draws more above
+// it, but not always: Chrome leaves the view where it is while the first
+// item drawn is in view. So a report holds what it found at the top
+// still through the next screen when the scroller has not moved since
+// (holdStill). A new placement marker is the placement's to apply first
+// (tunaPlace).
 action({
   name: "tunaScroll",
-  apply({ el }: { el: HTMLElement }, reason: "moved" | "rest"): void {
-    const state = scrollers.get(el);
-    if (state === undefined) return;  // tunaPlace runs first, then reports
-    showMoving(el, state);
+  apply({ el: from }: { el: HTMLElement }, reason: "moved" | "rest" | "spacer"): void {
+    const el = from.closest("[data-scroll-root]") as HTMLElement | null;
+    const state = el === null ? undefined : scrollers.get(el);
+    if (el === null || state === undefined) return;  // tunaPlace runs first, then reports
     if (!el.hasAttribute("data-effect")) {
       if (reason === "rest") state.owed = true;
       return;
@@ -116,40 +148,56 @@ action({
       holdStill(el, state.held);
       state.held = undefined;
     }
-    const wantAbove = pixels(el, "data-drawn-above");
-    const wantBelow = pixels(el, "data-drawn-below");
-    const above = el.scrollTop;
-    const below = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const want = pixels(el, "data-drawn-screens") * el.clientHeight;
     const box = el.getBoundingClientRect();
     const viewTop = box.top + el.clientTop;
     const viewBottom = viewTop + el.clientHeight;
     const items = el.querySelectorAll("[data-item]");
     const first = items[0];
     const last = items[items.length - 1];
-    const due = reason === "rest" || state.owed
+    const firstTop = first?.getBoundingClientRect().top ?? viewTop;
+    const lastBottom = last?.getBoundingClientRect().bottom ?? viewTop;
+    const above = Math.max(viewTop - firstTop, 0);
+    const below = Math.max(lastBottom - viewBottom, 0);
+    const due = reason !== "moved" || state.owed
       || el.clientWidth !== count(el, "data-measured-width")
       || el.clientHeight !== count(el, "data-measured-height")
-      || (above < wantAbove / 2 && !el.hasAttribute("data-run-at-start"))
-      || (below < wantBelow / 2 && !el.hasAttribute("data-run-at-end"))
+      || (above < want / 2 && !el.hasAttribute("data-run-at-start"))
+      || (below < want / 2 && !el.hasAttribute("data-run-at-end"))
       // Far more than asked for: only when an item lies far enough beyond
       // the edge that drawing fewer leaves enough.
-      || (above > 2 * wantAbove && first !== undefined
-          && viewTop - first.getBoundingClientRect().bottom > wantAbove / 2)
-      || (below > 2 * wantBelow && last !== undefined
-          && last.getBoundingClientRect().top - viewBottom > wantBelow / 2);
+      || (above > 2 * want && first !== undefined
+          && viewTop - first.getBoundingClientRect().bottom > want / 2)
+      || (below > 2 * want && last !== undefined
+          && last.getBoundingClientRect().top - viewBottom > want / 2);
     const revision = count(document.getElementById("screen"), "data-revision");
     const view = count(el.closest("[data-view]"), "data-view");
     const node = count(el, "data-scroll-root");
     if (!due || revision === null || view === null || node === null) return;
-    const topIndex = Math.min(firstEndingBelow(items, viewTop), items.length - 1);
-    const lastIndex = Math.max(firstEndingBelow(items, viewBottom + edgeTolerance) - 1, topIndex);
+    // The top edge is in a spacer when it is beyond the drawn items and a
+    // spacer is there.
+    const spacer = first !== undefined && firstTop - viewTop > edgeTolerance && spacerOn(el, "above") ? "above"
+      : last !== undefined && viewTop >= lastBottom && spacerOn(el, "below") ? "below"
+      : null;
+    const topIndex = spacer === "above" ? 0
+      : spacer === "below" ? items.length - 1
+      : Math.min(firstEndingBelow(items, viewTop), items.length - 1);
+    const lastIndex = firstEndingBelow(items, viewBottom + edgeTolerance) - 1;
+    const lastShown = items[lastIndex];
     const top = items[topIndex];
     const token = top?.getAttribute("data-item") ?? null;
     const offset = top ? viewTop - top.getBoundingClientRect().top : 0;
     el.removeAttribute("data-effect");
     state.owed = false;
-    state.held = token === null ? undefined : { token, offset, scrollTop: el.scrollTop };
-    void send<ScrollFacts>({
+    const marker = el.querySelector(".placement");
+    const blank = spacer !== null && (firstTop >= viewBottom || lastBottom <= viewTop);
+    state.held = token === null ? undefined : {
+      token, offset, scrollTop: el.scrollTop,
+      counted: blank
+        ? { target: marker?.getAttribute("data-target") ?? null, offset: marker?.getAttribute("data-offset") ?? null }
+        : undefined,
+    };
+    send<ScrollFacts>({
       type: "scroll",
       revision,
       view,
@@ -157,9 +205,16 @@ action({
       placement: state.placed,
       top: token,
       offset,
-      lastVisible: items[lastIndex]?.getAttribute("data-item") ?? null,
+      lastVisible: spacer === null
+        ? items[Math.max(lastIndex, topIndex)]?.getAttribute("data-item") ?? null
+        : lastShown !== undefined && lastShown.getBoundingClientRect().top >= viewTop - edgeTolerance
+          ? lastShown.getAttribute("data-item")
+          : null,
+      spacer,
+      spacerDistance: spacer === "above" ? firstTop - viewTop : spacer === "below" ? viewTop - lastBottom : 0,
       before: Math.max(topIndex, 0),
       after: Math.max(items.length - 1 - topIndex, 0),
+      drawnHeight: Math.max(lastBottom - firstTop, 0),
       above,
       below,
       width: el.clientWidth,
@@ -181,8 +236,7 @@ action({
     const number = count(el, "data-placement");
     if (scroller === null || number === null) return;
     const target = el.getAttribute("data-target");
-    const item = target === null ? undefined
-      : Array.from(scroller.querySelectorAll("[data-item]")).find((e) => e.getAttribute("data-item") === target);
+    const item = target === null ? undefined : drawnItem(scroller, target);
     if (target === null) {
       scroller.scrollTop = 0;
     } else if (item !== undefined) {
@@ -195,9 +249,8 @@ action({
       }
     }
     const state = scrollers.get(scroller);
-    if (state === undefined) scrollers.set(scroller, { placed: number, owed: true, scrollTop: scroller.scrollTop });
-    else Object.assign(state, { placed: number, owed: true, held: undefined, scrollTop: scroller.scrollTop });
-    placementApplied(scroller);
+    if (state === undefined) scrollers.set(scroller, { placed: number, owed: true });
+    else Object.assign(state, { placed: number, owed: true, held: undefined });
     // Run the scroller's report trigger, which reports what is owed.
     scroller.dispatchEvent(new Event("scroll"));
   },

@@ -1,8 +1,8 @@
 ;;; The scrolling plugin: scroll reports, resolved through the keys plugin
-;;; to view-scrolled, become the scroll state of the view they name, and
-;;; set how many items it draws; scroll bar events, resolved to
-;;; scroll-bar-drag and scroll-bar-page, and the keys C-v, M-v and C-l
-;;; place items; a view and its point are kept together. The layout is the
+;;; to view-scrolled, become the scroll state of the view they name, also
+;;; from a spacer, and set how many items it draws and its average item
+;;; height; the keys C-v, M-v and C-l place items; a view and its point
+;;; are kept together. The layout is the
 ;;; two-views double; a text of 5,000 lines is shown in its left view.
 ;;; Point moves by a command of this test's (`goto-test-line`), standing in
 ;;; for editing commands.
@@ -85,30 +85,31 @@
 ;; Submit a report about V's scroller, which draws V's text, then wait
 ;; until the editor loop has handled it. By default: line TOP at the top,
 ;; BEFORE items drawn before it and AFTER after it, ABOVE and BELOW px of
-;; them beyond the view, in a 800 x 744 px view; LAST, by default 30
-;; lines below TOP, is the last in view.
+;; them beyond the view, DRAWN px from the first one's top to the last
+;; one's bottom, in a 800 x 744 px view; LAST, by default 30 lines below
+;; TOP, is the last in view. With SPACER ('above or 'below), the view's top
+;; edge is DISTANCE px into that spacer, TOP is the drawn line next to it,
+;; and no line is wholly in view.
 (def (report! v top: (top 300) offset: (offset 0.) last: (last #f)
-              before: (before 100) after: (after 400) above: (above 20000.) below: (below 20000.)
+              spacer: (spacer #f) distance: (distance 0.)
+              before: (before 100) after: (after 400) above: (above 2000.) below: (below 2000.)
+              drawn: (drawn (+ above below 744.))
               placement: (placement 0) root: (root (view-node v)) node: (node (node-id root)))
   (submit! (make-scroll-event (next-sequence!) (make-posn 'view (view-id v) node 0) placement
                               (and top (line-token v top root: root)) offset
-                              (line-token v (or last (+ top 30)) root: root)
-                              before after above below 800 744)))
+                              (and (not spacer) (line-token v (or last (+ top 30)) root: root))
+                              spacer distance before after drawn above below 800 744)))
 
 ;; Report what the browser measured of V's newest placement: TOP and LAST
 ;; as report! takes them.
 (def (placed! v top last root: (root (view-node v)))
   (report! v top: top last: last root: root placement: (placement-number (view-placement v))))
 
-(def (scroll-bar! v part fraction)
-  (submit! (make-scroll-bar-event (next-sequence!)
-                                  (make-posn 'vertical-scroll-bar (view-id v) (node-id (view-node v)) 0)
-                                  part fraction)))
-
-;; The browser has placed V at its start and measured it there, so later
-;; reports are V scrolled by hand.
+;; The browser has placed V at its start and measured it there, with 100
+;; lines of 20 px drawn, so later reports are V scrolled by hand.
 (def (measured! v)
-  (report! v top: 1 last: 31 placement: (placement-number (view-placement v))))
+  (report! v top: 1 last: 31 before: 0 after: 99 above: 0. below: 1256. drawn: 2000.
+           placement: (placement-number (view-placement v))))
 
 ;; The line of IT, or #f.
 (def (line-of it)
@@ -193,14 +194,23 @@
          (on-baton (lambda () (goto-char 1) (insert "0\n")))
          (check (scroll-state v) => [301 5.]))))
 
-    (test-case "the counts grow by the measured density of what is drawn"
+    (test-case "the counts grow by the measured density of what is drawn, toward two view heights"
       (with-scrolling
        (lambda (v)
-         ;; 51 items in 240 + 744 + 200 px: 20,000 - 240 px more above need
-         ;; 852 more items, and 20,000 - 200 below need 853.
+         ;; 51 items in 1,184 px; two view heights are 1,488 px: 1,488 - 240
+         ;; px more above need 54 more items, and 1,488 - 200 below need 56.
          (measured! v)
-         (report! v top: 2500 before: 10 after: 40 above: 240. below: 200.)
-         (check (drawn v) => [862 893]))))
+         (report! v top: 2500 before: 10 after: 40 above: 240. below: 200. drawn: 1184.)
+         (check (drawn v) => [64 96]))))
+
+    (test-case "drawn-screens sets how much is drawn beyond the view, in view heights"
+      (with-scrolling
+       (lambda (v)
+         (on-baton (lambda () (set-buffer-setting! (view-showing v) drawn-screens 1)))
+         (measured! v)
+         ;; One view height, 744 px: 744 - 240 px above need 22 more items.
+         (report! v top: 2500 before: 10 after: 40 above: 240. below: 200. drawn: 1184.)
+         (check (car (drawn v)) => 32))))
 
     (test-case "the counts stop at the first and the last item"
       (with-scrolling
@@ -224,6 +234,19 @@
       (check (adjusted-count 1000 30 50000. 20000. 0.05) => 999)
       (check (adjusted-count 31 30 50000. 20000. 0.05) => 30))
 
+    (test-case "near an end, every item to it is drawn rather than a short spacer"
+      ;; 50 items fill 1,000 px at .05 items a px.
+      (check (to-the-end 100 50 1000. .05) => 50)
+      (check (to-the-end 100 60 1000. .05) => 100)
+      (check (to-the-end 10 50 1000. .05) => 10)
+      (with-scrolling
+       (lambda (v)
+         (measured! v)
+         ;; 64 items would be drawn above line 100, leaving 35: fewer than
+         ;; the 65 that fill two view heights.
+         (report! v top: 100 before: 10 after: 40 above: 240. below: 200. drawn: 1184.)
+         (check (car (drawn v)) => 99))))
+
     (test-case "a report measured before the view's newest placement is ignored"
       (with-scrolling
        (lambda (v)
@@ -245,32 +268,75 @@
          (check (scroll-state v) => [#f 0.])
          (check (view-facts v) => #f))))
 
-    (test-case "dragging the scroll bar's handle places the item at that fraction at the top"
-      (with-scrolling
-       (lambda (v)
-         (let (number (placement-number (view-placement v)))
-           (scroll-bar! v 'handle .5)
-           (let (p (view-placement v))
-             (check (placement-number p) => (+ number 1))
-             (check [(line-of (placement-target p)) (placement-align p)] => [2501 'top]))
-           (check (scroll-state v) => [2501 0.])
-           (scroll-bar! v 'handle 1.)
-           (check (scroll-state v) => [5000 0.])
-           (scroll-bar! v 'handle 0.)
-           (check (scroll-state v) => [1 0.])))))
-
-    (test-case "clicking the scroll bar's track pages: the last item in view to the top, or the top one to the bottom"
+    (test-case "a report from a spacer above counts back from the first drawn item by the average"
       (with-scrolling
        (lambda (v)
          (measured! v)
-         (report! v top: 300 last: 330)
-         (scroll-bar! v 'below-handle .9)
-         (let (p (view-placement v))
-           (check [(line-of (placement-target p)) (placement-align p)] => [330 'top]))
-         (report! v top: 330 last: 360 placement: (placement-number (view-placement v)))
-         (scroll-bar! v 'above-handle .1)
-         (let (p (view-placement v))
-           (check [(line-of (placement-target p)) (placement-align p)] => [330 'bottom])))))
+         (let (number (placement-number (view-placement v)))
+           ;; The top edge is 450 px above line 1,000, the first drawn; at
+           ;; 20 px an item, that is 22.5 items: line 977, 10 px of it above.
+           (report! v top: 1000 spacer: 'above distance: 450. before: 0 after: 99 above: 0. below: 0.
+                    drawn: 2000.)
+           (check (scroll-state v) => [977 10.])
+           ;; The placement names it, exactly, under the same number.
+           (check (placement-of v) => [number 977 'top 10.])
+           ;; Drawn around it: two view heights above, three below.
+           (check (drawn v) => [75 112])))))
+
+    (test-case "a report from a spacer below counts on from the last drawn item by the average"
+      (with-scrolling
+       (lambda (v)
+         (measured! v)
+         ;; 455 px below line 2,000, the last drawn: 22 items of 20 px after
+         ;; line 2,001, and 15 px into the next.
+         (report! v top: 2000 spacer: 'below distance: 455. before: 99 after: 0 above: 0. below: 0.
+                  drawn: 2000.)
+         (check (scroll-state v) => [2023 15.]))))
+
+    (test-case "counting across a spacer stops at the first and the last item, the rest their offset"
+      (with-scrolling
+       (lambda (v)
+         (measured! v)
+         (report! v top: 10 spacer: 'above distance: 5000. before: 0 after: 99 above: 0. below: 0.
+                  drawn: 2000.)
+         ;; 4,820 px above line 1: the start of the view is above it.
+         (check (scroll-state v) => [1 -4820.])
+         (report! v top: 4990 spacer: 'below distance: 5000. before: 99 after: 0 above: 0. below: 0.
+                  drawn: 2000.)
+         (check (scroll-state v) => [5000 4820.]))))
+
+    (test-case "an item across a spacer: the one whose share holds the edge, the rest its offset"
+      ;; Above, from item 100: 45 px is 2.25 items up, so item 97, 15 px above.
+      (check (item-across-spacer 'above 100 1000 45. 20.) => (cons 97 15.))
+      ;; Exactly two items up: item 98, at its top.
+      (check (item-across-spacer 'above 100 1000 40. 20.) => (cons 98 0.))
+      ;; Below, from item 100: 45 px past its bottom is 2 items after 101.
+      (check (item-across-spacer 'below 100 1000 45. 20.) => (cons 103 5.))
+      (check (item-across-spacer 'below 100 1000 0. 20.) => (cons 101 0.))
+      ;; Stopped at the first and the last item, the rest their offset.
+      (check (item-across-spacer 'above 3 1000 100. 20.) => (cons 0 -40.))
+      (check (item-across-spacer 'below 995 1000 100. 20.) => (cons 999 40.)))
+
+    (test-case "the average item height is measured on the first report and on reports from a spacer only"
+      (with-scrolling
+       (lambda (v)
+         (check (view-average-item-height v) => #f)
+         ;; 100 items in 2,000 px.
+         (measured! v)
+         (check (view-average-item-height v) => 20.)
+         ;; Another report measuring 30 px an item leaves the spacers as they are.
+         (report! v top: 300 before: 50 after: 49 above: 1000. below: 256. drawn: 3000.)
+         (check (view-average-item-height v) => 20.)
+         ;; A report from a spacer counts by the 20 px the spacer was drawn
+         ;; with, then keeps what it measured, 25 px, for the next spacers.
+         (report! v top: 1000 spacer: 'above distance: 50. before: 0 after: 99 above: 0. below: 0.
+                  drawn: 2500.)
+         (check (scroll-state v) => [997 10.])
+         (check (view-average-item-height v) => 25.)
+         ;; Showing another buffer forgets it.
+         (let (b (car (rows-with-text!)))
+           (on-baton (lambda () (set-view-buffer v b))))
+         (check (view-average-item-height v) => #f))))
 
     (test-case "C-v puts the last two items wholly in view at the top, and point there when it was above"
       (with-scrolling
@@ -401,16 +467,6 @@
          (check (point-at v) => [1 0])
          (goto-line! 2)
          (check (placed-at v) => [2 'center]))))
-
-    (test-case "the scroll bar moves point into view"
-      (with-scrolling
-       (lambda (v)
-         (measured! v)
-         (scroll-bar! v 'handle .5)
-         (check (point-at v) => [2501 0])
-         (on-baton (lambda () (goto-char 1)))
-         (placed! v 2501 2531)
-         (check (point-at v) => [2501 0]))))
 
     (test-case "items that are nodes: the view goes to the row holding point, and scroll commands page rows"
       (with-scrolling

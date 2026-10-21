@@ -387,20 +387,19 @@
            (check (has? html (line 1)) => #t)
            (check (has? html (line (+ 1 initial-drawn-items))) => #t)
            (check (has? html (line (+ 2 initial-drawn-items))) => #f)
+           ;; No spacers until the browser has measured the view's items.
            (check (has? html "spacer") => #f)
            (check (has? html "data-run-at-start") => #t)
            (check (has? html "data-run-at-end") => #f)
            (check (has? html "data-measured-height") => #f)
            (check (has? html "@tunaScroll('moved')") => #t)
            (check (has? html (string-append "data-scroll-root=\"" (number->string (node-id n)) "\"")) => #t)
-           (check (has? html "data-drawn-above=\"20000\" data-drawn-below=\"20000\"") => #t)
+           (check (has? html "data-drawn-screens=\"2.\"") => #t)
            ;; The placement marker names no item: the view stays at its start.
            (check (has? html (string-append "id=\"view-" (number->string (view-id v)) "-placement-0\"")) => #t)
-           (check (has? html "data-target") => #f)
-           ;; No scroll bar until the browser has measured the view.
-           (check (has? html "scroll-bar") => #f)))))
+           (check (has? html "data-target") => #f)))))
 
-    (test-case "scrolling: a view draws its counts of items around its scroll item, and its scroll bar"
+    (test-case "scrolling: a view draws its counts of items around its scroll item, between spacers"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (insert (fifty-thousand-lines))
@@ -411,6 +410,7 @@
            (set-view-scroll! v (item 25000) 5.)
            (set-view-drawn-items! v 100 300)
            (set-view-facts! v (make-scroll-facts (placement-number (view-placement v)) n (item 25030) 31 800 744))
+           (set-view-average-item-height! v 20.25)
            (let (html (screen))
              (check (has? html (line 24899)) => #f)
              (check (has? html (line 24900)) => #t)
@@ -422,8 +422,23 @@
              (check (has? html (string-append "data-target=\"" (item-token (item 25000))
                                               "\" data-align=\"top\" data-offset=\"5.\""))
                     => #t)
-             ;; The handle runs from item 24,999 (from 0) over 31 of 50,000.
-             (check (has? html "--scroll-bar-handle-start: 49.9980%; --scroll-bar-handle-size: 0.0620%") => #t))
+             ;; Spacers stand in for the 24,899 items before the run and the
+             ;; 24,700 after it, at the measured average of 20.25 px each;
+             ;; in view, each asks for a report naming the run (from 0).
+             (let ((above (string-contains html "data-spacer=\"above\""))
+                   (first (string-contains html (line 24900)))
+                   (last (string-contains html (line 25300)))
+                   (below (string-contains html "data-spacer=\"below\"")))
+               (check (and above first last below (< above first last below) #t) => #t))
+             (check (has? html "--spacer-block-size: 504205px") => #t)
+             (check (has? html "--spacer-block-size: 500175px") => #t)
+             (check (has? html "@tunaScroll('spacer', 24899, 25299)") => #t)
+             (check (has? html "scroll-bar") => #f))
+           ;; At the end of the buffer, no spacer below.
+           (set-view-scroll! v (item 49990) 0.)
+           (let (html (screen))
+             (check (has? html "data-spacer=\"above\"") => #t)
+             (check (has? html "data-spacer=\"below\"") => #f))
            ;; A placement is a new marker, with a larger number.
            (let (number (placement-number (view-placement v)))
              (place-view! v (item 100) 'center)

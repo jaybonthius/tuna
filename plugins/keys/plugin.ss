@@ -9,16 +9,14 @@
 ;;; without it, each from the most specific event name down
 ;;; (`pointer-event-names`), before the next keymap. A click does not clear
 ;;; the echo area, so clicking it to read a message keeps the message.
-;;; Scroll reports and scroll bar events resolve under their keys
-;;; ("<scroll>", "<vertical-scroll-bar> <drag-mouse-1>") from the node
+;;; Scroll reports resolve under their key ("<scroll>") from the node
 ;;; their view's scroller draws from, leaving a pending prefix, the echo
 ;;; area and the last command event as they were. A scroll report is a
 ;;; special event (Emacs's special-event-map): the browser telling the
 ;;; server what it measured, not something the user did, so its binding
 ;;; runs outside the command loop's bookkeeping (call-special-command): it
 ;;; becomes neither this-command nor last-command and runs no command
-;;; hooks. Scroll bar events are the user's, ordinary commands, as in
-;;; Emacs.
+;;; hooks.
 
 (import :tuna/kernel
         :tuna/plugins/keys/contract
@@ -285,34 +283,28 @@
         (message (string-append (car sequences) " is undefined"))
         #f))))
 
-;; A scroll report or scroll bar event, EVENT, at P, looked up under KEYS.
-;; Reports arrive whenever the browser needs a redraw, and a scroll bar
-;; drag sends many, between the keys of a sequence too, so they change no
-;; key state. A special event's binding runs as one (call-special-command).
-(def (resolve-scroll! (self : global-keys) (event : :t) (p : posn) (keys : :string)
-                      (special? : :boolean))
-  => (Maybe :pair)
-  (let (found (find-binding (active-keymaps self (clicked-node self p)) keys #f))
+;; A scroll report, EVENT, looked up under scroll-key. Reports arrive
+;; whenever the browser needs a redraw, between the keys of a sequence
+;; too, so they change no key state; a report is a special event, and its
+;; binding runs as one (call-special-command).
+(def (resolve-scroll! (self : global-keys) (event : scroll-event)) => (Maybe :pair)
+  (let (found (find-binding (active-keymaps self (clicked-node self (scroll-event-start event))) scroll-key #f))
     (and found (not (eq? found 'prefix))
          (let (name (entry-value found))
            (and (command-entry name)
                 (cons name (lambda ()
                              (parameterize ((activation-event event))
-                               (if special?
-                                 (call-special-command name)
-                                 (call-command name))))))))))
+                               (call-special-command name)))))))))
 
 (defmethod {resolve! global-keys}
   (lambda (self event)
     (cond
      ((pointer-event? event) (resolve-pointer! self event))
-     ((scroll-event? event) (resolve-scroll! self event (scroll-event-start event) scroll-key #t))
-     ((scroll-bar-event? event)
-      (resolve-scroll! self event (scroll-bar-event-start event) (scroll-bar-event-keys event) #f))
+     ((scroll-event? event) (resolve-scroll! self event))
      (else (resolve-key! self event)))))
 
-;; The quit key interrupts; every other key, pointer, scroll or scroll bar
-;; event is queued.
+;; The quit key interrupts; every other key, pointer or scroll event is
+;; queued.
 (defmethod {arrival global-keys}
   (lambda (self event)
     ;; Alt can never produce the quit key. In particular, Mac Option

@@ -1,4 +1,4 @@
-# What does a scroller hold? (planned)
+# What does a scroller hold? (built: native scroll bar, 2026-10-21)
 vars: {
   d2-config: {
     layout-engine: elk
@@ -7,27 +7,37 @@ vars: {
 }
 direction: right
 
-scroller: "A scroller: a view showing a 50,000-item buffer (the browser scrolls it natively)" {
+scroller: "A view showing a 50,000-item buffer (the browser scrolls it natively)" {
   grid-columns: 1
   grid-gap: 0
-  above: "Drawn: items 24,190 to 24,999\nabout 20,000 px, as the browser measured" {width: 560}
-  visible: "On screen: items 25,000 to 25,031\nscroll state = item 25,000, 8 px above the top edge" {
+  spacer_above: "Spacer for items 1 to 24,940\n24,940 × 25 px (the measured average) = 623,500 px, empty" {
+    style.stroke-dash: 3
+    style.fill: "#f4f4f4"
+    width: 560
+  }
+  above: "Drawn: items 24,941 to 24,999\nabout two view heights, as the browser measured" {width: 560}
+  visible: "On screen: items 25,000 to 25,027\nscroll state = item 25,000, 8 px above the top edge" {
     style.fill: "#d8e8ff"
     style.bold: true
     width: 560
   }
-  below: "Drawn: items 25,032 to 25,840\nabout 20,000 px, as the browser measured" {width: 560}
+  below: "Drawn: items 25,028 to 25,083\nabout two view heights, as the browser measured" {width: 560}
+  spacer_below: "Spacer for items 25,084 to 50,000\nat the same 25 px each, empty" {
+    style.stroke-dash: 3
+    style.fill: "#f4f4f4"
+    width: 560
+  }
 }
 
-bar: "Scrollbar, drawn by the server:\nthumb at item 25,000 of 50,000" {
+bar: "The browser's own scroll bar:\nthe spacers make its range the whole buffer,\nso its thumb sits about halfway" {
   shape: rectangle
   style.fill: "#eeeeee"
 }
 
-nothing: "Items 1 to 24,189 and 25,841 to 50,000:\nnot drawn, not sized, nothing stands in for them" {
-  style.stroke-dash: 3
+jump: "The page reports how far the top edge is\nfrom the nearest drawn item; Tuna counts items\nfrom there by the same average, makes the item\nthere the scroll state, and draws around it" {
+  shape: rectangle
   style.fill: "#ffffff"
 }
 
-scroller -> bar: "position in items, not pixels" {style.stroke-dash: 3}
-scroller -> nothing: "the scroller ends where drawing ends" {style.stroke-dash: 3}
+scroller -> bar: "sizes only, never positions" {style.stroke-dash: 3}
+scroller -> jump: "a drag or fling lands in a spacer" {style.stroke-dash: 3}

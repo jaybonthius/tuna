@@ -1,5 +1,7 @@
 # Brief: scroll state
 
+> **2026-10-21: superseded in part: native scroll bar.** After comparing four options on his phone, the owner chose the browser's own scroll bar over Tuna's: empty spacers stand in for the items not drawn again, each as high as its items would be at the average item height the browser measured, so the scroll bar covers the whole buffer. That average is the only estimate and sizes only the spacers; every position is still measured or placed. A drag that lands in a spacer is answered by counting items from the nearest drawn one. `drawn-above` and `drawn-below` became `drawn-screens` (view heights, default 2). See [ADR 15](../../agents/adr/0015-scroll-state.md) as amended, and the overview's Scrolling section.
+
 **Date:** 2026-10-17. **Status:** approved 2026-10-17 (the owner delegated the details: "keep this philosophically beautiful"). Supersedes the spacer and height-guessing parts of [scrolling a view](2026-10-scrolling.md); the browser still scrolls natively. Plan: [`agents/plans/scrolling.md`](../../agents/plans/scrolling.md). Evidence: [`agents/research/scrolling/`](../../agents/research/scrolling/README.md).
 
 ## What this is and why

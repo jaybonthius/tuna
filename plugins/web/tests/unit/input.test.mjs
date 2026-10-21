@@ -96,7 +96,7 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
   });
   await module.evaluate();
   assert.deepEqual(Object.keys(actions).sort(),
-                   ["tunaKeyboard", "tunaPlace", "tunaPointer", "tunaScroll", "tunaScrollBar"]);
+                   ["tunaKeyboard", "tunaPlace", "tunaPointer", "tunaScroll"]);
   return {
     posts, errors, retries,
     fire,
@@ -104,7 +104,6 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
     point: (evt) => actions.tunaPointer.apply({ evt }),
     scroll: (el, reason) => actions.tunaScroll.apply({ el }, reason),
     place: (el) => actions.tunaPlace.apply({ el }),
-    scrollBar: (el, evt) => actions.tunaScrollBar.apply({ el, evt }),
   };
 }
 
@@ -354,13 +353,8 @@ test("pressing on a node marked clickable, such as a button, keeps focus; its cl
 class Box extends Element {
   constructor(attributes, parent, top, height) {
     super(attributes, parent);
-    Object.assign(this, { top, height, children: [], listeners: {}, events: [], styles: {} });
+    Object.assign(this, { top, height, children: [], events: [] });
     parent?.children?.push(this);
-    this.classList = {
-      add: (name) => { if (!this.matches(`.${name}`)) this.attributes.class = `${this.attributes.class ?? ""} ${name}`.trim(); },
-      remove: (name) => { this.attributes.class = String(this.attributes.class ?? "").split(" ").filter((c) => c !== name).join(" "); },
-    };
-    this.style = { setProperty: (n, v) => { this.styles[n] = v; }, removeProperty: (n) => { delete this.styles[n]; } };
   }
   get parentElement() { return this.parent; }
   get scroller() { for (let e = this.parent; e; e = e.parent) if (e instanceof Scroller) return e; return null; }
@@ -378,11 +372,7 @@ class Box extends Element {
     return found;
   }
   querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
-  addEventListener(type, listener) { (this.listeners[type] ??= []).push(listener); }
-  removeEventListener(type, listener) { this.listeners[type] = (this.listeners[type] ?? []).filter((l) => l !== listener); }
-  fire(evt) { (this.listeners[evt.type] ?? []).forEach((listener) => listener(evt)); }
   dispatchEvent(evt) { this.events.push(evt.type); }
-  setPointerCapture(id) { this.captured = id; }
 }
 
 // A view's scroller: its box is CLIENTHEIGHT px tall at the viewport's
@@ -399,12 +389,12 @@ class Scroller extends Box {
 
 // View 12's 200 px scroller drawing node 4: 100 items of 20 px, tokens
 // "4.1.0" to "4.100.0", with a placement marker for placement 3 putting
-// "4.51.0" 5 px above the top edge, and a scroll bar whose handle is at
-// 50 to 60 px of its 200 px track. ATTRIBUTES go on the scroller.
+// "4.51.0" 5 px above the top edge, asking for 3 view heights drawn each
+// way. ATTRIBUTES go on the scroller.
 function scrolledView(attributes = {}, marker = {}) {
   const view = new Box({ "data-view": 12 }, null, 0, 200);
   const scroller = new Scroller({
-    "data-effect": "...", "data-scroll-root": 4, "data-drawn-above": 600, "data-drawn-below": 600,
+    "data-effect": "...", "data-scroll-root": 4, "data-drawn-screens": 3,
     "data-measured-width": 300, "data-measured-height": 200, ...attributes,
   }, view, 200, 2000);
   const placement = new Box({ class: "placement", "data-placement": 3, "data-target": "4.51.0", "data-align": "top",
@@ -412,9 +402,25 @@ function scrolledView(attributes = {}, marker = {}) {
   const text = new Box({ "data-node": 4 }, scroller, 0, 2000);
   const items = [];
   for (let k = 1; k <= 100; k++) items.push(new Box({ "data-item": `4.${k}.0` }, text, 20 * (k - 1), 20));
-  const bar = new Box({ class: "scroll-bar" }, view, 0, 200);
-  const handle = new Box({ class: "scroll-bar-handle" }, bar, 50, 10);
-  return { view, scroller, placement, items, bar, handle };
+  return { view, scroller, placement, items };
+}
+
+// View 12's scroller drawing items 51 to 150 of node 4, 20 px each, from
+// 1,000 to 3,000 px into its content, between a 1,000 px spacer above and
+// a 2,000 px spacer below; placed with item 51 at its top.
+function spacedView() {
+  const view = new Box({ "data-view": 12 }, null, 0, 200);
+  const scroller = new Scroller({
+    "data-effect": "...", "data-scroll-root": 4, "data-drawn-screens": 3,
+    "data-measured-width": 300, "data-measured-height": 200,
+  }, view, 200, 5000);
+  const placement = new Box({ class: "placement", "data-placement": 3, "data-target": "4.51.0", "data-align": "top",
+                              "data-offset": "0" }, scroller, 0, 0);
+  const above = new Box({ class: "spacer", "data-spacer": "above" }, scroller, 0, 1000);
+  const text = new Box({ "data-node": 4 }, scroller, 1000, 2000);
+  for (let k = 51; k <= 150; k++) new Box({ "data-item": `4.${k}.0` }, text, 1000 + 20 * (k - 51), 20);
+  const below = new Box({ class: "spacer", "data-spacer": "below" }, scroller, 3000, 2000);
+  return { view, scroller, placement, above, below };
 }
 
 test("tunaPlace puts the marker's item at the top, centre or bottom of its scroller", async () => {
@@ -453,8 +459,8 @@ test("tunaScroll reports nothing before a placement, then what it measured, once
   assert.equal(h.posts.length, 1);
   assert.deepEqual(h.posts[0].body, {
     version: 1, type: "scroll", sequence: 1, revision: 7, view: 12, node: 4, placement: 3,
-    top: "4.51.0", offset: 5, lastVisible: "4.60.0", before: 50, after: 49,
-    above: 1005, below: 795, width: 300, height: 200,
+    top: "4.51.0", offset: 5, lastVisible: "4.60.0", spacer: null, spacerDistance: 0,
+    before: 50, after: 49, drawnHeight: 2000, above: 1005, below: 795, width: 300, height: 200,
   }, "item 61 ends 15 px below the view, so item 60 is the last wholly in view");
   assert.equal(v.scroller.getAttribute("data-effect"), null, "one report is on its way at a time");
   h.scroll(v.scroller, "moved");
@@ -476,23 +482,24 @@ test("tunaScroll reports when drawn px run short or long, the size changed, or s
     h.scroll(v.scroller, reason);
     return h.posts.length - before;
   };
-  // 1,005 px above and 795 below, against 600 each way: within the band.
+  // 1,005 px above and 795 below, against 3 view heights, 600 px, each
+  // way: within the band.
   assert.equal(reports(settled()), 0);
   assert.equal(reports(settled(), "rest"), 1);
   // Short above (less than half of 600), unless the first item is drawn.
   const short = settled();
   short.scroller.scrollTop = 150;
   assert.equal(reports(short), 1);
-  const atStart = settled({ "data-run-at-start": "", "data-drawn-below": 1000 });
+  const atStart = settled({ "data-run-at-start": "", "data-drawn-screens": 5 });
   atStart.scroller.scrollTop = 150;
   assert.equal(reports(atStart), 0);
-  // Short below, unless the last item is drawn.
-  const low = settled({ "data-drawn-below": 2000 });
+  // Short below (less than half of 10 view heights), unless the last item is drawn.
+  const low = settled({ "data-drawn-screens": 10 });
   assert.equal(reports(low), 1);
-  assert.equal(reports(settled({ "data-drawn-below": 2000, "data-run-at-end": "" })), 0);
+  assert.equal(reports(settled({ "data-drawn-screens": 10, "data-run-at-end": "" })), 0);
   // Long above: more than twice what is asked for, and an item far enough
   // beyond the edge to drop.
-  assert.equal(reports(settled({ "data-drawn-above": 300, "data-drawn-below": 300 })), 1);
+  assert.equal(reports(settled({ "data-drawn-screens": 1.5 })), 1);
   // The size changed, or the server has not heard it yet.
   assert.equal(reports(settled({ "data-measured-height": 744 })), 1);
   assert.equal(reports(settled({ "data-measured-width": undefined })), 1);
@@ -541,6 +548,24 @@ test("a report holds its top item still through the next screen, unless the view
   assert.equal(v.scroller.scrollTop, 250);
 });
 
+test("at the top of its scroller, a report's top item goes where the scrolling since took it", async () => {
+  const h = await harness(new Element({ "data-revision": 7 }));
+  const v = scrolledView();
+  h.place(v.placement);
+  h.scroll(v.scroller, "moved");
+  assert.equal(h.posts[0].body.top, "4.51.0");
+  // Scrolled to the top, 1,005 px, after reporting item 51 5 px above the
+  // edge: it is 1,000 px below the edge. The next screen draws ten items above, and the
+  // browser does not anchor at the top.
+  v.scroller.scrollTop = 0;
+  for (const item of v.items) item.top += 200;
+  v.scroller.scrollHeight += 200;
+  v.scroller.attributes["data-effect"] = "...";
+  h.scroll(v.scroller, "moved");
+  assert.equal(v.scroller.scrollTop, 200);
+  assert.equal(v.items[50].getBoundingClientRect().top, 1000);
+});
+
 test("a new placement marker is applied before anything is reported", async () => {
   const h = await harness(new Element({ "data-revision": 7 }));
   const v = scrolledView();
@@ -558,53 +583,88 @@ test("a new placement marker is applied before anything is reported", async () =
   assert.equal(h.posts[1].body.placement, 4);
 });
 
-test("a click on the scroll bar's track pages toward it, and is the bar's alone", async () => {
+test("a spacer in view reports, unless a report is on its way, and is not owed", async () => {
   const h = await harness(new Element({ "data-revision": 7 }));
-  const v = scrolledView();
-  const click = (target, clientY) => {
-    const evt = new MouseEvent("click", target, { clientY });
-    evt.stopPropagation = () => { evt.stopped = true; };
-    h.scrollBar(v.bar, evt);
-    return evt;
-  };
-  assert.equal(click(v.bar, 150).stopped, true);
-  assert.equal(click(v.bar, 20).stopped, true);
-  click(v.handle, 55);
-  assert.deepEqual(h.posts.map((post) => post.body), [
-    { version: 1, type: "scroll-bar", sequence: 1, revision: 7, view: 12, node: 4,
-      part: "below-handle", fraction: 0.75 },
-    { version: 1, type: "scroll-bar", sequence: 2, revision: 7, view: 12, node: 4,
-      part: "above-handle", fraction: 0.1 },
-  ]);
+  const v = spacedView();
+  h.place(v.placement);
+  // 600 px drawn above and 1,200 below: within the band.
+  v.scroller.scrollTop = 1600;
+  h.scroll(v.scroller, "moved");
+  v.scroller.attributes["data-effect"] = "...";
+  assert.equal(h.posts.length, 1);
+  // Enough is drawn beyond the view, but a spacer came into view.
+  h.scroll(v.below, "spacer");
+  assert.equal(h.posts.length, 2, "the action finds its scroller from the spacer");
+  assert.equal(h.posts[1].body.spacer, null, "the top edge is on an item");
+  h.scroll(v.below, "spacer");
+  assert.equal(h.posts.length, 2, "one report at a time");
+  v.scroller.attributes["data-effect"] = "...";
+  h.scroll(v.scroller, "moved");
+  assert.equal(h.posts.length, 2, "the spacer is observed again by the next screen, not owed");
 });
 
-test("dragging the scroll bar's handle previews it and sends the newest fraction, one at a time", async () => {
+test("a report from a spacer names the drawn item next to it and how far the top edge is from it", async () => {
   const h = await harness(new Element({ "data-revision": 7 }));
-  const v = scrolledView();
-  const pointer = (type, clientY) => Object.assign(new MouseEvent(type, v.handle, { clientY }), { pointerId: 1 });
-  h.scrollBar(v.handle, pointer("pointerdown", 52));
-  assert.equal(v.handle.captured, 1);
-  v.handle.fire(pointer("pointermove", 102));
-  assert.equal(v.bar.styles["--scroll-bar-drag-start"], "100px");
-  assert.equal(h.posts.length, 1);
-  assert.equal(h.posts[0].body.part, "handle");
-  assert.equal(h.posts[0].body.fraction, 0.5);
-  v.handle.fire(pointer("pointermove", 122));
-  v.handle.fire(pointer("pointermove", 142));
-  assert.equal(h.posts.length, 1, "one at a time");
-  // Past the end of the track, the handle stops at it.
-  v.handle.fire(pointer("pointermove", 400));
-  assert.equal(v.bar.styles["--scroll-bar-drag-start"], "190px");
-  h.posts[0].resolve({ status: 204 });
-  await setImmediate();
-  assert.equal(h.posts.length, 2);
-  assert.equal(h.posts[1].body.fraction, 0.95, "only the newest");
-  v.handle.fire(pointer("pointerup", 400));
-  v.handle.fire(pointer("pointermove", 10));
-  h.posts[1].resolve({ status: 204 });
-  await setImmediate();
-  assert.equal(h.posts.length, 2, "the drag ended");
-  // The placement the drag asked for ends the preview.
+  const v = spacedView();
   h.place(v.placement);
-  assert.equal(v.bar.styles["--scroll-bar-drag-start"], undefined);
+  assert.equal(v.scroller.scrollTop, 1000);
+  h.scroll(v.scroller, "moved");
+  // 400 px up into the spacer above: nothing drawn is in view.
+  v.scroller.scrollTop = 600;
+  v.scroller.attributes["data-effect"] = "...";
+  h.scroll(v.scroller, "rest");
+  assert.deepEqual(h.posts[1].body, {
+    version: 1, type: "scroll", sequence: 2, revision: 7, view: 12, node: 4, placement: 3,
+    top: "4.51.0", offset: -400, lastVisible: null, spacer: "above", spacerDistance: 400,
+    before: 0, after: 99, drawnHeight: 2000, above: 0, below: 2200, width: 300, height: 200,
+  });
+  // 300 px down into the spacer below.
+  v.scroller.scrollTop = 3300;
+  v.scroller.attributes["data-effect"] = "...";
+  h.scroll(v.scroller, "rest");
+  assert.deepEqual(h.posts[2].body, {
+    version: 1, type: "scroll", sequence: 3, revision: 7, view: 12, node: 4, placement: 3,
+    top: "4.150.0", offset: 320, lastVisible: null, spacer: "below", spacerDistance: 300,
+    before: 99, after: 0, drawnHeight: 2000, above: 2300, below: 0, width: 300, height: 200,
+  });
+});
+
+test("after a report from a spacer with nothing in view, the item the server counted goes to the top", async () => {
+  const h = await harness(new Element({ "data-revision": 7 }));
+  // Reported from 400 px up into the spacer above; the next screen's marker
+  // names the item the server counted there, under the same placement.
+  const reported = (scrollTop) => {
+    const v = spacedView();
+    h.place(v.placement);
+    h.scroll(v.scroller, "moved");
+    v.scroller.scrollTop = scrollTop;
+    v.scroller.attributes["data-effect"] = "...";
+    h.scroll(v.scroller, "rest");
+    return v;
+  };
+  const answer = (v, target = "4.60.0", offset = "10") => {
+    Object.assign(v.placement.attributes, { "data-target": target, "data-offset": offset });
+    v.scroller.attributes["data-effect"] = "...";
+    h.scroll(v.scroller, "moved");
+  };
+  const still = reported(600);
+  answer(still);
+  assert.equal(still.scroller.scrollTop, 1180 + 10, "item 60, 10 px above the top edge");
+  // A view that moved on since it reported is left where the browser has it.
+  const moving = reported(600);
+  moving.scroller.scrollTop = 650;
+  answer(moving);
+  assert.equal(moving.scroller.scrollTop, 650);
+  // A screen sent before the answer: the marker still names what it did.
+  const early = reported(600);
+  const posts = h.posts.length;
+  answer(early, "4.51.0", "0");
+  assert.equal(early.scroller.scrollTop, 600);
+  assert.equal(h.posts.length, posts + 1, "still in the spacer, it reports again");
+  // A drawn item in view: that item is held where it was instead, here
+  // when the screen moved it by 30 px and the browser did not follow.
+  const shown = reported(900);
+  for (const item of shown.scroller.querySelectorAll("[data-item]")) item.top += 30;
+  answer(shown);
+  assert.equal(shown.scroller.scrollTop, 930);
 });
