@@ -17,12 +17,21 @@ unknown height (paragraphs, code, headings, tall boxes), never lines.
   (go-latest-frame-spike's /next). Frames are gzip-compressed on the stream
   unless ?gz=0, so a frame that differs little from the last costs little.
 
-Modes (?mode=):
+Modes (?mode=), the first three with up to WINDOW frames in flight, the
+last three with ONE (go-latest-frame-spike: the next frame goes out only
+after the page applied the last, so the frame rate is what the phone and
+network can take):
   a  Emacs-like: each delta moves the view at once.
   b  server-smoothed: the server animates toward where the input says,
      sending intermediate frames (like pixel-scroll-precision interpolation).
   c  b plus a finger preview: while frames are on their way the page slides
      the current frame by the input the server has not shown yet.
+  latest  each frame jumps to where the input has taken the view.
+  steps   like latest, but the view moves by whole blocks (no pixel offsets),
+          as Emacs moves by lines.
+  glide   like latest; the page animates between the two positions the
+          server sent, over about the time between frames.
+?inflight=N overrides how many frames may be in flight.
 
 Run: python3 server.py [--host ADDR] [--port N] [--latency MS]
 --latency adds MS one way to every frame and every post, without limiting
@@ -89,8 +98,9 @@ def block_html(i, h):
     return f'<p {a}>{i}: {esc(v)}</p>'
 
 class Page:
-    def __init__(self, cid, mode):
-        self.cid, self.mode = cid, mode
+    def __init__(self, cid, mode, inflight):
+        self.cid, self.mode, self.inflight = cid, mode, inflight
+        self.carry = 0.0                        # steps: input not yet a whole block
         self.lock = threading.Condition()
         self.anchor, self.offset = 0, 0.0      # what frames show
         self.remaining = 0.0                    # px of input not shown yet (modes b, c)
@@ -137,8 +147,16 @@ class Page:
 
     def input(self, seq, dy):
         self.input_seq = max(self.input_seq, seq)
-        if self.mode == "a":
+        if self.mode in ("a", "latest", "glide"):
             self.move(dy)
+        elif self.mode == "steps":
+            self.carry += dy
+            self.offset = 0.0
+            while self.anchor < N - 1 and self.carry >= self.est(self.anchor):
+                self.carry -= self.est(self.anchor); self.anchor += 1
+            while self.anchor > 0 and self.carry <= -self.est(self.anchor - 1):
+                self.anchor -= 1; self.carry += self.est(self.anchor)
+            if self.anchor == 0 and self.carry < 0: self.carry = 0.0
         else:
             self.remaining += dy
         self.dirty = True                       # also confirms the input seq
@@ -218,10 +236,13 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path); q = parse_qs(url.query)
         if url.path == "/":
             cid = secrets.token_hex(4)
-            page = PAGES[cid] = Page(cid, q.get("mode", ["b"])[0])
+            mode = q.get("mode", ["latest"])[0]
+            inflight = int(q.get("inflight", [WINDOW if mode in ("a", "b", "c") else 1])[0])
+            page = PAGES[cid] = Page(cid, mode, max(1, inflight))
             gz = q.get("gz", ["1"])[0]
             html = ((HERE / "page.html").read_text().replace("{{C}}", cid)
-                    .replace("{{MODE}}", page.mode).replace("{{GZ}}", gz))
+                    .replace("{{MODE}}", page.mode).replace("{{GZ}}", gz)
+                    .replace("{{INFLIGHT}}", str(page.inflight)))
             log(page, f"page loaded, mode {page.mode}, gzip {gz}, latency {ARGS.latency} ms each way")
             self.send_body("text/html; charset=utf-8", html.encode())
         elif url.path in ("/input.js", "/datastar.js"):
@@ -264,9 +285,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             while alive[0]:
                 with page.lock:
-                    if page.mode != "a": page.animate()
+                    if page.mode in ("b", "c"): page.animate()
                     stalled = page.frame > page.acked and time.monotonic() - page.last_ack > RESEND
-                    if (page.dirty and page.frame - page.acked < WINDOW) or stalled:
+                    if (page.dirty and page.frame - page.acked < page.inflight) or stalled:
                         if stalled:                    # a frame or its confirmation was lost
                             page.acked = page.frame; page.last_ack = time.monotonic()
                         page.dirty = False
@@ -286,7 +307,7 @@ class Handler(BaseHTTPRequestHandler):
                 with out_lock:
                     heapq.heappush(out, (time.monotonic() + ARGS.latency / 1000, n, data))
                     out_lock.notify()
-                if page.mode != "a":
+                if page.mode in ("b", "c"):
                     time.sleep(TICK)
         finally:
             alive[0] = False
@@ -327,7 +348,7 @@ def main():
     ARGS = p.parse_args()
     srv = ThreadingHTTPServer((ARGS.host, ARGS.port), Handler)
     srv.daemon_threads = True
-    print(f"http://{ARGS.host}:{ARGS.port}/?mode=a|b|c[&gz=0]", flush=True)
+    print(f"http://{ARGS.host}:{ARGS.port}/?mode=latest|steps|glide|a|b|c[&inflight=N][&gz=0]", flush=True)
     srv.serve_forever()
 
 if __name__ == "__main__":

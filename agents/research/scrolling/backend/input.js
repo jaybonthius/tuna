@@ -83,6 +83,7 @@ function onFrame(frame) {
     latencies.push(now - unshown.shift()[2]);
     if (latencies.length > 60) latencies.shift();
   }
+  glide(now);
   frameTimes.push(now);
   while (frameTimes.length && now - frameTimes[0] > 1000) frameTimes.shift();
   preview();
@@ -103,7 +104,7 @@ const pct = (xs, p) => {
 };
 setInterval(() => {
   document.getElementById("hud").textContent =
-    `mode ${MODE} · ${frameTimes.length} frames/s\ninput→screen ${pct(latencies, 0.5)} / ${pct(latencies, 0.95)} ms (p50/p95)`;
+    `${MODE} · ${document.body.dataset.inflight} in flight · ${frameTimes.length} frames/s\ninput→screen ${pct(latencies, 0.5)} / ${pct(latencies, 0.95)} ms (p50/p95)`;
 }, 250);
 
 // For checks driven from agent_browser.
@@ -160,4 +161,37 @@ function scrolled() {
   document.body.classList.add("scrolling");
   clearTimeout(hideBar);
   hideBar = setTimeout(() => document.body.classList.remove("scrolling"), 800);
+}
+
+// ---- glide: animate between the two positions the server sent ---------------
+// Not prediction: the page only slides from where the last frame showed a
+// block to where the new frame shows it, over about the time between
+// frames, so a few frames a second look smooth.
+let ref = null;                      // [block id, its top on screen] at the last animation frame
+(function watch() {
+  if (MODE === "glide") {
+    const v = view().getBoundingClientRect();
+    const el = [...document.querySelectorAll("#content [data-b]")]
+      .find((b) => b.getBoundingClientRect().bottom > v.top);
+    ref = el ? [el.id, el.getBoundingClientRect().top] : null;
+  }
+  requestAnimationFrame(watch);
+})();
+let lastFrameAt = 0, interval = 100;
+function glide(now) {
+  if (MODE !== "glide") return;
+  if (lastFrameAt) interval = 0.7 * interval + 0.3 * (now - lastFrameAt);
+  lastFrameAt = now;
+  const p = document.getElementById("preview");
+  const el = ref && document.getElementById(ref[0]);
+  if (!p || !el) return;
+  const current = new DOMMatrix(getComputedStyle(p).transform).m42;     // mid-slide, if any
+  const from = ref[1] - (el.getBoundingClientRect().top - current);
+  if (Math.abs(from) < 0.5) return;
+  p.style.transition = "none";
+  p.style.transform = `translateY(${from}px)`;
+  p.getBoundingClientRect();                                            // apply before animating
+  const ms = Math.round(Math.min(250, Math.max(40, interval)));
+  p.style.transition = `transform ${ms}ms linear`;
+  p.style.transform = "translateY(0)";
 }

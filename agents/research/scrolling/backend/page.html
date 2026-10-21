@@ -47,10 +47,10 @@ body.dragging #drag-thumb { display: block; }
 <script type="module" src="/datastar.js"></script>
 <script type="module" src="/input.js"></script>
 </head>
-<body data-init="@get('/stream?c={{C}}&gz={{GZ}}')" data-client="{{C}}" data-mode="{{MODE}}">
+<body data-init="@get('/stream?c={{C}}&gz={{GZ}}')" data-client="{{C}}" data-mode="{{MODE}}" data-inflight="{{INFLIGHT}}">
 <main id="frame"><div id="view"><div id="preview" data-preserve-attr="style"><div id="content"></div></div></div></main>
 <div id="hud">connecting…</div>
 <div id="drag-thumb"></div>
-<div id="modes">mode {{MODE}}: <a href="/?mode=a">a</a> <a href="/?mode=b">b</a> <a href="/?mode=c">c</a></div>
+<div id="modes">{{MODE}}: <a href="/?mode=latest">latest</a> <a href="/?mode=steps">steps</a> <a href="/?mode=glide">glide</a> · <a href="/?mode=a">a</a> <a href="/?mode=b">b</a> <a href="/?mode=c">c</a></div>
 </body>
 </html>
