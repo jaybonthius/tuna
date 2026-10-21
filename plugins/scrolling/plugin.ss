@@ -22,14 +22,17 @@
 ;;; drawn than the drawn-screens setting's view heights, as many more
 ;;; items as that density says fill the difference, at least
 ;;; `fetching-step`; with more than twice that, about as many as fill one
-;;; and a half times it, and at least one fewer than now.
+;;; and a half times it, and at least one fewer than now; and all the
+;;; items to that end of the buffer when fewer than fill those view heights
+;;; would be left, so no short spacer is drawn near an end.
 ;;;
 ;;; When the view's top edge is in a spacer (a fling or a drag of the
 ;;; scroll bar outran what is drawn), the report says how far it is from
 ;;; the drawn item next to that spacer, and the item there is counted from
-;;; that item by the view's average item height: the item whose share of
-;;; the spacer holds the edge, with the rest as its offset, but never
-;;; beyond the first or the last item. That becomes the scroll state, the
+;;; that item by the average item height the spacer was drawn with: the
+;;; item whose share of the spacer holds the edge, with the rest as its
+;;; offset, but never beyond the first or the last item. So the top of the
+;;; spacer above is the first item, and the end of the one below the last. That becomes the scroll state, the
 ;;; view's placement names it with its exact offset, and the renderer draws
 ;;; around it; the page puts it at the top unless the view moved on since
 ;;; it reported, when its next report says where it is. Counting starts
@@ -38,10 +41,10 @@
 ;;;
 ;;; The average item height (the drawn items' height over their count, as
 ;;; measured) is the spacers' height per item, so it changes only when it
-;;; must: on the view's first report, and on a report from a spacer, where
-;;; it counts. Taken from every report, it would swing the spacers by
-;;; thousands of px deep in a long buffer as the drawn items vary, moving
-;;; the scroll bar under the user's pointer.
+;;; must: on the view's first report, and on a report from a spacer, after
+;;; counting, for the spacers drawn next. Taken from every report, it would
+;;; swing the spacers by thousands of px deep in a long buffer as the drawn
+;;; items vary, moving the scroll bar under the user's pointer.
 ;;;
 ;;; Scroll commands place items (Emacs's names and keys): `C-v` puts the
 ;;; last items wholly in view at the top and `M-v` the first ones at the
@@ -77,6 +80,7 @@
         next-screen-context-items
         fetching-step
         adjusted-count
+        to-the-end
         item-across-spacer)
 
 ;; Whether scrolling a view moves its point into view (as in Emacs). Off,
@@ -130,25 +134,30 @@
     (fxmax in-view (fxmin (fx1- drawn) (fx+ in-view (ceiling-count (fl* 1.5 wanted density))))))
    (else drawn)))
 
+;; How many items to draw on one side of a view's scroll item, where
+;; there are THERE items, when COUNT would be drawn: all of them, when the
+;; spacer standing for the rest would be shorter than WANTED px at DENSITY
+;; items per px. A short spacer would be near an end of the buffer, where
+;; the browser's scroll range stops, and nothing could hold what is in
+;; view still when its items are drawn shorter than it.
+(def (to-the-end (there : :fixnum) (count : :fixnum) (wanted : :flonum) (density : :flonum)) => :fixnum
+  (if (fx< (fx- there count) (ceiling-count (fl* wanted density))) there count))
+
 ;; The item at a view's top edge when it is DISTANCE px inside the spacer
 ;; on SIDE ('above or 'below) of the drawn items, EDGE being the index of
 ;; the drawn item next to that spacer among COUNT items, at AVERAGE px an
 ;; item: (INDEX . OFFSET), the item whose share of the spacer holds the
-;; edge, counted from EDGE, and the px of it above the edge; the first or
-;; the last item, at offset 0, when the count runs past it.
+;; edge, counted from EDGE, and the px of it above the edge. Where the
+;; count runs past the first or the last item, that item, with the rest as
+;; its offset: negative above the first item, as the view's start is.
 (def (item-across-spacer (side : :symbol) (edge : :fixnum) (count : :fixnum) (distance : :flonum)
                          (average : :flonum))
   => :pair
   (if (eq? side 'above)
-    (let (steps (ceiling-count (fl/ distance average)))
-      (if (fx> steps edge)
-        (cons 0 0.)
-        (cons (fx- edge steps) (fl- (fl* (exact->inexact steps) average) distance))))
-    (let* ((steps (floor-count (fl/ distance average)))
-           (index (fx+ edge (fx1+ steps))))
-      (if (fx>= index count)
-        (cons (fx1- count) 0.)
-        (cons index (fl- distance (fl* (exact->inexact steps) average)))))))
+    (let (steps (fxmin edge (ceiling-count (fl/ distance average))))
+      (cons (fx- edge steps) (fl- (fl* (exact->inexact steps) average) distance)))
+    (let (steps (fxmin (fx- count edge 2) (floor-count (fl/ distance average))))
+      (cons (fx+ edge (fx1+ steps)) (fl- distance (fl* (exact->inexact steps) average))))))
 
 ;;; What the plugin keeps
 
@@ -333,14 +342,14 @@
            (let* ((resolve (lambda ((token :? :string)) (and token (token-item root token))))
                   (count (node-item-count root))
                   (measured (measured-average event))
-                  (average (if (and measured (or event.spacer (not (view-average-item-height v))))
-                             measured
-                             (view-average-item-height v)))
+                  (drawn-average (view-average-item-height v))
+                  (average (if (and measured (or event.spacer (not drawn-average))) measured drawn-average))
                   (named (resolve event.top-item))
                   (named-index (and named (node-item-index root named)))
-                  (across (and named-index event.spacer average
+                  ;; Counted by the average the spacer was drawn with.
+                  (across (and named-index event.spacer drawn-average
                                (item-across-spacer event.spacer named-index count
-                                                   event.spacer-distance average)))
+                                                   event.spacer-distance drawn-average)))
                   (top-index (if across (car across) named-index))
                   (top (if across (node-item-at root top-index) named))
                   (offset (if across (cdr across) event.top-offset))
@@ -364,20 +373,23 @@
                (set-view-average-item-height! v average))
              (when top-index
                (set-view-scroll! v top offset)
-               (let ((density (if measured (fl/ 1. measured) 0.))
-                     (wanted (wanted-pixels v event.viewport-height)))
-                 (if across
-                   ;; Nothing is drawn around the new top item yet.
-                   (set-view-drawn-items!
-                    v
-                    (fxmin top-index (adjusted-count 0 0 0. wanted density))
-                    (fxmin (fx- count top-index 1)
-                           (adjusted-count 0 0 0. (fl+ wanted (exact->inexact event.viewport-height)) density)))
-                   (set-view-drawn-items!
-                    v
-                    (fxmin top-index (adjusted-count event.drawn-before 0 event.px-above wanted density))
-                    (fxmin (fx- count top-index 1)
-                           (adjusted-count event.drawn-after visible event.px-below wanted density))))))
+               (let* ((density (if measured (fl/ 1. measured) 0.))
+                      (wanted (wanted-pixels v event.viewport-height))
+                      (height (exact->inexact event.viewport-height))
+                      (after-last (fx- count top-index 1)))
+                 (set-view-drawn-items!
+                  v
+                  (to-the-end top-index
+                              (if across
+                                ;; Nothing is drawn around the new top item yet.
+                                (adjusted-count 0 0 0. wanted density)
+                                (adjusted-count event.drawn-before 0 event.px-above wanted density))
+                              wanted density)
+                  (to-the-end after-last
+                              (if across
+                                (adjusted-count 0 0 0. (fl+ wanted height) density)
+                                (adjusted-count event.drawn-after visible event.px-below wanted density))
+                              wanted density))))
              (cons v how))))))
 
 ;; After a report adopted by view-scrolled!: a view that moved by hand

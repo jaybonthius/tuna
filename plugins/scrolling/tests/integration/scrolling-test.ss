@@ -234,6 +234,19 @@
       (check (adjusted-count 1000 30 50000. 20000. 0.05) => 999)
       (check (adjusted-count 31 30 50000. 20000. 0.05) => 30))
 
+    (test-case "near an end, every item to it is drawn rather than a short spacer"
+      ;; 50 items fill 1,000 px at .05 items a px.
+      (check (to-the-end 100 50 1000. .05) => 50)
+      (check (to-the-end 100 60 1000. .05) => 100)
+      (check (to-the-end 10 50 1000. .05) => 10)
+      (with-scrolling
+       (lambda (v)
+         (measured! v)
+         ;; 64 items would be drawn above line 100, leaving 35: fewer than
+         ;; the 65 that fill two view heights.
+         (report! v top: 100 before: 10 after: 40 above: 240. below: 200. drawn: 1184.)
+         (check (car (drawn v)) => 99))))
+
     (test-case "a report measured before the view's newest placement is ignored"
       (with-scrolling
        (lambda (v)
@@ -280,16 +293,17 @@
                   drawn: 2000.)
          (check (scroll-state v) => [2023 15.]))))
 
-    (test-case "counting across a spacer stops at the first and the last item"
+    (test-case "counting across a spacer stops at the first and the last item, the rest their offset"
       (with-scrolling
        (lambda (v)
          (measured! v)
          (report! v top: 10 spacer: 'above distance: 5000. before: 0 after: 99 above: 0. below: 0.
                   drawn: 2000.)
-         (check (scroll-state v) => [1 0.])
+         ;; 4,820 px above line 1: the start of the view is above it.
+         (check (scroll-state v) => [1 -4820.])
          (report! v top: 4990 spacer: 'below distance: 5000. before: 99 after: 0 above: 0. below: 0.
                   drawn: 2000.)
-         (check (scroll-state v) => [5000 0.]))))
+         (check (scroll-state v) => [5000 4820.]))))
 
     (test-case "an item across a spacer: the one whose share holds the edge, the rest its offset"
       ;; Above, from item 100: 45 px is 2.25 items up, so item 97, 15 px above.
@@ -299,9 +313,9 @@
       ;; Below, from item 100: 45 px past its bottom is 2 items after 101.
       (check (item-across-spacer 'below 100 1000 45. 20.) => (cons 103 5.))
       (check (item-across-spacer 'below 100 1000 0. 20.) => (cons 101 0.))
-      ;; Clamped at the ends, at offset 0.
-      (check (item-across-spacer 'above 3 1000 100. 20.) => (cons 0 0.))
-      (check (item-across-spacer 'below 995 1000 100. 20.) => (cons 999 0.)))
+      ;; Stopped at the first and the last item, the rest their offset.
+      (check (item-across-spacer 'above 3 1000 100. 20.) => (cons 0 -40.))
+      (check (item-across-spacer 'below 995 1000 100. 20.) => (cons 999 40.)))
 
     (test-case "the average item height is measured on the first report and on reports from a spacer only"
       (with-scrolling
@@ -313,11 +327,12 @@
          ;; Another report measuring 30 px an item leaves the spacers as they are.
          (report! v top: 300 before: 50 after: 49 above: 1000. below: 256. drawn: 3000.)
          (check (view-average-item-height v) => 20.)
-         ;; A report from a spacer counts with what it measured: 25 px.
+         ;; A report from a spacer counts by the 20 px the spacer was drawn
+         ;; with, then keeps what it measured, 25 px, for the next spacers.
          (report! v top: 1000 spacer: 'above distance: 50. before: 0 after: 99 above: 0. below: 0.
                   drawn: 2500.)
+         (check (scroll-state v) => [997 10.])
          (check (view-average-item-height v) => 25.)
-         (check (scroll-state v) => [998 0.])
          ;; Showing another buffer forgets it.
          (let (b (car (rows-with-text!)))
            (on-baton (lambda () (set-view-buffer v b))))

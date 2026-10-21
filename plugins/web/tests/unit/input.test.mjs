@@ -548,6 +548,24 @@ test("a report holds its top item still through the next screen, unless the view
   assert.equal(v.scroller.scrollTop, 250);
 });
 
+test("at the top of its scroller, a report's top item goes where the scrolling since took it", async () => {
+  const h = await harness(new Element({ "data-revision": 7 }));
+  const v = scrolledView();
+  h.place(v.placement);
+  h.scroll(v.scroller, "moved");
+  assert.equal(h.posts[0].body.top, "4.51.0");
+  // Scrolled to the top, 1,005 px, after reporting item 51 5 px above the
+  // edge: it is 1,000 px below the edge. The next screen draws ten items above, and the
+  // browser does not anchor at the top.
+  v.scroller.scrollTop = 0;
+  for (const item of v.items) item.top += 200;
+  v.scroller.scrollHeight += 200;
+  v.scroller.attributes["data-effect"] = "...";
+  h.scroll(v.scroller, "moved");
+  assert.equal(v.scroller.scrollTop, 200);
+  assert.equal(v.items[50].getBoundingClientRect().top, 1000);
+});
+
 test("a new placement marker is applied before anything is reported", async () => {
   const h = await harness(new Element({ "data-revision": 7 }));
   const v = scrolledView();
@@ -643,8 +661,10 @@ test("after a report from a spacer with nothing in view, the item the server cou
   answer(early, "4.51.0", "0");
   assert.equal(early.scroller.scrollTop, 600);
   assert.equal(h.posts.length, posts + 1, "still in the spacer, it reports again");
-  // Drawn items in view: the browser's scroll anchoring holds them.
+  // A drawn item in view: that item is held where it was instead, here
+  // when the screen moved it by 30 px and the browser did not follow.
   const shown = reported(900);
+  for (const item of shown.scroller.querySelectorAll("[data-item]")) item.top += 30;
   answer(shown);
-  assert.equal(shown.scroller.scrollTop, 900);
+  assert.equal(shown.scroller.scrollTop, 930);
 });
