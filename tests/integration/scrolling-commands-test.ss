@@ -62,7 +62,7 @@
              (token (lambda (line) (item-token (node-item-at n (- line 1))))))
         (make-scroll-event sequence (make-posn 'view (view-id v) (node-id n) 0)
                            (or placement (placement-number (view-placement v)))
-                           (token top) offset (token last) 100 400 20000. 20000. 800 744)))))
+                           (token top) offset (token last) #f 0. 100 400 40744. 20000. 20000. 800 744)))))
   (on-baton void))
 
 ;; V's newest placement's item's line and alignment.
@@ -170,4 +170,7 @@
            (check (placed-at new) => [300 'top])
            (check (placement-offset (view-placement new)) => 7.)
            (check [(view-drawn-before new) (view-drawn-after new)]
-                  => [(view-drawn-before v) (view-drawn-after v)])))))))
+                  => [(view-drawn-before v) (view-drawn-after v)])
+           ;; Its spacers are as high: 501 items in 40,744 px.
+           (check (view-average-item-height new) => (view-average-item-height v))
+           (check (view-average-item-height new) => (/ 40744. 501))))))))

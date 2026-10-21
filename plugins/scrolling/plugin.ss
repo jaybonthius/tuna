@@ -1,39 +1,54 @@
 #lang :tuna/prelude
 ;;; Scrolling views (live tier): what the browser measures of a view
-;;; becomes its scroll state (buffers contract); commands and the view's
-;;; scroll bar place items in it; and a view and its point are kept
-;;; together. The browser scrolls natively; the renderer draws only the run
-;;; of items around the scroll state. Nothing here knows lines, rows or any
-;;; other kind of item, and every position comes from what the browser
-;;; measured or from a placement.
+;;; becomes its scroll state (buffers contract); commands place items in
+;;; it; and a view and its point are kept together. The browser scrolls
+;;; natively, with its own scroll bar; the renderer draws only the run of
+;;; items around the scroll state, between spacers standing in for the
+;;; rest. Nothing here knows lines, rows or any other kind of item, and
+;;; every position comes from what the browser measured or from a
+;;; placement.
 ;;;
 ;;; `view-scrolled`, bound to scroll reports (the keys contract's
 ;;; `scroll-key`, a special event: it is not what the user did, so it
 ;;; becomes no one's last command and runs no command hooks), ignores a
-;;; report measured before the view's newest
-;;; placement, adopts the item the browser found at the view's top edge,
-;;; and how far above the edge it is, as the view's scroll state, keeps
-;;; what else it measured (the last item wholly in view, the view's size),
-;;; and sets how many items to draw before and after the scroll item. Those
-;;; counts are only a fetching step: where anything is comes only from what
-;;; the browser measures, and the next report corrects them. Each side
-;;; follows the density of what is drawn (items per px, both measured):
-;;; with fewer px drawn than the drawn-above (drawn-below) setting, as
-;;; many more items as that density says fill the difference, at least
-;;; `fetching-step`; with more than twice the setting, about as many as
-;;; fill one and a half times it, and at least one fewer than now.
+;;; report measured before the view's newest placement, adopts the item
+;;; the browser found at the view's top edge, and how far above the edge
+;;; it is, as the view's scroll state, keeps what else it measured (the
+;;; last item wholly in view, the view's size), and sets how many items to
+;;; draw before and after the scroll item. Those counts are only a
+;;; fetching step: where anything is comes only from what the browser
+;;; measures, and the next report corrects them. Each side follows the
+;;; density of what is drawn (items per px, both measured): with fewer px
+;;; drawn than the drawn-screens setting's view heights, as many more
+;;; items as that density says fill the difference, at least
+;;; `fetching-step`; with more than twice that, about as many as fill one
+;;; and a half times it, and at least one fewer than now.
+;;;
+;;; When the view's top edge is in a spacer (a fling or a drag of the
+;;; scroll bar outran what is drawn), the report says how far it is from
+;;; the drawn item next to that spacer, and the item there is counted from
+;;; that item by the view's average item height: the item whose share of
+;;; the spacer holds the edge, with the rest as its offset, but never
+;;; beyond the first or the last item. That becomes the scroll state, the
+;;; view's placement names it with its exact offset, and the renderer draws
+;;; around it; the page puts it at the top unless the view moved on since
+;;; it reported, when its next report says where it is. Counting starts
+;;; from the nearest drawn item, never from the top of the buffer, so no
+;;; estimate of everything above adds up.
+;;;
+;;; The average item height (the drawn items' height over their count, as
+;;; measured) is the spacers' height per item, so it changes only when it
+;;; must: on the view's first report, and on a report from a spacer, where
+;;; it counts. Taken from every report, it would swing the spacers by
+;;; thousands of px deep in a long buffer as the drawn items vary, moving
+;;; the scroll bar under the user's pointer.
 ;;;
 ;;; Scroll commands place items (Emacs's names and keys): `C-v` puts the
 ;;; last items wholly in view at the top and `M-v` the first ones at the
 ;;; bottom, keeping `next-screen-context-items` of them in view; `C-l`
 ;;; puts point's item at the centre, then the top, then the bottom. The
-;;; scroll bar (keys contract's scroll bar events): dragging its handle to
-;;; a fraction of the track puts the item at that fraction of the item
-;;; count at the top (`scroll-bar-drag`); clicking the track pages
-;;; (`scroll-bar-page`): below the handle, the last item wholly in view goes
-;;; to the top; above it, the item at the top goes to the bottom. Those that
-;;; need to know what is in view, the paging ones, wait for the browser to
-;;; measure the view's newest placement first: a view owes at most one,
+;;; paging ones need to know what is in view, so they wait for the browser
+;;; to measure the view's newest placement first: a view owes at most one,
 ;;; the newest, and runs it when the report comes.
 ;;;
 ;;; Point and the view. Point's item is the item of the view's items that
@@ -61,7 +76,8 @@
         scroll-moves-point
         next-screen-context-items
         fetching-step
-        adjusted-count)
+        adjusted-count
+        item-across-spacer)
 
 ;; Whether scrolling a view moves its point into view (as in Emacs). Off,
 ;; point stays where it was, out of view, until a command moves it or
@@ -84,15 +100,21 @@
 ;; view (or is the item they placed), not the view point. (view-scrolled
 ;; runs as a special event, outside the command hooks.)
 (def view-moving-commands
-  '(scroll-bar-drag scroll-bar-page scroll-up-command scroll-down-command recenter-top-bottom))
+  '(scroll-up-command scroll-down-command recenter-top-bottom))
 
-;; The setting S's px.
-(def (setting-pixels (s : setting)) => :flonum
-  (let (px (setting-value s))
-    (exact->inexact (if (and (real? px) (>= px 0)) px (setting-default s)))))
+;; The px V, HEIGHT px high, keeps drawn beyond each edge: the
+;; drawn-screens setting's view heights, for its buffer.
+(def (wanted-pixels (v : view) (height : :fixnum)) => :flonum
+  (let (screens (buffer-local-value drawn-screens (view-showing v)))
+    (fl* (exact->inexact height)
+         (:- (exact->inexact (if (and (real? screens) (> screens 0)) screens (setting-default drawn-screens)))
+             :flonum))))
 
 (def (ceiling-count (x : :flonum)) => :fixnum
   (inexact->exact (flceiling x)))
+
+(def (floor-count (x : :flonum)) => :fixnum
+  (inexact->exact (flfloor x)))
 
 ;; How many items to draw on one side of a view's scroll item: DRAWN are
 ;; drawn now, PX px of them beyond the view's edge, IN-VIEW of them inside
@@ -107,6 +129,26 @@
    ((fl> px (fl* 2. wanted))
     (fxmax in-view (fxmin (fx1- drawn) (fx+ in-view (ceiling-count (fl* 1.5 wanted density))))))
    (else drawn)))
+
+;; The item at a view's top edge when it is DISTANCE px inside the spacer
+;; on SIDE ('above or 'below) of the drawn items, EDGE being the index of
+;; the drawn item next to that spacer among COUNT items, at AVERAGE px an
+;; item: (INDEX . OFFSET), the item whose share of the spacer holds the
+;; edge, counted from EDGE, and the px of it above the edge; the first or
+;; the last item, at offset 0, when the count runs past it.
+(def (item-across-spacer (side : :symbol) (edge : :fixnum) (count : :fixnum) (distance : :flonum)
+                         (average : :flonum))
+  => :pair
+  (if (eq? side 'above)
+    (let (steps (ceiling-count (fl/ distance average)))
+      (if (fx> steps edge)
+        (cons 0 0.)
+        (cons (fx- edge steps) (fl- (fl* (exact->inexact steps) average) distance))))
+    (let* ((steps (floor-count (fl/ distance average)))
+           (index (fx+ edge (fx1+ steps))))
+      (if (fx>= index count)
+        (cons (fx1- count) 0.)
+        (cons index (fl- distance (fl* (exact->inexact steps) average)))))))
 
 ;;; What the plugin keeps
 
@@ -266,13 +308,22 @@
 
 ;;; Reports
 
+;; The average item height EVENT measured: the drawn items' height over
+;; their count; or #f when nothing drawn has a height.
+(def (measured-average (event : scroll-event)) => (Maybe :flonum)
+  (using (event : scroll-event)
+    (and (fl> event.drawn-height 0.)
+         (fl/ event.drawn-height (exact->inexact (fx+ event.drawn-before event.drawn-after 1))))))
+
 ;; Adopt what EVENT measured of its view, returning the view and how the
 ;; report found it, or #f when it was measured before the view's newest
 ;; placement or about another node: 'placed when it is the first measured
 ;; under that placement, 'moved when the view has scrolled since the last
 ;; report (another item or offset at the top, the same size), and 'still
 ;; otherwise. The node its view's scroller draws from is the one EVENT
-;; names, while the view's buffer holds it.
+;; names, while the view's buffer holds it. The item at the top is the one
+;; EVENT names, or, when its top edge is in a spacer, the one counted
+;; across the spacer from the drawn item EVENT names (item-across-spacer).
 (def (view-scrolled! (event : scroll-event)) => (Maybe :pair)
   (using (event : scroll-event)
     (let* ((p event.start)
@@ -280,8 +331,19 @@
            (root (and v (posn-node p))))
       (and root (fx>= event.placement (placement-number (view-placement v)))
            (let* ((resolve (lambda ((token :? :string)) (and token (token-item root token))))
-                  (top (resolve event.top-item))
-                  (top-index (and top (node-item-index root top)))
+                  (count (node-item-count root))
+                  (measured (measured-average event))
+                  (average (if (and measured (or event.spacer (not (view-average-item-height v))))
+                             measured
+                             (view-average-item-height v)))
+                  (named (resolve event.top-item))
+                  (named-index (and named (node-item-index root named)))
+                  (across (and named-index event.spacer average
+                               (item-across-spacer event.spacer named-index count
+                                                   event.spacer-distance average)))
+                  (top-index (if across (car across) named-index))
+                  (top (if across (node-item-at root top-index) named))
+                  (offset (if across (cdr across) event.top-offset))
                   (last-visible (resolve event.last-visible-item))
                   (last-index (and last-visible (node-item-index root last-visible)))
                   (visible (if (and top-index last-index) (fxmax 1 (fx1+ (fx- last-index top-index))) 0))
@@ -293,26 +355,29 @@
                               (fx= (scroll-facts-width before) event.viewport-width)
                               (fx= (scroll-facts-height before) event.viewport-height)
                               (or (not was) (not (item=? was top))
-                                  (fl>= (flabs (fl- (view-scroll-offset v) event.top-offset)) edge-tolerance)))
+                                  (fl>= (flabs (fl- (view-scroll-offset v) offset)) edge-tolerance)))
                          'moved)
                         (else 'still))))
              (set-view-facts! v (make-scroll-facts event.placement root last-visible visible
                                                    event.viewport-width event.viewport-height))
+             (when average
+               (set-view-average-item-height! v average))
              (when top-index
-               (set-view-scroll! v top event.top-offset)
-               (let* ((drawn-px (fl+ event.px-above event.px-below
-                                     (exact->inexact event.viewport-height)))
-                      (density (if (fl> drawn-px 0.)
-                                 (fl/ (exact->inexact (fx+ event.drawn-before event.drawn-after 1)) drawn-px)
-                                 0.)))
-                 (set-view-drawn-items!
-                  v
-                  (fxmin top-index
-                         (adjusted-count event.drawn-before 0 event.px-above
-                                         (setting-pixels drawn-above) density))
-                  (fxmin (fx- (node-item-count root) top-index 1)
-                         (adjusted-count event.drawn-after visible event.px-below
-                                         (setting-pixels drawn-below) density)))))
+               (set-view-scroll! v top offset)
+               (let ((density (if measured (fl/ 1. measured) 0.))
+                     (wanted (wanted-pixels v event.viewport-height)))
+                 (if across
+                   ;; Nothing is drawn around the new top item yet.
+                   (set-view-drawn-items!
+                    v
+                    (fxmin top-index (adjusted-count 0 0 0. wanted density))
+                    (fxmin (fx- count top-index 1)
+                           (adjusted-count 0 0 0. (fl+ wanted (exact->inexact event.viewport-height)) density)))
+                   (set-view-drawn-items!
+                    v
+                    (fxmin top-index (adjusted-count event.drawn-before 0 event.px-above wanted density))
+                    (fxmin (fx- count top-index 1)
+                           (adjusted-count event.drawn-after visible event.px-below wanted density))))))
              (cons v how))))))
 
 ;; After a report adopted by view-scrolled!: a view that moved by hand
@@ -331,39 +396,6 @@
      (else (settle-point! state v)))))
 
 ;;; Scroll commands
-
-;; The view, and the node its scroller draws from, of the scroll bar
-;; event that ran the command, or #f.
-(def (scroll-bar-target) => (Maybe :pair)
-  (let (event (last-command-event))
-    (and (scroll-bar-event? event)
-         (let* ((p (scroll-bar-event-start event))
-                (v (posn-view p))
-                (root (and v (posn-node p))))
-           (and root (cons v root))))))
-
-;; Place the item at FRACTION of ROOT's items at V's top.
-(def (place-at-fraction! (state : scrolling-state) (v : view) (root : node) (fraction : :flonum)) => :void
-  (let (count (node-item-count root))
-    (when (fx> count 0)
-      (place-view! v (node-item-at root (fxmax 0 (fxmin (fx1- count)
-                                                        (inexact->exact
-                                                         (flfloor (fl* fraction (exact->inexact count)))))))
-                   'top)
-      (scrolled! state v))))
-
-;; Page V toward PART of its track: the last item wholly in view to the
-;; top, or the top item to the bottom.
-(def (page! (state : scrolling-state) (v : view) (part : :symbol)) => :void
-  (let (s (view-shown v))
-    (when s
-      (using (s : shown)
-        (let ((top (node-item-index s.root (or (view-scroll-item v) (node-item-at s.root 0)))))
-          (when top
-            (if (eq? part 'below-handle)
-              (place-view! v (node-item-at s.root (or s.last top)) 'top)
-              (place-view! v (node-item-at s.root top) 'bottom))
-            (scrolled! state v)))))))
 
 ;; C-v in V: the item next-screen-context-items before the end of what is
 ;; wholly in view to the top, or at least the item after the top one.
@@ -437,7 +469,7 @@
          (else (void)))))))
 
 (defplugin (scrolling ctx)
-  "Keeps each view's scroll state where the browser measured it, scrolls views by command and scroll bar, and keeps views and their points together."
+  "Keeps each view's scroll state where the browser measured it, scrolls views by command, and keeps views and their points together."
   requires: [commands-service input-service buffers-service layout-service settings-service]
   (let (state (new-scrolling-state))
     (defcommand (view-scrolled) "Adopt what the browser measured of the view a scroll report names."
@@ -447,19 +479,6 @@
             (when adopted
               (after-report! state (car adopted) (cdr adopted))))
           (message "view-scrolled runs only from a scroll report"))))
-    (defcommand (scroll-bar-drag) "Put the item at the fraction of the view's items the scroll bar's handle was dragged to at its top."
-      (let (target (scroll-bar-target))
-        (if target
-          (place-at-fraction! state (car target) (cdr target)
-                              (scroll-bar-event-fraction (last-command-event)))
-          (message "scroll-bar-drag runs only from the scroll bar"))))
-    (defcommand (scroll-bar-page) "Page the view toward where its scroll bar's track was clicked."
-      (let (target (scroll-bar-target))
-        (if target
-          (let ((v (car target))
-                (part (scroll-bar-event-part (last-command-event))))
-            (scroll-when-measured! state v (lambda () (page! state v part))))
-          (message "scroll-bar-page runs only from the scroll bar"))))
     (defcommand (scroll-up-command) "Scroll forward by nearly a screen: the last items in view go to the top."
       (let (v (selected-view))
         (scroll-when-measured! state v (lambda () (scroll-up! state v)))))
@@ -478,8 +497,6 @@
             (set! (scrolling-state-before state) (cdr before))
             (after-command! state (car before)))))))
   (keymap-set ctx scroll-key 'view-scrolled)
-  (keymap-set ctx "<vertical-scroll-bar> <drag-mouse-1>" 'scroll-bar-drag)
-  (keymap-set ctx "<vertical-scroll-bar> <mouse-1>" 'scroll-bar-page)
   (keymap-set ctx "C-v" 'scroll-up-command)
   (keymap-set ctx "<next>" 'scroll-up-command)
   (keymap-set ctx "M-v" 'scroll-down-command)

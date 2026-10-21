@@ -1,5 +1,5 @@
-/* The renderer's semantic tokens: buffers, cursors, scroll bars, status
-   lines and the overlay on clickable parts. Each is a design token (design-tokens
+/* The renderer's semantic tokens: buffers, spacers, cursors, status lines
+   and the overlay on clickable parts. Each is a design token (design-tokens
    plugin) with a fallback, so the page stays readable without one. */
 :root {
   --buffer-padding: 0.5rem;
@@ -11,15 +11,8 @@
   --status-line-selected-foreground: var(--neutral-12, CanvasText);
   --status-line-border: var(--neutral-4, ButtonBorder);
   --status-line-padding: 0.25rem 0.5rem;
-  /* A view's scroll bar: its track, and the handle showing where the
-     view is among its items. */
-  --scroll-bar-width: 0.625rem;
-  --scroll-bar-touch-width: 0.25rem;
-  --scroll-bar-track: transparent;
-  --scroll-bar-handle: color-mix(in srgb, var(--neutral-12, CanvasText) 25%, transparent);
-  --scroll-bar-handle-active: color-mix(in srgb, var(--neutral-12, CanvasText) 45%, transparent);
-  --scroll-bar-handle-minimum: 1.5rem;
-  --scroll-bar-handle-radius: 0.3125rem;
+  /* The faint lines of a spacer standing in for items not drawn. */
+  --spacer-line: color-mix(in srgb, var(--neutral-12, CanvasText) 6%, transparent);
   /* Overlays for a clickable part under the pointer, and while pressed. */
   --clickable-hover: color-mix(in srgb, var(--neutral-12, CanvasText) 8%, transparent);
   --clickable-pressed: color-mix(in srgb, var(--neutral-12, CanvasText) 16%, transparent);

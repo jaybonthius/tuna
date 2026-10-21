@@ -1,7 +1,7 @@
 ;;; The web transport over real loopback HTTP on an ephemeral port: the
-;;; plain URL, Host and Origin checks, event requests (keydowns, pointer,
-;;; scroll and scroll bar items, validated strictly, and the screen
-;;; revision they name), and the screen stream's re-sends. A stand-in provides the input the
+;;; plain URL, Host and Origin checks, event requests (keydowns, pointer
+;;; and scroll items, validated strictly, and the screen revision they
+;;; name), and the screen stream's re-sends. A stand-in provides the input the
 ;;; editor loop needs; another records the items it resolves.
 (import :std/io
         :std/net/address
@@ -63,20 +63,15 @@
 
 ;; A scroll item as JSON: view 12's scroller drawing node 4, measured on
 ;; screen 0 after placement 2: line item "4.61.0" at the top, 5.5 px
-;; above the edge, and "4.95.0" the last in view.
+;; above the edge, not in a spacer, and "4.95.0" the last in view.
 (def (scroll-json . changes)
   (item-json '(("version" . "1") ("type" . "\"scroll\"") ("sequence" . "1") ("revision" . "0")
                ("view" . "12") ("node" . "4") ("placement" . "2")
                ("top" . "\"4.61.0\"") ("offset" . "5.5") ("lastVisible" . "\"4.95.0\"")
-               ("before" . "100") ("after" . "400") ("above" . "20000.25") ("below" . "19000")
+               ("spacer" . "null") ("spacerDistance" . "0")
+               ("before" . "100") ("after" . "400") ("drawnHeight" . "39744.25")
+               ("above" . "20000.25") ("below" . "19000")
                ("width" . "800") ("height" . "744"))
-             changes))
-
-;; A scroll bar item as JSON: view 12's handle, over a scroller drawing
-;; node 4, dragged to a quarter of the track on screen 0.
-(def (scroll-bar-json . changes)
-  (item-json '(("version" . "1") ("type" . "\"scroll-bar\"") ("sequence" . "1") ("revision" . "0")
-               ("view" . "12") ("node" . "4") ("part" . "\"handle\"") ("fraction" . "0.25"))
              changes))
 
 ;; The data-revision of each screen event in TEXT, oldest first.
@@ -314,19 +309,26 @@
            (check (post-json (scroll-json (cons "revision" (number->string revision)))) => 204)
            (check (post-json (scroll-json (cons "sequence" "2") (cons "top" "null") (cons "lastVisible" "null")
                                           (cons "placement" "0"))) => 204)
-           (let (items (recorded-items 2))
-             (check (length items) => 2)
+           (check (post-json (scroll-json (cons "sequence" "3") (cons "spacer" "\"below\"")
+                                          (cons "spacerDistance" "1234.5") (cons "lastVisible" "null"))) => 204)
+           (let (items (recorded-items 3))
+             (check (length items) => 3)
              (let ((e (car items))
-                   (bare (cadr items)))
+                   (bare (cadr items))
+                   (spaced (caddr items)))
                (let (p (scroll-event-start e))
                  (check [(posn-area p) (posn-part p) (posn-node-id p) (posn-revision p)]
                         => ['view 12 4 revision]))
                (check [(scroll-event-placement e) (scroll-event-top-item e) (scroll-event-top-offset e)
                        (scroll-event-last-visible-item e)]
                       => [2 "4.61.0" 5.5 "4.95.0"])
-               (check [(scroll-event-drawn-before e) (scroll-event-drawn-after e)
+               (check [(scroll-event-spacer e) (scroll-event-spacer-distance e)] => [#f 0.])
+               (check [(scroll-event-drawn-before e) (scroll-event-drawn-after e) (scroll-event-drawn-height e)
                        (scroll-event-px-above e) (scroll-event-px-below e)]
-                      => [100 400 20000.25 19000.])
+                      => [100 400 39744.25 20000.25 19000.])
+               (check [(scroll-event-spacer spaced) (scroll-event-spacer-distance spaced)
+                       (scroll-event-top-item spaced) (scroll-event-last-visible-item spaced)]
+                      => ['below 1234.5 "4.61.0" #f])
                (check [(scroll-event-viewport-width e) (scroll-event-viewport-height e)] => [800 744])
                (check [(scroll-event-top-item bare) (scroll-event-last-visible-item bare)
                        (scroll-event-placement bare)]
@@ -350,44 +352,25 @@
              ("top" . "\"11111111111111111111111111111111111111111111111111111111111111111\"")
              ("top" . #f) ("lastVisible" . "4") ("lastVisible" . #f)
              ("offset" . "\"5\"") ("offset" . "null") ("offset" . "1e12")
+             ("spacer" . "\"middle\"") ("spacer" . "\"Above\"") ("spacer" . "1") ("spacer" . #f)
+             ("spacerDistance" . "-1") ("spacerDistance" . "\"3\"") ("spacerDistance" . "null")
+             ("spacerDistance" . #f)
              ("before" . "-1") ("before" . "1.5") ("after" . "\"4\"") ("after" . #f)
-             ("above" . "true") ("above" . #f) ("below" . "[]")
+             ("drawnHeight" . "-0.5") ("drawnHeight" . "1e12") ("drawnHeight" . #f)
+             ("above" . "true") ("above" . "-1") ("above" . #f) ("below" . "[]") ("below" . "-3")
              ("width" . "-1") ("width" . #f)
              ("height" . "-1") ("height" . "744.5") ("height" . "2000000")))
          (check (length (recorded-items 1)) => 1))))
 
-    (test-case "a scroll bar item becomes a scroll bar event naming its view, scroller and part"
+    (test-case "a scroll item in a spacer must name the drawn item next to it"
       (set! (input-recorder-items recorded) [])
       (with-web-tuna [test-messages recording-input web-transport]
        (lambda ()
-         (check (post-json (scroll-bar-json)) => 204)
-         (check (post-json (scroll-bar-json (cons "sequence" "2") (cons "part" "\"below-handle\"")
-                                            (cons "fraction" "1"))) => 204)
-         (let (items (recorded-items 2))
-           (check (length items) => 2)
-           (let ((drag (car items))
-                 (click (cadr items)))
-             (let (p (scroll-bar-event-start drag))
-               (check [(posn-area p) (posn-part p) (posn-node-id p) (posn-revision p)]
-                      => ['vertical-scroll-bar 12 4 0]))
-             (check [(scroll-bar-event-part drag) (scroll-bar-event-fraction drag)] => ['handle .25])
-             (check (scroll-bar-event-keys drag) => "<vertical-scroll-bar> <drag-mouse-1>")
-             (check [(scroll-bar-event-part click) (scroll-bar-event-fraction click)] => ['below-handle 1.])
-             (check (scroll-bar-event-keys click) => "<vertical-scroll-bar> <mouse-1>"))))))
-
-    (test-case "malformed and forged scroll bar items get 204 without being submitted"
-      (set! (input-recorder-items recorded) [])
-      (with-web-tuna [test-messages recording-input web-transport]
-       (lambda ()
-         (check (post-json (scroll-bar-json)) => 204)
-         (for-each
-           (lambda (change)
-             (check [change (post-json (scroll-bar-json change (cons "sequence" "2")))] => [change 204]))
-           '(("version" . "2") ("type" . "\"scrollbar\"") ("sequence" . "0")
-             ("revision" . "999999") ("view" . "-1") ("node" . #f)
-             ("part" . "\"thumb\"") ("part" . "1") ("part" . #f)
-             ("fraction" . "-0.1") ("fraction" . "1.5") ("fraction" . "\"0.5\"") ("fraction" . #f)))
-         (check (length (recorded-items 1)) => 1))))
+         (check (post-json (scroll-json)) => 204)
+         (check (post-json (scroll-json (cons "sequence" "2") (cons "spacer" "\"above\"") (cons "top" "null")))
+                => 204)
+         (check (post-json (scroll-json (cons "sequence" "3"))) => 204)
+         (check (map scroll-event-sequence (recorded-items 2)) => [1 3]))))
 
     (test-case "a rejected item does not hold up the items after it"
       (set! (input-recorder-items recorded) [])

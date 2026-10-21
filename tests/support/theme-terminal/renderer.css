@@ -11,13 +11,7 @@
   --status-line-selected-foreground: Canvas;
   --status-line-border: CanvasText;
   --status-line-padding: 0 1ch;
-  --scroll-bar-width: 1ch;
-  --scroll-bar-touch-width: 0.25rem;
-  --scroll-bar-track: color-mix(in srgb, CanvasText 8%, transparent);
-  --scroll-bar-handle: color-mix(in srgb, CanvasText 40%, transparent);
-  --scroll-bar-handle-active: CanvasText;
-  --scroll-bar-handle-minimum: 1lh;
-  --scroll-bar-handle-radius: 0;
+  --spacer-line: color-mix(in srgb, CanvasText 10%, transparent);
   --clickable-hover: color-mix(in srgb, CanvasText 12%, transparent);
   --clickable-pressed: color-mix(in srgb, CanvasText 24%, transparent);
 }
