@@ -377,7 +377,7 @@
              (data-offset ,(number->string (placement-offset p)))))))
 
 ;; V's spacer standing in for ITEMS undrawn items on SIDE ("above" or
-;; "below" the run of START's items FIRST to LAST), at V's average item
+;; "below" the drawn run of items FIRST to LAST), at V's average item
 ;; height; none before the browser has measured it, or without items.
 ;; Whenever it is in view, the page reports (data-on-intersect, an
 ;; IntersectionObserver), however the view got there: a fling, a drag of

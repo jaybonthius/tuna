@@ -31,12 +31,13 @@
 ;;; the drawn item next to that spacer, and the item there is counted from
 ;;; that item by the average item height the spacer was drawn with: the
 ;;; item whose share of the spacer holds the edge, with the rest as its
-;;; offset, but never beyond the first or the last item. So the top of the
-;;; spacer above is the first item, and the end of the one below the last. That becomes the scroll state, the
-;;; view's placement names it with its exact offset, and the renderer draws
-;;; around it; the page puts it at the top unless the view moved on since
-;;; it reported, when its next report says where it is. Counting starts
-;;; from the nearest drawn item, never from the top of the buffer, so no
+;;; offset, but never beyond the first or the last item, so the top of the
+;;; spacer above is the first item and the end of the one below the last.
+;;; That becomes the scroll state, the view's placement names it with its
+;;; exact offset, and the renderer draws around it; when nothing drawn was
+;;; in view, the page puts it at the top, unless the view moved on since it
+;;; reported, when its next report says where it is. Counting starts from
+;;; the nearest drawn item, never from the top of the buffer, so no
 ;;; estimate of everything above adds up.
 ;;;
 ;;; The average item height (the drawn items' height over their count, as
