@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hyperlith-style virtual scroll</title>
+<style>
+html, body { margin: 0; height: 100%; overscroll-behavior: none; }
+#screen { height: 100dvh; }
+/* As in virtual_scroll.clj: a native scroller; overflow-anchor none
+   (items have one fixed size, so nothing shifts). */
+#scroller { height: 100%; overflow: scroll; overscroll-behavior: contain; overflow-anchor: none;
+            font: 15px/24px ui-monospace, monospace; }
+#table { position: relative; contain: strict; pointer-events: none; }
+#translate { position: absolute; left: 0; right: 0; contain: layout; }
+/* Every line exactly 24 px: not wrapped. */
+.line { height: 24px; padding: 0 12px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.line:nth-child(odd) { background: #fafafa; }
+</style>
+<script type="module" src="/datastar.js"></script>
+</head>
+<body data-signals="{y: 0, h: 0}" data-init="@get('/stream?c={{C}}')">
+{{SCREEN}}
+<div data-init="$h = document.getElementById('scroller').clientHeight; @post('/scroll?c={{C}}')"
+     data-on:resize__window__debounce.100ms="$h = document.getElementById('scroller').clientHeight; @post('/scroll?c={{C}}')"></div>
+</body>
+</html>
