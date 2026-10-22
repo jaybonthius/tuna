@@ -29,7 +29,7 @@ prelude: :gerbil/core
 (export source source? new-source source-revision
         record-read! source-changed!
         memo-drawing? check-not-drawing!
-        memo-cache? new-memo-cache memo-cache-size
+        memo-cache memo-cache? new-memo-cache memo-cache-size
         call-with-memo-pass memo memo-forget-client!
         set-memo-checking! memo-checking?
         plain-value? plain-equal?)

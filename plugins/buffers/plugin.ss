@@ -83,7 +83,7 @@
       (record-undo! t c point-before)
       (relocate-decorations! t c)
       (source-changed! t.changes)
-      (stamp-nodes! t.nodes)
+      (for-each stamp! t.nodes)
       (run-hook after-change-hook t c))))
 
 (def (record-journal! (t : default-text) (c : change)) => :void
@@ -168,7 +168,7 @@
             (filter (lambda ((layer : :pair)) (not (eq? (car layer) name))) t.decorations)))
     (set! t.decoration-revision (fx1+ t.decoration-revision))
     (source-changed! t.changes)
-    (stamp-nodes! t.nodes)))
+    (for-each stamp! t.nodes)))
 
 (def (layer-spans (t : default-text) (name : :symbol)) => :list
   (let (layer (assq name t.decorations))
@@ -214,22 +214,12 @@
   final: #t)
 
 ;; Change the source of N and of every node above it: their revisions.
-;; Stamping changes the buffers generation.
 (def (stamp! (n :? default-node)) => :void
-  (stamp-up! n)
-  (buffers-changed!))
-
-(def (stamp-up! (n :? default-node)) => :void
   (let lp ((n n))
     (when n
       (using (n : default-node)
         (source-changed! n.changes)
         (lp n.parent)))))
-
-(def (stamp-nodes! (nodes : :list)) => :void
-  (unless (null? nodes)
-    (for-each stamp-up! nodes)
-    (buffers-changed!)))
 
 ;; Detached subtrees must not be kept alive by their texts. Reattachment
 ;; also refreshes revisions, since a detached text may have changed.

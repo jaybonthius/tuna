@@ -5,6 +5,7 @@
         (only-in :gerbil/runtime/interface interface-instance-object)
         :std/test
         :tuna/kernel
+        :tuna/lib/memo
         :tuna/plugins/clients/contract
         (only-in :tuna/plugins/keys/contract keymap-set! keymap-set-in! new-keymap)
         :tuna/plugins/settings/contract
@@ -50,14 +51,14 @@
   (Renderer-render-screen (Renderer (service-provider renderer-service)) c))
 
 ;; Calls of the counted kind's HTML renderer, by the name of the buffer
-;; holding the node.
+;; holding the node, which each counted node carries (its 'in attribute):
+;; a renderer may read only its own node.
 (def renders (make-hash-table))
 
 (def (renders-of name) (hash-ref renders name 0))
 
-(def (node-buffer-name n)
-  (let (root (let up ((n n)) (or (and (node-parent n) (up (node-parent n))) n)))
-    (buffer-name (find (lambda (b) (eq? (buffer-root b) root)) (buffer-list)))))
+;; A counted node in the buffer named IN.
+(def (counted in children: (children [])) (new-node 'counted attributes: [(cons 'in in)] children: children))
 
 ;; The counted kind, and two buffers: "a", a counted root holding a
 ;; counted child and a text node; "b", a counted root holding two counted
@@ -68,17 +69,20 @@
   (context-define-node-kind! ctx 'counted)
   (context-define-node-renderer! ctx 'counted
                                  (lambda (n children)
-                                   (hash-update! renders (node-buffer-name n) 1+ 0)
+                                   (hash-update! renders (node-attribute n 'in) 1+ 0)
                                    `(div (@ (class "counted")) ,(or (node-attribute n 'label) "") ,@children)))
-  (context-add-buffer! ctx (new-buffer "a" (new-node 'counted children: [(new-node 'counted)
-                                                                         (new-text-node (new-text "a"))])))
-  (context-add-buffer! ctx (new-buffer "b" (new-node 'counted children: [(new-node 'counted)
-                                                                         (new-node 'counted)]))))
+  (context-add-buffer! ctx (new-buffer "a" (counted "a" children: [(counted "a") (new-text-node (new-text "a"))])))
+  (context-add-buffer! ctx (new-buffer "b" (counted "b" children: [(counted "b") (counted "b")]))))
 
 (defplugin (remapping ctx)
   "Draws digits as keywords."
   requires: [settings-service]
   (context-set-setting! ctx face-remapping [(cons 'digit 'keyword)]))
+
+(defplugin (no-status-lines ctx)
+  "Turns status lines off."
+  requires: [settings-service]
+  (context-set-setting! ctx show-status-line #f))
 
 ;; a | b, a selected.
 (def (two-counted-views!)
@@ -226,7 +230,7 @@
              (check (and (offset (string-append view " data-selected=\"true\">") html) #t) => #t)
              (check (offset "data-clickable" (substring html 0 (offset status-line html))) => #f))))))
 
-    (test-case "a node is clickable while its own keymap binds a plain click; a rebind draws it again"
+    (test-case "a node is clickable while its own keymap binds a plain click; a rebind draws it, and what holds it, again"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (activate-plugin! counted-kind)
@@ -252,17 +256,18 @@
            (hash-clear! renders)
            (check (offset "data-clickable" (screen)) => #f)
            (check (renders-of "b") => 0)
-           ;; Binding the click changes no node; the keymap generation makes
-           ;; the next screen draw the nodes again, marked.
+           ;; Binding the click changes no node, but the keymap's source:
+           ;; the next screen draws the node holding it again, marked, and
+           ;; its parent; not its sibling.
            (activate-plugin! node-click)
            (let (html (screen))
              (check (and (offset marked html) #t) => #t)
-             (check (renders-of "b") => 3))
+             (check (renders-of "b") => 2))
            (hash-clear! renders)
            (deactivate-plugin! node-click)
            (let (html (screen))
              (check (offset "data-clickable" html) => #f)
-             (check (renders-of "b") => 3))))))
+             (check (renders-of "b") => 2))))))
 
     (test-case "a kind without an HTML renderer shows its text projection"
       (call-with-fresh-kernel renderer-plugins
@@ -320,25 +325,25 @@
           (activate-plugin! counted-kind)
           (set-view-buffer (selected-view) (get-buffer "b"))
           (let* ((root (buffer-root (current-buffer)))
-                 (kept (new-node 'counted children: [(new-node 'counted)]))
-                 (rendering (interface-instance-object (service-provider renderer-service))))
+                 (kept (counted "b" children: [(counted "b")]))
+                 (rendering (interface-instance-object (service-provider renderer-service)))
+                 (pieces (lambda () (memo-cache-size (slot-ref rendering 'pieces)))))
             (for-each (lambda (_)
-                        (set-node-children! root [kept (new-node 'counted)])
+                        (set-node-children! root [kept (counted "b")])
                         (screen))
                       (iota 1000))
-            (let (cached (hash-get (slot-ref (hash-get (slot-ref rendering 'clients) #f) 'views)
-                                   (view-id (selected-view))))
-              (check (hash-length (slot-ref cached 'nodes)) => 4)
-              (hash-clear! renders)
-              (screen)
-              (check (renders-of "b") => 0)
-              (set-node-children! root [kept])
-              (screen)
-              (check (renders-of "b") => 1)
-              (check (hash-length (slot-ref cached 'nodes)) => 3)
-              (set-node-children! root [])
-              (screen)
-              (check (hash-length (slot-ref cached 'nodes)) => 1))))))
+            ;; The screen, its view, and four nodes.
+            (check (pieces) => 6)
+            (hash-clear! renders)
+            (screen)
+            (check (renders-of "b") => 0)
+            (set-node-children! root [kept])
+            (screen)
+            (check (renders-of "b") => 1)
+            (check (pieces) => 5)
+            (set-node-children! root [])
+            (screen)
+            (check (pieces) => 3)))))
 
     (test-case "HTML reuse: an unchanged buffer's node renderers are not called again"
       (call-with-fresh-kernel renderer-plugins
@@ -372,8 +377,8 @@
            ;; The layout: selecting the other view.
            (check (changed? (lambda () (select-view (cadr (view-list))))) => #t)
            ;; Settings: a global value.
-           (check (changed? (lambda () (activate-plugin! remapping))) => #t)
-           (check (changed? (lambda () (deactivate-plugin! remapping))) => #t)
+           (check (changed? (lambda () (activate-plugin! no-status-lines))) => #t)
+           (check (changed? (lambda () (deactivate-plugin! no-status-lines))) => #t)
            ;; Keymaps: a binding a status line's click reads.
            (activate-plugin! status-line-click)
            (check (and (string-contains (screen c) "data-clickable") #t) => #t)
@@ -420,7 +425,7 @@
            (check [(renders-of "a") (renders-of "b")] => [1 0])
            (check (and (string-contains html "<span class=\"inactive-cursor\">!</span>a") #t) => #t)))))
 
-    (test-case "HTML reuse: a face or setting change redraws everything"
+    (test-case "HTML reuse: a face-remapping change redraws what drew faces, and what holds it"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (two-counted-views!)
@@ -430,13 +435,13 @@
          (hash-clear! renders)
          (activate-plugin! remapping)
          (let (html (screen))
-           (check [(renders-of "a") (renders-of "b")] => [2 3])
+           (check [(renders-of "a") (renders-of "b")] => [1 0])
            (check (and (string-contains html "face-keyword") #t) => #t)
            (check (string-contains html "face-digit") => #f))
          (hash-clear! renders)
          (deactivate-plugin! remapping)
          (check (and (string-contains (screen) "face-digit") #t) => #t)
-         (check [(renders-of "a") (renders-of "b")] => [2 3]))))
+         (check [(renders-of "a") (renders-of "b")] => [1 0]))))
 
     (test-case "scrolling: a new view draws its first items, from its start"
       (call-with-fresh-kernel renderer-plugins

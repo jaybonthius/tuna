@@ -15,8 +15,8 @@
 ;;; keys contract gives the order). The keymap of a buffer's root node is
 ;;; the buffer's own (Emacs's local map); there is no separate buffer
 ;;; keymap. Giving a node another keymap is a change to it; bindings added
-;;; to or removed from a keymap are not, the keymap generation tracks them
-;;; (keys contract). A view is one
+;;; to or removed from a keymap are not: the keymap's own source tracks
+;;; them (keys contract). A view is one
 ;;; place in the layout showing a buffer: the focused text node, point, and
 ;;; the goal column, so two views of one buffer have their own points.
 ;;;
@@ -63,7 +63,6 @@ prelude: :gerbil/core
         :tuna/plugins/settings/contract)
 (export (interface-out Buffers)
         buffers-service
-        buffers-generation buffers-changed!
         ;; changes and the rule positions follow through them
         (struct-out change) (struct-out span)
         position-after-change span-after-change rebase-spans
@@ -402,25 +401,6 @@ prelude: :gerbil/core
   (new-service 'buffers is-Buffers? tier: 'live
                doc: "Keeps buffers, their texts and nodes, the selected view, and node kinds."))
 
-;;; The generation
-
-;; A number that changes with every change to what a screen can show of
-;; buffers: a node stamped; a buffer added, killed or renamed, or one of
-;; its settings set; a node kind or renderer registered or removed; the
-;; selected view; and every write to a view or to what a client measured
-;; of one. Reading a view does not change it, even where reading keeps a
-;; derived value current (point relocated through edits, a client view
-;; made when first needed). Providers call buffers-changed! whenever they
-;; stamp nodes. It is the contract's, not a provider's, so a new provider
-;; never repeats a number an old one gave. On the baton only.
-(def generation 0)
-
-(def (buffers-generation) => :fixnum
-  (:- generation :fixnum))
-
-(def (buffers-changed!) => :void
-  (set! generation (fx1+ (buffers-generation))))
-
 ;;; Texts
 
 ;; Runs on the baton after each change to a text, with the text and the
@@ -682,13 +662,11 @@ prelude: :gerbil/core
   (unless (memq items '(#f children whole))
     (error "A kind's nodes open into their children's items or are one item, not" items))
   (:- (with-service-provider (provider buffers-service Buffers)
-    (context-defer! ctx buffers-changed!)
     (context-defer! ctx node-kinds-changed!)
     (context-add-entry! ctx (: (Buffers-node-kinds provider) entry-table) name
                         (make-node-kind-info name doc project items)
                         doc: doc)
-    (node-kinds-changed!)
-    (buffers-changed!)) :void))
+    (node-kinds-changed!)) :void))
 
 ;; Render nodes of KIND to HTML with RENDER, called with the node and its
 ;; children already rendered, and returning SXML (ADR 7).
@@ -697,12 +675,10 @@ prelude: :gerbil/core
                                     (render : :procedure))
   => :void
   (:- (with-service-provider (provider buffers-service Buffers)
-    (context-defer! ctx buffers-changed!)
     (context-defer! ctx node-kinds-changed!)
     (context-add-entry! ctx (: (Buffers-node-renderers provider) entry-table)
                         kind render)
-    (node-kinds-changed!)
-    (buffers-changed!)) :void))
+    (node-kinds-changed!)) :void))
 
 (def (node-kind-ref (kind : :symbol)) => (Maybe node-kind-info)
   (record-read! node-kinds-source)
@@ -954,7 +930,6 @@ prelude: :gerbil/core
   (:- (with-service-provider (provider buffers-service Buffers)
     (Buffers-rename-buffer! provider b name)
     (source-changed! (buffer-changes b))
-    (buffers-changed!)
     (run-hook buffer-list-update-hook)) :void))
 
 ;; Buffers whose names start with a space are internal (as in Emacs):
@@ -987,8 +962,7 @@ prelude: :gerbil/core
     (let (old (Buffers-buffer-setting provider b s))
       (unless (and old (plain-equal? (cdr old) value))
         (Buffers-set-buffer-setting! provider b s value)
-        (source-changed! (buffer-changes b))
-        (buffers-changed!)))) :void))
+        (source-changed! (buffer-changes b))))) :void))
 
 ;; The buffer whose own values the buffer settings scope reads, while
 ;; buffer-local-value reads another buffer's.
@@ -1020,7 +994,6 @@ prelude: :gerbil/core
 (def (add-buffer! (b : buffer)) => :void
   (:- (with-service-provider (provider buffers-service Buffers)
     (Buffers-add-buffer! provider b)
-    (buffers-changed!)
     (run-hook buffer-list-update-hook)) :void))
 
 ;; Add B for CTX's plugin; it is killed when the plugin is deactivated.
@@ -1048,7 +1021,6 @@ prelude: :gerbil/core
 (def (kill-buffer (b : buffer)) => :void
   (:- (with-service-provider (provider buffers-service Buffers)
     (Buffers-kill-buffer! provider b)
-    (buffers-changed!)
     (run-hook buffer-list-update-hook)) :void))
 
 ;; The texts of B's text nodes, depth first. (Not append-map from
@@ -1165,8 +1137,7 @@ prelude: :gerbil/core
       (let* ((s (text-snapshot (text-node-content n)))
              (new (fxmax 1 (fxmin position (fx1+ (snapshot-size s))))))
         (unless (fx= new (view-point v))
-          (source-changed! v.changes)
-          (buffers-changed!))
+          (source-changed! v.changes))
         (set! v.position new)
         (set! v.revision (snapshot-revision s))))))
 
@@ -1184,8 +1155,7 @@ prelude: :gerbil/core
           (set! v.revision (node-chars-revision n))
           (set! v.goal-column #f)
           (source-changed! v.changes)
-          (show-point! v)
-          (buffers-changed!))))) :void))
+          (show-point! v))))) :void))
 
 ;; The item among ROOT's items that holds V's point: the line of V's
 ;; focused text node holding it, or the node above that line that is one
@@ -1256,8 +1226,7 @@ prelude: :gerbil/core
   (let (cv (hash-get v.clients c))
     (when cv
       (source-changed! (client-view-changes cv))
-      (hash-remove! v.clients c)))
-  (buffers-changed!))
+      (hash-remove! v.clients c))))
 
 ;; Move V's scroll position: put IT (#f: the first item V draws) at V's
 ;; top, centre or bottom (ALIGN 'top, 'center or 'bottom); with 'top,
@@ -1268,8 +1237,7 @@ prelude: :gerbil/core
   (set! v.last-placement (make-placement (fx1+ (placement-number v.last-placement)) it align
                                          (if (eq? align 'top) offset 0.)))
   (source-changed! v.changes)
-  (hash-for-each (lambda (c (cv : client-view)) (place-client-view! cv v.last-placement)) v.clients)
-  (buffers-changed!))
+  (hash-for-each (lambda (c (cv : client-view)) (place-client-view! cv v.last-placement)) v.clients))
 
 ;; Client C's browser scrolled V: IT is at its top edge, OFFSET px of it
 ;; above the edge. That is V's scroll position now, and every other
@@ -1281,8 +1249,7 @@ prelude: :gerbil/core
                    (if (eq? other c)
                      (set-client-view-scroll! cv it offset)
                      (place-client-view! cv v.last-placement)))
-                 v.clients)
-  (buffers-changed!))
+                 v.clients))
 
 ;; The newest placement sent to CV's client.
 (def (client-view-placement (cv : client-view)) => placement
@@ -1308,8 +1275,7 @@ prelude: :gerbil/core
 (def (set-client-view-scroll! (cv : client-view) (it : item) (offset : :flonum)) => :void
   (let (old cv.top-item)
     (unless (and old (item=? old it) (same-px? cv.scroll-offset offset))
-      (source-changed! cv.changes)
-      (buffers-changed!)))
+      (source-changed! cv.changes)))
   (set! cv.top-item it)
   (set! cv.scroll-offset offset))
 
@@ -1328,8 +1294,7 @@ prelude: :gerbil/core
 
 (def (set-client-view-facts! (cv : client-view) (facts : scroll-facts)) => :void
   (unless (same-facts? cv.facts facts)
-    (source-changed! cv.changes)
-    (buffers-changed!))
+    (source-changed! cv.changes))
   (set! cv.facts facts))
 
 ;; The last item wholly in CV's view, as last measured, moved with edits
@@ -1346,8 +1311,7 @@ prelude: :gerbil/core
   (let (rounded (fl/ (flround (fl* px 100.)) 100.))
     (unless (eqv? rounded cv.average-item-height)
       (set! cv.average-item-height rounded)
-      (source-changed! cv.changes)
-      (buffers-changed!))))
+      (source-changed! cv.changes))))
 
 ;; Draw BEFORE items before CV's scroll item and AFTER after it.
 (def (set-client-view-drawn-items! (cv : client-view) (before : :fixnum) (after : :fixnum)) => :void
@@ -1356,8 +1320,7 @@ prelude: :gerbil/core
     (unless (and (fx= before cv.drawn-before) (fx= after cv.drawn-after))
       (set! cv.drawn-before before)
       (set! cv.drawn-after after)
-      (source-changed! cv.changes)
-      (buffers-changed!))))
+      (source-changed! cv.changes))))
 
 (def (selected-view) => view
   (record-read! selected-view-source)
@@ -1369,8 +1332,7 @@ prelude: :gerbil/core
   (:- (with-service-provider (provider buffers-service Buffers)
     (unless (eq? v (Buffers-selected-view provider))
       (source-changed! selected-view-source))
-    (Buffers-set-selected-view! provider v)
-    (buffers-changed!)) :void))
+    (Buffers-set-selected-view! provider v)) :void))
 
 (def (current-buffer) => buffer
   (view-showing (selected-view)))

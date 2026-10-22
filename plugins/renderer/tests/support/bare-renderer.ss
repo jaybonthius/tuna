@@ -57,7 +57,7 @@ prelude: :gerbil/core
          (article (@ (class "buffer") (aria-label ,(buffer-name b)))
                   ,(render-node start))
          ,@(if (buffer-local-value show-status-line b)
-             [`(p (@ (class "status-line")) ,(status-line-text v selected?))]
+             [`(p (@ (class "status-line")) ,(status-line-text v (and selected? (current-task-name))))]
              [])))))
 
 (defmethod {render-screen bare-rendering}

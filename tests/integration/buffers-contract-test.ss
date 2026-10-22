@@ -281,23 +281,20 @@
            (set-node-children! section [])
            (check (> (node-revision root) before) => #t))))))
 
-  (test-case "an attribute set to an equal value is no change: no revision, no generation"
+  (test-case "an attribute set to an equal value is no change: no revision"
     (call-with-fresh-kernel buffer-plugins
      (lambda ()
        (let* ((n (new-node 'item attributes: [(cons 'label "One") (cons 'size [1 2])]))
               (root (new-node 'root children: [n])))
          (let ((own (node-revision n))
-               (revision (node-revision root))
-               (generation (buffers-generation)))
+               (revision (node-revision root)))
            (set-node-attribute! n 'label (string-append "O" "ne"))
            (set-node-attribute! n 'size [1 2])
            (check (node-revision n) => own)
            (check (node-revision root) => revision)
-           (check (buffers-generation) => generation)
            ;; A new attribute, even #f, and a different value are changes.
            (set-node-attribute! n 'hidden #f)
            (check (> (node-revision root) revision) => #t)
-           (check (> (buffers-generation) generation) => #t)
            (let (revision (node-revision root))
              (set-node-attribute! n 'label "Two")
              (check (> (node-revision root) revision) => #t)
@@ -363,7 +360,12 @@
          (check (drawn-again? read (lambda () (set-client-view-drawn-items! cv 10 10))) => #t)
          (check (drawn-again? read (lambda () (set-client-view-scroll! cv (node-item-at n 1) 3.2))) => #f)
          (check (drawn-again? read (lambda () (set-client-view-scroll! cv (node-item-at n 2) 3.2))) => #t)
-         (check (drawn-again? read (lambda () (place-view! v (node-item-at n 0) 'top))) => #t)))))
+         (check (drawn-again? read (lambda () (place-view! v (node-item-at n 0) 'top))) => #t)
+         (check (drawn-again? read (lambda () (set-view-scroll! v c (node-item-at n 2) 0.))) => #t)
+         (check (drawn-again? (lambda () (view-placement v)) (lambda () (set-view-scroll! v c (node-item-at n 1) 0.)))
+                => #t)
+         (check (drawn-again? (lambda () (view-point v) (client-view-scroll-item (view-client v c))) void) => #f)
+         (check (drawn-again? read (lambda () (forget-view-client! v c))) => #t)))))
 
   (test-case "test mode: drawing may relocate point and a scroll item, but not make a client's view"
     (call-with-fresh-kernel buffer-plugins
@@ -386,32 +388,6 @@
                               (lambda () (memo 'q [] (lambda (i) (view-client v (make-client "b"))))))))
                  => #t)
           (finally (set-memo-checking! #f)))))))
-
-  (test-case "the generation moves with every change a screen can show, not with reads"
-    (call-with-fresh-kernel buffer-plugins
-     (lambda ()
-       (let* ((moved? (lambda (change)
-                        (let (before (buffers-generation))
-                          (change)
-                          (> (buffers-generation) before))))
-              (v (selected-view))
-              (b (current-buffer))
-              (n (view-node v)))
-         (check (moved? (lambda () (insert "a\nb\nc"))) => #t)
-         (check (moved? (lambda () (goto-char 2))) => #t)
-         (check (moved? (lambda () (place-view! v (node-item-at n 1) 'top))) => #t)
-         (check (moved? (lambda () (set-buffer-setting! b fill-width 10))) => #t)
-         (check (moved? (lambda () (rename-buffer! b "renamed"))) => #t)
-         (check (moved? (lambda () (add-buffer! (new-buffer "other" (new-text-node (new-text "")))))) => #t)
-         (let (c (make-client "a"))
-           ;; Reads, even one that makes a client's view of V, are no change.
-           (check (moved? (lambda () (view-point v) (view-client v c) (client-view-scroll-item (view-client v c))))
-                  => #f)
-           (let (cv (view-client v c))
-             (check (moved? (lambda () (set-client-view-drawn-items! cv 5 5))) => #t)
-             (check (moved? (lambda () (set-client-view-average-item-height! cv 20.))) => #t)
-             (check (moved? (lambda () (set-view-scroll! v c (node-item-at n 2) 0.))) => #t)
-             (check (moved? (lambda () (forget-view-client! v c))) => #t)))))))
 
   (test-case "buffers: names are unique; a killed buffer leaves the selected view and its texts die"
     (call-with-fresh-kernel buffer-plugins

@@ -19,8 +19,7 @@ prelude: :gerbil/core
 (defclass two-view-layout ((left     : view)
                      (right    : view)
                      (selected : view)
-                     (marks    : :list)      ; frame mark names, oldest first
-                     (generation : :fixnum)) ; new from next-id! when it selects or restores
+                     (marks    : :list))     ; frame mark names, oldest first
   final: #t)
 
 (def (own-views (self : two-view-layout)) => :list
@@ -45,7 +44,6 @@ prelude: :gerbil/core
   (select-view! (lambda (self v)
                   (check-own-view self v)
                   (set! self.selected v)
-                  (set! self.generation (next-id!))
                   (layout-changed!)
                   (set-selected-view! v)))
   (next-view (lambda (self v)
@@ -84,7 +82,6 @@ prelude: :gerbil/core
                      (case target
                        ((html) `(div (@ (class "layout")) ,@rendered))
                        (else rendered)))))
-  (generation (lambda (self) self.generation))
 )
 
 (def (saved-layout (self : two-view-layout)) => :list
@@ -103,7 +100,6 @@ prelude: :gerbil/core
            (set! self.right (cadr kept))
            (set! self.selected selected)
            (set! self.marks (filter-map (lambda (m) (and (pair? m) (string? (car m)) (car m))) marks))
-           (set! self.generation (next-id!))
            (layout-changed!)
            (set-selected-view! selected)))))
     (else (void))))
@@ -116,7 +112,7 @@ prelude: :gerbil/core
   (add-stylesheet 'rules "two-views.css")
   (let* ((left (selected-view))
          (right (copy-view left)))
-    (using (self (two-view-layout left: left right: right selected: left marks: [] generation: (next-id!))
+    (using (self (two-view-layout left: left right: right selected: left marks: [])
                  : two-view-layout)
       (layout-changed!)
       (context-defer! ctx layout-changed!)

@@ -40,10 +40,6 @@
 ;;; contract's `call-special-command`), never becoming this-command or
 ;;; last-command and running no command hooks.
 ;;;
-;;; The keymap generation (`keymap-generation`) changes whenever any
-;;; binding is added or removed, so renderers that reuse HTML marked from
-;;; bindings (`data-clickable`) know to draw it again.
-;;;
 ;;; Sources (ADR 17): each keymap bound through this contract has one,
 ;;; which changes when a binding is added to it or goes, and one more
 ;;; source changes with the global keymap's bindings and with its
@@ -66,7 +62,6 @@ prelude: :gerbil/core
         event-start
         part-clickable?
         keymap-clickable?
-        keymap-generation
         keymap-changed!
         global-bindings-changed!
         report-stale-click
@@ -241,10 +236,7 @@ prelude: :gerbil/core
   (key-binding (keys : :string)) => :t
   ;; The key, pointer or scroll event that completed the running
   ;; command's keys, or #f (Emacs `last-command-event`).
-  (last-command-event) => :t
-  ;; A number that changes whenever a binding is added to or removed from
-  ;; any keymap.
-  (keymap-generation) => :fixnum)
+  (last-command-event) => :t)
 
 (def (context-set-click-resolver! (ctx : context) (resolve : :procedure)) => :void
   (:- (with-service-provider (provider input-service Keys)
@@ -355,10 +347,3 @@ prelude: :gerbil/core
 (def (keymap-clickable? (keymap : entry-table) (area : :symbol)) => :boolean
   (record-keymap-read! keymap)
   (and (ormap (cut entry-table-ref keymap <>) (plain-click-keys area #t)) #t))
-
-;; The current keymap generation, or 0 without key bindings.
-(def (keymap-generation) => :fixnum
-  (:- (let (input (service-provider input-service))
-          (if (and input (is-Keys? input))
-            (Keys-keymap-generation (Keys input))
-            0)) :fixnum))

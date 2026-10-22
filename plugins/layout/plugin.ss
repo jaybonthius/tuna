@@ -67,8 +67,7 @@
                        (marks        : :list)        ; frame marks, oldest first
                        (locked       : :list)        ; locked requests, oldest first
                        (kinds        : entry-table)  ; kind name -> layout-kind
-                       (generation   : :fixnum)      ; see generation-now!
-                       (seen         : :vector))     ; the state GENERATION was given for
+                       (seen         : :vector))     ; the state last noted (note-state!)
   final: #t)
 
 ;;; Container kinds
@@ -498,8 +497,7 @@
 ;;; SIZE is a weight or `content` and FLAGS lists `pinned` and `locked`.
 ;;; Ids are renumbered on restore; PART-ID #f is the whole layout.
 
-;; Tell the layout contract (layout-changed!), and take a new generation
-;; (the contract's `generation`) from next-id!, when SELF's tree, frame,
+;; Tell the layout contract (layout-changed!) when SELF's tree, frame,
 ;; selected part level, marks or locked requests are not the ones it was
 ;; last noted with. Each is a value that every change replaces and none
 ;; changes in place, so comparing them by identity sees every change.
@@ -512,7 +510,6 @@
                  (eq? (vector-ref seen 3) self.marks)
                  (eq? (vector-ref seen 4) self.locked))
       (set! self.seen (vector self.root self.frame self.level self.marks self.locked))
-      (set! self.generation (next-id!))
       (layout-changed!))))
 
 ;; Fresh lists: session data may share no pair.
@@ -920,7 +917,6 @@
                                  (render-view v (eq? v selected)
                                               (or (and (eq? l top) start) (buffer-root (view-showing v))))))
                              (visible self)))))))
-  (generation (lambda (self) (note-state! self) self.generation))
 )
 
 (defplugin (layout ctx)
@@ -932,7 +928,7 @@
   (let (v (selected-view))
     (using (self (tree-layout root: (make-leaf v #f) frame: (make-frame-state #f #f v) level: 0
                               marks: [] locked: [] kinds: (new-entry-table)
-                              generation: 0 seen: (vector #f #f -1 #f #f))
+                              seen: (vector #f #f -1 #f #f))
                  : tree-layout)
       (note-state! self)
       (context-defer! ctx layout-changed!)

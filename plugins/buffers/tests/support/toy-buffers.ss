@@ -185,8 +185,7 @@ prelude: :gerbil/core
                   (using (n : toy-node)
                     (source-changed! n.changes)
                     (lp n.parent)))))
-            nodes)
-  (buffers-changed!))
+            nodes))
 
 (def (attach! (parent : toy-node) (children : :list)) => :void
   (for-each (lambda ((child : toy-node))
