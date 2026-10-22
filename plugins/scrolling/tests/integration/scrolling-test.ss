@@ -317,9 +317,36 @@
       (check (item-across-spacer 'above 3 1000 100. 20.) => (cons 0 -40.))
       (check (item-across-spacer 'below 995 1000 100. 20.) => (cons 999 40.)))
 
-    (test-case "the average item height is measured on the first report and on reports from a spacer with drawn items in view"
+    (test-case "by default the average item height is measured on the first report, then kept"
       (with-scrolling
        (lambda (v)
+         (check (view-average-item-height v) => #f)
+         ;; 100 items in 2,000 px.
+         (measured! v)
+         (check (view-average-item-height v) => 20.)
+         ;; Neither an ordinary report nor reports from a spacer, with
+         ;; drawn items in view or without, change it: the scroller's total
+         ;; height stays the same.
+         (report! v top: 300 before: 50 after: 49 above: 1000. below: 256. drawn: 3000.)
+         (check (view-average-item-height v) => 20.)
+         (report! v top: 1000 spacer: 'above distance: 50. before: 0 after: 99 above: 0. below: 0.
+                  drawn: 2500.)
+         (check (scroll-state v) => [997 10.])
+         (check (view-average-item-height v) => 20.)
+         (report! v top: 2000 spacer: 'below distance: 1000. before: 99 after: 0 above: 0. below: 0.
+                  drawn: 3000.)
+         (check (scroll-state v) => [2051 0.])
+         (check (view-average-item-height v) => 20.)
+         ;; Showing another buffer forgets it; the next first report
+         ;; measures it again.
+         (let (b (car (rows-with-text!)))
+           (on-baton (lambda () (set-view-buffer v b))))
+         (check (view-average-item-height v) => #f))))
+
+    (test-case "measured, the average item height is measured on the first report and on reports from a spacer with drawn items in view"
+      (with-scrolling
+       (lambda (v)
+         (on-baton (lambda () (set-buffer-setting! (view-showing v) spacer-item-height 'measured)))
          (check (view-average-item-height v) => #f)
          ;; 100 items in 2,000 px.
          (measured! v)
