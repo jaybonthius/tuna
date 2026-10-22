@@ -75,6 +75,7 @@
    (head        : :string)      ; the newest <head>
    (served      : :list)        ; the served-stylesheets HEAD links
    (screen      : :string)      ; the newest screen
+   (rendered    : :string)      ; the renderer's output for it, before stamping
    (revision    : :fixnum)
    (stopped?    : :boolean)
    (streams     : :fixnum)      ; streams opened so far, to number them
@@ -144,17 +145,24 @@
 (defmethod {redisplay! web-server}
   (lambda (self)
     (using (self : web-server)
-      (let* ((revision (fx1+ (do-with-lock self.mutex self.revision)))
-             (served (changed-stylesheets self))
-             (head (and served (render-head served)))
-             (screen (stamp-revision (render-screen) revision)))
-        (do-with-lock self.mutex
-          (when served
-            (set! self.head head)
-            (set! self.served served))
-          (set! self.screen screen)
-          (set! self.revision revision)
-          (condition-variable-broadcast! self.changed))))))
+      (let* ((served (changed-stylesheets self))
+             (rendered (render-screen)))
+        ;; A screen is drawn only from editor state, so the same screen as
+        ;; the last one means nothing on it changed: it gets no new revision
+        ;; and nothing is sent. Timers such as the session save redisplay
+        ;; without changing what is shown.
+        (unless (and (not served) (string=? rendered (do-with-lock self.mutex self.rendered)))
+          (let* ((revision (fx1+ (do-with-lock self.mutex self.revision)))
+                 (head (and served (render-head served)))
+                 (screen (stamp-revision rendered revision)))
+            (do-with-lock self.mutex
+              (when served
+                (set! self.head head)
+                (set! self.served served))
+              (set! self.screen screen)
+              (set! self.rendered rendered)
+              (set! self.revision revision)
+              (condition-variable-broadcast! self.changed))))))))
 
 ;; The newest screen as [revision head screen] once STREAM's page has
 ;; applied its COUNTth screen and one newer than SENT exists; the newest
@@ -696,6 +704,7 @@
                               head: (render-head [])
                               served: []
                               screen: (stamp-revision "<main id=\"screen\"></main>" 0)
+                              rendered: ""
                               revision: 0
                               stopped?: #f
                               streams: 0

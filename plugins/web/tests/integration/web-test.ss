@@ -9,6 +9,7 @@
         :std/test
         :tuna/kernel
         :tuna/plugins/keys/contract
+        :tuna/plugins/renderer/contract
         :tuna/plugins/web/plugin
         "../support/web-client"
         (only-in "../../../../tuna/tests/support/string-input" test-input test-messages))
@@ -19,6 +20,24 @@
 
 (def (with-tuna thunk)
   (with-web-tuna web-plugins thunk))
+
+;; A renderer whose screen shows SHOWN, so a test decides when the screen
+;; changes: the transport sends a screen only when it differs from the last.
+(def shown 0)
+(defclass counting-rendering () final: #t)
+(defmethod {render-screen counting-rendering}
+  (lambda (self) (string-append "<main id=\"screen\"><p>" (number->string shown) "</p></main>")))
+(defplugin (counting-renderer ctx)
+  "Renders a screen that shows a number the test sets."
+  provides: [renderer-service]
+  (context-provide! ctx renderer-service (Renderer (counting-rendering))))
+
+(def (with-counting-tuna thunk)
+  (with-web-tuna [test-input counting-renderer web-transport] thunk))
+
+;; Change the screen and redisplay, on the editor loop.
+(def (change-screen!)
+  (call-on-editor-loop (lambda () (set! shown (+ shown 1)) (redisplay))))
 
 ;; An input provider that records every item it resolves, newest first.
 (defstruct input-recorder (items) final: #t)
@@ -405,8 +424,27 @@
            (Socket-close socket)
            (check (length (recorded-items 1)) => 1)))))
 
+    (test-case "a redisplay that changes nothing on screen sends nothing"
+      (with-counting-tuna
+       (lambda ()
+         (let* ((stream (open-screen-stream))
+                (first (read-until stream (lambda (text) (pair? (screen-revisions text))))))
+           (check (reply-status (http "POST" (applied-path first))) => 204)
+           ;; Nothing changed: no new screen, only keep-alives at most.
+           (call-on-editor-loop redisplay)
+           (call-on-editor-loop redisplay)
+           (Socket-set-input-timeout! stream (IOTimeout 1.5))
+           (let (text (with-catch (lambda (e) "") (lambda () (read-until stream (lambda (text) (pair? (screen-revisions text)))))))
+             (check (screen-revisions text) => []))
+           ;; A change is sent.
+           (Socket-set-input-timeout! stream (IOTimeout 5))
+           (change-screen!)
+           (check (pair? (screen-revisions (read-until stream (lambda (text) (pair? (screen-revisions text))))))
+                  => #t)
+           (Socket-close stream)))))
+
     (test-case "a page gets a newer screen once it confirms the last, or after the timeout"
-      (with-tuna
+      (with-counting-tuna
        (lambda ()
          (let* ((stream (open-screen-stream))
                 (first (read-until stream (lambda (text) (pair? (screen-revisions text)))))
@@ -414,7 +452,7 @@
                 (newer? (lambda (text) (any (cut > <> revision) (screen-revisions text))))
                 (started (time->seconds (current-time))))
            ;; Unconfirmed: the newer screen waits for the timeout (1 s).
-           (call-on-editor-loop redisplay)
+           (change-screen!)
            (let (text (read-until stream newer?))
              (check (newer? text) => #t)
              (check (> (- (time->seconds (current-time)) started) 0.8) => #t)
@@ -422,7 +460,7 @@
              (set! revision (apply max (screen-revisions text)))
              (check (reply-status (http "POST" (applied-path text))) => 204)
              (let (confirmed (time->seconds (current-time)))
-               (call-on-editor-loop redisplay)
+               (change-screen!)
                (check (newer? (read-until stream newer?)) => #t)
                (check (< (- (time->seconds (current-time)) confirmed) 0.5) => #t)))
            (Socket-close stream)))))))
