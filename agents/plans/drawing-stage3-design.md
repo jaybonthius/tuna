@@ -1,6 +1,6 @@
 # Design: drawing stage 3, lines and rows by value
 
-**Status:** design for review (2026-10-22). Stage 3 of `agents/plans/drawing-only-what-changed.md`, under ADR 17, after stage 2 (`agents/plans/drawing-stage2-design.md`, including its "As built"). Nothing here is built yet. Line numbers are at `5aabc7c`.
+**Status:** approved by the primary agent and built (2026-10-22); see As built at the end. Stage 3 of `agents/plans/drawing-only-what-changed.md`, under ADR 17, after stage 2 (`agents/plans/drawing-stage2-design.md`, including its "As built"). Nothing here is built yet. Line numbers are at `5aabc7c`.
 
 **Where stage 2 left lines.** A text node is one piece, `(node V N)` with the run as input (`renderer/plugin.ss:182-199`). `render-text-node` (`:243-288`) draws every drawn line inside it, each time:
 - it filters all highlights of the text (`:257-263`), then filters again per line (`:274-277`);
@@ -240,3 +240,43 @@ Imports and `requires:` are unchanged in every module.
    - Expected for *long*: key and `C-f` well under 1 ms, from about 3 ms; an identical result at about 0, from about 5.6 ms.
    - Expected for *mixed*: key still dominated by the recount (§5).
 5. **Records:** the renderer header (`renderer/plugin.ss:12-78`), the buffers Items documentation (`contract.ss:707-726`), the plan's status line, and this note's "As built".
+
+## As built (2026-10-22)
+
+Built in commits `d9d3c5f` through `67e8c2f` on branch `drawing-3`, with the primary agent's decisions: the placement source (§3) is in this stage; three views of one buffer stand in for three cursors; `children-items-of` counts again only the child that changed. It departs from the design above as follows:
+
+- **Element ids** are `view-V-node-N-line-END-REVISION` (a hyphen, not a dot).
+- **Placement source.** A view has a third source, `placement-changes`, which `place-view!` and `set-view-scroll!` change and only `view-placement` records. Each client's view still changes its own source when it is placed or scrolls, so view pieces are drawn again; text node pieces and their `['lines V N]` pieces are not.
+- **Counting items** (`children-items-of`, buffers contract). The kept count also keeps each child's id and revision and the node kinds' revision. After a change below one child, every other child's count is taken from the kept one, by place, or by id when the children changed; only that child is counted again. Defining or removing a node kind now counts everything again, which the stage-2 cache missed.
+- **Spans** (buffers contract). One helper, `spans-replaced`, does the ranged replacement and the cutoff for both providers. The default provider keeps a layer's place among the others when it is set again; it used to move it first. Results posted as ranged spans are rebased by `rebase-job-result`, which both providers' `job-rebase` call.
+- **Snapshot readers.** The buffers contract gains `snapshot-line-count`, `snapshot-line-start` and `snapshot-slice`, beside `snapshot-size` and `snapshot-for-each-chunk`. The `['lines V N]` piece reads every line it draws from one snapshot instead of through `text-line-start`, `text-line-end` and `text-substring`, which took a snapshot each: per edit in *long*, about 1 ms became about 0.3 ms.
+- **Joining HTML.** `html-string` joins fragments drawn already (`*unencoded*`) with `string-append` and writes only the markup around them through `write-sxml`. Copying the text node's HTML into the view and screen through a string port cost about 0.9 ms per frame in *long*.
+- **Dropping births.** Births of lines no client's last screen drew are dropped only when they may have piled up: kept for a text node no client drew, or more than twice the lines drawn of it plus 64 (`births-outgrown?`). Dropping on every new screen hashed every drawn birth each frame.
+- **A performance trap fixed on the way.** Typed procedures check `:list` arguments on every call, so a procedure that recurses on a list it takes as `:list` walks the list once per element. `same-spans?` and `span-after-changes` loop internally instead: replacing a 50,000-span layer with the same spans took 2.2 s.
+- **Tests.** Line pieces are counted through `current-memo-draw-observer`. The toy text store case runs the key, `C-f`, insertion and highlight checks with `string-text-store`.
+
+**Bench** (`scratch/drawing-3-bench`, medians, render per tab; *long* 90/135, *mixed* 30/45; `before.txt` at `5aabc7c`, `after.txt` at `67e8c2f`):
+
+| Scenario | Before | After | Line pieces drawn |
+|---|---|---|---|
+| *long* idle redisplay (nothing changed) | 0.004 ms | 0.034 ms | 0 |
+| *long* `C-f` | 3.43 ms | 0.59 ms | 1 |
+| *long* key | 3.05 ms | 0.84 ms | 1 |
+| *long* RET (point at a line start) | 3.06 ms | 0.83 ms | 1 |
+| *long* + 50,000 digit spans, key | 5.58 ms | 0.99 ms | 1 |
+| *long* highlight result changing one line | 5.52 ms | 1.12 ms | 1 |
+| *long* highlight result, identical | 5.52 ms | 0.05 ms (same screen object) | 0 |
+| *long* fling, 30 lines a report | 5.78 ms | 1.38 ms | 30 |
+| *long* two tabs, key (first tab, second tab) | 2.99, 0.28 ms | 0.84, 0.24 ms | 1 |
+| *long* three views, `C-f` in one | 3.37 ms | 0.59 ms | 1 |
+| *long* three views, key in one | 8.96 ms | 2.40 ms | 3 |
+| *mixed* middle `C-f` | 0.52 ms | 0.39 ms | 1 |
+| *mixed* middle key | 2.33 ms | 0.97 ms | 1 |
+| *mixed* middle fling, 10 items a report | 0.65 ms | 0.57 ms | 6 |
+| *mixed* root item count after one edit | 1.80 ms | 0.56 ms | — |
+| *mixed* middle three views, key in one | 4.93 ms | 1.84 ms | 3 |
+
+Costs that grew:
+- A redisplay that changes nothing walks about 230 more pieces: 0.004 ms became 0.034 ms. Idle still draws nothing.
+- Setting a whole 50,000-span layer costs 1.4 ms when it is the same (the comparison), and up to 6.5 ms when its spans come unordered (they are sorted), against 0.56 ms before. A key with that layer moves spans in 1.2 ms, against 0.9 ms before.
+
