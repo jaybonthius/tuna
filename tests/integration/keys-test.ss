@@ -9,6 +9,7 @@
         :tuna/plugins/settings/contract
         :tuna/plugins/settings/plugin
         "../../tuna/tests/support/kernel"
+        "../../tuna/tests/support/redraws"
         (only-in "../../tuna/tests/support/string-input" test-input test-messages current-message))
 (export keys-test)
 
@@ -89,7 +90,7 @@
       (call-with-fresh-kernel [test-input]
         (lambda ()
           (check (part-clickable? 'view) => #f)
-          (check (keymap-generation) => 0))))
+          (check (keymap-clickable? (new-keymap) 'view) => #f))))
 
     (test-case "the same owner's key replaces its previous binding"
       (call-with-fresh-kernel keys-plugins
@@ -501,7 +502,26 @@
            (check (keymap-clickable? plain 'view) => #t)
            (check (keymap-clickable? other 'view) => #f)))))
 
-    (test-case "the keymap generation changes when a binding comes or goes, in any keymap"
+    (test-case "sources: a binding draws again only what read its keymap"
+      (call-with-fresh-kernel keys-plugins
+       (lambda ()
+         (let ((mine (new-keymap)) (other (new-keymap)))
+           (defplugin (binds-mine ctx)
+             "Binds a click in a keymap of its own."
+             requires: [input-service]
+             (keymap-set-in ctx mine "<mouse-1>" 'command-a))
+           (check (drawn-again? (lambda () (keymap-clickable? mine 'view)) (lambda () (activate-plugin! binds-mine)))
+                  => #t)
+           (check (drawn-again? (lambda () (keymap-clickable? mine 'view)) (lambda () (activate-plugin! binds-a)))
+                  => #f)
+           (check (drawn-again? (lambda () (part-clickable? 'status-line)) (lambda () (deactivate-plugin! binds-a)))
+                  => #t)
+           (check (drawn-again? (lambda () (keymap-clickable? other 'view)) (lambda () (deactivate-plugin! binds-mine)))
+                  => #f)
+           (check (drawn-again? (lambda () (keymap-clickable? mine 'view)) (lambda () (activate-plugin! binds-mine)))
+                  => #t)))))
+
+    (test-case "a keymap's source changes when a binding comes or goes, and the binding goes with its plugin"
       (call-with-fresh-kernel keys-plugins
        (lambda ()
          (let (keymap (new-keymap))
@@ -509,13 +529,7 @@
              "Binds a key in a keymap of its own."
              requires: [input-service]
              (keymap-set-in ctx keymap "RET" 'command-a))
-           (let (g0 (keymap-generation))
-             (activate-plugin! binds-a)
-             (let (g1 (keymap-generation))
-               (check (= g1 g0) => #f)
-               (activate-plugin! node-key)
-               (let (g2 (keymap-generation))
-                 (check (= g2 g1) => #f)
-                 (deactivate-plugin! node-key)
-                 (check (= (keymap-generation) g2) => #f)
-                 (check (entry-table-ref keymap "RET") => #f))))))))))
+           (let (read (lambda () (keymap-clickable? keymap 'view)))
+             (check (drawn-again? read (lambda () (activate-plugin! node-key))) => #t)
+             (check (drawn-again? read (lambda () (deactivate-plugin! node-key))) => #t)
+             (check (entry-table-ref keymap "RET") => #f))))))))

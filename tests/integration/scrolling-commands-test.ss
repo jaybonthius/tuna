@@ -174,6 +174,7 @@
                  (now (on-baton (lambda () (view-client new #f)))))
              (check [(client-view-drawn-before now) (client-view-drawn-after now)]
                     => [(client-view-drawn-before was) (client-view-drawn-after was)])
-             ;; Its spacers are as high: 501 items in 40,744 px.
+             ;; Its spacers are as high: 501 items in 40,744 px, rounded to
+             ;; 1/100 px.
              (check (client-view-average-item-height now) => (client-view-average-item-height was))
-             (check (client-view-average-item-height now) => (/ 40744. 501)))))))))
+             (check (client-view-average-item-height now) => 81.33))))))))

@@ -51,84 +51,65 @@
 ;;; own keymap binds a plain click (data-clickable). Unprefixed global
 ;;; click bindings, which every part falls back to, mark nothing.
 ;;;
-;;; HTML reuse: the HTML of each node, as drawn in each view, is kept and
-;;; reused while the node's revision (which a change to it or below it
-;;; replaces), the view state it depends on (point and whether the view is
-;;; selected, for the nodes holding the view's focused text node; which of
-;;; its items are drawn, and its line ids, for the nodes holding drawn
-;;; items), how its kind renders, and the display-wide inputs (the
-;;; buffer's face-remapping, and the keymap generation, so a rebind marks
-;;; clickable nodes again) are unchanged. So a node renderer must draw only
-;;; from its node, its children's renderings (opaque HTML fragments to
-;;; place), and those inputs. Every redraw still sends the whole visible
-;;; screen as one fat morph. Kept HTML belongs to the views drawn: a view
-;;; not drawn, or drawn from another node, drops its own.
+;;; Drawing only what changed (ADR 17): the screen, each view and each
+;;; node are drawn through `memo` (tuna/lib/memo), which keeps each one's
+;;; HTML and draws it again only when its inputs differ or something it
+;;; read through a contract's accessors changed: the screen's input is
+;;; the running task's name, which the selected view's status line shows;
+;;; a view's, the node it is drawn from and, when it is selected, that
+;;; name; a node's, which of its items are drawn. A view's section element
+;;; is not a piece: the layout adds its own attributes to it. Pieces hold what they drew from
+;;; them, so an unchanged subtree is reused by one check, and the screen
+;;; asked for when nothing changed is the very same string. Every redraw
+;;; still sends the whole visible screen as one fat morph. A view reads
+;;; what its client's browser measured, so screens and views are each
+;;; client's; a node's HTML is shared by every client drawing the same
+;;; items of it. So a node renderer must draw only from its node, its
+;;; children's renderings (opaque HTML fragments to place), and what it
+;;; reads through contracts' accessors. Drawing writes nothing: before it,
+;;; each client's views of the views shown are made; after it, line ids
+;;; are pinned again (below).
 ;;;
-;;; Idle: each client's last screen is kept with the generations of what
-;;; it was drawn from (buffers, layout, settings, keymaps) and the running
-;;; task's name, which its status line may show. A screen asked for when
-;;; none of them moved is that same string, drawn again only when one did.
+;;; Line ids: each view keeps, for each text node it draws as lines, where
+;;; the line ids are pinned (line-ids), shared by every client. Drawing
+;;; reads them; after a screen is drawn they are pinned again at the first
+;;; line each text node draws, which gives every line the id it already
+;;; has, so it changes no HTML, and keeps the ids of lines below an edit
+;;; above them. Pins of views no client's last screen drew are dropped.
 
 (import (only-in :gerbil/runtime/hash HashTable)
         :std/text/markup/sxml/print
         :tuna/kernel
+        :tuna/lib/memo
         (only-in :tuna/plugins/clients/contract client client-gone-hook)
         :tuna/plugins/stylesheets/contract
-        (only-in :tuna/plugins/keys/contract part-clickable? keymap-clickable? keymap-generation)
+        (only-in :tuna/plugins/keys/contract part-clickable? keymap-clickable?)
         :tuna/plugins/settings/contract
         :tuna/plugins/renderer/contract
         :tuna/plugins/buffers/contract
         :tuna/plugins/layout/contract)
 (export html-renderer)
 
-;; A node's HTML in one view, and what it was drawn from.
-(defstruct kept-html ((revision   : :fixnum)
-                      (view-state : :t)          ; see render-node
-                      (how        : :t)          ; the kind's renderer or kind info
-                      (inputs     : :t)          ; the display-wide inputs
-                      (html       : :string))
-  final: #t)
-
 ;; Where a view's line ids are pinned in one text node: the line ending
-;; at POSITION, at character revision REVISION, had id ID. A line's end
-;; moves with its text when a line is inserted where it starts, so its id
-;; does too.
+;; at POSITION, at character revision REVISION, which was line LINE then,
+;; had id ID. A line's end moves with its text when a line is inserted
+;; where it starts, so its id does too.
 (defstruct line-ids ((position : :fixnum)
                      (revision : :fixnum)
+                     (line     : :fixnum)
                      (id       : :fixnum))
   final: #t)
 
-;; What one view keeps: the node it was drawn from, node id -> kept-html,
-;; and text node id -> line-ids for the text nodes it drew lines of.
-(defclass view-html ((start      : node)
-                     (nodes      : HashTable)
-                     (pinned-ids : HashTable))
+;; What a client's last screen was, and the ids of the views it drew.
+(defclass client-screen ((screen : :string)
+                         (views  : :list))
   final: #t)
 
-;; What is kept for one client: view id -> view-html, and its last screen
-;; (#f before the first) with the generations and the running task's name
-;; it was drawn from.
-(defclass client-screen ((views    : HashTable)
-                         (screen   :? :string)
-                         (buffers  : :fixnum)
-                         (layout   : :fixnum)
-                         (settings : :fixnum)
-                         (keymaps  : :fixnum)
-                         (task     :? :symbol))
-  final: #t)
-
-(defclass html-rendering ((clients : HashTable))  ; client (#f: none) -> client-screen
-  final: #t)
-
-;; Drawing one view: its kept HTML, the nodes from its buffer's root down
-;; to its focused text node, its view state, the display-wide inputs, and
-;; the line ids pinned when it was drawn last and now.
-(defstruct drawing ((nodes       : HashTable)
-                    (focus-path  : :list)
-                    (view-state  : :t)
-                    (inputs      : :t)
-                    (pinned-ids  : HashTable)
-                    (pinning     : HashTable))
+;; PIECES: the screens, views and nodes drawn. PINS: view id -> text node
+;; id -> line-ids. SCREENS: client (#f: none) -> client-screen.
+(defclass html-rendering ((pieces  : memo-cache)
+                          (pins    : HashTable)
+                          (screens : HashTable))
   final: #t)
 
 ;; The lines FIRST to LAST (from 1) of text node TEXT-NODE drawn as items,
@@ -140,10 +121,11 @@
   final: #t)
 
 ;; The view whose buffer is being rendered: where its text nodes show point.
+;; Each node's piece binds it from its key.
 (def rendering-view (make-parameter #f))
 
 ;; The line-run of the text node being rendered, or #f when it is drawn
-;; whole inside an item.
+;; whole inside an item. Each node's piece binds it from its inputs.
 (def rendering-lines (make-parameter #f))
 
 ;; The element id of view V.
@@ -193,56 +175,67 @@
            (node-child-items n first last)))
     (map (cut cons <> #f) (node-children n))))
 
-;; N's HTML as a fragment, kept or drawn again. RUN is how N is drawn: #f
-;; whole, inside an item; 'item, whole, as one item; or (FIRST . LAST),
-;; only its items FIRST to LAST (from 0), as a node that opens into items.
-(def (render-node (d : drawing) (n : node) (run : :t)) => :list
+;; N's HTML in view V as a fragment, kept or drawn again. RUN is how N is
+;; drawn: #f whole, inside an item; 'item, whole, as one item; or (FIRST
+;; . LAST), only its items FIRST to LAST (from 0), as a node that opens
+;; into items.
+(def (render-node (self : html-rendering) (v : view) (n : node) (run : :t)) => :list
+  ['*unencoded* (memo ['node (view-id v) (node-id n)] run (lambda (run) (draw-node self v n run)))])
+
+(def (draw-node (self : html-rendering) (v : view) (n : node) (run : :t)) => :string
   (let* ((kind (node-kind n))
          (render (node-renderer kind))
-         (how (or render (node-kind-ref kind)))
-         (lines (and (pair? run) (eq? (node-opening n) 'lines) (pin-line-run! d n run)))
-         (view-state (list (and (memq n (drawing-focus-path d)) (drawing-view-state d))
-                           run
-                           (and lines (line-run-id-offset lines))))
-         (revision (node-revision n))
-         (kept (hash-get (drawing-nodes d) (node-id n))))
-    (if (and kept
-             (using (kept : kept-html)
-               (and (fx= kept.revision revision)
-                    (equal? kept.view-state view-state)
-                    (eq? kept.how how)
-                    (equal? kept.inputs (drawing-inputs d)))))
-      ['*unencoded* (kept-html-html kept)]
-      (let* ((children (map (lambda ((child-run : :pair)) (render-node d (car child-run) (cdr child-run)))
-                            (drawn-children n run)))
-             (html (html-string
-                    (with-node-id n
-                      (parameterize ((rendering-lines lines))
-                        (if render
-                          (render n children)
-                          `(div (@ (class "node") (data-kind ,(symbol->string kind)))
-                                ,@(if (null? children) [(node-text-projection n)] children))))
-                      (eq? run 'item)))))
-        (hash-put! (drawing-nodes d) (node-id n)
-                   (make-kept-html revision view-state how (drawing-inputs d) html))
-        ['*unencoded* html]))))
+         (lines (and (pair? run) (eq? (node-opening n) 'lines) (line-run-of self v n run)))
+         (children (map (lambda ((child-run : :pair)) (render-node self v (car child-run) (cdr child-run)))
+                        (drawn-children n run))))
+    (parameterize ((rendering-view v)
+                   (rendering-lines lines))
+      (html-string
+       (with-node-id n
+         (if render
+           (render n children)
+           `(div (@ (class "node") (data-kind ,(symbol->string kind)))
+                 ,@(if (null? children) [(node-text-projection n)] children)))
+         (eq? run 'item))))))
 
-;; The line-run drawing text node N's items RUN (from 0), with line ids
-;; following the text from where D's view pinned them last; pinned again
-;; at the first line drawn.
-(def (pin-line-run! (d : drawing) (n : node) (run : :pair)) => line-run
-  (let* ((t (text-node-content n))
-         (first (fx1+ (: (car run) :fixnum)))
-         (last (fx1+ (: (cdr run) :fixnum)))
-         (pinned (hash-get (drawing-pinned-ids d) (node-id n)))
-         (offset (if pinned
-                   (using (pinned : line-ids)
-                     (fx- pinned.id
-                          (text-line-at t (relocate-position t pinned.position pinned.revision))))
-                   0)))
-    (hash-put! (drawing-pinning d) (node-id n)
-               (make-line-ids (text-line-end t first) (text-chars-revision t) (fx+ first offset)))
-    (make-line-run n first last offset)))
+;; The pin of view V's line ids in text node N, or #f.
+(def (pin-of (self : html-rendering) (v : view) (n : node)) => (Maybe line-ids)
+  (let (pins (hash-get self.pins (view-id v)))
+    (and pins (hash-get pins (node-id n)))))
+
+;; The offset of view V's line ids in text node N from the line numbers,
+;; by its pin (0 without one).
+(def (line-id-offset (self : html-rendering) (v : view) (n : node)) => :fixnum
+  (let (pinned (pin-of self v n))
+    (if pinned
+      (using (pinned : line-ids)
+        (let (t (text-node-content n))
+          (fx- pinned.id (text-line-at t (relocate-position t pinned.position pinned.revision)))))
+      0)))
+
+;; The line-run drawing text node N's items RUN (from 0) in view V, with
+;; line ids following the text from where V's ids are pinned.
+(def (line-run-of (self : html-rendering) (v : view) (n : node) (run : :pair)) => line-run
+  (make-line-run n (fx1+ (: (car run) :fixnum)) (fx1+ (: (cdr run) :fixnum)) (line-id-offset self v n)))
+
+;; After drawing: pin V's line ids in text node N, drawn from line FIRST,
+;; at that line, which keeps every line's id; unless they are pinned there
+;; already. In test mode, check that the ids stay.
+(def (pin-line-ids! (self : html-rendering) (v : view) (n : node) (first : :fixnum)) => :void
+  (let ((t (text-node-content n))
+        (pinned (pin-of self v n)))
+    (unless (and pinned
+                 (using (pinned : line-ids)
+                   (and (fx= pinned.line first) (fx= pinned.revision (text-chars-revision t)))))
+      (let ((offset (line-id-offset self v n))
+            (pins (or (hash-get self.pins (view-id v))
+                      (let (new (make-hash-table-eqv))
+                        (hash-put! self.pins (view-id v) new)
+                        new))))
+        (hash-put! pins (node-id n)
+                   (make-line-ids (text-line-end t first) (text-chars-revision t) first (fx+ first offset)))
+        (when (and (memo-checking?) (not (fx= offset (line-id-offset self v n))))
+          (error "Pinning line ids again changed them" (view-id v) (node-id n)))))))
 
 ;; A text node: one element per line, with the cursor when the node has
 ;; the rendered view's focus; only the lines drawn as items, each with its
@@ -336,22 +329,6 @@
 (def (cursor-span (cursor-class : :string) (character : :string) (face :? :symbol)) => :list
   `(span (@ (class ,(if face (string-append cursor-class " " (face-class face)) cursor-class)))
          ,character))
-
-;; The nodes from N up to its buffer's root.
-;; The nodes from N up to its buffer's root.
-(def (node-ancestors (n :? node)) => :list
-  (let up ((n n) (out []))
-    (if n (up (node-parent n) (cons n out)) out)))
-
-;; What SELF keeps for V drawn from START, emptied when V was drawn from
-;; another node before.
-(def (view-html-for (views : HashTable) (v : view) (start : node)) => view-html
-  (let (kept (hash-get views (view-id v)))
-    (if (and kept (eq? (view-html-start kept) start))
-      kept
-      (let (fresh (view-html start: start nodes: (make-hash-table-eqv) pinned-ids: (make-hash-table-eqv)))
-        (hash-put! views (view-id v) fresh)
-        fresh))))
 
 ;; The drawn-screens setting for B: a positive number of view heights.
 (def (drawn-screens-value (b : buffer)) => :number
@@ -458,107 +435,106 @@
                 (style ,(string-append "--scroll-sizer-block-size: " (items-pixels average count) "px"))))]
       [])))
 
-;; V, as client C shows it, keeping its HTML in VIEWS: its buffer from
-;; node START (the root, or where the frame points), then its status line
-;; unless its buffer turns it off.
-(def (render-view (views : HashTable) (c :? client) (v : view) (selected? : :boolean) (start : node))
+;; The items a view draws from a node: of COUNT items, FIRST to LAST.
+(defstruct drawn-items ((count : :fixnum)
+                        (first : :fixnum)
+                        (last  : :fixnum))
+  final: #t)
+
+;; The items a view draws from node START for the client whose view of it
+;; is CV: around CV's scroll item.
+(def (items-drawn (cv : client-view) (start : node)) => drawn-items
+  (let* ((count (node-item-count start))
+         (top (fxmax 0 (fxmin (fx1- count) (or (index-in start (client-view-scroll-item cv)) 0)))))
+    (make-drawn-items count
+                      (fxmax 0 (fx- top (client-view-drawn-before cv)))
+                      (fxmin (fx1- count) (fx+ top (client-view-drawn-after cv))))))
+
+;; V, as client C shows it, drawn from node START (the root, or where the
+;; frame points), selected or not; COMMAND is the running task's name
+;; when V is selected. The section is drawn each time, since the layout
+;; adds its own attributes to it; what it holds is a piece.
+(def (render-view (self : html-rendering) (c :? client) (v : view) (selected? : :boolean) (start : node)
+                  (command :? :symbol))
   => :list
+  (let (id (number->string (view-id v)))
+    `(section (@ (class "view")
+                 (id ,(view-element-id v))
+                 (data-view ,id)
+                 (data-part ,(string-append "view:" id))
+                 ,@(if selected? '((data-selected "true")) '()))
+       (*unencoded* ,(memo ['view (view-id v)] [(node-id start) (and selected? command)]
+                           (lambda (inputs) (draw-view self c v start (cadr inputs))))))))
+
+;; V's buffer from node START, then its status line unless its buffer
+;; turns it off.
+(def (draw-view (self : html-rendering) (c :? client) (v : view) (start : node) (command :? :symbol))
+  => :string
   (let* ((b (view-showing v))
          (cv (view-client v c))
-         (id (number->string (view-id v)))
-         (focus (view-node v))
-         (kept (view-html-for views v start))
-         (count (node-item-count start))
-         (top (fxmax 0 (fxmin (fx1- count) (or (index-in start (client-view-scroll-item cv)) 0))))
-         (first (fxmax 0 (fx- top (client-view-drawn-before cv))))
-         (last (fxmin (fx1- count) (fx+ top (client-view-drawn-after cv))))
-         (d (make-drawing (view-html-nodes kept)
-                          (node-ancestors focus)
-                          (and focus (cons (view-point v) selected?))
-                          (cons (buffer-local-value face-remapping b) (keymap-generation))
-                          (view-html-pinned-ids kept)
-                          (make-hash-table-eqv)))
-         (run (item-run start first last))
-         (above (spacer v cv "above" first first last))
-         (below (spacer v cv "below" (fx- count (fx1+ last)) first last)))
-    (begin0
-      (parameterize ((rendering-view v))
-        `(section (@ (class "view")
-                     (id ,(view-element-id v))
-                     (data-view ,id)
-                     (data-part ,(string-append "view:" id))
-                     ,@(if selected? '((data-selected "true")) '()))
-           (article (@ (class "buffer") (aria-label ,(buffer-name b))
-                       ,@(scroller-attributes v cv start first last count))
-                    ,(placement-marker v cv start)
-                    ,@above
-                    ,(render-node d start run)
-                    ,@below
-                    ,@(scroll-sizer cv count (append above below)))
-           ,@(if (buffer-local-value show-status-line b)
-               [`(p (@ (class "status-line")
-                       (data-part ,(string-append "status-line:" id))
-                       ,@(if (part-clickable? 'status-line) '((data-clickable "")) '()))
-                    ,(status-line-text v selected?))]
-               [])))
-      ;; Keep only what this drawing drew, descendants of reused HTML
-      ;; included, with the line ids pinned for them: a text node drawn as
-      ;; lines inside reused HTML was not visited, so its lines keep the ids
-      ;; pinned when it was drawn.
-      (let ((nodes (make-hash-table-eqv))
-            (pinning (drawing-pinning d)))
-        (let keep ((n start) (run run))
-          (let (id (node-id n))
-            (hash-put! nodes id (hash-ref (drawing-nodes d) id))
-            (when (and (pair? run) (not (hash-key? pinning id)))
-              (let (pinned (hash-get (drawing-pinned-ids d) id))
-                (when pinned (hash-put! pinning id pinned)))))
-          (for-each (lambda ((child-run : :pair)) (keep (car child-run) (cdr child-run)))
-                    (drawn-children n run)))
-        (set! (view-html-nodes kept) nodes)
-        (set! (view-html-pinned-ids kept) pinning)))))
+         (id (number->string (view-id v))))
+    (using (drawn (items-drawn cv start) : drawn-items)
+      (let* ((count drawn.count)
+             (first drawn.first)
+             (last drawn.last)
+             (above (spacer v cv "above" first first last))
+             (below (spacer v cv "below" (fx- count (fx1+ last)) first last)))
+        (html-string
+         (cons `(article (@ (class "buffer") (aria-label ,(buffer-name b))
+                            ,@(scroller-attributes v cv start first last count))
+                         ,(placement-marker v cv start)
+                         ,@above
+                         ,(render-node self v start (item-run start first last))
+                         ,@below
+                         ,@(scroll-sizer cv count (append above below)))
+               (if (buffer-local-value show-status-line b)
+                 [`(p (@ (class "status-line")
+                         (data-part ,(string-append "status-line:" id))
+                         ,@(if (part-clickable? 'status-line) '((data-clickable "")) '()))
+                      ,(status-line-text v command))]
+                 [])))))))
 
-(def (draw-screen (views : HashTable) (c :? client)) => :string
-  (let* ((drawn [])
-         (layout (render-layout 'html
-                                (lambda (v selected? start)
-                                  (set! drawn (cons (view-id v) drawn))
-                                  (render-view views c v selected? start)))))
-    (for-each (lambda (id) (unless (memv id drawn) (hash-remove! views id)))
-              (hash-keys views))
-    (html-string `(main (@ (id "screen") (class "screen")) ,layout))))
+(def (draw-screen (self : html-rendering) (c :? client) (command :? :symbol)) => :string
+  (html-string
+   `(main (@ (id "screen") (class "screen"))
+          ,(render-layout 'html (lambda (v selected? start) (render-view self c v selected? start command))))))
 
-;; Client C's screen: its last one when no generation moved and the same
-;; task runs, otherwise drawn again. The generations are read before
-;; drawing, so a change made while drawing draws again next time.
+;; After drawing SCREEN for client C, when it is a new one: pin the line
+;; ids of the text nodes each view drew as lines at the first line drawn,
+;; and drop the pins of views no client's last screen drew.
+(def (after-drawing! (self : html-rendering) (c :? client) (screen : :string)) => :void
+  (let (kept (hash-get self.screens c))
+    (unless (and kept (eq? (client-screen-screen kept) screen))
+      (let (views (render-layout 'views
+                                 (lambda (v selected? start)
+                                   (using (drawn (items-drawn (view-client v c) start) : drawn-items)
+                                     (let pin ((n start) (run (item-run start drawn.first drawn.last)))
+                                       (when (and (pair? run) (eq? (node-opening n) 'lines))
+                                         (pin-line-ids! self v n (fx1+ (: (car run) :fixnum))))
+                                       (for-each (lambda ((child-run : :pair)) (pin (car child-run) (cdr child-run)))
+                                                 (drawn-children n run))))
+                                   (view-id v))))
+        (hash-put! self.screens c (client-screen screen: screen views: views))
+        (drop-unused-pins! self)))))
+
+;; Drop the pins of views no client's last screen drew.
+(def (drop-unused-pins! (self : html-rendering)) => :void
+  (let (drawn (hash-fold (lambda (c (kept : client-screen) (ids : :list)) (append kept.views ids))
+                         [] self.screens))
+    (for-each (lambda (id) (unless (memv id drawn) (hash-remove! self.pins id)))
+              (hash-keys self.pins))))
+
+;; Client C's screen: its last one when nothing it was drawn from changed,
+;; otherwise drawn again, through the pieces kept. Before drawing, each
+;; view shown gets C's view of it, so drawing makes none.
 (def (render-screen! (self : html-rendering) (c :? client)) => :string
-  (let ((kept (or (hash-get self.clients c)
-                  (let (new (client-screen views: (make-hash-table-eqv) screen: #f
-                                           buffers: 0 layout: 0 settings: 0 keymaps: 0 task: #f))
-                    (hash-put! self.clients c new)
-                    new)))
-        (buffers (buffers-generation))
-        (layout (layout-generation))
-        (settings (settings-generation))
-        (keymaps (keymap-generation))
-        (task (current-task-name)))
-    (using (kept : client-screen)
-      (let (previous kept.screen)
-        (if (and previous
-                 (fx= kept.buffers buffers)
-                 (fx= kept.layout layout)
-                 (fx= kept.settings settings)
-                 (fx= kept.keymaps keymaps)
-                 (eq? kept.task task))
-          (:- previous :string)
-          (let (screen (draw-screen kept.views c))
-            (set! kept.screen screen)
-            (set! kept.buffers buffers)
-            (set! kept.layout layout)
-            (set! kept.settings settings)
-            (set! kept.keymaps keymaps)
-            (set! kept.task task)
-            screen))))))
+  (render-layout 'views (lambda (v selected? start) (view-client v c)))
+  (let* ((command (current-task-name))
+         (screen (call-with-memo-pass self.pieces c
+                   (lambda ()
+                     (memo '(screen) [command] (lambda (inputs) (draw-screen self c (car inputs))))))))
+    (after-drawing! self c screen)
+    screen))
 
 (defmethod {render-screen html-rendering}
   (lambda (self c) (render-screen! self c)))
@@ -571,7 +547,11 @@
   (add-stylesheet 'tokens "tokens.css")
   (add-stylesheet 'rules "rules.css")
   (context-define-node-renderer! ctx 'text render-text-node)
-  (using (self (html-rendering clients: (make-hash-table test: eq? weak-keys: #t)) : html-rendering)
+  (using (self (html-rendering pieces: (new-memo-cache) pins: (make-hash-table-eqv) screens: (make-hash-table-eq))
+               : html-rendering)
     (context-add-hook! ctx client-gone-hook 'html-renderer
-                       (lambda ((c : client)) (hash-remove! self.clients c)))
+                       (lambda ((c : client))
+                         (memo-forget-client! self.pieces c)
+                         (hash-remove! self.screens c)
+                         (drop-unused-pins! self)))
     (context-provide! ctx renderer-service (Renderer self))))

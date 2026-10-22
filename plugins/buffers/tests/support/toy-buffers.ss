@@ -17,6 +17,7 @@ prelude: :gerbil/core
         :std/interface
         :tuna/kernel
         :tuna/lib/jobs
+        :tuna/lib/memo
         :tuna/plugins/text-store/contract
         :tuna/plugins/settings/contract
         :tuna/plugins/buffers/contract)
@@ -52,7 +53,7 @@ prelude: :gerbil/core
 
 (def (new-toy-text (initial : :string)) => toy-text
   (let (store (current-text-store))
-    (toy-text id: (next-id!) store: store version: (TextStore-from-string store initial)
+    (toy-text id: (next-id!) changes: (new-source) store: store version: (TextStore-from-string store initial)
               revision: 0 content-revision: 0 decoration-revision: 0 journal: []
               groups: [] open?: #f last-task: #f pending: []
               layers: (make-hash-table-eq) live?: #t nodes: [])))
@@ -100,6 +101,7 @@ prelude: :gerbil/core
       (hash-for-each (lambda (name spans)
                        (hash-put! t.layers name (filter-map (cut span-after-change <> c) spans)))
                      t.layers)
+      (source-changed! t.changes)
       (stamp-all! t.nodes)
       (run-hook after-change-hook t c))))
 
@@ -161,6 +163,7 @@ prelude: :gerbil/core
                                        (fx<= 1 (span-start s) (span-end s) (fx1+ size)))
                                      spans))
     (set! t.decoration-revision (fx1+ t.decoration-revision))
+    (source-changed! t.changes)
     (stamp-all! t.nodes)))
 
 ;;; Nodes
@@ -170,21 +173,19 @@ prelude: :gerbil/core
    (attributes : :list)
    (children   : :vector)
    (parent     :? node)
-   (revision   : :fixnum)
    (text       :? toy-text)
    (keymap     :? entry-table))
   final: #t)
 
+;; Change the sources of NODES and of every node above them.
 (def (stamp-all! (nodes : :list)) => :void
-  (let (revision (next-id!))
-    (for-each (lambda (n)
-                (let lp ((n n))
-                  (when n
-                    (using (n : toy-node)
-                      (set! n.revision revision)
-                      (lp n.parent)))))
-              nodes)
-    (buffers-changed!)))
+  (for-each (lambda (n)
+              (let lp ((n n))
+                (when n
+                  (using (n : toy-node)
+                    (source-changed! n.changes)
+                    (lp n.parent)))))
+            nodes))
 
 (def (attach! (parent : toy-node) (children : :list)) => :void
   (for-each (lambda ((child : toy-node))
@@ -196,8 +197,8 @@ prelude: :gerbil/core
 (def (new-toy-node (id : :fixnum) (kind : :symbol) (attributes : :list) (children : :list)
                    (text :? toy-text) (keymap :? entry-table))
   => toy-node
-  (let (n (toy-node id: id kind: kind attributes: attributes children: (list->vector children)
-                    parent: #f revision: (next-id!) text: text keymap: keymap))
+  (let (n (toy-node id: id changes: (new-source) kind: kind attributes: attributes
+                    children: (list->vector children) parent: #f text: text keymap: keymap))
     (attach! n children)
     (when text
       (set! (toy-text-nodes text) (cons n (toy-text-nodes text))))
@@ -231,7 +232,7 @@ prelude: :gerbil/core
   (when root.parent
     (error "A buffer's root must have no parent" (node-id root)))
   (let (n (first-toy-text-node root))
-    (toy-buffer id: (next-id!) name: name root: root point-node: n point: 1
+    (toy-buffer id: (next-id!) changes: (new-source) name: name root: root point-node: n point: 1
                 revision: (if n (toy-text-revision (toy-node-text n)) 0) settings: [])))
 
 (def (toy-buffer-point-now (b : toy-buffer)) => :fixnum
@@ -300,11 +301,11 @@ prelude: :gerbil/core
   (make-text-node (lambda (self t) (new-toy-node (next-id!) 'text [] [] t #f)))
   (node-kind (lambda (self n) (using (n : toy-node) n.kind)))
   (node-attributes (lambda (self n) (using (n : toy-node) n.attributes)))
-  ;; An equal? value is no change: nothing is stamped.
+  ;; The same value (plain-equal?) is no change: nothing is stamped.
   (set-node-attribute! (lambda (self n name value)
                          (using (n : toy-node)
                            (let (old (assq name n.attributes))
-                             (unless (and old (equal? (cdr old) value))
+                             (unless (and old (plain-equal? (cdr old) value))
                                (set! n.attributes (cons (cons name value)
                                                         (filter (lambda ((pair : :pair)) (not (eq? (car pair) name)))
                                                                 n.attributes)))
@@ -315,7 +316,6 @@ prelude: :gerbil/core
                         (set! n.keymap keymap)
                         (stamp-all! [n]))))
   (node-parent (lambda (self n) (using (n : toy-node) n.parent)))
-  (node-revision (lambda (self n) (using (n : toy-node) n.revision)))
   (node-text (lambda (self n) (using (n : toy-node) n.text)))
   (node-child-count (lambda (self n) (using (n : toy-node) (vector-length n.children))))
   (node-children (lambda (self n start end)

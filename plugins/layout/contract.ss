@@ -42,6 +42,7 @@ prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
+        :tuna/lib/memo
         (only-in :tuna/plugins/keys/contract posn posn-part posn-node-id)
         :tuna/plugins/settings/contract
         :tuna/plugins/buffers/contract)
@@ -71,7 +72,7 @@ prelude: :gerbil/core
         set-frame-mark
         jump-to-frame-mark
         render-layout
-        layout-generation
+        layout-changed!
         replace-buffer-in-views)
 
 ;; Neutral session slot `layout`, version 2:
@@ -202,13 +203,9 @@ prelude: :gerbil/core
   ;; the view rendered for TARGET; the layout arranges the results. For
   ;; 'html both are SXML elements. For a target it does not know, the
   ;; result is the list of the views it shows, rendered, in order.
+  ;; A layout calls layout-changed! whenever what this draws may have
+  ;; changed through its own state.
   (render-layout (target : :symbol) (render-view : :procedure)) => :t
-  ;; A number that changes whenever what render-layout draws may have
-  ;; changed through the layout's own state (its arrangement, the frame,
-  ;; the selected view or part), and is never a number any layout gave
-  ;; before (take new ones from next-id!). Views and buffers count their
-  ;; own changes (the buffers contract).
-  (generation) => :fixnum
 )
 
 (def layout-service
@@ -335,11 +332,19 @@ prelude: :gerbil/core
 (def (jump-to-frame-mark (name : :string)) => :symbol
   (:- (with-service-provider (provider layout-service Layout) (Layout-jump-to-frame-mark! provider name)) :symbol))
 
-(def (render-layout (target : :symbol) (render-view : :procedure)) => :t
-  (with-service-provider (provider layout-service Layout) (Layout-render-layout provider target render-view)))
+;; Changes whenever what render-layout draws may have changed through the
+;; layout's own state (ADR 17): its arrangement, the frame, the selected
+;; view or part. The contract's, not a provider's, so a new provider
+;; draws afresh. Views and buffers have their own sources.
+(def layout-source (new-source))
 
-(def (layout-generation) => :fixnum
-  (:- (with-service-provider (provider layout-service Layout) (Layout-generation provider)) :fixnum))
+;; For layouts: what render-layout draws may have changed.
+(def (layout-changed!) => :void
+  (source-changed! layout-source))
+
+(def (render-layout (target : :symbol) (render-view : :procedure)) => :t
+  (record-read! layout-source)
+  (with-service-provider (provider layout-service Layout) (Layout-render-layout provider target render-view)))
 
 ;; For layouts, on `kill-buffer-hook`: show another buffer in each of VIEWS
 ;; that shows B.

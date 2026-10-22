@@ -49,8 +49,7 @@
                        (keymap        : entry-table)    ; key sequence -> command name
                        (targets       : :list)          ; input targets, innermost first
                        (sessions      : HashTable)      ; client -> key-session
-                       (shared        : key-session)    ; the session of events with no client
-                       (generation    : :fixnum))       ; changes with any binding
+                       (shared        : key-session))   ; the session of events with no client
   final: #t)
 
 ;; Browser key names with Emacs spellings.
@@ -377,16 +376,21 @@
                                         (string<? a b)))))))
                  bound))))
 
-;; Bind KEYS to COMMAND in KEYMAP for CTX's plugin. The generation changes
-;; now and again once the binding is gone: the deferred change is
-;; registered first, so it runs after the entry's removal.
+;; Bind KEYS to COMMAND in KEYMAP for CTX's plugin. KEYMAP's source, and
+;; for the global keymap the global bindings' source, change now and again
+;; once the binding is gone: the deferred change is registered first, so
+;; it runs after the entry's removal.
 (def (bind! (self : global-keys) (ctx : context) (keymap : entry-table) (keys : :string)
             (command : :symbol) (source :? :string))
   => :void
-  (let (normal (normalize-keys keys))
-    (context-defer! ctx (lambda () (set! self.generation (next-id!))))
+  (let ((normal (normalize-keys keys))
+        (changed! (lambda ()
+                    (keymap-changed! keymap)
+                    (when (eq? keymap self.keymap)
+                      (global-bindings-changed!)))))
+    (context-defer! ctx changed!)
     (context-add-entry! ctx keymap normal command source: source)
-    (set! self.generation (next-id!))))
+    (changed!)))
 
 (defmethod {keymap-set! global-keys}
   (lambda (self ctx keys command source)
@@ -427,8 +431,6 @@
     (context-add-entry! ctx (global-keys-click-resolvers self) 'click resolve)
     (void)))
 
-(defmethod {keymap-generation global-keys}
-  (lambda (self) (global-keys-generation self)))
 
 (defplugin (keys ctx)
   "Resolves keys through node keymaps and the global keymap. C-g quits."
@@ -437,9 +439,10 @@
   optional: [settings-service buffers-service]
   (using (self (global-keys click-resolvers: (new-entry-table) keymap: (new-entry-table) targets: []
                             sessions: (make-hash-table-eq)
-                            shared: (key-session pending: [] command-event: #f)
-                            generation: (next-id!))
+                            shared: (key-session pending: [] command-event: #f))
                : global-keys)
+    (global-bindings-changed!)
+    (context-defer! ctx global-bindings-changed!)
     (context-add-hook! ctx client-gone-hook 'keys
                        (lambda ((c : client)) (hash-remove! self.sessions c)))
     (context-define-command! ctx 'keyboard-quit signal-quit

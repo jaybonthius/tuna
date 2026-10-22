@@ -14,6 +14,7 @@
         :std/interface
         :tuna/kernel
         :tuna/lib/jobs
+        :tuna/lib/memo
         :tuna/plugins/text-store/contract
         :tuna/plugins/settings/contract
         :tuna/plugins/buffers/contract)
@@ -41,7 +42,7 @@
 
 (def (new-default-text (initial : :string)) => default-text
   (let (store (current-text-store))
-    (default-text id: (next-id!) store: store version: (TextStore-from-string store initial)
+    (default-text id: (next-id!) changes: (new-source) store: store version: (TextStore-from-string store initial)
                   chars-revision: 0 content-revision: 0 journal: [] journal-length: 0
                   undo-list: [] undo-pending: [] last-undo-task: #f
                   decorations: [] decoration-revision: 0 live?: #t nodes: [])))
@@ -81,7 +82,8 @@
       (record-journal! t c)
       (record-undo! t c point-before)
       (relocate-decorations! t c)
-      (stamp-nodes! t.nodes)
+      (source-changed! t.changes)
+      (for-each stamp! t.nodes)
       (run-hook after-change-hook t c))))
 
 (def (record-journal! (t : default-text) (c : change)) => :void
@@ -165,7 +167,8 @@
                                spans))
             (filter (lambda ((layer : :pair)) (not (eq? (car layer) name))) t.decorations)))
     (set! t.decoration-revision (fx1+ t.decoration-revision))
-    (stamp-nodes! t.nodes)))
+    (source-changed! t.changes)
+    (for-each stamp! t.nodes)))
 
 (def (layer-spans (t : default-text) (name : :symbol)) => :list
   (let (layer (assq name t.decorations))
@@ -206,30 +209,17 @@
    (attributes : :list)              ; alist of symbol -> value
    (children   : :list)              ; default nodes
    (parent     :? node)           ; a default node
-   (revision   : :fixnum)
    (content    :? default-text)      ; a text node's text
    (keymap     :? entry-table))
   final: #t)
 
-;; Give N, and every node above it, one new revision. Revisions come from
-;; next-id!, so they never repeat, even across providers. Stamping changes
-;; the buffers generation.
+;; Change the source of N and of every node above it: their revisions.
 (def (stamp! (n :? default-node)) => :void
-  (stamp-from! n (next-id!))
-  (buffers-changed!))
-
-(def (stamp-from! (n :? default-node) (revision : :fixnum)) => :void
   (let lp ((n n))
     (when n
       (using (n : default-node)
-        (set! n.revision revision)
+        (source-changed! n.changes)
         (lp n.parent)))))
-
-(def (stamp-nodes! (nodes : :list)) => :void
-  (unless (null? nodes)
-    (let (revision (next-id!))
-      (for-each (cut stamp-from! <> revision) nodes)
-      (buffers-changed!))))
 
 ;; Detached subtrees must not be kept alive by their texts. Reattachment
 ;; also refreshes revisions, since a detached text may have changed.
@@ -258,8 +248,8 @@
 (def (new-default-node (id : :fixnum) (kind : :symbol) (attributes : :list) (children : :list)
                         (content :? default-text) (keymap :? entry-table))
   => default-node
-  (let (n (default-node id: id kind: kind attributes: attributes children: children
-                        parent: #f revision: (next-id!) content: content keymap: keymap))
+  (let (n (default-node id: id changes: (new-source) kind: kind attributes: attributes children: children
+                        parent: #f content: content keymap: keymap))
     (adopt-children! n children)
     (when content
       (set! (default-text-nodes content) (cons n (default-text-nodes content))))
@@ -275,11 +265,11 @@
   (set! n.children children)
   (stamp! n))
 
-;; Setting an attribute to a value equal? to the one it has is no change:
+;; Setting an attribute to the value it has (plain-equal?) is no change:
 ;; N is not stamped.
 (def (set-attribute! (n : default-node) (name : :symbol) (value : :t)) => :void
   (let (old (assq name n.attributes))
-    (unless (and old (equal? (cdr old) value))
+    (unless (and old (plain-equal? (cdr old) value))
       (set! n.attributes (cons (cons name value)
                                (filter (lambda ((pair : :pair)) (not (eq? (car pair) name))) n.attributes)))
       (stamp! n))))
@@ -319,7 +309,7 @@
     (error "A buffer's root must have no parent" (node-id root)))
   (track-text-nodes! root #t)
   (let (focus (first-text root))
-    (default-buffer id: (next-id!) name: name root: root point-node: focus point-position: 1
+    (default-buffer id: (next-id!) changes: (new-source) name: name root: root point-node: focus point-position: 1
                     point-revision: (if focus (default-text-chars-revision (default-node-content focus)) 0)
                     settings: [])))
 
@@ -409,7 +399,6 @@
   (node-keymap (lambda (self n) (using (n : default-node) n.keymap)))
   (set-node-keymap! (lambda (self n keymap) (set-keymap! n keymap)))
   (node-parent (lambda (self n) (using (n : default-node) n.parent)))
-  (node-revision (lambda (self n) (using (n : default-node) n.revision)))
   (node-text (lambda (self n) (using (n : default-node) n.content)))
   (node-child-count (lambda (self n) (using (n : default-node) (length n.children))))
   (node-children (lambda (self n start end)

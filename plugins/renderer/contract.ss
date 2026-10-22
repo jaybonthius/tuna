@@ -42,11 +42,10 @@ prelude: :gerbil/core
     (if pair (cdr pair) face)))
 
 ;; The text of the status line (Emacs's mode line) of view V: the buffer,
-;; the line and column of V's point, and, for the selected view, the
-;; running command.
-(def (status-line-text (v : view) (selected? : :boolean)) => :string
-  (let ((command (and selected? (current-task-name)))
-        (n (view-node v)))
+;; the line and column of V's point, and COMMAND, the running task's name,
+;; if any: renderers pass it for the selected view.
+(def (status-line-text (v : view) (command :? :symbol)) => :string
+  (let (n (view-node v))
     (string-append
      "Tuna · " (buffer-name (view-showing v))
      (if n
