@@ -31,6 +31,7 @@ prelude: :gerbil/core
         memo-drawing? memo-from-scratch? check-not-drawing!
         memo-cache memo-cache? new-memo-cache memo-cache-size
         call-with-memo-pass memo memo-forget-client!
+        current-memo-draw-observer
         set-memo-checking! memo-checking?
         plain-value? plain-equal?)
 
@@ -77,6 +78,11 @@ prelude: :gerbil/core
 
 (def (memo-checking?) => :boolean
   checking?)
+
+;; A procedure called with the key of each piece drawn through a cache,
+;; not reused and not drawn from scratch; #f for none. For tests and
+;; benchmarks counting what a pass drew.
+(def current-memo-draw-observer (make-parameter #f))
 
 ;;; Pieces, frames and passes
 
@@ -226,7 +232,10 @@ prelude: :gerbil/core
                                       (equal? p.inputs inputs)
                                       (piece-current? p pass.number)))
                                (hash-ref cache.pieces key [])))
-                   (p (or kept (draw-piece pass key inputs draw))))
+                   (p (or kept
+                          (let (observe (current-memo-draw-observer))
+                            (when observe (observe key))
+                            (draw-piece pass key inputs draw)))))
               (using (p : piece)
                 (if kept
                   (mark! pass p)
