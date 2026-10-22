@@ -809,16 +809,24 @@ prelude: :gerbil/core
 ;;;
 ;;; Counting a node's children's items is kept per node and revision (a
 ;;; change to a node or below it gives it a new revision), so counting
-;;; them again, or finding an item by index, does not walk every child. A
-;;; kept count holds no node, so a tree it counted can still be collected.
-;;; On the baton only.
+;;; them again, or finding an item by index, does not walk every child.
+;;; With it, each child's revision then: after a change below one child,
+;;; the others' counts are taken from what was kept, and only that child
+;;; is counted again. Defining or removing a node kind counts them all
+;;; again, since it may change how nodes open. A kept count holds no node,
+;;; so a tree it counted can still be collected. On the baton only.
 
-;; How a node opening into its children did at REVISION: the index of each
-;; child's first item, then the item count (STARTS), and each child's
-;; place among its siblings by node id (PLACES).
-(defstruct children-items ((revision : :fixnum)
-                           (starts   : :vector)
-                           (places   : HashTable))
+;; How a node opening into its children did at REVISION, with node kinds
+;; at revision KINDS (node-kinds-source): each child's node id (IDS) and
+;; revision (CHILD-REVISIONS), the index of each child's first item, then
+;; the item count (STARTS), and each child's place among its siblings by
+;; node id (PLACES).
+(defstruct children-items ((revision        : :fixnum)
+                           (kinds           : :fixnum)
+                           (ids             : :vector)
+                           (child-revisions : :vector)
+                           (starts          : :vector)
+                           (places          : HashTable))
   final: #t)
 
 (def children-items-kept (make-hash-table test: eq? weak-keys: #t))
@@ -836,20 +844,44 @@ prelude: :gerbil/core
 
 (def (children-items-of (n : node)) => children-items
   (let ((revision (node-revision n))
+        (kinds (begin (record-read! node-kinds-source) (source-revision node-kinds-source)))
         (kept (hash-get children-items-kept n)))
-    (if (and kept (fx= (children-items-revision kept) revision))
+    (if (and kept (fx= (children-items-revision kept) revision) (fx= (children-items-kinds kept) kinds))
       kept
-      (let* ((children (node-children n))
-             (starts (make-vector (fx1+ (length children)) 0))
-             (places (make-hash-table-eqv)))
-        (let lp ((rest children) (place 0) (start 0))
-          (vector-set! starts place start)
-          (match rest
-            ([child . more]
-             (hash-put! places (node-id child) place)
-             (lp more (fx1+ place) (fx+ start (node-item-count child))))
-            ([] (void))))
-        (let (counted (make-children-items revision starts places))
+      (let* ((children (list->vector (node-children n)))
+             (size (vector-length children))
+             (ids (vector-map node-id children))
+             (earlier (and kept (fx= (children-items-kinds kept) kinds) kept))
+             (same-children? (and earlier (equal? ids (children-items-ids earlier))))
+             (revisions (make-vector size 0))
+             (starts (make-vector (fx1+ size) 0)))
+        ;; A child's count is the one kept for it while its revision is the
+        ;; same: found by its place, or by its id when the children changed.
+        (def (kept-count (place : :fixnum) (child-revision : :fixnum)) => (Maybe :fixnum)
+          (and earlier
+               (using (earlier : children-items)
+                 (let (before (if same-children? place (hash-get earlier.places (vector-ref ids place))))
+                   (and before
+                        (fx= (vector-ref earlier.child-revisions before) child-revision)
+                        (fx- (vector-ref earlier.starts (fx1+ before)) (vector-ref earlier.starts before)))))))
+        (let lp ((place 0))
+          (when (fx< place size)
+            (let* ((child (vector-ref children place))
+                   (child-revision (node-revision child)))
+              (vector-set! revisions place child-revision)
+              (vector-set! starts (fx1+ place)
+                           (fx+ (vector-ref starts place)
+                                (or (kept-count place child-revision) (node-item-count child))))
+              (lp (fx1+ place)))))
+        (let (counted (make-children-items revision kinds ids revisions starts
+                                           (if same-children?
+                                             (children-items-places earlier)
+                                             (let (places (make-hash-table-eqv))
+                                               (let lp ((place 0))
+                                                 (when (fx< place size)
+                                                   (hash-put! places (vector-ref ids place) place)
+                                                   (lp (fx1+ place))))
+                                               places))))
           (hash-put! children-items-kept n counted)
           counted)))))
 

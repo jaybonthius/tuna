@@ -4,6 +4,7 @@
 ;;; Restart and restore are integration-tested with session and autosave.
 (import (only-in :gerbil/runtime/mop slot-ref)
         :std/error
+        :std/interface
         :std/test
         :tuna/kernel
         :tuna/lib/jobs
@@ -32,6 +33,31 @@
   (or (< (car a) (car b)) (and (= (car a) (car b)) (< (cadr a) (cadr b)))))
 
 (defsetting fill-width 70 "A setting for buffer-local values.")
+
+;; Calls of the counting text store's line-count.
+(def line-counts 0)
+
+;; A text store counting how often lines are counted, otherwise the toy
+;; store.
+(defstruct counting-store () final: #t)
+
+(implement TextStore counting-store
+  (from-string (lambda (self text) (TextStore-from-string string-store-instance text)))
+  (size (lambda (self version) (TextStore-size string-store-instance version)))
+  (line-count (lambda (self version)
+                (set! line-counts (+ line-counts 1))
+                (TextStore-line-count string-store-instance version)))
+  (slice (lambda (self version start end) (TextStore-slice string-store-instance version start end)))
+  (line-at (lambda (self version position) (TextStore-line-at string-store-instance version position)))
+  (line-start (lambda (self version line) (TextStore-line-start string-store-instance version line)))
+  (for-each-chunk (lambda (self version start end proc)
+                    (TextStore-for-each-chunk string-store-instance version start end proc)))
+  (replace (lambda (self version start end text) (TextStore-replace string-store-instance version start end text))))
+
+(defplugin (counting-text-store ctx)
+  "Stores text as the toy text store does, counting how often lines are counted."
+  provides: [text-store-service]
+  (context-provide! ctx text-store-service (TextStore (make-counting-store))))
 
 ;; An object that refers to another: two of them can refer to each other.
 (defstruct ring (other))
@@ -636,6 +662,27 @@
          (check (map (lambda (child-start) [(node-id (car child-start)) (cdr child-start)])
                      (node-child-items root 2 5))
                 => [[(node-id text) 1] [(node-id empty) 4] [(node-id card) 5]])))))
+
+  (test-case "a node's items counted again after a change below one child count only that child again"
+    (call-with-fresh-kernel [counting-text-store settings provider]
+     (lambda ()
+       (let* ((texts (map (lambda (k) (new-text "a\nb")) (iota 200)))
+              (root (new-node 'column children: (map new-text-node texts))))
+         (check (node-item-count root) => 400)
+         (text-replace! (list-ref texts 7) 1 1 "x\n")
+         (set! line-counts 0)
+         (check (node-item-count root) => 401)
+         (check line-counts => 1)
+         (check (item-line (node-item-at root 16)) => 3)
+         (check (node-item-index root (node-item-at root 300)) => 300)
+         ;; Children replaced, reordered, added and removed.
+         (let ((children (node-children root))
+               (one (new-text-node (new-text "one"))))
+           (set-node-children! root (cons one (reverse (cddr children))))
+           ;; The child changed above has three lines.
+           (check (node-item-count root) => (+ 1 (* 2 198) 1))
+           (check (item-line (node-item-at root 0)) => 1)
+           (check (eq? (item-node (node-item-at root 1)) (list-ref children 199)) => #t))))))
 
   (test-case "items keep their identity through edits around them; tokens name them"
     (call-with-fresh-kernel buffer-plugins
