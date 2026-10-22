@@ -1,6 +1,6 @@
 # Brief: drawing only what changed
 
-**Date:** 2026-10-22. **Status:** proposed; waiting for the owner. Evidence is in [`agents/research/rendering/`](../../agents/research/rendering/): an audit of today's renderer with measurements, the incremental-computation prior art, how editors redraw lines, the loop and outside state, and Gerbil costs.
+**Date:** 2026-10-22. **Status:** approved 2026-10-22 (owner chose automatic recording). [ADR 17](../../agents/adr/0017-memo-and-sources.md); plan [`agents/plans/drawing-only-what-changed.md`](../../agents/plans/drawing-only-what-changed.md). Evidence is in [`agents/research/rendering/`](../../agents/research/rendering/): an audit of today's renderer with measurements, the incremental-computation prior art, how editors redraw lines, the loop and outside state, and Gerbil costs.
 
 ## What we're building and why
 

@@ -2,7 +2,11 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: none in progress; several tabs just finished
+## Current work: drawing only what changed (approved, not started)
+
+**Drawing only what changed: approved 2026-10-22** (brief `docs/briefs/2026-10-drawing-only-what-changed.md`, ADR 17, plan `agents/plans/drawing-only-what-changed.md`, research `agents/research/rendering/`). Every piece of the screen drawn through `memo`, which records the sources it reads (owner decision: automatic recording, not hand-written keys) and reuses its HTML while none moved; lines compared by value; outside state as sources posting only differences; idle does nothing; pieces written as bytes. Fat morph unchanged; kernel unchanged. Stage 1 starts with the line-id bug the audit reproduced. Proof: a `proced`-style process-list plugin.
+
+## Previous work: several tabs
 
 **Several tabs: done 2026-10-22** (`agents/plans/several-tabs.md`, ADR 16, brief `docs/briefs/2026-10-several-tabs.md`, research `agents/research/per-tab/`). Every tab mirrors one editor (owner decision 2026-10-21: mirror, like tmux; per-tab frames deferred). Per-tab state is exactly three things on the server, keyed by a server-made tab id, never saved: identity and connection (web plugin), keys in progress and `last-command` (keys and commands plugins, `current-client` bound per task), what the browser measured (`client-view` in the buffers contract, written by scrolling). A new `clients` contract holds the vocabulary; the kernel did not change. One screen is drawn per tab; the tab you use drives the shared scroll position; a confirming report never moves it. Other tabs follow only where scrolling comes to rest (the page's `tunarest`, 200 ms without scrolling): a follower got 10 screens for three flings instead of about 300.
 
