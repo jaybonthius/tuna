@@ -1,0 +1,36 @@
+# What does each piece of the screen depend on? (planned)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+direction: right
+
+pieces: "Pieces of the screen: each drawn through memo, its HTML reused while nothing it read changed" {
+  direction: down
+  screen: "The screen"
+  view: "A view"
+  node: "A node: paragraph, card, process row"
+  line: "An item: one line, one row"
+  screen -> view: contains
+  view -> node: contains
+  node -> line: contains
+}
+
+sources: "Sources: each change gives a new revision" {
+  direction: down
+  nodes: "Buffer nodes"
+  text: "Text: each line's characters"
+  marks: "Highlighting and cursors on a line"
+  keys: "Keymaps and settings"
+  tab: "What this tab measured"
+  outside: "Outside: git status, /proc"
+}
+
+pieces.view -> sources.tab: reads
+pieces.node -> sources.nodes: reads
+pieces.node -> sources.keys: reads
+pieces.line -> sources.text: reads
+pieces.line -> sources.marks: reads
+sources.outside -> sources.nodes: "a reading that differs\nupdates only its rows"

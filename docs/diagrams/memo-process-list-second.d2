@@ -1,0 +1,22 @@
+# One second of a live process list, with two tabs open (planned)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+job: "Process-list job (off the editor thread)"
+editor: "Editor (shared state)"
+renderer: "Renderer: memo"
+laptop: "Laptop tab"
+phone: "Phone tab"
+
+job -> job: "1. read /proc; compare with last second's reading:\n2 of 200 rows differ"
+job -> editor: "2. post the 2 changes"
+editor -> editor: "3. update those 2 row nodes (new revisions)"
+renderer -> renderer: "4. redraw: 2 rows drawn again, 198 reused,\nthe view and screen around them checked"
+renderer -> laptop: "5. the whole screen, one fat morph"
+renderer -> phone: "6. the whole screen, the same rows reused"
+job -> job: "7. next second: nothing differs,\nso nothing is posted, drawn or sent"
