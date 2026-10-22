@@ -1,6 +1,6 @@
 # Brief: several tabs on one editor
 
-**Date:** 2026-10-21. **Status:** proposed; waiting for the owner. Changes ADR 7 and ADR 10 ("one tab is assumed"), ADR 8 (input sessions become real) and ADR 15 (scroll state). Evidence: [`agents/research/per-tab/`](../../agents/research/per-tab/) (Datastar docs and Hyperlith, the Datastar Discord and Northstar, Emacs and other multi-client editors, an inventory of Tuna's state, Gerbil mechanics).
+**Date:** 2026-10-21. **Status:** approved 2026-10-21 (owner chose mirroring). ADR 16; plan [`agents/plans/several-tabs.md`](../../agents/plans/several-tabs.md). Changes ADR 7 and ADR 10 ("one tab is assumed"), ADR 8 (input sessions become real) and ADR 15 (scroll state). Evidence: [`agents/research/per-tab/`](../../agents/research/per-tab/) (Datastar docs and Hyperlith, the Datastar Discord and Northstar, Emacs and other multi-client editors, an inventory of Tuna's state, Gerbil mechanics).
 
 ## What we're building and why
 
