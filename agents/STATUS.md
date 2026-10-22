@@ -2,7 +2,7 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: drawing only what changed (stages 1-2 merged; stage 3 next)
+## Current work: drawing only what changed (stages 1-3 merged; stage 4 next)
 
 **Drawing only what changed: approved 2026-10-22** (brief `docs/briefs/2026-10-drawing-only-what-changed.md`, ADR 17, plan `agents/plans/drawing-only-what-changed.md`, research `agents/research/rendering/`). Every piece of the screen drawn through `memo`, which records the sources it reads (owner decision: automatic recording, not hand-written keys) and reuses its HTML while none moved; lines compared by value; outside state as sources posting only differences; idle does nothing; pieces written as bytes. Fat morph unchanged; kernel unchanged. Stage 1 starts with the line-id bug the audit reproduced. Proof: a `proced`-style process-list plugin.
 
