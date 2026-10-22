@@ -176,9 +176,38 @@
       ([tag . body] (cons* tag (cons '@ ids) body))
       (else element))))
 
+;; MARKUP's HTML. Fragments drawn already, (*unencoded* HTML ...), are
+;; joined in whole rather than copied through a port: they are most of a
+;; screen, and string-append copies them much faster.
 (def (html-string (markup : :t)) => :string
+  (apply string-append (html-parts markup [])))
+
+(def (sxml-string (markup : :t)) => :string
   (call-with-output-string ""
     (lambda (port) (write-sxml markup port: port xml?: #f))))
+
+;; Whether MARKUP holds a fragment drawn already.
+(def (holds-fragment? (markup : :t)) => :boolean
+  (and (pair? markup)
+       (or (eq? (car markup) '*unencoded*)
+           (ormap holds-fragment? (if (symbol? (car markup)) (cdr markup) markup)))))
+
+;; MARKUP's HTML as strings to join, before REST: an element holding a
+;; fragment as its tags around its body's parts, anything else written.
+(def (html-parts (markup : :t) (rest : :list)) => :list
+  (cond
+   ((not (holds-fragment? markup)) (cons (sxml-string markup) rest))
+   ((eq? (car markup) '*unencoded*) (append (cdr markup) rest))
+   ((symbol? (car markup))
+    (let* ((tag (car markup))
+           (attributes (and (pair? (cdr markup)) (pair? (cadr markup)) (eq? (car (cadr markup)) '@)
+                            (cadr markup)))
+           (body (if attributes (cddr markup) (cdr markup)))
+           (close (string-append "</" (symbol->string tag) ">"))
+           (shell (sxml-string (if attributes [tag attributes] [tag]))))
+      (cons (substring shell 0 (fx- (string-length shell) (string-length close)))
+            (foldr html-parts (cons close rest) body))))
+   (else (foldr html-parts rest markup))))
 
 ;; How N is drawn when its items FIRST to LAST are: N's whole node drawn
 ;; as one item ('item), or the run (FIRST . LAST) of its items.
@@ -315,13 +344,16 @@
               ((fx< at line) (search (fx1+ middle) high))
               (else (search low middle))))))))
 
+;; The birth of LINE by NOW (births-now), if it has one.
+(def (entry-birth (now : line-births) (line : :fixnum)) => (Maybe :pair)
+  (let (i (entry-of now line))
+    (and i (vector-ref (line-births-births now) i))))
+
 ;; The birth of LINE of T, by NOW (births-now): its entry's, or, without
 ;; one, now: (its end . T's revision).
 (def (line-birth (t : text) (now : line-births) (line : :fixnum)) => :pair
-  (let (i (entry-of now line))
-    (if i
-      (vector-ref (line-births-births now) i)
-      (cons (text-line-end t line) (line-births-revision now)))))
+  (or (entry-birth now line)
+      (cons (text-line-end t line) (line-births-revision now))))
 
 ;; What V's births of N's lines are now (births-now).
 (def (view-births-now (self : html-rendering) (v : view) (n : node)) => line-births
@@ -348,8 +380,14 @@
   (let* ((t (text-node-content n))
          (b (view-showing v))
          (now (view-births-now self v n))
-         (drawn-start (text-line-start t first))
-         (drawn-end (text-line-end t last))
+         (s (text-snapshot t))
+         (size (snapshot-size s))
+         (count (snapshot-line-count s))
+         ;; Where LINE ends, before its newline.
+         (line-end (lambda ((line : :fixnum) (next-start : :fixnum))
+                     (if (fx= line count) (fx1+ size) (fx1- next-start))))
+         (drawn-start (snapshot-line-start s first))
+         (drawn-end (if (fx= last count) (fx1+ size) (fx1- (snapshot-line-start s (fx1+ last)))))
          (spans (list->vector (text-highlights-in t drawn-start drawn-end)))
          ;; Span indexes ordered by start, and those that may overlap the
          ;; line being worked out, in order.
@@ -364,11 +402,11 @@
             (let (remapped (remapped-face value b))
               (hash-put! faces-of value remapped)
               remapped))))
-    (let lp ((line first) (next 0) (active []))
+    (let lp ((line first) (start drawn-start) (next 0) (active []))
       (when (fx<= line last)
-        (let* ((start (text-line-start t line))
-               (end (text-line-end t line))
-               (content (text-substring t start end)))
+        (let* ((next-start (if (fx= line count) (fx+ size 2) (snapshot-line-start s (fx1+ line))))
+               (end (line-end line next-start))
+               (content (snapshot-slice s start end)))
           ;; Spans starting before the line's end join; those ending at or
           ;; before its start leave.
           (let add ((next next) (active active))
@@ -376,13 +414,13 @@
                      (fx< (span-start (vector-ref spans (vector-ref by-start next))) end))
               (add (fx1+ next) (cons (vector-ref by-start next) active))
               (let* ((active (filter (lambda ((i : :fixnum)) (fx> (span-end (vector-ref spans i)) start)) active))
-                     (birth (line-birth t now line)))
+                     (birth (or (entry-birth now line) (cons end (line-births-revision now)))))
                 (vector-set! out (fx- line first)
                              [(car birth) (cdr birth) items? content
                               (face-runs (string-length content) start
                                          (map (lambda ((i : :fixnum)) (vector-ref spans i)) (list-sort fx< active))
                                          face)])
-                (lp (fx1+ line) next active)))))))
+                (lp (fx1+ line) next-start next active)))))))
     out))
 
 ;; The runs of faced characters of a line of SIZE characters starting at
@@ -679,7 +717,8 @@
 
 ;; After drawing SCREEN for client C, when it is a new one: keep the
 ;; births of the lines of each text node each view drew (keep-births!),
-;; and drop those of lines no client's last screen drew.
+;; and drop those of lines no client's last screen drew once they may
+;; have piled up (births-outgrown?).
 (def (after-drawing! (self : html-rendering) (c :? client) (screen : :string)) => :void
   (let (kept (hash-get self.screens c))
     (unless (and kept (eq? (client-screen-screen kept) screen))
@@ -697,7 +736,31 @@
                                (for-each (lambda ((child-run : :pair)) (walk (car child-run) (cdr child-run)))
                                          (drawn-children n run)))))))
         (hash-put! self.screens c (client-screen screen: screen drawn: drawn))
-        (drop-undrawn-births! self)))))
+        (when (births-outgrown? self)
+          (drop-undrawn-births! self))))))
+
+;; Whether births of lines no client's last screen drew may have piled up:
+;; kept for a text node no client drew, or more of them than twice the
+;; lines the clients drew of it, and a few more. Dropping them only when
+;; they do keeps a screen's cost from growing with every client's lines.
+(def (births-outgrown? (self : html-rendering)) => :boolean
+  (let (drawn (make-hash-table))        ; (view-id . node-id) -> lines drawn, over all clients
+    (hash-for-each (lambda (c (screen : client-screen))
+                     (for-each (lambda ((entry : :pair))
+                                 (hash-update! drawn (cons (car entry) (cadr entry))
+                                               (lambda ((count : :fixnum)) (fx+ count (vector-length (cddr entry))))
+                                               0))
+                               screen.drawn))
+                   self.screens)
+    (hash-fold (lambda (view-id (table : HashTable) (outgrown? : :boolean))
+                 (or outgrown?
+                     (hash-fold (lambda (node-id (kept : line-births) (outgrown? : :boolean))
+                                  (or outgrown?
+                                      (let (count (hash-get drawn (cons view-id node-id)))
+                                        (or (not count)
+                                            (fx> (vector-length (line-births-births kept)) (fx+ 64 (fx* 2 count)))))))
+                                #f table)))
+               #f self.births)))
 
 ;; After drawing N's lines FIRST to LAST in V: keep their births, with
 ;; the entries kept before, at the text's revision, which gives every line

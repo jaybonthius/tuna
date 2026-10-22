@@ -79,6 +79,7 @@ prelude: :gerbil/core
         after-change-hook
         ;; snapshots
         (struct-out snapshot) text-snapshot snapshot-size snapshot-for-each-chunk
+        snapshot-line-count snapshot-line-start snapshot-slice
         ;; decorations
         set-highlights! text-highlights text-highlights-in
         ;; nodes and node kinds
@@ -176,11 +177,12 @@ prelude: :gerbil/core
 
 ;; S moved through CHANGES (oldest first), or #f once it is empty.
 (def (span-after-changes (s : span) (changes : :list)) => (Maybe span)
-  (match changes
-    ([] s)
-    ([c . more]
-     (let (moved (span-after-change s c))
-       (and moved (span-after-changes moved more))))))
+  (let lp ((s s) (changes changes))
+    (match changes
+      ([] s)
+      ([c . more]
+       (let (moved (span-after-change s c))
+         (and moved (lp moved more)))))))
 
 ;; SPANS moved through CHANGES (oldest first), as highlights move with
 ;; edits (span-after-change); a span is dropped once it is empty.
@@ -190,16 +192,18 @@ prelude: :gerbil/core
 (def (span-before? (a : span) (b : span)) => :boolean
   (fx< (span-start a) (span-start b)))
 
+;; Whether spans A and B are the same, one by one, by start, end and value.
 (def (same-spans? (a : :list) (b : :list)) => :boolean
-  (match a
-    ([] (null? b))
-    ([(? span? x) . more]
-     (match b
-       ([(? span? y) . others]
-        (and (fx= (span-start x) (span-start y)) (fx= (span-end x) (span-end y))
-             (equal? (span-value x) (span-value y))
-             (same-spans? more others)))
-       (else #f)))))
+  (let lp ((a a) (b b))
+    (match a
+      ([] (null? b))
+      ([x . more]
+       (match b
+         ([y . others]
+          (and (fx= (span-start x) (span-start y)) (fx= (span-end x) (span-end y))
+               (equal? (span-value x) (span-value y))
+               (lp more others)))
+         (else #f))))))
 
 ;; A highlight layer's SPANS, ordered by start, with whatever lies inside
 ;; START..END replaced by NEW clipped to that range, still ordered by
@@ -514,6 +518,18 @@ prelude: :gerbil/core
 
 (def (snapshot-size (s : snapshot)) => :fixnum
   (TextStore-size (snapshot-store s) (snapshot-version s)))
+
+;; The number of lines in S.
+(def (snapshot-line-count (s : snapshot)) => :fixnum
+  (TextStore-line-count (snapshot-store s) (snapshot-version s)))
+
+;; The position where LINE of S starts; LINE must be one of S's lines.
+(def (snapshot-line-start (s : snapshot) (line : :fixnum)) => :fixnum
+  (TextStore-line-start (snapshot-store s) (snapshot-version s) line))
+
+;; S's characters from START up to END, valid positions of S.
+(def (snapshot-slice (s : snapshot) (start : :fixnum) (end : :fixnum)) => :string
+  (TextStore-slice (snapshot-store s) (snapshot-version s) start end))
 
 ;; Call PROC with each chunk of S's characters, in order.
 (def (snapshot-for-each-chunk (s : snapshot) (proc : :procedure)) => :void
