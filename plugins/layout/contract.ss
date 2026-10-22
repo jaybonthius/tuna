@@ -71,6 +71,7 @@ prelude: :gerbil/core
         set-frame-mark
         jump-to-frame-mark
         render-layout
+        layout-generation
         replace-buffer-in-views)
 
 ;; Neutral session slot `layout`, version 2:
@@ -202,6 +203,12 @@ prelude: :gerbil/core
   ;; 'html both are SXML elements. For a target it does not know, the
   ;; result is the list of the views it shows, rendered, in order.
   (render-layout (target : :symbol) (render-view : :procedure)) => :t
+  ;; A number that changes whenever what render-layout draws may have
+  ;; changed through the layout's own state (its arrangement, the frame,
+  ;; the selected view or part), and is never a number any layout gave
+  ;; before (take new ones from next-id!). Views and buffers count their
+  ;; own changes (the buffers contract).
+  (generation) => :fixnum
 )
 
 (def layout-service
@@ -330,6 +337,9 @@ prelude: :gerbil/core
 
 (def (render-layout (target : :symbol) (render-view : :procedure)) => :t
   (with-service-provider (provider layout-service Layout) (Layout-render-layout provider target render-view)))
+
+(def (layout-generation) => :fixnum
+  (:- (with-service-provider (provider layout-service Layout) (Layout-generation provider)) :fixnum))
 
 ;; For layouts, on `kill-buffer-hook`: show another buffer in each of VIEWS
 ;; that shows B.

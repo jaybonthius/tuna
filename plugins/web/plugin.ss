@@ -209,9 +209,10 @@
 ;; owed a screen, and with HEAD for SERVED stylesheets, when given, to every
 ;; tab. A screen is drawn only from editor state, so the same screen as a
 ;; tab's last one means nothing on it changed: that tab is sent nothing.
-;; Timers such as the session save redisplay without changing what is
-;; shown. A page sends one scroll report at a time and waits for a screen
-;; before the next, so a report is always answered with one.
+;; A renderer that saw nothing change returns the very string it returned
+;; last time, which is told apart without reading it. A page sends one
+;; scroll report at a time and waits for a screen before the next, so a
+;; report is always answered with one.
 (def (publish-screens! (self : web-server) (screens : :list) (head : :t) (served : :t)) => :void
   (do-with-lock self.mutex
     (when served
@@ -220,7 +221,8 @@
     (for-each (lambda ((screen : :pair))
                 (using (tab (car screen) : web-tab)
                   (let (rendered (:- (cdr screen) :string))
-                    (when (or served tab.owed (not (string=? rendered tab.rendered)))
+                    (when (or served tab.owed
+                              (not (or (eq? rendered tab.rendered) (string=? rendered tab.rendered))))
                       (let (revision (fx1+ self.revision))
                         (set! self.revision revision)
                         (give-screen! tab (stamp-revision rendered revision) rendered revision)))
@@ -566,8 +568,9 @@
 ;; Queues work for tabs on the editor loop, until sent 'stop: a redisplay
 ;; when sent 'redisplay (any task, even one doing nothing, is followed by
 ;; one), and forget-tab! for each [tab closings] from forget-later!, SELF's
-;; grace period later. It starts with the plugin, so it can reach the
-;; editor loop, which request threads may not.
+;; grace period later, unless the tab is no longer one to forget, so a tab
+;; with a stream open costs no task. It starts with the plugin, so it can
+;; reach the editor loop, which request threads may not.
 (def (tab-keeping-thread (self : web-server)) => :void
   (let lp ((waiting []))        ; [deadline tab closings] each, earliest first
     (let (wait (lambda (timeout)
@@ -585,23 +588,29 @@
            (if (> delay 0)
              (wait delay)
              (begin
-               (with-catch void
-                           (lambda ()
-                             (spawn-task! 'forget-tab (lambda () (forget-tab! self tab closings)))))
+               (when (do-with-lock self.mutex (to-forget? self tab closings))
+                 (with-catch void
+                             (lambda ()
+                               (spawn-task! 'forget-tab (lambda () (forget-tab! self tab closings))))))
                (lp rest)))))
         ([] (wait #f))))))
 
-;; On the editor loop: forget TAB if its streams last all closed when they
-;; had closed CLOSINGS times, and none has opened since; then run
-;; client-gone-hook, so plugins forget what they kept for its client.
+;; Whether TAB is still SELF's, and its streams last all closed when they
+;; had closed CLOSINGS times, with none opened since. Call with SELF's
+;; mutex held.
+(def (to-forget? (self : web-server) (tab : web-tab) (closings : :fixnum)) => :boolean
+  (and (eq? (hash-get self.tabs (client-id tab.client)) tab)
+       (fxzero? tab.streams)
+       (fx= tab.closings closings)))
+
+;; On the editor loop: forget TAB if it is still one to forget (to-forget?);
+;; then run client-gone-hook, so plugins forget what they kept for its
+;; client.
 (def (forget-tab! (self : web-server) (tab : web-tab) (closings : :fixnum)) => :void
-  (let (id (client-id tab.client))
-    (when (do-with-lock self.mutex
-            (and (eq? (hash-get self.tabs id) tab)
-                 (fxzero? tab.streams)
-                 (fx= tab.closings closings)
-                 (begin (hash-remove! self.tabs id) #t)))
-      (run-hook client-gone-hook tab.client))))
+  (when (do-with-lock self.mutex
+          (and (to-forget? self tab closings)
+               (begin (hash-remove! self.tabs (client-id tab.client)) #t)))
+    (run-hook client-gone-hook tab.client)))
 
 ;; One writer per stream: send the tab named ID its newest screen once the
 ;; page applied the last one, preceded by the head whenever it differs from

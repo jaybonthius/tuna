@@ -212,9 +212,11 @@
   final: #t)
 
 ;; Give N, and every node above it, one new revision. Revisions come from
-;; next-id!, so they never repeat, even across providers.
+;; next-id!, so they never repeat, even across providers. Stamping changes
+;; the buffers generation.
 (def (stamp! (n :? default-node)) => :void
-  (stamp-from! n (next-id!)))
+  (stamp-from! n (next-id!))
+  (buffers-changed!))
 
 (def (stamp-from! (n :? default-node) (revision : :fixnum)) => :void
   (let lp ((n n))
@@ -226,7 +228,8 @@
 (def (stamp-nodes! (nodes : :list)) => :void
   (unless (null? nodes)
     (let (revision (next-id!))
-      (for-each (cut stamp-from! <> revision) nodes))))
+      (for-each (cut stamp-from! <> revision) nodes)
+      (buffers-changed!))))
 
 ;; Detached subtrees must not be kept alive by their texts. Reattachment
 ;; also refreshes revisions, since a detached text may have changed.
@@ -272,10 +275,14 @@
   (set! n.children children)
   (stamp! n))
 
+;; Setting an attribute to a value equal? to the one it has is no change:
+;; N is not stamped.
 (def (set-attribute! (n : default-node) (name : :symbol) (value : :t)) => :void
-  (set! n.attributes (cons (cons name value)
-                           (filter (lambda ((pair : :pair)) (not (eq? (car pair) name))) n.attributes)))
-  (stamp! n))
+  (let (old (assq name n.attributes))
+    (unless (and old (equal? (cdr old) value))
+      (set! n.attributes (cons (cons name value)
+                               (filter (lambda ((pair : :pair)) (not (eq? (car pair) name))) n.attributes)))
+      (stamp! n))))
 
 (def (set-keymap! (n : default-node) (keymap :? entry-table)) => :void
   (set! n.keymap keymap)

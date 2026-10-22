@@ -21,6 +21,13 @@
                              (with-catch (lambda (e) (set! timer-quit? (quit-condition? e)) (raise e))
                                          (lambda () (suspend (lambda (s) (set! waiting s))))))))
 
+;; A one-shot timer the test restarts.
+(def once #f)
+
+(defplugin (once-timer ctx)
+  "A one-shot timer that counts its runs."
+  (set! once (context-run-with-timer! ctx 0.01 #f (lambda () (set! ticks (fx1+ ticks))) name: 'once)))
+
 (def (with-loop thunk)
   (set! ticks 0)
   (set! waiting #f)
@@ -53,6 +60,34 @@
          (let (stopped ticks)
            (thread-sleep! 0.1)
            (check ticks => stopped)))))
+
+    (test-case "a one-shot timer runs once per restart; restarting it while due changes nothing"
+      (with-loop
+       (lambda ()
+         (call-on-editor-loop (lambda () (activate-plugin! once-timer)))
+         (check (wait-until (lambda () (= ticks 1))) => #t)
+         (thread-sleep! 0.05)
+         (check ticks => 1)
+         (call-on-editor-loop (lambda () (restart-timer once) (restart-timer once)))
+         (check (wait-until (lambda () (= ticks 2))) => #t)
+         (thread-sleep! 0.05)
+         (check ticks => 2)
+         ;; A cancelled timer does not restart.
+         (call-on-editor-loop (lambda () (deactivate-plugin! once-timer) (restart-timer once)))
+         (thread-sleep! 0.05)
+         (check ticks => 2))))
+
+    (test-case "a one-shot timer that came due before the editor loop ran can be restarted"
+      (set! ticks 0)
+      (call-with-fresh-kernel [test-input]
+        (lambda ()
+          (activate-plugin! once-timer)
+          (thread-sleep! 0.05)
+          (start-editor-loop!)
+          (thread-sleep! 0.05)
+          (check ticks => 0)
+          (call-on-editor-loop (lambda () (restart-timer once)))
+          (check (wait-until (lambda () (= ticks 1))) => #t))))
 
     (test-case "deactivating a timer's plugin quits its waiting callback"
       (with-loop

@@ -8,11 +8,15 @@ prelude: :gerbil/core
         :tuna/kernel)
 (export context-run-with-timer!
         timer?
-        cancel-timer)
+        cancel-timer
+        restart-timer)
 
 (defclass timer ((name       : :symbol)
                  (procedure  : :procedure)
+                 (seconds    : :real)
+                 (repeat     :? :real)
                  (thread     :? :thread)
+                 (counting?  : :boolean)     ; its callback is due: not yet started, or repeating
                  (cancelled? : :boolean)
                  (tasks      : :list))       ; its callback tasks that have not ended
   final: #t)
@@ -27,11 +31,26 @@ prelude: :gerbil/core
                               name: (name : :symbol := 'timer))
   => timer
   ;; A later timer callback may register effects through current-context.
-  (using (new (timer name: name procedure: (context-bind ctx procedure) thread: #f cancelled?: #f tasks: []) : timer)
-    (set! new.thread (spawn-thread (lambda () (countdown-thread new seconds repeat))
-                                   'tuna-timer))
+  (using (new (timer name: name procedure: (context-bind ctx procedure) seconds: seconds repeat: repeat
+                     thread: #f counting?: #f cancelled?: #f tasks: [])
+              : timer)
+    (start-countdown! new)
     (context-defer! ctx (lambda () (cancel-timer new)))
     new))
+
+(def (start-countdown! (t : timer)) => :void
+  (set! t.counting? #t)
+  (set! t.thread (spawn-thread (lambda () (countdown-thread t t.seconds t.repeat))
+                               'tuna-timer)))
+
+;; Run T once more, its first delay from now (Emacs `timer-activate`):
+;; unless T is cancelled, or its callback is still due (it has not yet
+;; started, or T repeats). So a one-shot timer can be armed again and
+;; again, as a change asks, while it owns one countdown at a time. Call on
+;; the baton.
+(def (restart-timer (t : timer)) => :void
+  (unless (or t.cancelled? t.counting?)
+    (start-countdown! t)))
 
 ;; Stop T and cancel its callback tasks. Call on the baton.
 (def (cancel-timer (t : timer)) => :void
@@ -42,16 +61,21 @@ prelude: :gerbil/core
     (set! t.tasks [])))
 
 ;; Wait, then queue a callback task, until cancelled. Receiving any
-;; message cancels.
+;; message cancels. A callback that cannot be queued, because the editor
+;; loop is not running (yet), is not due any more, so a one-shot timer
+;; can be restarted.
 (def (countdown-thread (t : timer) (seconds : :real) (repeat :? :real)) => :void
   (let lp ((delay seconds))
     (unless (thread-receive delay #f)
-      (with-catch void (lambda () (spawn-task! t.name (lambda () (timer-callback t)))))
+      (with-catch (lambda (e) (unless repeat (set! t.counting? #f)))
+                  (lambda () (spawn-task! t.name (lambda () (timer-callback t)))))
       (when repeat
         (lp repeat)))))
 
 ;; On the baton: run T's procedure unless T was cancelled meanwhile.
 (def (timer-callback (t : timer)) => :void
+  (unless t.repeat
+    (set! t.counting? #f))
   (unless t.cancelled?
     (let (self (running-task))
       (set! t.tasks (cons self t.tasks))

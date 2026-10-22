@@ -1,12 +1,15 @@
 #lang :tuna/prelude
 ;;; The session plugin (startup tier; ADR 5): keeps the session slots
 ;;; plugins register, and saves them in $XDG_STATE_HOME/tuna/session.ss. It
-;;; saves while the editor is idle, when anything changed, and when the
-;;; program saves it on exit; the program restores it once the configured
-;;; plugins are active. After that, a plugin turned on later (by a reload
-;;; of init.ss) gets its slots' saved data once it is active, and a slot's
-;;; data is kept in memory when its plugin turns off, so a new version of
-;;; the plugin gets the latest state rather than what the file held.
+;;; saves `save-delay` ms after a task other than its own save ran, unless
+;;; input is waiting (the input's tasks ask again), so an editor where
+;;; nothing runs saves nothing and wakes nothing. It writes the file only
+;;; when anything changed, and the program saves it on exit. The program
+;;; restores it once the configured plugins are active. After that, a
+;;; plugin turned on later (by a reload of init.ss) gets its slots' saved
+;;; data once it is active, and a slot's data is kept in memory when its
+;;; plugin turns off, so a new version of the plugin gets the latest state
+;;; rather than what the file held.
 ;;;
 ;;; The file holds one datum, (tuna-session 1 (SLOT VERSION DATA) ...),
 ;;; written with `write`. It is read with `read` and validated as plain
@@ -18,6 +21,7 @@
         :tuna/kernel
         :tuna/configuration
         :tuna/lib/timers
+        :tuna/lib/plugin-options
         :tuna/plugins/session/contract)
 (export session
         session-state-directory)
@@ -25,8 +29,6 @@
 ;; The state directory; #f means $XDG_STATE_HOME/tuna, or
 ;; ~/.local/state/tuna when that is unset. Tests point it elsewhere.
 (def session-state-directory (make-parameter #f))
-
-(def save-interval 2.)                  ; seconds between idle saves
 
 (def format-version 1)
 
@@ -284,7 +286,15 @@
           (lambda (owners apply rollback) (restart! self owners apply rollback))))
       (context-add-hook! ctx plugin-activated-hook 'session
                          (lambda ((p : plugin)) (restore-plugin-slots! self p)))
-      (context-run-with-timer! ctx save-interval save-interval
-                               (lambda () (unless (input-pending?) (save! self)))
-                               name: 'save-session)
+      (let (saving (context-run-with-timer! ctx (/ (plugin-option session 'save-delay) 1000.) #f
+                                            (lambda () (unless (input-pending?) (save! self)))
+                                            name: 'save-session))
+        (context-add-hook! ctx task-finished-hook 'session
+                           (lambda (id (name : :symbol) how)
+                             (unless (eq? name 'save-session)
+                               (restart-timer saving)))))
       (context-provide! ctx session-service (Session self)))))
+
+(defplugin-options session
+  (save-delay 2000 "Milliseconds after a task ran before the session is saved."
+              (integer-type 1 3600000)))

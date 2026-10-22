@@ -99,6 +99,28 @@
 (def (has? haystack needle)
   (and (offset needle haystack) #t))
 
+;; The buffer "blocks": a column of a block holding the text "a1".."a3",
+;; a block holding "x1".."x7", and a label.
+(defplugin (block-kinds ctx)
+  "Defines the block and label kinds and adds the buffer blocks."
+  requires: [buffers-service]
+  (context-define-node-kind! ctx 'block)
+  (context-define-node-kind! ctx 'label items: 'whole)
+  (context-define-node-renderer! ctx 'block (lambda (n children) `(div (@ (class "block")) ,@children)))
+  (context-define-node-renderer! ctx 'label (lambda (n children) `(p ,(node-attribute n 'label))))
+  (context-add-buffer!
+   ctx (new-buffer "blocks"
+                   (new-node 'column
+                             children: [(new-node 'block children: [(new-text-node (new-text "a1\na2\na3"))])
+                                        (new-node 'block children: [(new-text-node (new-text "x1\nx2\nx3\nx4\nx5\nx6\nx7"))])
+                                        (new-node 'label attributes: [['label . "one"]])]))))
+
+;; A status line click binding, so status lines are marked clickable.
+(defplugin (status-line-click ctx)
+  "Binds a click on a status line."
+  requires: [input-service]
+  (keymap-set! ctx "<status-line> <mouse-1>" 'ignore #f))
+
 ;; Rows, a node opening into its children, each one item: the buffer
 ;; "rows" holds 1,000 of them.
 (defplugin (row-kinds ctx)
@@ -304,7 +326,8 @@
                         (set-node-children! root [kept (new-node 'counted)])
                         (screen))
                       (iota 1000))
-            (let (cached (hash-get (hash-get (slot-ref rendering 'clients) #f) (view-id (selected-view))))
+            (let (cached (hash-get (slot-ref (hash-get (slot-ref rendering 'clients) #f) 'views)
+                                   (view-id (selected-view))))
               (check (hash-length (slot-ref cached 'nodes)) => 4)
               (hash-clear! renders)
               (screen)
@@ -325,9 +348,48 @@
          (let (first (screen))
            (check [(renders-of "a") (renders-of "b")] => [2 3])
            (hash-clear! renders)
-           ;; Nothing changed: the same screen, without calling them.
-           (check (screen) => first)
+           ;; Nothing changed: the very same screen, without calling them.
+           (check (eq? (screen) first) => #t)
            (check [(renders-of "a") (renders-of "b")] => [0 0])))))
+
+    (test-case "idle: a screen is drawn again after a change by any owner of what it shows"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (two-counted-views!)
+         (let* ((c (make-client "a"))
+                (last (screen c))
+                (changed? (lambda (change)
+                            (change)
+                            (let (now (screen c))
+                              (begin0 (not (eq? now last))
+                                (set! last now))))))
+           ;; Buffers: a node, a buffer's name, its own setting, the
+           ;; selected view, and what the client measured.
+           (check (changed? (lambda () (set-node-attribute! (buffer-root (get-buffer "b")) 'label "b!"))) => #t)
+           (check (changed? (lambda () (rename-buffer! (get-buffer "a") "a2"))) => #t)
+           (check (changed? (lambda () (set-buffer-setting! (get-buffer "a2") show-status-line #f))) => #t)
+           (check (changed? (lambda () (set-client-view-drawn-items! (view-client (selected-view) c) 3 3))) => #t)
+           ;; The layout: selecting the other view.
+           (check (changed? (lambda () (select-view (cadr (view-list))))) => #t)
+           ;; Settings: a global value.
+           (check (changed? (lambda () (activate-plugin! remapping))) => #t)
+           (check (changed? (lambda () (deactivate-plugin! remapping))) => #t)
+           ;; Keymaps: a binding a status line's click reads.
+           (activate-plugin! status-line-click)
+           (check (and (string-contains (screen c) "data-clickable") #t) => #t)
+           (set! last (screen c))
+           (check (changed? void) => #f)))))
+
+    (test-case "the status line names the running task, and stops when it ends"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (let (idle (screen))
+           (check (string-contains idle "running") => #f)
+           (start-editor-loop!)
+           (let (running (call-on-editor-loop screen))
+             (check (and (string-contains running " · running call") #t) => #t)
+             (check (eq? (screen) running) => #f)
+             (check (string-contains (screen) "running") => #f))))))
 
     (test-case "HTML reuse: an edit redraws only the changed buffer's parts"
       (call-with-fresh-kernel renderer-plugins
@@ -544,6 +606,30 @@
            (insert "a\nb\n")
            (check (has? (screen) (string-append prefix "25000\">25000<")) => #t)
            (check (has? (screen) (string-append prefix "25002\">25000<")) => #f)))))
+
+    (test-case "scrolling: line ids stay with their text inside a block whose HTML was reused"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (activate-plugin! block-kinds)
+         (let* ((v (selected-view))
+                (b (get-buffer "blocks")))
+           (set-view-buffer v b)
+           (let* ((blocks (node-children (buffer-root b)))
+                  (x (car (node-children (cadr blocks))))
+                  (label (caddr blocks))
+                  (prefix (string-append "id=\"view-" (number->string (view-id v))
+                                         "-node-" (number->string (node-id x)) "-line-")))
+             (check (has? (screen) (string-append prefix "1\">x1<")) => #t)
+             ;; X's block is drawn from its kept HTML, X not visited.
+             (set-node-attribute! label 'label "two")
+             (check (has? (screen) (string-append prefix "7\">x7<")) => #t)
+             ;; A line inserted at X's start: "x1" keeps its id; the new line
+             ;; takes the one before it.
+             (text-replace! (text-node-content x) 1 1 "x0\n")
+             (let (html (screen))
+               (check (has? html (string-append prefix "0\">x0<")) => #t)
+               (check (has? html (string-append prefix "1\">x1<")) => #t)
+               (check (has? html (string-append prefix "7\">x7<")) => #t)))))))
 
     (test-case "scrolling: line ids stay with their text through a line inserted where drawing starts"
       (call-with-fresh-kernel renderer-plugins
