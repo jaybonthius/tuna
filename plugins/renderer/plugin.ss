@@ -63,6 +63,11 @@
 ;;; place), and those inputs. Every redraw still sends the whole visible
 ;;; screen as one fat morph. Kept HTML belongs to the views drawn: a view
 ;;; not drawn, or drawn from another node, drops its own.
+;;;
+;;; Idle: each client's last screen is kept with the generations of what
+;;; it was drawn from (buffers, layout, settings, keymaps) and the running
+;;; task's name, which its status line may show. A screen asked for when
+;;; none of them moved is that same string, drawn again only when one did.
 
 (import (only-in :gerbil/runtime/hash HashTable)
         :std/text/markup/sxml/print
@@ -76,7 +81,6 @@
         :tuna/plugins/layout/contract)
 (export html-renderer)
 
-;; A node's HTML in one view, and what it was drawn from.
 ;; A node's HTML in one view, and what it was drawn from.
 (defstruct kept-html ((revision   : :fixnum)
                       (view-state : :t)          ; see render-node
@@ -101,7 +105,19 @@
                      (pinned-ids : HashTable))
   final: #t)
 
-(defclass html-rendering ((clients : HashTable))  ; client (#f: none) -> view id -> view-html
+;; What is kept for one client: view id -> view-html, and its last screen
+;; (#f before the first) with the generations and the running task's name
+;; it was drawn from.
+(defclass client-screen ((views    : HashTable)
+                         (screen   :? :string)
+                         (buffers  : :fixnum)
+                         (layout   : :fixnum)
+                         (settings : :fixnum)
+                         (keymaps  : :fixnum)
+                         (task     :? :symbol))
+  final: #t)
+
+(defclass html-rendering ((clients : HashTable))  ; client (#f: none) -> client-screen
   final: #t)
 
 ;; Drawing one view: its kept HTML, the nodes from its buffer's root down
@@ -486,21 +502,24 @@
                     ,(status-line-text v selected?))]
                [])))
       ;; Keep only what this drawing drew, descendants of reused HTML
-      ;; included.
-      (let (nodes (make-hash-table-eqv))
+      ;; included, with the line ids pinned for them: a text node drawn as
+      ;; lines inside reused HTML was not visited, so its lines keep the ids
+      ;; pinned when it was drawn.
+      (let ((nodes (make-hash-table-eqv))
+            (pinning (drawing-pinning d)))
         (let keep ((n start) (run run))
-          (hash-put! nodes (node-id n) (hash-ref (drawing-nodes d) (node-id n)))
+          (let (id (node-id n))
+            (hash-put! nodes id (hash-ref (drawing-nodes d) id))
+            (when (and (pair? run) (not (hash-key? pinning id)))
+              (let (pinned (hash-get (drawing-pinned-ids d) id))
+                (when pinned (hash-put! pinning id pinned)))))
           (for-each (lambda ((child-run : :pair)) (keep (car child-run) (cdr child-run)))
                     (drawn-children n run)))
         (set! (view-html-nodes kept) nodes)
-        (set! (view-html-pinned-ids kept) (drawing-pinning d))))))
+        (set! (view-html-pinned-ids kept) pinning)))))
 
-(def (render-screen! (self : html-rendering) (c :? client)) => :string
-  (let* ((views (or (hash-get self.clients c)
-                    (let (views (make-hash-table-eqv))
-                      (hash-put! self.clients c views)
-                      views)))
-         (drawn [])
+(def (draw-screen (views : HashTable) (c :? client)) => :string
+  (let* ((drawn [])
          (layout (render-layout 'html
                                 (lambda (v selected? start)
                                   (set! drawn (cons (view-id v) drawn))
@@ -508,6 +527,38 @@
     (for-each (lambda (id) (unless (memv id drawn) (hash-remove! views id)))
               (hash-keys views))
     (html-string `(main (@ (id "screen") (class "screen")) ,layout))))
+
+;; Client C's screen: its last one when no generation moved and the same
+;; task runs, otherwise drawn again. The generations are read before
+;; drawing, so a change made while drawing draws again next time.
+(def (render-screen! (self : html-rendering) (c :? client)) => :string
+  (let ((kept (or (hash-get self.clients c)
+                  (let (new (client-screen views: (make-hash-table-eqv) screen: #f
+                                           buffers: 0 layout: 0 settings: 0 keymaps: 0 task: #f))
+                    (hash-put! self.clients c new)
+                    new)))
+        (buffers (buffers-generation))
+        (layout (layout-generation))
+        (settings (settings-generation))
+        (keymaps (keymap-generation))
+        (task (current-task-name)))
+    (using (kept : client-screen)
+      (let (previous kept.screen)
+        (if (and previous
+                 (fx= kept.buffers buffers)
+                 (fx= kept.layout layout)
+                 (fx= kept.settings settings)
+                 (fx= kept.keymaps keymaps)
+                 (eq? kept.task task))
+          (:- previous :string)
+          (let (screen (draw-screen kept.views c))
+            (set! kept.screen screen)
+            (set! kept.buffers buffers)
+            (set! kept.layout layout)
+            (set! kept.settings settings)
+            (set! kept.keymaps keymaps)
+            (set! kept.task task)
+            screen))))))
 
 (defmethod {render-screen html-rendering}
   (lambda (self c) (render-screen! self c)))

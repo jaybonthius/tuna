@@ -17,7 +17,8 @@ prelude: :gerbil/core
         call-with-settings
         setting-value
         context-set-setting!
-        context-add-setting-scope!)
+        context-add-setting-scope!
+        settings-generation)
 
 (defstruct setting ((name    : :symbol)
                     (default : :t)
@@ -61,12 +62,31 @@ prelude: :gerbil/core
 (def (setting-value (s : setting)) => :t
   (with-service-provider (provider settings-service Settings) (Settings-resolve provider s (current-setting-bindings))))
 
+;; A number that changes whenever a global value or a scope is added or
+;; removed (with its plugin), so what a setting resolves to outside the
+;; dynamic layer may have changed. What a scope looks up (a buffer's own
+;; values) is its owner's to count. The contract's, not a provider's, so a
+;; new provider never repeats a number. On the baton only.
+(def generation 0)
+
+(def (settings-generation) => :fixnum
+  (:- generation :fixnum))
+
+(def (settings-changed!) => :void
+  (set! generation (fx1+ (settings-generation))))
+
 (def (context-set-setting! (ctx : context) (s : setting) (value : :t)) => :void
-  (:- (with-service-provider (provider settings-service Settings) (Settings-add-global-value! provider ctx s value)) :void))
+  (:- (with-service-provider (provider settings-service Settings)
+        (context-defer! ctx settings-changed!)
+        (Settings-add-global-value! provider ctx s value)
+        (settings-changed!)) :void))
 
 (def (context-add-setting-scope! (ctx : context)
                                  (name : :symbol)
                                  (lookup : :procedure)
                                  priority: (priority : :fixnum := 0))
   => :void
-  (:- (with-service-provider (provider settings-service Settings) (Settings-add-scope! provider ctx name lookup priority)) :void))
+  (:- (with-service-provider (provider settings-service Settings)
+        (context-defer! ctx settings-changed!)
+        (Settings-add-scope! provider ctx name lookup priority)
+        (settings-changed!)) :void))
