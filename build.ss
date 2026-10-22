@@ -11,7 +11,7 @@
      "version"
      "kernel/ids" "kernel/entries" "kernel/state" "kernel/tasks"
      "kernel/plugins" "kernel/hooks" "kernel/loop" "kernel"
-     "lib/timers" "lib/jobs" "lib/plugin-options" "lib/configuration" "lib/advice"
+     "lib/timers" "lib/jobs" "lib/plugin-options" "lib/configuration" "lib/advice" "lib/memo"
      "configuration" "prelude" "config" "plugin-use" "config-blocks"
      (gxc: "boot" (extra-inputs: ("../starter/init.ss")))
      "control"
