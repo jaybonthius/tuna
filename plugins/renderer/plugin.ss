@@ -34,10 +34,10 @@
 ;;; from what the browser measures. Until it has measured the view there
 ;;; are no spacers. A spacer in view asks the page to report
 ;;; (data-on-intersect), whatever brought it there. Each drawn item's
-;;; element carries its token (data-item); a line's id stays with its
-;;; text, through scrolling and
-;;; through edits above it, so a morph moves lines rather than rewriting
-;;; them and the browser's scroll anchoring holds what you read still. The
+;;; element carries its token (data-item); a line's token and id stay with
+;;; its text, through scrolling and through edits around it (Line
+;;; identity, below), so a morph moves lines rather than rewriting them
+;;; and the browser's scroll anchoring holds what you read still. The
 ;;; scroller carries what its report trigger needs (the web transport's
 ;;; tunaScroll action): the drawn-screens setting, whether the run starts
 ;;; at the first item and ends at the last, the view size last measured
@@ -58,8 +58,16 @@
 ;;; the running task's name, which the selected view's status line shows;
 ;;; a view's, the node it is drawn from and, when it is selected, that
 ;;; name; a node's, which of its items are drawn. A view's section element
-;;; is not a piece: the layout adds its own attributes to it. Pieces hold what they drew from
-;;; them, so an unchanged subtree is reused by one check, and the screen
+;;; is not a piece: the layout adds its own attributes to it. A text
+;;; node's piece draws each of its lines as a piece of its own, whose
+;;; inputs are values: the line's characters, its runs of faces, the
+;;; cursor's column in it and its birth; never its position or the text's
+;;; revision. So a key draws one line again, moving point one or two, and
+;;; a line inserted above the others none of them; what those values come
+;;; from (one piece per text node and view, which reads the text and its
+;;; highlights) is worked out again, but no other line is drawn. Pieces
+;;; hold what they drew from them, so an unchanged subtree is reused by
+;;; one check, and the screen
 ;;; asked for when nothing changed is the very same string. Every redraw
 ;;; still sends the whole visible screen as one fat morph. A view reads
 ;;; what its client's browser measured, so screens and views are each
@@ -67,15 +75,25 @@
 ;;; items of it. So a node renderer must draw only from its node, its
 ;;; children's renderings (opaque HTML fragments to place), and what it
 ;;; reads through contracts' accessors. Drawing writes nothing: before it,
-;;; each client's views of the views shown are made; after it, line ids
-;;; are pinned again (below).
+;;; each client's views of the views shown are made; after it, the births
+;;; of the lines drawn are kept (below).
 ;;;
-;;; Line ids: each view keeps, for each text node it draws as lines, where
-;;; the line ids are pinned (line-ids), shared by every client. Drawing
-;;; reads them; after a screen is drawn they are pinned again at the first
-;;; line each text node draws, which gives every line the id it already
-;;; has, so it changes no HTML, and keeps the ids of lines below an edit
-;;; above them. Pins of views no client's last screen drew are dropped.
+;;; Line identity: a line a view draws is named by its birth, (END .
+;;; REVISION), a position in it and the text's character revision when
+;;; the view first drew it (its end then). Its token is a line item's,
+;;; "N.END.REVISION", which the buffers contract resolves through the
+;;; text's journal, and its element id is view-V-node-N-line-END-REVISION.
+;;; Each view keeps, for each text node, the births of the lines it drew
+;;; (line-births), shared by every client; drawing reads them, moved
+;;; through the text's changes since (births-now): a line keeps its birth
+;;; while a position of it moves with edits as point does, so typing in a
+;;; line keeps it, and so does a line inserted where it starts, which is
+;;; born anew; a line that has none is born when it is drawn. After a
+;;; screen is drawn, the births of the lines it drew are kept at the
+;;; text's revision, which gives every line the birth it was drawn with,
+;;; so it changes no HTML; births of lines no client's last screen drew
+;;; are dropped. A birth from a revision the text's journal no longer
+;;; reaches is born again, since its token would name nothing.
 
 (import (only-in :gerbil/runtime/hash HashTable)
         :std/text/markup/sxml/print
@@ -90,42 +108,49 @@
         :tuna/plugins/layout/contract)
 (export html-renderer)
 
-;; Where a view's line ids are pinned in one text node: the line ending
-;; at POSITION, at character revision REVISION, which was line LINE then,
-;; had id ID. A line's end moves with its text when a line is inserted
-;; where it starts, so its id does too.
-(defstruct line-ids ((position : :fixnum)
-                     (revision : :fixnum)
-                     (line     : :fixnum)
-                     (id       : :fixnum))
+;; The births of the lines of one text node as a view drew them (see
+;; Line identity in the header): at character revision REVISION, entry I
+;; is a line holding position (vector-ref ENDS I), which was line
+;; (vector-ref LINES I), born (vector-ref BIRTHS I); ENDS ascending.
+;; CURRENT caches what they are at a later revision: (REVISION .
+;; line-births), which changes how they are kept, never what they are.
+(defclass line-births ((revision : :fixnum)
+                       (ends     : :vector)
+                       (lines    : :vector)
+                       (births   : :vector)
+                       (current  :? :pair))
   final: #t)
 
-;; What a client's last screen was, and the ids of the views it drew.
+;; What a client's last screen was, and the births of the lines it drew:
+;; ((VIEW-ID NODE-ID . BIRTHS) ...), BIRTHS a vector.
 (defclass client-screen ((screen : :string)
-                         (views  : :list))
+                         (drawn  : :list))
   final: #t)
 
-;; PIECES: the screens, views and nodes drawn. PINS: view id -> text node
-;; id -> line-ids. SCREENS: client (#f: none) -> client-screen.
+;; PIECES: the screens, views, nodes and lines drawn. BIRTHS: view id ->
+;; text node id -> line-births. SCREENS: client (#f: none) ->
+;; client-screen.
 (defclass html-rendering ((pieces  : memo-cache)
-                          (pins    : HashTable)
+                          (births  : HashTable)
                           (screens : HashTable))
   final: #t)
 
-;; The lines FIRST to LAST (from 1) of text node TEXT-NODE drawn as items,
-;; with ID-OFFSET added to their numbers for their element ids.
+;; The lines FIRST to LAST (from 1) of text node TEXT-NODE, drawn by
+;; RENDERING, as items when ITEMS? (each with its token and an element
+;; id), or whole inside an item.
 (defstruct line-run ((text-node : node)
                      (first     : :fixnum)
                      (last      : :fixnum)
-                     (id-offset : :fixnum))
+                     (items?    : :boolean)
+                     (rendering : html-rendering))
   final: #t)
 
 ;; The view whose buffer is being rendered: where its text nodes show point.
 ;; Each node's piece binds it from its key.
 (def rendering-view (make-parameter #f))
 
-;; The line-run of the text node being rendered, or #f when it is drawn
-;; whole inside an item. Each node's piece binds it from its inputs.
+;; The line-run of the text node being rendered. Each text node's piece
+;; binds it from its inputs.
 (def rendering-lines (make-parameter #f))
 
 ;; The element id of view V.
@@ -185,7 +210,10 @@
 (def (draw-node (self : html-rendering) (v : view) (n : node) (run : :t)) => :string
   (let* ((kind (node-kind n))
          (render (node-renderer kind))
-         (lines (and (pair? run) (eq? (node-opening n) 'lines) (line-run-of self v n run)))
+         (lines (and (eq? (node-opening n) 'lines)
+                     (if (pair? run)
+                       (make-line-run n (fx1+ (: (car run) :fixnum)) (fx1+ (: (cdr run) :fixnum)) #t self)
+                       (make-line-run n 1 (text-line-count (text-node-content n)) #f self))))
          (children (map (lambda ((child-run : :pair)) (render-node self v (car child-run) (cdr child-run)))
                         (drawn-children n run))))
     (parameterize ((rendering-view v)
@@ -198,107 +226,250 @@
                  ,@(if (null? children) [(node-text-projection n)] children)))
          (eq? run 'item))))))
 
-;; The pin of view V's line ids in text node N, or #f.
-(def (pin-of (self : html-rendering) (v : view) (n : node)) => (Maybe line-ids)
-  (let (pins (hash-get self.pins (view-id v)))
-    (and pins (hash-get pins (node-id n)))))
+;;; Line identity
 
-;; The offset of view V's line ids in text node N from the line numbers,
-;; by its pin (0 without one).
-(def (line-id-offset (self : html-rendering) (v : view) (n : node)) => :fixnum
-  (let (pinned (pin-of self v n))
-    (if pinned
-      (using (pinned : line-ids)
-        (let (t (text-node-content n))
-          (fx- pinned.id (text-line-at t (relocate-position t pinned.position pinned.revision)))))
-      0)))
+;; The line-births of the lines of T that V drew in N, as kept: at T's
+;; revision R, from KEPT (#f: none), moved through T's changes since.
+;; Each change keeps the lines of positions before it, gives positions in
+;; what it removed the line of its start, and moves the lines of
+;; positions after it by its change in newlines; so no line is looked up.
+;; Of entries that land on one line, the first keeps it. Without changes
+;; since KEPT's revision in the journal, nothing is kept. Births whose
+;; revision the journal no longer reaches are born again at R.
+(def (births-now (t : text) (kept :? line-births)) => line-births
+  (let ((r (text-chars-revision t))
+        (none (lambda ((r : :fixnum)) (line-births revision: r ends: (vector) lines: (vector) births: (vector) current: #f))))
+    (cond
+     ((not kept) (none r))
+     ((fx= (line-births-revision kept) r) kept)
+     ((let (current (line-births-current kept)) (and current (fx= (car current) r) (cdr current)))
+      => values)
+     (else
+      (using (kept : line-births)
+        (let* ((changes (text-changes-since t kept.revision))
+               (now (if changes (moved-births t kept changes r) (none r))))
+          (set! kept.current (cons r now))
+          now))))))
 
-;; The line-run drawing text node N's items RUN (from 0) in view V, with
-;; line ids following the text from where V's ids are pinned.
-(def (line-run-of (self : html-rendering) (v : view) (n : node) (run : :pair)) => line-run
-  (make-line-run n (fx1+ (: (car run) :fixnum)) (fx1+ (: (cdr run) :fixnum)) (line-id-offset self v n)))
+(def (newlines (s : :string) (end : :fixnum)) => :fixnum
+  (let lp ((i 0) (count 0))
+    (if (fx< i end)
+      (lp (fx1+ i) (if (char=? (string-ref s i) #\newline) (fx1+ count) count))
+      count)))
 
-;; After drawing: pin V's line ids in text node N, drawn from line FIRST,
-;; at that line, which keeps every line's id; unless they are pinned there
-;; already. In test mode, check that the ids stay.
-(def (pin-line-ids! (self : html-rendering) (v : view) (n : node) (first : :fixnum)) => :void
-  (let ((t (text-node-content n))
-        (pinned (pin-of self v n)))
-    (unless (and pinned
-                 (using (pinned : line-ids)
-                   (and (fx= pinned.line first) (fx= pinned.revision (text-chars-revision t)))))
-      (let ((offset (line-id-offset self v n))
-            (pins (or (hash-get self.pins (view-id v))
-                      (let (new (make-hash-table-eqv))
-                        (hash-put! self.pins (view-id v) new)
-                        new))))
-        (hash-put! pins (node-id n)
-                   (make-line-ids (text-line-end t first) (text-chars-revision t) first (fx+ first offset)))
-        (when (and (memo-checking?) (not (fx= offset (line-id-offset self v n))))
-          (error "Pinning line ids again changed them" (view-id v) (node-id n)))))))
+;; KEPT's entries moved through CHANGES to T's revision R (births-now).
+(def (moved-births (t : text) (kept : line-births) (changes : :list) (r : :fixnum)) => line-births
+  (let* ((size (vector-length kept.ends))
+         (ends (vector-copy kept.ends))
+         (lines (vector-copy kept.lines)))
+    (for-each
+     (lambda ((c : change))
+       (let* ((removed (string-length (change-removed c)))
+              (edit-end (fx+ (change-start c) removed))
+              (shift (fx- (string-length (change-inserted c)) removed))
+              (line-shift (fx- (newlines (change-inserted c) (string-length (change-inserted c)))
+                               (newlines (change-removed c) removed))))
+         (let lp ((i 0))
+           (when (fx< i size)
+             (let (position (vector-ref ends i))
+               (cond
+                ((fx<= position (change-start c)) (void))
+                ((fx>= position edit-end)
+                 (vector-set! ends i (fx+ position shift))
+                 (vector-set! lines i (fx+ (vector-ref lines i) line-shift)))
+                (else
+                 (vector-set! ends i (change-start c))
+                 (vector-set! lines i (fx- (vector-ref lines i)
+                                           (newlines (change-removed c) (fx- position (change-start c))))))))
+             (lp (fx1+ i))))))
+     changes)
+    ;; One entry per line, the first; births the journal reaches.
+    (let ((reached (make-hash-table-eqv)))
+      (def (reached? (revision : :fixnum))
+        (let (known (hash-ref reached revision 'unknown))
+          (if (eq? known 'unknown)
+            (let (yes (and (text-changes-since t revision) #t))
+              (hash-put! reached revision yes)
+              yes)
+            known)))
+      (let lp ((i 0) (last-line 0) (out-ends []) (out-lines []) (out-births []))
+        (if (fx< i size)
+          (let ((line (vector-ref lines i))
+                (birth (vector-ref kept.births i)))
+            (if (fx= line last-line)
+              (lp (fx1+ i) last-line out-ends out-lines out-births)
+              (lp (fx1+ i) line (cons (vector-ref ends i) out-ends) (cons line out-lines)
+                  (cons (if (reached? (cdr birth)) birth (cons (text-line-end t line) r)) out-births))))
+          (line-births revision: r ends: (list->vector (reverse out-ends)) lines: (list->vector (reverse out-lines))
+                       births: (list->vector (reverse out-births)) current: #f))))))
 
-;; A text node: one element per line, with the cursor when the node has
-;; the rendered view's focus; only the lines drawn as items, each with its
-;; token and an id that stays with its text, when it is drawn as items.
-(def (render-text-node (n : node) (children : :list)) => :list
+;; Where LINE is among NOW's entries, or #f.
+(def (entry-of (now : line-births) (line : :fixnum)) => (Maybe :fixnum)
+  (let ((lines (line-births-lines now)))
+    (let search ((low 0) (high (vector-length lines)))
+      (and (fx< low high)
+           (let* ((middle (fxquotient (fx+ low high) 2))
+                  (at (vector-ref lines middle)))
+             (cond
+              ((fx= at line) middle)
+              ((fx< at line) (search (fx1+ middle) high))
+              (else (search low middle))))))))
+
+;; The birth of LINE of T, by NOW (births-now): its entry's, or, without
+;; one, now: (its end . T's revision).
+(def (line-birth (t : text) (now : line-births) (line : :fixnum)) => :pair
+  (let (i (entry-of now line))
+    (if i
+      (vector-ref (line-births-births now) i)
+      (cons (text-line-end t line) (line-births-revision now)))))
+
+;; What V's births of N's lines are now (births-now).
+(def (view-births-now (self : html-rendering) (v : view) (n : node)) => line-births
+  (births-now (text-node-content n)
+              (let (kept (hash-get self.births (view-id v)))
+                (and kept (hash-get kept (node-id n))))))
+
+;; The token of N's line born BIRTH: a line item's, "N.P.R", by the
+;; position and revision it was born at.
+(def (birth-token (n : node) (birth : :pair)) => :string
+  (string-append (number->string (node-id n)) "." (number->string (car birth)) "." (number->string (cdr birth))))
+
+;;; Lines
+
+;; What each of N's lines FIRST to LAST in V draws from, but for the
+;; cursor: [END REVISION ITEMS? TEXT FACES], END and REVISION its birth,
+;; TEXT its characters, FACES its runs of faced characters, (START-COLUMN
+;; END-COLUMN . FACE), through the face-remapping of V's buffer. Spans
+;; overlapping a line apply in the order text-highlights-in gives them,
+;; later over earlier.
+(def (line-descriptors (self : html-rendering) (v : view) (n : node) (first : :fixnum) (last : :fixnum)
+                       (items? : :boolean))
+  => :vector
   (let* ((t (text-node-content n))
-         (v (rendering-view))
-         (b (and v (view-showing v)))
-         (position (and v (eq? n (view-node v)) (view-point v)))
-         (cursor-class (if (eq? v (selected-view)) "cursor" "inactive-cursor"))
-         (cursor-line (and position (text-line-at t position)))
-         (cursor-column (and position (text-column t position)))
-         (lines (let (run (rendering-lines))
-                  (and run (eq? (line-run-text-node run) n) (:- run line-run))))
-         (first (if lines (line-run-first lines) 1))
-         (last (if lines (line-run-last lines) (text-line-count t)))
+         (b (view-showing v))
+         (now (view-births-now self v n))
          (drawn-start (text-line-start t first))
          (drawn-end (text-line-end t last))
-         (spans (map (lambda ((s : span))
-                       (if b
-                         (make-span (span-start s) (span-end s) (remapped-face (span-value s) b))
-                         s))
-                     (text-highlights-in t drawn-start drawn-end)))
-         (line-id-prefix (and lines v
-                              (string-append (view-element-id v) "-node-" (number->string (node-id n)) "-line-"))))
-    `(div (@ (class "text"))
-          ,@(let lp ((line last) (out []))
-              (if (fx< line first)
-                out
-                (let* ((start (text-line-start t line))
-                       (end (text-line-end t line)))
-                  (lp (fx1- line)
-                      (cons (render-line (text-substring t start end) start
-                                         (filter (lambda ((s : span))
-                                                   (and (fx< (span-start s) end)
-                                                        (fx> (span-end s) start)))
-                                                 spans)
-                                         (and (eqv? line cursor-line) cursor-column)
-                                         cursor-class
-                                         (if lines
-                                           (cons ['data-item (item-token (node-item-at n (fx1- line)))]
-                                                 (if line-id-prefix
-                                                   [['id (string-append line-id-prefix
-                                                                        (number->string
-                                                                         (fx+ line (line-run-id-offset lines))))]]
-                                                   []))
-                                           []))
-                            out))))))))
+         (spans (list->vector (text-highlights-in t drawn-start drawn-end)))
+         ;; Span indexes ordered by start, and those that may overlap the
+         ;; line being worked out, in order.
+         (by-start (list->vector (list-sort (lambda ((i : :fixnum) (j : :fixnum))
+                                              (fx< (span-start (vector-ref spans i)) (span-start (vector-ref spans j))))
+                                            (iota (vector-length spans)))))
+         (faces-of (make-hash-table-eq))
+         (out (make-vector (fx1+ (fx- last first)) #f)))
+    (def (face (s : span)) => :symbol
+      (let (value (span-value s))
+        (or (hash-get faces-of value)
+            (let (remapped (remapped-face value b))
+              (hash-put! faces-of value remapped)
+              remapped))))
+    (let lp ((line first) (next 0) (active []))
+      (when (fx<= line last)
+        (let* ((start (text-line-start t line))
+               (end (text-line-end t line))
+               (content (text-substring t start end)))
+          ;; Spans starting before the line's end join; those ending at or
+          ;; before its start leave.
+          (let add ((next next) (active active))
+            (if (and (fx< next (vector-length by-start))
+                     (fx< (span-start (vector-ref spans (vector-ref by-start next))) end))
+              (add (fx1+ next) (cons (vector-ref by-start next) active))
+              (let* ((active (filter (lambda ((i : :fixnum)) (fx> (span-end (vector-ref spans i)) start)) active))
+                     (birth (line-birth t now line)))
+                (vector-set! out (fx- line first)
+                             [(car birth) (cdr birth) items? content
+                              (face-runs (string-length content) start
+                                         (map (lambda ((i : :fixnum)) (vector-ref spans i)) (list-sort fx< active))
+                                         face)])
+                (lp (fx1+ line) next active)))))))
+    out))
 
-;; One line starting at text position START, with ATTRIBUTES besides its
-;; class: runs of characters with the same face, and the cursor character
-;; alone at column CURSOR, with the class CURSOR-CLASS.
-(def (render-line (content : :string) (start : :fixnum) (spans : :list) (cursor :? :fixnum)
-                  (cursor-class : :string) (attributes : :list))
+;; The runs of faced characters of a line of SIZE characters starting at
+;; text position START, under SPANS (later over earlier):
+;; ((START-COLUMN END-COLUMN . FACE) ...).
+(def (face-runs (size : :fixnum) (start : :fixnum) (spans : :list) (face : :procedure)) => :list
+  (if (null? spans)
+    []
+    (let (faces (make-vector size #f))
+      (for-each (lambda ((s : span))
+                  (let (f (face s))
+                    (let lp ((i (fxmax 0 (fx- (span-start s) start))))
+                      (when (fx< i (fxmin size (fx- (span-end s) start)))
+                        (vector-set! faces i f)
+                        (lp (fx1+ i))))))
+                spans)
+      (let lp ((i 0) (out []))
+        (cond
+         ((fx>= i size) (reverse out))
+         ((vector-ref faces i)
+          => (lambda (f)
+               (let run ((j (fx1+ i)))
+                 (if (and (fx< j size) (eq? (vector-ref faces j) f))
+                   (run (fx1+ j))
+                   (lp j (cons (cons* i j f) out))))))
+         (else (lp (fx1+ i) out)))))))
+
+;; A text node: one element per line, each drawn as its own piece, with
+;; the cursor when the node has the rendered view's focus; only the lines
+;; drawn as items, each with its token and an id that stays with its
+;; text, when it is drawn as items (see Line identity).
+(def (render-text-node (n : node) (children : :list)) => :list
+  (using (lines (rendering-lines) : line-run)
+    (let* ((v (rendering-view))
+           (self lines.rendering)
+           (first lines.first)
+           (last lines.last)
+           (items? lines.items?)
+           (descriptors (memo ['lines (view-id v) (node-id n)] [first last items?]
+                              (lambda (inputs) (line-descriptors self v n first last items?))))
+           (t (text-node-content n))
+           (position (and (eq? n (view-node v)) (view-point v)))
+           (cursor-line (and position (text-line-at t position)))
+           (cursor (and position
+                        (cons (text-column t position) (if (eq? v (selected-view)) "cursor" "inactive-cursor")))))
+      `(div (@ (class "text"))
+            ,@(let lp ((line last) (out []))
+                (if (fx< line first)
+                  out
+                  (let (d (vector-ref descriptors (fx- line first)))
+                    (lp (fx1- line)
+                        (cons ['*unencoded*
+                               (memo ['line (view-id v) (node-id n) (car d) (cadr d)]
+                                     (append d [(and (eqv? line cursor-line) cursor)])
+                                     (lambda (inputs) (draw-line v n inputs)))]
+                              out)))))))))
+
+;; A line of N in V from its inputs, [END REVISION ITEMS? TEXT FACES
+;; CURSOR] (line-descriptors): runs of characters with the same face, and
+;; the cursor character alone at CURSOR's column, with its class; as an
+;; item, with its token and its element id.
+(def (draw-line (v : view) (n : node) (inputs : :list)) => :string
+  (match inputs
+    ([end revision items? content faces cursor]
+     (html-string
+      (render-line content faces (and cursor (car cursor)) (if cursor (cdr cursor) "")
+                   (if items?
+                     (let (birth (cons end revision))
+                       [['data-item (birth-token n birth)]
+                        ['id (string-append (view-element-id v) "-node-" (number->string (node-id n))
+                                            "-line-" (number->string end) "-" (number->string revision))]])
+                     []))))))
+
+;; One line, with ATTRIBUTES besides its class: runs of characters with
+;; the same face (FACES, as face-runs gives them), and the cursor
+;; character alone at column CURSOR, with the class CURSOR-CLASS.
+(def (render-line (content : :string) (faces : :list) (cursor :? :fixnum) (cursor-class : :string)
+                  (attributes : :list))
   => :list
   (let* ((size (string-length content))
-         (faces (make-vector size #f)))
-    (for-each (lambda ((s : span))
-                (let lp ((i (fxmax 0 (fx- (span-start s) start))))
-                  (when (fx< i (fxmin size (fx- (span-end s) start)))
-                    (vector-set! faces i (span-value s))
+         (face-at (make-vector size #f)))
+    (for-each (lambda ((run : :pair))
+                (let lp ((i (car run)))
+                  (when (fx< i (cadr run))
+                    (vector-set! face-at i (cddr run))
                     (lp (fx1+ i)))))
-              spans)
+              faces)
     `(div (@ (class "line") ,@attributes)
           ,@(let lp ((i 0) (out []))
               (cond
@@ -306,13 +477,13 @@
                 (reverse (if (eqv? cursor size) (cons (cursor-span cursor-class " " #f) out) out)))
                ((eqv? i cursor)
                 (lp (fx1+ i) (cons (cursor-span cursor-class (substring content i (fx1+ i))
-                                                (vector-ref faces i))
+                                                (vector-ref face-at i))
                                    out)))
                (else
-                (let* ((face (vector-ref faces i))
+                (let* ((face (vector-ref face-at i))
                        (end (let run ((j (fx1+ i)))
                               (if (and (fx< j size) (not (eqv? j cursor))
-                                       (eq? (vector-ref faces j) face))
+                                       (eq? (vector-ref face-at j) face))
                                 (run (fx1+ j))
                                 j)))
                        (characters (substring content i end)))
@@ -366,8 +537,9 @@
 ;; client whose view of it is CV: its id carries the newest placement sent
 ;; to the client, so the browser runs its constant data-init (tunaPlace)
 ;; once per placement and on a freshly loaded page. Without a target among
-;; START's items, the view goes to its start.
-(def (placement-marker (v : view) (cv : client-view) (start : node)) => :list
+;; START's items, the view goes to its start. The target is named by the
+;; token its element carries (drawn-token).
+(def (placement-marker (self : html-rendering) (v : view) (cv : client-view) (start : node)) => :list
   (let* ((p (client-view-placement cv))
          (number (number->string (placement-number p)))
          (target (let (it (placement-target p))
@@ -376,9 +548,17 @@
              (id ,(string-append (view-element-id v) "-placement-" number))
              (data-init "@tunaPlace()")
              (data-placement ,number)
-             ,@(if target [['data-target (item-token target)]] [])
+             ,@(if target [['data-target (drawn-token self v target)]] [])
              (data-align ,(symbol->string (placement-align p)))
              (data-offset ,(number->string (placement-offset p)))))))
+
+;; The token IT's element carries in V: a line's by its birth.
+(def (drawn-token (self : html-rendering) (v : view) (it : item)) => :string
+  (let ((n (item-node it))
+        (line (item-line it)))
+    (if line
+      (birth-token n (line-birth (text-node-content n) (view-births-now self v n) line))
+      (item-token it))))
 
 ;; The px ITEMS items take at AVERAGE px each, rounded to a whole px.
 (def (items-pixels (average : :flonum) (items : :fixnum)) => :string
@@ -480,7 +660,7 @@
         (html-string
          (cons `(article (@ (class "buffer") (aria-label ,(buffer-name b))
                             ,@(scroller-attributes v cv start first last count))
-                         ,(placement-marker v cv start)
+                         ,(placement-marker self v cv start)
                          ,@above
                          ,(render-node self v start (item-run start first last))
                          ,@below
@@ -497,30 +677,106 @@
    `(main (@ (id "screen") (class "screen"))
           ,(render-layout 'html (lambda (v selected? start) (render-view self c v selected? start command))))))
 
-;; After drawing SCREEN for client C, when it is a new one: pin the line
-;; ids of the text nodes each view drew as lines at the first line drawn,
-;; and drop the pins of views no client's last screen drew.
+;; After drawing SCREEN for client C, when it is a new one: keep the
+;; births of the lines of each text node each view drew (keep-births!),
+;; and drop those of lines no client's last screen drew.
 (def (after-drawing! (self : html-rendering) (c :? client) (screen : :string)) => :void
   (let (kept (hash-get self.screens c))
     (unless (and kept (eq? (client-screen-screen kept) screen))
-      (let (views (render-layout 'views
-                                 (lambda (v selected? start)
-                                   (using (drawn (items-drawn (view-client v c) start) : drawn-items)
-                                     (let pin ((n start) (run (item-run start drawn.first drawn.last)))
-                                       (when (and (pair? run) (eq? (node-opening n) 'lines))
-                                         (pin-line-ids! self v n (fx1+ (: (car run) :fixnum))))
-                                       (for-each (lambda ((child-run : :pair)) (pin (car child-run) (cdr child-run)))
-                                                 (drawn-children n run))))
-                                   (view-id v))))
-        (hash-put! self.screens c (client-screen screen: screen views: views))
-        (drop-unused-pins! self)))))
+      (let (drawn [])
+        (render-layout 'views
+                       (lambda (v selected? start)
+                         (using (items (items-drawn (view-client v c) start) : drawn-items)
+                           (let walk ((n start) (run (item-run start items.first items.last)))
+                             (if (eq? (node-opening n) 'lines)
+                               (let (t (text-node-content n))
+                                 (set! drawn (cons (keep-births! self v n
+                                                                 (if (pair? run) (fx1+ (: (car run) :fixnum)) 1)
+                                                                 (if (pair? run) (fx1+ (: (cdr run) :fixnum)) (text-line-count t)))
+                                                   drawn)))
+                               (for-each (lambda ((child-run : :pair)) (walk (car child-run) (cdr child-run)))
+                                         (drawn-children n run)))))))
+        (hash-put! self.screens c (client-screen screen: screen drawn: drawn))
+        (drop-undrawn-births! self)))))
 
-;; Drop the pins of views no client's last screen drew.
-(def (drop-unused-pins! (self : html-rendering)) => :void
-  (let (drawn (hash-fold (lambda (c (kept : client-screen) (ids : :list)) (append kept.views ids))
-                         [] self.screens))
-    (for-each (lambda (id) (unless (memv id drawn) (hash-remove! self.pins id)))
-              (hash-keys self.pins))))
+;; After drawing N's lines FIRST to LAST in V: keep their births, with
+;; the entries kept before, at the text's revision, which gives every line
+;; the birth it was drawn with. Returns (VIEW-ID NODE-ID . BIRTHS), BIRTHS
+;; the drawn lines' births. In test mode, check that the births stay.
+(def (keep-births! (self : html-rendering) (v : view) (n : node) (first : :fixnum) (last : :fixnum)) => :pair
+  (let* ((t (text-node-content n))
+         (now (view-births-now self v n))
+         (births (make-vector (fx1+ (fx- last first)) #f)))
+    (let lp ((line first))
+      (when (fx<= line last)
+        (vector-set! births (fx- line first) (line-birth t now line))
+        (lp (fx1+ line))))
+    (let ((kept (hash-get self.births (view-id v)))
+          (covered? (let lp ((line first))
+                      (or (fx> line last) (and (entry-of now line) (lp (fx1+ line)))))))
+      (unless (and covered? kept (eq? (hash-get kept (node-id n)) now))
+        ;; The entries now, with the drawn lines that have none, in line order.
+        (let lp ((i 0) (line first) (ends []) (lines []) (out []))
+          (let ((entry-line (and (fx< i (vector-length (line-births-lines now)))
+                                 (vector-ref (line-births-lines now) i)))
+                (next-line (and (fx<= line last) line)))
+            (cond
+             ((and entry-line (or (not next-line) (fx<= entry-line next-line)))
+              (lp (fx1+ i) (if (eqv? entry-line next-line) (fx1+ line) line)
+                  (cons (vector-ref (line-births-ends now) i) ends) (cons entry-line lines)
+                  (cons (vector-ref (line-births-births now) i) out)))
+             (next-line
+              (lp i (fx1+ line) (cons (text-line-end t line) ends) (cons line lines)
+                  (cons (vector-ref births (fx- line first)) out)))
+             (else
+              (let (table (or kept (let (new (make-hash-table-eqv)) (hash-put! self.births (view-id v) new) new)))
+                (hash-put! table (node-id n)
+                           (line-births revision: (line-births-revision now)
+                                        ends: (list->vector (reverse ends)) lines: (list->vector (reverse lines))
+                                        births: (list->vector (reverse out)) current: #f))))))))
+      (when (and (memo-checking?)
+                 (not (let (again (view-births-now self v n))
+                        (let lp ((line first))
+                          (or (fx> line last)
+                              (and (equal? (line-birth t again line) (vector-ref births (fx- line first)))
+                                   (lp (fx1+ line))))))))
+        (error "Keeping line births changed them" (view-id v) (node-id n))))
+    (cons* (view-id v) (node-id n) births)))
+
+;; Drop the births of lines no client's last screen drew.
+(def (drop-undrawn-births! (self : html-rendering)) => :void
+  (let (drawn (make-hash-table))        ; (view-id . node-id) -> birth -> #t
+    (hash-for-each (lambda (c (screen : client-screen))
+                     (for-each (lambda ((entry : :pair))
+                                 (let* ((key (cons (car entry) (cadr entry)))
+                                        (births (or (hash-get drawn key)
+                                                    (let (new (make-hash-table)) (hash-put! drawn key new) new))))
+                                   (vector-for-each (lambda (birth) (hash-put! births birth #t)) (cddr entry))))
+                               screen.drawn))
+                   self.screens)
+    (for-each
+     (lambda (view-id)
+       (let (table (hash-ref self.births view-id))
+         (for-each
+          (lambda (node-id)
+            (let ((births (hash-get drawn (cons view-id node-id)))
+                  (kept (hash-ref table node-id)))
+              (if (not births)
+                (hash-remove! table node-id)
+                (using (kept : line-births)
+                  (let (keep (filter (lambda ((i : :fixnum)) (hash-key? births (vector-ref kept.births i)))
+                                     (iota (vector-length kept.births))))
+                    (unless (fx= (length keep) (vector-length kept.births))
+                      (hash-put! table node-id
+                                 (line-births revision: kept.revision
+                                              ends: (list->vector (map (cut vector-ref kept.ends <>) keep))
+                                              lines: (list->vector (map (cut vector-ref kept.lines <>) keep))
+                                              births: (list->vector (map (cut vector-ref kept.births <>) keep))
+                                              current: #f))))))))
+          (hash-keys table))
+         (when (fxzero? (hash-length table))
+           (hash-remove! self.births view-id))))
+     (hash-keys self.births))))
 
 ;; Client C's screen: its last one when nothing it was drawn from changed,
 ;; otherwise drawn again, through the pieces kept. Before drawing, each
@@ -545,11 +801,11 @@
   (add-stylesheet 'tokens "tokens.css")
   (add-stylesheet 'rules "rules.css")
   (context-define-node-renderer! ctx 'text render-text-node)
-  (using (self (html-rendering pieces: (new-memo-cache) pins: (make-hash-table-eqv) screens: (make-hash-table-eq))
+  (using (self (html-rendering pieces: (new-memo-cache) births: (make-hash-table-eqv) screens: (make-hash-table-eq))
                : html-rendering)
     (context-add-hook! ctx client-gone-hook 'html-renderer
                        (lambda ((c : client))
                          (memo-forget-client! self.pieces c)
                          (hash-remove! self.screens c)
-                         (drop-unused-pins! self)))
+                         (drop-undrawn-births! self)))
     (context-provide! ctx renderer-service (Renderer self))))

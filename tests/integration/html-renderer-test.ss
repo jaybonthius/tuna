@@ -19,6 +19,7 @@
         :tuna/plugins/buffers/plugin
         :tuna/plugins/layout/plugin
         :tuna/plugins/renderer/plugin
+        "../../plugins/text-store/tests/support/string-text-store"
         "../../tuna/tests/support/kernel"
         "../../plugins/session/tests/support/session"
         "../../plugins/layout/tests/support/two-views")
@@ -103,6 +104,105 @@
 
 (def (has? haystack needle)
   (and (offset needle haystack) #t))
+
+;; The token of line K of text node N drawn for the first time now: by its
+;; end and the text's revision (the renderer's line births).
+(def (new-line-token n k)
+  (let (t (text-node-content n))
+    (string-append (number->string (node-id n)) "." (number->string (text-line-end t k))
+                   "." (number->string (text-chars-revision t)))))
+
+;; The value of the attribute ending in NAME=" that comes last before
+;; position AT in HTML.
+(def (attribute-before html name at)
+  (let lp ((i at))
+    (cond
+     ((< i 0) #f)
+     ((string-prefix? name (substring html i (min (string-length html) (+ i (string-length name)))))
+      (let* ((start (+ i (string-length name)))
+             (end (string-index html #\" start)))
+        (substring html start end)))
+     (else (lp (- i 1))))))
+
+;; The element id of the line drawn as CONTENT in HTML, or #f.
+(def (line-id html content)
+  (let (at (string-contains html (string-append "\">" content "</div>")))
+    (and at (attribute-before html " id=\"" at))))
+
+;; The token (data-item) of the line drawn as CONTENT in HTML, or #f.
+(def (line-token html content)
+  (let (at (string-contains html (string-append "\">" content "</div>")))
+    (and at (attribute-before html "data-item=\"" at))))
+
+;; The keys of the pieces (DRAW) draws through the renderer's cache.
+(def (pieces-drawn draw)
+  (let (keys [])
+    (parameterize ((current-memo-draw-observer (lambda (key) (set! keys (cons key keys)))))
+      (draw))
+    keys))
+
+;; How many of KEYS are of line pieces, of view V's when V is given.
+(def (lines-drawn keys (v #f))
+  (length (filter (lambda (key) (and (pair? key) (eq? (car key) 'line) (or (not v) (eqv? (cadr key) (view-id v)))))
+                  keys)))
+
+;; How many of KEYS are of the pieces holding what each text node's lines
+;; are drawn from.
+(def (line-runs-drawn keys)
+  (length (filter (lambda (key) (and (pair? key) (eq? (car key) 'lines))) keys)))
+
+;; The checks of drawing lines by value, with PLUGINS.
+(def (check-lines-by-value plugins)
+  ;; A key draws one line again; point moving within a line one, across
+  ;; lines two.
+  (call-with-fresh-kernel plugins
+   (lambda ()
+     (insert "one\ntwo\nthree\nfour")
+     (goto-char 6)
+     (screen)
+     (check (lines-drawn (pieces-drawn (lambda () (insert "x") (screen)))) => 1)
+     (check (lines-drawn (pieces-drawn (lambda () (goto-char (+ (point) 1)) (screen)))) => 1)
+     (goto-char (text-line-end (current-text) 2))
+     (screen)
+     (check (lines-drawn (pieces-drawn (lambda () (goto-char (+ (point) 1)) (screen)))) => 2)
+     ;; Nothing changed: no piece at all.
+     (check (pieces-drawn screen) => [])))
+  ;; A line inserted above the drawn lines draws none of them; RET at the
+  ;; end of a drawn line draws that line and the new one.
+  (call-with-fresh-kernel plugins
+   (lambda ()
+     (insert (fifty-thousand-lines))
+     (let* ((v (selected-view))
+            (n (view-node v))
+            (t (text-node-content n)))
+       (set-view-scroll! v #f (node-item-at n 24999) 0.)
+       (set-client-view-drawn-items! (view-client v #f) 10 10)
+       (goto-char 1)
+       (screen)
+       (check (lines-drawn (pieces-drawn (lambda () (insert "new\n") (screen)))) => 0)
+       (goto-char (text-line-end t 25001))
+       (check (has? (screen) ">25000<span class=\"cursor\">") => #t)
+       (check (lines-drawn (pieces-drawn (lambda () (insert "\n") (screen)))) => 2))))
+  ;; A highlight result draws again only the lines whose spans changed;
+  ;; the same spans draw nothing and give the same screen.
+  (call-with-fresh-kernel plugins
+   (lambda ()
+     (insert "a1\nb2\nc3\nd4")
+     (goto-char 1)
+     (let (t (current-text))
+       (set-highlights! t 'digits [(make-span 2 3 'digit) (make-span 5 6 'digit) (make-span 8 9 'digit)])
+       (screen)
+       (check (lines-drawn (pieces-drawn (lambda ()
+                                           (set-highlights! t 'digits [(make-span 2 3 'digit) (make-span 4 6 'digit)
+                                                                       (make-span 8 9 'digit)])
+                                           (screen))))
+              => 1)
+       (let (before (screen))
+         (check (pieces-drawn (lambda ()
+                                (set-highlights! t 'digits [(make-span 2 3 'digit) (make-span 4 6 'digit)
+                                                            (make-span 8 9 'digit)])
+                                (check (eq? (screen) before) => #t)))
+                => []))))))
 
 ;; The buffer "blocks": a column of a block holding the text "a1".."a3",
 ;; a block holding "x1".."x7", and a label.
@@ -543,7 +643,7 @@
          (goto-char 1)
          (let* ((v (selected-view))
                 (n (view-node v))
-                (line (lambda (k) (string-append "data-item=\"" (item-token (node-item-at n (- k 1))) "\"")))
+                (line (lambda (k) (string-append "data-item=\"" (new-line-token n k) "\"")))
                 (html (screen)))
            (check (has? html (line 1)) => #t)
            (check (has? html (line (+ 1 initial-drawn-items))) => #t)
@@ -574,7 +674,7 @@
          (let* ((v (selected-view))
                 (n (view-node v))
                 (item (lambda (k) (node-item-at n (- k 1))))
-                (line (lambda (k) (string-append "data-item=\"" (item-token (item k)) "\""))))
+                (line (lambda (k) (string-append "data-item=\"" (new-line-token n k) "\""))))
            (set-view-scroll! v #f (item 25000) 5.)
            (let (cv (view-client v #f))
              (set-client-view-drawn-items! cv 100 300)
@@ -589,7 +689,7 @@
              (check (has? html "data-run-at-start") => #f)
              (check (has? html "data-measured-width=\"800\" data-measured-height=\"744\"") => #t)
              ;; Between placements the marker names the scroll state.
-             (check (has? html (string-append "data-target=\"" (item-token (item 25000))
+             (check (has? html (string-append "data-target=\"" (new-line-token n 25000)
                                               "\" data-align=\"top\" data-offset=\"5.\""))
                     => #t)
              ;; Spacers stand in for the 24,899 items before the run and the
@@ -618,7 +718,7 @@
              (place-view! v (item 100) 'center)
              (let (html (screen))
                (check (has? html (string-append "-placement-" (number->string (+ number 1)) "\"")) => #t)
-               (check (has? html (string-append "data-target=\"" (item-token (item 100))
+               (check (has? html (string-append "data-target=\"" (new-line-token n 100)
                                                 "\" data-align=\"center\""))
                       => #t)
                (check (has? html (line 100)) => #t)))))))
@@ -630,7 +730,7 @@
          (let* ((v (selected-view))
                 (n (view-node v))
                 (item (lambda (k) (node-item-at n (- k 1))))
-                (line (lambda (k) (string-append "data-item=\"" (item-token (item k)) "\"")))
+                (line (lambda (k) (string-append "data-item=\"" (new-line-token n k) "\"")))
                 (a (make-client "a"))
                 (b (make-client "b")))
            (place-view! v (item 25000) 'top)
@@ -693,17 +793,18 @@
        (lambda ()
          (insert (fifty-thousand-lines))
          (let* ((v (selected-view))
-                (n (view-node v))
-                (prefix (string-append "id=\"view-" (number->string (view-id v))
-                                       "-node-" (number->string (node-id n)) "-line-")))
+                (n (view-node v)))
            (set-view-scroll! v #f (node-item-at n 24999) 0.)
-           (check (has? (screen) (string-append prefix "25000\">25000<")) => #t)
-           ;; Two lines inserted at the top: the text "25000" is line 25002 now,
-           ;; and keeps its element.
-           (goto-char 1)
-           (insert "a\nb\n")
-           (check (has? (screen) (string-append prefix "25000\">25000<")) => #t)
-           (check (has? (screen) (string-append prefix "25002\">25000<")) => #f)))))
+           (let (id (line-id (screen) "25000"))
+             (check (string-prefix? (string-append "view-" (number->string (view-id v)) "-node-"
+                                                   (number->string (node-id n)) "-line-")
+                                    id)
+                    => #t)
+             ;; Two lines inserted at the top: the text "25000" is line 25002
+             ;; now, and keeps its element.
+             (goto-char 1)
+             (insert "a\nb\n")
+             (check (line-id (screen) "25000") => id))))))
 
     (test-case "scrolling: line ids stay with their text inside a block whose HTML was reused"
       (call-with-fresh-kernel renderer-plugins
@@ -715,35 +816,87 @@
            (let* ((blocks (node-children (buffer-root b)))
                   (x (car (node-children (cadr blocks))))
                   (label (caddr blocks))
-                  (prefix (string-append "id=\"view-" (number->string (view-id v))
-                                         "-node-" (number->string (node-id x)) "-line-")))
-             (check (has? (screen) (string-append prefix "1\">x1<")) => #t)
+                  (html (screen))
+                  (x1 (line-id html "x1"))
+                  (x7 (line-id html "x7")))
              ;; X's block is drawn from its kept HTML, X not visited.
              (set-node-attribute! label 'label "two")
-             (check (has? (screen) (string-append prefix "7\">x7<")) => #t)
-             ;; A line inserted at X's start: "x1" keeps its id; the new line
-             ;; takes the one before it.
+             (check (line-id (screen) "x7") => x7)
+             ;; A line inserted at X's start: "x1" and "x7" keep their ids;
+             ;; the new line has a new one.
              (text-replace! (text-node-content x) 1 1 "x0\n")
-             (let (html (screen))
-               (check (has? html (string-append prefix "0\">x0<")) => #t)
-               (check (has? html (string-append prefix "1\">x1<")) => #t)
-               (check (has? html (string-append prefix "7\">x7<")) => #t)))))))
+             (let* ((html (screen))
+                    (x0 (line-id html "x0")))
+               (check (line-id html "x1") => x1)
+               (check (line-id html "x7") => x7)
+               (check (and x0 (not (member x0 [x1 x7])) #t) => #t)))))))
 
     (test-case "scrolling: line ids stay with their text through a line inserted where drawing starts"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (insert (fifty-thousand-lines))
          (let* ((v (selected-view))
-                (n (view-node v))
-                (prefix (string-append "id=\"view-" (number->string (view-id v))
-                                       "-node-" (number->string (node-id n)) "-line-")))
+                (n (view-node v)))
            (set-view-scroll! v #f (node-item-at n 9) 0.)
-           (check (has? (screen) "data-run-at-start") => #t)
-           (check (has? (screen) (string-append prefix "10\">10<")) => #t)
-           ;; A line inserted before the first line drawn: the text "5" is
-           ;; line 6 now, and keeps its element, as "10" does.
+           (let* ((html (screen))
+                  (five (line-id html "5"))
+                  (ten (line-id html "10")))
+             (check (has? html "data-run-at-start") => #t)
+             ;; A line inserted before the first line drawn: the text "5" is
+             ;; line 6 now, and keeps its element, as "10" does.
+             (goto-char 1)
+             (insert "\n")
+             (let (html (screen))
+               (check (line-id html "5") => five)
+               (check (line-id html "10") => ten)))))))
+
+    (test-case "lines: drawn by value, each line again only when what it draws from changed"
+      (check-lines-by-value renderer-plugins))
+
+    (test-case "lines: the same with the toy text store"
+      (check-lines-by-value [commands keys string-text-store settings no-session buffers layout html-renderer]))
+
+    (test-case "lines: three views of one buffer: point moving in one draws one of its lines; a key draws the line in each"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (insert "one\ntwo\nthree")
+         (goto-char 6)
+         (let* ((a (selected-view))
+                (b (split-view a 'right))
+                (c (split-view a 'below)))
+           (screen)
+           (let (keys (pieces-drawn (lambda () (goto-char (+ (point) 1)) (screen))))
+             (check [(lines-drawn keys a) (lines-drawn keys b) (lines-drawn keys c)] => [1 0 0]))
+           (let (keys (pieces-drawn (lambda () (insert "x") (screen))))
+             (check [(lines-drawn keys a) (lines-drawn keys b) (lines-drawn keys c)] => [1 1 1]))))))
+
+    (test-case "lines: the placement marker names its line by the token the line is drawn with"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (insert (fifty-thousand-lines))
+         (let* ((v (selected-view))
+                (n (view-node v)))
+           (place-view! v (node-item-at n 99) 'center)
+           (screen)
+           ;; "100" was born before the edit above it, which moved it.
            (goto-char 1)
-           (insert "\n")
-           (let (html (screen))
-             (check (has? html (string-append prefix "5\">5<")) => #t)
-             (check (has? html (string-append prefix "10\">10<")) => #t))))))))
+           (insert "x\n")
+           (place-view! v (node-item-at n 100) 'top)
+           (let* ((html (screen))
+                  (target (attribute-before html "data-target=\"" (string-contains html "data-align"))))
+             (check target => (line-token html "100"))
+             (check (item-line (token-item n target)) => 101))))))
+
+    (test-case "lines: a line kept past the text's journal is born again; its old token names nothing"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (insert "a\nb\nc")
+         (let* ((n (view-node (selected-view)))
+                (t (text-node-content n))
+                (old (line-token (screen) "b")))
+           (check (item-line (token-item n old)) => 2)
+           (for-each (lambda (_) (text-replace! t (fx1+ (text-size t)) (fx1+ (text-size t)) "x")) (iota 1100))
+           (let (new (line-token (screen) "b"))
+             (check (equal? new old) => #f)
+             (check (token-item n old) => #f)
+             (check (item-line (token-item n new)) => 2))))))))
