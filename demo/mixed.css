@@ -1,0 +1,69 @@
+/* The mixed demo's kinds: headings, wrapped paragraphs, code blocks, cards
+   and pictures, one under another. They are items, or hold items, so they
+   are spaced with padding and borders, never margins: the browser's
+   measurements of a view must add up exactly. */
+:root {
+  --mixed-padding: 0.5rem 0.75rem;
+  --mixed-rule: color-mix(in srgb, var(--neutral-12, CanvasText) 12%, transparent);
+  --mixed-code-background: var(--neutral-3, Canvas);
+  --mixed-code-font: var(--font-mono, ui-monospace, monospace);
+  --mixed-card-background: var(--neutral-2, Canvas);
+  --mixed-tags-foreground: var(--neutral-8, GrayText);
+  --mixed-picture-background: linear-gradient(135deg,
+    color-mix(in srgb, var(--primary-6, Highlight) 35%, transparent),
+    color-mix(in srgb, var(--primary-9, Highlight) 55%, transparent));
+}
+
+:where(.mixed-heading) {
+  margin: 0;
+  padding: 1rem 0.75rem 0.25rem;
+  font-size: 1.25rem;
+  border-block-start: 1px solid var(--mixed-rule);
+}
+
+:where(.mixed-paragraph) {
+  padding: var(--mixed-padding);
+  font-family: system-ui, sans-serif;
+}
+
+:where(.mixed-code) {
+  padding: var(--mixed-padding);
+  background: var(--mixed-code-background);
+  font-family: var(--mixed-code-font);
+  font-size: 0.875rem;
+}
+
+:where(.mixed-paragraph, .mixed-code) .line {
+  white-space: pre-wrap;
+}
+
+:where(.mixed-card) {
+  padding: var(--mixed-padding);
+  background: var(--mixed-card-background);
+  border-block: 1px solid var(--mixed-rule);
+}
+
+:where(.mixed-card) :where(h3, p) {
+  margin: 0;
+  padding-block: 0.125rem;
+}
+
+:where(.mixed-tags) {
+  color: var(--mixed-tags-foreground);
+  font-size: 0.875rem;
+}
+
+:where(.mixed-picture) {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  box-sizing: border-box;
+  block-size: var(--mixed-picture-block-size, 120px);
+  display: grid;
+  align-items: end;
+  background: var(--mixed-picture-background);
+  background-clip: content-box;
+}
+
+:where(.mixed-picture) figcaption {
+  padding: 0.25rem 0.5rem;
+}

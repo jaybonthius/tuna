@@ -2,7 +2,7 @@
 ;;; The demo configuration, for development only: run
 ;;; `tuna --config demo/init.ss`. It declares the starter's plugins
 ;;; (starter/init.ss) plus the demo: the demo plugins (demo.ss, sidebar.ss,
-;;; long-buffer.ss, rows.ss) and the command fixtures from tuna/test-support/ that
+;;; long-buffer.ss, rows.ss, mixed.ss) and the command fixtures from tuna/test-support/ that
 ;;; it builds on. Tuna's
 ;;; executable does not link any of them; they load from source.
 
@@ -46,7 +46,8 @@
         "demo"
         "sidebar"
         "long-buffer"
-        "rows")
+        "rows"
+        "mixed")
 
 (use-plugin design-tokens        ; colours, sizes and fonts other stylesheets use;
   variant: stellar-default)      ; first, so later stylesheets can redefine them
@@ -93,6 +94,7 @@
                                  ; C-c T the terminal theme (tests/support/theme-terminal.ss)
 (use-plugin long-buffer-demo)    ; C-c g: *long*, 50,000 generated lines, for scrolling
 (use-plugin rows-demo)           ; C-c G: *rows*, 10,000 row nodes, scrolled the same way
+(use-plugin mixed-demo)          ; C-c M: *mixed*, headings, text, code, cards and pictures
 (use-plugin sidebar-demo)        ; C-c d: a sidebar of buffer buttons pinned to the left, or killed
 (use-plugin reload-config        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)
