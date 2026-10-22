@@ -211,6 +211,17 @@
            (check (pointer-event? (cadr items)) => #t)
            (check (key-event-key (caddr items)) => "c")))))
 
+    (test-case "a new page's first item may arrive after its second: the server made its tab, from 1"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (let* ((first (current-tab))
+                (second (new-tab!)))
+           (check (equal? first second) => #f)
+           (check (post-json (keydown-json "b" #f 2)) => 204)
+           (check (post-json (keydown-json "a" #f 1)) => 204)
+           (check (map key-event-key (recorded-items 2)) => ["a" "b"])))))
+
     (test-case "a page reload is a new tab, numbered on its own; the old tab keeps its order"
       (set! (input-recorder-items recorded) [])
       (with-web-tuna [test-messages recording-input web-transport]

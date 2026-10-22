@@ -2,10 +2,10 @@
 ;;; Web transport (startup tier): the loopback HTTP server, the page shell,
 ;;; ordered input over POST /commands, and the screen stream (ADR 7, ADR 10).
 ;;;
-;;; Every page is a tab, a client (ADR 16): the page shell makes a `tab`
-;;; signal from crypto.randomUUID() when it loads, outside the screen, so
-;;; Datastar sends it with the screen stream and /applied, and the input
-;;; sender adds it to every /commands item. The transport keeps a record
+;;; Every page is a tab, a client (ADR 16): serving the page makes a new
+;;; tab id, numbered from 1, and the page shell holds it as the `tab`
+;;; signal, outside the screen, so Datastar sends it with the screen stream
+;;; and /applied, and the input sender adds it to every /commands item. The transport keeps a record
 ;;; per tab id: its client, its input numbering, and its screens and their
 ;;; pacing. A reload is a new tab. A tab whose streams have all closed is
 ;;; forgotten `tab-grace` ms later unless one reopens (Datastar closes a
@@ -16,7 +16,9 @@
 ;;; item, each with its tab and its page-load sequence number, validated
 ;;; strictly into a key-event, a pointer-event or a scroll-event from the
 ;;; tab's client. Each tab's items are submitted in the order of their
-;;; numbers; a tab's first item sets where its numbering starts. Each
+;;; numbers. A page counts from 1 when it loads; a tab id the transport
+;;; does not know (the page outlived its tab, or a server restart) has its
+;;; numbering start at its first item. Each
 ;;; screen carries its revision as data-revision on its root element, and
 ;;; pointer and scroll items name the screen they were computed on, which
 ;;; must be one this transport sent the tab. The page's actions
@@ -52,6 +54,7 @@
         :std/net/uri
         :std/net/url
         :std/text/markup/sxml/print
+        (only-in :std/crypto/random random-bytes)
         :std/time/timeout
         :gerbil-datastar/http
         :tuna/kernel
@@ -257,9 +260,24 @@
           (mutex-lock! self.mutex)
           (lp)))))))
 
-(def (current-page (self : web-server)) => :string
-  (do-with-lock self.mutex
-    (page-html self.head self.screen)))
+;; A new page, as a new tab numbered from 1. The server makes the id, not
+;; the page, so it knows the tab counts from 1 even when its second item
+;; arrives before its first.
+(def (new-page (self : web-server)) => :string
+  (let (id (new-tab-id))
+    (using (tab (do-with-lock self.mutex (tab-named! self id)) : web-tab)
+      (do-with-lock self.admission
+        (set! tab.next 1)
+        (set! tab.numbered? #t))
+      (do-with-lock self.mutex
+        (page-html id self.head self.screen)))))
+
+;; 32 random hex digits.
+(def (new-tab-id) => :string
+  (apply string-append
+         (map (lambda ((b : :fixnum))
+                (string-append (if (fx< b 16) "0" "") (number->string b 16)))
+              (u8vector->list (random-bytes 16)))))
 
 (def (html-string (markup : :list)) => :string
   (call-with-output-string ""
@@ -385,13 +403,13 @@
                                   (read-file-u8vector file))))
       (respond-text response Not-Found (string-append "Not found: " rest)))))
 
-(def (page-html (head : :string) (screen : :string)) => :string
+(def (page-html (tab : :string) (head : :string) (screen : :string)) => :string
   (string-append
    "<!doctype html>"
    "<html lang=\"en\""
-   ;; The tab id (ADR 16): made at each page load, outside the screen, and
-   ;; before data-init, so the stream's first request carries it.
-   " data-signals:tab=\"crypto.randomUUID()\""
+   ;; The tab id (ADR 16), outside the screen and before data-init, so the
+   ;; stream's first request carries it. TAB is hex digits.
+   " data-signals:tab=\"'" tab "'\""
    " data-init=\"@get('/screen')\""
    " data-on:keydown__document__capture=\"@tunaKeyboard()\""
    ;; One pointer action for clicks on release (click, auxclick), and for
@@ -446,7 +464,7 @@
                                 '(("Content-Type" . "text/html; charset=utf-8")
                                   ("Cache-Control" . "no-store")
                                   ("Referrer-Policy" . "no-referrer"))
-                                (string->utf8 (current-page self)))
+                                (string->utf8 (new-page self)))
         (respond-text response Method-Not-Allowed "Use GET.")))
      ((string=? path "/screen")
       (let (id (and (string=? method "GET")
@@ -472,8 +490,8 @@
 
 ;;; Tabs
 
-;; A tab id as a page makes it (crypto.randomUUID()): 1 to 64 letters,
-;; digits and hyphens; otherwise #f.
+;; A tab id: 1 to 64 letters, digits and hyphens (new-tab-id makes hex
+;; digits); otherwise #f.
 (def (parse-tab-id (value : :t)) => (Maybe :string)
   (and (string? value)
        (fx<= 1 (string-length value) 64)
@@ -487,10 +505,9 @@
   (and (hash-table? signals) (parse-tab-id (hash-get signals "tab"))))
 
 ;; The tab named ID, made the first time ID is seen, starting at the
-;; newest screen. Its first item sets where its numbering starts: a new
-;; page counts from 1, and a page whose tab was forgotten, or that was
-;; open across a server restart, goes on counting. Call with SELF's mutex
-;; held.
+;; newest screen. Unless new-page made it, its first item sets where its
+;; numbering starts: a page whose tab was forgotten, or that was open
+;; across a server restart, goes on counting. Call with SELF's mutex held.
 (def (tab-named! (self : web-server) (id : :string)) => web-tab
   (or (hash-get self.tabs id)
       (let (tab (web-tab client: (make-client id)

@@ -12,6 +12,7 @@
         http
         current-tab
         new-tab!
+        unknown-tab!
         post-key
         post-applied
         open-screen-stream
@@ -116,11 +117,26 @@
 ;; The last sequence number each tab sent.
 (def sequences (make-hash-table))
 
-;; Make a new tab the current one, as a browser page load does, and return
-;; its id.
+;; Load the page, as a browser does: the server makes a new tab, numbered
+;; from 1, whose id the page holds as its `tab` signal. Make that tab the
+;; current one and return the page.
+(def (load-page!)
+  (let* ((page (reply-body (http "GET" "/")))
+         (marker "data-signals:tab=\"'")
+         (start (+ (string-search marker page) (string-length marker))))
+    (set! tab (substring page start (string-index page #\' start)))
+    page))
+
+;; Load a page and return its new tab's id.
 (def (new-tab!)
+  (load-page!)
+  tab)
+
+;; Make the current tab one the server never made, as a page open across a
+;; server restart has, and return its id.
+(def (unknown-tab!)
   (set! tabs-made (+ tabs-made 1))
-  (set! tab (string-append "tab-" (number->string tabs-made)))
+  (set! tab (string-append "unknown-" (number->string tabs-made)))
   tab)
 
 (def (next-sequence! tab)
@@ -189,8 +205,7 @@
 ;; The revision of the screen GET / shows. Loading the page makes a new
 ;; tab, numbered from 1, as a browser reload does.
 (def (page-revision)
-  (new-tab!)
-  (let* ((page (reply-body (http "GET" "/")))
+  (let* ((page (load-page!))
          (start (+ (string-search "data-revision=\"" page) 15)))
     (string->number (substring page start (string-index page #\" start)))))
 
@@ -217,7 +232,6 @@
              (colon (string-index url #\: 7))
              (slash (string-index url #\/ colon)))
         (set! port (string->number (substring url (+ colon 1) slash))))
-      (new-tab!)
-      (when load-page? (http "GET" "/"))
+      (if load-page? (load-page!) (unknown-tab!))
       (thunk))))
 
