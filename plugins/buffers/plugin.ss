@@ -32,7 +32,7 @@
    (undo-list        : :list)    ; changes and #f boundaries, newest first
    (undo-pending     : :list)    ; what a continued undo undoes next
    (last-undo-task   :? :fixnum) ; the task that recorded the newest change
-   (decorations      : :list)    ; highlight layers: (name . spans)
+   (decorations      : :list)    ; highlight layers: (name . highlight-layer)
    (decoration-revision : :fixnum)
    (live?            : :boolean) ; false once its buffer is killed
    (nodes            : :list))   ; the text nodes showing it
@@ -48,14 +48,15 @@
                   decorations: [] decoration-revision: 0 live?: #t nodes: [])))
 
 ;; Jobs over a text depend on its characters. A result that rebases is a
-;; list of spans, moved past the text's changes since the job started; it
-;; is dropped once the journal no longer reaches back that far.
+;; list of spans, or ranged-spans, moved past the text's changes since the
+;; job started (rebase-job-result); it is dropped once the journal no
+;; longer reaches back that far.
 (implement JobTarget default-text
   (job-revision (lambda (self) self.chars-revision))
   (job-target-alive? (lambda (self) self.live?))
   (job-rebase (lambda (self result revision)
                 (let (changes (changes-since self revision))
-                  (and changes [(rebase-spans result changes)])))))
+                  (and changes (rebase-job-result result changes))))))
 
 ;; The store that made T's version. A text keeps using it until it is
 ;; moved, so a text this plugin has not moved yet still works.
@@ -159,27 +160,71 @@
 
 ;;; Decorations
 
-(def (set-layer! (t : default-text) (name : :symbol) (spans : :list)) => :void
-  (let (size (text-size-of t))
-    (set! t.decorations
-      (cons (cons name (filter (lambda ((s : span))
-                                 (fx<= 1 (span-start s) (span-end s) (fx1+ size)))
-                               spans))
-            (filter (lambda ((layer : :pair)) (not (eq? (car layer) name))) t.decorations)))
-    (set! t.decoration-revision (fx1+ t.decoration-revision))
-    (source-changed! t.changes)
-    (for-each stamp! t.nodes)))
+;; A highlight layer: its SPANS ordered by start, and REACH, for each span,
+;; the furthest end of it and the spans before it, so the spans
+;; overlapping a range are found without looking at the others.
+(defstruct highlight-layer ((spans : :vector)
+                            (reach : :vector))
+  final: #t)
+
+;; The layer of SPANS, which are ordered by start.
+(def (new-highlight-layer (spans : :list)) => highlight-layer
+  (let* ((ordered (list->vector spans))
+         (reach (make-vector (vector-length ordered) 0)))
+    (let lp ((i 0) (furthest 0))
+      (when (fx< i (vector-length ordered))
+        (let (furthest (fxmax furthest (span-end (vector-ref ordered i))))
+          (vector-set! reach i furthest)
+          (lp (fx1+ i) furthest))))
+    (make-highlight-layer ordered reach)))
+
+;; The spans of LAYER overlapping START..END, in order: from the first
+;; whose reach passes START, those starting before END and ending after
+;; START.
+(def (layer-spans-in (layer : highlight-layer) (start : :fixnum) (end : :fixnum)) => :list
+  (let* ((spans (highlight-layer-spans layer))
+         (reach (highlight-layer-reach layer))
+         (size (vector-length spans))
+         (first (let search ((low 0) (high size))
+                  (if (fx>= low high)
+                    low
+                    (let (middle (fxquotient (fx+ low high) 2))
+                      (if (fx> (vector-ref reach middle) start)
+                        (search low middle)
+                        (search (fx1+ middle) high)))))))
+    (let lp ((i first) (out []))
+      (if (and (fx< i size) (fx< (span-start (vector-ref spans i)) end))
+        (lp (fx1+ i) (let (s (vector-ref spans i)) (if (fx> (span-end s) start) (cons s out) out)))
+        (reverse out)))))
 
 (def (layer-spans (t : default-text) (name : :symbol)) => :list
   (let (layer (assq name t.decorations))
-    (if layer (cdr layer) [])))
+    (if layer (vector->list (highlight-layer-spans (cdr layer))) [])))
 
+;; Replace what layer NAME has inside START..END with SPANS: a layer
+;; keeps its place among the others, and a new one comes first.
+(def (set-layer! (t : default-text) (name : :symbol) (spans : :list) (start : :fixnum) (end : :fixnum)) => :void
+  (let (replaced (spans-replaced (layer-spans t name) spans start end))
+    (when replaced
+      (let (layer (new-highlight-layer replaced))
+        (set! t.decorations
+          (if (assq name t.decorations)
+            (map (lambda ((entry : :pair)) (if (eq? (car entry) name) (cons name layer) entry)) t.decorations)
+            (cons (cons name layer) t.decorations))))
+      (set! t.decoration-revision (fx1+ t.decoration-revision))
+      (source-changed! t.changes)
+      (for-each stamp! t.nodes))))
+
+;; Every layer's spans moved through C, which keeps them ordered by start
+;; (span-after-change moves starts in order).
 (def (relocate-decorations! (t : default-text) (c : change)) => :void
   (unless (null? t.decorations)
     (set! t.decorations
-      (map (lambda ((layer : :pair))
-             (cons (car layer)
-                   (filter-map (cut span-after-change <> c) (cdr layer))))
+      (map (lambda ((entry : :pair))
+             (cons (car entry)
+                   (new-highlight-layer
+                    (filter-map (cut span-after-change <> c)
+                                (vector->list (highlight-layer-spans (cdr entry)))))))
            t.decorations))))
 
 ;; Positions inside a deleted range move to its start; insertions at a
@@ -387,9 +432,13 @@
   (undo-amalgamate! (lambda (self t limit) (amalgamate! t limit)))
   (text-undo! (lambda (self t continue?) (undo! t continue?)))
   (text-clear-undo! (lambda (self t) (clear-undo! t)))
-  (set-highlights! (lambda (self t name spans) (set-layer! t name spans)))
+  (set-highlights! (lambda (self t name spans start end) (set-layer! t name spans start end)))
   (text-highlights (lambda (self t name) (layer-spans t name)))
-  (text-all-highlights (lambda (self t) (using (t : default-text) (:- (append-map cdr t.decorations) :list))))
+  (text-highlights-in (lambda (self t start end)
+                        (using (t : default-text)
+                          (:- (append-map (lambda ((entry : :pair)) (layer-spans-in (cdr entry) start end))
+                                          t.decorations)
+                              :list))))
   (make-node (lambda (self kind attributes children)
                (new-default-node (next-id!) kind attributes children #f #f)))
   (make-text-node (lambda (self t) (new-default-node (next-id!) 'text [] [] t #f)))

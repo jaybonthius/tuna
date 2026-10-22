@@ -8,8 +8,9 @@
 ;;; restores that version as one minimal change (common prefix and suffix
 ;;; kept), so undoing a group also undoes later changes no group recorded;
 ;;; the journal keeps only the newest 100 changes; highlight layers live in
-;;; a hash table; a node keeps its children in a vector; the buffer list is
-;;; kept newest first.
+;;; a hash table, and finding the spans in a range filters them all; a
+;;; node keeps its children in a vector; the buffer list is kept newest
+;;; first.
 prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable)
@@ -63,7 +64,7 @@ prelude: :gerbil/core
   (job-target-alive? (lambda (self) self.live?))
   (job-rebase (lambda (self result revision)
                 (let (changes (toy-changes-since self revision))
-                  (and changes [(rebase-spans result changes)])))))
+                  (and changes (rebase-job-result result changes))))))
 
 (def (toy-store (t : toy-text)) => TextStore
   (TextStore t.store))
@@ -157,14 +158,14 @@ prelude: :gerbil/core
        (set! t.last-task (current-task-id))))
     ([] (void))))
 
-(def (toy-set-highlights! (t : toy-text) (name : :symbol) (spans : :list)) => :void
-  (let (size (toy-size t))
-    (hash-put! t.layers name (filter (lambda ((s : span))
-                                       (fx<= 1 (span-start s) (span-end s) (fx1+ size)))
-                                     spans))
-    (set! t.decoration-revision (fx1+ t.decoration-revision))
-    (source-changed! t.changes)
-    (stamp-all! t.nodes)))
+(def (toy-set-highlights! (t : toy-text) (name : :symbol) (spans : :list) (start : :fixnum) (end : :fixnum))
+  => :void
+  (let (replaced (spans-replaced (hash-ref t.layers name []) spans start end))
+    (when replaced
+      (hash-put! t.layers name replaced)
+      (set! t.decoration-revision (fx1+ t.decoration-revision))
+      (source-changed! t.changes)
+      (stamp-all! t.nodes))))
 
 ;;; Nodes
 
@@ -292,10 +293,13 @@ prelude: :gerbil/core
                         (set! t.groups [])
                         (set! t.pending [])
                         (set! t.open? #f))))
-  (set-highlights! (lambda (self t name spans) (toy-set-highlights! t name spans)))
+  (set-highlights! (lambda (self t name spans start end) (toy-set-highlights! t name spans start end)))
   (text-highlights (lambda (self t name) (using (t : toy-text) (hash-ref t.layers name []))))
-  (text-all-highlights (lambda (self t)
-                         (using (t : toy-text) (:- (append-map cdr (hash->list t.layers)) :list))))
+  (text-highlights-in (lambda (self t start end)
+                        (using (t : toy-text)
+                          (:- (filter (lambda ((s : span)) (and (fx< (span-start s) end) (fx> (span-end s) start)))
+                                      (append-map cdr (hash->list t.layers)))
+                              :list))))
   (make-node (lambda (self kind attributes children)
                (new-toy-node (next-id!) kind attributes children #f #f)))
   (make-text-node (lambda (self t) (new-toy-node (next-id!) 'text [] [] t #f)))

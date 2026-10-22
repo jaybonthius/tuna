@@ -66,6 +66,7 @@ prelude: :gerbil/core
         ;; changes and the rule positions follow through them
         (struct-out change) (struct-out span)
         position-after-change span-after-change rebase-spans
+        spans-replaced (struct-out ranged-spans) rebase-job-result
         ;; texts
         text text? text-id new-text
         text-chars-revision text-content-revision text-decoration-revision
@@ -78,8 +79,9 @@ prelude: :gerbil/core
         after-change-hook
         ;; snapshots
         (struct-out snapshot) text-snapshot snapshot-size snapshot-for-each-chunk
+        snapshot-line-count snapshot-line-start snapshot-slice
         ;; decorations
-        set-highlights! text-highlights text-all-highlights
+        set-highlights! text-highlights text-highlights-in
         ;; nodes and node kinds
         node node? node-id node-kind node-attributes node-attribute
         node-parent node-revision node-child-count node-children
@@ -173,18 +175,92 @@ prelude: :gerbil/core
            s
            (make-span start end s.value)))))
 
+;; S moved through CHANGES (oldest first), or #f once it is empty.
+(def (span-after-changes (s : span) (changes : :list)) => (Maybe span)
+  (let lp ((s s) (changes changes))
+    (match changes
+      ([] s)
+      ([c . more]
+       (let (moved (span-after-change s c))
+         (and moved (lp moved more)))))))
+
 ;; SPANS moved through CHANGES (oldest first), as highlights move with
 ;; edits (span-after-change); a span is dropped once it is empty.
 (def (rebase-spans (spans : :list) (changes : :list)) => :list
-  (filter-map
-   (lambda ((s : span))
-     (let lp ((rest changes) (s s))
-       (match rest
-         ([] s)
-         ([c . more]
-          (let (moved (span-after-change s c))
-            (and moved (lp more moved)))))))
-   spans))
+  (filter-map (cut span-after-changes <> changes) spans))
+
+(def (span-before? (a : span) (b : span)) => :boolean
+  (fx< (span-start a) (span-start b)))
+
+;; Whether spans A and B are the same, one by one, by start, end and value.
+(def (same-spans? (a : :list) (b : :list)) => :boolean
+  (let lp ((a a) (b b))
+    (match a
+      ([] (null? b))
+      ([x . more]
+       (match b
+         ([y . others]
+          (and (fx= (span-start x) (span-start y)) (fx= (span-end x) (span-end y))
+               (equal? (span-value x) (span-value y))
+               (lp more others)))
+         (else #f))))))
+
+;; A highlight layer's SPANS, ordered by start, with whatever lies inside
+;; START..END replaced by NEW clipped to that range, still ordered by
+;; start (a span crossing an edge keeps its part outside); or #f when that
+;; changes nothing, because the layer's spans inside the range, clipped,
+;; are already NEW's, by start, end and value. Empty spans are dropped.
+;; For providers setting highlights (Buffers set-highlights!).
+(def (spans-replaced (spans : :list) (new : :list) (start : :fixnum) (end : :fixnum)) => (Maybe :list)
+  (let* ((clip (lambda ((s : span))
+                 (let ((from (fxmax (span-start s) start))
+                       (to (fxmin (span-end s) end)))
+                   (and (fx< from to)
+                        (if (and (fx= from (span-start s)) (fx= to (span-end s)))
+                          s
+                          (make-span from to (span-value s)))))))
+         (clipped (filter-map clip new))
+         (inside (let lp ((rest clipped))
+                   (match rest
+                     ([a b . more] (if (fx<= (span-start a) (span-start b)) (lp (cdr rest)) (list-sort span-before? clipped)))
+                     (else clipped)))))
+    (and (not (same-spans? (filter-map clip spans) inside))
+         ;; Parts before START keep their starts; parts after END start
+         ;; at END or later: so the three runs are each in order.
+         (let ((before (filter-map (lambda ((s : span))
+                                     (and (fx< (span-start s) start)
+                                          (if (fx<= (span-end s) start)
+                                            s
+                                            (make-span (span-start s) start (span-value s)))))
+                                   spans))
+               (after (filter-map (lambda ((s : span))
+                                    (and (fx> (span-end s) end)
+                                         (if (fx>= (span-start s) end)
+                                           s
+                                           (make-span end (span-end s) (span-value s)))))
+                                  spans)))
+           (append before inside after)))))
+
+;; Spans a job computed for START..END of a highlight layer, as
+;; set-highlights! replaces them: what lies outside the range is not the
+;; job's to change.
+(defstruct ranged-spans ((start : :fixnum)
+                         (end   : :fixnum)
+                         (spans : :list))
+  final: #t)
+
+;; A job's RESULT moved through CHANGES (oldest first), as a list of one
+;; result, or #f when nothing of it is left: a list of spans moves as
+;; rebase-spans moves it; ranged-spans move their range as a span moves
+;; (text inserted at either edge stays outside), and are dropped once the
+;; range is empty. For providers rebasing job results (JobTarget).
+(def (rebase-job-result (result : :t) (changes : :list)) => (Maybe :pair)
+  (if (ranged-spans? result)
+    (using (result : ranged-spans)
+      (let (range (span-after-changes (make-span result.start result.end #f) changes))
+        (and range
+             [(make-ranged-spans (span-start range) (span-end range) (rebase-spans result.spans changes))])))
+    [(rebase-spans result changes)]))
 
 ;;; Identities. Providers extend these classes with their own state, and
 ;;; give each its own source (ADR 17), CHANGES: `(new-source)`, which they
@@ -290,14 +366,16 @@ prelude: :gerbil/core
   final: #t)
 
 ;; CHANGES, its source, changes with what a screen draws from the view:
-;; its buffer, focused node and scroll position; POINT-CHANGES, another,
-;; with its point, so what draws only the focused node draws again when
-;; point moves (ADR 17). Point is kept valid at the text revision REVISION
+;; its buffer and focused node; POINT-CHANGES, another, with its point, so
+;; what draws only the focused node draws again when point moves;
+;; PLACEMENT-CHANGES, a third, with its scroll position, so scrolling does
+;; not draw again what draws from its buffer (ADR 17). Point is kept valid at the text revision REVISION
 ;; and moved through later edits when read, which rewrites how it is
 ;; kept, never where it is, so reading changes no source.
 (defclass view ((id            : :fixnum)
                 (changes       : source)
                 (point-changes : source)
+                (placement-changes : source)
                 (shown         : buffer)        ; `view-showing`
                 (focus         :? node)         ; the focused text node
                 (position      : :fixnum)       ; point, valid at REVISION
@@ -352,9 +430,11 @@ prelude: :gerbil/core
   ;; Undo one group of T's changes and return where point belongs.
   (text-undo! (t : text) (continue? : :boolean)) => :fixnum
   (text-clear-undo! (t : text)) => :void
-  (set-highlights! (t : text) (name : :symbol) (spans : :list)) => :void
+  ;; Replace what layer NAME has inside START..END with SPANS
+  ;; (spans-replaced); no change, nothing stamped, when it is the same.
+  (set-highlights! (t : text) (name : :symbol) (spans : :list) (start : :fixnum) (end : :fixnum)) => :void
   (text-highlights (t : text) (name : :symbol)) => :list
-  (text-all-highlights (t : text)) => :list
+  (text-highlights-in (t : text) (start : :fixnum) (end : :fixnum)) => :list
   ;; Nodes
   (make-node (kind : :symbol) (attributes : :list) (children : :list)) => :t
   (make-text-node (t : text)) => :t
@@ -438,6 +518,18 @@ prelude: :gerbil/core
 
 (def (snapshot-size (s : snapshot)) => :fixnum
   (TextStore-size (snapshot-store s) (snapshot-version s)))
+
+;; The number of lines in S.
+(def (snapshot-line-count (s : snapshot)) => :fixnum
+  (TextStore-line-count (snapshot-store s) (snapshot-version s)))
+
+;; The position where LINE of S starts; LINE must be one of S's lines.
+(def (snapshot-line-start (s : snapshot) (line : :fixnum)) => :fixnum
+  (TextStore-line-start (snapshot-store s) (snapshot-version s) line))
+
+;; S's characters from START up to END, valid positions of S.
+(def (snapshot-slice (s : snapshot) (start : :fixnum) (end : :fixnum)) => :string
+  (TextStore-slice (snapshot-store s) (snapshot-version s) start end))
 
 ;; Call PROC with each chunk of S's characters, in order.
 (def (snapshot-for-each-chunk (s : snapshot) (proc : :procedure)) => :void
@@ -535,22 +627,32 @@ prelude: :gerbil/core
 
 ;;; Decorations
 
-;; Replace T's highlight layer NAME with SPANS, whose values are face
-;; names. Highlights are decorations: they bump the decoration revision,
-;; not the content revision (ADR 4), and move with edits
-;; (span-after-change).
-(def (set-highlights! (t : text) (name : :symbol) (spans : :list)) => :void
-  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-set-highlights! provider t name spans)) :void))
+;; Replace what T's highlight layer NAME has inside START..END (by
+;; default all of T) with SPANS, whose values are face names, clipped to
+;; that range; a span crossing an edge keeps its part outside
+;; (spans-replaced). Spans the same as the layer's inside the range are no
+;; change: nothing is drawn again. Highlights are decorations: they bump
+;; the decoration revision, not the content revision (ADR 4), and move
+;; with edits (span-after-change).
+(def (set-highlights! (t : text) (name : :symbol) (spans : :list)
+                      start: (start : :fixnum := 1) end: (end :? :fixnum := #f))
+  => :void
+  (:- (with-service-provider (provider buffers-service Buffers)
+    (let (end (or end (fx1+ (text-size t))))
+      (check-range (text-snapshot t) start end)
+      (Buffers-set-highlights! provider t name spans start end))) :void))
 
-;; T's highlight spans in layer NAME.
+;; T's highlight spans in layer NAME, ordered by start.
 (def (text-highlights (t : text) (name : :symbol)) => :list
   (record-read! (text-changes t))
   (:- (with-service-provider (provider buffers-service Buffers) (Buffers-text-highlights provider t name)) :list))
 
-;; Every highlight span of T, in no particular order.
-(def (text-all-highlights (t : text)) => :list
+;; T's highlight spans overlapping START..END, of every layer: layer by
+;; layer, in an order the provider keeps, and by start within a layer.
+;; Drawing asks only for what it draws, so a provider may index them.
+(def (text-highlights-in (t : text) (start : :fixnum) (end : :fixnum)) => :list
   (record-read! (text-changes t))
-  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-text-all-highlights provider t)) :list))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-text-highlights-in provider t start end)) :list))
 
 ;;; Nodes
 
@@ -718,20 +820,29 @@ prelude: :gerbil/core
 ;;; An item's token names it in HTML and in what the browser reports: "N"
 ;;; for node N, "N.P.R" for the line holding position P of text node N's
 ;;; text at character revision R, so a report about a screen drawn before
-;;; an edit still finds its line.
+;;; an edit still finds its line, while the text's journal reaches back to
+;;; R (text-changes-since); a token from before that names nothing.
 ;;;
 ;;; Counting a node's children's items is kept per node and revision (a
 ;;; change to a node or below it gives it a new revision), so counting
-;;; them again, or finding an item by index, does not walk every child. A
-;;; kept count holds no node, so a tree it counted can still be collected.
-;;; On the baton only.
+;;; them again, or finding an item by index, does not walk every child.
+;;; With it, each child's revision then: after a change below one child,
+;;; the others' counts are taken from what was kept, and only that child
+;;; is counted again. Defining or removing a node kind counts them all
+;;; again, since it may change how nodes open. A kept count holds no node,
+;;; so a tree it counted can still be collected. On the baton only.
 
-;; How a node opening into its children did at REVISION: the index of each
-;; child's first item, then the item count (STARTS), and each child's
-;; place among its siblings by node id (PLACES).
-(defstruct children-items ((revision : :fixnum)
-                           (starts   : :vector)
-                           (places   : HashTable))
+;; How a node opening into its children did at REVISION, with node kinds
+;; at revision KINDS (node-kinds-source): each child's node id (IDS) and
+;; revision (CHILD-REVISIONS), the index of each child's first item, then
+;; the item count (STARTS), and each child's place among its siblings by
+;; node id (PLACES).
+(defstruct children-items ((revision        : :fixnum)
+                           (kinds           : :fixnum)
+                           (ids             : :vector)
+                           (child-revisions : :vector)
+                           (starts          : :vector)
+                           (places          : HashTable))
   final: #t)
 
 (def children-items-kept (make-hash-table test: eq? weak-keys: #t))
@@ -749,20 +860,44 @@ prelude: :gerbil/core
 
 (def (children-items-of (n : node)) => children-items
   (let ((revision (node-revision n))
+        (kinds (begin (record-read! node-kinds-source) (source-revision node-kinds-source)))
         (kept (hash-get children-items-kept n)))
-    (if (and kept (fx= (children-items-revision kept) revision))
+    (if (and kept (fx= (children-items-revision kept) revision) (fx= (children-items-kinds kept) kinds))
       kept
-      (let* ((children (node-children n))
-             (starts (make-vector (fx1+ (length children)) 0))
-             (places (make-hash-table-eqv)))
-        (let lp ((rest children) (place 0) (start 0))
-          (vector-set! starts place start)
-          (match rest
-            ([child . more]
-             (hash-put! places (node-id child) place)
-             (lp more (fx1+ place) (fx+ start (node-item-count child))))
-            ([] (void))))
-        (let (counted (make-children-items revision starts places))
+      (let* ((children (list->vector (node-children n)))
+             (size (vector-length children))
+             (ids (vector-map node-id children))
+             (earlier (and kept (fx= (children-items-kinds kept) kinds) kept))
+             (same-children? (and earlier (equal? ids (children-items-ids earlier))))
+             (revisions (make-vector size 0))
+             (starts (make-vector (fx1+ size) 0)))
+        ;; A child's count is the one kept for it while its revision is the
+        ;; same: found by its place, or by its id when the children changed.
+        (def (kept-count (place : :fixnum) (child-revision : :fixnum)) => (Maybe :fixnum)
+          (and earlier
+               (using (earlier : children-items)
+                 (let (before (if same-children? place (hash-get earlier.places (vector-ref ids place))))
+                   (and before
+                        (fx= (vector-ref earlier.child-revisions before) child-revision)
+                        (fx- (vector-ref earlier.starts (fx1+ before)) (vector-ref earlier.starts before)))))))
+        (let lp ((place 0))
+          (when (fx< place size)
+            (let* ((child (vector-ref children place))
+                   (child-revision (node-revision child)))
+              (vector-set! revisions place child-revision)
+              (vector-set! starts (fx1+ place)
+                           (fx+ (vector-ref starts place)
+                                (or (kept-count place child-revision) (node-item-count child))))
+              (lp (fx1+ place)))))
+        (let (counted (make-children-items revision kinds ids revisions starts
+                                           (if same-children?
+                                             (children-items-places earlier)
+                                             (let (places (make-hash-table-eqv))
+                                               (let lp ((place 0))
+                                                 (when (fx< place size)
+                                                   (hash-put! places (vector-ref ids place) place)
+                                                   (lp (fx1+ place))))
+                                               places))))
           (hash-put! children-items-kept n counted)
           counted)))))
 
@@ -896,6 +1031,7 @@ prelude: :gerbil/core
       ([(? fixnum? id) (? fixnum? position) (? fixnum? revision)]
        (let (n (node-under root id))
          (and n (eq? (node-opening n) 'lines)
+              (text-changes-since (text-node-content n) revision)
               (let (it (make-item n position revision))
                 (and (node-item-index root it) it)))))
       (else #f))))
@@ -1043,7 +1179,8 @@ prelude: :gerbil/core
 ;; text revision REVISION, scrolled to the top. For buffers providers,
 ;; which must not call the dispatchers before they provide the service.
 (def (new-view-at (b : buffer) (n :? node) (position : :fixnum) (revision : :fixnum)) => view
-  (view id: (next-id!) changes: (new-source) point-changes: (new-source) shown: b focus: n position: position revision: revision
+  (view id: (next-id!) changes: (new-source) point-changes: (new-source) placement-changes: (new-source)
+        shown: b focus: n position: position revision: revision
         goal-column: #f last-placement: (make-placement 0 #f 'top 0.)
         clients: (make-hash-table test: eq? weak-keys: #t)))
 
@@ -1190,7 +1327,7 @@ prelude: :gerbil/core
 
 ;; V's scroll position, its newest placement.
 (def (view-placement (v : view)) => placement
-  (record-read! v.changes)
+  (record-read! v.placement-changes)
   v.last-placement)
 
 ;; Send CV, a view's client-view, a placement to the view's scroll
@@ -1240,7 +1377,7 @@ prelude: :gerbil/core
     (error "Place an item at the top, center or bottom, not" align))
   (set! v.last-placement (make-placement (fx1+ (placement-number v.last-placement)) it align
                                          (if (eq? align 'top) offset 0.)))
-  (source-changed! v.changes)
+  (source-changed! v.placement-changes)
   (hash-for-each (lambda (c (cv : client-view)) (place-client-view! cv v.last-placement)) v.clients))
 
 ;; Client C's browser scrolled V: IT is at its top edge, OFFSET px of it
@@ -1248,7 +1385,7 @@ prelude: :gerbil/core
 ;; client is sent a placement there; C, which is there, is sent none.
 (def (set-view-scroll! (v : view) (c :? client) (it : item) (offset : :flonum)) => :void
   (set! v.last-placement (make-placement (fx1+ (placement-number v.last-placement)) it 'top offset))
-  (source-changed! v.changes)
+  (source-changed! v.placement-changes)
   (hash-for-each (lambda (other (cv : client-view))
                    (if (eq? other c)
                      (set-client-view-scroll! cv it offset)

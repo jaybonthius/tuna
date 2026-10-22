@@ -112,6 +112,23 @@
         (check (pass) => 1)
         (set! hidden 2)
         (check (raises? pass) => #t)))
+    (test-case "the draw observer sees the pieces drawn, not those reused or drawn from scratch"
+      (reset!)
+      (set-memo-checking! #t)
+      (let ((cache (new-memo-cache)) (a (new-source)) (b (new-source)) (seen []))
+        (def (pass)
+          (set! seen [])
+          (parameterize ((current-memo-draw-observer (lambda (key) (set! seen (cons key seen)))))
+            (call-with-memo-pass cache #f (lambda () (parent a b))))
+          (reverse seen))
+        (check (pass) => '(parent child))
+        (check (pass) => '())
+        (source-changed! b)
+        (check (pass) => '(parent child))
+        (source-changed! a)
+        (check (pass) => '(parent)))
+      (set-memo-checking! #f))
+
     (test-case "plain-equal?: equal? for plain data, the same object otherwise, even cyclic"
       (reset!)
       (let ((a (ring other: #f)) (b (ring other: #f)) (c (ring other: #f)) (d (ring other: #f)))

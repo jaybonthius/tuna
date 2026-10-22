@@ -4,6 +4,7 @@
 ;;; Restart and restore are integration-tested with session and autosave.
 (import (only-in :gerbil/runtime/mop slot-ref)
         :std/error
+        :std/interface
         :std/test
         :tuna/kernel
         :tuna/lib/jobs
@@ -27,7 +28,36 @@
 
 (def (spans-of spans) (map (lambda (s) [(span-start s) (span-end s)]) spans))
 
+;; Whether span bounds (START END) come before (START* END*).
+(def (span-pair<? a b)
+  (or (< (car a) (car b)) (and (= (car a) (car b)) (< (cadr a) (cadr b)))))
+
 (defsetting fill-width 70 "A setting for buffer-local values.")
+
+;; Calls of the counting text store's line-count.
+(def line-counts 0)
+
+;; A text store counting how often lines are counted, otherwise the toy
+;; store.
+(defstruct counting-store () final: #t)
+
+(implement TextStore counting-store
+  (from-string (lambda (self text) (TextStore-from-string string-store-instance text)))
+  (size (lambda (self version) (TextStore-size string-store-instance version)))
+  (line-count (lambda (self version)
+                (set! line-counts (+ line-counts 1))
+                (TextStore-line-count string-store-instance version)))
+  (slice (lambda (self version start end) (TextStore-slice string-store-instance version start end)))
+  (line-at (lambda (self version position) (TextStore-line-at string-store-instance version position)))
+  (line-start (lambda (self version line) (TextStore-line-start string-store-instance version line)))
+  (for-each-chunk (lambda (self version start end proc)
+                    (TextStore-for-each-chunk string-store-instance version start end proc)))
+  (replace (lambda (self version start end text) (TextStore-replace string-store-instance version start end text))))
+
+(defplugin (counting-text-store ctx)
+  "Stores text as the toy text store does, counting how often lines are counted."
+  provides: [text-store-service]
+  (context-provide! ctx text-store-service (TextStore (make-counting-store))))
 
 ;; An object that refers to another: two of them can refer to each other.
 (defstruct ring (other))
@@ -144,10 +174,111 @@
          (text-replace! t 11 12 "")       ; inside the second: it shrinks
          (check (text-string t) => "XYab<12cd35")
          (check (spans-of (text-highlights t 'digits)) => [[6 8] [10 12]])
-         (check (length (text-all-highlights t)) => 2)
+         (check (length (text-highlights-in t 1 (fx1+ (text-size t)))) => 2)
          (text-replace! t 6 8 "")         ; all of the first: it goes
          (check (length (text-highlights t 'digits)) => 1)
          (check (text-highlights t 'other) => [])))))
+
+  (test-case "highlights: a ranged set replaces only what lies inside its range, clipped at its edges"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let (t (current-text))
+         (insert "0123456789abcdefghij")
+         (set-highlights! t 'faces [(make-span 1 4 'a) (make-span 6 12 'b) (make-span 15 18 'c)])
+         ;; 5..10: the span 6..12 keeps 10..12; a new span crossing 10 is
+         ;; clipped to the range.
+         (set-highlights! t 'faces [(make-span 7 13 'd)] start: 5 end: 10)
+         (check (map (lambda (s) [(span-start s) (span-end s) (span-value s)]) (text-highlights t 'faces))
+                => [[1 4 'a] [7 10 'd] [10 12 'b] [15 18 'c]])
+         ;; A range inside one span splits it.
+         (set-highlights! t 'faces [] start: 16 end: 17)
+         (check (spans-of (text-highlights t 'faces)) => [[1 4] [7 10] [10 12] [15 16] [17 18]])
+         ;; The whole text, by default.
+         (set-highlights! t 'faces [(make-span 2 3 'e)])
+         (check (spans-of (text-highlights t 'faces)) => [[2 3]])
+         (check (raises? (lambda () (set-highlights! t 'faces [] start: 5 end: 99))) => #t)))))
+
+  (test-case "highlights: the same spans in a range are no change; others are"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let* ((t (current-text))
+              (root (buffer-root (current-buffer))))
+         (insert "ab12cd345")
+         (set-highlights! t 'digits [(make-span 3 5 'digit) (make-span 7 10 'digit)])
+         (let ((decoration (text-decoration-revision t))
+               (revision (node-revision root)))
+           ;; The same spans, as new objects, and the same part of them in a range.
+           (set-highlights! t 'digits [(make-span 7 10 'digit) (make-span 3 5 'digit)])
+           (set-highlights! t 'digits [(make-span 3 5 'digit)] start: 1 end: 6)
+           (set-highlights! t 'other [])
+           (check (text-decoration-revision t) => decoration)
+           (check (node-revision root) => revision)
+           (check (drawn-again? (lambda () (text-highlights t 'digits))
+                                (lambda () (set-highlights! t 'digits [(make-span 3 5 'digit) (make-span 7 10 'digit)])))
+                  => #f)
+           (check (drawn-again? (lambda () (text-highlights t 'digits))
+                                (lambda () (set-highlights! t 'digits [(make-span 3 5 'other)] start: 1 end: 6)))
+                  => #t)
+           (check (> (node-revision root) revision) => #t))))))
+
+  (test-case "highlights: text-highlights-in finds exactly the spans overlapping a range, of every layer"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let (t (current-text))
+         (insert (make-string 100 #\x))
+         ;; A long span early, then short ones.
+         (set-highlights! t 'long [(make-span 2 90 'long)])
+         (set-highlights! t 'short (map (lambda (i) (make-span i (+ i 2) 'short)) (iota 30 1 3)))
+         (def (found start end)
+           (list-sort span-pair<? (map (lambda (s) [(span-start s) (span-end s)]) (text-highlights-in t start end))))
+         (def (expected start end)
+           (list-sort span-pair<? (filter (lambda (se) (and (< (car se) end) (> (cadr se) start)))
+                                          (cons [2 90] (map (lambda (i) [i (+ i 2)]) (iota 30 1 3))))))
+         (for-each (lambda (range)
+                     (check (found (car range) (cadr range)) => (expected (car range) (cadr range))))
+                   [[1 2] [3 4] [10 20] [40 41] [89 95] [90 101] [95 96] [5 5]])
+         ;; Edits move them, in order.
+         (text-replace! t 1 1 "yy")
+         (check (found 4 5) => [[3 5] [4 92]])))))
+
+  (test-case "a job's ranged spans move past edits and replace only their moved range"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let (t (current-text))
+         (insert "a12b34c56")
+         (set-highlights! t 'digits [(make-span 2 4 'digit) (make-span 5 7 'digit) (make-span 8 10 'digit)])
+         (let ((target (JobTarget t))
+               (revision (text-chars-revision t))
+               ;; A job's result for 4..8, "b34c": the 34 only.
+               (result (make-ranged-spans 4 8 [(make-span 5 7 'number)])))
+           (text-replace! t 1 1 "xx")      ; everything moves by 2
+           (text-replace! t 6 6 "!")       ; at the range's start: stays outside
+           (check (text-string t) => "xxa12!b34c56")
+           (match (JobTarget-job-rebase target result revision)
+             ([(? ranged-spans? moved)]
+              (check [(ranged-spans-start moved) (ranged-spans-end moved)] => [7 11])
+              (check (spans-of (ranged-spans-spans moved)) => [[8 10]])
+              (set-highlights! t 'digits (ranged-spans-spans moved)
+                               start: (ranged-spans-start moved) end: (ranged-spans-end moved))
+              (check (map (lambda (s) [(span-start s) (span-end s) (span-value s)]) (text-highlights t 'digits))
+                     => [[4 6 'digit] [8 10 'number] [11 13 'digit]]))
+             (else (check 'moved => 'not-moved)))
+           ;; A range deleted whole leaves nothing to apply.
+           (let (revision (text-chars-revision t))
+             (text-replace! t 6 12 "")
+             (check (JobTarget-job-rebase target (make-ranged-spans 7 11 []) revision) => #f)))))))
+
+  (test-case "a line's token names nothing once the journal no longer reaches its revision"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let* ((t (current-text))
+              (root (buffer-root (current-buffer))))
+         (insert "one\ntwo\nthree")
+         (let (token (item-token (node-item-at root 1)))
+           (check (item-line (token-item root token)) => 2)
+           (for-each (lambda (_) (text-replace! t 1 1 "x")) (iota 1100))
+           (check (token-item root token) => #f)
+           (check (item-line (token-item root (item-token (node-item-at root 1)))) => 2))))))
 
   (test-case "a text's changes since a revision come oldest first, while the journal reaches back"
     (call-with-fresh-kernel buffer-plugins
@@ -268,7 +399,7 @@
              (check (> (caddr after) (caddr before)) => #t)
              (check (cadddr after) => (cadddr before))))
          (let (before (revisions))
-           (set-highlights! t 'digits [])
+           (set-highlights! t 'digits [(make-span 1 2 'digit)])
            (check (> (node-revision root) (caddr before)) => #t)
            (check (node-revision other) => (cadddr before)))
          (let (before (node-revision root))
@@ -314,11 +445,18 @@
          (check (drawn-again? (lambda () (node-children root)) (lambda () (set-node-attribute! n 'size 1))) => #t)
          (insert "a\nb\nc")
          (check (drawn-again? (lambda () (text-substring t 1 2)) (lambda () (insert "x"))) => #t)
-         (check (drawn-again? (lambda () (text-all-highlights t))
+         (check (drawn-again? (lambda () (text-highlights-in t 1 2))
                               (lambda () (set-highlights! t 'faces [(make-span 1 2 'bold)])))
                 => #t)
+         (check (drawn-again? (lambda () (text-highlights-in t 1 2))
+                              (lambda () (set-highlights! t 'faces [(make-span 1 2 'bold)])))
+                => #f)
          (check (drawn-again? (lambda () (view-point v)) (lambda () (goto-char (point)))) => #f)
          (check (drawn-again? (lambda () (view-point v)) (lambda () (goto-char 1))) => #t)
+         ;; Scrolling changes the view's placement, not what its buffer draws.
+         (check (drawn-again? (lambda () (view-node v)) (lambda () (place-view! v #f 'top))) => #f)
+         (check (drawn-again? (lambda () (view-showing v)) (lambda () (place-view! v #f 'top))) => #f)
+         (check (drawn-again? (lambda () (view-placement v)) (lambda () (place-view! v #f 'top))) => #t)
          (check (drawn-again? (lambda () (buffer-local-value fill-width b))
                               (lambda () (set-buffer-setting! b fill-width 70)))
                 => #t)
@@ -524,6 +662,27 @@
          (check (map (lambda (child-start) [(node-id (car child-start)) (cdr child-start)])
                      (node-child-items root 2 5))
                 => [[(node-id text) 1] [(node-id empty) 4] [(node-id card) 5]])))))
+
+  (test-case "a node's items counted again after a change below one child count only that child again"
+    (call-with-fresh-kernel [counting-text-store settings provider]
+     (lambda ()
+       (let* ((texts (map (lambda (k) (new-text "a\nb")) (iota 200)))
+              (root (new-node 'column children: (map new-text-node texts))))
+         (check (node-item-count root) => 400)
+         (text-replace! (list-ref texts 7) 1 1 "x\n")
+         (set! line-counts 0)
+         (check (node-item-count root) => 401)
+         (check line-counts => 1)
+         (check (item-line (node-item-at root 16)) => 3)
+         (check (node-item-index root (node-item-at root 300)) => 300)
+         ;; Children replaced, reordered, added and removed.
+         (let ((children (node-children root))
+               (one (new-text-node (new-text "one"))))
+           (set-node-children! root (cons one (reverse (cddr children))))
+           ;; The child changed above has three lines.
+           (check (node-item-count root) => (+ 1 (* 2 198) 1))
+           (check (item-line (node-item-at root 0)) => 1)
+           (check (eq? (item-node (node-item-at root 1)) (list-ref children 199)) => #t))))))
 
   (test-case "items keep their identity through edits around them; tokens name them"
     (call-with-fresh-kernel buffer-plugins

@@ -125,9 +125,13 @@
                       (lambda ()
                         (insert (let lp ((k 500) (out "")) (if (zero? k) out (lp (- k 1) (string-append (number->string k) "\n" out)))))
                         (let* ((v (selected-view))
-                               (it (node-item-at (view-node v) 299)))
-                          (place-view! v it 'top offset: 7.)
-                          (item-token it)))))
+                               (n (view-node v))
+                               (t (text-node-content n)))
+                          (place-view! v (node-item-at n 299) 'top offset: 7.)
+                          ;; The token line 300 is drawn with, first drawn
+                          ;; now: by its end and the text's revision.
+                          (string-append (number->string (node-id n)) "." (number->string (text-line-end t 300))
+                                         "." (number->string (text-chars-revision t)))))))
            (check (and (string-search (string-append "data-target=\"" token "\" data-align=\"top\" data-offset=\"7.\"")
                                       (reply-body (http "GET" "/")))
                        #t)
