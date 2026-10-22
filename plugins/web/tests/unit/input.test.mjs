@@ -61,9 +61,10 @@ class Element {
   }
 }
 
-// Each harness is one page load, with no browser storage or identity.
+// Each harness is one page load, with no browser storage; its page shell's
+// `tab` signal is TAB.
 async function harness(screen = new Element({ "data-revision": 7 }), platform = "Linux x86_64",
-                       elementFromPoint = () => null) {
+                       elementFromPoint = () => null, tab = "tab-1") {
   const posts = [];
   const errors = [];
   const retries = [];
@@ -89,8 +90,9 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
     },
     console: { error: (...args) => errors.push(args) },
   });
-  const datastar = new SyntheticModule(["action"], function () {
+  const datastar = new SyntheticModule(["action", "getPath"], function () {
     this.setExport("action", (value) => { actions[value.name] = value; });
+    this.setExport("getPath", (path) => (path === "tab" ? tab : undefined));
   }, { context });
   const module = new SourceTextModule(source, { context });
   await module.link((specifier) => {
@@ -137,7 +139,7 @@ test("every keydown is posted immediately, including modifiers and composition",
     assert.equal(post.options.headers["Content-Type"], "application/json");
     assert.equal(post.options.headers["Datastar-Request"], "true");
     assert.deepEqual(post.body, {
-      version: 1, type: "keydown", sequence: index + 1,
+      version: 1, tab: "tab-1", type: "keydown", sequence: index + 1,
       key: event.key, code: event.code,
       location: event.location, repeat: event.repeat, isComposing: event.isComposing,
       altKey: true, ctrlKey: true, metaKey: true, shiftKey: true,
@@ -241,15 +243,15 @@ test("only network failures retry the same item; later items do not wait", async
   assert.equal(h.retries.length, 0, "any response stops retries");
 });
 
-test("a page load restarts numbering at one without a client id or storage", async () => {
+test("a page load restarts numbering at one, under the tab id its page shell made", async () => {
   const first = await harness();
   first.send(new KeyboardEvent("a"));
   first.send(new KeyboardEvent("b"));
-  assert.deepEqual(first.posts.map((post) => post.body.sequence), [1, 2]);
-  assert.equal("clientId" in first.posts[0].body, false);
-  const reloaded = await harness();
+  assert.deepEqual(first.posts.map((post) => [post.body.tab, post.body.sequence]),
+                   [["tab-1", 1], ["tab-1", 2]]);
+  const reloaded = await harness(undefined, undefined, undefined, "tab-2");
   reloaded.send(new KeyboardEvent("c"));
-  assert.equal(reloaded.posts[0].body.sequence, 1);
+  assert.deepEqual([reloaded.posts[0].body.tab, reloaded.posts[0].body.sequence], ["tab-2", 1]);
 });
 
 // A screen with a tab, and a view holding a text node: the markup the
@@ -282,7 +284,7 @@ test("a click is sent on release as a pointer item naming its part, node and scr
   for (let index = 0; index < expected.length; index++) {
     assert.equal(h.posts.length, expected.length, "all clicks are sent before any response");
     assert.deepEqual(h.posts[index].body, {
-      version: 1, type: "pointer", kind: "click",
+      version: 1, tab: "tab-1", type: "pointer", kind: "click",
       sequence: index + 1, revision: 7, ...expected[index],
     });
     h.posts[index].resolve({ status: 204 });
@@ -461,7 +463,7 @@ test("tunaScroll reports nothing before a placement, then what it measured, once
   h.scroll(v.scroller, "moved");
   assert.equal(h.posts.length, 1);
   assert.deepEqual(h.posts[0].body, {
-    version: 1, type: "scroll", sequence: 1, revision: 7, view: 12, node: 4, placement: 3,
+    version: 1, tab: "tab-1", type: "scroll", sequence: 1, revision: 7, view: 12, node: 4, placement: 3,
     top: "4.51.0", offset: 5, lastVisible: "4.60.0", spacer: null, spacerDistance: 0,
     before: 50, after: 49, drawnHeight: 2000, above: 1005, below: 795, width: 300, height: 200,
   }, "item 61 ends 15 px below the view, so item 60 is the last wholly in view");
@@ -599,7 +601,7 @@ test("a report from a spacer names the drawn item next to it and how far the top
   v.scroller.attributes["data-effect"] = "...";
   h.scroll(v.scroller, "rest");
   assert.deepEqual(h.posts[1].body, {
-    version: 1, type: "scroll", sequence: 2, revision: 7, view: 12, node: 4, placement: 3,
+    version: 1, tab: "tab-1", type: "scroll", sequence: 2, revision: 7, view: 12, node: 4, placement: 3,
     top: "4.51.0", offset: -400, lastVisible: null, spacer: "above", spacerDistance: 400,
     before: 0, after: 99, drawnHeight: 2000, above: 0, below: 2200, width: 300, height: 200,
   });
@@ -608,7 +610,7 @@ test("a report from a spacer names the drawn item next to it and how far the top
   v.scroller.attributes["data-effect"] = "...";
   h.scroll(v.scroller, "rest");
   assert.deepEqual(h.posts[2].body, {
-    version: 1, type: "scroll", sequence: 3, revision: 7, view: 12, node: 4, placement: 3,
+    version: 1, tab: "tab-1", type: "scroll", sequence: 3, revision: 7, view: 12, node: 4, placement: 3,
     top: "4.150.0", offset: 320, lastVisible: null, spacer: "below", spacerDistance: 300,
     before: 99, after: 0, drawnHeight: 2000, above: 2300, below: 0, width: 300, height: 200,
   });

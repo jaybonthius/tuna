@@ -47,7 +47,10 @@ prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
-        (only-in :tuna/plugins/buffers/contract node))
+        (only-in :tuna/plugins/buffers/contract node)
+        ;; Events have a field named client, which would shadow the type
+        ;; of that name in their constructors.
+        (rename-in (only-in :tuna/plugins/clients/contract client) (client client-type)))
 (export context-set-click-resolver!
         where-is
         (struct-out key-event posn pointer-event scroll-event)
@@ -71,11 +74,12 @@ prelude: :gerbil/core
         printing-char-key
         last-command-event)
 
-;; One keydown with its page-load sequence number (ADR 7, ADR 10). The web
-;; transport submits it as an input item; the input service resolves it.
-;; MAC?, ALT-LEFT?, ALT-RIGHT? and ALT-GRAPH?
-;; are browser facts; the input plugin decides their meaning.
+;; One keydown from CLIENT (#f for none), with its page-load sequence
+;; number (ADR 7, ADR 10, ADR 16). The web transport submits it as an input
+;; item; the input service resolves it. MAC?, ALT-LEFT?, ALT-RIGHT? and
+;; ALT-GRAPH? are browser facts; the input plugin decides their meaning.
 (defstruct key-event ((sequence   : :fixnum)
+                      (client     :? client-type)
                       (key        : :string)
                       (code       : :string)
                       (location   : :fixnum)
@@ -103,10 +107,11 @@ prelude: :gerbil/core
                  (revision : :fixnum))
   final: #t)
 
-;; One click with its page-load sequence number (ADR 7, ADR 10): BUTTON
-;; 1, 2 or 3 (left, middle, right, numbered as Emacs does), released after
-;; CLICKS presses in a row, at START.
+;; One click from CLIENT (#f for none), with its page-load sequence number
+;; (ADR 7, ADR 10, ADR 16): BUTTON 1, 2 or 3 (left, middle, right, numbered
+;; as Emacs does), released after CLICKS presses in a row, at START.
 (defstruct pointer-event ((sequence : :fixnum)
+                          (client   :? client-type)
                           (button   : :fixnum)
                           (clicks   : :fixnum)
                           (alt?     : :boolean)
@@ -116,8 +121,8 @@ prelude: :gerbil/core
                           (start    : posn))
   final: #t)
 
-;; What the browser measured of a view's scroller, with its page-load
-;; sequence number (ADR 7, ADR 10). START names the view (its part), the
+;; What CLIENT's browser (#f for none) measured of a view's scroller, with
+;; its page-load sequence number (ADR 7, ADR 10, ADR 16). START names the view (its part), the
 ;; node the scroller draws from (its node) and the screen measured. Items
 ;; are named by their tokens (the buffers contract's `item-token`); every
 ;; pixel quantity is measured. TOP-ITEM is the item at the top edge, with
@@ -135,6 +140,7 @@ prelude: :gerbil/core
 ;; bottom edges; PLACEMENT is the number of the last placement the page
 ;; applied to the view.
 (defstruct scroll-event ((sequence          : :fixnum)
+                         (client            :? client-type)
                          (start             : posn)
                          (placement         : :fixnum)
                          (top-item          :? :string)

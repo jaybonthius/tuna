@@ -95,7 +95,7 @@
               before: (before 100) after: (after 400) above: (above 2000.) below: (below 2000.)
               drawn: (drawn (+ above below 744.))
               placement: (placement 0) root: (root (view-node v)) node: (node (node-id root)))
-  (submit! (make-scroll-event (next-sequence!) (make-posn 'view (view-id v) node 0) placement
+  (submit! (make-scroll-event (next-sequence!) #f (make-posn 'view (view-id v) node 0) placement
                               (and top (line-token v top root: root)) offset
                               (and (not spacer) (line-token v (or last (+ top 30)) root: root))
                               spacer distance before after drawn above below 800 744)))

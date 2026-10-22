@@ -16,6 +16,7 @@
      (gxc: "boot" (extra-inputs: ("../starter/init.ss")))
      "control"
      (exe: "main" bin: "tuna"))
+    ("plugins/clients" "contract")
     ("plugins/commands" "contract" "plugin")
     ("plugins/stylesheets" "contract")
     ("plugins/design-tokens" "plugin")

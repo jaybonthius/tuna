@@ -1,13 +1,18 @@
 ;;; The web transport over real loopback HTTP on an ephemeral port: the
 ;;; plain URL, Host and Origin checks, event requests (keydowns, pointer
 ;;; and scroll items, validated strictly, and the screen revision they
-;;; name), and the screen stream's re-sends. A stand-in provides the input the
-;;; editor loop needs; another records the items it resolves.
+;;; name), the screen stream's re-sends, and tabs (ADR 16): each tab's own
+;;; numbering, pacing and screens, and forgetting a tab that went away. A
+;;; stand-in provides the input the editor loop needs; another records the
+;;; items it resolves.
 (import :std/io
         :std/net/address
+        :std/net/uri
         :std/time/timeout
         :std/test
         :tuna/kernel
+        :tuna/lib/plugin-options
+        :tuna/plugins/clients/contract
         :tuna/plugins/keys/contract
         :tuna/plugins/renderer/contract
         :tuna/plugins/web/plugin
@@ -80,11 +85,13 @@
      (string-join (map (lambda (field) (string-append "\"" (car field) "\":" (cdr field))) merged) ",")
      "}")))
 
-;; A scroll item as JSON: view 12's scroller drawing node 4, measured on
-;; screen 0 after placement 2: line item "4.61.0" at the top, 5.5 px
-;; above the edge, not in a spacer, and "4.95.0" the last in view.
+;; A scroll item as JSON from the current tab: view 12's scroller drawing
+;; node 4, measured on screen 0 after placement 2: line item "4.61.0" at
+;; the top, 5.5 px above the edge, not in a spacer, and "4.95.0" the last
+;; in view.
 (def (scroll-json . changes)
-  (item-json '(("version" . "1") ("type" . "\"scroll\"") ("sequence" . "1") ("revision" . "0")
+  (item-json `(("version" . "1") ("tab" . ,(string-append "\"" (current-tab) "\""))
+               ("type" . "\"scroll\"") ("sequence" . "1") ("revision" . "0")
                ("view" . "12") ("node" . "4") ("placement" . "2")
                ("top" . "\"4.61.0\"") ("offset" . "5.5") ("lastVisible" . "\"4.95.0\"")
                ("spacer" . "null") ("spacerDistance" . "0")
@@ -92,6 +99,34 @@
                ("above" . "20000.25") ("below" . "19000")
                ("width" . "800") ("height" . "744"))
              changes))
+
+;; Whether TEXT holds a screen.
+(def (has-screen? text) (pair? (screen-revisions text)))
+
+;; A test that TEXT holds a screen newer than every screen in OLD.
+(def (newer-than old)
+  (let (revision (apply max (screen-revisions old)))
+    (lambda (text) (any (cut > <> revision) (screen-revisions text)))))
+
+(def (seconds-since start) (- (time->seconds (current-time)) start))
+
+(def (wait-until ready?)
+  (let lp ((tries 300))
+    (cond
+     ((ready?) #t)
+     ((zero? tries) #f)
+     (else (thread-sleep! 0.01) (lp (- tries 1))))))
+
+(def (quoted text) (string-append "\"" text "\""))
+
+;; The clients client-gone-hook ran for, newest first, each as its id and
+;; the task the hook ran in.
+(def gone [])
+
+(defplugin (gone-recorder ctx)
+  "Records the clients that went away."
+  (context-add-hook! ctx client-gone-hook 'gone-recorder
+                     (lambda (c) (set! gone (cons [(client-id c) (current-task-name)] gone)))))
 
 ;; The data-revision of each screen event in TEXT, oldest first.
 (def (screen-revisions text)
@@ -164,9 +199,10 @@
       (set! (input-recorder-items recorded) [])
       (with-web-tuna [test-messages recording-input web-transport]
        (lambda ()
+         ;; A tab's first item sets where its numbering starts.
+         (check (post-json (keydown-json "a" #f 1)) => 204)
          (check (post-json (keydown-json "c" #f 3)) => 204)
          (check (post-json (keydown-json "duplicate" #f 3)) => 204)
-         (check (post-json (keydown-json "a" #f 1)) => 204)
          (check (post-json (pointer-json (cons "sequence" "2"))) => 204)
          (check (post-json (keydown-json "duplicate" #f 1)) => 204)
          (let (items (recorded-items 3))
@@ -175,16 +211,20 @@
            (check (pointer-event? (cadr items)) => #t)
            (check (key-event-key (caddr items)) => "c")))))
 
-    (test-case "a page reload restarts numbering and drops the old page's early items"
+    (test-case "a page reload is a new tab, numbered on its own; the old tab keeps its order"
       (set! (input-recorder-items recorded) [])
       (with-web-tuna [test-messages recording-input web-transport]
        (lambda ()
-         (check (post-json (keydown-json "a" #f 1)) => 204)
-         (check (post-json (keydown-json "old" #f 3)) => 204)
-         (check (reply-status (http "GET" "/")) => 200)
-         (check (post-json (keydown-json "b" #f 1)) => 204)
-         (check (post-json (keydown-json "c" #f 2)) => 204)
-         (check (map key-event-key (recorded-items 3)) => ["a" "b" "c"]))))
+         (let (old (current-tab))
+           (check (post-json (keydown-json "a" #f 1)) => 204)
+           (check (post-json (keydown-json "old" #f 3)) => 204)
+           (check (reply-status (http "GET" "/")) => 200)
+           (new-tab!)
+           (check (post-json (keydown-json "b" #f 1)) => 204)
+           (check (post-json (keydown-json "c" #f 2)) => 204)
+           (check (map key-event-key (recorded-items 3)) => ["a" "b" "c"])
+           (check (post-json (keydown-json "a2" #f 2 (cons "tab" (string-append "\"" old "\"")))) => 204)
+           (check (map key-event-key (recorded-items 5)) => ["a" "b" "c" "a2" "old"])))))
 
     (test-case "a screen stream that reconnects without a reload keeps the numbering"
       (set! (input-recorder-items recorded) [])
@@ -216,17 +256,19 @@
       (set! (input-recorder-items recorded) [])
       (with-web-tuna [test-messages recording-input web-transport]
        (lambda ()
-         (let lp ((sequence 2))
-           (when (<= sequence 66)
+         (check (post-json (keydown-json "first" #f 1)) => 204)
+         (let lp ((sequence 3))
+           (when (<= sequence 67)
              (check (post-json (keydown-json (number->string sequence) #f sequence)) => 204)
              (lp (+ sequence 1))))
          ;; The missing item arriving late is ignored, still with 204.
-         (check (post-json (keydown-json "late" #f 1)) => 204)
-         (check (post-json (keydown-json "after" #f 67)) => 204)
-         (let (keys (map key-event-key (recorded-items 66)))
-           (check (car keys) => "2")
-           (check (list-ref keys 64) => "66")
-           (check (list-ref keys 65) => "after")
+         (check (post-json (keydown-json "late" #f 2)) => 204)
+         (check (post-json (keydown-json "after" #f 68)) => 204)
+         (let (keys (map key-event-key (recorded-items 67)))
+           (check (car keys) => "first")
+           (check (cadr keys) => "3")
+           (check (list-ref keys 65) => "67")
+           (check (list-ref keys 66) => "after")
            (check (member "late" keys) => #f)))))
 
     (test-case "key items preserve platform, held Option sides and AltGraph facts"
@@ -429,7 +471,7 @@
        (lambda ()
          (let* ((stream (open-screen-stream))
                 (first (read-until stream (lambda (text) (pair? (screen-revisions text))))))
-           (check (reply-status (http "POST" (applied-path first))) => 204)
+           (check (reply-status (post-applied (applied-path first))) => 204)
            ;; Nothing changed: no new screen, only keep-alives at most.
            (call-on-editor-loop redisplay)
            (call-on-editor-loop redisplay)
@@ -458,12 +500,154 @@
              (check (> (- (time->seconds (current-time)) started) 0.8) => #t)
              ;; Confirmed: the next newer screen comes at once.
              (set! revision (apply max (screen-revisions text)))
-             (check (reply-status (http "POST" (applied-path text))) => 204)
+             (check (reply-status (post-applied (applied-path text))) => 204)
              (let (confirmed (time->seconds (current-time)))
                (change-screen!)
                (check (newer? (read-until stream newer?)) => #t)
                (check (< (- (time->seconds (current-time)) confirmed) 0.5) => #t)))
-           (Socket-close stream)))))))
+           (Socket-close stream)))))
+
+    (test-case "two tabs are numbered on their own: a tab opening loses or reorders none of another's input"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (let* ((a (current-tab))
+                (a-stream (open-screen-stream tab: a)))
+           (for-each (lambda (key) (post-key key tab: a)) ["a1" "a2" "a3"])
+           ;; Tab B loads and counts from 1 while A is at 3.
+           (check (reply-status (http "GET" "/")) => 200)
+           (let* ((b (new-tab!))
+                  (b-stream (open-screen-stream tab: b)))
+             (post-key "b1" tab: b)
+             (post-key "a4" tab: a)
+             (post-key "b2" tab: b)
+             (post-key "a5" tab: a)
+             ;; Each tab's items are put in order on their own.
+             (check (post-json (keydown-json "a7" #f 7 (cons "tab" (quoted a)))) => 204)
+             (check (post-json (keydown-json "a6" #f 6 (cons "tab" (quoted a)))) => 204)
+             (let* ((items (recorded-items 9))
+                    (from (lambda (id)
+                            (filter (lambda (e) (equal? (client-id (key-event-client e)) id)) items))))
+               (check (length items) => 9)
+               (check (map key-event-key (from a)) => ["a1" "a2" "a3" "a4" "a5" "a6" "a7"])
+               (check (map key-event-key (from b)) => ["b1" "b2"])
+               ;; One client per tab.
+               (check (andmap (lambda (e) (eq? (key-event-client e) (key-event-client (car (from a)))))
+                              (from a))
+                      => #t)
+               (check (eq? (key-event-client (car (from a))) (key-event-client (car (from b)))) => #f))
+             (Socket-close a-stream)
+             (Socket-close b-stream))))))
+
+    (test-case "items and streams without a valid tab id are rejected"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (check (post-json (keydown-json "x" #f 1)) => 204)
+         (for-each
+          (lambda (bad)
+            (check [bad (post-json (keydown-json "y" #f 2 (cons "tab" bad)))] => [bad 204]))
+          [#f "null" "\"\"" "5" "[]" "{}" "\"tab one\"" "\"tab/1\"" "\"é\""
+           (quoted (make-string 65 #\a))])
+         (check (post-json (keydown-json "z" #f 2)) => 204)
+         (check (post-json (keydown-json "w" #f 1 (cons "tab" (quoted (make-string 64 #\a))))) => 204)
+         (check (map key-event-key (recorded-items 3)) => ["x" "z" "w"])
+         (for-each
+          (lambda (path)
+            (check [path (reply-status (http "GET" path headers: [(cons "Datastar-Request" "true")]))]
+                   => [path 400]))
+          ["/screen"
+           (string-append "/screen?datastar=" (uri-encode "{}"))
+           (string-append "/screen?datastar=" (uri-encode "{\"tab\":\"tab one\"}"))
+           (string-append "/screen?datastar=" (uri-encode "{\"tab\":5}"))]))))
+
+    (test-case "each tab's screens are paced by its own confirmations"
+      (with-counting-tuna
+       (lambda ()
+         (let* ((a (current-tab))
+                (b (new-tab!))
+                (a-stream (open-screen-stream tab: a))
+                (b-stream (open-screen-stream tab: b))
+                (a-first (read-until a-stream has-screen?))
+                (b-first (read-until b-stream has-screen?))
+                (started (time->seconds (current-time))))
+           ;; A confirms its screen; B does not, so B's next waits for the
+           ;; timeout (1 s) while A's comes at once.
+           (check (reply-status (post-applied (applied-path a-first) tab: a)) => 204)
+           (change-screen!)
+           (check ((newer-than a-first) (read-until a-stream (newer-than a-first))) => #t)
+           (check (< (seconds-since started) 0.5) => #t)
+           (check ((newer-than b-first) (read-until b-stream (newer-than b-first))) => #t)
+           (check (> (seconds-since started) 0.8) => #t)
+           (Socket-close a-stream)
+           (Socket-close b-stream)))))
+
+    (test-case "a scroll report gets its own tab a screen even when nothing changed, and no other tab"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input counting-renderer web-transport]
+       (lambda ()
+         (let* ((a (current-tab))
+                (b (new-tab!))
+                (a-stream (open-screen-stream tab: a))
+                (b-stream (open-screen-stream tab: b))
+                (a-first (read-until a-stream has-screen?))
+                (b-first (read-until b-stream has-screen?))
+                (nothing-on (lambda (stream)
+                              (Socket-set-input-timeout! stream (IOTimeout 1.5))
+                              (let (text (with-catch (lambda (e) "")
+                                                     (lambda () (read-until stream has-screen?))))
+                                (Socket-set-input-timeout! stream (IOTimeout 5))
+                                (screen-revisions text)))))
+           (check (reply-status (post-applied (applied-path a-first) tab: a)) => 204)
+           (check (reply-status (post-applied (applied-path b-first) tab: b)) => 204)
+           (check (post-json (scroll-json (cons "tab" (quoted a)))) => 204)
+           (let (text (read-until a-stream (newer-than a-first)))
+             (check ((newer-than a-first) text) => #t)
+             (check (reply-status (post-applied (applied-path text) tab: a)) => 204))
+           (check (nothing-on b-stream) => [])
+           ;; A rejected report is answered too, again only in its own tab.
+           (check (post-json (scroll-json (cons "tab" (quoted b)) (cons "height" "-1"))) => 204)
+           (check ((newer-than b-first) (read-until b-stream (newer-than b-first))) => #t)
+           (check (nothing-on a-stream) => [])
+           (check (length (recorded-items 1)) => 1)
+           (Socket-close a-stream)
+           (Socket-close b-stream)))))
+
+    (test-case "a tab whose streams all closed is forgotten after the grace period; one reopened in time is kept"
+      (set! (input-recorder-items recorded) [])
+      (set! gone [])
+      (set-plugin-options! web-transport [(cons 'screen-timeout 50) (cons 'tab-grace 300)])
+      (unwind-protect
+        (with-web-tuna [test-messages recording-input web-transport gone-recorder]
+         (lambda ()
+           (let* ((a (current-tab))
+                  (b (new-tab!))
+                  (a-stream (open-screen-stream tab: a))
+                  (b-stream (open-screen-stream tab: b)))
+             (read-until a-stream has-screen?)
+             (read-until b-stream has-screen?)
+             (post-key "a1" tab: a)
+             (post-key "b1" tab: b)
+             (check (map key-event-key (recorded-items 2)) => ["a1" "b1"])
+             ;; A closes for good; B's stream closes and reopens, as when a
+             ;; hidden browser tab is shown again.
+             (Socket-close a-stream)
+             (Socket-close b-stream)
+             (let (b-again (open-screen-stream tab: b))
+               (read-until b-again has-screen?)
+               ;; The hook runs on the editor loop, as a task.
+               (check (wait-until (lambda () (pair? gone))) => #t)
+               (check gone => [[a 'forget-tab]])
+               (thread-sleep! 0.5)
+               (check (map car gone) => [a])
+               ;; B kept its numbering, so its 3 waits for its 2. A comes
+               ;; back as a new tab, whose first item sets its numbering.
+               (check (post-json (keydown-json "b3" #f 3 (cons "tab" (quoted b)))) => 204)
+               (check (post-json (keydown-json "b2" #f 2 (cons "tab" (quoted b)))) => 204)
+               (check (post-json (keydown-json "a5" #f 5 (cons "tab" (quoted a)))) => 204)
+               (check (map key-event-key (recorded-items 5)) => ["a1" "b1" "b2" "b3" "a5"])
+               (Socket-close b-again)))))
+        (set-plugin-options! web-transport [])))))
 
 ;; The /applied path of the last screen in TEXT, as its data-init posts it.
 (def (applied-path text)

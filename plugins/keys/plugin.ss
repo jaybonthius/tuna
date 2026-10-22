@@ -17,8 +17,16 @@
 ;;; runs outside the command loop's bookkeeping (call-special-command): it
 ;;; becomes neither this-command nor last-command and runs no command
 ;;; hooks.
+;;;
+;;; Keys in progress are per client (ADR 16; Emacs's kboard): each client's
+;;; pending prefix and the event that completed its last sequence, so a
+;;; prefix typed in one browser tab never joins keys from another. Events
+;;; with no client share one session. Each command's task sees its client
+;;; as `current-client`.
 
-(import :tuna/kernel
+(import (only-in :gerbil/runtime/hash HashTable)
+        :tuna/kernel
+        :tuna/plugins/clients/contract
         :tuna/plugins/keys/contract
         :tuna/plugins/commands/contract
         :tuna/plugins/settings/contract
@@ -32,11 +40,16 @@
 
 (def quit-key "C-g")
 
+;; One client's keys in progress.
+(defclass key-session ((pending       : :list)          ; keys typed so far of a prefix
+                       (command-event :? :t))           ; key-event or pointer-event
+  final: #t)
+
 (defclass global-keys ((click-resolvers : entry-table)
                        (keymap        : entry-table)    ; key sequence -> command name
                        (targets       : :list)          ; input targets, innermost first
-                       (pending       : :list)          ; keys typed so far of a prefix
-                       (command-event :? :t)            ; key-event or pointer-event
+                       (sessions      : HashTable)      ; client -> key-session
+                       (shared        : key-session)    ; the session of events with no client
                        (generation    : :fixnum))       ; changes with any binding
   final: #t)
 
@@ -197,26 +210,44 @@
 (defsyntax (this-source stx)
   (with-syntax ((source (stx-source-string stx))) #'source))
 
-;; Capture the event in the resolved task, so another command at a prompt
-;; cannot overwrite the suspended command's event.
+;; The client EVENT, a key, pointer or scroll event, came from, or #f.
+(def (event-client (event : :t)) => (Maybe client)
+  (cond
+   ((key-event? event) (key-event-client event))
+   ((pointer-event? event) (pointer-event-client event))
+   ((scroll-event? event) (scroll-event-client event))
+   (else #f)))
+
+;; The keys in progress of CLIENT (#f for none), made when first needed.
+(def (client-session (self : global-keys) (c :? client)) => key-session
+  (if c
+    (or (hash-get self.sessions c)
+        (let (session (key-session pending: [] command-event: #f))
+          (hash-put! self.sessions c session)
+          session))
+    self.shared))
+
+;; Capture the event and its client in the resolved task, so another
+;; command at a prompt cannot overwrite the suspended command's event.
 (def activation-event (make-parameter #f))
 
-(def (command-task (self : global-keys) (name : :symbol)) => (Maybe :pair)
+(def (command-task (event : :t) (name : :symbol)) => (Maybe :pair)
   (and (command-entry name)
-       (let (event self.command-event)
-         (cons name (lambda ()
-                      (parameterize ((activation-event event))
-                        (call-command name)))))))
+       (cons name (lambda ()
+                    (parameterize ((activation-event event)
+                                   (current-client (event-client event)))
+                      (call-command name))))))
 
-;; A key sequence ended with EVENT, a key or pointer event, and selected
-;; the command named NAME, or #f for none.
-(def (complete-keys! (self : global-keys) (event : :t) (name :? :symbol)) => :void
-  (set! self.pending [])
-  (set! self.command-event event))
+;; A key sequence of SESSION ended with EVENT, a key or pointer event, and
+;; selected the command named NAME, or #f for none.
+(def (complete-keys! (session : key-session) (event : :t) (name :? :symbol)) => :void
+  (set! session.pending [])
+  (set! session.command-event event))
 
 (def (resolve-key! (self : global-keys) (event : key-event)) => (Maybe :pair)
   (let ((key (key-description event))
-        (keymaps (active-keymaps self (focused-node))))
+        (keymaps (active-keymaps self (focused-node)))
+        (session (client-session self (key-event-client event))))
     (cond
      ((not key) #f)
      ((equal? key quit-key)
@@ -224,33 +255,33 @@
       ;; minibuffer's prompts do.
       (let* ((found (find-binding keymaps quit-key #f))
              (name (if (and found (not (eq? found 'prefix))) (entry-value found) 'keyboard-quit)))
-        (complete-keys! self event name)
-        (command-task self name)))
+        (complete-keys! session event name)
+        (command-task event name)))
      (else
       (message "")
-      (let* ((typed (append self.pending [key]))
+      (let* ((typed (append (key-session-pending session) [key]))
              (keys (string-join typed " "))
              (found (find-binding keymaps keys
-                                  (and (null? self.pending) (printing-char? key)
+                                  (and (null? (key-session-pending session)) (printing-char? key)
                                        printing-char-key))))
         (cond
          ((eq? found 'prefix)
-          (set! self.pending typed)
+          (set! (key-session-pending session) typed)
           (message (string-append keys "-"))
           #f)
          (found
           (let (name (entry-value found))
-            (complete-keys! self event name)
-            (bound-command-task self keys name)))
+            (complete-keys! session event name)
+            (bound-command-task event keys name)))
          (else
-          (complete-keys! self event #f)
+          (complete-keys! session event #f)
           (message (string-append keys " is undefined"))
           #f)))))))
 
-;; The command NAME of a completed sequence KEYS, as a task, or #f with a
-;; message when no command has that name.
-(def (bound-command-task (self : global-keys) (keys : :string) (name : :symbol)) => (Maybe :pair)
-  (or (command-task self name)
+;; The command NAME of a sequence KEYS that EVENT completed, as a task, or
+;; #f with a message when no command has that name.
+(def (bound-command-task (event : :t) (keys : :string) (name : :symbol)) => (Maybe :pair)
+  (or (command-task event name)
       (begin
         (message (string-append keys " runs " (symbol->string name) ", which is not defined"))
         #f)))
@@ -260,12 +291,14 @@
 ;; <tab-line> <double-mouse-1>", "C-x <tab-line> <mouse-1>"), then the same
 ;; without the part kind, all of them in one keymap before the next.
 (def (resolve-pointer! (self : global-keys) (event : pointer-event)) => (Maybe :pair)
-  (let* ((start (pointer-event-start event))
+  (let* ((session (client-session self (pointer-event-client event)))
+         (start (pointer-event-start event))
          (keymaps (active-keymaps self (clicked-node self start)))
          (area (string-append "<" (symbol->string (posn-area start)) ">"))
          (names (map (lambda ((name : :string)) (string-append "<" name ">"))
                      (pointer-event-names event)))
-         (sequences (map (lambda ((tail : :list)) (string-join (append self.pending tail) " "))
+         (sequences (map (lambda ((tail : :list))
+                           (string-join (append (key-session-pending session) tail) " "))
                          (append (map (lambda (name) [area name]) names)
                                  (map (lambda (name) [name]) names))))
          (found (ormap (lambda ((keymap : entry-table))
@@ -276,10 +309,10 @@
                        keymaps)))
     (if found
       (begin
-        (complete-keys! self event (cdr found))
-        (bound-command-task self (car found) (cdr found)))
+        (complete-keys! session event (cdr found))
+        (bound-command-task event (car found) (cdr found)))
       (begin
-        (complete-keys! self event #f)
+        (complete-keys! session event #f)
         (message (string-append (car sequences) " is undefined"))
         #f))))
 
@@ -293,7 +326,8 @@
          (let (name (entry-value found))
            (and (command-entry name)
                 (cons name (lambda ()
-                             (parameterize ((activation-event event))
+                             (parameterize ((activation-event event)
+                                            (current-client (scroll-event-client event)))
                                (call-special-command name)))))))))
 
 (defmethod {resolve! global-keys}
@@ -379,7 +413,14 @@
       (entry-table-ref self.keymap (normalize-keys keys)))))
 
 (defmethod {last-command-event global-keys}
-  (lambda (self) (or (activation-event) (global-keys-command-event self))))
+  (lambda (self)
+    (using (self : global-keys)
+      (or (activation-event)
+          (let (c (current-client))
+            (if c
+              (let (session (hash-get self.sessions c))
+                (and session (key-session-command-event session)))
+              (key-session-command-event self.shared)))))))
 
 (defmethod {set-click-resolver! global-keys}
   (lambda (self ctx resolve)
@@ -395,9 +436,12 @@
   requires: [commands-service]
   optional: [settings-service buffers-service]
   (using (self (global-keys click-resolvers: (new-entry-table) keymap: (new-entry-table) targets: []
-                            pending: [] command-event: #f
+                            sessions: (make-hash-table-eq)
+                            shared: (key-session pending: [] command-event: #f)
                             generation: (next-id!))
                : global-keys)
+    (context-add-hook! ctx client-gone-hook 'keys
+                       (lambda ((c : client)) (hash-remove! self.sessions c)))
     (context-define-command! ctx 'keyboard-quit signal-quit
                              doc: "Cancel the current key sequence or command." source: (this-source))
     (context-provide! ctx input-service (Keys self))))

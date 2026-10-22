@@ -60,7 +60,7 @@
     (lambda ()
       (let* ((n (view-node v))
              (token (lambda (line) (item-token (node-item-at n (- line 1))))))
-        (make-scroll-event sequence (make-posn 'view (view-id v) (node-id n) 0)
+        (make-scroll-event sequence #f (make-posn 'view (view-id v) (node-id n) 0)
                            (or placement (placement-number (view-placement v)))
                            (token top) offset (token last) #f 0. 100 400 40744. 20000. 20000. 800 744)))))
   (on-baton void))
