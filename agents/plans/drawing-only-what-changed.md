@@ -57,7 +57,12 @@
      - A highlight result redraws only the lines whose spans changed.
      - The same results with the toy text store.
 4. **Bytes on the wire.**
-   - Pieces are kept as UTF-8 bytes and written to the stream in order, with per-piece event framing.
+   - The owner approved this approach on 2026-10-22: the owner's packages gain general streaming primitives, and their existing API is unchanged.
+     - **gerbil-sse** gets a "write one event" primitive (lock, the stream's writer, flush). `sse-send!` is built on it.
+     - **gerbil-datastar** keeps the SDK specification's functions (`patch-elements`, `patch-signals`, `execute-script`) and gains a helper, `call-with-patch-elements`. It writes the event header, hands the caller a writer for the elements (newlines become new `data: elements` lines), then ends the event. Its internal send stays the single path for every event, as the SDK specification asks.
+     - The wire bytes are unchanged (the Clojure SDK's `patch-elements-seq!`, templ writing to an io.Writer, and Hyperlith all stream the same way).
+     - Measure a scratch prototype first.
+   - Pieces are kept as UTF-8 bytes and written into the event in order.
    - Remove the whole-screen copies: the revision stamp, the `/applied` stamp, line splitting.
    - Tests: identical bytes to before; measured frame cost.
 5. **Outside state, and the proof.**
