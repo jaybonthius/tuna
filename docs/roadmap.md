@@ -46,7 +46,12 @@ How the server learns layout facts from the browser (event-attached facts, measu
 
 1. *Done (2026-10-13): commands contract, `M-x`, completion ([brief](briefs/2026-10-completion.md)).* Still to do here: prefix-key help (which-key style), Consult-style sources and preview, Embark-style actions.
 2. Windows: the window contract and the default layout-tree window manager ([desired design](ideas/window-management.md)), starting with a brief; `display-buffer`-style rules, window configurations, mode line; major and minor modes as plugins.
-3. Real syntax highlighting and language-server integration as jobs and subprocesses.
+3. Real syntax highlighting and language-server integration as jobs and subprocesses. Tree-sitter is the default (owner, 2026-10-22).
+
+   Notes from 2026-10-22, not decisions; research again before building:
+   - **Highlighting works on what is drawn,** as Emacs's jit-lock, Neovim, Zed, VS Code and CodeMirror do. A background job keeps the whole-file tree-sitter tree up to date incrementally, colours the drawn range plus a margin (any tab's drawn lines, from scrolling), and posts that range through stage 3's ranged highlights. A deferred pass recolours the lines after an edit, for multi-line constructs. Highlighters that need context from the top keep a state per line end (VS Code).
+   - **Language servers are whole-file by nature:** the file is synchronised whole, then by incremental changes, and diagnostics cover the file. Semantic tokens can be requested for a range, which suits the drawn range.
+   - **Missing pieces:** a way for a plugin to ask which ranges are drawn now, and a "buffer shown or hidden" hook. Add them with the first real highlighter.
 4. First rich (non-text) buffer kind and navigation across nodes.
 5. Attached REPL, `init.ss` reload, package reload.
 6. *Done (2026-10-22): several tabs mirror one editor, with per-tab input sessions ([ADR 16](../agents/adr/0016-several-tabs-mirror-one-editor.md)).* Later, if wanted: per-tab frames (each tab its own part of the layout); client-side reactivity where it pays off.
