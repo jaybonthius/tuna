@@ -339,16 +339,17 @@
 
 ;; The attributes of V's scroller, which draws START's items FIRST to LAST
 ;; of COUNT, that its report trigger reads (the web transport's tunaScroll
-;; action). The scroll handler only counts scrolls, so that the effect,
-;; which reads the count, runs on each; the effect must not write signals,
-;; or Datastar would run it a second time after it reports.
+;; action). Each trigger is the scroller's own: its scroll events, and an
+;; effect reading no signal, which runs when a screen puts it back after
+;; a report removed it. An effect reading a page-wide signal would run for
+;; every scroller whenever any one scrolled, including one a morph is
+;; removing, which measures nothing.
 (def (scroller-attributes (v : view) (start : node) (first : :fixnum) (last : :fixnum) (count : :fixnum))
   => :list
   (let (facts (view-facts v))
     (append
-     [['data-signals__ifmissing "{_tunaScrolls: 0}"]
-      ['data-on:scroll "$_tunaScrolls = $_tunaScrolls + 1"]
-      ['data-effect "$_tunaScrolls; @tunaScroll('moved')"]
+     [['data-on:scroll "@tunaScroll('moved')"]
+      ['data-effect "@tunaScroll('moved')"]
       ['data-on:scrollend "@tunaScroll('rest')"]
       ['data-scroll-root (number->string (node-id start))]
       ['data-drawn-screens (number->string (drawn-screens-value (view-showing v)))]]

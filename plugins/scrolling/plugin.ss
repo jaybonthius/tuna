@@ -34,18 +34,22 @@
 ;;; offset, but never beyond the first or the last item, so the top of the
 ;;; spacer above is the first item and the end of the one below the last.
 ;;; That becomes the scroll state, the view's placement names it with its
-;;; exact offset, and the renderer draws around it; when nothing drawn was
-;;; in view, the page puts it at the top, unless the view moved on since it
-;;; reported, when its next report says where it is. Counting starts from
-;;; the nearest drawn item, never from the top of the buffer, so no
-;;; estimate of everything above adds up.
+;;; exact offset, and the renderer draws around it, so its items appear
+;;; about where the spacer said they were, give or take how far the items
+;;; drawn before it differ from the average; the page then measures what
+;;; it shows. Counting starts from the nearest drawn item, never from the
+;;; top of the buffer, so no estimate of everything above adds up.
 ;;;
 ;;; The average item height (the drawn items' height over their count, as
 ;;; measured) is the spacers' height per item, so it changes only when it
-;;; must: on the view's first report, and on a report from a spacer, after
-;;; counting, for the spacers drawn next. Taken from every report, it would
-;;; swing the spacers by thousands of px deep in a long buffer as the drawn
-;;; items vary, moving the scroll bar under the user's pointer.
+;;; must: on the view's first report, and on a report from a spacer with
+;;; drawn items in view, after counting, for the spacers drawn next. Taken
+;;; from every report, it would swing the spacers by thousands of px deep
+;;; in a long buffer as the drawn items vary, moving the scroll bar under
+;;; the user's pointer. Never from a report with nothing drawn in view: a
+;;; new average moves everything below a spacer by its items times the
+;;; change, and the browser's scroll anchoring holds the view still only
+;;; with a drawn item in view to hold.
 ;;;
 ;;; Scroll commands place items (Emacs's names and keys): `C-v` puts the
 ;;; last items wholly in view at the top and `M-v` the first ones at the
@@ -92,7 +96,8 @@
 ;; sized by the spacers, so a value that changes while you drag moves the
 ;; handle away from the pointer.
 ;; - 'measured: the average item height measured, updated on the view's
-;;   first report and on each report from a spacer;
+;;   first report and on each report from a spacer with drawn items in
+;;   view;
 ;; - 'first: the average measured on the view's first report, then kept;
 ;; - a number: that many px for every undrawn item, never measured.
 (defsetting spacer-item-height 'measured
@@ -336,6 +341,16 @@
     (and (fl> event.drawn-height 0.)
          (fl/ event.drawn-height (exact->inexact (fx+ event.drawn-before event.drawn-after 1))))))
 
+;; Whether EVENT's view had a drawn item in it: not when its top edge was
+;; in the spacer below the drawn items, or as far in the spacer above them
+;; as the view is high.
+(def (drawn-in-view? (event : scroll-event)) => :boolean
+  (using (event : scroll-event)
+    (case event.spacer
+      ((above) (fl< event.spacer-distance (exact->inexact event.viewport-height)))
+      ((below) #f)
+      (else #t))))
+
 ;; Adopt what EVENT measured of its view, returning the view and how the
 ;; report found it, or #f when it was measured before the view's newest
 ;; placement or about another node: 'placed when it is the first measured
@@ -359,7 +374,8 @@
                   (average (cond
                             ((and (real? rule) (> rule 0)) (exact->inexact rule))
                             ((eq? rule 'first) (or drawn-average measured))
-                            ((and measured (or event.spacer (not drawn-average))) measured)
+                            ((and measured (or (not drawn-average) (and event.spacer (drawn-in-view? event))))
+                             measured)
                             (else drawn-average)))
                   (named (resolve event.top-item))
                   (named-index (and named (node-item-index root named)))

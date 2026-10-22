@@ -41,10 +41,13 @@ class Element {
     this.parent = parent;
   }
   getAttribute(name) { return name in this.attributes ? String(this.attributes[name]) : null; }
-  // Whether this element matches SELECTOR: [name] or .class.
+  // Whether this element matches SELECTOR: [name], [name="value"] or .class.
   matches(selector) {
-    const attribute = selector.match(/^\[([a-z-]+)\]$/);
-    if (attribute) return attribute[1] in this.attributes;
+    const attribute = selector.match(/^\[([a-z-]+)(?:="([^"]*)")?\]$/);
+    if (attribute) {
+      return attribute[1] in this.attributes
+        && (attribute[2] === undefined || this.getAttribute(attribute[1]) === attribute[2]);
+    }
     const name = selector.match(/^\.([a-z-]+)$/)[1];
     return String(this.attributes.class ?? "").split(" ").includes(name);
   }
@@ -523,47 +526,29 @@ test("an end of scrolling while a report is on its way is owed, and goes with th
   assert.equal(h.posts.length, 2);
 });
 
-test("a report holds its top item still through the next screen, unless the view moved since", async () => {
+test("only a placement moves the view: a screen that moves what is drawn leaves it where the browser has it", async () => {
   const h = await harness(new Element({ "data-revision": 7 }));
   const v = scrolledView({}, { "data-target": "4.1.0", "data-offset": "0" });
   h.place(v.placement);
   h.scroll(v.scroller, "moved");
   assert.equal(h.posts[0].body.top, "4.1.0");
-  assert.equal(h.posts[0].body.above, 0);
   // The next screen draws ten items above, which pushes the first one
-  // down by 200 px, and the browser did not anchor.
-  const drawAbove = () => {
-    for (const item of v.items) item.top += 200;
-    v.scroller.scrollHeight += 200;
-    v.scroller.attributes["data-effect"] = "...";
-  };
-  drawAbove();
-  h.scroll(v.scroller, "moved");
-  assert.equal(v.scroller.scrollTop, 200);
-  assert.equal(h.posts.length, 2, "it reports from where it holds the item");
-  // The view moved after that report: the screen is left as the browser has it.
-  v.scroller.scrollTop = 250;
-  drawAbove();
-  h.scroll(v.scroller, "moved");
-  assert.equal(v.scroller.scrollTop, 250);
-});
-
-test("at the top of its scroller, a report's top item goes where the scrolling since took it", async () => {
-  const h = await harness(new Element({ "data-revision": 7 }));
-  const v = scrolledView();
-  h.place(v.placement);
-  h.scroll(v.scroller, "moved");
-  assert.equal(h.posts[0].body.top, "4.51.0");
-  // Scrolled to the top, 1,005 px, after reporting item 51 5 px above the
-  // edge: it is 1,000 px below the edge. The next screen draws ten items above, and the
-  // browser does not anchor at the top.
-  v.scroller.scrollTop = 0;
+  // down by 200 px; the browser's scroll anchoring is the browser's.
   for (const item of v.items) item.top += 200;
   v.scroller.scrollHeight += 200;
   v.scroller.attributes["data-effect"] = "...";
   h.scroll(v.scroller, "moved");
-  assert.equal(v.scroller.scrollTop, 200);
-  assert.equal(v.items[50].getBoundingClientRect().top, 1000);
+  assert.equal(v.scroller.scrollTop, 0);
+  // Scrolled to the top of a deeper view after reporting, the same.
+  const deep = scrolledView();
+  h.place(deep.placement);
+  h.scroll(deep.scroller, "moved");
+  deep.scroller.scrollTop = 0;
+  for (const item of deep.items) item.top += 200;
+  deep.scroller.scrollHeight += 200;
+  deep.scroller.attributes["data-effect"] = "...";
+  h.scroll(deep.scroller, "moved");
+  assert.equal(deep.scroller.scrollTop, 0);
 });
 
 test("a new placement marker is applied before anything is reported", async () => {
@@ -629,42 +614,33 @@ test("a report from a spacer names the drawn item next to it and how far the top
   });
 });
 
-test("after a report from a spacer with nothing in view, the item the server counted goes to the top", async () => {
+test("after a report from a spacer, the page reports what the next screen drew there", async () => {
   const h = await harness(new Element({ "data-revision": 7 }));
-  // Reported from 400 px up into the spacer above; the next screen's marker
-  // names the item the server counted there, under the same placement.
-  const reported = (scrollTop) => {
-    const v = spacedView();
-    h.place(v.placement);
-    h.scroll(v.scroller, "moved");
-    v.scroller.scrollTop = scrollTop;
-    v.scroller.attributes["data-effect"] = "...";
-    h.scroll(v.scroller, "rest");
-    return v;
-  };
-  const answer = (v, target = "4.60.0", offset = "10") => {
-    Object.assign(v.placement.attributes, { "data-target": target, "data-offset": offset });
-    v.scroller.attributes["data-effect"] = "...";
-    h.scroll(v.scroller, "moved");
-  };
-  const still = reported(600);
-  answer(still);
-  assert.equal(still.scroller.scrollTop, 1180 + 10, "item 60, 10 px above the top edge");
-  // A view that moved on since it reported is left where the browser has it.
-  const moving = reported(600);
-  moving.scroller.scrollTop = 650;
-  answer(moving);
-  assert.equal(moving.scroller.scrollTop, 650);
-  // A screen sent before the answer: the marker still names what it did.
-  const early = reported(600);
-  const posts = h.posts.length;
-  answer(early, "4.51.0", "0");
-  assert.equal(early.scroller.scrollTop, 600);
-  assert.equal(h.posts.length, posts + 1, "still in the spacer, it reports again");
-  // A drawn item in view: that item is held where it was instead, here
-  // when the screen moved it by 30 px and the browser did not follow.
-  const shown = reported(900);
-  for (const item of shown.scroller.querySelectorAll("[data-item]")) item.top += 30;
-  answer(shown);
-  assert.equal(shown.scroller.scrollTop, 930);
+  const v = spacedView();
+  h.place(v.placement);
+  h.scroll(v.scroller, "moved");
+  // 300 px down into the spacer below: nothing drawn is in view.
+  v.scroller.scrollTop = 3300;
+  v.scroller.attributes["data-effect"] = "...";
+  h.scroll(v.scroller, "rest");
+  assert.equal(h.posts[1].body.spacer, "below");
+  // The answer draws the items the server counted there, from 2,400 px:
+  // the view, where the browser left it, shows item 96 at its top, with
+  // 900 px drawn above it and 900 below, within the band. The page does
+  // not move it, and reports it.
+  for (const item of v.scroller.querySelectorAll("[data-item]")) item.top += 1400;
+  v.above.height = 2400;
+  v.below.top = 4400;
+  v.below.height = 600;
+  v.scroller.attributes["data-effect"] = "...";
+  h.scroll(v.scroller, "moved");
+  assert.equal(v.scroller.scrollTop, 3300);
+  assert.equal(h.posts.length, 3);
+  assert.equal(h.posts[2].body.spacer, null);
+  assert.equal(h.posts[2].body.top, "4.96.0");
+  assert.equal(h.posts[2].body.offset, 0);
+  // Measured, it owes nothing more.
+  v.scroller.attributes["data-effect"] = "...";
+  h.scroll(v.scroller, "moved");
+  assert.equal(h.posts.length, 3);
 });
