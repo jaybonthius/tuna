@@ -78,6 +78,7 @@
         :tuna/plugins/layout/contract)
 (export scrolling
         scroll-moves-point
+        spacer-item-height
         next-screen-context-items
         fetching-step
         adjusted-count
@@ -87,6 +88,16 @@
 ;; Whether scrolling a view moves its point into view (as in Emacs). Off,
 ;; point stays where it was, out of view, until a command moves it or
 ;; edits its text, which brings the view back to it (as in VS Code).
+;; How tall a spacer counts each undrawn item. The browser's scroll bar is
+;; sized by the spacers, so a value that changes while you drag moves the
+;; handle away from the pointer.
+;; - 'measured: the average item height measured, updated on the view's
+;;   first report and on each report from a spacer;
+;; - 'first: the average measured on the view's first report, then kept;
+;; - a number: that many px for every undrawn item, never measured.
+(defsetting spacer-item-height 'measured
+  "How tall a spacer counts each undrawn item: 'measured, 'first, or a number of px.")
+
 (defsetting scroll-moves-point #t
   "Whether scrolling a view moves its point into view; off, point stays and the view returns to it when a command moves it.")
 
@@ -344,7 +355,12 @@
                   (count (node-item-count root))
                   (measured (measured-average event))
                   (drawn-average (view-average-item-height v))
-                  (average (if (and measured (or event.spacer (not drawn-average))) measured drawn-average))
+                  (rule (buffer-local-value spacer-item-height (view-showing v)))
+                  (average (cond
+                            ((and (real? rule) (> rule 0)) (exact->inexact rule))
+                            ((eq? rule 'first) (or drawn-average measured))
+                            ((and measured (or event.spacer (not drawn-average))) measured)
+                            (else drawn-average)))
                   (named (resolve event.top-item))
                   (named-index (and named (node-item-index root named)))
                   ;; Counted by the average the spacer was drawn with.
