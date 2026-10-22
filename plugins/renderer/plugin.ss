@@ -254,13 +254,11 @@
          (last (if lines (line-run-last lines) (text-line-count t)))
          (drawn-start (text-line-start t first))
          (drawn-end (text-line-end t last))
-         (spans (filter-map (lambda ((s : span))
-                              (and (fx< (span-start s) drawn-end)
-                                   (fx> (span-end s) drawn-start)
-                                   (if b
-                                     (make-span (span-start s) (span-end s) (remapped-face (span-value s) b))
-                                     s)))
-                            (text-all-highlights t)))
+         (spans (map (lambda ((s : span))
+                       (if b
+                         (make-span (span-start s) (span-end s) (remapped-face (span-value s) b))
+                         s))
+                     (text-highlights-in t drawn-start drawn-end)))
          (line-id-prefix (and lines v
                               (string-append (view-element-id v) "-node-" (number->string (node-id n)) "-line-"))))
     `(div (@ (class "text"))

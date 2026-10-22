@@ -66,6 +66,7 @@ prelude: :gerbil/core
         ;; changes and the rule positions follow through them
         (struct-out change) (struct-out span)
         position-after-change span-after-change rebase-spans
+        spans-replaced (struct-out ranged-spans) rebase-job-result
         ;; texts
         text text? text-id new-text
         text-chars-revision text-content-revision text-decoration-revision
@@ -79,7 +80,7 @@ prelude: :gerbil/core
         ;; snapshots
         (struct-out snapshot) text-snapshot snapshot-size snapshot-for-each-chunk
         ;; decorations
-        set-highlights! text-highlights text-all-highlights
+        set-highlights! text-highlights text-highlights-in
         ;; nodes and node kinds
         node node? node-id node-kind node-attributes node-attribute
         node-parent node-revision node-child-count node-children
@@ -173,18 +174,89 @@ prelude: :gerbil/core
            s
            (make-span start end s.value)))))
 
+;; S moved through CHANGES (oldest first), or #f once it is empty.
+(def (span-after-changes (s : span) (changes : :list)) => (Maybe span)
+  (match changes
+    ([] s)
+    ([c . more]
+     (let (moved (span-after-change s c))
+       (and moved (span-after-changes moved more))))))
+
 ;; SPANS moved through CHANGES (oldest first), as highlights move with
 ;; edits (span-after-change); a span is dropped once it is empty.
 (def (rebase-spans (spans : :list) (changes : :list)) => :list
-  (filter-map
-   (lambda ((s : span))
-     (let lp ((rest changes) (s s))
-       (match rest
-         ([] s)
-         ([c . more]
-          (let (moved (span-after-change s c))
-            (and moved (lp more moved)))))))
-   spans))
+  (filter-map (cut span-after-changes <> changes) spans))
+
+(def (span-before? (a : span) (b : span)) => :boolean
+  (fx< (span-start a) (span-start b)))
+
+(def (same-spans? (a : :list) (b : :list)) => :boolean
+  (match a
+    ([] (null? b))
+    ([(? span? x) . more]
+     (match b
+       ([(? span? y) . others]
+        (and (fx= (span-start x) (span-start y)) (fx= (span-end x) (span-end y))
+             (equal? (span-value x) (span-value y))
+             (same-spans? more others)))
+       (else #f)))))
+
+;; A highlight layer's SPANS, ordered by start, with whatever lies inside
+;; START..END replaced by NEW clipped to that range, still ordered by
+;; start (a span crossing an edge keeps its part outside); or #f when that
+;; changes nothing, because the layer's spans inside the range, clipped,
+;; are already NEW's, by start, end and value. Empty spans are dropped.
+;; For providers setting highlights (Buffers set-highlights!).
+(def (spans-replaced (spans : :list) (new : :list) (start : :fixnum) (end : :fixnum)) => (Maybe :list)
+  (let* ((clip (lambda ((s : span))
+                 (let ((from (fxmax (span-start s) start))
+                       (to (fxmin (span-end s) end)))
+                   (and (fx< from to)
+                        (if (and (fx= from (span-start s)) (fx= to (span-end s)))
+                          s
+                          (make-span from to (span-value s)))))))
+         (clipped (filter-map clip new))
+         (inside (let lp ((rest clipped))
+                   (match rest
+                     ([a b . more] (if (fx<= (span-start a) (span-start b)) (lp (cdr rest)) (list-sort span-before? clipped)))
+                     (else clipped)))))
+    (and (not (same-spans? (filter-map clip spans) inside))
+         ;; Parts before START keep their starts; parts after END start
+         ;; at END or later: so the three runs are each in order.
+         (let ((before (filter-map (lambda ((s : span))
+                                     (and (fx< (span-start s) start)
+                                          (if (fx<= (span-end s) start)
+                                            s
+                                            (make-span (span-start s) start (span-value s)))))
+                                   spans))
+               (after (filter-map (lambda ((s : span))
+                                    (and (fx> (span-end s) end)
+                                         (if (fx>= (span-start s) end)
+                                           s
+                                           (make-span end (span-end s) (span-value s)))))
+                                  spans)))
+           (append before inside after)))))
+
+;; Spans a job computed for START..END of a highlight layer, as
+;; set-highlights! replaces them: what lies outside the range is not the
+;; job's to change.
+(defstruct ranged-spans ((start : :fixnum)
+                         (end   : :fixnum)
+                         (spans : :list))
+  final: #t)
+
+;; A job's RESULT moved through CHANGES (oldest first), as a list of one
+;; result, or #f when nothing of it is left: a list of spans moves as
+;; rebase-spans moves it; ranged-spans move their range as a span moves
+;; (text inserted at either edge stays outside), and are dropped once the
+;; range is empty. For providers rebasing job results (JobTarget).
+(def (rebase-job-result (result : :t) (changes : :list)) => (Maybe :pair)
+  (if (ranged-spans? result)
+    (using (result : ranged-spans)
+      (let (range (span-after-changes (make-span result.start result.end #f) changes))
+        (and range
+             [(make-ranged-spans (span-start range) (span-end range) (rebase-spans result.spans changes))])))
+    [(rebase-spans result changes)]))
 
 ;;; Identities. Providers extend these classes with their own state, and
 ;;; give each its own source (ADR 17), CHANGES: `(new-source)`, which they
@@ -352,9 +424,11 @@ prelude: :gerbil/core
   ;; Undo one group of T's changes and return where point belongs.
   (text-undo! (t : text) (continue? : :boolean)) => :fixnum
   (text-clear-undo! (t : text)) => :void
-  (set-highlights! (t : text) (name : :symbol) (spans : :list)) => :void
+  ;; Replace what layer NAME has inside START..END with SPANS
+  ;; (spans-replaced); no change, nothing stamped, when it is the same.
+  (set-highlights! (t : text) (name : :symbol) (spans : :list) (start : :fixnum) (end : :fixnum)) => :void
   (text-highlights (t : text) (name : :symbol)) => :list
-  (text-all-highlights (t : text)) => :list
+  (text-highlights-in (t : text) (start : :fixnum) (end : :fixnum)) => :list
   ;; Nodes
   (make-node (kind : :symbol) (attributes : :list) (children : :list)) => :t
   (make-text-node (t : text)) => :t
@@ -535,22 +609,32 @@ prelude: :gerbil/core
 
 ;;; Decorations
 
-;; Replace T's highlight layer NAME with SPANS, whose values are face
-;; names. Highlights are decorations: they bump the decoration revision,
-;; not the content revision (ADR 4), and move with edits
-;; (span-after-change).
-(def (set-highlights! (t : text) (name : :symbol) (spans : :list)) => :void
-  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-set-highlights! provider t name spans)) :void))
+;; Replace what T's highlight layer NAME has inside START..END (by
+;; default all of T) with SPANS, whose values are face names, clipped to
+;; that range; a span crossing an edge keeps its part outside
+;; (spans-replaced). Spans the same as the layer's inside the range are no
+;; change: nothing is drawn again. Highlights are decorations: they bump
+;; the decoration revision, not the content revision (ADR 4), and move
+;; with edits (span-after-change).
+(def (set-highlights! (t : text) (name : :symbol) (spans : :list)
+                      start: (start : :fixnum := 1) end: (end :? :fixnum := #f))
+  => :void
+  (:- (with-service-provider (provider buffers-service Buffers)
+    (let (end (or end (fx1+ (text-size t))))
+      (check-range (text-snapshot t) start end)
+      (Buffers-set-highlights! provider t name spans start end))) :void))
 
-;; T's highlight spans in layer NAME.
+;; T's highlight spans in layer NAME, ordered by start.
 (def (text-highlights (t : text) (name : :symbol)) => :list
   (record-read! (text-changes t))
   (:- (with-service-provider (provider buffers-service Buffers) (Buffers-text-highlights provider t name)) :list))
 
-;; Every highlight span of T, in no particular order.
-(def (text-all-highlights (t : text)) => :list
+;; T's highlight spans overlapping START..END, of every layer: layer by
+;; layer, in an order the provider keeps, and by start within a layer.
+;; Drawing asks only for what it draws, so a provider may index them.
+(def (text-highlights-in (t : text) (start : :fixnum) (end : :fixnum)) => :list
   (record-read! (text-changes t))
-  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-text-all-highlights provider t)) :list))
+  (:- (with-service-provider (provider buffers-service Buffers) (Buffers-text-highlights-in provider t start end)) :list))
 
 ;;; Nodes
 
@@ -718,7 +802,8 @@ prelude: :gerbil/core
 ;;; An item's token names it in HTML and in what the browser reports: "N"
 ;;; for node N, "N.P.R" for the line holding position P of text node N's
 ;;; text at character revision R, so a report about a screen drawn before
-;;; an edit still finds its line.
+;;; an edit still finds its line, while the text's journal reaches back to
+;;; R (text-changes-since); a token from before that names nothing.
 ;;;
 ;;; Counting a node's children's items is kept per node and revision (a
 ;;; change to a node or below it gives it a new revision), so counting
@@ -896,6 +981,7 @@ prelude: :gerbil/core
       ([(? fixnum? id) (? fixnum? position) (? fixnum? revision)]
        (let (n (node-under root id))
          (and n (eq? (node-opening n) 'lines)
+              (text-changes-since (text-node-content n) revision)
               (let (it (make-item n position revision))
                 (and (node-item-index root it) it)))))
       (else #f))))
