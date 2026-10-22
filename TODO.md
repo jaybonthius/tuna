@@ -40,4 +40,7 @@
 - [ ] **A flood of input breaks ordering** (found 2026-10-17): about 2,700 synthetic keydowns in 4.5 s produced "Skipped missing input" and "Ignored duplicate input", and the page fell out of sync until reloaded. Normal typing is fine. Web transport ordering, not scrolling.
 - [ ] **A key press redraws every drawn item** (scrolling, 2026-10-17): at two screens drawn each way a key costs about 11 ms and 36 KB per screen (34–39 ms and up to 376 KB at 20,000 px). Reuse HTML per item so an edit redraws only what changed; stream compression (roadmap item 8) cuts the bytes.
 - [ ] **Fast scrolling outruns two screens over a slow link** (2026-10-21): at 9,000 px/s with an 80 ms round trip, about half the frames show spacer lines. Raise `drawn-screens`, or draw more ahead of the motion.
+- [ ] **After a restart the first screen can arrive before the stylesheet** (2026-10-22, seen on main too): the placement then does nothing and the view lands a few lines off. Make the placement wait for the stylesheets, or owe another placement.
+- [ ] **The frozen per-item height survives width changes** (2026-10-22): after a resize, rotation or `C-x 3`, the thumb-to-item mapping drifts. Consider re-measuring when the measured width changes (a resize is not a drag).
+- [ ] **A resize does not trigger a scroll report** (2026-10-22): the server's offset stays stale until the next scroll.
 
