@@ -41,15 +41,19 @@
 ;;; top of the buffer, so no estimate of everything above adds up.
 ;;;
 ;;; The average item height (the drawn items' height over their count, as
-;;; measured) is the spacers' height per item, so it changes only when it
-;;; must: on the view's first report, and on a report from a spacer with
-;;; drawn items in view, after counting, for the spacers drawn next. Taken
-;;; from every report, it would swing the spacers by thousands of px deep
-;;; in a long buffer as the drawn items vary, moving the scroll bar under
-;;; the user's pointer. Never from a report with nothing drawn in view: a
-;;; new average moves everything below a spacer by its items times the
-;;; change, and the browser's scroll anchoring holds the view still only
-;;; with a drawn item in view to hold.
+;;; measured) is the spacers' height per item, and with the item count it
+;;; sets the scroller's total height. By default (`spacer-item-height`
+;;; 'first) it is measured on the view's first report and then kept while
+;;; the view shows its buffer, so the total height changes only when items
+;;; are added or removed: Chrome on macOS drops a scroll bar drag's move
+;;; whenever it changes. With 'measured it is also measured again on a
+;;; report from a spacer with drawn items in view, after counting, for the
+;;; spacers drawn next. Taken from every report, it would swing the
+;;; spacers by thousands of px deep in a long buffer as the drawn items
+;;; vary, moving the scroll bar under the user's pointer. Never from a
+;;; report with nothing drawn in view: a new average moves everything
+;;; below a spacer by its items times the change, and the browser's scroll
+;;; anchoring holds the view still only with a drawn item in view to hold.
 ;;;
 ;;; Scroll commands place items (Emacs's names and keys): `C-v` puts the
 ;;; last items wholly in view at the top and `M-v` the first ones at the
@@ -89,19 +93,25 @@
         to-the-end
         item-across-spacer)
 
+;; How tall a spacer counts each undrawn item. The browser's scroll bar is
+;; sized by the spacers, whose box is as high as all the view's items at
+;; this height (the renderer), so a value that changes while you drag
+;; moves the handle away from the pointer, and on Chrome for macOS, which
+;; drops a drag's move whenever the scroller's total height changes, makes
+;; the handle lag the pointer.
+;; - 'first: the average measured on the view's first report, then kept
+;;   until the view shows another buffer; the total height then changes
+;;   only when items are added or removed;
+;; - 'measured: the average item height measured, updated on the view's
+;;   first report and on each report from a spacer with drawn items in
+;;   view; each update changes the total height;
+;; - a number: that many px for every undrawn item, never measured.
+(defsetting spacer-item-height 'first
+  "How tall a spacer counts each undrawn item: 'first, 'measured (changes the scroll height, dropping scroll bar drag movement on Chrome for macOS), or a number of px.")
+
 ;; Whether scrolling a view moves its point into view (as in Emacs). Off,
 ;; point stays where it was, out of view, until a command moves it or
 ;; edits its text, which brings the view back to it (as in VS Code).
-;; How tall a spacer counts each undrawn item. The browser's scroll bar is
-;; sized by the spacers, so a value that changes while you drag moves the
-;; handle away from the pointer.
-;; - 'measured: the average item height measured, updated on the view's
-;;   first report and on each report from a spacer with drawn items in
-;;   view;
-;; - 'first: the average measured on the view's first report, then kept;
-;; - a number: that many px for every undrawn item, never measured.
-(defsetting spacer-item-height 'measured
-  "How tall a spacer counts each undrawn item: 'measured, 'first, or a number of px.")
 
 (defsetting scroll-moves-point #t
   "Whether scrolling a view moves its point into view; off, point stays and the view returns to it when a command moves it.")

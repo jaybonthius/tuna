@@ -2,15 +2,16 @@
    and status lines.
 
    These classes and data attributes are a published styling surface:
-   .screen, .view, .buffer, .text, .line, .spacer, .cursor,
-   .inactive-cursor, .placement, .status-line, .face-NAME, [data-view],
+   .screen, .view, .buffer, .scroll-content, .text, .line, .spacer,
+   .cursor, .inactive-cursor, .placement, .status-line, .face-NAME,
+   [data-view],
    [data-selected], [data-part], [data-node], [data-clickable],
    [data-spacer], and [data-item] on each drawn item of a view. Other
    plugins may select on them, for example to style their own nodes
    inside a buffer. Rules here are wrapped in :where() so that any other
    plugin's or theme's rule wins whatever its place on the page; the
    cursor, the items' margins and the spacers' scrolling rules are the
-   exceptions. */
+   exceptions, and so is the scroll content's layout. */
 
 /* The screen is the layout, and fills the browser window; views scroll
    inside it. Dynamic viewport units follow a phone's browser toolbar, and
@@ -61,12 +62,37 @@
   display: none;
 }
 
-/* A spacer stands in for items not drawn, as high as the server says
-   (--spacer-block-size). It must never be the browser's scroll anchor,
-   or the browser would hold a spacer still instead of the items being
-   read, and it has no margins, which would fall outside what the page
-   measures. Real specificity, so no other rule changes either. */
-.buffer > .spacer {
+/* What the buffer scrolls: the spacer above, the drawn items, the spacer
+   below. With spacers, it is as high as the server says
+   (--scroll-content-block-size: all the buffer's items at the view's
+   average item height), whatever the drawn items' real heights: the
+   spacer above and the drawn items keep their own heights, and the last
+   spacer grows to fill what they leave. So the scroller's total height
+   stays the same while the view scrolls; Chrome on macOS drops a drag of
+   the scroll bar's thumb whenever it changes. Drawn items taller than
+   their share overflow it, near the end of the buffer. Real specificity,
+   so no other rule changes the layout. */
+.buffer > .scroll-content {
+  display: flex;
+  flex-direction: column;
+  block-size: var(--scroll-content-block-size, auto);
+}
+
+.scroll-content > * {
+  flex: none;
+}
+
+.scroll-content > .spacer:not(:has(~ .spacer)) {
+  flex-grow: 1;
+}
+
+/* A spacer stands in for items not drawn: the spacer above as high as
+   the server says (--spacer-block-size), the one below filling the rest.
+   It must never be the browser's scroll anchor, or the browser would hold
+   a spacer still instead of the items being read, and it has no margins,
+   which would fall outside what the page measures. Real specificity, so
+   no other rule changes either. */
+.scroll-content > .spacer {
   margin-block: 0;
   overflow-anchor: none;
 }

@@ -13,6 +13,6 @@
 }
 
 /* The echo area pads itself; its buffer (the renderer's .buffer) does not. */
-.buffer:has(> .echo-area) {
+.buffer:has(> .scroll-content > .echo-area) {
   padding: 0;
 }
