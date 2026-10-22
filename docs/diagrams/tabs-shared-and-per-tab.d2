@@ -1,0 +1,28 @@
+# What is shared, and what does each tab keep? (planned)
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 0
+  }
+}
+direction: down
+
+editor: "The editor: one, shared by every tab, saved with your session" {
+  buffers: "Buffers, text, undo,\nkill ring, settings, theme"
+  layout: "Layout, the part shown,\nthe selected view"
+  point: "Each view's point and\nscroll position (the item at its top)"
+  prompts: "Questions being asked,\nmessages, completion"
+}
+
+laptop: "Laptop tab: kept on the server, never saved" {
+  who: "1. Its id and connection:\ninput numbering, last screen sent"
+  keys: "2. Keys in progress:\nC-x waiting, last command"
+  measured: "3. What its browser measured:\nsizes, drawn items, placement done"
+}
+
+phone: "Phone tab: the same three things, its own values"
+
+laptop -> editor: "keys, clicks, scroll reports\n(each names the tab)"
+phone -> editor: "keys, clicks, scroll reports"
+editor -> laptop: "a screen drawn for the laptop"
+editor -> phone: "a screen drawn for the phone"

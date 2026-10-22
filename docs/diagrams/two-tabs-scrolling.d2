@@ -1,0 +1,24 @@
+# Two tabs on one editor: what happens when you scroll and type? (planned)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+laptop: "Laptop tab"
+phone: "Phone tab"
+web: "Web transport plugin"
+editor: "Editor (shared state)"
+
+laptop -> web: "1. page loads; it makes tab id L and opens its screen stream"
+phone -> web: "2. page loads; tab id P"
+laptop -> editor: "3. scroll report from L: section 900 at the top"
+editor -> editor: "4. scroll position := section 900;\nL's measurements stored under L"
+web -> laptop: "5. a screen drawn for L: no move needed"
+web -> phone: "6. a screen drawn for P, with one placement:\nput section 900 at the top"
+phone -> editor: "7. C-x from P: P's keys in progress = C-x"
+laptop -> editor: "8. b from L: L has nothing in progress,\nso b is typed into the buffer (not C-x b)"
+web -> phone: "9. a screen for P showing the new b,\nstill waiting after C-x"
+web -> laptop: "10. a screen for L showing the new b"
