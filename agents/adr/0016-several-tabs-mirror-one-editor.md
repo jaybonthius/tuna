@@ -27,6 +27,7 @@ Both models keep input-sequence state and measured geometry per client. Datastar
 - **The tab you use drives the scroll position.**
   - A report from tab T moves the shared scroll position. Every other tab then gets exactly one placement to that position; T gets none.
   - A report from T is accepted when it acknowledges the newest placement sent to T.
+  - A report that only confirms the placement T was just sent (the first report after T applied it) updates T's measurements but never moves the shared position, so tabs of different sizes cannot bounce each other.
   - Point-follows-view, `C-v`, `M-v` and `C-l` use the measurements of the client that ran the command.
   - Work with no client (timers, restore) places for every tab.
 - **Quit.** `C-g` stops a running command whichever tab sends it, because all clients share one editor thread, as with Emacs's global `quit-flag`. With nothing running, `C-g` resolves in the sending tab's keys in progress.

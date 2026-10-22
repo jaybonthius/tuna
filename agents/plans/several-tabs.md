@@ -9,6 +9,7 @@
 - Everything else stays shared and saved as today.
 - Commands keep calling `(current-buffer)`, `(point)` and `(selected-view)` unchanged. No command signature changes.
 - Each per-tab entry lives in the plugin whose concept it is. The `clients` contract is vocabulary only, imports only the kernel facade, and serves at least the web, keys, commands, scrolling and renderer plugins.
+- **No bouncing:** a report that only confirms the placement its tab was just sent updates that tab's measurements and never moves the shared position, so a placement in one tab never causes a placement back in another.
 - No backward compatibility: the single-tab paths (`restart-numbering!`, the global `owed`, one global `rendered`) are deleted, not kept beside the new ones.
 
 ## Placement
@@ -42,6 +43,7 @@
    - Point-follows-view and the scroll commands use the commanding client's measurements; work with no client places for every tab.
    - Tests:
      - Tab A's report moves tab B with one placement, and A gets none.
+     - B's confirming report after that placement sends A nothing, even when B's offset differs.
      - Two tabs with different heights each draw their own runs and spacers.
      - A reload is a new tab and lands at the shared position.
    - Then check by hand in two real browser windows of different sizes: scroll each, fling each, and type in each. Report what was checked.
