@@ -1,6 +1,6 @@
 # Plan: drawing only what changed
 
-**Status:** approved 2026-10-22 (brief `docs/briefs/2026-10-drawing-only-what-changed.md`, ADR 17). Not started.
+**Status:** approved 2026-10-22 (brief `docs/briefs/2026-10-drawing-only-what-changed.md`, ADR 17). Stage 1 merged 2026-10-22 (`16f0891`); stage 2 merged 2026-10-22 (`965eeac`; design and as-built notes in `agents/plans/drawing-stage2-design.md`). Next: stage 3.
 
 ## Invariants
 
