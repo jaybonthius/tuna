@@ -138,7 +138,8 @@ prelude: :gerbil/core
 ;; is the px from the top of the first of them to the bottom of the last,
 ;; and PX-ABOVE and PX-BELOW are the px of them beyond the view's top and
 ;; bottom edges; PLACEMENT is the number of the last placement the page
-;; applied to the view.
+;; applied to the view. SETTLED? is whether scrolling had come to rest
+;; when the page measured, rather than being on its way.
 (defstruct scroll-event ((sequence          : :fixnum)
                          (client            :? client-type)
                          (start             : posn)
@@ -154,7 +155,8 @@ prelude: :gerbil/core
                          (px-above          : :flonum)
                          (px-below          : :flonum)
                          (viewport-width    : :fixnum)
-                         (viewport-height   : :fixnum))
+                         (viewport-height   : :fixnum)
+                         (settled?          : :boolean))
   final: #t)
 
 ;; The key scroll events are looked up under.

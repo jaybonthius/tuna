@@ -62,9 +62,11 @@ class Element {
 }
 
 // Each harness is one page load, with no browser storage; its page shell's
-// `tab` signal is TAB.
+// `tab` signal is TAB. DOCUMENT-LISTENERS gets the page's document-level
+// listeners.
 async function harness(screen = new Element({ "data-revision": 7 }), platform = "Linux x86_64",
-                       elementFromPoint = () => null, tab = "tab-1") {
+                       elementFromPoint = () => null, tab = "tab-1",
+                       { documentListeners = {} } = {}) {
   const posts = [];
   const errors = [];
   const retries = [];
@@ -81,7 +83,8 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
     WeakMap,
     WeakSet,
     clearTimeout() {},
-    document: { getElementById: (id) => (id === "screen" ? screen : null), elementFromPoint },
+    document: { getElementById: (id) => (id === "screen" ? screen : null), elementFromPoint,
+                addEventListener(type, listener) { (documentListeners[type] ??= []).push(listener); } },
     setTimeout(callback, delay) { retries.push({ callback, delay }); },
     fetch(url, options) {
       return new Promise((resolve, reject) => {
@@ -469,10 +472,43 @@ test("tunaScroll reports nothing before a placement, then what it measured, once
     version: 1, tab: "tab-1", type: "scroll", sequence: 1, revision: 7, view: 12, node: 4, placement: 3,
     top: "4.51.0", offset: 5, lastVisible: "4.60.0", spacer: null, spacerDistance: 0,
     before: 50, after: 49, drawnHeight: 2000, above: 1005, below: 795, width: 300, height: 200,
+    settled: false,
   }, "item 61 ends 15 px below the view, so item 60 is the last wholly in view");
   assert.equal(v.scroller.getAttribute("data-effect"), null, "one report is on its way at a time");
   h.scroll(v.scroller, "moved");
   assert.equal(h.posts.length, 1);
+});
+
+test("a report says whether scrolling had come to rest, also when it came to rest while another was on its way", async () => {
+  const h = await harness();
+  const v = scrolledView();
+  h.place(v.placement);
+  h.scroll(v.scroller, "moved");
+  assert.equal(h.posts.length, 1);
+  assert.equal(h.posts[0].body.settled, false, "the placement's report, owed, not at rest");
+  h.scroll(v.scroller, "rest");
+  assert.equal(h.posts.length, 1, "at rest while a report is on its way: owed");
+  v.scroller.attributes["data-effect"] = "...";
+  h.scroll(v.scroller, "moved");
+  assert.equal(h.posts.length, 2);
+  assert.equal(h.posts[1].body.settled, true, "the owed report says scrolling came to rest");
+  v.scroller.attributes["data-effect"] = "...";
+  v.scroller.scrollTop = 150;
+  h.scroll(v.scroller, "moved");
+  assert.equal(h.posts.length, 3);
+  assert.equal(h.posts[2].body.settled, false, "a rest is reported once; scrolling again is on its way");
+});
+
+test("a scroller that has not scrolled for 200 ms gets tunarest, once however many steps its scroll took", async () => {
+  const listeners = {};
+  const h = await harness(undefined, undefined, undefined, undefined, { documentListeners: listeners });
+  const v = scrolledView();
+  assert.equal(listeners.scroll.length, 1);
+  for (let step = 0; step < 40; step++) listeners.scroll[0]({ target: v.scroller });
+  const waits = h.retries.filter((r) => r.delay === 200);
+  assert.equal(waits.length, 40, "each scroll restarts the wait");
+  waits.at(-1).callback();
+  assert.deepEqual(v.scroller.events.filter((type) => type === "tunarest"), ["tunarest"]);
 });
 
 test("tunaScroll reports when drawn px run short or long, the size changed, or scrolling ended", async () => {
@@ -607,6 +643,7 @@ test("a report from a spacer names the drawn item next to it and how far the top
     version: 1, tab: "tab-1", type: "scroll", sequence: 2, revision: 7, view: 12, node: 4, placement: 3,
     top: "4.51.0", offset: -400, lastVisible: null, spacer: "above", spacerDistance: 400,
     before: 0, after: 99, drawnHeight: 2000, above: 0, below: 2200, width: 300, height: 200,
+    settled: true,
   });
   // 300 px down into the spacer below.
   v.scroller.scrollTop = 3300;
@@ -616,6 +653,7 @@ test("a report from a spacer names the drawn item next to it and how far the top
     version: 1, tab: "tab-1", type: "scroll", sequence: 3, revision: 7, view: 12, node: 4, placement: 3,
     top: "4.150.0", offset: 320, lastVisible: null, spacer: "below", spacerDistance: 300,
     before: 99, after: 0, drawnHeight: 2000, above: 2300, below: 0, width: 300, height: 200,
+    settled: true,
   });
 });
 

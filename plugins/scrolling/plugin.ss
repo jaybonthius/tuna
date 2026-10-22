@@ -12,11 +12,16 @@
 ;;; shared, and what each client's browser measured of it is kept per
 ;;; client (the buffers contract's client-view), dropped when the client
 ;;; goes (client-gone-hook). The client you use drives the scroll
-;;; position: a report that scrolled the view moves it, and every other
-;;; client is placed there; the first report after a client applied a
+;;; position: a report sent once scrolling came to rest, from a client
+;;; that has scrolled since it was last where the view's position is,
+;;; moves it, and every other client is placed there once; reports on the
+;;; way only draw for the client scrolling, so a fling moves the others
+;;; once, where it ends. The first report after a client applied a
 ;;; placement only confirms it, updating what that client measured and
-;;; moving nothing, so clients of different sizes never place each other
-;;; back and forth. Commands place the view in every client, and work out
+;;; moving nothing, and where it measured itself then is where it is in
+;;; step with the position, so clients of different sizes, which apply the
+;;; same placement a little differently, never place each other back and
+;;; forth. Commands place the view in every client, and work out
 ;;; what is in view from what the commanding client (`current-client`)
 ;;; measured; work with no client has measurements only from reports with
 ;;; no client, so usually none, and then places nothing that needs them.
@@ -208,6 +213,7 @@
 ;; as (NUMBER . ITEM). The points of the views commands run in, innermost
 ;; command first, as they were before it. Where C-l last put point's item.
 (defclass scrolling-state ((moved-last       : HashTable)
+                           (in-step          : HashTable) ; client-view -> (item . offset) where it was last in step with its view's position
                            (owed             : HashTable)
                            (point-placements : HashTable)
                            (before           : :list)
@@ -216,6 +222,7 @@
 
 (def (new-scrolling-state) => scrolling-state
   (scrolling-state moved-last: (make-hash-table test: eq? weak-keys: #t)
+                   in-step: (make-hash-table test: eq? weak-keys: #t)
                    owed: (make-hash-table test: eq? weak-keys: #t)
                    point-placements: (make-hash-table test: eq? weak-keys: #t)
                    before: [] recentered: 'bottom))
@@ -385,13 +392,15 @@
 ;; another node: 'placed when it is the first measured under that
 ;; placement, which only confirms it; 'moved when the view has scrolled
 ;; since the client's last report (another item or offset at the top,
-;; the same size), which moves the view's scroll position, so every other
-;; client is placed there; and 'still otherwise. The node its view's
+;; the same size), or EVENT came once scrolling settled away from where
+;; the client was last in step with the view's position (STATE's
+;; in-step); and 'still otherwise. Only a settled move moves the view's
+;; scroll position, so every other client is placed there. The node its view's
 ;; scroller draws from is the one EVENT names, while the view's buffer
 ;; holds it. The item at the top is the one EVENT names, or, when its top
 ;; edge is in a spacer, the one counted across the spacer from the drawn
 ;; item EVENT names (item-across-spacer).
-(def (view-scrolled! (event : scroll-event)) => (Maybe :list)
+(def (view-scrolled! (state : scrolling-state) (event : scroll-event)) => (Maybe :list)
   (using (event : scroll-event)
     (let* ((p event.start)
            (v (posn-view p))
@@ -423,13 +432,20 @@
                   (visible (if (and top-index last-index) (fxmax 1 (fx1+ (fx- last-index top-index))) 0))
                   (before (client-view-facts cv))
                   (was (client-view-scroll-item cv))
+                  (in-step (hash-get (scrolling-state-in-step state) cv))
+                  (away? (lambda ((it :? item) (it-offset : :flonum))
+                           (or (not it) (not (item=? it top))
+                               (fl>= (flabs (fl- it-offset offset)) edge-tolerance))))
+                  (placed? (or (not before) (fx< (scroll-facts-placement before) event.placement)))
+                  (same-size? (and before
+                                   (fx= (scroll-facts-width before) event.viewport-width)
+                                   (fx= (scroll-facts-height before) event.viewport-height)))
+                  (settled-move? (and top (not placed?) same-size? event.settled?
+                                      (or (not in-step) (away? (car in-step) (cdr in-step)))))
                   (how (cond
-                        ((or (not before) (fx< (scroll-facts-placement before) event.placement)) 'placed)
-                        ((and top
-                              (fx= (scroll-facts-width before) event.viewport-width)
-                              (fx= (scroll-facts-height before) event.viewport-height)
-                              (or (not was) (not (item=? was top))
-                                  (fl>= (flabs (fl- (client-view-scroll-offset cv) offset)) edge-tolerance)))
+                        (placed? 'placed)
+                        ((and top same-size?
+                              (or settled-move? (away? was (client-view-scroll-offset cv))))
                          'moved)
                         (else 'still))))
              (set-client-view-facts! cv (make-scroll-facts event.placement root last-visible visible
@@ -437,9 +453,11 @@
              (when average
                (set-client-view-average-item-height! cv average))
              (when top-index
-               (if (eq? how 'moved)
+               (if settled-move?
                  (set-view-scroll! v event.client top offset)
                  (set-client-view-scroll! cv top offset))
+               (when (and top (or placed? settled-move?))
+                 (hash-put! (scrolling-state-in-step state) cv (cons top offset)))
                (let* ((density (if measured (fl/ 1. measured) 0.))
                       (wanted (wanted-pixels v event.viewport-height))
                       (height (exact->inexact event.viewport-height))
@@ -557,7 +575,7 @@
     (defcommand (view-scrolled) "Adopt what the browser measured of the view a scroll report names."
       (let (event (last-command-event))
         (if (scroll-event? event)
-          (match (view-scrolled! event)
+          (match (view-scrolled! state event)
             ([v cv how] (after-report! state v cv how))
             (else (void)))
           (message "view-scrolled runs only from a scroll report"))))

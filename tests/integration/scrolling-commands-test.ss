@@ -62,7 +62,7 @@
              (token (lambda (line) (item-token (node-item-at n (- line 1))))))
         (make-scroll-event sequence #f (make-posn 'view (view-id v) (node-id n) 0)
                            (or placement (placement-number (client-view-placement (view-client v #f))))
-                           (token top) offset (token last) #f 0. 100 400 40744. 20000. 20000. 800 744)))))
+                           (token top) offset (token last) #f 0. 100 400 40744. 20000. 20000. 800 744 #t)))))
   (on-baton void))
 
 ;; V's newest placement's item's line and alignment.

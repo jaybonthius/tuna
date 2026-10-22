@@ -348,7 +348,8 @@
 
 ;; The attributes of V's scroller, which draws START's items FIRST to LAST
 ;; of COUNT, that its report trigger reads (the web transport's tunaScroll
-;; action). Each trigger is the scroller's own: its scroll events, and an
+;; action). Each trigger is the scroller's own: its scroll events, its
+;; tunarest event (scrolling came to rest, from the transport's page), and an
 ;; effect reading no signal, which runs when a screen puts it back after
 ;; a report removed it. An effect reading a page-wide signal would run for
 ;; every scroller whenever any one scrolled, including one a morph is
@@ -360,7 +361,7 @@
     (append
      [['data-on:scroll "@tunaScroll('moved')"]
       ['data-effect "@tunaScroll('moved')"]
-      ['data-on:scrollend "@tunaScroll('rest')"]
+      ['data-on:tunarest "@tunaScroll('rest')"]
       ['data-scroll-root (number->string (node-id start))]
       ['data-drawn-screens (number->string (drawn-screens-value (view-showing v)))]]
      (if (fx<= first 0) [['data-run-at-start ""]] [])

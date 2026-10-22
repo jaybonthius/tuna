@@ -105,8 +105,9 @@
 ;; TOP, is the last in view. With SPACER ('above or 'below), the view's top
 ;; edge is DISTANCE px into that spacer, TOP is the drawn line next to it,
 ;; and no line is wholly in view. From client FROM, by default none,
-;; measured under PLACEMENT: by default the newest sent to FROM.
-(def (report! v top: (top 300) offset: (offset 0.) last: (last #f) client: (from #f)
+;; measured under PLACEMENT: by default the newest sent to FROM; SETTLED,
+;; by default, once scrolling came to rest.
+(def (report! v top: (top 300) offset: (offset 0.) last: (last #f) client: (from #f) settled: (settled #t)
               spacer: (spacer #f) distance: (distance 0.)
               before: (before 100) after: (after 400) above: (above 2000.) below: (below 2000.)
               drawn: (drawn (+ above below 744.))
@@ -115,7 +116,7 @@
                               (or placement (client-placement v from))
                               (and top (line-token v top root: root)) offset
                               (and (not spacer) (line-token v (or last (+ top 30)) root: root))
-                              spacer distance before after drawn above below 800 744)))
+                              spacer distance before after drawn above below 800 744 settled)))
 
 ;; Report what the browser measured of V's newest placement: TOP and LAST
 ;; as report! takes them.
@@ -211,6 +212,47 @@
              (report! v top: 400 client: b)
              (check (placed-at v) => [400 'top])
              (check (client-placement-of v a) => [(+ a-before 1) 400 'top 0.]))))))
+
+    (test-case "a fling moves the other clients once, where it comes to rest; applying a placement moves nobody"
+      (with-scrolling
+       (lambda (v)
+         (let ((a (make-client "a"))
+               (b (make-client "b")))
+           (report! v top: 1 last: 31 client: a)
+           (report! v top: 1 last: 61 client: b)
+           (let ((a-before (client-placement v a))
+                 (b-before (client-placement v b))
+                 (position (placement-of v)))
+             ;; On its way: A draws further, B is sent nothing.
+             (report! v top: 100 client: a settled: #f)
+             (report! v top: 200 client: a settled: #f)
+             (report! v top: 300 offset: 5. client: a settled: #f)
+             (check (placement-of v) => position)
+             (check (client-placement v b) => b-before)
+             (check (line-of (on-baton (lambda () (client-view-scroll-item (view-client v a))))) => 300)
+             ;; At rest where the last report on its way was: B is placed once.
+             (report! v top: 300 offset: 5. client: a)
+             (check (placed-at v) => [300 'top])
+             (check (client-placement-of v b) => [(+ b-before 1) 300 'top 5.])
+             (check (client-placement v a) => a-before)
+             ;; B applies it a little differently (40 px, its lines wrap
+             ;; differently), confirms, and then reports at rest there:
+             ;; neither moves the view, so A is sent nothing.
+             (let (moved (placement-of v))
+               (report! v top: 300 offset: 40. last: 320 client: b settled: #f)
+               (report! v top: 300 offset: 40. last: 320 client: b)
+               (check (placement-of v) => moved)
+               (check (client-placement v a) => a-before)
+               ;; A at rest again, still where it was in step: nothing.
+               (report! v top: 300 offset: 5. client: a)
+               (check (placement-of v) => moved)
+               (check (client-placement v b) => (+ b-before 1)))
+             ;; B scrolls from there and comes to rest: A follows.
+             (report! v top: 500 client: b settled: #f)
+             (check (client-placement v a) => a-before)
+             (report! v top: 500 client: b)
+             (check (placed-at v) => [500 'top])
+             (check (client-placement-of v a) => [(+ a-before 1) 500 'top 0.]))))))
 
     (test-case "a client's report measured before the newest placement sent to it is ignored"
       (with-scrolling

@@ -867,7 +867,8 @@
              (above (parse-size (hash-get value "above")))
              (below (parse-size (hash-get value "below")))
              (width (hash-get value "width"))
-             (height (hash-get value "height")))
+             (height (hash-get value "height"))
+             (settled (hash-get value "settled")))
          (and (fixnum? sequence) (fx>= sequence 1)
               start
               (count? placement)
@@ -877,9 +878,10 @@
               drawn-height above below
               (fixnum? width) (fx<= 0 width 1000000)
               (fixnum? height) (fx<= 0 height 1000000)
+              (boolean? settled)
               (make-scroll-event sequence from start placement (cdr top) offset (cdr last-visible)
                                  (cdr spacer) spacer-distance before after drawn-height
-                                 above below width height)))))
+                                 above below width height settled)))))
 
 ;; A validated keydown, pointer or scroll item from the client FROM, or #f.
 (def (parse-input-item (value : :t) (from : client-type) (newest-revision : :fixnum)) => :t

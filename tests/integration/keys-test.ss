@@ -350,7 +350,7 @@
                 (key-task (Input-resolve! input (keydown "r" client: a)))
                 (scroll-task (Input-resolve! input
                                              (make-scroll-event 1 a (make-posn 'view 1 #f 0) 0 #f 0. #f
-                                                                #f 0. 0 0 0. 0. 0. 800 600))))
+                                                                #f 0. 0 0 0. 0. 0. 800 600 #t))))
            (check (current-client) => #f)
            (check ((cdr key-task)) => [a a])
            (check ((cdr scroll-task)) => a)))))

@@ -97,7 +97,7 @@
                ("spacer" . "null") ("spacerDistance" . "0")
                ("before" . "100") ("after" . "400") ("drawnHeight" . "39744.25")
                ("above" . "20000.25") ("below" . "19000")
-               ("width" . "800") ("height" . "744"))
+               ("width" . "800") ("height" . "744") ("settled" . "true"))
              changes))
 
 ;; Whether TEXT holds a screen.
@@ -430,6 +430,7 @@
              ("before" . "-1") ("before" . "1.5") ("after" . "\"4\"") ("after" . #f)
              ("drawnHeight" . "-0.5") ("drawnHeight" . "1e12") ("drawnHeight" . #f)
              ("above" . "true") ("above" . "-1") ("above" . #f) ("below" . "[]") ("below" . "-3")
+             ("settled" . "null") ("settled" . "1") ("settled" . "\"true\"") ("settled" . #f)
              ("width" . "-1") ("width" . #f)
              ("height" . "-1") ("height" . "744.5") ("height" . "2000000")))
          (check (length (recorded-items 1)) => 1))))

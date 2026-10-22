@@ -23,12 +23,29 @@ type ScrollFacts = Readonly<{
   below: number;               // px of them below the view
   width: number;               // the view's size, px
   height: number;
+  settled: boolean;            // scrolling had come to rest
 }>;
 
 // What the page keeps of each scroller: the last placement it applied,
-// and whether it owes the server a report, which goes as soon as one may.
-type ScrollerState = { placed: number; owed: boolean };
+// whether it owes the server a report, which goes as soon as one may, and
+// whether scrolling came to rest since its last report.
+type ScrollerState = { placed: number; owed: boolean; rested: boolean };
 const scrollers = new WeakMap<Element, ScrollerState>();
+
+// Scrolling has come to rest when a scroller has not moved for restMs:
+// it then gets a "tunarest" event, which its report trigger listens for.
+// Only reports at rest move the view in the other tabs (ADR 16), so a
+// fling moves them once. The browser's scrollend is not used: it fires
+// after each step of a scroll made of several (each wheel notch, each
+// position a script sets), and Safari has it only since 26.2.
+const restMs = 200;
+const resting = new WeakMap<EventTarget, ReturnType<typeof setTimeout>>();
+document.addEventListener("scroll", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  clearTimeout(resting.get(target));
+  resting.set(target, setTimeout(() => target.dispatchEvent(new Event("tunarest")), restMs));
+}, { capture: true, passive: true });
 
 // A non-negative integer attribute's value, or null.
 function count(element: Element | null | undefined, name: string): number | null {
@@ -83,7 +100,7 @@ action({
     const state = el === null ? undefined : scrollers.get(el);
     if (el === null || state === undefined) return;  // tunaPlace runs first, then reports
     if (!el.hasAttribute("data-effect")) {
-      if (reason === "rest") state.owed = true;
+      if (reason === "rest") { state.owed = true; state.rested = true; }
       return;
     }
     if (count(el.querySelector(".placement"), "data-placement") !== state.placed) return;
@@ -127,6 +144,8 @@ action({
     const top = items[topIndex];
     el.removeAttribute("data-effect");
     state.owed = spacer !== null;
+    const settled = reason === "rest" || state.rested;
+    state.rested = false;
     send<ScrollFacts>({
       type: "scroll",
       revision,
@@ -149,6 +168,7 @@ action({
       below,
       width: el.clientWidth,
       height: el.clientHeight,
+      settled,
     });
   },
 });
@@ -180,7 +200,7 @@ action({
         default: scroller.scrollTop = top + Math.min(pixels(el, "data-offset"), Math.max(box.height - 1, 0));
       }
     }
-    scrollers.set(scroller, { placed: number, owed: true });
+    scrollers.set(scroller, { placed: number, owed: true, rested: false });
     // Run the scroller's report trigger, which reports what is owed.
     scroller.dispatchEvent(new Event("scroll"));
   },
