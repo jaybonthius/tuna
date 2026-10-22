@@ -24,7 +24,7 @@ Everything else is shared: buffers, text and undo, the kill ring, settings and t
 
 ## The picture
 
-**Status:** planned; today there is one tab.
+**Status:** built 2026-10-22.
 
 ![What is shared, and what each tab keeps](../diagrams/tabs-shared-and-per-tab.svg)
 

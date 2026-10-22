@@ -61,7 +61,7 @@ Follow the numbers for the main loop:
 4. When there's no more input waiting, the editor thread draws a new **screen**: everything the tab shows, as HTML.
 5. The web server sends that screen to the browser over its screen stream.
 
-The browser opens the plain `http://127.0.0.1:PORT/` URL: no launch token, cookie, or client id. Tuna still listens only on loopback and rejects foreign Host/Origin headers. One tab is assumed. Numbering starts at 1 on page load; opening its screen stream resets the server's numbering. Failed network requests retry the same numbered item; malformed or excessive waiting input is logged, not shown in the echo area. [How input stays in order](diagrams/input-ordering.svg) shows the implemented flow.
+The browser opens the plain `http://127.0.0.1:PORT/` URL: no launch token, cookie, or sign-in. Tuna still listens only on loopback and rejects foreign Host/Origin headers. Serving the page makes a new **tab id**, which the page holds as a Datastar signal and sends with every request; each tab numbers its input from 1 on its own. A page whose tab Tuna no longer knows (after a server restart) has its numbering start at its next item. Failed network requests retry the same numbered item; malformed or excessive waiting input is logged, not shown in the echo area. [How input stays in order](diagrams/input-ordering.svg) shows the implemented flow.
 
 Around that loop:
 
@@ -230,6 +230,16 @@ root (top to bottom)                       zoomed onto main.ss:
 
 The minibuffer and echo area are ordinary buffers in views in that locked, pinned bar, put there by their plugins; a locked part can't be unpinned or deleted by you. A question appears in the minibuffer nearest the view you're in, so a pinned minibuffer inside one split serves just that split. Splits are `C-x 2` and `C-x 3`, `C-x 0` deletes a view, Shift-arrows move between visible views, and tabs use Emacs's `C-x t` keys. `C-x w p` and `C-x w u` pin and unpin the selected part, `C-x w a` and `C-x w c` widen the selection to the surrounding container and back, and `C-x w` followed by an arrow moves a part past its siblings or into a neighboring container. The layout, frame, marks and pins are saved with your session.
 
+## Several tabs
+
+**Status:** built 2026-10-22 ([ADR 16](../agents/adr/0016-several-tabs-mirror-one-editor.md), brief [several tabs](briefs/2026-10-several-tabs.md)).
+
+You can open Tuna in several tabs or on several devices at once. Every tab mirrors the same editor, like attaching to one tmux session: the same layout, the same views at the same place, each laid out by its own browser. Everything is shared editor state on the server, except three things kept per tab, also on the server, never saved, and forgotten a minute after the tab's stream closes: its id and connection (input numbering, which screen it was sent), its keys in progress (a half-typed `C-x`, the last command), and what its browser measured. Each redisplay draws one screen per tab from shared state plus that tab's measurements. The tab you use drives the scroll position: when it reports where it is, every other tab gets one placement to the same item; a report that only confirms a placement moves nothing, so tabs of different sizes never bounce each other. Commands that move a view (`C-v`, `C-l`, point leaving the view) place every tab. `C-g` stops a running command from any tab.
+
+![What is shared, and what each tab keeps](diagrams/tabs-shared-and-per-tab.svg)
+
+![Two tabs scrolling and typing](diagrams/two-tabs-scrolling.svg)
+
 ## Scrolling
 
 **Status:** built for views (2026-10-17, [ADR 15](../agents/adr/0015-scroll-state.md); the browser's own scroll bar since 2026-10-21). Node scrollers and scrolling strips use the same model and come with their first user.
@@ -238,7 +248,7 @@ A buffer can be enormous, so a view draws only what is near what you are looking
 
 ![What a scroller holds](diagrams/scroller-items.svg)
 
-A view lays out **items**: a text's lines, a list's rows; each kind of node says what its items are, and the scrolling code never knows which. The view's **scroll state** is the item at its top edge and how many pixels of it are above the edge, as the browser measured. Above and below the drawn items, a **spacer** stands in for the rest, as high as those items would be at the average item height the browser measured for this view. That average is the only estimate in Tuna, and it only sizes spacers, so the scroll bar covers the whole buffer; every position still comes from the browser. The view's total height is fixed at all its items times that average, measured once when the view first shows its buffer, and the browser fits the spacer below to whatever the drawn items leave; so the total stays the same while you scroll, which Chrome on macOS needs for the scroll bar's thumb to follow your pointer. When a drag of the scroll bar or a fast fling lands in a spacer, the page says how far it is from the nearest drawn item, and Tuna counts items from there by the same average, makes that item the scroll state, and draws around it.
+A view lays out **items**: a text's lines, a list's rows; each kind of node says what its items are, and the scrolling code never knows which. The view's **scroll state** is the item at its top edge and how many pixels of it are above the edge, as the browser measured; it is shared by every tab, while what each browser measured is kept per tab. Above and below the drawn items, a **spacer** stands in for the rest, as high as those items would be at the average item height the browser measured for this view. That average is the only estimate in Tuna, and it only sizes spacers, so the scroll bar covers the whole buffer; every position still comes from the browser. The view's total height is fixed at all its items times that average, measured once when the view first shows its buffer, and the browser fits the spacer below to whatever the drawn items leave; so the total stays the same while you scroll, which Chrome on macOS needs for the scroll bar's thumb to follow your pointer. When a drag of the scroll bar or a fast fling lands in a spacer, the page says how far it is from the nearest drawn item, and Tuna counts items from there by the same average, makes that item the scroll state, and draws around it.
 
 ![How scroll state moves](diagrams/scroll-report-and-placement.svg)
 
@@ -304,11 +314,13 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 - **Placement**: Tuna asking the browser, once, to put an item at the top, centre or bottom of a view.
 - **Layout**: the tree of containers and views that arranges the screen, owned by a replaceable layout plugin.
 - **Container**: a part of the layout that arranges its children: *fit* (split the space) or *tabbed* (one at a time), horizontal or vertical.
-- **Frame**: where you're looking: a movable pointer to any part of the tree, drawn by a browser tab. Every tab shows the same frame for now.
+- **Frame**: where you're looking: a movable pointer to any part of the tree. Every tab shows the same frame.
 - **Frame mark**: a saved frame location you can jump back to.
 - **Pin**: a flag on a part of the layout that keeps it visible when the frame zooms past it; a **locked** pin belongs to a plugin.
 - **Task**: anything that runs on the editor thread, such as a command or a timer; it may pause to wait for an answer.
-- **Client**: one connected browser tab.
+- **Client**: one place you look at Tuna from; today a browser tab.
+- **Tab id**: the name the server gives a page when it serves it; every request from the page carries it.
+- **Per-tab state**: the three things kept for each tab, on the server and never saved: its id and connection, its keys in progress, and what its browser measured.
 - **Version** (or revision): a number that goes up every time a buffer, or a part of it, changes.
 - **Snapshot**: a frozen copy of a buffer's text at one version, cheap to make.
 - **Job**: slow work done off the editor thread using a snapshot.

@@ -1,8 +1,12 @@
 # Status and handoff
 
-Read this first when resuming work. Last updated 2026-10-17. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
+Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: none in progress; scrolling just finished
+## Current work: none in progress; several tabs just finished
+
+**Several tabs: done 2026-10-22** (`agents/plans/several-tabs.md`, ADR 16, brief `docs/briefs/2026-10-several-tabs.md`, research `agents/research/per-tab/`). Every tab mirrors one editor (owner decision 2026-10-21: mirror, like tmux; per-tab frames deferred). Per-tab state is exactly three things on the server, keyed by a server-made tab id, never saved: identity and connection (web plugin), keys in progress and `last-command` (keys and commands plugins, `current-client` bound per task), what the browser measured (`client-view` in the buffers contract, written by scrolling). A new `clients` contract holds the vocabulary; the kernel did not change. One screen is drawn per tab; the tab you use drives the shared scroll position; a confirming report never moves it. Known cost: a follower tab gets many screens while another tab flings (about 300 in 6 s in the check).
+
+## Previous work: scrolling
 
 **Scrolling: done 2026-10-17** (`agents/plans/scrolling.md`, ADR 15, briefs `docs/briefs/2026-10-scroll-state.md` and `2026-10-scrolling.md`). Views scroll natively with the browser's own scroll bar: drawn items between spacers sized by the measured average item height (stage 4, 2026-10-21, the owner's choice after comparing four options on his phone; `drawn-screens`, default 2); scroll state is (item, measured offset) on the view; the server places items; scroll reports are special events; `C-v`/`M-v`/`C-l`/`M-<`/`M->`, point following, `scroll-moves-point`, saved scroll state. Owner decisions: native scrolling (after trying server-moved, hybrid and native prototypes on desktop and iPhone, including over 80 ms); a native scroll bar; two screens drawn each way. Open follow-ups in `TODO.md`: per-item HTML reuse (a key costs ~11 ms and 36 KB at two screens), fast scrolling outrunning two screens over slow links, the restart-without-an-editable-view bug, input floods breaking ordering. Stage reports and prototypes: `agents/research/scrolling/`.
 

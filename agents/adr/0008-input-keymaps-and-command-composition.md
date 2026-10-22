@@ -1,6 +1,6 @@
 # 8. Input sessions, layered keymaps, and composable commands
 
-Status: accepted (2026-10-11), from the [capability audit](../research/capability-audit/README.md) (lanes 1 and 4); amended 2026-10-13 with clicks (see "Clicks"; brief [`docs/briefs/2026-10-mouse-input.md`](../../docs/briefs/2026-10-mouse-input.md)).
+Status: accepted (2026-10-11), from the [capability audit](../research/capability-audit/README.md) (lanes 1 and 4); amended 2026-10-13 with clicks (see "Clicks"; brief [`docs/briefs/2026-10-mouse-input.md`](../../docs/briefs/2026-10-mouse-input.md)). Amended 2026-10-22 by [ADR 16](0016-several-tabs-mirror-one-editor.md): input sessions are per client (pending keys, the event that ran the last command, `last-command`); commands see their client as `current-client`.
 
 ## Context
 

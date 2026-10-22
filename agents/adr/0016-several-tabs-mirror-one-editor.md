@@ -1,6 +1,6 @@
 # 16. Several tabs mirror one editor; a short, explicit list of per-tab state
 
-Status: accepted (2026-10-21). Owner-approved brief: [`docs/briefs/2026-10-several-tabs.md`](../../docs/briefs/2026-10-several-tabs.md). Research: [`agents/research/per-tab/`](../research/per-tab/). Amends ADR 7 and ADR 10 (one tab assumed; no client identity), ADR 8 (input sessions become per client), ADR 13 (per-tab frames deferred) and ADR 15 (measurements per tab).
+Status: accepted (2026-10-21); built 2026-10-22 (plan [`agents/plans/several-tabs.md`](../plans/several-tabs.md)). Owner-approved brief: [`docs/briefs/2026-10-several-tabs.md`](../../docs/briefs/2026-10-several-tabs.md). Research: [`agents/research/per-tab/`](../research/per-tab/). Amends ADR 7 and ADR 10 (one tab assumed; no client identity), ADR 8 (input sessions become per client), ADR 13 (per-tab frames deferred) and ADR 15 (measurements per tab).
 
 ## Context
 

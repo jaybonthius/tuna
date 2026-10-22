@@ -1,6 +1,6 @@
 # Plan: several tabs mirror one editor
 
-**Status:** approved 2026-10-21 (brief `docs/briefs/2026-10-several-tabs.md`, ADR 16). Not started.
+**Status:** done 2026-10-22 (brief `docs/briefs/2026-10-several-tabs.md`, ADR 16). Stage 1 `5847924` and `c1b94cd` (the server makes the tab id); stage 2 `7c26658` and `09e6b68`; stage 3 records.
 
 ## Invariants
 

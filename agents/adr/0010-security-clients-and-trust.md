@@ -1,6 +1,6 @@
 # 10. Loopback access and the trust boundary
 
-Status: accepted (2026-10-11); amended 2026-10-14 by the owner-approved [input brief](../../docs/briefs/2026-10-input-without-waiting.md): remove launch-token authentication and client identity; assume one tab.
+Status: accepted (2026-10-11); amended 2026-10-14 by the owner-approved [input brief](../../docs/briefs/2026-10-input-without-waiting.md): remove launch-token authentication and client identity; assume one tab. Amended 2026-10-22 by [ADR 16](0016-several-tabs-mirror-one-editor.md): a client identity returns, as a tab id the server makes when it serves the page; still no token, cookie or sign-in.
 
 ## Context
 
