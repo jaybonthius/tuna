@@ -91,11 +91,12 @@
 (export html-renderer)
 
 ;; Where a view's line ids are pinned in one text node: the line ending
-;; at POSITION, at character revision REVISION, had id ID. A line's end
-;; moves with its text when a line is inserted where it starts, so its id
-;; does too.
+;; at POSITION, at character revision REVISION, which was line LINE then,
+;; had id ID. A line's end moves with its text when a line is inserted
+;; where it starts, so its id does too.
 (defstruct line-ids ((position : :fixnum)
                      (revision : :fixnum)
+                     (line     : :fixnum)
                      (id       : :fixnum))
   final: #t)
 
@@ -218,17 +219,23 @@
   (make-line-run n (fx1+ (: (car run) :fixnum)) (fx1+ (: (cdr run) :fixnum)) (line-id-offset self v n)))
 
 ;; After drawing: pin V's line ids in text node N, drawn from line FIRST,
-;; at that line, which keeps every line's id. In test mode, check that.
+;; at that line, which keeps every line's id; unless they are pinned there
+;; already. In test mode, check that the ids stay.
 (def (pin-line-ids! (self : html-rendering) (v : view) (n : node) (first : :fixnum)) => :void
-  (let* ((t (text-node-content n))
-         (offset (line-id-offset self v n))
-         (pins (or (hash-get self.pins (view-id v))
-                   (let (new (make-hash-table-eqv))
-                     (hash-put! self.pins (view-id v) new)
-                     new))))
-    (hash-put! pins (node-id n) (make-line-ids (text-line-end t first) (text-chars-revision t) (fx+ first offset)))
-    (when (and (memo-checking?) (not (fx= offset (line-id-offset self v n))))
-      (error "Pinning line ids again changed them" (view-id v) (node-id n)))))
+  (let ((t (text-node-content n))
+        (pinned (pin-of self v n)))
+    (unless (and pinned
+                 (using (pinned : line-ids)
+                   (and (fx= pinned.line first) (fx= pinned.revision (text-chars-revision t)))))
+      (let ((offset (line-id-offset self v n))
+            (pins (or (hash-get self.pins (view-id v))
+                      (let (new (make-hash-table-eqv))
+                        (hash-put! self.pins (view-id v) new)
+                        new))))
+        (hash-put! pins (node-id n)
+                   (make-line-ids (text-line-end t first) (text-chars-revision t) first (fx+ first offset)))
+        (when (and (memo-checking?) (not (fx= offset (line-id-offset self v n))))
+          (error "Pinning line ids again changed them" (view-id v) (node-id n)))))))
 
 ;; A text node: one element per line, with the cursor when the node has
 ;; the rendered view's focus; only the lines drawn as items, each with its

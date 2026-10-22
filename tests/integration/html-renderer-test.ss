@@ -111,7 +111,10 @@
   requires: [buffers-service]
   (context-define-node-kind! ctx 'block)
   (context-define-node-kind! ctx 'label items: 'whole)
-  (context-define-node-renderer! ctx 'block (lambda (n children) `(div (@ (class "block")) ,@children)))
+  (context-define-node-renderer! ctx 'block
+                                 (lambda (n children)
+                                   (unless (memo-from-scratch?) (hash-update! renders "block" 1+ 0))
+                                   `(div (@ (class "block")) ,@children)))
   (context-define-node-renderer! ctx 'label (lambda (n children) `(p ,(node-attribute n 'label))))
   (context-add-buffer!
    ctx (new-buffer "blocks"
@@ -495,6 +498,17 @@
          (set-buffer-setting! (current-buffer) shouting #f)
          (check (and (string-contains (screen) ">hello</p>") #t) => #t)
          (check (renders-of "shouted") => 2))))
+
+    (test-case "moving point draws again the text node holding it and what holds that, not other text"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (activate-plugin! block-kinds)
+         (set-view-buffer (selected-view) (get-buffer "blocks"))
+         (screen)
+         (hash-clear! renders)
+         (goto-char 2)
+         (screen)
+         (check (renders-of "block") => 1))))
 
     (test-case "two clients share the HTML of nodes drawn the same for both"
       (call-with-fresh-kernel renderer-plugins

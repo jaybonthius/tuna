@@ -289,13 +289,15 @@ prelude: :gerbil/core
                        (drawn-after   : :fixnum))
   final: #t)
 
-;; CHANGES, its source, changes with what a screen draws from the view: its buffer,
-;; focused node, point and scroll position (ADR 17). Point is kept valid
-;; at the text revision REVISION and moved through later edits when read,
-;; which rewrites how it is kept, never where it is, so reading changes
-;; no source.
+;; CHANGES, its source, changes with what a screen draws from the view:
+;; its buffer, focused node and scroll position; POINT-CHANGES, another,
+;; with its point, so what draws only the focused node draws again when
+;; point moves (ADR 17). Point is kept valid at the text revision REVISION
+;; and moved through later edits when read, which rewrites how it is
+;; kept, never where it is, so reading changes no source.
 (defclass view ((id            : :fixnum)
                 (changes       : source)
+                (point-changes : source)
                 (shown         : buffer)        ; `view-showing`
                 (focus         :? node)         ; the focused text node
                 (position      : :fixnum)       ; point, valid at REVISION
@@ -1041,7 +1043,7 @@ prelude: :gerbil/core
 ;; text revision REVISION, scrolled to the top. For buffers providers,
 ;; which must not call the dispatchers before they provide the service.
 (def (new-view-at (b : buffer) (n :? node) (position : :fixnum) (revision : :fixnum)) => view
-  (view id: (next-id!) changes: (new-source) shown: b focus: n position: position revision: revision
+  (view id: (next-id!) changes: (new-source) point-changes: (new-source) shown: b focus: n position: position revision: revision
         goal-column: #f last-placement: (make-placement 0 #f 'top 0.)
         clients: (make-hash-table test: eq? weak-keys: #t)))
 
@@ -1055,6 +1057,7 @@ prelude: :gerbil/core
   (set! v.position position)
   (set! v.revision revision)
   (source-changed! v.changes)
+  (source-changed! v.point-changes)
   (forget-measured! v)
   (place-view! v #f 'top))
 
@@ -1120,7 +1123,7 @@ prelude: :gerbil/core
 ;; V's point, relocated through the changes made since V last looked.
 ;; Keeping the relocated point is no change (see view).
 (def (view-point (v : view)) => :fixnum
-  (record-read! v.changes)
+  (record-read! v.point-changes)
   (let (n v.focus)
     (when n
       (let* ((t (text-node-content n))
@@ -1137,7 +1140,7 @@ prelude: :gerbil/core
       (let* ((s (text-snapshot (text-node-content n)))
              (new (fxmax 1 (fxmin position (fx1+ (snapshot-size s))))))
         (unless (fx= new (view-point v))
-          (source-changed! v.changes))
+          (source-changed! v.point-changes))
         (set! v.position new)
         (set! v.revision (snapshot-revision s))))))
 
@@ -1155,6 +1158,7 @@ prelude: :gerbil/core
           (set! v.revision (node-chars-revision n))
           (set! v.goal-column #f)
           (source-changed! v.changes)
+          (source-changed! v.point-changes)
           (show-point! v))))) :void))
 
 ;; The item among ROOT's items that holds V's point: the line of V's
