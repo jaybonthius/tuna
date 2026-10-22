@@ -28,7 +28,7 @@ prelude: :gerbil/core
         :tuna/kernel)
 (export source source? new-source source-revision
         record-read! source-changed!
-        memo-drawing? check-not-drawing!
+        memo-drawing? memo-from-scratch? check-not-drawing!
         memo-cache memo-cache? new-memo-cache memo-cache-size
         call-with-memo-pass memo memo-forget-client!
         set-memo-checking! memo-checking?
@@ -137,6 +137,12 @@ prelude: :gerbil/core
 ;; Whether this thread is drawing a pass.
 (def (memo-drawing?) => :boolean
   (and (current-memo-frame) #t))
+
+;; Whether this thread is drawing a pass from scratch: test mode's second
+;; drawing, which tests that count what is drawn leave out.
+(def (memo-from-scratch?) => :boolean
+  (let (f (current-memo-frame))
+    (and f (not (memo-pass-cache (frame-pass f))))))
 
 ;; In test mode, fail when this thread is drawing: WHAT writes state.
 (def (check-not-drawing! (what : :symbol)) => :void

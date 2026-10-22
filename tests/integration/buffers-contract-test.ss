@@ -365,7 +365,8 @@
          (check (drawn-again? (lambda () (view-placement v)) (lambda () (set-view-scroll! v c (node-item-at n 1) 0.)))
                 => #t)
          (check (drawn-again? (lambda () (view-point v) (client-view-scroll-item (view-client v c))) void) => #f)
-         (check (drawn-again? read (lambda () (forget-view-client! v c))) => #t)))))
+         ;; Drawing never makes a client's view: it is made again first.
+         (check (drawn-again? read (lambda () (forget-view-client! v c) (view-client v c))) => #t)))))
 
   (test-case "test mode: drawing may relocate point and a scroll item, but not make a client's view"
     (call-with-fresh-kernel buffer-plugins
@@ -378,16 +379,14 @@
          (set-client-view-scroll! cv (node-item-at n 2) 0.)
          (goto-char 1)
          (insert "new line\n")
-         (set-memo-checking! #t)
-         (try
-          (check (call-with-memo-pass cache #f
-                   (lambda () (memo 'p [] (lambda (i) [(view-point v) (item-line (client-view-scroll-item cv))]))))
-                 => [10 4])
-          (check (raises? (lambda ()
-                            (call-with-memo-pass cache #f
-                              (lambda () (memo 'q [] (lambda (i) (view-client v (make-client "b"))))))))
-                 => #t)
-          (finally (set-memo-checking! #f)))))))
+         (check (memo-checking?) => #t)
+         (check (call-with-memo-pass cache #f
+                  (lambda () (memo 'p [] (lambda (i) [(view-point v) (item-line (client-view-scroll-item cv))]))))
+                => [10 4])
+         (check (raises? (lambda ()
+                           (call-with-memo-pass cache #f
+                             (lambda () (memo 'q [] (lambda (i) (view-client v (make-client "b"))))))))
+                => #t)))))
 
   (test-case "buffers: names are unique; a killed buffer leaves the selected view and its texts die"
     (call-with-fresh-kernel buffer-plugins

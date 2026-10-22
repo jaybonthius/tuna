@@ -10,7 +10,8 @@
         (count 0))
     (def (pass)
       (call-with-memo-pass cache #f
-        (lambda () (memo 'piece [] (lambda (inputs) (set! count (+ count 1)) (read) #t)))))
+        (lambda ()
+          (memo 'piece [] (lambda (inputs) (unless (memo-from-scratch?) (set! count (+ count 1))) (read) #t)))))
     (pass)
     (change)
     (pass)
