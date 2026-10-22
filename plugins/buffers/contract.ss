@@ -1000,9 +1000,14 @@ prelude: :gerbil/core
   (place-view! v #f 'top))
 
 ;; Forget what every client's browser measured of what V showed, and what
-;; was worked out from it.
+;; was worked out from it. Each client keeps counting its placements, so
+;; its page, which may still hold the last one, takes the next for new.
 (def (forget-measured! (v : view)) => :void
-  (hash-clear! v.clients))
+  (hash-for-each (lambda (c (cv : client-view))
+                   (set! cv.facts #f)
+                   (set! cv.average-item-height #f)
+                   (set-client-view-drawn-items! cv initial-drawn-items initial-drawn-items))
+                 v.clients))
 
 ;; Forget what the browser measured of what V showed before, and place
 ;; V's point's item, among the items of the root of the buffer V shows, at

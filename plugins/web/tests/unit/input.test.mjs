@@ -433,6 +433,9 @@ test("tunaPlace puts the marker's item at the top, centre or bottom of its scrol
   const at = (marker) => { const v = scrolledView({}, marker); h.place(v.placement); return v.scroller.scrollTop; };
   assert.equal(at({}), 1005);
   assert.equal(at({ "data-offset": "-8" }), 992);
+  // An offset measured in another tab, where the item is taller, keeps the
+  // item at the top here.
+  assert.equal(at({ "data-offset": "50" }), 1019);
   assert.equal(at({ "data-align": "center", "data-offset": "0" }), 1000 + 10 - 100);
   assert.equal(at({ "data-align": "bottom", "data-offset": "0" }), 1000 + 20 - 200);
   // Beyond the content, the browser stops at its end.
