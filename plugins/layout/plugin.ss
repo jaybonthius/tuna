@@ -184,7 +184,8 @@
     (unless (eq? v (frame-state-selected f))
       (set! self.level 0)
       (set! self.frame (make-frame-state (frame-state-part f) (frame-state-start f) v)))
-    (set-selected-view! v)))
+    (set-selected-view! v)
+    (note-state! self)))
 
 ;; Where a frame targeting PART of OLD points in NEW: PART if it is still
 ;; there; else the lowest part holding what survives of PART's views; else
@@ -368,6 +369,7 @@
       (append (filter (lambda ((r : locked-request)) (and (memq r.showing live) (not (eq? r.showing b))))
                       self.locked)
               [(make-locked-request b side size)])))
+  (note-state! self)
   (let (l (leaf-showing self b))
     (if l (leaf-view l) (place-locked! self b side size))))
 
@@ -496,12 +498,13 @@
 ;;; SIZE is a weight or `content` and FLAGS lists `pinned` and `locked`.
 ;;; Ids are renumbered on restore; PART-ID #f is the whole layout.
 
-;; SELF's generation (the contract's `generation`), new from next-id!
-;; whenever its tree, frame, selected part level, marks or locked requests
-;; are not the ones it was last given for. Each is a value that every
-;; change replaces and none changes in place, so comparing them by
-;; identity sees every change, whichever operation made it.
-(def (generation-now! (self : tree-layout)) => :fixnum
+;; Tell the layout contract (layout-changed!), and take a new generation
+;; (the contract's `generation`) from next-id!, when SELF's tree, frame,
+;; selected part level, marks or locked requests are not the ones it was
+;; last noted with. Each is a value that every change replaces and none
+;; changes in place, so comparing them by identity sees every change.
+;; Every operation that sets one of them ends by calling this.
+(def (note-state! (self : tree-layout)) => :void
   (let (seen self.seen)
     (unless (and (eq? (vector-ref seen 0) self.root)
                  (eq? (vector-ref seen 1) self.frame)
@@ -509,8 +512,8 @@
                  (eq? (vector-ref seen 3) self.marks)
                  (eq? (vector-ref seen 4) self.locked))
       (set! self.seen (vector self.root self.frame self.level self.marks self.locked))
-      (set! self.generation (next-id!)))
-    self.generation))
+      (set! self.generation (next-id!))
+      (layout-changed!))))
 
 ;; Fresh lists: session data may share no pair.
 (def (link-flags (l : link)) => :list
@@ -609,7 +612,8 @@
          (part (or (frame-state-part self.frame) (and start (part-id self.root)))))
     (set! self.marks
       (append (filter (lambda ((m : frame-mark)) (not (string=? m.name name))) self.marks)
-              [(make-frame-mark name part (and start (node-id start)))]))))
+              [(make-frame-mark name part (and start (node-id start)))]))
+    (note-state! self)))
 
 (def (jump! (self : tree-layout) (name : :string)) => :symbol
   (let (m (find (lambda ((m : frame-mark)) (string=? m.name name)) self.marks))
@@ -622,6 +626,7 @@
           (if (or (not target) (and m.node (not n)))
             (begin
               (set! self.marks (remq m self.marks))
+              (note-state! self)
               'gone)
             (begin
               (point-frame! self m.part n)
@@ -747,6 +752,7 @@
     (if (fx<= 0 level depth)
       (begin
         (set! self.level level)
+        (note-state! self)
         (message (string-append "Selected part: " (describe-part (selected-part self)))))
       (message (if (fx< level 0) "The selected part is the selected view" "The selected part is the whole layout")))))
 
@@ -774,7 +780,8 @@
       (begin
         (commit! self moved)
         (select! self v)
-        (set! self.level level)))))
+        (set! self.level level)
+        (note-state! self)))))
 
 
 (def (rearranging-refusal (self : tree-layout) (p : :t)) => (Maybe :string)
@@ -913,7 +920,7 @@
                                  (render-view v (eq? v selected)
                                               (or (and (eq? l top) start) (buffer-root (view-showing v))))))
                              (visible self)))))))
-  (generation (lambda (self) (generation-now! self)))
+  (generation (lambda (self) (note-state! self) self.generation))
 )
 
 (defplugin (layout ctx)
@@ -927,6 +934,8 @@
                               marks: [] locked: [] kinds: (new-entry-table)
                               generation: 0 seen: (vector #f #f -1 #f #f))
                  : tree-layout)
+      (note-state! self)
+      (context-defer! ctx layout-changed!)
       (context-set-click-resolver! ctx posn-start-node)
       (context-add-entry! ctx self.kinds 'fit fit-kind doc: (layout-kind-doc fit-kind))
       (context-add-entry! ctx self.kinds 'tabbed tabbed-kind doc: (layout-kind-doc tabbed-kind))

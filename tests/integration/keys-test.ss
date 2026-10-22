@@ -9,6 +9,7 @@
         :tuna/plugins/settings/contract
         :tuna/plugins/settings/plugin
         "../../tuna/tests/support/kernel"
+        "../../tuna/tests/support/redraws"
         (only-in "../../tuna/tests/support/string-input" test-input test-messages current-message))
 (export keys-test)
 
@@ -500,6 +501,25 @@
            (check (keymap-clickable? prefixed 'tab-line) => #f)
            (check (keymap-clickable? plain 'view) => #t)
            (check (keymap-clickable? other 'view) => #f)))))
+
+    (test-case "sources: a binding draws again only what read its keymap"
+      (call-with-fresh-kernel keys-plugins
+       (lambda ()
+         (let ((mine (new-keymap)) (other (new-keymap)))
+           (defplugin (binds-mine ctx)
+             "Binds a click in a keymap of its own."
+             requires: [input-service]
+             (keymap-set-in ctx mine "<mouse-1>" 'command-a))
+           (check (drawn-again? (lambda () (keymap-clickable? mine 'view)) (lambda () (activate-plugin! binds-mine)))
+                  => #t)
+           (check (drawn-again? (lambda () (keymap-clickable? mine 'view)) (lambda () (activate-plugin! binds-a)))
+                  => #f)
+           (check (drawn-again? (lambda () (part-clickable? 'status-line)) (lambda () (deactivate-plugin! binds-a)))
+                  => #t)
+           (check (drawn-again? (lambda () (keymap-clickable? other 'view)) (lambda () (deactivate-plugin! binds-mine)))
+                  => #f)
+           (check (drawn-again? (lambda () (keymap-clickable? mine 'view)) (lambda () (activate-plugin! binds-mine)))
+                  => #t)))))
 
     (test-case "the keymap generation changes when a binding comes or goes, in any keymap"
       (call-with-fresh-kernel keys-plugins

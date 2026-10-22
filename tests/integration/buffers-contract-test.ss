@@ -16,7 +16,9 @@
         "../../plugins/text-store/tests/support/string-text-store"
         :tuna/plugins/buffers/plugin
         "../../plugins/buffers/tests/support/toy-buffers"
-        "../../tuna/tests/support/kernel")
+        "../../tuna/tests/support/kernel"
+        "../../tuna/tests/support/redraws"
+        :tuna/lib/memo)
 (export buffers-test
         toy-buffers-test)
 
@@ -26,6 +28,9 @@
 (def (spans-of spans) (map (lambda (s) [(span-start s) (span-end s)]) spans))
 
 (defsetting fill-width 70 "A setting for buffer-local values.")
+
+;; An object that refers to another: two of them can refer to each other.
+(defstruct ring (other))
 
 ;; The contract's cases, run with PROVIDER as the buffers plugin.
 (def (buffers-contract-cases provider)
@@ -246,7 +251,7 @@
          (add-buffer! b)
          (check (map text-string (buffer-texts b)) => ["a" "b" "c" "d"])))))
 
-  (test-case "a change stamps its node and every node above it with a new, larger revision"
+  (test-case "a change gives its node and every node above it a new, larger revision"
     (call-with-fresh-kernel buffer-plugins
      (lambda ()
        (let* ((t (new-text "abc"))
@@ -259,8 +264,8 @@
            (text-replace! t 1 1 "x")
            (let (after (revisions))
              (check (> (car after) (car before)) => #t)
-             (check (cadr after) => (car after))
-             (check (caddr after) => (car after))
+             (check (> (cadr after) (cadr before)) => #t)
+             (check (> (caddr after) (caddr before)) => #t)
              (check (cadddr after) => (cadddr before))))
          (let (before (revisions))
            (set-highlights! t 'digits [])
@@ -270,7 +275,7 @@
            (set-node-attribute! other 'label "Other")
            (check (node-attribute other 'label) => "Other")
            (check (> (node-revision other) before) => #t)
-           (check (node-revision root) => (node-revision other))
+           (check (> (node-revision root) before) => #t)
            (check (> (node-revision root) (node-revision section)) => #t))
          (let (before (node-revision root))
            (set-node-children! section [])
@@ -297,6 +302,90 @@
              (set-node-attribute! n 'label "Two")
              (check (> (node-revision root) revision) => #t)
              (check (node-attribute n 'label) => "Two")))))))
+
+  (test-case "sources: what is drawn from a node, text, buffer or view is drawn again when it changes"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let* ((n (new-node 'item attributes: [(cons 'label "One")]))
+              (root (new-node 'root children: [n]))
+              (b (current-buffer))
+              (v (selected-view))
+              (t (current-text))
+              (label (lambda () (node-attribute n 'label))))
+         (check (drawn-again? label (lambda () (set-node-attribute! n 'label "One"))) => #f)
+         (check (drawn-again? label (lambda () (set-node-attribute! n 'label "Two"))) => #t)
+         (check (drawn-again? (lambda () (node-children root)) (lambda () (set-node-attribute! n 'size 1))) => #t)
+         (insert "a\nb\nc")
+         (check (drawn-again? (lambda () (text-substring t 1 2)) (lambda () (insert "x"))) => #t)
+         (check (drawn-again? (lambda () (text-all-highlights t))
+                              (lambda () (set-highlights! t 'faces [(make-span 1 2 'bold)])))
+                => #t)
+         (check (drawn-again? (lambda () (view-point v)) (lambda () (goto-char (point)))) => #f)
+         (check (drawn-again? (lambda () (view-point v)) (lambda () (goto-char 1))) => #t)
+         (check (drawn-again? (lambda () (buffer-local-value fill-width b))
+                              (lambda () (set-buffer-setting! b fill-width 70)))
+                => #t)
+         (check (drawn-again? (lambda () (buffer-local-value fill-width b))
+                              (lambda () (set-buffer-setting! b fill-width 70)))
+                => #f)
+         (check (drawn-again? (lambda () (buffer-name b)) (lambda () (rename-buffer! b "renamed"))) => #t)
+         (check (drawn-again? selected-view (lambda () (set-selected-view! v))) => #f)))))
+
+  (test-case "sources: an attribute holding objects is compared by identity, even when they are cyclic"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let* ((ring (lambda ()
+                      (let ((a (make-ring #f)) (b (make-ring #f)))
+                        (set! (ring-other a) b)
+                        (set! (ring-other b) a)
+                        a)))
+              (old (ring))
+              (n (new-node 'item attributes: [(cons 'object old)]))
+              (label (lambda () (node-attribute n 'object))))
+         (check (drawn-again? label (lambda () (set-node-attribute! n 'object old))) => #f)
+         (check (drawn-again? label (lambda () (set-node-attribute! n 'object (ring)))) => #t)))))
+
+  (test-case "sources: client measurements count only when they differ once rounded"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (insert "a\nb\nc")
+       (let* ((v (selected-view))
+              (n (view-node v))
+              (c (make-client "a"))
+              (cv (view-client v c))
+              (read (lambda () (view-client v c))))
+         (set-client-view-average-item-height! cv 24.)
+         (set-client-view-scroll! cv (node-item-at n 1) 3.)
+         (check (drawn-again? read (lambda () (set-client-view-average-item-height! cv 24.004))) => #f)
+         (check (client-view-average-item-height cv) => 24.)
+         (check (drawn-again? read (lambda () (set-client-view-average-item-height! cv 24.5))) => #t)
+         (check (drawn-again? read (lambda () (set-client-view-drawn-items! cv 200 200))) => #f)
+         (check (drawn-again? read (lambda () (set-client-view-drawn-items! cv 10 10))) => #t)
+         (check (drawn-again? read (lambda () (set-client-view-scroll! cv (node-item-at n 1) 3.2))) => #f)
+         (check (drawn-again? read (lambda () (set-client-view-scroll! cv (node-item-at n 2) 3.2))) => #t)
+         (check (drawn-again? read (lambda () (place-view! v (node-item-at n 0) 'top))) => #t)))))
+
+  (test-case "test mode: drawing may relocate point and a scroll item, but not make a client's view"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (insert "a\nb\nc")
+       (let* ((v (selected-view))
+              (n (view-node v))
+              (cv (view-client v #f))
+              (cache (new-memo-cache)))
+         (set-client-view-scroll! cv (node-item-at n 2) 0.)
+         (goto-char 1)
+         (insert "new line\n")
+         (set-memo-checking! #t)
+         (try
+          (check (call-with-memo-pass cache #f
+                   (lambda () (memo 'p [] (lambda (i) [(view-point v) (item-line (client-view-scroll-item cv))]))))
+                 => [10 4])
+          (check (raises? (lambda ()
+                            (call-with-memo-pass cache #f
+                              (lambda () (memo 'q [] (lambda (i) (view-client v (make-client "b"))))))))
+                 => #t)
+          (finally (set-memo-checking! #f)))))))
 
   (test-case "the generation moves with every change a screen can show, not with reads"
     (call-with-fresh-kernel buffer-plugins
@@ -390,7 +479,7 @@
            (set-node-keymap! plain other)
            (check (eq? (node-keymap plain) other) => #t)
            (check (> (node-revision plain) before) => #t)
-           (check (node-revision root) => (node-revision plain)))
+           (check (> (node-revision root) before) => #t))
          (let (before (node-revision leaf))
            (set-node-keymap! leaf #f)
            (check (node-keymap leaf) => #f)

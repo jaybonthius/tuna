@@ -16,6 +16,7 @@
         :tuna/plugins/buffers/plugin
         :tuna/plugins/layout/plugin
         "../../tuna/tests/support/kernel"
+        "../../tuna/tests/support/redraws"
         "../../plugins/keys/tests/support/keys"
         "../../plugins/session/tests/support/session"
         (only-in "../../tuna/tests/support/string-input" test-messages current-message))
@@ -143,6 +144,16 @@
 
 (def layout-test
   (test-suite "tuna/plugins/layout"
+    (test-case "sources: what was drawn from the layout is drawn again when it changes, not otherwise"
+      (with-layout
+       (lambda ()
+         (let (read (lambda () (render-layout 'test (lambda (v selected? start) (view-id v)))))
+           (check (on-baton (lambda () (drawn-again? read void))) => #f)
+           (check (on-baton (lambda () (drawn-again? read (lambda () (split-view (selected-view) 'right)))))
+                  => #t)
+           (check (on-baton (lambda () (drawn-again? read (lambda () (select-view (cadr (view-list)))))))
+                  => #t)))))
+
     (test-case "splitting shows the same buffer at the same point; deleting keeps the last view"
       (with-layout
        (lambda ()

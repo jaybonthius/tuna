@@ -5,7 +5,9 @@
         :tuna/plugins/text-store/plugin
         :tuna/plugins/settings/plugin
         :tuna/plugins/buffers/plugin
-        "../../tuna/tests/support/kernel")
+        :tuna/lib/memo
+        "../../tuna/tests/support/kernel"
+        "../../tuna/tests/support/redraws")
 (export settings-test)
 
 (defsetting fill-column 70 "Where filling breaks lines.")
@@ -19,6 +21,11 @@
   "Sets fill-column globally to 40."
   requires: [settings-service]
   (context-set-setting! ctx fill-column 40))
+
+(defplugin (scope-of-sixty ctx)
+  "Adds a scope that resolves fill-column to 60."
+  requires: [settings-service]
+  (context-add-setting-scope! ctx 'sixty (lambda (s) (and (eq? s fill-column) (cons s 60))) priority: 10))
 
 (def buffer-plugins
   [rope-text-store settings buffers])
@@ -39,6 +46,26 @@
              (check (setting-value fill-column) => 10))
            (check (setting-value fill-column) => 20))
          (check (setting-value fill-column) => 80))))
+
+    (test-case "sources: global values, scopes and a buffer's own values draw again what read the setting"
+      (call-with-fresh-kernel buffer-plugins
+       (lambda ()
+         (let (read (lambda () (setting-value fill-column)))
+           (check (drawn-again? read void) => #f)
+           (check (drawn-again? read (lambda () (activate-plugin! sets-wide))) => #t)
+           (check (drawn-again? read (lambda () (set-buffer-setting! (current-buffer) fill-column 80))) => #t)
+           (check (drawn-again? read (lambda () (activate-plugin! scope-of-sixty))) => #t)
+           (check (drawn-again? read (lambda () (deactivate-plugin! scope-of-sixty))) => #t)
+           (check (drawn-again? read (lambda () (deactivate-plugin! sets-wide))) => #t)))))
+
+    (test-case "drawing resolves settings without with-settings bindings"
+      (call-with-fresh-kernel buffer-plugins
+       (lambda ()
+         (with-settings ((fill-column 20))
+           (check (setting-value fill-column) => 20)
+           (check (call-with-memo-pass (new-memo-cache) #f
+                    (lambda () (memo 'p [] (lambda (i) (setting-value fill-column)))))
+                  => 70)))))
 
     (test-case "global values are owner-tagged and revert in any order"
       (call-with-fresh-kernel buffer-plugins

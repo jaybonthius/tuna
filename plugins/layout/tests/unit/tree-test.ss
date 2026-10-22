@@ -1,6 +1,7 @@
 ;;; The default layout's tree operations, which are pure: no kernel, no
 ;;; buffers provider. Views here are bare contract objects.
 (import :std/test
+        :tuna/lib/memo
         :tuna/plugins/buffers/contract
         :tuna/plugins/layout/tree)
 (export tree-test)
@@ -9,10 +10,10 @@
 (def tabbed (make-layout-kind 'tabbed "" #f #t void))
 (def (kind-of name) (if (eq? name 'tabbed) tabbed fit))
 
-(def some-buffer (buffer id: 0))
+(def some-buffer (buffer id: 0 changes: (new-source)))
 
 (def (leaf-of id)
-  (make-leaf (view id: id showing: some-buffer focus: #f position: 1 revision: 0 goal-column: #f
+  (make-leaf (view id: id changes: (new-source) shown: some-buffer focus: #f position: 1 revision: 0 goal-column: #f
                    last-placement: (make-placement 0 #f 'top 0.) clients: (make-hash-table))
              #f))
 

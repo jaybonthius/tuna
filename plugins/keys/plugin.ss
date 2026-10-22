@@ -377,16 +377,22 @@
                                         (string<? a b)))))))
                  bound))))
 
-;; Bind KEYS to COMMAND in KEYMAP for CTX's plugin. The generation changes
-;; now and again once the binding is gone: the deferred change is
-;; registered first, so it runs after the entry's removal.
+;; Bind KEYS to COMMAND in KEYMAP for CTX's plugin. The generation and
+;; KEYMAP's source change now and again once the binding is gone: the
+;; deferred change is registered first, so it runs after the entry's
+;; removal.
 (def (bind! (self : global-keys) (ctx : context) (keymap : entry-table) (keys : :string)
             (command : :symbol) (source :? :string))
   => :void
-  (let (normal (normalize-keys keys))
-    (context-defer! ctx (lambda () (set! self.generation (next-id!))))
+  (let ((normal (normalize-keys keys))
+        (changed! (lambda ()
+                    (set! self.generation (next-id!))
+                    (keymap-changed! keymap)
+                    (when (eq? keymap self.keymap)
+                      (global-bindings-changed!)))))
+    (context-defer! ctx changed!)
     (context-add-entry! ctx keymap normal command source: source)
-    (set! self.generation (next-id!))))
+    (changed!)))
 
 (defmethod {keymap-set! global-keys}
   (lambda (self ctx keys command source)
@@ -440,6 +446,8 @@
                             shared: (key-session pending: [] command-event: #f)
                             generation: (next-id!))
                : global-keys)
+    (global-bindings-changed!)
+    (context-defer! ctx global-bindings-changed!)
     (context-add-hook! ctx client-gone-hook 'keys
                        (lambda ((c : client)) (hash-remove! self.sessions c)))
     (context-define-command! ctx 'keyboard-quit signal-quit

@@ -5,10 +5,18 @@
 ;;; command's bindings (Emacs `let` on a special variable). Then come the
 ;;; scopes plugins add (such as the buffer), then global values, then the
 ;;; default. Resolution is a startup-tier service.
+;;;
+;;; Each setting has a source (ADR 17) that changes when its global value
+;;; is set or goes, and one more source changes when a scope is added or
+;;; goes; resolving a setting records reads of both, and each scope records
+;;; what it reads itself (the buffer scope, the buffer's own values).
+;;; Drawing resolves settings without the dynamic layer: a screen shows the
+;;; editor's settings, not what one command bound for itself.
 prelude: :gerbil/core
 
 (import :std/interface
-        :tuna/kernel)
+        :tuna/kernel
+        :tuna/lib/memo)
 (export (interface-out Settings)
         settings-service
         (struct-out setting)
@@ -25,11 +33,34 @@ prelude: :gerbil/core
                     (doc     : :string))
   final: #t)
 
+;; Setting -> its source, which changes with its global value. A setting
+;; is plain data, compared and hashed by its fields, so its source, which
+;; changes, is kept beside it; a source does not refer to its setting.
+(def setting-sources (make-hash-table test: eq? weak-keys: #t))
+
+;; Changes when a setting made without defsetting is first set.
+(def unlisted-settings-source (new-source))
+
+;; A setting named NAME, with its source.
+(def (new-setting (name : :symbol) (default : :t) (doc : :string)) => setting
+  (let (s (make-setting name default doc))
+    (hash-put! setting-sources s (new-source))
+    s))
+
 ;; (defsetting name default "doc")
 (defrules defsetting ()
   ((_ name default doc)
    (identifier? #'name)
-   (def name (make-setting 'name default doc))))
+   (def name (new-setting 'name default doc))))
+
+;; S's global value changed: change its source, made now if S has none.
+(def (setting-changed! (s : setting)) => :void
+  (let (source (hash-get setting-sources s))
+    (if source
+      (source-changed! source)
+      (begin
+        (hash-put! setting-sources s (new-source))
+        (source-changed! unlisted-settings-source)))))
 
 ;; The dynamic layer: (setting . value) pairs, innermost first.
 (def current-setting-bindings (make-parameter []))
@@ -59,8 +90,14 @@ prelude: :gerbil/core
   (new-service 'settings is-Settings? tier: 'startup
                doc: "Resolves settings through the dynamic layer, scopes, and global values."))
 
+;; Changes whenever a scope is added or goes.
+(def scopes-source (new-source))
+
 (def (setting-value (s : setting)) => :t
-  (with-service-provider (provider settings-service Settings) (Settings-resolve provider s (current-setting-bindings))))
+  (record-read! (or (hash-get setting-sources s) unlisted-settings-source))
+  (record-read! scopes-source)
+  (with-service-provider (provider settings-service Settings)
+    (Settings-resolve provider s (if (memo-drawing?) [] (current-setting-bindings)))))
 
 ;; A number that changes whenever a global value or a scope is added or
 ;; removed (with its plugin), so what a setting resolves to outside the
@@ -78,7 +115,9 @@ prelude: :gerbil/core
 (def (context-set-setting! (ctx : context) (s : setting) (value : :t)) => :void
   (:- (with-service-provider (provider settings-service Settings)
         (context-defer! ctx settings-changed!)
+        (context-defer! ctx (lambda () (setting-changed! s)))
         (Settings-add-global-value! provider ctx s value)
+        (setting-changed! s)
         (settings-changed!)) :void))
 
 (def (context-add-setting-scope! (ctx : context)
@@ -88,5 +127,7 @@ prelude: :gerbil/core
   => :void
   (:- (with-service-provider (provider settings-service Settings)
         (context-defer! ctx settings-changed!)
+        (context-defer! ctx (lambda () (source-changed! scopes-source)))
         (Settings-add-scope! provider ctx name lookup priority)
+        (source-changed! scopes-source)
         (settings-changed!)) :void))

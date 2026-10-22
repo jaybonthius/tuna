@@ -42,6 +42,7 @@ prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
+        :tuna/lib/memo
         (only-in :tuna/plugins/keys/contract posn posn-part posn-node-id)
         :tuna/plugins/settings/contract
         :tuna/plugins/buffers/contract)
@@ -71,6 +72,7 @@ prelude: :gerbil/core
         set-frame-mark
         jump-to-frame-mark
         render-layout
+        layout-changed!
         layout-generation
         replace-buffer-in-views)
 
@@ -335,7 +337,18 @@ prelude: :gerbil/core
 (def (jump-to-frame-mark (name : :string)) => :symbol
   (:- (with-service-provider (provider layout-service Layout) (Layout-jump-to-frame-mark! provider name)) :symbol))
 
+;; Changes whenever what render-layout draws may have changed through the
+;; layout's own state (ADR 17): its arrangement, the frame, the selected
+;; view or part. The contract's, not a provider's, so a new provider
+;; draws afresh. Views and buffers have their own sources.
+(def layout-source (new-source))
+
+;; For layouts: what render-layout draws may have changed.
+(def (layout-changed!) => :void
+  (source-changed! layout-source))
+
 (def (render-layout (target : :symbol) (render-view : :procedure)) => :t
+  (record-read! layout-source)
   (with-service-provider (provider layout-service Layout) (Layout-render-layout provider target render-view)))
 
 (def (layout-generation) => :fixnum

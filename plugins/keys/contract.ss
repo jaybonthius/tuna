@@ -43,10 +43,17 @@
 ;;; The keymap generation (`keymap-generation`) changes whenever any
 ;;; binding is added or removed, so renderers that reuse HTML marked from
 ;;; bindings (`data-clickable`) know to draw it again.
+;;;
+;;; Sources (ADR 17): each keymap bound through this contract has one,
+;;; which changes when a binding is added to it or goes, and one more
+;;; source changes with the global keymap's bindings and with its
+;;; provider. `keymap-clickable?` and `part-clickable?` record reads of
+;;; them, so a rebind draws again only what was drawn from that keymap.
 prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
+        :tuna/lib/memo
         (only-in :tuna/plugins/buffers/contract node)
         ;; Events have a field named client, which would shadow the type
         ;; of that name in their constructors.
@@ -60,6 +67,8 @@ prelude: :gerbil/core
         part-clickable?
         keymap-clickable?
         keymap-generation
+        keymap-changed!
+        global-bindings-changed!
         report-stale-click
         (interface-out Keys)
         keymap-set
@@ -298,11 +307,42 @@ prelude: :gerbil/core
            []
            ["1" "2" "3"])))
 
+;;; Sources
+
+;; Keymap -> its source, for the keymaps bindings were made in. A source
+;; does not refer to its keymap, so a keymap no one keeps is collected.
+(def keymap-sources (make-hash-table test: eq? weak-keys: #t))
+
+;; Changes when a keymap is first bound: until then a read of a keymap
+;; records this.
+(def unbound-keymaps-source (new-source))
+
+;; Changes with the global keymap's bindings, and with its provider.
+(def global-bindings-source (new-source))
+
+;; For providers: a binding was added to KEYMAP or removed from it.
+(def (keymap-changed! (keymap : entry-table)) => :void
+  (let (s (hash-get keymap-sources keymap))
+    (if s
+      (source-changed! s)
+      (begin
+        (hash-put! keymap-sources keymap (new-source))
+        (source-changed! unbound-keymaps-source)))))
+
+;; For providers: the global keymap's bindings changed, or its provider
+;; started or stopped.
+(def (global-bindings-changed!) => :void
+  (source-changed! global-bindings-source))
+
+(def (record-keymap-read! (keymap : entry-table)) => :void
+  (record-read! (or (hash-get keymap-sources keymap) unbound-keymaps-source)))
+
 ;; Whether a plain click on a part of kind AREA has a global binding with
 ;; AREA as its prefix key ("<tab-line> <mouse-1>"), so renderers mark such
 ;; parts clickable; #f without key bindings. The unprefixed global
 ;; fallbacks do not count: they would make every part clickable.
 (def (part-clickable? (area : :symbol)) => :boolean
+  (record-read! global-bindings-source)
   (:- (let (input (service-provider input-service))
           (and input (is-Keys? input)
                (ormap (lambda ((keys : :string)) (Keys-key-binding (Keys input) keys))
@@ -313,6 +353,7 @@ prelude: :gerbil/core
 ;; AREA, with or without AREA as a prefix key ("<mouse-1>", "<view>
 ;; <mouse-1>"), so renderers mark the node clickable.
 (def (keymap-clickable? (keymap : entry-table) (area : :symbol)) => :boolean
+  (record-keymap-read! keymap)
   (and (ormap (cut entry-table-ref keymap <>) (plain-click-keys area #t)) #t))
 
 ;; The current keymap generation, or 0 without key bindings.
