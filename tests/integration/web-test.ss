@@ -1,7 +1,8 @@
 ;;; Integration: the real plugins of a browser editor, driven over real
 ;;; loopback HTTP. Every client's stream receives the new screen, C-g
-;;; sent from the browser stops a running command, and keys and clicks are
-;;; handled in the order they were sent. This tests the web transport
+;;; sent from the browser stops a running command, keys and clicks are
+;;; handled in the order they were sent, and each tab's keys in progress
+;;; are its own. This tests the web transport
 ;;; together with keys, buffers, layout, view commands, rendering, help, and
 ;;; quitting; tuna/plugins/web-test.ss tests the transport alone.
 (import :std/io
@@ -98,6 +99,39 @@
          (post-key "h" ctrl?: #t)
          (post-key "s")
          (check (settled-message) => ""))))
+
+    (test-case "each tab's keys in progress are its own: C-x in one tab, then b in another types b"
+      (with-tuna
+       (lambda ()
+         (call-on-editor-loop (lambda () (show-new-buffer! (selected-view) "typed")))
+         (let* ((a (current-tab))
+                (b (new-tab!))
+                (views (lambda () (call-on-editor-loop (lambda () (length (view-list))))))
+                (before (views)))
+           (post-key "x" ctrl?: #t tab: a)
+           (post-key "b" tab: b)
+           (check (wait-until (lambda () (equal? (call-on-editor-loop (lambda () (buffer-string "typed"))) "b")))
+                  => #t)
+           (check (views) => before)
+           ;; A's next key still completes A's C-x: C-x 3 splits the view.
+           (post-key "3" tab: a)
+           (check (wait-until (lambda () (= (views) (+ before 1)))) => #t)
+           (check (call-on-editor-loop (lambda () (buffer-string "typed"))) => "b")))))
+
+    (test-case "a new page lands at the view's scroll position"
+      (with-tuna
+       (lambda ()
+         (let (token (call-on-editor-loop
+                      (lambda ()
+                        (insert (let lp ((k 500) (out "")) (if (zero? k) out (lp (- k 1) (string-append (number->string k) "\n" out)))))
+                        (let* ((v (selected-view))
+                               (it (node-item-at (view-node v) 299)))
+                          (place-view! v it 'top offset: 7.)
+                          (item-token it)))))
+           (check (and (string-search (string-append "data-target=\"" token "\" data-align=\"top\" data-offset=\"7.\"")
+                                      (reply-body (http "GET" "/")))
+                       #t)
+                  => #t)))))
 
     (test-case "keys and clicks sent back to back are handled in the order sent"
       (with-tuna

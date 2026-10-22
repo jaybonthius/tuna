@@ -1,10 +1,27 @@
 #lang :tuna/prelude
 ;;; Command registry and thread-scoped activations (ADR 8, ADR 14).
+;;;
+;;; last-command is per client (ADR 16; Emacs keeps it per kboard): each
+;;; command completes as the last command of the client it ran for
+;;; (`current-client`). Work with no client, such as a timer, has a last
+;;; command of its own, shared by all such work.
 (import :std/interface (only-in :gerbil/runtime/hash HashTable)
-        :tuna/kernel :tuna/lib/advice :tuna/plugins/commands/contract)
+        :tuna/kernel :tuna/lib/advice :tuna/plugins/commands/contract
+        :tuna/plugins/clients/contract)
 (export commands)
 
-(defclass command-registry ((entries : entry-table) (advice : HashTable) (last :? :symbol)) final: #t)
+(defclass command-registry ((entries : entry-table)
+                            (advice : HashTable)
+                            (last-by-client : HashTable) ; client -> its last command
+                            (last :? :symbol))           ; the last command of work with no client
+  final: #t)
+
+;; The last command of CLIENT (#f for none).
+(def (client-last-command (self : command-registry) (c :? client)) => (Maybe :symbol)
+  (if c (hash-get self.last-by-client c) self.last))
+
+(def (set-client-last-command! (self : command-registry) (c :? client) (name : :symbol)) => :void
+  (if c (hash-put! self.last-by-client c name) (set! self.last name)))
 ;; A command's advice and its composition, cached for the definition it was
 ;; built from: redefining the command or changing the advice rebuilds it.
 (defclass command-advice ((target : advice-target) (base :? :procedure) (effective :? :procedure))
@@ -52,7 +69,9 @@
     (using (c (entry-value e) : command)
       (let* ((parent (registry-activation self))
              (a (activation registry: self name: name
-                            previous: (if parent (activation-previous parent) self.last)
+                            previous: (if parent
+                                        (activation-previous parent)
+                                        (client-last-command self (current-client)))
                             completed-name: name)))
         (parameterize ((current-activation a))
           (unwind-protect
@@ -62,11 +81,11 @@
                 (run-hook post-command-hook)))
             ;; A nested programmatic invocation replaces the wrapper for
             ;; repetition (e.g. M-x). Prompt keystrokes run in other tasks.
-            (begin
-              (set! self.last (activation-completed-name a))
+            (let (completed (activation-completed-name a))
+              (set-client-last-command! self (current-client) completed)
               (when parent
-                (set! (activation-completed-name parent) self.last)
-                (set! (activation-previous parent) self.last)))))))))
+                (set! (activation-completed-name parent) completed)
+                (set! (activation-previous parent) completed)))))))))
 
 (implement Commands command-registry
   (define-command! (lambda (self ctx c source)
@@ -87,10 +106,14 @@
                   (let (a (registry-activation self)) (and a (activation-name a)))))
   (last-command (lambda (self)
                   (let (a (registry-activation self))
-                    (if a (activation-previous a) self.last)))))
+                    (if a (activation-previous a) (client-last-command self (current-client)))))))
 
 (defplugin (commands ctx)
   "Defines, lists and invokes commands, independently of key bindings."
   provides: [commands-service]
-  (context-provide! ctx commands-service
-                    (Commands (command-registry entries: (new-entry-table) advice: (make-hash-table-eq) last: #f))))
+  (using (self (command-registry entries: (new-entry-table) advice: (make-hash-table-eq)
+                                 last-by-client: (make-hash-table-eq) last: #f)
+               : command-registry)
+    (context-add-hook! ctx client-gone-hook 'commands
+                       (lambda ((c : client)) (hash-remove! self.last-by-client c)))
+    (context-provide! ctx commands-service (Commands self))))

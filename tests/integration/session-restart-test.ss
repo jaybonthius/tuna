@@ -82,7 +82,7 @@
        (if (eq? (car views) (selected-view)) i (lp (cdr views) (+ i 1)))))))
 
 (def (screen)
-  (on-baton (lambda () (Renderer-render-screen (Renderer (service-provider renderer-service))))))
+  (on-baton (lambda () (Renderer-render-screen (Renderer (service-provider renderer-service)) #f))))
 
 (def (count-of needle haystack)
   (let lp ((start 0) (n 0))
@@ -208,7 +208,7 @@
                            (insert (string-join (map number->string (iota 1000 1)) "\n"))
                            (goto-char (text-line-start (current-text) 310))
                            ;; Measured: line 300 at the top, 5.5 px of it above the edge.
-                           (set-view-scroll! (selected-view) (line-item (selected-view) 300) 5.5)))
+                           (set-view-scroll! (selected-view) #f (line-item (selected-view) 300) 5.5)))
                (type! "C-x" "3")
                ;; The new view is placed, not yet measured: line 700 at its centre.
                (on-baton (lambda ()

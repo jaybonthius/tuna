@@ -88,7 +88,7 @@
 (def (toy?) (on-baton (lambda () (plugin-active? toy-buffers))))
 
 (def (screen)
-  (on-baton (lambda () (Renderer-render-screen (Renderer (service-provider renderer-service))))))
+  (on-baton (lambda () (Renderer-render-screen (Renderer (service-provider renderer-service)) #f))))
 
 (def buffers-swap-test
   (test-suite "integration: swapping the buffers provider live"

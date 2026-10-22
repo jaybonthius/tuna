@@ -62,7 +62,7 @@
        (lambda ()
          (start-editor-loop!)
          ((input-submitter)
-          (make-key-event 1 "≈" "KeyX" 0 #f #f #t #f #f #f #t #f #t #f))
+          (make-key-event 1 #f "≈" "KeyX" 0 #f #f #t #f #f #f #t #f #t #f))
          (check (state) => ["≈" 2 ""]))))
 
     (test-case "line motion keeps the goal column across short lines"

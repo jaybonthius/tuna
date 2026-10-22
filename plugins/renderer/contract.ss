@@ -6,6 +6,7 @@ prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
+        (only-in :tuna/plugins/clients/contract client)
         :tuna/plugins/settings/contract
         :tuna/plugins/buffers/contract)
 (export (interface-out Renderer)
@@ -16,9 +17,11 @@ prelude: :gerbil/core
         status-line-text)
 
 (interface Renderer
-  ;; Render the current editor state as an HTML fragment whose root element
-  ;; has the id "screen". Runs on the baton.
-  (render-screen) => :string)
+  ;; Render the current editor state, as client C's browser shows it (C #f
+  ;; for none; ADR 16), as an HTML fragment whose root element has the id
+  ;; "screen". Each view is drawn from what C's browser measured of it,
+  ;; with the newest placement sent to C. Runs on the baton.
+  (render-screen (c :? client)) => :string)
 
 (def renderer-service
   (new-service 'renderer is-Renderer? tier: 'live

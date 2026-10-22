@@ -2,15 +2,35 @@
 ;;; Web transport (startup tier): the loopback HTTP server, the page shell,
 ;;; ordered input over POST /commands, and the screen stream (ADR 7, ADR 10).
 ;;;
-;;; POST /commands takes one input item: a keydown, a pointer or a scroll
-;;; item, each with its page-load sequence number, validated strictly into
-;;; a key-event, a pointer-event or a scroll-event. Each screen carries its
-;;; revision as data-revision on its root element, and pointer and scroll
-;;; items name the screen they were computed on, which must be one this
-;;; transport sent. The page's actions (frontend/) measure and report
-;;; scrolling (tunaScroll) and place a view where the server asks
-;;; (tunaPlace).
+;;; Every page is a tab, a client (ADR 16): serving the page makes a new
+;;; tab id, numbered from 1, and the page shell holds it as the `tab`
+;;; signal, outside the screen, so Datastar sends it with the screen stream
+;;; and /applied, and the input sender adds it to every /commands item. The transport keeps a record
+;;; per tab id: its client, its input numbering, and its screens and their
+;;; pacing. A reload is a new tab. A tab whose streams have all closed is
+;;; forgotten `tab-grace` ms later unless one reopens (Datastar closes a
+;;; hidden tab's stream and reopens it when the tab is shown), and
+;;; client-gone-hook then runs for its client on the editor loop.
 ;;;
+;;; POST /commands takes one input item: a keydown, a pointer or a scroll
+;;; item, each with its tab and its page-load sequence number, validated
+;;; strictly into a key-event, a pointer-event or a scroll-event from the
+;;; tab's client. Each tab's items are submitted in the order of their
+;;; numbers. A page counts from 1 when it loads; a tab id the transport
+;;; does not know (the page outlived its tab, or a server restart) has its
+;;; numbering start at its first item. Each
+;;; screen carries its revision as data-revision on its root element, and
+;;; pointer and scroll items name the screen they were computed on, which
+;;; must be one this transport sent the tab. The page's actions
+;;; (frontend/) measure and report scrolling (tunaScroll) and place a view
+;;; where the server asks (tunaPlace).
+;;;
+;;; Each redisplay renders a screen for each tab that has a stream open, as
+;;; that tab's browser shows the editor (the renderer contract), and sends
+;;; it when it differs from the tab's last screen or the tab is owed one
+;;; for a scroll report. Rendering happens on the editor thread only: a
+;;; page being served, or a stream that opens, asks the editor loop to
+;;; redisplay, and waits for its screen.
 ;;; Each page's stream sends a screen only once the page has applied the
 ;;; previous one: every screen carries a data-init that posts /applied when
 ;;; it is morphed in. So a slow phone or link gets the newest screen, never
@@ -28,6 +48,7 @@
 ;;; before the screen whenever it differs from what a stream last got.
 
 (import (only-in :gerbil/runtime/hash HashTable)
+        (only-in :gerbil/runtime/thread spawn-thread)
         :std/io
         :std/log
         :std/misc/ports
@@ -37,11 +58,16 @@
         :std/net/uri
         :std/net/url
         :std/text/markup/sxml/print
+        (only-in :std/crypto/random random-bytes)
         :std/time/timeout
         :gerbil-datastar/http
         :tuna/kernel
         :tuna/version
         :tuna/lib/plugin-options
+        ;; A tab has a field named client, which would shadow the type of
+        ;; that name in its constructor.
+        (rename-in (only-in :tuna/plugins/clients/contract client make-client client-id client-gone-hook)
+                   (client client-type))
         (only-in :tuna/plugins/keys/contract key-event make-key-event pointer-event make-pointer-event
                  scroll-event make-scroll-event
                  posn make-posn)
@@ -64,25 +90,39 @@
    (port        : :fixnum)
    (host        : :string)      ; the only Host accepted
    (origin      : :string)      ; the only Origin accepted
-   (admission   : :mutex)       ; guards input ordering and submission
-   (next        : :fixnum)      ; next page-load sequence to submit
-   (pending     : HashTable)  ; sequence -> input item
-   (numbered?   : :boolean)     ; whether a page load or first item set NEXT
+   (admission   : :mutex)       ; guards each tab's input ordering and submission
    (slot-numbers : HashTable)   ; (owner . name) -> n in /css/<n>/; editor thread only
    (stylesheets-seen : :fixnum) ; the stylesheets generation HEAD shows; editor thread only
-   (mutex       : :mutex)       ; guards the fields below
+   (grace       : :real)        ; seconds a tab without a stream is kept
+   (keeper      :? :thread)     ; runs tab-keeping-thread
+   (mutex       : :mutex)       ; guards the fields below and each tab's screens
    (changed     : :condvar)
+   (tabs        : HashTable)    ; tab id -> web-tab
    (head        : :string)      ; the newest <head>
    (served      : :list)        ; the served-stylesheets HEAD links
-   (screen      : :string)      ; the newest screen
-   (rendered    : :string)      ; the renderer's output for it, before stamping
-   (owed        : :boolean)     ; a scroll report awaits a screen
-   (revision    : :fixnum)
+   (revision    : :fixnum)      ; the newest revision given to a screen
    (stopped?    : :boolean)
    (streams     : :fixnum)      ; streams opened so far, to number them
-   (applied     : HashTable)    ; stream -> last screen count its page applied
    (timeout     : :real)        ; seconds a page may take to confirm a screen
    (server      : :t))
+  final: #t)
+
+;; One browser tab, by the id its page made (ADR 16).
+(defclass web-tab
+  ((client    : client-type)
+   ;; Guarded by the server's admission mutex:
+   (next      : :fixnum)        ; next page-load sequence to submit
+   (pending   : HashTable)      ; sequence -> input item
+   (numbered? : :boolean)       ; whether its first item set NEXT
+   ;; Guarded by the server's mutex:
+   (screen    : :string)        ; the newest screen for it
+   (rendered  : :string)        ; the renderer's output for it, before stamping
+   (revision  : :fixnum)        ; SCREEN's revision
+   (owed      : :boolean)       ; a scroll report awaits a screen
+   (wanted?   : :boolean)       ; a screen must be rendered for it before it is sent one
+   (applied   : HashTable)      ; its stream -> last screen count its page applied
+   (streams   : :fixnum)        ; its open streams
+   (closings  : :fixnum))       ; times its streams all closed; a grace period acts on the latest only
   final: #t)
 
 ;; A stylesheet the head links, as request threads serve it: its text, and
@@ -110,11 +150,19 @@
 
 ;;; Screens
 
-(def (render-screen) => :string
+;; The screen for client C. Editor thread only.
+(def (render-screen (c : client-type)) => :string
   (let (renderer (service-provider renderer-service))
     (if renderer
-      (:- (Renderer-render-screen (Renderer renderer)) :string)
+      (:- (Renderer-render-screen (Renderer renderer) c) :string)
       "<main id=\"screen\"><p>No renderer is active.</p></main>")))
+
+;; What a tab shows before a screen was rendered for it.
+(def empty-screen "<main id=\"screen\"></main>")
+
+;; Seconds a page being served waits for the editor loop to render its
+;; screen, before it is served without one and its stream brings it.
+(def page-render-seconds 2.)
 
 ;; SCREEN with REVISION as data-revision on its root element, so that
 ;; pointer items can name the screen they were computed on (ADR 7).
@@ -142,58 +190,85 @@
       screen)))
 
 ;; Only the editor loop redisplays, so revisions are assigned in order.
-;; It also holds the baton, so it may read the stylesheets registry.
+;; It also holds the baton, so it may read the stylesheets registry and
+;; render: a screen for each tab with a stream open or wanting one.
 (defmethod {redisplay! web-server}
   (lambda (self)
     (using (self : web-server)
       (let* ((served (changed-stylesheets self))
-             (rendered (render-screen)))
-        ;; A screen is drawn only from editor state, so the same screen as
-        ;; the last one means nothing on it changed: it gets no new revision
-        ;; and nothing is sent. Timers such as the session save redisplay
-        ;; without changing what is shown.
-        ;; A page sends one scroll report at a time and waits for a screen
-        ;; before the next, so a report is always answered with one.
-        (unless (and (not served)
-                     (do-with-lock self.mutex
-                       (and (not self.owed) (string=? rendered self.rendered))))
-          (publish-screen! self rendered (and served (render-head served)) served))))))
+             (head (and served (render-head served)))
+             (tabs (do-with-lock self.mutex
+                     (filter (lambda ((tab : web-tab)) (or tab.wanted? (fx> tab.streams 0)))
+                             (hash-values self.tabs)))))
+        (publish-screens! self
+                          (map (lambda ((tab : web-tab)) (cons tab (render-screen tab.client))) tabs)
+                          head served)))))
 
-;; Send RENDERED (and HEAD for SERVED stylesheets, when given) as the next
-;; screen revision.
-(def (publish-screen! (self : web-server) (rendered : :string) (head : :t) (served : :t)) => :void
+;; Give each of SCREENS, (tab . rendered) pairs, the next revision and send
+;; it to its tab when it differs from the tab's last screen or the tab is
+;; owed a screen, and with HEAD for SERVED stylesheets, when given, to every
+;; tab. A screen is drawn only from editor state, so the same screen as a
+;; tab's last one means nothing on it changed: that tab is sent nothing.
+;; Timers such as the session save redisplay without changing what is
+;; shown. A page sends one scroll report at a time and waits for a screen
+;; before the next, so a report is always answered with one.
+(def (publish-screens! (self : web-server) (screens : :list) (head : :t) (served : :t)) => :void
   (do-with-lock self.mutex
-    (let (revision (fx1+ self.revision))
-      (when served
-        (set! self.head head)
-        (set! self.served served))
-      (set! self.screen (stamp-revision rendered revision))
-      (set! self.rendered rendered)
-      (set! self.revision revision)
-      (set! self.owed #f)
-      (condition-variable-broadcast! self.changed))))
+    (when served
+      (set! self.head head)
+      (set! self.served served))
+    (for-each (lambda ((screen : :pair))
+                (using (tab (car screen) : web-tab)
+                  (let (rendered (:- (cdr screen) :string))
+                    (when (or served tab.owed (not (string=? rendered tab.rendered)))
+                      (let (revision (fx1+ self.revision))
+                        (set! self.revision revision)
+                        (give-screen! tab (stamp-revision rendered revision) rendered revision)))
+                    (set! tab.wanted? #f))))
+              screens)
+    (condition-variable-broadcast! self.changed)))
 
-;; The newest screen as [revision head screen] once STREAM's page has
-;; applied its COUNTth screen and one newer than SENT exists; the newest
-;; again when the page has not confirmed within SELF's timeout; 'heartbeat
+;; Send TAB its last screen again, under a new revision: the answer to a
+;; scroll report that no task runs for.
+(def (resend-screen! (self : web-server) (tab : web-tab)) => :void
+  (do-with-lock self.mutex
+    (unless (fxzero? (string-length tab.rendered))
+      (let (revision (fx1+ self.revision))
+        (set! self.revision revision)
+        (give-screen! tab (stamp-revision tab.rendered revision) tab.rendered revision)
+        (condition-variable-broadcast! self.changed)))))
+
+;; Make SCREEN, RENDERED stamped with REVISION, TAB's newest screen. Call
+;; with the server's mutex held.
+(def (give-screen! (tab : web-tab) (screen : :string) (rendered : :string) (revision : :fixnum)) => :void
+  (set! tab.screen screen)
+  (set! tab.rendered rendered)
+  (set! tab.revision revision)
+  (set! tab.owed #f))
+
+;; TAB's newest screen as [revision head screen] once STREAM's page has
+;; applied its COUNTth screen and one newer than SENT exists, and no
+;; screen is being rendered for TAB; the newest again when the page has
+;; not confirmed within SELF's timeout; 'heartbeat
 ;; after heartbeat-seconds of nothing to send; #f once stopped. Never
 ;; touches editor state, so a slow client never holds up the editor loop.
-(def (await-screen (self : web-server) (stream : :fixnum) (sent : :fixnum) (count : :fixnum)) => :t
+(def (await-screen (self : web-server) (tab : web-tab) (stream : :fixnum) (sent : :fixnum) (count : :fixnum))
+  => :t
   (let (start (time->seconds (current-time)))
     (mutex-lock! self.mutex)
     (let lp ()
-      (let* ((applied? (fx>= (: (hash-ref self.applied stream 0) :fixnum) count))
+      (let* ((applied? (fx>= (: (hash-ref tab.applied stream 0) :fixnum) count))
              (deadline (+ start (if applied? heartbeat-seconds self.timeout)))
-             (newest (lambda () (let (newest [self.revision self.head self.screen])
+             (newest (lambda () (let (newest [tab.revision self.head tab.screen])
                                   (mutex-unlock! self.mutex)
                                   newest))))
         (cond
          (self.stopped?
           (mutex-unlock! self.mutex)
           #f)
-         ((and applied? (fx> self.revision sent))
+         ((and applied? (not tab.wanted?) (fx> tab.revision sent))
           (newest))
-         ((>= (time->seconds (current-time)) deadline)
+         ((and (>= (time->seconds (current-time)) deadline) (not tab.wanted?))
           (if applied?
             (begin (mutex-unlock! self.mutex) 'heartbeat)
             (newest)))
@@ -202,9 +277,40 @@
           (mutex-lock! self.mutex)
           (lp)))))))
 
-(def (current-page (self : web-server)) => :string
-  (do-with-lock self.mutex
-    (page-html self.head self.screen)))
+;; A new page, as a new tab numbered from 1, showing the screen the editor
+;; loop renders for it. The server makes the id, not the page, so it knows
+;; the tab counts from 1 even when its second item arrives before its
+;; first.
+(def (new-page (self : web-server)) => :string
+  (let (id (new-tab-id))
+    (using (tab (do-with-lock self.mutex
+                  (let (tab (tab-named! self id))
+                    (set! (web-tab-wanted? tab) #t)
+                    tab))
+                : web-tab)
+      (do-with-lock self.admission
+        (set! tab.next 1)
+        (set! tab.numbered? #t))
+      (ask-redisplay! self)
+      (let (deadline (+ (time->seconds (current-time)) page-render-seconds))
+        (mutex-lock! self.mutex)
+        (let lp ()
+          (let (left (- deadline (time->seconds (current-time))))
+            (if (and tab.wanted? (not self.stopped?) (> left 0))
+              (begin
+                (mutex-unlock! self.mutex self.changed left)
+                (mutex-lock! self.mutex)
+                (lp))
+              (let (page (page-html id self.head tab.screen))
+                (mutex-unlock! self.mutex)
+                page))))))))
+
+;; 32 random hex digits.
+(def (new-tab-id) => :string
+  (apply string-append
+         (map (lambda ((b : :fixnum))
+                (string-append (if (fx< b 16) "0" "") (number->string b 16)))
+              (u8vector->list (random-bytes 16)))))
 
 (def (html-string (markup : :list)) => :string
   (call-with-output-string ""
@@ -330,10 +436,14 @@
                                   (read-file-u8vector file))))
       (respond-text response Not-Found (string-append "Not found: " rest)))))
 
-(def (page-html (head : :string) (screen : :string)) => :string
+(def (page-html (tab : :string) (head : :string) (screen : :string)) => :string
   (string-append
    "<!doctype html>"
-   "<html lang=\"en\" data-init=\"@get('/screen')\""
+   "<html lang=\"en\""
+   ;; The tab id (ADR 16), outside the screen and before data-init, so the
+   ;; stream's first request carries it. TAB is hex digits.
+   " data-signals:tab=\"'" tab "'\""
+   " data-init=\"@get('/screen')\""
    " data-on:keydown__document__capture=\"@tunaKeyboard()\""
    ;; One pointer action for clicks on release (click, auxclick), and for
    ;; presses on chrome that must not move focus (mousedown, contextmenu).
@@ -383,18 +493,19 @@
     (cond
      ((string=? path "/")
       (if (string=? method "GET")
-        (begin
-         (restart-numbering! self)
-         (ResponseHandler-write! response OK
+        (ResponseHandler-write! response OK
                                 '(("Content-Type" . "text/html; charset=utf-8")
                                   ("Cache-Control" . "no-store")
                                   ("Referrer-Policy" . "no-referrer"))
-                                (string->utf8 (current-page self))))
+                                (string->utf8 (new-page self)))
         (respond-text response Method-Not-Allowed "Use GET.")))
      ((string=? path "/screen")
-      (if (and (string=? method "GET") (datastar-request? request))
-        (stream-screens self request response)
-        (respond-text response Bad-Request "Expected a Datastar GET.")))
+      (let (id (and (string=? method "GET")
+                    (datastar-request? request)
+                    (signals-tab-id (with-catch (lambda (e) #f) (lambda () (read-signals request))))))
+        (if id
+          (stream-screens self id request response)
+          (respond-text response Bad-Request "Expected a Datastar GET from a tab."))))
      ((string=? path "/commands")
       (accept-event self request response))
      ((and (string=? path "/applied") (string=? method "POST"))
@@ -410,22 +521,103 @@
      (else
       (respond-text response Not-Found (string-append "Not found: " path))))))
 
-;; A page numbers its input from 1 when it loads, so serving the page starts
-;; numbering again. A stream that reconnects without a reload keeps it: the
-;; page's count goes on. One tab only.
-(def (restart-numbering! (self : web-server)) => :void
-  (do-with-lock self.admission
-    (set! self.next 1)
-    (set! self.numbered? #t)
-    (hash-clear! self.pending)))
+;;; Tabs
 
-;; One writer per client: send the newest screen once the page applied the
-;; last one, preceded by the head whenever it differs from the head this
-;; stream last sent, so a new stream gets the head first.
-(def (stream-screens (self : web-server) (request : Request) (response : ResponseHandler)) => :void
-  (let (stream (do-with-lock self.mutex
-                 (set! self.streams (fx1+ self.streams))
-                 self.streams))
+;; A tab id: 1 to 64 letters, digits and hyphens (new-tab-id makes hex
+;; digits); otherwise #f.
+(def (parse-tab-id (value : :t)) => (Maybe :string)
+  (and (string? value)
+       (fx<= 1 (string-length value) 64)
+       (andmap (lambda ((c : :char))
+                 (or (char<=? #\a c #\z) (char<=? #\A c #\Z) (char<=? #\0 c #\9) (char=? c #\-)))
+               (string->list value))
+       value))
+
+;; The tab id in SIGNALS, the signals a request carries, or #f.
+(def (signals-tab-id (signals : :t)) => (Maybe :string)
+  (and (hash-table? signals) (parse-tab-id (hash-get signals "tab"))))
+
+;; The tab named ID, made the first time ID is seen, with no screen yet.
+;; Unless new-page made it, its first item sets where its
+;; numbering starts: a page whose tab was forgotten, or that was open
+;; across a server restart, goes on counting. Call with SELF's mutex held.
+(def (tab-named! (self : web-server) (id : :string)) => web-tab
+  (or (hash-get self.tabs id)
+      (let (tab (web-tab client: (make-client id)
+                         next: 1 pending: (make-hash-table-eqv) numbered?: #f
+                         screen: (stamp-revision empty-screen 0) rendered: "" revision: 0
+                         owed: #f wanted?: #f applied: (make-hash-table-eqv) streams: 0 closings: 0))
+        (hash-put! self.tabs id tab)
+        ;; A tab that never opens a stream is forgotten as if its streams
+        ;; had closed.
+        (forget-later! self tab)
+        tab)))
+
+;; Forget TAB SELF's grace period from now, unless one of its streams
+;; opens meanwhile. Call with SELF's mutex held.
+(def (forget-later! (self : web-server) (tab : web-tab)) => :void
+  (unless self.stopped?
+    (thread-send (:- self.keeper :thread) [tab tab.closings])))
+
+;; Have the editor loop redisplay, so it renders the screens tabs want.
+(def (ask-redisplay! (self : web-server)) => :void
+  (thread-send (:- self.keeper :thread) 'redisplay))
+
+;; Queues work for tabs on the editor loop, until sent 'stop: a redisplay
+;; when sent 'redisplay (any task, even one doing nothing, is followed by
+;; one), and forget-tab! for each [tab closings] from forget-later!, SELF's
+;; grace period later. It starts with the plugin, so it can reach the
+;; editor loop, which request threads may not.
+(def (tab-keeping-thread (self : web-server)) => :void
+  (let lp ((waiting []))        ; [deadline tab closings] each, earliest first
+    (let (wait (lambda (timeout)
+                 (match (if timeout (thread-receive timeout #f) (thread-receive))
+                   ('stop (void))
+                   ('redisplay
+                    (with-catch void (lambda () (spawn-task! 'tab-screen void)))
+                    (lp waiting))
+                   ([tab closings]
+                    (lp (append waiting [[(+ (time->seconds (current-time)) self.grace) tab closings]])))
+                   (else (lp waiting)))))
+      (match waiting
+        ([[deadline tab closings] . rest]
+         (let (delay (- deadline (time->seconds (current-time))))
+           (if (> delay 0)
+             (wait delay)
+             (begin
+               (with-catch void
+                           (lambda ()
+                             (spawn-task! 'forget-tab (lambda () (forget-tab! self tab closings)))))
+               (lp rest)))))
+        ([] (wait #f))))))
+
+;; On the editor loop: forget TAB if its streams last all closed when they
+;; had closed CLOSINGS times, and none has opened since; then run
+;; client-gone-hook, so plugins forget what they kept for its client.
+(def (forget-tab! (self : web-server) (tab : web-tab) (closings : :fixnum)) => :void
+  (let (id (client-id tab.client))
+    (when (do-with-lock self.mutex
+            (and (eq? (hash-get self.tabs id) tab)
+                 (fxzero? tab.streams)
+                 (fx= tab.closings closings)
+                 (begin (hash-remove! self.tabs id) #t)))
+      (run-hook client-gone-hook tab.client))))
+
+;; One writer per stream: send the tab named ID its newest screen once the
+;; page applied the last one, preceded by the head whenever it differs from
+;; the head this stream last sent, so a new stream gets the head first.
+(def (stream-screens (self : web-server) (id : :string) (request : Request) (response : ResponseHandler))
+  => :void
+  (let* ((opened (do-with-lock self.mutex
+                   (using (tab (tab-named! self id) : web-tab)
+                     (set! tab.streams (fx1+ tab.streams))
+                     ;; Its screen is rendered afresh, before it is sent.
+                     (set! tab.wanted? #t)
+                     (set! self.streams (fx1+ self.streams))
+                     (cons tab self.streams))))
+         (tab (:- (car opened) web-tab))
+         (stream (:- (cdr opened) :fixnum)))
+    (ask-redisplay! self)
     ;; A closed tab surfaces as a failed write; that ends this stream only.
     (with-catch
      void
@@ -433,7 +625,7 @@
        (call-with-datastar-sse request response
          (lambda (session)
            (let lp ((sent -1) (sent-head "") (count 0))
-             (match (await-screen self stream sent count)
+             (match (await-screen self tab stream sent count)
                ([revision head screen]
                 (unless (string=? head sent-head)
                   (patch-elements session head))
@@ -443,24 +635,32 @@
                 (patch-signals session "{}")
                 (lp sent sent-head count))
                (else (void))))))))
-    (do-with-lock self.mutex (hash-remove! self.applied stream))))
+    (using (tab : web-tab)
+      (do-with-lock self.mutex
+        (hash-remove! tab.applied stream)
+        (set! tab.streams (fx1- tab.streams))
+        (when (fxzero? tab.streams)
+          (set! tab.closings (fx1+ tab.closings))
+          (forget-later! self tab))))))
 
-;; POST /applied?stream=S&count=N: the page applied stream S's Nth screen.
+;; POST /applied?stream=S&count=N from a tab: its page applied stream S's
+;; Nth screen.
 (def (accept-applied (self : web-server) (request : Request) (response : ResponseHandler)) => :void
   ;; Read the signals Datastar posts before answering, as accept-event does.
-  (with-catch void (lambda () (read-signals request)))
-  (ResponseHandler-write! response No-Content [] #u8())
-  (let* ((query (form-url-decode (or (URL-query (Request-url request)) "")))
-         (number (lambda (name)
-                   (let (pair (assoc name query))
-                     (and pair (cdr pair) (string->number (cdr pair))))))
-         (stream (number "stream"))
-         (count (number "count")))
-    (when (and (fixnum? stream) (fixnum? count))
-      (do-with-lock self.mutex
-        (when (fx> count (: (hash-ref self.applied stream 0) :fixnum))
-          (hash-put! self.applied stream count)
-          (condition-variable-broadcast! self.changed))))))
+  (let (id (signals-tab-id (with-catch (lambda (e) #f) (lambda () (read-signals request)))))
+    (ResponseHandler-write! response No-Content [] #u8())
+    (let* ((query (form-url-decode (or (URL-query (Request-url request)) "")))
+           (number (lambda (name)
+                     (let (pair (assoc name query))
+                       (and pair (cdr pair) (string->number (cdr pair))))))
+           (stream (number "stream"))
+           (count (number "count")))
+      (when (and id (fixnum? stream) (fixnum? count))
+        (do-with-lock self.mutex
+          (let (tab (hash-get self.tabs id))
+            (when (and tab (fx> count (: (hash-ref (web-tab-applied tab) stream 0) :fixnum)))
+              (hash-put! (web-tab-applied tab) stream count)
+              (condition-variable-broadcast! self.changed))))))))
 
 (def (json-content-type? (request : Request)) => :boolean
   (let (type (header request "Content-Type"))
@@ -478,52 +678,54 @@
          ;; No command response carries feedback, even when its input is
          ;; rejected.
          (_ (ResponseHandler-write! response No-Content [] #u8()))
-         (event (with-catch (lambda (e) #f)
-                            (lambda ()
-                              (parse-input-item value (do-with-lock self.mutex self.revision))))))
-    (when (and (hash-table? value) (equal? (hash-get value "type") "scroll"))
+         (id (and (hash-table? value) (parse-tab-id (hash-get value "tab"))))
+         ;; An item without a valid tab has no order to take its place in.
+         (tab (and id (do-with-lock self.mutex (tab-named! self id))))
+         (event (and tab
+                     (with-catch (lambda (e) #f)
+                                 (lambda ()
+                                   (parse-input-item value (web-tab-client tab)
+                                                     (do-with-lock self.mutex (web-tab-revision tab))))))))
+    (when (and tab (equal? (hash-get value "type") "scroll"))
       (if event
-        (do-with-lock self.mutex (set! self.owed #t))
+        (do-with-lock self.mutex (set! (web-tab-owed tab) #t))
         ;; No task runs for a rejected report, so answer it here.
-        (let (rendered (do-with-lock self.mutex self.rendered))
-          (unless (fxzero? (string-length rendered))
-            (publish-screen! self rendered #f #f)))))
+        (resend-screen! self tab)))
     (cond
      (event
-      (admit-event! self (hash-ref value "sequence") event))
-     ;; A rejected item still takes its place in the order, so the items
-     ;; after it are not left waiting for it.
-     ((and (hash-table? value) (fixnum? (hash-get value "sequence")) (fx>= (hash-get value "sequence") 1))
+      (admit-event! self tab (hash-ref value "sequence") event))
+     ;; A rejected item still takes its place in its tab's order, so the
+     ;; items after it are not left waiting for it.
+     ((and tab (fixnum? (hash-get value "sequence")) (fx>= (hash-get value "sequence") 1))
       (web-log.warnf "Dropped malformed %a input %a." (hash-get value "type") (hash-get value "sequence"))
-      (admit-event! self (hash-get value "sequence") 'dropped))
+      (admit-event! self tab (hash-get value "sequence") 'dropped))
      (else
       (web-log.warnf "Dropped malformed input.")))))
 
 ;; HTTP handlers may arrive in any order. Submission stays under this lock
 ;; so another handler cannot overtake an item while it is handed to the loop.
-;; EVENT is 'dropped for a rejected item, which is skipped in its turn.
-(def (admit-event! (self : web-server) (sequence : :fixnum) (event : :t)) => :void
+;; EVENT, from TAB, is 'dropped for a rejected item, which is skipped in its
+;; turn.
+(def (admit-event! (self : web-server) (tab : web-tab) (sequence : :fixnum) (event : :t)) => :void
   (do-with-lock self.admission
-    ;; After a server restart the open page keeps its count and loads no new
-    ;; page, so the first item seen sets the numbering.
-    (unless self.numbered?
-      (set! self.next sequence)
-      (set! self.numbered? #t))
+    (unless tab.numbered?
+      (set! tab.next sequence)
+      (set! tab.numbered? #t))
     (cond
-     ((or (fx< sequence self.next) (hash-key? self.pending sequence))
+     ((or (fx< sequence tab.next) (hash-key? tab.pending sequence))
       (web-log.warnf "Ignored duplicate input %a." sequence))
      (else
-      (hash-put! self.pending sequence event)
+      (hash-put! tab.pending sequence event)
       ;; A missing item that 64 later ones wait for is given up on, so
       ;; input carries on from the earliest item that did arrive.
-      (when (fx> (hash-length self.pending) 64)
-        (web-log.warnf "Skipped missing input %a." self.next)
-        (set! self.next (apply min (hash-keys self.pending))))
+      (when (fx> (hash-length tab.pending) 64)
+        (web-log.warnf "Skipped missing input %a." tab.next)
+        (set! tab.next (apply min (hash-keys tab.pending))))
       (let lp ()
-        (let (next (hash-get self.pending self.next))
+        (let (next (hash-get tab.pending tab.next))
           (when next
-            (hash-remove! self.pending self.next)
-            (set! self.next (fx1+ self.next))
+            (hash-remove! tab.pending tab.next)
+            (set! tab.next (fx1+ tab.next))
             (unless (eq? next 'dropped)
               ((web-server-submit self) next))
             (lp))))))))
@@ -531,8 +733,8 @@
 (def (short-string? (value : :t)) => :boolean
   (and (string? value) (fx<= (string-length value) 64)))
 
-;; A validated keydown event, or #f.
-(def (parse-key-event (value : :t)) => (Maybe key-event)
+;; A validated keydown event from the client FROM, or #f.
+(def (parse-key-event (value : :t) (from : client-type)) => (Maybe key-event)
   (and (hash-table? value)
        (eqv? (hash-get value "version") 1)
        (equal? (hash-get value "type") "keydown")
@@ -548,7 +750,7 @@
               (short-string? code)
               (fixnum? location) (fx<= 0 location 3)
               (andmap boolean? flags)
-              (apply make-key-event sequence key code location flags)))))
+              (apply make-key-event sequence from key code location flags)))))
 
 ;; Browser buttons (0 left, 1 middle, 2 right) as Emacs numbers them.
 (def browser-buttons '((0 . 1) (1 . 2) (2 . 3)))
@@ -570,9 +772,10 @@
                      (andmap char-numeric? (string->list digits))
                      (cons (string->symbol kind) (string->number digits))))))))
 
-;; A validated pointer item computed on a screen no newer than
+;; A validated pointer item from the client FROM computed on a screen no newer than
 ;; NEWEST-REVISION, or #f.
-(def (parse-pointer-event (value : :t) (newest-revision : :fixnum)) => (Maybe pointer-event)
+(def (parse-pointer-event (value : :t) (from : client-type) (newest-revision : :fixnum))
+  => (Maybe pointer-event)
   (and (hash-table? value)
        (eqv? (hash-get value "version") 1)
        (equal? (hash-get value "type") "pointer")
@@ -594,7 +797,7 @@
               (let (flags (map (lambda ((name : :string)) (hash-ref modifiers name 'missing))
                                '("alt" "ctrl" "meta" "shift")))
                 (and (andmap boolean? flags)
-                     (apply make-pointer-event sequence (cdr button) clicks
+                     (apply make-pointer-event sequence from (cdr button) clicks
                             (append flags
                                     [(make-posn (car part) (cdr part)
                                                 (and (fixnum? node) node) revision)]))))))))
@@ -636,11 +839,12 @@
 ;; The spacers a scroll item may name its top edge in.
 (def spacer-sides '(("above" . above) ("below" . below)))
 
-;; A validated scroll item computed on a screen no newer than
+;; A validated scroll item from the client FROM computed on a screen no newer than
 ;; NEWEST-REVISION, or #f. TOP, LASTVISIBLE and SPACER are null when
 ;; nothing is there, but never missing; a SPACER names the drawn item next
 ;; to it as TOP.
-(def (parse-scroll-event (value : :t) (newest-revision : :fixnum)) => (Maybe scroll-event)
+(def (parse-scroll-event (value : :t) (from : client-type) (newest-revision : :fixnum))
+  => (Maybe scroll-event)
   (and (hash-table? value)
        (eqv? (hash-get value "version") 1)
        (equal? (hash-get value "type") "scroll")
@@ -673,18 +877,18 @@
               drawn-height above below
               (fixnum? width) (fx<= 0 width 1000000)
               (fixnum? height) (fx<= 0 height 1000000)
-              (make-scroll-event sequence start placement (cdr top) offset (cdr last-visible)
+              (make-scroll-event sequence from start placement (cdr top) offset (cdr last-visible)
                                  (cdr spacer) spacer-distance before after drawn-height
                                  above below width height)))))
 
-;; A validated keydown, pointer or scroll item, or #f.
-(def (parse-input-item (value : :t) (newest-revision : :fixnum)) => :t
+;; A validated keydown, pointer or scroll item from the client FROM, or #f.
+(def (parse-input-item (value : :t) (from : client-type) (newest-revision : :fixnum)) => :t
   (and (hash-table? value)
        (let (type (hash-get value "type"))
          (cond
-          ((equal? type "keydown") (parse-key-event value))
-          ((equal? type "pointer") (parse-pointer-event value newest-revision))
-          ((equal? type "scroll") (parse-scroll-event value newest-revision))
+          ((equal? type "keydown") (parse-key-event value from))
+          ((equal? type "pointer") (parse-pointer-event value from newest-revision))
+          ((equal? type "scroll") (parse-scroll-event value from newest-revision))
           (else #f)))))
 
 ;;; The plugin
@@ -693,6 +897,7 @@
   (do-with-lock self.mutex
     (set! self.stopped? #t)
     (condition-variable-broadcast! self.changed))
+  (thread-send (:- self.keeper :thread) 'stop)
   (Server-stop! (Server self.server)))
 
 (defplugin (web-transport ctx)
@@ -709,23 +914,19 @@
                               host: host
                               origin: (string-append "http://" host)
                               admission: (make-mutex 'tuna-admission)
-                              next: 1
-                              pending: (make-hash-table-eqv)
-                              numbered?: #f
                               slot-numbers: (make-hash-table)
                               ;; The first redisplay reads the registry.
                               stylesheets-seen: -1
+                              grace: (/ (plugin-option web-transport 'tab-grace) 1000.)
+                              keeper: #f
                               mutex: (make-mutex 'tuna-screen)
                               changed: (make-condition-variable 'tuna-screen)
+                              tabs: (make-hash-table)
                               head: (render-head [])
                               served: []
-                              screen: (stamp-revision "<main id=\"screen\"></main>" 0)
-                              rendered: ""
-                              owed: #f
                               revision: 0
                               stopped?: #f
                               streams: 0
-                              applied: (make-hash-table-eqv)
                               timeout: (/ (plugin-option web-transport 'screen-timeout) 1000.)
                               server: #f))
          (server (new-http-server
@@ -738,6 +939,7 @@
                    listen: [(string-append "inet4:" host)]
                    response-timeout: !NoTimeout))))
     (set! (web-server-server self) server)
+    (set! (web-server-keeper self) (spawn-thread (lambda () (tab-keeping-thread self)) 'tuna-tabs))
     (Server-start! server)
     (context-defer! ctx (lambda () (stop-web-transport! self)))
     (context-provide! ctx display-service self)
@@ -748,4 +950,7 @@
   (port 0 "The loopback port to listen on; 0 picks a free one."
         (integer-type 0 65535) flag: "--port")
   (screen-timeout 1000 "Milliseconds a page may take to confirm a screen before the newest is sent again."
-                  (integer-type 1 60000)))
+                  (integer-type 1 60000))
+  (tab-grace 60000
+             "Milliseconds a tab whose screen streams have all closed is kept; a stream reopening in time keeps its place."
+             (integer-type 1 86400000)))

@@ -8,14 +8,27 @@
 ;;; every position comes from what the browser measured or from a
 ;;; placement.
 ;;;
+;;; Several clients mirror one editor (ADR 16): a view's scroll position is
+;;; shared, and what each client's browser measured of it is kept per
+;;; client (the buffers contract's client-view), dropped when the client
+;;; goes (client-gone-hook). The client you use drives the scroll
+;;; position: a report that scrolled the view moves it, and every other
+;;; client is placed there; the first report after a client applied a
+;;; placement only confirms it, updating what that client measured and
+;;; moving nothing, so clients of different sizes never place each other
+;;; back and forth. Commands place the view in every client, and work out
+;;; what is in view from what the commanding client (`current-client`)
+;;; measured; work with no client has measurements only from reports with
+;;; no client, so usually none, and then places nothing that needs them.
+;;;
 ;;; `view-scrolled`, bound to scroll reports (the keys contract's
 ;;; `scroll-key`, a special event: it is not what the user did, so it
 ;;; becomes no one's last command and runs no command hooks), ignores a
-;;; report measured before the view's newest placement, adopts the item
-;;; the browser found at the view's top edge, and how far above the edge
-;;; it is, as the view's scroll state, keeps what else it measured (the
-;;; last item wholly in view, the view's size), and sets how many items to
-;;; draw before and after the scroll item. Those counts are only a
+;;; report measured before the newest placement sent to its client,
+;;; adopts the item the browser found at the view's top edge, and how far
+;;; above the edge it is, as where that client's view is, keeps what else
+;;; it measured (the last item wholly in view, the view's size), and sets
+;;; how many items to draw before and after the scroll item. Those counts are only a
 ;;; fetching step: where anything is comes only from what the browser
 ;;; measures, and the next report corrects them. Each side follows the
 ;;; density of what is drawn (items per px, both measured): with fewer px
@@ -79,6 +92,7 @@
 ;;; the items beyond the edge it was placed at known to be out of it.
 (import (only-in :gerbil/runtime/hash HashTable)
         :tuna/kernel
+        :tuna/plugins/clients/contract
         :tuna/plugins/commands/contract
         :tuna/plugins/keys/contract
         :tuna/plugins/settings/contract
@@ -189,10 +203,10 @@
 ;;; What the plugin keeps
 
 ;; For each view: which moved last, its point or the view ('point or
-;; 'view; 'point until the view first moves), the scroll it owes, and the
-;; last placement made to show its point's item, as (NUMBER . ITEM). The
-;; points of the views commands run in, innermost command first, as they
-;; were before it. Where C-l last put point's item.
+;; 'view; 'point until the view first moves). For each client-view: the
+;; scroll it owes, and the last placement made to show its point's item,
+;; as (NUMBER . ITEM). The points of the views commands run in, innermost
+;; command first, as they were before it. Where C-l last put point's item.
 (defclass scrolling-state ((moved-last       : HashTable)
                            (owed             : HashTable)
                            (point-placements : HashTable)
@@ -223,32 +237,32 @@
                   (count : :fixnum))
   final: #t)
 
-;; V's facts if the browser measured them under V's newest placement, so
-;; they say where V is; else #f.
-(def (current-facts (v : view)) => (Maybe scroll-facts)
-  (let (facts (view-facts v))
+;; CV's facts if its browser measured them under the newest placement
+;; sent to it, so they say where its view is; else #f.
+(def (current-facts (cv : client-view)) => (Maybe scroll-facts)
+  (let (facts (client-view-facts cv))
     (and facts
-         (fx= (scroll-facts-placement facts) (placement-number (view-placement v)))
+         (fx= (scroll-facts-placement facts) (placement-number (client-view-placement cv)))
          facts)))
 
-;; What is known of what V shows, or #f before the browser has measured V.
-;; Measured under the newest placement: the items wholly in view, from
-;; the scroll item, or the one after it when the scroll item is partly
-;; above the edge, to the last measured. Placed since: the placement's
-;; item, and on the side it was placed at, the items beyond.
-(def (view-shown (v : view)) => (Maybe shown)
-  (let (facts (view-facts v))
+;; What is known of what CV's view shows, or #f before its browser has
+;; measured it. Measured under the newest placement: the items wholly in
+;; view, from the scroll item, or the one after it when the scroll item
+;; is partly above the edge, to the last measured. Placed since: the
+;; placement's item, and on the side it was placed at, the items beyond.
+(def (view-shown (cv : client-view)) => (Maybe shown)
+  (let (facts (client-view-facts cv))
     (and facts
          (let* ((root (scroll-facts-root facts))
                 (index (lambda ((it :? item)) (if it (node-item-index root it) 0))))
-           (if (current-facts v)
-             (let ((top (index (view-scroll-item v)))
-                   (last-visible (view-last-visible-item v)))
+           (if (current-facts cv)
+             (let ((top (index (client-view-scroll-item cv)))
+                   (last-visible (client-view-last-visible-item cv)))
                (and top
-                    (let* ((first (if (fl>= (view-scroll-offset v) edge-tolerance) (fx1+ top) top))
+                    (let* ((first (if (fl>= (client-view-scroll-offset cv) edge-tolerance) (fx1+ top) top))
                            (last (fxmax top (or (and last-visible (node-item-index root last-visible)) top))))
                       (make-shown root first last (fxmax 1 (fx1+ (fx- last first)))))))
-             (let* ((p (view-placement v))
+             (let* ((p (client-view-placement cv))
                     (target (index (placement-target p)))
                     (count (fxmax 1 (scroll-facts-visible-count facts))))
                (and target
@@ -265,10 +279,11 @@
 
 ;;; Point and the view
 
-;; Place V's point's item in V when it is known to be out of V: at the
-;; edge it lies beyond, or at the centre when more than a screen beyond.
-(def (show-point-item! (state : scrolling-state) (v : view)) => :void
-  (let (s (view-shown v))
+;; Place V's point's item in V when it is known to be out of what CV, V
+;; as a client shows it, shows: at the edge it lies beyond, or at the
+;; centre when more than a screen beyond.
+(def (show-point-item! (state : scrolling-state) (v : view) (cv : client-view)) => :void
+  (let (s (view-shown cv))
     (when s
       (using (s : shown)
         (let (p (point-index v s.root))
@@ -283,25 +298,26 @@
                            (else #f))))
               (when align
                 (place-view! v it align)
-                (hash-put! (scrolling-state-point-placements state) v
-                           (cons (placement-number (view-placement v)) it))))))))))
+                (hash-put! (scrolling-state-point-placements state) cv
+                           (cons (placement-number (client-view-placement cv)) it))))))))))
 
-;; Whether the browser has just measured V under the placement last made
+;; Whether CV's browser has just measured V under the placement last made
 ;; to show its point's item, and point is in that item still: then placing
 ;; it again would not show it either (the browser could not put it there).
-(def (point-placement-measured? (state : scrolling-state) (v : view)) => :boolean
-  (let ((placed (hash-get (scrolling-state-point-placements state) v))
-        (facts (current-facts v)))
+(def (point-placement-measured? (state : scrolling-state) (v : view) (cv : client-view)) => :boolean
+  (let ((placed (hash-get (scrolling-state-point-placements state) cv))
+        (facts (current-facts cv)))
     (and placed facts
          (fx= (car placed) (scroll-facts-placement facts))
          (let (p (point-index v (scroll-facts-root facts)))
            (and p (item=? (cdr p) (cdr placed)))))))
 
-;; Move V's point into V when it is known to be out of V and its text's
-;; lines are among V's items: to the first line of its text known to be in
-;; view if it is above, or the last if below, at its column.
-(def (move-point-into-view! (v : view)) => :void
-  (let ((s (view-shown v))
+;; Move V's point into V when it is known to be out of what CV shows and
+;; its text's lines are among V's items: to the first line of its text
+;; known to be in view if it is above, or the last if below, at its
+;; column.
+(def (move-point-into-view! (v : view) (cv : client-view)) => :void
+  (let ((s (view-shown cv))
         (n (view-node v)))
     (when (and s n)
       (using (s : shown)
@@ -320,27 +336,29 @@
                     (set-view-point! v (text-position-at t (fx1+ (fx- (if above? low high) base))
                                                          (text-column t (view-point v))))))))))))))
 
-;; Bring V and its point together after the browser measured V: the view
+;; Bring V and its point together after CV's browser measured V: the view
 ;; to point if point moved last, else point to the view unless
 ;; scroll-moves-point is off for V's buffer.
-(def (settle-point! (state : scrolling-state) (v : view)) => :void
+(def (settle-point! (state : scrolling-state) (v : view) (cv : client-view)) => :void
   (if (eq? (moved-last state v) 'point)
-    (show-point-item! state v)
+    (show-point-item! state v cv)
     (when (buffer-local-value scroll-moves-point (view-showing v))
-      (move-point-into-view! v))))
+      (move-point-into-view! v cv))))
 
-;; V was scrolled by a command, which placed an item: point follows.
-(def (scrolled! (state : scrolling-state) (v : view)) => :void
+;; V was scrolled by a command, which placed an item: point follows, as
+;; far as CV, the commanding client's view, shows.
+(def (scrolled! (state : scrolling-state) (v : view) (cv : client-view)) => :void
   (set-moved-last! state v 'view)
   (when (buffer-local-value scroll-moves-point (view-showing v))
-    (move-point-into-view! v)))
+    (move-point-into-view! v cv)))
 
-;; Run SCROLL, a scroll of V that needs to know what is in V, now if the
-;; browser has measured V's newest placement, or else once it has.
-(def (scroll-when-measured! (state : scrolling-state) (v : view) (scroll : :procedure)) => :void
-  (if (current-facts v)
+;; Run SCROLL, a scroll of V that needs to know what is in CV, V as the
+;; commanding client shows it, now if its browser has measured its newest
+;; placement, or else once it has.
+(def (scroll-when-measured! (state : scrolling-state) (cv : client-view) (scroll : :procedure)) => :void
+  (if (current-facts cv)
     (scroll)
-    (hash-put! (scrolling-state-owed state) v scroll)))
+    (hash-put! (scrolling-state-owed state) cv scroll)))
 
 ;;; Reports
 
@@ -361,25 +379,29 @@
       ((below) #f)
       (else #t))))
 
-;; Adopt what EVENT measured of its view, returning the view and how the
-;; report found it, or #f when it was measured before the view's newest
-;; placement or about another node: 'placed when it is the first measured
-;; under that placement, 'moved when the view has scrolled since the last
-;; report (another item or offset at the top, the same size), and 'still
-;; otherwise. The node its view's scroller draws from is the one EVENT
-;; names, while the view's buffer holds it. The item at the top is the one
-;; EVENT names, or, when its top edge is in a spacer, the one counted
-;; across the spacer from the drawn item EVENT names (item-across-spacer).
-(def (view-scrolled! (event : scroll-event)) => (Maybe :pair)
+;; Adopt what EVENT measured of its view in its client, returning the view,
+;; the client-view, and how the report found it, or #f when it was
+;; measured before the newest placement sent to its client or about
+;; another node: 'placed when it is the first measured under that
+;; placement, which only confirms it; 'moved when the view has scrolled
+;; since the client's last report (another item or offset at the top,
+;; the same size), which moves the view's scroll position, so every other
+;; client is placed there; and 'still otherwise. The node its view's
+;; scroller draws from is the one EVENT names, while the view's buffer
+;; holds it. The item at the top is the one EVENT names, or, when its top
+;; edge is in a spacer, the one counted across the spacer from the drawn
+;; item EVENT names (item-across-spacer).
+(def (view-scrolled! (event : scroll-event)) => (Maybe :list)
   (using (event : scroll-event)
     (let* ((p event.start)
            (v (posn-view p))
-           (root (and v (posn-node p))))
-      (and root (fx>= event.placement (placement-number (view-placement v)))
+           (root (and v (posn-node p)))
+           (cv (and root (view-client v event.client))))
+      (and cv (fx>= event.placement (placement-number (client-view-placement cv)))
            (let* ((resolve (lambda ((token :? :string)) (and token (token-item root token))))
                   (count (node-item-count root))
                   (measured (measured-average event))
-                  (drawn-average (view-average-item-height v))
+                  (drawn-average (client-view-average-item-height cv))
                   (rule (buffer-local-value spacer-item-height (view-showing v)))
                   (average (cond
                             ((and (real? rule) (> rule 0)) (exact->inexact rule))
@@ -399,29 +421,31 @@
                   (last-visible (resolve event.last-visible-item))
                   (last-index (and last-visible (node-item-index root last-visible)))
                   (visible (if (and top-index last-index) (fxmax 1 (fx1+ (fx- last-index top-index))) 0))
-                  (before (view-facts v))
-                  (was (view-scroll-item v))
+                  (before (client-view-facts cv))
+                  (was (client-view-scroll-item cv))
                   (how (cond
                         ((or (not before) (fx< (scroll-facts-placement before) event.placement)) 'placed)
                         ((and top
                               (fx= (scroll-facts-width before) event.viewport-width)
                               (fx= (scroll-facts-height before) event.viewport-height)
                               (or (not was) (not (item=? was top))
-                                  (fl>= (flabs (fl- (view-scroll-offset v) offset)) edge-tolerance)))
+                                  (fl>= (flabs (fl- (client-view-scroll-offset cv) offset)) edge-tolerance)))
                          'moved)
                         (else 'still))))
-             (set-view-facts! v (make-scroll-facts event.placement root last-visible visible
-                                                   event.viewport-width event.viewport-height))
+             (set-client-view-facts! cv (make-scroll-facts event.placement root last-visible visible
+                                                           event.viewport-width event.viewport-height))
              (when average
-               (set-view-average-item-height! v average))
+               (set-client-view-average-item-height! cv average))
              (when top-index
-               (set-view-scroll! v top offset)
+               (if (eq? how 'moved)
+                 (set-view-scroll! v event.client top offset)
+                 (set-client-view-scroll! cv top offset))
                (let* ((density (if measured (fl/ 1. measured) 0.))
                       (wanted (wanted-pixels v event.viewport-height))
                       (height (exact->inexact event.viewport-height))
                       (after-last (fx- count top-index 1)))
-                 (set-view-drawn-items!
-                  v
+                 (set-client-view-drawn-items!
+                  cv
                   (to-the-end top-index
                               (if across
                                 ;; Nothing is drawn around the new top item yet.
@@ -433,32 +457,34 @@
                                 (adjusted-count 0 0 0. (fl+ wanted height) density)
                                 (adjusted-count event.drawn-after visible event.px-below wanted density))
                               wanted density))))
-             (cons v how))))))
+             [v cv how])))))
 
-;; After a report adopted by view-scrolled!: a view that moved by hand
-;; moved last; then V runs the scroll it owes, or V and its point are
-;; brought together, unless this report measured the placement made to
-;; show point's item and point is still in it.
-(def (after-report! (state : scrolling-state) (v : view) (how : :symbol)) => :void
+;; After a report adopted by view-scrolled!, from the client whose view of
+;; V is CV: a view that moved by hand moved last; then CV runs the scroll
+;; it owes, or V and its point are brought together, unless this report
+;; measured the placement made to show point's item and point is still in
+;; it.
+(def (after-report! (state : scrolling-state) (v : view) (cv : client-view) (how : :symbol)) => :void
   (when (eq? how 'moved)
     (set-moved-last! state v 'view))
-  (let (owed (hash-get (scrolling-state-owed state) v))
+  (let (owed (hash-get (scrolling-state-owed state) cv))
     (cond
      (owed
-      (hash-remove! (scrolling-state-owed state) v)
+      (hash-remove! (scrolling-state-owed state) cv)
       (owed))
-     ((and (eq? how 'placed) (point-placement-measured? state v)) (void))
-     (else (settle-point! state v)))))
+     ((and (eq? how 'placed) (point-placement-measured? state v cv)) (void))
+     (else (settle-point! state v cv)))))
 
 ;;; Scroll commands
 
-;; C-v in V: the item next-screen-context-items before the end of what is
-;; wholly in view to the top, or at least the item after the top one.
-(def (scroll-up! (state : scrolling-state) (v : view)) => :void
-  (let (s (view-shown v))
+;; C-v in V, as CV shows it: the item next-screen-context-items before the
+;; end of what is wholly in view to the top, or at least the item after
+;; the top one.
+(def (scroll-up! (state : scrolling-state) (v : view) (cv : client-view)) => :void
+  (let (s (view-shown cv))
     (when s
       (using (s : shown)
-        (let ((top (node-item-index s.root (or (view-scroll-item v) (node-item-at s.root 0))))
+        (let ((top (node-item-index s.root (or (client-view-scroll-item cv) (node-item-at s.root 0))))
               (count (node-item-count s.root)))
           (when (and top s.last)
             (when (fx>= s.last (fx1- count))
@@ -466,28 +492,29 @@
             (place-view! v (node-item-at s.root (fxmax (fx1+ top)
                                                        (fx- s.last (fx1- next-screen-context-items))))
                          'top)
-            (scrolled! state v)))))))
+            (scrolled! state v cv)))))))
 
-;; M-v in V: the item next-screen-context-items after the start of what is
-;; in view to the bottom, or at least the item before the last one wholly
-;; in view.
-(def (scroll-down! (state : scrolling-state) (v : view)) => :void
-  (let (s (view-shown v))
+;; M-v in V, as CV shows it: the item next-screen-context-items after the
+;; start of what is in view to the bottom, or at least the item before the
+;; last one wholly in view.
+(def (scroll-down! (state : scrolling-state) (v : view) (cv : client-view)) => :void
+  (let (s (view-shown cv))
     (when s
       (using (s : shown)
-        (let ((top (node-item-index s.root (or (view-scroll-item v) (node-item-at s.root 0)))))
+        (let ((top (node-item-index s.root (or (client-view-scroll-item cv) (node-item-at s.root 0)))))
           (when (and top s.last)
-            (when (and (fx= top 0) (fl< (view-scroll-offset v) edge-tolerance))
+            (when (and (fx= top 0) (fl< (client-view-scroll-offset cv) edge-tolerance))
               (error "Beginning of buffer"))
             (place-view! v (node-item-at s.root (fxmax 0 (fxmin (fx+ top (fx1- next-screen-context-items))
                                                                (fx1- s.last))))
                          'bottom)
-            (scrolled! state v)))))))
+            (scrolled! state v cv)))))))
 
-;; C-l in V: point's item at the centre, then on repeating at the top, at
-;; the bottom, and at the centre again (Emacs's recenter-positions).
-(def (recenter! (state : scrolling-state) (v : view)) => :void
-  (let* ((facts (view-facts v))
+;; C-l in V, as CV shows it: point's item at the centre, then on repeating
+;; at the top, at the bottom, and at the centre again (Emacs's
+;; recenter-positions).
+(def (recenter! (state : scrolling-state) (v : view) (cv : client-view)) => :void
+  (let* ((facts (client-view-facts cv))
          (root (if facts (scroll-facts-root facts) (buffer-root (view-showing v))))
          (p (point-index v root)))
     (when p
@@ -520,7 +547,7 @@
          ([(? (cut eq? <> v)) before-n before-position before-revision]
           (unless (and (eq? n before-n) (eqv? position before-position) (eqv? revision before-revision))
             (set-moved-last! state v 'point)
-            (show-point-item! state v)))
+            (show-point-item! state v (view-client v (current-client)))))
          (else (void)))))))
 
 (defplugin (scrolling ctx)
@@ -530,18 +557,25 @@
     (defcommand (view-scrolled) "Adopt what the browser measured of the view a scroll report names."
       (let (event (last-command-event))
         (if (scroll-event? event)
-          (let (adopted (view-scrolled! event))
-            (when adopted
-              (after-report! state (car adopted) (cdr adopted))))
+          (match (view-scrolled! event)
+            ([v cv how] (after-report! state v cv how))
+            (else (void)))
           (message "view-scrolled runs only from a scroll report"))))
     (defcommand (scroll-up-command) "Scroll forward by nearly a screen: the last items in view go to the top."
-      (let (v (selected-view))
-        (scroll-when-measured! state v (lambda () (scroll-up! state v)))))
+      (let* ((v (selected-view))
+             (cv (view-client v (current-client))))
+        (scroll-when-measured! state cv (lambda () (scroll-up! state v cv)))))
     (defcommand (scroll-down-command) "Scroll back by nearly a screen: the first items in view go to the bottom."
-      (let (v (selected-view))
-        (scroll-when-measured! state v (lambda () (scroll-down! state v)))))
+      (let* ((v (selected-view))
+             (cv (view-client v (current-client))))
+        (scroll-when-measured! state cv (lambda () (scroll-down! state v cv)))))
     (defcommand (recenter-top-bottom) "Put point's item at the centre of the view; repeated, at the top, then the bottom."
-      (recenter! state (selected-view)))
+      (let (v (selected-view))
+        (recenter! state v (view-client v (current-client)))))
+    ;; What a client measured goes with it.
+    (context-add-hook! ctx client-gone-hook 'scrolling
+      (lambda ((c : client))
+        (for-each (lambda ((v : view)) (forget-view-client! v c)) (view-list))))
     (context-add-hook! ctx pre-command-hook 'point-before
       (lambda ()
         (set! (scrolling-state-before state) (cons (point-place) (scrolling-state-before state)))))

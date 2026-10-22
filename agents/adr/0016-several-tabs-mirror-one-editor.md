@@ -1,6 +1,6 @@
 # 16. Several tabs mirror one editor; a short, explicit list of per-tab state
 
-Status: accepted (2026-10-21). Owner-approved brief: [`docs/briefs/2026-10-several-tabs.md`](../../docs/briefs/2026-10-several-tabs.md). Research: [`agents/research/per-tab/`](../research/per-tab/). Amends ADR 7 and ADR 10 (one tab assumed; no client identity), ADR 8 (input sessions become per client), ADR 13 (per-tab frames deferred) and ADR 15 (measurements per tab).
+Status: accepted (2026-10-21); built 2026-10-22 (plan [`agents/plans/several-tabs.md`](../plans/several-tabs.md)). Owner-approved brief: [`docs/briefs/2026-10-several-tabs.md`](../../docs/briefs/2026-10-several-tabs.md). Research: [`agents/research/per-tab/`](../research/per-tab/). Amends ADR 7 and ADR 10 (one tab assumed; no client identity), ADR 8 (input sessions become per client), ADR 13 (per-tab frames deferred) and ADR 15 (measurements per tab).
 
 ## Context
 
@@ -21,7 +21,7 @@ Both models keep input-sequence state and measured geometry per client. Datastar
   3. **What the tab's browser measured** (scrolling, on behalf of the view): view facts and size, the average item height, the drawn before/after counts, the total scroll height, and the newest placement sent to the tab.
 
   Everything else is shared editor state.
-- **Tab identity is a Datastar signal** in the page shell, outside the morph target. It is made with `crypto.randomUUID()` at each page load and sent with every request. A reload or a duplicated tab is a new tab. It is not kept in `sessionStorage` (duplicated tabs copy it) or in a cookie (cookies are per browser).
+- **Tab identity is a Datastar signal** in the page shell, outside the morph target, sent with every request. The server makes the id (32 random hex digits) each time it serves the page and registers the tab as numbering its input from 1, so a new page's second item arriving before its first is still ordered (a page-made id, as in Hyperlith, would leave the server guessing where a new tab's numbering starts). A tab id the server does not know (the page outlived its tab, or the server restarted) has its numbering start at its first item. A reload or a duplicated tab is a new tab. It is not kept in `sessionStorage` (duplicated tabs copy it) or in a cookie (cookies are per browser).
 - **A client is the transport-neutral word**: a browser tab today, and a terminal or desktop window later. A small `clients` contract provides the vocabulary: the `current-client` parameter, which the input plugin binds inside each command's task, and a hook run when a client goes away. The kernel does not change and never names clients (ADR 12).
 - **One screen per client.** Each redisplay renders a screen for each connected client from shared state plus that client's measurements. A client whose screen did not change is sent nothing.
 - **The tab you use drives the scroll position.**

@@ -156,9 +156,10 @@ action({
 // The renderer calls this from a view's placement marker (data-init) when
 // the marker is new: on a new placement, and on a freshly drawn scroller.
 // It scrolls the marker's scroller so that the item the marker names is
-// at the top (data-offset px of it above the edge), centre or bottom
-// (data-align), or, when it names none, to the scroller's start; then has
-// the scroller report where it is.
+// at the top (data-offset px of it above the edge, but never all of it:
+// another tab measured the offset, and the item may be shorter here),
+// centre or bottom (data-align), or, when it names none, to the
+// scroller's start; then has the scroller report where it is.
 action({
   name: "tunaPlace",
   apply({ el }: { el: HTMLElement }): void {
@@ -176,7 +177,7 @@ action({
       switch (el.getAttribute("data-align")) {
         case "center": scroller.scrollTop = top + box.height / 2 - scroller.clientHeight / 2; break;
         case "bottom": scroller.scrollTop = top + box.height - scroller.clientHeight; break;
-        default: scroller.scrollTop = top + pixels(el, "data-offset");
+        default: scroller.scrollTop = top + Math.min(pixels(el, "data-offset"), Math.max(box.height - 1, 0));
       }
     }
     scrollers.set(scroller, { placed: number, owed: true });

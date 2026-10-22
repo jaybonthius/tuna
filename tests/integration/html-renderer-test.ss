@@ -5,6 +5,7 @@
         (only-in :gerbil/runtime/interface interface-instance-object)
         :std/test
         :tuna/kernel
+        :tuna/plugins/clients/contract
         (only-in :tuna/plugins/keys/contract keymap-set! keymap-set-in! new-keymap)
         :tuna/plugins/settings/contract
         :tuna/plugins/renderer/contract
@@ -45,8 +46,8 @@
                                                         (new-text-node
                                                          (new-text "This buffer is a tree: a column holding a heading and this text.\nType here; the heading stays.\n"))]))))
 
-(def (screen)
-  (Renderer-render-screen (Renderer (service-provider renderer-service))))
+(def (screen (c #f))
+  (Renderer-render-screen (Renderer (service-provider renderer-service)) c))
 
 ;; Calls of the counted kind's HTML renderer, by the name of the buffer
 ;; holding the node.
@@ -303,7 +304,7 @@
                         (set-node-children! root [kept (new-node 'counted)])
                         (screen))
                       (iota 1000))
-            (let (cached (hash-get (slot-ref rendering 'views) (view-id (selected-view))))
+            (let (cached (hash-get (hash-get (slot-ref rendering 'clients) #f) (view-id (selected-view))))
               (check (hash-length (slot-ref cached 'nodes)) => 4)
               (hash-clear! renders)
               (screen)
@@ -402,7 +403,8 @@
            (check (has? html (string-append "data-scroll-root=\"" (number->string (node-id n)) "\"")) => #t)
            (check (has? html "data-drawn-screens=\"2.\"") => #t)
            ;; The placement marker names no item: the view stays at its start.
-           (check (has? html (string-append "id=\"view-" (number->string (view-id v)) "-placement-0\"")) => #t)
+           ;; The first placement sent to this client.
+           (check (has? html (string-append "id=\"view-" (number->string (view-id v)) "-placement-1\"")) => #t)
            (check (has? html "data-target") => #f)))))
 
     (test-case "scrolling: a view draws its counts of items around its scroll item, between spacers"
@@ -413,10 +415,12 @@
                 (n (view-node v))
                 (item (lambda (k) (node-item-at n (- k 1))))
                 (line (lambda (k) (string-append "data-item=\"" (item-token (item k)) "\""))))
-           (set-view-scroll! v (item 25000) 5.)
-           (set-view-drawn-items! v 100 300)
-           (set-view-facts! v (make-scroll-facts (placement-number (view-placement v)) n (item 25030) 31 800 744))
-           (set-view-average-item-height! v 20.25)
+           (set-view-scroll! v #f (item 25000) 5.)
+           (let (cv (view-client v #f))
+             (set-client-view-drawn-items! cv 100 300)
+             (set-client-view-facts! cv (make-scroll-facts (placement-number (client-view-placement cv))
+                                                           n (item 25030) 31 800 744))
+             (set-client-view-average-item-height! cv 20.25))
            (let (html (screen))
              (check (has? html (line 24899)) => #f)
              (check (has? html (line 24900)) => #t)
@@ -444,13 +448,13 @@
              (check (has? html "@tunaScroll('spacer', 24899, 25299)") => #t)
              (check (has? html "scroll-bar") => #f))
            ;; At the end of the buffer, no spacer below.
-           (set-view-scroll! v (item 49990) 0.)
+           (set-view-scroll! v #f (item 49990) 0.)
            (let (html (screen))
              (check (has? html "data-spacer=\"above\"") => #t)
              (check (has? html "data-spacer=\"below\"") => #f)
              (check (has? html "--scroll-sizer-block-size: 1012500px") => #t))
            ;; A placement is a new marker, with a larger number.
-           (let (number (placement-number (view-placement v)))
+           (let (number (placement-number (client-view-placement (view-client v #f))))
              (place-view! v (item 100) 'center)
              (let (html (screen))
                (check (has? html (string-append "-placement-" (number->string (+ number 1)) "\"")) => #t)
@@ -458,6 +462,48 @@
                                                 "\" data-align=\"center\""))
                       => #t)
                (check (has? html (line 100)) => #t)))))))
+
+    (test-case "scrolling: each client's screen draws the run, spacers and total height its browser measured"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (insert (fifty-thousand-lines))
+         (let* ((v (selected-view))
+                (n (view-node v))
+                (item (lambda (k) (node-item-at n (- k 1))))
+                (line (lambda (k) (string-append "data-item=\"" (item-token (item k)) "\"")))
+                (a (make-client "a"))
+                (b (make-client "b")))
+           (place-view! v (item 25000) 'top)
+           ;; A, short: 100 items drawn before and 300 after, 20.25 px each;
+           ;; B, tall: 500 and 500, 40 px each.
+           (for-each (lambda (setup)
+                       (let (cv (view-client v (car setup)))
+                         (apply set-client-view-drawn-items! cv (cadr setup))
+                         (set-client-view-average-item-height! cv (caddr setup))
+                         (set-client-view-facts! cv (make-scroll-facts (placement-number (client-view-placement cv))
+                                                                       n (item 25030) 31 800 (cadddr setup)))))
+                     [[a [100 300] 20.25 744] [b [500 500] 40. 1600]])
+           (let ((short (screen a))
+                 (tall (screen b)))
+             (check [(has? short (line 24899)) (has? short (line 24900)) (has? short (line 25300))
+                     (has? short (line 25301))]
+                    => [#f #t #t #f])
+             (check [(has? tall (line 24499)) (has? tall (line 24500)) (has? tall (line 25500))
+                     (has? tall (line 25501))]
+                    => [#f #t #t #f])
+             (check (has? short "data-measured-height=\"744\"") => #t)
+             (check (has? tall "data-measured-height=\"1600\"") => #t)
+             (check (has? short "--spacer-block-size: 504205px") => #t)
+             (check (has? tall "--spacer-block-size: 979960px") => #t)
+             (check (has? short "--scroll-sizer-block-size: 1012500px") => #t)
+             (check (has? tall "--scroll-sizer-block-size: 2000000px") => #t)
+             ;; Each is sent its own placements: the first, for each.
+             (check (has? short (string-append "-placement-1\"")) => #t)
+             (check (has? tall (string-append "-placement-1\"")) => #t)
+             ;; Moving the view sends both a new one.
+             (place-view! v (item 100) 'center)
+             (check (has? (screen a) (string-append "-placement-2\"")) => #t)
+             (check (has? (screen b) (string-append "-placement-2\"")) => #t))))))
 
     (test-case "scrolling: a node opening into children is drawn with only the children holding drawn items"
       (call-with-fresh-kernel renderer-plugins
@@ -470,8 +516,8 @@
                   (rows (node-children root))
                   (row-id (lambda (k) (string-append "id=\"view-" (number->string (view-id v)) "-node-"
                                                      (number->string (node-id (list-ref rows k))) "\""))))
-             (set-view-scroll! v (node-item (list-ref rows 500)) 0.)
-             (set-view-drawn-items! v 10 10)
+             (set-view-scroll! v #f (node-item (list-ref rows 500)) 0.)
+             (set-client-view-drawn-items! (view-client v #f) 10 10)
              (let (html (screen))
                (check (has? html (string-append "class=\"rows\"")) => #t)
                (check (has? html (row-id 489)) => #f)
@@ -490,7 +536,7 @@
                 (n (view-node v))
                 (prefix (string-append "id=\"view-" (number->string (view-id v))
                                        "-node-" (number->string (node-id n)) "-line-")))
-           (set-view-scroll! v (node-item-at n 24999) 0.)
+           (set-view-scroll! v #f (node-item-at n 24999) 0.)
            (check (has? (screen) (string-append prefix "25000\">25000<")) => #t)
            ;; Two lines inserted at the top: the text "25000" is line 25002 now,
            ;; and keeps its element.
@@ -507,7 +553,7 @@
                 (n (view-node v))
                 (prefix (string-append "id=\"view-" (number->string (view-id v))
                                        "-node-" (number->string (node-id n)) "-line-")))
-           (set-view-scroll! v (node-item-at n 9) 0.)
+           (set-view-scroll! v #f (node-item-at n 9) 0.)
            (check (has? (screen) "data-run-at-start") => #t)
            (check (has? (screen) (string-append prefix "10\">10<")) => #t)
            ;; A line inserted before the first line drawn: the text "5" is

@@ -3,13 +3,18 @@
 (import :std/error
         :std/io
         :std/net/address
+        :std/net/uri
         :std/time/timeout
         :tuna/kernel
         :tuna/plugins/web/plugin
         "../../../../tuna/tests/support/kernel")
 (export with-web-tuna
         http
+        current-tab
+        new-tab!
+        unknown-tab!
         post-key
+        post-applied
         open-screen-stream
         read-until
         string-search
@@ -102,10 +107,49 @@
       (Socket-close socket)
       (parse-reply text))))
 
+;;; Tabs: every page names its tab (ADR 16)
+
+;; The tab the helpers below send from unless told otherwise.
+(def tab "tab-0")
+(def tabs-made 0)
+(def (current-tab) tab)
+
+;; The last sequence number each tab sent.
+(def sequences (make-hash-table))
+
+;; Load the page, as a browser does: the server makes a new tab, numbered
+;; from 1, whose id the page holds as its `tab` signal. Make that tab the
+;; current one and return the page.
+(def (load-page!)
+  (let* ((page (reply-body (http "GET" "/")))
+         (marker "data-signals:tab=\"'")
+         (start (+ (string-search marker page) (string-length marker))))
+    (set! tab (substring page start (string-index page #\' start)))
+    page))
+
+;; Load a page and return its new tab's id.
+(def (new-tab!)
+  (load-page!)
+  tab)
+
+;; Make the current tab one the server never made, as a page open across a
+;; server restart has, and return its id.
+(def (unknown-tab!)
+  (set! tabs-made (+ tabs-made 1))
+  (set! tab (string-append "unknown-" (number->string tabs-made)))
+  tab)
+
+(def (next-sequence! tab)
+  (let (n (+ 1 (hash-ref sequences tab 0)))
+    (hash-put! sequences tab n)
+    n))
+
+(def (tab-json tab) (string-append "\"" tab "\""))
+
 ;; CHANGES replaces a raw JSON field, or omits it when its value is #f.
 (def (keydown-json (key : :string) (ctrl? : :boolean) (sequence : :fixnum) . changes)
   => :string
-  (let* ((fields [ (cons "version" "1") (cons "type" "\"keydown\"")
+  (let* ((fields [ (cons "version" "1") (cons "tab" (tab-json tab)) (cons "type" "\"keydown\"")
                   (cons "sequence" (number->string sequence))
                   (cons "key" (string-append "\"" key "\"")) (cons "code" "\"\"")
                   (cons "location" "0") (cons "repeat" "false") (cons "isComposing" "false")
@@ -119,19 +163,22 @@
                                      merged) ",")
                    "}")))
 
-(def sequence 0)
-
-(def (post-key key ctrl?: (ctrl? #f))
-  (set! sequence (+ sequence 1))
+(def (post-key key ctrl?: (ctrl? #f) tab: (from tab))
   (http "POST" "/commands"
         headers: [(cons "Datastar-Request" "true") (cons "Content-Type" "application/json")]
-        body: (keydown-json key ctrl? sequence)))
+        body: (keydown-json key ctrl? (next-sequence! from) (cons "tab" (tab-json from)))))
 
-;; A pointer item as JSON: a left click on tab-line:30 on screen 0, with the
-;; fields in CHANGES, each (name . raw-json), or (name . #f) to leave the
-;; field out.
+;; Post PATH, a screen's /applied path, as tab FROM's page does.
+(def (post-applied path tab: (from tab))
+  (http "POST" path
+        headers: [(cons "Datastar-Request" "true") (cons "Content-Type" "application/json")]
+        body: (string-append "{\"tab\":" (tab-json from) "}")))
+
+;; A pointer item as JSON: a left click on tab-line:30 on screen 0 from the
+;; current tab, with the fields in CHANGES, each (name . raw-json), or (name
+;; . #f) to leave the field out.
 (def (pointer-json . changes)
-  (let* ((fields '(("version" . "1") ("type" . "\"pointer\"")
+  (let* ((fields `(("version" . "1") ("tab" . ,(tab-json tab)) ("type" . "\"pointer\"")
                    ("sequence" . "1") ("revision" . "0") ("kind" . "\"click\"")
                    ("button" . "0") ("clicks" . "1")
                    ("modifiers" . "{\"alt\":false,\"ctrl\":false,\"meta\":false,\"shift\":false}")
@@ -144,28 +191,30 @@
      (string-join (map (lambda (field) (string-append "\"" (car field) "\":" (cdr field))) merged) ",")
      "}")))
 
-;; Post a left click on the part TARGET ("view:12") on screen REVISION, in
-;; sequence after the keys post-key sent.
-(def (post-click target revision: (revision 0) node: (node #f))
-  (set! sequence (+ sequence 1))
+;; Post a left click on the part TARGET ("view:12") on screen REVISION from
+;; tab FROM, in sequence after the keys post-key sent.
+(def (post-click target revision: (revision 0) node: (node #f) tab: (from tab))
   (http "POST" "/commands"
         headers: [(cons "Datastar-Request" "true") (cons "Content-Type" "application/json")]
-        body: (pointer-json (cons "sequence" (number->string sequence))
+        body: (pointer-json (cons "tab" (tab-json from))
+                            (cons "sequence" (number->string (next-sequence! from)))
                             (cons "revision" (number->string revision))
                             (cons "target" (string-append "\"" target "\""))
                             (cons "node" (if node (number->string node) "null")))))
 
-;; The revision of the screen GET / shows. Loading the page starts its
-;; input numbering again, as a browser reload does.
+;; The revision of the screen GET / shows. Loading the page makes a new
+;; tab, numbered from 1, as a browser reload does.
 (def (page-revision)
-  (set! sequence 0)
-  (let* ((page (reply-body (http "GET" "/")))
+  (let* ((page (load-page!))
          (start (+ (string-search "data-revision=\"" page) 15)))
     (string->number (substring page start (string-index page #\" start)))))
 
-(def (open-screen-stream)
+;; Open tab FROM's screen stream, as Datastar does, with its signals in
+;; the datastar query parameter.
+(def (open-screen-stream tab: (from tab))
   (let (socket (connect port))
-    (send! socket (request-text "GET" "/screen"
+    (send! socket (request-text "GET" (string-append "/screen?datastar="
+                                                     (uri-encode (string-append "{\"tab\":" (tab-json from) "}")))
                                 [(cons "Host" (host))
                                  (cons "Datastar-Request" "true")]
                                 ""))
@@ -183,7 +232,6 @@
              (colon (string-index url #\: 7))
              (slash (string-index url #\/ colon)))
         (set! port (string->number (substring url (+ colon 1) slash))))
-      (set! sequence 0)
-      (when load-page? (http "GET" "/"))
+      (if load-page? (load-page!) (unknown-tab!))
       (thunk))))
 

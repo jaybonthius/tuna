@@ -49,7 +49,7 @@ How the server learns layout facts from the browser (event-attached facts, measu
 3. Real syntax highlighting and language-server integration as jobs and subprocesses.
 4. First rich (non-text) buffer kind and navigation across nodes.
 5. Attached REPL, `init.ss` reload, package reload.
-6. Per-tab frames and input sessions; client-side reactivity where it pays off.
+6. *Done (2026-10-22): several tabs mirror one editor, with per-tab input sessions ([ADR 16](../agents/adr/0016-several-tabs-mirror-one-editor.md)).* Later, if wanted: per-tab frames (each tab its own part of the layout); client-side reactivity where it pays off.
 7. A settings screen, like Emacs's `M-x customize`: browse and change plugin settings through Tuna's interface; changes are saved as plain data in `custom.ss` and override `init.ss`.
 8. Compressed screen stream: Brotli or Zstandard streaming compression of the SSE screen stream. Needs Gerbil packages equivalent to Racket's [libbrotli](https://docs.racket-lang.org/libbrotli/index.html) and [libzstd](https://pkgs.racket-lang.org/package/libzstd) (owner builds them). Makes the unchanged-screen resends the resource audit found (`agents/research/resource-audit-2026-10-15.md`) nearly free.
 9. Files: find-file, save, revert, autosave; many buffers; buffer switching; large-file viewport.

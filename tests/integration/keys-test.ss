@@ -2,6 +2,7 @@
         :std/error
         :std/test
         :tuna/kernel
+        :tuna/plugins/clients/contract
         :tuna/plugins/keys/contract
         :tuna/plugins/commands/plugin
         :tuna/plugins/keys/plugin
@@ -15,14 +16,15 @@
               shift?: (shift? : :boolean := #f) meta?: (meta? : :boolean := #f)
               composing?: (composing? : :boolean := #f) code: (code : :string := "")
               mac?: (mac? : :boolean := #f) left?: (left? : :boolean := #f)
-              right?: (right? : :boolean := #f) graph?: (graph? : :boolean := #f))
+              right?: (right? : :boolean := #f) graph?: (graph? : :boolean := #f)
+              client: (from :? client := #f))
   => key-event
-  (make-key-event 1 key code 0 #f composing? alt? ctrl? meta? shift?
+  (make-key-event 1 from key code 0 #f composing? alt? ctrl? meta? shift?
                   mac? left? right? graph?))
 
 (def (pointer area part button: (button 1) clicks: (clicks 1) ctrl?: (ctrl? #f)
-                 alt?: (alt? #f) shift?: (shift? #f) meta?: (meta? #f))
-  (make-pointer-event 1 button clicks alt? ctrl? meta? shift?
+                 alt?: (alt? #f) shift?: (shift? #f) meta?: (meta? #f) client: (from #f))
+  (make-pointer-event 1 from button clicks alt? ctrl? meta? shift?
                       (make-posn area part #f 5)))
 
 (defplugin (binds-a ctx)
@@ -300,6 +302,58 @@
          (check (resolve (keydown "g" ctrl?: #t)) => 'keyboard-quit)
          (check (resolve (keydown "x")) => #f)
          (check (current-message) => "x is undefined"))))
+
+    (test-case "keys in progress are per client: a prefix from one never joins another's keys"
+      (call-with-fresh-kernel keys-plugins
+       (lambda ()
+         (defplugin (client-commands ctx)
+           "A command under C-x, and one for printing characters."
+           requires: [commands-service input-service]
+           (define-command ctx (switch) "C-x b." 'switch)
+           (define-command ctx (insert) "A printing character." 'insert)
+           (keymap-set ctx "C-x b" 'switch)
+           (keymap-set ctx "<printing-char>" 'insert))
+         (activate-plugin! client-commands)
+         (let ((a (make-client "a"))
+               (b (make-client "b")))
+           (check (resolve (keydown "x" ctrl?: #t client: a)) => #f)
+           (check (resolve (keydown "b" client: b)) => 'insert)
+           (check (resolve (keydown "b" client: a)) => 'switch)
+           ;; A click ends only its own client's prefix.
+           (check (resolve (keydown "x" ctrl?: #t client: a)) => #f)
+           (check (resolve (pointer 'view 1 client: b)) => #f)
+           (check (resolve (keydown "b" client: a)) => 'switch)
+           ;; Events without a client share keys in progress of their own.
+           (check (resolve (keydown "x" ctrl?: #t)) => #f)
+           (check (resolve (keydown "b" client: a)) => 'insert)
+           (check (resolve (keydown "b")) => 'switch)
+           ;; A client that went away leaves no prefix behind.
+           (check (resolve (keydown "x" ctrl?: #t client: a)) => #f)
+           (run-hook client-gone-hook a)
+           (check (resolve (keydown "b" client: a)) => 'insert)))))
+
+    (test-case "a command's task sees the client whose event ran it"
+      (call-with-fresh-kernel keys-plugins
+       (lambda ()
+         (defplugin (client-reporters ctx)
+           "Commands that report their client and event."
+           requires: [commands-service input-service]
+           (define-command ctx (report) "Its client and event's client."
+             [(current-client) (key-event-client (last-command-event))])
+           (define-command ctx (report-scroll) "Its client."
+             (current-client))
+           (keymap-set ctx "r" 'report)
+           (keymap-set ctx scroll-key 'report-scroll))
+         (activate-plugin! client-reporters)
+         (let* ((a (make-client "a"))
+                (input (Input (service-provider input-service)))
+                (key-task (Input-resolve! input (keydown "r" client: a)))
+                (scroll-task (Input-resolve! input
+                                             (make-scroll-event 1 a (make-posn 'view 1 #f 0) 0 #f 0. #f
+                                                                #f 0. 0 0 0. 0. 0. 800 600))))
+           (check (current-client) => #f)
+           (check ((cdr key-task)) => [a a])
+           (check ((cdr scroll-task)) => a)))))
 
     (test-case "the innermost input target's keymap comes first, including for C-g"
       (call-with-fresh-kernel keys-plugins

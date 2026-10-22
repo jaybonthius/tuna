@@ -1,6 +1,7 @@
 ;;; Registry behavior without a Keys provider; package macros use Commands.
 prelude: :gerbil/core
 (import :std/test :std/error :tuna/kernel :tuna/plugins/commands/contract
+        :tuna/plugins/clients/contract
         (only-in :tuna/prelude advise! advice-for advised-targets
                  advice-target-info-advice advice-info-name)
         :tuna/plugins/commands/plugin "../../../../tuna/tests/support/kernel" "../support/toy-commands")
@@ -90,6 +91,33 @@ prelude: :gerbil/core
               (check (call-command 'greet) => 'hello)
               (check (advised-targets) => '()))))
         [commands toy-commands]))
+
+    (test-case "last-command is per client; work with no client has its own"
+      (call-with-fresh-kernel [commands actions]
+        (lambda ()
+          (let ((a (make-client "a"))
+                (b (make-client "b"))
+                (as (lambda (c thunk) (parameterize ((current-client c)) (thunk)))))
+            (as a (lambda () (call-command 'visible-action)))
+            (as b (lambda () (call-command 'hidden-action)))
+            (check (last-command) => #f)
+            (check (as a last-command) => 'visible-action)
+            (check (as b last-command) => 'hidden-action)
+            ;; Inside a command, last-command is its client's previous one.
+            (defplugin (previous ctx) "Reports the last command."
+              requires: [commands-service]
+              (defcommand (previous-action) "The last command." (last-command)))
+            (activate-plugin! previous)
+            (check (as b (lambda () (call-command 'previous-action))) => 'hidden-action)
+            (check (as b last-command) => 'previous-action)
+            (check (as a last-command) => 'visible-action)
+            (call-command 'hidden-action)
+            (check (last-command) => 'hidden-action)
+            (check (as a last-command) => 'visible-action)
+            ;; A client that went away is forgotten.
+            (run-hook client-gone-hook a)
+            (check (as a last-command) => #f)
+            (check (as b last-command) => 'previous-action)))))
 
     (test-case "named calls run command hooks even without an input provider"
       (for-each

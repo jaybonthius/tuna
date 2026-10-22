@@ -14,8 +14,8 @@
     ("<left>" . "ArrowLeft") ("<right>" . "ArrowRight")))
 
 ;; Submit one key to the running editor loop: "a", "RET", "C-f", "<up>",
-;; "S-<left>".
-(def (press (key : :string)) => :void
+;; "S-<left>", from the clients contract's CLIENT, if given.
+(def (press (key : :string) client: (client #f)) => :void
   (set! sequence (+ sequence 1))
   (let* ((ctrl? (string-prefix? "C-" key))
          (shift? (string-prefix? "S-" key))
@@ -25,7 +25,7 @@
                        ((assoc name browser-keys) => cdr)
                        (else name))))
     ((input-submitter)
-     (make-key-event sequence browser-key "" 0 #f #f alt? ctrl? #f shift? #f #f #f #f))))
+     (make-key-event sequence client browser-key "" 0 #f #f alt? ctrl? #f shift? #f #f #f #f))))
 
 (def (type! . keys)
   (for-each press keys))
@@ -34,10 +34,10 @@
 ;; PART, as if made on screen REVISION: (click 'tab-line 30),
 ;; (click 'view 12 button: 3 clicks: 2 ctrl?: #t node: 4).
 (def (click (area : :symbol) (part : :fixnum)
-            button: (button 1) clicks: (clicks 1) node: (node #f) revision: (revision 0)
+            client: (client #f) button: (button 1) clicks: (clicks 1) node: (node #f) revision: (revision 0)
             ctrl?: (ctrl? #f) alt?: (alt? #f) shift?: (shift? #f) meta?: (meta? #f))
   => :void
   (set! sequence (+ sequence 1))
   ((input-submitter)
-   (make-pointer-event sequence button clicks alt? ctrl? meta? shift?
+   (make-pointer-event sequence client button clicks alt? ctrl? meta? shift?
                        (make-posn area part node revision))))
