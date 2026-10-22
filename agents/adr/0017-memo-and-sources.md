@@ -32,21 +32,25 @@ Every editor surveyed avoids redrawing lines by comparing small per-line inputs 
   - plugin-owned outside sources such as git status and `/proc`.
 
   Reads go through the accessors of the contract that owns the source, and those accessors record the read.
-- **`memo`.** Every piece of the screen is drawn through one function, `(memo key thunk)`. Pieces are the screen, a view, a node, an item (a line or a row), and any part a renderer chooses. `memo` runs the thunk in a tracking frame that records every source read. It reuses the piece's last HTML while no recorded source has a newer revision.
+- **`memo`.** Every piece of the screen is drawn through one function, `(memo key inputs thunk)`. Pieces are the screen, a view, a node, an item (a line or a row), and any part a renderer chooses. `memo` runs the thunk in a tracking frame that records every source read. It reuses the piece's last HTML while `inputs` is `equal?` to last time's (CLIM's `cache-value` and `cache-test`) and no recorded source has a newer revision.
+  - `inputs` holds every value the piece uses that is not a source read: values its parent computed and dynamic parameters such as the view being drawn. The thunk receives `inputs` and closes over nothing else. A captured value would be reused stale (McCLIM, Compose, Xilem; `immediate-mode-and-lisp-prior-art.md`).
+  - `key` is explicit identity (a node id, a line's identity, a row's key), never a position or a counter. DOM ids derive from the same identity. A duplicate key under one parent is an error in test mode.
   - Pieces nest. A piece's reads include its children's, so an unchanged subtree is reused in one check.
   - Renderers stay ordinary recursive functions that never mention revisions.
   - `memo` is a library (`tuna/lib/`), not kernel vocabulary.
-- **Automatic recording, not hand-written keys** (owner decision, 2026-10-22). A test mode renders every frame twice, memoized and from scratch, and fails when they differ. It also fails any write to a source during rendering. Together these catch a renderer that reads state behind the accessors.
-- **Equality cutoff.** A derived value may be compared with `equal?`; when equal, its revision does not move. Leaves use it:
+- **Automatic recording, not hand-written keys** (owner decision, 2026-10-22). Compose's snapshots and SwiftUI's Observation reached the same choice after hand-declared validity (CLIM, Genera) proved error-prone. A test mode renders every frame twice, memoized and from scratch, and fails when they differ. It also fails any write during rendering, whether to a source or to a renderer-global table. Together these catch a renderer that reads state behind the accessors.
+- **Drawing has no side outputs.** A piece produces only its HTML. Anything else drawing used to write, such as line-id pins, belongs to a source owned by the view and is updated outside drawing. Anything written during drawing would be lost when the piece is reused, which is the root of the audit's dropped-pins bug.
+- **Equality cutoff.** A derived value may be compared with `equal?`; when equal, its revision does not move. Cutoff compares content, never identity: a mutable object mutated in place is not a value. Use it at the leaves and on cheap derivations of expensive inputs, not on whole-buffer values, where comparing costs more than recomputing (Compose). Leaves use it:
   - a line's inputs (its text, the decoration spans clipped to it, and the cursor and selection columns in it) are compared by value. Its position and the text's global revision are not inputs, so inserting a line leaves the others reused for any text store;
-  - a node attribute set to an equal value stamps nothing.
+  - a node attribute set to an equal value stamps nothing;
+  - client measurements are rounded (to whole pixels) and compared before they count as changed, so a render, measure, render loop settles (egui, Compose). A renderer never derives a measurement request from its own output in the same frame.
 - **Outside and asynchronous state.**
   - A source's reader runs off the editor thread, in a job that may post several results (ADR 3). It compares each reading with the last and posts only differences. When nothing differs, no task runs, nothing is drawn and nothing is sent.
   - Highlighting results carry the text revision they were computed for. They are rebased through the change journal, replace spans only in their range, and redraw only the lines whose spans changed.
 - **Idle is idle.** Each owner of visible state keeps a generation. The display provider skips a tab when no generation moved since its last screen. Session saving is armed by a change, not by a repeating timer.
 - **Tabs share pieces.** A piece that read no per-client source is shared by every client. A piece that read one belongs to that client.
 - **Assembly.** Pieces are kept as UTF-8 bytes and written into the stream in order, not concatenated into one string. Each frame is still one whole-screen morph.
-- **Cache lifetime.** A piece lives while the last frame of some client used it (mark and sweep per frame). It is not kept in Gambit weak-key tables, because they keep entries whose values point at their keys (`gerbil-mechanics.md`).
+- **Cache lifetime.** A piece lives while the last frame of some client used it. Mark and sweep runs per client, since clients render on their own schedules. Reusing a parent marks its unvisited descendants live (egui). It is not kept in Gambit weak-key tables, because they keep entries whose values point at their keys (`gerbil-mechanics.md`).
 
 ## Consequences
 

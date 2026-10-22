@@ -7,7 +7,7 @@
 - **The output does not change.** Every frame is still one whole-screen fat morph, and the HTML the browser receives is the same as without memoization. The double-render test mode proves this on every test screen.
 - **The kernel does not change.** `memo` and sources live in `tuna/lib/`, and each source lives in its owner's contract and plugin.
 - **Renderers never mention revisions.** They read through contract accessors, which record what they read.
-- **Writes are never part of drawing.** Drawing writes no source (test mode fails otherwise). Today's render-time side effects (point relocation, scroll-item rewrite, creating client views) move out of the read path or become explicit derived caches.
+- **Writes are never part of drawing.** Drawing writes no source and no renderer-global table (test mode fails otherwise); line-id pins move to a view-owned source updated outside drawing. Today's render-time side effects (point relocation, scroll-item rewrite, creating client views) move out of the read path or become explicit derived caches.
 - **Idle is zero:** zero tasks, zero screens built, zero bytes beyond heartbeats.
 - **No backward compatibility.** Delete the hand-written key (`kept-html` with its `view-state`, `how` and `inputs`) when `memo` replaces it.
 
@@ -36,7 +36,9 @@
      - The bug's reproduction from the audit (`bench pin`).
      - 60 s idle with two tabs: zero tasks, zero screens built.
 2. **`memo` and sources.**
-   - Build `tuna/lib/memo.ss`.
+   - Build `tuna/lib/memo.ss` with `(memo key inputs thunk)`: `inputs` compared by `equal?`, the thunk closing over nothing else; explicit keys only, duplicate keys an error in test mode; per-client mark and sweep that keeps the descendants of reused pieces live.
+   - Dynamic parameters read while drawing (`rendering-view`, `rendering-lines`) become sources or `inputs`.
+   - Client measurements are rounded and compared before they count as changed.
    - Make the contract accessors record reads.
    - The renderer draws the screen, views and nodes through `memo`, keyed by identity. Delete the hand-written key.
    - Add the double-render test mode to the renderer and web tests.
