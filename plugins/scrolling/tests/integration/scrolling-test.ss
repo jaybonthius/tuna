@@ -8,6 +8,7 @@
 ;;; for editing commands.
 (import :std/test
         :tuna/kernel
+        :tuna/plugins/clients/contract
         :tuna/plugins/commands/contract
         :tuna/plugins/keys/contract
         :tuna/plugins/settings/contract
@@ -82,6 +83,20 @@
   (set! sequence (+ sequence 1))
   sequence)
 
+;; V as client C shows it: by default no client, as most reports here
+;; come from (ADR 16).
+(def (cv v (c #f)) (on-baton (lambda () (view-client v c))))
+
+;; The number of the newest placement sent to client C.
+(def (client-placement v (c #f))
+  (on-baton (lambda () (placement-number (client-view-placement (view-client v c))))))
+
+;; The newest placement sent to client C: its number, item's line,
+;; alignment and offset.
+(def (client-placement-of v c)
+  (let (p (client-view-placement (cv v c)))
+    [(placement-number p) (line-of (placement-target p)) (placement-align p) (placement-offset p)]))
+
 ;; Submit a report about V's scroller, which draws V's text, then wait
 ;; until the editor loop has handled it. By default: line TOP at the top,
 ;; BEFORE items drawn before it and AFTER after it, ABOVE and BELOW px of
@@ -89,13 +104,15 @@
 ;; one's bottom, in a 800 x 744 px view; LAST, by default 30 lines below
 ;; TOP, is the last in view. With SPACER ('above or 'below), the view's top
 ;; edge is DISTANCE px into that spacer, TOP is the drawn line next to it,
-;; and no line is wholly in view.
-(def (report! v top: (top 300) offset: (offset 0.) last: (last #f)
+;; and no line is wholly in view. From client FROM, by default none,
+;; measured under PLACEMENT: by default the newest sent to FROM.
+(def (report! v top: (top 300) offset: (offset 0.) last: (last #f) client: (from #f)
               spacer: (spacer #f) distance: (distance 0.)
               before: (before 100) after: (after 400) above: (above 2000.) below: (below 2000.)
               drawn: (drawn (+ above below 744.))
-              placement: (placement 0) root: (root (view-node v)) node: (node (node-id root)))
-  (submit! (make-scroll-event (next-sequence!) #f (make-posn 'view (view-id v) node 0) placement
+              placement: (placement #f) root: (root (view-node v)) node: (node (node-id root)))
+  (submit! (make-scroll-event (next-sequence!) from (make-posn 'view (view-id v) node 0)
+                              (or placement (client-placement v from))
                               (and top (line-token v top root: root)) offset
                               (and (not spacer) (line-token v (or last (+ top 30)) root: root))
                               spacer distance before after drawn above below 800 744)))
@@ -103,13 +120,12 @@
 ;; Report what the browser measured of V's newest placement: TOP and LAST
 ;; as report! takes them.
 (def (placed! v top last root: (root (view-node v)))
-  (report! v top: top last: last root: root placement: (placement-number (view-placement v))))
+  (report! v top: top last: last root: root))
 
 ;; The browser has placed V at its start and measured it there, with 100
 ;; lines of 20 px drawn, so later reports are V scrolled by hand.
 (def (measured! v)
-  (report! v top: 1 last: 31 before: 0 after: 99 above: 0. below: 1256. drawn: 2000.
-           placement: (placement-number (view-placement v))))
+  (report! v top: 1 last: 31 before: 0 after: 99 above: 0. below: 1256. drawn: 2000.))
 
 ;; The line of IT, or #f.
 (def (line-of it)
@@ -146,12 +162,15 @@
        [b root (list-ref rows 999)]))))
 
 
-;; V's scroll state: the line at its top and the px of it above the edge.
+;; Where V is as no client shows it: the line at its top and the px of it
+;; above the edge.
 (def (scroll-state v)
-  [(line-of (on-baton (lambda () (view-scroll-item v)))) (view-scroll-offset v)])
+  (let (c (cv v))
+    [(line-of (on-baton (lambda () (client-view-scroll-item c)))) (client-view-scroll-offset c)]))
 
 (def (drawn v)
-  [(view-drawn-before v) (view-drawn-after v)])
+  (let (c (cv v))
+    [(client-view-drawn-before c) (client-view-drawn-after c)]))
 
 (def (with-scrolling thunk)
   (call-with-fresh-kernel scrolling-plugins
@@ -161,11 +180,94 @@
 
 (def scrolling-test
   (test-suite "tuna/plugins/scrolling"
+    (test-case "a report that scrolls one client places every other client there once; it gets none"
+      (with-scrolling
+       (lambda (v)
+         (let ((a (make-client "a"))
+               (b (make-client "b")))
+           (report! v top: 1 last: 31 client: a)
+           (report! v top: 1 last: 61 client: b)
+           (let ((a-before (client-placement v a))
+                 (b-before (client-placement v b)))
+             ;; A scrolls to line 300, 5 px of it above the edge.
+             (report! v top: 300 offset: 5. client: a)
+             (check (placed-at v) => [300 'top])
+             (check (client-placement v a) => a-before)
+             (check (client-placement-of v b) => [(+ b-before 1) 300 'top 5.])
+             ;; A scrolls on before B's page showed that: B is sent only the
+             ;; newest, with one larger number.
+             (report! v top: 310 offset: 2. client: a)
+             (check (client-placement v a) => a-before)
+             (check (client-placement-of v b) => [(+ b-before 2) 310 'top 2.])
+             ;; B applies it and its browser, laying lines out differently,
+             ;; finds line 309 at its top, 40 px above: that confirms the
+             ;; placement, moving nothing, so A is sent nothing.
+             (let (position (placement-of v))
+               (report! v top: 309 offset: 40. last: 330 client: b)
+               (check (placement-of v) => position))
+             (check (client-placement v a) => a-before)
+             (check (line-of (on-baton (lambda () (client-view-scroll-item (view-client v b))))) => 309)
+             ;; B's next report that scrolled it moves the view, and A follows.
+             (report! v top: 400 client: b)
+             (check (placed-at v) => [400 'top])
+             (check (client-placement-of v a) => [(+ a-before 1) 400 'top 0.]))))))
+
+    (test-case "a client's report measured before the newest placement sent to it is ignored"
+      (with-scrolling
+       (lambda (v)
+         (let ((a (make-client "a"))
+               (b (make-client "b")))
+           (report! v top: 1 last: 31 client: a)
+           (report! v top: 1 last: 31 client: b)
+           (let (old (client-placement v b))
+             (report! v top: 300 client: a)
+             ;; B measured under its old placement: stale, though A's is fine.
+             (report! v top: 900 client: b placement: old)
+             (check (placed-at v) => [300 'top])
+             (check (line-of (on-baton (lambda () (client-view-scroll-item (view-client v b))))) => 300))))))
+
+    (test-case "a command places the view in every client, from what the commanding client measured"
+      (with-scrolling
+       (lambda (v)
+         (let ((a (make-client "a"))
+               (b (make-client "b")))
+           ;; A's view shows lines 1 to 31, B's, taller, 1 to 61.
+           (report! v top: 1 last: 31 client: a)
+           (report! v top: 1 last: 61 client: b)
+           (let ((a-before (client-placement v a))
+                 (b-before (client-placement v b)))
+             (on-baton (lambda () (parameterize ((current-client a)) (call-command 'scroll-up-command))))
+             ;; From A's measurements: 30 and 31 stay in view.
+             (check (placed-at v) => [30 'top])
+             (check (client-placement-of v a) => [(+ a-before 1) 30 'top 0.])
+             (check (client-placement-of v b) => [(+ b-before 1) 30 'top 0.])
+             ;; Point follows the view as far as A sees it.
+             (check (point-at v) => [30 0])
+             ;; Point moved out of what A sees, not of what B sees: placed
+             ;; from A's measurements.
+             (report! v top: 30 last: 60 client: a)
+             (report! v top: 30 last: 90 client: b)
+             (set! test-line 75)
+             (on-baton (lambda () (parameterize ((current-client a)) (call-command 'goto-test-line))))
+             (check (placed-at v) => [75 'bottom]))))))
+
+    (test-case "what a client measured goes when the client goes"
+      (with-scrolling
+       (lambda (v)
+         (let (a (make-client "a"))
+           (report! v top: 1 last: 31 client: a)
+           (let (before (cv v a))
+             (check (client-view-facts before) ? scroll-facts?)
+             (on-baton (lambda () (run-hook client-gone-hook a)))
+             (let (after (cv v a))
+               (check (eq? after before) => #f)
+               (check (client-view-facts after) => #f)))))))
+
     (test-case "a new view is at the start of its buffer and draws a first fetching step"
       (with-scrolling
        (lambda (v)
          (check (scroll-state v) => [#f 0.])
-         (check (view-facts v) => #f)
+         (check (client-view-facts (cv v)) => #f)
          (check (drawn v) => [initial-drawn-items initial-drawn-items]))))
 
     (test-case "a report's top item becomes the scroll state, where the browser has it"
@@ -175,14 +277,14 @@
            (measured! v)
            (report! v top: 300 offset: 5.)
            (check (scroll-state v) => [300 5.])
-           (let (facts (view-facts v))
+           (let (facts (client-view-facts (cv v)))
              (check (line-of (scroll-facts-last-visible facts)) => 330)
              (check (scroll-facts-visible-count facts) => 31)
              (check [(scroll-facts-width facts) (scroll-facts-height facts)] => [800 744]))
-           ;; The placement names the scroll state now, under the same number,
-           ;; so a page loaded later puts the view there.
+           ;; The view's scroll position moves there, so every other client
+           ;; and a page loaded later put the view there.
            (let (p (view-placement v))
-             (check (placement-number p) => number)
+             (check (placement-number p) => (+ number 1))
              (check [(line-of (placement-target p)) (placement-align p) (placement-offset p)]
                     => [300 'top 5.]))))))
 
@@ -251,13 +353,14 @@
       (with-scrolling
        (lambda (v)
          ;; Point in what the report finds in view, so the view stays there.
+         (cv v)
          (on-baton (lambda () (goto-char (text-line-start (current-text) 310))
                       (place-view! v (node-item-at (view-node v) 99) 'top)))
-         (let (number (placement-number (view-placement v)))
+         (let (number (client-placement v))
            (check (scroll-state v) => [100 0.])
            (report! v top: 300 offset: 5. placement: (- number 1))
            (check (scroll-state v) => [100 0.])
-           (check (view-facts v) => #f)
+           (check (client-view-facts (cv v)) => #f)
            (report! v top: 300 offset: 5. placement: number)
            (check (scroll-state v) => [300 5.])))))
 
@@ -266,7 +369,7 @@
        (lambda (v)
          (report! v top: 300 offset: 5. node: 999999)
          (check (scroll-state v) => [#f 0.])
-         (check (view-facts v) => #f))))
+         (check (client-view-facts (cv v)) => #f))))
 
     (test-case "a report from a spacer above counts back from the first drawn item by the average"
       (with-scrolling
@@ -278,8 +381,8 @@
            (report! v top: 1000 spacer: 'above distance: 450. before: 0 after: 99 above: 0. below: 0.
                     drawn: 2000.)
            (check (scroll-state v) => [977 10.])
-           ;; The placement names it, exactly, under the same number.
-           (check (placement-of v) => [number 977 'top 10.])
+           ;; The view's scroll position moves to it, exactly.
+           (check (placement-of v) => [(+ number 1) 977 'top 10.])
            ;; Drawn around it: two view heights above, three below.
            (check (drawn v) => [75 112])))))
 
@@ -320,61 +423,61 @@
     (test-case "by default the average item height is measured on the first report, then kept"
       (with-scrolling
        (lambda (v)
-         (check (view-average-item-height v) => #f)
+         (check (client-view-average-item-height (cv v)) => #f)
          ;; 100 items in 2,000 px.
          (measured! v)
-         (check (view-average-item-height v) => 20.)
+         (check (client-view-average-item-height (cv v)) => 20.)
          ;; Neither an ordinary report nor reports from a spacer, with
          ;; drawn items in view or without, change it: the scroller's total
          ;; height stays the same.
          (report! v top: 300 before: 50 after: 49 above: 1000. below: 256. drawn: 3000.)
-         (check (view-average-item-height v) => 20.)
+         (check (client-view-average-item-height (cv v)) => 20.)
          (report! v top: 1000 spacer: 'above distance: 50. before: 0 after: 99 above: 0. below: 0.
                   drawn: 2500.)
          (check (scroll-state v) => [997 10.])
-         (check (view-average-item-height v) => 20.)
+         (check (client-view-average-item-height (cv v)) => 20.)
          (report! v top: 2000 spacer: 'below distance: 1000. before: 99 after: 0 above: 0. below: 0.
                   drawn: 3000.)
          (check (scroll-state v) => [2051 0.])
-         (check (view-average-item-height v) => 20.)
+         (check (client-view-average-item-height (cv v)) => 20.)
          ;; Showing another buffer forgets it; the next first report
          ;; measures it again.
          (let (b (car (rows-with-text!)))
            (on-baton (lambda () (set-view-buffer v b))))
-         (check (view-average-item-height v) => #f))))
+         (check (client-view-average-item-height (cv v)) => #f))))
 
     (test-case "measured, the average item height is measured on the first report and on reports from a spacer with drawn items in view"
       (with-scrolling
        (lambda (v)
          (on-baton (lambda () (set-buffer-setting! (view-showing v) spacer-item-height 'measured)))
-         (check (view-average-item-height v) => #f)
+         (check (client-view-average-item-height (cv v)) => #f)
          ;; 100 items in 2,000 px.
          (measured! v)
-         (check (view-average-item-height v) => 20.)
+         (check (client-view-average-item-height (cv v)) => 20.)
          ;; Another report measuring 30 px an item leaves the spacers as they are.
          (report! v top: 300 before: 50 after: 49 above: 1000. below: 256. drawn: 3000.)
-         (check (view-average-item-height v) => 20.)
+         (check (client-view-average-item-height (cv v)) => 20.)
          ;; A report from a spacer counts by the 20 px the spacer was drawn
          ;; with, then keeps what it measured, 25 px, for the next spacers.
          (report! v top: 1000 spacer: 'above distance: 50. before: 0 after: 99 above: 0. below: 0.
                   drawn: 2500.)
          (check (scroll-state v) => [997 10.])
-         (check (view-average-item-height v) => 25.)
+         (check (client-view-average-item-height (cv v)) => 25.)
          ;; With nothing drawn in view, it counts by those 25 px and keeps
          ;; them: a new average would move what is drawn under a view
          ;; that has nothing drawn in it for the browser to hold still.
          (report! v top: 2000 spacer: 'below distance: 1000. before: 99 after: 0 above: 0. below: 0.
                   drawn: 3000.)
          (check (scroll-state v) => [2041 0.])
-         (check (view-average-item-height v) => 25.)
+         (check (client-view-average-item-height (cv v)) => 25.)
          (report! v top: 1000 spacer: 'above distance: 1000. before: 0 after: 99 above: 0. below: 0.
                   drawn: 3000.)
          (check (scroll-state v) => [960 0.])
-         (check (view-average-item-height v) => 25.)
+         (check (client-view-average-item-height (cv v)) => 25.)
          ;; Showing another buffer forgets it.
          (let (b (car (rows-with-text!)))
            (on-baton (lambda () (set-view-buffer v b))))
-         (check (view-average-item-height v) => #f))))
+         (check (client-view-average-item-height (cv v)) => #f))))
 
     (test-case "C-v puts the last two items wholly in view at the top, and point there when it was above"
       (with-scrolling
@@ -472,9 +575,10 @@
          (goto-line! 2000)
          (check (placed-at v) => [2000 'center])
          (let (before (placement-of v))
-           ;; Measured under that placement, but the view is where it was.
+           ;; Measured under that placement, but the view is where it was:
+           ;; the report only confirms it, so the scroll position stays.
            (placed! v 1 31)
-           (check (placement-of v) => (match before ([number _ _ _] [number 1 'top 0.])))
+           (check (placement-of v) => before)
            (goto-line! 2001)
            (check (placed-at v) => [2001 'center])))))
 

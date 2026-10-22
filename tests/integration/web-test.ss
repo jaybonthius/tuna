@@ -118,6 +118,21 @@
            (check (wait-until (lambda () (= (views) (+ before 1)))) => #t)
            (check (call-on-editor-loop (lambda () (buffer-string "typed"))) => "b")))))
 
+    (test-case "a new page lands at the view's scroll position"
+      (with-tuna
+       (lambda ()
+         (let (token (call-on-editor-loop
+                      (lambda ()
+                        (insert (let lp ((k 500) (out "")) (if (zero? k) out (lp (- k 1) (string-append (number->string k) "\n" out)))))
+                        (let* ((v (selected-view))
+                               (it (node-item-at (view-node v) 299)))
+                          (place-view! v it 'top offset: 7.)
+                          (item-token it)))))
+           (check (and (string-search (string-append "data-target=\"" token "\" data-align=\"top\" data-offset=\"7.\"")
+                                      (reply-body (http "GET" "/")))
+                       #t)
+                  => #t)))))
+
     (test-case "keys and clicks sent back to back are handled in the order sent"
       (with-tuna
        (lambda ()

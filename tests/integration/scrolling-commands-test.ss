@@ -52,7 +52,7 @@
 
 ;; Report that V's scroller, drawing V's text, has line TOP at the top and
 ;; LAST as the last line wholly in view, measured under PLACEMENT (by
-;; default V's newest).
+;; default the newest sent to the report's client, none).
 (def (report! v top last offset: (offset 0.) placement: (placement #f))
   (set! sequence (+ sequence 1))
   ((input-submitter)
@@ -61,7 +61,7 @@
       (let* ((n (view-node v))
              (token (lambda (line) (item-token (node-item-at n (- line 1))))))
         (make-scroll-event sequence #f (make-posn 'view (view-id v) (node-id n) 0)
-                           (or placement (placement-number (view-placement v)))
+                           (or placement (placement-number (client-view-placement (view-client v #f))))
                            (token top) offset (token last) #f 0. 100 400 40744. 20000. 20000. 800 744)))))
   (on-baton void))
 
@@ -87,7 +87,8 @@
          (report! v 1 31)
          (apply keys! (repeat 30 "C-n"))
          (check (point-at v) => [31 0])
-         (check (placed-at v) => [1 'top])
+         ;; Still where the view was first placed: at its start.
+         (check (placed-at v) => [#f 'top])
          (keys! "C-n")
          (check (placed-at v) => [32 'bottom])
          (keys! "C-n")
@@ -132,7 +133,7 @@
          (keys! "M->")
          (report! v 4970 5000)
          (apply keys! (repeat 10 "C-p"))
-         (report! v 4960 4990 placement: (placement-number (view-placement v)))
+         (report! v 4960 4990 placement: (on-baton (lambda () (placement-number (client-view-placement (view-client v #f))))))
          (keys! "M->")
          (check (placed-at v) => [5000 'bottom]))))
 
@@ -169,8 +170,10 @@
                                               (view-list)))))
            (check (placed-at new) => [300 'top])
            (check (placement-offset (view-placement new)) => 7.)
-           (check [(view-drawn-before new) (view-drawn-after new)]
-                  => [(view-drawn-before v) (view-drawn-after v)])
-           ;; Its spacers are as high: 501 items in 40,744 px.
-           (check (view-average-item-height new) => (view-average-item-height v))
-           (check (view-average-item-height new) => (/ 40744. 501))))))))
+           (let ((was (on-baton (lambda () (view-client v #f))))
+                 (now (on-baton (lambda () (view-client new #f)))))
+             (check [(client-view-drawn-before now) (client-view-drawn-after now)]
+                    => [(client-view-drawn-before was) (client-view-drawn-after was)])
+             ;; Its spacers are as high: 501 items in 40,744 px.
+             (check (client-view-average-item-height now) => (client-view-average-item-height was))
+             (check (client-view-average-item-height now) => (/ 40744. 501)))))))))

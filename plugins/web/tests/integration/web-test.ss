@@ -31,7 +31,7 @@
 (def shown 0)
 (defclass counting-rendering () final: #t)
 (defmethod {render-screen counting-rendering}
-  (lambda (self) (string-append "<main id=\"screen\"><p>" (number->string shown) "</p></main>")))
+  (lambda (self c) (string-append "<main id=\"screen\"><p>" (number->string shown) "</p></main>")))
 (defplugin (counting-renderer ctx)
   "Renders a screen that shows a number the test sets."
   provides: [renderer-service]

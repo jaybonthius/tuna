@@ -66,7 +66,7 @@
                          (set! job-results (fx1+ job-results))))))
 
 (def (screen)
-  (on-baton (lambda () (Renderer-render-screen (Renderer (service-provider renderer-service))))))
+  (on-baton (lambda () (Renderer-render-screen (Renderer (service-provider renderer-service)) #f))))
 
 (def (contains? html needle)
   (and (string-contains html needle) #t))

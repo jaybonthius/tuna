@@ -22,15 +22,20 @@
 ;;;
 ;;; A view is a scroller: it lays out the items of the node it draws from
 ;;; one after another (see Items below), and the browser scrolls it. Its
-;;; scroll state (Emacs's window-start plus vscroll) is the item at its top
-;;; edge and how many pixels of that item are above the edge, as the
-;;; browser measured: never a size or position the server worked out. The
-;;; item moves with edits as point does. Beside it are what the browser
-;;; last measured of the view (`scroll-facts`) and the average height of
-;;; its items, and the view's placement:
-;;; the server asking the browser, once, to put an item at the top, centre
-;;; or bottom of the view. Each placement has a larger number than the
-;;; last, and reports measured before the newest placement are stale.
+;;; scroll position, which every client shows (ADR 16), is its newest
+;;; placement (`view-placement`): an item at the top, centre or bottom of
+;;; the view, with the px of it above the top edge, as a command put it or
+;;; as the browser of the client that scrolled it measured (Emacs's
+;;; window-start plus vscroll): never a size or position the server worked
+;;; out. Its number counts the moves. Each client's browser shows the view
+;;; in its own size, so what it measured is kept per client (the clients
+;;; contract), never saved (`client-view`): the item at its top edge and
+;;; how far above the edge, its `scroll-facts`, the average height of its
+;;; items, how many it draws, and the newest placement sent to it, which
+;;; asks that browser, once, to put the view at the scroll position. Each
+;;; placement a client is sent has a larger number than the last, and its
+;;; reports measured before its newest placement are stale. Items move
+;;; with edits as point does.
 ;;; Editing primitives act on the selected view's focused text node. Positions are 1-based character positions within that node's
 ;;; text.
 ;;;
@@ -52,6 +57,7 @@ prelude: :gerbil/core
 (import (only-in :gerbil/runtime/hash HashTable)
         :std/interface
         :tuna/kernel
+        (only-in :tuna/plugins/clients/contract client)
         :tuna/plugins/text-store/contract
         :tuna/plugins/settings/contract)
 (export (interface-out Buffers)
@@ -99,11 +105,12 @@ prelude: :gerbil/core
         view view? view-id view-showing view-node view-position view-revision
         new-view new-view-at copy-view reset-view!
         view-point set-view-point! set-view-showing! view-point-item
-        view-scroll-item view-scroll-offset set-view-scroll!
-        (struct-out placement) view-placement place-view!
-        (struct-out scroll-facts) view-facts set-view-facts! view-last-visible-item
-        view-average-item-height set-view-average-item-height!
-        view-drawn-before view-drawn-after set-view-drawn-items! initial-drawn-items
+        (struct-out placement) view-placement place-view! set-view-scroll!
+        client-view client-view? view-client forget-view-client!
+        client-view-placement client-view-scroll-item client-view-scroll-offset set-client-view-scroll!
+        (struct-out scroll-facts) client-view-facts set-client-view-facts! client-view-last-visible-item
+        client-view-average-item-height set-client-view-average-item-height!
+        client-view-drawn-before client-view-drawn-after set-client-view-drawn-items! initial-drawn-items
         drawn-screens
         selected-view set-selected-view!
         current-buffer switch-to-buffer
@@ -216,24 +223,25 @@ prelude: :gerbil/core
 
 ;;; Views
 
-;; A placement: the server asking the browser, once, to put item TARGET
-;; (#f: the first item the view draws) at the view's top, centre or
-;; bottom (ALIGN 'top, 'center or 'bottom); with 'top, OFFSET px of it
-;; above the top edge. NUMBER is larger than every earlier placement's in
-;; the view. Once the browser confirms it, the placement names where the
-;; view is (`set-view-scroll!`), so a page loaded later puts the view
-;; there again.
+;; A placement: item TARGET (#f: the first item the view draws) at the
+;; view's top, centre or bottom (ALIGN 'top, 'center or 'bottom); with
+;; 'top, OFFSET px of it above the top edge. A view's newest placement is
+;; its scroll position, and NUMBER counts how often it moved. A client's
+;; newest placement is the server asking that client's browser, once, to
+;; put the view at the scroll position, and NUMBER is larger than every
+;; earlier one's sent to that client for the view.
 (defstruct placement ((number : :fixnum)
                       (target :? item)
                       (align  : :symbol)
                       (offset : :flonum))
   final: #t)
 
-;; What the browser last measured of a view: under which placement (its
-;; number), drawing which node's items (ROOT), the last item wholly in
-;; view, how many items there are from the item at the top to it, and the
-;; view's width and height in px. Facts measured under an older placement
-;; than the view's newest describe where the view was before it.
+;; What a client's browser last measured of a view: under which of the
+;; client's placements (its number), drawing which node's items (ROOT),
+;; the last item wholly in view, how many items there are from the item at
+;; the top to it, and the view's width and height in px. Facts measured
+;; under an older placement than the client's newest describe where the
+;; view was before it.
 (defstruct scroll-facts ((placement     : :fixnum)
                          (root          : node)
                          (last-visible  :? item)
@@ -242,33 +250,41 @@ prelude: :gerbil/core
                          (height        : :fixnum))
   final: #t)
 
-;; DRAWN-BEFORE and DRAWN-AFTER are how many items the renderer draws
-;; before and after the scroll item, and AVERAGE-ITEM-HEIGHT the px an
-;; item of the view takes on average, as the browser measured what was
-;; drawn (#f before it has). All three are derived state, never saved with
-;; the session, which the scrolling plugin works out from what the browser
-;; measured (its `view-scrolled` writes them; a new buffer starts them
-;; again). The counts are only a fetching step, which the next report
-;; corrects. The average is the only estimate of a size anywhere: the
-;; renderer sizes the spacers standing in for the items it does not draw
-;; by it, so that the browser's own scroll bar covers the whole buffer,
-;; and the scrolling plugin counts items across a spacer by it. No
-;; position is ever worked out from it. They live on the view, beside the
-;; scroll state they count from, so the renderer can read them without a
-;; service of their own (primary agent, 2026-10-17).
+;; A view as one client's browser shows it (ADR 16): NEWEST-PLACEMENT,
+;; the newest placement sent to the client; TOP-ITEM and SCROLL-OFFSET, where
+;; its view is: the item at the top edge (#f: the first) and the px of it
+;; above the edge, as placed or as the browser measured; FACTS, what the
+;; browser last measured. DRAWN-BEFORE and DRAWN-AFTER are how many items
+;; the renderer draws for it before and after TOP-ITEM, and
+;; AVERAGE-ITEM-HEIGHT the px an item takes on average, as the browser
+;; measured what was drawn (#f before it has). All of it is never saved:
+;; the scrolling plugin works it out from what the browser measured (its
+;; `view-scrolled` writes it; a new buffer starts it again), and drops a
+;; client's when the client goes. The counts are only a fetching step,
+;; which the next report corrects. The average is the only estimate of a
+;; size anywhere: the renderer sizes the spacers standing in for the items
+;; it does not draw by it, so that the browser's own scroll bar covers the
+;; whole buffer, and the scrolling plugin counts items across a spacer by
+;; it. No position is ever worked out from it. It lives with the view so
+;; the renderer can read it without a service of its own (primary agent,
+;; 2026-10-17).
+(defclass client-view ((newest-placement : placement)
+                       (top-item      :? item)
+                       (scroll-offset : :flonum)
+                       (facts         :? scroll-facts)
+                       (average-item-height :? :flonum)
+                       (drawn-before  : :fixnum)
+                       (drawn-after   : :fixnum))
+  final: #t)
+
 (defclass view ((id            : :fixnum)
                 (showing       : buffer)
                 (focus         :? node)         ; the focused text node
                 (position      : :fixnum)       ; point, valid at REVISION
                 (revision      : :fixnum)       ; of the node's text
                 (goal-column   :? :fixnum)
-                (top-item      :? item)         ; the item at the top edge; #f: the first
-                (scroll-offset : :flonum)       ; px of it above the edge
-                (last-placement : placement)    ; the newest
-                (facts         :? scroll-facts)
-                (average-item-height :? :flonum)
-                (drawn-before  : :fixnum)
-                (drawn-after   : :fixnum))
+                (last-placement : placement)    ; the scroll position
+                (clients       : HashTable))    ; client (#f: none) -> client-view
   final: #t)
 
 ;; How many items a view draws on each side of its scroll item before the
@@ -968,9 +984,8 @@ prelude: :gerbil/core
 ;; which must not call the dispatchers before they provide the service.
 (def (new-view-at (b : buffer) (n :? node) (position : :fixnum) (revision : :fixnum)) => view
   (view id: (next-id!) showing: b focus: n position: position revision: revision goal-column: #f
-        top-item: #f scroll-offset: 0. last-placement: (make-placement 0 #f 'top 0.)
-        facts: #f average-item-height: #f
-        drawn-before: initial-drawn-items drawn-after: initial-drawn-items))
+        last-placement: (make-placement 0 #f 'top 0.)
+        clients: (make-hash-table test: eq? weak-keys: #t)))
 
 ;; Point V, keeping its identity, at B with its point at POSITION in N,
 ;; valid at N's text revision REVISION, scrolled to the top. For buffers
@@ -984,12 +999,10 @@ prelude: :gerbil/core
   (forget-measured! v)
   (place-view! v #f 'top))
 
-;; Forget what the browser measured of what V showed, and what was worked
-;; out from it.
+;; Forget what every client's browser measured of what V showed, and what
+;; was worked out from it.
 (def (forget-measured! (v : view)) => :void
-  (set! v.facts #f)
-  (set! v.average-item-height #f)
-  (set-view-drawn-items! v initial-drawn-items initial-drawn-items))
+  (hash-clear! v.clients))
 
 ;; Forget what the browser measured of what V showed before, and place
 ;; V's point's item, among the items of the root of the buffer V shows, at
@@ -1014,15 +1027,18 @@ prelude: :gerbil/core
     (show-point! v)
     v))
 
-;; A new view of V's buffer at V's point, placed where V's newest placement
-;; puts V, drawing as much, with spacers as high: when a view is split,
+;; A new view of V's buffer at V's point, at V's scroll position, drawing
+;; as much in each client, with spacers as high: when a view is split,
 ;; both halves start where it was (Emacs keeps the window start).
 (def (copy-view (v : view)) => view
   (let ((new (new-view-at v.showing v.focus (view-point v) (node-chars-revision v.focus)))
         (p v.last-placement))
     (place-view! new (placement-target p) (placement-align p) offset: (placement-offset p))
-    (set-view-drawn-items! new v.drawn-before v.drawn-after)
-    (set! (view-average-item-height new) v.average-item-height)
+    (hash-for-each (lambda (c (old : client-view))
+                     (using (copy (view-client new c) : client-view)
+                       (set-client-view-drawn-items! copy old.drawn-before old.drawn-after)
+                       (set! copy.average-item-height old.average-item-height)))
+                   v.clients)
     new))
 
 ;; The text node V's point is in, or #f.
@@ -1090,61 +1106,98 @@ prelude: :gerbil/core
                      revision)))
       it)))
 
-;; The item at V's top edge, moved with edits since, or #f for the first
-;; item V draws.
-(def (view-scroll-item (v : view)) => (Maybe item)
-  (let (it v.top-item)
-    (and it
-         (let (now (current-item it))
-           (set! v.top-item now)
-           now))))
-
-;; Adopt what the browser measured of V: IT at the top edge, OFFSET px of
-;; it above the edge. V's placement names it from now on, keeping its
-;; number, so a page loaded later puts V where it is.
-(def (set-view-scroll! (v : view) (it : item) (offset : :flonum)) => :void
-  (set! v.top-item it)
-  (set! v.scroll-offset offset)
-  (set! v.last-placement (make-placement (placement-number v.last-placement) it 'top offset)))
-
-;; V's newest placement.
+;; V's scroll position, its newest placement.
 (def (view-placement (v : view)) => placement
   v.last-placement)
 
-;; Ask the browser to put IT (#f: the first item V draws) at V's top,
-;; centre or bottom (ALIGN 'top, 'center or 'bottom); with 'top, OFFSET px
-;; of it above the edge. Until the browser reports, V draws around IT, as
-;; many items on each side as it draws on its longer side now: the target
-;; may lie anywhere, and a side cut short by an end of the buffer says
-;; nothing about how many items fill the view elsewhere.
+;; Send CV, a view's client-view, a placement to the view's scroll
+;; position P. Until its browser reports, it draws around P's item, as many
+;; items on each side as it draws on its longer side now: the target may
+;; lie anywhere, and a side cut short by an end of the buffer says nothing
+;; about how many items fill the view elsewhere.
+(def (place-client-view! (cv : client-view) (p : placement)) => :void
+  (set! cv.newest-placement (make-placement (fx1+ (placement-number cv.newest-placement)) (placement-target p)
+                                     (placement-align p) (placement-offset p)))
+  (set! cv.top-item (placement-target p))
+  (set! cv.scroll-offset (placement-offset p))
+  (let (drawn (fxmax cv.drawn-before cv.drawn-after))
+    (set-client-view-drawn-items! cv drawn drawn)))
+
+;; V as client C's browser shows it (C #f for no client), made when first
+;; needed, with a placement to V's scroll position, so a new client's
+;; first screen puts V where every other client has it.
+(def (view-client (v : view) (c :? client)) => client-view
+  (or (hash-get v.clients c)
+      (let (cv (client-view newest-placement: (make-placement 0 #f 'top 0.) top-item: #f scroll-offset: 0.
+                            facts: #f average-item-height: #f
+                            drawn-before: initial-drawn-items drawn-after: initial-drawn-items))
+        (place-client-view! cv v.last-placement)
+        (hash-put! v.clients c cv)
+        cv)))
+
+;; Forget what client C's browser measured of V.
+(def (forget-view-client! (v : view) (c :? client)) => :void
+  (hash-remove! v.clients c))
+
+;; Move V's scroll position: put IT (#f: the first item V draws) at V's
+;; top, centre or bottom (ALIGN 'top, 'center or 'bottom); with 'top,
+;; OFFSET px of it above the edge. Every client is sent a placement there.
 (def (place-view! (v : view) (it :? item) (align : :symbol) offset: (offset : :flonum := 0.)) => :void
   (unless (memq align '(top center bottom))
     (error "Place an item at the top, center or bottom, not" align))
   (set! v.last-placement (make-placement (fx1+ (placement-number v.last-placement)) it align
-                                    (if (eq? align 'top) offset 0.)))
-  (set! v.top-item it)
-  (set! v.scroll-offset (if (eq? align 'top) offset 0.))
-  (let (drawn (fxmax v.drawn-before v.drawn-after))
-    (set-view-drawn-items! v drawn drawn)))
+                                         (if (eq? align 'top) offset 0.)))
+  (hash-for-each (lambda (c (cv : client-view)) (place-client-view! cv v.last-placement)) v.clients))
 
-(def (set-view-facts! (v : view) (facts : scroll-facts)) => :void
-  (set! v.facts facts))
+;; Client C's browser scrolled V: IT is at its top edge, OFFSET px of it
+;; above the edge. That is V's scroll position now, and every other
+;; client is sent a placement there; C, which is there, is sent none.
+(def (set-view-scroll! (v : view) (c :? client) (it : item) (offset : :flonum)) => :void
+  (set! v.last-placement (make-placement (fx1+ (placement-number v.last-placement)) it 'top offset))
+  (hash-for-each (lambda (other (cv : client-view))
+                   (if (eq? other c)
+                     (set-client-view-scroll! cv it offset)
+                     (place-client-view! cv v.last-placement)))
+                 v.clients))
 
-;; The last item wholly in V, as last measured, moved with edits since;
-;; or #f.
-(def (view-last-visible-item (v : view)) => (Maybe item)
-  (let* ((facts v.facts)
+;; The newest placement sent to CV's client.
+(def (client-view-placement (cv : client-view)) => placement
+  cv.newest-placement)
+
+;; The item at the top edge of CV's view, moved with edits since, or #f
+;; for the first item it draws.
+(def (client-view-scroll-item (cv : client-view)) => (Maybe item)
+  (let (it cv.top-item)
+    (and it
+         (let (now (current-item it))
+           (set! cv.top-item now)
+           now))))
+
+;; Adopt what CV's browser measured: IT at the top edge of its view,
+;; OFFSET px of it above the edge.
+(def (set-client-view-scroll! (cv : client-view) (it : item) (offset : :flonum)) => :void
+  (set! cv.top-item it)
+  (set! cv.scroll-offset offset))
+
+(def (set-client-view-facts! (cv : client-view) (facts : scroll-facts)) => :void
+  (set! cv.facts facts))
+
+;; The last item wholly in CV's view, as last measured, moved with edits
+;; since; or #f.
+(def (client-view-last-visible-item (cv : client-view)) => (Maybe item)
+  (let* ((facts cv.facts)
          (it (and facts (scroll-facts-last-visible facts))))
     (and it (current-item it))))
 
-;; Keep PX as the px an item of V takes on average (see view).
-(def (set-view-average-item-height! (v : view) (px : :flonum)) => :void
-  (set! v.average-item-height px))
+;; Keep PX as the px an item of CV's view takes on average (see
+;; client-view).
+(def (set-client-view-average-item-height! (cv : client-view) (px : :flonum)) => :void
+  (set! cv.average-item-height px))
 
-;; Draw BEFORE items before V's scroll item and AFTER after it.
-(def (set-view-drawn-items! (v : view) (before : :fixnum) (after : :fixnum)) => :void
-  (set! v.drawn-before (fxmax 0 before))
-  (set! v.drawn-after (fxmax 0 after)))
+;; Draw BEFORE items before CV's scroll item and AFTER after it.
+(def (set-client-view-drawn-items! (cv : client-view) (before : :fixnum) (after : :fixnum)) => :void
+  (set! cv.drawn-before (fxmax 0 before))
+  (set! cv.drawn-after (fxmax 0 after)))
 
 (def (selected-view) => view
   (:- (with-service-provider (provider buffers-service Buffers) (: (Buffers-selected-view provider) view)) view))

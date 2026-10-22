@@ -13,10 +13,15 @@
 ;;; keeps its scroll position: a view's is view-V, a node's view-V-node-N,
 ;;; since one buffer may show in several views.
 ;;;
+;;; Each screen is drawn for one client (ADR 16): every client shows the
+;;; same views, each scrolled as that client's browser measured it (the
+;;; buffers contract's client-view), so the HTML kept for reuse is kept
+;;; per client, and dropped when the client goes (client-gone-hook).
+;;;
 ;;; Scrolling (the buffers contract's items and scroll state): a view's
 ;;; buffer, from the node it draws from, is a scroller of items, and the
 ;;; view draws only the run of them from its drawn-before items before its
-;;; scroll item to its drawn-after items after it, inside as much of the
+;;; scroll item to its drawn-after items after it, as the client measured, inside as much of the
 ;;; tree as holds them: a node opening into children is drawn with only
 ;;; the children holding drawn items, and a text node with only its drawn
 ;;; lines. A spacer stands in for the items before the run and another for
@@ -62,6 +67,7 @@
 (import (only-in :gerbil/runtime/hash HashTable)
         :std/text/markup/sxml/print
         :tuna/kernel
+        (only-in :tuna/plugins/clients/contract client client-gone-hook)
         :tuna/plugins/stylesheets/contract
         (only-in :tuna/plugins/keys/contract part-clickable? keymap-clickable? keymap-generation)
         :tuna/plugins/settings/contract
@@ -95,7 +101,7 @@
                      (pinned-ids : HashTable))
   final: #t)
 
-(defclass html-rendering ((views : HashTable))    ; view id -> view-html
+(defclass html-rendering ((clients : HashTable))  ; client (#f: none) -> view id -> view-html
   final: #t)
 
 ;; Drawing one view: its kept HTML, the nodes from its buffer's root down
@@ -323,12 +329,12 @@
 
 ;; What SELF keeps for V drawn from START, emptied when V was drawn from
 ;; another node before.
-(def (view-html-for (self : html-rendering) (v : view) (start : node)) => view-html
-  (let (kept (hash-get (html-rendering-views self) (view-id v)))
+(def (view-html-for (views : HashTable) (v : view) (start : node)) => view-html
+  (let (kept (hash-get views (view-id v)))
     (if (and kept (eq? (view-html-start kept) start))
       kept
       (let (fresh (view-html start: start nodes: (make-hash-table-eqv) pinned-ids: (make-hash-table-eqv)))
-        (hash-put! (html-rendering-views self) (view-id v) fresh)
+        (hash-put! views (view-id v) fresh)
         fresh))))
 
 ;; The drawn-screens setting for B: a positive number of view heights.
@@ -347,9 +353,10 @@
 ;; a report removed it. An effect reading a page-wide signal would run for
 ;; every scroller whenever any one scrolled, including one a morph is
 ;; removing, which measures nothing.
-(def (scroller-attributes (v : view) (start : node) (first : :fixnum) (last : :fixnum) (count : :fixnum))
+(def (scroller-attributes (v : view) (cv : client-view) (start : node) (first : :fixnum) (last : :fixnum)
+                          (count : :fixnum))
   => :list
-  (let (facts (view-facts v))
+  (let (facts (client-view-facts cv))
     (append
      [['data-on:scroll "@tunaScroll('moved')"]
       ['data-effect "@tunaScroll('moved')"]
@@ -363,12 +370,13 @@
         ['data-measured-height (number->string (scroll-facts-height facts))]]
        []))))
 
-;; V's placement marker, in its scroller drawing START's items: its id
-;; carries the placement's number, so the browser runs its constant
-;; data-init (tunaPlace) once per placement and on a freshly loaded page.
-;; Without a target among START's items, the view goes to its start.
-(def (placement-marker (v : view) (start : node)) => :list
-  (let* ((p (view-placement v))
+;; V's placement marker, in its scroller drawing START's items, for the
+;; client whose view of it is CV: its id carries the newest placement sent
+;; to the client, so the browser runs its constant data-init (tunaPlace)
+;; once per placement and on a freshly loaded page. Without a target among
+;; START's items, the view goes to its start.
+(def (placement-marker (v : view) (cv : client-view) (start : node)) => :list
+  (let* ((p (client-view-placement cv))
          (number (number->string (placement-number p)))
          (target (let (it (placement-target p))
                    (and it (node-item-index start it) it))))
@@ -397,8 +405,10 @@
 ;; afresh and asks again while the spacer is in view. It is not the
 ;; browser's scroll anchor (the renderer's stylesheet), so the browser
 ;; holds drawn items still, never a spacer.
-(def (spacer (v : view) (side : :string) (items : :fixnum) (first : :fixnum) (last : :fixnum)) => :list
-  (let (average (view-average-item-height v))
+(def (spacer (v : view) (cv : client-view) (side : :string) (items : :fixnum) (first : :fixnum)
+             (last : :fixnum))
+  => :list
+  (let (average (client-view-average-item-height cv))
     (if (and average (fx> items 0))
       [`(div (@ (class "spacer") (aria-hidden "true")
                 (id ,(string-append (view-element-id v) "-spacer-" side))
@@ -424,24 +434,27 @@
 ;; the browser would take a box around the spacers as its scroll anchor
 ;; whenever only spacers are in view, and keep it while the items drawn
 ;; next move under the view.
-(def (scroll-sizer (v : view) (count : :fixnum) (spacers : :list)) => :list
-  (let (average (view-average-item-height v))
+(def (scroll-sizer (cv : client-view) (count : :fixnum) (spacers : :list)) => :list
+  (let (average (client-view-average-item-height cv))
     (if (and average (pair? spacers))
       [`(div (@ (class "scroll-sizer") (aria-hidden "true")
                 (style ,(string-append "--scroll-sizer-block-size: " (items-pixels average count) "px"))))]
       [])))
 
-;; V: its buffer from node START (the root, or where the frame points),
-;; then its status line unless its buffer turns it off.
-(def (render-view (self : html-rendering) (v : view) (selected? : :boolean) (start : node)) => :list
+;; V, as client C shows it, keeping its HTML in VIEWS: its buffer from
+;; node START (the root, or where the frame points), then its status line
+;; unless its buffer turns it off.
+(def (render-view (views : HashTable) (c :? client) (v : view) (selected? : :boolean) (start : node))
+  => :list
   (let* ((b (view-showing v))
+         (cv (view-client v c))
          (id (number->string (view-id v)))
          (focus (view-node v))
-         (kept (view-html-for self v start))
+         (kept (view-html-for views v start))
          (count (node-item-count start))
-         (top (fxmax 0 (fxmin (fx1- count) (or (index-in start (view-scroll-item v)) 0))))
-         (first (fxmax 0 (fx- top (view-drawn-before v))))
-         (last (fxmin (fx1- count) (fx+ top (view-drawn-after v))))
+         (top (fxmax 0 (fxmin (fx1- count) (or (index-in start (client-view-scroll-item cv)) 0))))
+         (first (fxmax 0 (fx- top (client-view-drawn-before cv))))
+         (last (fxmin (fx1- count) (fx+ top (client-view-drawn-after cv))))
          (d (make-drawing (view-html-nodes kept)
                           (node-ancestors focus)
                           (and focus (cons (view-point v) selected?))
@@ -449,8 +462,8 @@
                           (view-html-pinned-ids kept)
                           (make-hash-table-eqv)))
          (run (item-run start first last))
-         (above (spacer v "above" first first last))
-         (below (spacer v "below" (fx- count (fx1+ last)) first last)))
+         (above (spacer v cv "above" first first last))
+         (below (spacer v cv "below" (fx- count (fx1+ last)) first last)))
     (begin0
       (parameterize ((rendering-view v))
         `(section (@ (class "view")
@@ -459,12 +472,12 @@
                      (data-part ,(string-append "view:" id))
                      ,@(if selected? '((data-selected "true")) '()))
            (article (@ (class "buffer") (aria-label ,(buffer-name b))
-                       ,@(scroller-attributes v start first last count))
-                    ,(placement-marker v start)
+                       ,@(scroller-attributes v cv start first last count))
+                    ,(placement-marker v cv start)
                     ,@above
                     ,(render-node d start run)
                     ,@below
-                    ,@(scroll-sizer v count (append above below)))
+                    ,@(scroll-sizer cv count (append above below)))
            ,@(if (buffer-local-value show-status-line b)
                [`(p (@ (class "status-line")
                        (data-part ,(string-append "status-line:" id))
@@ -481,19 +494,22 @@
         (set! (view-html-nodes kept) nodes)
         (set! (view-html-pinned-ids kept) (drawing-pinning d))))))
 
-(def (render-screen! (self : html-rendering)) => :string
-  (let* ((drawn [])
+(def (render-screen! (self : html-rendering) (c :? client)) => :string
+  (let* ((views (or (hash-get self.clients c)
+                    (let (views (make-hash-table-eqv))
+                      (hash-put! self.clients c views)
+                      views)))
+         (drawn [])
          (layout (render-layout 'html
                                 (lambda (v selected? start)
                                   (set! drawn (cons (view-id v) drawn))
-                                  (render-view self v selected? start))))
-         (views (html-rendering-views self)))
+                                  (render-view views c v selected? start)))))
     (for-each (lambda (id) (unless (memv id drawn) (hash-remove! views id)))
               (hash-keys views))
     (html-string `(main (@ (id "screen") (class "screen")) ,layout))))
 
 (defmethod {render-screen html-rendering}
-  (lambda (self) (render-screen! self)))
+  (lambda (self c) (render-screen! self c)))
 
 (defplugin (html-renderer ctx)
   "Renders the screen as HTML: the layout drawn from the frame."
@@ -503,4 +519,7 @@
   (add-stylesheet 'tokens "tokens.css")
   (add-stylesheet 'rules "rules.css")
   (context-define-node-renderer! ctx 'text render-text-node)
-  (context-provide! ctx renderer-service (Renderer (html-rendering views: (make-hash-table-eqv)))))
+  (using (self (html-rendering clients: (make-hash-table test: eq? weak-keys: #t)) : html-rendering)
+    (context-add-hook! ctx client-gone-hook 'html-renderer
+                       (lambda ((c : client)) (hash-remove! self.clients c)))
+    (context-provide! ctx renderer-service (Renderer self))))

@@ -61,7 +61,7 @@ prelude: :gerbil/core
              [])))))
 
 (defmethod {render-screen bare-rendering}
-  (lambda (self)
+  (lambda (self c)
     (call-with-output-string ""
       (lambda (port)
         (write-sxml `(main (@ (id "screen") (class "screen") (data-renderer "bare"))

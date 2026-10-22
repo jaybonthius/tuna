@@ -13,8 +13,7 @@
 
 (def (leaf-of id)
   (make-leaf (view id: id showing: some-buffer focus: #f position: 1 revision: 0 goal-column: #f
-                   top-item: #f scroll-offset: 0. last-placement: (make-placement 0 #f 'top 0.)
-                   facts: #f average-item-height: #f drawn-before: 0 drawn-after: 0)
+                   last-placement: (make-placement 0 #f 'top 0.) clients: (make-hash-table))
              #f))
 
 (def (ids parts) (map part-id parts))
