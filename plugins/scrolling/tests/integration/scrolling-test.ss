@@ -317,7 +317,7 @@
       (check (item-across-spacer 'above 3 1000 100. 20.) => (cons 0 -40.))
       (check (item-across-spacer 'below 995 1000 100. 20.) => (cons 999 40.)))
 
-    (test-case "the average item height is measured on the first report and on reports from a spacer only"
+    (test-case "the average item height is measured on the first report and on reports from a spacer with drawn items in view"
       (with-scrolling
        (lambda (v)
          (check (view-average-item-height v) => #f)
@@ -332,6 +332,17 @@
          (report! v top: 1000 spacer: 'above distance: 50. before: 0 after: 99 above: 0. below: 0.
                   drawn: 2500.)
          (check (scroll-state v) => [997 10.])
+         (check (view-average-item-height v) => 25.)
+         ;; With nothing drawn in view, it counts by those 25 px and keeps
+         ;; them: a new average would move what is drawn under a view
+         ;; that has nothing drawn in it for the browser to hold still.
+         (report! v top: 2000 spacer: 'below distance: 1000. before: 99 after: 0 above: 0. below: 0.
+                  drawn: 3000.)
+         (check (scroll-state v) => [2041 0.])
+         (check (view-average-item-height v) => 25.)
+         (report! v top: 1000 spacer: 'above distance: 1000. before: 0 after: 99 above: 0. below: 0.
+                  drawn: 3000.)
+         (check (scroll-state v) => [960 0.])
          (check (view-average-item-height v) => 25.)
          ;; Showing another buffer forgets it.
          (let (b (car (rows-with-text!)))

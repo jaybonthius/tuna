@@ -392,7 +392,11 @@
            (check (has? html "data-run-at-start") => #t)
            (check (has? html "data-run-at-end") => #f)
            (check (has? html "data-measured-height") => #f)
-           (check (has? html "@tunaScroll('moved')") => #t)
+           ;; Each trigger is the scroller's own: no page-wide signal, whose
+           ;; change would run every scroller's effect, even one being removed.
+           (check (has? html "data-on:scroll=\"@tunaScroll('moved')\"") => #t)
+           (check (has? html "data-effect=\"@tunaScroll('moved')\"") => #t)
+           (check (has? html "data-signals") => #f)
            (check (has? html (string-append "data-scroll-root=\"" (number->string (node-id n)) "\"")) => #t)
            (check (has? html "data-drawn-screens=\"2.\"") => #t)
            ;; The placement marker names no item: the view stays at its start.
