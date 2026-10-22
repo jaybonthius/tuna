@@ -41,6 +41,8 @@ Done 2026-10-16; see `agents/plans/hooks-and-advice.md`. Open package functions,
 
 ## Owner decisions and preferences (do not relitigate)
 
+- Pushing (2026-10-22, owner): agents may commit to and push the owner's `gerbil-sse` and `gerbil-datastar` packages (git.cons.io/jay/…) when Tuna's work needs it (stage 4 of the drawing plan). Tuna itself is never pushed.
+
 - Everything is a plugin; the kernel is scaffolding only (ADR 12 and its contract). Tuna's own plugins get no privileged access.
 - No arbitrary limits such as line-count caps. Make every kernel addition deliberate and justified instead.
 - Buffer positions are 1-based. Ordinary browser tabs are first-class; reserved keys are simply rebound. Layout belongs to the browser; mixed monospace and proportional text must be possible (no cell grid).
