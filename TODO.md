@@ -42,5 +42,7 @@
 - [ ] **Fast scrolling outruns two screens over a slow link** (2026-10-21): at 9,000 px/s with an 80 ms round trip, about half the frames show spacer lines. Raise `drawn-screens`, or draw more ahead of the motion.
 - [ ] **After a restart the first screen can arrive before the stylesheet** (2026-10-22, seen on main too): the placement then does nothing and the view lands a few lines off. Make the placement wait for the stylesheets, or owe another placement.
 - [ ] **The frozen per-item height survives width changes** (2026-10-22): after a resize, rotation or `C-x 3`, the thumb-to-item mapping drifts. Consider re-measuring when the measured width changes (a resize is not a drag).
+- [ ] **A follower tab gets a screen for every step of another tab's fling** (several tabs, 2026-10-22): about 300 screens in 6 s while the other tab flings. Paced by `/applied`, so no backlog, but costly over a slow link. Send followers only where the driving tab settles (for example, place other tabs only on reports at scroll end).
+- [ ] **Typing in `*mixed*` after scrolling jumps back to point** (2026-10-22, same on the one-tab build): scrolling into cards and pictures cannot move point there, so point stays in an earlier text block and the next key places the view back on it. Decide what point does when the view holds no text near it.
 - [ ] **A resize does not trigger a scroll report** (2026-10-22): the server's offset stays stale until the next scroll.
 
