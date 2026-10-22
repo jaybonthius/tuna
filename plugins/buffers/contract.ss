@@ -362,14 +362,16 @@ prelude: :gerbil/core
   final: #t)
 
 ;; CHANGES, its source, changes with what a screen draws from the view:
-;; its buffer, focused node and scroll position; POINT-CHANGES, another,
-;; with its point, so what draws only the focused node draws again when
-;; point moves (ADR 17). Point is kept valid at the text revision REVISION
+;; its buffer and focused node; POINT-CHANGES, another, with its point, so
+;; what draws only the focused node draws again when point moves;
+;; PLACEMENT-CHANGES, a third, with its scroll position, so scrolling does
+;; not draw again what draws from its buffer (ADR 17). Point is kept valid at the text revision REVISION
 ;; and moved through later edits when read, which rewrites how it is
 ;; kept, never where it is, so reading changes no source.
 (defclass view ((id            : :fixnum)
                 (changes       : source)
                 (point-changes : source)
+                (placement-changes : source)
                 (shown         : buffer)        ; `view-showing`
                 (focus         :? node)         ; the focused text node
                 (position      : :fixnum)       ; point, valid at REVISION
@@ -1129,7 +1131,8 @@ prelude: :gerbil/core
 ;; text revision REVISION, scrolled to the top. For buffers providers,
 ;; which must not call the dispatchers before they provide the service.
 (def (new-view-at (b : buffer) (n :? node) (position : :fixnum) (revision : :fixnum)) => view
-  (view id: (next-id!) changes: (new-source) point-changes: (new-source) shown: b focus: n position: position revision: revision
+  (view id: (next-id!) changes: (new-source) point-changes: (new-source) placement-changes: (new-source)
+        shown: b focus: n position: position revision: revision
         goal-column: #f last-placement: (make-placement 0 #f 'top 0.)
         clients: (make-hash-table test: eq? weak-keys: #t)))
 
@@ -1276,7 +1279,7 @@ prelude: :gerbil/core
 
 ;; V's scroll position, its newest placement.
 (def (view-placement (v : view)) => placement
-  (record-read! v.changes)
+  (record-read! v.placement-changes)
   v.last-placement)
 
 ;; Send CV, a view's client-view, a placement to the view's scroll
@@ -1326,7 +1329,7 @@ prelude: :gerbil/core
     (error "Place an item at the top, center or bottom, not" align))
   (set! v.last-placement (make-placement (fx1+ (placement-number v.last-placement)) it align
                                          (if (eq? align 'top) offset 0.)))
-  (source-changed! v.changes)
+  (source-changed! v.placement-changes)
   (hash-for-each (lambda (c (cv : client-view)) (place-client-view! cv v.last-placement)) v.clients))
 
 ;; Client C's browser scrolled V: IT is at its top edge, OFFSET px of it
@@ -1334,7 +1337,7 @@ prelude: :gerbil/core
 ;; client is sent a placement there; C, which is there, is sent none.
 (def (set-view-scroll! (v : view) (c :? client) (it : item) (offset : :flonum)) => :void
   (set! v.last-placement (make-placement (fx1+ (placement-number v.last-placement)) it 'top offset))
-  (source-changed! v.changes)
+  (source-changed! v.placement-changes)
   (hash-for-each (lambda (other (cv : client-view))
                    (if (eq? other c)
                      (set-client-view-scroll! cv it offset)

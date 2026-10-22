@@ -870,6 +870,24 @@
            (let (keys (pieces-drawn (lambda () (insert "x") (screen))))
              (check [(lines-drawn keys a) (lines-drawn keys b) (lines-drawn keys c)] => [1 1 1]))))))
 
+    (test-case "lines: a scroll report keeping the drawn run draws no text node or its lines again"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (insert (fifty-thousand-lines))
+         (let* ((v (selected-view))
+                (n (view-node v))
+                (it (node-item-at n 24999)))
+           (set-view-scroll! v #f it 0.)
+           (set-client-view-drawn-items! (view-client v #f) 10 10)
+           (screen)
+           ;; The view scrolled 5 px further into the same item: a new
+           ;; scroll position, the same items drawn.
+           (let (keys (pieces-drawn (lambda () (set-view-scroll! v #f it 5.) (screen))))
+             (check (and (member ['view (view-id v)] keys) #t) => #t)
+             (check (member ['node (view-id v) (node-id n)] keys) => #f)
+             (check (line-runs-drawn keys) => 0)
+             (check (lines-drawn keys) => 0))))))
+
     (test-case "lines: the placement marker names its line by the token the line is drawn with"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()

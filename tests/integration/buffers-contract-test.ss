@@ -427,6 +427,10 @@
                 => #f)
          (check (drawn-again? (lambda () (view-point v)) (lambda () (goto-char (point)))) => #f)
          (check (drawn-again? (lambda () (view-point v)) (lambda () (goto-char 1))) => #t)
+         ;; Scrolling changes the view's placement, not what its buffer draws.
+         (check (drawn-again? (lambda () (view-node v)) (lambda () (place-view! v #f 'top))) => #f)
+         (check (drawn-again? (lambda () (view-showing v)) (lambda () (place-view! v #f 'top))) => #f)
+         (check (drawn-again? (lambda () (view-placement v)) (lambda () (place-view! v #f 'top))) => #t)
          (check (drawn-again? (lambda () (buffer-local-value fill-width b))
                               (lambda () (set-buffer-setting! b fill-width 70)))
                 => #t)
