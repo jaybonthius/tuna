@@ -76,6 +76,7 @@
    (served      : :list)        ; the served-stylesheets HEAD links
    (screen      : :string)      ; the newest screen
    (rendered    : :string)      ; the renderer's output for it, before stamping
+   (owed        : :boolean)     ; a scroll report awaits a screen
    (revision    : :fixnum)
    (stopped?    : :boolean)
    (streams     : :fixnum)      ; streams opened so far, to number them
@@ -151,18 +152,26 @@
         ;; the last one means nothing on it changed: it gets no new revision
         ;; and nothing is sent. Timers such as the session save redisplay
         ;; without changing what is shown.
-        (unless (and (not served) (string=? rendered (do-with-lock self.mutex self.rendered)))
-          (let* ((revision (fx1+ (do-with-lock self.mutex self.revision)))
-                 (head (and served (render-head served)))
-                 (screen (stamp-revision rendered revision)))
-            (do-with-lock self.mutex
-              (when served
-                (set! self.head head)
-                (set! self.served served))
-              (set! self.screen screen)
-              (set! self.rendered rendered)
-              (set! self.revision revision)
-              (condition-variable-broadcast! self.changed))))))))
+        ;; A page sends one scroll report at a time and waits for a screen
+        ;; before the next, so a report is always answered with one.
+        (unless (and (not served)
+                     (do-with-lock self.mutex
+                       (and (not self.owed) (string=? rendered self.rendered))))
+          (publish-screen! self rendered (and served (render-head served)) served))))))
+
+;; Send RENDERED (and HEAD for SERVED stylesheets, when given) as the next
+;; screen revision.
+(def (publish-screen! (self : web-server) (rendered : :string) (head : :t) (served : :t)) => :void
+  (do-with-lock self.mutex
+    (let (revision (fx1+ self.revision))
+      (when served
+        (set! self.head head)
+        (set! self.served served))
+      (set! self.screen (stamp-revision rendered revision))
+      (set! self.rendered rendered)
+      (set! self.revision revision)
+      (set! self.owed #f)
+      (condition-variable-broadcast! self.changed))))
 
 ;; The newest screen as [revision head screen] once STREAM's page has
 ;; applied its COUNTth screen and one newer than SENT exists; the newest
@@ -472,6 +481,13 @@
          (event (with-catch (lambda (e) #f)
                             (lambda ()
                               (parse-input-item value (do-with-lock self.mutex self.revision))))))
+    (when (and (hash-table? value) (equal? (hash-get value "type") "scroll"))
+      (if event
+        (do-with-lock self.mutex (set! self.owed #t))
+        ;; No task runs for a rejected report, so answer it here.
+        (let (rendered (do-with-lock self.mutex self.rendered))
+          (unless (fxzero? (string-length rendered))
+            (publish-screen! self rendered #f #f)))))
     (cond
      (event
       (admit-event! self (hash-ref value "sequence") event))
@@ -705,6 +721,7 @@
                               served: []
                               screen: (stamp-revision "<main id=\"screen\"></main>" 0)
                               rendered: ""
+                              owed: #f
                               revision: 0
                               stopped?: #f
                               streams: 0
