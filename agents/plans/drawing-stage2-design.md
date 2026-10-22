@@ -176,3 +176,16 @@ The text-store, clients and web contracts are untouched. **No contract serves a 
    - Expected: a redisplay after a task that changed nothing is one validation.
    - Expected: the second tab costs only its screen and view pieces.
 6. Update `docs/emacs-equivalents.md` only if a divergence lands (the dynamic-layer rule).
+
+## As built (2026-10-22)
+
+Stage 2 is implemented, in commits `ea2626e` through the docs commit after `a951978`. It departs from the design above as follows:
+
+- **Field names.** The source fields are named `changes`: `text`, `node`, `buffer`, `view` and `client-view` each have `(changes : source)`. A field named `source` of type `source` breaks Gerbil's keyword constructors, because the parameter shadows the type.
+- **Settings.** A setting's source is kept in a weak `eq?` table beside it (`setting-sources`), not in a field. Settings are hash keys in `equal?` entry tables, so a mutable field would change their hash. Settings made without `defsetting` record `unlisted-settings-source`. Keymaps work the same way: `unbound-keymaps-source` covers a keymap until it is first bound.
+- **Point.** A view has a second source, `point-changes`, read only by `view-point`. With a single view source, every text node in `*mixed*` read its view to learn whether it held the focus, and `C-f` drew them all again; the audit bench caught this.
+- **Node revisions.** Each changed node and each of its ancestors gets its own new revision, not one revision shared by all of them. Tests check "a new, larger revision".
+- **Views.** A view's `section` element is drawn on every screen and is not part of the piece, because the layout adds its own attributes (sizes) to it. The view piece's inputs are `[start-id command-if-selected]`.
+- **Test mode.** It is on in every test kernel (`call-with-fresh-kernel`), not just in four tests; `make test` takes the same time. Tests that count draws leave out the scratch drawing with `memo-from-scratch?`.
+- **Pins.** A pin also records its line. Re-pinning is skipped when a text node's first drawn line and character revision are unchanged.
+- **Layout.** The tree layout calls `note-state!` (the identity comparison, then `layout-changed!`) at the end of every operation that sets its state, and at activation and deactivation.
