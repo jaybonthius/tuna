@@ -388,9 +388,9 @@
            (check (has? html (line (+ 1 initial-drawn-items))) => #t)
            (check (has? html (line (+ 2 initial-drawn-items))) => #f)
            ;; No spacers until the browser has measured the view's items,
-           ;; and the scroll content is as high as what is drawn.
+           ;; and no scroll sizer: the scroller is as high as what is drawn.
            (check (has? html "spacer") => #f)
-           (check (has? html "class=\"scroll-content\">") => #t)
+           (check (has? html "scroll-sizer") => #f)
            (check (has? html "data-run-at-start") => #t)
            (check (has? html "data-run-at-end") => #f)
            (check (has? html "data-measured-height") => #f)
@@ -429,17 +429,17 @@
                                               "\" data-align=\"top\" data-offset=\"5.\""))
                     => #t)
              ;; Spacers stand in for the 24,899 items before the run and the
-             ;; 24,700 after it, inside scroll content as high as all
-             ;; 50,000 items at the measured average of 20.25 px each: the
-             ;; spacer above as high as its items, the one below with no
-             ;; height of its own, filling the rest. In view, each asks for
-             ;; a report naming the run (from 0).
-             (let ((content (string-contains html "class=\"scroll-content\" style=\"--scroll-content-block-size: 1012500px\""))
-                   (above (string-contains html "data-spacer=\"above\" style=\"--spacer-block-size: 504205px\""))
+             ;; 24,700 after it, beside a scroll sizer as high as all 50,000
+             ;; items at the measured average of 20.25 px each: the spacer
+             ;; above as high as its items, the one below with no height of
+             ;; its own, filling the rest. In view, each asks for a report
+             ;; naming the run (from 0).
+             (let ((above (string-contains html "data-spacer=\"above\" style=\"--spacer-block-size: 504205px\""))
                    (first (string-contains html (line 24900)))
                    (last (string-contains html (line 25300)))
-                   (below (string-contains html "data-spacer=\"below\" data-on-intersect")))
-               (check (and content above first last below (< content above first last below) #t) => #t))
+                   (below (string-contains html "data-spacer=\"below\" data-on-intersect"))
+                   (sizer (string-contains html "class=\"scroll-sizer\" aria-hidden=\"true\" style=\"--scroll-sizer-block-size: 1012500px\"")))
+               (check (and above first last below sizer (< above first last below sizer) #t) => #t))
              (check (has? html "--spacer-block-size: 500175px") => #f)
              (check (has? html "@tunaScroll('spacer', 24899, 25299)") => #t)
              (check (has? html "scroll-bar") => #f))
@@ -448,7 +448,7 @@
            (let (html (screen))
              (check (has? html "data-spacer=\"above\"") => #t)
              (check (has? html "data-spacer=\"below\"") => #f)
-             (check (has? html "--scroll-content-block-size: 1012500px") => #t))
+             (check (has? html "--scroll-sizer-block-size: 1012500px") => #t))
            ;; A placement is a new marker, with a larger number.
            (let (number (placement-number (view-placement v)))
              (place-view! v (item 100) 'center)

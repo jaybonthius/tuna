@@ -2,16 +2,15 @@
    and status lines.
 
    These classes and data attributes are a published styling surface:
-   .screen, .view, .buffer, .scroll-content, .text, .line, .spacer,
+   .screen, .view, .buffer, .text, .line, .spacer, .scroll-sizer,
    .cursor, .inactive-cursor, .placement, .status-line, .face-NAME,
-   [data-view],
-   [data-selected], [data-part], [data-node], [data-clickable],
+   [data-view], [data-selected], [data-part], [data-node], [data-clickable],
    [data-spacer], and [data-item] on each drawn item of a view. Other
    plugins may select on them, for example to style their own nodes
    inside a buffer. Rules here are wrapped in :where() so that any other
    plugin's or theme's rule wins whatever its place on the page; the
    cursor, the items' margins and the spacers' scrolling rules are the
-   exceptions, and so is the scroll content's layout. */
+   exceptions, and so is the scroller's grid. */
 
 /* The screen is the layout, and fills the browser window; views scroll
    inside it. Dynamic viewport units follow a phone's browser toolbar, and
@@ -62,37 +61,70 @@
   display: none;
 }
 
-/* What the buffer scrolls: the spacer above, the drawn items, the spacer
-   below. With spacers, it is as high as the server says
-   (--scroll-content-block-size: all the buffer's items at the view's
-   average item height), whatever the drawn items' real heights: the
-   spacer above and the drawn items keep their own heights, and the last
-   spacer grows to fill what they leave. So the scroller's total height
-   stays the same while the view scrolls; Chrome on macOS drops a drag of
-   the scroll bar's thumb whenever it changes. Drawn items taller than
-   their share overflow it, near the end of the buffer. Real specificity,
-   so no other rule changes the layout. */
-.buffer > .scroll-content {
-  display: flex;
-  flex-direction: column;
-  block-size: var(--scroll-content-block-size, auto);
+/* The buffer is a grid: the spacer above, the drawn items and the spacer
+   below in rows 1 to 3 of the first column, and, when there are spacers,
+   the scroll sizer, as high as the server says (--scroll-sizer-block-size:
+   all the buffer's items at the view's average item height), spanning
+   every row of a second column of no width. The last spacer's row is the
+   flexible one: it takes what the spacer above and the drawn items leave
+   of the sizer's height, whatever the drawn items' real heights, so the
+   scroller's total height stays the same while the view scrolls (Chrome
+   on macOS drops a drag of the scroll bar's thumb whenever it changes).
+   Near the end of the buffer, where every item to the end is drawn, the
+   spacer above is the last: it takes what the drawn items leave, more or
+   less than its items' share, and only drawn items taller than the whole
+   sizer make the scroller taller. Without spacers the drawn items sit in
+   row 2 and the empty rows take no room, as in normal flow.
+
+   The grid is the scroller itself, not a box around the rows: the browser
+   would take such a box as its scroll anchor whenever only spacers are in
+   view. And it is a grid with or without spacers: changing the scroller's
+   display when the first spacers arrive would rebuild the boxes of the
+   drawn items, and the browser would lose the item it holds still. Real
+   specificity, so no other rule changes the layout. */
+.buffer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  grid-template-rows: auto auto 1fr;
 }
 
-.scroll-content > * {
-  flex: none;
+.buffer:has(> .scroll-sizer):not(:has(> [data-spacer="below"])) {
+  grid-template-rows: 1fr auto;
 }
 
-.scroll-content > .spacer:not(:has(~ .spacer)) {
-  flex-grow: 1;
+.buffer > [data-spacer="above"] {
+  grid-area: 1 / 1;
+}
+
+.buffer:has(> .scroll-sizer):not(:has(> [data-spacer="below"])) > [data-spacer="above"] {
+  min-block-size: 0;
+}
+
+.buffer > [data-node] {
+  grid-area: 2 / 1;
+}
+
+.buffer > [data-spacer="below"] {
+  grid-area: 3 / 1;
+}
+
+/* The sizer is empty and takes no width, and is neither the browser's
+   scroll anchor nor a target for the pointer. */
+.buffer > .scroll-sizer {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  block-size: var(--scroll-sizer-block-size, 0);
+  overflow-anchor: none;
+  pointer-events: none;
 }
 
 /* A spacer stands in for items not drawn: the spacer above as high as
-   the server says (--spacer-block-size), the one below filling the rest.
-   It must never be the browser's scroll anchor, or the browser would hold
-   a spacer still instead of the items being read, and it has no margins,
-   which would fall outside what the page measures. Real specificity, so
-   no other rule changes either. */
-.scroll-content > .spacer {
+   the server says (--spacer-block-size), and the last spacer filling its
+   row. It must never be the browser's scroll anchor, or the browser would
+   hold a spacer still instead of the items being read, and it has no
+   margins, which would fall outside what the page measures. Real
+   specificity, so no other rule changes either. */
+.buffer > .spacer {
   margin-block: 0;
   overflow-anchor: none;
 }
@@ -100,7 +132,7 @@
 /* Its faint lines read as "content coming" while a fast scroll outruns
    what is drawn. */
 :where(.spacer) {
-  block-size: var(--spacer-block-size, 0);
+  min-block-size: var(--spacer-block-size, 0);
   background: repeating-linear-gradient(transparent 0 0.25lh,
                                         var(--spacer-line) 0.25lh 0.75lh,
                                         transparent 0.75lh 1lh);

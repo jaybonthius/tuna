@@ -23,11 +23,11 @@
 }
 
 /* The idle minibuffer's view takes no space. */
-.view:has(> .buffer > .scroll-content > .minibuffer:empty) {
+.view:has(> .buffer > .minibuffer:empty) {
   display: none;
 }
 
 /* The minibuffer pads itself; its buffer does not. */
-.buffer:has(> .scroll-content > .minibuffer) {
+.buffer:has(> .minibuffer) {
   padding: 0;
 }

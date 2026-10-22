@@ -20,16 +20,17 @@
 ;;; tree as holds them: a node opening into children is drawn with only
 ;;; the children holding drawn items, and a text node with only its drawn
 ;;; lines. A spacer stands in for the items before the run and another for
-;;; those after it, in a box as high as all the items would be at the
-;;; view's average item height, which the browser measured: the spacer
-;;; above as high as its items, the spacer below filling the rest; so the
-;;; browser's own scroll bar covers the whole buffer, and its total height
-;;; does not change as the view scrolls. That height is the only size
-;;; here, and only spacers use it: every position comes from what the
-;;; browser measures. Until it has measured the view there are no
-;;; spacers. A spacer in view asks the page to report (data-on-intersect),
-;;; whatever brought it there. Each drawn item's element carries its token
-;;; (data-item); a line's id stays with its text, through scrolling and
+;;; those after it, beside a scroll sizer as high as all the items would
+;;; be at the view's average item height, which the browser measured: the
+;;; spacer above as high as its items, the spacer below filling the rest;
+;;; so the browser's own scroll bar covers the whole buffer, and its total
+;;; height does not change as the view scrolls. That height is the only
+;;; size here, and only spacers and the sizer use it: every position comes
+;;; from what the browser measures. Until it has measured the view there
+;;; are no spacers. A spacer in view asks the page to report
+;;; (data-on-intersect), whatever brought it there. Each drawn item's
+;;; element carries its token (data-item); a line's id stays with its
+;;; text, through scrolling and
 ;;; through edits above it, so a morph moves lines rather than rewriting
 ;;; them and the browser's scroll anchoring holds what you read still. The
 ;;; scroller carries what its report trigger needs (the web transport's
@@ -387,7 +388,8 @@
 ;; "below" the drawn run of items FIRST to LAST), at V's average item
 ;; height; none before the browser has measured it, or without items.
 ;; The spacer below takes no size of its own: it fills what the drawn
-;; items leave of the scroll content (see scroll-content).
+;; items leave of the scroll sizer's height (see scroll-sizer), as the
+;; spacer above does near the end of the buffer, where it is the last.
 ;; Whenever it is in view, the page reports (data-on-intersect, an
 ;; IntersectionObserver), however the view got there: a fling, a drag of
 ;; the scroll bar, or a report that was already on its way when scrolling
@@ -408,25 +410,26 @@
                                                    (number->string last) ")"))))]
       [])))
 
-;; What V's scroller scrolls: RUN, the HTML of its items FIRST to LAST of
-;; COUNT, between the spacers standing in for the rest. Whenever a spacer
-;; is drawn, it is as high as all COUNT items at V's average item height,
-;; whatever the drawn items' real heights, and the last spacer fills what
-;; they leave (the renderer's stylesheet). So the scroller's total height
+;; V's scroll sizer, in a scroller drawing COUNT items with SPACERS (the
+;; spacers it draws): when there are spacers, an empty block as high as
+;; all COUNT items at V's average item height, beside them (the
+;; renderer's stylesheet lays the scroller out as a grid, the sizer in a
+;; column of no width spanning every row). The last spacer fills what
+;; the drawn items and any spacer before it leave of that height,
+;; whatever the drawn items' real heights, so the scroller's total height
 ;; stays the same while the view scrolls, as long as the average and the
 ;; item count do: Chrome on macOS drags the scroll bar's thumb on its
 ;; compositor thread and drops a move whenever the total height changed
-;; since the last one (ADR 15). Without spacers it is as high as what is
-;; drawn.
-(def (scroll-content (v : view) (first : :fixnum) (last : :fixnum) (count : :fixnum) (run : :t)) => :list
-  (let ((above (spacer v "above" first first last))
-        (below (spacer v "below" (fx- count (fx1+ last)) first last))
-        (average (view-average-item-height v)))
-    `(div (@ (class "scroll-content")
-             ,@(if (and average (or (pair? above) (pair? below)))
-                 [['style (string-append "--scroll-content-block-size: " (items-pixels average count) "px")]]
-                 []))
-          ,@above ,run ,@below)))
+;; since the last one (ADR 15). The sizer is not a box around the items:
+;; the browser would take a box around the spacers as its scroll anchor
+;; whenever only spacers are in view, and keep it while the items drawn
+;; next move under the view.
+(def (scroll-sizer (v : view) (count : :fixnum) (spacers : :list)) => :list
+  (let (average (view-average-item-height v))
+    (if (and average (pair? spacers))
+      [`(div (@ (class "scroll-sizer") (aria-hidden "true")
+                (style ,(string-append "--scroll-sizer-block-size: " (items-pixels average count) "px"))))]
+      [])))
 
 ;; V: its buffer from node START (the root, or where the frame points),
 ;; then its status line unless its buffer turns it off.
@@ -445,7 +448,9 @@
                           (cons (buffer-local-value face-remapping b) (keymap-generation))
                           (view-html-pinned-ids kept)
                           (make-hash-table-eqv)))
-         (run (item-run start first last)))
+         (run (item-run start first last))
+         (above (spacer v "above" first first last))
+         (below (spacer v "below" (fx- count (fx1+ last)) first last)))
     (begin0
       (parameterize ((rendering-view v))
         `(section (@ (class "view")
@@ -456,7 +461,10 @@
            (article (@ (class "buffer") (aria-label ,(buffer-name b))
                        ,@(scroller-attributes v start first last count))
                     ,(placement-marker v start)
-                    ,(scroll-content v first last count (render-node d start run)))
+                    ,@above
+                    ,(render-node d start run)
+                    ,@below
+                    ,@(scroll-sizer v count (append above below)))
            ,@(if (buffer-local-value show-status-line b)
                [`(p (@ (class "status-line")
                        (data-part ,(string-append "status-line:" id))
