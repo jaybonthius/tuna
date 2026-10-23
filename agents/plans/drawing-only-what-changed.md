@@ -1,6 +1,6 @@
 # Plan: drawing only what changed
 
-**Status:** approved 2026-10-22 (brief `docs/briefs/2026-10-drawing-only-what-changed.md`, ADR 17). Stage 1 merged 2026-10-22 (`16f0891`); stage 2 merged 2026-10-22 (`965eeac`; design and as-built notes in `agents/plans/drawing-stage2-design.md`). Stage 3 merged 2026-10-22 (`6d00e95`; design and as-built notes in `agents/plans/drawing-stage3-design.md`). Stage 4 merged 2026-10-22 (`48e945c`; design and as-built notes in `agents/plans/drawing-stage4-design.md`; gerbil-sse `f675e5b` and gerbil-datastar `78634fb` pushed). Next: stage 5.
+**Status:** approved 2026-10-22 (brief `docs/briefs/2026-10-drawing-only-what-changed.md`, ADR 17). Stage 1 merged 2026-10-22 (`16f0891`); stage 2 merged 2026-10-22 (`965eeac`; design and as-built notes in `agents/plans/drawing-stage2-design.md`). Stage 3 merged 2026-10-22 (`6d00e95`; design and as-built notes in `agents/plans/drawing-stage3-design.md`). Stage 4 merged 2026-10-22 (`48e945c`; design and as-built notes in `agents/plans/drawing-stage4-design.md`; gerbil-sse `f675e5b` and gerbil-datastar `78634fb` pushed). Stage 5 merged 2026-10-23 (`d05866a`; design and as-built notes in `agents/plans/drawing-stage5-design.md`; brief `docs/briefs/2026-10-background-work.md`). Next: stage 6.
 
 ## Invariants
 
