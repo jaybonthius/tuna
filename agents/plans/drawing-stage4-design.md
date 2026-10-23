@@ -1,6 +1,6 @@
 # Drawing stage 4 design: bytes on the wire
 
-**Status:** design, for the primary agent's review; nothing is built. Stage 4 of `agents/plans/drawing-only-what-changed.md`, under ADR 17 ("Assembly": pieces kept as UTF-8 bytes, written into the stream in order), after stages 2 and 3 as built. Line numbers: Tuna at `f58772a`, gerbil-sse at `1a8609e`, gerbil-datastar at `a0d020c`.
+**Status:** approved by the primary agent and built (2026-10-22); see As built at the end. Stage 4 of `agents/plans/drawing-only-what-changed.md`, under ADR 17 ("Assembly": pieces kept as UTF-8 bytes, written into the stream in order), after stages 2 and 3 as built. Line numbers: Tuna at `f58772a`, gerbil-sse at `1a8609e`, gerbil-datastar at `a0d020c`.
 
 **Today.** Every screen is copied four times as a whole: `html-string` joins children into each parent's string (`renderer/plugin.ss:182-209`); `stamp-revision` and `stamp-applied` copy it through `add-root-attributes` (`web/plugin.ss:169-190`); `patch-elements` scans it for CR and NUL, splits it into lines and builds the frame through a string port (`core.ss:39-55, 360-379, 381-423`); `sse-send!` encodes that to UTF-8 (`sse.ss:50`). Measured at 35 KB: about 320 µs and 367 KB per screen, against about 5 µs for writing cached UTF-8 bytes to the writer (`agents/research/rendering/gerbil-mechanics.md`).
 
@@ -253,3 +253,69 @@ It adds that newlines in the elements become new `data: elements` lines, that CR
     - this note's "As built";
     - TODO: close the copying item, add the CR item;
     - the packages' READMEs, already done in steps 1 and 2.
+
+## As built (2026-10-22)
+
+Built with the primary agent's decisions:
+- The push came after Tuna worked against the local clones.
+- No pin.
+- CR and NUL are escaped in the renderer.
+- The unchecked scan is kept, in its own module.
+
+Commits:
+- gerbil-sse `f675e5b`, pushed;
+- gerbil-datastar `78634fb`, pushed;
+- Tuna `a93d8d9` and the records commit after it, on `drawing-4`.
+
+Departures from the design above:
+
+- **The elements writer.** It implements `Closer`, `Writer` and `BufferedWriter`; Gerbil refuses a `BufferedWriter` prototype without the methods of the interfaces it extends.
+  - It checks the range of every write before the unchecked scan (`"datastar: elements write out of range"`, reachable only through the unchecked `&BufferedWriter-write`) and the byte given to `write-u8`.
+  - `flush` does nothing while the event is open, and fails after it.
+- **A send while writing a frame** raises inside the frame writer, so the session fails like any other error from it (tested).
+- **Option checks** are shared by `patch-elements/core` and `call-with-patch-elements/core` (`check-element-options`, `check-mode-selector`, `element-option-lines`); the order of their errors is unchanged.
+- **CR and NUL** (owner decision 3). The html renderer writes CR as `&#13;` and NUL as `&#xFFFD;` (`escape-cr-nul` in `sxml-bytes`, a byte pass that returns the same bytes when there is neither). Every path that writes markup goes through `sxml-bytes`, so no TODO is needed.
+  - Tests: `html-renderer-test` "CR and NUL in text are written as character references"; `tests/integration/web-test` "a buffer holding CR and NUL is sent, and its stream stays open".
+- **A hang found in the tests, not in Tuna.** `read-until` in the web test client read forever when the text it waited for never came: an unconfirmed screen is re-sent every second, so the socket's timeout never fires. It now stops after 20 s (`seconds:`), and a web test checks that it does.
+- **The page** is built in a memory `BufferedWriter`. A tab's `screen` field is gone; `rendered` starts as the `empty-screen` object, which `resend-screen!` recognizes by identity.
+- **Pushing.** The clones' `origin` is HTTPS without credentials, so both packages were pushed to `ssh://gitea@git.cons.io:2222/jay/<package>.git` (the owner's other clones use that URL), leaving the clones' configuration unchanged.
+- **Found, not changed:** gerbil-datastar's `httpd-test.ss` "header predicate is strict" fails at `a0d020c` as well. Gerbil's server trims the header value `true `, so the request is treated as a Datastar request.
+
+**Validation.**
+- gerbil-sse tests pass, with 5 new cases.
+- gerbil-datastar: all tests pass but that pre-existing case.
+  - New cases: old frame builder against the new path for every option shape and element string; streamed against string, written whole, by `write-u8`, by `write-string-utf8` and split at every offset; errors before and after the header; misuse.
+  - The official conformance suite (`-D datastar-conformance`) passes.
+- Tuna `make test` passes, against the linked clones and again after unlinking and `make deps` against the pushed packages.
+
+**Prototype** (`scratch/drawing-4-bench/prototype`), sending one screen into a discarding sink, three runs:
+
+| Screen | Today | Streamed bytes |
+|---|---|---|
+| 35 KB | 280–610 µs, 380 KB allocated | 33–35 µs (first run 66 µs) |
+| 400 KB | 3.3–7 ms | 0.3 ms |
+
+Same bytes on both paths.
+
+**Bench** (`scratch/drawing-4-bench`, medians per tab, `before.txt` at `7abcf8b` with the old packages, `after.txt` at `a93d8d9`). Send is the web plugin's send of a changed screen.
+
+| Scenario | Send before | Send after | Send allocation before → after | Render + send before → after |
+|---|---|---|---|---|
+| *long* 90/135 key (54 KB) | 0.80 ms | 0.085 ms | 1,907 → 61 KB | 2.06 → 0.93 ms |
+| *long* `C-f` | 0.40 ms | 0.064 ms | 1,908 → 61 KB | 0.86 → 0.47 ms |
+| *long* two tabs, key | 0.40 ms | 0.066 ms | 1,916 → 61 KB | 1.32 → 0.87 ms |
+| *mixed* top key (11 KB) | 0.088 ms | 0.026 ms | 384 → 18 KB | 1.01 → 0.95 ms |
+| *mixed* middle key (19 KB), one or two tabs | 0.14 ms | 0.036 ms | 666 → 27 KB | 1.16 → 1.06 ms |
+
+- Idle sends nothing in every case; render is 0.03 ms.
+- Render times are within noise of before. The first *long* key run's 1.2 ms before was the first measurement.
+- The frames every scenario sent are byte-identical before and after (`out-frames/`, 12 files, `cmp`).
+
+**End to end** (`scratch/drawing-4-bench/e2e/session.py`). The starter configuration, a fixed 23-key session, each screen confirmed at once, run twice on each binary: the decoded screen stream is byte-identical, before against after, 23 screens and 59,056 bytes.
+
+**Browser** (this worktree's binary, port 9474, demo configuration):
+- *long*: typing, `C-f` and RET; a slow scroll; a fling of 40 × 3,000 px. After it, 26 lines were visible where it stopped, and screens stopped.
+- Two tabs: keys typed in one show in the other, and a scroll in one is followed by the other where it comes to rest.
+- *mixed*: typing, `C-f`, RET, a slow scroll, a fling, and the other tab following.
+- 15 s idle with two tabs: 0 screens and 0 CPU ticks.
+- The CR case was checked over HTTP by the integration test; typing a CR from the keyboard is not easy to reach.
