@@ -18,6 +18,7 @@
 (def redisplays 0)
 (def waiting #f)          ; the suspension of the `wait` task
 (def saw-pending? #f)
+(def arm-gate #f)         ; completion: let the wait-slowly task finish arming
 
 (defstruct counting-display ()
   final: #t)
@@ -54,6 +55,12 @@
            (with-inhibit-quit (let lp () (lp)))))
    (cons 'wait                          ; wait to be resumed, then note the value
          (lambda () (note! [(suspend (lambda (s) (set! waiting s)))])))
+   (cons 'wait-slowly                   ; like wait, but arming waits for arm-gate
+         (lambda ()
+           (note! [(suspend (lambda (s)
+                              (set! waiting s)
+                              (set! started? #t)
+                              (completion-wait! arm-gate)))])))
    (cons 'discard                       ; note whether input is pending, then discard it
          (lambda ()
            (set! saw-pending? (input-pending?))
@@ -63,7 +70,7 @@
 
 (for-each (lambda (key) (hash-put! test-bindings key (task-named (string->symbol key))))
           ["note-a" "note-b" "fail" "block" "cooperative-loop" "stubborn-loop" "inhibited-loop"
-           "wait" "discard"])
+           "wait" "wait-slowly" "discard"])
 
 (defplugin (idle ctx)
   "Registers nothing.")
@@ -202,6 +209,20 @@
 ;; Wait for every earlier item and its task, then read the last message.
 (def (settled-message) (call-on-editor-loop current-message))
 
+;; THUNK's value, or ['raised summary], from a root thread started now by
+;; this thread: it inherits no parameters, so not the kernel.
+(def (on-root-thread thunk)
+  (thread-join!
+   (thread-start!
+    (make-root-thread
+     (cut thread-main
+          (lambda () (with-catch (lambda (e) ['raised (exception-summary e)]) thunk)))
+     'outside-the-kernel))))
+
+;; A task that waits to be resumed, then notes the value it was given.
+(def (spawn-waiter!)
+  (spawn-task! 'waiter (lambda () (note! [(suspend (lambda (s) (set! waiting s)))]))))
+
 (def (elapsed thunk)
   (let (start (time->seconds (current-time)))
     (thunk)
@@ -300,6 +321,53 @@
           (check (reverse log) => '(quit a))
           (finally (hash-remove! test-bindings "quit"))))))
 
+    (test-case "an interrupt a task ends without acting on is queued and resolved as input"
+      (with-loop
+       (lambda ()
+         (hash-put! test-bindings "quit" (task-named 'note-quit))
+         (try
+          (press "block")               ; never checks for quit
+          (check (wait-until (lambda () started?)) => #t)
+          (press "quit")
+          (thread-sleep! 0.1)           ; the loop has asked the task to quit
+          (set! released? #t)
+          (check (wait-until (lambda () (pair? log))) => #t)
+          (settled-message)
+          (check log => '(quit))
+          (finally (hash-remove! test-bindings "quit"))))
+       quit-grace: 30.))
+
+    (test-case "an interrupt a task quits on is not queued again"
+      (with-loop
+       (lambda ()
+         (hash-put! test-bindings "quit" (task-named 'note-quit))
+         (try
+          (press "cooperative-loop")
+          (check (wait-until (lambda () started?)) => #t)
+          (press "quit")
+          (check (settled-message) => "Quit")
+          (press "note-a")
+          (settled-message)
+          (check log => '(a))
+          (finally (hash-remove! test-bindings "quit"))))
+       quit-grace: 30.))
+
+    (test-case "an interrupt between a task's last quit check and its suspension quits the wait"
+      (set! arm-gate (make-completion))
+      (with-loop
+       (lambda ()
+         (hash-put! test-bindings "quit" (task-named 'note-quit))
+         (try
+          (press "wait-slowly")
+          (check (wait-until (lambda () started?)) => #t)
+          (press "quit")
+          (thread-sleep! 0.1)           ; the loop has asked the task to quit
+          (completion-post! arm-gate #t)
+          (check (wait-until (lambda () (equal? (settled-message) "Quit"))) => #t)
+          (check log => '())
+          (finally (hash-remove! test-bindings "quit"))))
+       quit-grace: 30.))
+
     (test-case "input items of any shape are queued and resolved untouched"
       (with-loop
        (lambda ()
@@ -372,6 +440,65 @@
          (settled-message)
          (stop-editor-loop!)
          (check (editor-loop-running?) => #f))))
+
+    (test-case "resume! from a root thread resumes the waiting task on its loop"
+      (with-loop
+       (lambda ()
+         (spawn-waiter!)
+         (settled-message)
+         (check (on-root-thread (lambda () (resume! waiting 'from-root))) => (void))
+         (settled-message)
+         (check log => '((from-root))))))
+
+    (test-case "cancel-task! from a root thread quits the waiting task"
+      (with-loop
+       (lambda ()
+         (let (t (spawn-waiter!))
+           (settled-message)
+           (check (on-root-thread (lambda () (cancel-task! t))) => (void))
+           (check (settled-message) => "Quit")
+           (check log => '())))))
+
+    (test-case "spawn-task! from a root thread a task started queues on that task's loop"
+      (with-loop
+       (lambda ()
+         (spawn-task! 'starter
+                      (lambda ()
+                        (thread-start!
+                         (make-root-thread
+                          (cut thread-main
+                               (lambda ()
+                                 (with-catch (lambda (e) (note! ['raised (exception-summary e)]))
+                                             (lambda () (spawn-task! 'from-root (lambda () (note! 'from-root)))))))
+                          'root-of-a-task))))
+         (check (wait-until (lambda () (pair? log))) => #t)
+         (check log => '(from-root)))))
+
+    (test-case "call-on-editor-loop from a root thread a task started runs on that task's loop"
+      (with-loop
+       (lambda ()
+         (let (answer #f)
+           (spawn-task! 'starter
+                        (lambda ()
+                          (thread-start!
+                           (make-root-thread
+                            (cut thread-main
+                                 (lambda ()
+                                   (set! answer (with-catch (lambda (e) ['raised (exception-summary e)])
+                                                            (lambda () (call-on-editor-loop (lambda () 42)))))))
+                            'root-of-a-task))))
+           (check (wait-until (lambda () answer)) => #t)
+           (check answer => 42)))))
+
+    (test-case "resume! and cancel-task! from a root thread after the loop stopped do nothing"
+      (with-loop
+       (lambda ()
+         (let (t (spawn-waiter!))
+           (settled-message)
+           (stop-editor-loop!)
+           (check (on-root-thread (lambda () (resume! waiting 'late) (cancel-task! t) 'returned))
+                  => 'returned)
+           (check log => '())))))
 
     (test-case "input-pending? sees queued input; discard-input drops only input"
       (with-loop

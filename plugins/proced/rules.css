@@ -1,0 +1,24 @@
+/* A process list: one grid row per process, numbers aligned to the end. */
+:where(.proced-row) {
+  display: grid;
+  grid-template-columns:
+    var(--proced-pid-width) var(--proced-state-width) var(--proced-cpu-width)
+    var(--proced-memory-width) var(--proced-time-width) minmax(0, 1fr);
+  column-gap: var(--proced-column-gap);
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+}
+
+:where(.proced-pid, .proced-cpu, .proced-memory, .proced-time) {
+  text-align: end;
+}
+
+:where(.proced-command) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:where(.proced-header) {
+  color: var(--proced-header-foreground);
+  border-block-end: 1px solid var(--proced-header-border);
+}

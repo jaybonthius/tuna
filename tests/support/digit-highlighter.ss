@@ -57,7 +57,7 @@ prelude: :gerbil/core
   (when (and (editor-loop-running?) (not (internal-text? t)))
     (job-group-start! jobs ['highlight-digits (text-id t)]
                       input: [(text-snapshot t) (setting-value digit-highlight-delay)]
-                      run: (lambda (input cancelled?)
+                      run: (lambda (input cancelled? post!)
                              (match input
                                ([snapshot delay]
                                 (and (sleep-unless-cancelled delay cancelled?)

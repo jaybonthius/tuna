@@ -19,6 +19,7 @@ prelude: :gerbil/core
         :tuna/kernel
         :tuna/lib/jobs
         :tuna/lib/memo
+        (only-in :tuna/lib/plain-data plain-equal?)
         :tuna/plugins/text-store/contract
         :tuna/plugins/settings/contract
         :tuna/plugins/buffers/contract)

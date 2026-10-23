@@ -58,6 +58,7 @@ prelude: :gerbil/core
         :std/interface
         :tuna/kernel
         :tuna/lib/memo
+        (only-in :tuna/lib/plain-data plain-equal?)
         (only-in :tuna/plugins/clients/contract client)
         :tuna/plugins/text-store/contract
         :tuna/plugins/settings/contract)
