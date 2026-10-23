@@ -37,6 +37,7 @@
         :tuna/plugins/settings/contract
         (only-in :tuna/kernel current-context)
         :tuna/plugins/reload-config/plugin
+        :tuna/plugins/proced/plugin
         "../tests/support/endless-commands"
         "../tests/support/services-help"
         "../tests/support/rename-command"
@@ -91,11 +92,14 @@
 (use-plugin digit-highlighter)   ; colors digits from a slow job
 (use-plugin tree-buffer)         ; C-c b: the *welcome* buffer, built as a tree
 (use-plugin demo)                ; C-c s text store, C-c p basic editing, C-c h hungry delete,
-                                 ; C-c T the terminal theme (tests/support/theme-terminal.ss)
+                                 ; C-c T the terminal theme (tests/support/theme-terminal.ss),
+                                 ; C-c W a wait off the editor thread that C-g quits
 (use-plugin long-buffer-demo)    ; C-c g: *long*, 50,000 generated lines, for scrolling
 (use-plugin rows-demo)           ; C-c G: *rows*, 10,000 row nodes, scrolled the same way
 (use-plugin mixed-demo)          ; C-c M: *mixed*, headings, text, code, cards and pictures
 (use-plugin sidebar-demo)        ; C-c d: a sidebar of buffer buttons pinned to the left, or killed
+(use-plugin proced               ; C-c P: *Processes*, read from /proc every second
+  config: (keymap-set "C-c P" 'proced))
 (use-plugin reload-config        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)
           (keymap-set "C-c C-r" 'show-config-report))

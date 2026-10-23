@@ -44,6 +44,7 @@
     ("plugins/scrolling" "plugin")
     ("plugins/autosave" "plugin")
     ("plugins/reload-config" "plugin")
+    ("plugins/proced" "plugin")
     ("plugins/web" "embed"
      (gxc: "plugin"
            (extra-inputs: ,(map (cut string-append "web/" <>)
