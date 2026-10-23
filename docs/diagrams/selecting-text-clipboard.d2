@@ -1,0 +1,30 @@
+# How does a copy reach your computer's clipboard, and a paste come back? (planned)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: You
+clip: Your computer's clipboard
+browser: Browser tab
+editor: Editor thread
+
+copy: Copy {
+  you -> browser: 1. M-w
+  browser -> editor: 2. the key, as always
+  editor -> editor: "3. put the selection on the kill ring;\nask this tab to copy it"
+  editor -> browser: "4. next screen for this tab carries\n\"copy this text\"" {
+    style.stroke-dash: 3
+  }
+  browser -> clip: "5. copy (allowed: under 5 seconds\nsince your key press)"
+}
+
+paste: Paste {
+  you -> browser: "6. the browser's paste key\n(Cmd+V on a Mac)"
+  clip -> browser: 7. the browser hands over the text
+  browser -> editor: 8. paste, with the text
+  editor -> editor: "9. insert it at the cursor;\nadd it to the kill ring"
+}

@@ -2,7 +2,11 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: none in progress; drawing only what changed just finished
+## Current work: clicking and selecting text (brief proposed 2026-10-23, awaiting owner approval)
+
+Brief `docs/briefs/2026-10-selecting-text.md`. Owner decided 2026-10-23: the server draws the selection while dragging; Emacs region rules, with a `delete-selection` setting (off by default). Spike pages in `../scratch/selecting-text/` (`click.html`: point to line and column, 453/457 in Chrome 146, misses are a combining accent and the end-of-line cursor; `copy.html`: `execCommand('copy')` works on the plain-HTTP Tailscale address within user activation, `navigator.clipboard` exists only on HTTPS/localhost). Firefox and Safari unchecked. After approval: a one-page plan in `agents/plans/`, then the four stages.
+
+## Previous work: drawing only what changed (finished 2026-10-23)
 
 **Drawing only what changed: done 2026-10-23** (plan `agents/plans/drawing-only-what-changed.md`, ADR 17, briefs `docs/briefs/2026-10-drawing-only-what-changed.md` and `docs/briefs/2026-10-background-work.md`, as-built notes `agents/plans/drawing-stage{2,3,4,5}-design.md`). Pieces drawn through `memo` record what they read; lines by value; HTML as bytes streamed through gerbil-datastar's `call-with-patch-elements` (gerbil-sse `f675e5b`, gerbil-datastar `78634fb`, pushed); `off-thread`, `sleep-for`, sources, jobs posting several results; the `proced` demo (`C-c P`); kernel fixes: loop reachable from any thread, a C-g a task did not act on is queued. Open items in `TODO.md`.
 

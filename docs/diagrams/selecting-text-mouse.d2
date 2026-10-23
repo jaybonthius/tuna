@@ -1,0 +1,33 @@
+# What happens when you press on a word and drag to select? (planned)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: You
+browser: Browser
+editor: Editor thread
+
+press: Press: the cursor moves there {
+  you -> browser: 1. press the button on "hello"
+  browser -> browser: "2. ask the browser which character\nis under the pointer; count from\nthe start of its line"
+  browser -> editor: "3. press, line 7.120.42, column 15,\nscreen 812"
+  editor -> editor: "4. down-mouse-1: shift the spot past\nanything typed since screen 812;\nput the cursor and the mark there"
+  editor -> browser: "5. new screen: the cursor's old\nand new lines drawn again" {
+    style.stroke-dash: 3
+  }
+}
+
+drag: Drag: the selection follows {
+  you -> browser: 6. move to line 9
+  browser -> editor: "7. drag, line 9, column 3\n(one at a time: the next waits\nfor this screen)"
+  editor -> editor: "8. move the cursor: the region grows"
+  editor -> browser: "9. new screen: only lines whose\nselection changed drawn again" {
+    style.stroke-dash: 3
+  }
+  you -> browser: 10. release
+  browser -> editor: 11. release, line 9, column 3
+}
