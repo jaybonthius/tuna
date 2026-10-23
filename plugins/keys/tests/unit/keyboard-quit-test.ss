@@ -93,6 +93,17 @@ prelude: :gerbil/core
          (settle)
          (check ended => '("a")))))
 
+    (test-case "another client's C-g leaves this client's pending prefix alone"
+      (with-keys
+       (lambda ()
+         (start-wait! b)
+         (press "C-c" client: a)
+         (press "C-g" client: b)
+         (press "w" client: a)
+         (settle)
+         (check ended => '("b"))
+         (check (waiting-count) => 1))))
+
     (test-case "C-g leaves alone a task that is not a command"
       (with-keys
        (lambda ()

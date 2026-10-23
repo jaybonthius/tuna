@@ -1,6 +1,6 @@
 # Drawing stage 5 design: work off the editor thread, sources, and `proced`
 
-**Status:** design for review (2026-10-22); not built. Stage 5 of `agents/plans/drawing-only-what-changed.md`, under the owner-approved brief `docs/briefs/2026-10-background-work.md` (API decided), ADR 3, 4, 12, 16 and 17. Evidence: `agents/research/background-work/` (prototypes in `/home/jay/Code/workbench-gerbil/scratch/background-work/`). Line numbers: Tuna at `28b889d`.
+**Status:** approved by the primary agent (choices 1-6 yes; 7 with %CPU through `(read input previous)`) and built (2026-10-23); see As built at the end. Stage 5 of `agents/plans/drawing-only-what-changed.md`, under the owner-approved brief `docs/briefs/2026-10-background-work.md` (API decided), ADR 3, 4, 12, 16 and 17. Evidence: `agents/research/background-work/` (prototypes in `/home/jay/Code/workbench-gerbil/scratch/background-work/`). Line numbers: Tuna at `28b889d`.
 
 The plan's invariant "the kernel does not change" is superseded for one bug fix by the later approved brief (section 1). Section 10 lists the choices this note makes that the brief does not; each needs the reviewer's yes.
 
@@ -191,3 +191,43 @@ New package `plugins/proced/` (`gerbil.pkg`, `plugin.ss`, `tokens.css`, `rules.c
 8. Scratch benches (60 s idle, typing p95, memory churn); as-built notes here.
 
 **Browser check** (`make`, then `.gerbil/bin/tuna --port N --config demo/init.ss`, stopped by PID afterwards): two Chrome tabs through `agent_browser` plus a second browser (Firefox if installed, otherwise reported): `C-c P` in tab A shows `*Processes*`, rows update in both tabs once a second and only the changed rows' elements are replaced (Datastar morph keeps the others; check with a DOM mutation count); typing in `*scratch*` in tab B stays immediate; `C-c W` then `C-g` in the same tab ends the wait with "Quit"; `C-c W` in A then `C-g` in B also quits it; killing `*Processes*` stops the updates; screenshots in `scratch/drawing-5/`.
+
+## As built (2026-10-23)
+
+Commits on `drawing-5`: `695f4bb` kernel, `8c7b502` plain data, `1464150` jobs, `ee3f2ae` background, `8fdaf39` keys, `92eec16` sources, `0abad82` and `564b266` proced, then this note. `make test` green after each.
+
+**Kernel (§1): as designed.** `suspension` gains `loop-thread`, `task` gains `loop-thread` (set by `spawn-task!`, `call-on-editor-loop` and `start-task!`); the loop thread runs in `(make-thread-group loop)`; `caller-loop` walks the calling thread's groups, then the kernel parameter. No export changed. ADR 12 amendment "Reaching the right loop from any thread". The five new `loop-test` cases fail on the old kernel (checked by building it) and pass.
+
+**Libraries (§2): as designed,** plus `jobs.ss` exports the `job` type (for `context-start-source!`'s return type and `proced`'s field). `plain-data.ss`'s test check is `check-plain-data!`, raising "WHAT must be plain data".
+
+**`off-thread`, `sleep-for` (§3-4): as designed.** The cancellation check is `(background-cancelled?)` (choice 1); a timeout raises an `Error` "off-thread timed out after N seconds" (choice 3).
+
+**`C-g` (§5): as designed** (choice 2): `keyboard-quit!` in the keys plugin, the `command-clients` table, and the private `quit-cancelled-prefix?` parameter. ADR 3 amendment (yield points) and two `docs/emacs-equivalents.md` rows (`sleep-for`, `off-thread`) plus a divergence row.
+
+**Jobs (§6): as designed** (choice 5); ADR 3's jobs bullet amended.
+
+**Sources (§7): changed by the owner's answer to choice 7.**
+- `(read input previous)`: PREVIOUS is the last successful reading, `#f` the first time, so a reading may carry raw counters for the next one. LAST is always updated to the newest reading, posted or not; COMPARE (default `equal?`) compares LAST with the new reading, so a source compares only what it shows by passing a COMPARE on the shown part.
+- After a failed read the next successful reading is posted whatever it is (a failure may have replaced an unapplied reading under `coalesce: 'latest`).
+- The first read is immediate; `context-start-source!` returns the job.
+
+**`proced` (§8): changed by the owner's answer to choice 7.**
+- Columns PID, STAT, %CPU, RSS MiB, TIME, COMMAND. A reading is `(rows . (time . ((pid . ticks) ...)))`; `same-rows?` compares only the rows. %CPU = Δticks / (Δseconds × 100) × 100, one decimal, from the previous reading; `0.0` on the first reading and for a new pid. `processes-reading` is the pure part (`read-processes` = read the stats + now + it), unit-tested with fixed times.
+- Options `root` (default `/proc`) and `interval` in milliseconds (default 1000; the note said `interval-ms`; renamed to match `session`'s `save-delay`, which is also in milliseconds).
+- Added for the browser check: `q` in *Processes* (its root node's keymap) runs `quit-proced`, which kills it and so stops reading; `proced` now requires the input service for that keymap.
+- Demo: `C-c P` (`proced`), `C-c W` (`wait-demo`, `(off-thread slow-answer 3)`).
+
+**Measurements (§9).** Tests: `tests/integration/proced-test.ss` (2 rows changed → 2 row pieces drawn with one tab and with two; 3 s of 150 unchanged readings → 0 tasks, 0 pieces, 0 bytes; `quit-proced` stops reading; churn keeps one row per process) and `tuna/tests/unit/background-test.ss` (idle source: 0 tasks, 0 redisplays in 0.5 s). Benchmarks (compiled `-O`, no test mode; `scratch/drawing-5/bench-proced.ss`, the typing client a separate process, `typing-client.py`):
+
+| Benchmark | Result |
+|---|---|
+| 60 s idle, *Processes* shown, 200 fixture processes, read every 1 s | 0 tasks, 0 pieces drawn, 0 bytes sent; 21 CPU ticks (210 ms, the source's 60 reads of 200 files) |
+| typing 400 keys, one per 50 ms, into *scratch*, *Processes* in the other view | not shown: p50 1.8 ms, p95 3.4 ms, max 4.5 ms; every row changing every 1 s: p50 2.3, p95 4.5, max 15.0 ms; every row changing every 100 ms (10× the real rate): p50 2.3, p95 19.7, max 25.1 ms |
+| churn, 500 cycles replacing 20 of 200 processes every 20 ms, read every 10 ms | rows 200 at the end; live heap after GC 4.23 MB at cycle 1, 4.24 MB at 100, 200, 300, 400 and 500 |
+
+**Browser check** (`.gerbil/bin/tuna --port 9475 --config demo/init.ss`, isolated XDG directories, two headless Chrome browsers through `agent_browser`, real `/proc` with about 950 processes): 15 s idle with *Processes* not shown: 0 CPU ticks for the editor process, 0 DOM mutations, screen revision unchanged. With *Processes* shown in both browsers: 119 rows in each DOM, 14 screens in 18.7 s, 19 row mutations over 6 distinct rows in each (identical in both); 24 CPU ticks per 10 s (the source reading /proc). After `q`: 0 CPU ticks in 15 s and 0 mutations in the other browser. Typing in *scratch* (lower view) in browser B with *Processes* live above: keydown-to-DOM p50 4.3 ms, max 4.9 ms over 12 keys. `C-c W` then `C-g` in the same browser: "Quit", no "Waited" afterwards (5 of 5). `C-c W` in A then `C-g` in B: quit in 3 of 4 tries (see open issues). Firefox 131 headless (`--screenshot`) draws the same screen. Screenshots: `scratch/drawing-5/browser-a-processes.png`, `browser-b-processes.png`, `browser-b-typing.png`, `browser-b-wait-quit.png`, `browser-b-quits-a-wait.png`, `firefox-processes.png`.
+
+**Open issues.**
+- Once in four cross-browser tries, `C-g` in B did not quit A's wait and showed no "Quit" either; once an A `C-c W` inserted `W` (its prefix was lost). Neither reproduced in nine later tries or in the keys tests (including a new test that another client's `C-g` leaves this client's prefix alone). One candidate, in the kernel's quit lane and older than this stage: a `C-g` that arrives while any short task runs (a source's apply, the web plugin's `tab-screen` task) sets that task's quit request, and when the task ends without a quit check the request is dropped, where Emacs keeps `quit-flag` set. A fix would hand an unconsumed interrupt to the input provider when the task ends; that is a kernel change for the primary agent and owner to decide.
+- Typing p95 rises by about 16 ms when every visible row changes ten times a second: a key waits for a redisplay that redraws 200 rows. At the real rate (once a second) it rises by 1.1 ms.
+- The list of waits in `background.ss` is one per process (fine with one kernel; tests run kernels one at a time).
