@@ -104,6 +104,20 @@ prelude: :gerbil/core
          (check ended => '("b"))
          (check (waiting-count) => 1))))
 
+    (test-case "a C-g that lands on a short task which never checks for quit still quits the waiting command"
+      (with-keys
+       (lambda ()
+         (let (released? #f)
+           (start-wait! a)
+           (spawn-task! 'busy (lambda () (let lp () (unless released? (thread-sleep! 0.01) (lp)))))
+           (thread-sleep! 0.05)          ; busy is running
+           (press "C-g" client: b)
+           (thread-sleep! 0.1)           ; the loop has asked busy to quit
+           (set! released? #t)
+           (check (wait-until (lambda () (pair? ended))) => #t)
+           (check ended => '("a"))
+           (check (waiting-count) => 0)))))
+
     (test-case "C-g leaves alone a task that is not a command"
       (with-keys
        (lambda ()

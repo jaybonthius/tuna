@@ -314,6 +314,37 @@
           (check (reverse log) => '(quit a))
           (finally (hash-remove! test-bindings "quit"))))))
 
+    (test-case "an interrupt a task ends without acting on is queued and resolved as input"
+      (with-loop
+       (lambda ()
+         (hash-put! test-bindings "quit" (task-named 'note-quit))
+         (try
+          (press "block")               ; never checks for quit
+          (check (wait-until (lambda () started?)) => #t)
+          (press "quit")
+          (thread-sleep! 0.1)           ; the loop has asked the task to quit
+          (set! released? #t)
+          (check (wait-until (lambda () (pair? log))) => #t)
+          (settled-message)
+          (check log => '(quit))
+          (finally (hash-remove! test-bindings "quit"))))
+       quit-grace: 30.))
+
+    (test-case "an interrupt a task quits on is not queued again"
+      (with-loop
+       (lambda ()
+         (hash-put! test-bindings "quit" (task-named 'note-quit))
+         (try
+          (press "cooperative-loop")
+          (check (wait-until (lambda () started?)) => #t)
+          (press "quit")
+          (check (settled-message) => "Quit")
+          (press "note-a")
+          (settled-message)
+          (check log => '(a))
+          (finally (hash-remove! test-bindings "quit"))))
+       quit-grace: 30.))
+
     (test-case "input items of any shape are queued and resolved untouched"
       (with-loop
        (lambda ()

@@ -38,13 +38,16 @@ prelude: :gerbil/core
                 (state           : :symbol)
                 (suspension      :? :t)            ; its wait, while suspended
                 (quit-requested? : :boolean)
+                ;; the interrupt input item that asked it to quit, if any:
+                ;; handed on as input if it ends without quitting (./loop)
+                (interrupt       :? :t)
                 (interrupts      : :fixnum)
                 (inhibit-depth   : :fixnum))
   final: #t)
 
 (def (new-task (name : :symbol) (procedure : :procedure) (reply :? :procedure)) => task
   (task id: (next-id!) name: name procedure: procedure reply: reply thread: #f loop-thread: #f
-        state: 'queued suspension: #f quit-requested?: #f interrupts: 0 inhibit-depth: 0))
+        state: 'queued suspension: #f quit-requested?: #f interrupt: #f interrupts: 0 inhibit-depth: 0))
 
 ;; The task running in this thread, or #f outside tasks. ./loop binds it.
 (def current-task (make-parameter #f))

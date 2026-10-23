@@ -6,7 +6,9 @@
 ;;; thread; later items wait until the task finishes or suspends. A task
 ;;; suspends only at a yield point (`suspend`), which returns the baton to the
 ;;; loop; once resumed, it takes the baton back before any further input.
-;;; Quit requests arrive out of band, so they reach a running task at once.
+;;; Quit requests arrive out of band, so they reach a running task at once;
+;;; one the task ends without acting on is not dropped but queued as input,
+;;; as Emacs keeps quit-flag set until something checks it.
 prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/thread spawn-thread)
@@ -504,6 +506,10 @@ prelude: :gerbil/core
     (set! loop.force-at #f)
     (set! loop.dirty? #t)
     (task-finished! loop ended (how-task-ended raised? value))
+    ;; Interrupted, but it ended without quitting: it never reached a quit
+    ;; check. Its interrupt is input now, as with no task running.
+    (when (and ended.interrupt (not (and raised? (quit-condition? value))))
+      (enqueue! loop (make-queued-input ended.interrupt)))
     (cond
      (ended.reply => (lambda ((reply : :procedure)) (reply raised? value)))
      ((not raised?) (void))
@@ -589,13 +595,15 @@ prelude: :gerbil/core
 
 ;; The first interrupt asks the task to stop; the second, or the grace
 ;; period running out, interrupts its thread. With no task running, the
-;; item is queued as ordinary input, which a waiting prompt may bind.
+;; item is queued as ordinary input, which a waiting prompt may bind; so
+;; is the item of a task that ends without quitting (on-task-ended!).
 (def (on-interrupt! (loop : editor-loop) (item : :t)) => :void
   (let (running loop.running)
     (if running
       (using (running : task)
         (set! running.interrupts (fx1+ running.interrupts))
         (set! running.quit-requested? #t)
+        (set! running.interrupt item)
         (if (fx= running.interrupts 1)
           (set! loop.force-at (+ (now) loop.quit-grace))
           (force-quit! loop running)))
