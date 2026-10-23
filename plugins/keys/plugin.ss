@@ -23,9 +23,16 @@
 ;;; prefix typed in one browser tab never joins keys from another. Events
 ;;; with no client share one session. Each command's task sees its client
 ;;; as `current-client`.
+;;;
+;;; `C-g` with nothing running runs `keyboard-quit`, which also quits a
+;;; command waiting in `off-thread` or `sleep-for` (tuna/lib/background):
+;;; the most recent wait of a command this client started, otherwise of
+;;; any client's, unless the `C-g` cancelled a pending prefix. A task that
+;;; is not a command, such as a timer's, is never quit this way.
 
 (import (only-in :gerbil/runtime/hash HashTable)
         :tuna/kernel
+        (only-in :tuna/lib/background background-waiting-tasks quit-background-wait!)
         :tuna/plugins/clients/contract
         :tuna/plugins/keys/contract
         :tuna/plugins/commands/contract
@@ -49,7 +56,8 @@
                        (keymap        : entry-table)    ; key sequence -> command name
                        (targets       : :list)          ; input targets, innermost first
                        (sessions      : HashTable)      ; client -> key-session
-                       (shared        : key-session))   ; the session of events with no client
+                       (shared        : key-session)    ; the session of events with no client
+                       (command-clients : HashTable))   ; running command's task id -> (box client)
   final: #t)
 
 ;; Browser key names with Emacs spellings.
@@ -230,12 +238,25 @@
 ;; command at a prompt cannot overwrite the suspended command's event.
 (def activation-event (make-parameter #f))
 
-(def (command-task (event : :t) (name : :symbol)) => (Maybe :pair)
+;; Whether the quit key that started this task cancelled a pending prefix.
+(def quit-cancelled-prefix? (make-parameter #f))
+
+;; The command NAME as the task EVENT starts. While it runs, SELF knows
+;; its client, so the quit key can find the commands a client started.
+(def (command-task (self : global-keys) (event : :t) (name : :symbol)
+                   cancelled-prefix?: (cancelled-prefix? : :boolean := #f))
+  => (Maybe :pair)
   (and (command-entry name)
        (cons name (lambda ()
-                    (parameterize ((activation-event event)
-                                   (current-client (event-client event)))
-                      (call-command name))))))
+                    (let ((client (event-client event))
+                          (id (current-task-id)))
+                      (parameterize ((activation-event event)
+                                     (current-client client)
+                                     (quit-cancelled-prefix? cancelled-prefix?))
+                        (hash-put! self.command-clients id (box client))
+                        (unwind-protect
+                          (call-command name)
+                          (hash-remove! self.command-clients id))))))))
 
 ;; A key sequence of SESSION ended with EVENT, a key or pointer event, and
 ;; selected the command named NAME, or #f for none.
@@ -253,9 +274,10 @@
       ;; The quit key cancels a pending prefix; a keymap may bind it, as the
       ;; minibuffer's prompts do.
       (let* ((found (find-binding keymaps quit-key #f))
-             (name (if (and found (not (eq? found 'prefix))) (entry-value found) 'keyboard-quit)))
+             (name (if (and found (not (eq? found 'prefix))) (entry-value found) 'keyboard-quit))
+             (pending? (pair? (key-session-pending session))))
         (complete-keys! session event name)
-        (command-task event name)))
+        (command-task self event name cancelled-prefix?: pending?)))
      (else
       (message "")
       (let* ((typed (append (key-session-pending session) [key]))
@@ -271,7 +293,7 @@
          (found
           (let (name (entry-value found))
             (complete-keys! session event name)
-            (bound-command-task event keys name)))
+            (bound-command-task self event keys name)))
          (else
           (complete-keys! session event #f)
           (message (string-append keys " is undefined"))
@@ -279,8 +301,9 @@
 
 ;; The command NAME of a sequence KEYS that EVENT completed, as a task, or
 ;; #f with a message when no command has that name.
-(def (bound-command-task (event : :t) (keys : :string) (name : :symbol)) => (Maybe :pair)
-  (or (command-task event name)
+(def (bound-command-task (self : global-keys) (event : :t) (keys : :string) (name : :symbol))
+  => (Maybe :pair)
+  (or (command-task self event name)
       (begin
         (message (string-append keys " runs " (symbol->string name) ", which is not defined"))
         #f)))
@@ -309,7 +332,7 @@
     (if found
       (begin
         (complete-keys! session event (cdr found))
-        (bound-command-task event (car found) (cdr found)))
+        (bound-command-task self event (car found) (cdr found)))
       (begin
         (complete-keys! session event #f)
         (message (string-append (car sequences) " is undefined"))
@@ -335,6 +358,21 @@
      ((pointer-event? event) (resolve-pointer! self event))
      ((scroll-event? event) (resolve-scroll! self event))
      (else (resolve-key! self event)))))
+
+;; Quit (Emacs `keyboard-quit`). Unless the quit key that ran this
+;; cancelled a pending prefix, first quit one command waiting in
+;; off-thread or sleep-for: the most recent wait of a command started from
+;; this client, otherwise the most recent of any client's command.
+(def (keyboard-quit! (self : global-keys)) => :void
+  (unless (quit-cancelled-prefix?)
+    (let* ((clients self.command-clients)
+           (c (current-client))
+           (waiting (filter (cut hash-key? clients <>) (background-waiting-tasks)))
+           (target (or (find (lambda (id) (eq? (unbox (hash-ref clients id)) c)) waiting)
+                       (and (pair? waiting) (car waiting)))))
+      (when target
+        (quit-background-wait! target))))
+  (signal-quit))
 
 ;; The quit key interrupts; every other key, pointer or scroll event is
 ;; queued.
@@ -439,12 +477,14 @@
   optional: [settings-service buffers-service]
   (using (self (global-keys click-resolvers: (new-entry-table) keymap: (new-entry-table) targets: []
                             sessions: (make-hash-table-eq)
-                            shared: (key-session pending: [] command-event: #f))
+                            shared: (key-session pending: [] command-event: #f)
+                            command-clients: (make-hash-table-eqv))
                : global-keys)
     (global-bindings-changed!)
     (context-defer! ctx global-bindings-changed!)
     (context-add-hook! ctx client-gone-hook 'keys
                        (lambda ((c : client)) (hash-remove! self.sessions c)))
-    (context-define-command! ctx 'keyboard-quit signal-quit
-                             doc: "Cancel the current key sequence or command." source: (this-source))
+    (context-define-command! ctx 'keyboard-quit (lambda () (keyboard-quit! self))
+                             doc: "Cancel the current key sequence, or quit the command waiting in the background that was started last from here."
+                             source: (this-source))
     (context-provide! ctx input-service (Keys self))))
