@@ -39,7 +39,7 @@
   "Selects the default providers for swap commands in this test configuration."
   (context-set-swap-providers! ctx html-renderer layout buffers))
 
-(defplugin (view-arrows ctx)
+(defplugin (user-view-bindings ctx)
   "Binds the S-arrows to selecting the view on that side, and a click in a view to selecting it, as a user may in init.ss."
   requires: [input-service]
   (keymap-set ctx "<view> <mouse-1>" 'mouse-select-view)
@@ -62,7 +62,7 @@
 (def command-plugins
   [session-owner commands keys echo-area rope-text-store settings session
    buffers autosave layout view-commands basic-editing minibuffer
-   swap-configuration swap-commands tree-buffer view-arrows])
+   swap-configuration swap-commands tree-buffer user-view-bindings])
 
 (def (with-commands thunk)
   (call-with-state-kernel command-plugins
