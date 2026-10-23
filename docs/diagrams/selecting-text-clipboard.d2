@@ -19,7 +19,7 @@ copy: Copy {
   editor -> browser: "4. next screen for this tab carries\n\"copy this text\"" {
     style.stroke-dash: 3
   }
-  browser -> clip: "5. copy (allowed: under 5 seconds\nsince your key press)"
+  browser -> clip: "5. navigator.clipboard.writeText\n(HTTPS or localhost only)"
 }
 
 paste: Paste {

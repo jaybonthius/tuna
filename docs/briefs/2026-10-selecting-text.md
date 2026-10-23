@@ -1,6 +1,6 @@
 # Brief: clicking and selecting text
 
-**Date:** 2026-10-23. **Status:** proposed, awaiting the owner's approval. Builds on [mouse input](2026-10-mouse-input.md) (clicks as keys; its "clicking and selecting inside text comes later" is this). Evidence: a Chrome 146 spike (below), Weevil's paste work (`~/Code/weevil/plans/archive/clipboard-paste-plan.md`), the `shux` terminal spike's clipboard element (`~/Code/shux/spikes/libghostty-terminal/web.go:806`), and Emacs's `lisp/mouse.el` (commit `541f693ca2e`).
+**Date:** 2026-10-23. **Status:** approved 2026-10-23 (owner), with the clipboard simplified to the standard Clipboard API. Builds on [mouse input](2026-10-mouse-input.md) (clicks as keys; its "clicking and selecting inside text comes later" is this). Evidence: a Chrome 146 spike (below), Weevil's paste work (`~/Code/weevil/plans/archive/clipboard-paste-plan.md`), the `shux` terminal spike's clipboard element (`~/Code/shux/spikes/libghostty-terminal/web.go:806`), and Emacs's `lisp/mouse.el` (commit `541f693ca2e`).
 
 ## What we're building and why
 
@@ -30,9 +30,7 @@ The check gave the same result with the browser's own selection turned off. Fire
 
 ![Copy and paste](../diagrams/selecting-text-clipboard.svg)
 
-**The clipboard, checked:** browsers let a page write to the clipboard directly (`navigator.clipboard`) only on HTTPS or `localhost`. On `127.0.0.1` it exists. On `http://100.111.127.122` it doesn't, which I checked in Chrome. That's why the earlier "patch in an element that copies" approach worked locally.
-
-The older copy command, `document.execCommand('copy')`, works on any address, as long as it runs within about 5 seconds of a key press. On the Tailscale address in Chrome it copied 30 ms after a key press, and refused 7 seconds after one and with no key press. So the "copy this" instruction uses `navigator.clipboard` where it exists and `execCommand` otherwise. **No HTTPS is needed.**
+**The clipboard** uses the standard Clipboard API only (owner, 2026-10-23): copying calls `navigator.clipboard.writeText`, and pasting reads the browser's `paste` event. Browsers provide `navigator.clipboard` only on HTTPS or `localhost`; checked in Chrome, it is missing on `http://100.111.127.122`. There, copying to your computer's clipboard is unavailable: the text still goes on the kill ring, and the echo area says why the clipboard copy didn't happen. Serving Tuna over HTTPS (for example with `tailscale serve`) would make it work there; not in this work.
 
 ## A walkthrough
 
@@ -71,7 +69,7 @@ Each stage runs in the browser. Nothing goes into the kernel: clicks already arr
    - The `delete-selection` setting.
 2. **Click to move the cursor.** The browser finds the line and column. `mouse-1` on text runs `mouse-set-point`, and `posn-point` gives any command the clicked position. Clicks below the last line go to the end. A click on a line that no longer exists is reported as stale, as buttons are today. Also check the spike page in Firefox and Safari.
 3. **Drag and multiple clicks.** These follow Emacs: `down-mouse-1` sets the cursor and mark (Emacs `mouse-drag-region`), drag reports move the cursor one at a time, and `drag-mouse-1` finishes (`mouse-set-region`). Also double-click for a word, triple-click for a line, and shift-click to extend.
-4. **The clipboard.** Copying commands also copy to the clipboard of the tab you pressed the key in; if the copy is refused, the echo area says so. The browser's paste key inserts the clipboard's text: Cmd+V on a Mac. On Linux and Windows, Ctrl+V stays Emacs's `C-v` (scroll), so the paste keys there are Ctrl+Shift+V and Shift+Insert, to be checked.
+4. **The clipboard.** Copying commands also copy to the clipboard of the tab you pressed the key in, with `navigator.clipboard.writeText`; if it is missing or refuses, the echo area says so. The browser's paste key inserts the clipboard's text: Cmd+V on a Mac. On Linux and Windows, Ctrl+V stays Emacs's `C-v` (scroll), so the paste keys there are Ctrl+Shift+V and Shift+Insert, to be checked.
 
    **Known limit, from Weevil:** Firefox sends no paste to a page with no text field focused, so Firefox paste waits for the hidden text field planned for typing on phones.
 
@@ -89,7 +87,7 @@ Each stage runs in the browser. Nothing goes into the kernel: clicks already arr
 
 ## Decisions for you
 
-None left. You decided that the server draws the selection while you drag, and that Emacs's rules apply, with `delete-selection` as a setting. The clipboard question is answered above: no HTTPS needed.
+None left. You decided that the server draws the selection while you drag; that Emacs's rules apply, with `delete-selection` as a setting; and that the clipboard uses the standard Clipboard API only.
 
 ## New terms
 
