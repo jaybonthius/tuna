@@ -18,6 +18,10 @@
 ;;; becomes neither this-command nor last-command and runs no command
 ;;; hooks.
 ;;;
+;;; A sequence with no binding whose last key has shift is looked up again
+;;; without it (Emacs's shift translation; `unshifted-key`), and its
+;;; command runs knowing so (`this-command-keys-shift-translated?`).
+;;;
 ;;; Keys in progress are per client (ADR 16; Emacs's kboard): each client's
 ;;; pending prefix and the event that completed its last sequence, so a
 ;;; prefix typed in one browser tab never joins keys from another. Events
@@ -241,10 +245,14 @@
 ;; Whether the quit key that started this task cancelled a pending prefix.
 (def quit-cancelled-prefix? (make-parameter #f))
 
+;; Whether this task's command was found by shift translation.
+(def activation-shift-translated? (make-parameter #f))
+
 ;; The command NAME as the task EVENT starts. While it runs, SELF knows
 ;; its client, so the quit key can find the commands a client started.
 (def (command-task (self : global-keys) (event : :t) (name : :symbol)
-                   cancelled-prefix?: (cancelled-prefix? : :boolean := #f))
+                   cancelled-prefix?: (cancelled-prefix? : :boolean := #f)
+                   shift-translated?: (shift-translated? : :boolean := #f))
   => (Maybe :pair)
   (and (command-entry name)
        (cons name (lambda ()
@@ -252,7 +260,8 @@
                           (id (current-task-id)))
                       (parameterize ((activation-event event)
                                      (current-client client)
-                                     (quit-cancelled-prefix? cancelled-prefix?))
+                                     (quit-cancelled-prefix? cancelled-prefix?)
+                                     (activation-shift-translated? shift-translated?))
                         (hash-put! self.command-clients id (box client))
                         (unwind-protect
                           (call-command name)
@@ -294,10 +303,60 @@
           (let (name (entry-value found))
             (complete-keys! session event name)
             (bound-command-task self event keys name)))
+         ((let (unshifted (unshifted-key key))
+            (and unshifted
+                 (let* ((typed (append (key-session-pending session) [unshifted]))
+                        (keys (string-join typed " ")))
+                   (cons typed (find-binding keymaps keys #f)))))
+          => (lambda ((translated : :pair))
+               (let ((typed (car translated))
+                     (found (cdr translated)))
+                 (shift-translated! self session event typed found keys))))
          (else
           (complete-keys! session event #f)
           (message (string-append keys " is undefined"))
           #f)))))))
+
+;; KEY, the last of a sequence with no binding, without shift (Emacs's
+;; shift translation): without its S- modifier ("C-S-<right>" ->
+;; "C-<right>"), or an upper-case letter in lower case ("C-F" -> "C-f");
+;; #f for a key without shift.
+(def (unshifted-key (key : :string)) => (Maybe :string)
+  (let lp ((rest key) (modifiers ""))
+    (cond
+     ((and (fx> (string-length rest) 2) (char=? (string-ref rest 1) #\-)
+           (memv (string-ref rest 0) '(#\C #\M #\S #\s)))
+      (if (char=? (string-ref rest 0) #\S)
+        (string-append modifiers (substring rest 2 (string-length rest)))
+        (lp (substring rest 2 (string-length rest)) (string-append modifiers (substring rest 0 2)))))
+     ((and (fx= (string-length rest) 1) (char-upper-case? (string-ref rest 0))
+           (not (char=? (char-downcase (string-ref rest 0)) (string-ref rest 0))))
+      (string-append modifiers (string (char-downcase (string-ref rest 0)))))
+     (else #f))))
+
+;; The keys TYPED, the sequence ORIGINAL with shift taken off its last
+;; key, found FOUND (find-binding) for SESSION's EVENT: a command, which
+;; runs knowing it was shift-translated; a prefix, which waits for more;
+;; or nothing, and ORIGINAL is undefined.
+(def (shift-translated! (self : global-keys) (session : key-session) (event : key-event) (typed : :list)
+                        (found : :t) (original : :string))
+  => (Maybe :pair)
+  (cond
+   ((eq? found 'prefix)
+    (set! (key-session-pending session) typed)
+    (message (string-append (string-join typed " ") "-"))
+    #f)
+   (found
+    (let (name (entry-value found))
+      (complete-keys! session event name)
+      (or (command-task self event name shift-translated?: #t)
+          (begin
+            (message (string-append (string-join typed " ") " runs " (symbol->string name) ", which is not defined"))
+            #f))))
+   (else
+    (complete-keys! session event #f)
+    (message (string-append original " is undefined"))
+    #f)))
 
 ;; The command NAME of a sequence KEYS that EVENT completed, as a task, or
 ;; #f with a message when no command has that name.
@@ -463,6 +522,9 @@
               (let (session (hash-get self.sessions c))
                 (and session (key-session-command-event session)))
               (key-session-command-event self.shared)))))))
+
+(defmethod {this-command-keys-shift-translated? global-keys}
+  (lambda (self) (activation-shift-translated?)))
 
 (defmethod {set-click-resolver! global-keys}
   (lambda (self ctx resolve)

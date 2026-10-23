@@ -1,6 +1,7 @@
 ;;; The demo plugin, for development only (`tuna --config demo/init.ss`):
 ;;; swapping the text store (C-c s), basic editing (C-c p), hungry
-;;; delete (C-c h) and the terminal theme (C-c T) while Tuna runs, and
+;;; delete (C-c h), the terminal theme (C-c T) and the delete-selection
+;;; setting (C-c D) while Tuna runs, and
 ;;; waiting off the editor thread (C-c W, which C-g quits). The
 ;;; demo's other commands (the *welcome* tree buffer, endless loops,
 ;;; describe-services, renaming, renderer and layout swaps, the slow
@@ -13,6 +14,8 @@ prelude: :gerbil/core
 (import :tuna/plugins/commands/contract
         :tuna/kernel
         :tuna/plugins/keys/contract
+        :tuna/plugins/settings/contract
+        :tuna/plugins/region/contract
         :tuna/configuration
         :tuna/lib/background
         :tuna/plugins/text-store/plugin
@@ -32,9 +35,16 @@ prelude: :gerbil/core
   (thread-sleep! seconds)
   seconds)
 
+;; Turns delete-selection on while it is on itself.
+(defplugin (delete-selection-demo ctx)
+  "Typing, deleting and yanking replace the active region."
+  requires: [settings-service]
+  (context-set-setting! ctx delete-selection #t))
+
 (defplugin (demo ctx)
-  "Demo commands: swap text store (C-c s), toggle basic editing (C-c p), hungry delete (C-c h), the terminal theme (C-c T) and waiting off the editor thread (C-c W)."
+  "Demo commands: swap text store (C-c s), toggle basic editing (C-c p), hungry delete (C-c h), the terminal theme (C-c T), delete-selection (C-c D) and waiting off the editor thread (C-c W)."
   requires: [commands-service input-service configuration-service]
+  optional: [settings-service region-service] ; delete-selection-demo sets region's setting
   (define-command ctx (swap-text-store) "Switch between the rope and the plain-string text store."
     (if (plugin-active? string-text-store)
       (swap-plugins string-text-store rope-text-store)
@@ -51,11 +61,15 @@ prelude: :gerbil/core
   (define-command ctx (toggle-theme-terminal) "Turn the terminal theme (theme-terminal) off or on."
     (toggle-plugin! theme-terminal)
     (message (if (plugin-active? theme-terminal) "Terminal theme on" "Terminal theme off")))
+  (define-command ctx (toggle-delete-selection) "Turn the delete-selection setting on or off."
+    (toggle-plugin! delete-selection-demo)
+    (message (if (plugin-active? delete-selection-demo) "Delete selection on" "Delete selection off")))
   (define-command ctx (wait-demo) "Wait three seconds off the editor thread, then say so; C-g quits the wait."
     (message "Waiting three seconds off the editor thread; C-g quits")
     (message (string-append "Waited " (number->string (off-thread slow-answer 3)) " seconds off the editor thread")))
   (keymap-set ctx "C-c W" 'wait-demo)
   (keymap-set ctx "C-c h" 'toggle-hungry-delete)
   (keymap-set ctx "C-c T" 'toggle-theme-terminal)
+  (keymap-set ctx "C-c D" 'toggle-delete-selection)
   (keymap-set ctx "C-c p" 'toggle-basic-editing)
   (keymap-set ctx "C-c s" 'swap-text-store))

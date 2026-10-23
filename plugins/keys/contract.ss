@@ -29,6 +29,13 @@
 ;;; contract finds the view and node a posn names (`posn-view`,
 ;;; `posn-node`).
 ;;;
+;;; A key with shift (`S-<right>`, or an upper-case letter with or
+;;; without other modifiers, `C-F`) that ends a sequence with no binding
+;;; is looked up again without it (`<right>`, `C-f`), as Emacs's shift
+;;; translation does; the command it finds can tell
+;;; (`this-command-keys-shift-translated?`), which is how shifted motion
+;;; keys select text.
+;;;
 ;;; A scroll report (`scroll-event`) is what the browser measured of a
 ;;; view's scroller. It is looked up like a click, under `scroll-key`
 ;;; ("<scroll>"), in the keymaps from the node the scroller draws from up,
@@ -76,7 +83,8 @@ prelude: :gerbil/core
         remove-input-target!
         key-binding
         printing-char-key
-        last-command-event)
+        last-command-event
+        this-command-keys-shift-translated?)
 
 ;; One keydown from CLIENT (#f for none), with its page-load sequence
 ;; number (ADR 7, ADR 10, ADR 16). The web transport submits it as an input
@@ -236,7 +244,10 @@ prelude: :gerbil/core
   (key-binding (keys : :string)) => :t
   ;; The key, pointer or scroll event that completed the running
   ;; command's keys, or #f (Emacs `last-command-event`).
-  (last-command-event) => :t)
+  (last-command-event) => :t
+  ;; Whether the running command's keys were found only once shift was
+  ;; taken off their last key (Emacs `this-command-keys-shift-translated`).
+  (this-command-keys-shift-translated?) => :boolean)
 
 (def (context-set-click-resolver! (ctx : context) (resolve : :procedure)) => :void
   (:- (with-service-provider (provider input-service Keys)
@@ -287,6 +298,10 @@ prelude: :gerbil/core
 ;; A key-event, a pointer-event, a scroll-event, or #f.
 (def (last-command-event) => :t
   (with-service-provider (provider input-service Keys) (Keys-last-command-event provider)))
+
+(def (this-command-keys-shift-translated?) => :boolean
+  (:- (with-service-provider (provider input-service Keys) (Keys-this-command-keys-shift-translated? provider))
+      :boolean))
 
 ;; The keys of a plain click (mouse-1, mouse-2 or mouse-3) on a part of
 ;; kind AREA: under AREA as a prefix key ("<view> <mouse-1>"), and also

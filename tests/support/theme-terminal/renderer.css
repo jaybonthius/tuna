@@ -6,6 +6,7 @@
   --cursor-background: CanvasText;
   --cursor-foreground: Canvas;
   --inactive-cursor-outline: CanvasText;
+  --region-background: Highlight;
   --status-line-background: CanvasText;
   --status-line-foreground: color-mix(in srgb, Canvas 65%, CanvasText);
   --status-line-selected-foreground: Canvas;

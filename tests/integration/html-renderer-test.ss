@@ -909,6 +909,36 @@
            (let (keys (pieces-drawn (lambda () (insert "x") (screen))))
              (check [(lines-drawn keys a) (lines-drawn keys b) (lines-drawn keys c)] => [1 1 1]))))))
 
+    (test-case "lines: the active region is drawn in the region class; moving it draws only the lines whose selected part changed"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (insert "one\ntwo\nthree\nfour")
+         (let* ((a (selected-view))
+                (b (split-view a 'right)))
+           (set-view-mark! a 1)
+           (set-view-mark-active! a #t)
+           (goto-char 7)                ; line 2, column 2
+           (let (html (screen))
+             (check (has? html "<span class=\"region\">one</span>") => #t)
+             (check (has? html "<span class=\"region\">tw</span>") => #t)
+             ;; Line 1's newline is in the region, in view a only.
+             (check (offset "data-region-newline" html) ? number?)
+             (check (offset "data-region-newline" (substring html (+ 1 (offset "data-region-newline" html))
+                                                             (string-length html)))
+                    => #f))
+           ;; Point and the region's end move within line 2: one line.
+           (check (lines-drawn (pieces-drawn (lambda () (goto-char 8) (screen))) a) => 1)
+           ;; To line 3's start: line 2 now selected to its newline, and
+           ;; line 3, which gets the cursor but no selected part.
+           (check (lines-drawn (pieces-drawn (lambda () (goto-char 9) (screen))) a) => 2)
+           ;; Deactivating: lines 1 and 2; line 3 had no selected part.
+           (check (lines-drawn (pieces-drawn (lambda () (set-view-mark-active! a #f) (screen))) a) => 2)
+           (check (has? (screen) "region") => #f)
+           ;; The other view's region draws none of view a's lines.
+           (set-view-mark! b 18)        ; b's point is at the end, line 4
+           (let (keys (pieces-drawn (lambda () (set-view-mark-active! b #t) (screen))))
+             (check [(lines-drawn keys a) (lines-drawn keys b)] => [0 1]))))))
+
     (test-case "lines: a scroll report keeping the drawn run draws no text node or its lines again"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()

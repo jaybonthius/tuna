@@ -344,7 +344,7 @@ prelude: :gerbil/core
                                      (lambda () (apply run-lifecycle-hook (car event) (cdr event)))))
                        (reverse (unbox events))))
            ;; Raised here, it keeps a forced quit's flag; the inhibited
-           ;; region's own quit check would raise an unforced one.
+           ;; operation's own quit check would raise an unforced one.
            (let (quit (unbox held))
              (when (and quit (current-task))
                (raise quit)))))))))

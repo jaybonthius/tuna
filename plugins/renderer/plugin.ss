@@ -5,8 +5,10 @@
 ;;; For each view the renderer walks its buffer's tree, from where the
 ;;; frame points, and renders each node through the procedure registered
 ;;; for its kind. A kind without one is shown as its text projection. Text nodes show their highlights as face classes,
-;;; through the buffer's face-remapping, and each view's point as a cursor:
-;;; solid in the selected view, hollow in others. A view's status line
+;;; through the buffer's face-remapping, each view's point as a cursor:
+;;; solid in the selected view, hollow in others, and each view's active
+;;; region (between its point and its mark) in the region class, in every
+;;; view that has one (Emacs shows it only in the selected window). A view's status line
 ;;; shows unless its buffer's show-status-line is off.
 ;;;
 ;;; Every view and node element has a stable id, so the browser's morph
@@ -61,8 +63,8 @@
 ;;; is not a piece: the layout adds its own attributes to it. A text
 ;;; node's piece draws each of its lines as a piece of its own, whose
 ;;; inputs are values: the line's characters, its runs of faces, the
-;;; cursor's column in it and its birth; never its position or the text's
-;;; revision. So a key draws one line again, moving point one or two, and
+;;; cursor's column in it, the columns of the active region in it and its
+;;; birth; never its position or the text's revision. So a key draws one line again, moving point one or two, and
 ;;; a line inserted above the others none of them; what those values come
 ;;; from (one piece per text node and view, which reads the text and its
 ;;; highlights) is worked out again, but no other line is drawn. Pieces
@@ -514,7 +516,8 @@
            (position (and (eq? n (view-node v)) (view-point v)))
            (cursor-line (and position (text-line-at t position)))
            (cursor (and position
-                        (cons (text-column t position) (if (eq? v (selected-view)) "cursor" "inactive-cursor")))))
+                        (cons (text-column t position) (if (eq? v (selected-view)) "cursor" "inactive-cursor"))))
+           (region (and position (view-mark-active? v) (active-region t position (view-mark v)))))
       `(div (@ (class "text"))
             ,@(let lp ((line last) (out []))
                 (if (fx< line first)
@@ -522,19 +525,43 @@
                   (let (d (vector-ref descriptors (fx- line first)))
                     (lp (fx1- line)
                         (cons (memo ['line (view-id v) (node-id n) (car d) (cadr d)]
-                                    (append d [(and (eqv? line cursor-line) cursor)])
+                                    (append d [(and (eqv? line cursor-line) cursor)
+                                               (and region (line-region region line (string-length (list-ref d 3))))])
                                     (lambda (inputs) (draw-line v n inputs)))
                               out)))))))))
 
+;; The region of T from POSITION to MARK, when it is not empty: its first
+;; and last lines, and its columns in them, [FIRST-LINE START-COLUMN
+;; LAST-LINE END-COLUMN]; or #f.
+(def (active-region (t : text) (position : :fixnum) (mark :? :fixnum)) => (Maybe :list)
+  (and mark (not (fx= mark position))
+       (let ((start (fxmin mark position))
+             (end (fxmax mark position)))
+         [(text-line-at t start) (text-column t start) (text-line-at t end) (text-column t end)])))
+
+;; What of LINE, of SIZE characters, REGION (active-region) covers, as a
+;; line's input: [START-COLUMN END-COLUMN NEWLINE?], NEWLINE? when it also
+;; covers the newline after the line; or #f.
+(def (line-region (region : :list) (line : :fixnum) (size : :fixnum)) => (Maybe :list)
+  (match region
+    ([first-line start-column last-line end-column]
+     (and (fx<= first-line line last-line)
+          (let ((start (if (fx= line first-line) start-column 0))
+                (end (if (fx= line last-line) end-column size))
+                (newline? (fx< line last-line)))
+            (and (or newline? (fx< start end))
+                 [start end newline?]))))))
+
 ;; A line of N in V from its inputs, [END REVISION ITEMS? TEXT FACES
-;; CURSOR] (line-descriptors): runs of characters with the same face, and
-;; the cursor character alone at CURSOR's column, with its class; as an
-;; item, with its token and its element id.
+;; CURSOR REGION] (line-descriptors, line-region): runs of characters with
+;; the same face, in the region or not, and the cursor character alone at
+;; CURSOR's column, with its class; as an item, with its token and its
+;; element id.
 (def (draw-line (v : view) (n : node) (inputs : :list)) => :u8vector
   (match inputs
-    ([end revision items? content faces cursor]
+    ([end revision items? content faces cursor region]
      (sxml-bytes
-      (render-line content faces (and cursor (car cursor)) (if cursor (cdr cursor) "")
+      (render-line content faces (and cursor (car cursor)) (if cursor (cdr cursor) "") region
                    (if items?
                      (let (birth (cons end revision))
                        [['data-item (birth-token n birth)]
@@ -543,20 +570,27 @@
                      []))))))
 
 ;; One line, with ATTRIBUTES besides its class: runs of characters with
-;; the same face (FACES, as face-runs gives them), and the cursor
-;; character alone at column CURSOR, with the class CURSOR-CLASS.
+;; the same face (FACES, as face-runs gives them), in the region or not
+;; (REGION, as line-region gives it, or #f), and the cursor character
+;; alone at column CURSOR, with the class CURSOR-CLASS. A region covering
+;; the newline marks the line (data-region-newline), unless the cursor is
+;; drawn there.
 (def (render-line (content : :string) (faces : :list) (cursor :? :fixnum) (cursor-class : :string)
-                  (attributes : :list))
+                  (region :? :list) (attributes : :list))
   => :list
   (let* ((size (string-length content))
-         (face-at (make-vector size #f)))
+         (face-at (make-vector size #f))
+         (region-start (if region (car region) size))
+         (region-end (if region (cadr region) size))
+         (in-region? (lambda ((i : :fixnum)) (and (fx<= region-start i) (fx< i region-end))))
+         (newline? (and region (caddr region) (not (eqv? cursor size)))))
     (for-each (lambda ((run : :pair))
                 (let lp ((i (car run)))
                   (when (fx< i (cadr run))
                     (vector-set! face-at i (cddr run))
                     (lp (fx1+ i)))))
               faces)
-    `(div (@ (class "line") ,@attributes)
+    `(div (@ (class "line") ,@(if newline? [['data-region-newline ""]] []) ,@attributes)
           ,@(let lp ((i 0) (out []))
               (cond
                ((fx>= i size)
@@ -567,14 +601,21 @@
                                    out)))
                (else
                 (let* ((face (vector-ref face-at i))
+                       (selected? (in-region? i))
                        (end (let run ((j (fx1+ i)))
                               (if (and (fx< j size) (not (eqv? j cursor))
-                                       (eq? (vector-ref face-at j) face))
+                                       (eq? (vector-ref face-at j) face)
+                                       (eq? (in-region? j) selected?))
                                 (run (fx1+ j))
                                 j)))
-                       (characters (substring content i end)))
-                  (lp end (cons (if face
-                                  `(span (@ (class ,(face-class face))) ,characters)
+                       (characters (substring content i end))
+                       (class (cond
+                               ((and face selected?) (string-append (face-class face) " region"))
+                               (face (face-class face))
+                               (selected? "region")
+                               (else #f))))
+                  (lp end (cons (if class
+                                  `(span (@ (class ,class)) ,characters)
                                   characters)
                                 out)))))))))
 
