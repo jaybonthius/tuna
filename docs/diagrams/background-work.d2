@@ -1,0 +1,20 @@
+# How does work get done off the editor thread? (planned)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+command: "A command (on the editor thread)"
+worker: "A worker thread (plain data only)"
+editor: "Editor state"
+source: "A source (its own thread)"
+
+command -> worker: "1. (off-thread parse-status dir): the command pauses,\nthe editor stays free for typing"
+worker -> command: "2. the answer comes back; the command resumes\non the editor thread"
+command -> editor: "3. it updates state; the screen redraws what changed"
+source -> source: "4. every second: read /proc, compare with last time"
+source -> editor: "5. only when something differs: apply the 2 changed rows"
+source -> source: "6. nothing differs: nothing is posted,\nthe editor does nothing at all"
