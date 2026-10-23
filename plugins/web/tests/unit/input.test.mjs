@@ -32,14 +32,16 @@ class MouseEvent extends Event {
   }
 }
 
-// Just enough of an element for the pointer action: attributes, a parent,
-// closest() for [data-name] selectors, and contains().
+// Just enough of an element for the pointer action: attributes, a parent
+// (also as parentElement), closest() for [data-name] selectors, and
+// contains().
 class Element {
   constructor(attributes = {}, parent = null) {
     // An attribute given as undefined is left out.
     this.attributes = Object.fromEntries(Object.entries(attributes).filter(([, value]) => value !== undefined));
     this.parent = parent;
   }
+  get parentElement() { return this.parent; }
   getAttribute(name) { return name in this.attributes ? String(this.attributes[name]) : null; }
   // Whether this element matches SELECTOR: [name], [name="value"] or .class.
   matches(selector) {
@@ -66,7 +68,7 @@ class Element {
 // listeners.
 async function harness(screen = new Element({ "data-revision": 7 }), platform = "Linux x86_64",
                        elementFromPoint = () => null, tab = "tab-1",
-                       { documentListeners = {} } = {}) {
+                       { documentListeners = {}, caret = {} } = {}) {
   const posts = [];
   const errors = [];
   const retries = [];
@@ -84,7 +86,8 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
     WeakSet,
     clearTimeout() {},
     document: { getElementById: (id) => (id === "screen" ? screen : null), elementFromPoint,
-                addEventListener(type, listener) { (documentListeners[type] ??= []).push(listener); } },
+                addEventListener(type, listener) { (documentListeners[type] ??= []).push(listener); },
+                ...caret },
     setTimeout(callback, delay) { retries.push({ callback, delay }); },
     fetch(url, options) {
       return new Promise((resolve, reject) => {
@@ -277,11 +280,11 @@ test("a click is sent on release as a pointer item naming its part, node and scr
   h.point(new MouseEvent("click", parts.line, { detail: 2, ctrlKey: true }));
   h.point(new MouseEvent("auxclick", parts.statusLine, { button: 2, shiftKey: true }));
   const expected = [
-    { button: 0, clicks: 1, target: "tab-line:30", node: null,
+    { button: 0, clicks: 1, target: "tab-line:30", node: null, line: null,
       modifiers: { alt: false, ctrl: false, meta: false, shift: false } },
-    { button: 0, clicks: 2, target: "view:12", node: 4,
+    { button: 0, clicks: 2, target: "view:12", node: 4, line: null,
       modifiers: { alt: false, ctrl: true, meta: false, shift: false } },
-    { button: 2, clicks: 1, target: "status-line:12", node: null,
+    { button: 2, clicks: 1, target: "status-line:12", node: null, line: null,
       modifiers: { alt: false, ctrl: false, meta: false, shift: true } },
   ];
   for (let index = 0; index < expected.length; index++) {
@@ -294,6 +297,42 @@ test("a click is sent on release as a pointer item naming its part, node and scr
     await setImmediate();
   }
   assert.deepEqual(h.errors, []);
+});
+
+// A line of text "a😀bc" in a text node drawn at revision 9, 20 px tall,
+// and the caret positions found at a point: just after "b" for points
+// with X 30, by caretPositionFromPoint or, where only that exists,
+// caretRangeFromPoint; none elsewhere.
+function textLine() {
+  const parts = screenParts();
+  const text = new Element({ "data-node": 4, "data-chars-revision": 9 }, parts.view);
+  const line = new Element({ "data-item": "4.12.3" }, text);
+  line.getBoundingClientRect = () => ({ top: 0, bottom: 20 });
+  const characters = { data: "a😀bc", parentElement: line };
+  const range = () => {
+    let end = null;
+    return {
+      setStart() {},
+      setEnd(node, offset) { end = node.data.slice(0, offset); },
+      toString() { return end; },
+    };
+  };
+  const caretPositionFromPoint = (x) => (x === 30 ? { offsetNode: characters, offset: 4 } : null);
+  const caretRangeFromPoint = (x) => (x === 30 ? { startContainer: characters, startOffset: 4 } : null);
+  return { parts, line, createRange: range, caretPositionFromPoint, caretRangeFromPoint };
+}
+
+test("a click in or beside a line of text names the line, its text's revision and the column in code points", async () => {
+  const { parts, line, createRange, caretPositionFromPoint, caretRangeFromPoint } = textLine();
+  for (const caret of [{ createRange, caretPositionFromPoint }, { createRange, caretRangeFromPoint }]) {
+    const h = await harness(parts.screen, undefined, undefined, undefined, { caret });
+    h.point(new MouseEvent("click", line, { clientX: 30, clientY: 10 }));
+    // Below the line, and where no caret is found, no line is named.
+    h.point(new MouseEvent("click", parts.view, { clientX: 30, clientY: 25 }));
+    h.point(new MouseEvent("click", line, { clientX: 31, clientY: 10 }));
+    assert.deepEqual(h.posts.map((post) => [post.body.node, post.body.line]),
+                     [[4, { item: "4.12.3", charsRevision: 9, column: 3 }], [null, null], [4, null]]);
+  }
 });
 
 test("keys and clicks send immediately with one shared sequence", async () => {

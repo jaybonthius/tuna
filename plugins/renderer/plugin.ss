@@ -502,7 +502,11 @@
 ;; A text node: one element per line, each drawn as its own piece, with
 ;; the cursor when the node has the rendered view's focus; only the lines
 ;; drawn as items, each with its token and an id that stays with its
-;; text, when it is drawn as items (see Line identity).
+;; text, when it is drawn as items (see Line identity). The node carries
+;; its text's character revision (data-chars-revision), which a click in
+;; a line names with the line's token, so the column clicked can be moved
+;; through edits made since; the node is drawn again for every edit of
+;; its text anyway, but its lines are not.
 (def (render-text-node (n : node) (children : :list)) => :list
   (using (lines (rendering-lines) : line-run)
     (let* ((v (rendering-view))
@@ -518,7 +522,7 @@
            (cursor (and position
                         (cons (text-column t position) (if (eq? v (selected-view)) "cursor" "inactive-cursor"))))
            (region (and position (view-mark-active? v) (active-region t position (view-mark v)))))
-      `(div (@ (class "text"))
+      `(div (@ (class "text") (data-chars-revision ,(number->string (text-chars-revision t))))
             ,@(let lp ((line last) (out []))
                 (if (fx< line first)
                   out

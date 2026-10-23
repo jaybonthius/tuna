@@ -99,7 +99,7 @@ prelude: :gerbil/core
         ;; items
         item item? item-node node-opening item-line item=?
         node-item node-item-count node-item-at node-item-index node-child-items
-        item-token token-item node-line-item
+        item-token token-item node-line-item item-column-position
         ;; buffers
         buffer buffer? buffer-id buffer-name buffer-root new-buffer rename-buffer!
         buffer-setting set-buffer-setting! buffer-local-value settings-buffer
@@ -1049,6 +1049,62 @@ prelude: :gerbil/core
               (let (it (make-item n position revision))
                 (and (node-item-index root it) it)))))
       (else #f))))
+
+;; Where the gap COLUMN characters from the start of line item IT's line
+;; is now, as that line was at its text's character revision REVISION (a
+;; screen's): the line's end then when COLUMN is past it, moved through
+;; the changes since, as point is. #f when IT is a node, REVISION is
+;; before IT's or after now, the journal no longer reaches it, or every
+;; character the line had then, its newline too, has been deleted since.
+(def (item-column-position (it : item) (revision : :fixnum) (column : :fixnum)) => (Maybe :fixnum)
+  (let ((position (item-position it))
+        (t (text-node-content (item-node it))))
+    (and position
+         (fx<= (item-revision it) revision (text-chars-revision t))
+         (let ((before (text-changes-since t (item-revision it)))
+               (after (text-changes-since t revision)))
+           (and before after
+                (if (null? after)
+                  (text-position-at t (text-line-at t (relocated-position t position (item-revision it))) column)
+                  ;; Where IT's position was at REVISION, as relocate-position moves it.
+                  (past-line-column-position t after
+                                             (foldl (lambda ((c : change) (p : :fixnum))
+                                                      (if (fx<= (change-revision c) revision)
+                                                        (position-after-change c p #f)
+                                                        p))
+                                                    position before)
+                                             revision column)))))))
+
+;; item-column-position for a line of T at a revision before AFTER, the
+;; changes since, as the line holding IN-LINE then.
+(def (past-line-column-position (t : text) (after : :list) (in-line : :fixnum) (revision : :fixnum)
+                                (column : :fixnum))
+  => (Maybe :fixnum)
+  (let* ((s (text-snapshot t))
+         ;; The character at P at REVISION, or #f past the end.
+         (character-then
+          (lambda ((p : :fixnum))
+            (let lp ((changes after) (p p))
+              (match changes
+                ([c . more]
+                 (let* ((start (change-start c))
+                        (removed (change-removed c))
+                        (removed-end (fx+ start (string-length removed))))
+                   (cond
+                    ((fx< p start) (lp more p))
+                    ((fx< p removed-end) (string-ref removed (fx- p start)))
+                    (else (lp more (fx+ p (fx- (string-length (change-inserted c)) (string-length removed))))))))
+                ([] (and (fx<= 1 p (snapshot-size s)) (string-ref (snapshot-slice s p (fx1+ p)) 0)))))))
+         (newline-then? (lambda ((p : :fixnum)) (eqv? (character-then p) #\newline)))
+         (start (let lp ((p in-line))
+                  (if (and (fx> p 1) (not (newline-then? (fx1- p)))) (lp (fx1- p)) p)))
+         (end (let lp ((p start))
+                (if (and (character-then p) (not (newline-then? p))) (lp (fx1+ p)) p)))
+         ;; The line's characters then, its newline too.
+         (size (fx+ (fx- end start) (if (character-then end) 1 0)))
+         (start-now (relocated-position t start revision)))
+    (and (or (fx= size 0) (not (fx= start-now (relocated-position t (fx+ start size) revision))))
+         (relocated-position t (fx+ start (fxmin column (fx- end start))) revision))))
 
 ;; The node with id ID in the tree at ROOT, or #f.
 (def (node-under (root : node) (id : :fixnum)) => (Maybe node)

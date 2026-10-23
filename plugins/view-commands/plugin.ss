@@ -7,9 +7,11 @@
 ;;; allows. Commands that need one layout's own arrangement (tabs, zooming
 ;;; one level) come with that layout plugin.
 ;;;
-;;; Clicking a view or its status line selects that view
-;;; (`mouse-select-view`, Emacs `mouse-select-window`), unless its buffer
-;;; is skipped by `other-view` (`no-other-view`: the bar's views).
+;;; Clicking a view's status line selects that view (`mouse-select-view`,
+;;; Emacs `mouse-select-window` on the mode line), unless its buffer is
+;;; skipped by `other-view` (`no-other-view`: the bar's views). A click in
+;;; the view itself is the text-mouse plugin's (`mouse-set-point`, which
+;;; selects the view too, as in Emacs).
 ;;;
 ;;; Selecting the view on a side (`select-view-left` and the like, Emacs's
 ;;; windmove) is unbound, as in Emacs: the S-arrows select text.
@@ -41,7 +43,7 @@
      (else (report-stale-click p)))))
 
 (defplugin view-commands
-  "View commands for any layout: C-x o, C-x 0 to 3, selecting the view on a side (unbound), frames (C-x n), frame marks (C-x r), clicking a view."
+  "View commands for any layout: C-x o, C-x 0 to 3, selecting the view on a side (unbound), frames (C-x n), frame marks (C-x r), clicking a status line."
   requires: [commands-service input-service buffers-service layout-service minibuffer-service settings-service]
   (defcommand (mouse-select-view) "Select the view clicked on, or the view whose status line was clicked."
     (select-clicked-view))
@@ -95,5 +97,4 @@
   (keymap-set "C-x r w" 'set-frame-mark)
   (keymap-set "C-x r j" 'jump-to-frame-mark)
   (keymap-set "C-x r l" 'list-frame-marks)
-  (keymap-set "<view> <mouse-1>" 'mouse-select-view)
   (keymap-set "<status-line> <mouse-1>" 'mouse-select-view))

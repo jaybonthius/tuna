@@ -820,6 +820,21 @@
                      (andmap char-numeric? (string->list digits))
                      (cons (string->symbol kind) (string->number digits))))))))
 
+;; The line of text a pointer item names, {item, charsRevision, column}
+;; or null (missing: null): (VALID? ITEM CHARS-REVISION COLUMN), ITEM #f
+;; for null.
+(def (parse-line (value : :t)) => :list
+  (cond
+   ((void? value) [#t #f 0 0])
+   ((hash-table? value)
+    (let ((item (parse-token (hash-ref value "item" #f)))
+          (revision (hash-get value "charsRevision"))
+          (column (hash-get value "column")))
+      (if (and (car item) (cdr item) (count? revision) (count? column))
+        [#t (cdr item) revision column]
+        [#f #f 0 0])))
+   (else [#f #f 0 0])))
+
 ;; A validated pointer item from the client FROM computed on a screen no newer than
 ;; NEWEST-REVISION, or #f.
 (def (parse-pointer-event (value : :t) (from : client-type) (newest-revision : :fixnum))
@@ -834,7 +849,8 @@
              (clicks (hash-get value "clicks"))
              (modifiers (hash-get value "modifiers"))
              (part (parse-part (hash-get value "target")))
-             (node (hash-ref value "node" (void))))
+             (node (hash-ref value "node" (void)))
+             (line (parse-line (hash-ref value "line" (void)))))
          (and (fixnum? sequence) (fx>= sequence 1)
               (fixnum? revision) (fx<= 0 revision newest-revision)
               button
@@ -842,13 +858,14 @@
               (hash-table? modifiers)
               part
               (or (void? node) (and (fixnum? node) (fx>= node 0)))
+              (car line)
               (let (flags (map (lambda ((name : :string)) (hash-ref modifiers name 'missing))
                                '("alt" "ctrl" "meta" "shift")))
                 (and (andmap boolean? flags)
                      (apply make-pointer-event sequence from (cdr button) clicks
                             (append flags
-                                    [(make-posn (car part) (cdr part)
-                                                (and (fixnum? node) node) revision)]))))))))
+                                    [(apply make-posn (car part) (cdr part)
+                                            (and (fixnum? node) node) revision (cdr line))]))))))))
 
 ;; A pixel position or size no further than 10^9 px from 0, as a flonum,
 ;; or #f.
@@ -877,7 +894,7 @@
         (node (hash-get value "node")))
     (and (fixnum? revision) (fx<= 0 revision newest-revision)
          (count? view) (count? node)
-         (make-posn 'view view node revision))))
+         (make-posn 'view view node revision #f 0 0))))
 
 ;; A pixel size: non-negative, as parse-pixels takes it, or #f.
 (def (parse-size (value : :t)) => (Maybe :flonum)

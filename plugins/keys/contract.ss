@@ -26,8 +26,8 @@
 ;;; keymap is searched under every one of those names before the next, so
 ;;; a node's `<mouse-1>` shadows the global `<view> <mouse-1>`. A command
 ;;; reads its click with `last-command-event` and `event-start`; the layout
-;;; contract finds the view and node a posn names (`posn-view`,
-;;; `posn-node`).
+;;; contract finds the view, node and position a posn names (`posn-view`,
+;;; `posn-node`, `posn-point`).
 ;;;
 ;;; A key with shift (`S-<right>`, or an upper-case letter with or
 ;;; without other modifiers, `C-F`) that ends a sequence with no binding
@@ -112,11 +112,20 @@ prelude: :gerbil/core
 ;; id PART, over the node with id NODE-ID if any, on the screen with
 ;; revision REVISION. Parts are named by stable id, never by position: a
 ;; view or its status line by the view's id, a tab of a tab line by the id
-;; of the part it shows.
-(defstruct posn ((area     : :symbol)
-                 (part     : :fixnum)
-                 (node-id  :? :fixnum)
-                 (revision : :fixnum))
+;; of the part it shows. A click in a line of text also names the line,
+;; by its item token LINE (the buffers contract's `item-token`), the
+;; character revision LINE-REVISION of its text when the screen was drawn,
+;; and the COLUMN, in characters from the line's start, of the gap
+;; between characters nearest the click; LINE is #f for any other click,
+;; and the other two are 0. The layout contract's `posn-point` turns them
+;; into a position now.
+(defstruct posn ((area          : :symbol)
+                 (part          : :fixnum)
+                 (node-id       :? :fixnum)
+                 (revision      : :fixnum)
+                 (line          :? :string)
+                 (line-revision : :fixnum)
+                 (column        : :fixnum))
   final: #t)
 
 ;; One click from CLIENT (#f for none), with its page-load sequence number
