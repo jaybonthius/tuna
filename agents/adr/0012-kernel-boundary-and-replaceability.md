@@ -81,6 +81,15 @@ No kernel change. Interactive evaluation belongs to one always-on owner, `sessio
 - `plugin?`: configuration validates declaration data without using a failing type cast as a predicate.
 - `context-plugin-name`: registration diagnostics name the owning plugin without creating a registration to learn it.
 
+### Reaching the right loop from any thread (amendment, 2026-10-22, drawing stage 5)
+
+A bug fix, approved with the [background work brief](../../docs/briefs/2026-10-background-work.md); no export, signature or message changes. `resume!`, `resume-quit!`, `spawn-task!`, `cancel-task!` and `call-on-editor-loop` were documented as callable from any thread, but found their loop through the kernel parameter, which a root thread (a job's, a worker's) does not have: under a test kernel they raised or did nothing, and in production they reached the right loop only because it was the default kernel's.
+
+- An operation on an object goes to that object's loop: a suspension records its loop's thread (`suspension-loop-thread`, set by `suspend`), and a task records the loop it was queued on (`task-loop-thread`, set when it is queued or started). Both fields are private to the kernel.
+- An operation without one goes to the caller's loop: the loop thread runs in its own Gambit thread group, named by the loop, which every thread it starts inherits, root threads included; `caller-loop` walks up the calling thread's groups and falls back to the kernel parameter.
+
+No plugin or library could own this: only the kernel knows which loop a suspension or task belongs to.
+
 ## Consequences
 
 - "State management" is not a replaceable component: each plugin owns its state objects, the kernel enforces ownership, and saving state is the persistence plugin's job.

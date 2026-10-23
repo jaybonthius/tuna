@@ -31,6 +31,9 @@ prelude: :gerbil/core
                 (procedure       : :procedure)
                 (reply           :? :procedure)    ; receives raised? and value
                 (thread          :? :thread)
+                ;; the thread of the loop it was queued on, set by ./loop,
+                ;; so cancel-task! reaches that loop from any thread
+                (loop-thread     :? :thread)
                 ;; queued, running, suspended, quitting, finished, cancelled
                 (state           : :symbol)
                 (suspension      :? :t)            ; its wait, while suspended
@@ -40,7 +43,7 @@ prelude: :gerbil/core
   final: #t)
 
 (def (new-task (name : :symbol) (procedure : :procedure) (reply :? :procedure)) => task
-  (task id: (next-id!) name: name procedure: procedure reply: reply thread: #f
+  (task id: (next-id!) name: name procedure: procedure reply: reply thread: #f loop-thread: #f
         state: 'queued suspension: #f quit-requested?: #f interrupts: 0 inhibit-depth: 0))
 
 ;; The task running in this thread, or #f outside tasks. ./loop binds it.

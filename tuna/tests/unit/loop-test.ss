@@ -202,6 +202,20 @@
 ;; Wait for every earlier item and its task, then read the last message.
 (def (settled-message) (call-on-editor-loop current-message))
 
+;; THUNK's value, or ['raised summary], from a root thread started now by
+;; this thread: it inherits no parameters, so not the kernel.
+(def (on-root-thread thunk)
+  (thread-join!
+   (thread-start!
+    (make-root-thread
+     (cut thread-main
+          (lambda () (with-catch (lambda (e) ['raised (exception-summary e)]) thunk)))
+     'outside-the-kernel))))
+
+;; A task that waits to be resumed, then notes the value it was given.
+(def (spawn-waiter!)
+  (spawn-task! 'waiter (lambda () (note! [(suspend (lambda (s) (set! waiting s)))]))))
+
 (def (elapsed thunk)
   (let (start (time->seconds (current-time)))
     (thunk)
@@ -372,6 +386,65 @@
          (settled-message)
          (stop-editor-loop!)
          (check (editor-loop-running?) => #f))))
+
+    (test-case "resume! from a root thread resumes the waiting task on its loop"
+      (with-loop
+       (lambda ()
+         (spawn-waiter!)
+         (settled-message)
+         (check (on-root-thread (lambda () (resume! waiting 'from-root))) => (void))
+         (settled-message)
+         (check log => '((from-root))))))
+
+    (test-case "cancel-task! from a root thread quits the waiting task"
+      (with-loop
+       (lambda ()
+         (let (t (spawn-waiter!))
+           (settled-message)
+           (check (on-root-thread (lambda () (cancel-task! t))) => (void))
+           (check (settled-message) => "Quit")
+           (check log => '())))))
+
+    (test-case "spawn-task! from a root thread a task started queues on that task's loop"
+      (with-loop
+       (lambda ()
+         (spawn-task! 'starter
+                      (lambda ()
+                        (thread-start!
+                         (make-root-thread
+                          (cut thread-main
+                               (lambda ()
+                                 (with-catch (lambda (e) (note! ['raised (exception-summary e)]))
+                                             (lambda () (spawn-task! 'from-root (lambda () (note! 'from-root)))))))
+                          'root-of-a-task))))
+         (check (wait-until (lambda () (pair? log))) => #t)
+         (check log => '(from-root)))))
+
+    (test-case "call-on-editor-loop from a root thread a task started runs on that task's loop"
+      (with-loop
+       (lambda ()
+         (let (answer #f)
+           (spawn-task! 'starter
+                        (lambda ()
+                          (thread-start!
+                           (make-root-thread
+                            (cut thread-main
+                                 (lambda ()
+                                   (set! answer (with-catch (lambda (e) ['raised (exception-summary e)])
+                                                            (lambda () (call-on-editor-loop (lambda () 42)))))))
+                            'root-of-a-task))))
+           (check (wait-until (lambda () answer)) => #t)
+           (check answer => 42)))))
+
+    (test-case "resume! and cancel-task! from a root thread after the loop stopped do nothing"
+      (with-loop
+       (lambda ()
+         (let (t (spawn-waiter!))
+           (settled-message)
+           (stop-editor-loop!)
+           (check (on-root-thread (lambda () (resume! waiting 'late) (cancel-task! t) 'returned))
+                  => 'returned)
+           (check log => '())))))
 
     (test-case "input-pending? sees queued input; discard-input drops only input"
       (with-loop

@@ -96,9 +96,12 @@ prelude: :gerbil/core
 
 ;; One wait of a suspended task. The loop thread records the outcome, a
 ;; pair of raised? and value, and hands it over with the baton.
-(defclass suspension ((waiter  : task)
-                      (done    : :t)               ; a completion
-                      (outcome :? :pair))
+;; LOOP-THREAD is the thread of the waiter's loop, so resume! reaches it
+;; from any thread.
+(defclass suspension ((waiter      : task)
+                      (loop-thread : :thread)
+                      (done        : :t)           ; a completion
+                      (outcome     :? :pair))
   final: #t)
 
 ;; Runs inside the task's thread through thread-interrupt!.
@@ -165,9 +168,30 @@ prelude: :gerbil/core
       (error "The editor loop is not running"))
     (: loop editor-loop)))
 
+;; The running editor loop of the calling thread, or #f: the loop whose
+;; thread group holds the thread, as every task and every thread a task
+;; starts does (root threads too), otherwise the current kernel's. So a
+;; thread whose dynamic environment lacks the kernel still reaches the
+;; loop that runs it.
+(def (caller-loop) => (Maybe editor-loop)
+  (let lp ((group (thread-thread-group (current-thread))))
+    (cond
+     ((not group) (kernel-editor-loop (the-kernel)))
+     ((editor-loop? (thread-group-name group))
+      (using (loop (thread-group-name group) : editor-loop)
+        (and (not loop.stopping) loop)))
+     (else (lp (thread-group-parent group))))))
+
+;; The thread of the calling thread's running editor loop (caller-loop).
+(def (caller-loop-thread) => :thread
+  (let (loop (caller-loop))
+    (unless loop
+      (error "The editor loop is not running"))
+    (using (loop : editor-loop)
+      (: loop.thread :thread))))
+
 (def (send-to-loop! (msg : :t)) => :void
-  (using (loop (running-loop (the-kernel)) : editor-loop)
-    (thread-send (: loop.thread :thread) msg)))
+  (thread-send (caller-loop-thread) msg))
 
 (def (now) => :real
   (time->seconds (current-time)))
@@ -189,7 +213,10 @@ prelude: :gerbil/core
                                 force-at: #f stopping: #f)
                    : editor-loop)
         (set! k.loop loop)
-        (let (thread (spawn-thread (lambda () (editor-thread loop)) 'tuna-editor-loop))
+        ;; The loop's thread group, named by the loop, holds every thread
+        ;; it starts (caller-loop).
+        (let (thread (spawn-thread (lambda () (editor-thread loop)) 'tuna-editor-loop
+                                   (make-thread-group loop)))
           (set! loop.thread thread)
           (thread-send thread [wake:]))))))
 
@@ -227,10 +254,14 @@ prelude: :gerbil/core
 ;; and return its value or raise its exception. Callable from any thread
 ;; except a task's.
 (def (call-on-editor-loop (procedure : :procedure)) => :t
-  (let (done (make-completion))
-    (send-to-loop! [enqueue: (new-task 'call procedure
-                                     (lambda (raised? value)
-                                       (completion-post! done (cons raised? value))))])
+  (let ((done (make-completion))
+        (thread (caller-loop-thread)))
+    (using (queued (new-task 'call procedure
+                             (lambda (raised? value)
+                               (completion-post! done (cons raised? value))))
+                   : task)
+      (set! queued.loop-thread thread)
+      (thread-send thread [enqueue: queued]))
     (let (result (: (completion-wait! done) :pair))
       (if (car result)
         (raise (cdr result))
@@ -239,8 +270,10 @@ prelude: :gerbil/core
 ;; Queue PROCEDURE to run as a task named NAME, in order with input, and
 ;; return the task. Callable from any thread.
 (def (spawn-task! (name : :symbol) (procedure : :procedure)) => task
-  (let (queued (new-task name procedure #f))
-    (send-to-loop! [enqueue: queued])
+  (let ((queued (new-task name procedure #f))
+        (thread (caller-loop-thread)))
+    (set! (task-loop-thread queued) thread)
+    (thread-send thread [enqueue: queued])
     queued))
 
 ;; Own direct-style registrations and cancel the task on receipt undo.
@@ -255,8 +288,12 @@ prelude: :gerbil/core
 ;; resumes by raising quit, and a running one is asked to quit at its next
 ;; quit check. Callable from any thread.
 (def (cancel-task! (target : task)) => :void
-  (when (editor-loop-running?)
-    (send-to-loop! [cancel: target])))
+  (let (thread (or target.loop-thread
+                   (let (loop (caller-loop))
+                     (and loop (using (loop : editor-loop) loop.thread)))))
+    ;; A stopped loop's thread has ended; what is sent to it is dropped.
+    (when thread
+      (thread-send thread [cancel: target]))))
 
 ;; A procedure of a name and a thunk that queues the thunk as a task on
 ;; this loop after pending input, but before the next redisplay (ADR 3: job
@@ -295,7 +332,8 @@ prelude: :gerbil/core
     (using ((running : task)
             (loop (running-loop (the-kernel)) : editor-loop))
       (check-quit)
-      (using (s (suspension waiter: running done: (make-completion) outcome: #f) : suspension)
+      (using (s (suspension waiter: running loop-thread: loop.thread done: (make-completion) outcome: #f)
+                : suspension)
         (arm s)
         (thread-send (: loop.thread :thread) [suspended: s])
         (let (outcome (: (completion-wait! s.done) :pair))
@@ -304,13 +342,14 @@ prelude: :gerbil/core
             (cdr outcome)))))))
 
 ;; Resume S's task with VALUE once the baton is free, before further input.
-;; Only the first resumption counts. Callable from any thread.
+;; Only the first resumption counts, and none once its loop has stopped.
+;; Callable from any thread.
 (def (resume! (s : suspension) (value : :t)) => :void
-  (send-to-loop! [resume: s #f value]))
+  (thread-send s.loop-thread [resume: s #f value]))
 
-;; Resume S's task by raising quit in it.
+;; Resume S's task by raising quit in it. Callable from any thread.
 (def (resume-quit! (s : suspension)) => :void
-  (send-to-loop! [resume: s #t (quit-condition forced?: #f)]))
+  (thread-send s.loop-thread [resume: s #t (quit-condition forced?: #f)]))
 
 ;; Whether input items are queued (Emacs `input-pending-p`). Call it from
 ;; a task.
@@ -438,6 +477,7 @@ prelude: :gerbil/core
 (def (start-task! (loop : editor-loop) (next : task)) => :void
   (let (loop-thread (: loop.thread :thread))
     (set! next.state 'running)
+    (set! next.loop-thread loop-thread)
     (set! loop.running next)
     (run-lifecycle-hook task-started-hook next.id next.name)
     (set! next.thread (spawn-thread (lambda () (baton-task-thread loop-thread next)) next.name))))
