@@ -30,7 +30,7 @@ Owner-approved brief: [`docs/briefs/2026-10-selecting-text.md`](../../docs/brief
    - **The `delete-selection` setting.**
    - **Package API:** `region-active?`, `region-beginning`, `region-end`.
    - **Tests:** two views on one buffer keep separate marks, and moving a selection redraws only the affected lines.
-2. **Click to move the cursor.**
+2. **Click to move the cursor.** **Done 2026-10-23** (merged; report `/home/jay/Code/workbench-gerbil/scratch/selecting-text/stage2-report.md`). As built: text nodes carry `data-chars-revision`, and a click sends `{item, charsRevision, column}`; `item-column-position` (buffers contract) reads the line as it was then; `posn-point` lives in the layout contract (it needs the view); `mouse-set-point` is in a new `text-mouse` plugin bound to `<view> <mouse-1>`, and `mouse-select-view` stays on status lines. Firefox 131 on the spike page: 449/455 (misses: the left quarter of wide tabs, the combining accent, a wrap-point space, the end cursor). Divergences for stage 5 are in the report.
    - **Browser:** the `tunaPointer` action sends the line token and column for clicks inside text, using `caretPositionFromPoint` with `caretRangeFromPoint` as a fallback.
    - **Server:** `posn-point` gives the clicked position, and `<view> <mouse-1>` on text runs `mouse-set-point`, which also selects the view. A click below the last line goes to the end.
    - **Browsers:** check `click.html` in Firefox, and in Safari if available.

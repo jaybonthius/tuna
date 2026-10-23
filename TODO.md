@@ -53,3 +53,5 @@
 - [ ] **Typing in `*mixed*` after scrolling jumps back to point** (2026-10-22, same on the one-tab build): scrolling into cards and pictures cannot move point there, so point stays in an earlier text block and the next key places the view back on it. Decide what point does when the view holds no text near it.
 - [ ] **A resize does not trigger a scroll report** (2026-10-22): the server's offset stays stale until the next scroll.
 - [ ] **The mark is not saved with the session** (selecting text, stage 1): point is restored after a restart; the mark and region are not.
+- [ ] **A click only moves point within the view's focused text node** (selecting text, stage 2): in a buffer with several text nodes, a click in another one only selects the view; nothing moves a view's focus between text nodes.
+- [ ] **Firefox: a click on the left quarter of a wide tab lands after it** (selecting text, stage 2, spike page only); Safari unchecked.
