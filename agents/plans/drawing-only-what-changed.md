@@ -65,7 +65,7 @@
    - Pieces are kept as UTF-8 bytes and written into the event in order.
    - Remove the whole-screen copies: the revision stamp, the `/applied` stamp, line splitting.
    - Tests: identical bytes to before; measured frame cost.
-5. **Outside state, and the proof.**
+5. **Outside state, and the proof.** API approved 2026-10-22 in `docs/briefs/2026-10-background-work.md`: `off-thread` and `sleep-for` for commands (C-g quits a waiting command), sources as jobs that post only differences, jobs that may post several results, and the kernel fix that makes `resume!`, `spawn-task!` and `cancel-task!` callable from any thread as documented.
    - Jobs may post several results.
    - New `plugins/proced/`: a `*Processes*` buffer with one row node per pid, read from `/proc` (a plugin option sets the root, so tests use fixtures) once a second in a job that posts only differences.
    - Measure outside the plugin:

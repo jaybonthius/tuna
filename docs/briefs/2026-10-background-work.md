@@ -1,6 +1,6 @@
 # Brief: work off the editor thread
 
-**Date:** 2026-10-22. **Status:** proposed; waiting for the owner. Evidence: [`agents/research/background-work/`](../../agents/research/background-work/) (prior art across editors and languages; Tuna's mechanics, with a working prototype). Changes the jobs library (ADR 3) and fixes one kernel bug; stage 5 of [drawing only what changed](2026-10-drawing-only-what-changed.md) builds on it.
+**Date:** 2026-10-22. **Status:** approved 2026-10-22 (owner). Built in stage 5 of [`agents/plans/drawing-only-what-changed.md`](../../agents/plans/drawing-only-what-changed.md). Evidence: [`agents/research/background-work/`](../../agents/research/background-work/) (prior art across editors and languages; Tuna's mechanics, with a working prototype). Changes the jobs library (ADR 3) and fixes one kernel bug; stage 5 of [drawing only what changed](2026-10-drawing-only-what-changed.md) builds on it.
 
 ## What we're building and why
 
