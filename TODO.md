@@ -52,4 +52,4 @@
 - [ ] **The frozen per-item height survives width changes** (2026-10-22): after a resize, rotation or `C-x 3`, the thumb-to-item mapping drifts. Consider re-measuring when the measured width changes (a resize is not a drag).
 - [ ] **Typing in `*mixed*` after scrolling jumps back to point** (2026-10-22, same on the one-tab build): scrolling into cards and pictures cannot move point there, so point stays in an earlier text block and the next key places the view back on it. Decide what point does when the view holds no text near it.
 - [ ] **A resize does not trigger a scroll report** (2026-10-22): the server's offset stays stale until the next scroll.
-
+- [ ] **The mark is not saved with the session** (selecting text, stage 1): point is restored after a restart; the mark and region are not.

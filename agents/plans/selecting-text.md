@@ -22,7 +22,7 @@ Owner-approved brief: [`docs/briefs/2026-10-selecting-text.md`](../../docs/brief
 
 ## Stages
 
-1. **The selection from the keyboard.**
+1. **The selection from the keyboard.** **Done 2026-10-23** (merged `48277a8`; report `/home/jay/Code/workbench-gerbil/scratch/selecting-text/stage1-report.md`). Owner decision: S-arrows shift-select as in Emacs's default; `select-view-*` (windmove) are unbound by default, with a commented example in `starter/init.ss`. Divergences for stage 5: every view draws its own region; an edit deactivates only the selected view's region; `M-y` not after a yank is an error (Emacs 28+ prompts).
    - **Mark commands:** `C-SPC` (`set-mark-command`, "Mark set"), `C-x C-x` (`exchange-point-and-mark`), and `C-g` deactivates.
    - **Shift-select:** shifted movement keys (arrows, `C-S-f`, …) activate a temporary region, and unshifted movement ends it, as in Emacs.
    - **The region** is drawn in the `region` face.
