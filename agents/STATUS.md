@@ -2,7 +2,7 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: clicking and selecting text (brief approved 2026-10-23; plan `agents/plans/selecting-text.md`; stage 1 merged `48277a8`; stage 2 merged; stage 3, drag and multiple clicks, next)
+## Current work: clicking and selecting text (brief approved 2026-10-23; plan `agents/plans/selecting-text.md`; stage 1 merged `48277a8`; stage 2 merged; stage 3 merged; stage 4, the clipboard, next)
 
 Brief `docs/briefs/2026-10-selecting-text.md`. Owner decided 2026-10-23: the server draws the selection while dragging; Emacs region rules, with a `delete-selection` setting (off by default). Spike pages in `../scratch/selecting-text/` (`click.html`: point to line and column, 453/457 in Chrome 146, misses are a combining accent and the end-of-line cursor; `copy.html`: `execCommand('copy')` works on the plain-HTTP Tailscale address within user activation, `navigator.clipboard` exists only on HTTPS/localhost). Firefox and Safari unchecked. Owner 2026-10-23: clipboard uses the standard Clipboard API only (`navigator.clipboard.writeText` and the `paste` event); no `execCommand` fallback, so copying to the system clipboard needs HTTPS or localhost.
 

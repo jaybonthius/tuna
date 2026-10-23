@@ -34,7 +34,7 @@ Owner-approved brief: [`docs/briefs/2026-10-selecting-text.md`](../../docs/brief
    - **Browser:** the `tunaPointer` action sends the line token and column for clicks inside text, using `caretPositionFromPoint` with `caretRangeFromPoint` as a fallback.
    - **Server:** `posn-point` gives the clicked position, and `<view> <mouse-1>` on text runs `mouse-set-point`, which also selects the view. A click below the last line goes to the end.
    - **Browsers:** check `click.html` in Firefox, and in Safari if available.
-3. **Drag and multiple clicks.**
+3. **Drag and multiple clicks.** **Done 2026-10-23** (merged; report `/home/jay/Code/workbench-gerbil/scratch/selecting-text/stage3-report.md`). As built: `pointer-event` has a `kind` (down, movement, click, drag → `down-mouse-1`, `mouse-movement`, `mouse-1`, `drag-mouse-1`); the browser decides click versus drag by a 3 px distance; movements are special events paced one per screen through the web plugin's owed-screen rule; the mark is set only once the pointer moves; mouse regions are temporary (`set-temporary-region!`); positions outside the pressed view are ignored. Divergences for stage 5 are in the report.
    - **Drag:** `down-mouse-1` sets the cursor and mark (`mouse-drag-region`). Drag reports move the cursor, one in flight at a time, each waiting for its screen as scroll reports do. `drag-mouse-1` ends the drag (`mouse-set-region`).
    - **Multiple clicks:** `double-mouse-1` selects a word, `triple-mouse-1` a line, and `S-mouse-1` extends the selection.
    - **Browser:** its own text selection is suppressed inside text.
