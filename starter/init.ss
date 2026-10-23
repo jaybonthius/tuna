@@ -82,6 +82,9 @@
 (use-plugin autosave)
 (use-plugin layout)
 (use-plugin view-commands)
+;; To select the view on a side with Shift and an arrow (Emacs's windmove;
+;; the S-arrows then no longer select text), give the line above
+;; config: (keymap-set "S-<left>" 'select-view-left), and so on.
 (use-plugin scrolling)           ; views scroll natively; the server draws what is near
 (use-plugin html-renderer)
 (use-plugin buttons)             ; buttons in buffers: a click runs their action

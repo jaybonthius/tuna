@@ -14,15 +14,16 @@ prelude: :gerbil/core
 (import :tuna/plugins/commands/contract
         :tuna/kernel
         :tuna/plugins/keys/contract
-        :tuna/plugins/settings/contract
-        :tuna/plugins/region/contract
+        (only-in :tuna/plugins/settings/contract settings-service)
+        (only-in :tuna/plugins/region/contract region-service)
         :tuna/configuration
         :tuna/lib/background
         :tuna/plugins/text-store/plugin
         :tuna/plugins/basic-editing/plugin
         :tuna/plugins/hungry-delete/plugin
         "../plugins/text-store/tests/support/string-text-store"
-        "../tests/support/theme-terminal")
+        "../tests/support/theme-terminal"
+        "delete-selection")
 (export demo)
 
 (def (toggle-plugin! (p : plugin)) => :void
@@ -35,16 +36,10 @@ prelude: :gerbil/core
   (thread-sleep! seconds)
   seconds)
 
-;; Turns delete-selection on while it is on itself.
-(defplugin (delete-selection-demo ctx)
-  "Typing, deleting and yanking replace the active region."
-  requires: [settings-service]
-  (context-set-setting! ctx delete-selection #t))
-
 (defplugin (demo ctx)
   "Demo commands: swap text store (C-c s), toggle basic editing (C-c p), hungry delete (C-c h), the terminal theme (C-c T), delete-selection (C-c D) and waiting off the editor thread (C-c W)."
   requires: [commands-service input-service configuration-service]
-  optional: [settings-service region-service] ; delete-selection-demo sets region's setting
+  optional: [settings-service region-service]  ; delete-selection-demo's, which it turns on and off
   (define-command ctx (swap-text-store) "Switch between the rope and the plain-string text store."
     (if (plugin-active? string-text-store)
       (swap-plugins string-text-store rope-text-store)

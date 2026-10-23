@@ -38,7 +38,7 @@ Zooming must not hide things like the minibuffer, a VS Code-style button bar, or
 
 - **The minibuffer and echo area are two views** in the locked bar, from two independent plugins: messages stay visible while a question waits; the idle minibuffer takes no space, and the echo area keeps its line. A prompt is a buffer holding its question and answer; its view is selected while it waits and the previous selection returns afterwards. The minibuffer's separate focus views are gone (`current-view` is replaced by `selected-view`).
 - **"Nearest"** walks up from the selected view and considers only parts pinned beside the path, never parts inside other branches, so a minibuffer pinned in one split does not catch questions from its sibling split.
-- **Buffer settings** `no-other-view` (skipped by `C-x o` and the Shift-arrows) and `show-status-line` (off for bar views).
+- **Buffer settings** `no-other-view` (skipped by `C-x o` and `select-view-left` and the like) and `show-status-line` (off for bar views).
 - **HTML reuse** keys a node's HTML on its revision, the view state, and display-wide settings; the first display-wide setting is `face-remapping` (Emacs `face-remapping-alist`).
 - Help is the ordinary `*Help*` buffer from `help-buffer-plugin`, shown with `display-buffer`; `C-h q` closes it.
 

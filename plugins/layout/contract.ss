@@ -286,7 +286,7 @@ prelude: :gerbil/core
 
 ;; Emacs's `no-other-window`, for a buffer rather than a window.
 (defsetting no-other-view #f
-  "Whether moving between views (other-view, the S-arrows) skips views of this buffer.")
+  "Whether moving between views (other-view, select-view-left and the like) skips views of this buffer.")
 
 ;; Whether moving between views skips V: its buffer's no-other-view.
 (def (view-skipped? (v : view)) => :boolean

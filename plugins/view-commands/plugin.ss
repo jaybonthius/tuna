@@ -10,6 +10,9 @@
 ;;; Clicking a view or its status line selects that view
 ;;; (`mouse-select-view`, Emacs `mouse-select-window`), unless its buffer
 ;;; is skipped by `other-view` (`no-other-view`: the bar's views).
+;;;
+;;; Selecting the view on a side (`select-view-left` and the like, Emacs's
+;;; windmove) is unbound, as in Emacs: the S-arrows select text.
 (import :tuna/plugins/commands/contract
         :tuna/kernel
         :tuna/plugins/keys/contract
@@ -38,7 +41,7 @@
      (else (report-stale-click p)))))
 
 (defplugin view-commands
-  "View commands for any layout: C-x o, C-x 0 to 3, S-arrows, frames (C-x n), frame marks (C-x r), clicking a view."
+  "View commands for any layout: C-x o, C-x 0 to 3, selecting the view on a side (unbound), frames (C-x n), frame marks (C-x r), clicking a view."
   requires: [commands-service input-service buffers-service layout-service minibuffer-service settings-service]
   (defcommand (mouse-select-view) "Select the view clicked on, or the view whose status line was clicked."
     (select-clicked-view))
@@ -89,10 +92,6 @@
   (keymap-set "C-x 1" 'frame-to-selected-view)
   (keymap-set "C-x n s" 'frame-to-node-at-point)
   (keymap-set "C-x n w" 'frame-to-top)
-  (keymap-set "S-<left>" 'select-view-left)
-  (keymap-set "S-<right>" 'select-view-right)
-  (keymap-set "S-<up>" 'select-view-up)
-  (keymap-set "S-<down>" 'select-view-down)
   (keymap-set "C-x r w" 'set-frame-mark)
   (keymap-set "C-x r j" 'jump-to-frame-mark)
   (keymap-set "C-x r l" 'list-frame-marks)
