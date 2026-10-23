@@ -9,6 +9,11 @@
 ;;; which the input provider calls), and deactivating a command's plugin
 ;;; quits it, as at a prompt.
 ;;;
+;;; A source (`context-start-source!`) keeps something outside the editor
+;;; current, such as /proc: a job reads it every few seconds on its own
+;;; thread, compares the reading with the last one there, and posts it only
+;;; when it differs, so while nothing changes the editor runs no task.
+;;;
 ;;; Anything handed to another thread is plain data (tuna/lib/plain-data),
 ;;; checked in test mode; the other thread starts with a cleared dynamic
 ;;; environment, as jobs do, so it cannot reach live editor objects.
@@ -16,12 +21,14 @@ prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/thread spawn-thread thread-main)
         :tuna/kernel
+        :tuna/lib/jobs
         :tuna/lib/plain-data)
 (export off-thread
         background-cancelled?
         sleep-for
         background-waiting-tasks
-        quit-background-wait!)
+        quit-background-wait!
+        context-start-source!)
 
 ;;; Cancellation
 
@@ -161,3 +168,67 @@ prelude: :gerbil/core
          (when relay
            (thread-send relay 'cancel))))
       (void))))
+
+;;; Sources
+
+;; Start a source of CTX's plugin named NAME and return its job. On the
+;; job's thread it reads (READ INPUT PREVIOUS) now and then every EVERY
+;; seconds, PREVIOUS being the last reading (#f the first time), so a
+;; reading can carry what the next one needs, such as counters. A reading
+;; that is not (COMPARE LAST READING) to the last one is posted, and
+;; (APPLY READING) runs on the baton with quit inhibited; when readings
+;; keep comparing equal, the editor does nothing. Only the newest posted
+;; reading not yet applied is applied. INPUT and readings are plain data.
+;; READ or COMPARE raising does not stop the source: the first failure
+;; after a reading is shown as a message, and the next reading is posted
+;; whatever it is. Deactivating CTX's plugin, or job-cancel! on the job,
+;; stops it and drops what it posted but did not apply. Call on the baton.
+(def (context-start-source! (ctx : context) (name : :symbol)
+                            every:   (every   : :real)
+                            read:    (read    : :procedure)
+                            apply:   (apply   : :procedure)
+                            input:   (input   : :t := #f)
+                            compare: (compare : :procedure := equal?))
+  => job
+  (check-plain-data! "A source's input" input)
+  (job-group-start! (new-job-group ctx) name
+                    input: input
+                    coalesce: 'latest
+                    run: (lambda (input cancelled? post!)
+                           (run-source read compare every input cancelled? post!))
+                    apply: (lambda (posted) (apply-source-post name apply posted))))
+
+;; On the source's job thread: read, compare, post, sleep, until cancelled.
+;; What it posts is (reading . READING) or (failed . SUMMARY).
+(def (run-source (read : :procedure) (compare : :procedure) (every : :real) (input : :t)
+                 (cancelled? : :procedure) (post! : :procedure))
+  => :void
+  (parameterize ((current-cancelled-check cancelled?))
+    (let lp ((last #f) (post-next? #t) (failing? #f))
+      (unless (cancelled?)
+        (let* ((raised #f)
+               (reading (with-catch (lambda (e) (set! raised e) #f)
+                                    (lambda ()
+                                      (let (reading (read input last))
+                                        (check-plain-data! "A source's reading" reading)
+                                        reading))))
+               (same? (and (not raised) (not post-next?)
+                           (with-catch (lambda (e) (set! raised e) #f)
+                                       (lambda () (compare last reading))))))
+          (if raised
+            (begin
+              (unless failing?
+                (post! (cons 'failed (exception-summary raised))))
+              (when (job-sleep every cancelled?)
+                (lp last #t #t)))
+            (begin
+              (unless same?
+                (post! (cons 'reading reading)))
+              (when (job-sleep every cancelled?)
+                (lp reading #f #f)))))))))
+
+;; On the baton: apply a source's reading, or report its failure.
+(def (apply-source-post (name : :symbol) (apply : :procedure) (posted : :pair)) => :void
+  (if (eq? (car posted) 'failed)
+    (message (string-append "Source " (symbol->string name) " failed: " (cdr posted)))
+    (with-inhibit-quit (apply (cdr posted)))))

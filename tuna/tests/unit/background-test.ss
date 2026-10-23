@@ -1,8 +1,10 @@
 (import (only-in :std/list/list append-map)
         :std/error
+        :std/sync/completion
         :std/test
         :tuna/kernel
         :tuna/lib/background
+        (only-in :tuna/lib/jobs job-cancel!)
         "../support/kernel"
         "../support/string-input")
 (export background-test)
@@ -30,9 +32,15 @@
   "Lends its context to the tests."
   (set! owner-context ctx))
 
+(def tasks-started 0)
+
+(defplugin (task-counter ctx)
+  "Counts the tasks started."
+  (context-add-hook! ctx task-started-hook 'count (lambda (id name) (set! tasks-started (+ tasks-started 1)))))
+
 (def (with-background thunk plugins: (plugins []))
   (set! log [])
-  (call-with-fresh-kernel (cons* test-input counting-display-provider plugins)
+  (call-with-fresh-kernel (cons* test-input counting-display-provider task-counter plugins)
     (lambda ()
       (start-editor-loop!)
       (thunk))))
@@ -60,6 +68,19 @@
 
 (def (threads-named name)
   (filter (lambda (t) (eq? (thread-name t) name)) (all-threads)))
+
+;; What test sources read, and whether their reads fail.
+(def source-value #f)
+(def source-fails? #f)
+
+;; A source of the task-owner plugin, every 20 ms, reading source-value
+;; and noting what it applies.
+(def (start-test-source! name)
+  (context-start-source! owner-context name every: 0.02
+                         read: (lambda (input previous)
+                                 (when source-fails? (error "boom"))
+                                 source-value)
+                         apply: note!))
 
 ;; Set by a worker once it started, and once it saw its cancellation.
 (def worker-started? #f)
@@ -174,4 +195,113 @@
            (check (on-baton (lambda () (quit-background-wait! sleeper-id))) => #t)
            (check (settled-message) => "Quit")
            (check (on-baton (lambda () (quit-background-wait! sleeper-id))) => #f)
-           (check log => '())))))))
+           (check log => '())))))
+
+    (test-case "a source whose readings do not change runs no task and redraws nothing"
+      (set! source-value 'a)
+      (with-background
+       (lambda ()
+         (on-baton (lambda () (start-test-source! 'steady)))
+         (check (wait-until (lambda () (pair? log))) => #t)
+         (on-baton void)
+         (set! tasks-started 0)
+         (set! redisplays 0)
+         (thread-sleep! 0.5)
+         (check tasks-started => 0)
+         (check redisplays => 0)
+         (check log => '(a))
+         ;; One change: one task applies it.
+         (set! source-value 'b)
+         (check (wait-until (lambda () (equal? log '(b a)))) => #t)
+         (thread-sleep! 0.1)
+         (check tasks-started => 1)
+         (check log => '(b a)))
+       plugins: [task-owner]))
+
+    (test-case "a source's read receives its previous reading; compare decides what is posted"
+      (set! source-value 'shown)
+      (with-background
+       (lambda ()
+         ;; The reading is (shown . reads so far); only the shown part is compared.
+         (on-baton (lambda ()
+                     (context-start-source! owner-context 'counting every: 0.01
+                                            read: (lambda (input previous)
+                                                    (cons source-value (if previous (+ (cdr previous) 1) 1)))
+                                            compare: (lambda (a b) (eq? (car a) (car b)))
+                                            apply: note!)))
+         (check (wait-until (lambda () (pair? log))) => #t)
+         (check log => '((shown . 1)))
+         (thread-sleep! 0.1)
+         (check (length log) => 1)
+         (set! source-value 'changed)
+         (check (wait-until (lambda () (= (length log) 2))) => #t)
+         (check (car (car log)) => 'changed)
+         (check (> (cdr (car log)) 5) => #t))
+       plugins: [task-owner]))
+
+    (test-case "a failing read is reported once and the source goes on"
+      (set! source-value 'fine)
+      (set! source-fails? #f)
+      (with-background
+       (lambda ()
+         (on-baton (lambda () (start-test-source! 'flaky)))
+         (check (wait-until (lambda () (pair? log))) => #t)
+         (on-baton void)
+         (set! source-fails? #t)
+         (check (wait-until (lambda () (equal? (on-baton current-message) "Source flaky failed: boom"))) => #t)
+         ;; Reported once: the failing reads that follow post nothing.
+         (on-baton void)
+         (set! tasks-started 0)
+         (thread-sleep! 0.2)
+         (check tasks-started => 0)
+         ;; Recovery posts the next reading, even an unchanged one.
+         (set! source-fails? #f)
+         (check (wait-until (lambda () (equal? log '(fine fine)))) => #t))
+       plugins: [task-owner]))
+
+    (test-case "a non-plain reading counts as a failure in test mode"
+      (with-background
+       (lambda ()
+         (on-baton (lambda ()
+                     (context-start-source! owner-context 'opaque every: 0.01
+                                            read: (lambda (input previous) (opaque x: 1))
+                                            apply: note!)))
+         (check (wait-until (lambda () (equal? (on-baton current-message)
+                                               "Source opaque failed: A source's reading must be plain data")))
+                => #t)
+         (check log => '()))
+       plugins: [task-owner]))
+
+    (test-case "deactivating a source's plugin stops it and drops a reading not yet applied"
+      (set! source-value 'first)
+      (with-background
+       (lambda ()
+         (let (gate (make-completion))
+           (on-baton (lambda ()
+                       (context-start-source! owner-context 'gated every: 0.01
+                                              read: (lambda (input previous)
+                                                      (when previous (completion-wait! gate))
+                                                      source-value)
+                                              apply: note!)))
+           (check (wait-until (lambda () (pair? log))) => #t)
+           (set! source-value 'second)
+           (on-baton (lambda () (deactivate-plugin! task-owner)))
+           (completion-post! gate #t)
+           (check (wait-until (lambda () (null? (threads-named 'tuna-job)))) => #t)
+           (on-baton void)
+           (check log => '(first))))
+       plugins: [task-owner]))
+
+    (test-case "job-cancel! on a source's job stops it"
+      (set! source-value 'a)
+      (set! source-fails? #f)
+      (with-background
+       (lambda ()
+         (let (j (on-baton (lambda () (start-test-source! 'cancelled))))
+           (check (wait-until (lambda () (pair? log))) => #t)
+           (on-baton (lambda () (job-cancel! j)))
+           (check (wait-until (lambda () (null? (threads-named 'tuna-job)))) => #t)
+           (set! source-value 'b)
+           (thread-sleep! 0.05)
+           (check log => '(a))))
+       plugins: [task-owner]))))

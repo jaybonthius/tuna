@@ -32,6 +32,7 @@ prelude: :gerbil/core
         new-job-group
         job-group?
         job-group-start!
+        job
         job?
         job-cancel!
         job-sleep)
