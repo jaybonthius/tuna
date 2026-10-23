@@ -23,9 +23,9 @@
   (make-key-event 1 from key code 0 #f composing? alt? ctrl? meta? shift?
                   mac? left? right? graph?))
 
-(def (pointer area part button: (button 1) clicks: (clicks 1) ctrl?: (ctrl? #f)
+(def (pointer area part kind: (kind 'click) button: (button 1) clicks: (clicks 1) ctrl?: (ctrl? #f)
                  alt?: (alt? #f) shift?: (shift? #f) meta?: (meta? #f) client: (from #f))
-  (make-pointer-event 1 from button clicks alt? ctrl? meta? shift?
+  (make-pointer-event 1 from kind button clicks alt? ctrl? meta? shift?
                       (make-posn area part #f 5 #f 0 0)))
 
 (defplugin (binds-a ctx)
@@ -469,6 +469,40 @@
          (check (current-message) => "C-c <tab-line> <mouse-1> is undefined")
          (check (resolve (keydown "x")) => #f)
          (check (current-message) => "x is undefined"))))
+
+    (test-case "presses, drags and movements have Emacs's names: a drag falls back to the click"
+      (check (pointer-event-names (pointer 'view 1 kind: 'down clicks: 2 shift?: #t))
+             => ["S-double-down-mouse-1" "S-down-mouse-1"])
+      (check (pointer-event-names (pointer 'view 1 kind: 'drag clicks: 2))
+             => ["double-drag-mouse-1" "drag-mouse-1" "mouse-1"])
+      (check (pointer-event-names (pointer 'view 1 kind: 'movement ctrl?: #t)) => ["mouse-movement"]))
+
+    (test-case "an unbound press is dropped quietly; a movement is a special event, quiet when unbound"
+      (call-with-fresh-kernel keys-plugins
+       (lambda ()
+         (defplugin (dragging ctx)
+           "A command under C-c, one on a press and one on a movement."
+           requires: [commands-service input-service]
+           (for-each (lambda (name) (context-define-command! ctx name void))
+                     '(command-a pressed moved))
+           (keymap-set ctx "C-c x" 'command-a)
+           (keymap-set ctx "<view> <down-mouse-1>" 'pressed)
+           (keymap-set ctx "<view> <mouse-movement>" 'moved))
+         (activate-plugin! dragging)
+         (message "kept")
+         (check (resolve (pointer 'view 12 kind: 'down)) => 'pressed)
+         (check (resolve (pointer 'view 12 kind: 'movement)) => 'moved)
+         (check (resolve (pointer 'tab-line 30 kind: 'down)) => #f)
+         (check (resolve (pointer 'tab-line 30 kind: 'movement)) => #f)
+         (check (current-message) => "kept")
+         ;; Neither an unbound press nor a movement ends a pending prefix.
+         (check (resolve (keydown "c" ctrl?: #t)) => #f)
+         (check (resolve (pointer 'tab-line 30 kind: 'down)) => #f)
+         (check (resolve (pointer 'view 12 kind: 'movement)) => 'moved)
+         (check (resolve (keydown "x")) => 'command-a)
+         ;; An unbound drag says so, under its most specific name.
+         (check (resolve (pointer 'view 12 kind: 'drag)) => #f)
+         (check (current-message) => "<view> <drag-mouse-1> is undefined"))))
 
     (test-case "part-clickable? is true for a part kind whose plain click has a binding"
       (call-with-fresh-kernel keys-plugins
