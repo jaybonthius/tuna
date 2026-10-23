@@ -4,7 +4,7 @@
 ;;; reads /proc every second off the editor thread. A reading is posted
 ;;; only when what the rows show changed, and a row whose values are equal
 ;;; stamps nothing, so only the rows that changed are drawn again. Killing
-;;; *Processes*, or turning the plugin off, stops the reading.
+;;; *Processes* (`q` in it), or turning the plugin off, stops the reading.
 
 (import (only-in :gerbil/runtime/hash HashTable)
         :tuna/kernel
@@ -12,6 +12,7 @@
         (only-in :tuna/lib/jobs job job-cancel!)
         :tuna/lib/plugin-options
         :tuna/plugins/commands/contract
+        :tuna/plugins/keys/contract
         :tuna/plugins/buffers/contract
         :tuna/plugins/layout/contract
         :tuna/plugins/stylesheets/contract)
@@ -168,11 +169,11 @@
   (hash-clear! self.rows))
 
 ;; Show *Processes* in the selected view, making it and starting to read
-;; the first time.
-(def (show-processes! (self : proced-state) (ctx : context)) => :void
+;; the first time. KEYMAP is its keymap.
+(def (show-processes! (self : proced-state) (ctx : context) (keymap : entry-table)) => :void
   (unless self.processes
     (let* ((header (new-node 'proced-header))
-           (root (new-node 'proced children: [header]))
+           (root (new-node 'proced children: [header] keymap: keymap))
            (b (new-buffer processes-buffer-name root)))
       (set! self.list-node root)
       (set! self.header-node header)
@@ -189,7 +190,7 @@
 
 (defplugin (proced ctx)
   "M-x proced: *Processes*, one row per process, read from /proc every second."
-  requires: [commands-service buffers-service layout-service]
+  requires: [commands-service input-service buffers-service layout-service]
   (add-stylesheet 'tokens "tokens.css")
   (add-stylesheet 'rules "rules.css")
   (context-define-node-kind! ctx 'proced doc: "A list of processes, one row each." items: 'children)
@@ -204,11 +205,17 @@
                                  (lambda (n children) `(div (@ (class "proced-row proced-header")) ,@(render-cells columns))))
   (context-define-node-renderer! ctx 'proced-row
                                  (lambda (n children) `(div (@ (class "proced-row")) ,@(render-cells (node-attribute n 'row)))))
-  (using (self (proced-state processes: #f list-node: #f header-node: #f rows: (make-hash-table-eqv) reading-job: #f) : proced-state)
+  (using ((self (proced-state processes: #f list-node: #f header-node: #f rows: (make-hash-table-eqv) reading-job: #f)
+                : proced-state)
+          (keymap (new-keymap) : entry-table))
     (context-add-hook! ctx kill-buffer-hook 'proced
                        (lambda (b) (when (eq? b self.processes) (stop-reading! self))))
     (define-command ctx (proced) "Show *Processes*, one row per process, kept current."
-      (show-processes! self ctx))))
+      (show-processes! self ctx keymap))
+    (define-command ctx (quit-proced) "Kill *Processes*, which stops reading the processes."
+      (let (b self.processes)
+        (when b (kill-buffer b))))
+    (keymap-set-in keymap "q" 'quit-proced)))
 
 (defplugin-options proced
   (root "/proc" "The directory to read processes from, as Linux's /proc." string-type)

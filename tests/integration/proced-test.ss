@@ -202,14 +202,15 @@
                (Socket-close a-stream))))
          (finally (delete-proc-fixture root)))))
 
-    (test-case "killing *Processes* stops reading"
+    (test-case "killing *Processes* (quit-proced, q) stops reading"
       (let (root (fixture-with-processes 3))
         (try
          (with-proced-tuna root
            (lambda ()
              (on-baton (lambda () (call-command 'proced)))
              (check (wait-until (lambda () (= (length (row-ids)) 3))) => #t)
-             (on-baton (lambda () (kill-buffer (get-buffer "*Processes*"))))
+             (on-baton (lambda () (call-command 'quit-proced)))
+             (check (on-baton (lambda () (get-buffer "*Processes*"))) => #f)
              ;; A source still reading would now fail, and report it in a task.
              (delete-proc-fixture root)
              (thread-sleep! 0.2)
