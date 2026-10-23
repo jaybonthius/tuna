@@ -67,13 +67,16 @@
 ;;; from (one piece per text node and view, which reads the text and its
 ;;; highlights) is worked out again, but no other line is drawn. Pieces
 ;;; hold what they drew from them, so an unchanged subtree is reused by
-;;; one check, and the screen
-;;; asked for when nothing changed is the very same string. Every redraw
-;;; still sends the whole visible screen as one fat morph. A view reads
+;;; one check, and the screen asked for when nothing changed is the very
+;;; same object. A piece's HTML is UTF-8 bytes (the renderer contract's
+;;; HTML), and a parent refers to its children's HTML rather than copying
+;;; it, so a piece drawn again writes only its own tags. CR and NUL in
+;;; text are written as character references. Every redraw still sends
+;;; the whole visible screen as one fat morph. A view reads
 ;;; what its client's browser measured, so screens and views are each
 ;;; client's; a node's HTML is shared by every client drawing the same
 ;;; items of it. So a node renderer must draw only from its node, its
-;;; children's renderings (opaque HTML fragments to place), and what it
+;;; children's renderings (HTML drawn already, to place as they are), and what it
 ;;; reads through contracts' accessors. Drawing writes nothing: before it,
 ;;; each client's views of the views shown are made; after it, the births
 ;;; of the lines drawn are kept (below).
@@ -123,7 +126,7 @@
 
 ;; What a client's last screen was, and the births of the lines it drew:
 ;; ((VIEW-ID NODE-ID . BIRTHS) ...), BIRTHS a vector.
-(defclass client-screen ((screen : :string)
+(defclass client-screen ((screen : :t)
                          (drawn  : :list))
   final: #t)
 
@@ -176,38 +179,84 @@
       ([tag . body] (cons* tag (cons '@ ids) body))
       (else element))))
 
-;; MARKUP's HTML. Fragments drawn already, (*unencoded* HTML ...), are
-;; joined in whole rather than copied through a port: they are most of a
-;; screen, and string-append copies them much faster.
-(def (html-string (markup : :t)) => :string
-  (apply string-append (html-parts markup [])))
+;; MARKUP, SXML that may hold HTML drawn already (the renderer contract's
+;; HTML: a u8vector or a vector) anywhere an element may be, as HTML. What
+;; was drawn already is referred to, never copied: an element holding some
+;; is its tags around its body's parts, and only the markup between is
+;; written (sxml-bytes).
+(def (markup->html (markup : :t)) => :t
+  (let (parts (markup-parts markup []))
+    (if (and (pair? parts) (null? (cdr parts)))
+      (car parts)
+      (list->vector parts))))
 
-(def (sxml-string (markup : :t)) => :string
-  (call-with-output-string ""
-    (lambda (port) (write-sxml markup port: port xml?: #f))))
+(def (html? (x : :t)) => :boolean
+  (or (u8vector? x) (vector? x)))
 
-;; Whether MARKUP holds a fragment drawn already.
-(def (holds-fragment? (markup : :t)) => :boolean
-  (and (pair? markup)
-       (or (eq? (car markup) '*unencoded*)
-           (ormap holds-fragment? (if (symbol? (car markup)) (cdr markup) markup)))))
+;; Whether MARKUP holds HTML drawn already.
+(def (holds-html? (markup : :t)) => :boolean
+  (or (html? markup)
+      (and (pair? markup)
+           (ormap holds-html? (if (symbol? (car markup)) (cdr markup) markup)))))
 
-;; MARKUP's HTML as strings to join, before REST: an element holding a
-;; fragment as its tags around its body's parts, anything else written.
-(def (html-parts (markup : :t) (rest : :list)) => :list
+;; MARKUP's HTML as parts, before REST.
+(def (markup-parts (markup : :t) (rest : :list)) => :list
   (cond
-   ((not (holds-fragment? markup)) (cons (sxml-string markup) rest))
-   ((eq? (car markup) '*unencoded*) (append (cdr markup) rest))
+   ((html? markup) (cons markup rest))
+   ((not (holds-html? markup)) (cons (sxml-bytes markup) rest))
    ((symbol? (car markup))
     (let* ((tag (car markup))
            (attributes (and (pair? (cdr markup)) (pair? (cadr markup)) (eq? (car (cadr markup)) '@)
                             (cadr markup)))
            (body (if attributes (cddr markup) (cdr markup)))
-           (close (string-append "</" (symbol->string tag) ">"))
-           (shell (sxml-string (if attributes [tag attributes] [tag]))))
-      (cons (substring shell 0 (fx- (string-length shell) (string-length close)))
-            (foldr html-parts (cons close rest) body))))
-   (else (foldr html-parts rest markup))))
+           (close (string->utf8 (string-append "</" (symbol->string tag) ">")))
+           (shell (sxml-bytes (if attributes [tag attributes] [tag]))))
+      (cons (subu8vector shell 0 (fx- (u8vector-length shell) (u8vector-length close)))
+            (body-parts body (cons close rest)))))
+   (else (body-parts markup rest))))
+
+;; The parts of the nodes BODY, before REST: each run of nodes holding no
+;; HTML drawn already written at once.
+(def (body-parts (body : :list) (rest : :list)) => :list
+  (let lp ((body body) (plain []))
+    (def (flush (rest : :list)) => :list
+      (if (null? plain) rest (cons (sxml-bytes (reverse plain)) rest)))
+    (cond
+     ((null? body) (flush rest))
+     ((holds-html? (car body)) (flush (markup-parts (car body) (lp (cdr body) []))))
+     (else (lp (cdr body) (cons (car body) plain))))))
+
+;; MARKUP, holding no HTML drawn already, as UTF-8, with CR and NUL in its
+;; text and attribute values written as character references (CR as
+;; itself, NUL as U+FFFD, as HTML parsers read it), so no screen holds
+;; them raw: the screen stream cannot carry them (Datastar's elements
+;; lines).
+(def (sxml-bytes (markup : :t)) => :u8vector
+  (let (port (open-output-u8vector (list char-encoding: 'UTF-8)))
+    (write-sxml markup port: port xml?: #f)
+    (escape-cr-nul (get-output-u8vector port))))
+
+(def cr-reference (string->utf8 "&#13;"))
+(def nul-reference (string->utf8 "&#xFFFD;"))
+
+;; BYTES with each CR and NUL byte replaced by its character reference;
+;; BYTES itself when it has none.
+(def (escape-cr-nul (bytes : :u8vector)) => :u8vector
+  (let ((size (u8vector-length bytes)))
+    (def (special? (b : :fixnum)) => :boolean
+      (or (fx= b 13) (fx= b 0)))
+    (if (let lp ((i 0))
+          (and (fx< i size) (or (special? (u8vector-ref bytes i)) (lp (fx1+ i)))))
+      (let lp ((i 0) (run 0) (out []))
+        (cond
+         ((fx= i size)
+          (apply u8vector-append (reverse (cons (subu8vector bytes run size) out))))
+         ((special? (u8vector-ref bytes i))
+          (lp (fx1+ i) (fx1+ i)
+              (cons* (if (fx= (u8vector-ref bytes i) 13) cr-reference nul-reference)
+                     (subu8vector bytes run i) out)))
+         (else (lp (fx1+ i) run out))))
+      bytes)))
 
 ;; How N is drawn when its items FIRST to LAST are: N's whole node drawn
 ;; as one item ('item), or the run (FIRST . LAST) of its items.
@@ -233,10 +282,10 @@
 ;; drawn: #f whole, inside an item; 'item, whole, as one item; or (FIRST
 ;; . LAST), only its items FIRST to LAST (from 0), as a node that opens
 ;; into items.
-(def (render-node (self : html-rendering) (v : view) (n : node) (run : :t)) => :list
-  ['*unencoded* (memo ['node (view-id v) (node-id n)] run (lambda (run) (draw-node self v n run)))])
+(def (render-node (self : html-rendering) (v : view) (n : node) (run : :t)) => :t
+  (memo ['node (view-id v) (node-id n)] run (lambda (run) (draw-node self v n run))))
 
-(def (draw-node (self : html-rendering) (v : view) (n : node) (run : :t)) => :string
+(def (draw-node (self : html-rendering) (v : view) (n : node) (run : :t)) => :t
   (let* ((kind (node-kind n))
          (render (node-renderer kind))
          (lines (and (eq? (node-opening n) 'lines)
@@ -247,7 +296,7 @@
                         (drawn-children n run))))
     (parameterize ((rendering-view v)
                    (rendering-lines lines))
-      (html-string
+      (markup->html
        (with-node-id n
          (if render
            (render n children)
@@ -472,20 +521,19 @@
                   out
                   (let (d (vector-ref descriptors (fx- line first)))
                     (lp (fx1- line)
-                        (cons ['*unencoded*
-                               (memo ['line (view-id v) (node-id n) (car d) (cadr d)]
-                                     (append d [(and (eqv? line cursor-line) cursor)])
-                                     (lambda (inputs) (draw-line v n inputs)))]
+                        (cons (memo ['line (view-id v) (node-id n) (car d) (cadr d)]
+                                    (append d [(and (eqv? line cursor-line) cursor)])
+                                    (lambda (inputs) (draw-line v n inputs)))
                               out)))))))))
 
 ;; A line of N in V from its inputs, [END REVISION ITEMS? TEXT FACES
 ;; CURSOR] (line-descriptors): runs of characters with the same face, and
 ;; the cursor character alone at CURSOR's column, with its class; as an
 ;; item, with its token and its element id.
-(def (draw-line (v : view) (n : node) (inputs : :list)) => :string
+(def (draw-line (v : view) (n : node) (inputs : :list)) => :u8vector
   (match inputs
     ([end revision items? content faces cursor]
-     (html-string
+     (sxml-bytes
       (render-line content faces (and cursor (car cursor)) (if cursor (cdr cursor) "")
                    (if items?
                      (let (birth (cons end revision))
@@ -679,13 +727,13 @@
                  (data-view ,id)
                  (data-part ,(string-append "view:" id))
                  ,@(if selected? '((data-selected "true")) '()))
-       (*unencoded* ,(memo ['view (view-id v)] [(node-id start) (and selected? command)]
-                           (lambda (inputs) (draw-view self c v start (cadr inputs))))))))
+       ,(memo ['view (view-id v)] [(node-id start) (and selected? command)]
+              (lambda (inputs) (draw-view self c v start (cadr inputs)))))))
 
 ;; V's buffer from node START, then its status line unless its buffer
 ;; turns it off.
 (def (draw-view (self : html-rendering) (c :? client) (v : view) (start : node) (command :? :symbol))
-  => :string
+  => :t
   (let* ((b (view-showing v))
          (cv (view-client v c))
          (id (number->string (view-id v))))
@@ -695,7 +743,7 @@
              (last drawn.last)
              (above (spacer v cv "above" first first last))
              (below (spacer v cv "below" (fx- count (fx1+ last)) first last)))
-        (html-string
+        (markup->html
          (cons `(article (@ (class "buffer") (aria-label ,(buffer-name b))
                             ,@(scroller-attributes v cv start first last count))
                          ,(placement-marker self v cv start)
@@ -710,8 +758,8 @@
                       ,(status-line-text v command))]
                  [])))))))
 
-(def (draw-screen (self : html-rendering) (c :? client) (command :? :symbol)) => :string
-  (html-string
+(def (draw-screen (self : html-rendering) (c :? client) (command :? :symbol)) => :t
+  (markup->html
    `(main (@ (id "screen") (class "screen"))
           ,(render-layout 'html (lambda (v selected? start) (render-view self c v selected? start command))))))
 
@@ -719,7 +767,7 @@
 ;; births of the lines of each text node each view drew (keep-births!),
 ;; and drop those of lines no client's last screen drew once they may
 ;; have piled up (births-outgrown?).
-(def (after-drawing! (self : html-rendering) (c :? client) (screen : :string)) => :void
+(def (after-drawing! (self : html-rendering) (c :? client) (screen : :t)) => :void
   (let (kept (hash-get self.screens c))
     (unless (and kept (eq? (client-screen-screen kept) screen))
       (let (drawn [])
@@ -844,7 +892,7 @@
 ;; Client C's screen: its last one when nothing it was drawn from changed,
 ;; otherwise drawn again, through the pieces kept. Before drawing, each
 ;; view shown gets C's view of it, so drawing makes none.
-(def (render-screen! (self : html-rendering) (c :? client)) => :string
+(def (render-screen! (self : html-rendering) (c :? client)) => :t
   (render-layout 'views (lambda (v selected? start) (view-client v c)))
   (let* ((command (current-task-name))
          (screen (call-with-memo-pass self.pieces c

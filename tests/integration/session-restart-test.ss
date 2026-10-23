@@ -82,7 +82,7 @@
        (if (eq? (car views) (selected-view)) i (lp (cdr views) (+ i 1)))))))
 
 (def (screen)
-  (on-baton (lambda () (Renderer-render-screen (Renderer (service-provider renderer-service)) #f))))
+  (on-baton (lambda () (html->string (Renderer-render-screen (Renderer (service-provider renderer-service)) #f)))))
 
 (def (count-of needle haystack)
   (let lp ((start 0) (n 0))

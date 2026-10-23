@@ -28,10 +28,16 @@
 
 ;; A renderer whose screen shows SHOWN, so a test decides when the screen
 ;; changes: the transport sends a screen only when it differs from the last.
+;; Each screen is a new object, in parts that split the root's tag name
+;; from its attributes, with a newline.
 (def shown 0)
 (defclass counting-rendering () final: #t)
 (defmethod {render-screen counting-rendering}
-  (lambda (self c) (string-append "<main id=\"screen\"><p>" (number->string shown) "</p></main>")))
+  (lambda (self c)
+    (let (n (number->string shown))
+      (vector (string->utf8 "<main")
+              (vector (string->utf8 " id=\"screen\">") (string->utf8 (string-append "<p>" n)))
+              (string->utf8 (string-append "\n" n "</p></main>"))))))
 (defplugin (counting-renderer ctx)
   "Renders a screen that shows a number the test sets."
   provides: [renderer-service]
@@ -477,6 +483,40 @@
            (check (string-prefix? "HTTP/1.1 204" (read-until socket (lambda (text) #f))) => #t)
            (Socket-close socket)
            (check (length (recorded-items 1)) => 1)))))
+
+    (test-case "a screen's event: its parts in order, data-init then data-revision after the tag name"
+      (with-counting-tuna
+       (lambda ()
+         (let* ((stream (open-screen-stream))
+                (text (read-until stream (lambda (text) (string-search "</main>\n\n" text))))
+                (revision (car (screen-revisions text)))
+                (stream-number (let* ((path (applied-path text))
+                                      (from (+ (string-search "stream=" path) 7)))
+                                 (substring path from (string-index path #\& from))))
+                (n (number->string shown))
+                (event (string-append
+                        "event: datastar-patch-elements\n"
+                        "data: elements <main data-init=\"@post('/applied?stream=" stream-number
+                        "&amp;count=1'); el.removeAttribute('data-init')\" data-revision=\""
+                        (number->string revision) "\" id=\"screen\"><p>" n "\n"
+                        "data: elements " n "</p></main>\n\n")))
+           (check (and (string-search event text) #t) => #t)
+           ;; The page shows the screen with its revision only.
+           (let (page (reply-body (http "GET" "/")))
+             (check (and (string-search (string-append "<body><main data-revision=\"") page) #t) => #t)
+             (check (and (string-search (string-append "\" id=\"screen\"><p>" n "\n" n "</p></main></body></html>") page) #t)
+                    => #t))
+           (Socket-close stream)))))
+
+    (test-case "reading a stream for a screen that never comes stops at its deadline"
+      (with-counting-tuna
+       (lambda ()
+         (let* ((stream (open-screen-stream))
+                (started (time->seconds (current-time)))
+                (text (read-until stream (lambda (text) #f) seconds: 2)))
+           (check (has-screen? text) => #t)
+           (check (< (seconds-since started) 4) => #t)
+           (Socket-close stream)))))
 
     (test-case "a redisplay that changes nothing on screen sends nothing"
       (with-counting-tuna

@@ -89,7 +89,7 @@
 (def (text) (on-baton (lambda () (text-string (current-text)))))
 
 (def (screen)
-  (on-baton (lambda () (Renderer-render-screen (Renderer (service-provider renderer-service)) #f))))
+  (on-baton (lambda () (html->string (Renderer-render-screen (Renderer (service-provider renderer-service)) #f)))))
 
 (def (count-of needle haystack)
   (let lp ((start 0) (n 0))

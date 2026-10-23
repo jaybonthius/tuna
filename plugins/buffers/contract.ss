@@ -773,7 +773,8 @@ prelude: :gerbil/core
     (node-kinds-changed!)) :void))
 
 ;; Render nodes of KIND to HTML with RENDER, called with the node and its
-;; children already rendered, and returning SXML (ADR 7).
+;; children already rendered, and returning SXML (ADR 7). The children are
+;; opaque HTML, to place in that SXML as they are, never to inspect.
 (def (context-define-node-renderer! (ctx    : context)
                                     (kind   : :symbol)
                                     (render : :procedure))

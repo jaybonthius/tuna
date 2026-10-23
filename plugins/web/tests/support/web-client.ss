@@ -47,13 +47,16 @@
    "Connection: close\r\n\r\n"
    body))
 
-;; Read until (DONE? text) or end of input.
-(def (read-until socket done?)
+;; Read until (DONE? text), end of input, or SECONDS have passed: a screen
+;; stream re-sends an unconfirmed screen every second, so without a
+;; deadline it would be read forever for a screen that never comes.
+(def (read-until socket done? seconds: (seconds 20))
   (let ((reader (StreamSocket-reader socket))
-        (buffer (make-u8vector 4096)))
+        (buffer (make-u8vector 4096))
+        (deadline (+ (time->seconds (current-time)) seconds)))
     (let lp ((chunks []))
       (let (text (utf8->string (apply u8vector-append (reverse chunks))))
-        (if (done? text)
+        (if (or (done? text) (> (time->seconds (current-time)) deadline))
           text
           (let (count (with-catch (lambda (e) (if (premature-end-of-input-error? e) 0 (raise e)))
                                   (lambda () (Reader-read reader buffer 0 4096 1))))

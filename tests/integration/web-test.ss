@@ -83,6 +83,28 @@
            (Socket-close first)
            (Socket-close second)))))
 
+    (test-case "a buffer holding CR and NUL is sent, and its stream stays open"
+      (with-tuna
+       (lambda ()
+         (let (stream (open-screen-stream))
+           (read-until stream (cut string-search "id=\"screen\"" <>))
+           (call-on-editor-loop
+            (lambda ()
+              (let (b (new-buffer "*control*"
+                                  (new-text-node (new-text (string #\a #\return #\b #\newline #\c #\nul #\d)))))
+                (add-buffer! b)
+                (set-view-buffer (selected-view) b))
+              (redisplay)))
+           (let (text (read-until stream (cut string-search "c&#xFFFD;d" <>)))
+             (check (and (string-search "<span class=\"cursor\">a</span>&#13;b" text) #t) => #t)
+             (check (and (string-search "c&#xFFFD;d" text) #t) => #t))
+           ;; The stream goes on: a key typed there arrives.
+           (post-key "x")
+           (let (typed "x<span class=\"cursor\">a</span>&#13;b")
+             (check (and (string-search typed (read-until stream (cut string-search typed <>))) #t)
+                    => #t))
+           (Socket-close stream)))))
+
     (test-case "C-c l then C-g recovers; so does C-c L, by force"
       (with-tuna
        (lambda ()

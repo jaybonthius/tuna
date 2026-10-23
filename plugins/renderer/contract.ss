@@ -11,21 +11,44 @@ prelude: :gerbil/core
         :tuna/plugins/buffers/contract)
 (export (interface-out Renderer)
         renderer-service
+        html-for-each
+        html->string
         show-status-line
         face-remapping
         remapped-face
         status-line-text)
 
+;; HTML drawn already (ADR 17): its UTF-8 bytes, as a u8vector, or a
+;; vector of HTML read in order, so a part drawn once is referred to, never
+;; copied. It is never changed once made: frames and tabs share its parts.
 (interface Renderer
   ;; Render the current editor state, as client C's browser shows it (C #f
-  ;; for none; ADR 16), as an HTML fragment whose root element has the id
-  ;; "screen". Each view is drawn from what C's browser measured of it,
-  ;; with the newest placement sent to C. Runs on the baton.
-  (render-screen (c :? client)) => :string)
+  ;; for none; ADR 16), as HTML whose root element has the id "screen".
+  ;; Each view is drawn from what C's browser measured of it, with the
+  ;; newest placement sent to C. Runs on the baton.
+  (render-screen (c :? client)) => :t)
 
 (def renderer-service
   (new-service 'renderer is-Renderer? tier: 'live
                doc: "Turns editor state into a screen."))
+
+;; Call WRITE with each u8vector of HTML H, in order.
+(def (html-for-each (write : :procedure) (h : :t)) => :void
+  (if (u8vector? h)
+    (write h)
+    (vector-for-each (lambda (part) (html-for-each write part)) h)))
+
+;; HTML H as one string.
+(def (html->string (h : :t)) => :string
+  (let (size 0)
+    (html-for-each (lambda ((bytes : :u8vector)) (set! size (fx+ size (u8vector-length bytes)))) h)
+    (let ((out (make-u8vector size))
+          (at 0))
+      (html-for-each (lambda ((bytes : :u8vector))
+                       (subu8vector-move! bytes 0 (u8vector-length bytes) out at)
+                       (set! at (fx+ at (u8vector-length bytes))))
+                     h)
+      (utf8->string out))))
 
 ;; Emacs's `mode-line-format` set to nil, for a buffer: the minibuffer's
 ;; and the echo area's views have no status line.

@@ -283,16 +283,29 @@ prelude: :gerbil/core
       (hash-for-each (lambda ((p : piece) _) (unless (hash-key? new p) (release! cache p))) old))
     (hash-put! cache.clients pass.client new)))
 
+;; X as text, when it is a string or UTF-8 bytes: a u8vector, or a vector
+;; of such values read in order; otherwise #f.
+(def (drawing-text (x : :t)) => (Maybe :string)
+  (cond
+   ((string? x) x)
+   ((u8vector? x) (utf8->string x))
+   ((vector? x)
+    (let (parts (map drawing-text (vector->list x)))
+      (and (andmap identity parts) (apply string-append parts))))
+   (else #f)))
+
 ;; Where A and B, two drawings that should be the same, first differ.
 (def (difference (a : :t) (b : :t)) => :string
-  (if (and (string? a) (string? b))
-    (let* ((size (fxmin (string-length a) (string-length b)))
-           (at (let lp ((i 0))
-                 (if (and (fx< i size) (char=? (string-ref a i) (string-ref b i))) (lp (fx1+ i)) i)))
-           (around (lambda ((s : :string))
-                     (substring s (fxmax 0 (fx- at 80)) (fxmin (string-length s) (fx+ at 80))))))
-      (string-append "at " (number->string at) ":\n  kept:    " (around a) "\n  scratch: " (around b)))
-    "(not strings)"))
+  (let ((a (drawing-text a))
+        (b (drawing-text b)))
+    (if (and a b)
+      (let* ((size (fxmin (string-length a) (string-length b)))
+             (at (let lp ((i 0))
+                   (if (and (fx< i size) (char=? (string-ref a i) (string-ref b i))) (lp (fx1+ i)) i)))
+             (around (lambda ((s : :string))
+                       (substring s (fxmax 0 (fx- at 80)) (fxmin (string-length s) (fx+ at 80))))))
+        (string-append "at " (number->string at) ":\n  kept:    " (around a) "\n  scratch: " (around b)))
+      "(not text)")))
 
 ;; Draw (DRAW) for CLIENT (#f for none) through CACHE: every memo inside
 ;; it keeps and reuses CACHE's pieces. Returns what DRAW returns. In test
