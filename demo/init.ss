@@ -25,6 +25,8 @@
         :tuna/plugins/renderer/plugin
         :tuna/plugins/buttons/plugin
         :tuna/plugins/basic-editing/plugin
+        :tuna/plugins/region/plugin
+        :tuna/plugins/kill-ring/plugin
         :tuna/plugins/hungry-delete/plugin
         :tuna/plugins/minibuffer/plugin
         :tuna/plugins/completion/plugin
@@ -69,6 +71,8 @@
 (use-plugin html-renderer)
 (use-plugin buttons)             ; buttons in buffers: a click runs their action
 (use-plugin basic-editing)
+(use-plugin region)              ; C-SPC, C-x C-x, shift-select; the delete-selection setting
+(use-plugin kill-ring)           ; C-w, M-w, C-y, M-y
 (use-plugin hungry-delete)       ; Backspace deletes the spaces before point in one edit
 (use-plugin minibuffer)
 (use-plugin completion-engine
@@ -93,6 +97,7 @@
 (use-plugin tree-buffer)         ; C-c b: the *welcome* buffer, built as a tree
 (use-plugin demo)                ; C-c s text store, C-c p basic editing, C-c h hungry delete,
                                  ; C-c T the terminal theme (tests/support/theme-terminal.ss),
+                                 ; C-c D the delete-selection setting,
                                  ; C-c W a wait off the editor thread that C-g quits
 (use-plugin long-buffer-demo)    ; C-c g: *long*, 50,000 generated lines, for scrolling
 (use-plugin rows-demo)           ; C-c G: *rows*, 10,000 row nodes, scrolled the same way

@@ -1,11 +1,13 @@
-/* The renderer's semantic tokens: buffers, spacers, cursors, status lines
-   and the overlay on clickable parts. Each is a design token (design-tokens
+/* The renderer's semantic tokens: buffers, spacers, cursors, the region,
+   status lines and the overlay on clickable parts. Each is a design token (design-tokens
    plugin) with a fallback, so the page stays readable without one. */
 :root {
   --buffer-padding: 0.5rem;
   --cursor-background: var(--neutral-12, CanvasText);
   --cursor-foreground: var(--neutral-1, Canvas);
   --inactive-cursor-outline: var(--neutral-7, GrayText);
+  /* Behind the text of the active region (Emacs's region face). */
+  --region-background: var(--primary-3, Mark);
   --status-line-background: var(--neutral-3, Canvas);
   --status-line-foreground: var(--neutral-7, GrayText);
   --status-line-selected-foreground: var(--neutral-12, CanvasText);

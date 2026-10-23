@@ -31,6 +31,8 @@
     ("plugins/help" "contract" "plugin")
     ("plugins/buttons" "contract" "plugin")
     ("plugins/basic-editing" "plugin")
+    ("plugins/region" "contract" "plugin")
+    ("plugins/kill-ring" "contract" "plugin")
     ("plugins/hungry-delete" "plugin")
     ("plugins/minibuffer" "contract" "plugin")
     ("plugins/completion" "contract" "plugin")

@@ -1,16 +1,17 @@
-/* The renderer's HTML: the screen, views, buffers, text, spacers, cursors
-   and status lines.
+/* The renderer's HTML: the screen, views, buffers, text, spacers, cursors,
+   the region and status lines.
 
    These classes and data attributes are a published styling surface:
    .screen, .view, .buffer, .text, .line, .spacer, .scroll-sizer,
-   .cursor, .inactive-cursor, .placement, .status-line, .face-NAME,
+   .cursor, .inactive-cursor, .region, .placement, .status-line, .face-NAME,
    [data-view], [data-selected], [data-part], [data-node], [data-clickable],
-   [data-spacer], and [data-item] on each drawn item of a view. Other
+   [data-spacer], [data-region-newline], and [data-item] on each drawn
+   item of a view. Other
    plugins may select on them, for example to style their own nodes
    inside a buffer. Rules here are wrapped in :where() so that any other
    plugin's or theme's rule wins whatever its place on the page; the
-   cursor, the items' margins and the spacers' scrolling rules are the
-   exceptions, and so is the scroller's grid. */
+   cursor, the region, the items' margins and the spacers' scrolling rules
+   are the exceptions, and so is the scroller's grid. */
 
 /* The screen is the layout, and fills the browser window; views scroll
    inside it. Dynamic viewport units follow a phone's browser toolbar, and
@@ -149,6 +150,29 @@
 
 @media (forced-colors: active) {
   .text .cursor {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
+/* The active region: the text between point and the mark. Two classes,
+   so it beats a face class on the same characters, as the cursor does.
+   A line whose newline is in the region shows one more cell of it after
+   its text. Forced-colours mode would hide the background, so it uses
+   system colours there. */
+.text .region,
+.text [data-region-newline]::after {
+  background: var(--region-background);
+}
+
+.text [data-region-newline]::after {
+  content: " ";
+}
+
+@media (forced-colors: active) {
+  .text .region,
+  .text [data-region-newline]::after {
     forced-color-adjust: none;
     background: Highlight;
     color: HighlightText;

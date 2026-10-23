@@ -52,6 +52,8 @@
         :tuna/plugins/renderer/plugin
         :tuna/plugins/buttons/plugin
         :tuna/plugins/basic-editing/plugin
+        :tuna/plugins/region/plugin
+        :tuna/plugins/kill-ring/plugin
         :tuna/plugins/minibuffer/plugin
         :tuna/plugins/completion/plugin
         :tuna/plugins/completion-vertical/plugin
@@ -80,10 +82,15 @@
 (use-plugin autosave)
 (use-plugin layout)
 (use-plugin view-commands)
+;; To select the view on a side with Shift and an arrow (Emacs's windmove;
+;; the S-arrows then no longer select text), give the line above
+;; config: (keymap-set "S-<left>" 'select-view-left), and so on.
 (use-plugin scrolling)           ; views scroll natively; the server draws what is near
 (use-plugin html-renderer)
 (use-plugin buttons)             ; buttons in buffers: a click runs their action
 (use-plugin basic-editing)
+(use-plugin region)              ; C-SPC, C-x C-x, shift-select; the delete-selection setting
+(use-plugin kill-ring)           ; C-w, M-w, C-y, M-y
 (use-plugin minibuffer)
 (use-plugin completion-engine
   config: (context-set-setting! (current-context) completion-styles '(orderless substring)))

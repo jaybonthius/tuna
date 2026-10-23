@@ -1,6 +1,7 @@
 ;;; Integration: the view and frame commands of view-commands, bound by
 ;;; keys, under the default layout: C-x 2, C-x 3, C-x 0, C-x 1, C-x o,
-;;; S-<arrows>, C-x n s, C-x n w, and the frame marks on C-x r w, C-x r j
+;;; the S-<arrows> as a user binds them (windmove's keys; unbound by
+;;; default, as in Emacs), C-x n s, C-x n w, and the frame marks on C-x r w, C-x r j
 ;;; and C-x r l, read in the minibuffer; and the same commands under the
 ;;; toy layout, which falls back as the contract allows. The bar (the
 ;;; minibuffer's and echo area's views, pinned and locked) is left out of
@@ -11,6 +12,7 @@
         :tuna/plugins/buffers/contract
         :tuna/plugins/echo-area/contract
         :tuna/plugins/layout/contract
+        (only-in :tuna/plugins/keys/contract keymap-set keymap-set!)
         :tuna/plugins/commands/plugin
         :tuna/plugins/keys/plugin
         :tuna/plugins/echo-area/plugin
@@ -35,6 +37,14 @@
   "Selects the default providers for swap commands in this test configuration."
   (context-set-swap-providers! ctx html-renderer layout buffers))
 
+(defplugin (view-arrows ctx)
+  "Binds the S-arrows to selecting the view on that side, as a user may in init.ss."
+  requires: [input-service]
+  (keymap-set ctx "S-<left>" 'select-view-left)
+  (keymap-set ctx "S-<right>" 'select-view-right)
+  (keymap-set ctx "S-<up>" 'select-view-up)
+  (keymap-set ctx "S-<down>" 'select-view-down))
+
 
 (def (call-with-state-kernel (plugins : :list) (thunk : :procedure)) => :t
   (let (directory (path-expand (string-append "tuna-swap-" (number->string (random-integer 1000000000)))
@@ -49,7 +59,7 @@
 (def command-plugins
   [session-owner commands keys echo-area rope-text-store settings session
    buffers autosave layout view-commands basic-editing minibuffer
-   swap-configuration swap-commands tree-buffer])
+   swap-configuration swap-commands tree-buffer view-arrows])
 
 (def (with-commands thunk)
   (call-with-state-kernel command-plugins

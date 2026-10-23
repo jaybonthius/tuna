@@ -17,8 +17,11 @@
 ;;; keymap. Giving a node another keymap is a change to it; bindings added
 ;;; to or removed from a keymap are not: the keymap's own source tracks
 ;;; them (keys contract). A view is one
-;;; place in the layout showing a buffer: the focused text node, point, and
-;;; the goal column, so two views of one buffer have their own points.
+;;; place in the layout showing a buffer: the focused text node, point, the
+;;; mark, whether the region between them is active, and the goal column,
+;;; so two views of one buffer have their own points and marks (in Emacs
+;;; the mark is the buffer's). The region plugin's contract is how
+;;; commands set the mark and turn the region on and off.
 ;;;
 ;;; A view is a scroller: it lays out the items of the node it draws from
 ;;; one after another (see Items below), and the browser scrolls it. Its
@@ -109,6 +112,7 @@ prelude: :gerbil/core
         view view? view-id view-showing view-node
         new-view new-view-at copy-view reset-view!
         view-point set-view-point! set-view-showing! view-point-item
+        view-mark set-view-mark! view-mark-active? set-view-mark-active!
         (struct-out placement) view-placement place-view! set-view-scroll!
         client-view client-view? view-client forget-view-client!
         client-view-placement client-view-scroll-item client-view-scroll-offset set-client-view-scroll!
@@ -369,18 +373,26 @@ prelude: :gerbil/core
 ;; CHANGES, its source, changes with what a screen draws from the view:
 ;; its buffer and focused node; POINT-CHANGES, another, with its point, so
 ;; what draws only the focused node draws again when point moves;
-;; PLACEMENT-CHANGES, a third, with its scroll position, so scrolling does
+;; MARK-CHANGES, with its mark and whether the region is active, so the
+;; status line, which shows point, is not drawn again for the mark;
+;; PLACEMENT-CHANGES, a fourth, with its scroll position, so scrolling does
 ;; not draw again what draws from its buffer (ADR 17). Point is kept valid at the text revision REVISION
 ;; and moved through later edits when read, which rewrites how it is
-;; kept, never where it is, so reading changes no source.
+;; kept, never where it is, so reading changes no source. The mark (the
+;; region's other end; #f for none) is in the focused text node too, kept
+;; the same way at MARK-REVISION, and goes when the focus does.
 (defclass view ((id            : :fixnum)
                 (changes       : source)
                 (point-changes : source)
+                (mark-changes  : source)
                 (placement-changes : source)
                 (shown         : buffer)        ; `view-showing`
                 (focus         :? node)         ; the focused text node
                 (position      : :fixnum)       ; point, valid at REVISION
                 (revision      : :fixnum)       ; of the node's text
+                (mark-position :? :fixnum)      ; the mark, valid at MARK-REVISION
+                (mark-revision : :fixnum)
+                (mark-on?      : :boolean)      ; whether the region is active
                 (goal-column   :? :fixnum)
                 (last-placement : placement)    ; the scroll position
                 (clients       : HashTable))    ; client (#f: none) -> client-view
@@ -1181,8 +1193,10 @@ prelude: :gerbil/core
 ;; text revision REVISION, scrolled to the top. For buffers providers,
 ;; which must not call the dispatchers before they provide the service.
 (def (new-view-at (b : buffer) (n :? node) (position : :fixnum) (revision : :fixnum)) => view
-  (view id: (next-id!) changes: (new-source) point-changes: (new-source) placement-changes: (new-source)
+  (view id: (next-id!) changes: (new-source) point-changes: (new-source) mark-changes: (new-source)
+        placement-changes: (new-source)
         shown: b focus: n position: position revision: revision
+        mark-position: #f mark-revision: 0 mark-on?: #f
         goal-column: #f last-placement: (make-placement 0 #f 'top 0.)
         clients: (make-hash-table test: eq? weak-keys: #t)))
 
@@ -1197,6 +1211,7 @@ prelude: :gerbil/core
   (set! v.revision revision)
   (source-changed! v.changes)
   (source-changed! v.point-changes)
+  (forget-mark! v)
   (forget-measured! v)
   (place-view! v #f 'top))
 
@@ -1241,6 +1256,9 @@ prelude: :gerbil/core
 (def (copy-view (v : view)) => view
   (let ((new (new-view-at v.shown v.focus (view-point v) (node-chars-revision v.focus)))
         (p v.last-placement))
+    ;; The new view has the mark too, as both windows have the buffer's
+    ;; mark in Emacs, but not an active region.
+    (set-view-mark! new (view-mark v))
     (place-view! new (placement-target p) (placement-align p) offset: (placement-offset p))
     (hash-for-each (lambda (c (old : client-view))
                      (using (copy (view-client new c) : client-view)
@@ -1283,6 +1301,53 @@ prelude: :gerbil/core
         (set! v.position new)
         (set! v.revision (snapshot-revision s))))))
 
+;; V's mark, relocated through the changes made since V last looked, as
+;; its point is (view-point); #f when V has none.
+(def (view-mark (v : view)) => (Maybe :fixnum)
+  (record-read! v.mark-changes)
+  (let ((position v.mark-position)
+        (n v.focus))
+    (and position n
+         (let* ((t (text-node-content n))
+                (revision (text-chars-revision t)))
+           (unless (fx= v.mark-revision revision)
+             (set! v.mark-position (relocate-position t position v.mark-revision))
+             (set! v.mark-revision revision))
+           v.mark-position))))
+
+;; Put V's mark at POSITION, limited to its text, leaving the region active
+;; or not; #f removes the mark, which deactivates the region. Without a
+;; focused text node V has no mark.
+(def (set-view-mark! (v : view) (position :? :fixnum)) => :void
+  (let (n v.focus)
+    (if (and position n)
+      (let* ((s (text-snapshot (text-node-content n)))
+             (new (fxmax 1 (fxmin position (fx1+ (snapshot-size s))))))
+        (unless (eqv? new (view-mark v))
+          (source-changed! v.mark-changes))
+        (set! v.mark-position new)
+        (set! v.mark-revision (snapshot-revision s)))
+      (forget-mark! v))))
+
+(def (forget-mark! (v : view)) => :void
+  (when (or v.mark-position v.mark-on?)
+    (source-changed! v.mark-changes))
+  (set! v.mark-position #f)
+  (set! v.mark-on? #f))
+
+;; Whether V's region, between its point and its mark, is active: shown,
+;; and what commands act on (Emacs `mark-active`). Never without a mark.
+(def (view-mark-active? (v : view)) => :boolean
+  (record-read! v.mark-changes)
+  v.mark-on?)
+
+;; Activate V's region, if V has a mark, or deactivate it.
+(def (set-view-mark-active! (v : view) (active? : :boolean)) => :void
+  (let (active? (and active? v.mark-position #t))
+    (unless (eq? active? v.mark-on?)
+      (source-changed! v.mark-changes))
+    (set! v.mark-on? active?)))
+
 ;; Show B in V. The buffer V showed keeps V's point as its own. Layouts
 ;; call this; commands call `set-view-buffer`, which asks the layout.
 (def (set-view-showing! (v : view) (b : buffer)) => :void
@@ -1298,6 +1363,7 @@ prelude: :gerbil/core
           (set! v.goal-column #f)
           (source-changed! v.changes)
           (source-changed! v.point-changes)
+          (forget-mark! v)
           (show-point! v))))) :void))
 
 ;; The item among ROOT's items that holds V's point: the line of V's
