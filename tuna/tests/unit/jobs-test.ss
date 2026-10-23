@@ -64,7 +64,7 @@
   (call-on-editor-loop
    (lambda ()
      (job-group-start! (or group starter) key input: input target: target validity: validity
-                       run: (lambda (input cancelled?) (completion-wait! gate) input)
+                       run: (lambda (input cancelled? post!) (completion-wait! gate) input)
                        apply: (lambda (result) (set! applied (cons result applied)))))))
 
 ;; Start a job of GROUP (by default the job-starter plugin's) on the baton
@@ -75,7 +75,7 @@
   (call-on-editor-loop
    (lambda ()
      (job-group-start! (or group starter) key input: input target: target validity: validity
-                       run: (lambda (input cancelled?)
+                       run: (lambda (input cancelled? post!)
                               (set! ran (cons input ran))
                               (let poll ((n 0))
                                 (cond
@@ -107,7 +107,7 @@
           (lambda ()
             (parameterize ((setting 'inside))
               (job-group-start! starter 'probe input: 'input target: (new-target)
-                                run: (lambda (input cancelled?) [input (setting) (running-task)])
+                                run: (lambda (input cancelled? post!) [input (setting) (running-task)])
                                 apply: (lambda (result)
                                          (set! applied [(append result [(and (running-task) #t)])]))))))
          (check (applied-after 1) => '((input outside #f #t))))))
@@ -280,6 +280,113 @@
            (completion-post! old-gate #t)
            (thread-sleep! 0.05)
            (check (applied-after 1) => '(new))))))
+
+    (test-case "a job's posts apply in order, before the result it returns"
+      (with-jobs
+       (lambda ()
+         (on-baton
+          (lambda ()
+            (job-group-start! starter 'posting input: 3 target: (new-target)
+                              run: (lambda (n cancelled? post!)
+                                     (let lp ((i 1)) (when (<= i n) (post! i) (lp (+ i 1))))
+                                     'end)
+                              apply: (lambda (result) (set! applied (cons result applied))))))
+         (check (applied-after 4) => '(1 2 3 end)))))
+
+    (test-case "coalesce latest applies only the newest post not yet applied"
+      (with-jobs
+       (lambda ()
+         (let ((posted (make-completion))
+               (release (make-completion))
+               (gate (make-completion)))
+           ;; The task holds the baton while the job posts five results.
+           (spawn-task! 'hold
+                        (lambda ()
+                          (job-group-start! starter 'latest input: 5 target: (new-target) coalesce: 'latest
+                                            run: (lambda (n cancelled? post!)
+                                                   (let lp ((i 1)) (when (<= i n) (post! i) (lp (+ i 1))))
+                                                   (completion-post! posted #t)
+                                                   (completion-wait! gate)
+                                                   'end)
+                                            apply: (lambda (result) (set! applied (cons result applied))))
+                          (completion-wait! release)))
+           (completion-wait! posted)
+           (completion-post! release #t)
+           (completion-post! gate #t)
+           (check (applied-after 2) => '(5 end))))))
+
+    (test-case "each post is checked for validity: exact-revision posts stop once the target changes"
+      (with-jobs
+       (lambda ()
+         (let ((gate (make-completion))
+               (target (new-target)))
+           (on-baton
+            (lambda ()
+              (job-group-start! starter 'k input: #f target: target
+                                run: (lambda (input cancelled? post!)
+                                       (post! 'before)
+                                       (completion-wait! gate)
+                                       (post! 'after)
+                                       'end)
+                                apply: (lambda (result) (set! applied (cons result applied))))))
+           (check (applied-after 1) => '(before))
+           (on-baton (lambda () (edit! target)))
+           (completion-post! gate #t)
+           (thread-sleep! 0.1)
+           (check (applied-after 1) => '(before))))))
+
+    (test-case "cancelling a job drops its posts not yet applied"
+      (with-jobs
+       (lambda ()
+         (let (posted (make-completion))
+           (spawn-task! 'hold
+                        (lambda ()
+                          (let (j (job-group-start! starter 'k input: #f target: (new-target)
+                                                    run: (lambda (input cancelled? post!)
+                                                           (post! 'dropped)
+                                                           (completion-post! posted #t)
+                                                           (job-sleep 10 cancelled?)
+                                                           'end)
+                                                    apply: (lambda (result) (set! applied (cons result applied)))))
+                            (completion-wait! posted)
+                            (job-cancel! j))))
+           (thread-sleep! 0.1)
+           (check (applied-after 0) => [])))))
+
+    (test-case "job-sleep returns #t after its delay, and #f at once when the job is cancelled"
+      (with-jobs
+       (lambda ()
+         (let ((woke #f)
+               (cancelled-at #f))
+           (on-baton
+            (lambda ()
+              (job-group-start! starter 'short input: 0.05
+                                run: (lambda (seconds cancelled? post!) (job-sleep seconds cancelled?))
+                                apply: (lambda (result) (set! applied (cons result applied))))))
+           (check (applied-after 1) => '(#t))
+           (let (j (on-baton
+                    (lambda ()
+                      (job-group-start! starter 'long input: 10
+                                        run: (lambda (seconds cancelled? post!)
+                                               (job-sleep seconds cancelled?)
+                                               (set! woke (time->seconds (current-time))))
+                                        apply: void))))
+             (thread-sleep! 0.05)
+             (on-baton (lambda ()
+                         (set! cancelled-at (time->seconds (current-time)))
+                         (job-cancel! j)))
+             (check (wait-until (lambda () woke)) => #t)
+             (check (< (- woke cancelled-at) 0.05) => #t))))))
+
+    (test-case "a job without a target applies every result until cancelled"
+      (with-jobs
+       (lambda ()
+         (on-baton
+          (lambda ()
+            (job-group-start! starter 'untargeted input: 'x
+                              run: (lambda (input cancelled? post!) (post! 'posted) input)
+                              apply: (lambda (result) (set! applied (cons result applied))))))
+         (check (applied-after 2) => '(posted x)))))
 
     (test-case "a closed group refuses new jobs"
       (with-jobs

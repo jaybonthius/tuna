@@ -79,7 +79,7 @@
      (let (t (current-text))
        (job-group-start! jobs 'gated-digits
                          input: (text-snapshot t)
-                         run: (lambda (snapshot cancelled?)
+                         run: (lambda (snapshot cancelled? post!)
                                 (completion-wait! gate)
                                 (digit-spans snapshot))
                          apply: (lambda (spans) (set-highlights! t 'digits spans))
