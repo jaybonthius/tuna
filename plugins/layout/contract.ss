@@ -37,13 +37,15 @@
 ;;;
 ;;; Clicks name parts by id (the keys contract's `posn`): a view and its
 ;;; status line by the view's id. `posn-view` and `posn-node` find the view
-;;; and node a click names, or #f once they are gone.
+;;; and node a click names, or #f once they are gone, and `posn-point` the
+;;; position in its text.
 prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
         :tuna/lib/memo
-        (only-in :tuna/plugins/keys/contract posn posn-part posn-node-id)
+        (only-in :tuna/plugins/keys/contract posn posn-part posn-node-id posn-line posn-line-revision
+                 posn-column)
         :tuna/plugins/settings/contract
         :tuna/plugins/buffers/contract)
 (export (interface-out Layout)
@@ -65,6 +67,7 @@ prelude: :gerbil/core
         view-skipped?
         posn-view
         posn-node
+        posn-point
         posn-start-node
         current-frame-target
         move-frame
@@ -309,6 +312,25 @@ prelude: :gerbil/core
            (if (fx= (node-id n) id)
              n
              (ormap find-node (node-children n)))))))
+
+;; The position clicked (Emacs `posn-point`), in the text of the node
+;; clicked (posn-node): for a click in a line of text, the gap between
+;; characters clicked, where it is now (the buffers contract's
+;; item-column-position), or #f when the line or its view is gone; for a
+;; click in a view's empty space below its text, naming neither a line
+;; nor a node, the end of the text of the view's focused node (Emacs
+;; gives point-max), or #f without one; for any other click, #f.
+(def (posn-point (p : posn)) => (Maybe :fixnum)
+  (let ((v (posn-view p))
+        (line (posn-line p)))
+    (and v
+         (cond
+          (line
+           (let (it (token-item (buffer-root (view-showing v)) line))
+             (and it (item-column-position it (posn-line-revision p) (posn-column p)))))
+          ((posn-node-id p) #f)
+          ((view-node v) => (lambda ((n : node)) (fx1+ (text-size (text-node-content n)))))
+          (else #f)))))
 
 ;; The node where click keymap lookup begins, falling back to the view's root.
 (def (posn-start-node (p : posn)) => (Maybe node)

@@ -294,13 +294,17 @@
           (let (html (screen))
             (check (and (offset "hello" html) #t) => #t)
             (check (offset "data-clickable" html) => #f)))))
-    (test-case "*scratch* renders its one text node with the cursor"
+    (test-case "*scratch* renders its one text node, with its text's revision, and the cursor"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (insert "a<b\nc")
          (goto-char 2)
          (let (html (screen))
-           (check (and (offset "class=\"text\"" html) #t) => #t)
+           (check (and (offset (string-append "class=\"text\" data-chars-revision=\""
+                                              (number->string (text-chars-revision (current-text))) "\"")
+                               html)
+                       #t)
+                  => #t)
            (check (and (offset "a<span class=\"cursor\">&lt;</span>b" html) #t) => #t)
            (check (and (offset "line 1, column 1" html) #t) => #t)))))
 

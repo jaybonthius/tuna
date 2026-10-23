@@ -1,7 +1,9 @@
 ;;; Integration: the view and frame commands of view-commands, bound by
 ;;; keys, under the default layout: C-x 2, C-x 3, C-x 0, C-x 1, C-x o,
 ;;; the S-<arrows> as a user binds them (windmove's keys; unbound by
-;;; default, as in Emacs), C-x n s, C-x n w, and the frame marks on C-x r w, C-x r j
+;;; default, as in Emacs), mouse-select-view on status lines and, as a
+;;; user binds it, on views (the text-mouse plugin's mouse-set-point has
+;;; that click by default), C-x n s, C-x n w, and the frame marks on C-x r w, C-x r j
 ;;; and C-x r l, read in the minibuffer; and the same commands under the
 ;;; toy layout, which falls back as the contract allows. The bar (the
 ;;; minibuffer's and echo area's views, pinned and locked) is left out of
@@ -38,8 +40,9 @@
   (context-set-swap-providers! ctx html-renderer layout buffers))
 
 (defplugin (view-arrows ctx)
-  "Binds the S-arrows to selecting the view on that side, as a user may in init.ss."
+  "Binds the S-arrows to selecting the view on that side, and a click in a view to selecting it, as a user may in init.ss."
   requires: [input-service]
+  (keymap-set ctx "<view> <mouse-1>" 'mouse-select-view)
   (keymap-set ctx "S-<left>" 'select-view-left)
   (keymap-set ctx "S-<right>" 'select-view-right)
   (keymap-set ctx "S-<up>" 'select-view-up)

@@ -30,7 +30,7 @@
   (make-key-event 1 #f key "" 0 #f #f #f ctrl? #f #f #f #f #f #f))
 
 (def (pointer part node: (node #f) area: (area 'view) clicks: (clicks 1))
-  (make-pointer-event 1 #f 1 clicks #f #f #f #f (make-posn area part node 1)))
+  (make-pointer-event 1 #f 1 clicks #f #f #f #f (make-posn area part node 1 #f 0 0)))
 
 ;; The name of the command EVENT resolves to, or #f.
 (def (resolve event)
@@ -103,13 +103,13 @@
                  (root (buffer-root (view-showing view)))
                  (leaf (current-text-node))
                  (part (view-id view)))
-            (check (posn-start-node (make-posn 'view part (node-id leaf) 1))
+            (check (posn-start-node (make-posn 'view part (node-id leaf) 1 #f 0 0))
                    ? (cut eq? <> leaf))
-            (check (posn-start-node (make-posn 'status-line part #f 1))
+            (check (posn-start-node (make-posn 'status-line part #f 1 #f 0 0))
                    ? (cut eq? <> root))
-            (check (posn-start-node (make-posn 'view part -1 1))
+            (check (posn-start-node (make-posn 'view part -1 1 #f 0 0))
                    ? (cut eq? <> root))
-            (check (posn-start-node (make-posn 'view -1 #f 1)) => #f)))))
+            (check (posn-start-node (make-posn 'view -1 #f 1 #f 0 0)) => #f)))))
     (test-case "click resolvers run as their owner and disappear with its receipt"
       (call-with-fresh-kernel lookup-plugins
         (lambda ()

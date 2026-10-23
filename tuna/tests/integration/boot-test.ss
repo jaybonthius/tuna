@@ -436,7 +436,7 @@
                         (configuration-declarations loaded))
                    => '(design-tokens commands keys web-transport settings session
                         rope-text-store buffers autosave layout
-                        view-commands scrolling html-renderer buttons basic-editing region kill-ring
+                        view-commands scrolling html-renderer buttons basic-editing region kill-ring text-mouse
                         minibuffer completion-engine completion-vertical extended-command
                         orderless annotations
                         echo-area help-buffer advice-help stylesheets-help

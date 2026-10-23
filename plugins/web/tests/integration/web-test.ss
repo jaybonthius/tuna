@@ -328,7 +328,7 @@
            (check (and (string-search "<main data-revision=\"" page) #t) => #t)
            (check (fixnum? (page-revision)) => #t)))))
 
-    (test-case "a pointer item becomes a pointer event: Emacs's button, its part, node and screen"
+    (test-case "a pointer item becomes a pointer event: Emacs's button, its part, node, line and screen"
       (set! (input-recorder-items recorded) [])
       (with-web-tuna [test-messages recording-input web-transport]
        (lambda ()
@@ -336,6 +336,7 @@
            (check (post-json (pointer-json (cons "revision" (number->string revision))
                                            (cons "button" "2") (cons "clicks" "2")
                                            (cons "target" "\"status-line:12\"") (cons "node" "4")
+                                           (cons "line" "{\"item\":\"4.12.3\",\"charsRevision\":9,\"column\":15}")
                                            (cons "modifiers" "{\"alt\":false,\"ctrl\":true,\"meta\":false,\"shift\":true}")))
                   => 204)
            (check (post-json (pointer-json (cons "sequence" "2") (cons "node" #f))) => 204)
@@ -350,9 +351,11 @@
                       => [#f #t #f #t])
                (check (pointer-event-names e) => ["C-S-double-mouse-3" "C-S-mouse-3"])
                (let (p (pointer-event-start e))
-                 (check [(posn-area p) (posn-part p) (posn-node-id p) (posn-revision p)]
-                        => ['status-line 12 4 revision]))
+                 (check [(posn-area p) (posn-part p) (posn-node-id p) (posn-revision p)
+                         (posn-line p) (posn-line-revision p) (posn-column p)]
+                        => ['status-line 12 4 revision "4.12.3" 9 15]))
                (check (posn-node-id (pointer-event-start bare)) => #f)
+               (check (posn-line (pointer-event-start bare)) => #f)
                (check (pointer-event-button bare) => 1)))))))
 
     (test-case "malformed and forged pointer items get 204 without being submitted"
@@ -376,7 +379,12 @@
              ("target" . "\"Tab-line:30\"") ("target" . "\"tab-line:-30\"") ("target" . "\"tab-line:30:31\"")
              ("target" . "\"tab-line:3x\"") ("target" . "\"1tab-line:30\"") ("target" . "30") ("target" . #f)
              ("target" . "\"tab-line:1234567890123456\"")
-             ("node" . "\"4\"") ("node" . "-4") ("node" . "4.5")))
+             ("node" . "\"4\"") ("node" . "-4") ("node" . "4.5")
+             ("line" . "\"4.12.3\"") ("line" . "{}")
+             ("line" . "{\"item\":\"4.x.3\",\"charsRevision\":9,\"column\":15}")
+             ("line" . "{\"item\":\"4.12.3\",\"charsRevision\":-1,\"column\":15}")
+             ("line" . "{\"item\":\"4.12.3\",\"charsRevision\":9,\"column\":1.5}")
+             ("line" . "{\"item\":\"4.12.3\",\"column\":15}")))
          (check (length (recorded-items 1)) => 1))))
 
     (test-case "a scroll item becomes a scroll event naming its view, scroller and screen"

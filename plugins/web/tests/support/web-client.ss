@@ -185,7 +185,7 @@
                    ("sequence" . "1") ("revision" . "0") ("kind" . "\"click\"")
                    ("button" . "0") ("clicks" . "1")
                    ("modifiers" . "{\"alt\":false,\"ctrl\":false,\"meta\":false,\"shift\":false}")
-                   ("target" . "\"tab-line:30\"") ("node" . "null")))
+                   ("target" . "\"tab-line:30\"") ("node" . "null") ("line" . "null")))
          (merged (filter cdr (map (lambda (field)
                                     (or (assoc (car field) changes) field))
                                   fields))))

@@ -3,8 +3,8 @@
 ;;; sent from the browser stops a running command, keys and clicks are
 ;;; handled in the order they were sent, and each tab's keys in progress
 ;;; are its own. This tests the web transport
-;;; together with keys, buffers, layout, view commands, rendering, help, and
-;;; quitting; tuna/plugins/web-test.ss tests the transport alone.
+;;; together with keys, buffers, layout, view commands, clicks in text,
+;;; rendering, help, and quitting; tuna/plugins/web-test.ss tests the transport alone.
 (import :std/io
         :std/test
         :tuna/kernel
@@ -21,6 +21,8 @@
         :tuna/plugins/buffers/plugin
         :tuna/plugins/layout/plugin
         :tuna/plugins/view-commands/plugin
+        :tuna/plugins/region/plugin
+        :tuna/plugins/text-mouse/plugin
         :tuna/plugins/renderer/plugin
         :tuna/plugins/basic-editing/plugin
         :tuna/plugins/minibuffer/plugin
@@ -33,7 +35,7 @@
 (def browser-editor-plugins
   [commands keys web-transport echo-area help-buffer
    rope-text-store settings no-session buffers layout
-   minibuffer view-commands html-renderer basic-editing endless-commands services-help])
+   minibuffer view-commands region text-mouse html-renderer basic-editing endless-commands services-help])
 
 (def (with-tuna thunk)
   (with-web-tuna browser-editor-plugins thunk))

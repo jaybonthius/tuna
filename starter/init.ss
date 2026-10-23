@@ -54,6 +54,7 @@
         :tuna/plugins/basic-editing/plugin
         :tuna/plugins/region/plugin
         :tuna/plugins/kill-ring/plugin
+        :tuna/plugins/text-mouse/plugin
         :tuna/plugins/minibuffer/plugin
         :tuna/plugins/completion/plugin
         :tuna/plugins/completion-vertical/plugin
@@ -91,6 +92,7 @@
 (use-plugin basic-editing)
 (use-plugin region)              ; C-SPC, C-x C-x, shift-select; the delete-selection setting
 (use-plugin kill-ring)           ; C-w, M-w, C-y, M-y
+(use-plugin text-mouse)          ; a click in text moves point there
 (use-plugin minibuffer)
 (use-plugin completion-engine
   config: (context-set-setting! (current-context) completion-styles '(orderless substring)))
