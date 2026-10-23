@@ -38,6 +38,10 @@ The skeleton let pieces of features creep into the kernel. The approved plan ([k
 
 Brief: [briefs/2026-10-stylesheets.md](briefs/2026-10-stylesheets.md). HTML is Tuna's only presentation language. Each plugin styles its own HTML with its own stylesheets on top of shipped design tokens; themes and `init.ss` replace any of them, and turning a plugin off takes its styles away. `describe-stylesheets` and `reload-stylesheets` inspect and reread them. The default look works on phones (dynamic viewport, safe areas, touch-sized targets) and in forced-colours mode. See [how Tuna works](overview.md#how-it-looks-html-and-stylesheets).
 
+## Done: drawing only what changed (2026-10-23)
+
+Brief: [briefs/2026-10-drawing-only-what-changed.md](briefs/2026-10-drawing-only-what-changed.md), [ADR 17](../agents/adr/0017-memo-and-sources.md). Every piece of the screen records what it read and is reused while nothing changed; a key redraws one line; an idle editor does nothing; screens are written into the stream as bytes. Work off the editor thread ([brief](briefs/2026-10-background-work.md)): `off-thread`, `sleep-for` and sources, proved by the `proced` demo. See [how Tuna works](overview.md#drawing-only-what-changed).
+
 ## Research before windows and scrolling
 
 How the server learns layout facts from the browser (event-attached facts, measurement requests, Rocket components for local-only behavior). See [the capability-audit brief](briefs/2026-10-capability-audit.md).
@@ -46,7 +50,7 @@ How the server learns layout facts from the browser (event-attached facts, measu
 
 1. *Done (2026-10-13): commands contract, `M-x`, completion ([brief](briefs/2026-10-completion.md)).* Still to do here: prefix-key help (which-key style), Consult-style sources and preview, Embark-style actions.
 2. Windows: the window contract and the default layout-tree window manager ([desired design](ideas/window-management.md)), starting with a brief; `display-buffer`-style rules, window configurations, mode line; major and minor modes as plugins.
-3. Real syntax highlighting and language-server integration as jobs and subprocesses. Tree-sitter is the default (owner, 2026-10-22).
+3. Real syntax highlighting and language-server integration as jobs and subprocesses. Tree-sitter is the default (owner, 2026-10-22). The background machinery it needs is built (jobs that post several results, `off-thread`, sources, ranged highlights); highlighting itself is not.
 
    Notes from 2026-10-22, not decisions; research again before building:
    - **Highlighting works on what is drawn,** as Emacs's jit-lock, Neovim, Zed, VS Code and CodeMirror do. A background job keeps the whole-file tree-sitter tree up to date incrementally, colours the drawn range plus a margin (any tab's drawn lines, from scrolling), and posts that range through stage 3's ranged highlights. A deferred pass recolours the lines after an edit, for multi-line constructs. Highlighters that need context from the top keep a state per line end (VS Code).

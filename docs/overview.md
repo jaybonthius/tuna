@@ -1,6 +1,6 @@
 # How Tuna works
 
-**Status (2026-10-21):** scrolling (below) is built, with the browser's own scroll bar. The architecture skeleton, the buffers, views and layout work, the kernel's alignment with Cordis, and the split into one package per concept are complete. Built: the small kernel (plugins with receipts, one plugin per service, swapping a service's plugin by restarting and restoring saved data, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the loopback browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML, the only presentation language; a bare second HTML renderer proves the slot can be swapped), buffers as a replaceable service (editing, undo and highlights live in the buffers plugin; a toy buffers plugin proves the slot), the layout (splits, tabs, a movable frame with frame marks, pinning, and the minibuffer and echo area as ordinary views; a toy two-view layout proves the slot), saving your session and unsaved text across restarts, and starting from and reloading your `init.ss` (stages 1 and 2 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, `tuna check`, reloading with `reload-config` or `tuna reload`, and, from stage 3, plugin options and the `show-config-report` command). Also built: each plugin styling its own HTML with its own stylesheets, which themes and `init.ss` can replace ([below](#how-it-looks-html-and-stylesheets)), clicks and buttons, nested containers, `M-x` with completion (a vertical list, any-order matching, and annotations), plugins that may use only the services they declare, and evaluating code into the running session (the entry points; the `eval-buffer` and `M-:` commands come later). Not built yet: files, modes, and scrolling strips. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
+**Status (2026-10-23):** scrolling (below) is built, with the browser's own scroll bar. The architecture skeleton, the buffers, views and layout work, the kernel's alignment with Cordis, and the split into one package per concept are complete. Built: the small kernel (plugins with receipts, one plugin per service, swapping a service's plugin by restarting and restoring saved data, the editor thread with `C-g`, hooks; cut back on 2026-10-12 to the four things described [below](#a-small-kernel-and-a-lot-of-plugins)), the loopback browser connection, key handling, buffers as node trees with an editable text node, a swappable text store (a rope by default), basic editing with undo, the echo area and minibuffer with `read-string`, temporary settings, timers, background jobs, a swappable renderer (HTML, the only presentation language; a bare second HTML renderer proves the slot can be swapped), buffers as a replaceable service (editing, undo and highlights live in the buffers plugin; a toy buffers plugin proves the slot), the layout (splits, tabs, a movable frame with frame marks, pinning, and the minibuffer and echo area as ordinary views; a toy two-view layout proves the slot), saving your session and unsaved text across restarts, and starting from and reloading your `init.ss` (stages 1 and 2 of [the configuration plan](../agents/plans/configuration.md): `use-plugin` declarations, `config:` blocks, your own code as a plugin, a start-up report, `tuna init`, `tuna check`, reloading with `reload-config` or `tuna reload`, and, from stage 3, plugin options and the `show-config-report` command). Also built: drawing only what changed and work off the editor thread ([below](#drawing-only-what-changed)), several tabs mirroring one editor, each plugin styling its own HTML with its own stylesheets, which themes and `init.ss` can replace ([below](#how-it-looks-html-and-stylesheets)), clicks and buttons, nested containers, `M-x` with completion (a vertical list, any-order matching, and annotations), plugins that may use only the services they declare, and evaluating code into the running session (the entry points; the `eval-buffer` and `M-:` commands come later). Not built yet: files, modes, and scrolling strips. Sections marked *planned* describe the design for what isn't built. This page is updated as each piece is built, so it always describes what's real. The detailed reasoning lives in the [architecture decision records](../agents/adr/README.md).
 
 ## The idea
 
@@ -77,6 +77,8 @@ Around that loop:
 ![Typing a letter](diagrams/typing-a-letter.svg)
 
 The important part is the split between the fast path and the slow path. The letter shows up after one command and one redraw (steps 1–8). Highlighting runs separately and arrives a moment later (steps 9–12).
+
+The redraws in steps 7 and 11 rebuild only the line that changed: every other line, view and part of the screen is reused as it was ([drawing only what changed](#drawing-only-what-changed)).
 
 Every change bumps the buffer's version number. The highlighting job works on version 42. If you've typed more by the time its colors come back, Tuna keeps a short record of every change since version 42 and shifts the colors past what you typed, so they still land on the right characters. In Emacs, slow work like this freezes the whole editor. In Tuna it can't, because it never runs on the editor thread.
 
@@ -254,6 +256,28 @@ A view lays out **items**: a text's lines, a list's rows; each kind of node says
 
 There are two flows. When you scroll, the browser reports what it measured (only when you near the end of what is drawn, or a spacer comes into view, one report at a time), and Tuna draws more ahead and drops what is far behind; the browser keeps the item you are reading still. When Tuna moves the view (`C-v`, `M-v`, `C-l`, `M-<`, `M->`, point moving off screen, a refresh, a restart), it **places** an item at the top, centre or bottom, and the browser carries that out once. Scroll reports are special events, like Emacs's focus events: they never count as a command. Whichever moved last wins: after you move point, the view follows it; after you scroll, point follows into view (the `scroll-moves-point` setting turns that off). Each view's scroll state is saved with your session, and a refresh keeps your place.
 
+## Drawing only what changed
+
+**Status:** built 2026-10-22 ([ADR 17](../agents/adr/0017-memo-and-sources.md); brief [drawing only what changed](briefs/2026-10-drawing-only-what-changed.md)).
+
+Every redraw still sends the whole visible screen to the browser as one piece of HTML, as before. What changed is how cheaply Tuna produces it. The screen is made of **pieces**: the screen, each view, each node of a buffer, each line of a text, each row of a list. Each piece is drawn through one function, `memo`, which notes everything the piece read while drawing: a node's attributes, a line's text, the highlighting and cursor on a line, a setting, what this tab measured. Everything that can change has a **revision** that moves when it changes. On the next redraw, a piece none of whose reads moved is reused as it was, and a parent with nothing changed beneath it is reused in one check. Renderers are ordinary functions that never mention any of this; the accessors they read through do the noting.
+
+![What each piece of the screen depends on](diagrams/memo-pieces-and-sources.svg)
+
+Lines are compared by what they show (their text, the highlighting on them, the cursor on them), not by their position, so this works for any way of storing text. Typing a letter redraws one line; moving the cursor redraws the one or two lines it left and entered; a highlighting result redraws only the lines whose colours changed, and an identical result redraws nothing. Pieces that did not depend on a particular tab are shared by every tab. Pieces are kept as bytes, and the screen is written straight into the stream, so producing a screen copies nothing that did not change. When nothing changed, nothing is drawn or sent: an idle editor does no work at all. In tests, every screen is drawn twice, once reusing pieces and once from scratch, and the test fails if the two differ, which catches a renderer that reads something behind Tuna's back.
+
+## Work off the editor thread
+
+**Status:** built 2026-10-23 (brief [work off the editor thread](briefs/2026-10-background-work.md); [ADR 3](../agents/adr/0003-command-loop-and-jobs.md)).
+
+Only the editor thread changes editor state, so nothing needs a lock. Slow work runs elsewhere on plain data (numbers, strings, lists, snapshots of text) and its result comes back to the editor thread, which applies it; the screen then redraws what changed. A command that needs slow work calls `(off-thread procedure input)`: the command pauses, the work runs on another thread, and the command carries on with the answer, while you keep typing. `(sleep-for seconds)` pauses the same way. `C-g` stops a command that is waiting, from any tab.
+
+![Work off the editor thread](diagrams/background-work.svg)
+
+State that lives outside Tuna, such as running processes, git status or files, comes in through a **source**: something read on its own thread every so often, compared there with the last reading, and posted to the editor only when it differs. So a source that sees nothing new makes the editor do nothing. The demo's `C-c P` opens `*Processes*`, a live process list fed by a source reading `/proc` every second: when two processes change, two rows are redrawn.
+
+![One second of a live process list](diagrams/memo-process-list-second.svg)
+
 ## How it looks: HTML and stylesheets
 
 **Status:** built.
@@ -323,7 +347,13 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 - **Per-tab state**: the three things kept for each tab, on the server and never saved: its id and connection, its keys in progress, and what its browser measured.
 - **Version** (or revision): a number that goes up every time a buffer, or a part of it, changes.
 - **Snapshot**: a frozen copy of a buffer's text at one version, cheap to make.
-- **Job**: slow work done off the editor thread using a snapshot.
+- **Job**: slow work done off the editor thread using a snapshot; it may post several results.
+- **Piece**: any part of the screen with its own HTML: the screen, a view, a node, a line, a row.
+- **Source** (in drawing): anything a piece can read that has a revision, which moves when it changes.
+- **`memo`**: draws a piece, or reuses its last HTML when nothing it read has changed.
+- **Off-thread**: running a procedure on another thread while the calling command pauses, then resuming it with the answer.
+- **Source** (outside state): something outside Tuna, read on its own thread, that posts only its changes.
+- **Plain data**: numbers, strings, symbols, booleans, and lists and vectors of them; anything crossing threads must be plain data.
 - **Job group**: a plugin's set of jobs; turning the plugin off cancels them.
 - **Candidate**: one thing you can choose in a list, with the text shown and the value returned.
 - **Category**: what kind of thing the candidates are (`command`, later `buffer` or `file`); annotations and settings key off it.

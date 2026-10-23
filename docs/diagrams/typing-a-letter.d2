@@ -22,7 +22,7 @@ fast: Fast path: the letter appears right away {
   web -> editor: 4. queue the key
   editor -> editor: 5. run the insert command:\nbuffer now says "a",\nversion 41 → 42
   editor -> job: 6. start highlighting\nwith a snapshot of version 42
-  editor -> web: 7. new screen (plain "a")
+  editor -> web: "7. new screen: only the changed line\nis drawn again (plain \"a\")"
   web -> browser: 8. show it {
     style.stroke-dash: 3
   }
@@ -31,7 +31,7 @@ fast: Fast path: the letter appears right away {
 slow: Slow path: colors arrive a moment later {
   job -> editor: 9. colors for version 42
   editor -> editor: "10. shift the colors past anything\nyou typed since version 42,\nthen apply them"
-  editor -> web: 11. new screen (colored "a")
+  editor -> web: "11. new screen: only lines whose\ncolors changed are drawn again"
   web -> browser: 12. show it {
     style.stroke-dash: 3
   }

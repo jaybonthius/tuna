@@ -1,6 +1,6 @@
 # 17. Drawing only what changed: `memo` pieces over revisioned sources
 
-Status: accepted (2026-10-22). Owner-approved brief: [`docs/briefs/2026-10-drawing-only-what-changed.md`](../../docs/briefs/2026-10-drawing-only-what-changed.md). Research: [`agents/research/rendering/`](../research/rendering/). Amends ADR 13 ("Drawing": HTML reuse keyed by hand) and ADR 7 (screen assembly); keeps ADR 7's fat morph and ADR 12's kernel unchanged.
+Status: accepted (2026-10-22); built 2026-10-23 (plan [`agents/plans/drawing-only-what-changed.md`](../plans/drawing-only-what-changed.md), stages 1–5; as-built notes in `agents/plans/drawing-stage{2,3,4,5}-design.md`). Owner-approved brief: [`docs/briefs/2026-10-drawing-only-what-changed.md`](../../docs/briefs/2026-10-drawing-only-what-changed.md). Research: [`agents/research/rendering/`](../research/rendering/). Amends ADR 13 ("Drawing": HTML reuse keyed by hand) and ADR 7 (screen assembly); keeps ADR 7's fat morph and ADR 12's kernel unchanged.
 
 ## Context
 

@@ -39,7 +39,7 @@ Around those rules:
 
 ## The picture
 
-**Status:** planned.
+**Status:** built 2026-10-23.
 
 ![What each piece of the screen depends on](../diagrams/memo-pieces-and-sources.svg)
 

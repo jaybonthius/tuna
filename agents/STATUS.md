@@ -2,7 +2,11 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: drawing only what changed (stages 1-5 merged; stage 6, records, next)
+## Current work: none in progress; drawing only what changed just finished
+
+**Drawing only what changed: done 2026-10-23** (plan `agents/plans/drawing-only-what-changed.md`, ADR 17, briefs `docs/briefs/2026-10-drawing-only-what-changed.md` and `docs/briefs/2026-10-background-work.md`, as-built notes `agents/plans/drawing-stage{2,3,4,5}-design.md`). Pieces drawn through `memo` record what they read; lines by value; HTML as bytes streamed through gerbil-datastar's `call-with-patch-elements` (gerbil-sse `f675e5b`, gerbil-datastar `78634fb`, pushed); `off-thread`, `sleep-for`, sources, jobs posting several results; the `proced` demo (`C-c P`); kernel fixes: loop reachable from any thread, a C-g a task did not act on is queued. Open items in `TODO.md`.
+
+## Previous work: drawing only what changed (detail)
 
 **Drawing only what changed: approved 2026-10-22** (brief `docs/briefs/2026-10-drawing-only-what-changed.md`, ADR 17, plan `agents/plans/drawing-only-what-changed.md`, research `agents/research/rendering/`). Every piece of the screen drawn through `memo`, which records the sources it reads (owner decision: automatic recording, not hand-written keys) and reuses its HTML while none moved; lines compared by value; outside state as sources posting only differences; idle does nothing; pieces written as bytes. Fat morph unchanged; kernel unchanged. Stage 1 starts with the line-id bug the audit reproduced. Proof: a `proced`-style process-list plugin.
 

@@ -30,7 +30,7 @@ Jobs stay, with an added "post a result" procedure, for work that needs "newest 
 
 ## The picture
 
-**Status:** planned.
+**Status:** built 2026-10-23.
 
 ![Work off the editor thread](../diagrams/background-work.svg)
 
