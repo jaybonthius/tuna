@@ -16,7 +16,7 @@
 
 ## Tuna
 
-- [ ] **Jobs that post several results** (carry-over from stage 3). A job's `run` returns one result. Posting partial results (for example a highlighter coloring a large text in chunks) needs a way for `run` to post through the job's validity check without finishing; deferred until a job needs it.
+- [ ] **A prefix key once lost in the browser** (drawing stage 5, 2026-10-23). In a two-browser check, `C-c W` typed in browser A once inserted `W` into *scratch*: A's pending `C-c` was gone when `W` arrived. Browser B had just pressed `C-g`, and *Processes* was live. It did not happen again in 25 later `C-c W` sequences (10 with a `C-g` from the other browser 0.1-2 s later, 5 in the same browser, 10 without `C-g`). The keys test "another client's C-g leaves this client's pending prefix alone" passes. If it comes back, log the key events the web transport submits per tab (client, sequence, key) and check whether the `W` and the `C-c` arrived from the same tab, in order.
 - [ ] **Autosave runs on the baton.** Each changed text is written synchronously while idle. Texts are persistent, so a large text could be written from a job over a snapshot instead.
 - [ ] **No `fsync` before the atomic rename** of session and autosave files: a crash of the machine (not of Tuna) shortly after a save could leave an empty file on some file systems. Gambit has no portable `fsync`.
 
