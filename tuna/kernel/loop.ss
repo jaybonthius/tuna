@@ -557,6 +557,10 @@ prelude: :gerbil/core
       (set! suspended.state 'suspended)
       (set! suspended.suspension s)
       (set! loop.waiting (cons suspended loop.waiting))
+      ;; Asked to quit after suspend's quit check: quit the wait now
+      ;; rather than leave the request until it resumes.
+      (when (and suspended.quit-requested? (fxzero? suspended.inhibit-depth) (not s.outcome))
+        (set! s.outcome (cons #t (quit-condition forced?: #f))))
       (when s.outcome
         (set! loop.resumes (append loop.resumes [s]))))))
 

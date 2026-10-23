@@ -18,6 +18,7 @@
 (def redisplays 0)
 (def waiting #f)          ; the suspension of the `wait` task
 (def saw-pending? #f)
+(def arm-gate #f)         ; completion: let the wait-slowly task finish arming
 
 (defstruct counting-display ()
   final: #t)
@@ -54,6 +55,12 @@
            (with-inhibit-quit (let lp () (lp)))))
    (cons 'wait                          ; wait to be resumed, then note the value
          (lambda () (note! [(suspend (lambda (s) (set! waiting s)))])))
+   (cons 'wait-slowly                   ; like wait, but arming waits for arm-gate
+         (lambda ()
+           (note! [(suspend (lambda (s)
+                              (set! waiting s)
+                              (set! started? #t)
+                              (completion-wait! arm-gate)))])))
    (cons 'discard                       ; note whether input is pending, then discard it
          (lambda ()
            (set! saw-pending? (input-pending?))
@@ -63,7 +70,7 @@
 
 (for-each (lambda (key) (hash-put! test-bindings key (task-named (string->symbol key))))
           ["note-a" "note-b" "fail" "block" "cooperative-loop" "stubborn-loop" "inhibited-loop"
-           "wait" "discard"])
+           "wait" "wait-slowly" "discard"])
 
 (defplugin (idle ctx)
   "Registers nothing.")
@@ -342,6 +349,22 @@
           (press "note-a")
           (settled-message)
           (check log => '(a))
+          (finally (hash-remove! test-bindings "quit"))))
+       quit-grace: 30.))
+
+    (test-case "an interrupt between a task's last quit check and its suspension quits the wait"
+      (set! arm-gate (make-completion))
+      (with-loop
+       (lambda ()
+         (hash-put! test-bindings "quit" (task-named 'note-quit))
+         (try
+          (press "wait-slowly")
+          (check (wait-until (lambda () started?)) => #t)
+          (press "quit")
+          (thread-sleep! 0.1)           ; the loop has asked the task to quit
+          (completion-post! arm-gate #t)
+          (check (wait-until (lambda () (equal? (settled-message) "Quit"))) => #t)
+          (check log => '())
           (finally (hash-remove! test-bindings "quit"))))
        quit-grace: 30.))
 

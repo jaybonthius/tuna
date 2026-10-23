@@ -90,7 +90,7 @@ A bug fix, approved with the [background work brief](../../docs/briefs/2026-10-b
 
 No plugin or library could own this: only the kernel knows which loop a suspension or task belongs to.
 
-A second quit-lane bug fix in the same stage (2026-10-23): a task now records the interrupt item that asked it to quit (`task-interrupt`, private), and when it ends without having quit, the loop queues that item as input instead of dropping it (ADR 3). Before, a `C-g` that reached a short task which never checked for quit was lost, which sources made frequent. No export, signature or message changes; only the loop sees the quit lane.
+A second quit-lane bug fix in the same stage (2026-10-23): a task now records the interrupt item that asked it to quit (`task-interrupt`, private), and when it ends without having quit, the loop queues that item as input instead of dropping it (ADR 3). And a task asked to quit between `suspend`'s quit check and its suspension now quits that wait at once. Before, a `C-g` that reached a short task which never checked for quit was lost, which sources made frequent, and one that reached a task about to wait was held until the wait ended. No export, signature or message changes; only the loop sees the quit lane.
 
 ## Consequences
 
