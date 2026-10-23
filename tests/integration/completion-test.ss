@@ -35,7 +35,7 @@ prelude: :gerbil/core
       (filter (lambda ((n : node)) (eq? (node-kind n) 'completion-row)) (node-children (car lists))))))
 (def (row-texts) => :list
   (map (lambda ((n : node)) (candidate-text (node-attribute n 'candidate))) (row-nodes)))
-(def (html) => :string (Renderer-render-screen (Renderer (service-provider renderer-service)) #f))
+(def (html) => :string (html->string (Renderer-render-screen (Renderer (service-provider renderer-service)) #f)))
 (def (contains? (text : :string) (part : :string)) => :boolean (and (string-contains text part) #t))
 
 (defclass completion-display () final: #t)

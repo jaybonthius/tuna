@@ -62,11 +62,11 @@ prelude: :gerbil/core
 
 (defmethod {render-screen bare-rendering}
   (lambda (self c)
-    (call-with-output-string ""
-      (lambda (port)
-        (write-sxml `(main (@ (id "screen") (class "screen") (data-renderer "bare"))
-                       ,(render-layout 'html render-view))
-                    port: port xml?: #f)))))
+    (let (port (open-output-u8vector (list char-encoding: 'UTF-8)))
+      (write-sxml `(main (@ (id "screen") (class "screen") (data-renderer "bare"))
+                     ,(render-layout 'html render-view))
+                  port: port xml?: #f)
+      (get-output-u8vector port))))
 
 (defplugin (bare-renderer ctx)
   "Renders the screen as HTML without reuse (a toy)."

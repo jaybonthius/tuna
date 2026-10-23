@@ -28,7 +28,10 @@
 ;;; Each redisplay renders a screen for each tab that has a stream open, as
 ;;; that tab's browser shows the editor (the renderer contract), and sends
 ;;; it when it differs from the tab's last screen or the tab is owed one
-;;; for a scroll report. Rendering happens on the editor thread only: a
+;;; for a scroll report. A screen is the renderer's HTML, UTF-8 bytes in
+;;; parts, streamed into its event as they are (call-with-patch-elements):
+;;; its revision and its data-init are written after its root element's
+;;; tag name as it is sent, so no screen is ever copied. Rendering happens on the editor thread only: a
 ;;; page being served, or a stream that opens, asks the editor loop to
 ;;; redisplay, and waits for its screen.
 ;;; Each page's stream sends a screen only once the page has applied the
@@ -115,9 +118,8 @@
    (pending   : HashTable)      ; sequence -> input item
    (numbered? : :boolean)       ; whether its first item set NEXT
    ;; Guarded by the server's mutex:
-   (screen    : :string)        ; the newest screen for it
-   (rendered  : :string)        ; the renderer's output for it, before stamping
-   (revision  : :fixnum)        ; SCREEN's revision
+   (rendered  : :t)             ; the newest screen for it, the renderer's HTML
+   (revision  : :fixnum)        ; RENDERED's revision
    (owed      : :boolean)       ; a scroll report awaits a screen
    (wanted?   : :boolean)       ; a screen must be rendered for it before it is sent one
    (applied   : HashTable)      ; its stream -> last screen count its page applied
@@ -151,43 +153,70 @@
 ;;; Screens
 
 ;; The screen for client C. Editor thread only.
-(def (render-screen (c : client-type)) => :string
+(def (render-screen (c : client-type)) => :t
   (let (renderer (service-provider renderer-service))
     (if renderer
-      (:- (Renderer-render-screen (Renderer renderer) c) :string)
-      "<main id=\"screen\"><p>No renderer is active.</p></main>")))
+      (Renderer-render-screen (Renderer renderer) c)
+      no-renderer-screen)))
 
-;; What a tab shows before a screen was rendered for it.
-(def empty-screen "<main id=\"screen\"></main>")
+(def no-renderer-screen (string->utf8 "<main id=\"screen\"><p>No renderer is active.</p></main>"))
+
+;; What a tab shows before a screen was rendered for it; that it shows
+;; this very object means none was.
+(def empty-screen (string->utf8 "<main id=\"screen\"></main>"))
 
 ;; Seconds a page being served waits for the editor loop to render its
 ;; screen, before it is served without one and its stream brings it.
 (def page-render-seconds 2.)
 
-;; SCREEN with REVISION as data-revision on its root element, so that
-;; pointer items can name the screen they were computed on (ADR 7).
-(def (stamp-revision (screen : :string) (revision : :fixnum)) => :string
-  (add-root-attributes screen (string-append " data-revision=\"" (number->string revision) "\"")))
+;; What a screen sent as REVISION carries on its root element: as the
+;; COUNTth screen sent on STREAM, a data-init telling the page to confirm
+;; it once applied (go-latest-frame-spike's /next); then REVISION as
+;; data-revision, so that pointer items can name the screen they were
+;; computed on (ADR 7). The page's first screen has no data-init.
+(def (screen-stamps (revision : :fixnum) (stream :? :fixnum) (count :? :fixnum)) => :u8vector
+  (string->utf8
+   (string-append
+    (if (and stream count)
+      (string-append " data-init=\"@post('/applied?stream=" (number->string stream)
+                     "&amp;count=" (number->string count) "'); el.removeAttribute('data-init')\"")
+      "")
+    " data-revision=\"" (number->string revision) "\"")))
 
-;; SCREEN, as the COUNTth screen sent on STREAM, telling the page to
-;; confirm it once applied (go-latest-frame-spike's /next).
-(def (stamp-applied (screen : :string) (stream : :fixnum) (count : :fixnum)) => :string
-  (add-root-attributes
-   screen
-   (string-append " data-init=\"@post('/applied?stream=" (number->string stream)
-                  "&amp;count=" (number->string count) "'); el.removeAttribute('data-init')\"")))
-
-;; SCREEN with ATTRIBUTES (text with a leading space) after its root tag name.
-(def (add-root-attributes (screen : :string) (attributes : :string)) => :string
-  (let* ((size (string-length screen))
-         (end (let lp ((i 1))
-                (if (and (fx< i size)
-                         (not (memv (string-ref screen i) '(#\space #\tab #\newline #\> #\/))))
-                  (lp (fx1+ i))
-                  i))))
-    (if (and (fx> size 1) (char=? (string-ref screen 0) #\<))
-      (string-append (substring screen 0 end) attributes (substring screen end size))
-      screen)))
+;; SCREEN's bytes to OUT, with STAMPS (text with a leading space) after its
+;; root element's tag name: before the first space, tab, newline, > or /
+;; after its first byte, which must be <; without them when it is not.
+(def (write-stamped-screen (out : BufferedWriter) (screen : :t) (stamps : :u8vector)) => :void
+  (let ((state 'start)                  ; start, name (in the tag name) or done
+        (seen 0))
+    (html-for-each
+     (lambda ((bytes : :u8vector))
+       (let (size (u8vector-length bytes))
+         (case state
+           ((done) (BufferedWriter-write out bytes))
+           (else
+            (let (from (cond
+                        ((fxzero? size) 0)
+                        ((eq? state 'name) 0)
+                        ((fx= (u8vector-ref bytes 0) 60) (set! state 'name) 1)
+                        (else (set! state 'done) size)))
+              (let (end (let lp ((i from))
+                          (if (and (eq? state 'name) (fx< i size)
+                                   (not (memv (u8vector-ref bytes i) '(32 9 10 62 47))))
+                            (lp (fx1+ i))
+                            i)))
+                (if (and (eq? state 'name) (fx< end size))
+                  (begin
+                    (BufferedWriter-write out bytes 0 end)
+                    (BufferedWriter-write out stamps)
+                    (BufferedWriter-write out bytes end size)
+                    (set! state 'done))
+                  (BufferedWriter-write out bytes))))))
+         (set! seen (fx+ seen size))))
+     screen)
+    ;; A screen that is all tag name: the stamps go at its end.
+    (when (and (eq? state 'name) (fx> seen 1))
+      (BufferedWriter-write out stamps))))
 
 ;; Only the editor loop redisplays, so revisions are assigned in order.
 ;; It also holds the baton, so it may read the stylesheets registry and
@@ -209,7 +238,7 @@
 ;; owed a screen, and with HEAD for SERVED stylesheets, when given, to every
 ;; tab. A screen is drawn only from editor state, so the same screen as a
 ;; tab's last one means nothing on it changed: that tab is sent nothing.
-;; A renderer that saw nothing change returns the very string it returned
+;; A renderer that saw nothing change returns the very HTML it returned
 ;; last time, which is told apart without reading it. A page sends one
 ;; scroll report at a time and waits for a screen before the next, so a
 ;; report is always answered with one.
@@ -220,12 +249,12 @@
       (set! self.served served))
     (for-each (lambda ((screen : :pair))
                 (using (tab (car screen) : web-tab)
-                  (let (rendered (:- (cdr screen) :string))
+                  (let (rendered (cdr screen))
                     (when (or served tab.owed
-                              (not (or (eq? rendered tab.rendered) (string=? rendered tab.rendered))))
+                              (not (or (eq? rendered tab.rendered) (equal? rendered tab.rendered))))
                       (let (revision (fx1+ self.revision))
                         (set! self.revision revision)
-                        (give-screen! tab (stamp-revision rendered revision) rendered revision)))
+                        (give-screen! tab rendered revision)))
                     (set! tab.wanted? #f))))
               screens)
     (condition-variable-broadcast! self.changed)))
@@ -234,16 +263,15 @@
 ;; scroll report that no task runs for.
 (def (resend-screen! (self : web-server) (tab : web-tab)) => :void
   (do-with-lock self.mutex
-    (unless (fxzero? (string-length tab.rendered))
+    (unless (eq? tab.rendered empty-screen)
       (let (revision (fx1+ self.revision))
         (set! self.revision revision)
-        (give-screen! tab (stamp-revision tab.rendered revision) tab.rendered revision)
+        (give-screen! tab tab.rendered revision)
         (condition-variable-broadcast! self.changed)))))
 
-;; Make SCREEN, RENDERED stamped with REVISION, TAB's newest screen. Call
-;; with the server's mutex held.
-(def (give-screen! (tab : web-tab) (screen : :string) (rendered : :string) (revision : :fixnum)) => :void
-  (set! tab.screen screen)
+;; Make RENDERED, as REVISION, TAB's newest screen. Call with the server's
+;; mutex held.
+(def (give-screen! (tab : web-tab) (rendered : :t) (revision : :fixnum)) => :void
   (set! tab.rendered rendered)
   (set! tab.revision revision)
   (set! tab.owed #f))
@@ -261,7 +289,7 @@
     (let lp ()
       (let* ((applied? (fx>= (: (hash-ref tab.applied stream 0) :fixnum) count))
              (deadline (+ start (if applied? heartbeat-seconds self.timeout)))
-             (newest (lambda () (let (newest [tab.revision self.head tab.screen])
+             (newest (lambda () (let (newest [tab.revision self.head tab.rendered])
                                   (mutex-unlock! self.mutex)
                                   newest))))
         (cond
@@ -283,7 +311,7 @@
 ;; loop renders for it. The server makes the id, not the page, so it knows
 ;; the tab counts from 1 even when its second item arrives before its
 ;; first.
-(def (new-page (self : web-server)) => :string
+(def (new-page (self : web-server)) => :u8vector
   (let (id (new-tab-id))
     (using (tab (do-with-lock self.mutex
                   (let (tab (tab-named! self id))
@@ -303,7 +331,7 @@
                 (mutex-unlock! self.mutex self.changed left)
                 (mutex-lock! self.mutex)
                 (lp))
-              (let (page (page-html id self.head tab.screen))
+              (let (page (page-html id self.head tab.rendered tab.revision))
                 (mutex-unlock! self.mutex)
                 page))))))))
 
@@ -438,7 +466,15 @@
                                   (read-file-u8vector file))))
       (respond-text response Not-Found (string-append "Not found: " rest)))))
 
-(def (page-html (tab : :string) (head : :string) (screen : :string)) => :string
+(def (page-html (tab : :string) (head : :string) (screen : :t) (revision : :fixnum)) => :u8vector
+  (let (out (open-buffered-writer #f))
+    (BufferedWriter-write-string-utf8 out (page-start tab head))
+    (write-stamped-screen out screen (screen-stamps revision #f #f))
+    (BufferedWriter-write-string-utf8 out "</body></html>")
+    (get-memory-output-u8vector out)))
+
+;; The page up to its screen.
+(def (page-start (tab : :string) (head : :string)) => :string
   (string-append
    "<!doctype html>"
    "<html lang=\"en\""
@@ -455,7 +491,7 @@
    " data-on:auxclick__document=\"@tunaPointer()\">"
    head
    ;; The renderer's HTML is already escaped.
-   "<body>" screen "</body></html>"))
+   "<body>"))
 
 ;;; Requests
 
@@ -499,7 +535,7 @@
                                 '(("Content-Type" . "text/html; charset=utf-8")
                                   ("Cache-Control" . "no-store")
                                   ("Referrer-Policy" . "no-referrer"))
-                                (string->utf8 (new-page self)))
+                                (new-page self))
         (respond-text response Method-Not-Allowed "Use GET.")))
      ((string=? path "/screen")
       (let (id (and (string=? method "GET")
@@ -547,7 +583,7 @@
   (or (hash-get self.tabs id)
       (let (tab (web-tab client: (make-client id)
                          next: 1 pending: (make-hash-table-eqv) numbered?: #f
-                         screen: (stamp-revision empty-screen 0) rendered: "" revision: 0
+                         rendered: empty-screen revision: 0
                          owed: #f wanted?: #f applied: (make-hash-table-eqv) streams: 0 closings: 0))
         (hash-put! self.tabs id tab)
         ;; A tab that never opens a stream is forgotten as if its streams
@@ -638,7 +674,10 @@
                ([revision head screen]
                 (unless (string=? head sent-head)
                   (patch-elements session head))
-                (patch-elements session (stamp-applied screen stream (fx1+ count)))
+                (let (stamps (screen-stamps revision stream (fx1+ count)))
+                  (call-with-patch-elements
+                   session
+                   (lambda (out) (write-stamped-screen out screen stamps))))
                 (lp revision head (fx1+ count)))
                ('heartbeat
                 (patch-signals session "{}")

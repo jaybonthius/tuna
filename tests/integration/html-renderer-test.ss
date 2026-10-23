@@ -48,8 +48,10 @@
                                                         (new-text-node
                                                          (new-text "This buffer is a tree: a column holding a heading and this text.\nType here; the heading stays.\n"))]))))
 
-(def (screen (c #f))
+(def (screen-html (c #f))
   (Renderer-render-screen (Renderer (service-provider renderer-service)) c))
+(def (screen (c #f))
+  (html->string (screen-html c)))
 
 ;; Calls of the counted kind's HTML renderer, by the name of the buffer
 ;; holding the node, which each counted node carries (its 'in attribute):
@@ -197,11 +199,11 @@
                                                                        (make-span 8 9 'digit)])
                                            (screen))))
               => 1)
-       (let (before (screen))
+       (let (before (screen-html))
          (check (pieces-drawn (lambda ()
                                 (set-highlights! t 'digits [(make-span 2 3 'digit) (make-span 4 6 'digit)
                                                             (make-span 8 9 'digit)])
-                                (check (eq? (screen) before) => #t)))
+                                (check (eq? (screen-html) before) => #t)))
                 => []))))))
 
 ;; The buffer "blocks": a column of a block holding the text "a1".."a3",
@@ -301,6 +303,43 @@
            (check (and (offset "class=\"text\"" html) #t) => #t)
            (check (and (offset "a<span class=\"cursor\">&lt;</span>b" html) #t) => #t)
            (check (and (offset "line 1, column 1" html) #t) => #t)))))
+
+    (test-case "a screen refers to the HTML of what did not change, never copying it"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (insert (fifty-thousand-lines))
+         (let* ((v (selected-view))
+                (n (view-node v)))
+           (set-view-scroll! v #f (node-item-at n 100) 0.)
+           (set-client-view-drawn-items! (view-client v #f) 40 40)
+           (goto-char (text-line-start (current-text) 101))
+           (let* ((before (screen-html))
+                  (kept (make-hash-table-eq))
+                  (_ (html-for-each (lambda (bytes) (hash-put! kept bytes #t)) before))
+                  (after (begin (insert "x") (screen-html)))
+                  (new-bytes 0)
+                  (all-bytes 0))
+             (html-for-each (lambda (bytes)
+                              (set! all-bytes (+ all-bytes (u8vector-length bytes)))
+                              (unless (hash-key? kept bytes)
+                                (set! new-bytes (+ new-bytes (u8vector-length bytes)))))
+                            after)
+             ;; 81 lines are drawn; the screen made after the key holds
+             ;; them, but the bytes written for it are one line and the
+             ;; tags and status line around it.
+             (check (> all-bytes 5000) => #t)
+             (check (< new-bytes 2500) => #t)
+             (check (has? (html->string after) "x<span class=\"cursor\">") => #t))))))
+
+    (test-case "CR and NUL in text are written as character references"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (insert (string #\a #\return #\b #\newline #\c #\nul #\d))
+         (let (html (screen))
+           (check (has? html "a&#13;b") => #t)
+           (check (has? html "c&#xFFFD;d") => #t)
+           (check (string-index html #\return) => #f)
+           (check (string-index html #\nul) => #f)))))
 
     (test-case "highlights render as face classes, around and under the cursor"
       (call-with-fresh-kernel renderer-plugins
@@ -491,11 +530,11 @@
        (lambda ()
          (two-counted-views!)
          (hash-clear! renders)
-         (let (first (screen))
+         (let (first (screen-html))
            (check [(renders-of "a") (renders-of "b")] => [2 3])
            (hash-clear! renders)
            ;; Nothing changed: the very same screen, without calling them.
-           (check (eq? (screen) first) => #t)
+           (check (eq? (screen-html) first) => #t)
            (check [(renders-of "a") (renders-of "b")] => [0 0])))))
 
     (test-case "idle: a screen is drawn again after a change by any owner of what it shows"
@@ -503,10 +542,10 @@
        (lambda ()
          (two-counted-views!)
          (let* ((c (make-client "a"))
-                (last (screen c))
+                (last (screen-html c))
                 (changed? (lambda (change)
                             (change)
-                            (let (now (screen c))
+                            (let (now (screen-html c))
                               (begin0 (not (eq? now last))
                                 (set! last now))))))
            ;; Buffers: a node, a buffer's name, its own setting, the
@@ -523,7 +562,7 @@
            ;; Keymaps: a binding a status line's click reads.
            (activate-plugin! status-line-click)
            (check (and (string-contains (screen c) "data-clickable") #t) => #t)
-           (set! last (screen c))
+           (set! last (screen-html c))
            (check (changed? void) => #f)))))
 
     (test-case "the status line names the running task, and stops when it ends"
@@ -534,7 +573,7 @@
            (start-editor-loop!)
            (let (running (call-on-editor-loop screen))
              (check (and (string-contains running " · running call") #t) => #t)
-             (check (eq? (screen) running) => #f)
+             (check (string=? (screen) running) => #f)
              (check (string-contains (screen) "running") => #f))))))
 
     (test-case "HTML reuse: an edit redraws only the changed buffer's parts"
