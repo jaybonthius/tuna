@@ -71,6 +71,13 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
                        { documentListeners = {}, caret = {} } = {}) {
   const posts = [];
   const errors = [];
+  // The page's MutationObservers: each records what it observes.
+  const observers = [];
+  class MutationObserver {
+    constructor(callback) { this.callback = callback; this.targets = []; observers.push(this); }
+    observe(target) { this.targets.push(target); }
+    disconnect() { this.targets = []; }
+  }
   const retries = [];
   const actions = {};
   const listeners = {};
@@ -80,6 +87,7 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
     window: { addEventListener(type, listener) { (listeners[type] ??= []).push(listener); } },
     KeyboardEvent,
     MouseEvent,
+    MutationObserver,
     Element,
     Event,
     WeakMap,
@@ -111,6 +119,11 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
   return {
     posts, errors, retries,
     fire,
+    // A new screen with REVISION applied: its root's data-revision changes.
+    apply(revision) {
+      screen.attributes["data-revision"] = revision;
+      observers.filter((o) => o.targets.includes(screen)).forEach((o) => o.callback([]));
+    },
     send: (evt) => { if (evt instanceof KeyboardEvent) fire(evt); actions.tunaKeyboard.apply({ evt }); },
     point: (evt) => actions.tunaPointer.apply({ evt }),
     scroll: (el, reason) => actions.tunaScroll.apply({ el }, reason),
@@ -333,6 +346,88 @@ test("a click in or beside a line of text names the line, its text's revision an
     assert.deepEqual(h.posts.map((post) => [post.body.node, post.body.line]),
                      [[4, { item: "4.12.3", charsRevision: 9, column: 3 }], [null, null], [4, null]]);
   }
+});
+
+// A line of text "hello world" in a text node drawn at revision 9, 20 px
+// tall, in view 12: the caret nearest a point with X below 200 is after
+// X / 10 characters; there is none further right.
+function textRow() {
+  const parts = screenParts();
+  const text = new Element({ "data-node": 4, "data-chars-revision": 9 }, parts.view);
+  const line = new Element({ "data-item": "4.12.3" }, text);
+  line.getBoundingClientRect = () => ({ top: 0, bottom: 20 });
+  const characters = { data: "hello world", parentElement: line };
+  const createRange = () => {
+    let end = null;
+    return { setStart() {}, setEnd(node, offset) { end = node.data.slice(0, offset); }, toString() { return end; } };
+  };
+  const caretPositionFromPoint = (x) => (x < 200 ? { offsetNode: characters, offset: Math.floor(x / 10) } : null);
+  return { parts, line, caret: { createRange, caretPositionFromPoint } };
+}
+
+// What POSTS sent of pointer items: kind, revision, clicks, the column
+// named and the shift modifier.
+const pressed = (posts) => posts.map(({ body }) =>
+  [body.kind, body.revision, body.clicks, body.line?.column ?? null, body.modifiers.shift]);
+
+test("a left press in text is sent and starts no browser selection; released in place, it is the click", async () => {
+  const { parts, line, caret } = textRow();
+  const h = await harness(parts.screen, undefined, undefined, undefined, { caret });
+  const down = new MouseEvent("mousedown", line, { clientX: 30, clientY: 10, detail: 2 });
+  h.point(down);
+  assert.equal(down.defaultPrevented, true);
+  // Within 3 px of the press: no drag yet.
+  h.point(new MouseEvent("mousemove", line, { clientX: 32, clientY: 11, buttons: 1 }));
+  h.point(new MouseEvent("mouseup", line, { clientX: 32, clientY: 11, detail: 2 }));
+  h.point(new MouseEvent("click", line, { clientX: 32, clientY: 11, detail: 2 }));
+  assert.deepEqual(pressed(h.posts), [["down", 7, 2, 3, false], ["click", 7, 2, 3, false]]);
+  assert.deepEqual(h.posts.map((post) => [post.body.target, post.body.node]), [["view:12", 4], ["view:12", 4]]);
+  // The click after a release already sent is not sent again; the next is.
+  h.point(new MouseEvent("mousedown", parts.tab));
+  h.point(new MouseEvent("click", parts.tab));
+  assert.equal(h.posts.length, 3);
+  assert.equal(h.posts[2].body.target, "tab-line:30");
+});
+
+test("a drag sends one movement at a time, the next with the newest place once a new screen is applied", async () => {
+  const { parts, line, caret } = textRow();
+  const h = await harness(parts.screen, undefined, undefined, undefined, { caret });
+  h.point(new MouseEvent("mousedown", line, { clientX: 10, clientY: 10 }));
+  h.point(new MouseEvent("mousemove", line, { clientX: 30, clientY: 10, buttons: 1 }));
+  h.point(new MouseEvent("mousemove", line, { clientX: 40, clientY: 10, buttons: 1 }));
+  h.point(new MouseEvent("mousemove", line, { clientX: 50, clientY: 10, buttons: 1 }));
+  assert.deepEqual(pressed(h.posts), [["down", 7, 1, 1, false], ["movement", 7, 1, 3, false]],
+                   "one movement is on its way");
+  h.apply(8);
+  assert.deepEqual(pressed(h.posts).slice(2), [["movement", 8, 1, 5, false]], "the newest place goes");
+  h.apply(9);
+  assert.equal(h.posts.length, 3, "nothing new to send");
+  // Below the line, the drag stays on it; outside the text, it is not sent.
+  h.point(new MouseEvent("mousemove", parts.view, { clientX: 60, clientY: 90, buttons: 1 }));
+  h.apply(10);
+  h.point(new MouseEvent("mousemove", parts.view, { clientX: 300, clientY: 10, buttons: 1 }));
+  h.point(new MouseEvent("mouseup", parts.view, { clientX: 70, clientY: 10, shiftKey: true }));
+  h.point(new MouseEvent("click", parts.view, { clientX: 70, clientY: 10 }));
+  assert.deepEqual(pressed(h.posts).slice(3), [["movement", 9, 1, 6, false], ["drag", 10, 1, 7, true]]);
+  // After the release, movements and screens send nothing.
+  h.point(new MouseEvent("mousemove", line, { clientX: 20, clientY: 10, buttons: 1 }));
+  h.apply(11);
+  assert.equal(h.posts.length, 5);
+});
+
+test("a drag released outside the text names no line; a release the page missed ends it at the next movement", async () => {
+  const { parts, line, caret } = textRow();
+  const h = await harness(parts.screen, undefined, undefined, undefined, { caret });
+  h.point(new MouseEvent("mousedown", line, { clientX: 10, clientY: 10 }));
+  h.point(new MouseEvent("mousemove", line, { clientX: 300, clientY: 10, buttons: 1 }));
+  h.point(new MouseEvent("mouseup", parts.outside, { clientX: 300, clientY: 10 }));
+  h.point(new MouseEvent("mousedown", line, { clientX: 10, clientY: 10 }));
+  h.point(new MouseEvent("mousemove", line, { clientX: 30, clientY: 10, buttons: 1 }));
+  h.point(new MouseEvent("mousemove", parts.outside, { clientX: 40, clientY: 10, buttons: 0 }));
+  assert.deepEqual(pressed(h.posts), [["down", 7, 1, 1, false], ["drag", 7, 1, null, false],
+                                      ["down", 7, 1, 1, false], ["movement", 7, 1, 3, false],
+                                      ["drag", 7, 1, 4, false]]);
+  assert.deepEqual(h.posts.map((post) => post.body.target), Array(5).fill("view:12"));
 });
 
 test("keys and clicks send immediately with one shared sequence", async () => {

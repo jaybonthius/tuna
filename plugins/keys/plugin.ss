@@ -8,7 +8,11 @@
 ;;; running): in each keymap under the part kind as a prefix key, then
 ;;; without it, each from the most specific event name down
 ;;; (`pointer-event-names`), before the next keymap. A click does not clear
-;;; the echo area, so clicking it to read a message keeps the message.
+;;; the echo area, so clicking it to read a message keeps the message. A
+;;; press with no binding is dropped quietly, keeping a pending prefix, as
+;;; Emacs drops unbound down events. A pointer movement while a button is
+;;; held is looked up like a click, but is a special event, as a scroll
+;;; report is: it changes no key state and is ignored quietly when unbound.
 ;;; Scroll reports resolve under their key ("<scroll>") from the node
 ;;; their view's scroller draws from, leaving a pending prefix, the echo
 ;;; area and the last command event as they were. A scroll report is a
@@ -367,35 +371,56 @@
         (message (string-append keys " runs " (symbol->string name) ", which is not defined"))
         #f)))
 
-;; A click ends any pending prefix: the sequences it is looked up under
-;; are that prefix, the part kind, and each of its event names ("C-x
-;; <tab-line> <double-mouse-1>", "C-x <tab-line> <mouse-1>"), then the same
-;; without the part kind, all of them in one keymap before the next.
-(def (resolve-pointer! (self : global-keys) (event : pointer-event)) => (Maybe :pair)
-  (let* ((session (client-session self (pointer-event-client event)))
-         (start (pointer-event-start event))
+;; The binding of EVENT after the keys PENDING, as (keys . command name),
+;; or #f: looked up under PENDING, the part kind, and each of its event
+;; names ("C-x <tab-line> <double-mouse-1>", "C-x <tab-line> <mouse-1>"),
+;; then the same without the part kind, all of them in one keymap before
+;; the next. The first sequence tried comes with #f for none found.
+(def (pointer-binding (self : global-keys) (event : pointer-event) (pending : :list)) => :pair
+  (let* ((start (pointer-event-start event))
          (keymaps (active-keymaps self (clicked-node self start)))
          (area (string-append "<" (symbol->string (posn-area start)) ">"))
          (names (map (lambda ((name : :string)) (string-append "<" name ">"))
                      (pointer-event-names event)))
-         (sequences (map (lambda ((tail : :list))
-                           (string-join (append (key-session-pending session) tail) " "))
+         (sequences (map (lambda ((tail : :list)) (string-join (append pending tail) " "))
                          (append (map (lambda (name) [area name]) names)
-                                 (map (lambda (name) [name]) names))))
-         (found (ormap (lambda ((keymap : entry-table))
-                         (ormap (lambda ((keys : :string))
-                                  (let (binding (entry-table-ref keymap keys))
-                                    (and binding (cons keys (entry-value binding)))))
-                                sequences))
-                       keymaps)))
-    (if found
-      (begin
+                                 (map (lambda (name) [name]) names)))))
+    (or (ormap (lambda ((keymap : entry-table))
+                 (ormap (lambda ((keys : :string))
+                          (let (binding (entry-table-ref keymap keys))
+                            (and binding (cons keys (entry-value binding)))))
+                        sequences))
+               keymaps)
+        (cons (car sequences) #f))))
+
+;; A click or a drag ends any pending prefix; a press does when it is
+;; bound, and is otherwise dropped quietly; a movement is a special event
+;; (resolve-movement!).
+(def (resolve-pointer! (self : global-keys) (event : pointer-event)) => (Maybe :pair)
+  (if (eq? (pointer-event-kind event) 'movement)
+    (resolve-movement! self event)
+    (let* ((session (client-session self (pointer-event-client event)))
+           (found (pointer-binding self event (key-session-pending session))))
+      (cond
+       ((cdr found)
         (complete-keys! session event (cdr found))
         (bound-command-task self event (car found) (cdr found)))
-      (begin
+       ((eq? (pointer-event-kind event) 'down) #f)
+       (else
         (complete-keys! session event #f)
-        (message (string-append (car sequences) " is undefined"))
-        #f))))
+        (message (string-append (car found) " is undefined"))
+        #f)))))
+
+;; A pointer movement while a button is held, EVENT, as a special event:
+;; looked up like a click with no pending prefix, changing no key state,
+;; and ignored quietly when unbound.
+(def (resolve-movement! (self : global-keys) (event : pointer-event)) => (Maybe :pair)
+  (let (name (cdr (pointer-binding self event [])))
+    (and name (command-entry name)
+         (cons name (lambda ()
+                      (parameterize ((activation-event event)
+                                     (current-client (pointer-event-client event)))
+                        (call-special-command name)))))))
 
 ;; A scroll report, EVENT, looked up under scroll-key. Reports arrive
 ;; whenever the browser needs a redraw, between the keys of a sequence

@@ -120,7 +120,7 @@
    ;; Guarded by the server's mutex:
    (rendered  : :t)             ; the newest screen for it, the renderer's HTML
    (revision  : :fixnum)        ; RENDERED's revision
-   (owed      : :boolean)       ; a scroll report awaits a screen
+   (owed      : :boolean)       ; a scroll report or pointer movement awaits a screen
    (wanted?   : :boolean)       ; a screen must be rendered for it before it is sent one
    (applied   : HashTable)      ; its stream -> last screen count its page applied
    (streams   : :fixnum)        ; its open streams
@@ -240,8 +240,9 @@
 ;; tab's last one means nothing on it changed: that tab is sent nothing.
 ;; A renderer that saw nothing change returns the very HTML it returned
 ;; last time, which is told apart without reading it. A page sends one
-;; scroll report at a time and waits for a screen before the next, so a
-;; report is always answered with one.
+;; scroll report, or one pointer movement, at a time and waits for a
+;; screen before the next, so such a report is always answered with one
+;; (paced-report?).
 (def (publish-screens! (self : web-server) (screens : :list) (head : :t) (served : :t)) => :void
   (do-with-lock self.mutex
     (when served
@@ -260,7 +261,7 @@
     (condition-variable-broadcast! self.changed)))
 
 ;; Send TAB its last screen again, under a new revision: the answer to a
-;; scroll report that no task runs for.
+;; scroll report or pointer movement that no task runs for.
 (def (resend-screen! (self : web-server) (tab : web-tab)) => :void
   (do-with-lock self.mutex
     (unless (eq? tab.rendered empty-screen)
@@ -483,9 +484,13 @@
    " data-signals:tab=\"'" tab "'\""
    " data-init=\"@get('/screen')\""
    " data-on:keydown__document__capture=\"@tunaKeyboard()\""
-   ;; One pointer action for clicks on release (click, auxclick), and for
-   ;; presses on chrome that must not move focus (mousedown, contextmenu).
+   ;; One pointer action for clicks on release (click, auxclick), for
+   ;; presses on chrome that must not move focus (mousedown, contextmenu),
+   ;; and for pressing, dragging and releasing in text (mousedown,
+   ;; mousemove, mouseup).
    " data-on:mousedown__document=\"@tunaPointer()\""
+   " data-on:mousemove__document=\"@tunaPointer()\""
+   " data-on:mouseup__document=\"@tunaPointer()\""
    " data-on:contextmenu__document=\"@tunaPointer()\""
    " data-on:click__document=\"@tunaPointer()\""
    " data-on:auxclick__document=\"@tunaPointer()\">"
@@ -734,7 +739,7 @@
                                  (lambda ()
                                    (parse-input-item value (web-tab-client tab)
                                                      (do-with-lock self.mutex (web-tab-revision tab))))))))
-    (when (and tab (equal? (hash-get value "type") "scroll"))
+    (when (and tab (paced-report? value))
       (if event
         (do-with-lock self.mutex (set! (web-tab-owed tab) #t))
         ;; No task runs for a rejected report, so answer it here.
@@ -749,6 +754,15 @@
       (admit-event! self tab (hash-get value "sequence") 'dropped))
      (else
       (web-log.warnf "Dropped malformed input.")))))
+
+;; Whether VALUE, an input item, is one a page sends one at a time, waiting
+;; for a screen before the next: a scroll report, or a pointer movement
+;; while a button is held. Each is answered with a screen, even one that
+;; changes nothing.
+(def (paced-report? (value : HashTable)) => :boolean
+  (let (type (hash-get value "type"))
+    (or (equal? type "scroll")
+        (and (equal? type "pointer") (equal? (hash-get value "kind") "movement")))))
 
 ;; HTTP handlers may arrive in any order. Submission stays under this lock
 ;; so another handler cannot overtake an item while it is handed to the loop.
@@ -835,6 +849,9 @@
         [#f #f 0 0])))
    (else [#f #f 0 0])))
 
+;; The kinds of pointer item, as the keys contract's pointer-event kinds.
+(def pointer-kinds '(("click" . click) ("down" . down) ("movement" . movement) ("drag" . drag)))
+
 ;; A validated pointer item from the client FROM computed on a screen no newer than
 ;; NEWEST-REVISION, or #f.
 (def (parse-pointer-event (value : :t) (from : client-type) (newest-revision : :fixnum))
@@ -842,8 +859,8 @@
   (and (hash-table? value)
        (eqv? (hash-get value "version") 1)
        (equal? (hash-get value "type") "pointer")
-       (equal? (hash-get value "kind") "click")
-       (let ((sequence (hash-get value "sequence"))
+       (let ((kind (assoc (hash-get value "kind") pointer-kinds))
+             (sequence (hash-get value "sequence"))
              (revision (hash-get value "revision"))
              (button (assv (hash-get value "button") browser-buttons))
              (clicks (hash-get value "clicks"))
@@ -851,7 +868,8 @@
              (part (parse-part (hash-get value "target")))
              (node (hash-ref value "node" (void)))
              (line (parse-line (hash-ref value "line" (void)))))
-         (and (fixnum? sequence) (fx>= sequence 1)
+         (and kind
+              (fixnum? sequence) (fx>= sequence 1)
               (fixnum? revision) (fx<= 0 revision newest-revision)
               button
               (fixnum? clicks) (fx<= 1 clicks 255)
@@ -862,7 +880,7 @@
               (let (flags (map (lambda ((name : :string)) (hash-ref modifiers name 'missing))
                                '("alt" "ctrl" "meta" "shift")))
                 (and (andmap boolean? flags)
-                     (apply make-pointer-event sequence from (cdr button) clicks
+                     (apply make-pointer-event sequence from (cdr kind) (cdr button) clicks
                             (append flags
                                     [(apply make-posn (car part) (cdr part)
                                             (and (fixnum? node) node) revision (cdr line))]))))))))

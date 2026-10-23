@@ -35,12 +35,14 @@
 ;; (click 'view 12 button: 3 clicks: 2 ctrl?: #t node: 4); in a line, by
 ;; its token, its text's revision when drawn and a column:
 ;; (click 'view 12 node: 4 line: "4.7.0" line-revision: 0 column: 3).
-(def (click (area : :symbol) (part : :fixnum)
+;; KIND makes it a press, a movement or a drag instead (the keys
+;; contract's pointer-event): (click 'view 12 kind: 'down …).
+(def (click (area : :symbol) (part : :fixnum) kind: (kind 'click)
             client: (client #f) button: (button 1) clicks: (clicks 1) node: (node #f) revision: (revision 0)
             line: (line #f) line-revision: (line-revision 0) column: (column 0)
             ctrl?: (ctrl? #f) alt?: (alt? #f) shift?: (shift? #f) meta?: (meta? #f))
   => :void
   (set! sequence (+ sequence 1))
   ((input-submitter)
-   (make-pointer-event sequence client button clicks alt? ctrl? meta? shift?
+   (make-pointer-event sequence client kind button clicks alt? ctrl? meta? shift?
                        (make-posn area part node revision line line-revision column))))

@@ -8,8 +8,8 @@
 ;;; Shift selection: a motion command (`shift-select-commands`) whose keys
 ;;; were found by shift translation (the keys contract) activates a
 ;;; temporary region from where point was, unless one is already active;
-;;; an unshifted motion command ends a temporary region, but not one C-SPC
-;;; made. Which commands are motions is this plugin's list, not a mark on
+;;; an unshifted motion command ends a temporary region, such as one the
+;;; mouse made (`set-temporary-region!`), but not one C-SPC made. Which commands are motions is this plugin's list, not a mark on
 ;;; the commands: Emacs marks them with `^` in their interactive specs.
 ;;;
 ;;; With the delete-selection setting on, typing, RET, DEL, C-d and
@@ -119,7 +119,10 @@
                                      (fxmin (view-point v) (the-mark v)))))
   (region-end (lambda (self) (let (v (or (text-view) (error "No text to edit here")))
                                (fxmax (view-point v) (the-mark v)))))
-  (deactivate-mark! (lambda (self) (let (v (text-view)) (when v (deactivate! self v))))))
+  (deactivate-mark! (lambda (self) (let (v (text-view)) (when v (deactivate! self v)))))
+  (set-temporary-region! (lambda (self mark)
+                           (let (v (or (text-view) (error "No text to edit here")))
+                             (activate! self v mark #t)))))
 
 (defplugin (region ctx)
   "The region: C-SPC sets the mark, C-x C-x swaps it with point, shifted motion keys select, an edit or C-g deactivates."

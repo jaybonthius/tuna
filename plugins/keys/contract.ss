@@ -21,7 +21,13 @@
 ;;; `C-mouse-1`, `double-mouse-1`), first with the kind of part clicked as
 ;;; a prefix key ("<tab-line> <mouse-1>", as Emacs's "<mode-line> <mouse-1>"),
 ;;; then without it; a double or triple click falls back to the single
-;;; one. The keymaps are those of the same order, starting at the node
+;;; one. Pressing and dragging are pointer events too, as in Emacs: the
+;;; press (`down-mouse-1`), then, while the button is held and the pointer
+;;; moves, its movements (`mouse-movement`), then the release: a click
+;;; (`mouse-1`) where it was pressed, or a drag (`drag-mouse-1`) after the
+;;; pointer moved away. A drag with no binding falls back to the click,
+;;; and a press with no binding is ignored quietly. A movement is a
+;;; special event, as a scroll report is (below). The keymaps are those of the same order, starting at the node
 ;;; clicked (or, with none, at the root of the clicked view's buffer); each
 ;;; keymap is searched under every one of those names before the next, so
 ;;; a node's `<mouse-1>` shadows the global `<view> <mouse-1>`. A command
@@ -128,11 +134,18 @@ prelude: :gerbil/core
                  (column        : :fixnum))
   final: #t)
 
-;; One click from CLIENT (#f for none), with its page-load sequence number
-;; (ADR 7, ADR 10, ADR 16): BUTTON 1, 2 or 3 (left, middle, right, numbered
-;; as Emacs does), released after CLICKS presses in a row, at START.
+;; One pointer event from CLIENT (#f for none), with its page-load
+;; sequence number (ADR 7, ADR 10, ADR 16), of KIND (Emacs's event types):
+;; 'down, the press; 'movement, the pointer moving while the button is
+;; held; 'click, the release where it was pressed; 'drag, the release
+;; after the pointer moved away. BUTTON is 1, 2 or 3 (left, middle, right,
+;; numbered as Emacs does), the CLICKSth press in a row; START is where
+;; the event happened: for a drag, where the button was released, which
+;; is where the drag ended (Emacs's `event-end`; the press was its own
+;; event).
 (defstruct pointer-event ((sequence : :fixnum)
                           (client   :? client-type)
+                          (kind     : :symbol)
                           (button   : :fixnum)
                           (clicks   : :fixnum)
                           (alt?     : :boolean)
@@ -184,21 +197,29 @@ prelude: :gerbil/core
 (def scroll-key "<scroll>")
 
 ;; The names EVENT is looked up under, most specific first: modifiers,
-;; then `double-` or `triple-`, then `mouse-BUTTON`; a triple click falls
-;; back to the double one and a double to the single one, as in Emacs:
-;; ("C-double-mouse-1" "C-mouse-1").
+;; then `double-` or `triple-`, then `down-` or `drag-`, then
+;; `mouse-BUTTON`. As in Emacs, a triple click, press or drag falls back
+;; to the double one and a double to the single one, then a drag to the
+;; click: ("C-double-mouse-1" "C-mouse-1"), ("double-drag-mouse-1"
+;; "drag-mouse-1" "mouse-1"). A movement is `mouse-movement` alone.
 (def (pointer-event-names (event : pointer-event)) => :list
   (using (event : pointer-event)
-    (let ((modifiers (string-append (if event.ctrl? "C-" "")
-                                    (if event.alt? "M-" "")
-                                    (if event.shift? "S-" "")
-                                    (if event.meta? "s-" "")))
-          (base (string-append "mouse-" (number->string event.button))))
-      (map (lambda ((repeat : :string)) (string-append modifiers repeat base))
-           (cond
-            ((fx>= event.clicks 3) ["triple-" "double-" ""])
-            ((fx= event.clicks 2) ["double-" ""])
-            (else [""]))))))
+    (if (eq? event.kind 'movement)
+      ["mouse-movement"]
+      (let* ((modifiers (string-append (if event.ctrl? "C-" "")
+                                       (if event.alt? "M-" "")
+                                       (if event.shift? "S-" "")
+                                       (if event.meta? "s-" "")))
+             (base (string-append "mouse-" (number->string event.button)))
+             (kind (case event.kind ((down) "down-") ((drag) "drag-") (else "")))
+             (names (map (lambda ((repeat : :string)) (string-append modifiers repeat kind base))
+                         (cond
+                          ((fx>= event.clicks 3) ["triple-" "double-" ""])
+                          ((fx= event.clicks 2) ["double-" ""])
+                          (else [""])))))
+        (if (eq? event.kind 'drag)
+          (append names [(string-append modifiers base)])
+          names)))))
 
 ;; Where EVENT happened: a pointer or scroll event's posn, or
 ;; #f for a key event, which has no position (Emacs gives point in the

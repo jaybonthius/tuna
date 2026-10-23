@@ -2,7 +2,9 @@
 ;;; of text selects the view and moves its point to the column clicked,
 ;;; shifted through edits made after the screen was drawn; a column past
 ;;; the line's end goes to its end, a click below the text to the text's
-;;; end, and a click on a line that is gone says so.
+;;; end, and a click on a line that is gone says so. Pressing, dragging
+;;; and releasing select; a double click selects a word and a triple
+;;; click a line; shift-click extends the selection.
 (import :std/test
         :tuna/kernel
         :tuna/plugins/buffers/contract
@@ -53,6 +55,24 @@
         p
         (and (fx<= p (text-size t)) (string-ref (text-substring t p (fx1+ p)) 0))
         (current-message)]))))
+
+;; The selected view's point, mark, whether its region is active, and
+;; the region's text.
+(def (selection)
+  (call-on-editor-loop
+   (lambda ()
+     (let* ((v (selected-view))
+            (t (text-node-content (view-node v)))
+            (p (view-point v))
+            (m (view-mark v)))
+       [p m (view-mark-active? v) (if m (text-substring t (min p m) (max p m)) "")]))))
+
+;; A pointer event of KIND in view V at COLUMN of the line holding
+;; POSITION, on a screen drawn now.
+(def (point-at kind v node position column clicks: (clicks 1) shift?: (shift? #f))
+  (click 'view (view-id v) kind: kind clicks: clicks shift?: shift? node: node
+         line: (line-token position) column: column
+         line-revision: (call-on-editor-loop (lambda () (text-chars-revision (current-text))))))
 
 (def (edit! start end replacement)
   (call-on-editor-loop (lambda () (text-replace! (current-text) start end replacement))))
@@ -135,4 +155,108 @@
                   (emptied (call-on-editor-loop (lambda () (text-chars-revision (current-text))))))
               (edit! 5 10 "")
               (click 'view (view-id left) node: node line: token line-revision: emptied column: 2)
-              (check (state left right) => [0 5 #\newline "Stale click: the line is gone (clicked on screen 0)"])))))))))
+              (check (state left right) => [0 5 #\newline "Stale click: the line is gone (clicked on screen 0)"])))))))
+
+    (test-case "pressing, dragging and releasing selects the text dragged over"
+      (call-with-fresh-kernel text-mouse-plugins
+       (lambda ()
+         (start-editor-loop!)
+         (match (two-views! "hello world\nsecond line\n")
+           ([left right node revision]
+            (point-at 'down right node 1 2)
+            ;; The press moves point and leaves the region inactive.
+            (check (state left right) => [1 3 #\l ""])
+            (check (caddr (selection)) => #f)
+            (point-at 'movement right node 13 3)
+            (check (selection) => [16 3 #t "llo world\nsec"])
+            ;; Dragging back over the press selects backwards.
+            (point-at 'movement right node 1 0)
+            (check (selection) => [1 3 #t "he"])
+            (point-at 'drag right node 1 8)
+            (check (selection) => [9 3 #t "llo wo"])
+            ;; A movement after the release moves nothing.
+            (point-at 'movement right node 13 1)
+            (check (selection) => [9 3 #t "llo wo"]))))))
+
+    (test-case "a press released where it was pressed is a click, keeping the mark; a drag back to it too"
+      (call-with-fresh-kernel text-mouse-plugins
+       (lambda ()
+         (start-editor-loop!)
+         (match (two-views! "hello world\nsecond line\n")
+           ([left right node revision]
+            (call-on-editor-loop (lambda () (set-view-mark! left 5)))
+            (point-at 'down left node 1 7)
+            (point-at 'click left node 1 7)
+            (check (selection) => [8 5 #f "o w"])
+            (point-at 'down left node 1 2)
+            (point-at 'movement left node 1 4)
+            (point-at 'drag left node 1 2)
+            (check (selection) => [3 3 #f ""]))))))
+
+    (test-case "a double click selects a word, a triple click a line with its newline"
+      (call-with-fresh-kernel text-mouse-plugins
+       (lambda ()
+         (start-editor-loop!)
+         (match (two-views! "hello world, done\nsecond line\n")
+           ([left right node revision]
+            (point-at 'down left node 1 8)
+            (point-at 'click left node 1 8)
+            (point-at 'down left node 1 8 clicks: 2)
+            ;; The second press already selects the word.
+            (check (selection) => [12 7 #t "world"])
+            (point-at 'click left node 1 8 clicks: 2)
+            (check (selection) => [12 7 #t "world"])
+            (point-at 'down left node 1 8 clicks: 3)
+            (point-at 'click left node 1 8 clicks: 3)
+            (check (selection) => [19 1 #t "hello world, done\n"])
+            ;; Whitespace and punctuation are runs of their own.
+            (point-at 'click left node 1 12 clicks: 2)
+            (check (selection) => [14 13 #t " "])
+            (point-at 'click left node 1 10 clicks: 2)
+            (check (selection) => [12 7 #t "world"])
+            (point-at 'click left node 1 11 clicks: 2)
+            (check (selection) => [13 12 #t ","])
+            ;; The second line.
+            (point-at 'click left node 19 2 clicks: 3)
+            (check (selection) => [31 19 #t "second line\n"])
+            ;; A double press dragged selects by words.
+            (point-at 'down left node 1 1 clicks: 2)
+            (point-at 'movement left node 1 8)
+            (check (selection) => [12 1 #t "hello world"])
+            (point-at 'drag left node 1 8 clicks: 2)
+            (check (selection) => [12 1 #t "hello world"]))))))
+
+    (test-case "shift-click extends the region from the mark when active, from point otherwise"
+      (call-with-fresh-kernel text-mouse-plugins
+       (lambda ()
+         (start-editor-loop!)
+         (match (two-views! "hello world\nsecond line\n")
+           ([left right node revision]
+            (point-at 'down left node 1 2)
+            (point-at 'click left node 1 2)
+            (point-at 'down left node 1 5 shift?: #t)
+            (point-at 'click left node 1 5 shift?: #t)
+            (check (selection) => [6 3 #t "llo"])
+            ;; Again, from the same mark, now backwards.
+            (point-at 'down left node 1 0 shift?: #t)
+            (point-at 'click left node 1 0 shift?: #t)
+            (check (selection) => [1 3 #t "he"])
+            ;; Shift-dragging moves the same end.
+            (point-at 'down left node 13 1 shift?: #t)
+            (point-at 'movement left node 13 3)
+            (check (selection) => [16 3 #t "llo world\nsec"])
+            (point-at 'drag left node 13 4 shift?: #t)
+            (check (selection) => [17 3 #t "llo world\nseco"]))))))
+
+    (test-case "a drag released outside the text ends where the last movement put point"
+      (call-with-fresh-kernel text-mouse-plugins
+       (lambda ()
+         (start-editor-loop!)
+         (match (two-views! "hello world\nsecond line\n")
+           ([left right node revision]
+            (point-at 'down left node 1 1)
+            (point-at 'movement left node 1 4)
+            (click 'view (view-id left) kind: 'drag node: node)
+            (check (selection) => [5 2 #t "ell"])
+            (check (current-message) => ""))))))))
+

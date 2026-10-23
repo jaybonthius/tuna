@@ -30,7 +30,7 @@
   (make-key-event 1 #f key "" 0 #f #f #f ctrl? #f #f #f #f #f #f))
 
 (def (pointer part node: (node #f) area: (area 'view) clicks: (clicks 1))
-  (make-pointer-event 1 #f 1 clicks #f #f #f #f (make-posn area part node 1 #f 0 0)))
+  (make-pointer-event 1 #f 'click 1 clicks #f #f #f #f (make-posn area part node 1 #f 0 0)))
 
 ;; The name of the command EVENT resolves to, or #f.
 (def (resolve event)
