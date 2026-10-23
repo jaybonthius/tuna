@@ -7,11 +7,11 @@
 ;;; revisions. `(memo key inputs draw)` draws one piece: it returns the
 ;;; value kept for KEY when that value was drawn from `equal?` INPUTS and
 ;;; nothing it read has changed since, and otherwise calls (DRAW INPUTS)
-;;; and keeps what it returns. INPUTS are plain data (`plain-value?`): the
-;;; values the piece's parent worked out for it. DRAW may close over the
-;;; objects KEY identifies (ids are never reused) and nothing else. Pieces
-;;; nest: a piece read whatever its child pieces read, so an unchanged
-;;; subtree is reused by one check.
+;;; and keeps what it returns. INPUTS are plain data (`plain-value?` in
+;;; tuna/lib/plain-data): the values the piece's parent worked out for it.
+;;; DRAW may close over the objects KEY identifies (ids are never reused)
+;;; and nothing else. Pieces nest: a piece read whatever its child pieces
+;;; read, so an unchanged subtree is reused by one check.
 ;;;
 ;;; Pieces are kept per cache (one per drawer), and each pass draws for
 ;;; one client. A piece that read a per-client source is that client's;
@@ -25,15 +25,15 @@
 prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable)
-        :tuna/kernel)
+        :tuna/kernel
+        :tuna/lib/plain-data)
 (export source source? new-source source-revision
         record-read! source-changed!
         memo-drawing? memo-from-scratch? check-not-drawing!
         memo-cache memo-cache? new-memo-cache memo-cache-size
         call-with-memo-pass memo memo-forget-client!
         current-memo-draw-observer
-        set-memo-checking! memo-checking?
-        plain-value? plain-equal?)
+        set-memo-checking! memo-checking?)
 
 ;;; Sources
 
@@ -48,26 +48,6 @@ prelude: :gerbil/core
 ;; that a piece reading it belongs to that client.
 (def (new-source per-client?: (per-client? : :boolean := #f)) => source
   (make-source (next-id!) per-client? 0))
-
-;;; Plain data
-
-;; Whether X is plain data: a number, character, string, symbol, keyword,
-;; boolean, (), or a pair or vector of plain data. Objects are not: `equal?`
-;; walks their fields, all the way through what they refer to.
-(def (plain-value? (x : :t)) => :boolean
-  (cond
-   ((pair? x) (and (plain-value? (car x)) (plain-value? (cdr x))))
-   ((vector? x)
-    (let lp ((i 0))
-      (or (fx= i (vector-length x))
-          (and (plain-value? (vector-ref x i)) (lp (fx1+ i))))))
-   (else (or (number? x) (string? x) (symbol? x) (keyword? x) (char? x) (boolean? x) (null? x)))))
-
-;; A and B are the same value: `equal?` when both are plain data,
-;; otherwise the same object.
-(def (plain-equal? (a : :t) (b : :t)) => :boolean
-  (or (eq? a b)
-      (and (plain-value? a) (plain-value? b) (equal? a b))))
 
 ;;; Test mode
 
