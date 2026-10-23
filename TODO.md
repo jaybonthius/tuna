@@ -10,6 +10,10 @@
 - [ ] **A `(Maybe T)` return breaks proper tail calls.** A function declared `=> (Maybe T)` checks its result after the body returns, so a self-call in tail position is no longer a tail call: 10,000 recursions use 10,012 frames instead of about 10 (`return-contract` in `src/gerbil/core/contract.ss`, from PR #1496). Reproduction without Tuna: `/home/jay/Code/workbench-gerbil/scratch/maybe-tail/gerbil-repro.ss`. Likely fix: the optimizer drops the check when the value comes from a call that already guarantees the same nullable type, keeping every other check. Research: `agents/research/gerbil-maybe-tail-calls/`. Affects 34 Tuna functions (list in `agents/research/hooks-advice/open-def-spike.md`); not blocking.
 - [ ] **Plain typed returns are trusted, not verified.** `(def (f (x : :string)) => :fixnum x)` compiles, and calling it returns a string (v0.19-dev-63). `(Maybe T)` returns are checked at runtime, so plain returns are the weaker case. Report as an issue; see `agents/research/gerbil-maybe-tail-calls/gerbil.md` section 2.
 
+## Report or fix in the owner's packages
+
+- [ ] **gerbil-datastar's "header predicate is strict" test fails** (`httpd-test.ss`, found 2026-10-22 during drawing stage 4): it fails the same way at `a0d020c`, before stage 4's changes. Gerbil's HTTP server trims header values, so the test's expectation cannot hold. Fix the test or the predicate, or mark it as expected to fail.
+
 ## Tuna
 
 - [ ] **Jobs that post several results** (carry-over from stage 3). A job's `run` returns one result. Posting partial results (for example a highlighter coloring a large text in chunks) needs a way for `run` to post through the job's validity check without finishing; deferred until a job needs it.
