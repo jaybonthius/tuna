@@ -22,7 +22,7 @@ Recognition is limited to a grammar made of every command's spoken name, so what
 ## A walkthrough
 
 1. **Say it.** In `notes.txt` you press `C-c c` and say "split view right". The echo area shows "split view…" as you speak.
-2. **It ends by itself.** The command model hears that you stopped talking, about half a second later, so there is no key to finish.
+2. **It ends by itself.** You never press a key to finish (owner, 2026-10-24): listening ends as soon as what you've said can only be one command ("split view r…" has one possible ending), or when you pause after speaking, or after a few seconds if you say nothing. Pausing to end a command is how Talon, the main voice-coding tool, works.
 3. **It runs.** The grammar picked "split view right", scoring close to the free transcription. Tuna runs `split-view-right`; the echo area says "split-view-right".
 4. **Two close candidates.** You say "next line" a bit unclearly; "next line" and "end line" both score close. Tuna shows both, "next line" selected; `RET` runs it.
 5. **A mumble.** Someone talks to you after `C-c c`. The grammar forces that into "kill buffer", but the free transcription scores far better, below the offer threshold: "Didn't catch a command". Nothing runs.
@@ -50,6 +50,9 @@ Settings of the voice plugin, each with a default you can change in `init.ss` or
 | `voice-command-candidates` | At most this many commands in the list | 5 |
 | `voice-command-always-ask` | Commands that always show the list, however confident (for example `kill-buffer`) | none |
 | `voice-command-names` | Easier spoken names for commands, as pairs: `((magit-status . "git status"))` | none |
+| `voice-command-finish-when-unique` | Finish as soon as what was said can only be one command, without waiting for the pause | on |
+| `voice-command-end-pause` | Seconds of silence after speech that end listening (the model also reports the end of a phrase itself) | about 0.5 |
+| `voice-command-start-timeout` | Seconds to wait for speech before giving up | 5 |
 | `voice-command-model` | The model for commands | `realtime_eou` |
 
 Setting `voice-command-run-confidence` above 1 means every command asks first.
