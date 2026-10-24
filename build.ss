@@ -52,7 +52,8 @@
      (gxc: "plugin"
            (extra-inputs: ,(map (cut string-append "web/" <>)
                                (directory-files "plugins/web/web")))))
-    ("plugins/microphone" "contract" "plugin")))
+    ("plugins/microphone" "contract" "plugin")
+    ("plugins/voice" "contract" "plugin")))
 
 (def (build-options (args : :list)) => :list
   (match args
