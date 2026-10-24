@@ -60,9 +60,19 @@
 ;;; work. The head is rendered from the registry on the editor thread at
 ;;; redisplay, published with the screen, and sent whole as one morph
 ;;; before the screen whenever it differs from what a stream last got.
+;;;
+;;; The transport provides the page service (contract.ss): after its own
+;;; input module, the head loads every plugin's page script as a module,
+;;; served at /js/<n>/<hash>/<file> with the files beside it; a POST to
+;;; /plugin/<plugin>/<name> naming its tab in a Tuna-Tab header calls that
+;;; plugin's handler on the request thread; and a plugin's one-time
+;;; instructions to a tab go after its next screen, with its copy, each
+;;; an element appended to the body whose data-init runs the action on
+;;; the JSON it holds and removes it.
 
 (import (only-in :gerbil/runtime/hash HashTable)
         (only-in :gerbil/runtime/thread spawn-thread)
+        :std/interface
         :std/io
         :std/log
         :std/misc/ports
@@ -73,6 +83,8 @@
         :std/net/url
         :std/text/markup/sxml/print
         (only-in :std/crypto/random random-bytes)
+        (only-in :std/crypto/digest sha256)
+        (only-in :std/encoding/hex hex-encode)
         (only-in :std/encoding/json json->string)
         (only-in :std/string/misc string-subst)
         :std/time/timeout
@@ -91,6 +103,7 @@
         (only-in :tuna/plugins/kill-ring/contract kill-ring-service kill-new-hook)
         :tuna/plugins/renderer/contract
         :tuna/plugins/stylesheets/contract
+        :tuna/plugins/web/contract
         :tuna/plugins/web/embed)
 (export web-transport
         web-transport-url)
@@ -119,6 +132,10 @@
    (tabs        : HashTable)    ; tab id -> web-tab
    (head        : :string)      ; the newest <head>
    (served      : :list)        ; the served-stylesheets HEAD links
+   (scripts     : :list)        ; plugins' page-scripts, in registration order
+   (scripts-made : :fixnum)     ; page scripts registered so far, to number them
+   (scripts-shown : :list)      ; the SCRIPTS HEAD loads; editor thread only
+   (addresses   : HashTable)    ; "/plugin/<plugin>/<name>" -> handler
    (revision    : :fixnum)      ; the newest revision given to a screen
    (stopped?    : :boolean)
    (streams     : :fixnum)      ; streams opened so far, to number them
@@ -139,6 +156,7 @@
    (owed      : :boolean)       ; a scroll report, pointer movement or copy awaits a screen
    (wanted?   : :boolean)       ; a screen must be rendered for it before it is sent one
    (copy      :? :string)       ; a text its page is to copy to the clipboard, after its next screen
+   (instructions : :list)       ; page instructions to send after its next screen, newest first
    (applied   : HashTable)      ; its stream -> last screen count its page applied
    (streams   : :fixnum)        ; its open streams
    (closings  : :fixnum))       ; times its streams all closed; a grace period acts on the latest only
@@ -151,6 +169,14 @@
                               (file      : :string)   ; its file name, URL-encoded
                               (directory : :string)   ; where the files beside it are
                               (bytes     : :u8vector))
+  final: #t)
+
+;; A plugin's page script, as request threads serve it: the module itself,
+;; and the files beside it under the same URL prefix.
+(defstruct page-script ((prefix    : :string)   ; "/js/<n>/<hash>/"
+                        (file      : :string)   ; its file name, URL-encoded
+                        (directory : :string)   ; where the files beside it are
+                        (bytes     : :u8vector))
   final: #t)
 
 ;; Bind and release an ephemeral loopback port.
@@ -241,8 +267,11 @@
 (defmethod {redisplay! web-server}
   (lambda (self)
     (using (self : web-server)
-      (let* ((served (changed-stylesheets self))
-             (head (and served (render-head served)))
+      (let* ((new-served (changed-stylesheets self))
+             (scripts (changed-scripts self))
+             (served (and (or new-served scripts)
+                          (or new-served (do-with-lock self.mutex self.served))))
+             (head (and served (render-head served (or scripts self.scripts-shown))))
              (tabs (do-with-lock self.mutex
                      (filter (lambda ((tab : web-tab)) (or tab.wanted? (fx> tab.streams 0)))
                              (hash-values self.tabs)))))
@@ -311,7 +340,39 @@
 (def (copy-instruction (text : :string)) => :string
   (html-string `(div (@ (hidden "") (data-init "@tunaCopy()")) ,(json->string text))))
 
-;; TAB's newest screen as [revision head screen copy] once STREAM's page
+;; Have the tab of client C run the page action ACTION with ARGUMENT after
+;; its next screen, which it is owed even when nothing on it changes, and
+;; have the editor loop redisplay. Any thread.
+(def (instruct-client! (self : web-server) (c : client-type) (action : :string) (argument : :t))
+  => :void
+  (unless (page-action-name? action)
+    (error "A page action is letters and digits" action))
+  (let (instruction (page-instruction action (json->string argument)))
+    (when (do-with-lock self.mutex
+            (let (tab (hash-get self.tabs (client-id c)))
+              (and tab (eq? (web-tab-client tab) c)
+                   (begin
+                     (set! (web-tab-instructions tab) (cons instruction (web-tab-instructions tab)))
+                     (set! (web-tab-owed tab) #t)
+                     #t))))
+      (ask-redisplay! self))))
+
+(def (page-action-name? (name : :string)) => :boolean
+  (and (fx<= 1 (string-length name) 64)
+       (char-alphabetic? (string-ref name 0))
+       (andmap (lambda ((c : :char)) (or (char<=? #\a c #\z) (char<=? #\A c #\Z) (char<=? #\0 c #\9)))
+               (string->list name))))
+
+;; A one-time page instruction: an element appended to the body that runs
+;; the action ACTION on the value JSON spells, which it holds as text so
+;; that every character survives HTML parsing, and removes itself.
+(def (page-instruction (action : :string) (json : :string)) => :string
+  (html-string `(div (@ (hidden "")
+                        (data-init ,(string-append "@" action "(JSON.parse(el.textContent)); el.remove()")))
+                     ,json)))
+
+;; TAB's newest screen as [revision head screen copy instructions], the
+;; instructions oldest first, once STREAM's page
 ;; has applied its COUNTth screen and one newer than SENT exists, and no
 ;; screen is being rendered for TAB; the newest again when the page has
 ;; not confirmed within SELF's timeout; 'heartbeat
@@ -324,9 +385,12 @@
     (let lp ()
       (let* ((applied? (fx>= (: (hash-ref tab.applied stream 0) :fixnum) count))
              (deadline (+ start (if applied? heartbeat-seconds self.timeout)))
-             ;; COPY, TAB's pending copy, goes with this screen only.
-             (newest (lambda () (let (newest [tab.revision self.head tab.rendered tab.copy])
+             ;; COPY, TAB's pending copy, and its instructions go with this
+             ;; screen only.
+             (newest (lambda () (let (newest [tab.revision self.head tab.rendered tab.copy
+                                              (reverse tab.instructions)])
                                   (set! tab.copy #f)
+                                  (set! tab.instructions [])
                                   (mutex-unlock! self.mutex)
                                   newest))))
         (cond
@@ -429,12 +493,126 @@
                 (string->list text))))
   (string-append "css__" (escape (symbol->string owner)) "__" (escape (symbol->string name))))
 
-;; The page's <head>, linking SERVED in order. The first page and every
+;;; Page scripts and addresses (the page service)
+
+;; The page scripts, when they changed since the head last showed them;
+;; otherwise #f. Editor thread only.
+(def (changed-scripts (self : web-server)) => (Maybe :list)
+  (let (scripts (do-with-lock self.mutex self.scripts))
+    (and (not (and (fx= (length scripts) (length self.scripts-shown))
+                   (andmap eq? scripts self.scripts-shown)))
+         (begin
+           (set! self.scripts-shown scripts)
+           scripts))))
+
+;; Add the module at PATH to every page until CTX's plugin turns off.
+(def (add-page-script! (self : web-server) (ctx : context) (path : :string)) => :void
+  (let* ((bytes (read-file-u8vector path))
+         (script (do-with-lock self.mutex
+                   (let* ((n (fx1+ self.scripts-made))
+                          (script (make-page-script
+                                   (string-append "/js/" (number->string n) "/"
+                                                  (hex-encode (sha256 bytes)) "/")
+                                   (uri-encode (path-strip-directory path))
+                                   (path-directory path)
+                                   bytes)))
+                     (set! self.scripts-made n)
+                     (set! self.scripts (append self.scripts [script]))
+                     script))))
+    (context-defer! ctx (lambda ()
+                          (do-with-lock self.mutex
+                            (set! self.scripts (remq script self.scripts)))
+                          (ask-redisplay! self)))
+    (ask-redisplay! self)))
+
+;; Call HANDLER with (client bytes) for posts to /plugin/<CTX's plugin>/<NAME>
+;; until CTX's plugin turns off.
+(def (add-page-address! (self : web-server) (ctx : context) (name : :string) (handler : :procedure))
+  => :void
+  (let ((owner (symbol->string (context-plugin-name ctx)))
+        (plain? (lambda ((text : :string))
+                  (and (fx<= 1 (string-length text) 64)
+                       (andmap (lambda ((c : :char))
+                                 (or (char<=? #\a c #\z) (char<=? #\A c #\Z) (char<=? #\0 c #\9)
+                                     (char=? c #\-)))
+                               (string->list text))))))
+    (unless (and (plain? owner) (plain? name))
+      (error "A page address is a plugin and a name of letters, digits and hyphens" owner name))
+    (let (path (string-append "/plugin/" owner "/" name))
+      (do-with-lock self.mutex
+        (when (hash-key? self.addresses path)
+          (error "Page address already taken" path))
+        (hash-put! self.addresses path handler))
+      (context-defer! ctx (lambda () (do-with-lock self.mutex (hash-remove! self.addresses path)))))))
+
+;; GET /js/<n>/<hash>/<rest>: a page script, cached forever since its hash
+;; names its bytes, or a module beside it, with an ETag. Any prefix that
+;; is not current gets 404.
+(def (serve-script (self : web-server) (request : Request) (response : ResponseHandler) (path : :string))
+  => :void
+  (let (s (find (lambda ((s : page-script)) (string-prefix? (page-script-prefix s) path))
+                (do-with-lock self.mutex self.scripts)))
+    (if s
+      (using (s : page-script)
+        (let (rest (substring path (string-length s.prefix) (string-length path)))
+          (if (string=? rest s.file)
+            (ResponseHandler-write! response OK
+                                    '(("Content-Type" . "text/javascript; charset=utf-8")
+                                      ("Cache-Control" . "public, max-age=31536000, immutable"))
+                                    s.bytes)
+            (serve-asset request response s.directory rest script-content-type))))
+      (respond-text response Not-Found (string-append "Not found: " path)))))
+
+;; File types served beside a page script: modules.
+(def (script-content-type (path : :string)) => (Maybe :string)
+  (and (member (path-extension path) '(".js" ".mjs")) "text/javascript; charset=utf-8"))
+
+;; The most bytes a post to a page address may carry.
+(def page-post-limit (* 1024 1024))
+
+;; POST /plugin/<plugin>/<name> from the tab its Tuna-Tab header names:
+;; the address's handler gets the tab's client and the body, on this
+;; thread. A tab the transport does not know, no handler, or a body over
+;; page-post-limit is refused.
+(def (accept-page-post (self : web-server) (request : Request) (response : ResponseHandler) (path : :string))
+  => :void
+  (let* ((handler (do-with-lock self.mutex (hash-get self.addresses path)))
+         (id (parse-tab-id (header request "Tuna-Tab")))
+         (tab (and id (do-with-lock self.mutex (hash-get self.tabs id))))
+         (size (string->number (or (header request "Content-Length") ""))))
+    (cond
+     ((not handler)
+      (respond-text response Not-Found (string-append "Not found: " path)))
+     ((not (and (fixnum? size) (fx<= 0 size page-post-limit)))
+      (respond-text response Request-Entity-Too-Large "Expected a body of at most 1 MiB with its length."))
+     ((not tab)
+      (respond-text response Bad-Request "Expected a post from a tab of this page."))
+     (else
+      ;; Read the body before answering, as accept-event does.
+      (let (bytes (read-all-from-reader (Request-body request)))
+        (if (with-catch (lambda (e)
+                          (web-log.warnf "Page address %a failed: %a" path (exception-summary e))
+                          #f)
+                        (lambda () (handler (web-tab-client tab) bytes) #t))
+          (ResponseHandler-write! response No-Content [] #u8())
+          (respond-text response Internal-Server-Error "The page address failed.")))))))
+
+;; The page service's methods. (Not `implement`: its signatures name the
+;; client type, which this module renames.)
+(defmethod {add-script! web-server}
+  (lambda (self ctx path) (add-page-script! self ctx path)))
+(defmethod {add-address! web-server}
+  (lambda (self ctx name handler) (add-page-address! self ctx name handler)))
+(defmethod {instruct! web-server}
+  (lambda (self c action argument) (instruct-client! self c action argument)))
+
+;; The page's <head>, linking SERVED in order and loading SCRIPTS, the
+;; plugins' page scripts, after the input module. The first page and every
 ;; head morph use it, so the scripts it holds stay identical and a morph
 ;; leaves them alone. The viewport lets a phone's soft keyboard shrink the
 ;; page, and lets the page reach the screen's edges; the renderer's screen
 ;; pads itself out of the safe-area insets.
-(def (render-head (served : :list)) => :string
+(def (render-head (served : :list) (scripts : :list)) => :string
   (html-string
    `(head
      (meta (@ (charset "utf-8")))
@@ -448,7 +626,11 @@
             served)
      (script (@ (type "importmap"))
              "{\"imports\":{\"datastar\":\"/static/datastar-v1.0.2.js\"}}")
-     (script (@ (type "module") (src "/static/tuna-input.js"))))))
+     (script (@ (type "module") (src "/static/tuna-input.js")))
+     ,@(map (lambda ((s : page-script))
+              `(script (@ (type "module")
+                          (src ,(string-append (page-script-prefix s) (page-script-file s))))))
+            scripts))))
 
 ;; File types served beside a stylesheet: fonts, images and CSS.
 (def (asset-content-type (path : :string)) => (Maybe :string)
@@ -482,13 +664,15 @@
                                     '(("Content-Type" . "text/css; charset=utf-8")
                                       ("Cache-Control" . "public, max-age=31536000, immutable"))
                                     s.bytes)
-            (serve-asset request response s.directory rest))))
+            (serve-asset request response s.directory rest asset-content-type))))
       (respond-text response Not-Found (string-append "Not found: " path)))))
 
-(def (serve-asset (request : Request) (response : ResponseHandler) (directory : :string) (rest : :string))
+;; GET REST under DIRECTORY, if CONTENT-TYPE gives its file a type.
+(def (serve-asset (request : Request) (response : ResponseHandler) (directory : :string) (rest : :string)
+                  (content-type : :procedure))
   => :void
   (let* ((file (and (plain-relative-path? rest) (path-expand rest directory)))
-         (type (and file (asset-content-type file)))
+         (type (and file (content-type file)))
          (info (and type (file-exists? file) (file-info file #t))))
     (if (and info (eq? (file-info-type info) 'regular))
       (let (etag (string-append "\"" (number->string (file-info-size info)) "-"
@@ -594,6 +778,10 @@
       (accept-applied self request response))
      ((and (string=? method "GET") (string-prefix? "/css/" path))
       (serve-css self request response path))
+     ((and (string=? method "GET") (string-prefix? "/js/" path))
+      (serve-script self request response path))
+     ((and (string=? method "POST") (string-prefix? "/plugin/" path))
+      (accept-page-post self request response path))
      ((and (string=? method "GET") (hash-get static-assets path))
       => (lambda ((asset : :pair))
            (ResponseHandler-write! response OK
@@ -628,7 +816,8 @@
       (let (tab (web-tab client: (make-client id)
                          next: 1 pending: (make-hash-table-eqv) numbered?: #f
                          rendered: empty-screen revision: 0
-                         owed: #f wanted?: #f copy: #f applied: (make-hash-table-eqv) streams: 0 closings: 0))
+                         owed: #f wanted?: #f copy: #f instructions: []
+                         applied: (make-hash-table-eqv) streams: 0 closings: 0))
         (hash-put! self.tabs id tab)
         ;; A tab that never opens a stream is forgotten as if its streams
         ;; had closed.
@@ -723,7 +912,7 @@
          (lambda (session)
            (let lp ((sent -1) (sent-head "") (count 0))
              (match (await-screen self tab stream sent count)
-               ([revision head screen copy]
+               ([revision head screen copy instructions]
                 (unless (string=? head sent-head)
                   (patch-elements session head))
                 (let (stamps (screen-stamps revision stream (fx1+ count)))
@@ -732,6 +921,9 @@
                    (lambda (out) (write-stamped-screen out screen stamps))))
                 (when copy
                   (patch-elements session (copy-instruction copy) selector: "body" mode: 'append))
+                (for-each (lambda ((instruction : :string))
+                            (patch-elements session instruction selector: "body" mode: 'append))
+                          instructions)
                 (lp revision head (fx1+ count)))
                ('heartbeat
                 (patch-signals session "{}")
@@ -1072,7 +1264,7 @@
 
 (defplugin (web-transport ctx)
   "Serves screens to browser tabs on loopback and receives their input."
-  provides: [display-service]
+  provides: [display-service page-service]
   ;; The kill ring only for its hook: a tab copies what its commands kill.
   optional: [renderer-service messages-service kill-ring-service]
   (add-stylesheet 'tokens "tokens.css")
@@ -1100,8 +1292,12 @@
                               mutex: (make-mutex 'tuna-screen)
                               changed: (make-condition-variable 'tuna-screen)
                               tabs: (make-hash-table)
-                              head: (render-head [])
+                              head: (render-head [] [])
                               served: []
+                              scripts: []
+                              scripts-made: 0
+                              scripts-shown: []
+                              addresses: (make-hash-table)
                               revision: 0
                               stopped?: #f
                               streams: 0
@@ -1123,6 +1319,7 @@
     (Server-start! server)
     (context-defer! ctx (lambda () (stop-web-transport! self)))
     (context-provide! ctx display-service self)
+    (context-provide! ctx page-service (Page self))
     (web-log.infof "Tuna %a is running. Open http://%a/"
                    (tuna-version) host)))
 

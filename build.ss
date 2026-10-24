@@ -48,7 +48,7 @@
     ("plugins/autosave" "plugin")
     ("plugins/reload-config" "plugin")
     ("plugins/proced" "plugin")
-    ("plugins/web" "embed"
+    ("plugins/web" "contract" "embed"
      (gxc: "plugin"
            (extra-inputs: ,(map (cut string-append "web/" <>)
                                (directory-files "plugins/web/web")))))))
