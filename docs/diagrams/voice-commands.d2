@@ -1,0 +1,24 @@
+# How does a spoken command run? (planned)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: You
+tuna: Tuna (voice plugin)
+worker: Speech worker
+search: Grammar search (parakeet)
+
+you -> tuna: "1. C-c c, then say\n\"split view right\""
+tuna -> worker: "2. the grammar: every command\nname, spoken; then the audio"
+worker -> search: 3. decode, allowing only command names
+search -> search: "4. also decode with no grammar,\nover the same audio"
+search -> worker: "5. \"split view right\":\nits score, and the free score"
+worker -> tuna: 6. the command and both scores
+tuna -> tuna: "7. confidence = how little the\ngrammar had to force it"
+tuna -> you: "8. high: runs it and says so.\nlow: asks first. no match: says so" {
+  style.stroke-dash: 3
+}
