@@ -294,6 +294,20 @@ Copying also reaches your computer's clipboard, through the tab where you presse
 
 ![Copy and paste](diagrams/selecting-text-clipboard.svg)
 
+## Voice dictation
+
+**Status:** built 2026-10-24 (brief [voice dictation](briefs/2026-10-voice-dictation.md)). In the demo configuration; the starter leaves it out, since it needs the speech worker and a model on this machine.
+
+Press `C-c v` and talk: the words appear at the cursor a fraction of a second after you say them. `C-c v` again, or `C-g`, stops. You can keep editing meanwhile; the words still go where dictation started, because that place moves with your edits as the cursor does. Undo removes what you said between pauses, one stretch at a time.
+
+The microphone is the browser's, so the tab records and sends the audio, and the server says when to start and stop. Recognizing speech would freeze Tuna, so a separate program, the **speech worker**, does it (`make voice-worker` builds it against the local `gerbil-parakeet`; the default model is nemotron). The audio goes from the tab straight to the worker, never through the editor thread; only the recognized words become editor work.
+
+Three plugins share the job, and the web plugin knows nothing about microphones. The **web plugin** offers general **page machinery** any plugin can use: put the plugin's own script on the page, receive what that script posts at the plugin's own address, and send one tab a one-time instruction after its next screen. The **microphone plugin** uses it to capture a tab's microphone at 16 kHz. The **voice plugin** uses the microphone, runs the worker, and inserts the words.
+
+![How speech becomes text](diagrams/voice-dictation.svg)
+
+The browser gives a page the microphone only on HTTPS or `localhost`; elsewhere, or when you refuse it, the echo area says why.
+
 ## How it looks: HTML and stylesheets
 
 **Status:** built.
@@ -343,6 +357,8 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 
 - **Buffer**: a named piece of UI, made of a tree of nodes: a file, the minibuffer, `*Help*`, a sidebar.
 - **Node**: one piece of a buffer's tree; a text node holds editable text.
+- **Page machinery** (the page service): what the web plugin offers other plugins on the browser page: their own scripts, their own addresses to post to, one-time instructions to one tab.
+- **Speech worker**: the separate program that turns audio into text, so recognizing speech never freezes Tuna.
 - **Command**: a named action, such as `forward-char`, usually bound to a key.
 - **Editor thread**: the single worker that runs commands and is the only thing allowed to change editor state.
 - **Screen**: one complete drawing of what a browser tab shows, sent as HTML.
