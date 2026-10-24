@@ -20,10 +20,9 @@
         :tuna/plugins/layout/plugin
         :tuna/plugins/view-commands/plugin
         :tuna/plugins/renderer/plugin
-        :tuna/plugins/basic-editing/plugin
+        :tuna/plugins/editing/plugin
         :tuna/plugins/minibuffer/plugin
         :tuna/plugins/completion/plugin
-        :tuna/plugins/extended-command/plugin
         :tuna/plugins/renderer/contract
         "../../tuna/tests/support/kernel"
         "../../plugins/keys/tests/support/keys"
@@ -48,7 +47,7 @@
 (def editor-plugins
   [session-owner commands keys echo-area rope-text-store settings
    session buffers autosave layout view-commands
-   html-renderer basic-editing minibuffer completion-engine extended-command
+   html-renderer editing minibuffer completion-engine
    swap-configuration swap-commands])
 
 ;; One run of Tuna on DIRECTORY, booted as main does: activate, restore,

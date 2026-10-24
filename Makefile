@@ -32,7 +32,7 @@ deps:
 # read from its last line of output, which is OK only when every test passed
 # and gerbil test itself exited 0.
 test: build test-frontend demo-check
-	{ gerbil test ./tuna/... ./plugins/... ./tests/... || echo "make test: gerbil test exited $$?"; } | tee .gerbil/test.out
+	{ gerbil test ./tuna/... ./plugins/... ./tests/... ./demo/... || echo "make test: gerbil test exited $$?"; } | tee .gerbil/test.out
 	@test "$$(tail -n 1 .gerbil/test.out)" = OK || { echo "make test: Gerbil tests failed" >&2; exit 1; }
 
 test-frontend: assets
@@ -49,7 +49,7 @@ run: all
 STELLAR ?= stellar
 
 tokens:
-	cd plugins/design-tokens/tokens && $(STELLAR) gen --input stellar.config.json
+	cd plugins/stylesheets/tokens && $(STELLAR) gen --input stellar.config.json
 
 # The speech worker (plugins/voice/worker/) links the owner's local
 # gerbil-parakeet install, so only this target builds it; make and make test

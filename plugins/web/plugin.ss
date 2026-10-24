@@ -100,7 +100,7 @@
         (only-in :tuna/plugins/keys/contract key-event make-key-event pointer-event make-pointer-event
                  scroll-event make-scroll-event paste-event make-paste-event
                  posn make-posn)
-        (only-in :tuna/plugins/kill-ring/contract kill-ring-service kill-new-hook)
+        (only-in :tuna/plugins/editing/contract editing-service kill-new-hook)
         :tuna/plugins/renderer/contract
         :tuna/plugins/stylesheets/contract
         :tuna/plugins/web/contract
@@ -1265,8 +1265,8 @@
 (defplugin (web-transport ctx)
   "Serves screens to browser tabs on loopback and receives their input."
   provides: [display-service page-service]
-  ;; The kill ring only for its hook: a tab copies what its commands kill.
-  optional: [renderer-service messages-service kill-ring-service]
+  ;; Editing only for the kill ring's hook: a tab copies what its commands kill.
+  optional: [renderer-service messages-service editing-service]
   (add-stylesheet 'tokens "tokens.css")
   (add-stylesheet 'rules "rules.css")
   (let* ((port (let (configured (plugin-option web-transport 'port))

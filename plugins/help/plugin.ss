@@ -1,7 +1,10 @@
 #lang :tuna/prelude
 ;;; Help in a buffer (live tier): help output goes to *Help*, a `help` node
 ;;; holding a `help-title` node and a text node, shown with display-buffer.
-;;; C-h q (quit-help) kills *Help*, which closes a view made for it.
+;;; C-h q (quit-help) kills *Help*, which closes a view made for it. The
+;;; describe commands show their output there: describe-advice
+;;; (describe-advice.ss), and describe-stylesheets and reload-stylesheets
+;;; (describe-stylesheets.ss).
 
 (import :tuna/plugins/commands/contract
         :std/interface
@@ -10,7 +13,10 @@
         :tuna/plugins/keys/contract
         :tuna/plugins/buffers/contract
         :tuna/plugins/layout/contract
-        :tuna/plugins/help/contract)
+        :tuna/plugins/completion/contract
+        :tuna/plugins/help/contract
+        "describe-advice"
+        "describe-stylesheets")
 (export help-buffer)
 
 (def help-buffer-name "*Help*")
@@ -49,9 +55,12 @@
   (current-help (lambda (self) self.output)))
 
 (defplugin (help-buffer ctx)
-  "Shows help output in the *Help* buffer; C-h q closes it."
+  "Shows help output in the *Help* buffer; C-h q closes it. M-x describe-advice, describe-stylesheets, reload-stylesheets."
   provides: [help-service]
   requires: [commands-service input-service buffers-service layout-service]
+  ;; Completion only for describe-advice's choice, which says when no
+  ;; plugin provides it.
+  optional: [completion-service completion-ui-service]
   (add-stylesheet 'rules "rules.css")
   (context-define-node-kind! ctx 'help doc: "Help output: a title, then text.")
   (context-define-node-kind! ctx 'help-title doc: "The title of help output."
@@ -67,6 +76,12 @@
           (kill-buffer b)
           (message "No help is shown"))))
     (keymap-set "C-h q" 'quit-help)
+    (defcommand (describe-advice) "Choose an advised function or command and show its advice, outermost first."
+      (describe-advice!))
+    (defcommand (describe-stylesheets) "List the page's stylesheets in order, with their owners, files and replacements, and check them."
+      (describe-stylesheets!))
+    (defcommand (reload-stylesheets) "Read every stylesheet's file again."
+      (reload-stylesheets!))
     (context-defer! ctx (lambda ()
                           (let (b (live-help-buffer self))
                             (when b (kill-buffer b)))))

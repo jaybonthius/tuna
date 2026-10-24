@@ -6,7 +6,7 @@ prelude: :gerbil/core
         :tuna/plugins/settings/contract :tuna/plugins/layout/contract :tuna/plugins/session/contract
         :tuna/plugins/commands/plugin :tuna/plugins/keys/plugin :tuna/plugins/text-store/plugin
         :tuna/plugins/settings/plugin :tuna/plugins/buffers/plugin :tuna/plugins/layout/plugin
-        :tuna/plugins/basic-editing/plugin :tuna/plugins/minibuffer/plugin :tuna/plugins/session/plugin
+        :tuna/plugins/editing/plugin :tuna/plugins/minibuffer/plugin :tuna/plugins/session/plugin
         "../../plugins/buffers/tests/support/toy-buffers" "../../tuna/tests/support/kernel"
         "../../plugins/keys/tests/support/keys" "../../tuna/tests/support/string-input")
 (export prompt-foundations-test)
@@ -68,7 +68,7 @@ prelude: :gerbil/core
       (parameterize ((session-state-directory directory))
         (for-each activate-plugin!
           [commands keys test-messages rope-text-store
-           settings session provider layout basic-editing
+           settings session provider layout editing
            minibuffer questions]))
       (restore-session)
       (start-editor-loop!)

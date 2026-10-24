@@ -27,7 +27,7 @@
         :tuna/plugins/view-commands/plugin
         :tuna/plugins/scrolling/plugin
         :tuna/plugins/renderer/plugin
-        :tuna/plugins/basic-editing/plugin
+        :tuna/plugins/editing/plugin
         :tuna/plugins/minibuffer/plugin
         :tuna/plugins/proced/plugin
         "../../plugins/web/tests/support/web-client"
@@ -45,7 +45,7 @@
 
 (def proced-plugins
   [commands keys web-transport echo-area rope-text-store settings session buffers autosave
-   layout minibuffer view-commands scrolling html-renderer basic-editing proced task-counter])
+   layout minibuffer view-commands scrolling html-renderer editing proced task-counter])
 
 (def (call-with-state-directory proc)
   (let (directory (path-expand (string-append "tuna-proced-test-" (number->string (random-integer 1000000000)))

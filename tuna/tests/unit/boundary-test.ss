@@ -158,8 +158,9 @@
 
 
 ;; New packages and source-only doubles automatically become forbidden kernel
-;; vocabulary. "completion" and "annotations" also name concurrency
-;; primitives and Gerbil type declarations, not just editor features.
+;; vocabulary. "completion" also names concurrency primitives, and
+;; "configuration" Tuna's own init.ss, which the kernel's plugin runtime
+;; serves, not just editor features.
 (def (plugin-package-directories) => :list
   (filter-map (lambda ((name : :string))
                 (let (directory (string-append "plugins/" name))
@@ -168,7 +169,7 @@
 
 (def (feature-names) => :list
   (unique
-   (filter (lambda ((name : :string)) (not (member name '("completion" "annotations"))))
+   (filter (lambda ((name : :string)) (not (member name '("completion" "configuration"))))
     (append
      (map path-strip-directory (plugin-package-directories))
      (apply append
@@ -396,7 +397,8 @@
                      (all-source-names))))
 
 ;; A demo may use plugin fixtures/doubles, never the helper that selects a
-;; fresh private kernel. Relative imports remain source-only.
+;; fresh private kernel; the demo's own tests (demo/tests/) may, as every
+;; test does. Relative imports remain source-only.
 (def (demo-support-allowed? (file : :string) (name : :string)) => :boolean
   (let (target (string-append (reference-target file name) ".ss"))
     (and (file-exists? target)
@@ -412,7 +414,8 @@
                     (not (demo-support-allowed? file name))
                     (string-append file ": demo imports non-plugin test helper " name)))
              (references file)))
-         (source-names "demo"))))
+         (filter (lambda ((file : :string)) (not (test-source? file)))
+                 (source-names "demo")))))
 
 (def (demo-reference-problems (file : :string) (names : :list)) => :list
   (filter-map
@@ -809,7 +812,7 @@
       (check (re-exports? '(export (phi: +1 (import: :tuna/plugins/commands/contract)))) => #t)
       (check (re-exports? '(export own-name)) => #f))
     (test-case "plugin implementations use the live-redefinition prelude"
-      ;; A contract-only package, such as stylesheets, has no plugin.ss.
+      ;; A contract-only package, such as clients, has no plugin.ss.
       (for-each
        (lambda ((directory : :string))
          (let (plugin (source-path (string-append directory "/plugin.ss")))
@@ -821,9 +824,10 @@
       (check (unbuilt-packages '("plugins/a" "plugins/new") '("tuna" "plugins/a"))
              => '("plugins/new")))
     (test-case "kernel feature vocabulary follows packages and plugin declarations"
-      (check (member "completion-vertical" (feature-names)) ? pair?)
+      (check (member "completion-list" (feature-names)) ? pair?)
       (check (member "two-views" (feature-names)) ? pair?)
-      (check (member "completion" (feature-names)) => #f))
+      (check (member "completion" (feature-names)) => #f)
+      (check (member "configuration" (feature-names)) => #f))
     (test-case "production package imports form a directed acyclic graph"
       (displayln "  package boundary: " (length (package-graph)) " packages checked")
       (check (problem-count (graph-cycle-problems (package-graph))) => 0))
@@ -860,7 +864,7 @@
       (check (length (kernel-reference-problems "tuna/plugin-use.ss" '(":tuna/kernel/state"))) => 1))
     (test-case "program code stays private from features and demo"
       (check (problem-count (source-reference-problems program-reference-problems (all-source-names))) => 0)
-      (check (length (program-reference-problems "plugins/reload-config/plugin.ss" '(":tuna/boot"))) => 1)
+      (check (length (program-reference-problems "plugins/configuration/plugin.ss" '(":tuna/boot"))) => 1)
       (check (length (plugin-reference-problems "plugins/keys/plugin.ss" '(":tuna/control"))) => 1))
     (test-case "nested import forms quoted module names and includes are checked"
       (check (referenced-names '((import (only-in :tuna/plugins/layout/tree secret))

@@ -3,7 +3,7 @@
 ;;; their identities, paths and order, never colours or rules.
 ;;;
 ;;; A stylesheet is a slot named by its owner, a plugin, and a symbol:
-;;; (completion-vertical rules). The owner fills it with add-stylesheet;
+;;; (completion-list rules). The owner fills it with add-stylesheet;
 ;;; any plugin, theme or init.ss replaces it with replace-stylesheet, or
 ;;; removes it by replacing it with #f. The slots are owner-tagged entries
 ;;; (ADR 2): the owner's own file has priority 0 and replacements priority

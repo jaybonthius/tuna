@@ -1,13 +1,17 @@
 #lang :tuna/prelude
 ;;; Inline completion engine. Matching sees plain text/indices, never buffers
 ;;; or candidate values; the post-command hook finishes it before redisplay.
+;;; Its matching styles are substring and any-order; its command annotator
+;;; shows a command's key and first documentation line; and M-x
+;;; (execute-extended-command) reads a command with it and runs it.
 
 (import :std/interface (only-in :gerbil/runtime/hash HashTable)
+        :std/text/pregexp
         :tuna/kernel :tuna/plugins/commands/contract :tuna/plugins/keys/contract
         :tuna/plugins/buffers/contract :tuna/plugins/minibuffer/contract :tuna/plugins/settings/contract
         :tuna/plugins/completion/contract)
 (export completion-engine completion-styles completion-category-overrides
-        completion-pipeline substring-compile)
+        completion-pipeline substring-compile any-order-compile)
 
 (defsetting completion-styles '(substring) "Matching styles, tried in order until one matches.")
 (defsetting completion-category-overrides [] "Category-to-style-list overrides, as an association list.")
@@ -19,6 +23,36 @@
       (if (string-empty? input) []
         (let (start (string-contains (if sensitive? text (string-downcase text)) needle))
           (and start [(cons start (fx+ start (string-length input)))]))))))
+
+;;; The any-order style: every space-separated component must match, in
+;;; any order; matching sees only plain text.
+
+;; Literal wins when both styles match. Compile regexps once per input, not
+;; once per candidate; invalid regexps retain the component's literal meaning.
+(def (compile-component (component : :string)) => :procedure
+  (let* ((sensitive? (ormap char-upper-case? (string->list component)))
+         (literal (if sensitive? component (string-downcase component)))
+         (regexp (with-catch (lambda (_) #f)
+                   (lambda () (pregexp (if sensitive? component
+                                         (string-append "(?i:" component ")")))))))
+    (lambda ((text : :string))
+      (let (start (string-contains (if sensitive? text (string-downcase text)) literal))
+        (if start (cons start (fx+ start (string-length component)))
+          (and regexp
+               (let (positions (pregexp-match-positions regexp text))
+                 (and positions (car positions)))))))))
+
+;; Components are independent, so uppercase makes only that component
+;; case-sensitive. The component compiler is the seam for future dispatch.
+(def (any-order-compile (input : :string)) => :procedure
+  (let (matchers (map compile-component
+                     (filter (lambda ((part : :string)) (not (string-empty? part)))
+                             (string-split input #\space))))
+    (lambda ((text : :string))
+      (let lp ((rest matchers) (spans []))
+        (if (null? rest) (reverse spans)
+          (let (span ((car rest) text))
+            (and span (lp (cdr rest) (cons span spans)))))))))
 
 ;; TEXTS is a vector, HISTORY newest-first text, COMPILERS pure styles.
 ;; Return (index . spans) rows. The first style with matches wins. SORTER,
@@ -211,6 +245,28 @@
               (else answer)))
       (when session (set! self.sessions (remq session self.sessions))))))
 
+;;; Commands: annotations and M-x
+
+;; The engine supplies the session's origin selected-view snapshot, including
+;; its focused node; looking at the prompt's maps would hide local bindings.
+(def (annotate-command (c : candidate)) => (Maybe :list)
+  (let* ((name (candidate-value c))
+         (command (and (symbol? name) (command-ref name))))
+    (and command
+         (let* ((focus (or (view-node (selected-view)) (buffer-root (current-buffer))))
+                (keys (where-is name focus))
+                (doc (command-doc command))
+                (end (or (string-index doc #\newline) (string-length doc))))
+           [(make-annotation-field (if (null? keys) "" (car keys)) 'key)
+            (make-annotation-field (substring doc 0 end) 'doc)]))))
+
+(def (visible-command-candidates (origin : buffer)) => :list
+  (filter-map (lambda ((name : :symbol))
+                (let (c (command-ref name))
+                  (and c ((command-visible? c) c origin)
+                       (make-candidate text: (symbol->string name) value: name key: name))))
+              (command-names)))
+
 (implement Completion completion-state
   (completing-read (lambda (self question table require-match initial history default)
                      (ask! self question table require-match initial history default)))
@@ -220,7 +276,7 @@
   (annotators (lambda (self) self.annotators)))
 
 (defplugin (completion-engine ctx)
-  "Completion reads with smart-case substring matching; works without a list UI."
+  "Completion reads with substring and any-order matching, command annotations and M-x; works without a list UI."
   provides: [completion-service]
   requires: [commands-service input-service buffers-service minibuffer-service settings-service]
   optional: [completion-ui-service]
@@ -231,6 +287,17 @@
     (keymap-set-in ctx (completion-state-keymap self) "M-RET" 'completion-accept-input)
     (context-define-completion-style! ctx
       (make-completion-style 'substring substring-compile "Smart-case substring matching."))
+    (context-define-completion-style! ctx
+      (make-completion-style 'any-order any-order-compile
+        "Space-separated components in any order; each matches literally or as a valid regexp, and uppercase makes it case-sensitive."))
+    (context-define-annotator! ctx 'command annotate-command)
+    (define-command ctx (execute-extended-command) "Choose a command by name, then run it as if its keys were pressed."
+      (let* ((origin (current-buffer))
+             (table (make-completion-table category: 'command
+                      items: (lambda (input) (visible-command-candidates origin))))
+             (choice (completing-read "M-x " table history: 'extended-command)))
+        (call-command choice)))
+    (keymap-set ctx "M-x" 'execute-extended-command)
     (context-define-command! ctx 'completion-accept-input
       (lambda () (exit-session! (session-here self) #t))
       doc: "Accept exactly the input typed, validating required matches."

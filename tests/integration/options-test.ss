@@ -20,7 +20,7 @@
         :tuna/plugins/commands/plugin
         :tuna/plugins/keys/plugin
         :tuna/plugins/web/plugin
-        :tuna/plugins/reload-config/plugin
+        :tuna/plugins/configuration/plugin
         "../../tuna/tests/support/kernel"
         (only-in "../../tuna/tests/support/string-input" test-input test-messages current-message)
         "../support/config"
@@ -359,7 +359,7 @@
                                       "(use-plugin dependent)"))
                     (report (start path)))
                (check (last-configuration-report) => (startup-report-text report))
-               (for-each activate-plugin! [commands keys test-messages reload-config])
+               (for-each activate-plugin! [commands keys test-messages configuration])
                (run-hook configuration-report-ready-hook
                          (make-configuration-report (startup-report-text report) #f
                            (map (lambda ((e : report-entry)) [(report-entry-status e) (report-entry-what e)])
@@ -373,7 +373,7 @@
          (call-with-fresh-kernel []
            (lambda ()
              (start (write-init directory "(use-plugin good)"))
-             (for-each activate-plugin! [commands keys test-messages reload-config])
+             (for-each activate-plugin! [commands keys test-messages configuration])
              (run-hook configuration-report-ready-hook
                        (make-configuration-report "No problems" #f '((on "good")) "/s/startup.log"))
              (check (current-message) => "")
@@ -384,7 +384,7 @@
                (check (last-configuration-report) => (reload-report-text report))))))))
 
     (test-case "reload-config and show-config-report go through the contract"
-      (call-with-fresh-kernel [commands keys test-messages stub-configuration reload-config]
+      (call-with-fresh-kernel [commands keys test-messages stub-configuration configuration]
         (lambda ()
           (run-command 'show-config-report)
           (check (current-message) => "There is no configuration report yet.")

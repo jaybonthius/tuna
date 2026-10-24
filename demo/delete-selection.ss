@@ -4,10 +4,10 @@ prelude: :gerbil/core
 
 (import :tuna/kernel
         :tuna/plugins/settings/contract
-        :tuna/plugins/region/contract)
+        :tuna/plugins/editing/contract)
 (export delete-selection-demo)
 
 (defplugin (delete-selection-demo ctx)
   "Typing, deleting and yanking replace the active region."
-  requires: [settings-service region-service]
+  requires: [settings-service editing-service]
   (context-set-setting! ctx delete-selection #t))

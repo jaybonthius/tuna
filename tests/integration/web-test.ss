@@ -12,7 +12,7 @@
         :tuna/plugins/buffers/contract
         :tuna/plugins/layout/contract
         :tuna/plugins/echo-area/contract
-        :tuna/plugins/kill-ring/contract
+        :tuna/plugins/editing/contract
         :tuna/plugins/commands/plugin
         :tuna/plugins/keys/plugin
         :tuna/plugins/web/plugin
@@ -23,12 +23,9 @@
         :tuna/plugins/buffers/plugin
         :tuna/plugins/layout/plugin
         :tuna/plugins/view-commands/plugin
-        :tuna/plugins/region/plugin
-        :tuna/plugins/text-mouse/plugin
         :tuna/plugins/renderer/plugin
-        :tuna/plugins/basic-editing/plugin
+        :tuna/plugins/editing/plugin
         :tuna/plugins/minibuffer/plugin
-        :tuna/plugins/kill-ring/plugin
         "../../plugins/session/tests/support/session"
         "../support/endless-commands"
         "../support/services-help"
@@ -38,7 +35,7 @@
 (def browser-editor-plugins
   [commands keys web-transport echo-area help-buffer
    rope-text-store settings no-session buffers layout
-   minibuffer view-commands region text-mouse html-renderer basic-editing endless-commands services-help])
+   minibuffer view-commands html-renderer editing endless-commands services-help])
 
 (def (with-tuna thunk)
   (with-web-tuna browser-editor-plugins thunk))
@@ -176,7 +173,7 @@
                   => #t)))))
 
     (test-case "M-w copies in the tab that pressed it, once; a paste from another tab is inserted and killed, not copied back"
-      (with-web-tuna (append browser-editor-plugins [kill-ring])
+      (with-web-tuna browser-editor-plugins
        (lambda ()
          (call-on-editor-loop (lambda () (show-new-buffer! (selected-view) "clip")))
          (let* ((a (current-tab))

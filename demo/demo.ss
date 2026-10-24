@@ -1,6 +1,6 @@
 ;;; The demo plugin, for development only (`tuna --config demo/init.ss`):
-;;; swapping the text store (C-c s), basic editing (C-c p), hungry
-;;; delete (C-c h), the terminal theme (C-c T) and the delete-selection
+;;; swapping the text store (C-c s), editing (C-c p), hungry delete
+;;; (C-c h, hungry-delete.ss), the terminal theme (C-c T) and the delete-selection
 ;;; setting (C-c D) while Tuna runs, and
 ;;; waiting off the editor thread (C-c W, which C-g quits). The
 ;;; demo's other commands (the *welcome* tree buffer, endless loops,
@@ -15,15 +15,16 @@ prelude: :gerbil/core
         :tuna/kernel
         :tuna/plugins/keys/contract
         (only-in :tuna/plugins/settings/contract settings-service)
-        (only-in :tuna/plugins/region/contract region-service)
+        (only-in :tuna/plugins/editing/contract editing-service)
+        (only-in :tuna/plugins/buffers/contract buffers-service)
         :tuna/configuration
         :tuna/lib/background
         :tuna/plugins/text-store/plugin
-        :tuna/plugins/basic-editing/plugin
-        :tuna/plugins/hungry-delete/plugin
+        :tuna/plugins/editing/plugin
         "../plugins/text-store/tests/support/string-text-store"
         "../tests/support/theme-terminal"
-        "delete-selection")
+        "delete-selection"
+        "hungry-delete")
 (export demo)
 
 (def (toggle-plugin! (p : plugin)) => :void
@@ -37,9 +38,10 @@ prelude: :gerbil/core
   seconds)
 
 (defplugin (demo ctx)
-  "Demo commands: swap text store (C-c s), toggle basic editing (C-c p), hungry delete (C-c h), the terminal theme (C-c T), delete-selection (C-c D) and waiting off the editor thread (C-c W)."
+  "Demo commands: swap text store (C-c s), toggle editing (C-c p), hungry delete (C-c h), the terminal theme (C-c T), delete-selection (C-c D) and waiting off the editor thread (C-c W)."
   requires: [commands-service input-service configuration-service]
-  optional: [settings-service region-service]  ; delete-selection-demo's, which it turns on and off
+  ;; delete-selection-demo's and hungry-delete's, which it turns on and off
+  optional: [settings-service editing-service buffers-service]
   (define-command ctx (swap-text-store) "Switch between the rope and the plain-string text store."
     (if (plugin-active? string-text-store)
       (swap-plugins string-text-store rope-text-store)
@@ -47,9 +49,9 @@ prelude: :gerbil/core
     (message (if (plugin-active? string-text-store)
                "Text store: plain strings"
                "Text store: rope")))
-  (define-command ctx (toggle-basic-editing) "Turn the basic-editing plugin off or on."
-    (toggle-plugin! basic-editing)
-    (message (if (plugin-active? basic-editing) "Basic editing on" "Basic editing off")))
+  (define-command ctx (toggle-editing) "Turn the editing plugin off or on."
+    (toggle-plugin! editing)
+    (message (if (plugin-active? editing) "Editing on" "Editing off")))
   (define-command ctx (toggle-hungry-delete) "Turn the hungry-delete plugin off or on."
     (toggle-plugin! hungry-delete)
     (message (if (plugin-active? hungry-delete) "Hungry delete on" "Hungry delete off")))
@@ -66,5 +68,5 @@ prelude: :gerbil/core
   (keymap-set ctx "C-c h" 'toggle-hungry-delete)
   (keymap-set ctx "C-c T" 'toggle-theme-terminal)
   (keymap-set ctx "C-c D" 'toggle-delete-selection)
-  (keymap-set ctx "C-c p" 'toggle-basic-editing)
+  (keymap-set ctx "C-c p" 'toggle-editing)
   (keymap-set ctx "C-c s" 'swap-text-store))
