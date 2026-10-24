@@ -9,7 +9,7 @@ shape: sequence_diagram
 
 you: You
 browser: Browser tab
-web: Web plugin
+web: Web plugin (page machinery)
 voice: Voice plugin
 worker: Speech worker (separate process)
 editor: Editor thread
@@ -26,7 +26,7 @@ start: Start {
 talk: While you talk {
   you -> browser: 5. speech
   browser -> web: "6. audio, 16 kHz, a chunk\nevery tenth of a second"
-  web -> voice: 7. the chunk (not via the editor thread)
+  web -> voice: "7. the chunk, to the microphone\nplugin's address (not via the editor thread)"
   voice -> worker: 8. the chunk, over a pipe
   worker -> voice: "9. new text, when a chunk\nof speech is decoded"
   voice -> editor: 10. insert it at the mark
