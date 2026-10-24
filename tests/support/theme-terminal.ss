@@ -17,5 +17,5 @@ prelude: :gerbil/core
   (replace-stylesheet 'web-transport 'tokens "theme-terminal/page.css")
   (replace-stylesheet 'html-renderer 'tokens "theme-terminal/renderer.css")
   (replace-stylesheet 'layout 'rules "theme-terminal/layout.css")
-  (replace-stylesheet 'completion-vertical 'tokens "theme-terminal/completion.css")
+  (replace-stylesheet 'completion-list 'tokens "theme-terminal/completion.css")
   (replace-stylesheet 'buttons 'rules "theme-terminal/buttons.css"))

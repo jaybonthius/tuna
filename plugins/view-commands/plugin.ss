@@ -10,7 +10,7 @@
 ;;; Clicking a view's status line selects that view (`mouse-select-view`,
 ;;; Emacs `mouse-select-window` on the mode line), unless its buffer is
 ;;; skipped by `other-view` (`no-other-view`: the bar's views). A click in
-;;; the view itself is the text-mouse plugin's (`mouse-set-point`, which
+;;; the view itself is the editing plugin's (`mouse-set-point`, which
 ;;; selects the view too, as in Emacs).
 ;;;
 ;;; Selecting the view on a side (`select-view-left` and the like, Emacs's

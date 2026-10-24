@@ -6,9 +6,9 @@ prelude: :gerbil/core
         :tuna/plugins/session/contract (except-in :tuna/configuration activate-plugin!)
         :tuna/plugins/commands/plugin :tuna/plugins/keys/plugin :tuna/plugins/text-store/plugin
         :tuna/plugins/settings/plugin :tuna/plugins/buffers/plugin :tuna/plugins/layout/plugin
-        :tuna/plugins/session/plugin :tuna/plugins/autosave/plugin :tuna/plugins/basic-editing/plugin
+        :tuna/plugins/session/plugin :tuna/plugins/autosave/plugin :tuna/plugins/editing/plugin
         :tuna/plugins/minibuffer/plugin :tuna/plugins/buttons/plugin :tuna/plugins/help/plugin
-        :tuna/plugins/view-commands/plugin :tuna/plugins/reload-config/plugin
+        :tuna/plugins/view-commands/plugin :tuna/plugins/configuration/plugin
         :tuna/plugins/renderer/plugin
         "../../tuna/tests/support/kernel" "../../plugins/keys/tests/support/keys"
         "../support/rename-command" "../support/swap-commands"
@@ -38,9 +38,9 @@ prelude: :gerbil/core
 
 (def silent-plugins
   [commands keys rope-text-store settings session
-   buffers layout autosave basic-editing minibuffer
+   buffers layout autosave editing minibuffer
    buttons help-buffer view-commands configuration-fixture swap-configuration
-   reload-config rename-command swap-commands endless-commands])
+   configuration rename-command swap-commands endless-commands])
 
 (def optional-messages-test
   (test-suite "optional message displays"

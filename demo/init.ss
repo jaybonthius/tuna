@@ -1,13 +1,13 @@
 #lang :tuna/config
 ;;; The demo configuration, for development only: run
 ;;; `tuna --config demo/init.ss`. It declares the starter's plugins
-;;; (starter/init.ss) plus the demo: the demo plugins (demo.ss, sidebar.ss,
-;;; long-buffer.ss, rows.ss, mixed.ss) and the command fixtures from tuna/test-support/ that
+;;; (starter/init.ss) plus the demo: the demo plugins (demo.ss,
+;;; hungry-delete.ss, sidebar.ss, long-buffer.ss, rows.ss, mixed.ss) and the command fixtures from tuna/test-support/ that
 ;;; it builds on. Tuna's
 ;;; executable does not link any of them; they load from source.
 
 (import :tuna/plugins/commands/contract
-        :tuna/plugins/design-tokens/plugin
+        :tuna/plugins/stylesheets/plugin
         :tuna/plugins/keys/contract
         :tuna/plugins/commands/plugin
         :tuna/plugins/keys/plugin
@@ -24,22 +24,13 @@
         :tuna/plugins/scrolling/plugin
         :tuna/plugins/renderer/plugin
         :tuna/plugins/buttons/plugin
-        :tuna/plugins/basic-editing/plugin
-        :tuna/plugins/region/plugin
-        :tuna/plugins/kill-ring/plugin
-        :tuna/plugins/text-mouse/plugin
-        :tuna/plugins/hungry-delete/plugin
+        :tuna/plugins/editing/plugin
         :tuna/plugins/minibuffer/plugin
         :tuna/plugins/completion/plugin
-        :tuna/plugins/completion-vertical/plugin
-        :tuna/plugins/extended-command/plugin
-        :tuna/plugins/advice-help/plugin
-        :tuna/plugins/stylesheets-help/plugin
-        :tuna/plugins/orderless/plugin
-        :tuna/plugins/command-annotations/plugin
+        :tuna/plugins/completion-list/plugin
         :tuna/plugins/settings/contract
         (only-in :tuna/kernel current-context)
-        :tuna/plugins/reload-config/plugin
+        :tuna/plugins/configuration/plugin
         :tuna/plugins/proced/plugin
         :tuna/plugins/microphone/plugin
         :tuna/plugins/voice/plugin
@@ -50,6 +41,7 @@
         "../tests/support/digit-highlighter"
         "../tests/support/tree-buffer"
         "demo"
+        "hungry-delete"
         "sidebar"
         "long-buffer"
         "rows"
@@ -74,22 +66,16 @@
 (use-plugin scrolling)           ; views scroll natively; the server draws what is near
 (use-plugin html-renderer)
 (use-plugin buttons)             ; buttons in buffers: a click runs their action
-(use-plugin basic-editing)
-(use-plugin region)              ; C-SPC, C-x C-x, shift-select; the delete-selection setting
-(use-plugin kill-ring)           ; C-w, M-w, C-y, M-y
-(use-plugin text-mouse)          ; a click in text moves point there
-(use-plugin hungry-delete)       ; Backspace deletes the spaces before point in one edit
+(use-plugin editing)             ; typing and moving; C-SPC, C-x C-x and shift-select (the
+                                 ; delete-selection setting); C-w, M-w, C-y, M-y; clicking and dragging
+(use-plugin hungry-delete)       ; Backspace deletes the spaces before point in one edit (hungry-delete.ss)
 (use-plugin minibuffer)
-(use-plugin completion-engine
-  config: (context-set-setting! (current-context) completion-styles '(orderless substring)))
-(use-plugin completion-vertical)
-(use-plugin extended-command)
-(use-plugin orderless)
-(use-plugin annotations)
+(use-plugin completion-engine    ; M-x, matching styles, command annotations
+  config: (context-set-setting! (current-context) completion-styles '(any-order substring)))
+(use-plugin completion-list)     ; the candidates in rows under the minibuffer
 (use-plugin echo-area)           ; in the bar, under the minibuffer
-(use-plugin help-buffer)         ; *Help*; C-h q closes it
-(use-plugin advice-help)         ; M-x describe-advice: function and command advice
-(use-plugin stylesheets-help)    ; M-x describe-stylesheets, M-x reload-stylesheets
+(use-plugin help-buffer)         ; *Help*; C-h q closes it; M-x describe-advice,
+                                 ; describe-stylesheets, reload-stylesheets
 (use-plugin endless-commands)    ; C-c l and C-c L: loops to quit with C-g
 (use-plugin services-help)       ; C-h s: describe-services
 (use-plugin rename-command)      ; C-c r: rename the buffer in the minibuffer
@@ -100,7 +86,7 @@
                                html-renderer layout buffers))
 (use-plugin digit-highlighter)   ; colors digits from a slow job
 (use-plugin tree-buffer)         ; C-c b: the *welcome* buffer, built as a tree
-(use-plugin demo)                ; C-c s text store, C-c p basic editing, C-c h hungry delete,
+(use-plugin demo)                ; C-c s text store, C-c p editing, C-c h hungry delete,
                                  ; C-c T the terminal theme (tests/support/theme-terminal.ss),
                                  ; C-c D the delete-selection setting,
                                  ; C-c W a wait off the editor thread that C-g quits
@@ -118,6 +104,6 @@
 (use-plugin voice
   config: (keymap-set "C-c v" 'voice-dictate)
           (keymap-set "C-c c" 'voice-command))
-(use-plugin reload-config        ; reload this file; show the last report
+(use-plugin configuration        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)
           (keymap-set "C-c C-r" 'show-config-report))

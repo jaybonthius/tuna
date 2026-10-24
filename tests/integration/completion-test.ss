@@ -7,9 +7,8 @@ prelude: :gerbil/core
         :tuna/plugins/completion/contract :tuna/plugins/settings/contract :tuna/plugins/renderer/contract
         :tuna/plugins/commands/plugin :tuna/plugins/keys/plugin :tuna/plugins/text-store/plugin
         :tuna/plugins/settings/plugin :tuna/plugins/buffers/plugin :tuna/plugins/layout/plugin
-        :tuna/plugins/basic-editing/plugin :tuna/plugins/minibuffer/plugin :tuna/plugins/renderer/plugin
-        :tuna/plugins/completion/plugin :tuna/plugins/completion-vertical/plugin :tuna/plugins/extended-command/plugin
-        :tuna/plugins/orderless/plugin :tuna/plugins/command-annotations/plugin
+        :tuna/plugins/editing/plugin :tuna/plugins/minibuffer/plugin :tuna/plugins/renderer/plugin
+        :tuna/plugins/completion/plugin :tuna/plugins/completion-list/plugin
         "../../tuna/tests/support/kernel" "../../plugins/keys/tests/support/keys" "../../plugins/session/tests/support/session"
         "../../tuna/tests/support/string-input" "../../plugins/completion/tests/support/toy-completion-ui")
 (export completion-test)
@@ -83,10 +82,10 @@ prelude: :gerbil/core
       (lambda (input) (lambda (text) (and (equal? text "beta") []))) "Only beta."))
   (context-set-setting! ctx completion-category-overrides '((test only-beta))))
 
-(defplugin (orderless-default ctx)
-  "Prefer Orderless, retaining substring if its plugin is removed."
+(defplugin (any-order-default ctx)
+  "Prefer the any-order style, then substring."
   requires: [settings-service]
-  (context-set-setting! ctx completion-styles '(orderless substring)))
+  (context-set-setting! ctx completion-styles '(any-order substring)))
 
 (defplugin (origin-bindings ctx)
   "A local binding at the origin focus, not on the minibuffer."
@@ -101,8 +100,8 @@ prelude: :gerbil/core
 
 (def completion-engine-plugins
   [commands keys test-messages rope-text-store settings no-session
-   buffers layout basic-editing minibuffer html-renderer
-   completion-engine extended-command fixture])
+   buffers layout editing minibuffer html-renderer
+   completion-engine fixture])
 
 (def (run-completion (ui :? plugin) (thunk : :procedure)) => :t
   (set! results []) (set! captured-annotations []) (set! redraws [])
@@ -113,11 +112,10 @@ prelude: :gerbil/core
 
 (def completion-test
   (test-suite "completion integration"
-    (test-case "Orderless M-x highlights every component and command rows show key and first doc line"
-      (run-completion completion-vertical
+    (test-case "any-order M-x highlights every component and command rows show key and first doc line"
+      (run-completion completion-list
         (lambda ()
-          (on-editor (lambda () (activate-plugin! orderless-default) (activate-plugin! orderless)
-                                (activate-plugin! annotations) (activate-plugin! origin-bindings)))
+          (on-editor (lambda () (activate-plugin! any-order-default) (activate-plugin! origin-bindings)))
           (type! "M-x" "a" "l" "p" "h" "a" "SPC" "t" "e" "s" "t")
           (check (on-editor texts) => ["test-alpha"])
           (check (on-editor (lambda ()
@@ -130,34 +128,23 @@ prelude: :gerbil/core
           (type! "RET")
           (check (on-editor session) => #f)
           (check results => ['alpha]))))
-    (test-case "removing annotations restores M-x key-only fallback; removing Orderless restores substring"
-      (run-completion completion-vertical
+    (test-case "completion-styles chooses the matching: substring alone does not match components in any order"
+      (run-completion completion-list
         (lambda ()
-          (on-editor (lambda () (activate-plugin! orderless-default) (activate-plugin! orderless)
-                                (activate-plugin! annotations)))
-          (type! "M-x" "a" "l" "p" "h" "a")
-          (check (on-editor (lambda () (contains? (html) "An alpha action."))) => #t)
-          (type! "C-g")
-          (on-editor (lambda () (deactivate-plugin! annotations)))
+          (on-editor (lambda () (activate-plugin! any-order-default)))
           (type! "M-x" "a" "l" "p" "h" "a" "SPC" "t" "e" "s" "t")
           (check (on-editor texts) => ["test-alpha"])
-          (check (on-editor (lambda ()
-            (map annotation-field-class (node-attribute (car (row-nodes)) 'annotations)))) => ['key])
-          (check (on-editor (lambda () (contains? (html) "C-c a"))) => #t)
-          (type! "RET")
-          (check (on-editor session) => #f)
-          (check results => ['alpha])
-          (on-editor (lambda () (deactivate-plugin! orderless)))
+          (type! "C-g")
+          (on-editor (lambda () (deactivate-plugin! any-order-default)))
           (type! "M-x" "a" "l" "p" "h" "a" "SPC" "t" "e" "s" "t")
           (check (on-editor texts) => [])
           (type! "C-g" "M-x" "a" "l" "p" "h" "a" "RET")
           (check (on-editor session) => #f)
-          (check results => ['alpha 'alpha]))))
-    (test-case "Orderless and annotations remain optional with no list: plain M-x runs an exact name"
+          (check results => ['alpha]))))
+    (test-case "any-order and annotations work with no list: plain M-x runs an exact name"
       (run-completion #f
         (lambda ()
-          (on-editor (lambda () (activate-plugin! orderless-default) (activate-plugin! orderless)
-                                (activate-plugin! annotations)))
+          (on-editor (lambda () (activate-plugin! any-order-default)))
           (type! "M-x" "t" "e" "s" "t" "-" "a" "l" "p" "h" "a")
           (check (on-editor row-texts) => [])
           (check (on-editor (lambda () (contains? (html) "completion-doc"))) => #f)
@@ -166,9 +153,9 @@ prelude: :gerbil/core
           (check results => ['alpha])
           (check (on-editor session) => #f))))
     (test-case "annotators for unrelated categories are never called"
-      (run-completion completion-vertical
+      (run-completion completion-list
         (lambda ()
-          (on-editor (lambda () (activate-plugin! test-annotator) (activate-plugin! annotations)
+          (on-editor (lambda () (activate-plugin! test-annotator)
             (set! reads-table (make-completion-table category: 'unknown
               items: [(make-candidate text: "test-alpha" value: 'test-alpha key: 'test-alpha)]))))
           (type! "C-c" "f")
@@ -178,7 +165,7 @@ prelude: :gerbil/core
           (check (on-editor session) => #f)
           (check results => ['test-alpha]))))
     (test-case "M-x: visibility, same-redraw matches, navigate, run and recency history"
-      (run-completion completion-vertical
+      (run-completion completion-list
         (lambda ()
           (type! "M-x" "t" "e" "s" "t" "-")
           (check (on-editor texts) => ["test-beta" "test-alpha"])
@@ -196,7 +183,7 @@ prelude: :gerbil/core
           (type! "C-g")
           (check (on-editor (lambda () (minibuffer-history 'extended-command))) => ["test-alpha"]))))
     (test-case "keys, editing, prompts and completion work without optional messages"
-      (run-completion completion-vertical
+      (run-completion completion-list
         (lambda ()
           (on-editor (lambda () (deactivate-plugin! test-messages)
                                 (check (service-provider messages-service) => #f)))
@@ -220,7 +207,7 @@ prelude: :gerbil/core
           (check results => ['beta])
           (check (on-editor (lambda () (minibuffer-history 'extended-command))) => ["test-beta"]))))
     (test-case "click a row, stale row identity cannot choose a replacement"
-      (run-completion completion-vertical
+      (run-completion completion-list
         (lambda ()
           (type! "C-c" "f")
           (let (ids (on-editor (lambda () [(view-id (selected-view)) (node-id (cadr (row-nodes)))])))
@@ -235,11 +222,11 @@ prelude: :gerbil/core
             (check results => ["alpha"])
             (type! "C-g")))))
     (test-case "UI off during a read removes nodes and restores plain RET; toy UI swaps in"
-      (run-completion completion-vertical
+      (run-completion completion-list
         (lambda ()
           (type! "C-c" "f" "b")
           (check (on-editor row-texts) => ["beta"])
-          (on-editor (lambda () (deactivate-plugin! completion-vertical)))
+          (on-editor (lambda () (deactivate-plugin! completion-list)))
           (check (on-editor row-texts) => [])
           (type! "RET")
           (check (on-editor (lambda () (and (session) #t))) => #t)
@@ -251,12 +238,12 @@ prelude: :gerbil/core
           (check (on-editor session) => #f)
           (check results => ["beta"])
           (on-editor (lambda () (deactivate-plugin! toy-completion-ui)
-                                 (activate-plugin! completion-vertical)))
+                                 (activate-plugin! completion-list)))
           (type! "C-c" "f")
           (check (on-editor (lambda () (pair? (row-nodes)))) => #t)
           (type! "C-g"))))
     (test-case "records return values, selection stays by key across fresh source records"
-      (run-completion completion-vertical
+      (run-completion completion-list
         (lambda ()
           (on-editor (lambda ()
             (set! reads-table (make-completion-table category: 'test sort: values
@@ -270,22 +257,22 @@ prelude: :gerbil/core
           (check results => [2])
           (check (on-editor (lambda () (minibuffer-history 'picks))) => ["car"]))))
     (test-case "configuration selects one UI at a time"
-      (run-completion completion-vertical
+      (run-completion completion-list
         (lambda ()
           (type! "C-c" "f" "b")
-          (on-editor (lambda () (deactivate-plugin! completion-vertical)
+          (on-editor (lambda () (deactivate-plugin! completion-list)
                                  (activate-plugin! toy-completion-ui)))
           (check (on-editor row-texts) => [])
           (check (on-editor (lambda () (length (prompt-nodes 'toy-completion-summary)))) => 1)
           (on-editor (lambda () (deactivate-plugin! toy-completion-ui)
-                                 (activate-plugin! completion-vertical)))
+                                 (activate-plugin! completion-list)))
           (check (on-editor row-texts) => ["beta"])
           (check (on-editor (lambda () (prompt-nodes 'toy-completion-summary))) => [])
           (type! "RET")
           (check (on-editor session) => #f)
           (check results => ["beta"]))))
     (test-case "M-RET takes literal input when allowed; required matches and defaults validate"
-      (run-completion completion-vertical
+      (run-completion completion-list
         (lambda ()
           (on-editor (lambda () (set! must-match? #f)
              (set! reads-table (make-completion-table category: 'test
@@ -302,7 +289,7 @@ prelude: :gerbil/core
           (check (on-editor session) => #f)
           (check results => [42 "beta"]))))
     (test-case "TAB inserts selected text; first/last and up/down clamp at edges"
-      (run-completion completion-vertical
+      (run-completion completion-list
         (lambda ()
           (type! "C-c" "f" "M->")
           (check (on-editor (lambda () (candidate-text (CompletionSession-session-selected (session))))) => "gamma")
@@ -315,7 +302,7 @@ prelude: :gerbil/core
           (check (on-editor session) => #f)
           (check results => ["beta"]))))
     (test-case "only visible rows are annotated, registry before fallback, in the origin buffer"
-      (run-completion completion-vertical
+      (run-completion completion-list
         (lambda ()
           (on-editor (lambda () (activate-plugin! count-two) (activate-plugin! test-annotator)
             (set! reads-table (make-completion-table category: 'test
@@ -330,7 +317,7 @@ prelude: :gerbil/core
           (check (on-editor (lambda () (contains? (html) "fallback"))) => #t)
           (type! "C-g"))))
     (test-case "category style overrides use the registry; removing a style falls back to substring"
-      (run-completion completion-vertical
+      (run-completion completion-list
         (lambda ()
           (on-editor (lambda () (activate-plugin! test-style)))
           (type! "C-c" "f")
@@ -340,7 +327,7 @@ prelude: :gerbil/core
           (check (on-editor texts) => ["beta" "alpha" "gamma"])
           (type! "C-g"))))
     (test-case "nested reads have independent sessions and restore the outer selection and rows"
-      (run-completion completion-vertical
+      (run-completion completion-list
         (lambda ()
           (type! "C-c" "f" "C-n")
           (let (outer (on-editor session))

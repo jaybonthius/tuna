@@ -16,7 +16,7 @@
         :tuna/plugins/buffers/plugin
         :tuna/plugins/layout/plugin
         :tuna/plugins/view-commands/plugin
-        :tuna/plugins/basic-editing/plugin
+        :tuna/plugins/editing/plugin
         :tuna/plugins/minibuffer/plugin
         :tuna/plugins/scrolling/plugin
         "../../tuna/tests/support/kernel"
@@ -26,7 +26,7 @@
 
 (def scrolling-plugins
   [commands keys echo-area rope-text-store settings no-session buffers layout view-commands
-   basic-editing minibuffer scrolling])
+   editing minibuffer scrolling])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 

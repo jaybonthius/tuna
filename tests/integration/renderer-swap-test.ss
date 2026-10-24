@@ -17,7 +17,7 @@
         :tuna/plugins/layout/plugin
         :tuna/plugins/view-commands/plugin
         :tuna/plugins/renderer/plugin
-        :tuna/plugins/basic-editing/plugin
+        :tuna/plugins/editing/plugin
         :tuna/plugins/minibuffer/plugin
         "../../tuna/tests/support/kernel"
         "../../plugins/keys/tests/support/keys"
@@ -38,7 +38,7 @@
   [session-owner commands keys echo-area help-buffer rope-text-store
    settings no-session buffers layout
    view-commands
-   html-renderer basic-editing minibuffer
+   html-renderer editing minibuffer
    swap-configuration swap-commands rename-command tree-buffer])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))

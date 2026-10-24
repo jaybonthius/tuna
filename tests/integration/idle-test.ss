@@ -25,7 +25,7 @@
         :tuna/plugins/view-commands/plugin
         :tuna/plugins/scrolling/plugin
         :tuna/plugins/renderer/plugin
-        :tuna/plugins/basic-editing/plugin
+        :tuna/plugins/editing/plugin
         :tuna/plugins/minibuffer/plugin
         "../../plugins/web/tests/support/web-client")
 (export idle-test)
@@ -49,7 +49,7 @@
 
 (def idle-plugins
   [commands keys web-transport echo-area rope-text-store settings session buffers autosave
-   layout minibuffer view-commands scrolling html-renderer basic-editing idle-counters])
+   layout minibuffer view-commands scrolling html-renderer editing idle-counters])
 
 ;; Milliseconds after a task before the session is saved, and before a
 ;; page's tab is forgotten unless a stream is open: the first passes before

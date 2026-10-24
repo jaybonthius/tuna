@@ -436,11 +436,10 @@
                         (configuration-declarations loaded))
                    => '(design-tokens commands keys web-transport settings session
                         rope-text-store buffers autosave layout
-                        view-commands scrolling html-renderer buttons basic-editing region kill-ring text-mouse
-                        minibuffer completion-engine completion-vertical extended-command
-                        orderless annotations
-                        echo-area help-buffer advice-help stylesheets-help
-                        reload-config))
+                        view-commands scrolling html-renderer buttons editing
+                        minibuffer completion-engine completion-list
+                        echo-area help-buffer
+                        configuration))
             (check (declaration-options (car (configuration-declarations loaded)))
                    => '((variant . stellar-default)))
             (check (declaration-options (list-ref (configuration-declarations loaded) 3))

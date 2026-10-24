@@ -18,7 +18,7 @@
         :tuna/plugins/renderer/contract
         :tuna/plugins/web/plugin
         "../support/web-client"
-        :tuna/plugins/kill-ring/contract
+        :tuna/plugins/editing/contract
         (only-in "../../../../tuna/tests/support/string-input" test-input test-messages current-message))
 (export web-test)
 

@@ -12,7 +12,7 @@
         :tuna/kernel
         :tuna/boot
         :tuna/plugins/stylesheets/contract
-        :tuna/plugins/stylesheets-help/plugin
+        (only-in :tuna/plugins/help/describe-stylesheets stylesheet-warnings)
         "../../tuna/tests/support/kernel"
         "../support/theme-terminal")
 (export stylesheets-test)
@@ -99,7 +99,7 @@
     (html-renderer tokens) (html-renderer rules)
     (buttons rules)
     (minibuffer rules)
-    (completion-vertical tokens) (completion-vertical rules)
+    (completion-list tokens) (completion-list rules)
     (echo-area rules)
     (help-buffer rules)))
 
@@ -130,7 +130,7 @@
             (string-join [(read-file-string (path-expand "starter/init.ss" repository-directory))
                           (string-append "(import \"" theme-module "\")")
                           "(use-plugin theme-terminal)"
-                          "(replace-stylesheet 'completion-vertical 'tokens \"my-completion.css\")"
+                          "(replace-stylesheet 'completion-list 'tokens \"my-completion.css\")"
                           ""]
                          "\n"))
            (call-with-fresh-kernel []
@@ -143,12 +143,12 @@
                       => '(theme-terminal "tests/support/theme-terminal/renderer.css"))
                (check (slot 'layout 'rules prefix)
                       => '(theme-terminal "tests/support/theme-terminal/layout.css"))
-               (check (slot 'completion-vertical 'tokens prefix) => '(init "my-completion.css"))
+               (check (slot 'completion-list 'tokens prefix) => '(init "my-completion.css"))
                (check-clean-page)
                (deactivate-plugin! theme-terminal)
                (check (page) => starter-page)
                (check (slot 'html-renderer 'tokens prefix) => '(#f "plugins/renderer/tokens.css"))
                (check (slot 'layout 'rules prefix) => '(#f "plugins/layout/rules.css"))
                (check (slot 'web-transport 'tokens prefix) => '(#f "plugins/web/tokens.css"))
-               (check (slot 'completion-vertical 'tokens prefix) => '(init "my-completion.css"))
+               (check (slot 'completion-list 'tokens prefix) => '(init "my-completion.css"))
                (check-clean-page)))))))))

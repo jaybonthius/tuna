@@ -2,7 +2,7 @@
 ;;; keys, under the default layout: C-x 2, C-x 3, C-x 0, C-x 1, C-x o,
 ;;; the S-<arrows> as a user binds them (windmove's keys; unbound by
 ;;; default, as in Emacs), mouse-select-view on status lines and, as a
-;;; user binds it, on views (the text-mouse plugin's mouse-set-point has
+;;; user binds it, on views (the editing plugin's mouse-set-point has
 ;;; that click by default), C-x n s, C-x n w, and the frame marks on C-x r w, C-x r j
 ;;; and C-x r l, read in the minibuffer; and the same commands under the
 ;;; toy layout, which falls back as the contract allows. The bar (the
@@ -23,7 +23,7 @@
         :tuna/plugins/buffers/plugin
         :tuna/plugins/layout/plugin
         :tuna/plugins/view-commands/plugin
-        :tuna/plugins/basic-editing/plugin
+        :tuna/plugins/editing/plugin
         :tuna/plugins/minibuffer/plugin
         :tuna/plugins/renderer/plugin
         "../../tuna/tests/support/kernel"
@@ -61,7 +61,7 @@
 
 (def command-plugins
   [session-owner commands keys echo-area rope-text-store settings session
-   buffers autosave layout view-commands basic-editing minibuffer
+   buffers autosave layout view-commands editing minibuffer
    swap-configuration swap-commands tree-buffer user-view-bindings])
 
 (def (with-commands thunk)

@@ -34,7 +34,7 @@
 ;;; change the editor, since nothing could undo it.
 
 (import :tuna/plugins/commands/contract
-        :tuna/plugins/design-tokens/plugin
+        :tuna/plugins/stylesheets/plugin
         :tuna/plugins/keys/contract
         :tuna/plugins/commands/plugin
         :tuna/plugins/keys/plugin
@@ -51,22 +51,14 @@
         :tuna/plugins/scrolling/plugin
         :tuna/plugins/renderer/plugin
         :tuna/plugins/buttons/plugin
-        :tuna/plugins/basic-editing/plugin
-        :tuna/plugins/region/plugin
-        :tuna/plugins/kill-ring/plugin
-        :tuna/plugins/text-mouse/plugin
+        :tuna/plugins/editing/plugin
         :tuna/plugins/minibuffer/plugin
         :tuna/plugins/completion/plugin
-        :tuna/plugins/completion-vertical/plugin
-        :tuna/plugins/extended-command/plugin
-        :tuna/plugins/advice-help/plugin
-        :tuna/plugins/stylesheets-help/plugin
-        :tuna/plugins/orderless/plugin
-        :tuna/plugins/command-annotations/plugin
+        :tuna/plugins/completion-list/plugin
         :tuna/plugins/settings/contract
         :tuna/plugins/stylesheets/contract
         (only-in :tuna/kernel current-context)
-        :tuna/plugins/reload-config/plugin)
+        :tuna/plugins/configuration/plugin)
 
 (use-plugin design-tokens        ; colours, sizes and fonts other stylesheets use;
   variant: stellar-default)      ; first, so later stylesheets can redefine them
@@ -90,22 +82,16 @@
 (use-plugin scrolling)           ; views scroll natively; the server draws what is near
 (use-plugin html-renderer)
 (use-plugin buttons)             ; buttons in buffers: a click runs their action
-(use-plugin basic-editing)
-(use-plugin region)              ; C-SPC, C-x C-x, shift-select; the delete-selection setting
-(use-plugin kill-ring)           ; C-w, M-w, C-y, M-y
-(use-plugin text-mouse)          ; a click in text moves point there
+(use-plugin editing)             ; typing and moving; C-SPC, C-x C-x and shift-select (the
+                                 ; delete-selection setting); C-w, M-w, C-y, M-y; clicking and dragging
 (use-plugin minibuffer)
-(use-plugin completion-engine
-  config: (context-set-setting! (current-context) completion-styles '(orderless substring)))
-(use-plugin completion-vertical)
-(use-plugin extended-command)
-(use-plugin orderless)
-(use-plugin annotations)
+(use-plugin completion-engine    ; M-x, matching styles, command annotations
+  config: (context-set-setting! (current-context) completion-styles '(any-order substring)))
+(use-plugin completion-list)     ; the candidates in rows under the minibuffer
 (use-plugin echo-area)           ; in the bar, under the minibuffer
-(use-plugin help-buffer)         ; *Help*; C-h q closes it
-(use-plugin advice-help)         ; M-x describe-advice: function and command advice
-(use-plugin stylesheets-help)    ; M-x describe-stylesheets, M-x reload-stylesheets
-(use-plugin reload-config        ; reload this file; show the last report
+(use-plugin help-buffer)         ; *Help*; C-h q closes it; M-x describe-advice,
+                                 ; describe-stylesheets, reload-stylesheets
+(use-plugin configuration        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)
           (keymap-set "C-c C-r" 'show-config-report))
 
@@ -116,4 +102,4 @@
 ;; replace a plugin's file to rewrite it. Paths are relative to this file;
 ;; M-x reload-stylesheets reads them again after you edit them.
 ;; (add-stylesheet 'mine "my.css")
-;; (replace-stylesheet 'completion-vertical 'tokens "my-completion-tokens.css")
+;; (replace-stylesheet 'completion-list 'tokens "my-completion-tokens.css")

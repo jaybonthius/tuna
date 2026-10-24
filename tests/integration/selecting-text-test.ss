@@ -12,17 +12,14 @@
         :tuna/plugins/settings/contract
         :tuna/plugins/buffers/contract
         :tuna/plugins/layout/contract
-        :tuna/plugins/region/contract
+        :tuna/plugins/editing/contract
         :tuna/plugins/commands/plugin
         :tuna/plugins/keys/plugin
         :tuna/plugins/text-store/plugin
         :tuna/plugins/settings/plugin
         :tuna/plugins/buffers/plugin
         :tuna/plugins/layout/plugin
-        :tuna/plugins/basic-editing/plugin
-        :tuna/plugins/region/plugin
-        :tuna/plugins/kill-ring/plugin
-        :tuna/plugins/text-mouse/plugin
+        :tuna/plugins/editing/plugin
         :tuna/plugins/renderer/plugin
         "../../tuna/tests/support/kernel"
         "../../plugins/keys/tests/support/keys"
@@ -37,10 +34,10 @@
 
 (def selecting-plugins
   [commands keys test-messages rope-text-store settings no-session buffers layout
-   basic-editing region kill-ring])
+   editing])
 
 (def mouse-plugins
-  (append selecting-plugins [text-mouse html-renderer]))
+  (append selecting-plugins [html-renderer]))
 
 ;; A pointer event of KIND in the selected view at COLUMN of the line
 ;; holding POSITION, on a screen drawn now.

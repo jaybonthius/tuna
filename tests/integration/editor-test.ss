@@ -23,7 +23,7 @@
         :tuna/plugins/buffers/plugin
         :tuna/plugins/layout/plugin
         :tuna/plugins/renderer/plugin
-        :tuna/plugins/basic-editing/plugin
+        :tuna/plugins/editing/plugin
         :tuna/plugins/minibuffer/plugin
         "../../tuna/tests/support/kernel"
         "../../plugins/keys/tests/support/keys"
@@ -36,7 +36,7 @@
 (def editor-plugins
   [commands keys echo-area help-buffer rope-text-store
    settings no-session buffers layout html-renderer
-   basic-editing minibuffer
+   editing minibuffer
    rename-command services-help digit-highlighter])
 
 (def jobs #f)
@@ -47,7 +47,7 @@
 
 (def job-plugins
   [commands keys rope-text-store settings
-   buffers basic-editing job-host])
+   buffers editing job-host])
 
 (def (on-baton thunk) (call-on-editor-loop thunk))
 
