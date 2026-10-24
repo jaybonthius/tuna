@@ -2,7 +2,8 @@
 ;;; microphone and a stand-in speech worker (../support/fake-worker.sh),
 ;;; so no model is needed: C-c v (voice-dictate) starts listening on the
 ;;; client that pressed it; what the worker recognizes goes in at point
-;;; when it arrives, as typing does; C-c v again stops the
+;;; when it arrives, as typing does, except leading punctuation, which
+;;; goes after the previous piece; C-c v again stops the
 ;;; microphone, and the worker's last words still arrive; C-g stops too;
 ;;; a worker that fails, a microphone that fails, or a missing worker
 ;;; says why in the echo area; turning the plugin off kills the worker.
@@ -142,6 +143,70 @@
          (call-on-editor-loop (lambda () (insert "\nlast line") (goto-char 6)))
          (say! "again")
          (check (text-becomes "hello again\nlast line") => "hello again\nlast line")
+         (check (call-on-editor-loop point) => 12))))
+
+    (test-case "a piece's leading punctuation goes after the previous piece, the rest at point"
+      (with-voice
+       (lambda ()
+         (press-keys "C-c" "v")
+         (check (wait-until (lambda () (hash-key? captures tab))) => #t)
+         (say! "This is a test of the dictation feature")
+         (check (text-becomes "This is a test of the dictation feature")
+                => "This is a test of the dictation feature")
+         (call-on-editor-loop (lambda () (insert "\n") (insert "\n") (insert "\n")))
+         (say! ". It's actually working quite well")
+         (check (text-becomes "This is a test of the dictation feature.\n\n\nIt's actually working quite well")
+                => "This is a test of the dictation feature.\n\n\nIt's actually working quite well")
+         (check (call-on-editor-loop point) => 76)
+         ;; The punctuation is in the undo group of the piece it came with.
+         (call-on-editor-loop (lambda () (text-undo! (current-text) #f)))
+         (check (buffer-text) => "This is a test of the dictation feature\n\n\n"))))
+
+    (test-case "punctuation goes at point when point is where the previous piece ends"
+      (with-voice
+       (lambda ()
+         (press-keys "C-c" "v")
+         (check (wait-until (lambda () (hash-key? captures tab))) => #t)
+         (say! "hello")
+         (say! ", world")
+         (check (text-becomes "hello, world") => "hello, world")
+         (check (call-on-editor-loop point) => 13))))
+
+    (test-case "the last words' punctuation at stop goes after the last piece, wherever point is"
+      (with-voice
+       (lambda ()
+         (press-keys "C-c" "v")
+         (check (wait-until (lambda () (hash-key? captures tab))) => #t)
+         (say! "final:.")
+         (say! "hello")
+         (check (text-becomes "hello") => "hello")
+         (call-on-editor-loop (lambda () (insert "\nmore") (goto-char 1)))
+         (press-keys "C-c" "v")
+         (check (text-becomes "hello.\nmore") => "hello.\nmore")
+         (check (call-on-editor-loop point) => 1))))
+
+    (test-case "punctuation goes at point when the previous piece was deleted"
+      (with-voice
+       (lambda ()
+         (call-on-editor-loop (lambda () (insert "Notes:")))
+         (press-keys "C-c" "v")
+         (check (wait-until (lambda () (hash-key? captures tab))) => #t)
+         (say! "hello")
+         (check (text-becomes "Notes: hello") => "Notes: hello")
+         (call-on-editor-loop (lambda () (delete-region 7 13) (insert "\n")))
+         (say! ". Next")
+         (check (text-becomes "Notes:\n. Next") => "Notes:\n. Next"))))
+
+    (test-case "a piece without leading punctuation goes wholly at point"
+      (with-voice
+       (lambda ()
+         (press-keys "C-c" "v")
+         (check (wait-until (lambda () (hash-key? captures tab))) => #t)
+         (say! "hello")
+         (check (text-becomes "hello") => "hello")
+         (call-on-editor-loop (lambda () (insert "\n")))
+         (say! "world")
+         (check (text-becomes "hello\nworld") => "hello\nworld")
          (check (call-on-editor-loop point) => 12))))
 
     (test-case "with no text at point, a piece is dropped with a note"

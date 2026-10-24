@@ -15,7 +15,10 @@
 ;;; plugin off stops the microphone and the worker at once.
 ;;;
 ;;; Each dictated piece goes in at point when it arrives, as typing does:
-;;; in whatever text the cursor is in, leaving point after it. Pieces
+;;; in whatever text the cursor is in, leaving point after it. The model
+;;; sends a sentence's punctuation with the next words (". It's"), so a
+;;; piece's leading punctuation goes after the previous piece instead,
+;;; when that piece is still there and the cursor has moved away. Pieces
 ;;; arriving less than `undo-pause-seconds` apart, with no other change to
 ;;; the text between them, are one undo group: undo removes what was said
 ;;; between pauses (the default model reports no end of an utterance).
@@ -200,12 +203,28 @@
 
 ;;; Dictation
 
-;; The text the last dictated piece went into, LAST-TEXT; its character
-;; revision after the piece, LAST-REVISION; and when, LAST-TIME.
+;; The text the last dictated piece went into, LAST-TEXT; where the piece
+;; starts and ends there, LAST-START and LAST-END, valid at LAST-REVISION,
+;; the text's character revision after the piece; and when, LAST-TIME.
 (defclass dictation ((last-text     :? text)
+                     (last-start    : :fixnum)
+                     (last-end      : :fixnum)
                      (last-revision : :fixnum)
                      (last-time     : :real))
   final: #t)
+
+;; Punctuation that belongs to the word before it. The streaming model
+;; sends a sentence's punctuation with the words after it (". It's"), so
+;; a piece's leading run of these goes after the previous piece.
+(def attached-punctuation
+  '(#\. #\, #\? #\! #\; #\: #\… #\) #\] #\} #\” #\’ #\»))
+
+(def (leading-punctuation-length (piece : :string)) => :fixnum
+  (let lp ((i 0))
+    (if (and (fx< i (string-length piece))
+             (memv (string-ref piece i) attached-punctuation))
+      (lp (fx1+ i))
+      i)))
 
 (def (now-seconds) => :real
   (time->seconds (current-time)))
@@ -220,25 +239,60 @@
       (lp (fx1+ i))
       (substring s i (string-length s)))))
 
-;; Insert PIECE at point, without its leading space at the start of a
-;; line or after whitespace, leaving point after it. With no text at
-;; point, say so and drop PIECE.
+;; Where D's last piece ends now, when punctuation can go there: its
+;; text is alive, some of the piece is left, and the character before its
+;; end is not whitespace. Otherwise #f.
+(def (last-piece-end (d : dictation)) => (Maybe :fixnum)
+  (let (t d.last-text)
+    (and t
+         (text-live? t)
+         (let ((start (relocate-position t d.last-start d.last-revision))
+               (end (relocate-position t d.last-end d.last-revision)))
+           (and (fx< start end)
+                (not (whitespace-before? t end))
+                end)))))
+
+(def (remember-piece! (d : dictation) (t : text) (start : :fixnum) (end : :fixnum) (now : :real)) => :void
+  (set! d.last-text t)
+  (set! d.last-start start)
+  (set! d.last-end end)
+  (set! d.last-revision (text-chars-revision t))
+  (set! d.last-time now))
+
+;; Insert PIECE: its leading punctuation after the last piece, when that
+;; piece is still there and the cursor is elsewhere, and the rest at
+;; point, without its leading space at the start of a line or after
+;; whitespace, leaving point after it. With no text at point, say so and
+;; drop the rest.
 (def (insert-dictated! (d : dictation) (piece : :string)) => :void
-  (let (n (current-text-node))
-    (if (not n)
-      (message "No text here to dictate into")
-      (let* ((t (text-node-content n))
-             (position (point))
-             (piece (if (whitespace-before? t position) (string-trim-start piece) piece)))
-        (unless (string-empty? piece)
-          (when (and (eq? d.last-text t)
-                     (fx= d.last-revision (text-chars-revision t))
-                     (< (- (now-seconds) d.last-time) undo-pause-seconds))
-            (undo-amalgamate! t 1000000))
-          (insert piece)
-          (set! d.last-text t)
-          (set! d.last-revision (text-chars-revision t))
-          (set! d.last-time (now-seconds)))))))
+  (let* ((now (now-seconds))
+         (n (current-text-node))
+         (t (and n (text-node-content n)))
+         (punctuation-length (leading-punctuation-length piece))
+         (end (and (fx> punctuation-length 0) (last-piece-end d)))
+         (attach-end (and end (not (and (eq? t d.last-text) (fx= end (point)))) end))
+         (rest (if attach-end (substring piece punctuation-length (string-length piece)) piece)))
+    (let (last d.last-text)
+      (when (and last
+                 (or attach-end (eq? t last))
+                 (fx= d.last-revision (text-chars-revision last))
+                 (< (- now d.last-time) undo-pause-seconds))
+        (undo-amalgamate! last 1000000)))
+    (when attach-end
+      (let* ((last (:- d.last-text text))
+             (start (relocate-position last d.last-start d.last-revision)))
+        (text-replace! last attach-end attach-end (substring piece 0 punctuation-length)
+                       point-before: (and (eq? t last) (point)))
+        (remember-piece! d last start (fx+ attach-end punctuation-length) now)))
+    (cond
+     ((string-empty? rest) (void))
+     ((not t) (message "No text here to dictate into"))
+     (else
+      (let* ((start (point))
+             (rest (if (whitespace-before? t start) (string-trim-start rest) rest)))
+        (unless (string-empty? rest)
+          (insert rest)
+          (remember-piece! d t start (point) now)))))))
 
 ;; The keys that run COMMAND, for the echo area, or M-x COMMAND.
 (def (keys-for (command : :symbol)) => :string
@@ -248,7 +302,7 @@
       (string-append "M-x " (symbol->string command)))))
 
 (def (start-dictation!) => :void
-  (let (d (dictation last-text: #f last-revision: 0 last-time: 0))
+  (let (d (dictation last-text: #f last-start: 1 last-end: 1 last-revision: 0 last-time: 0))
     (voice-start! (lambda ((piece : :string)) (insert-dictated! d piece)))
     (message (string-append "Listening… (" (keys-for 'voice-dictate) " to stop)"))))
 
