@@ -38,23 +38,32 @@ classes: {
 }
 
 legend: |md
-  **Status:** planned. Yellow: features that ask a question. Green: the completion contract and its engine. Blue: replaceable plugins that plug into it.
+  **Status:** built; the file picker and buffer switching are planned.
+
+  Yellow: features that ask a question.
+
+  Green: the completion plugin.
+
+  Blue: other plugins it works with.
 |
 
-mx: "M-x\n(a small plugin)" {class: user}
-picker: "Project file picker,\nbuffer switching (later)" {class: user}
-engine: "Completion contract and engine\ncandidates, categories, history,\nthe running session" {class: core}
-ui: "Vertical list\n(like Vertico)" {class: part}
-matcher: "Matching style\n(like Orderless)" {class: part}
-notes: "Annotations\n(like Marginalia)" {class: part}
+picker: "Project file picker,\nbuffer switching (planned)" {class: user}
+completion: "Completion plugin" {
+  class: core
+  engine: "Engine\ncandidates, categories, history,\nthe running session" {class: core}
+  mx: "M-x" {class: user}
+  matcher: "Matching styles\nsubstring, any order\n(like Orderless)" {class: core}
+  notes: "Command annotations\n(like Marginalia)" {class: core}
+}
+ui: "Completion list\n(like Vertico)" {class: part}
 minibuffer: "Minibuffer\n(where you type)" {class: part}
 commands: "Commands\n(every command, its\ndoc and its keys)" {class: part}
 
-mx -> engine: "choose a command"
-picker -> engine: "choose a file"
-engine -> matcher: "which candidates match?"
-engine -> notes: "what to show beside each?"
-engine -> ui: "show the session"
-engine -> minibuffer: "ask in a prompt"
-mx -> commands: "list and run commands"
-notes -> commands: "doc and key binding"
+completion.mx -> completion.engine: "choose a command"
+picker -> completion.engine: "choose a file"
+completion.engine -> completion.matcher: "which candidates match?"
+completion.engine -> completion.notes: "what to show beside each?"
+completion.engine -> ui: "show the session"
+completion.engine -> minibuffer: "ask in a prompt"
+completion.mx -> commands: "list and run commands"
+completion.notes -> commands: "doc and key binding"

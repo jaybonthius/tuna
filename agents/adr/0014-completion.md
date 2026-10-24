@@ -14,7 +14,7 @@ The owner wants M-x with a Vertico, Orderless, Marginalia and Consult experience
 - **Commands contract** (`tuna/services/commands.ss`), split from keys: command records with documentation and visibility, listing, and `call-command`, which runs a command as if its keys were pressed. The keys plugin keeps bindings and resolution and adds `where-is`.
 - **Command-loop hooks:** `pre-command-hook` and `post-command-hook` (ADR 8) are built now, in the keys contract; the engine recomputes from `post-command-hook`, so the list changes in the same redraw as the keystroke. Matching runs inline on the baton as a pure function of plain data, so moving it to jobs later is a switch, not a redesign.
 - **History belongs to the minibuffer:** named lists, `M-p`/`M-n`, saved in a session slot.
-- **M-x is a plugin** (`execute-extended-command`), a command over the commands contract with category `command` and history `extended-command`. Vertico-, Orderless- and Marginalia-like plugins are ordinary plugins; turning any of them off leaves M-x working with less.
+- **M-x** (`execute-extended-command`) is a command over the commands contract with category `command` and history `extended-command`. ~~It is a plugin; Vertico-, Orderless- and Marginalia-like plugins are ordinary plugins; turning any of them off leaves M-x working with less.~~ *Superseded 2026-10-24 (plugin restructure, roadmap tier 0):* M-x, the any-order matching style (like Orderless) and the command annotator (like Marginalia) are part of the completion plugin (`completion-engine`); the list (like Vertico) is the `completion-list` plugin, and turning it off leaves M-x working with less. Matching styles and annotators remain registries, so other plugins still add their own.
 - **Rendering** follows ADR 7 and ADR 13: candidate rows are nodes in the prompt's buffer, rebuilt from the session, clickable through node keymaps.
 
 ## Consequences
@@ -31,4 +31,8 @@ The owner wants M-x with a Vertico, Orderless, Marginalia and Consult experience
 
 ## Amendment (2026-10-13)
 
-The command-loop hooks live in the commands contract, not keys (see ADR 8's amendment); the keys contract no longer re-exports commands. The vertical list uses only the session and prompt handle it is given.
+The command-loop hooks live in the commands contract, not keys (see ADR 8's amendment); the keys contract no longer re-exports commands. The completion list uses only the session and prompt handle it is given.
+
+## Amendment (2026-10-24, plugin restructure)
+
+A plugin is a feature turned on, off or swapped as a whole (roadmap, tier 0), so the completion package's one plugin holds the engine, M-x, the `substring` and `any-order` styles and the command annotator; `orderless`, `command-annotations` and `extended-command` are gone, and `completion-vertical` is `completion-list`. M-x lives in completion, not commands, because the completion package already imports the commands contract; the reverse would make the two packages import each other. Third-party names are not used: Orderless's style is `any-order`, and the package README credits Orderless, Marginalia and Vertico.
