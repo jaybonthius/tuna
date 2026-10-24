@@ -22,6 +22,8 @@
 ;;; becomes neither this-command nor last-command and runs no command
 ;;; hooks.
 ;;;
+;;; A paste resolves like a key, under its key ("<paste>").
+;;;
 ;;; A sequence with no binding whose last key has shift is looked up again
 ;;; without it (Emacs's shift translation; `unshifted-key`), and its
 ;;; command runs knowing so (`this-command-keys-shift-translated?`).
@@ -57,7 +59,7 @@
 
 ;; One client's keys in progress.
 (defclass key-session ((pending       : :list)          ; keys typed so far of a prefix
-                       (command-event :? :t))           ; key-event or pointer-event
+                       (command-event :? :t))           ; key-event, pointer-event or paste-event
   final: #t)
 
 (defclass global-keys ((click-resolvers : entry-table)
@@ -225,12 +227,13 @@
 (defsyntax (this-source stx)
   (with-syntax ((source (stx-source-string stx))) #'source))
 
-;; The client EVENT, a key, pointer or scroll event, came from, or #f.
+;; The client EVENT, a key, pointer, scroll or paste event, came from, or #f.
 (def (event-client (event : :t)) => (Maybe client)
   (cond
    ((key-event? event) (key-event-client event))
    ((pointer-event? event) (pointer-event-client event))
    ((scroll-event? event) (scroll-event-client event))
+   ((paste-event? event) (paste-event-client event))
    (else #f)))
 
 ;; The keys in progress of CLIENT (#f for none), made when first needed.
@@ -271,16 +274,17 @@
                           (call-command name)
                           (hash-remove! self.command-clients id))))))))
 
-;; A key sequence of SESSION ended with EVENT, a key or pointer event, and
+;; A key sequence of SESSION ended with EVENT, a key, pointer or paste event, and
 ;; selected the command named NAME, or #f for none.
 (def (complete-keys! (session : key-session) (event : :t) (name :? :symbol)) => :void
   (set! session.pending [])
   (set! session.command-event event))
 
-(def (resolve-key! (self : global-keys) (event : key-event)) => (Maybe :pair)
-  (let ((key (key-description event))
-        (keymaps (active-keymaps self (focused-node)))
-        (session (client-session self (key-event-client event))))
+;; EVENT, a key or paste event, typed as KEY: its key-description, #f for
+;; a key that only modifies or composes others, or paste-key.
+(def (resolve-key! (self : global-keys) (event : :t) (key :? :string)) => (Maybe :pair)
+  (let ((keymaps (active-keymaps self (focused-node)))
+        (session (client-session self (event-client event))))
     (cond
      ((not key) #f)
      ((equal? key quit-key)
@@ -342,7 +346,7 @@
 ;; key, found FOUND (find-binding) for SESSION's EVENT: a command, which
 ;; runs knowing it was shift-translated; a prefix, which waits for more;
 ;; or nothing, and ORIGINAL is undefined.
-(def (shift-translated! (self : global-keys) (session : key-session) (event : key-event) (typed : :list)
+(def (shift-translated! (self : global-keys) (session : key-session) (event : :t) (typed : :list)
                         (found : :t) (original : :string))
   => (Maybe :pair)
   (cond
@@ -441,7 +445,8 @@
     (cond
      ((pointer-event? event) (resolve-pointer! self event))
      ((scroll-event? event) (resolve-scroll! self event))
-     (else (resolve-key! self event)))))
+     ((paste-event? event) (resolve-key! self event paste-key))
+     (else (resolve-key! self event (key-description event))))))
 
 ;; Quit (Emacs `keyboard-quit`). Unless the quit key that ran this
 ;; cancelled a pending prefix, first quit one command waiting in

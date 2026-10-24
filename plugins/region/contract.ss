@@ -30,10 +30,10 @@ prelude: :gerbil/core
   (new-service 'region is-Region? tier: 'live
                doc: "Sets the mark and keeps the region active or not, as Transient Mark mode does."))
 
-;; When on, typing, RET, DEL, C-d and yanking replace the active region
-;; (Emacs `delete-selection-mode`). Off, as in Emacs.
+;; When on, typing, RET, DEL, C-d, yanking and pasting replace the active
+;; region (Emacs `delete-selection-mode`). Off, as in Emacs.
 (defsetting delete-selection #f
-  "Whether typing, deleting and yanking replace the active region, as in other editors.")
+  "Whether typing, deleting, yanking and pasting replace the active region, as in other editors.")
 
 ;; Whether the selected view's region is active (Emacs `region-active-p`):
 ;; it has a mark, and the region is shown and used. It may be empty.

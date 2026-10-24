@@ -1,6 +1,6 @@
 ;;; Selecting text from the keyboard with the real editing commands:
 ;;; shifted motion keys select, C-w and C-y move text through the kill
-;;; ring, delete-selection makes yanking replace the region, and two views
+;;; ring, delete-selection makes yanking and pasting replace the region, and two views
 ;;; of one buffer keep their own marks. Selecting with the mouse: an
 ;;; unshifted motion key ends the selection a drag made, a shifted one
 ;;; extends it, and each step of a drag draws only the lines whose
@@ -90,6 +90,14 @@
          (start-editor-loop!)
          (type! "a" "b" "c" "C-a" "S-<right>" "M-w" "C-e" "S-<left>" "S-<left>" "C-y")
          (check (state) => ["aa" 3 2 #f]))))
+
+    (test-case "with delete-selection on, a paste replaces the region"
+      (call-with-fresh-kernel (append selecting-plugins [deleting-selection])
+       (lambda ()
+         (start-editor-loop!)
+         (type! "a" "b" "c" "S-<left>" "S-<left>")
+         (paste "XY")
+         (check (state) => ["aXY" 4 2 #f]))))
 
     (test-case "two views of one buffer keep their own marks"
       (call-with-fresh-kernel selecting-plugins

@@ -42,6 +42,12 @@
 ;;; (`this-command-keys-shift-translated?`), which is how shifted motion
 ;;; keys select text.
 ;;;
+;;; A paste (`paste-event`) is the text the browser's paste key took from
+;;; the computer's clipboard. It is looked up like a key, under
+;;; `paste-key` ("<paste>"), after any pending prefix, in the keymaps a
+;;; key is, as Emacs looks up a terminal's bracketed paste
+;;; (`xterm-paste`); its command reads the text from `last-command-event`.
+;;;
 ;;; A scroll report (`scroll-event`) is what the browser measured of a
 ;;; view's scroller. It is looked up like a click, under `scroll-key`
 ;;; ("<scroll>"), in the keymaps from the node the scroller draws from up,
@@ -69,9 +75,10 @@ prelude: :gerbil/core
         (rename-in (only-in :tuna/plugins/clients/contract client) (client client-type)))
 (export context-set-click-resolver!
         where-is
-        (struct-out key-event posn pointer-event scroll-event)
+        (struct-out key-event posn pointer-event scroll-event paste-event)
         pointer-event-names
         scroll-key
+        paste-key
         event-start
         part-clickable?
         keymap-clickable?
@@ -196,6 +203,17 @@ prelude: :gerbil/core
 ;; The key scroll events are looked up under.
 (def scroll-key "<scroll>")
 
+;; A paste from CLIENT (#f for none), with its page-load sequence number
+;; (ADR 7, ADR 10, ADR 16): TEXT, from the computer's clipboard, with its
+;; line ends as newlines.
+(defstruct paste-event ((sequence : :fixnum)
+                        (client   :? client-type)
+                        (text     : :string))
+  final: #t)
+
+;; The key paste events are looked up under.
+(def paste-key "<paste>")
+
 ;; The names EVENT is looked up under, most specific first: modifiers,
 ;; then `double-` or `triple-`, then `down-` or `drag-`, then
 ;; `mouse-BUTTON`. As in Emacs, a triple click, press or drag falls back
@@ -272,7 +290,7 @@ prelude: :gerbil/core
   (remove-input-target! (target : input-target)) => :void
   ;; The effective binding entry for KEYS, or #f.
   (key-binding (keys : :string)) => :t
-  ;; The key, pointer or scroll event that completed the running
+  ;; The key, pointer, scroll or paste event that completed the running
   ;; command's keys, or #f (Emacs `last-command-event`).
   (last-command-event) => :t
   ;; Whether the running command's keys were found only once shift was
@@ -325,7 +343,7 @@ prelude: :gerbil/core
 (def (key-binding (keys : :string)) => :t
   (with-service-provider (provider input-service Keys) (Keys-key-binding provider keys)))
 
-;; A key-event, a pointer-event, a scroll-event, or #f.
+;; A key-event, a pointer-event, a scroll-event, a paste-event, or #f.
 (def (last-command-event) => :t
   (with-service-provider (provider input-service Keys) (Keys-last-command-event provider)))
 

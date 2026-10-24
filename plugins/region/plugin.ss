@@ -12,8 +12,8 @@
 ;;; mouse made (`set-temporary-region!`), but not one C-SPC made. Which commands are motions is this plugin's list, not a mark on
 ;;; the commands: Emacs marks them with `^` in their interactive specs.
 ;;;
-;;; With the delete-selection setting on, typing, RET, DEL, C-d and
-;;; yanking replace a non-empty active region: advice on those commands,
+;;; With the delete-selection setting on, typing, RET, DEL, C-d,
+;;; yanking and pasting replace a non-empty active region: advice on those commands,
 ;;; outside any other.
 (import :std/interface
         (only-in :gerbil/runtime/hash HashTable)
@@ -33,7 +33,7 @@
 
 ;; Commands that insert in place of an active region when delete-selection
 ;; is on, and those that delete it instead of doing what they do.
-(def delete-selection-inserting-commands '(self-insert-command newline yank))
+(def delete-selection-inserting-commands '(self-insert-command newline yank clipboard-yank))
 (def delete-selection-deleting-commands '(delete-backward-char delete-char))
 
 ;; TEMPORARY: views whose active region shift selection made. EDITED: the

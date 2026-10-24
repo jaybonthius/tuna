@@ -33,10 +33,21 @@ window.addEventListener("keydown", trackAlt, true);
 window.addEventListener("keyup", trackAlt, true);
 window.addEventListener("blur", () => { altLeft = false; altRight = false; });
 
+// The browser's paste keys: Cmd+V on a Mac; elsewhere Ctrl+Shift+V and
+// Shift+Insert, since Ctrl+V is Emacs's C-v. They are neither cancelled
+// nor sent, so the browser fires its paste event (tunaPaste) instead.
+function pasteChord(evt: KeyboardEvent): boolean {
+  const v = evt.key === "v" || evt.key === "V";
+  if (isMac) return v && evt.metaKey && !evt.ctrlKey && !evt.altKey && !evt.shiftKey;
+  if (evt.altKey || evt.metaKey) return false;
+  return (v && evt.ctrlKey && evt.shiftKey) || (evt.key === "Insert" && evt.shiftKey && !evt.ctrlKey);
+}
+
 action({
   name: "tunaKeyboard",
   apply({ evt }: { evt?: Event }): void {
     if (!(evt instanceof KeyboardEvent) || evt.type !== "keydown") return;
+    if (pasteChord(evt)) return;
     if (!evt.isComposing) evt.preventDefault();
     send<KeydownFacts>({
       type: "keydown",
