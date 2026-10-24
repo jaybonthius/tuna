@@ -48,7 +48,11 @@ Brief: [briefs/2026-10-selecting-text.md](briefs/2026-10-selecting-text.md). The
 
 ## Done: voice dictation (2026-10-24)
 
-Brief: [briefs/2026-10-voice-dictation.md](briefs/2026-10-voice-dictation.md). `C-c v` in the demo inserts what you say at the cursor as you say it, through a separate speech worker (parakeet, nemotron model); the web plugin's page machinery, a microphone plugin and a voice plugin. Spoken commands with a grammar come later and reuse all of it. See [how Tuna works](overview.md#voice-dictation).
+Brief: [briefs/2026-10-voice-dictation.md](briefs/2026-10-voice-dictation.md). `C-c v` in the demo inserts what you say at the cursor as you say it, through a separate speech worker (parakeet, nemotron model); the web plugin's page machinery, a microphone plugin and a voice plugin. See [how Tuna works](overview.md#voice-dictation).
+
+## Done: spoken commands (2026-10-24)
+
+Brief: [briefs/2026-10-voice-commands.md](briefs/2026-10-voice-commands.md). `C-c c` in the demo: say a command's name and it runs. The speech worker listens with a grammar of every visible command's spoken name (a fast English model, `realtime_eou`); listening ends by itself; a confidence from the grammar's score against the score without the grammar decides between running the command, offering the `M-x` list, and "Didn't catch a command", every threshold a setting. Needed a parakeet.cpp patch reporting those scores (`0005-grammar-scores`, carried by `gerbil-parakeet`). See [how Tuna works](overview.md#spoken-commands).
 
 ## Research before windows and scrolling
 
