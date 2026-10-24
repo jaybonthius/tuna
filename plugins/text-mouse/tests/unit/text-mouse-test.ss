@@ -4,7 +4,9 @@
 ;;; the line's end goes to its end, a click below the text to the text's
 ;;; end, and a click on a line that is gone says so. Pressing, dragging
 ;;; and releasing select; a double click selects a word and a triple
-;;; click a line; shift-click extends the selection.
+;;; click a line; shift-click extends the selection. A click or press in
+;;; another text node of the view's buffer moves the view's focus there;
+;;; a selection stays in one text node.
 (import :std/test
         :tuna/kernel
         :tuna/plugins/buffers/contract
@@ -76,6 +78,38 @@
 
 (def (edit! start end replacement)
   (call-on-editor-loop (lambda () (text-replace! (current-text) start end replacement))))
+
+;; Show, in the selected view, a new buffer of two text nodes holding
+;; FIRST and SECOND: returns the view and the two nodes.
+(def (two-texts! first second)
+  (call-on-editor-loop
+   (lambda ()
+     (let* ((a (new-text-node (new-text first)))
+            (b (new-text-node (new-text second)))
+            (buffer (new-buffer "two texts" (new-node 'column children: [a b]))))
+       (add-buffer! buffer)
+       (switch-to-buffer buffer)
+       [(selected-view) a b]))))
+
+;; A pointer event of KIND in view V at COLUMN of the line of text node N
+;; holding POSITION, on a screen drawn now.
+(def (point-in kind v n position column shift?: (shift? #f))
+  (match (call-on-editor-loop
+          (lambda () [(item-token (node-line-item n position)) (text-chars-revision (text-node-content n))]))
+    ([token revision]
+     (click 'view (view-id v) kind: kind shift?: shift? node: (node-id n)
+            line: token line-revision: revision column: column))))
+
+;; Which of the text nodes A and B has V's focus (0 or 1), V's point,
+;; and the texts of A and B.
+(def (focus-state v a b)
+  (call-on-editor-loop
+   (lambda ()
+     (let (n (view-node v))
+       [(if (eq? n a) 0 (if (eq? n b) 1 #f))
+        (view-point v)
+        (text-substring (text-node-content a) 1 (fx1+ (text-size (text-node-content a))))
+        (text-substring (text-node-content b) 1 (fx1+ (text-size (text-node-content b))))]))))
 
 (def text-mouse-test
   (test-suite "tuna/plugins/text-mouse"
@@ -258,5 +292,50 @@
             (point-at 'movement left node 1 4)
             (click 'view (view-id left) kind: 'drag node: node)
             (check (selection) => [5 2 #t "ell"])
-            (check (current-message) => ""))))))))
+            (check (current-message) => ""))))))
+
+    (test-case "a click in another text node moves the view's focus and point there, dropping the region; typing goes there"
+      (call-with-fresh-kernel text-mouse-plugins
+       (lambda ()
+         (start-editor-loop!)
+         (match (two-texts! "one\ntwo" "three\nfour")
+           ([v a b]
+            (check (focus-state v a b) => [0 1 "one\ntwo" "three\nfour"])
+            (call-on-editor-loop
+             (lambda ()
+               (set-view-mark! v 3)
+               (set-view-mark-active! v #t)))
+            ;; Column 2 of "four", the second node's second line.
+            (point-in 'click v b 7 2)
+            (check (focus-state v a b) => [1 9 "one\ntwo" "three\nfour"])
+            (check (selection) => [9 #f #f ""])
+            (call-on-editor-loop (lambda () (insert "X")))
+            (check (focus-state v a b) => [1 10 "one\ntwo" "three\nfoXur"])
+            ;; And back: column 1 of "one".
+            (point-in 'click v a 1 1)
+            (check (focus-state v a b) => [0 2 "one\ntwo" "three\nfoXur"])
+            (call-on-editor-loop (lambda () (insert "Y")))
+            (check (focus-state v a b) => [0 3 "oYne\ntwo" "three\nfoXur"])
+            ;; A press moves the focus too.
+            (point-in 'down v b 1 3)
+            (check (focus-state v a b) => [1 4 "oYne\ntwo" "three\nfoXur"]))))))
+
+    (test-case "a drag ignores positions in another text node; a shift-click there only moves point"
+      (call-with-fresh-kernel text-mouse-plugins
+       (lambda ()
+         (start-editor-loop!)
+         (match (two-texts! "one\ntwo" "three\nfour")
+           ([v a b]
+            (point-in 'down v a 1 0)
+            (point-in 'movement v a 1 3)
+            (check (selection) => [4 1 #t "one"])
+            (point-in 'movement v b 7 2)
+            (check (selection) => [4 1 #t "one"])
+            (point-in 'drag v b 7 2)
+            (check (selection) => [4 1 #t "one"])
+            (check (focus-state v a b) => [0 4 "one\ntwo" "three\nfour"])
+            (point-in 'down v b 7 1 shift?: #t)
+            (point-in 'click v b 7 1 shift?: #t)
+            (check (focus-state v a b) => [1 8 "one\ntwo" "three\nfour"])
+            (check (selection) => [8 #f #f ""]))))))))
 

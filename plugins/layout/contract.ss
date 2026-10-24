@@ -37,8 +37,8 @@
 ;;;
 ;;; Clicks name parts by id (the keys contract's `posn`): a view and its
 ;;; status line by the view's id. `posn-view` and `posn-node` find the view
-;;; and node a click names, or #f once they are gone, and `posn-point` the
-;;; position in its text.
+;;; and node a click names, or #f once they are gone, `posn-point` the
+;;; position in its text and `posn-text-node` the text node holding it.
 prelude: :gerbil/core
 
 (import :std/interface
@@ -68,6 +68,7 @@ prelude: :gerbil/core
         posn-view
         posn-node
         posn-point
+        posn-text-node
         posn-start-node
         current-frame-target
         move-frame
@@ -313,8 +314,24 @@ prelude: :gerbil/core
              n
              (ormap find-node (node-children n)))))))
 
-;; The position clicked (Emacs `posn-point`), in the text of the node
-;; clicked (posn-node): for a click in a line of text, the gap between
+;; The text node holding the position clicked (posn-point): for a click
+;; in a line of text, the node of that line, which need not be the view's
+;; focused node, or #f when that node or its view is gone; for a click in a
+;; view's empty space below its text, the view's focused node, or #f
+;; without one; for any other click, #f.
+(def (posn-text-node (p : posn)) => (Maybe node)
+  (let ((v (posn-view p))
+        (line (posn-line p)))
+    (and v
+         (cond
+          (line
+           (let (it (token-item (buffer-root (view-showing v)) line))
+             (and it (item-node it))))
+          ((posn-node-id p) #f)
+          (else (view-node v))))))
+
+;; The position clicked (Emacs `posn-point`), in the text of the text node
+;; clicked (posn-text-node): for a click in a line of text, the gap between
 ;; characters clicked, where it is now (the buffers contract's
 ;; item-column-position), or #f when the line or its view is gone; for a
 ;; click in a view's empty space below its text, naming neither a line

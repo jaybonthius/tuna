@@ -578,6 +578,37 @@
            (check (view-point v) => 9)
            (check (= (view-id v) (view-id (selected-view))) => #f))))))
 
+  (test-case "set-view-focus! moves a view's point to another text node of its buffer, without the mark"
+    (call-with-fresh-kernel buffer-plugins
+     (lambda ()
+       (let* ((a (new-text-node (new-text "one")))
+              (x (new-text-node (new-text "three")))
+              (b (new-buffer "two texts" (new-node 'column children: [a x])))
+              (v (selected-view)))
+         (add-buffer! b)
+         (switch-to-buffer b)
+         (check (eq? (view-node v) a) => #t)
+         (set-view-mark! v 2)
+         (set-view-mark-active! v #t)
+         ;; What draws from the focus is drawn again; what draws from the
+         ;; buffer is not.
+         (check (drawn-again? (lambda () (view-showing v)) (lambda () (set-view-focus! v x 3))) => #f)
+         (check [(eq? (view-node v) x) (point) (view-mark v) (view-mark-active? v)] => [#t 3 #f #f])
+         (check (drawn-again? (lambda () (view-node v)) (lambda () (set-view-focus! v a 99))) => #t)
+         (check [(eq? (view-node v) a) (point)] => [#t 4])
+         ;; In the focused node it only moves point, keeping the mark.
+         (set-view-mark! v 1)
+         (set-view-focus! v a 2)
+         (check [(point) (view-mark v)] => [2 1])
+         ;; The buffer keeps the node with its point while no view shows it.
+         (set-view-focus! v x 5)
+         (switch-to-buffer (get-buffer "*scratch*"))
+         (switch-to-buffer b)
+         (check [(eq? (view-node v) x) (point)] => [#t 5])
+         (check (with-catch (lambda (e) 'refused)
+                            (lambda () (set-view-focus! v (new-text-node (new-text "elsewhere")) 1)))
+                => 'refused)))))
+
   (test-case "a node carries a keymap, given when it is made or later; giving one is a change"
     (call-with-fresh-kernel buffer-plugins
      (lambda ()

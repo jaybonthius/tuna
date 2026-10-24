@@ -653,6 +653,24 @@
          (screen)
          (check (renders-of "block") => 1))))
 
+    (test-case "moving the focus to another text node draws again only the line losing the cursor and the one gaining it"
+      (call-with-fresh-kernel renderer-plugins
+       (lambda ()
+         (activate-plugin! block-kinds)
+         (set-view-buffer (selected-view) (get-buffer "blocks"))
+         (let* ((v (selected-view))
+                (a (view-node v))
+                (x (car (node-children (cadr (node-children (buffer-root (current-buffer))))))))
+           (check (has? (screen) "<span class=\"cursor\">a</span>1") => #t)
+           (let (keys (pieces-drawn (lambda () (set-view-focus! v x 5) (screen))))
+             (check [(lines-drawn keys) (line-runs-drawn keys)] => [2 0]))
+           (let (html (screen))
+             (check (has? html "x<span class=\"cursor\">2</span>") => #t)
+             (check (has? html "<span class=\"cursor\">a</span>") => #f))
+           (let (keys (pieces-drawn (lambda () (set-view-focus! v a 2) (screen))))
+             (check [(lines-drawn keys) (line-runs-drawn keys)] => [2 0]))
+           (check (has? (screen) "a<span class=\"cursor\">1</span>") => #t)))))
+
     (test-case "two clients share the HTML of nodes drawn the same for both"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()

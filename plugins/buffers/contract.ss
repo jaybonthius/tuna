@@ -111,7 +111,7 @@ prelude: :gerbil/core
         ;; views
         view view? view-id view-showing view-node
         new-view new-view-at copy-view reset-view!
-        view-point set-view-point! set-view-showing! view-point-item
+        view-point set-view-point! set-view-focus! set-view-showing! view-point-item
         view-mark set-view-mark! view-mark-active? set-view-mark-active!
         (struct-out placement) view-placement place-view! set-view-scroll!
         client-view client-view? view-client forget-view-client!
@@ -371,7 +371,10 @@ prelude: :gerbil/core
   final: #t)
 
 ;; CHANGES, its source, changes with what a screen draws from the view:
-;; its buffer and focused node; POINT-CHANGES, another, with its point, so
+;; its buffer; FOCUS-CHANGES, another, with its focused node, so moving
+;; the focus to another text node of the buffer draws again only what
+;; asked which node has it, not all that draws from the buffer;
+;; POINT-CHANGES, another, with its point, so
 ;; what draws only the focused node draws again when point moves;
 ;; MARK-CHANGES, with its mark and whether the region is active, so the
 ;; status line, which shows point, is not drawn again for the mark;
@@ -383,6 +386,7 @@ prelude: :gerbil/core
 ;; the same way at MARK-REVISION, and goes when the focus does.
 (defclass view ((id            : :fixnum)
                 (changes       : source)
+                (focus-changes : source)
                 (point-changes : source)
                 (mark-changes  : source)
                 (placement-changes : source)
@@ -1249,7 +1253,8 @@ prelude: :gerbil/core
 ;; text revision REVISION, scrolled to the top. For buffers providers,
 ;; which must not call the dispatchers before they provide the service.
 (def (new-view-at (b : buffer) (n :? node) (position : :fixnum) (revision : :fixnum)) => view
-  (view id: (next-id!) changes: (new-source) point-changes: (new-source) mark-changes: (new-source)
+  (view id: (next-id!) changes: (new-source) focus-changes: (new-source) point-changes: (new-source)
+        mark-changes: (new-source)
         placement-changes: (new-source)
         shown: b focus: n position: position revision: revision
         mark-position: #f mark-revision: 0 mark-on?: #f
@@ -1266,6 +1271,7 @@ prelude: :gerbil/core
   (set! v.position position)
   (set! v.revision revision)
   (source-changed! v.changes)
+  (source-changed! v.focus-changes)
   (source-changed! v.point-changes)
   (forget-mark! v)
   (forget-measured! v)
@@ -1330,8 +1336,29 @@ prelude: :gerbil/core
 
 ;; The text node V's point is in, or #f.
 (def (view-node (v : view)) => (Maybe node)
-  (record-read! v.changes)
+  (record-read! v.focus-changes)
   v.focus)
+
+;; Move V's focus to N, a text node of the buffer V shows, with point at
+;; POSITION in it, limited to its text, as a click in another text node
+;; does. The mark, which is in the focused node, goes, deactivating the
+;; region, and so does the goal column. In the focused node, this only
+;; moves point (set-view-point!).
+(def (set-view-focus! (v : view) (n : node) (position : :fixnum)) => :void
+  (cond
+   ((eq? n v.focus) (set-view-point! v position))
+   ((not (eq? (let up ((m n)) (let (parent (node-parent m)) (if parent (up parent) m)))
+              (buffer-root v.shown)))
+    (error "Not a node of the buffer the view shows" (node-id n)))
+   (else
+    (let (s (text-snapshot (text-node-content n)))
+      (set! v.focus n)
+      (set! v.position (fxmax 1 (fxmin position (fx1+ (snapshot-size s)))))
+      (set! v.revision (snapshot-revision s))
+      (set! v.goal-column #f)
+      (source-changed! v.focus-changes)
+      (source-changed! v.point-changes)
+      (forget-mark! v)))))
 
 ;; V's point, relocated through the changes made since V last looked.
 ;; Keeping the relocated point is no change (see view).
@@ -1418,6 +1445,7 @@ prelude: :gerbil/core
           (set! v.revision (node-chars-revision n))
           (set! v.goal-column #f)
           (source-changed! v.changes)
+          (source-changed! v.focus-changes)
           (source-changed! v.point-changes)
           (forget-mark! v)
           (show-point! v))))) :void))
