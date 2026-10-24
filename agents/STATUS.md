@@ -2,7 +2,11 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: voice dictation (brief approved 2026-10-23; plan `agents/plans/voice-dictation.md`; stage 1, the worker, merged `e61098e`; stages 2 and 3, page machinery, microphone and voice plugins, done on branch `voice-2` 2026-10-24, pending review and merge; report `/home/jay/Code/workbench-gerbil/scratch/voice/stage23-report.md`)
+## Current work: none in progress; voice dictation and spoken commands finished (2026-10-24)
+
+Dictation (`C-c v`, nemotron; text at the cursor; punctuation attaches to the word before it) and spoken commands (`C-c c`, realtime_eou, grammar of command names, confidence from parakeet patch 0005 scores; plan `agents/plans/voice-commands.md`). Native: branch `grammar-scores` in `/home/jay/Code/parakeet.cpp__grammar-scores` (patches 0002–0004 as commits, `fd05fca` the scores change); `gerbil-parakeet` `ec19de2`, `626097d`, `e661666` (patch 0005, binding, reinstall). Thresholds come from Piper clips; re-check with the owner's voice. Owner priority still open: error recovery (`TODO.md`).
+
+## Previous: voice dictation
 
 ## Previous: clicking and selecting text finished (2026-10-23)
 
