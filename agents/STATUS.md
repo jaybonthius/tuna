@@ -2,7 +2,7 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: voice dictation (brief approved 2026-10-23; plan `agents/plans/voice-dictation.md`; stage 1, the worker, in progress)
+## Current work: voice dictation (brief approved 2026-10-23; plan `agents/plans/voice-dictation.md`; stage 1, the worker, merged `e61098e`; owner: stop after stage 1, stage 2 waits for the owner)
 
 ## Previous: clicking and selecting text finished (2026-10-23)
 
