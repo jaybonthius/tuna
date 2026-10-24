@@ -4,12 +4,22 @@ ESBUILD ?= esbuild
 
 all: assets build
 
-assets: plugins/web/web/tuna-input.js
+assets: plugins/web/web/tuna-input.js plugins/microphone/web/microphone.js plugins/microphone/web/microphone-worklet.js
 
 plugins/web/web/tuna-input.js: plugins/web/frontend/tuna-input.ts plugins/web/frontend/input-sender.ts plugins/web/frontend/tuna-keyboard.ts \
 		plugins/web/frontend/tuna-pointer.ts plugins/web/frontend/tuna-scroll.ts \
 		plugins/web/frontend/tuna-clipboard.ts Makefile
 	$(ESBUILD) $< --bundle --external:datastar --format=esm --minify \
+		--platform=browser --target=es2022 --legal-comments=none --outfile=$@
+
+# The microphone plugin's page script and its AudioWorklet, which the page
+# loads as a separate module.
+plugins/microphone/web/microphone.js: plugins/microphone/frontend/microphone.ts Makefile
+	$(ESBUILD) $< --bundle --external:datastar --format=esm --minify \
+		--platform=browser --target=es2022 --legal-comments=none --outfile=$@
+
+plugins/microphone/web/microphone-worklet.js: plugins/microphone/frontend/microphone-worklet.ts Makefile
+	$(ESBUILD) $< --bundle --format=esm --minify \
 		--platform=browser --target=es2022 --legal-comments=none --outfile=$@
 
 build:
