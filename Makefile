@@ -1,4 +1,4 @@
-.PHONY: all assets build deps test test-frontend demo-check run tokens
+.PHONY: all assets build deps test test-frontend demo-check run tokens voice-worker voice-worker-check
 
 ESBUILD ?= esbuild
 
@@ -40,6 +40,33 @@ STELLAR ?= stellar
 
 tokens:
 	cd plugins/design-tokens/tokens && $(STELLAR) gen --input stellar.config.json
+
+# The speech worker (plugins/voice/worker/) links the owner's local
+# gerbil-parakeet install, so only this target builds it; make and make test
+# never need parakeet or a model. parakeet-compile supplies the native
+# include and link flags and a relative library path. gxc writes the
+# worker's compiled module and every static module's C into GERBIL_PATH, so
+# it compiles against a copy of the install's static modules, beside a link
+# to its parakeet modules, and leaves the install itself untouched.
+PARAKEET_GERBIL_PATH ?= /home/jay/Code/workbench-gerbil/gerbil-parakeet/.install-check/local
+VOICE_MODEL ?= /home/jay/Code/workbench-gerbil/gerbil-parakeet/.deps/models/nemotron-3.5-asr-streaming-0.6b-q8_0.gguf
+VOICE_SPEECH ?= /home/jay/Code/workbench-gerbil/gerbil-parakeet/.deps/fixtures/speech.f32
+VOICE_WORKER_GERBIL_PATH = $(CURDIR)/.gerbil/voice-worker
+
+voice-worker: .gerbil/bin/tuna-voice-worker
+
+.gerbil/bin/tuna-voice-worker: plugins/voice/worker/worker.ss Makefile
+	rm -rf $(VOICE_WORKER_GERBIL_PATH)
+	mkdir -p $(VOICE_WORKER_GERBIL_PATH)/lib
+	ln -s $(PARAKEET_GERBIL_PATH)/lib/parakeet $(VOICE_WORKER_GERBIL_PATH)/lib/parakeet
+	cp -pr $(PARAKEET_GERBIL_PATH)/lib/static $(VOICE_WORKER_GERBIL_PATH)/lib/static
+	GERBIL_PATH=$(VOICE_WORKER_GERBIL_PATH) $(PARAKEET_GERBIL_PATH)/bin/parakeet-compile $< $@
+
+# Pipe recorded speech through the worker at real-time pace, then at full
+# speed, timing each line.
+voice-worker-check: voice-worker
+	plugins/voice/worker/check.sh .gerbil/bin/tuna-voice-worker $(VOICE_MODEL) $(VOICE_SPEECH) paced
+	plugins/voice/worker/check.sh .gerbil/bin/tuna-voice-worker $(VOICE_MODEL) $(VOICE_SPEECH) full
 
 # The demo configuration loads and its declarations are valid. demo/ is not
 # built into the package, so this is what keeps it from rotting.
