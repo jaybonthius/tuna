@@ -1,6 +1,7 @@
 #lang :tuna/prelude
-;;; Voice dictation: the voice service, and `voice-dictate`, which inserts
-;;; what you say at point, as you say it.
+;;; Voice: the voice service; `voice-dictate`, which inserts what you say
+;;; at point, as you say it; and `voice-command`, which runs the command
+;;; whose name you say.
 ;;;
 ;;; Listening starts a speech worker (worker/worker.ss; `make
 ;;; voice-worker`) for that one listening: the worker ends when its input
@@ -364,6 +365,25 @@
     (message (string-append "Listening… (" (keys-for 'voice-dictate) " to stop)"))))
 
 ;;; Spoken commands
+;;;
+;;; voice-command listens with a grammar of the visible commands' spoken
+;;; names (spoken.ss), written to a file for a grammar worker started for
+;;; that one command, and with voice-command-model, which reports the end
+;;; of an utterance. The command waits (suspend) while the worker's lines
+;;; and the countdowns below arrive on the editor loop; the first of these
+;;; decides, and resumes it with the outcome:
+;;; - a committed unit;
+;;; - no new partial for voice-command-end-pause seconds after speech, or
+;;;   a partial that can only become one spoken name (at once when it is
+;;;   the whole name, else after voice-command-unique-grace seconds):
+;;;   these stop the microphone and close the worker's input, and the
+;;;   finalized document decides (without a unit, the unique name is
+;;;   offered, else nothing matched);
+;;; - the worker saying it can match nothing more;
+;;; - no partial within voice-command-start-timeout seconds;
+;;; - C-g, a failing microphone or worker: cancelled.
+;;; Then, in the command, the confidence rule (spoken.ss) runs the command,
+;;; offers the list through completing-read, or says nothing matched.
 
 (defsetting voice-command-run-confidence 0.85
   "Run a spoken command without asking when it is at least this confident (0 to 1; above 1 always asks).")
