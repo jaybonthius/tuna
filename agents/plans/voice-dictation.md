@@ -15,5 +15,20 @@ Brief: [`docs/briefs/2026-10-voice-dictation.md`](../../docs/briefs/2026-10-voic
 ## Stages
 
 1. **Worker.** Reads float32 LE mono 16 kHz PCM from stdin, feeds `asr-stream-feed`, writes one JSON line per non-empty result (`{"text":…,"eou":…}`), finalizes on EOF; strips `<xx-YY>` language tags. Model path and language as arguments. Check: piping `speech.f32` in 100 ms chunks prints the expected text faster than real time with both models.
+
+   **As built** (2026-10-23, branch `voice-1`). `plugins/voice/worker/worker.ss`, built by `make voice-worker` to `.gerbil/bin/tuna-voice-worker`; `make voice-worker-check` runs `check.sh` (paced and full speed). Protocol: `tuna-voice-worker MODEL [LANGUAGE]`; stdout lines `{"ready":true}` after loading, `{"text":"…","eou":bool}` per feed that finalized text or an end of utterance (text keeps the model's leading space; it may be empty when `eou` is true; pieces can split words, "Pho" + "ebe"), `{"done":true}` after EOF and finalize, or `{"error":"…"}` and exit 1. Each stdin read is fed at once; a read that splits a sample keeps its bytes for the next. The worker's preinit entry re-executes it with `OMP_WAIT_POLICY=PASSIVE` (and no `GOMP_SPINCOUNT`) unless already so, because the installed `parakeet-compile` predates the binding's own startup glue, and gives back the CPUs it started with before loading, because Gambit pins its thread to one CPU and the inference threads inherited that (full speed went from 6.4 s to 2.3 s). gxc writes compiled modules into `GERBIL_PATH`, so the build compiles against a copy of the install's static modules in `.gerbil/voice-worker/`.
+
+   Measured on `speech.f32` (7.4 s), 100 ms chunks (1600 samples, 6400 bytes), page cache warm, launched without `OMP_WAIT_POLICY`:
+
+   | | nemotron 0.6b (default) | realtime_eou 120m |
+   |---|---|---|
+   | load (start to ready) | 0.37 s | 0.08 s |
+   | full speed, first audio to done | 1.9 s (3.9× real time) | 1.2 s (6.4×) |
+   | paced: first text | at 1.0 s of audio (speech starts at 0.5 s) | at 0.9 s |
+   | paced: word end to its text | 0.1–0.35 s, about 0.2 s typical; a line every 0.3 s | 0–0.3 s, about 0.1 s typical |
+   | paced: last text / done after last audio | 0.07 s / 0.13 s | before / 0.04 s |
+   | end of utterance | never reported, even after 3 s of silence; its final "." arrives only at finalize | `eou` 0.5 s after speech ends |
+
+   The brief's comparison (nemotron 7.2 s for 7.4 s including load) was measured on one pinned core; the worker takes 2.3 s including load. Idle CPU while waiting for audio is zero. For stage 3: EOF ends the worker, so "kept warm" across dictations needs a protocol addition or a restart per dictation (0.4 s with nemotron, warm cache); undo grouping cannot rely on EOU with nemotron, so group by pause.
 2. **Page machinery and microphone.** The page contract in the web plugin (generic; no audio), then the microphone plugin using it: AudioWorklet capture at 16 kHz mono (resampling in the page if the context won't run at 16 kHz), started and stopped by a one-time per-tab instruction like the clipboard copy; permission-denied and missing-API reports to the echo area. Check: a test page records chunks; Chrome and Firefox capture.
 3. **Voice plugin.** `voice-dictate` toggle (`C-c v` in the demo; `C-g` stops), marker at point, worker lifecycle (started on first use, kept warm, stopped with the plugin), insertion of each line at the marker with one undo group per utterance (EOU) or per pause, echo-area status. Tests with a fake worker: text arrives at the marker; typing above moves the marker; stop flushes; turning the plugin off kills the worker. Browser check with real speech (or `speech.wav` played into the page's audio graph).
