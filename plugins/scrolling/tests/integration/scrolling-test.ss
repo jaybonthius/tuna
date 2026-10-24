@@ -30,12 +30,15 @@
 (def test-line 1)
 
 (defplugin (test-motion ctx)
-  "goto-test-line: point to test-line, as editing commands move it."
-  requires: [commands-service buffers-service]
+  "goto-test-line: point to test-line, as editing commands move it; RET inserts a newline."
+  requires: [commands-service input-service buffers-service]
   (defcommand (goto-test-line) "Move point to the start of test-line."
     (goto-char (text-line-start (current-text) test-line)))
   (defcommand (insert-test-text) "Insert x at point."
-    (insert "x")))
+    (insert "x"))
+  (defcommand (insert-test-newline) "Insert a newline at point."
+    (insert "\n"))
+  (keymap-set ctx "RET" 'insert-test-newline))
 
 (defplugin (test-rows ctx)
   "Row nodes: each one item, under a node opening into their items."
@@ -107,16 +110,21 @@
 ;; and no line is wholly in view. From client FROM, by default none,
 ;; measured under PLACEMENT: by default the newest sent to FROM; SETTLED,
 ;; by default, once scrolling came to rest.
-(def (report! v top: (top 300) offset: (offset 0.) last: (last #f) client: (from #f) settled: (settled #t)
-              spacer: (spacer #f) distance: (distance 0.)
-              before: (before 100) after: (after 400) above: (above 2000.) below: (below 2000.)
-              drawn: (drawn (+ above below 744.))
-              placement: (placement #f) root: (root (view-node v)) node: (node (node-id root)))
-  (submit! (make-scroll-event (next-sequence!) from (make-posn 'view (view-id v) node 0 #f 0 0)
-                              (or placement (client-placement v from))
-                              (and top (line-token v top root: root)) offset
-                              (and (not spacer) (line-token v (or last (+ top 30)) root: root))
-                              spacer distance before after drawn above below 800 744 settled)))
+(def (report! v . args)
+  (submit! (apply scroll-report v args)))
+
+;; The report report! submits, made now: its items' tokens and its
+;; placement are those of now.
+(def (scroll-report v top: (top 300) offset: (offset 0.) last: (last #f) client: (from #f) settled: (settled #t)
+                    spacer: (spacer #f) distance: (distance 0.)
+                    before: (before 100) after: (after 400) above: (above 2000.) below: (below 2000.)
+                    drawn: (drawn (+ above below 744.))
+                    placement: (placement #f) root: (root (view-node v)) node: (node (node-id root)))
+  (make-scroll-event (next-sequence!) from (make-posn 'view (view-id v) node 0 #f 0 0)
+                     (or placement (client-placement v from))
+                     (and top (line-token v top root: root)) offset
+                     (and (not spacer) (line-token v (or last (+ top 30)) root: root))
+                     spacer distance before after drawn above below 800 744 settled))
 
 ;; Report what the browser measured of V's newest placement: TOP and LAST
 ;; as report! takes them.
@@ -178,6 +186,29 @@
     (lambda ()
       (start-editor-loop!)
       (thunk (long-view!)))))
+
+;; With *scratch* holding a, ten empty lines and b, point after b.
+(def (with-short-text thunk)
+  (call-with-fresh-kernel scrolling-plugins
+    (lambda ()
+      (start-editor-loop!)
+      (thunk (on-baton (lambda () (insert (string-append "a" (make-string 10 #\newline) "b")) (selected-view)))))))
+
+;; What the browser measures of the short text in its 744 px view: its 11
+;; lines of 20 px, all drawn and wholly in view, the first 8 px below the
+;; top edge (the scroller's padding).
+(def (short-text-report v)
+  (scroll-report v top: 1 offset: -8. last: 11 before: 0 after: 10 above: 0. below: 0. drawn: 220.))
+
+;; Whether V draws every item of its text, with no spacer.
+(def (all-drawn? v)
+  (on-baton (lambda ()
+              (let* ((c (view-client v #f))
+                     (root (view-node v))
+                     (it (client-view-scroll-item c))
+                     (top (if it (node-item-index root it) 0)))
+                (and (<= (- top (client-view-drawn-before c)) 0)
+                     (>= (+ top (client-view-drawn-after c)) (- (node-item-count root) 1)))))))
 
 (def scrolling-test
   (test-suite "tuna/plugins/scrolling"
@@ -356,14 +387,16 @@
          (report! v top: 2500 before: 10 after: 40 above: 240. below: 200. drawn: 1184.)
          (check (car (drawn v)) => 32))))
 
-    (test-case "the counts stop at the first and the last item"
+    (test-case "the counts reach the first and the last item, and as many more as fill two view heights"
       (with-scrolling
        (lambda (v)
          (measured! v)
+         ;; 51 items in 1,184 px: 65 fill two view heights.
          (report! v top: 20 before: 10 after: 40 above: 240. below: 200.)
-         (check (car (drawn v)) => 19)
+         (check (car (drawn v)) => (+ 19 65))
+         ;; 20 items in 1,184 px: 26 fill two view heights.
          (report! v top: 4990 last: 5000 before: 10 after: 9 above: 240. below: 200.)
-         (check (cadr (drawn v)) => 10))))
+         (check (cadr (drawn v)) => (+ 10 26)))))
 
     (test-case "adjusting a count: grow by density, at least a step; shrink to one and a half settings"
       ;; Too little drawn: grow by the px missing times the density.
@@ -378,18 +411,18 @@
       (check (adjusted-count 1000 30 50000. 20000. 0.05) => 999)
       (check (adjusted-count 31 30 50000. 20000. 0.05) => 30))
 
-    (test-case "near an end, every item to it is drawn rather than a short spacer"
+    (test-case "near an end, every item to it is drawn rather than a short spacer, and as many more as fill the px wanted"
       ;; 50 items fill 1,000 px at .05 items a px.
       (check (to-the-end 100 50 1000. .05) => 50)
-      (check (to-the-end 100 60 1000. .05) => 100)
-      (check (to-the-end 10 50 1000. .05) => 10)
+      (check (to-the-end 100 60 1000. .05) => 150)
+      (check (to-the-end 10 50 1000. .05) => 60)
       (with-scrolling
        (lambda (v)
          (measured! v)
          ;; 64 items would be drawn above line 100, leaving 35: fewer than
          ;; the 65 that fill two view heights.
          (report! v top: 100 before: 10 after: 40 above: 240. below: 200. drawn: 1184.)
-         (check (car (drawn v)) => 99))))
+         (check (car (drawn v)) => (+ 99 65)))))
 
     (test-case "a report measured before the view's newest placement is ignored"
       (with-scrolling
@@ -623,6 +656,47 @@
            (check (placement-of v) => before)
            (goto-line! 2001)
            (check (placed-at v) => [2001 'center])))))
+
+    (test-case "typing RET in a text shorter than the view places nothing and draws every line"
+      (with-short-text
+       (lambda (v)
+         (submit! (short-text-report v))
+         (let (placement (placement-of v))
+           (for-each (lambda (n)
+                       (keys! "RET")
+                       (check (point-at v) => [(+ 11 n) 0])
+                       (check (placement-of v) => placement)
+                       (check (all-drawn? v) => #t))
+                     (iota 10 1))))))
+
+    (test-case "typing RET past the bottom edge, measured late, leaves point at the end and the view on it"
+      (with-short-text
+       (lambda (v)
+         (submit! (short-text-report v))
+         ;; 40 RETs, each followed by a report the browser measured before
+         ;; the keys queued ahead of it, under the placement it had then.
+         (let (late (map (lambda (_) (short-text-report v)) (iota 40)))
+           (for-each (lambda (report) (press "RET") ((input-submitter) report)) late)
+           (check (point-at v) => [51 0]))
+         ;; The browser applies the newest placement: its view's top edge is
+         ;; in the spacer above the lines drawn, 300 px above line 40. Then,
+         ;; on the screen drawing every line, it finds the view at the
+         ;; text's start, having lost its scroll position as the spacer went.
+         (report! v top: 40 spacer: 'above distance: 300. before: 0 after: 11 above: 0. below: 0. drawn: 240.)
+         (report! v top: 1 offset: -8. last: 37 before: 0 after: 50 above: 0. below: 284. drawn: 1020.
+                  settled: #f)
+         (check (point-at v) => [51 0])
+         (check (placed-at v) => [51 'bottom]))))
+
+    (test-case "after typing, a hand scroll still moves point into view"
+      (with-scrolling
+       (lambda (v)
+         (measured! v)
+         (goto-line! 10)
+         (keys! "RET")
+         (check (point-at v) => [11 0])
+         (report! v top: 300 last: 330)
+         (check (point-at v) => [300 0]))))
 
     (test-case "scrolling by hand moves point into view, keeping its column"
       (with-scrolling
