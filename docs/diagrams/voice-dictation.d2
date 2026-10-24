@@ -1,0 +1,36 @@
+# How does speech become text in a buffer? (planned)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: You
+browser: Browser tab
+web: Web plugin
+voice: Voice plugin
+worker: Speech worker (separate process)
+editor: Editor thread
+
+start: Start {
+  you -> browser: "1. C-c v"
+  browser -> editor: 2. the key, as always
+  editor -> voice: "3. voice-dictate: mark where\nthe text goes; start the worker"
+  voice -> browser: "4. this tab's next screen says\n\"start the microphone\"" {
+    style.stroke-dash: 3
+  }
+}
+
+talk: While you talk {
+  you -> browser: 5. speech
+  browser -> web: "6. audio, 16 kHz, a chunk\nevery tenth of a second"
+  web -> voice: 7. the chunk (not via the editor thread)
+  voice -> worker: 8. the chunk, over a pipe
+  worker -> voice: "9. new text, when a chunk\nof speech is decoded"
+  voice -> editor: 10. insert it at the mark
+  editor -> browser: "11. next screen: the line\nwith the new words" {
+    style.stroke-dash: 3
+  }
+}
