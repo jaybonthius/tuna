@@ -58,20 +58,51 @@ Brief: [briefs/2026-10-voice-commands.md](briefs/2026-10-voice-commands.md). `C-
 
 How the server learns layout facts from the browser (event-attached facts, measurement requests, Rocket components for local-only behavior). See [the capability-audit brief](briefs/2026-10-capability-audit.md).
 
-## Later, roughly in order
+## What's next, in tiers (owner, 2026-10-24)
 
-1. *Done (2026-10-13): commands contract, `M-x`, completion ([brief](briefs/2026-10-completion.md)).* Still to do here: prefix-key help (which-key style), Consult-style sources and preview, Embark-style actions.
-2. Windows: the window contract and the default layout-tree window manager ([desired design](ideas/window-management.md)), starting with a brief; `display-buffer`-style rules, window configurations, mode line; major and minor modes as plugins.
-3. Real syntax highlighting and language-server integration as jobs and subprocesses. Tree-sitter is the default (owner, 2026-10-22). The background machinery it needs is built (jobs that post several results, `off-thread`, sources, ranged highlights); highlighting itself is not.
+Tiers are ordered by what blocks daily use, then by what each piece builds on. Within a tier the order is a suggestion. A plugin is a coherent feature you would turn on, off or swap as a whole, roughly the size of an Emacs package; single functions are commands inside one, and any command can still be advised or redefined by another plugin. Names: Emacs built-in names are fine (ours may be an enhanced version of the built-in); third-party package names are not used, and each plugin inspired by one credits it in an Acknowledgements section of its README.
 
-   Notes from 2026-10-22, not decisions; research again before building:
-   - **Highlighting works on what is drawn,** as Emacs's jit-lock, Neovim, Zed, VS Code and CodeMirror do. A background job keeps the whole-file tree-sitter tree up to date incrementally, colours the drawn range plus a margin (any tab's drawn lines, from scrolling), and posts that range through stage 3's ranged highlights. A deferred pass recolours the lines after an edit, for multi-line constructs. Highlighters that need context from the top keep a state per line end (VS Code).
-   - **Language servers are whole-file by nature:** the file is synchronised whole, then by incremental changes, and diagnostics cover the file. Semantic tokens can be requested for a range, which suits the drawn range.
-   - **Missing pieces:** a way for a plugin to ask which ranges are drawn now, and a "buffer shown or hidden" hook. Add them with the first real highlighter.
-4. First rich (non-text) buffer kind and navigation across nodes.
-5. Attached REPL, `init.ss` reload, package reload.
-6. *Done (2026-10-22): several tabs mirror one editor, with per-tab input sessions ([ADR 16](../agents/adr/0016-several-tabs-mirror-one-editor.md)).* Later, if wanted: per-tab frames (each tab its own part of the layout); client-side reactivity where it pays off.
-7. A settings screen, like Emacs's `M-x customize`: browse and change plugin settings through Tuna's interface; changes are saved as plain data in `custom.ss` and override `init.ss`.
-8. Compressed screen stream: Brotli or Zstandard streaming compression of the SSE screen stream. Needs Gerbil packages equivalent to Racket's [libbrotli](https://docs.racket-lang.org/libbrotli/index.html) and [libzstd](https://pkgs.racket-lang.org/package/libzstd) (owner builds them). Makes the unchanged-screen resends the resource audit found (`agents/research/resource-audit-2026-10-15.md`) nearly free.
-9. Files: find-file, save, revert, autosave; many buffers; buffer switching; large-file viewport.
-10. The optional [profiler plugin](briefs/2026-10-profiler.md) (brief decided 2026-10-12), with service-operation advice.
+### Tier 0: before daily use
+
+1. **Restructure the existing plugins** to that size and naming: `basic-editing`, `region`, `kill-ring` and `text-mouse` become `editing`; `hungry-delete` moves to `demo/`; `orderless`, `command-annotations` and `M-x` (`extended-command`) become part of `completion` (M-x goes there, not into `commands`, because completion already imports the commands contract); `completion-vertical` becomes `completion-list`; `advice-help` and `stylesheets-help` become part of `help`; `design-tokens` becomes part of `stylesheets`; `reload-config` becomes `configuration`. `view-commands` stays separate so it keeps working under any layout plugin.
+2. **Error recovery**, built into the kernel, the layout and the session, not a plugin: one bad command, swap, reload or plugin must never leave the editor unusable or need a restart (`TODO.md`, "Error recovery").
+3. **`files`:** buffers visiting files; open, save, revert, external changes, recent files, cursor positions remembered, the file picker; large files.
+4. **`buffers`** gains switching; **`completion`** gains sources and preview for pickers.
+5. **A process library** (shared code like the jobs library, not a plugin): running programs and reading their output; needed by search, git, language servers, formatters and the terminal. The voice plugin's private process code becomes its first user.
+
+### Tier 1: daily editing
+
+1. **`modes`:** major and minor modes, attached to a node or to a region of text, so one file can hold several (JavaScript and CSS inside HTML): the mode at the cursor decides keys, settings and commands; each region is highlighted by its own grammar (tree-sitter injections can report the regions); each region goes to its own language server as a separate virtual document with positions mapped. A brief first, and an [idea page](ideas/modes.md).
+2. **`project`:** project root, project files, search with ripgrep, compile and jump to errors.
+3. **`editing`** grows: motions (words, expressions, paragraphs), search and replace, undo and redo, indentation, comments, rectangles.
+4. **`modal-editing`** (Helix-like, inspired by Hel), as a plugin.
+5. **`which-key`:** prefix-key help.
+6. **In-buffer completion** (Corfu-like) as part of `completion`, or `completion-popup` beside `completion-list` if it must be swappable on its own.
+
+### Tier 2: IDE
+
+1. **`tree-sitter`:** parsing, highlighting, folding, structural navigation; tree-sitter is the default (owner, 2026-10-22). Notes from 2026-10-22, not decisions: highlight what is drawn, as jit-lock, Neovim, Zed, VS Code and CodeMirror do, with a background job keeping the tree current and posting ranged highlights; missing pieces are a way to ask which ranges are drawn and a "buffer shown or hidden" hook.
+2. **`lsp`:** language servers, whole-file synchronisation with incremental changes, semantic tokens for the drawn range.
+3. **`diagnostics`:** underlines, margin marks, next and previous error; fed by `lsp` and linters.
+4. **`formatting`:** formatters and editorconfig.
+
+### Tier 3: big tools
+
+1. **`git`** (Magit-like): sections are nodes, which Tuna's buffers already are.
+2. **`terminal`:** Ghostty-based (the owner's libghostty web spike is in `~/Code/shux/spikes/libghostty-terminal/`).
+3. **`actions`** (Embark-like): act on the candidate or the thing at the cursor.
+4. **`workspaces`.**
+
+### Tier 4: later
+
+`llm` (chat and agents), `notes` (Denote/Org-like; to confirm), language modes (`markdown-mode`, `typst-mode`, …), `structural-editing` (Symex-like), `jump` (flash-like).
+
+### Also planned, not yet placed
+
+- First rich (non-text) buffer kind and keyboard navigation across nodes.
+- Attached REPL; reloading package code.
+- Per-tab frames (each tab its own part of the layout), if wanted; client-side reactivity where it pays off.
+- A settings screen like `M-x customize`, in `configuration`: changes saved as plain data in `custom.ss`, overriding `init.ss`.
+- Compressed screen stream (Brotli or Zstandard streaming compression; needs Gerbil packages the owner builds).
+- The optional [profiler plugin](briefs/2026-10-profiler.md), with service-operation advice.
+- Advice targets that declare their dependency (`TODO.md`).
