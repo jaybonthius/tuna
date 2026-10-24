@@ -16,10 +16,10 @@
 ;;; a paste item, each with its tab and its page-load sequence number,
 ;;; validated strictly into a key-event, a pointer-event, a scroll-event or
 ;;; a paste-event from the tab's client; or a clipboard report, which the
-;;; transport shows in the echo area itself. Each tab's items are submitted in the order of their
-;;; numbers. A page counts from 1 when it loads; a tab id the transport
-;;; does not know (the page outlived its tab, or a server restart) has its
-;;; numbering start at its first item. Each
+;;; transport shows in the echo area itself. Each tab's items are submitted
+;;; in the order of their numbers. A page counts from 1 when it loads; a
+;;; tab id the transport does not know (the page outlived its tab, or a
+;;; server restart) has its numbering start at its first item. Each
 ;;; screen carries its revision as data-revision on its root element, and
 ;;; pointer and scroll items name the screen they were computed on, which
 ;;; must be one this transport sent the tab. The page's actions
@@ -650,9 +650,9 @@
 ;; Queues work for tabs on the editor loop, until sent 'stop: a redisplay
 ;; when sent 'redisplay (any task, even one doing nothing, is followed by
 ;; one), a message in the echo area when sent ['message text]
-;; (show-message!), and forget-tab! for each [tab closings] from forget-later!, SELF's
-;; grace period later, unless the tab is no longer one to forget, so a tab
-;; with a stream open costs no task. It starts with the plugin, so it can
+;; (show-message!), and forget-tab! for each [tab closings] from
+;; forget-later!, SELF's grace period later, unless the tab is no longer
+;; one to forget, so a tab with a stream open costs no task. It starts with the plugin, so it can
 ;; reach the editor loop, which request threads may not.
 (def (tab-keeping-thread (self : web-server)) => :void
   (let lp ((waiting []))        ; [deadline tab closings] each, earliest first
