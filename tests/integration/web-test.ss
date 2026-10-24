@@ -2,15 +2,17 @@
 ;;; loopback HTTP. Every client's stream receives the new screen, C-g
 ;;; sent from the browser stops a running command, keys and clicks are
 ;;; handled in the order they were sent, and each tab's keys in progress
-;;; are its own. This tests the web transport
+;;; are its own; copying goes to the clipboard of the tab that pressed the
+;;; key, and a paste is inserted. This tests the web transport
 ;;; together with keys, buffers, layout, view commands, clicks in text,
-;;; rendering, help, and quitting; tuna/plugins/web-test.ss tests the transport alone.
+;;; the kill ring, rendering, help, and quitting; tuna/plugins/web-test.ss tests the transport alone.
 (import :std/io
         :std/test
         :tuna/kernel
         :tuna/plugins/buffers/contract
         :tuna/plugins/layout/contract
         :tuna/plugins/echo-area/contract
+        :tuna/plugins/kill-ring/contract
         :tuna/plugins/commands/plugin
         :tuna/plugins/keys/plugin
         :tuna/plugins/web/plugin
@@ -26,6 +28,7 @@
         :tuna/plugins/renderer/plugin
         :tuna/plugins/basic-editing/plugin
         :tuna/plugins/minibuffer/plugin
+        :tuna/plugins/kill-ring/plugin
         "../../plugins/session/tests/support/session"
         "../support/endless-commands"
         "../support/services-help"
@@ -58,6 +61,17 @@
 
 (def (buffer-string name)
   (text-string (text-node-content (buffer-point-node (get-buffer name)))))
+
+;; How many times NEEDLE is in TEXT.
+(def (occurrences needle text)
+  (let lp ((at 0) (n 0))
+    (let (found (and (<= at (string-length text))
+                     (string-search needle (substring text at (string-length text)))))
+      (if found (lp (+ at found 1) (+ n 1)) n))))
+
+;; What STREAM receives in SECONDS; "" when nothing comes.
+(def (received stream seconds)
+  (with-catch (lambda (e) "") (lambda () (read-until stream (lambda (text) #f) seconds: seconds))))
 
 (def web-test
   (test-suite "integration: the browser editor over HTTP"
@@ -160,6 +174,42 @@
                                       (reply-body (http "GET" "/")))
                        #t)
                   => #t)))))
+
+    (test-case "M-w copies in the tab that pressed it, once; a paste from another tab is inserted and killed, not copied back"
+      (with-web-tuna (append browser-editor-plugins [kill-ring])
+       (lambda ()
+         (call-on-editor-loop (lambda () (show-new-buffer! (selected-view) "clip")))
+         (let* ((a (current-tab))
+                (b (new-tab!))
+                (a-stream (open-screen-stream tab: a))
+                (b-stream (open-screen-stream tab: b)))
+           (read-until a-stream (cut string-search "id=\"screen\"" <>))
+           (read-until b-stream (cut string-search "id=\"screen\"" <>))
+           (post-key "a" tab: a)
+           (post-key "b" tab: a)
+           (post-key " " ctrl?: #t tab: a)
+           (post-key "a" ctrl?: #t tab: a)
+           (post-key "w" alt?: #t tab: a)
+           (let (text (read-until a-stream (cut string-search "tunaCopy" <>)))
+             (check (occurrences "tunaCopy" text) => 1)
+             (check (and (string-search ">\"ab\"</div>" text) #t) => #t))
+           (check (occurrences "tunaCopy" (received a-stream 1.5)) => 0)
+           ;; B is sent screens, the newest again each second it does not
+           ;; confirm one, but no copy.
+           (let (b-text (received b-stream 1.5))
+             (check (and (string-search "data-revision" b-text) #t) => #t)
+             (check (occurrences "tunaCopy" b-text) => 0))
+           (post-paste "\"X\\r\\nY\"" tab: b)
+           (check (wait-until (lambda () (equal? (call-on-editor-loop (lambda () (buffer-string "clip"))) "X\nYab")))
+                  => #t)
+           (check (call-on-editor-loop (lambda () [(current-kill 0) (current-message)])) => ["X\nY" "Mark set"])
+           (check (occurrences "tunaCopy" (received b-stream 1.5)) => 0)
+           (check (occurrences "tunaCopy" (received a-stream 0.5)) => 0)
+           ;; A page that could not copy says so.
+           (post-clipboard-report "\"unavailable\"" tab: a)
+           (check (wait-until (lambda () (string-prefix? "On the kill ring only" (settled-message)))) => #t)
+           (Socket-close a-stream)
+           (Socket-close b-stream)))))
 
     (test-case "keys and clicks sent back to back are handled in the order sent"
       (with-tuna

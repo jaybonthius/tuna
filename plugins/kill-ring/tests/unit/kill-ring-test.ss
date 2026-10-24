@@ -79,4 +79,22 @@
            (activate-plugin! watcher)
            (kill-new "x")
            (check seen => ["x"])
-           (check (current-kill 0) => "x")))))))
+           (check (current-kill 0) => "x")))))
+
+    (test-case "a paste inserts its text at point and puts it on the kill ring, without copying it back; M-y replaces it"
+      (call-with-fresh-kernel kill-ring-plugins
+       (lambda ()
+         (let (seen [])
+           (defplugin (watcher ctx) "Records killed texts."
+             (context-add-hook! ctx kill-new-hook 'watcher (lambda (text) (set! seen (cons text seen)))))
+           (activate-plugin! watcher)
+           (start-editor-loop!)
+           (call-on-editor-loop (lambda () (insert "ab")))
+           (select! 2 1)
+           (type! "M-w")
+           (paste "XY")
+           (check (state) => ["aXYb" 4 2 #f "Mark set"])
+           (check seen => ["a"])
+           (check (call-on-editor-loop (lambda () (current-kill 0))) => "XY")
+           (type! "M-y")
+           (check (state) => ["aab" 3 2 #f ""])))))))

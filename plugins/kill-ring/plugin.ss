@@ -2,7 +2,10 @@
 ;;; The kill ring, and the commands that kill, copy and yank through it:
 ;;; C-w (kill-region), M-w (kill-ring-save), C-y (yank) and M-y (yank-pop,
 ;;; right after a yank). Killing and copying take the region between point
-;;; and the mark, active or not, as in Emacs.
+;;; and the mark, active or not, as in Emacs. A paste from the browser
+;;; (`<paste>`) runs clipboard-yank, which puts the pasted text on the kill
+;;; ring and yanks it, as Emacs's `xterm-paste` does for a terminal's
+;;; paste.
 (import :std/interface
         :tuna/kernel
         :tuna/plugins/commands/contract
@@ -37,10 +40,16 @@
   (kill-new (lambda (self text) (kill-new! self text)))
   (current-kill (lambda (self n) (current-kill! self n))))
 
-(def yank-commands '(yank yank-pop))
+(def yank-commands '(yank yank-pop clipboard-yank))
+
+;; Insert TEXT at point, with the mark before it (Emacs `yank`).
+(def (yank-text! (text : :string)) => :void
+  (set-view-mark! (selected-view) (point))
+  (insert text)
+  (message "Mark set"))
 
 (defplugin (kill-ring ctx)
-  "The kill ring: C-w kills the region, M-w copies it, C-y yanks the last kill and M-y replaces it with earlier ones."
+  "The kill ring: C-w kills the region, M-w copies it, C-y yanks the last kill and M-y replaces it with earlier ones; the browser's paste key yanks the clipboard."
   provides: [kill-ring-service]
   requires: [commands-service input-service settings-service buffers-service region-service]
   (using (self (kill-ring-state texts: [] pointer: 0) : kill-ring-state)
@@ -54,11 +63,14 @@
     (kill-new (text-substring (current-text) (region-beginning) (region-end)))
     (deactivate-mark!))
   (defcommand (yank) "Insert the newest kill, with the mark before it and point after it."
-    (let ((text (current-kill 0))
-          (v (selected-view)))
-      (set-view-mark! v (point))
-      (insert text)
-      (message "Mark set")))
+    (yank-text! (current-kill 0)))
+  (defcommand (clipboard-yank) "Insert the text the browser's paste key took from the clipboard, and put it on the kill ring."
+    (let (event (last-command-event))
+      (unless (paste-event? event)
+        (error "clipboard-yank runs from the browser's paste key"))
+      (let (text (paste-event-text event))
+        (kill-new text from-clipboard?: #t)
+        (yank-text! text))))
   (defcommand (yank-pop) "Replace the text just yanked with the kill before it; only right after a yank."
     (unless (memq (last-command) yank-commands)
       (error "Previous command was not a yank"))
@@ -74,4 +86,5 @@
   (keymap-set "C-w" 'kill-region)
   (keymap-set "M-w" 'kill-ring-save)
   (keymap-set "C-y" 'yank)
-  (keymap-set "M-y" 'yank-pop))
+  (keymap-set "M-y" 'yank-pop)
+  (keymap-set paste-key 'clipboard-yank))

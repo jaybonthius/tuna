@@ -14,6 +14,8 @@
         new-tab!
         unknown-tab!
         post-key
+        post-paste
+        post-clipboard-report
         post-applied
         open-screen-stream
         read-until
@@ -166,10 +168,27 @@
                                      merged) ",")
                    "}")))
 
-(def (post-key key ctrl?: (ctrl? #f) tab: (from tab))
+(def (post-key key ctrl?: (ctrl? #f) alt?: (alt? #f) tab: (from tab))
   (http "POST" "/commands"
         headers: [(cons "Datastar-Request" "true") (cons "Content-Type" "application/json")]
-        body: (keydown-json key ctrl? (next-sequence! from) (cons "tab" (tab-json from)))))
+        body: (keydown-json key ctrl? (next-sequence! from) (cons "tab" (tab-json from))
+                            (cons "altKey" (if alt? "true" "false")))))
+
+;; Post a paste item from tab FROM: TEXT-JSON, raw JSON, is its text.
+(def (post-paste text-json tab: (from tab))
+  (http "POST" "/commands"
+        headers: [(cons "Datastar-Request" "true") (cons "Content-Type" "application/json")]
+        body: (string-append "{\"version\":1,\"tab\":" (tab-json from) ",\"type\":\"paste\","
+                             "\"sequence\":" (number->string (next-sequence! from)) ","
+                             "\"text\":" text-json "}")))
+
+;; Post a clipboard report from tab FROM: OUTCOME and REASON are raw JSON.
+(def (post-clipboard-report outcome reason: (reason "null") tab: (from tab))
+  (http "POST" "/commands"
+        headers: [(cons "Datastar-Request" "true") (cons "Content-Type" "application/json")]
+        body: (string-append "{\"version\":1,\"tab\":" (tab-json from) ",\"type\":\"clipboard\","
+                             "\"sequence\":" (number->string (next-sequence! from)) ","
+                             "\"outcome\":" outcome ",\"reason\":" reason "}")))
 
 ;; Post PATH, a screen's /applied path, as tab FROM's page does.
 (def (post-applied path tab: (from tab))

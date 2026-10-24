@@ -12,18 +12,29 @@
 ;;; hidden tab's stream and reopens it when the tab is shown), and
 ;;; client-gone-hook then runs for its client on the editor loop.
 ;;;
-;;; POST /commands takes one input item: a keydown, a pointer or a scroll
-;;; item, each with its tab and its page-load sequence number, validated
-;;; strictly into a key-event, a pointer-event or a scroll-event from the
-;;; tab's client. Each tab's items are submitted in the order of their
-;;; numbers. A page counts from 1 when it loads; a tab id the transport
-;;; does not know (the page outlived its tab, or a server restart) has its
-;;; numbering start at its first item. Each
+;;; POST /commands takes one input item: a keydown, a pointer, a scroll or
+;;; a paste item, each with its tab and its page-load sequence number,
+;;; validated strictly into a key-event, a pointer-event, a scroll-event or
+;;; a paste-event from the tab's client; or a clipboard report, which the
+;;; transport shows in the echo area itself. Each tab's items are submitted
+;;; in the order of their numbers. A page counts from 1 when it loads; a
+;;; tab id the transport does not know (the page outlived its tab, or a
+;;; server restart) has its numbering start at its first item. Each
 ;;; screen carries its revision as data-revision on its root element, and
 ;;; pointer and scroll items name the screen they were computed on, which
 ;;; must be one this transport sent the tab. The page's actions
 ;;; (frontend/) measure and report scrolling (tunaScroll) and place a view
 ;;; where the server asks (tunaPlace).
+;;;
+;;; The clipboard is the browser's, so the transport carries it (as
+;;; Emacs's window-system code is its `interprogram-cut-function`): a text
+;;; put on the kill ring by a command a tab started (kill-new-hook) is
+;;; given to that tab alone, as a one-time instruction after its next
+;;; screen, which the page carries out with navigator.clipboard.writeText
+;;; (tunaCopy). Where the page has no clipboard access (it needs HTTPS or
+;;; localhost) or the browser refuses, the page sends a clipboard report,
+;;; and the echo area says the text is on the kill ring only. The page's
+;;; paste event becomes a paste item (tunaPaste).
 ;;;
 ;;; Each redisplay renders a screen for each tab that has a stream open, as
 ;;; that tab's browser shows the editor (the renderer contract), and sends
@@ -62,6 +73,8 @@
         :std/net/url
         :std/text/markup/sxml/print
         (only-in :std/crypto/random random-bytes)
+        (only-in :std/encoding/json json->string)
+        (only-in :std/string/misc string-subst)
         :std/time/timeout
         :gerbil-datastar/http
         :tuna/kernel
@@ -69,11 +82,13 @@
         :tuna/lib/plugin-options
         ;; A tab has a field named client, which would shadow the type of
         ;; that name in its constructor.
-        (rename-in (only-in :tuna/plugins/clients/contract client make-client client-id client-gone-hook)
+        (rename-in (only-in :tuna/plugins/clients/contract client make-client client-id client-gone-hook
+                            current-client)
                    (client client-type))
         (only-in :tuna/plugins/keys/contract key-event make-key-event pointer-event make-pointer-event
-                 scroll-event make-scroll-event
+                 scroll-event make-scroll-event paste-event make-paste-event
                  posn make-posn)
+        (only-in :tuna/plugins/kill-ring/contract kill-ring-service kill-new-hook)
         :tuna/plugins/renderer/contract
         :tuna/plugins/stylesheets/contract
         :tuna/plugins/web/embed)
@@ -120,8 +135,9 @@
    ;; Guarded by the server's mutex:
    (rendered  : :t)             ; the newest screen for it, the renderer's HTML
    (revision  : :fixnum)        ; RENDERED's revision
-   (owed      : :boolean)       ; a scroll report or pointer movement awaits a screen
+   (owed      : :boolean)       ; a scroll report, pointer movement or copy awaits a screen
    (wanted?   : :boolean)       ; a screen must be rendered for it before it is sent one
+   (copy      :? :string)       ; a text its page is to copy to the clipboard, after its next screen
    (applied   : HashTable)      ; its stream -> last screen count its page applied
    (streams   : :fixnum)        ; its open streams
    (closings  : :fixnum))       ; times its streams all closed; a grace period acts on the latest only
@@ -277,8 +293,25 @@
   (set! tab.revision revision)
   (set! tab.owed #f))
 
-;; TAB's newest screen as [revision head screen] once STREAM's page has
-;; applied its COUNTth screen and one newer than SENT exists, and no
+;; Have the tab of client C (#f for none) copy TEXT to the clipboard after
+;; its next screen, which it is owed even when nothing on it changes; a
+;; newer copy replaces one not yet sent. Editor thread only.
+(def (copy-for-client! (self : web-server) (c :? client-type) (text : :string)) => :void
+  (when c
+    (do-with-lock self.mutex
+      (let (tab (hash-get self.tabs (client-id c)))
+        (when (and tab (eq? (web-tab-client tab) c))
+          (set! (web-tab-copy tab) text)
+          (set! (web-tab-owed tab) #t))))))
+
+;; The one-time instruction for a page to copy TEXT to the clipboard
+;; (tunaCopy): an element appended to its body, holding TEXT as a JSON
+;; string, so that every character, CR and NUL too, survives HTML parsing.
+(def (copy-instruction (text : :string)) => :string
+  (html-string `(div (@ (hidden "") (data-init "@tunaCopy()")) ,(json->string text))))
+
+;; TAB's newest screen as [revision head screen copy] once STREAM's page
+;; has applied its COUNTth screen and one newer than SENT exists, and no
 ;; screen is being rendered for TAB; the newest again when the page has
 ;; not confirmed within SELF's timeout; 'heartbeat
 ;; after heartbeat-seconds of nothing to send; #f once stopped. Never
@@ -290,7 +323,9 @@
     (let lp ()
       (let* ((applied? (fx>= (: (hash-ref tab.applied stream 0) :fixnum) count))
              (deadline (+ start (if applied? heartbeat-seconds self.timeout)))
-             (newest (lambda () (let (newest [tab.revision self.head tab.rendered])
+             ;; COPY, TAB's pending copy, goes with this screen only.
+             (newest (lambda () (let (newest [tab.revision self.head tab.rendered tab.copy])
+                                  (set! tab.copy #f)
                                   (mutex-unlock! self.mutex)
                                   newest))))
         (cond
@@ -493,7 +528,9 @@
    " data-on:mouseup__document=\"@tunaPointer()\""
    " data-on:contextmenu__document=\"@tunaPointer()\""
    " data-on:click__document=\"@tunaPointer()\""
-   " data-on:auxclick__document=\"@tunaPointer()\">"
+   " data-on:auxclick__document=\"@tunaPointer()\""
+   ;; The browser's paste key, which the keydown action lets through.
+   " data-on:paste__document=\"@tunaPaste()\">"
    head
    ;; The renderer's HTML is already escaped.
    "<body>"))
@@ -589,7 +626,7 @@
       (let (tab (web-tab client: (make-client id)
                          next: 1 pending: (make-hash-table-eqv) numbered?: #f
                          rendered: empty-screen revision: 0
-                         owed: #f wanted?: #f applied: (make-hash-table-eqv) streams: 0 closings: 0))
+                         owed: #f wanted?: #f copy: #f applied: (make-hash-table-eqv) streams: 0 closings: 0))
         (hash-put! self.tabs id tab)
         ;; A tab that never opens a stream is forgotten as if its streams
         ;; had closed.
@@ -602,15 +639,20 @@
   (unless self.stopped?
     (thread-send (:- self.keeper :thread) [tab tab.closings])))
 
+;; Show TEXT in the echo area, from a request thread.
+(def (show-message! (self : web-server) (text : :string)) => :void
+  (thread-send (:- self.keeper :thread) ['message text]))
+
 ;; Have the editor loop redisplay, so it renders the screens tabs want.
 (def (ask-redisplay! (self : web-server)) => :void
   (thread-send (:- self.keeper :thread) 'redisplay))
 
 ;; Queues work for tabs on the editor loop, until sent 'stop: a redisplay
 ;; when sent 'redisplay (any task, even one doing nothing, is followed by
-;; one), and forget-tab! for each [tab closings] from forget-later!, SELF's
-;; grace period later, unless the tab is no longer one to forget, so a tab
-;; with a stream open costs no task. It starts with the plugin, so it can
+;; one), a message in the echo area when sent ['message text]
+;; (show-message!), and forget-tab! for each [tab closings] from
+;; forget-later!, SELF's grace period later, unless the tab is no longer
+;; one to forget, so a tab with a stream open costs no task. It starts with the plugin, so it can
 ;; reach the editor loop, which request threads may not.
 (def (tab-keeping-thread (self : web-server)) => :void
   (let lp ((waiting []))        ; [deadline tab closings] each, earliest first
@@ -619,6 +661,9 @@
                    ('stop (void))
                    ('redisplay
                     (with-catch void (lambda () (spawn-task! 'tab-screen void)))
+                    (lp waiting))
+                   (['message (? string? text)]
+                    (with-catch void (lambda () (spawn-task! 'web-message (lambda () (message text)))))
                     (lp waiting))
                    ([tab closings]
                     (lp (append waiting [[(+ (time->seconds (current-time)) self.grace) tab closings]])))
@@ -676,13 +721,15 @@
          (lambda (session)
            (let lp ((sent -1) (sent-head "") (count 0))
              (match (await-screen self tab stream sent count)
-               ([revision head screen]
+               ([revision head screen copy]
                 (unless (string=? head sent-head)
                   (patch-elements session head))
                 (let (stamps (screen-stamps revision stream (fx1+ count)))
                   (call-with-patch-elements
                    session
                    (lambda (out) (write-stamped-screen out screen stamps))))
+                (when copy
+                  (patch-elements session (copy-instruction copy) selector: "body" mode: 'append))
                 (lp revision head (fx1+ count)))
                ('heartbeat
                 (patch-signals session "{}")
@@ -745,6 +792,11 @@
         ;; No task runs for a rejected report, so answer it here.
         (resend-screen! self tab)))
     (cond
+     ((string? event)
+      ;; A clipboard report takes its place in its tab's order, with no
+      ;; input to submit.
+      (admit-event! self tab (hash-ref value "sequence") 'dropped)
+      (show-message! self event))
      (event
       (admit-event! self tab (hash-ref value "sequence") event))
      ;; A rejected item still takes its place in its tab's order, so the
@@ -766,8 +818,8 @@
 
 ;; HTTP handlers may arrive in any order. Submission stays under this lock
 ;; so another handler cannot overtake an item while it is handed to the loop.
-;; EVENT, from TAB, is 'dropped for a rejected item, which is skipped in its
-;; turn.
+;; EVENT, from TAB, is 'dropped for a rejected item or a clipboard report,
+;; which is skipped in its turn.
 (def (admit-event! (self : web-server) (tab : web-tab) (sequence : :fixnum) (event : :t)) => :void
   (do-with-lock self.admission
     (unless tab.numbered?
@@ -966,7 +1018,36 @@
                                  (cdr spacer) spacer-distance before after drawn-height
                                  above below width height settled)))))
 
-;; A validated keydown, pointer or scroll item from the client FROM, or #f.
+;; A validated paste item from the client FROM, or #f: the text the page's
+;; paste event carried, with each CR LF or lone CR made a newline.
+(def (parse-paste-event (value : HashTable) (from : client-type)) => (Maybe paste-event)
+  (let ((sequence (hash-get value "sequence"))
+        (text (hash-get value "text")))
+    (and (eqv? (hash-get value "version") 1)
+         (fixnum? sequence) (fx>= sequence 1)
+         (string? text)
+         (make-paste-event sequence from (string-subst (string-subst text "\r\n" "\n") "\r" "\n")))))
+
+;; The message a validated clipboard report calls for, or #f. A page
+;; reports when it has no navigator.clipboard ("unavailable": browsers
+;; give it only to HTTPS and localhost pages) or writeText rejected
+;; ("refused", with the error's name as REASON).
+(def (parse-clipboard-report (value : HashTable)) => (Maybe :string)
+  (let ((sequence (hash-get value "sequence"))
+        (outcome (hash-get value "outcome"))
+        (reason (hash-get value "reason")))
+    (and (eqv? (hash-get value "version") 1)
+         (fixnum? sequence) (fx>= sequence 1)
+         (cond
+          ((equal? outcome "unavailable")
+           "On the kill ring only: the browser gives the clipboard only to HTTPS and localhost pages")
+          ((and (equal? outcome "refused") (short-string? reason) (not (string-empty? reason))
+                (andmap char-alphabetic? (string->list reason)))
+           (string-append "On the kill ring only: the browser refused the clipboard (" reason ")"))
+          (else #f)))))
+
+;; A validated keydown, pointer, scroll or paste item from the client
+;; FROM; for a clipboard report, the message it calls for; or #f.
 (def (parse-input-item (value : :t) (from : client-type) (newest-revision : :fixnum)) => :t
   (and (hash-table? value)
        (let (type (hash-get value "type"))
@@ -974,6 +1055,8 @@
           ((equal? type "keydown") (parse-key-event value from))
           ((equal? type "pointer") (parse-pointer-event value from newest-revision))
           ((equal? type "scroll") (parse-scroll-event value from newest-revision))
+          ((equal? type "paste") (parse-paste-event value from))
+          ((equal? type "clipboard") (parse-clipboard-report value))
           (else #f)))))
 
 ;;; The plugin
@@ -988,7 +1071,8 @@
 (defplugin (web-transport ctx)
   "Serves screens to browser tabs on loopback and receives their input."
   provides: [display-service]
-  optional: [renderer-service]
+  ;; The kill ring only for its hook: a tab copies what its commands kill.
+  optional: [renderer-service messages-service kill-ring-service]
   (add-stylesheet 'tokens "tokens.css")
   (add-stylesheet 'rules "rules.css")
   (let* ((port (let (configured (plugin-option web-transport 'port))
@@ -1025,6 +1109,8 @@
                    response-timeout: !NoTimeout))))
     (set! (web-server-server self) server)
     (set! (web-server-keeper self) (spawn-thread (lambda () (tab-keeping-thread self)) 'tuna-tabs))
+    (context-add-hook! ctx kill-new-hook 'web-transport
+                       (lambda ((text : :string)) (copy-for-client! self (current-client) text)))
     (Server-start! server)
     (context-defer! ctx (lambda () (stop-web-transport! self)))
     (context-provide! ctx display-service self)

@@ -2,7 +2,8 @@
 ;;; plain URL, Host and Origin checks, event requests (keydowns, pointer
 ;;; and scroll items, validated strictly, and the screen revision they
 ;;; name), the screen stream's re-sends, and tabs (ADR 16): each tab's own
-;;; numbering, pacing and screens, and forgetting a tab that went away. A
+;;; numbering, pacing and screens, and forgetting a tab that went away;
+;;; pastes, clipboard reports, and the copy a tab's command asks for. A
 ;;; stand-in provides the input the editor loop needs; another records the
 ;;; items it resolves.
 (import :std/io
@@ -17,7 +18,8 @@
         :tuna/plugins/renderer/contract
         :tuna/plugins/web/plugin
         "../support/web-client"
-        (only-in "../../../../tuna/tests/support/string-input" test-input test-messages))
+        :tuna/plugins/kill-ring/contract
+        (only-in "../../../../tuna/tests/support/string-input" test-input test-messages current-message))
 (export web-test)
 
 (def web-plugins
@@ -49,6 +51,31 @@
 ;; Change the screen and redisplay, on the editor loop.
 (def (change-screen!)
   (call-on-editor-loop (lambda () (set! shown (+ shown 1)) (redisplay))))
+
+;; An input provider that runs each key as a command for its client would:
+;; the command puts the key's text on the kill ring, which only runs
+;; kill-new-hook here.
+(defclass copying-keys () final: #t)
+
+(defmethod {resolve! copying-keys}
+  (lambda (self item)
+    (cons 'kill (lambda ()
+                  (parameterize ((current-client (key-event-client item)))
+                    (run-hook kill-new-hook (key-event-key item)))))))
+
+(defmethod {arrival copying-keys}
+  (lambda (self item) 'queue))
+
+(defplugin (copying-input ctx)
+  "Runs kill-new-hook with each key's text, for the key's client."
+  provides: [input-service]
+  (context-provide! ctx input-service (copying-keys)))
+
+;; How many times NEEDLE is in TEXT.
+(def (occurrences needle text)
+  (let lp ((from 0) (n 0))
+    (let (at (string-search-from needle text from))
+      (if at (lp (+ at 1) (+ n 1)) n))))
 
 ;; An input provider that records every item it resolves, newest first.
 (defstruct input-recorder (items) final: #t)
@@ -320,6 +347,61 @@
                       [#f "null" "0" "1" "\"true\"" "[]" "{}"]))
           ["isMac" "altLeft" "altRight" "altGraph"])
          (check (length (recorded-items 1)) => 1))))
+
+    (test-case "a paste item becomes a paste event, its line ends made newlines; a clipboard report shows its message and submits nothing"
+      (set! (input-recorder-items recorded) [])
+      (with-web-tuna [test-messages recording-input web-transport]
+       (lambda ()
+         (let (message-is (lambda (text)
+                            (wait-until (lambda () (equal? (call-on-editor-loop current-message) text)))))
+           (check (reply-status (post-paste "\"a\\r\\nb\\rc\"")) => 204)
+           (check (reply-status (post-paste "5")) => 204)
+           (check (reply-status (post-clipboard-report "\"unavailable\"")) => 204)
+           (check (message-is "On the kill ring only: the browser gives the clipboard only to HTTPS and localhost pages")
+                  => #t)
+           (check (reply-status (post-clipboard-report "\"refused\"" reason: "\"NotAllowedError\"")) => 204)
+           (check (message-is "On the kill ring only: the browser refused the clipboard (NotAllowedError)") => #t)
+           (check (reply-status (post-clipboard-report "\"refused\"" reason: "\"<b>\"")) => 204)
+           (check (reply-status (post-clipboard-report "\"lost\"")) => 204)
+           (check (reply-status (post-key "x")) => 204)
+           (let (items (recorded-items 2))
+             (check (map (lambda (item) (if (paste-event? item) (paste-event-text item) (key-event-key item))) items)
+                    => ["a\nb\nc" "x"])
+             (check (map (lambda (item) (if (paste-event? item) (paste-event-sequence item) (key-event-sequence item)))
+                         items)
+                    => [1 7]))
+           (check (call-on-editor-loop current-message)
+                  => "On the kill ring only: the browser refused the clipboard (NotAllowedError)")))))
+
+    (test-case "a text a tab's command puts on the kill ring is copied by that tab alone, once, after its next screen"
+      (with-web-tuna [test-messages copying-input counting-renderer web-transport]
+       (lambda ()
+         (let* ((a (current-tab))
+                (b (new-tab!))
+                (a-stream (open-screen-stream tab: a))
+                (b-stream (open-screen-stream tab: b))
+                (a-first (read-until a-stream has-screen?))
+                (b-first (read-until b-stream has-screen?)))
+           (check (reply-status (post-applied (applied-path a-first) tab: a)) => 204)
+           (check (reply-status (post-applied (applied-path b-first) tab: b)) => 204)
+           ;; Tab A's key kills a\r<b>; nothing on the screen changes.
+           (check (reply-status (post-key "a\\r<b>" tab: a)) => 204)
+           (let (text (read-until a-stream (cut string-search "tunaCopy" <>)))
+             (check ((newer-than a-first) text) => #t)
+             (check (occurrences "@tunaCopy()" text) => 1)
+             (check (and (string-search "data: selector body\ndata: mode append\n" text) #t) => #t)
+             (check (and (string-search "\"a\\r&lt;b&gt;\"" text) #t) => #t))
+           ;; A's unconfirmed screen is sent again after a second, without
+           ;; the copy; B gets nothing.
+           (let (again (read-until a-stream (lambda (text) #f) seconds: 1.5))
+             (check (has-screen? again) => #t)
+             (check (occurrences "tunaCopy" again) => 0))
+           (Socket-set-input-timeout! b-stream (IOTimeout 1.5))
+           (check (occurrences "tunaCopy" (with-catch (lambda (e) "")
+                                                      (lambda () (read-until b-stream (lambda (text) #f) seconds: 1.5))))
+                  => 0)
+           (Socket-close a-stream)
+           (Socket-close b-stream)))))
 
     (test-case "each screen carries its revision on its root element"
       (with-tuna

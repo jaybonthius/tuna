@@ -1,10 +1,11 @@
 ;;; Key presses and clicks for tests that drive plugins through the real
 ;;; editor loop.
 (import :tuna/kernel
-        (only-in :tuna/plugins/keys/contract make-key-event make-pointer-event make-posn))
+        (only-in :tuna/plugins/keys/contract make-key-event make-pointer-event make-posn make-paste-event))
 (export press
         type!
-        click)
+        click
+        paste)
 
 (def sequence 0)
 
@@ -46,3 +47,9 @@
   ((input-submitter)
    (make-pointer-event sequence client kind button clicks alt? ctrl? meta? shift?
                        (make-posn area part node revision line line-revision column))))
+
+;; Submit a paste of TEXT to the running editor loop, from the clients
+;; contract's CLIENT, if given.
+(def (paste (text : :string) client: (client #f)) => :void
+  (set! sequence (+ sequence 1))
+  ((input-submitter) (make-paste-event sequence client text)))

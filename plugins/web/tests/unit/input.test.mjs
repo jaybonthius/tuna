@@ -65,10 +65,10 @@ class Element {
 
 // Each harness is one page load, with no browser storage; its page shell's
 // `tab` signal is TAB. DOCUMENT-LISTENERS gets the page's document-level
-// listeners.
+// listeners. CLIPBOARD is navigator.clipboard, absent unless given.
 async function harness(screen = new Element({ "data-revision": 7 }), platform = "Linux x86_64",
                        elementFromPoint = () => null, tab = "tab-1",
-                       { documentListeners = {}, caret = {} } = {}) {
+                       { documentListeners = {}, caret = {}, clipboard } = {}) {
   const posts = [];
   const errors = [];
   // The page's MutationObservers: each records what it observes.
@@ -83,7 +83,7 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
   const listeners = {};
   const fire = (evt) => (listeners[evt.type] ?? []).forEach((listener) => listener(evt));
   const context = createContext({
-    navigator: { platform },
+    navigator: { platform, clipboard },
     window: { addEventListener(type, listener) { (listeners[type] ??= []).push(listener); } },
     KeyboardEvent,
     MouseEvent,
@@ -115,7 +115,7 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
   });
   await module.evaluate();
   assert.deepEqual(Object.keys(actions).sort(),
-                   ["tunaKeyboard", "tunaPlace", "tunaPointer", "tunaScroll"]);
+                   ["tunaCopy", "tunaKeyboard", "tunaPaste", "tunaPlace", "tunaPointer", "tunaScroll"]);
   return {
     posts, errors, retries,
     fire,
@@ -128,6 +128,8 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
     point: (evt) => actions.tunaPointer.apply({ evt }),
     scroll: (el, reason) => actions.tunaScroll.apply({ el }, reason),
     place: (el) => actions.tunaPlace.apply({ el }),
+    paste: (evt) => actions.tunaPaste.apply({ evt }),
+    copy: (el) => actions.tunaCopy.apply({ el }),
   };
 }
 
@@ -237,6 +239,72 @@ test("captures facts immediately and ignores non-keydown events", async () => {
   assert.equal(h.posts[1].body.key, "b");
   h.posts[1].resolve({ status: 204 });
   await setImmediate();
+});
+
+test("the paste keys are neither cancelled nor sent, so the browser pastes; C-v is still a key", async () => {
+  // [platform, key, modifiers, whether it is a key Tuna gets]
+  const cases = [
+    ["Linux x86_64", "V", { ctrlKey: true, shiftKey: true, code: "KeyV" }, false],
+    ["Linux x86_64", "Insert", { shiftKey: true, code: "Insert" }, false],
+    ["Linux x86_64", "v", { ctrlKey: true, code: "KeyV" }, true],
+    ["Linux x86_64", "Insert", { code: "Insert" }, true],
+    ["Linux x86_64", "V", { ctrlKey: true, shiftKey: true, altKey: true, code: "KeyV" }, true],
+    ["MacIntel", "v", { metaKey: true, code: "KeyV" }, false],
+    ["MacIntel", "v", { ctrlKey: true, code: "KeyV" }, true],
+    ["MacIntel", "V", { ctrlKey: true, shiftKey: true, code: "KeyV" }, true],
+  ];
+  for (const [platform, key, modifiers, sent] of cases) {
+    const h = await harness(undefined, platform);
+    const evt = new KeyboardEvent(key, modifiers);
+    h.send(evt);
+    assert.deepEqual([platform, key, modifiers, evt.defaultPrevented, h.posts.length],
+                     [platform, key, modifiers, sent, sent ? 1 : 0]);
+  }
+});
+
+test("a paste sends the clipboard's text, and the page inserts nothing itself", async () => {
+  const h = await harness();
+  const paste = (text) => {
+    const evt = new Event("paste", { cancelable: true });
+    evt.clipboardData = { getData: (type) => (type === "text/plain" ? text : "") };
+    h.paste(evt);
+    return evt;
+  };
+  assert.equal(paste("one\r\ntwo").defaultPrevented, true);
+  assert.equal(paste("").defaultPrevented, true, "an empty or non-text clipboard sends nothing");
+  h.paste(new Event("click"));
+  assert.deepEqual(h.posts.map((post) => post.body),
+                   [{ version: 1, tab: "tab-1", type: "paste", sequence: 1, text: "one\r\ntwo" }]);
+});
+
+test("tunaCopy copies its instruction's text once and removes it; without the clipboard, or refused, it reports", async () => {
+  const instruction = (text) => ({
+    textContent: JSON.stringify(text), removed: false, remove() { this.removed = true; },
+  });
+  const writes = [];
+  const allowed = await harness(undefined, undefined, undefined, undefined, {
+    clipboard: { writeText(text) { writes.push(text); return Promise.resolve(); } },
+  });
+  const el = instruction("a\r<b>\u0000😀");
+  allowed.copy(el);
+  await setImmediate();
+  assert.deepEqual(writes, ["a\r<b>\u0000😀"]);
+  assert.equal(el.removed, true);
+  assert.equal(allowed.posts.length, 0);
+
+  const refused = await harness(undefined, undefined, undefined, undefined, {
+    clipboard: { writeText() { return Promise.reject(Object.assign(new Error("denied"), { name: "NotAllowedError" })); } },
+  });
+  refused.copy(instruction("x"));
+  await setImmediate();
+  assert.deepEqual(refused.posts.map((post) => post.body),
+                   [{ version: 1, tab: "tab-1", type: "clipboard", sequence: 1,
+                      outcome: "refused", reason: "NotAllowedError" }]);
+
+  const missing = await harness();
+  missing.copy(instruction("x"));
+  assert.deepEqual(missing.posts.map((post) => post.body),
+                   [{ version: 1, tab: "tab-1", type: "clipboard", sequence: 1, outcome: "unavailable" }]);
 });
 
 test("only network failures retry the same item; later items do not wait", async () => {
