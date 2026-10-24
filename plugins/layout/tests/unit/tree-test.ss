@@ -13,7 +13,7 @@
 (def some-buffer (buffer id: 0 changes: (new-source)))
 
 (def (leaf-of id)
-  (make-leaf (view id: id changes: (new-source) point-changes: (new-source) mark-changes: (new-source) placement-changes: (new-source) shown: some-buffer focus: #f position: 1 revision: 0
+  (make-leaf (view id: id changes: (new-source) focus-changes: (new-source) point-changes: (new-source) mark-changes: (new-source) placement-changes: (new-source) shown: some-buffer focus: #f position: 1 revision: 0
                    mark-position: #f mark-revision: 0 mark-on?: #f goal-column: #f
                    last-placement: (make-placement 0 #f 'top 0.) clients: (make-hash-table))
              #f))

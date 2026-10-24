@@ -1,8 +1,11 @@
 #lang :tuna/prelude
 ;;; Clicking and dragging in text (Emacs's mouse.el). Each command selects
 ;;; the view the pointer event names, as a click in a window does in Emacs,
-;;; and works in its focused text node, at the gap between characters the
-;;; event names (the layout contract's `posn-point`):
+;;; and works at the gap between characters the event names (the layout
+;;; contract's `posn-point`), in the text node holding it
+;;; (`posn-text-node`). A press or click in another text node of the
+;;; view's buffer first moves the view's focus there (the buffers
+;;; contract's `set-view-focus!`), which deactivates the region:
 ;;;
 ;;; - a press (`down-mouse-1`, `mouse-drag-region`) moves point there and
 ;;;   deactivates the region; the press is remembered, for its client,
@@ -28,9 +31,12 @@
 ;;; A press on a double or triple click selects by words or lines from the
 ;;; start, and dragging it extends by words or lines. A region the mouse
 ;;; made is temporary (the region contract's `set-temporary-region!`): the
-;;; next unshifted motion command ends it. A click below the view's text
-;;; goes to the text's end; a click on a line that is gone says so; a drag
-;;; released outside the text ends where the last movement put point.
+;;; next unshifted motion command ends it. A region stays in one text
+;;; node: a drag ignores positions outside the node pressed in, and a
+;;; shift-click in another node only moves point there. A click below the
+;;; view's text goes to the end of its focused text; a click on a line
+;;; that is gone says so; a drag released outside the text ends where the
+;;; last movement put point.
 ;;; A node's own click binding, such as a button's or a completion row's,
 ;;; shadows these. Views whose buffer other-view skips (the bar's) refuse,
 ;;; as `mouse-select-view` does.
@@ -147,11 +153,29 @@
      ((view-skipped? v) #f)
      (else (select-view v) v))))
 
-;; The position P names in V's focused text node, or #f.
+;; The text node P names a position in and that position (posn-text-node,
+;; posn-point), as (node . position), or #f.
+(def (clicked-text (p : posn)) => (Maybe :pair)
+  (let ((n (posn-text-node p))
+        (position (posn-point p)))
+    (and n position (cons n position))))
+
+;; The position P names in V's focused text node; #f when P names none,
+;; or one in another text node.
 (def (text-position (v : view) (p : posn)) => (Maybe :fixnum)
-  (let ((position (posn-point p))
-        (n (view-node v)))
-    (and position n (or (not (posn-node-id p)) (eq? (posn-node p) n)) position)))
+  (let (place (clicked-text p))
+    (and place (eq? (car place) (view-node v)) (cdr place))))
+
+;; The position P names in a text node of the buffer V shows, or #f; when
+;; that is not V's focused node, V's focus moves there first, with point
+;; at the position and no mark (set-view-focus!).
+(def (focus-position! (v : view) (p : posn)) => (Maybe :fixnum)
+  (let (place (clicked-text p))
+    (and place
+         (begin
+           (unless (eq? (car place) (view-node v))
+             (set-view-focus! v (car place) (cdr place)))
+           (cdr place)))))
 
 ;; Report a click on a line that is gone, when P names one.
 (def (report-gone-line (p : posn)) => :void
@@ -187,10 +211,10 @@
     (hash-remove! self.presses (current-client))
     (let (v (and p (select-posn-view p)))
       (when v
-        (let ((position (text-position v p))
-              (n (view-node v)))
-          (if (and position n)
-            (let* ((t (text-node-content n))
+        (let (position (focus-position! v p))
+          (if position
+            (let* ((n (:- (view-node v) node))
+                   (t (text-node-content n))
                    (mode (if shift? 0 (click-mode (event-clicks))))
                    (anchor (if (and shift? (view-mark-active? v)) (:- (view-mark v) :fixnum) (view-point v))))
               (cond
@@ -203,7 +227,8 @@
                 (select-between! v position position mode))))
             (report-gone-line p)))))))
 
-;; Where the held button moved: point there, the region from the press.
+;; Where the held button moved: point there, the region from the press;
+;; a position outside the text node pressed in is ignored.
 (def (drag-movement! (self : text-mouse-state)) => :void
   (let* ((p (event-start (last-command-event)))
          (pr (hash-get self.presses (current-client)))
@@ -215,18 +240,20 @@
           (select-between! v anchor position (press-mode pr) dragging?: #t))))))
 
 ;; Emacs `mouse-set-region`: the region from the press to the release, or
-;; to point when the release names no position in the text.
+;; to point when the release names no position in the text pressed in;
+;; without a press in the view, a click where the release was.
 (def (set-region-from-release! (self : text-mouse-state)) => :void
   (let* ((p (pointer-posn "mouse-set-region"))
          (pr (hash-get self.presses (current-client))))
     (hash-remove! self.presses (current-client))
     (let (v (and p (select-posn-view p)))
-      (when (and v (view-node v))
-        (let* ((end (or (text-position v p) (view-point v)))
-               (anchor (and pr (pressed-position pr v))))
+      (when v
+        (let (anchor (and pr (pressed-position pr v)))
           (if anchor
-            (select-between! v anchor end (press-mode pr))
-            (select-between! v end end (click-mode (event-clicks)))))))))
+            (select-between! v anchor (or (text-position v p) (view-point v)) (press-mode pr))
+            (let (end (or (focus-position! v p) (and (view-node v) (view-point v))))
+              (when end
+                (select-between! v end end (click-mode (event-clicks)))))))))))
 
 ;; Emacs `mouse-set-point`: point where the click was; a double or triple
 ;; click selects the word or the line there.
@@ -235,7 +262,7 @@
     (hash-remove! self.presses (current-client))
     (let (v (and p (select-posn-view p)))
       (when v
-        (let (position (text-position v p))
+        (let (position (focus-position! v p))
           (if position
             (select-between! v position position (click-mode (event-clicks)))
             (report-gone-line p)))))))
