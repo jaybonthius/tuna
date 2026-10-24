@@ -1,5 +1,5 @@
 /* The completion list's semantic tokens. Each is a design token
-   (design-tokens plugin) with a fallback, so the list stays readable
+   (stylesheets plugin) with a fallback, so the list stays readable
    without one. */
 :root {
   --completion-muted: var(--neutral-7, GrayText);

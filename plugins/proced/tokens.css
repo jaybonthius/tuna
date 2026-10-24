@@ -1,5 +1,5 @@
 /* The process list's semantic tokens (proced plugin). Each is a design
-   token (design-tokens plugin) with a fallback. */
+   token (stylesheets plugin) with a fallback. */
 :root {
   --proced-header-foreground: var(--neutral-7, GrayText);
   --proced-header-border: var(--neutral-4, ButtonBorder);

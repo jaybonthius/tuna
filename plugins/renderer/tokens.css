@@ -1,5 +1,5 @@
 /* The renderer's semantic tokens: buffers, spacers, cursors, the region,
-   status lines and the overlay on clickable parts. Each is a design token (design-tokens
+   status lines and the overlay on clickable parts. Each is a design token (stylesheets
    plugin) with a fallback, so the page stays readable without one. */
 :root {
   --buffer-padding: 0.5rem;

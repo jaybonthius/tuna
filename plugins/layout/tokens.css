@@ -1,5 +1,5 @@
 /* The layout's semantic tokens: the rules between parts, the tab strip
-   and the selected part. Each is a design token (design-tokens plugin)
+   and the selected part. Each is a design token (stylesheets plugin)
    with a fallback, so the page stays readable without one. */
 :root {
   --container-rule: var(--neutral-4, ButtonBorder);
