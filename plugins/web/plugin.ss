@@ -459,7 +459,7 @@
            (set! self.stylesheets-seen generation)
            (filter-map (lambda ((s : stylesheet))
                          (and (stylesheet-text s) (serve-stylesheet self s)))
-                       (stylesheets))))))
+                       (page-stylesheets))))))
 
 (def (serve-stylesheet (self : web-server) (s : stylesheet)) => served-stylesheet
   (let* ((key (cons (stylesheet-owner s) (stylesheet-name s)))

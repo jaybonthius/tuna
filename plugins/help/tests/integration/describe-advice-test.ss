@@ -45,7 +45,7 @@ prelude: :gerbil/core
 
 (def help-plugins
   [toy-commands keys rope-text-store settings no-session buffers layout
-   inspection-completion-provider help-buffer])
+   inspection-completion-provider help])
 
 (def (with-inspection (advisors : :list) (body : :procedure)) => :t
   (set! seen-table #f)
@@ -176,14 +176,14 @@ prelude: :gerbil/core
         (advise! ctx a-probe 'persistent override: (lambda (n) 100)))
       (with-inspection [persistent-owner]
         (lambda ()
-          (check (entry-owner (command-entry 'describe-advice)) => 'help-buffer)
-          (check (plugin-optional help-buffer) => [completion-service completion-ui-service])
-          (deactivate-plugin! help-buffer)
+          (check (entry-owner (command-entry 'describe-advice)) => 'help)
+          (check (plugin-optional help) => [completion-service completion-ui-service])
+          (deactivate-plugin! help)
           (check (command-ref 'describe-advice) => #f)
           (check (map advice-info-name (advice-target-info-advice (advice-for a-probe)))
                  => '(persistent))
           (check (a-probe 1) => 100)
-          (activate-plugin! help-buffer)
+          (activate-plugin! help)
           (call-command 'describe-advice)
           (check read-count => 1)))
       (check (a-probe 1) => 2))))

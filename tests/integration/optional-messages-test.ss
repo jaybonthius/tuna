@@ -39,7 +39,7 @@ prelude: :gerbil/core
 (def silent-plugins
   [commands keys rope-text-store settings session
    buffers layout autosave editing minibuffer
-   buttons help-buffer view-commands configuration-fixture swap-configuration
+   buttons help view-commands configuration-fixture swap-configuration
    configuration rename-command swap-commands endless-commands])
 
 (def optional-messages-test

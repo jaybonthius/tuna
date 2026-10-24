@@ -1,8 +1,8 @@
 prelude: :gerbil/core
 (import :std/test :tuna/plugins/completion/plugin)
-(export completion-engine-test)
+(export completion-test)
 
-(def completion-engine-test
+(def completion-test
   (test-suite "completion pipeline"
     (test-case "substring smart case and half-open highlights"
       (check ((substring-compile "buf") "Buffer-buffer") => [(cons 0 3)])

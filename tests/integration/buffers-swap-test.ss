@@ -60,7 +60,7 @@
   (keymap-set ctx "C-c D" 'swap-from-dependent))
 
 (def swap-plugins
-  [session-owner commands keys echo-area help-buffer rope-text-store
+  [session-owner commands keys echo-area help rope-text-store
    settings session buffers autosave layout
    view-commands html-renderer editing minibuffer
    swap-configuration swap-commands rename-command tree-buffer dependent-swapper])

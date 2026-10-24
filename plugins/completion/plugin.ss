@@ -10,7 +10,7 @@
         :tuna/kernel :tuna/plugins/commands/contract :tuna/plugins/keys/contract
         :tuna/plugins/buffers/contract :tuna/plugins/minibuffer/contract :tuna/plugins/settings/contract
         :tuna/plugins/completion/contract)
-(export completion-engine completion-styles completion-category-overrides
+(export completion completion-styles completion-category-overrides
         completion-pipeline substring-compile any-order-compile)
 
 (defsetting completion-styles '(substring) "Matching styles, tried in order until one matches.")
@@ -275,7 +275,7 @@
   (styles (lambda (self) self.styles))
   (annotators (lambda (self) self.annotators)))
 
-(defplugin (completion-engine ctx)
+(defplugin (completion ctx)
   "Completion reads with substring and any-order matching, command annotations and M-x; works without a list UI."
   provides: [completion-service]
   requires: [commands-service input-service buffers-service minibuffer-service settings-service]

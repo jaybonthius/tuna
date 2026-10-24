@@ -47,7 +47,7 @@
       (delete-file-or-directory directory #t))))
 
 (def layout-plugins
-  [session-owner commands keys echo-area help-buffer rope-text-store
+  [session-owner commands keys echo-area help rope-text-store
    settings session buffers autosave layout
    view-commands
    html-renderer editing minibuffer
@@ -207,5 +207,5 @@
                 ? (lambda (info)
                     (and (eq? (service-info-provider info) 'two-views)
                          (equal? (list-sort string<? (map symbol->string (service-info-dependents info)))
-                                 ["echo-area" "help-buffer" "html-renderer"
+                                 ["echo-area" "help" "html-renderer"
                                   "minibuffer" "view-commands"])))))))))

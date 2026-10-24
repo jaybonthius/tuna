@@ -1,6 +1,6 @@
 # completion
 
-Choosing from a list. A command calls `completing-read` (the contract) with candidates; the `completion-engine` plugin keeps the running question (the session), matches what you type, sorts recent answers first and asks the minibuffer for the prompt. Showing the candidates is a separate slot (`completion-ui-service`), which `completion-list` fills by default.
+Choosing from a list. A command calls `completing-read` (the contract) with candidates; the `completion` plugin keeps the running question (the session), matches what you type, sorts recent answers first and asks the minibuffer for the prompt. Showing the candidates is a separate slot (`completion-ui-service`), which `completion-list` fills by default.
 
 The plugin also holds:
 

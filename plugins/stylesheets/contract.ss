@@ -40,7 +40,7 @@ prelude: :gerbil/core
         replace-stylesheet
         stylesheet stylesheet? stylesheet-owner stylesheet-name stylesheet-path
         stylesheet-text stylesheet-digest stylesheet-replaced-by stylesheet-warning
-        stylesheets
+        page-stylesheets
         stylesheet-replacement stylesheet-replacement? stylesheet-replacement-owner stylesheet-replacement-name
         stylesheet-replacement-replaced-by stylesheet-replacement-path
         stylesheet-replacement-target
@@ -194,7 +194,7 @@ prelude: :gerbil/core
            (owner-order)))))
 
 ;; The stylesheets on the page, in page order.
-(def (stylesheets) => :list
+(def (page-stylesheets) => :list
   (map (lambda ((pair : :pair))
          (let ((key (car pair))
                (r (: (cdr pair) registration)))

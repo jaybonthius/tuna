@@ -101,7 +101,7 @@ prelude: :gerbil/core
 (def completion-engine-plugins
   [commands keys test-messages rope-text-store settings no-session
    buffers layout editing minibuffer html-renderer
-   completion-engine fixture])
+   completion fixture])
 
 (def (run-completion (ui :? plugin) (thunk : :procedure)) => :t
   (set! results []) (set! captured-annotations []) (set! redraws [])

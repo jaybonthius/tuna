@@ -13,7 +13,7 @@
   (map (lambda (s)
          [(stylesheet-owner s) (stylesheet-name s)
           (path-strip-directory (stylesheet-path s)) (stylesheet-replaced-by s)])
-       (stylesheets)))
+       (page-stylesheets)))
 
 (def (replacements)
   (map (lambda (r)
@@ -23,7 +23,7 @@
 
 (def (find-stylesheet owner name)
   (find (lambda (s) (and (eq? (stylesheet-owner s) owner) (eq? (stylesheet-name s) name)))
-        (stylesheets)))
+        (page-stylesheets)))
 
 ;; A file the reread test changes, and the plugin that adds it with its
 ;; context argument and an absolute path.
@@ -47,7 +47,7 @@
             (check (string-length (stylesheet-digest s)) => 64)
             (check (stylesheet-warning s) => #f)
             (check (string-prefix? "/" (stylesheet-path s)) => #t))))
-      (check (stylesheets) => []))
+      (check (page-stylesheets) => []))
 
     (test-case "a replacement wins, #f removes, and turning the theme off restores both"
       (call-with-fresh-kernel [styled-a styled-b theme]

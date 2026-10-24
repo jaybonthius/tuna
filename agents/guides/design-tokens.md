@@ -1,8 +1,8 @@
 # Design tokens plugins may use
 
-The `design-tokens` plugin (the stylesheets package's plugin, `plugins/stylesheets/plugin.ss`) adds one stylesheet, `(design-tokens tokens)`: the raw design scale as CSS custom properties. Its `variant:` option picks a shipped file in `plugins/stylesheets/tokens/`; today only `stellar-default`, Stellar's output for `tokens/stellar.config.json` with only the core sections. Never edit the generated file. Change the config and run `make tokens STELLAR=/path/to/stellar`. The Stellar binary and its key belong to the owner and are not in this repository. Normal builds and tests never run it.
+The `stylesheets` plugin (`plugins/stylesheets/plugin.ss`) adds one stylesheet, `(stylesheets tokens)`: the raw design scale as CSS custom properties. Its `variant:` option picks a shipped file in `plugins/stylesheets/tokens/`; today only `stellar-default`, Stellar's output for `tokens/stellar.config.json` with only the core sections. Never edit the generated file. Change the config and run `make tokens STELLAR=/path/to/stellar`. The Stellar binary and its key belong to the owner and are not in this repository. Normal builds and tests never run it.
 
-Plugins rely only on the subset below, so that moving to another design system means mapping these names in one file. Use them in a plugin's semantic tokens file, always with a fallback (`--completion-selected-background: var(--primary-3, Highlight)`), never directly in rules. `make test` checks that the shipped file defines every name here (`plugins/stylesheets/tests/integration/design-tokens-test.ss`); update both together.
+Plugins rely only on the subset below, so that moving to another design system means mapping these names in one file. Use them in a plugin's semantic tokens file, always with a fallback (`--completion-selected-background: var(--primary-3, Highlight)`), never directly in rules. `make test` checks that the shipped file defines every name here (`plugins/stylesheets/tests/integration/tokens-test.ss`); update both together.
 
 `N` is a step number; negative steps are written with a second hyphen (`--size--2`).
 

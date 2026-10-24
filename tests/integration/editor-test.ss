@@ -34,7 +34,7 @@
 (export editor-test)
 
 (def editor-plugins
-  [commands keys echo-area help-buffer rope-text-store
+  [commands keys echo-area help rope-text-store
    settings no-session buffers layout html-renderer
    editing minibuffer
    rename-command services-help digit-highlighter])

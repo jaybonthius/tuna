@@ -47,7 +47,7 @@
 (def editor-plugins
   [session-owner commands keys echo-area rope-text-store settings
    session buffers autosave layout view-commands
-   html-renderer editing minibuffer completion-engine
+   html-renderer editing minibuffer completion
    swap-configuration swap-commands])
 
 ;; One run of Tuna on DIRECTORY, booted as main does: activate, restore,

@@ -109,7 +109,7 @@ Answers are remembered per question kind: `M-p` and `M-n` step through earlier a
 
 ![Which plugin does what](diagrams/completion-plugins.svg)
 
-When a command asks you to choose (a command, later a file or a buffer), it calls `completing-read` with a list of **candidates**. A candidate is a small record, the text you see and the value you get back, not a string with hidden data as in Emacs. Two plugins share the work, the way Vertico, Orderless and Marginalia do in Emacs, but without advice. The **completion** plugin (`completion-engine`) holds:
+When a command asks you to choose (a command, later a file or a buffer), it calls `completing-read` with a list of **candidates**. A candidate is a small record, the text you see and the value you get back, not a string with hidden data as in Emacs. Two plugins share the work, the way Vertico, Orderless and Marginalia do in Emacs, but without advice. The **completion** plugin (`completion`) holds:
 
 - the **engine**, which keeps the running question (the **session**: what you typed, the matches, the selection), sorts recent answers first, and updates the list in the same redraw as your keystroke;
 - the **matching styles**, which decide what matches: in the starter, `any-order`, the parts you type, separated by spaces, in any order (`view sel` finds `select-view-left`), each as plain text or a regular expression, with upper case mattering only if you type it, then `substring`; other plugins can add styles;
@@ -343,7 +343,7 @@ The defaults (run 0.85, margin 0.1, offer 0.4) come from recordings of command n
 
 Every plugin draws its nodes as HTML and styles that HTML with its own CSS files, which it adds when it turns on and which go away when it turns off. Usually there are two:
 
-- `tokens.css`, the plugin's **semantic tokens**: CSS custom properties that say what its parts mean, named after its classes, such as `--completion-selected-background`. Each is defined with a **design token** from the `design-tokens` plugin (Stellar's palettes, sizes and fonts) and a fallback, such as a system colour, so the page stays readable without design tokens.
+- `tokens.css`, the plugin's **semantic tokens**: CSS custom properties that say what its parts mean, named after its classes, such as `--completion-selected-background`. Each is defined with a **design token** from the `stylesheets` plugin (Stellar's palettes, sizes and fonts) and a fallback, such as a system colour, so the page stays readable without design tokens.
 - `rules.css`, which styles the plugin's HTML using only those names.
 
 Follow the numbers in the picture: (1) completion's tokens use a design token; (2) its rules use its tokens; (3) your `init.ss` may replace its tokens file with your own; (4) the web transport links every stylesheet in the page's head, in `init.ss` order, so design tokens come first and your own files last.
@@ -434,7 +434,7 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 - **Input item**: one unit of input from a browser tab, such as a key press; the kernel queues it without looking inside.
 - **Package**: a directory with its own `gerbil.pkg`; Gerbil names and builds its modules together. **Concept package**: one concept's contract and default plugin, under `plugins/<concept>/`.
 - **Stylesheet**: a CSS file on the page, owned by a plugin or by your `init.ss` and named, such as `(completion-list rules)`.
-- **Design tokens**: the raw design scale (palette steps, sizes, fonts) as CSS custom properties, from the `design-tokens` plugin of the stylesheets package.
+- **Design tokens**: the raw design scale (palette steps, sizes, fonts) as CSS custom properties, from the `stylesheets` plugin of the stylesheets package.
 - **Semantic tokens**: a plugin's own CSS custom properties naming what its parts mean, such as `--completion-selected-background`, defined with design tokens.
 - **Theme**: a plugin that replaces other plugins' stylesheets.
 - **Session slot**: a named piece of one plugin's state that the session plugin saves while Tuna is idle and on exit, and hands back on the next start.

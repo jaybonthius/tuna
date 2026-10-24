@@ -60,7 +60,7 @@
         (only-in :tuna/kernel current-context)
         :tuna/plugins/configuration/plugin)
 
-(use-plugin design-tokens        ; colours, sizes and fonts other stylesheets use;
+(use-plugin stylesheets        ; colours, sizes and fonts other stylesheets use;
   variant: stellar-default)      ; first, so later stylesheets can redefine them
 (use-plugin commands)
 (use-plugin keys)
@@ -85,11 +85,11 @@
 (use-plugin editing)             ; typing and moving; C-SPC, C-x C-x and shift-select (the
                                  ; delete-selection setting); C-w, M-w, C-y, M-y; clicking and dragging
 (use-plugin minibuffer)
-(use-plugin completion-engine    ; M-x, matching styles, command annotations
+(use-plugin completion    ; M-x, matching styles, command annotations
   config: (context-set-setting! (current-context) completion-styles '(any-order substring)))
 (use-plugin completion-list)     ; the candidates in rows under the minibuffer
 (use-plugin echo-area)           ; in the bar, under the minibuffer
-(use-plugin help-buffer)         ; *Help*; C-h q closes it; M-x describe-advice,
+(use-plugin help)         ; *Help*; C-h q closes it; M-x describe-advice,
                                  ; describe-stylesheets, reload-stylesheets
 (use-plugin configuration        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)

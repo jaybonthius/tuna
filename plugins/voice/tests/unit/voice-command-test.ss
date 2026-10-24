@@ -77,7 +77,7 @@
 
 (def voice-command-plugins
   [commands keys test-messages rope-text-store settings no-session buffers layout minibuffer
-   completion-engine toy-completion-ui fake-microphone voice spoken-commands])
+   completion toy-completion-ui fake-microphone voice spoken-commands])
 
 (def tab (make-client "tab"))
 

@@ -1,6 +1,6 @@
-;;; The stylesheets package's design-tokens plugin: its variant: option
+;;; The stylesheets package's stylesheets plugin: its variant: option
 ;;; accepts only shipped variants, checked when init.ss loads; it
-;;; registers the variant's file as (design-tokens tokens) with the file's
+;;; registers the variant's file as (stylesheets tokens) with the file's
 ;;; text; and the file defines every token agents/guides/design-tokens.md
 ;;; lets plugins use.
 (import :std/misc/ports
@@ -11,13 +11,13 @@
         :tuna/plugins/stylesheets/contract
         :tuna/plugins/stylesheets/plugin
         "../../../../tuna/tests/support/kernel")
-(export design-tokens-test)
+(export tokens-test)
 
 (def tokens-directory
   (path-normalize (path-expand "../../tokens" (path-expand (this-source-directory)))))
 
 (def (call-with-temporary-directory proc)
-  (let (directory (path-expand (string-append "tuna-design-tokens-test-"
+  (let (directory (path-expand (string-append "tuna-tokens-test-"
                                               (number->string (random-integer 1000000000)))
                                (getenv "TMPDIR" "/tmp")))
     (create-directory* directory)
@@ -73,7 +73,7 @@
          "string" "string-affix" "string-delim" "string-doc" "string-escape" "string-regex"
          "number" "operator" "type" "error" "deleted" "inserted" "emph" "strong"])))
 
-(def design-tokens-test
+(def tokens-test
   (test-suite "tuna/plugins/stylesheets/design-tokens"
     (test-case "variant: accepts only a shipped variant, checked when init.ss loads"
       (check design-token-variants => '(stellar-default))
@@ -84,22 +84,22 @@
                 design-token-variants)
       (call-with-temporary-directory
        (lambda (directory)
-         (check (check-init directory "(use-plugin design-tokens variant: stellar-default)") => #f)
-         (check (check-init directory "(use-plugin design-tokens)") => #f)
-         (let (problem (check-init directory "(use-plugin design-tokens variant: stellar-defualt)"))
+         (check (check-init directory "(use-plugin stylesheets variant: stellar-default)") => #f)
+         (check (check-init directory "(use-plugin stylesheets)") => #f)
+         (let (problem (check-init directory "(use-plugin stylesheets variant: stellar-defualt)"))
            (check (and (string-contains
                         problem
-                        "init.ss line 3: design-tokens option variant must be one of: stellar-default")
+                        "init.ss line 3: stylesheets option variant must be one of: stellar-default")
                        #t)
                   => #t)))))
 
-    (test-case "the plugin adds its variant's file as (design-tokens tokens)"
-      (call-with-fresh-kernel [design-tokens]
+    (test-case "the plugin adds its variant's file as (stylesheets tokens)"
+      (call-with-fresh-kernel [stylesheets]
         (lambda ()
-          (let (sheets (stylesheets))
+          (let (sheets (page-stylesheets))
             (check (length sheets) => 1)
             (let (s (car sheets))
-              (check [(stylesheet-owner s) (stylesheet-name s)] => '(design-tokens tokens))
+              (check [(stylesheet-owner s) (stylesheet-name s)] => '(stylesheets tokens))
               (check (stylesheet-path s) => (path-expand "stellar-default.css" tokens-directory))
               (check (stylesheet-warning s) => #f)
               (check (stylesheet-text s) => (read-file-string (stylesheet-path s))))))))

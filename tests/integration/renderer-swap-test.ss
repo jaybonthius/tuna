@@ -35,7 +35,7 @@
 
 
 (def renderer-plugins
-  [session-owner commands keys echo-area help-buffer rope-text-store
+  [session-owner commands keys echo-area help rope-text-store
    settings no-session buffers layout
    view-commands
    html-renderer editing minibuffer

@@ -2,7 +2,7 @@
 ;;; page in order with owners, files and replacements; the replacement
 ;;; check; the var() check; rereading; and one echo-area line when a check
 ;;; fails. The lines about the stylesheets of the plugins help needs
-;;; (layout, help-buffer) are left out of what is checked.
+;;; (layout, help) are left out of what is checked.
 prelude: :gerbil/core
 (import :std/interface
         :std/misc/ports
@@ -25,7 +25,7 @@ prelude: :gerbil/core
 (export describe-stylesheets-test)
 
 (def help-plugins
-  [test-messages toy-commands keys rope-text-store settings no-session buffers layout help-buffer])
+  [test-messages toy-commands keys rope-text-store settings no-session buffers layout help])
 
 ;; A stylesheet file the test writes, and the plugin that adds it.
 (def written-file (make-parameter #f))
@@ -48,12 +48,12 @@ prelude: :gerbil/core
 (def (help-lines) => :list
   (check (help-output-title (current-help)) => "Stylesheets")
   (filter (lambda ((line : :string))
-            (not (or (string-prefix? "(layout " line) (string-prefix? "(help-buffer " line))))
+            (not (or (string-prefix? "(layout " line) (string-prefix? "(help " line))))
           (help-output-lines (current-help))))
 
 (def (path-of (owner : :symbol) (name : :symbol)) => :string
   (stylesheet-path (find (lambda (s) (and (eq? (stylesheet-owner s) owner) (eq? (stylesheet-name s) name)))
-                         (stylesheets))))
+                         (page-stylesheets))))
 
 (def (warnings) => :list
   (let (tail (member "Warnings:" (help-lines)))

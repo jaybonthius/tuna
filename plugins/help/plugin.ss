@@ -17,7 +17,7 @@
         :tuna/plugins/help/contract
         "describe-advice"
         "describe-stylesheets")
-(export help-buffer)
+(export help)
 
 (def help-buffer-name "*Help*")
 
@@ -54,7 +54,7 @@
   (show-help! (lambda (self output) (show! self output)))
   (current-help (lambda (self) self.output)))
 
-(defplugin (help-buffer ctx)
+(defplugin (help ctx)
   "Shows help output in the *Help* buffer; C-h q closes it. M-x describe-advice, describe-stylesheets, reload-stylesheets."
   provides: [help-service]
   requires: [commands-service input-service buffers-service layout-service]

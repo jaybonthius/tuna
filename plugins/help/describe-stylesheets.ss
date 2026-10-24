@@ -112,7 +112,7 @@
 ;; One line per failing check, in page order: what describe-stylesheets
 ;; lists under "Warnings:".
 (def (stylesheet-warnings) => :list
-  (let* ((sheets (stylesheets))
+  (let* ((sheets (page-stylesheets))
          (texts (map (lambda ((s : stylesheet))
                        (cons s (strip-comments (or (stylesheet-text s) ""))))
                      sheets))
@@ -169,7 +169,7 @@
 
 ;; List the page's stylesheets in *Help* and check them.
 (def (describe-stylesheets!) => :void
-  (let ((sheets (stylesheets))
+  (let ((sheets (page-stylesheets))
         (removals (removal-lines))
         (warnings (stylesheet-warnings)))
     (show-help "Stylesheets"

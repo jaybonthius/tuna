@@ -1,7 +1,7 @@
 #lang :tuna/prelude
-;;; The design-tokens plugin, the stylesheets package's plugin: the raw
+;;; The stylesheets plugin, the stylesheets package's plugin: the raw
 ;;; design scale (palettes, sizes, fonts, radii, shadows, motion) as one
-;;; stylesheet, (design-tokens tokens), first on the page when init.ss
+;;; stylesheet, (stylesheets tokens), first on the page when init.ss
 ;;; declares this plugin first. The variant: option picks one of the
 ;;; pregenerated files in tokens/; agents/guides/design-tokens.md names
 ;;; the tokens other plugins may use.
@@ -13,7 +13,7 @@
 (import :tuna/kernel
         :tuna/lib/plugin-options
         :tuna/plugins/stylesheets/contract)
-(export design-tokens
+(export stylesheets
         design-token-variants)
 
 ;; The shipped variants, each tokens/<variant>.css.
@@ -25,11 +25,11 @@
                     (lambda (value) (and (memq value design-token-variants) #t))
                     string->symbol))
 
-(defplugin (design-tokens ctx)
+(defplugin (stylesheets ctx)
   "Adds the design tokens stylesheet that the variant: option names."
   (add-stylesheet 'tokens (string-append "tokens/"
-                                         (symbol->string (plugin-option design-tokens 'variant))
+                                         (symbol->string (plugin-option stylesheets 'variant))
                                          ".css")))
 
-(defplugin-options design-tokens
+(defplugin-options stylesheets
   (variant 'stellar-default "Which shipped design tokens file to use." variant-type))

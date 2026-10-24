@@ -33,7 +33,7 @@
 (export web-test)
 
 (def browser-editor-plugins
-  [commands keys web-transport echo-area help-buffer
+  [commands keys web-transport echo-area help
    rope-text-store settings no-session buffers layout
    minibuffer view-commands html-renderer editing endless-commands services-help])
 

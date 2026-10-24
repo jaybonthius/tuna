@@ -57,13 +57,13 @@
 
 ;; The page as (owner name).
 (def (page)
-  (map (lambda (s) [(stylesheet-owner s) (stylesheet-name s)]) (stylesheets)))
+  (map (lambda (s) [(stylesheet-owner s) (stylesheet-name s)]) (page-stylesheets)))
 
 ;; The stylesheet in slot (OWNER NAME) as (replaced-by path), the path
 ;; relative to the repository, or to init.ss's directory DIRECTORY.
 (def (slot (owner : :symbol) (name : :symbol) (directory : :string))
   (let* ((s (find (lambda (s) (and (eq? (stylesheet-owner s) owner) (eq? (stylesheet-name s) name)))
-                  (stylesheets)))
+                  (page-stylesheets)))
          (path (stylesheet-path s)))
     [(stylesheet-replaced-by s)
      (cond
@@ -89,11 +89,11 @@
 ")
 
 (def (check-clean-page)
-  (check (filter-map (lambda (s) (stylesheet-warning s)) (stylesheets)) => [])
+  (check (filter-map (lambda (s) (stylesheet-warning s)) (page-stylesheets)) => [])
   (check (stylesheet-warnings) => []))
 
 (def starter-page
-  '((design-tokens tokens)
+  '((stylesheets tokens)
     (web-transport tokens) (web-transport rules)
     (layout tokens) (layout rules)
     (html-renderer tokens) (html-renderer rules)
@@ -101,7 +101,7 @@
     (minibuffer rules)
     (completion-list tokens) (completion-list rules)
     (echo-area rules)
-    (help-buffer rules)))
+    (help rules)))
 
 (def stylesheets-test
   (test-suite "the real plugins' stylesheets"

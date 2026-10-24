@@ -40,7 +40,7 @@
   (map (lambda (s)
          [(stylesheet-owner s) (stylesheet-name s)
           (path-strip-directory (stylesheet-path s)) (stylesheet-replaced-by s)])
-       (stylesheets)))
+       (page-stylesheets)))
 
 (def stylesheets-config-test
   (test-suite "stylesheets from init.ss"
@@ -63,7 +63,7 @@
                (check (page) => '((styled-a tokens "a-tokens.css" #f)
                                   (styled-a rules "my-rules.css" init)
                                   (init mine "mine.css" #f)))
-               (let (mine (find (lambda (s) (eq? (stylesheet-name s) 'mine)) (stylesheets)))
+               (let (mine (find (lambda (s) (eq? (stylesheet-name s) 'mine)) (page-stylesheets)))
                  (check (stylesheet-path mine) => (path-expand "mine.css" directory))
                  (check (stylesheet-text mine) => ".mine { color: red; }\n"))))))))
 
