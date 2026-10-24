@@ -1,6 +1,6 @@
 # Brief: spoken commands
 
-**Date:** 2026-10-24. **Status:** approved 2026-10-24 (owner), with candidate lists and the knobs below. Builds on [voice dictation](2026-10-voice-dictation.md). Touches three repositories: the owner's parakeet.cpp (a new local branch; his working tree is left alone), `gerbil-parakeet`, and Tuna.
+**Date:** 2026-10-24. **Status:** approved 2026-10-24 (owner), with candidate lists and the knobs below; built 2026-10-24 (all three stages; see [the overview](../overview.md#spoken-commands) for what was built, which is current where this brief differs: the default thresholds are run 0.85, margin 0.1, offer 0.4; a `voice-command-unique-grace` setting was added; easier spoken names come from the `voice-command-names` setting, not a `spoken:` keyword on `define-command`; the catch-all branch was tried and not kept). Builds on [voice dictation](2026-10-voice-dictation.md). Touches three repositories: the owner's parakeet.cpp (a new local branch; his working tree is left alone), `gerbil-parakeet`, and Tuna.
 
 ## What we're building and why
 
@@ -15,7 +15,7 @@ Recognition is limited to a grammar made of every command's spoken name, so what
 
 ## The picture
 
-**Status:** planned.
+**Status:** built as drawn.
 
 ![How a spoken command runs](../diagrams/voice-commands.svg)
 

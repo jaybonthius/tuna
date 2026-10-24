@@ -308,6 +308,31 @@ Three plugins share the job, and the web plugin knows nothing about microphones.
 
 The browser gives a page the microphone only on HTTPS or `localhost`; elsewhere, or when you refuse it, the echo area says why.
 
+## Spoken commands
+
+**Status:** built 2026-10-24 (brief [spoken commands](briefs/2026-10-voice-commands.md)). In the demo configuration, on `C-c c`.
+
+Press `C-c c` and say a command's name, "split view right": Tuna runs `split-view-right`. Every visible command can be said, including ones a plugin adds later, because the list is made fresh each time from the commands that exist. A command's spoken name is its name with hyphens as spaces; a command whose name has digits or other symbols can't be said, unless you give it a spoken name in `voice-command-names`.
+
+![How a spoken command runs](diagrams/voice-commands.svg)
+
+*Built as drawn.*
+
+The speech worker listens with a **grammar**, the list of every spoken name, so what it hears can only come out as a real command; it uses a fast English model (`realtime_eou`) that also notices when you stop talking. The echo area says "Say a command…", then what it has heard so far. You never press a key to finish. Listening ends by itself:
+
+- when the model reports the end of what you said;
+- when nothing new is heard for `voice-command-end-pause` seconds after you started speaking;
+- as soon as what you have said can only become one name ("split view r…"): at once if it already is the whole name, otherwise after `voice-command-unique-grace` seconds for the rest of the name (`voice-command-finish-when-unique`);
+- after `voice-command-start-timeout` seconds if you say nothing: "No command heard".
+
+`C-g` while listening cancels. A grammar forces any speech into the nearest name, so Tuna also computes a **confidence**, from 0 to 1: how little the grammar had to force the result, comparing its score with the score of the best transcription without the grammar over the same audio. Then:
+
+- **Clear** (at least `voice-command-run-confidence`, and at least `voice-command-margin` ahead of the next best): it runs, and the echo area says "Ran split-view-right (voice, 0.99)".
+- **Unclear:** the candidates at least `voice-command-offer-confidence` confident, at most `voice-command-candidates` of them, appear as the `M-x` list, best first and selected; `RET` runs it, `C-g` cancels. A command in `voice-command-always-ask` always asks.
+- **Nothing:** "Didn't catch a command".
+
+The defaults (run 0.85, margin 0.1, offer 0.4) come from recordings of command names made once with a speech synthesizer and kept with the tests; `make voice-command-check` runs them through the worker and shows what each setting would do. Most speech that is not a command, and noise, finds no name at all.
+
 ## How it looks: HTML and stylesheets
 
 **Status:** built.
@@ -359,6 +384,9 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 - **Node**: one piece of a buffer's tree; a text node holds editable text.
 - **Page machinery** (the page service): what the web plugin offers other plugins on the browser page: their own scripts, their own addresses to post to, one-time instructions to one tab.
 - **Speech worker**: the separate program that turns audio into text, so recognizing speech never freezes Tuna.
+- **Grammar**: the list of phrases recognition is allowed to produce; for spoken commands, every command's spoken name.
+- **Confidence** (of a spoken command): how little the grammar had to force what was heard, from 0 to 1, comparing its score with the free score.
+- **Free score**: the score of the best transcription with no grammar, over the same audio.
 - **Command**: a named action, such as `forward-char`, usually bound to a key.
 - **Editor thread**: the single worker that runs commands and is the only thing allowed to change editor state.
 - **Screen**: one complete drawing of what a browser tab shows, sent as HTML.
