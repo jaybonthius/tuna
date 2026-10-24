@@ -106,3 +106,4 @@ Tiers are ordered by what blocks daily use, then by what each piece builds on. W
 - Compressed screen stream (Brotli or Zstandard streaming compression; needs Gerbil packages the owner builds).
 - The optional [profiler plugin](briefs/2026-10-profiler.md), with service-operation advice.
 - Advice targets that declare their dependency (`TODO.md`).
+- `completing-read` moves into the minibuffer contract, completion becomes the engine plugged into it, and M-x moves to `commands` (`TODO.md`).
