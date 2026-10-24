@@ -1,4 +1,4 @@
-# How does speech become text in a buffer? (planned)
+# How does speech become text in a buffer? (built 2026-10-24)
 vars: {
   d2-config: {
     layout-engine: dagre
@@ -10,6 +10,7 @@ shape: sequence_diagram
 you: You
 browser: Browser tab
 web: Web plugin (page machinery)
+mic: Microphone plugin
 voice: Voice plugin
 worker: Speech worker (separate process)
 editor: Editor thread
@@ -18,19 +19,21 @@ start: Start {
   you -> browser: "1. C-c v"
   browser -> editor: 2. the key, as always
   editor -> voice: "3. voice-dictate: mark where\nthe text goes; start the worker"
-  voice -> browser: "4. this tab's next screen says\n\"start the microphone\"" {
+  voice -> mic: "4. start capturing\nthis tab"
+  mic -> browser: "5. this tab's next screen says\n\"start the microphone\"" {
     style.stroke-dash: 3
   }
 }
 
 talk: While you talk {
-  you -> browser: 5. speech
-  browser -> web: "6. audio, 16 kHz, a chunk\nevery tenth of a second"
-  web -> voice: "7. the chunk, to the microphone\nplugin's address (not via the editor thread)"
-  voice -> worker: 8. the chunk, over a pipe
-  worker -> voice: "9. new text, when a chunk\nof speech is decoded"
-  voice -> editor: 10. insert it at the mark
-  editor -> browser: "11. next screen: the line\nwith the new words" {
+  you -> browser: 6. speech
+  browser -> web: "7. audio, 16 kHz, a chunk\nevery tenth of a second"
+  web -> mic: "8. the chunk, to the microphone\nplugin's address (not via the editor thread)"
+  mic -> voice: 9. the chunk
+  voice -> worker: 10. the chunk, over a pipe
+  worker -> voice: "11. new text, when a chunk\nof speech is decoded"
+  voice -> editor: 12. insert it at the mark
+  editor -> browser: "13. next screen: the line\nwith the new words" {
     style.stroke-dash: 3
   }
 }

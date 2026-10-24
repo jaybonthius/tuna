@@ -41,6 +41,8 @@
         (only-in :tuna/kernel current-context)
         :tuna/plugins/reload-config/plugin
         :tuna/plugins/proced/plugin
+        :tuna/plugins/microphone/plugin
+        :tuna/plugins/voice/plugin
         "../tests/support/endless-commands"
         "../tests/support/services-help"
         "../tests/support/rename-command"
@@ -91,7 +93,7 @@
 (use-plugin endless-commands)    ; C-c l and C-c L: loops to quit with C-g
 (use-plugin services-help)       ; C-h s: describe-services
 (use-plugin rename-command)      ; C-c r: rename the buffer in the minibuffer
-;; C-c v, C-c w, C-c B: swap renderer, layout, buffers.
+;; C-c V, C-c w, C-c B: swap renderer, layout, buffers.
 (use-plugin swap-commands
   config:
   (context-set-swap-providers! (current-context)
@@ -108,6 +110,11 @@
 (use-plugin sidebar-demo)        ; C-c d: a sidebar of buffer buttons pinned to the left, or killed
 (use-plugin proced               ; C-c P: *Processes*, read from /proc every second
   config: (keymap-set "C-c P" 'proced))
+(use-plugin microphone)          ; a tab's microphone, for voice
+;; C-c v: dictate at point; C-c v again or C-g stops. Needs the speech
+;; worker (make voice-worker) and the model in the voice plugin's options.
+(use-plugin voice
+  config: (keymap-set "C-c v" 'voice-dictate))
 (use-plugin reload-config        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)
           (keymap-set "C-c C-r" 'show-config-report))

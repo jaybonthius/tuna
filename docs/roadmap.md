@@ -46,6 +46,10 @@ Brief: [briefs/2026-10-drawing-only-what-changed.md](briefs/2026-10-drawing-only
 
 Brief: [briefs/2026-10-selecting-text.md](briefs/2026-10-selecting-text.md). The mark, the region and the kill ring from the keyboard, with shift-selection and a `delete-selection` setting; clicking to move the cursor into any text of a buffer; dragging, double-click, triple-click and shift-click; copying to and pasting from the system clipboard. See [how Tuna works](overview.md#selecting-text-and-the-clipboard).
 
+## Done: voice dictation (2026-10-24)
+
+Brief: [briefs/2026-10-voice-dictation.md](briefs/2026-10-voice-dictation.md). `C-c v` in the demo inserts what you say at the cursor as you say it, through a separate speech worker (parakeet, nemotron model); the web plugin's page machinery, a microphone plugin and a voice plugin. Spoken commands with a grammar come later and reuse all of it. See [how Tuna works](overview.md#voice-dictation).
+
 ## Research before windows and scrolling
 
 How the server learns layout facts from the browser (event-attached facts, measurement requests, Rocket components for local-only behavior). See [the capability-audit brief](briefs/2026-10-capability-audit.md).

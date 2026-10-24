@@ -1,4 +1,4 @@
-;;; Integration: the renderer slot swapped live (C-c v) to the bare HTML
+;;; Integration: the renderer slot swapped live (C-c V) to the bare HTML
 ;;; contract double (plugins/renderer/tests/support/bare-renderer.ss) and back
 ;;; while editing, with tree buffers, two views, and a prompt, driven by
 ;;; keys through the real editor loop.
@@ -51,13 +51,13 @@
 
 (def renderer-swap-test
   (test-suite "integration: swapping the renderer live"
-    (test-case "C-c v swaps to the bare renderer and back without losing text or point"
+    (test-case "C-c V swaps to the bare renderer and back without losing text or point"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (start-editor-loop!)
          (type! "a" "<" "b" "RET" "c" "C-p")
          (check (contains? (screen) "class=\"line\"") => #t)
-         (type! "C-c" "v")
+         (type! "C-c" "V")
          (check (on-baton (lambda () (plugin-active? bare-renderer))) => #t)
          (let (html (screen))
            (check (contains? html "data-renderer=\"bare\"") => #t)
@@ -69,7 +69,7 @@
          ;; Editing goes on under the bare renderer.
          (type! "C-e" "!")
          (check (contains? (screen) "a&lt;b!<span class=\"cursor\"> </span>\nc") => #t)
-         (type! "C-c" "v")
+         (type! "C-c" "V")
          (let (html (screen))
            (check (contains? html "data-renderer") => #f)
            (check (contains? html "a&lt;b!<span class=\"cursor\"> </span>") => #t)
@@ -80,7 +80,7 @@
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (start-editor-loop!)
-         (type! "C-c" "v" "C-c" "b")
+         (type! "C-c" "V" "C-c" "b")
          (check (contains? (screen) "<div class=\"column\"><h1 class=\"heading\">Welcome to Tuna</h1><pre class=\"text\"><span class=\"cursor\">T</span>his buffer")
                 => #t))))
 
@@ -88,7 +88,7 @@
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (start-editor-loop!)
-         (type! "x" "y" "C-c" "v" "C-c" "w" "C-b")
+         (type! "x" "y" "C-c" "V" "C-c" "w" "C-b")
          (let (html (screen))
            (check (contains? html "x<span class=\"cursor\">y</span>") => #t)
            (check (contains? html "xy<span class=\"inactive-cursor\"> </span>") => #t)
@@ -98,7 +98,7 @@
       (call-with-fresh-kernel renderer-plugins
        (lambda ()
          (start-editor-loop!)
-         (type! "C-c" "v" "C-c" "r" "o" "k")
+         (type! "C-c" "V" "C-c" "r" "o" "k")
          (check (contains? (screen) "<span class=\"prompt\">New name: </span><pre class=\"text\">ok<span class=\"cursor\"> </span></pre></div></article></section>") => #t)
          (type! "C-g")
          (check (contains? (screen) "New name: ") => #f)

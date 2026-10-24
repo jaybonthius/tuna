@@ -1,6 +1,6 @@
 # Brief: voice dictation
 
-**Date:** 2026-10-23. **Status:** approved 2026-10-23 (owner). Uses the owner's local, unpublished [`gerbil-parakeet`](../../../gerbil-parakeet/) binding and the `grammar-constraints` branch of `~/Code/parakeet.cpp`. Spoken commands with a grammar come later and reuse all of this.
+**Date:** 2026-10-23. **Status:** approved 2026-10-23 (owner); built 2026-10-24 (stage 1 the worker, stages 2 and 3 the page machinery, microphone and voice plugins). Current description: [how Tuna works](../overview.md#voice-dictation). Uses the owner's local, unpublished [`gerbil-parakeet`](../../../gerbil-parakeet/) binding and the `grammar-constraints` branch of `~/Code/parakeet.cpp`. Spoken commands with a grammar come later and reuse all of this.
 
 ## What we're building and why
 
@@ -16,7 +16,7 @@ Three facts shape the design:
 
 ## The picture
 
-**Status:** planned.
+**Status:** built 2026-10-24 (the diagram was updated to add the microphone plugin as built).
 
 ![How speech becomes text](../diagrams/voice-dictation.svg)
 
