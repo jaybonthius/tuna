@@ -1,6 +1,6 @@
 # Brief: voice dictation
 
-**Date:** 2026-10-23. **Status:** proposed, awaiting the owner's approval. Uses the owner's local, unpublished [`gerbil-parakeet`](../../../gerbil-parakeet/) binding and the `grammar-constraints` branch of `~/Code/parakeet.cpp`. Spoken commands with a grammar come later and reuse all of this.
+**Date:** 2026-10-23. **Status:** approved 2026-10-23 (owner). Uses the owner's local, unpublished [`gerbil-parakeet`](../../../gerbil-parakeet/) binding and the `grammar-constraints` branch of `~/Code/parakeet.cpp`. Spoken commands with a grammar come later and reuse all of this.
 
 ## What we're building and why
 
@@ -54,7 +54,7 @@ Tests use a fake worker (a script that prints lines), so they run without models
 ## Decisions for you
 
 1. **Which model by default:** decided 2026-10-23, nemotron.
-2. **Move the clipboard out of the web plugin too?** Today the web plugin listens to the kill ring to copy, the same mixing of concerns. With the page machinery, the clipboard becomes its own small plugin, which also gives the machinery its second user. **Recommendation: yes, in stage 2.**
+2. **Move the clipboard out of the web plugin too?** Today the web plugin listens to the kill ring to copy, the same mixing of concerns. With the page machinery, the clipboard becomes its own small plugin, which also gives the machinery its second user. Decided 2026-10-23: later, recorded in `TODO.md`; not in this work.
 
 Model comparison, for the record: `nemotron-3.5-asr-streaming-0.6b` (1 GB) writes capitals and punctuation, "Well, I don't wish to see it any more, observed Phoebe", and decoded 7.4 s of speech in 7.2 s including loading the model. `realtime_eou_120m` (176 MB) is about twice as fast but writes "well i don't wish to see it any more observed phoebe". **Recommendation: nemotron**, because dictated text without punctuation needs fixing by hand; the model is a plugin option either way.
 

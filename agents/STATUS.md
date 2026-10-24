@@ -2,7 +2,9 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: none in progress; clicking and selecting text just finished (2026-10-23)
+## Current work: voice dictation (brief approved 2026-10-23; plan `agents/plans/voice-dictation.md`; stage 1, the worker, in progress)
+
+## Previous: clicking and selecting text finished (2026-10-23)
 
 All five stages of `agents/plans/selecting-text.md` merged, plus clicks into any text node and the scroll-ghost fix (no ghost line or cursor snap while typing). Owner priority next, not yet scheduled: error recovery (`TODO.md`, "Error recovery: the editor must never become unusable"); owner 2026-10-23: no brief yet, a deep dive later.
 
