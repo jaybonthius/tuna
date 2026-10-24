@@ -73,7 +73,8 @@
 (use-plugin commands)
 (use-plugin keys)
 (use-plugin web-transport        ; the browser page; `tuna --port N` overrides port:
-  port: 0)                              ; 0: any free port
+  port: 0                               ; 0: any free port
+  hosts: ())                            ; other names for this port, e.g. ("me.tailnet.ts.net") behind `tailscale serve`
 (use-plugin settings)
 ;; Session slots restore in activation order: buffers (autosave) before
 ;; the views that show them (layout).

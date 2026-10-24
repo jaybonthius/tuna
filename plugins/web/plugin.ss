@@ -106,8 +106,9 @@
 (defclass web-server
   ((submit      : :procedure)   ; input item -> void; submits to the editor loop
    (port        : :fixnum)
-   (host        : :string)      ; the only Host accepted
-   (origin      : :string)      ; the only Origin accepted
+   (host        : :string)      ; the Host of the URL Tuna prints
+   (hosts       : :list)        ; every Host accepted (ADR 10)
+   (origins     : :list)        ; every Origin accepted, when one is sent
    (admission   : :mutex)       ; guards each tab's input ordering and submission
    (slot-numbers : HashTable)   ; (owner . name) -> n in /css/<n>/; editor thread only
    (stylesheets-seen : :fixnum) ; the stylesheets generation HEAD shows; editor thread only
@@ -556,13 +557,14 @@
                             ("Cache-Control" . "no-store"))
                           (string->utf8 text)))
 
-;; Every route keeps the loopback Host/Origin boundary, without a sign-in.
+;; Every route keeps the Host/Origin boundary, without a sign-in (ADR 10):
+;; a foreign page's Origin and a rebound name's Host are refused.
 (def (handle-request (self : web-server) (request : Request) (response : ResponseHandler)) => :void
   (let (origin (header request "Origin"))
     (cond
-     ((not (equal? (header request "Host") self.host))
+     ((not (member (header request "Host") self.hosts))
       (respond-text response Forbidden "Unexpected Host."))
-     ((and origin (not (string=? origin self.origin)))
+     ((and origin (not (member origin self.origins)))
       (respond-text response Forbidden "Unexpected Origin."))
      (else
       (route self request response (URL-path (Request-url request)))))))
@@ -1078,10 +1080,17 @@
   (let* ((port (let (configured (plugin-option web-transport 'port))
                  (if (zero? configured) (free-loopback-port) configured)))
          (host (string-append "127.0.0.1:" (number->string port)))
+         ;; Loopback by either name, then the names the user added, such
+         ;; as a `tailscale serve` name in front of this port.
+         (hosts (cons* host (string-append "localhost:" (number->string port))
+                       (plugin-option web-transport 'hosts)))
          (self (web-server submit: (input-submitter)
                               port: port
                               host: host
-                              origin: (string-append "http://" host)
+                              hosts: hosts
+                              origins: (foldr (lambda ((h : :string) (rest : :list))
+                                                (cons* (string-append "http://" h) (string-append "https://" h) rest))
+                                              [] hosts)
                               admission: (make-mutex 'tuna-admission)
                               slot-numbers: (make-hash-table)
                               ;; The first redisplay reads the registry.
@@ -1117,9 +1126,17 @@
     (web-log.infof "Tuna %a is running. Open http://%a/"
                    (tuna-version) host)))
 
+;; A list of host names, as in a Host header: "name" or "name:port".
+(def host-list-type
+  (make-option-type "a list of host names, such as (\"me.example.ts.net\")"
+                    (lambda (v) (and (list? v) (andmap string? v)))
+                    (lambda ((text : :string)) (string-split text #\,))))
+
 (defplugin-options web-transport
   (port 0 "The loopback port to listen on; 0 picks a free one."
         (integer-type 0 65535) flag: "--port")
+  (hosts [] "Host names besides 127.0.0.1 and localhost that reach this port, such as a `tailscale serve` name; requests with any other Host or Origin are refused."
+         host-list-type flag: "--hosts")
   (screen-timeout 1000 "Milliseconds a page may take to confirm a screen before the newest is sent again."
                   (integer-type 1 60000))
   (tab-grace 60000

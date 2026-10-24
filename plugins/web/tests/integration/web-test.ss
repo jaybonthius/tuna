@@ -194,8 +194,7 @@
             (check (reply-status (http "POST" path host: "evil.example")) => 403)
             (check (reply-status (http "POST" path headers: [(cons "Origin" "http://evil.example")])) => 403))
           ["/" "/screen" "/commands" "/static/tuna-input.js"])
-         (check (reply-status (http "GET" "/" host: (string-append "localhost:" (number->string port))))
-                => 403)
+         (check (reply-status (http "GET" "/" host: "localhost")) => 403)
          (check (reply-status (http "GET" "/" headers: [(cons "Origin" "http://evil.example")])) => 403)
          (check (reply-status (http "POST" "/commands"
                                     headers: [(cons "Origin" "http://evil.example")
@@ -205,6 +204,25 @@
                 => 403)
          (check (reply-status (http "GET" "/" headers: [(cons "Origin" (string-append "http://" (host)))]))
                 => 200))))
+
+    (test-case "loopback by either name, and the hosts option's names, are accepted with http or https"
+      (set-plugin-options! web-transport [(cons 'hosts ["me.example.ts.net"])])
+      (unwind-protect
+        (with-tuna
+         (lambda ()
+           (let (localhost (string-append "localhost:" (number->string port)))
+             (check (reply-status (http "GET" "/" host: localhost)) => 200)
+             (check (reply-status (http "GET" "/" host: localhost
+                                        headers: [(cons "Origin" (string-append "http://" localhost))]))
+                    => 200))
+           (check (reply-status (http "GET" "/" host: "me.example.ts.net"
+                                      headers: [(cons "Origin" "https://me.example.ts.net")]))
+                  => 200)
+           (check (reply-status (http "GET" "/" host: "me.example.ts.net"
+                                      headers: [(cons "Origin" "https://evil.example")]))
+                  => 403)
+           (check (reply-status (http "GET" "/" host: "other.example.ts.net")) => 403)))
+        (set-plugin-options! web-transport [])))
 
     (test-case "all command requests get 204, including malformed requests"
       (with-tuna

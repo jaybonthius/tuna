@@ -444,7 +444,7 @@
             (check (declaration-options (car (configuration-declarations loaded)))
                    => '((variant . stellar-default)))
             (check (declaration-options (list-ref (configuration-declarations loaded) 3))
-                   => '((port . 0)))
+                   => '((port . 0) (hosts)))
             (check (describe-services) => [])))))
 
     (test-case "tuna init copies the starter once and never overwrites"
