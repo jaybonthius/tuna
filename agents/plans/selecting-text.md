@@ -41,7 +41,7 @@ Owner-approved brief: [`docs/briefs/2026-10-selecting-text.md`](../../docs/brief
 4. **The clipboard.** **Done 2026-10-23** (merged; report `/home/jay/Code/workbench-gerbil/scratch/selecting-text/stage4-report.md`). As built: the web plugin listens to `kill-new-hook` (kill ring optional) and appends a one-time `@tunaCopy()` element after that tab's next screen; failures come back as a report shown in the echo area; pastes are `paste-event`s looked up under `<paste>`, bound to `clipboard-yank` in the kill-ring plugin. Also merged: clicks move a view's focus into any text node of its buffer (`set-view-focus!`, `posn-text-node`; branch `click-focus`, report `/home/jay/Code/workbench-gerbil/scratch/click-focus/report.md`).
    - **Copy:** `kill-region` and `kill-ring-save` ask the tab that sent the key to copy, through a one-time instruction on that tab's next screen. Where `navigator.clipboard` is missing (plain HTTP) or refuses, the echo area says so.
    - **Paste:** the page's `paste` event sends its text, which is inserted and pushed onto the kill ring. The keydown handler stops cancelling the paste chords: Cmd+V, Ctrl+Shift+V and Shift+Insert. Ctrl+V stays `C-v`.
-5. **Records,** done by the primary agent: the overview, the Emacs table rows and the two divergences (the mark belongs to the view; shift-click extends), an ADR 13 amendment for the mark, and the roadmap.
+5. **Records.** **Done 2026-10-23.** Plan complete. Done by the primary agent: the overview, the Emacs table rows and the two divergences (the mark belongs to the view; shift-click extends), an ADR 13 amendment for the mark, and the roadmap.
 
 ## Not in this plan
 

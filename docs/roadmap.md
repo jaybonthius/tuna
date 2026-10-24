@@ -42,6 +42,10 @@ Brief: [briefs/2026-10-stylesheets.md](briefs/2026-10-stylesheets.md). HTML is T
 
 Brief: [briefs/2026-10-drawing-only-what-changed.md](briefs/2026-10-drawing-only-what-changed.md), [ADR 17](../agents/adr/0017-memo-and-sources.md). Every piece of the screen records what it read and is reused while nothing changed; a key redraws one line; an idle editor does nothing; screens are written into the stream as bytes. Work off the editor thread ([brief](briefs/2026-10-background-work.md)): `off-thread`, `sleep-for` and sources, proved by the `proced` demo. See [how Tuna works](overview.md#drawing-only-what-changed).
 
+## Done: selecting text (2026-10-23)
+
+Brief: [briefs/2026-10-selecting-text.md](briefs/2026-10-selecting-text.md). The mark, the region and the kill ring from the keyboard, with shift-selection and a `delete-selection` setting; clicking to move the cursor into any text of a buffer; dragging, double-click, triple-click and shift-click; copying to and pasting from the system clipboard. See [how Tuna works](overview.md#selecting-text-and-the-clipboard).
+
 ## Research before windows and scrolling
 
 How the server learns layout facts from the browser (event-attached facts, measurement requests, Rocket components for local-only behavior). See [the capability-audit brief](briefs/2026-10-capability-audit.md).

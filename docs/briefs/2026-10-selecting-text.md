@@ -1,6 +1,6 @@
 # Brief: clicking and selecting text
 
-**Date:** 2026-10-23. **Status:** approved 2026-10-23 (owner), with the clipboard simplified to the standard Clipboard API. Builds on [mouse input](2026-10-mouse-input.md) (clicks as keys; its "clicking and selecting inside text comes later" is this). Evidence: a Chrome 146 spike (below), Weevil's paste work (`~/Code/weevil/plans/archive/clipboard-paste-plan.md`), the `shux` terminal spike's clipboard element (`~/Code/shux/spikes/libghostty-terminal/web.go:806`), and Emacs's `lisp/mouse.el` (commit `541f693ca2e`).
+**Date:** 2026-10-23. **Status:** approved 2026-10-23 (owner), with the clipboard simplified to the standard Clipboard API; built 2026-10-23 ([plan](../../agents/plans/selecting-text.md); [how it works now](../overview.md#selecting-text-and-the-clipboard)). Builds on [mouse input](2026-10-mouse-input.md) (clicks as keys; its "clicking and selecting inside text comes later" is this). Evidence: a Chrome 146 spike (below), Weevil's paste work (`~/Code/weevil/plans/archive/clipboard-paste-plan.md`), the `shux` terminal spike's clipboard element (`~/Code/shux/spikes/libghostty-terminal/web.go:806`), and Emacs's `lisp/mouse.el` (commit `541f693ca2e`).
 
 ## What we're building and why
 
@@ -24,7 +24,7 @@ The check gave the same result with the browser's own selection turned off. Fire
 
 ## The picture
 
-**Status:** both diagrams are planned; nothing here is built.
+**Status:** both diagrams are built.
 
 ![Pressing on a word and dragging](../diagrams/selecting-text-mouse.svg)
 
