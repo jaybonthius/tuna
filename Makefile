@@ -1,4 +1,4 @@
-.PHONY: all assets build deps test test-frontend demo-check run tokens voice-worker voice-worker-check
+.PHONY: all assets build deps test test-frontend demo-check run tokens voice-worker voice-worker-check voice-command-check
 
 ESBUILD ?= esbuild
 
@@ -61,6 +61,7 @@ tokens:
 PARAKEET_GERBIL_PATH ?= /home/jay/Code/workbench-gerbil/gerbil-parakeet/.install-check/local
 VOICE_MODEL ?= /home/jay/Code/workbench-gerbil/gerbil-parakeet/.deps/models/nemotron-3.5-asr-streaming-0.6b-q8_0.gguf
 VOICE_SPEECH ?= /home/jay/Code/workbench-gerbil/gerbil-parakeet/.deps/fixtures/speech.f32
+VOICE_THUNDER ?= /home/jay/Code/workbench-gerbil/gerbil-parakeet/.deps/fixtures/thunder.f32
 VOICE_WORKER_GERBIL_PATH = $(CURDIR)/.gerbil/voice-worker
 
 voice-worker: .gerbil/bin/tuna-voice-worker
@@ -77,6 +78,15 @@ voice-worker: .gerbil/bin/tuna-voice-worker
 voice-worker-check: voice-worker
 	plugins/voice/worker/check.sh .gerbil/bin/tuna-voice-worker $(VOICE_MODEL) $(VOICE_SPEECH) paced
 	plugins/voice/worker/check.sh .gerbil/bin/tuna-voice-worker $(VOICE_MODEL) $(VOICE_SPEECH) full
+
+# Spoken commands against recordings (plugins/voice/tests/fixtures/), and
+# against speech and thunder that name no command: the grammar the demo's
+# commands make, what the worker recognizes, each candidate's confidence
+# and what voice-command would do with the default settings. A manual
+# check, for setting those defaults; make test never runs it.
+voice-command-check: build voice-worker
+	gerbil env gxi plugins/voice/tests/support/command-check.ss $(CURDIR)/.gerbil/bin/tuna-voice-worker \
+		demo/init.ss $(wildcard plugins/voice/tests/fixtures/*.f32) $(VOICE_SPEECH) $(VOICE_THUNDER)
 
 # The demo configuration loads and its declarations are valid. demo/ is not
 # built into the package, so this is what keeps it from rotting.

@@ -53,7 +53,7 @@
            (extra-inputs: ,(map (cut string-append "web/" <>)
                                (directory-files "plugins/web/web")))))
     ("plugins/microphone" "contract" "plugin")
-    ("plugins/voice" "contract" "plugin")))
+    ("plugins/voice" "contract" "spoken" "plugin")))
 
 (def (build-options (args : :list)) => :list
   (match args

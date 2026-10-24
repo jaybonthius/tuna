@@ -111,10 +111,13 @@
 (use-plugin proced               ; C-c P: *Processes*, read from /proc every second
   config: (keymap-set "C-c P" 'proced))
 (use-plugin microphone)          ; a tab's microphone, for voice
-;; C-c v: dictate at point; C-c v again or C-g stops. Needs the speech
-;; worker (make voice-worker) and the model in the voice plugin's options.
+;; C-c v: dictate at point; C-c v again or C-g stops. C-c c: say a
+;; command's name to run it; listening ends by itself. Both need the
+;; speech worker (make voice-worker); dictation's model is the voice
+;; plugin's model: option, the commands' the voice-command-model setting.
 (use-plugin voice
-  config: (keymap-set "C-c v" 'voice-dictate))
+  config: (keymap-set "C-c v" 'voice-dictate)
+          (keymap-set "C-c c" 'voice-command))
 (use-plugin reload-config        ; reload this file; show the last report
   config: (keymap-set "C-c R" 'reload-config)
           (keymap-set "C-c C-r" 'show-config-report))
