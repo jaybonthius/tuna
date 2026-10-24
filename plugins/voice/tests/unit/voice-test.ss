@@ -1,8 +1,8 @@
 ;;; The voice plugin through the real editor loop, with a stand-in
 ;;; microphone and a stand-in speech worker (../support/fake-worker.sh),
 ;;; so no model is needed: C-c v (voice-dictate) starts listening on the
-;;; client that pressed it; what the worker recognizes goes in at the
-;;; marker, which moves with edits above it; C-c v again stops the
+;;; client that pressed it; what the worker recognizes goes in at point
+;;; when it arrives, as typing does; C-c v again stops the
 ;;; microphone, and the worker's last words still arrive; C-g stops too;
 ;;; a worker that fails, a microphone that fails, or a missing worker
 ;;; says why in the echo area; turning the plugin off kills the worker.
@@ -99,7 +99,7 @@
 
 (def voice-test
   (test-suite "tuna/plugins/voice"
-    (test-case "dictated text goes in at the marker as it is recognized; stopping flushes the last words"
+    (test-case "dictated text goes in at point as it is recognized; stopping flushes the last words"
       (with-voice
        (lambda ()
          (call-on-editor-loop (lambda () (insert "Notes: ")))
@@ -113,17 +113,48 @@
          (say! "world")
          (check (text-becomes "Notes: hello world") => "Notes: hello world")
          (check (call-on-editor-loop point) => 19)
-         ;; Typing above the marker moves it; point stays where it is put.
-         (call-on-editor-loop (lambda () (goto-char 1) (insert "> ")))
-         (say! "again")
-         (check (text-becomes "> Notes: hello world again") => "> Notes: hello world again")
-         (check (call-on-editor-loop point) => 3)
          ;; C-c v stops the microphone; the worker's last words still come.
          (press-keys "C-c" "v")
          (check (wait-until (lambda () (not (hash-key? captures tab)))) => #t)
-         (check (text-becomes "> Notes: hello world again end.") => "> Notes: hello world again end.")
+         (check (text-becomes "Notes: hello world end.") => "Notes: hello world end.")
          (check (call-on-editor-loop voice-listening?) => #f)
          (check (process-gone? (worker-pid)) => #t))))
+
+    (test-case "a piece goes in where the cursor is when it arrives, after what was typed"
+      (with-voice
+       (lambda ()
+         (press-keys "C-c" "v")
+         (check (wait-until (lambda () (hash-key? captures tab))) => #t)
+         (say! "hello")
+         (check (text-becomes "hello") => "hello")
+         (call-on-editor-loop (lambda () (insert "!") (insert "\n") (insert "\n") (insert "\n")))
+         (say! "world")
+         (check (text-becomes "hello!\n\n\nworld") => "hello!\n\n\nworld")
+         (check (call-on-editor-loop point) => 15))))
+
+    (test-case "moving point between pieces puts the next piece there"
+      (with-voice
+       (lambda ()
+         (press-keys "C-c" "v")
+         (check (wait-until (lambda () (hash-key? captures tab))) => #t)
+         (say! "hello")
+         (check (text-becomes "hello") => "hello")
+         (call-on-editor-loop (lambda () (insert "\nlast line") (goto-char 6)))
+         (say! "again")
+         (check (text-becomes "hello again\nlast line") => "hello again\nlast line")
+         (check (call-on-editor-loop point) => 12))))
+
+    (test-case "with no text at point, a piece is dropped with a note"
+      (with-voice
+       (lambda ()
+         (press-keys "C-c" "v")
+         (check (wait-until (lambda () (hash-key? captures tab))) => #t)
+         (call-on-editor-loop
+          (lambda () (switch-to-buffer (new-buffer "no text" (new-node 'column)))))
+         (say! "lost")
+         (check (wait-until (lambda () (equal? (call-on-editor-loop current-message)
+                                               "No text here to dictate into")))
+                => #t))))
 
     (test-case "pieces said without a pause are one undo group"
       (with-voice
@@ -140,6 +171,21 @@
          (check (buffer-text) => "one two")
          (call-on-editor-loop (lambda () (text-undo! (current-text) #t)))
          (check (buffer-text) => ""))))
+
+    (test-case "a character typed between two pieces ends their undo group"
+      (with-voice
+       (lambda ()
+         (press-keys "C-c" "v")
+         (check (wait-until (lambda () (hash-key? captures tab))) => #t)
+         (say! "one")
+         (check (text-becomes "one") => "one")
+         (call-on-editor-loop (lambda () (insert "!")))
+         (say! "two")
+         (check (text-becomes "one! two") => "one! two")
+         (call-on-editor-loop (lambda () (text-undo! (current-text) #f)))
+         (check (buffer-text) => "one!")
+         (call-on-editor-loop (lambda () (text-undo! (current-text) #t)))
+         (check (buffer-text) => "one"))))
 
     (test-case "C-g stops dictating"
       (with-voice

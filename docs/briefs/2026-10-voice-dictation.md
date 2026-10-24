@@ -25,6 +25,7 @@ Three facts shape the design:
 1. **Start.** You are in `notes.txt` and press `C-c v`. `voice-dictate` remembers where the cursor is (a marker), starts the worker if it isn't running, and asks this tab to start its microphone. The first time, the browser asks your permission. The echo area says "Listening… (C-c v to stop)".
 2. **Talk.** The tab sends a chunk of audio every tenth of a second. The worker decodes as it goes, and every time it finalizes words ("Well, I don't"), the voice plugin inserts them at the marker. You see them a fraction of a second after you say them.
 3. **Type meanwhile.** You fix a typo above the marker. The marker moves with your edit, as point does, so later words still land where dictation is going.
+   *Changed 2026-10-24 (owner): there is no marker; each piece of text goes in at the cursor when it arrives, exactly as typing does.*
 4. **Stop.** `C-c v` again: the tab stops the microphone, the worker flushes the last words, and dictation ends. Undo removes what was dictated, one sentence at a time.
 
 ## A code sample (package author's view)

@@ -1,6 +1,6 @@
 #lang :tuna/prelude
 ;;; Voice dictation: the voice service, and `voice-dictate`, which inserts
-;;; what you say where point was when you started, as you say it.
+;;; what you say at point, as you say it.
 ;;;
 ;;; Listening starts a speech worker (worker/worker.ss; `make
 ;;; voice-worker`) for that one listening: the worker ends when its input
@@ -14,9 +14,8 @@
 ;;; has not ended `worker-finish-seconds` later is stopped. Turning the
 ;;; plugin off stops the microphone and the worker at once.
 ;;;
-;;; Dictated text goes in at a marker: a position in the text that moves
-;;; with edits, as point does, so editing elsewhere while dictating is
-;;; fine. Point follows the text when it was at the marker. Pieces
+;;; Each dictated piece goes in at point when it arrives, as typing does:
+;;; in whatever text the cursor is in, leaving point after it. Pieces
 ;;; arriving less than `undo-pause-seconds` apart, with no other change to
 ;;; the text between them, are one undo group: undo removes what was said
 ;;; between pauses (the default model reports no end of an utterance).
@@ -201,13 +200,10 @@
 
 ;;; Dictation
 
-;; Where dictated text goes: POSITION in TARGET as of its character revision
-;; REVISION; LAST-REVISION, the revision after the last piece went in, and
-;; LAST-TIME, when.
-(defclass dictation ((target        : text)
-                     (position      : :fixnum)
-                     (revision      : :fixnum)
-                     (last-revision :? :fixnum)
+;; The text the last dictated piece went into, LAST-TEXT; its character
+;; revision after the piece, LAST-REVISION; and when, LAST-TIME.
+(defclass dictation ((last-text     :? text)
+                     (last-revision : :fixnum)
                      (last-time     : :real))
   final: #t)
 
@@ -224,33 +220,25 @@
       (lp (fx1+ i))
       (substring s i (string-length s)))))
 
-;; Insert PIECE at D's marker, without its leading space at the start of
-;; a line or after whitespace, and move the marker after it.
+;; Insert PIECE at point, without its leading space at the start of a
+;; line or after whitespace, leaving point after it. With no text at
+;; point, say so and drop PIECE.
 (def (insert-dictated! (d : dictation) (piece : :string)) => :void
-  (let (t d.target)
-    (if (not (text-live? t))
-      (begin
-        (voice-stop!)
-        (message "Stopped dictating: its text is gone"))
-      (let* ((position (relocate-position t d.position d.revision))
-             (piece (if (whitespace-before? t position) (string-trim-start piece) piece))
-             (v (selected-view))
-             (follow? (and (view-node v)
-                           (eq? (text-node-content (view-node v)) t)
-                           (fx= (view-point v) position))))
+  (let (n (current-text-node))
+    (if (not n)
+      (message "No text here to dictate into")
+      (let* ((t (text-node-content n))
+             (position (point))
+             (piece (if (whitespace-before? t position) (string-trim-start piece) piece)))
         (unless (string-empty? piece)
-          (when (and d.last-revision (fx= d.last-revision (text-chars-revision t))
+          (when (and (eq? d.last-text t)
+                     (fx= d.last-revision (text-chars-revision t))
                      (< (- (now-seconds) d.last-time) undo-pause-seconds))
             (undo-amalgamate! t 1000000))
-          (text-replace! t position position piece point-before: position)
-          (let ((after (fx+ position (string-length piece)))
-                (revision (text-chars-revision t)))
-            (when follow?
-              (set-view-point! v after))
-            (set! d.position after)
-            (set! d.revision revision)
-            (set! d.last-revision revision)
-            (set! d.last-time (now-seconds))))))))
+          (insert piece)
+          (set! d.last-text t)
+          (set! d.last-revision (text-chars-revision t))
+          (set! d.last-time (now-seconds)))))))
 
 ;; The keys that run COMMAND, for the echo area, or M-x COMMAND.
 (def (keys-for (command : :symbol)) => :string
@@ -260,9 +248,7 @@
       (string-append "M-x " (symbol->string command)))))
 
 (def (start-dictation!) => :void
-  (let* ((t (current-text))
-         (d (dictation target: t position: (point) revision: (text-chars-revision t)
-                       last-revision: #f last-time: 0)))
+  (let (d (dictation last-text: #f last-revision: 0 last-time: 0))
     (voice-start! (lambda ((piece : :string)) (insert-dictated! d piece)))
     (message (string-append "Listening… (" (keys-for 'voice-dictate) " to stop)"))))
 
