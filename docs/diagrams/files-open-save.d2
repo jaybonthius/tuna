@@ -1,0 +1,27 @@
+# What happens when you open, edit and save a file? (planned)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+you: You
+files: Files plugin
+disk: Disk (through the file service)
+watch: File watcher (own thread)
+
+you -> files: "1. C-x C-f, pick notes.txt\n(recent files and the folder, any order)"
+files -> disk: 2. read it
+files -> you: "3. a buffer visiting notes.txt,\ncursor where you left it" {
+  style.stroke-dash: 3
+}
+files -> watch: 4. watch notes.txt
+you -> files: "5. type: the status line\nshows unsaved changes"
+watch -> files: "6. another program changed it"
+files -> you: "7. no unsaved changes: reload it.\nunsaved: say so; saving asks first" {
+  style.stroke-dash: 3
+}
+you -> files: 8. C-x C-s
+files -> disk: "9. write a temporary file,\nthen rename it over the old one"
