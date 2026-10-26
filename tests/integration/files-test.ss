@@ -1,5 +1,5 @@
-;;; The files plugin through its keys: the picker (C-x C-f) with its DEL
-;;; and ~/ keys, saving (C-x C-s, C-x s), the unsaved marker in the status
+;;; The files plugin through its keys: the picker (C-x C-f) with its ~/
+;;; key, saving (C-x C-s, C-x s), the unsaved marker in the status
 ;;; line, and C-x k asking before killing an unsaved file buffer.
 prelude: :gerbil/core
 (import :std/test
@@ -56,7 +56,7 @@ prelude: :gerbil/core
 
 (def files-test
   (test-suite "files through their keys"
-    (test-case "the picker lists the folder; DEL after / goes up a folder; ~/ jumps home"
+    (test-case "the picker lists the folder; DEL deletes one character; ~/ jumps home"
       (with-picker
        (lambda (folder)
          (type! "C-x" "C-f")
@@ -68,13 +68,11 @@ prelude: :gerbil/core
          (check (input) => (string-append folder "sub/"))
          (check (texts) => [(string-append folder "sub/c.txt")])
          (type! "DEL")
-         (check (input) => folder)
-         (type! "DEL")
-         (check (input) => (file-name-directory (substring folder 0 (fx1- (string-length folder)))))
-         (type-string! "~/")
+         (check (input) => (string-append folder "sub"))
+         (type-string! "/~/")
          (check (input) => "~/")
          (type! "DEL")
-         (check (input) => (abbreviate-file-name (file-name-directory (home-directory))))
+         (check (input) => "~")
          (type! "C-g")
          (check (question) => #f))))
     (test-case "C-x C-f opens the file chosen; editing marks it unsaved; C-x C-s saves it"

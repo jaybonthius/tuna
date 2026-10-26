@@ -6,9 +6,10 @@
 ;;; works on whole names. The listing comes from the file service and is
 ;;; read again only when the folder typed changes.
 ;;;
-;;; Keys in the picker: DEL right after a "/" goes up a folder, deleting
-;;; the last folder name ("~/a/b/" becomes "~/a/"); typing "/" after "~"
-;;; anywhere jumps home ("~/a/~/" becomes "~/"). They are bound in a node
+;;; Keys in the picker: typing "/" after "~" anywhere jumps home
+;;; ("~/a/~/" becomes "~/"), as Emacs's substitute-in-file-name reads
+;;; such a name; DEL is the ordinary editing key, as in Emacs's file
+;;; prompt. The key is bound in a node
 ;;; the picker wraps around the prompt's answer, so they come before the
 ;;; global keys and after the completion list's.
 (import :tuna/kernel
@@ -19,7 +20,6 @@
 (export file-table
         file-annotations
         wrap-picker-answer!
-        picker-delete-backward!
         picker-slash!
         human-size
         age-text)
@@ -117,19 +117,6 @@
   (let (t (current-text))
     (text-replace! t 1 (fx1+ (text-size t)) input)
     (goto-char (fx1+ (string-length input)))))
-
-;; DEL: right after a "/" at the end of the input, the input becomes its
-;; parent folder (abbreviated); elsewhere it deletes the character before
-;; point.
-(def (picker-delete-backward!) => :void
-  (let ((input (picker-input))
-        (p (point)))
-    (cond
-     ((and (fx= p (fx1+ (string-length input))) (string-suffix? "/" input) (fx> (string-length input) 1))
-      (let* ((folder (expand-file-name input (buffer-default-directory (current-buffer))))
-             (parent (file-name-directory (substring folder 0 (fx1- (string-length folder))))))
-        (replace-input! (if (string-prefix? "~" input) (abbreviate-file-name parent) parent))))
-     ((fx> p 1) (delete-region (fx1- p) p)))))
 
 ;; "/": insert it; when that makes the input end in "/~/" (or be "~/"
 ;; after more), the input becomes "~/".

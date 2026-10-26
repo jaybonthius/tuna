@@ -384,9 +384,6 @@
                   (equal? (buffer-file b) name)
                   (yes-or-no? (string-append "File " (abbreviate-file-name name) " exists; overwrite? ")))
           (write-file b name))))
-    (context-define-command! ctx 'file-picker-delete-backward picker-delete-backward!
-      doc: "In the file picker: after a \"/\", go up a folder; elsewhere delete the character before point."
-      visible?: (lambda (c origin) #f))
     (context-define-command! ctx 'file-picker-slash picker-slash!
       doc: "In the file picker: insert \"/\"; \"~/\" there jumps home."
       visible?: (lambda (c origin) #f))
@@ -403,7 +400,6 @@
             (prompt-exit! (car (files-state-answering self)) (cdr answer) history-text: key))))
       doc: "Answer save-some-buffers' question with the key typed."
       visible?: (lambda (c origin) #f))
-    (keymap-set-in ctx (files-state-picker-keymap self) "DEL" 'file-picker-delete-backward)
     (keymap-set-in ctx (files-state-picker-keymap self) "/" 'file-picker-slash)
     (for-each (lambda ((answer : :pair))
                 (keymap-set-in ctx (files-state-answer-keymap self) (car answer) 'save-some-buffers-answer))
