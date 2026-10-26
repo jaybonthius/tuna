@@ -2,7 +2,9 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: none in progress; voice dictation and spoken commands finished (2026-10-24)
+## Current work: files (brief approved 2026-10-26; plan `agents/plans/files.md`; stage 1, open and save, merged; stage 2, recent files and remembered places, next)
+
+## Previous: voice dictation and spoken commands finished (2026-10-24)
 
 Dictation (`C-c v`, nemotron; text at the cursor; punctuation attaches to the word before it) and spoken commands (`C-c c`, realtime_eou, grammar of command names, confidence from parakeet patch 0005 scores; plan `agents/plans/voice-commands.md`). Native: branch `grammar-scores` in `/home/jay/Code/parakeet.cpp__grammar-scores` (patches 0002–0004 as commits, `fd05fca` the scores change); `gerbil-parakeet` `ec19de2`, `626097d`, `e661666` (patch 0005, binding, reinstall). Thresholds come from Piper clips; re-check with the owner's voice. Owner priority still open: error recovery (`TODO.md`). Roadmap rewritten into tiers (2026-10-24); tier 0 item 1, the plugin restructuring, merged `1d285c1` (26 packages; report `/home/jay/Code/workbench-gerbil/scratch/restructure/report.md`). Plugins renamed after it (2026-10-24): `completion-engine` → `completion`, `help-buffer` → `help`, `design-tokens` → `stylesheets` (the contract's `stylesheets` procedure became `page-stylesheets`).
 
