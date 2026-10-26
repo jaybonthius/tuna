@@ -343,7 +343,7 @@
   provides: [file-system-service files-service]
   requires: [commands-service input-service buffers-service layout-service settings-service
              minibuffer-service completion-service session-service]
-  optional: [renderer-service]
+  optional: [renderer-service completion-ui-service]
   (add-stylesheet 'rules "rules.css")
   (context-provide! ctx file-system-service
                     (FileSystem (new-local-disk (lambda () (path-expand "file-backups" (state-directory))))))

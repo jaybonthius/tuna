@@ -156,7 +156,7 @@ prelude: :gerbil/core
          (base (file-name-nondirectory target))
          (old (stat-path target)))
     (unless (file-exists? folder)
-      (error "No such folder" folder))
+      (error "No such folder; Tuna creates none" folder))
     (when (and old (not (eq? (file-stat-kind old) 'file)))
       (error "Not a regular file" target))
     (cond

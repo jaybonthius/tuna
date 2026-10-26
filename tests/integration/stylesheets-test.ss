@@ -100,6 +100,7 @@
     (buttons rules)
     (minibuffer rules)
     (completion-list tokens) (completion-list rules)
+    (files rules)
     (echo-area rules)
     (help rules)))
 

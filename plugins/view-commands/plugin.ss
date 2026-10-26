@@ -69,7 +69,7 @@
 (defplugin view-commands
   "View commands for any layout: C-x o, C-x 0 to 3, selecting the view on a side (unbound), frames (C-x n), frame marks (C-x r), clicking a status line; C-x k kills a buffer."
   requires: [commands-service input-service buffers-service layout-service minibuffer-service settings-service]
-  optional: [completion-service]
+  optional: [completion-service completion-ui-service]
   (defcommand (kill-buffer) "Kill a buffer chosen by name (the current one by default), if every kill query agrees."
     (let* ((name (read-buffer-to-kill))
            (b (get-buffer name)))

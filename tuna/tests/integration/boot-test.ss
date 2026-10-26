@@ -437,7 +437,7 @@
                    => '(stylesheets commands keys web-transport settings session
                         rope-text-store buffers autosave layout
                         view-commands scrolling html-renderer buttons editing
-                        minibuffer completion completion-list
+                        minibuffer completion completion-list files
                         echo-area help
                         configuration))
             (check (declaration-options (car (configuration-declarations loaded)))
