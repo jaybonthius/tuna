@@ -38,6 +38,7 @@
     ("plugins/autosave" "plugin")
     ("plugins/configuration" "plugin")
     ("plugins/proced" "plugin")
+    ("plugins/files" "contract" "encoding" "local-disk" "picker" "plugin")
     ("plugins/web" "contract" "embed"
      (gxc: "plugin"
            (extra-inputs: ,(map (cut string-append "web/" <>)
