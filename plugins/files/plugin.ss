@@ -702,6 +702,16 @@
   (ask-one-key self (string-append "Save file " (abbreviate-file-name (buffer-file b)) "? (y, n, !, ., q) ")
                save-answers))
 
+;; Ask with QUESTION for a file for B to visit from now on, and save B
+;; there; overwriting another file asks first.
+(def (write-file-asking! (self : files-state) (b : buffer) (question : :string)) => :void
+  (let* ((name (read-file-to-visit self question #f))
+         (stat (stat-file name)))
+    (when (or (not stat) (eq? (file-stat-kind stat) 'folder)
+              (equal? (buffer-file b) name)
+              (yes-or-no? (string-append "File " (abbreviate-file-name name) " exists; overwrite? ")))
+      (write-file b name))))
+
 ;; Offer each unsaved file buffer for saving, as Emacs's save-some-buffers.
 (def (save-some-buffers! (self : files-state)) => :void
   (let lp ((rest (filter buffer-modified? (file-buffers))) (all? #f) (saved 0))
@@ -807,8 +817,16 @@
           (message "No recent files")
           (find-file (:- (completing-read "Find recent file: " [(recent-file-table files #f #f)] history: 'file)
                          :string)))))
-    (defcommand (save-buffer) "Save the current buffer to its file, if it changed."
-      (save-buffer (current-buffer)))
+    (defcommand (save-buffer) "Save the current buffer to its file, if it changed; a changed buffer with no file asks for one, which it visits from then on."
+      (let (b (current-buffer))
+        (cond
+         ((buffer-visit b) (save-buffer b))
+         ;; Emacs's basic-save-buffer: a buffer with no file asks for one,
+         ;; if it changed. Tuna has no modified flag for such buffers, so
+         ;; any change since the text was made counts.
+         ((and (text-node? (buffer-root b)) (fx> (text-chars-revision (text-of b)) 0))
+          (write-file-asking! self b "File to save in: "))
+         (else (message "(No changes need to be saved)")))))
     (defcommand (revert-buffer) "Read the current buffer's file again, as one undoable change, asking first when the buffer has unsaved changes."
       (let (b (current-buffer))
         (when (or (not (buffer-modified? b))
@@ -818,13 +836,7 @@
     (defcommand (save-some-buffers) "Offer each unsaved file buffer for saving: y or SPC saves, n or DEL skips, ! saves the rest, . saves this one and stops, q or RET stops."
       (save-some-buffers! self))
     (defcommand (write-file) "Save the current buffer to another file, which it visits from then on."
-      (let* ((b (current-buffer))
-             (name (read-file-to-visit self "Write file: " #f))
-             (stat (stat-file name)))
-        (when (or (not stat) (eq? (file-stat-kind stat) 'folder)
-                  (equal? (buffer-file b) name)
-                  (yes-or-no? (string-append "File " (abbreviate-file-name name) " exists; overwrite? ")))
-          (write-file b name))))
+      (write-file-asking! self (current-buffer) "Write file: "))
     (context-define-command! ctx 'file-picker-slash picker-slash!
       doc: "In the file picker: insert \"/\"; \"~/\" there jumps home."
       visible?: (lambda (c origin) #f))
