@@ -1,6 +1,7 @@
 ;;; The files plugin through its keys: the picker (C-x C-f) with its ~/
 ;;; key, saving (C-x C-s, C-x s), the unsaved marker in the status
-;;; line, and C-x k asking before killing an unsaved file buffer.
+;;; line, C-x k asking before killing an unsaved file buffer, saving over a
+;;; file another program changed, and revert-buffer.
 prelude: :gerbil/core
 (import :std/test
         :tuna/kernel
@@ -50,6 +51,29 @@ prelude: :gerbil/core
 (def (screen) => :string
   (on-editor (lambda () (html->string (Renderer-render-screen (Renderer (service-provider renderer-service)) #f)))))
 (def (contains? (text : :string) (part : :string)) => :boolean (and (string-contains text part) #t))
+
+;; Wait up to 5 s for (READY?) on the editor loop; whether it came true.
+(def (eventually (ready? : :procedure)) => :boolean
+  (let lp ((left 100))
+    (cond
+     ((on-editor ready?) #t)
+     ((fx= left 0) #f)
+     (else (thread-sleep! .05) (lp (fx1- left))))))
+
+(def (buffer-text) => :string
+  (on-editor (lambda () (text-string (current-text)))))
+
+;; Open a.txt, type x into it, and have another program write "other\n"
+;; to it; wait until Tuna notices.
+(def (conflict! (folder : :string)) => :void
+  (type! "C-x" "C-f")
+  (type-string! "a.t")
+  (type! "RET" "x")
+  (check (buffer-text) => "xalpha\n")
+  (put-string! (string-append folder "a.txt") "other\n")
+  (check (eventually (lambda () (equal? (current-message) "a.txt changed on disk"))) => #t))
+
+(def conflict-question "a.txt changed on disk: overwrite with yours, or reload theirs? ")
 
 (def (type-string! (s : :string)) => :void
   (for-each (lambda (c) (press (if (char=? c #\space) "SPC" (string c)))) (string->list s)))
@@ -147,4 +171,55 @@ prelude: :gerbil/core
          (type! "n")
          (check (question) => #f)
          (check (string-of (string-append folder "a.txt")) => "1alpha\n")
-         (check (string-of (string-append folder "b.txt")) => "beta\n"))))))
+         (check (string-of (string-append folder "b.txt")) => "beta\n"))))
+    (test-case "saving over a file another program changed asks; overwrite writes yours"
+      (with-picker
+       (lambda (folder)
+         (conflict! folder)
+         (check (buffer-text) => "xalpha\n")
+         (check (contains? (screen) "a.txt * changed on disk · line") => #t)
+         (type! "C-x" "C-s")
+         (check (question) => conflict-question)
+         (type-string! "overwrite")
+         (type! "RET")
+         (check (question) => #f)
+         (check (string-of (string-append folder "a.txt")) => "xalpha\n")
+         (check (contains? (screen) "a.txt · line") => #t))))
+    (test-case "answering reload takes their file, and undo brings yours back"
+      (with-picker
+       (lambda (folder)
+         (conflict! folder)
+         (type! "C-x" "C-s")
+         (check (question) => conflict-question)
+         (type-string! "reload")
+         (type! "RET")
+         (check (question) => #f)
+         (check (buffer-text) => "other\n")
+         (check (string-of (string-append folder "a.txt")) => "other\n")
+         (check (contains? (screen) "a.txt · line") => #t)
+         (type! "C-/")
+         (check (buffer-text) => "xalpha\n"))))
+    (test-case "C-g at the question saves nothing"
+      (with-picker
+       (lambda (folder)
+         (conflict! folder)
+         (type! "C-x" "C-s")
+         (check (question) => conflict-question)
+         (type! "C-g")
+         (check (question) => #f)
+         (check (string-of (string-append folder "a.txt")) => "other\n")
+         (check (buffer-text) => "xalpha\n"))))
+    (test-case "revert-buffer asks before discarding unsaved changes"
+      (with-picker
+       (lambda (folder)
+         (type! "C-x" "C-f")
+         (type-string! "b.t")
+         (type! "RET" "y")
+         (type! "M-x")
+         (type-string! "revert-buffer")
+         (type! "RET")
+         (check (question) => "Discard your changes to b.txt and reload it from disk? (yes or no) ")
+         (type-string! "yes")
+         (type! "RET")
+         (check (buffer-text) => "beta\n")
+         (check (current-message) => "Reloaded b.txt"))))))
