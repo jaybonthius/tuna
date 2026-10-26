@@ -359,11 +359,34 @@ To restyle Tuna:
 
 The default look follows the system's light or dark setting, keeps the cursor visible in forced-colours (high contrast) mode, fills a phone's screen above its browser toolbar, and gives tabs, buttons, completion rows and clickable status lines finger-sized targets on touch screens.
 
+## Files
+
+`C-x C-f` opens a file, `C-x C-s` saves it, `C-x s` offers every unsaved file for saving, and `C-x C-w` saves under another name. The `files` plugin does all of it; turning it off takes these keys away.
+
+![Opening, editing and saving a file](diagrams/files-open-save.svg)
+
+*Built (stage 1 of the [files plan](../agents/plans/files.md)): steps 1 to 3, 5, 8 and 9, without recent files or the remembered cursor (stage 2). Planned: watching the folder and reloading (steps 4, 6, 7; stage 3), and autosave for file buffers (stage 4).*
+
+A concrete case: in a folder holding `notes.txt`, you press `C-x C-f`. The **file picker** asks "Find file:" with the folder already typed, and lists what is in it, with each file's size and how long ago it changed; an open file says "open". You type `not` and `RET`. The plugin reads the bytes through the **file service**, turns them into characters, and shows a buffer named `notes.txt`. You type; the status line shows `notes.txt *`. `C-x C-s` writes a temporary file beside it, flushes it to disk, gives it the old file's permissions and owner, renames it over the old file and flushes the folder, so a crash leaves the old file or the new one, never half of each. The `*` goes away.
+
+What to know:
+
+- **The text visits the file, not the buffer.** The visit record on the text says which file, what was on disk at the last read or save (with a hash of its bytes, so later checks can tell Tuna's own writes from other programs'), and how its bytes became characters. A file reached through a symbolic link is the same text as the file itself.
+- **Bytes are kept exactly.** UTF-8 with or without a byte-order mark is editable, and the mark is written back. Windows line endings on every line show as plain lines and are written back as Windows line endings; mixed endings stay in the text as they are. A missing final newline stays missing. Anything else (not valid UTF-8, UTF-16, binary) opens read-only with a note in the echo area, and saving it is refused. Tuna never guesses an encoding.
+- **Saving through links.** A symbolic link saves into its target and stays a link. A file with other hard links, one whose owner a new file could not get, or one in a folder that takes no new files is written in place instead, after a backup copy that is removed once the new contents are on disk.
+- **A new name makes a new file** on its first save; Tuna never creates a folder, and saving into a folder that does not exist says so.
+- **The picker's keys:** `DEL` right after a `/` goes up a folder; typing `~/` after a `/` jumps home; `RET` on a folder opens the picker in it; `M-RET` takes exactly what you typed (for a new name that matches something).
+- **Two files with the same name** get their folder's name too: `notes.txt<docs>` and `notes.txt<work>`.
+- **Killing an unsaved file buffer asks** (`C-x k`, in `view-commands`): "Buffer notes.txt modified; kill anyway? (yes or no)". Quitting Tuna does not ask yet: there is no quit command.
+- **For package authors:** `before-save-hook` (a formatter, say), `context-add-save-takeover!` (save the buffer some other way; the first that does wins), `after-save-hook`, `find-file-hook`, and `auto-mode-hook`, where a future modes plugin will choose a mode by file type. A failing callback is reported in the echo area and on the terminal and removed; the save goes on. Each buffer has a `default-directory`, the folder its relative file names start from.
+
+Three small additions outside the plugin made this possible: `completing-read` passes a `setup:` procedure the prompt handle (the picker wraps the answer in a node carrying its keys); the buffers contract gained `buffer-read-only` and kill queries (Emacs's `kill-buffer-query-functions`); and the renderer contract gained status-line parts, which is how `*` gets there. All file access goes through the file service, whose provider is the local disk; remote files can come later as another provider.
+
 ## Where things are saved
 
 | What | Where | When |
 |---|---|---|
-| Your files | Wherever they live | When you save |
+| Your files | Wherever they live | When you save (`C-x C-s`; built) |
 | Unsaved changes | `~/.local/state/tuna/autosave/` | Every so often, and when idle |
 | Open buffers, cursor positions, the layout with its frame, frame marks and pins, history | `~/.local/state/tuna/session.ss` | When idle, and on exit |
 | Settings changed through Tuna's UI | `~/.config/tuna/custom.ss` (planned) | When changed |
@@ -381,6 +404,9 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 ## Words used here
 
 - **Buffer**: a named piece of UI, made of a tree of nodes: a file, the minibuffer, `*Help*`, a sidebar.
+- **Visiting**: a text is linked to a file; saving writes the text to it. The **visit record** on the text holds the file's name, what was on disk at the last read or save, and how its bytes became characters.
+- **File service**: the replaceable layer all file reading, writing and listing goes through; today's provider is the local disk.
+- **File picker**: `C-x C-f`'s completion over the files of the folder typed so far.
 - **Node**: one piece of a buffer's tree; a text node holds editable text.
 - **Page machinery** (the page service): what the web plugin offers other plugins on the browser page: their own scripts, their own addresses to post to, one-time instructions to one tab.
 - **Speech worker**: the separate program that turns audio into text, so recognizing speech never freezes Tuna.
@@ -419,7 +445,7 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 - **Plain data**: numbers, strings, symbols, booleans, and lists and vectors of them; anything crossing threads must be plain data.
 - **Job group**: a plugin's set of jobs; turning the plugin off cancels them.
 - **Candidate**: one thing you can choose in a list, with the text shown and the value returned.
-- **Category**: what kind of thing the candidates are (`command`, later `buffer` or `file`); annotations and settings key off it.
+- **Category**: what kind of thing the candidates are (`command`, `file`, `buffer`); annotations and settings key off it.
 - **Session**: one running question in completion: what you have typed, the matches, and the selection.
 - **Matching style**: a rule for which candidates match what you typed.
 - **Annotator**: adds details beside each candidate of a category.
