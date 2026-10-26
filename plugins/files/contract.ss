@@ -4,8 +4,8 @@
 ;;; All file access goes through the file service (`FileSystem`), whose
 ;;; provider is the local disk, so remote or compressed files can come
 ;;; later without touching its callers (Emacs's file-name handlers). Paths
-;;; it takes are absolute and expanded (`expand-file-name`). Watching for
-;;; changes on disk comes later (the files plan, stage 3).
+;;; it takes are absolute and expanded (`expand-file-name`). It also
+;;; watches files for changes by other programs.
 ;;;
 ;;; A text visits a file, not a buffer: its visit record says which file,
 ;;; what was on disk at the last read or save (its attributes and a hash of
@@ -20,6 +20,13 @@
 ;;; line endings used on every line are shown as plain lines and written
 ;;; back; mixed line endings stay in the text as they are. Anything else
 ;;; (invalid UTF-8, UTF-16, binary) opens read-only and cannot be saved.
+;;;
+;;; When another program changes a visited file, a text with no unsaved
+;;; changes is reloaded (the `auto-revert` setting), as one undoable change
+;;; that replaces only the lines that changed; a text with unsaved changes
+;;; is marked as in conflict, and saving it asks whether to overwrite the
+;;; file or reload it. A file deleted or renamed away leaves its text
+;;; unsaved, so saving writes it again.
 prelude: :gerbil/core
 
 (import :std/interface
@@ -32,15 +39,18 @@ prelude: :gerbil/core
         (interface-out FileSystem)
         file-system-service
         stat-file read-file-bytes write-file-bytes list-folder true-name
+        watch-file unwatch-file check-watched-files
         visit visit? visit-file-name visit-true-name visit-identity visit-disk visit-hash
         visit-encoding visit-bom? visit-line-ending visit-final-newline? visit-saved-revision
-        visit-editable? visit-changes
+        visit-conflict? visit-editable? visit-changes
         (interface-out Files)
         files-service
         find-file-noselect find-file
         text-visit buffer-visit buffer-file buffer-modified? file-buffers
-        save-buffer write-file
+        save-buffer write-file revert-buffer
         find-file-hook auto-mode-hook before-save-hook after-save-hook
+        before-revert-hook after-revert-hook
+        auto-revert auto-revert-use-notify auto-revert-interval revert-buffer-function
         save-takeover-hook context-add-save-takeover! run-save-takeovers
         default-directory buffer-default-directory
         home-directory expand-file-name abbreviate-file-name
@@ -78,7 +88,18 @@ prelude: :gerbil/core
   (list-folder (path : :string)) => :list
   ;; PATH with every symbolic link, "." and ".." resolved; for a file that
   ;; does not exist, its folder's true name and its name.
-  (true-name (path : :string)) => :string)
+  (true-name (path : :string)) => :string
+  ;; Call (CHANGED HASH) on the editor thread soon after another program
+  ;; changed what is at PATH (a true name): wrote, replaced, created,
+  ;; deleted or renamed it. HASH is the SHA-256 of the file's bytes then,
+  ;; or #f when it is not a readable file. A file whose bytes did not
+  ;; change (touch) is no change, but a replaced file with the same bytes
+  ;; may be reported. Watching PATH again replaces CHANGED.
+  (watch-file (path : :string) (changed : :procedure)) => :void
+  (unwatch-file (path : :string)) => :void
+  ;; Look at every watched file again soon, as when changes may have been
+  ;; missed. Callable from any thread.
+  (check-watched-files) => :void)
 
 (def file-system-service
   (new-service 'file-system is-FileSystem? tier: 'live
@@ -99,6 +120,15 @@ prelude: :gerbil/core
 (def (true-name (path : :string)) => :string
   (:- (with-service-provider (provider file-system-service FileSystem) (FileSystem-true-name provider path)) :string))
 
+(def (watch-file (path : :string) (changed : :procedure)) => :void
+  (:- (with-service-provider (provider file-system-service FileSystem) (FileSystem-watch-file provider path changed)) :void))
+
+(def (unwatch-file (path : :string)) => :void
+  (:- (with-service-provider (provider file-system-service FileSystem) (FileSystem-unwatch-file provider path)) :void))
+
+(def (check-watched-files) => :void
+  (:- (with-service-provider (provider file-system-service FileSystem) (FileSystem-check-watched-files provider)) :void))
+
 ;;; Visits
 
 ;; A text's file. FILE-NAME is the file as visited (Emacs's
@@ -109,7 +139,9 @@ prelude: :gerbil/core
 ;; 'utf-16 or 'binary. LINE-ENDING is 'lf, 'crlf (every line; the text
 ;; holds plain newlines) or 'mixed (kept in the text as they are).
 ;; SAVED-REVISION is the text's character revision at the last read or
-;; save. CHANGES changes whenever the record does (tuna/lib/memo).
+;; save, -1 when the file was deleted. CONFLICT? says another program
+;; changed the file while the text had unsaved changes. CHANGES changes
+;; whenever the record does (tuna/lib/memo).
 (defclass visit ((file-name      : :string)
                  (true-name      : :string)
                  (identity       :? :pair)
@@ -120,6 +152,7 @@ prelude: :gerbil/core
                  (line-ending    : :symbol)
                  (final-newline? : :boolean)
                  (saved-revision : :fixnum)
+                 (conflict?      : :boolean)
                  (changes        : source))
   final: #t)
 
@@ -134,7 +167,9 @@ prelude: :gerbil/core
   ;; Write B's text to its file; #f when it was refused, with a message.
   (save-buffer! (b : buffer)) => :boolean
   ;; Make B's text visit PATH instead, then save it there.
-  (write-buffer! (b : buffer) (path : :string)) => :boolean)
+  (write-buffer! (b : buffer) (path : :string)) => :boolean
+  ;; Read B's file again into B, without asking (revert-buffer).
+  (revert-buffer! (b : buffer)) => :boolean)
 
 (def files-service
   (new-service 'files is-Files? tier: 'live
@@ -184,6 +219,14 @@ prelude: :gerbil/core
 (def (write-file (b : buffer) (path : :string)) => :boolean
   (:- (with-service-provider (provider files-service Files) (Files-write-buffer! provider b path)) :boolean))
 
+;; Make B show what is on disk again, discarding unsaved changes, as one
+;; undoable change (Emacs's revert-buffer with NOCONFIRM): B's
+;; revert-buffer-function if it has one, otherwise before-revert-hook,
+;; reading its file, and after-revert-hook. #f when there was nothing to
+;; read, with a message.
+(def (revert-buffer (b : buffer)) => :boolean
+  (:- (with-service-provider (provider files-service Files) (Files-revert-buffer! provider b)) :boolean))
+
 ;;; Hooks. Each runs with the buffer. A callback that fails is reported in
 ;;; the echo area and on stderr (the kernel's run-hook) and removed.
 
@@ -195,6 +238,23 @@ prelude: :gerbil/core
   (new-hook 'before-save doc: "Runs with a buffer before its text is written to its file."))
 (def after-save-hook
   (new-hook 'after-save doc: "Runs with a buffer after its text was written to its file."))
+(def before-revert-hook
+  (new-hook 'before-revert doc: "Runs with a buffer before its file is read into it again."))
+(def after-revert-hook
+  (new-hook 'after-revert doc: "Runs with a buffer after its file was read into it again."))
+
+;;; Settings for changes on disk
+
+;; Emacs leaves auto-revert off (global-auto-revert-mode); Tuna turns it
+;; on, as other editors do, since a reload is one undoable change.
+(defsetting auto-revert #t
+  "Whether a file buffer with no unsaved changes is reloaded when another program changes its file.")
+(defsetting auto-revert-use-notify #t
+  "Whether file changes are noticed through the operating system's notifications (inotify) rather than by looking every auto-revert-interval seconds; read when watching starts.")
+(defsetting auto-revert-interval 2
+  "Seconds between looks at files that are polled, where notifications do not work.")
+(defsetting revert-buffer-function #f
+  "When a procedure, revert-buffer calls it with the buffer instead of reading the buffer's file (Emacs's revert-buffer-function).")
 
 ;; Emacs's write-contents-functions: a callback may write the buffer
 ;; itself instead of the file service. Callbacks run with the buffer and a

@@ -4,7 +4,8 @@ ESBUILD ?= esbuild
 
 all: assets build
 
-assets: plugins/web/web/tuna-input.js plugins/microphone/web/microphone.js plugins/microphone/web/microphone-worklet.js
+assets: plugins/web/web/tuna-input.js plugins/microphone/web/microphone.js plugins/microphone/web/microphone-worklet.js \
+	plugins/files/web/files.js
 
 plugins/web/web/tuna-input.js: plugins/web/frontend/tuna-input.ts plugins/web/frontend/input-sender.ts plugins/web/frontend/tuna-keyboard.ts \
 		plugins/web/frontend/tuna-pointer.ts plugins/web/frontend/tuna-scroll.ts \
@@ -20,6 +21,11 @@ plugins/microphone/web/microphone.js: plugins/microphone/frontend/microphone.ts 
 
 plugins/microphone/web/microphone-worklet.js: plugins/microphone/frontend/microphone-worklet.ts Makefile
 	$(ESBUILD) $< --bundle --format=esm --minify \
+		--platform=browser --target=es2022 --legal-comments=none --outfile=$@
+
+# The files plugin's page script.
+plugins/files/web/files.js: plugins/files/frontend/files.ts Makefile
+	$(ESBUILD) $< --bundle --external:datastar --format=esm --minify \
 		--platform=browser --target=es2022 --legal-comments=none --outfile=$@
 
 build:
