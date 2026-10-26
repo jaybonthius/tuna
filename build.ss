@@ -39,7 +39,7 @@
     ("plugins/configuration" "plugin")
     ("plugins/proced" "plugin")
     ("plugins/files" "contract" "encoding" "local-disk" "picker" "plugin")
-    ("plugins/web" "contract" "embed"
+    ("plugins/web" "contract" "embed" "proxy"
      (gxc: "plugin"
            (extra-inputs: ,(map (cut string-append "web/" <>)
                                (directory-files "plugins/web/web")))))

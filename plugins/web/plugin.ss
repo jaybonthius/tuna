@@ -104,7 +104,8 @@
         :tuna/plugins/renderer/contract
         :tuna/plugins/stylesheets/contract
         :tuna/plugins/web/contract
-        :tuna/plugins/web/embed)
+        :tuna/plugins/web/embed
+        :tuna/plugins/web/proxy)
 (export web-transport
         web-transport-url)
 
@@ -122,6 +123,7 @@
    (host        : :string)      ; the Host of the URL Tuna prints
    (hosts       : :list)        ; every Host accepted (ADR 10)
    (origins     : :list)        ; every Origin accepted, when one is sent
+   (secret      :? :u8vector)   ; required from peers that are not loopback (ADR 10)
    (admission   : :mutex)       ; guards each tab's input ordering and submission
    (slot-numbers : HashTable)   ; (owner . name) -> n in /css/<n>/; editor thread only
    (stylesheets-seen : :fixnum) ; the stylesheets generation HEAD shows; editor thread only
@@ -742,10 +744,15 @@
                           (string->utf8 text)))
 
 ;; Every route keeps the Host/Origin boundary, without a sign-in (ADR 10):
-;; a foreign page's Origin and a rebound name's Host are refused.
+;; a foreign page's Origin and a rebound name's Host are refused, and a
+;; peer that is not loopback (a reverse proxy on another address) must
+;; send the proxy secret.
 (def (handle-request (self : web-server) (request : Request) (response : ResponseHandler)) => :void
   (let (origin (header request "Origin"))
     (cond
+     ((not (or (loopback-peer? (Request-client request))
+               (secret-matches? self.secret (header request "Tuna-Proxy-Secret"))))
+      (respond-text response Forbidden "Forbidden."))
      ((not (member (header request "Host") self.hosts))
       (respond-text response Forbidden "Unexpected Host."))
      ((and origin (not (member origin self.origins)))
@@ -1276,10 +1283,20 @@
          ;; as a `tailscale serve` name in front of this port.
          (hosts (cons* host (string-append "localhost:" (number->string port))
                        (plugin-option web-transport 'hosts)))
+         ;; Another address to listen on, for a reverse proxy, which must
+         ;; send the secret in the secret file.
+         (also (plugin-option web-transport 'listen-also))
+         (secret-file (plugin-option web-transport 'proxy-secret-file))
+         (secret (cond
+                  ((and (string-empty? also) (string-empty? secret-file)) #f)
+                  ((or (string-empty? also) (string-empty? secret-file))
+                   (error "listen-also and proxy-secret-file must be given together"))
+                  (else (read-proxy-secret secret-file))))
          (self (web-server submit: (input-submitter)
                               port: port
                               host: host
                               hosts: hosts
+                              secret: secret
                               origins: (foldr (lambda ((h : :string) (rest : :list))
                                                 (cons* (string-append "http://" h) (string-append "https://" h) rest))
                                               [] hosts)
@@ -1310,7 +1327,10 @@
                                    (lambda (request response)
                                      (handle-request self request response))))
                    log: (stderr-log-sink)
-                   listen: [(string-append "inet4:" host)]
+                   listen: (if (string-empty? also)
+                             [(string-append "inet4:" host)]
+                             [(string-append "inet4:" host)
+                              (string-append "inet4:" also ":" (number->string port))])
                    response-timeout: !NoTimeout))))
     (set! (web-server-server self) server)
     (set! (web-server-keeper self) (spawn-thread (lambda () (tab-keeping-thread self)) 'tuna-tabs))
@@ -1334,6 +1354,10 @@
         (integer-type 0 65535) flag: "--port")
   (hosts [] "Host names besides 127.0.0.1 and localhost that reach this port, such as a `tailscale serve` name; requests with any other Host or Origin are refused."
          host-list-type flag: "--hosts")
+  (listen-also "" "Another address to listen on as well as loopback, such as Docker's bridge address for a reverse proxy; requires proxy-secret-file."
+               string-type flag: "--listen-also")
+  (proxy-secret-file "" "A file (mode 600) holding a secret that requests from addresses other than loopback must send in the Tuna-Proxy-Secret header."
+                     string-type flag: "--proxy-secret-file")
   (screen-timeout 1000 "Milliseconds a page may take to confirm a screen before the newest is sent again."
                   (integer-type 1 60000))
   (tab-grace 60000
