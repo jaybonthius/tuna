@@ -56,11 +56,11 @@
          (question (string-append "Kill buffer (default " current "): ")))
     (if (service-provider completion-service)
       (:- (completing-read question
-                       (make-completion-table
-                        category: 'buffer
-                        items: (strings->candidates
-                                (filter-map (lambda ((b : buffer)) (and (not (internal-buffer? b)) (buffer-name b)))
-                                            (buffer-list))))
+                       [(make-completion-table
+                         category: 'buffer
+                         items: (strings->candidates
+                                 (filter-map (lambda ((b : buffer)) (and (not (internal-buffer? b)) (buffer-name b)))
+                                             (buffer-list))))]
                        default: current)
           :string)
       (let (answer (read-string question))

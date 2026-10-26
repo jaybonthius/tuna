@@ -23,6 +23,14 @@
 ;;; The status line shows "*" for an unsaved file buffer and "read-only"
 ;;; for one that cannot be saved; killing an unsaved file buffer with
 ;;; C-x k asks first.
+;;;
+;;; Remembering, in session slots, both by true name: recent files
+;;; (Emacs's recentf), most recent first, recorded when a file is visited
+;;; or written to a new name, offered first in the picker and by
+;;; recent-file, and dropped once they no longer exist; and remembered
+;;; places (Emacs's save-place), each file's cursor position when its
+;;; buffer is killed or saved, or the session saved, put back when the
+;;; file is opened again.
 
 (import (only-in :gerbil/runtime/hash HashTable)
         (only-in :std/crypto/digest sha256)
@@ -44,14 +52,21 @@
         "encoding"
         "picker")
 (export files
-        file-buffer-names)
+        file-buffer-names
+        recent-files-limit
+        remembered-places-limit)
+
+(defsetting recent-files-limit 100 "How many recent files to remember (Emacs's recentf-max-saved-items).")
+(defsetting remembered-places-limit 400 "How many files' cursor positions to remember (Emacs's save-place-limit).")
 
 ;;; Visits
 
 (defclass files-state ((visits : HashTable)          ; text -> visit
                        (picker-keymap : entry-table)
                        (answer-keymap : entry-table)  ; save-some-buffers' one-key answers
-                       (answering : :list))           ; its prompts waiting, innermost first
+                       (answering : :list)            ; its prompts waiting, innermost first
+                       (recent : :list)               ; true names, most recent first
+                       (places : :list))              ; (true name . position), most recent first
   final: #t)
 
 (def (text-of (b : buffer)) => text
@@ -79,6 +94,73 @@
     ((binary) "binary")
     ((utf-16) "UTF-16, which Tuna cannot edit yet")
     (else "not valid UTF-8")))
+
+;;; Recent files and remembered places
+
+(def (setting-limit (s : setting)) => :fixnum
+  (let (limit (setting-value s))
+    (unless (and (fixnum? limit) (fx>= limit 0))
+      (error "A limit must be a non-negative integer:" (setting-name s) limit))
+    limit))
+
+(def (at-most (items : :list) (limit : :fixnum)) => :list
+  (if (fx> (length items) limit) (take items limit) items))
+
+(def (add-recent-file! (self : files-state) (truename : :string)) => :void
+  (set! self.recent (at-most (cons truename (filter (lambda ((name : :string)) (not (equal? name truename)))
+                                                    self.recent))
+                             (setting-limit recent-files-limit))))
+
+;; The recent files that still exist; the others are forgotten.
+(def (existing-recent-files! (self : files-state)) => :list
+  (set! self.recent (filter (lambda ((name : :string))
+                              (let (stat (with-catch (lambda (e) #f) (lambda () (stat-file name))))
+                                (and stat (eq? (file-stat-kind stat) 'file))))
+                            self.recent))
+  self.recent)
+
+;; Saved recent files after those recorded since start.
+(def (restore-recent-files! (self : files-state) (data : :t)) => :void
+  (set! self.recent (at-most (append self.recent
+                                     (filter (lambda (name) (and (string? name) (not (member name self.recent))))
+                                             (if (list? data) data [])))
+                             (setting-limit recent-files-limit))))
+
+;; B's cursor position: the selected view's when it shows B, else the
+;; first view's that does, else B's own.
+(def (buffer-position (b : buffer)) => :fixnum
+  (let (selected (selected-view))
+    (if (eq? (view-showing selected) b)
+      (view-point selected)
+      (let (shown (find (lambda ((v : view)) (eq? (view-showing v) b)) (view-list)))
+        (if shown (view-point shown) (buffer-point b))))))
+
+;; PLACES with TRUENAME at POSITION, first. Position 1 is forgotten, as
+;; Emacs's save-place does.
+(def (with-place (places : :list) (truename : :string) (position : :fixnum)) => :list
+  (let (others (filter (lambda ((place : :pair)) (not (equal? (car place) truename))) places))
+    (at-most (if (fx> position 1) (cons (cons truename position) others) others)
+             (setting-limit remembered-places-limit))))
+
+(def (remember-place! (self : files-state) (b : buffer)) => :void
+  (let (v (buffer-visit b))
+    (when v
+      (set! self.places (with-place self.places (visit-true-name v) (buffer-position b))))))
+
+;; The remembered places, with every file buffer's position now.
+(def (current-places (self : files-state)) => :list
+  (foldl (lambda ((b : buffer) (places : :list))
+           (with-place places (visit-true-name (:- (buffer-visit b) visit)) (buffer-position b)))
+         self.places (file-buffers)))
+
+;; Saved places after those remembered since start.
+(def (restore-places! (self : files-state) (data : :t)) => :void
+  (set! self.places (at-most (append self.places
+                                     (filter (lambda (place)
+                                               (and (pair? place) (string? (car place)) (fixnum? (cdr place))
+                                                    (not (assoc (car place) self.places))))
+                                             (if (list? data) data [])))
+                             (setting-limit remembered-places-limit))))
 
 ;;; Buffer names
 
@@ -157,6 +239,7 @@
     (when (and stat (not (eq? (file-stat-kind stat) 'file)))
       (error "This is not a regular file:" (abbreviate-file-name name)))
     (let (truename (true-name name))
+      (add-recent-file! self truename)
       (or (visiting-buffer truename (and stat (file-stat-identity stat)))
           (new-file-buffer! self name truename stat)))))
 
@@ -172,6 +255,9 @@
     (record-disk! v stat bytes (text-chars-revision t))
     (hash-put! (files-state-visits self) t v)
     (set-buffer-setting! b default-directory (file-name-directory name))
+    (let (place (and stat (assoc truename (files-state-places self))))
+      (when place
+        (set-buffer-point! b (fxmin (cdr place) (fx1+ (text-size t))))))
     (unless (visit-editable? v)
       (set-buffer-setting! b buffer-read-only #t))
     (rename-buffer! b (rename-file-buffers! #f b name))
@@ -264,7 +350,8 @@
         (record-disk! v #f #f -1)
         (set-buffer-setting! b default-directory (file-name-directory name))
         (rename-file-buffers! #f #f #f)
-        (save! b v))))))
+        (and (save! b v)
+             (begin (add-recent-file! self (visit-true-name v)) #t)))))))
 
 (implement Files files-state
   (find-file-noselect (lambda (self path) (visit-file! self path)))
@@ -324,11 +411,15 @@
 ;;; Commands
 
 ;; The file name to visit, read with the picker from the current buffer's
-;; folder; RET on a folder opens the picker there.
-(def (read-file-to-visit (self : files-state) (question : :string)) => :string
+;; folder, offering recent files first when RECENT?; RET on a folder opens
+;; the picker there.
+(def (read-file-to-visit (self : files-state) (question : :string) (recent? : :boolean)) => :string
   (let lp ((initial (abbreviate-file-name (buffer-default-directory (current-buffer)))))
     (let* ((from (buffer-default-directory (current-buffer)))
-           (answer (completing-read question (file-table from)
+           (sources (if recent?
+                      [(recent-file-table (existing-recent-files! self) "Recent files" initial) (file-table from)]
+                      [(file-table from)]))
+           (answer (completing-read question sources
                                     require-match: #f initial: initial history: 'file
                                     setup: (lambda ((p : Prompt))
                                              (wrap-picker-answer! p (files-state-picker-keymap self)))))
@@ -339,7 +430,7 @@
         name))))
 
 (defplugin (files ctx)
-  "Opens and saves files: C-x C-f, C-x C-s, C-x s, C-x C-w; the local disk as the file service."
+  "Opens and saves files: C-x C-f, C-x C-s, C-x s, C-x C-w, recent-file; remembers recent files and cursor places; the local disk as the file service."
   provides: [file-system-service files-service]
   requires: [commands-service input-service buffers-service layout-service settings-service
              minibuffer-service completion-service session-service]
@@ -348,7 +439,8 @@
   (context-provide! ctx file-system-service
                     (FileSystem (new-local-disk (lambda () (path-expand "file-backups" (state-directory))))))
   (using (self (files-state visits: (make-hash-table-eq weak-keys: #t)
-                            picker-keymap: (new-keymap) answer-keymap: (new-keymap) answering: [])
+                            picker-keymap: (new-keymap) answer-keymap: (new-keymap) answering: []
+                            recent: [] places: [])
                : files-state)
     (context-provide! ctx files-service (Files self))
     (context-define-node-kind! ctx 'file-picker-input items: 'children
@@ -365,20 +457,35 @@
            ((buffer-modified? b) "*")
            (else #f)))))
     (context-add-kill-buffer-query! ctx 'files kill-unsaved?)
+    (context-add-session-slot! ctx 'recent-files version: 1
+      save: (lambda () (files-state-recent self))
+      restore: (lambda (data) (restore-recent-files! self data)))
+    (context-add-session-slot! ctx 'remembered-places version: 1
+      save: (lambda () (current-places self))
+      restore: (lambda (data) (restore-places! self data)))
+    (context-add-hook! ctx after-save-hook 'remembered-places
+      (lambda ((b : buffer)) (remember-place! self b)))
     (context-add-hook! ctx kill-buffer-hook 'files
       (lambda ((b : buffer))
         (when (buffer-visit b)
+          (remember-place! self b)
           (rename-file-buffers! b #f #f)
           (hash-remove! (files-state-visits self) (text-of b)))))
     (defcommand (find-file) "Visit a file, chosen with the file picker, in the selected view; a new name makes a new file on first save."
-      (find-file (read-file-to-visit self "Find file: ")))
+      (find-file (read-file-to-visit self "Find file: " #t)))
+    (defcommand (recent-file) "Visit a recently visited file, chosen from the most recent first."
+      (let (files (existing-recent-files! self))
+        (if (null? files)
+          (message "No recent files")
+          (find-file (:- (completing-read "Find recent file: " [(recent-file-table files #f #f)] history: 'file)
+                         :string)))))
     (defcommand (save-buffer) "Save the current buffer to its file, if it changed."
       (save-buffer (current-buffer)))
     (defcommand (save-some-buffers) "Offer each unsaved file buffer for saving: y or SPC saves, n or DEL skips, ! saves the rest, . saves this one and stops, q or RET stops."
       (save-some-buffers! self))
     (defcommand (write-file) "Save the current buffer to another file, which it visits from then on."
       (let* ((b (current-buffer))
-             (name (read-file-to-visit self "Write file: "))
+             (name (read-file-to-visit self "Write file: " #f))
              (stat (stat-file name)))
         (when (or (not stat) (eq? (file-stat-kind stat) 'folder)
                   (equal? (buffer-file b) name)

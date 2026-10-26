@@ -53,5 +53,5 @@
                                     (make-candidate text: (target-label info) value: info
                                                     key: (advice-target-info-target info)))
                                   targets)))
-             (selected (: (completing-read "Describe advice for: " table) advice-target-info)))
+             (selected (: (completing-read "Describe advice for: " [table]) advice-target-info)))
         (show-help "Advice" (target-description selected))))))

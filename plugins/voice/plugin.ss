@@ -546,14 +546,14 @@
 ;; first selected, and return it.
 (def (choose-command (candidates : :list)) => :symbol
   (completing-read "Voice command: "
-                   (make-completion-table
-                    category: 'command
-                    items: (map (lambda ((pair : :pair))
-                                  (let (name (car pair))
-                                    (make-candidate text: (symbol->string name) value: name key: name)))
-                                candidates)
-                    ;; Keep the order: most confident first.
-                    sort: (lambda (rows) rows))))
+                   [(make-completion-table
+                     category: 'command
+                     items: (map (lambda ((pair : :pair))
+                                   (let (name (car pair))
+                                     (make-candidate text: (symbol->string name) value: name key: name)))
+                                 candidates)
+                     ;; Keep the order: most confident first.
+                     sort: (lambda (rows) rows))]))
 
 ;; Act on what the command heard, OUTCOME.
 (def (act-on-hearing! (outcome : :t)) => :void

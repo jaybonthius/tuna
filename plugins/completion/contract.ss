@@ -14,11 +14,16 @@ prelude: :gerbil/core
   final: #t)
 
 ;; ITEMS is a candidate list or input -> candidate list. SORT reorders plain
-;; (index . text) pairs, initially in source order; #f uses history/length/name.
+;; (index . text) pairs, initially in item order; #f uses history/length/name.
 ;; GROUP is candidate -> optional group title. Table callbacks are read-only.
+;; A read can combine several tables, its sources (Consult's sources), in
+;; one list: each source's matches follow the previous source's, under its
+;; TITLE unless GROUP or the candidate names a group. QUERY, input -> the
+;; text this source's candidates are matched against, defaults to the input.
 (defstruct completion-table ((category : :symbol) (items : :t)
                              (sort :? :procedure := #f) (group :? :procedure := #f)
-                             (annotate :? :procedure := #f))
+                             (annotate :? :procedure := #f)
+                             (title :? :string := #f) (query :? :procedure := #f))
   final: #t)
 
 ;; COMPILE: input -> (text -> #f or list of zero-based half-open spans).
@@ -43,7 +48,7 @@ prelude: :gerbil/core
   (session-group (c : candidate)) => (Maybe :string))
 
 (interface Completion
-  (completing-read (question : :string) (table : completion-table)
+  (completing-read (question : :string) (sources : :list)
                    (require-match : :boolean) (initial : :string)
                    (history :? :symbol) (default :? :string) (setup :? :procedure)) => :t
   (current-session) => (Maybe CompletionSession)
@@ -61,16 +66,19 @@ prelude: :gerbil/core
 (def completion-ui-service (new-service 'completion-ui is-CompletionUI? tier: 'live
   doc: "Presents a completion session in its prompt buffer."))
 
+;; SOURCES is a non-empty list of completion tables, shown in that order;
+;; one table is the one-source case. The first source's category chooses
+;; the matching styles and is the session's category.
 ;; SETUP, when given, receives the minibuffer's Prompt handle once the
 ;; engine has set up the prompt, before it is first presented: a caller adds
 ;; prompt-local nodes and keys there (the file picker's DEL and ~/).
-(def (completing-read (question : :string) (table : completion-table)
+(def (completing-read (question : :string) (sources : :list)
                       require-match: (require-match : :boolean := #t)
                       initial: (initial : :string := "")
                       history: (history :? :symbol := #f)
                       default: (default :? :string := #f)
                       setup: (setup :? :procedure := #f)) => :t
-  (with-service-provider (provider completion-service Completion) (Completion-completing-read provider question table require-match initial history default setup)))
+  (with-service-provider (provider completion-service Completion) (Completion-completing-read provider question sources require-match initial history default setup)))
 
 (def (current-completion-session) => (Maybe CompletionSession)
   (:? (let (provider (service-provider completion-service))
