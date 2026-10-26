@@ -113,7 +113,7 @@
   => visit
   (visit file-name: name true-name: truename identity: #f disk: #f hash: #f
          encoding: encoding bom?: bom? line-ending: line-ending final-newline?: final-newline?
-         saved-revision: -1 saved-size: -1 conflict?: #f changes: (new-source)))
+         saved-revision: -1 saved-size: -1 conflict: #f changes: (new-source)))
 
 ;; Record in V that DISK, whose bytes have the SHA-256 HASH, is what its
 ;; file now holds, and that the text's character REVISION, of SIZE
@@ -125,13 +125,13 @@
   (set! v.hash hash)
   (set! v.saved-revision revision)
   (set! v.saved-size size)
-  (set! v.conflict? #f)
+  (set! v.conflict #f)
   (source-changed! (visit-changes v)))
 
-;; Mark V as in conflict: another program changed its file while its text
-;; had unsaved changes.
-(def (mark-conflict! (v : visit)) => :void
-  (set! v.conflict? #t)
+;; Mark V as in conflict: another program changed its file to bytes with
+;; the SHA-256 HASH while its text had unsaved changes.
+(def (mark-conflict! (v : visit) (hash : :u8vector)) => :void
+  (set! v.conflict hash)
   (source-changed! (visit-changes v)))
 
 ;; Whether T, which visits a file, differs from what the file held at the
@@ -406,7 +406,7 @@
                  #f)
                 (else
                  (record-disk! v file recorded -1 -1)
-                 (mark-conflict! v)
+                 (mark-conflict! v hash)
                  "changed on disk while Tuna was not running"))))
     (let (b (add-file-buffer! self t v 1))
       (when note
@@ -467,8 +467,11 @@
                   (override b)
                   (reload! b v stat bytes)))
               (message (string-append "Reloaded " (buffer-name b))))
+             ;; Already noticed (as when the first look after a restart
+             ;; reports what recovering found).
+             ((equal? hash (visit-conflict v)) (void))
              (else
-              (mark-conflict! v)
+              (mark-conflict! v hash)
               (message (string-append (buffer-name b) " changed on disk")))))))))))
 
 ;; Make B, which visits V, hold BYTES, read from its file with STAT: the

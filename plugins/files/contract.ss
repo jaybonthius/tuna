@@ -48,7 +48,7 @@ prelude: :gerbil/core
         watch-file unwatch-file check-watched-files
         visit visit? visit-file-name visit-true-name visit-identity visit-disk visit-hash
         visit-encoding visit-bom? visit-line-ending visit-final-newline? visit-saved-revision visit-saved-size
-        visit-conflict? visit-editable? visit-changes
+        visit-conflict visit-conflict? visit-editable? visit-changes
         (interface-out Files)
         files-service
         find-file-noselect find-file
@@ -148,8 +148,9 @@ prelude: :gerbil/core
 ;; SAVED-REVISION is the text's character revision at the last read or
 ;; save, -1 when the file was deleted; SAVED-SIZE its size in characters
 ;; then, -1 when unknown, which tells most edited texts from saved ones
-;; without hashing them. CONFLICT? says another program
-;; changed the file while the text had unsaved changes. CHANGES changes
+;; without hashing them. CONFLICT is the SHA-256 of the bytes another
+;; program wrote to the file while the text had unsaved changes, else #f
+;; (visit-conflict? says whether there is one). CHANGES changes
 ;; whenever the record does (tuna/lib/memo).
 (defclass visit ((file-name      : :string)
                  (true-name      : :string)
@@ -162,9 +163,12 @@ prelude: :gerbil/core
                  (final-newline? : :boolean)
                  (saved-revision : :fixnum)
                  (saved-size     : :fixnum)
-                 (conflict?      : :boolean)
+                 (conflict       :? :u8vector)
                  (changes        : source))
   final: #t)
+
+(def (visit-conflict? (v : visit)) => :boolean
+  (and (visit-conflict v) #t))
 
 (def (visit-editable? (v : visit)) => :boolean
   (eq? (visit-encoding v) 'utf-8))
