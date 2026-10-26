@@ -105,7 +105,7 @@ Answers are remembered per question kind: `M-p` and `M-n` step through earlier a
 
 ## Choosing from a list: completion
 
-**Status:** built (`M-x`); other pickers will reuse it.
+**Status:** built (`M-x`, the file picker, `recent-file`); other pickers will reuse it.
 
 ![Which plugin does what](diagrams/completion-plugins.svg)
 
@@ -114,9 +114,10 @@ When a command asks you to choose (a command, later a file or a buffer), it call
 - the **engine**, which keeps the running question (the **session**: what you typed, the matches, the selection), sorts recent answers first, and updates the list in the same redraw as your keystroke;
 - the **matching styles**, which decide what matches: in the starter, `any-order`, the parts you type, separated by spaces, in any order (`view sel` finds `select-view-left`), each as plain text or a regular expression, with upper case mattering only if you type it, then `substring`; other plugins can add styles;
 - **annotations**, details beside each candidate of a **category**: for commands, the key binding and the first line of the description; other plugins can add annotators;
-- `M-x`, which asks the engine to choose a command and runs it.
+- `M-x`, which asks the engine to choose a command and runs it;
+- **sources**: one question can offer several groups of candidates in one list, each from its own table with its own category, annotations and title. The file picker offers "Recent files", then "This folder"; what you type is matched against all of them (a source may match only part of it), and each group keeps its own order. Consult's sources in Emacs are the model.
 
-The **completion list** plugin (`completion-list`) shows ten rows below the prompt: `C-n`/`C-p` move, `RET` chooses, `TAB` copies the selected text into the prompt, `M-RET` takes exactly what you typed, and a click chooses a row. Turn it off, and `M-x` keeps working with less. Commands have their own contract (listing them, their descriptions, running one by name), and `pre-command-hook` and `post-command-hook` run around every command.
+The **completion list** plugin (`completion-list`) shows ten rows below the prompt, with a heading wherever the group changes: `C-n`/`C-p` move, `RET` chooses, `TAB` copies the selected text into the prompt, `M-RET` takes exactly what you typed, and a click chooses a row. Turn it off, and `M-x` keeps working with less. Commands have their own contract (listing them, their descriptions, running one by name), and `pre-command-hook` and `post-command-hook` run around every command.
 
 ## Changing package code while Tuna runs
 
@@ -361,13 +362,13 @@ The default look follows the system's light or dark setting, keeps the cursor vi
 
 ## Files
 
-`C-x C-f` opens a file, `C-x C-s` saves it, `C-x s` offers every unsaved file for saving, and `C-x C-w` saves under another name. The `files` plugin does all of it; turning it off takes these keys away.
+`C-x C-f` opens a file, `C-x C-s` saves it, `C-x s` offers every unsaved file for saving, and `C-x C-w` saves under another name. The `files` plugin does all of it, and remembers the files you opened and where the cursor was in each; turning it off takes these keys away.
 
 ![Opening, editing and saving a file](diagrams/files-open-save.svg)
 
-*Built (stage 1 of the [files plan](../agents/plans/files.md)): steps 1 to 3, 5, 8 and 9, without recent files or the remembered cursor (stage 2). Planned: watching the folder and reloading (steps 4, 6, 7; stage 3), and autosave for file buffers (stage 4).*
+*Built (stages 1 and 2 of the [files plan](../agents/plans/files.md)): steps 1 to 3, 5, 8 and 9, with recent files and the remembered cursor. Planned: watching the folder and reloading (steps 4, 6, 7; stage 3), and autosave for file buffers (stage 4).*
 
-A concrete case: in a folder holding `notes.txt`, you press `C-x C-f`. The **file picker** asks "Find file:" with the folder already typed, and lists what is in it, with each file's size and how long ago it changed; an open file says "open". You type `not` and `RET`. The plugin reads the bytes through the **file service**, turns them into characters, and shows a buffer named `notes.txt`. You type; the status line shows `notes.txt *`. `C-x C-s` writes a temporary file beside it, flushes it to disk, gives it the old file's permissions and owner, renames it over the old file and flushes the folder, so a crash leaves the old file or the new one, never half of each. The `*` goes away.
+A concrete case: in a folder holding `notes.txt`, you press `C-x C-f`. The **file picker** asks "Find file:" with the folder already typed, and lists the files you opened recently under "Recent files", then what is in the folder under "This folder", with each file's size and how long ago it changed; an open file says "open". You type `not` and `RET`; `notes.txt` is first because you opened it yesterday, and it opens with the cursor where you left it. The plugin reads the bytes through the **file service**, turns them into characters, and shows a buffer named `notes.txt`. You type; the status line shows `notes.txt *`. `C-x C-s` writes a temporary file beside it, flushes it to disk, gives it the old file's permissions and owner, renames it over the old file and flushes the folder, so a crash leaves the old file or the new one, never half of each. The `*` goes away.
 
 What to know:
 
@@ -376,6 +377,8 @@ What to know:
 - **Saving through links.** A symbolic link saves into its target and stays a link. A file with other hard links, one whose owner a new file could not get, or one in a folder that takes no new files is written in place instead, after a backup copy that is removed once the new contents are on disk.
 - **A new name makes a new file** on its first save; Tuna never creates a folder, and saving into a folder that does not exist says so.
 - **The picker's keys:** `DEL` deletes one character, as in Emacs's file prompt (`M-DEL`, deleting a word, comes with the editing plugin's word commands); typing `~/` after a `/` jumps home; `RET` on a folder opens the picker in it; `M-RET` takes exactly what you typed (for a new name that matches something).
+- **Recent files** (Emacs's recentf): visiting a file, or saving under a new name, puts it first; a file is listed once by its true name, so a link and its target are one entry; at most `recent-files-limit` (100) are kept. The picker offers them while the folder typed is the one it opened at, matched against the name typed after it; type another folder and the picker lists only that folder. `recent-file` (through `M-x`) offers them alone. A file that no longer exists is dropped when the list is shown.
+- **Remembered places** (Emacs's save-place): when a file buffer is killed or saved, and whenever the session is saved, the cursor's position is kept by the file's true name, for at most `remembered-places-limit` (400) files; opening the file again puts the cursor back (at the end, if the file got shorter). Both lists are session slots, so they survive restarts.
 - **Two files with the same name** get their folder's name too: `notes.txt<docs>` and `notes.txt<work>`.
 - **Killing an unsaved file buffer asks** (`C-x k`, in `view-commands`): "Buffer notes.txt modified; kill anyway? (yes or no)". Quitting Tuna does not ask yet: there is no quit command.
 - **For package authors:** `before-save-hook` (a formatter, say), `context-add-save-takeover!` (save the buffer some other way; the first that does wins), `after-save-hook`, `find-file-hook`, and `auto-mode-hook`, where a future modes plugin will choose a mode by file type. A failing callback is reported in the echo area and on the terminal and removed; the save goes on. Each buffer has a `default-directory`, the folder its relative file names start from.
@@ -388,7 +391,7 @@ Three small additions outside the plugin made this possible: `completing-read` p
 |---|---|---|
 | Your files | Wherever they live | When you save (`C-x C-s`; built) |
 | Unsaved changes | `~/.local/state/tuna/autosave/` | Every so often, and when idle |
-| Open buffers, cursor positions, the layout with its frame, frame marks and pins, history | `~/.local/state/tuna/session.ss` | When idle, and on exit |
+| Open buffers, cursor positions, the layout with its frame, frame marks and pins, history, recent files, each file's remembered cursor position | `~/.local/state/tuna/session.ss` | When idle, and on exit |
 | Settings changed through Tuna's UI | `~/.config/tuna/custom.ss` (planned) | When changed |
 | Your configuration code | `~/.config/tuna/init.ss` | You edit it |
 | The start-up report | `~/.local/state/tuna/startup.log` | Replaced on every start |

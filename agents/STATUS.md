@@ -2,7 +2,7 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: files (brief approved 2026-10-26; plan `agents/plans/files.md`; stage 1, open and save, merged; stage 2, recent files and remembered places, next)
+## Current work: files (brief approved 2026-10-26; plan `agents/plans/files.md`; stage 1, open and save, merged; stage 2, recent files and remembered places with completion sources, built on branch `files-2`; stage 3, changes on disk, next)
 
 ## Previous: voice dictation and spoken commands finished (2026-10-24)
 
