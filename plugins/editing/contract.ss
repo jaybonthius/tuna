@@ -14,9 +14,10 @@
 ;;;
 ;;; The kill ring (Emacs's): the texts killed or copied, newest first, and
 ;;; a yank pointer into them, which yanking inserts from. Putting a text on
-;;; it runs `kill-new-hook`, where a transport can copy the text to the
-;;; computer's clipboard (Emacs's `interprogram-cut-function`), unless the
-;;; text came from that clipboard.
+;;; it, or adding to the newest one, runs `kill-new-hook` with the whole
+;;; text, where a transport can copy it to the computer's clipboard
+;;; (Emacs's `interprogram-cut-function`), unless the text came from that
+;;; clipboard.
 prelude: :gerbil/core
 
 (import :std/interface
@@ -27,7 +28,7 @@ prelude: :gerbil/core
         region-active? region-beginning region-end
         deactivate-mark! set-temporary-region!
         delete-selection
-        kill-new current-kill
+        kill-new kill-append current-kill
         kill-new-hook)
 
 (interface Editing
@@ -37,6 +38,8 @@ prelude: :gerbil/core
   (deactivate-mark!) => :void
   (set-temporary-region! (mark : :fixnum)) => :void
   (kill-new (text : :string)) => :void
+  ;; Returns the newest text, with TEXT added.
+  (kill-append (text : :string) (before? : :boolean)) => :string
   (current-kill (n : :fixnum)) => :string)
 
 (def editing-service
@@ -49,9 +52,10 @@ prelude: :gerbil/core
   "Whether typing, deleting, yanking and pasting replace the active region, as in other editors.")
 
 ;; Runs with each text put on the kill ring, after it is there, unless
-;; the text came from the computer's clipboard.
+;; the text came from the computer's clipboard, and with the newest text
+;; after something was added to it.
 (def kill-new-hook
-  (new-hook 'kill-new doc: "Runs with each text put on the kill ring that did not come from the clipboard."))
+  (new-hook 'kill-new doc: "Runs with each text put on the kill ring that did not come from the clipboard, and with the newest text when something is added to it."))
 
 ;;; The region
 
@@ -91,6 +95,15 @@ prelude: :gerbil/core
   (with-service-provider (provider editing-service Editing) (Editing-kill-new provider text))
   (unless from-clipboard?
     (run-hook kill-new-hook text)))
+
+;; Add TEXT to the end of the newest text on the kill ring, or to its
+;; start when BEFORE?, and point the yank pointer at it (Emacs
+;; `kill-append`); with the ring empty, put TEXT on it. Kill commands do
+;; this when the previous command killed too, so consecutive kills yank
+;; back as one text.
+(def (kill-append (text : :string) (before? : :boolean)) => :void
+  (run-hook kill-new-hook
+            (:- (with-service-provider (provider editing-service Editing) (Editing-kill-append provider text before?)) :string)))
 
 ;; Move the yank pointer N texts older (newer for negative N), around the
 ;; ring, and return the text it points at (Emacs `current-kill`). Signals

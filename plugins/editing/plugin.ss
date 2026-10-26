@@ -4,6 +4,9 @@
 ;;;
 ;;; - typing, deleting, moving by characters and lines and to either end,
 ;;;   and undo;
+;;; - words (words.ss): moving over them (M-f, M-b), killing them (M-d,
+;;;   M-DEL), marking (M-@), transposing (M-t) and changing their case
+;;;   (M-u, M-l, M-c);
 ;;; - the region (Emacs's Transient Mark mode, shift selection and
 ;;;   delete-selection-mode): C-SPC sets the mark and activates the
 ;;;   region, C-x C-x swaps point and the mark, and C-g deactivates it; a
@@ -12,7 +15,9 @@
 ;;; - the kill ring, and the commands that kill, copy and yank through it:
 ;;;   C-w (kill-region), M-w (kill-ring-save), C-y (yank) and M-y
 ;;;   (yank-pop, right after a yank). Killing and copying take the region
-;;;   between point and the mark, active or not, as in Emacs. A paste from
+;;;   between point and the mark, active or not, as in Emacs. A kill right
+;;;   after another kill adds its text to that kill's, so they yank back
+;;;   together (before it when the kill went backward). A paste from
 ;;;   the browser (`<paste>`) runs clipboard-yank, which puts the pasted
 ;;;   text on the kill ring and yanks it, as Emacs's `xterm-paste` does for
 ;;;   a terminal's paste;
@@ -38,7 +43,8 @@
         :tuna/plugins/buffers/contract
         (only-in :tuna/plugins/layout/contract layout-service)
         :tuna/plugins/editing/contract
-        "mouse")
+        "mouse"
+        "words")
 (export editing
         kill-ring-max)
 
@@ -83,7 +89,7 @@
 
 ;; The motion commands that shifted keys select with.
 (def shift-select-commands
-  '(forward-char backward-char next-line previous-line
+  '(forward-char backward-char forward-word backward-word next-line previous-line
     move-beginning-of-line move-end-of-line beginning-of-buffer end-of-buffer
     scroll-up-command scroll-down-command))
 
@@ -179,6 +185,30 @@
     (set! self.texts (if (fx< 0 limit (length texts)) (take texts limit) texts))
     (set! self.pointer 0)))
 
+;; Emacs `kill-append` (lisp/simple.el:5787), which replaces the newest
+;; kill with the longer text.
+(def (kill-append! (self : editing-state) (text : :string) (before? : :boolean)) => :string
+  (if (null? self.texts)
+    (kill-new! self text)
+    (let (newest (car self.texts))
+      (set! self.texts (cons (if before? (string-append text newest) (string-append newest text))
+                             (cdr self.texts)))
+      (set! self.pointer 0)))
+  (car self.texts))
+
+;; M-@ (Emacs `mark-word`, lisp/simple.el:8916, without a prefix
+;; argument): with the region active, or again right after itself, move
+;; the mark one word away from point; otherwise set the mark at the end
+;; of the next word. The region is activated.
+(def (mark-word! (self : editing-state)) => :void
+  (let* ((v (or (text-view) (error "No text to edit here")))
+         (m (view-mark v)))
+    (if (and m (or (view-mark-active? v) (eq? (last-command) 'mark-word)))
+      (activate! self v (forward-word-position (current-text) m (if (fx< m (view-point v)) -1 1)) #f)
+      (begin
+        (activate! self v (forward-word-position (current-text) (view-point v) 1) #f)
+        (message "Mark set")))))
+
 (def (current-kill! (self : editing-state) (n : :fixnum)) => :string
   (when (null? self.texts)
     (error "Kill ring is empty"))
@@ -196,9 +226,27 @@
                            (let (v (or (text-view) (error "No text to edit here")))
                              (activate! self v mark #t))))
   (kill-new (lambda (self text) (kill-new! self text)))
+  (kill-append (lambda (self text before?) (kill-append! self text before?)))
   (current-kill (lambda (self n) (current-kill! self n))))
 
 (def yank-commands '(yank yank-pop clipboard-yank))
+
+;; The commands that kill: a kill right after one of them adds to its
+;; text. Emacs's kill commands set this-command to kill-region instead,
+;; and kill-region appends after kill-region (lisp/simple.el:5886).
+(def kill-commands '(kill-region kill-word backward-kill-word))
+
+;; Kill the text between FROM and TO (Emacs `kill-region`): put it on the
+;; kill ring, or, right after another kill, add it to that kill's text,
+;; before it when TO is before FROM; then delete it.
+(def (kill-region! (from : :fixnum) (to : :fixnum)) => :void
+  (let* ((start (fxmin from to))
+         (end (fxmax from to))
+         (text (text-substring (current-text) start end)))
+    (if (memq (last-command) kill-commands)
+      (kill-append text (fx< to from))
+      (kill-new text))
+    (delete-region start end)))
 
 ;; Insert TEXT at point, with the mark before it (Emacs `yank`).
 (def (yank-text! (text : :string)) => :void
@@ -207,7 +255,7 @@
   (message "Mark set"))
 
 (defplugin (editing ctx)
-  "Typing, deleting, moving and undo; the region (C-SPC, C-x C-x, shift selection); the kill ring (C-w, M-w, C-y, M-y, paste); clicking and dragging in text."
+  "Typing, deleting, moving and undo; words (M-f, M-b, M-d, M-DEL, M-@, M-t, M-u, M-l, M-c); the region (C-SPC, C-x C-x, shift selection); the kill ring (C-w, M-w, C-y, M-y, paste); clicking and dragging in text."
   provides: [editing-service]
   requires: [commands-service input-service buffers-service settings-service]
   optional: [layout-service]          ; the mouse commands, which run only from a pointer event on a layout's screen
@@ -247,6 +295,18 @@
   (defcommand (undo) "Undo the last command's changes; repeat to undo earlier ones."
     (goto-char (text-undo! (current-text) (eq? (last-command) 'undo)))
     (message "Undo"))
+  (defcommand (forward-word) "Move point to the end of the next word."
+    (goto-char (forward-word-position (current-text) (point) 1)))
+  (defcommand (backward-word) "Move point to the start of the previous word."
+    (goto-char (forward-word-position (current-text) (point) -1)))
+  (defcommand (transpose-words) "Swap the word before or around point with the next one, leaving point after both."
+    (transpose-words!))
+  (defcommand (upcase-word) "Convert to upper case from point to the end of the word, moving over it."
+    (casify-word! string-upcase))
+  (defcommand (downcase-word) "Convert to lower case from point to the end of the word, moving over it."
+    (casify-word! string-downcase))
+  (defcommand (capitalize-word) "Capitalize from point to the end of the word, moving over it."
+    (casify-word! capitalize-string))
   (keymap-set printing-char-key 'self-insert-command)
   (keymap-set "SPC" 'self-insert-command)
   (keymap-set "RET" 'newline)
@@ -269,6 +329,19 @@
   (keymap-set "M->" 'end-of-buffer)
   (keymap-set "C-/" 'undo)
   (keymap-set "C-_" 'undo)
+  ;; Emacs binds C-<right>, C-<left>, M-<right> and M-<left> to right-word
+  ;; and left-word, which follow the paragraph's direction; Tuna has no
+  ;; right-to-left text yet, as <right> runs forward-char.
+  (keymap-set "M-f" 'forward-word)
+  (keymap-set "C-<right>" 'forward-word)
+  (keymap-set "M-<right>" 'forward-word)
+  (keymap-set "M-b" 'backward-word)
+  (keymap-set "C-<left>" 'backward-word)
+  (keymap-set "M-<left>" 'backward-word)
+  (keymap-set "M-t" 'transpose-words)
+  (keymap-set "M-u" 'upcase-word)
+  (keymap-set "M-l" 'downcase-word)
+  (keymap-set "M-c" 'capitalize-word)
   (using (self (editing-state temporary: (make-hash-table test: eq? weak-keys: #t) edited: []
                               texts: [] pointer: 0)
                : editing-state)
@@ -301,17 +374,22 @@
     (define-command ctx (set-mark-command)
       "Set the mark at point and activate the region; repeated, deactivate or reactivate it."
       (set-mark-command! self))
+    (define-command ctx (mark-word)
+      "Set the mark at the end of the next word; with the region active, move the mark a word further."
+      (mark-word! self))
     (define-command ctx (exchange-point-and-mark)
       "Put the mark where point is and point where the mark was, and activate the region."
       (exchange-point-and-mark! self))
     (keymap-set ctx "C-SPC" 'set-mark-command)
     (keymap-set ctx "C-x C-x" 'exchange-point-and-mark)
+    (keymap-set ctx "M-@" 'mark-word)
     (context-provide! ctx editing-service (Editing self)))
   (defcommand (kill-region) "Delete the text between point and the mark, and put it on the kill ring."
-    (let ((start (region-beginning))
-          (end (region-end)))
-      (kill-new (text-substring (current-text) start end))
-      (delete-region start end)))
+    (kill-region! (the-mark (selected-view)) (point)))
+  (defcommand (kill-word) "Kill from point to the end of the next word."
+    (kill-region! (point) (forward-word-position (current-text) (point) 1)))
+  (defcommand (backward-kill-word) "Kill from point back to the start of the previous word."
+    (kill-region! (point) (forward-word-position (current-text) (point) -1)))
   (defcommand (kill-ring-save) "Put the text between point and the mark on the kill ring, and deactivate the region."
     (kill-new (text-substring (current-text) (region-beginning) (region-end)))
     (deactivate-mark!))
@@ -337,6 +415,11 @@
       (set-view-mark! v start)
       (insert text)))
   (keymap-set "C-w" 'kill-region)
+  (keymap-set "M-d" 'kill-word)
+  (keymap-set "C-<delete>" 'kill-word)
+  (keymap-set "M-DEL" 'backward-kill-word)
+  ;; Emacs's C-<backspace>: Tuna names the Backspace key DEL.
+  (keymap-set "C-DEL" 'backward-kill-word)
   (keymap-set "M-w" 'kill-ring-save)
   (keymap-set "C-y" 'yank)
   (keymap-set "M-y" 'yank-pop)

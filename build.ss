@@ -28,7 +28,7 @@
     ("plugins/renderer" "contract" "plugin")
     ("plugins/echo-area" "contract" "plugin")
     ("plugins/buttons" "contract" "plugin")
-    ("plugins/editing" "contract" "mouse" "plugin")
+    ("plugins/editing" "contract" "words" "mouse" "plugin")
     ("plugins/minibuffer" "contract" "plugin")
     ("plugins/completion" "contract" "plugin")
     ("plugins/help" "contract" "describe-advice" "describe-stylesheets" "plugin")

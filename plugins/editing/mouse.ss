@@ -48,7 +48,8 @@
         :tuna/plugins/keys/contract
         :tuna/plugins/buffers/contract
         :tuna/plugins/editing/contract
-        :tuna/plugins/layout/contract)
+        :tuna/plugins/layout/contract
+        "words")
 (export define-mouse-commands!)
 
 ;; A press being dragged, from the press to its release: the view and
@@ -73,13 +74,13 @@
   (and (fx<= 1 position (text-size t))
        (string-ref (text-substring t position (fx1+ position)) 0)))
 
-;; C's class in Emacs's standard syntax table: whitespace, a word
-;; constituent (letters, digits, $, % and every non-ASCII character), a
-;; symbol constituent, or something else (punctuation, brackets, quotes).
+;; C's class, as in Emacs's standard syntax table: whitespace, a word
+;; constituent (words.ss), a symbol constituent, or something else
+;; (punctuation, brackets, quotes).
 (def (char-class (c : :char)) => :symbol
   (cond
    ((memv c '(#\space #\tab #\newline #\return #\page)) 'space)
-   ((or (char-alphabetic? c) (char-numeric? c) (memv c '(#\$ #\%)) (fx>= (char->integer c) 128)) 'word)
+   ((word-constituent? c) 'word)
    ((memv c '(#\_ #\- #\+ #\* #\/ #\& #\| #\< #\> #\=)) 'symbol)
    (else 'other)))
 
