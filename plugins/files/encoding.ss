@@ -81,7 +81,7 @@ prelude: :gerbil/core
             (begin (u8vector-set! out j b) (lp (fx1+ i) (fx1+ j)))))))))
 
 ;; Characters for a file that is not UTF-8, only to be looked at: valid
-;; UTF-8 sequences decode, and every other byte, and every control
+;; UTF-8 sequences decode, and every other byte, and every ASCII control
 ;; character but tab, LF and CR, shows as U+FFFD.
 (def (lenient-text (bytes : :u8vector)) => :string
   (let ((size (u8vector-length bytes))
@@ -89,15 +89,15 @@ prelude: :gerbil/core
     (let lp ((i 0))
       (when (fx< i size)
         (let* ((b (u8vector-ref bytes i))
-               (length (cond ((fx< b #x80) 1) ((fx<= #xC2 b #xDF) 2) ((fx<= #xE0 b #xEF) 3)
+               (width (cond ((fx< b #x80) 1) ((fx<= #xC2 b #xDF) 2) ((fx<= #xE0 b #xEF) 3)
                              ((fx<= #xF0 b #xF4) 4) (else 0)))
-               (decoded (and (fx> length 0) (fx<= (fx+ i length) size)
+               (decoded (and (fx> width 0) (fx<= (fx+ i width) size)
                              (with-catch (lambda (e) #f)
-                               (lambda () (utf8->string (subu8vector bytes i (fx+ i length))))))))
+                               (lambda () (utf8->string (subu8vector bytes i (fx+ i width))))))))
           (cond
-           ((and decoded (fx= length 1) (fx< b 32) (not (memv b '(9 10 13))))
+           ((and decoded (fx= width 1) (or (fx= b 127) (and (fx< b 32) (not (memv b '(9 10 13))))))
             (write-char #\xFFFD out) (lp (fx1+ i)))
-           (decoded (write-string decoded out) (lp (fx+ i length)))
+           (decoded (write-string decoded out) (lp (fx+ i width)))
            (else (write-char #\xFFFD out) (lp (fx1+ i)))))))
     (get-output-string out)))
 

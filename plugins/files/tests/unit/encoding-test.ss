@@ -49,6 +49,6 @@
         (check (decoded-encoding d) => 'invalid-utf-8)
         (check (decoded-text d) => "ok \xFFFD; é"))
       (check (decoded-encoding (decode-file-bytes (bytes '(#xFF #xFE 65 0)))) => 'utf-16)
-      (let (d (decode-file-bytes (bytes "ELF" '(0 1 2) "x")))
+      (let (d (decode-file-bytes (bytes '(127) "ELF" '(0 1 2) "x")))
         (check (decoded-encoding d) => 'binary)
-        (check (decoded-text d) => "ELF\xFFFD;\xFFFD;\xFFFD;x")))))
+        (check (decoded-text d) => "\xFFFD;ELF\xFFFD;\xFFFD;\xFFFD;x")))))
