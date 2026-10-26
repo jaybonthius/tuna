@@ -27,6 +27,12 @@
 ;;; is marked as in conflict, and saving it asks whether to overwrite the
 ;;; file or reload it. A file deleted or renamed away leaves its text
 ;;; unsaved, so saving writes it again.
+;;;
+;;; A file buffer's unsaved text can be kept elsewhere (the autosave plugin
+;;; keeps it in Tuna's state folder) with its `buffer-recovery-data`, and
+;;; `recover-file-buffer` makes the buffer again after a restart: visiting
+;;; the file, holding the text unsaved, and in conflict when the file
+;;; changed on disk meanwhile.
 prelude: :gerbil/core
 
 (import :std/interface
@@ -41,13 +47,14 @@ prelude: :gerbil/core
         stat-file read-file-bytes write-file-bytes list-folder true-name
         watch-file unwatch-file check-watched-files
         visit visit? visit-file-name visit-true-name visit-identity visit-disk visit-hash
-        visit-encoding visit-bom? visit-line-ending visit-final-newline? visit-saved-revision
+        visit-encoding visit-bom? visit-line-ending visit-final-newline? visit-saved-revision visit-saved-size
         visit-conflict? visit-editable? visit-changes
         (interface-out Files)
         files-service
         find-file-noselect find-file
         text-visit buffer-visit buffer-file buffer-modified? file-buffers
         save-buffer write-file revert-buffer
+        buffer-recovery-data recover-file-buffer
         find-file-hook auto-mode-hook before-save-hook after-save-hook
         before-revert-hook after-revert-hook
         auto-revert auto-revert-use-notify auto-revert-interval revert-buffer-function
@@ -139,7 +146,9 @@ prelude: :gerbil/core
 ;; 'utf-16 or 'binary. LINE-ENDING is 'lf, 'crlf (every line; the text
 ;; holds plain newlines) or 'mixed (kept in the text as they are).
 ;; SAVED-REVISION is the text's character revision at the last read or
-;; save, -1 when the file was deleted. CONFLICT? says another program
+;; save, -1 when the file was deleted; SAVED-SIZE its size in characters
+;; then, -1 when unknown, which tells most edited texts from saved ones
+;; without hashing them. CONFLICT? says another program
 ;; changed the file while the text had unsaved changes. CHANGES changes
 ;; whenever the record does (tuna/lib/memo).
 (defclass visit ((file-name      : :string)
@@ -152,6 +161,7 @@ prelude: :gerbil/core
                  (line-ending    : :symbol)
                  (final-newline? : :boolean)
                  (saved-revision : :fixnum)
+                 (saved-size     : :fixnum)
                  (conflict?      : :boolean)
                  (changes        : source))
   final: #t)
@@ -169,7 +179,14 @@ prelude: :gerbil/core
   ;; Make B's text visit PATH instead, then save it there.
   (write-buffer! (b : buffer) (path : :string)) => :boolean
   ;; Read B's file again into B, without asking (revert-buffer).
-  (revert-buffer! (b : buffer)) => :boolean)
+  (revert-buffer! (b : buffer)) => :boolean
+  ;; Whether T, which visits a file, differs from what the file held at
+  ;; the last read or save.
+  (text-modified? (t : text)) => :boolean
+  ;; Plain data recover-file-buffer! makes B's file buffer from, or #f.
+  (buffer-recovery-data (b : buffer)) => :t
+  ;; The file buffer DATA describes, with CONTENT as its unsaved text.
+  (recover-file-buffer! (data : :t) (content :? :string)) => :t)
 
 (def files-service
   (new-service 'files is-Files? tier: 'live
@@ -199,14 +216,17 @@ prelude: :gerbil/core
   (let (v (buffer-visit b))
     (and v (visit-file-name v))))
 
-;; Whether B visits a file and its text changed since the last read or
-;; save (Emacs `buffer-modified-p` for file buffers).
+;; Whether B visits a file and its text differs from what the file held
+;; at the last read or save (Emacs `buffer-modified-p` for file buffers,
+;; except that undoing back to the saved text counts as unmodified).
 (def (buffer-modified? (b : buffer)) => :boolean
   (let (v (buffer-visit b))
     (and v
-         (let (saved (visit-saved-revision v))
+         (begin
            (record-read! (visit-changes v))
-           (not (fx= saved (text-chars-revision (text-node-content (buffer-root b)))))))))
+           (:- (with-service-provider (provider files-service Files)
+                 (Files-text-modified? provider (text-node-content (buffer-root b))))
+               :boolean)))))
 
 ;; The buffers that visit files, oldest first.
 (def (file-buffers) => :list
@@ -226,6 +246,23 @@ prelude: :gerbil/core
 ;; read, with a message.
 (def (revert-buffer (b : buffer)) => :boolean
   (:- (with-service-provider (provider files-service Files) (Files-revert-buffer! provider b)) :boolean))
+
+;; Plain data (session data) from which recover-file-buffer makes B again:
+;; its file, how the file's bytes became its text, and a hash of what was
+;; on disk at the last read or save. #f when B visits no file.
+(def (buffer-recovery-data (b : buffer)) => :t
+  (with-service-provider (provider files-service Files) (Files-buffer-recovery-data provider b)))
+
+;; The buffer visiting the file DATA (from buffer-recovery-data) names,
+;; as after a restart (Emacs's recover-file). With CONTENT, the buffer
+;; holds it as unsaved text: in conflict, with a message, when the file's
+;; bytes are no longer those DATA recorded, so saving asks first; unsaved,
+;; with a message, when the file is gone. Without CONTENT, the file is
+;; read from disk. A buffer already visiting the file is kept as it is.
+;; #f when DATA is not such data, or there is no CONTENT and no file.
+(def (recover-file-buffer (data : :t) (content :? :string)) => (Maybe buffer)
+  (:? (with-service-provider (provider files-service Files) (Files-recover-file-buffer! provider data content))
+      buffer))
 
 ;;; Hooks. Each runs with the buffer. A callback that fails is reported in
 ;;; the echo area and on stderr (the kernel's run-hook) and removed.

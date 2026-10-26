@@ -22,7 +22,9 @@
 ;;;
 ;;; The status line shows "*" for an unsaved file buffer and "read-only"
 ;;; for one that cannot be saved; killing an unsaved file buffer with
-;;; C-x k asks first.
+;;; C-x k asks first. A buffer is unsaved while its text differs from what
+;;; was read or saved, so undoing back to it clears the "*"
+;;; (text-modified?).
 ;;;
 ;;; Remembering, in session slots, both by true name: recent files
 ;;; (Emacs's recentf), most recent first, recorded when a file is visited
@@ -39,14 +41,21 @@
 ;;; highlights elsewhere stay put and the buffer keeps its modes and
 ;;; settings; "Reloaded notes.txt". A buffer with unsaved changes is
 ;;; marked as in conflict ("notes.txt changed on disk", and in the status
-;;; line); saving it asks whether to overwrite the file or reload it. A
+;;; line); saving it asks whether to overwrite the file or reload it, with
+;;; one key, o or r (as save-some-buffers' question takes one key). A
 ;;; file deleted or renamed away leaves its buffer unsaved. Saving looks
 ;;; at the file first in any case, and a browser tab that becomes visible
 ;;; or gains focus asks the file service to look at every file again
 ;;; (web/files.js). revert-buffer reloads on request.
+;;;
+;;; Recovery: buffer-recovery-data and recover-file-buffer! let the
+;;; autosave plugin bring a file buffer back after a restart, with its
+;;; unsaved text, compared with the file by hash: changed means conflict,
+;;; gone means unsaved, both with a note.
 
 (import (only-in :gerbil/runtime/hash HashTable)
         (only-in :std/crypto/digest sha256)
+        (only-in :std/encoding/hex hex-encode hex-decode)
         :std/interface
         :tuna/kernel
         :tuna/lib/memo
@@ -77,9 +86,11 @@
 ;;; Visits
 
 (defclass files-state ((visits : HashTable)          ; text -> visit
+                       (modified-checks : HashTable)  ; text -> (revision hash modified?), see text-modified?
                        (picker-keymap : entry-table)
-                       (answer-keymap : entry-table)  ; save-some-buffers' one-key answers
-                       (answering : :list)            ; its prompts waiting, innermost first
+                       (answer-keymap : entry-table)  ; one-key questions' keys
+                       (answering : :list)            ; (prompt . answers) of those waiting, innermost first
+                       (unwatched : :list)            ; visits made before the editor loop ran
                        (recent : :list)               ; true names, most recent first
                        (places : :list))              ; (true name . position), most recent first
   final: #t)
@@ -95,15 +106,55 @@
                        (and identity (equal? (visit-identity v) identity))))))
         (buffer-list)))
 
+;; A visit of NAME, whose true name is TRUENAME, read as the other
+;; arguments say; nothing recorded of the disk yet.
+(def (new-visit (name : :string) (truename : :string) (encoding : :symbol) (bom? : :boolean)
+                (line-ending : :symbol) (final-newline? : :boolean))
+  => visit
+  (visit file-name: name true-name: truename identity: #f disk: #f hash: #f
+         encoding: encoding bom?: bom? line-ending: line-ending final-newline?: final-newline?
+         saved-revision: -1 saved-size: -1 conflict?: #f changes: (new-source)))
+
 ;; Record in V that DISK, whose bytes have the SHA-256 HASH, is what its
-;; file now holds, and that the text's character REVISION matches it.
-(def (record-disk! (v : visit) (disk :? file-stat) (hash :? :u8vector) (revision : :fixnum)) => :void
+;; file now holds, and that the text's character REVISION, of SIZE
+;; characters, matches it.
+(def (record-disk! (v : visit) (disk :? file-stat) (hash :? :u8vector) (revision : :fixnum) (size : :fixnum))
+  => :void
   (set! v.disk disk)
   (set! v.identity (and disk (file-stat-identity disk)))
   (set! v.hash hash)
   (set! v.saved-revision revision)
+  (set! v.saved-size size)
   (set! v.conflict? #f)
   (source-changed! (visit-changes v)))
+
+;; Mark V as in conflict: another program changed its file while its text
+;; had unsaved changes.
+(def (mark-conflict! (v : visit)) => :void
+  (set! v.conflict? #t)
+  (source-changed! (visit-changes v)))
+
+;; Whether T, which visits a file, differs from what the file held at the
+;; last read or save. Its revision being the saved one says no and its
+;; size differing says yes, so typing never hashes; otherwise (as after
+;; undoing back to the saved text) the bytes saving would write are
+;; hashed, once per revision.
+(def (text-modified? (self : files-state) (t : text)) => :boolean
+  (let (v (hash-get (files-state-visits self) t))
+    (and v
+         (let ((revision (text-chars-revision t))
+               (hash (visit-hash v)))
+           (cond
+            ((fx= revision (visit-saved-revision v)) #f)
+            ((or (not hash) (not (visit-editable? v)) (not (fx= (text-size t) (visit-saved-size v)))) #t)
+            (else
+             (let (checked (hash-get (files-state-modified-checks self) t))
+               (if (and checked (fx= (car checked) revision) (eq? (cadr checked) hash))
+                 (caddr checked)
+                 (let (modified? (not (equal? hash (sha256 (encode-text (text-string t) (visit-bom? v)
+                                                                        (visit-line-ending v))))))
+                   (hash-put! (files-state-modified-checks self) t [revision hash modified?])
+                   modified?)))))))))
 
 ;; The buffer whose text V visits.
 (def (visit-buffer (v : visit)) => (Maybe buffer)
@@ -267,30 +318,100 @@
   (let* ((bytes (and stat (read-file-bytes name)))
          (d (if bytes (decode-file-bytes bytes) (make-decoded "" 'utf-8 #f 'lf #f)))
          (t (new-text (decoded-text d)))
-         (b (new-buffer (string-append " *files-new-" (number->string (next-id!)) "*") (new-text-node t)))
-         (v (visit file-name: name true-name: truename identity: #f disk: #f hash: #f
-                   encoding: (decoded-encoding d) bom?: (decoded-bom? d)
-                   line-ending: (decoded-line-ending d) final-newline?: (decoded-final-newline? d)
-                   saved-revision: 0 conflict?: #f changes: (new-source))))
-    (record-disk! v stat (and bytes (sha256 bytes)) (text-chars-revision t))
+         (v (new-visit name truename (decoded-encoding d) (decoded-bom? d)
+                       (decoded-line-ending d) (decoded-final-newline? d)))
+         (place (and stat (assoc truename (files-state-places self)))))
+    (record-disk! v stat (and bytes (sha256 bytes)) (text-chars-revision t) (text-size t))
+    (let (b (add-file-buffer! self t v (if place (cdr place) 1)))
+      (cond
+       ((not stat) (message "(New file)"))
+       ((not (visit-editable? v))
+        (message (string-append (abbreviate-file-name name) " is " (note-for (visit-encoding v))
+                                "; opened read-only"))))
+      b)))
+
+;; Add a buffer showing T, which visits V, at POINT (clamped): named after
+;; its file, in its folder, watched, and read-only when the file cannot be
+;; edited; then auto-mode-hook and find-file-hook run.
+(def (add-file-buffer! (self : files-state) (t : text) (v : visit) (point : :fixnum)) => buffer
+  (let (b (new-buffer (string-append " *files-new-" (number->string (next-id!)) "*") (new-text-node t)))
     (hash-put! (files-state-visits self) t v)
-    (watch-visit! v)
-    (set-buffer-setting! b default-directory (file-name-directory name))
-    (let (place (and stat (assoc truename (files-state-places self))))
-      (when place
-        (set-buffer-point! b (fxmin (cdr place) (fx1+ (text-size t))))))
+    ;; Watching runs a source, which needs the editor loop; buffers made
+    ;; before it runs (restored at start) are watched once the first task
+    ;; runs, and the watcher's first look reports what changed meanwhile.
+    (if (editor-loop-running?)
+      (watch-visit! v)
+      (set! (files-state-unwatched self) (cons v (files-state-unwatched self))))
+    (set-buffer-setting! b default-directory (file-name-directory (visit-file-name v)))
+    (set-buffer-point! b (fxmax 1 (fxmin point (fx1+ (text-size t)))))
     (unless (visit-editable? v)
       (set-buffer-setting! b buffer-read-only #t))
-    (rename-buffer! b (rename-file-buffers! #f b name))
+    (rename-buffer! b (rename-file-buffers! #f b (visit-file-name v)))
     (add-buffer! b)
     (run-hook auto-mode-hook b)
     (run-hook find-file-hook b)
-    (cond
-     ((not stat) (message "(New file)"))
-     ((not (visit-editable? v))
-      (message (string-append (abbreviate-file-name name) " is " (note-for (visit-encoding v))
-                              "; opened read-only"))))
     b))
+
+;;; Recovery after a restart
+
+;; B's visit as plain data for recover-file!: (FILE-NAME TRUE-NAME
+;; ENCODING BOM? LINE-ENDING FINAL-NEWLINE? HASH), HASH in hexadecimal or #f.
+(def (buffer-recovery-data (b : buffer)) => :t
+  (let (v (buffer-visit b))
+    (and v
+         [(visit-file-name v) (visit-true-name v) (visit-encoding v) (visit-bom? v) (visit-line-ending v)
+          (visit-final-newline? v) (let (hash (visit-hash v)) (and hash (hex-encode hash)))])))
+
+;; The buffer visiting the file DATA (from buffer-recovery-data) names:
+;; one already open, or one holding CONTENT unsaved, or, without CONTENT,
+;; the file read again.
+(def (recover-file! (self : files-state) (data : :t) (content :? :string)) => (Maybe buffer)
+  (match data
+    ([(? string? name) (? string? truename) (? symbol? encoding) (? boolean? bom?) (? symbol? line-ending)
+      (? boolean? final-newline?) hash-hex]
+     (and (string-prefix? "/" name)
+          (memq line-ending '(lf crlf mixed))
+          (or (not hash-hex) (string? hash-hex))
+          (let* ((stat (stat-file name))
+                 (file (and stat (eq? (file-stat-kind stat) 'file) stat)))
+            (cond
+             ((visiting-buffer truename (and file (file-stat-identity file))))
+             ((not content) (and file (new-file-buffer! self name (true-name name) file)))
+             (else
+              (recovered-file-buffer! self (new-visit name (if file (true-name name) truename)
+                                                      encoding bom? line-ending final-newline?)
+                                      (and hash-hex (hex-decode hash-hex)) file content))))))
+    (else #f)))
+
+;; A buffer holding CONTENT, unsaved text kept while V's file held bytes
+;; with the SHA-256 RECORDED (#f: none); FILE is what is there now.
+;; Changed bytes put it in conflict and missing ones leave it unsaved,
+;; both with a note.
+(def (recovered-file-buffer! (self : files-state) (v : visit) (recorded :? :u8vector) (file :? file-stat)
+                             (content : :string))
+  => buffer
+  (let* ((t (new-text content))
+         (bytes (and file (read-file-bytes (visit-file-name v))))
+         (hash (and bytes (sha256 bytes)))
+         (note (cond
+                ((not bytes)
+                 (record-disk! v #f #f -1 -1)
+                 (and recorded "was deleted on disk while Tuna was not running"))
+                ((and (visit-editable? v)
+                      (equal? hash (sha256 (encode-text content (visit-bom? v) (visit-line-ending v)))))
+                 (record-disk! v file hash (text-chars-revision t) (text-size t))
+                 #f)
+                ((equal? hash recorded)
+                 (record-disk! v file hash -1 (string-length (decoded-text (decode-file-bytes bytes))))
+                 #f)
+                (else
+                 (record-disk! v file recorded -1 -1)
+                 (mark-conflict! v)
+                 "changed on disk while Tuna was not running"))))
+    (let (b (add-file-buffer! self t v 1))
+      (when note
+        (message (string-append (buffer-name b) " " note)))
+      b)))
 
 ;;; Changes on disk
 
@@ -325,21 +446,21 @@
         (cond
          ((not stat)
           (when (visit-disk v)
-            (record-disk! v #f #f -1)
+            (record-disk! v #f #f -1 -1)
             (message (string-append (buffer-name b) " was deleted on disk"))))
          ((not (eq? (file-stat-kind stat) 'file)) (void))
          ((and reported (equal? reported (visit-hash v)))
           (unless (same-disk? stat (visit-disk v))
-            (record-disk! v stat reported (visit-saved-revision v))))
+            (record-disk! v stat reported (visit-saved-revision v) (visit-saved-size v))))
          (else
           (let* ((bytes (read-file-bytes name))
                  (hash (sha256 bytes)))
             (cond
              ((equal? hash (visit-hash v))
               ;; Touched, or changed back: only its attributes are new.
-              (record-disk! v stat hash (visit-saved-revision v)))
+              (record-disk! v stat hash (visit-saved-revision v) (visit-saved-size v)))
              ((same-as-text? b v hash)
-              (record-disk! v stat hash (text-chars-revision (text-of b))))
+              (record-disk! v stat hash (text-chars-revision (text-of b)) (text-size (text-of b))))
              ((and (not (buffer-modified? b)) (buffer-local-value auto-revert b))
               (let (override (buffer-local-value revert-buffer-function b))
                 (if (procedure? override)
@@ -347,8 +468,7 @@
                   (reload! b v stat bytes)))
               (message (string-append "Reloaded " (buffer-name b))))
              (else
-              (set! v.conflict? #t)
-              (source-changed! (visit-changes v))
+              (mark-conflict! v)
               (message (string-append (buffer-name b) " changed on disk")))))))))))
 
 ;; Make B, which visits V, hold BYTES, read from its file with STAT: the
@@ -368,7 +488,7 @@
     (set! v.bom? (decoded-bom? d))
     (set! v.line-ending (decoded-line-ending d))
     (set! v.final-newline? (decoded-final-newline? d))
-    (record-disk! v stat (sha256 bytes) (text-chars-revision t))
+    (record-disk! v stat (sha256 bytes) (text-chars-revision t) (text-size t))
     (cond
      ((not (visit-editable? v)) (set-buffer-setting! b buffer-read-only #t))
      ((not was-editable?) (set-buffer-setting! b buffer-read-only #f))))
@@ -392,20 +512,20 @@
             (message (string-append (abbreviate-file-name (visit-file-name v)) " is not on disk"))
             #f)))))))
 
+;; The answers to the question about a file changed on disk, by key.
+(def conflict-answers
+  '(("o" . overwrite) ("r" . reload)))
+
 ;; Ask what to do about B's file, changed on disk by another program:
 ;; 'overwrite or 'reload. C-g quits.
-(def (ask-about-conflict (b : buffer)) => :symbol
-  (string->symbol
-   (:- (completing-read (string-append (buffer-name b) " changed on disk: overwrite with yours, or reload theirs? ")
-                        ;; Reload first: it can be undone, overwriting cannot.
-                        [(make-completion-table category: 'disk-conflict
-                                                items: (strings->candidates ["reload" "overwrite"])
-                                                sort: (lambda (pairs) pairs))])
-       :string)))
+(def (ask-about-conflict (self : files-state) (b : buffer)) => :symbol
+  (ask-one-key self (string-append (buffer-name b) " changed on disk; save anyway? "
+                                   "[o]verwrite with yours, [r]eload theirs, C-g cancels ")
+               conflict-answers))
 
 ;; Before saving B, which visits V: whether to go on. A file another
 ;; program changed asks first; answering reload reloads it instead.
-(def (disk-allows-save? (b : buffer) (v : visit)) => :boolean
+(def (disk-allows-save? (self : files-state) (b : buffer) (v : visit)) => :boolean
   (let* ((name (visit-file-name v))
          (stat (stat-file name)))
     (if (or (not stat) (not (eq? (file-stat-kind stat) 'file))
@@ -415,10 +535,10 @@
              (hash (sha256 bytes)))
         (cond
          ((equal? hash (visit-hash v))
-          (record-disk! v stat hash (visit-saved-revision v))
+          (record-disk! v stat hash (visit-saved-revision v) (visit-saved-size v))
           #t)
          ((same-as-text? b v hash) #t)
-         ((eq? (ask-about-conflict b) 'overwrite) #t)
+         ((eq? (ask-about-conflict self b) 'overwrite) #t)
          (else
           (reload! b v stat bytes)
           (message (string-append "Reloaded " (buffer-name b)))
@@ -438,6 +558,7 @@
   (run-hook before-save-hook b)
   (let* ((t (text-of b))
          (revision (text-chars-revision t))
+         (size (text-size t))
          (new? (not (visit-disk v)))
          (taker (run-save-takeovers b)))
     (and (with-catch
@@ -445,7 +566,7 @@
           (lambda ()
             (if taker
               (let (disk (stat-file (visit-file-name v)))
-                (record-disk! v disk (and disk (sha256 (read-file-bytes (visit-file-name v)))) revision))
+                (record-disk! v disk (and disk (sha256 (read-file-bytes (visit-file-name v)))) revision size))
               (let* ((text (text-string t))
                      (bytes (encode-text text (visit-bom? v) (visit-line-ending v)))
                      (disk (write-file-bytes (visit-file-name v) bytes)))
@@ -456,14 +577,14 @@
                       (unwatch-file (visit-true-name v))
                       (set! v.true-name truename)
                       (watch-visit! v))))
-                (record-disk! v disk (sha256 bytes) revision)))
+                (record-disk! v disk (sha256 bytes) revision size)))
             #t))
          (begin
            (message (string-append "Wrote " (abbreviate-file-name (visit-file-name v))))
            (run-hook after-save-hook b)
            #t))))
 
-(def (save-buffer! (b : buffer)) => :boolean
+(def (save-buffer! (self : files-state) (b : buffer)) => :boolean
   (let (v (buffer-visit b))
     (cond
      ((not v) (message (string-append (buffer-name b) " is not visiting a file")) #f)
@@ -473,7 +594,7 @@
      ((and (not (buffer-modified? b)) (visit-disk v))
       (message "(No changes need to be saved)")
       #t)
-     ((not (disk-allows-save? b v)) #f)
+     ((not (disk-allows-save? self b v)) #f)
      (else (save! b v)))))
 
 ;; B visits PATH from now on (Emacs set-visited-file-name), then is saved.
@@ -497,9 +618,7 @@
       #f)
      (else
       (using (v (or old
-                    (let (v (visit file-name: name true-name: truename identity: #f disk: #f hash: #f
-                                   encoding: 'utf-8 bom?: #f line-ending: 'lf final-newline?: #f
-                                   saved-revision: -1 conflict?: #f changes: (new-source)))
+                    (let (v (new-visit name truename 'utf-8 #f 'lf #f))
                       (hash-put! (files-state-visits self) (text-of b) v)
                       v))
                 : visit)
@@ -507,7 +626,7 @@
           (unwatch-file (visit-true-name v)))
         (set! v.file-name name)
         (set! v.true-name truename)
-        (record-disk! v #f #f -1)
+        (record-disk! v #f #f -1 -1)
         (watch-visit! v)
         (set-buffer-setting! b default-directory (file-name-directory name))
         (rename-file-buffers! #f #f #f)
@@ -517,9 +636,12 @@
 (implement Files files-state
   (find-file-noselect (lambda (self path) (visit-file! self path)))
   (text-visit (lambda (self t) (hash-get (files-state-visits self) t)))
-  (save-buffer! (lambda (self b) (save-buffer! b)))
+  (save-buffer! (lambda (self b) (save-buffer! self b)))
   (write-buffer! (lambda (self b path) (write-buffer! self b path)))
-  (revert-buffer! (lambda (self b) (revert-buffer! b))))
+  (revert-buffer! (lambda (self b) (revert-buffer! b)))
+  (text-modified? (lambda (self t) (text-modified? self t)))
+  (buffer-recovery-data (lambda (self b) (buffer-recovery-data b)))
+  (recover-file-buffer! (lambda (self data content) (recover-file! self data content))))
 
 ;;; Questions
 
@@ -532,6 +654,44 @@
        ((equal? answer "no") #f)
        (else (message "Please answer yes or no.") (lp))))))
 
+;; Ask QUESTION, answered by one key (Emacs's read-multiple-choice):
+;; ANSWERS maps each key ("y", "SPC") to the symbol returned; any other
+;; key is refused with a note, and C-g quits.
+(def (ask-one-key (self : files-state) (question : :string) (answers : :list)) => :symbol
+  (let (asked #f)
+    (unwind-protect
+      (:- (read-from-minibuffer
+           question
+           setup: (lambda ((p : Prompt))
+                    (set! asked p)
+                    (set! (files-state-answering self) (cons (cons p answers) (files-state-answering self)))
+                    (set-node-keymap! (prompt-answer-node p) (files-state-answer-keymap self))))
+          :symbol)
+      (set! (files-state-answering self)
+        (filter (lambda ((waiting : :pair)) (not (eq? (car waiting) asked))) (files-state-answering self))))))
+
+;; The key that answers a one-key question: the last key typed.
+(def (answer-key) => :string
+  (let (event (last-command-event))
+    (if (key-event? event)
+      (let (key (:- (key-event-key event) :string))
+        (cond ((equal? key " ") "SPC")
+              ((equal? key "Backspace") "DEL")
+              ((equal? key "Enter") "RET")
+              (else key)))
+      "")))
+
+;; Answer the innermost one-key question with the key typed.
+(def (answer-one-key! (self : files-state)) => :void
+  (match (files-state-answering self)
+    ([[p . answers] . _]
+     (let* ((key (answer-key))
+            (answer (assoc key answers)))
+       (if answer
+         (prompt-exit! p (cdr answer) history-text: key)
+         (message (string-append "Please answer " (string-join (map car answers) ", "))))))
+    (else (void))))
+
 ;; The answers to save-some-buffers' question, by the key typed.
 (def save-answers
   '(("y" . save) ("SPC" . save) ("n" . skip) ("DEL" . skip)
@@ -539,16 +699,8 @@
 
 ;; Ask whether to save B; one of save-answers' answers.
 (def (ask-save (self : files-state) (b : buffer)) => :symbol
-  (let (asked #f)
-    (unwind-protect
-      (:- (read-from-minibuffer
-           (string-append "Save file " (abbreviate-file-name (buffer-file b)) "? (y, n, !, ., q) ")
-           setup: (lambda ((p : Prompt))
-                    (set! asked p)
-                    (set! (files-state-answering self) (cons p (files-state-answering self)))
-                    (set-node-keymap! (prompt-answer-node p) (files-state-answer-keymap self))))
-          :symbol)
-      (set! (files-state-answering self) (remq asked (files-state-answering self))))))
+  (ask-one-key self (string-append "Save file " (abbreviate-file-name (buffer-file b)) "? (y, n, !, ., q) ")
+               save-answers))
 
 ;; Offer each unsaved file buffer for saving, as Emacs's save-some-buffers.
 (def (save-some-buffers! (self : files-state)) => :void
@@ -559,9 +711,9 @@
       ([b . more]
        (let (answer (if all? 'save (ask-save self b)))
          (case answer
-           ((save) (lp more all? (if (save-buffer! b) (fx1+ saved) saved)))
-           ((save-all) (lp more #t (if (save-buffer! b) (fx1+ saved) saved)))
-           ((save-and-stop) (lp [] all? (if (save-buffer! b) (fx1+ saved) saved)))
+           ((save) (lp more all? (if (save-buffer! self b) (fx1+ saved) saved)))
+           ((save-all) (lp more #t (if (save-buffer! self b) (fx1+ saved) saved)))
+           ((save-and-stop) (lp [] all? (if (save-buffer! self b) (fx1+ saved) saved)))
            ((skip) (lp more all? saved))
            (else (lp [] all? saved))))))))
 
@@ -606,7 +758,8 @@
     (add-script "web/files.js")
     (context-add-page-address! ctx "check" (lambda (c bytes) (FileSystem-check-watched-files disk))))
   (using (self (files-state visits: (make-hash-table-eq weak-keys: #t)
-                            picker-keymap: (new-keymap) answer-keymap: (new-keymap) answering: []
+                            modified-checks: (make-hash-table-eq weak-keys: #t)
+                            picker-keymap: (new-keymap) answer-keymap: (new-keymap) answering: [] unwatched: []
                             recent: [] places: [])
                : files-state)
     (context-provide! ctx files-service (Files self))
@@ -625,6 +778,12 @@
            ((buffer-modified? b) "*")
            (else #f)))))
     (context-add-kill-buffer-query! ctx 'files kill-unsaved?)
+    (context-add-hook! ctx task-started-hook 'files
+      (lambda (id name)
+        (let (waiting (files-state-unwatched self))
+          (when (pair? waiting)
+            (set! (files-state-unwatched self) [])
+            (for-each (lambda ((v : visit)) (when (visit-buffer v) (watch-visit! v))) waiting)))))
     (context-add-session-slot! ctx 'recent-files version: 1
       save: (lambda () (files-state-recent self))
       restore: (lambda (data) (restore-recent-files! self data)))
@@ -669,23 +828,13 @@
     (context-define-command! ctx 'file-picker-slash picker-slash!
       doc: "In the file picker: insert \"/\"; \"~/\" there jumps home."
       visible?: (lambda (c origin) #f))
-    (context-define-command! ctx 'save-some-buffers-answer
-      (lambda ()
-        (let* ((event (last-command-event))
-               (key (cond ((not (key-event? event)) "")
-                          ((equal? (key-event-key event) " ") "SPC")
-                          ((equal? (key-event-key event) "Backspace") "DEL")
-                          ((equal? (key-event-key event) "Enter") "RET")
-                          (else (key-event-key event))))
-               (answer (assoc key save-answers)))
-          (when (and answer (pair? (files-state-answering self)))
-            (prompt-exit! (car (files-state-answering self)) (cdr answer) history-text: key))))
-      doc: "Answer save-some-buffers' question with the key typed."
+    (context-define-command! ctx 'files-answer-key (lambda () (answer-one-key! self))
+      doc: "Answer the question asked (save-some-buffers', or about a file changed on disk) with the key typed."
       visible?: (lambda (c origin) #f))
     (keymap-set-in ctx (files-state-picker-keymap self) "/" 'file-picker-slash)
-    (for-each (lambda ((answer : :pair))
-                (keymap-set-in ctx (files-state-answer-keymap self) (car answer) 'save-some-buffers-answer))
-              save-answers)
+    (for-each (lambda ((key : :string))
+                (keymap-set-in ctx (files-state-answer-keymap self) key 'files-answer-key))
+              [printing-char-key "SPC" "DEL" "RET"])
     (keymap-set "C-x C-f" 'find-file)
     (keymap-set "C-x C-s" 'save-buffer)
     (keymap-set "C-x s" 'save-some-buffers)
