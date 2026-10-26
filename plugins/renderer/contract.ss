@@ -6,6 +6,7 @@ prelude: :gerbil/core
 
 (import :std/interface
         :tuna/kernel
+        :tuna/lib/memo
         (only-in :tuna/plugins/clients/contract client)
         :tuna/plugins/settings/contract
         :tuna/plugins/buffers/contract)
@@ -16,7 +17,8 @@ prelude: :gerbil/core
         show-status-line
         face-remapping
         remapped-face
-        status-line-text)
+        status-line-text
+        context-add-status-line-part!)
 
 ;; HTML drawn already (ADR 17): its UTF-8 bytes, as a u8vector, or a
 ;; vector of HTML read in order, so a part drawn once is referred to, never
@@ -64,13 +66,40 @@ prelude: :gerbil/core
   (let (pair (assq face (buffer-local-value face-remapping b)))
     (if pair (cdr pair) face)))
 
-;; The text of the status line (Emacs's mode line) of view V: the buffer,
-;; the line and column of V's point, and COMMAND, the running task's name,
-;; if any: renderers pass it for the selected view.
+;; Parts other plugins add to the status line after the buffer's name
+;; (Emacs's mode-line-format constructs, such as `mode-line-modified`):
+;; name -> procedure taking the buffer and returning a string or #f. They
+;; show in order of name. A part's procedure runs while the status line is
+;; drawn, so it reads state only through accessors that record their reads
+;; (tuna/lib/memo), and changes nothing.
+(def status-line-parts (new-entry-table))
+;; Changes when a part is added or goes.
+(def status-line-parts-source (new-source))
+
+(def (context-add-status-line-part! (ctx : context) (name : :symbol) (part : :procedure)) => :void
+  (context-add-entry! ctx status-line-parts name part)
+  (source-changed! status-line-parts-source)
+  (context-defer! ctx (lambda () (source-changed! status-line-parts-source))))
+
+;; What the parts show for B, each after a space.
+(def (status-line-parts-text (b : buffer)) => :string
+  (record-read! status-line-parts-source)
+  (apply string-append
+         (filter-map (lambda ((name : :symbol))
+                       (let* ((e (entry-table-ref status-line-parts name))
+                              (shown (and e ((entry-value e) b))))
+                         (and (string? shown) (string-append " " shown))))
+                     (list-sort (lambda ((a : :symbol) (b : :symbol))
+                                  (string<? (symbol->string a) (symbol->string b)))
+                                (entry-table-names status-line-parts)))))
+
+;; The text of the status line (Emacs's mode line) of view V: the buffer
+;; and its parts, the line and column of V's point, and COMMAND, the
+;; running task's name, if any: renderers pass it for the selected view.
 (def (status-line-text (v : view) (command :? :symbol)) => :string
   (let (n (view-node v))
     (string-append
-     "Tuna · " (buffer-name (view-showing v))
+     "Tuna · " (buffer-name (view-showing v)) (status-line-parts-text (view-showing v))
      (if n
        (let* ((t (text-node-content n))
               (p (view-point v)))
