@@ -1,0 +1,13 @@
+/* The file picker. Its answer is wrapped in a node carrying the picker's
+   keys; the wrapper takes no box, so the minibuffer lays out the answer
+   as before. */
+.file-picker-input {
+  display: contents;
+}
+
+/* File annotations: size, how long ago it changed, and whether a buffer
+   has it open. */
+:where(.completion-file-size, .completion-file-modified) {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}

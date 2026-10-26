@@ -55,6 +55,7 @@
         :tuna/plugins/minibuffer/plugin
         :tuna/plugins/completion/plugin
         :tuna/plugins/completion-list/plugin
+        :tuna/plugins/files/plugin
         :tuna/plugins/settings/contract
         :tuna/plugins/stylesheets/contract
         (only-in :tuna/kernel current-context)
@@ -88,6 +89,7 @@
 (use-plugin completion    ; M-x, matching styles, command annotations
   config: (context-set-setting! (current-context) completion-styles '(any-order substring)))
 (use-plugin completion-list)     ; the candidates in rows under the minibuffer
+(use-plugin files)               ; C-x C-f opens a file, C-x C-s saves it, C-x s saves all, C-x C-w saves as
 (use-plugin echo-area)           ; in the bar, under the minibuffer
 (use-plugin help)         ; *Help*; C-h q closes it; M-x describe-advice,
                                  ; describe-stylesheets, reload-stylesheets

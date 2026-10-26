@@ -13,6 +13,12 @@
 ;;; the view itself is the editing plugin's (`mouse-set-point`, which
 ;;; selects the view too, as in Emacs).
 ;;;
+;;; C-x k (kill-buffer) kills a buffer chosen by name, the current one by
+;;; default, once every kill query of the buffers contract agrees (an
+;;; unsaved file asks first). It lives here, not in the buffers package,
+;;; because the keys, minibuffer and completion contracts import the
+;;; buffers contract, and packages must not import each other.
+;;;
 ;;; Selecting the view on a side (`select-view-left` and the like, Emacs's
 ;;; windmove) is unbound, as in Emacs: the S-arrows select text.
 (import :tuna/plugins/commands/contract
@@ -21,7 +27,8 @@
         :tuna/plugins/buffers/contract
         :tuna/plugins/minibuffer/contract
         :tuna/plugins/settings/contract
-        :tuna/plugins/layout/contract)
+        :tuna/plugins/layout/contract
+        :tuna/plugins/completion/contract)
 (export view-commands)
 
 (def (select-neighbor (direction : :symbol) (where : :string)) => :void
@@ -42,9 +49,33 @@
              (select-view v))))
      (else (report-stale-click p)))))
 
+;; The name of a buffer to kill, read with completion when a plugin
+;; provides it; the current buffer's on empty input.
+(def (read-buffer-to-kill) => :string
+  (let* ((current (buffer-name (current-buffer)))
+         (question (string-append "Kill buffer (default " current "): ")))
+    (if (service-provider completion-service)
+      (:- (completing-read question
+                       (make-completion-table
+                        category: 'buffer
+                        items: (strings->candidates
+                                (filter-map (lambda ((b : buffer)) (and (not (internal-buffer? b)) (buffer-name b)))
+                                            (buffer-list))))
+                       default: current)
+          :string)
+      (let (answer (read-string question))
+        (if (string-empty? answer) current answer)))))
+
 (defplugin view-commands
-  "View commands for any layout: C-x o, C-x 0 to 3, selecting the view on a side (unbound), frames (C-x n), frame marks (C-x r), clicking a status line."
+  "View commands for any layout: C-x o, C-x 0 to 3, selecting the view on a side (unbound), frames (C-x n), frame marks (C-x r), clicking a status line; C-x k kills a buffer."
   requires: [commands-service input-service buffers-service layout-service minibuffer-service settings-service]
+  optional: [completion-service completion-ui-service]
+  (defcommand (kill-buffer) "Kill a buffer chosen by name (the current one by default), if every kill query agrees."
+    (let* ((name (read-buffer-to-kill))
+           (b (get-buffer name)))
+      (cond
+       ((not b) (message (string-append "No buffer named " name)))
+       ((kill-buffer-allowed? b) (kill-buffer b)))))
   (defcommand (mouse-select-view) "Select the view clicked on, or the view whose status line was clicked."
     (select-clicked-view))
   (defcommand (other-view) "Select the next view, cyclically."
@@ -87,6 +118,7 @@
       (message (if (null? names)
                  "No frame marks"
                  (string-append "Frame marks: " (string-join names ", "))))))
+  (keymap-set "C-x k" 'kill-buffer)
   (keymap-set "C-x o" 'other-view)
   (keymap-set "C-x 2" 'split-view-below)
   (keymap-set "C-x 3" 'split-view-right)

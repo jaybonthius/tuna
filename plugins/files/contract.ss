@@ -1,0 +1,285 @@
+;;; The files contract (live tier; ADR 5): reading and writing files, and
+;;; texts that visit them.
+;;;
+;;; All file access goes through the file service (`FileSystem`), whose
+;;; provider is the local disk, so remote or compressed files can come
+;;; later without touching its callers (Emacs's file-name handlers). Paths
+;;; it takes are absolute and expanded (`expand-file-name`). Watching for
+;;; changes on disk comes later (the files plan, stage 3).
+;;;
+;;; A text visits a file, not a buffer: its visit record says which file,
+;;; what was on disk at the last read or save (its attributes and a hash of
+;;; its bytes), how the bytes became characters (encoding, byte-order mark,
+;;; line endings, final newline) and the text's character revision then.
+;;; One text visits each file, found by true name or by device and inode,
+;;; so a file reached through a symbolic link is still one text. Visiting
+;;; makes a buffer showing the text (named after the file, with its
+;;; folder's name added as "notes.txt<docs>" when two files share a name).
+;;;
+;;; Only UTF-8, with or without a byte-order mark, is editable. Windows
+;;; line endings used on every line are shown as plain lines and written
+;;; back; mixed line endings stay in the text as they are. Anything else
+;;; (invalid UTF-8, UTF-16, binary) opens read-only and cannot be saved.
+prelude: :gerbil/core
+
+(import :std/interface
+        :tuna/kernel
+        :tuna/lib/memo
+        :tuna/plugins/settings/contract
+        :tuna/plugins/buffers/contract
+        :tuna/plugins/layout/contract)
+(export (struct-out file-stat folder-entry)
+        (interface-out FileSystem)
+        file-system-service
+        stat-file read-file-bytes write-file-bytes list-folder true-name
+        visit visit? visit-file-name visit-true-name visit-identity visit-disk visit-hash
+        visit-encoding visit-bom? visit-line-ending visit-final-newline? visit-saved-revision
+        visit-editable? visit-changes
+        (interface-out Files)
+        files-service
+        find-file-noselect find-file
+        text-visit buffer-visit buffer-file buffer-modified? file-buffers
+        save-buffer write-file
+        find-file-hook auto-mode-hook before-save-hook after-save-hook
+        save-takeover-hook context-add-save-takeover! run-save-takeovers
+        default-directory buffer-default-directory
+        home-directory expand-file-name abbreviate-file-name
+        file-name-directory file-name-nondirectory file-name-as-directory)
+
+;;; The file service
+
+;; What is at a path, following symbolic links: KIND is 'file, 'folder or
+;; 'other; MODIFIED is nanoseconds since 1970; IDENTITY is (device . inode).
+(defstruct file-stat ((kind     : :symbol)
+                      (size     : :integer)
+                      (modified : :integer)
+                      (mode     : :fixnum)
+                      (owner    : :fixnum)
+                      (group    : :fixnum)
+                      (links    : :fixnum)
+                      (identity : :pair))
+  final: #t)
+
+;; One name in a folder and what is there.
+(defstruct folder-entry ((name : :string)
+                         (stat : file-stat))
+  final: #t)
+
+(interface FileSystem
+  ;; What is at PATH, or #f when nothing is.
+  (stat-file (path : :string)) => :t
+  (read-file-bytes (path : :string)) => :u8vector
+  ;; Make PATH hold BYTES, creating the file but never a folder. A crash
+  ;; leaves the old contents or the new, never a mix; a symbolic link stays
+  ;; a link and its target changes; the file keeps its identity, mode and
+  ;; owner. Returns what is at PATH afterwards.
+  (write-file-bytes (path : :string) (bytes : :u8vector)) => :t
+  ;; The entries of folder PATH, without "." and "..", in no order.
+  (list-folder (path : :string)) => :list
+  ;; PATH with every symbolic link, "." and ".." resolved; for a file that
+  ;; does not exist, its folder's true name and its name.
+  (true-name (path : :string)) => :string)
+
+(def file-system-service
+  (new-service 'file-system is-FileSystem? tier: 'live
+               doc: "Reads, writes and lists files."))
+
+(def (stat-file (path : :string)) => (Maybe file-stat)
+  (:? (with-service-provider (provider file-system-service FileSystem) (FileSystem-stat-file provider path)) file-stat))
+
+(def (read-file-bytes (path : :string)) => :u8vector
+  (:- (with-service-provider (provider file-system-service FileSystem) (FileSystem-read-file-bytes provider path)) :u8vector))
+
+(def (write-file-bytes (path : :string) (bytes : :u8vector)) => file-stat
+  (:- (with-service-provider (provider file-system-service FileSystem) (FileSystem-write-file-bytes provider path bytes)) file-stat))
+
+(def (list-folder (path : :string)) => :list
+  (:- (with-service-provider (provider file-system-service FileSystem) (FileSystem-list-folder provider path)) :list))
+
+(def (true-name (path : :string)) => :string
+  (:- (with-service-provider (provider file-system-service FileSystem) (FileSystem-true-name provider path)) :string))
+
+;;; Visits
+
+;; A text's file. FILE-NAME is the file as visited (Emacs's
+;; buffer-file-name), TRUE-NAME it resolved. DISK and HASH (SHA-256 of
+;; its bytes) are what was there at the last read or save, both #f for a
+;; file not yet on disk; IDENTITY is DISK's. ENCODING is 'utf-8 for an
+;; editable file, otherwise what kept it read-only: 'invalid-utf-8,
+;; 'utf-16 or 'binary. LINE-ENDING is 'lf, 'crlf (every line; the text
+;; holds plain newlines) or 'mixed (kept in the text as they are).
+;; SAVED-REVISION is the text's character revision at the last read or
+;; save. CHANGES changes whenever the record does (tuna/lib/memo).
+(defclass visit ((file-name      : :string)
+                 (true-name      : :string)
+                 (identity       :? :pair)
+                 (disk           :? file-stat)
+                 (hash           :? :u8vector)
+                 (encoding       : :symbol)
+                 (bom?           : :boolean)
+                 (line-ending    : :symbol)
+                 (final-newline? : :boolean)
+                 (saved-revision : :fixnum)
+                 (changes        : source))
+  final: #t)
+
+(def (visit-editable? (v : visit)) => :boolean
+  (eq? (visit-encoding v) 'utf-8))
+
+(interface Files
+  ;; The buffer showing the text that visits PATH, made if there is none.
+  (find-file-noselect (path : :string)) => :t
+  ;; T's visit, or #f.
+  (text-visit (t : text)) => :t
+  ;; Write B's text to its file; #f when it was refused, with a message.
+  (save-buffer! (b : buffer)) => :boolean
+  ;; Make B's text visit PATH instead, then save it there.
+  (write-buffer! (b : buffer) (path : :string)) => :boolean)
+
+(def files-service
+  (new-service 'files is-Files? tier: 'live
+               doc: "Texts that visit files: opening and saving."))
+
+(def (find-file-noselect (path : :string)) => buffer
+  (:- (with-service-provider (provider files-service Files) (Files-find-file-noselect provider path)) buffer))
+
+;; Visit PATH in the selected view.
+(def (find-file (path : :string)) => buffer
+  (let (b (find-file-noselect path))
+    (set-view-buffer (selected-view) b)
+    b))
+
+(def (text-visit (t : text)) => (Maybe visit)
+  (:? (let (provider (service-provider files-service))
+        (and provider (Files-text-visit (Files provider) t)))
+      visit))
+
+;; The visit of B's text, when B is one text node.
+(def (buffer-visit (b : buffer)) => (Maybe visit)
+  (let (root (buffer-root b))
+    (and (text-node? root) (text-visit (text-node-content root)))))
+
+;; The file B visits (Emacs `buffer-file-name`), or #f.
+(def (buffer-file (b : buffer)) => (Maybe :string)
+  (let (v (buffer-visit b))
+    (and v (visit-file-name v))))
+
+;; Whether B visits a file and its text changed since the last read or
+;; save (Emacs `buffer-modified-p` for file buffers).
+(def (buffer-modified? (b : buffer)) => :boolean
+  (let (v (buffer-visit b))
+    (and v
+         (let (saved (visit-saved-revision v))
+           (record-read! (visit-changes v))
+           (not (fx= saved (text-chars-revision (text-node-content (buffer-root b)))))))))
+
+;; The buffers that visit files, oldest first.
+(def (file-buffers) => :list
+  (filter buffer-file (buffer-list)))
+
+(def (save-buffer (b : buffer)) => :boolean
+  (:- (with-service-provider (provider files-service Files) (Files-save-buffer! provider b)) :boolean))
+
+;; Emacs's write-file: B visits PATH from now on and is saved there.
+(def (write-file (b : buffer) (path : :string)) => :boolean
+  (:- (with-service-provider (provider files-service Files) (Files-write-buffer! provider b path)) :boolean))
+
+;;; Hooks. Each runs with the buffer. A callback that fails is reported in
+;;; the echo area and on stderr (the kernel's run-hook) and removed.
+
+(def auto-mode-hook
+  (new-hook 'auto-mode doc: "Runs with a buffer that has just visited a file, before find-file-hook: where the plugin that chooses modes by file type sets one (Emacs's set-auto-mode)."))
+(def find-file-hook
+  (new-hook 'find-file doc: "Runs with a buffer once it visits a file."))
+(def before-save-hook
+  (new-hook 'before-save doc: "Runs with a buffer before its text is written to its file."))
+(def after-save-hook
+  (new-hook 'after-save doc: "Runs with a buffer after its text was written to its file."))
+
+;; Emacs's write-contents-functions: a callback may write the buffer
+;; itself instead of the file service. Callbacks run with the buffer and a
+;; claim; context-add-save-takeover! adds one that runs only while the
+;; claim is open.
+(def save-takeover-hook
+  (new-hook 'save-takeover doc: "Runs with a buffer about to be saved and a claim; a callback that saves it itself takes the claim."))
+
+(defclass save-claim ((by :? :symbol)) final: #t)
+
+;; Add SAVE, a procedure taking the buffer: it returns true when it saved
+;; the buffer itself. The first that does wins; the others are not called.
+(def (context-add-save-takeover! (ctx : context) (name : :symbol) (save : :procedure)) => :void
+  (context-add-hook! ctx save-takeover-hook name
+                     (lambda (b (claim : save-claim))
+                       (unless (save-claim-by claim)
+                         (when (save b)
+                           (set! (save-claim-by claim) name))))))
+
+;; Offer B to the save takeovers; the name of the one that saved it, or #f.
+(def (run-save-takeovers (b : buffer)) => (Maybe :symbol)
+  (let (claim (save-claim by: #f))
+    (run-hook save-takeover-hook b claim)
+    (save-claim-by claim)))
+
+;;; Folders and file names
+
+;; The folder a buffer's relative file names start from (Emacs
+;; `default-directory`): a folder name ending in "/". #f means Tuna's
+;; working folder.
+(defsetting default-directory #f
+  "The folder this buffer's file names are relative to; #f for Tuna's working folder.")
+
+(def (buffer-default-directory (b : buffer)) => :string
+  (let (folder (buffer-local-value default-directory b))
+    (file-name-as-directory (if (string? folder) folder (current-directory)))))
+
+;; The user's home folder, from HOME, without a trailing "/".
+(def (home-directory) => :string
+  (let (home (:- (getenv "HOME" "/") :string))
+    (if (and (fx> (string-length home) 1) (string-suffix? "/" home))
+      (substring home 0 (fx1- (string-length home)))
+      home)))
+
+(def (file-name-as-directory (name : :string)) => :string
+  (if (string-suffix? "/" name) name (string-append name "/")))
+
+;; NAME up to and including its last "/", or "" without one.
+(def (file-name-directory (name : :string)) => :string
+  (let (slash (string-rindex name #\/))
+    (if slash (substring name 0 (fx1+ slash)) "")))
+
+;; NAME after its last "/".
+(def (file-name-nondirectory (name : :string)) => :string
+  (let (slash (string-rindex name #\/))
+    (if slash (substring name (fx1+ slash) (string-length name)) name)))
+
+;; NAME as an absolute file name: "~" means the home folder, a relative
+;; name starts from DIRECTORY, and "." and ".." are resolved without
+;; looking at the disk. A name ending in "/" keeps it.
+(def (expand-file-name (name : :string) (directory : :string)) => :string
+  (let* ((full (cond
+                ((or (string=? name "~") (string-prefix? "~/" name))
+                 (string-append (home-directory) (substring name 1 (string-length name))))
+                ((string-prefix? "/" name) name)
+                (else (string-append (file-name-as-directory (expand-file-name directory "/")) name))))
+         (folder? (or (string-suffix? "/" full) (string-suffix? "/." full) (string-suffix? "/.." full)))
+         (parts (let lp ((rest (string-split full #\/)) (out []))
+                  (match rest
+                    ([] (reverse out))
+                    ([part . more]
+                     (cond
+                      ((or (string-empty? part) (string=? part ".")) (lp more out))
+                      ((string=? part "..") (lp more (if (pair? out) (cdr out) out)))
+                      (else (lp more (cons part out)))))))))
+    (if (null? parts)
+      "/"
+      (string-append "/" (string-join parts "/") (if folder? "/" "")))))
+
+;; NAME with the home folder written "~".
+(def (abbreviate-file-name (name : :string)) => :string
+  (let (home (home-directory))
+    (cond
+     ((string=? home "/") name)
+     ((string=? name home) "~")
+     ((string-prefix? (string-append home "/") name)
+      (string-append "~" (substring name (string-length home) (string-length name))))
+     (else name))))

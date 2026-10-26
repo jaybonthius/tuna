@@ -45,7 +45,7 @@ prelude: :gerbil/core
 (interface Completion
   (completing-read (question : :string) (table : completion-table)
                    (require-match : :boolean) (initial : :string)
-                   (history :? :symbol) (default :? :string)) => :t
+                   (history :? :symbol) (default :? :string) (setup :? :procedure)) => :t
   (current-session) => (Maybe CompletionSession)
   (styles) => entry-table
   (annotators) => entry-table)
@@ -61,12 +61,16 @@ prelude: :gerbil/core
 (def completion-ui-service (new-service 'completion-ui is-CompletionUI? tier: 'live
   doc: "Presents a completion session in its prompt buffer."))
 
+;; SETUP, when given, receives the minibuffer's Prompt handle once the
+;; engine has set up the prompt, before it is first presented: a caller adds
+;; prompt-local nodes and keys there (the file picker's DEL and ~/).
 (def (completing-read (question : :string) (table : completion-table)
                       require-match: (require-match : :boolean := #t)
                       initial: (initial : :string := "")
                       history: (history :? :symbol := #f)
-                      default: (default :? :string := #f)) => :t
-  (with-service-provider (provider completion-service Completion) (Completion-completing-read provider question table require-match initial history default)))
+                      default: (default :? :string := #f)
+                      setup: (setup :? :procedure := #f)) => :t
+  (with-service-provider (provider completion-service Completion) (Completion-completing-read provider question table require-match initial history default setup)))
 
 (def (current-completion-session) => (Maybe CompletionSession)
   (:? (let (provider (service-provider completion-service))

@@ -106,6 +106,8 @@ prelude: :gerbil/core
         buffer-point-node buffer-point set-buffer-point!
         internal-buffer?
         buffer-list get-buffer add-buffer! context-add-buffer! kill-buffer kill-buffer-hook
+        context-add-kill-buffer-query! kill-buffer-allowed?
+        buffer-read-only
         buffer-list-update-hook
         other-buffer buffer-texts
         ;; views
@@ -1223,6 +1225,25 @@ prelude: :gerbil/core
 (def buffer-list-update-hook
   (new-hook 'buffer-list-update doc: "Runs after a buffer is added, killed or renamed."))
 
+;; Questions asked before a buffer is killed interactively (Emacs
+;; `kill-buffer-query-functions`): name -> procedure taking the buffer and
+;; returning #f to keep it. Only the interactive path (the kill-buffer
+;; command) asks them; `kill-buffer` itself never does, so plugins can
+;; remove their own buffers silently.
+(def kill-buffer-queries (new-entry-table))
+
+(def (context-add-kill-buffer-query! (ctx : context) (name : :symbol) (query : :procedure)) => :void
+  (context-add-entry! ctx kill-buffer-queries name query)
+  (void))
+
+;; Whether every kill query agrees to killing B. A query may ask in the
+;; minibuffer, so call this from a command.
+(def (kill-buffer-allowed? (b : buffer)) => :boolean
+  (andmap (lambda (name)
+            (let (e (entry-table-ref kill-buffer-queries name))
+              (or (not e) (and ((entry-value e) b) #t))))
+          (entry-table-names kill-buffer-queries)))
+
 ;; The buffer to show instead of B: the oldest other buffer that is not
 ;; internal, or #f.
 (def (other-buffer (b : buffer)) => (Maybe buffer)
@@ -1658,13 +1679,27 @@ prelude: :gerbil/core
   (current-text)
   (set-view-point! (selected-view) position))
 
+;; Emacs's `buffer-read-only`: editing commands may not change the text
+;; of a buffer whose value is true. The editing primitives below check it
+;; for the current buffer; text-replace! does not, so the plugin that owns
+;; a buffer can still change it.
+(defsetting buffer-read-only #f
+  "Whether editing commands may not change this buffer's text.")
+
+(def (check-writable) => :void
+  (let (b (current-buffer))
+    (when (buffer-local-value buffer-read-only b)
+      (error "Buffer is read-only:" (buffer-name b)))))
+
 ;; Insert INSERTION at point, leaving point after it.
 (def (insert (insertion : :string)) => :void
+  (check-writable)
   (let (start (point))
     (text-replace! (current-text) start start insertion point-before: start)
     (goto-char (fx+ start (string-length insertion)))))
 
 (def (delete-region (start : :fixnum) (end : :fixnum)) => :void
+  (check-writable)
   (text-replace! (current-text) (fxmin start end) (fxmax start end) "" point-before: (point)))
 
 (def (goal-column) => (Maybe :fixnum)

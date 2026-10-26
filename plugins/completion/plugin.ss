@@ -210,7 +210,7 @@
 
 (def (ask! (self : completion-state) (question : :string) (table : completion-table)
            (require-match : :boolean) (initial : :string) (history :? :symbol)
-           (default :? :string)) => :t
+           (default :? :string) (setup :? :procedure)) => :t
   (let* ((origin (current-buffer)) (origin-view (copy-view (selected-view)))
          (command (this-command))
          (overrides (setting-value completion-category-overrides))
@@ -238,6 +238,7 @@
                            (and require-match (not (completion-session-accepting? session))
                                 (not (exact-candidate session input)) "Input does not name a candidate")))
                        (set-node-keymap! (prompt-answer-node p) self.keymap)
+                       (when setup (setup p))
                        (present! session))))
         (cond ((candidate? answer) (candidate-value answer))
               ((and require-match (string? answer))
@@ -268,8 +269,8 @@
               (command-names)))
 
 (implement Completion completion-state
-  (completing-read (lambda (self question table require-match initial history default)
-                     (ask! self question table require-match initial history default)))
+  (completing-read (lambda (self question table require-match initial history default setup)
+                     (ask! self question table require-match initial history default setup)))
   (current-session (lambda (self)
                      (and (pair? self.sessions) (CompletionSession (car self.sessions)))))
   (styles (lambda (self) self.styles))

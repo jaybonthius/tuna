@@ -28,7 +28,7 @@ prelude: :gerbil/core
 
 (defclass inspection-completion () final: #t)
 (implement Completion inspection-completion
-  (completing-read (lambda (self question table require-match initial history default)
+  (completing-read (lambda (self question table require-match initial history default setup)
                      (check question => "Describe advice for: ")
                      (check require-match => #t)
                      (set! read-count (fx1+ read-count))
