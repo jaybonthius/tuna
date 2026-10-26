@@ -74,7 +74,7 @@ Tiers are ordered by what blocks daily use, then by what each piece builds on. W
 
 1. **`modes`:** major and minor modes, attached to a node or to a region of text, so one file can hold several (JavaScript and CSS inside HTML): the mode at the cursor decides keys, settings and commands; each region is highlighted by its own grammar (tree-sitter injections can report the regions); each region goes to its own language server as a separate virtual document with positions mapped. A brief first, and an [idea page](ideas/modes.md).
 2. **`project`:** project root, project files, search with ripgrep, compile and jump to errors.
-3. **`editing`** grows: motions (words, expressions, paragraphs), search and replace, undo and redo, indentation, comments, rectangles.
+3. **`editing`** grows: motions (words, expressions, paragraphs), search and replace, undo and redo, indentation, comments, rectangles. Words are built (2026-10-26): `M-f`, `M-b`, `M-d`, `M-DEL`, `M-@`, `M-t`, `M-u`, `M-l`, `M-c`, with consecutive kills appending; prefix arguments wait for a numeric-argument command.
 4. **`modal-editing`** (Helix-like, inspired by Hel), as a plugin.
 5. **`which-key`:** prefix-key help.
 6. **In-buffer completion** (Corfu-like) as part of `completion`, or `completion-popup` beside `completion-list` if it must be swappable on its own.

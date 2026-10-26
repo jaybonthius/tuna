@@ -12,16 +12,20 @@
 (def browser-keys
   '(("RET" . "Enter") ("DEL" . "Backspace") ("SPC" . " ")
     ("<up>" . "ArrowUp") ("<down>" . "ArrowDown")
-    ("<left>" . "ArrowLeft") ("<right>" . "ArrowRight")))
+    ("<left>" . "ArrowLeft") ("<right>" . "ArrowRight")
+    ("<delete>" . "Delete")))
 
 ;; Submit one key to the running editor loop: "a", "RET", "C-f", "<up>",
-;; "S-<left>", from the clients contract's CLIENT, if given.
+;; "S-<left>", "C-S-<right>", "M-DEL", from the clients contract's CLIENT,
+;; if given. Modifiers come in the order C-, M-, S-.
 (def (press (key : :string) client: (client #f)) => :void
   (set! sequence (+ sequence 1))
   (let* ((ctrl? (string-prefix? "C-" key))
-         (shift? (string-prefix? "S-" key))
+         (key (if ctrl? (substring key 2 (string-length key)) key))
          (alt? (string-prefix? "M-" key))
-         (name (if (or ctrl? shift? alt?) (substring key 2 (string-length key)) key))
+         (key (if alt? (substring key 2 (string-length key)) key))
+         (shift? (string-prefix? "S-" key))
+         (name (if shift? (substring key 2 (string-length key)) key))
          (browser-key (cond
                        ((assoc name browser-keys) => cdr)
                        (else name))))
