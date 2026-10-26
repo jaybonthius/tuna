@@ -11,6 +11,9 @@
 ;;; files (Neovim's backupcopy=auto rule). The backup goes beside the file,
 ;;; or into BACKUP-FOLDER when its folder takes no new files.
 ;;;
+;;; Watching: watcher.ss, with inotify unless auto-revert-use-notify is
+;;; off, polling every auto-revert-interval seconds where it cannot.
+;;;
 ;;; Gambit has no realpath(3), chmod(2), chown(2), nanosecond modification
 ;;; times or a way to flush a folder, so this module calls them itself, as
 ;;; tuna/control.ss does chmod.
@@ -19,7 +22,10 @@ prelude: :gerbil/core
 (import :std/ffi
         (only-in :std/os/pid getpid)
         :std/interface
-        :tuna/plugins/files/contract)
+        :tuna/kernel
+        :tuna/plugins/settings/contract
+        :tuna/plugins/files/contract
+        "watcher")
 (export local-disk new-local-disk)
 
 (C-ffi-macrology)
@@ -46,12 +52,19 @@ prelude: :gerbil/core
    else { if (fsync(fd) < 0) r = -errno; close(fd); }
    ___return(r);")
 
-(defclass local-disk ((backup-folder : :procedure)) final: #t)
+(defclass local-disk ((backup-folder : :procedure)
+                      (watching      : watcher))
+  final: #t)
 
 ;; BACKUP-FOLDER returns the folder for backups of files whose own folder
-;; takes no new files.
-(def (new-local-disk (backup-folder : :procedure)) => local-disk
-  (local-disk backup-folder: backup-folder))
+;; takes no new files. Watching belongs to CTX's plugin.
+(def (new-local-disk (ctx : context) (backup-folder : :procedure)) => local-disk
+  (local-disk backup-folder: backup-folder
+              watching: (new-watcher ctx stat-path read-bytes
+                                    (lambda ()
+                                      (let (interval (setting-value auto-revert-interval))
+                                        (cons (and (setting-value auto-revert-use-notify) #t)
+                                              (if (and (real? interval) (> interval 0)) interval 2)))))))
 
 (def (info->stat (path : :string) (info : :t)) => file-stat
   (let (nanoseconds (modification-nanoseconds path))
@@ -195,4 +208,7 @@ prelude: :gerbil/core
   (read-file-bytes (lambda (self path) (read-bytes path)))
   (write-file-bytes (lambda (self path bytes) (write-path! self path bytes)))
   (list-folder (lambda (self path) (folder-entries path)))
-  (true-name (lambda (self path) (resolve-true-name path))))
+  (true-name (lambda (self path) (resolve-true-name path)))
+  (watch-file (lambda (self path changed) (watch-path! (local-disk-watching self) path changed)))
+  (unwatch-file (lambda (self path) (unwatch-path! (local-disk-watching self) path)))
+  (check-watched-files (lambda (self) (recheck-watched! (local-disk-watching self)))))

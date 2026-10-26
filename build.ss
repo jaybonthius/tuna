@@ -38,11 +38,11 @@
     ("plugins/autosave" "plugin")
     ("plugins/configuration" "plugin")
     ("plugins/proced" "plugin")
-    ("plugins/files" "contract" "encoding" "local-disk" "picker" "plugin")
     ("plugins/web" "contract" "embed" "proxy"
      (gxc: "plugin"
            (extra-inputs: ,(map (cut string-append "web/" <>)
                                (directory-files "plugins/web/web")))))
+    ("plugins/files" "contract" "encoding" "line-diff" "watcher" "local-disk" "picker" "plugin")
     ("plugins/microphone" "contract" "plugin")
     ("plugins/voice" "contract" "spoken" "plugin")))
 

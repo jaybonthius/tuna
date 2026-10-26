@@ -1,0 +1,1 @@
+import{getPath as n}from"datastar";var t=0;function i(){if(document.visibilityState!=="visible")return;let e=Date.now();e-t<1e3||(t=e,fetch("/plugin/files/check",{method:"POST",headers:{"Tuna-Tab":String(n("tab"))},body:""}).catch(()=>{}))}document.addEventListener("visibilitychange",i);window.addEventListener("focus",i);

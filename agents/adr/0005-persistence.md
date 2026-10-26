@@ -24,6 +24,7 @@ Emacs reaches remote and virtual files through `file-name-handler-alist` (TRAMP,
 - **Format.** Data files are written with `write` and read with `read`, then validated. They are never evaluated. Only `init.ss` is code. Text properties are persisted only when their values are plain data.
 - **Writes** go to a temporary file followed by an atomic rename. A corrupt file is moved aside and reported; Tuna starts without it rather than overwriting it.
 - **Restore** happens after plugins activate, slot by slot. One slot failing does not prevent others.
+- **Changes on disk** (*2026-10-26, files stage 3*). The file service watches visited files and reports a file only when its bytes changed (a SHA-256 compared off the editor thread), so `touch`, identical checkouts and Tuna's own saves are no change. A text with no unsaved changes is reloaded automatically (`auto-revert`, on by default, unlike Emacs; owner decision 2026-10-26) by applying a line diff as one undo group, never by replacing the text, so markers, views and highlights outside the changed lines stay put and the buffer is not re-initialized. A text with unsaved changes is marked as in conflict, and saving it asks: overwrite, or reload theirs; Emacs's question at the first edit of a stale buffer is not copied. Saving always compares the file on disk with what was last read or saved first.
 - **SQLite** is available to plugins that need queries; it is not a core store.
 
 ## Consequences
