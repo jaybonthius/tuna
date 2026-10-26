@@ -28,12 +28,13 @@ prelude: :gerbil/core
 
 (defclass inspection-completion () final: #t)
 (implement Completion inspection-completion
-  (completing-read (lambda (self question table require-match initial history default setup)
+  (completing-read (lambda (self question sources require-match initial history default setup)
                      (check question => "Describe advice for: ")
+                     (check (length sources) => 1)
                      (check require-match => #t)
                      (set! read-count (fx1+ read-count))
-                     (set! seen-table table)
-                     ((choose) table)))
+                     (set! seen-table (car sources))
+                     ((choose) (car sources))))
   (current-session (lambda (self) #f))
   (styles (lambda (self) (new-entry-table)))
   (annotators (lambda (self) (new-entry-table))))

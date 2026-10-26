@@ -92,9 +92,9 @@
 
 (defclass completion-state ((sessions : :list) (styles : entry-table) (annotators : entry-table)
                             (keymap : entry-table)) final: #t)
-(defclass completion-session ((owner : completion-state) (table : completion-table)
+(defclass completion-session ((owner : completion-state) (sources : :list)
                              (prompt : Prompt) (input : :string) (candidates : :list)
-                             (selected :? candidate) (spans : HashTable)
+                             (selected :? candidate) (spans : HashTable) (origins : HashTable)
                              (origin-command :? :symbol) (origin-buffer : buffer) (origin-view : view)
                              (revision : :fixnum) (require-match : :boolean) (default :? :string)
                              (history : :list) (style-names : :list)
@@ -112,18 +112,46 @@
                          s.style-names))
     (if (null? found) [substring-compile] found)))
 
+(defstruct source-items ((table : completion-table) (candidates : :vector) (texts : :vector)
+                         (query : :string))
+  final: #t)
+
+;; Match every source's candidates against its query: (candidate table . spans)
+;; rows, each source's after the previous source's, in its own order. The
+;; first style with matches in any source is used for all of them.
+(def (match-sources (sources : :list) (history : :list) (compilers : :list)) => :list
+  (let styles ((rest compilers))
+    (if (null? rest) []
+      (let (rows (foldr
+                  (lambda ((source : source-items) (later : :list))
+                    (append (map (lambda ((row : :pair))
+                                   (cons* (vector-ref source.candidates (car row)) source.table (cdr row)))
+                                 (completion-pipeline source.texts source.query history [(car rest)]
+                                                      (completion-table-sort source.table)))
+                            later))
+                  [] sources))
+        (if (pair? rows) rows (styles (cdr rest)))))))
+
 (def (recompute! (s : completion-session)) => :void
-  (let* ((input (prompt-input s.prompt)) (table s.table)
-         (items (completion-table-items table))
-         (all (list->vector (if (procedure? items) (items input) items)))
-         (rows (completion-pipeline (vector-map candidate-text all) input s.history (style-compilers s)
-                                    (completion-table-sort table)))
-         (ordered (map (lambda (row) (vector-ref all (car row))) rows))
+  (let* ((input (prompt-input s.prompt))
+         (parts (map (lambda ((table : completion-table))
+                         (let* ((items (completion-table-items table))
+                                (all (list->vector (if (procedure? items) (items input) items)))
+                                (query (completion-table-query table)))
+                           (make-source-items table all (vector-map candidate-text all)
+                                              (if query (query input) input))))
+                       s.sources))
+         (rows (match-sources parts s.history (style-compilers s)))
+         (ordered (map car rows))
          (previous s.selected))
     (set! s.input input)
     (set! s.candidates ordered)
     (hash-clear! s.spans)
-    (for-each (lambda (row) (hash-put! s.spans (vector-ref all (car row)) (cdr row))) rows)
+    (hash-clear! s.origins)
+    (for-each (lambda (row)
+                (hash-put! s.spans (car row) (cddr row))
+                (hash-put! s.origins (car row) (cadr row)))
+              rows)
     (set! s.selected (or (and previous
                              (find (lambda ((c : candidate)) (equal? c.key (candidate-key previous))) ordered))
                         (and (pair? ordered) (car ordered))))
@@ -165,22 +193,27 @@
 
 ;; Annotators are read-only. A temporary selected-view snapshot supplies the
 ;; origin buffer without changing the layout's focus memory or showing it.
+;; The source C came from.
+(def (candidate-source (s : completion-session) (c : candidate)) => completion-table
+  (hash-ref s.origins c (car s.sources)))
+
 (def (annotate-visible (s : completion-session) (c : candidate)) => :list
-  (let ((before (selected-view))
-        (entries (entry-table-entries (completion-state-annotators s.owner)
-                                      (or (candidate-category c) (completion-table-category s.table)))))
+  (let* ((before (selected-view))
+         (table (candidate-source s c))
+         (entries (entry-table-entries (completion-state-annotators s.owner)
+                                       (or (candidate-category c) (completion-table-category table)))))
     (unwind-protect
       (begin
         (set-selected-view! s.origin-view)
         (or (let lp ((rest entries))
               (and (pair? rest) (or ((entry-value (car rest)) c) (lp (cdr rest)))))
-            (let (fallback (completion-table-annotate s.table)) (and fallback (fallback c)))
+            (let (fallback (completion-table-annotate table)) (and fallback (fallback c)))
             []))
       (set-selected-view! before))))
 
 (implement CompletionSession completion-session
   (session-input (lambda (s) s.input))
-  (session-category (lambda (s) (:- (completion-table-category s.table) :symbol)))
+  (session-category (lambda (s) (:- (completion-table-category (car s.sources)) :symbol)))
   (session-candidates (lambda (s) s.candidates))
   (session-selected (lambda (s) s.selected))
   (session-command (lambda (s) s.origin-command))
@@ -205,16 +238,18 @@
   (session-spans (lambda (s c) (:- (hash-ref s.spans c []) :list)))
   (session-annotations (lambda (s c) (annotate-visible s c)))
   (session-group (lambda (s c)
-                   (let (group (completion-table-group s.table))
-                     (if group (group c) (candidate-group c))))))
+                   (let* ((table (candidate-source s c)) (group (completion-table-group table)))
+                     (or (if group (group c) (candidate-group c)) (completion-table-title table))))))
 
-(def (ask! (self : completion-state) (question : :string) (table : completion-table)
+(def (ask! (self : completion-state) (question : :string) (sources : :list)
            (require-match : :boolean) (initial : :string) (history :? :symbol)
            (default :? :string) (setup :? :procedure)) => :t
+  (unless (and (pair? sources) (andmap completion-table? sources))
+    (error "Completion sources must be a non-empty list of completion tables" sources))
   (let* ((origin (current-buffer)) (origin-view (copy-view (selected-view)))
          (command (this-command))
          (overrides (setting-value completion-category-overrides))
-         (override (assq (completion-table-category table) overrides))
+         (override (assq (completion-table-category (car sources)) overrides))
          (styles (if override (cdr override) (setting-value completion-styles)))
          (recent (if history (minibuffer-history history) []))
          (session #f))
@@ -223,8 +258,8 @@
       (let (answer
             (read-from-minibuffer question initial history: history
               setup: (lambda ((p : Prompt))
-                       (set! session (completion-session owner: self table: table prompt: p input: initial
-                         candidates: [] selected: #f spans: (make-hash-table-eq)
+                       (set! session (completion-session owner: self sources: sources prompt: p input: initial
+                         candidates: [] selected: #f spans: (make-hash-table-eq) origins: (make-hash-table-eq)
                          origin-command: command origin-buffer: origin origin-view: origin-view revision: 0
                          require-match: require-match default: default history: recent style-names: styles
                          accepting?: #f ui: #f drawn-revision: -1))
@@ -269,8 +304,8 @@
               (command-names)))
 
 (implement Completion completion-state
-  (completing-read (lambda (self question table require-match initial history default setup)
-                     (ask! self question table require-match initial history default setup)))
+  (completing-read (lambda (self question sources require-match initial history default setup)
+                     (ask! self question sources require-match initial history default setup)))
   (current-session (lambda (self)
                      (and (pair? self.sessions) (CompletionSession (car self.sessions)))))
   (styles (lambda (self) self.styles))
@@ -296,7 +331,7 @@
       (let* ((origin (current-buffer))
              (table (make-completion-table category: 'command
                       items: (lambda (input) (visible-command-candidates origin))))
-             (choice (completing-read "M-x " table history: 'extended-command)))
+             (choice (completing-read "M-x " [table] history: 'extended-command)))
         (call-command choice)))
     (keymap-set ctx "M-x" 'execute-extended-command)
     (context-define-command! ctx 'completion-accept-input

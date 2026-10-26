@@ -1,10 +1,14 @@
 #lang :tuna/prelude
-;;; The file picker: `completing-read` over the files of the folder typed
-;;; so far, category `file`. The input is a file name ("~/notes/to"); the
-;;; candidates are the entries of its folder ("~/notes/"), each written as
-;;; that folder plus its name, folders ending in "/", so any matching style
-;;; works on whole names. The listing comes from the file service and is
-;;; read again only when the folder typed changes.
+;;; The file picker: `completing-read` over two sources, category `file`:
+;;; "Recent files", then "This folder", the files of the folder typed so
+;;; far. The input is a file name ("~/notes/to"); the folder's candidates
+;;; are the entries of its folder ("~/notes/"), each written as that folder
+;;; plus its name, folders ending in "/", so any matching style works on
+;;; whole names. The listing comes from the file service and is read again
+;;; only when the folder typed changes. Recent files are offered while the
+;;; input's folder is the one the picker opened at, matched against the
+;;; name typed after it: typing a folder means looking in it, so the
+;;; listing is then that folder's alone.
 ;;;
 ;;; Keys in the picker: typing "/" after "~" anywhere jumps home
 ;;; ("~/a/~/" becomes "~/"), as Emacs's substitute-in-file-name reads
@@ -18,6 +22,7 @@
         :tuna/plugins/completion/contract
         :tuna/plugins/files/contract)
 (export file-table
+        recent-file-table
         file-annotations
         wrap-picker-answer!
         picker-slash!
@@ -38,6 +43,7 @@
   (let ((listed-folder #f) (listed []))
     (make-completion-table
      category: 'file
+     title: "This folder"
      items: (lambda ((input : :string))
               (let* ((where (input-folder input from))
                      (folder-part (car where))
@@ -55,6 +61,25 @@
                      (list-sort (lambda ((a : folder-entry) (b : folder-entry))
                                   (string<? (folder-entry-name a) (folder-entry-name b)))
                                 listed)))))))
+
+;; FILES, true names most recent first, as a source titled TITLE, in that
+;; order. With STARTING, the folder the picker opened at as typed, they are
+;; offered only while the input's folder part is that or empty, and matched
+;; against the name typed after it; otherwise against the whole input.
+(def (recent-file-table (files : :list) (title :? :string) (starting :? :string)) => completion-table
+  (let (candidates (map (lambda ((name : :string))
+                          (let (text (abbreviate-file-name name))
+                            (make-candidate text: text value: name key: (cons 'recent text))))
+                        files))
+    (make-completion-table
+     category: 'file
+     title: title
+     sort: values
+     items: (if starting
+              (lambda ((input : :string))
+                (if (member (file-name-directory input) ["" starting]) candidates []))
+              candidates)
+     query: (and starting file-name-nondirectory))))
 
 ;; SIZE bytes as "512", "1.2K", "34M".
 (def (human-size (size : :integer)) => :string

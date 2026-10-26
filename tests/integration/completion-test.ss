@@ -14,7 +14,7 @@ prelude: :gerbil/core
 (export completion-test)
 
 (def results [])
-(def reads-table #f)
+(def reads-sources [])
 (def must-match? #t)
 (def default-text #f)
 (def captured-annotations [])
@@ -32,6 +32,11 @@ prelude: :gerbil/core
   (let (lists (prompt-nodes 'completion-list))
     (if (null? lists) []
       (filter (lambda ((n : node)) (eq? (node-kind n) 'completion-row)) (node-children (car lists))))))
+(def (group-titles) => :list
+  (let (lists (prompt-nodes 'completion-list))
+    (if (null? lists) []
+      (filter-map (lambda ((n : node)) (and (eq? (node-kind n) 'completion-group) (node-attribute n 'content)))
+                  (node-children (car lists))))))
 (def (row-texts) => :list
   (map (lambda ((n : node)) (candidate-text (node-attribute n 'candidate))) (row-nodes)))
 (def (html) => :string (html->string (Renderer-render-screen (Renderer (service-provider renderer-service)) #f)))
@@ -53,12 +58,12 @@ prelude: :gerbil/core
   (context-define-command! ctx 'test-hidden void visible?: (lambda (c origin) #f))
   (keymap-set "C-c a" 'test-alpha)
   (define-command ctx (fixture-read) "A configurable read."
-    (set! results (cons (completing-read "Pick: " reads-table require-match: must-match?
+    (set! results (cons (completing-read "Pick: " reads-sources require-match: must-match?
                                        history: 'picks default: default-text) results)))
   (keymap-set "C-c f" 'fixture-read)
   (define-command ctx (fixture-nested) "Ask inside an existing prompt."
-    (set! results (cons (completing-read "Inner: " (make-completion-table category: 'test
-                                        items: (strings->candidates ["inner"]))) results)))
+    (set! results (cons (completing-read "Inner: " [(make-completion-table category: 'test
+                                         items: (strings->candidates ["inner"]))]) results)))
   (keymap-set "C-c n" 'fixture-nested))
 
 (defplugin (count-two ctx)
@@ -106,7 +111,7 @@ prelude: :gerbil/core
 (def (run-completion (ui :? plugin) (thunk : :procedure)) => :t
   (set! results []) (set! captured-annotations []) (set! redraws [])
   (set! must-match? #t) (set! default-text #f)
-  (set! reads-table (make-completion-table category: 'test items: (strings->candidates ["alpha" "beta" "gamma"])))
+  (set! reads-sources [(make-completion-table category: 'test items: (strings->candidates ["alpha" "beta" "gamma"]))])
   (call-with-fresh-kernel completion-engine-plugins
     (lambda () (when ui (activate-plugin! ui)) (start-editor-loop!) (thunk))))
 
@@ -152,12 +157,37 @@ prelude: :gerbil/core
           (check (on-editor session) => #f)
           (check results => ['alpha])
           (check (on-editor session) => #f))))
+    (test-case "sources: each source's matches under its title, in source order, matched across all"
+      (run-completion completion-list
+        (lambda ()
+          (on-editor (lambda ()
+            (set! reads-sources
+              [(make-completion-table category: 'test title: "Recent" sort: values
+                 items: (strings->candidates ["zeta" "alpha"]))
+               (make-completion-table category: 'test title: "All"
+                 items: (strings->candidates ["alphabet" "beta"])
+                 query: string-downcase)])))
+          (type! "C-c" "f")
+          (check (on-editor texts) => ["zeta" "alpha" "beta" "alphabet"])
+          (check (on-editor group-titles) => ["Recent" "All"])
+          (type! "a" "l")
+          (check (on-editor texts) => ["alpha" "alphabet"])
+          (check (on-editor group-titles) => ["Recent" "All"])
+          (type! "C-n" "RET")
+          (check (on-editor session) => #f)
+          (check results => ["alphabet"])
+          ;; The second source matches its own query, here the input in
+          ;; lower case; smart case keeps "AL" from matching "alpha".
+          (type! "C-c" "f" "A" "L")
+          (check (on-editor texts) => ["alphabet"])
+          (check (on-editor group-titles) => ["All"])
+          (type! "C-g"))))
     (test-case "annotators for unrelated categories are never called"
       (run-completion completion-list
         (lambda ()
           (on-editor (lambda () (activate-plugin! test-annotator)
-            (set! reads-table (make-completion-table category: 'unknown
-              items: [(make-candidate text: "test-alpha" value: 'test-alpha key: 'test-alpha)]))))
+            (set! reads-sources [(make-completion-table category: 'unknown
+              items: [(make-candidate text: "test-alpha" value: 'test-alpha key: 'test-alpha)])])))
           (type! "C-c" "f")
           (check captured-annotations => [])
           (check (on-editor (lambda () (node-attribute (car (row-nodes)) 'annotations))) => [])
@@ -246,10 +276,10 @@ prelude: :gerbil/core
       (run-completion completion-list
         (lambda ()
           (on-editor (lambda ()
-            (set! reads-table (make-completion-table category: 'test sort: values
+            (set! reads-sources [(make-completion-table category: 'test sort: values
               items: (lambda (input)
                        [(make-candidate text: "car" value: 1 key: 'a)
-                        (make-candidate text: "car" value: 2 key: 'b)])))))
+                        (make-candidate text: "car" value: 2 key: 'b)]))])))
           (type! "C-c" "f" "C-n" "c" "a")
           (check (on-editor (lambda () (candidate-key (CompletionSession-session-selected (session))))) => 'b)
           (type! "RET")
@@ -275,8 +305,8 @@ prelude: :gerbil/core
       (run-completion completion-list
         (lambda ()
           (on-editor (lambda () (set! must-match? #f)
-             (set! reads-table (make-completion-table category: 'test
-               items: [(make-candidate text: "beta" value: 42 key: 'b)]))))
+             (set! reads-sources [(make-completion-table category: 'test
+               items: [(make-candidate text: "beta" value: 42 key: 'b)])])))
           (type! "C-c" "f" "b" "e" "t" "a" "M-RET")
           (check (on-editor session) => #f)
           (check results => ["beta"])
@@ -305,9 +335,9 @@ prelude: :gerbil/core
       (run-completion completion-list
         (lambda ()
           (on-editor (lambda () (activate-plugin! count-two) (activate-plugin! test-annotator)
-            (set! reads-table (make-completion-table category: 'test
+            (set! reads-sources [(make-completion-table category: 'test
               items: (strings->candidates ["a" "b" "c" "d"])
-              annotate: (lambda (c) [(make-annotation-field "fallback" 'key)])))))
+              annotate: (lambda (c) [(make-annotation-field "fallback" 'key)]))])))
           (type! "C-c" "f")
           (check (on-editor (lambda () captured-annotations)) => [["b" "*scratch*"] ["a" "*scratch*"]])
           (check (on-editor (lambda () (contains? (html) "registered"))) => #t)
