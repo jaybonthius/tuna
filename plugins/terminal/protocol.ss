@@ -7,12 +7,14 @@
 ;;; Tuna speaks first, with `hello` and the protocol version it speaks. The
 ;;; helper answers `hello` with its version, its own pid, its program's pid
 ;;; and its size, then `snapshot` (its terminal as libghostty snapshot
-;;; bytes), then every byte the program writes as `output`, and `exit` with
-;;; the program's status once it ended; or `refused` with a reason, and
+;;; bytes), then every byte the program writes as `output`, `resized` where
+;;; in that output its terminal took a new size, and `exit` with the
+;;; program's status once it ended; or `refused` with a reason, and
 ;;; closes. Tuna sends `input` (bytes for the program), `resize`, `focus`,
-;;; `snapshot-request` (answered by `snapshot`, after which output resumes),
 ;;; `colors` (the theme's colours, which the helper's terminal answers
-;;; colour queries with), `kill`, and `exit-ack` once it has shown the exit.
+;;; colour queries with), `settings` (where and how often to save its
+;;; screen, how much scrollback to save, when to compress its scrollback),
+;;; `kill`, and `exit-ack` once it has shown the exit.
 prelude: :gerbil/core
 
 (export protocol-version
@@ -26,20 +28,22 @@ prelude: :gerbil/core
         helper-hello-payload (struct-out helper-hello) parse-helper-hello
         resize-payload (struct-out resize-request) parse-resize
         exit-payload parse-exit
-        (struct-out theme-colors) colors-payload parse-colors)
+        (struct-out theme-colors) colors-payload parse-colors
+        (struct-out helper-settings) helper-settings-payload parse-helper-settings)
 
 ;; A helper and a plugin with different versions do not talk. Version 2
-;; added `colors`.
-(def protocol-version 2)
+;; added `colors`; version 3 `resized`, in place of a snapshot after each
+;; resize, and `settings`.
+(def protocol-version 3)
 
 ;; The largest payload either side accepts: a snapshot of a terminal with a
 ;; very large scrollback fits.
 (def maximum-payload (* 256 1024 1024))
 
 (def frame-types
-  '((hello . 1) (refused . 2) (snapshot . 3) (output . 4) (exit . 5)
-    (input . 65) (resize . 66) (focus . 67) (snapshot-request . 68) (kill . 69) (exit-ack . 70)
-    (colors . 71)))
+  '((hello . 1) (refused . 2) (snapshot . 3) (output . 4) (exit . 5) (resized . 6)
+    (input . 65) (resize . 66) (focus . 67) (kill . 69) (exit-ack . 70)
+    (colors . 71) (settings . 72)))
 
 ;; One message: TYPE, a symbol of frame-types, and its PAYLOAD.
 (defstruct frame ((type : :symbol) (payload : :u8vector))
@@ -154,7 +158,8 @@ prelude: :gerbil/core
                        (bytes-u16 payload 10) (bytes-u16 payload 12))
     (make-helper-hello (if (fx>= (u8vector-length payload) 2) (bytes-u16 payload 0) 0) 0 0 0 0)))
 
-;; A new size: COLUMNS x ROWS cells, each CELL-WIDTH x CELL-HEIGHT px.
+;; A new size: COLUMNS x ROWS cells, each CELL-WIDTH x CELL-HEIGHT px; the
+;; payload of `resize` and of `resized`.
 (defstruct resize-request ((columns : :fixnum)
                            (rows : :fixnum)
                            (cell-width : :fixnum)
@@ -231,3 +236,38 @@ prelude: :gerbil/core
                                                    (vector-set! v i (bytes-rgb payload (fx+ at 2 (fx* 3 i))))
                                                    (lp (fx1+ i))))
                                                v)))))))))
+
+;; What Tuna tells a helper to do on its own: save its screen to
+;; SAVE-PATH ("" for never) every SAVE-INTERVAL seconds while it changes,
+;; with at most SAVED-ROWS rows of scrollback (#f for all it keeps), and
+;; compress its scrollback after COMPRESS-AFTER seconds without output
+;; (#f for never).
+(defstruct helper-settings ((save-path : :string)
+                            (save-interval : :fixnum)
+                            (saved-rows :? :integer)
+                            (compress-after :? :fixnum))
+  final: #t)
+
+;; The interval and the delay as two bytes each (0 for #f), the rows as
+;; four (#xffffffff for #f), then the path's length (two bytes) and its
+;; UTF-8.
+(def (helper-settings-payload (s : helper-settings)) => :u8vector
+  (let (path (string->utf8 (helper-settings-save-path s)))
+    (u8vector-append (u16-bytes (helper-settings-save-interval s))
+                     (u16-bytes (or (helper-settings-compress-after s) 0))
+                     (u32-bytes (or (helper-settings-saved-rows s) #xffffffff))
+                     (u16-bytes (u8vector-length path))
+                     path)))
+
+;; The settings a payload names, or #f when it is too short.
+(def (parse-helper-settings (payload : :u8vector)) => (Maybe helper-settings)
+  (let (size (u8vector-length payload))
+    (and (fx>= size 10)
+         (let (length (bytes-u16 payload 8))
+           (and (fx= size (fx+ 10 length))
+                (let ((compress (bytes-u16 payload 2))
+                      (rows (bytes-u32 payload 4)))
+                  (make-helper-settings (utf8->string (subu8vector payload 10 size))
+                                        (bytes-u16 payload 0)
+                                        (and (not (= rows #xffffffff)) rows)
+                                        (and (fx> compress 0) compress))))))))

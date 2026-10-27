@@ -10,17 +10,29 @@
 ;;; ended and a Tuna has seen that, or when Tuna asks it to kill the
 ;;; program.
 ;;;
-;;;   tuna-terminal-helper --socket PATH [--columns N] [--rows N]
-;;;     [--scrollback BYTES] [--directory DIR] [--log PATH] -- PROGRAM ARG...
+;;; As Tuna's `settings` say, it saves its screen (saved-screen.ss) every
+;;; so often while it changes, and when it is asked to end (SIGTERM, as a
+;;; shutdown sends), so the terminal can come back after a reboot; it
+;;; removes the file when its terminal ends or is killed on purpose. It
+;;; compresses its scrollback once its program has been quiet a while.
 ;;;
-;;; The program gets the helper's own environment. The helper starts a
-;;; session of its own and drops its standard ports, so nothing ties it to
-;;; whatever started it.
+;;;   tuna-terminal-helper --socket PATH [--columns N] [--rows N]
+;;;     [--scrollback BYTES] [--directory DIR] [--log PATH]
+;;;     [--restore SNAPSHOT] -- PROGRAM ARG...
+;;;
+;;; With --restore, its terminal starts as that snapshot file holds it (a
+;;; terminal brought back after its helper was gone), and the file is
+;;; removed. The program gets the helper's own environment. The helper
+;;; starts a session of its own and drops its standard ports, so nothing
+;;; ties it to whatever started it.
 prelude: :gerbil/core
 
 (import (rename-in :gerbil-libghostty/ghostty (terminal? ghostty-terminal?))
+        (only-in :std/os/signal SIGTERM)
+        (only-in :std/os/signal-handler add-signal-handler!)
         ./io
-        ./protocol)
+        ./protocol
+        ./saved-screen)
 (export main)
 
 ;; Bytes read from the pseudo-terminal at a time.
@@ -30,6 +42,8 @@ prelude: :gerbil/core
 (def queue-limit (* 4 1024 1024))
 ;; Seconds between checks of whether the program ended.
 (def watch-interval 0.1)
+;; Seconds between checks of whether to save or compress.
+(def tick-interval 1.0)
 ;; Seconds after SIGHUP before a killed program gets SIGKILL.
 (def kill-grace 1.0)
 (def sighup 1)
@@ -54,17 +68,23 @@ prelude: :gerbil/core
                   (scheme    :? :symbol)         ; light or dark, from Tuna's colours
                   (status    :? :fixnum)         ; the program's, once it ended
                   (killed?   : :boolean)
+                  (wanted    :? helper-settings) ; what Tuna's settings ask: saving, compressing
+                  (changed?  : :boolean)         ; the screen changed since it was saved
+                  (saved-at  : :real)            ; when it was last saved
+                  (output-at : :real)            ; when the program last wrote
+                  (compressed? : :boolean)       ; nothing written since compressing
+                  (saver     : :thread)          ; saves and compresses, woken by output
                   (done      : :thread))         ; main, waiting to be told to end
   final: #t)
 
 ;;; Arguments
 
 (defstruct options ((socket : :string) (columns : :fixnum) (rows : :fixnum) (scrollback : :integer)
-                    (directory : :string) (log : :string) (program : :list))
+                    (directory : :string) (log : :string) (restore : :string) (program : :list))
   final: #t)
 
 (def (parse-arguments (args : :list)) => options
-  (let lp ((args args) (o (make-options "" 80 24 (* 5 1024 1024) "" "" [])))
+  (let lp ((args args) (o (make-options "" 80 24 (* 5 1024 1024) "" "" "" [])))
     (match args
       (["--" . program] (set! (options-program o) program) o)
       ([flag value . rest]
@@ -76,6 +96,7 @@ prelude: :gerbil/core
           ((equal? flag "--scrollback") (set! (options-scrollback o) (number)))
           ((equal? flag "--directory") (set! (options-directory o) value))
           ((equal? flag "--log") (set! (options-log o) value))
+          ((equal? flag "--restore") (set! (options-restore o) value))
           (else (error "Unknown argument" flag)))
          (lp rest o)))
       (else (error "Usage: tuna-terminal-helper --socket PATH ... -- PROGRAM ARG...")))))
@@ -181,15 +202,16 @@ prelude: :gerbil/core
            (thread-send h.pty-writer (focus-encode (if (and (fx> (u8vector-length payload) 0)
                                                             (fx= (u8vector-ref payload 0) 1))
                                                      'gained 'lost))))))
-      ((snapshot-request)
-       (do-with-lock h.lock
-         (when (eq? h.client device)
-           (send-to-client! h (frame-bytes 'snapshot (terminal->snapshot-bytes h.term))))))
       ((colors) (let (c (parse-colors payload)) (when c (set-colors! h c))))
-      ((kill) (kill-program! h))
-      ((exit-ack) (when h.status (thread-send h.done 'end)))
+      ((settings) (let (s (parse-helper-settings payload)) (when s (adopt-settings! h s))))
+      ((kill) (forget-saved-screen! h) (kill-program! h))
+      ;; The terminal ended and Tuna showed it: nothing to bring back.
+      ((exit-ack) (when h.status (forget-saved-screen! h) (thread-send h.done 'end)))
       (else (void)))))
 
+;; Resize the terminal, and tell the connected Tuna where in the output
+;; that happened, so its mirror resizes at the same point and never
+;; parses output written for one size at another.
 (def (resize! (h : helper) (columns : :fixnum) (rows : :fixnum) (width : :fixnum) (height : :fixnum))
   => :void
   (do-with-lock h.lock
@@ -197,7 +219,9 @@ prelude: :gerbil/core
     (set! h.rows rows)
     (set! h.cell-width width)
     (set! h.cell-height height)
-    (terminal-resize! h.term columns rows cell-width-px: width cell-height-px: height))
+    (terminal-resize! h.term columns rows cell-width-px: width cell-height-px: height)
+    (when h.live?
+      (send-to-client! h (frame-bytes 'resized (resize-payload (make-resize-request columns rows width height))))))
   (pty-resize (device-fd h.pty) columns rows (fx* columns width) (fx* rows height))
   (void))
 
@@ -254,6 +278,71 @@ prelude: :gerbil/core
                    (color-scheme-report-encode scheme))))))
     (when report (thread-send h.pty-writer report))))
 
+;;; Saving and compressing
+
+(def (now) => :real
+  (time->seconds (current-time)))
+
+;; Take Tuna's settings S; saving to a new file, or no longer saving,
+;; removes the old one, and the screen is saved at once (Tuna sends them
+;; on connecting and when it stops).
+(def (adopt-settings! (h : helper) (s : helper-settings)) => :void
+  (let (old (do-with-lock h.lock (let (old h.wanted) (set! h.wanted s) old)))
+    (when (and old (not (equal? (helper-settings-save-path old) (helper-settings-save-path s)))
+               (not (string-empty? (helper-settings-save-path old))))
+      (delete-saved-screen! (helper-settings-save-path old)))
+    (save-screen! h #t)
+    (thread-send h.saver 'settings)))
+
+;; Write the terminal's snapshot, trimmed to the rows of scrollback the
+;; settings keep, to the file they name: when ALWAYS?, or when the screen
+;; changed since the last save. Failing to save is not fatal.
+(def (save-screen! (h : helper) (always? : :boolean)) => :void
+  (let* ((s h.wanted)
+         (path (and s (helper-settings-save-path s)))
+         (snapshot (and path (not (string-empty? path))
+                        (do-with-lock h.lock
+                          (and (or always? h.changed?)
+                               (begin (set! h.changed? #f)
+                                      (set! h.saved-at (now))
+                                      (terminal->snapshot-bytes h.term)))))))
+    (when snapshot
+      (with-catch (lambda (e) (set! h.changed? #t))
+                  (lambda ()
+                    (write-saved-screen! path (trimmed-snapshot snapshot (helper-settings-saved-rows s))))))))
+
+;; Remove the saved screen and save no more: the terminal is gone on
+;; purpose.
+(def (forget-saved-screen! (h : helper)) => :void
+  (let (s (do-with-lock h.lock (let (s h.wanted) (set! h.wanted #f) s)))
+    (when s
+      (let (path (helper-settings-save-path s))
+        (unless (string-empty? path) (delete-saved-screen! path))))))
+
+;; Now and then: save the screen once its interval has passed since the
+;; last save and it changed, and compress the scrollback once the program
+;; has been quiet for the settings' delay. With nothing to do it sleeps
+;; until output or new settings wake it.
+(def (saver-thread (h : helper)) => :void
+  (let lp ()
+    (let (s h.wanted)
+      (thread-receive (and s (or (and h.changed? (fx> (helper-settings-save-interval s) 0))
+                                 (and (helper-settings-compress-after s) (not h.compressed?)))
+                           tick-interval)
+                      #f))
+    (let ((s h.wanted)
+          (t (now)))
+      (when s
+        (when (and h.changed? (fx> (helper-settings-save-interval s) 0)
+                   (>= (- t h.saved-at) (helper-settings-save-interval s)))
+          (save-screen! h #f))
+        (let (delay (helper-settings-compress-after s))
+          (when (and delay (not h.compressed?) (>= (- t h.output-at) delay))
+            (do-with-lock h.lock
+              (terminal-compress! h.term mode: 'full)
+              (set! h.compressed? #t))))))
+    (lp)))
+
 ;;; The program
 
 (def (pty-writer-thread (h : helper)) => :void
@@ -274,6 +363,10 @@ prelude: :gerbil/core
                 (do-with-lock h.lock
                   (set! h.replies [])
                   (terminal-write! h.term buffer start: 0 end: n)
+                  (unless (and h.changed? (not h.compressed?)) (thread-send h.saver 'output))
+                  (set! h.changed? #t)
+                  (set! h.compressed? #f)
+                  (set! h.output-at (now))
                   (when h.live?
                     (send-to-client! h (frame-bytes 'output (subu8vector buffer 0 n))))
                   (reverse h.replies)))
@@ -319,6 +412,20 @@ prelude: :gerbil/core
 
 ;;; Main
 
+;; The terminal of COLUMNS x ROWS a helper starts with: the one the
+;; snapshot file RESTORE holds ("" for none), which is then removed, else
+;; a new one.
+(def (restored-or-new-terminal (restore : :string) (columns : :fixnum) (rows : :fixnum)) => terminal
+  (let* ((bytes (and (not (string-empty? restore)) (read-saved-screen restore)))
+         (term (and bytes (with-catch (lambda (e) #f) (lambda () (snapshot-bytes->terminal bytes))))))
+    (unless (string-empty? restore) (delete-saved-screen! restore))
+    (if term
+      (begin
+        (terminal-set-continuation-max-bytes! term (* 1024 1024))
+        (terminal-resize! term columns rows)
+        term)
+      (make-terminal columns rows continuation-max-bytes: (* 1024 1024)))))
+
 (def (main . args)
   (let* ((o (parse-arguments args))
          (program (options-program o)))
@@ -329,7 +436,7 @@ prelude: :gerbil/core
     (default-child-signal)
     (let* ((columns (options-columns o))
            (rows (options-rows o))
-           (term (make-terminal columns rows continuation-max-bytes: (* 1024 1024)))
+           (term (restored-or-new-terminal (options-restore o) columns rows))
            (listener (unix-listen (options-socket o)))
            (spawned (spawn-on-pty (resolve-program (car program)) program (environment-strings)
                                   (options-directory o) columns rows))
@@ -337,7 +444,8 @@ prelude: :gerbil/core
                       listener: listener socket: (options-socket o) lock: (make-mutex 'terminal-helper)
                       client: #f writer: #f live?: #f queued: 0 pty-writer: (current-thread)
                       replies: [] columns: columns rows: rows cell-width: 0 cell-height: 0
-                      scheme: #f status: #f killed?: #f done: (current-thread))))
+                      scheme: #f status: #f killed?: #f wanted: #f changed?: #t saved-at: 0 output-at: (now)
+                      compressed?: #f saver: (current-thread) done: (current-thread))))
       (terminal-set-scrollback-max-bytes! term (options-scrollback o))
       (terminal-set-pty-write-handler! term (lambda (bytes) (set! (helper-replies h) (cons bytes (helper-replies h)))))
       (terminal-set-color-scheme-handler! term (lambda () (helper-scheme h)))
@@ -352,7 +460,15 @@ prelude: :gerbil/core
       (let (reader (spawn/name 'terminal-pty-reader (lambda () (pty-reader-thread h))))
         (spawn/name 'terminal-watcher (lambda () (watcher-thread h reader))))
       (spawn/name 'terminal-acceptor (lambda () (acceptor-thread h)))
-      (let lp () (unless (eq? (thread-receive) 'end) (lp)))
+      (set! (helper-saver h) (spawn/name 'terminal-saver (lambda () (saver-thread h))))
+      ;; Asked to end (a shutdown, or kill): save the screen first, so the
+      ;; terminal comes back after the reboot.
+      (add-signal-handler! SIGTERM (lambda () (thread-send (helper-done h) 'terminate)))
+      (let lp ()
+        (case (thread-receive)
+          ((end) (void))
+          ((terminate) (save-screen! h #t))
+          (else (lp))))
       ;; Let the last frames reach Tuna before closing.
       (let (writer (do-with-lock (helper-lock h) (let (w (helper-writer h)) (drop-client! h) w)))
         (when writer (with-catch void (lambda () (thread-join! writer 2.0)))))

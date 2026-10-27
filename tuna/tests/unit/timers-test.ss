@@ -77,6 +77,20 @@
          (thread-sleep! 0.05)
          (check ticks => 2))))
 
+    (test-case "a restart can give a one-shot timer a new delay, which it keeps"
+      (with-loop
+       (lambda ()
+         (call-on-editor-loop (lambda () (activate-plugin! once-timer)))
+         (check (wait-until (lambda () (= ticks 1))) => #t)
+         (call-on-editor-loop (lambda () (restart-timer once seconds: 0.3)))
+         (thread-sleep! 0.15)
+         (check ticks => 1)
+         (check (wait-until (lambda () (= ticks 2))) => #t)
+         (call-on-editor-loop (lambda () (restart-timer once)))
+         (thread-sleep! 0.15)
+         (check ticks => 2)
+         (check (wait-until (lambda () (= ticks 3))) => #t))))
+
     (test-case "a one-shot timer that came due before the editor loop ran can be restarted"
       (set! ticks 0)
       (call-with-fresh-kernel [test-input]

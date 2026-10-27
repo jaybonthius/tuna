@@ -1,12 +1,14 @@
 ;;; A session provider that keeps what it saves in memory, across fresh
 ;;; kernels, so a test can stop one Tuna and start another from its
-;;; session, as a restart does.
+;;; session, as a restart does. Its state folder is the one a test sets,
+;;; if any.
 (import (only-in :gerbil/runtime/hash HashTable)
         :tuna/kernel
         (only-in :tuna/plugins/session/contract session-service session-slot-name session-slot-save
                  session-slot-restore))
 (export memory-session
-        forget-memory-session!)
+        forget-memory-session!
+        set-memory-session-state-directory!)
 
 ;; Slot name -> data, as the last save left it.
 (def saved (make-hash-table-eq))
@@ -16,6 +18,12 @@
 
 (defstruct remembering-session ((slots : :list))
   final: #t)
+
+;; The state folder the session gives, or #f for none.
+(def state-folder #f)
+
+(def (set-memory-session-state-directory! (folder :? :string)) => :void
+  (set! state-folder folder))
 
 (defmethod {add-session-slot! remembering-session}
   (lambda (self ctx slot priority)
@@ -37,7 +45,7 @@
               (remembering-session-slots self))))
 
 (defmethod {state-directory remembering-session}
-  (lambda (self) (error "This session keeps no files")))
+  (lambda (self) (or state-folder (error "This session keeps no files"))))
 
 (defplugin (memory-session ctx)
   "Provides a session kept in memory, across kernels."

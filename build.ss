@@ -60,6 +60,7 @@
      "io"
      "protocol"
      "connection"
+     "saved-screen"
      "contract"
      "keys"
      "screen"

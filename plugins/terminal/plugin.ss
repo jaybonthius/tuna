@@ -4,18 +4,31 @@
 ;;; pseudo-terminal held by a helper process (helper.ss) outside Tuna, so it
 ;;; survives Tuna restarting, crashing, or this plugin being swapped or
 ;;; reloaded: the plugin keeps the list of helpers in its session slot and
-;;; reconnects.
+;;; reconnects. A helper saves its screen in Tuna's state folder now and
+;;; then (`terminal-save-screen`); a terminal whose helper is gone (a
+;;; reboot, or the helper killed) comes back showing that screen, or what
+;;; Tuna last showed, under a "Restored" note, with a new shell in its
+;;; folder, at once or on RET (`terminal-restore-start`). Commands are
+;;; never run again. Quiet terminals' scrollback is compressed, in the
+;;; mirror and the helper (`terminal-compress-after`).
 ;;;
 ;;; Each terminal keeps a mirror: a libghostty-vt terminal restored from
 ;;; the helper's snapshot and fed the same bytes the helper's is, by a job
 ;;; that reads the helper's socket and posts what arrives; parsing runs in
-;;; the job's apply, on the editor thread. Drawing reads only the mirror:
-;;; after output, the rows that changed are copied into row nodes
-;;; (screen.ss), at most every `terminal-timer-delay`, at once after a key
-;;; (`terminal-immediate-redraw-interval`) or after a quiet spell, as
-;;; ghostel draws. A view showing a terminal at its bottom follows its
-;;; output; one scrolled up stays put. The alternate screen (vim, htop) is
-;;; a grid of the screen's rows without scrollback.
+;;; the job's apply, on the editor thread, a batch at a time (the reader
+;;; waits while `terminal-input-buffer-size` bytes wait, so a flood holds
+;;; the program back rather than filling Tuna). Drawing reads only the
+;;; mirror: after output, the rows that changed are copied into row nodes
+;;; (screen.ss), paced as ghostel paces its redraws: at once after a key
+;;; (`terminal-immediate-redraw-interval`), else by a timer that coalesces
+;;; what arrives meanwhile (`terminal-timer-delay`, sooner after a quiet
+;;; spell with `terminal-adaptive-fps`). Rows that left the screen are
+;;; copied at once only near the bottom; older ones once output pauses, so
+;;; a flood does not copy rows it trims before anyone sees them. A terminal
+;;; no view shows is copied once one does. Plain links are looked for after
+;;; `terminal-plain-link-detection-delay`. A view showing a terminal at its
+;;; bottom follows its output; one scrolled up stays put. The alternate
+;;; screen (vim, htop) is a grid of the screen's rows without scrollback.
 ;;;
 ;;; Keys: the terminal node's keymap is semi-char mode's, which sends every
 ;;; key to the program but `terminal-keymap-exceptions` (C-c, C-x, M-x, ...)
@@ -26,8 +39,9 @@
 ;;;
 ;;; Each terminal is as big as the smallest view showing it, in cells, as
 ;;; Emacs sizes a process's window; the plugin's page script measures the
-;;; views (web/terminal.js). A resize asks the helper for a fresh snapshot,
-;;; so the mirror never parses output written for another size.
+;;; views (web/terminal.js). The helper marks where in its output it
+;;; resized, and the mirror resizes there, so it never parses output
+;;; written for another size; only connecting sends a whole snapshot.
 ;;;
 ;;; The program's title (OSC 0/2), folder (OSC 7, the buffer's
 ;;; default-directory) and bell run the contract's hooks; when it ends the
@@ -64,6 +78,7 @@
         (only-in :tuna/plugins/files/contract files-service file-system-service
                  default-directory buffer-default-directory find-file-noselect)
         (only-in :tuna/plugins/web/contract page-service add-script context-add-page-address! page-instruct!)
+        (only-in :tuna/plugins/session/contract state-directory)
         :tuna/plugins/terminal/contract
         (only-in :gerbil-libghostty/ghostty
                  snapshot-bytes->terminal terminal-write! terminal-close! terminal-resize!
@@ -79,10 +94,11 @@
                  terminal-set-reset-handler!
                  terminal-set-unknown-sequence-handler! terminal-set-unknown-max-bytes!
                  unknown-sequence-tag unknown-sequence-content unknown-sequence-truncated? unknown-sequence-terminator
-                 terminal-copy-changed-rows! terminal-copy-rows
+                 terminal-copy-changed-rows! terminal-copy-rows terminal->snapshot-bytes terminal-compress!
                  row-changes-numbering row-changes-rows row-changes-frozen-start row-changes-frozen-end
                  row-changes-cursor row-changes-held?
                  row-numbering-screen row-numbering-generation row-numbering-first-row row-numbering-total-rows
+                 row-numbering-rows
                  row-cursor-row row-cursor-x row-cursor-visible? row-cursor-style row-cursor-blinking?
                  styled-row-number styled-row-wrap? terminal-render-held? terminal-end-render-hold!
                  make-key-encoder key-encoder-encode paste-encode paste-safe? terminal-mode-enabled? terminal-modes
@@ -99,7 +115,8 @@
         ./keys
         ./screen
         ./copy-text
-        ./links)
+        ./links
+        ./saved-screen)
 (export terminals
         terminal-shell
         terminal-term
@@ -108,6 +125,14 @@
         terminal-timer-delay
         terminal-adaptive-fps
         terminal-immediate-redraw-interval
+        terminal-plain-link-detection-delay
+        terminal-input-buffer-size
+        terminal-save-screen
+        terminal-saved-scrollback-rows
+        terminal-save-interval
+        terminal-restore-start
+        terminal-restored-note
+        terminal-compress-after
         terminal-buffer-name
         terminal-buffer-name-function
         terminal-kill-buffer-on-exit
@@ -148,11 +173,27 @@
 (defsetting terminal-max-scrollback (* 5 1024 1024)
   "Bytes of scrollback a terminal keeps, in its helper and its mirror (about 5,000 rows of 80 columns for 5 MB).")
 (defsetting terminal-timer-delay 0.033
-  "Seconds between redraws of a terminal under sustained output (about 30 per second).")
+  "Seconds between redraws of a terminal under sustained output (about 30 per second; ghostel-timer-delay).")
 (defsetting terminal-adaptive-fps #t
-  "Whether output after a quiet spell (100 ms) is drawn at once rather than after terminal-timer-delay.")
+  "Whether the first output after a quiet spell (100 ms) is drawn after at most 16 ms rather than terminal-timer-delay (ghostel-adaptive-fps).")
 (defsetting terminal-immediate-redraw-interval 0.05
-  "Seconds after a key within which a terminal's output is drawn at once, as its echo.")
+  "Seconds after a key within which a terminal's output is drawn at once, as its echo (ghostel-immediate-redraw-interval).")
+(defsetting terminal-plain-link-detection-delay 0.1
+  "Seconds after a redraw before its rows are searched for plain URLs and file references; redraws within the delay share one search, and 0 searches at each redraw (ghostel-plain-link-detection-delay).")
+(defsetting terminal-input-buffer-size (* 1024 1024)
+  "Bytes of a terminal's output Tuna holds before it has parsed them; past this it stops reading, and the helper and then the program wait, so a flood never outruns the editor.")
+(defsetting terminal-save-screen #t
+  "Whether a terminal's helper saves its screen, with terminal-saved-scrollback-rows of scrollback, in Tuna's state folder (owner-only files), so the terminal comes back after a reboot or after its helper was killed. Scrollback can hold secrets; off, the terminal still comes back, empty, with a new shell in its folder.")
+(defsetting terminal-saved-scrollback-rows 1000
+  "How many rows of scrollback a saved screen keeps (whole pages, so a few more); #f for all a terminal keeps.")
+(defsetting terminal-save-interval 30
+  "Seconds between saves of a terminal's screen while it changes; it is also saved when its helper is asked to end (a shutdown) and when Tuna stops.")
+(defsetting terminal-restore-start 'auto
+  "What a terminal whose helper is gone (a reboot, or the helper killed) does once it shows its saved screen: 'auto starts a new shell in its folder at once, as ghostel-desktop does; 'key waits for RET. Commands are never run again.")
+(defsetting terminal-restored-note "Restored %t · its programs ended · new shell in %d"
+  "The line a restored terminal shows after its saved screen, in reverse video: %t when the screen was saved, %d the folder the new shell starts in, %% a %.")
+(defsetting terminal-compress-after 30
+  "Seconds without output after which a terminal's scrollback is compressed, in Tuna and in its helper (libghostty compression; reading it back is transparent); #f never.")
 (defsetting terminal-buffer-name "*terminal*"
   "The name of terminal buffers; later ones get <2>, <3>, ...")
 (defsetting terminal-buffer-name-function #f
@@ -243,7 +284,12 @@
    (last-input   : :real)
    (last-output  : :real)
    (timer        :? :t)            ; its redraw timer
-   (sync-due?    : :boolean)
+   (link-timer   :? :t)            ; its timer for finding links in rows copied
+   (fill-timer   :? :t)            ; its timer for copying older rows once output pauses
+   (arrived      : :real)          ; when output last arrived
+   (scheduled?   : :boolean)       ; the redraw timer runs
+   (sync-due?    : :boolean)       ; output not yet drawn, maybe until a view shows it
+   (inbox        :? frame-inbox)         ; what its reader read and the editor has not taken
    (held-since   :? :real)
    (running?     : :boolean)            ; a command runs, by OSC 133
    (started      :? :real)              ; when that command started (OSC 133 C)
@@ -254,7 +300,14 @@
    (line         :? line-state)         ; while in line mode
    (line-paused? : :boolean)            ; line mode waits for the alternate screen to end
    (history      : :list)               ; line mode's lines sent, newest first
-   (status       : source))             ; changes with what its status line shows
+   (status       : source)              ; changes with what its status line shows
+   (start-directory : :string)          ; where its program started
+   (foreign?     : :boolean)            ; its helper is from another version of Tuna
+   (restored     :? :u8vector)          ; while a restored terminal waits for RET: its screen
+   (revived-at   : :real)               ; when it was last revived
+   (compress-timer :? :t)
+   (compressed?  : :boolean)            ; nothing arrived since its mirror was compressed
+   (sent-settings :? helper-settings))  ; what its helper was last told
   final: #t)
 
 (defclass terminals-state ((ctx       : context)
@@ -265,6 +318,7 @@
                            (quote-map : entry-table)
                            (copy-map  : entry-table)      ; copy mode
                            (copy-fast-map : entry-table)  ; copy mode with fast exit
+                           (restored-map : entry-table)   ; a restored terminal waiting for RET
                            (line-map  : entry-table)      ; line mode's input
                            (line-root-map : entry-table)  ; line mode, around the input
                            (jobs      : job-group)
@@ -276,6 +330,7 @@
                            (focused   :? live-terminal)
                            (yank      : :fixnum)
                            (waiting   : :list)            ; terminals to connect once the loop runs
+                           (owed      : :list)            ; terminals whose output waits for a view
                            (colors    :? theme-colors) ; the theme's, as a browser last measured them
                            (stopping? : :boolean))
   final: #t)
@@ -440,7 +495,7 @@
         (if (get-buffer candidate) (lp (fx1+ n)) candidate)))))
 
 (def (new-live-terminal (self : terminals-state) (id : :string) (socket : :string) (name : :string)
-                        (mode : :symbol) (columns : :fixnum) (rows : :fixnum))
+                        (mode : :symbol) (columns : :fixnum) (rows : :fixnum) (directory : :string))
   => live-terminal
   (let* ((root (new-node 'terminal attributes: [(cons 'id id) (cons 'screen 'primary)]
                          keymap: (if (eq? mode 'char) self.char-map self.semi-char)))
@@ -451,16 +506,33 @@
                               cursor-row: #f columns: columns rows: rows cell-width: 0 cell-height: 0
                               effects: [] input-mode: mode initial-name: name managed-name: name
                               follow: (make-hash-table-eq) last-input: 0 last-output: 0 timer: #f
-                              sync-due?: #f held-since: #f running?: #f started: #f failure: #f refusals: 0 last-client: #f copy: #f line: #f line-paused?: #f history: []
-                              status: (new-source))))
+                              link-timer: #f fill-timer: #f arrived: 0 scheduled?: #f inbox: #f sync-due?: #f held-since: #f running?: #f started: #f failure: #f refusals: 0 last-client: #f copy: #f line: #f line-paused?: #f history: []
+                              status: (new-source) start-directory: directory foreign?: #f restored: #f revived-at: 0
+                              compress-timer: #f compressed?: #f sent-settings: #f)))
     (add-buffer! b)
     (hash-put! self.terms id term)
     (hash-put! self.by-buffer b term)
     (set! (live-terminal-timer term)
       (context-run-with-timer! self.ctx (setting-value terminal-timer-delay) #f
-                               (lambda () (when (live-terminal-sync-due? term)
-                                            (guarded! term "redraw" (lambda () (sync! self term)))))
+                               (lambda ()
+                                 (set! (live-terminal-scheduled? term) #f)
+                                 (when (live-terminal-sync-due? term)
+                                   (if (shown? term)
+                                     (guarded! term "redraw" (lambda () (sync! self term)))
+                                     (owe! self term))))
                                name: 'terminal-redraw))
+    (set! (live-terminal-link-timer term)
+      (context-run-with-timer! self.ctx (setting-value terminal-plain-link-detection-delay) #f
+                               (lambda () (guarded! term "link detection" (lambda () (scan-links! term))))
+                               name: 'terminal-links))
+    (set! (live-terminal-fill-timer term)
+      (context-run-with-timer! self.ctx (setting-value terminal-timer-delay) #f
+                               (lambda () (guarded! term "redraw" (lambda () (fill-when-quiet! term))))
+                               name: 'terminal-fill))
+    (set! (live-terminal-compress-timer term)
+      (context-run-with-timer! self.ctx (or (setting-value terminal-compress-after) 30) #f
+                               (lambda () (compress-when-quiet! term))
+                               name: 'terminal-compress))
     term))
 
 ;; The terminal the current buffer shows, or #f.
@@ -479,38 +551,47 @@
 ;; connection, then every batch of frames, and ends with 'ended.
 (def (start-reader! (self : terminals-state) (term : live-terminal) (launch :? helper-launch)) => :void
   (if (editor-loop-running?)
-    (begin
+    (let (inbox (new-frame-inbox (setting-value terminal-input-buffer-size)))
       (keep-poster! self)
+      (let (old term.inbox) (when old (frame-inbox-close! old)))
+      (set! term.inbox inbox)
       (set! term.reader
         (job-group-start! self.jobs (terminal-id term)
-                          input: (cons launch term.socket)
+                          input: [launch term.socket inbox]
                           run: reader-run
-                          apply: (lambda (result) (receive! self term result)))))
+                          apply: (lambda (result) (receive! self term inbox result)))))
     ;; Restored at start, before the editor loop runs jobs: connect once
     ;; the first task runs.
     (set! self.waiting (cons term self.waiting))))
 
 ;; On the job's thread. Its input and posts are a helper launch, a
-;; connection and frames: not editor state, so they may cross threads,
-;; though they are not plain data.
-(def (reader-run (input : :pair) (cancelled? : :procedure) (post! : :procedure)) => :t
+;; connection and the inbox frames wait in: not editor state, so they may
+;; cross threads, though they are not plain data. It posts 'frames when
+;; the inbox has frames and was empty, and waits while it is full.
+(def (reader-run (input : :list) (cancelled? : :procedure) (post! : :procedure)) => :t
   (let ((launch (car input))
-        (socket (cdr input)))
+        (socket (cadr input))
+        (inbox (caddr input)))
     (with-catch
-     (lambda (e) (cons 'failed (with-catch (lambda (_) "error") (lambda () (error-message e)))))
+     (lambda (e) (if (eq? e 'gone) 'gone (cons 'failed (with-catch (lambda (_) "error") (lambda () (error-message e))))))
      (lambda ()
        (when launch (launch-helper! launch))
        (if (not (wait-for-socket socket (if launch 10 0.5)))
-         'gone
-         (let ((c (open-connection socket))
+         (if launch (cons 'failed "the terminal helper did not start") 'gone)
+         (let ((c (or (with-catch
+                       (lambda (e)
+                         ;; No helper listens there: its socket is stale.
+                         (if launch (raise e) (begin (with-catch void (lambda () (delete-file socket))) #f)))
+                       (lambda () (open-connection socket)))
+                      (raise 'gone)))
                (reader (new-frame-reader))
                (buffer (make-u8vector 65536 0)))
            (post! (cons 'connected c))
            (let lp ()
              (let (frames (read-frames (connection-device c) reader buffer))
                (when frames
-                 (post! (cons 'frames frames))
-                 (lp))))
+                 (when (frame-inbox-put! inbox frames) (post! 'frames))
+                 (unless (cancelled?) (lp)))))
            'ended))))))
 
 (def (error-message (e : :t)) => :string
@@ -523,22 +604,33 @@
 
 ;;; What the helper sends
 
-(def (receive! (self : terminals-state) (term : live-terminal) (result : :t)) => :void
+(def (receive! (self : terminals-state) (term : live-terminal) (waiting : frame-inbox) (result : :t)) => :void
   (keep-poster! self)
   (when (and (eq? (hash-get self.terms (terminal-id term)) term) (not self.stopping?))
     (cond
      ((and (pair? result) (eq? (car result) 'connected))
       (set! term.link (cdr result)))
-     ((and (pair? result) (eq? (car result) 'frames))
+     ((eq? result 'frames)
       (for-each (lambda ((f : frame)) (guarded! term "output" (lambda () (receive-frame! self term f))))
-                (cdr result)))
+                (frame-inbox-take! waiting)))
      ((and (pair? result) (eq? (car result) 'failed))
-      (message (string-append (terminal-id-name term) ": " (cdr result)))
-      (helper-gone! self term))
-     ((memq result '(ended gone))
+      (helper-failed! self term (cdr result)))
+     ((eq? result 'gone)
       (set! term.link #f)
-      (unless (terminal-exit-status term)
-        (helper-gone! self term))))))
+      (revive! self term))
+     ((eq? result 'ended)
+      (set! term.link #f)
+      ;; A connection the helper refused ends too: as busy, another try
+      ;; follows; one of another version runs on.
+      (unless (or (terminal-exit-status term) (fx> term.refusals 0) term.foreign?)
+        ;; Its helper went away while Tuna ran (killed): bring it back,
+        ;; after a moment, so a shutdown ending Tuna too starts nothing.
+        (context-run-with-timer! self.ctx 1.0 #f
+                                 (lambda ()
+                                   (when (and (eq? (hash-get self.terms (terminal-id term)) term) (not term.link)
+                                              (not self.stopping?))
+                                     (revive! self term)))
+                                 name: 'terminal-revive))))))
 
 ;; Run THUNK, WHAT for TERM, reporting a failure as the kernel reports a
 ;; failing hook, in the echo area and Tuna's log, once while it repeats,
@@ -574,19 +666,33 @@
              (set! term.rows (helper-hello-rows h))
              (set-node-attribute! term.root 'size (size-text term))
              (send-colors! self term)
+             (send-settings! term #t)
              ;; Views measured while it was starting, or since the last
              ;; Tuna saw it, may want another size.
              (resize-to-views! self term))
-           (message (string-append (terminal-id-name term)
-                                   ": its helper is from another version of Tuna; it runs on, unshown")))))
+           (begin
+             (set! term.foreign? #t)
+             (message (string-append (terminal-id-name term)
+                                     ": its helper is from another version of Tuna; it runs on, unshown"))))))
       ((snapshot) (adopt-snapshot! self term payload))
       ((output)
        (let (mirror term.mirror)
          (when mirror
            (terminal-write! mirror payload)
-           (set! term.last-output (now))
+           (set! term.arrived (now))
+           (set! term.compressed? #f)
+           (let (delay (buffer-local-value terminal-compress-after (terminal-buffer term)))
+             (when (and (real? delay) (> delay 0))
+               (restart-timer term.compress-timer seconds: delay)))
            (apply-effects! self term)
            (output-arrived! self term))))
+      ((resized)
+       (let ((r (parse-resize payload))
+             (mirror term.mirror))
+         (when (and r mirror)
+           (terminal-resize! mirror (resize-request-columns r) (resize-request-rows r)
+                             cell-width-px: (resize-request-cell-width r) cell-height-px: (resize-request-cell-height r))
+           (if (shown? term) (sync! self term) (begin (set! term.sync-due? #t) (owe! self term))))))
       ((exit) (program-ended! self term (parse-exit payload)))
       ((refused)
        (set! term.link #f)
@@ -599,15 +705,21 @@
                                       (when (eq? (hash-get self.terms (terminal-id term)) term)
                                         (start-reader! self term #f)))
                                     name: 'terminal-reconnect))
-         (message (string-append (terminal-id-name term) ": its helper refused to connect ("
-                                 (utf8->string payload) ")"))))
+         (begin
+           (set! term.foreign? #t)
+           (message (string-append (terminal-id-name term) ": its helper refused to connect ("
+                                   (utf8->string payload) ")")))))
       (else (void)))))
 
 ;; The helper's terminal, as a snapshot, becomes TERM's mirror.
 (def (adopt-snapshot! (self : terminals-state) (term : live-terminal) (bytes : :u8vector)) => :void
-  (let ((old term.mirror)
-        (mirror (snapshot-bytes->terminal bytes)))
-    (when old (terminal-close! old))
+  (adopt-mirror! self term (snapshot-bytes->terminal bytes)))
+
+;; MIRROR becomes TERM's mirror, listening for what programs say, and is
+;; drawn.
+(def (adopt-mirror! (self : terminals-state) (term : live-terminal) (mirror : vt-terminal)) => :void
+  (let (old term.mirror)
+    (when (and old (not (eq? old mirror))) (terminal-close! old))
     (terminal-set-scrollback-max-bytes! mirror (setting-value terminal-max-scrollback))
     (terminal-set-title-changed-handler! mirror (lambda (title) (push-effect! term (cons 'title title))))
     (terminal-set-pwd-changed-handler! mirror (lambda (directory) (push-effect! term (cons 'directory directory))))
@@ -635,7 +747,7 @@
     ;; A new mirror numbers its rows anew: every row is copied again.
     (set! (row-store-generation term.primary) #f)
     (set! (row-store-generation term.alternate) #f)
-    (sync! self term)))
+    (if (shown? term) (sync! self term) (begin (set! term.sync-due? #t) (owe! self term)))))
 
 ;; Handlers only queue: they run inside the mirror's write, which must not
 ;; call back into Tuna.
@@ -852,17 +964,47 @@
 
 ;;; Drawing
 
-;; Output arrived: draw it now when it is the echo of a key or follows a
-;; quiet spell, else at the next tick of TERM's timer.
+;; Whether a view shows TERM.
+(def (shown? (term : live-terminal)) => :boolean
+  (pair? (views-showing term)))
+
+;; Output arrived (ghostel--invalidate): drawn at once when it is the echo
+;; of a key, else by TERM's redraw timer, which coalesces what arrives
+;; meanwhile; a terminal no view shows is drawn once one does.
 (def (output-arrived! (self : terminals-state) (term : live-terminal)) => :void
-  (let ((t (now))
-        (quiet? (and (setting-value terminal-adaptive-fps)
-                     (> (- (now) term.last-output) 0.1))))
-    (if (or (< (- t term.last-input) (setting-value terminal-immediate-redraw-interval)) quiet?)
-      (sync! self term)
-      (begin
-        (set! term.sync-due? #t)
-        (restart-timer term.timer)))))
+  (set! term.sync-due? #t)
+  (cond
+   ((not (shown? term)) (owe! self term))
+   ((< (- (now) term.last-input) (setting-value terminal-immediate-redraw-interval)) (sync! self term))
+   (else (schedule-redraw! term))))
+
+;; Start TERM's redraw timer unless it runs: after terminal-timer-delay,
+;; or, with terminal-adaptive-fps, after at most 16 ms when nothing was
+;; scheduled for 100 ms, so the first frame of a burst comes quickly.
+(def (schedule-redraw! (term : live-terminal)) => :void
+  (unless term.scheduled?
+    (let* ((t (now))
+           (delay (setting-value terminal-timer-delay))
+           (quiet? (and (setting-value terminal-adaptive-fps) (> (- t term.last-output) 0.1))))
+      (set! term.scheduled? #t)
+      (set! term.last-output t)
+      (restart-timer term.timer seconds: (if quiet? (min 0.016 delay) delay)))))
+
+;; Remember that TERM's output waits for a view to show it: its rows are
+;; not copied meanwhile, as ghostel leaves a hidden buffer's redraw
+;; pending.
+(def (owe! (self : terminals-state) (term : live-terminal)) => :void
+  (unless (memq term self.owed)
+    (set! self.owed (cons term self.owed))))
+
+;; After each task: draw the terminals whose output waited for a view, now
+;; that one shows them (ghostel redraws once a window shows the buffer).
+(def (draw-owed! (self : terminals-state)) => :void
+  (when (pair? self.owed)
+    (let (shown (filter shown? self.owed))
+      (when (pair? shown)
+        (set! self.owed (filter (lambda (term) (not (memq term shown))) self.owed))
+        (for-each schedule-redraw! shown)))))
 
 ;; The row nodes of TERM's mirror's screen made current, its root showing
 ;; that screen, and the views following its output at its bottom.
@@ -881,20 +1023,31 @@
              (copied (make-hash-table-eqv))
              (prompts (make-hash-table-eqv))
              (cursor (row-changes-cursor changes)))
-        (if (eqv? (row-store-generation store) (row-numbering-generation numbering))
-          (begin
-            (row-store-trim! store first)
-            (row-store-extend! store end)
-            (let ((from (max first (row-changes-frozen-start changes)))
-                  (to (min end (row-changes-frozen-end changes))))
-              (when (< from to) (copy-rows! copied prompts mirror from to)))
-            (vector-for-each (cut keep-row! copied prompts <>) (row-changes-rows changes)))
-          (begin
-            (row-store-reset! store (row-numbering-generation numbering) first)
-            (row-store-extend! store end)
-            (copy-rows! copied prompts mirror first end)
-            (vector-for-each (cut keep-row! copied prompts <>) (row-changes-rows changes))))
-        (set-rows! term store copied (and cursor (row-cursor-visible? cursor) (row-cursor-row cursor)))
+        ;; Rows that left the screen since the last redraw, or every row
+        ;; of a new generation, are copied now if near the bottom, where a
+        ;; view following the output shows them; older ones once output
+        ;; pauses, so a flood does not copy rows it trims before anyone
+        ;; sees them.
+        (let (copy-or-defer!
+              (lambda (from to)
+                (let (recent (max from (- end (* recent-screens (row-numbering-rows numbering)))))
+                  (let lp ((n from))
+                    (when (< n recent) (hash-put! (row-store-unfilled store) n #t) (lp (+ n 1))))
+                  (when (< recent to) (copy-rows! copied prompts mirror recent to)))))
+          (if (eqv? (row-store-generation store) (row-numbering-generation numbering))
+            (begin
+              (row-store-trim! store first)
+              (row-store-extend! store end)
+              (let ((from (max first (row-changes-frozen-start changes)))
+                    (to (min end (row-changes-frozen-end changes))))
+                (when (< from to) (copy-or-defer! from to))))
+            (begin
+              (row-store-reset! store (row-numbering-generation numbering) first)
+              (row-store-extend! store end)
+              (copy-or-defer! first end))))
+        (vector-for-each (cut keep-row! copied prompts <>) (row-changes-rows changes))
+        (fill-near-views! term store mirror copied prompts)
+        (set-rows! term store copied)
         (hash-for-each (lambda (number prompt)
                          (let (n (row-store-row store number))
                            (when n (set-node-attribute! n 'prompt prompt))))
@@ -907,9 +1060,91 @@
         ;; Once the rows are the root's, so a view can focus the input.
         (follow-line-mode! self term screen)
         (set! term.screen screen)
+        (when (fx> (hash-length copied) 0) (links-due! term))
+        (when (fx> (hash-length (row-store-unfilled store)) 0) (restart-timer term.fill-timer))
         (refresh-root-attributes! self term)
         (end-long-hold! term mirror)
         (for-each (cut place-at-bottom! term <>) following)))))
+
+;; How many screens of rows above the bottom a redraw copies at once; older
+;; rows wait until output pauses.
+(def recent-screens 4)
+
+;; How many waiting rows are copied in one go once output pauses.
+(def fill-batch 1000)
+
+;; Copy the waiting rows near where views that do not follow the output
+;; show TERM, two screens either way, into COPIED and PROMPTS.
+(def (fill-near-views! (term : live-terminal) (store : row-store) (mirror : vt-terminal)
+                       (copied : HashTable) (prompts : HashTable))
+  => :void
+  (let (unfilled (row-store-unfilled store))
+    (when (fx> (hash-length unfilled) 0)
+      (for-each
+       (lambda ((v : view))
+         (let* ((target (placement-target (view-placement v)))
+                (top (and target (node-attribute (item-node target) 'number))))
+           (when (integer? top)
+             (let ((reach (* 2 (max 1 term.rows))))
+               (copy-unfilled! store mirror copied prompts
+                               (filter (lambda (n) (<= (- top reach) n (+ top reach reach)))
+                                       (hash-keys unfilled)))))))
+       (views-showing term)))))
+
+;; Copy the rows NUMBERS, waiting in STORE, from MIRROR into COPIED and
+;; PROMPTS.
+(def (copy-unfilled! (store : row-store) (mirror : vt-terminal) (copied : HashTable) (prompts : HashTable)
+                     (numbers : :list))
+  => :void
+  (let lp ((numbers (list-sort < numbers)))
+    (match numbers
+      ([] (void))
+      ([n . more]
+       ;; A run of consecutive numbers at a time.
+       (let run ((last n) (rest more))
+         (if (and (pair? rest) (= (car rest) (+ last 1)))
+           (run (car rest) (cdr rest))
+           (begin
+             (copy-rows! copied prompts mirror n (+ last 1))
+             (let mark ((m n)) (when (<= m last) (hash-remove! (row-store-unfilled store) m) (mark (+ m 1))))
+             (lp rest))))))))
+
+;; Once output has paused for terminal-timer-delay, copy TERM's waiting
+;; rows, the newest first, fill-batch at a time; while output goes on, or
+;; no view shows TERM, wait (a redraw starts the timer again).
+(def (fill-when-quiet! (term : live-terminal)) => :void
+  (let ((mirror term.mirror)
+        (store (current-store term)))
+    (when (and mirror (not term.copy) (fx> (hash-length (row-store-unfilled store)) 0) (shown? term))
+      (if (< (- (now) term.arrived) (setting-value terminal-timer-delay))
+        (restart-timer term.fill-timer)
+        (let ((numbers (list-sort > (hash-keys (row-store-unfilled store))))
+              (copied (make-hash-table-eqv))
+              (prompts (make-hash-table-eqv)))
+          (copy-unfilled! store mirror copied prompts
+                          (let take ((ns numbers) (k 0) (out []))
+                            (if (or (null? ns) (fx= k fill-batch)) out (take (cdr ns) (fx1+ k) (cons (car ns) out)))))
+          (set-copied-rows! term store copied prompts)
+          (when (fx> (hash-length (row-store-unfilled store)) 0) (restart-timer term.fill-timer)))))))
+
+;; Copy every row of TERM's screen still waiting, before reading them all.
+(def (fill-all-rows! (term : live-terminal)) => :void
+  (let ((mirror term.mirror)
+        (store (current-store term)))
+    (when (and mirror (fx> (hash-length (row-store-unfilled store)) 0))
+      (let ((copied (make-hash-table-eqv))
+            (prompts (make-hash-table-eqv)))
+        (copy-unfilled! store mirror copied prompts (hash-keys (row-store-unfilled store)))
+        (set-copied-rows! term store copied prompts)))))
+
+;; Set rows COPIED and their PROMPTS marks on STORE's nodes.
+(def (set-copied-rows! (term : live-terminal) (store : row-store) (copied : HashTable) (prompts : HashTable)) => :void
+  (set-rows! term store copied)
+  (hash-for-each (lambda (number prompt)
+                   (let (n (row-store-row store number))
+                     (when n (set-node-attribute! n 'prompt prompt))))
+                 prompts)
+  (when (fx> (hash-length copied) 0) (links-due! term)))
 
 ;; Copy rows FROM to TO of MIRROR into COPIED and PROMPTS, a thousand at
 ;; a time.
@@ -928,40 +1163,81 @@
   (hash-put! prompts (styled-row-number row) (row-prompt-mark row)))
 
 ;; Set the rows COPIED holds on their nodes in STORE, each attribute
-;; once, with the plain links (ghostel-links) found in the program's
-;; lines they are part of, rows it wrapped joined; not in the line of the
-;; cursor's row CURSOR, which is the input being typed.
-(def (set-rows! (term : live-terminal) (store : row-store) (copied : HashTable) (cursor :? :integer)) => :void
+;; once, and note them to be searched for plain links (ghostel-links)
+;; once terminal-plain-link-detection-delay has passed, as ghostel does:
+;; the redraws meanwhile share one search, and rows a flood trimmed by
+;; then are never searched.
+(def (set-rows! (term : live-terminal) (store : row-store) (copied : HashTable)) => :void
   (let* ((b (terminal-buffer term))
-         (urls? (buffer-local-value terminal-enable-url-detection b))
-         (files? (buffer-local-value terminal-enable-file-detection b))
-         (final (hash-copy copied)))
-    (def (row-of (number : :integer)) => (Maybe :pair)
-      (or (hash-get final number)
-          (let (n (row-store-row store number))
-            (and n (cons (node-attribute n 'runs) (node-attribute n 'wrap))))))
-    (when (or urls? files?)
-      (let ((seen (make-hash-table-eqv))
-            (directory (or (terminal-directory term) (buffer-default-directory b))))
-        (for-each
-         (lambda (number)
-           (unless (hash-get seen number)
-             (let* ((start (let back ((m number) (k 0))
-                             (let (previous (row-of (- m 1)))
-                               (if (and previous (cdr previous) (< k link-line-rows)) (back (- m 1) (+ k 1)) m))))
-                    (end (let forward ((m number) (k 0))
-                           (let (row (row-of m))
-                             (if (and row (cdr row) (row-of (+ m 1)) (< k link-line-rows)) (forward (+ m 1) (+ k 1)) m)))))
-               (let mark ((m start)) (when (<= m end) (hash-put! seen m #t) (mark (+ m 1))))
-               (unless (and cursor (<= start cursor end))
-                 (link-line! final row-of start end urls? files? directory)))))
-         (hash-keys copied))))
+         (search? (or (buffer-local-value terminal-enable-url-detection b)
+                      (buffer-local-value terminal-enable-file-detection b))))
     (hash-for-each (lambda (number (row : :pair))
                      (let (n (row-store-row store number))
                        (when n
                          (set-node-attribute! n 'runs (car row))
-                         (set-node-attribute! n 'wrap (cdr row)))))
-                   final)))
+                         (set-node-attribute! n 'wrap (cdr row))
+                         (when search? (hash-put! (row-store-unscanned store) number #t)))))
+                   copied)))
+
+;; Look for links in the rows copied, after terminal-plain-link-detection-delay.
+(def (links-due! (term : live-terminal)) => :void
+  (let (delay (setting-value terminal-plain-link-detection-delay))
+    (if (and (real? delay) (> delay 0))
+      (restart-timer term.link-timer seconds: delay)
+      (scan-links! term))))
+
+;; Put the plain links found in the program's lines that rows copied
+;; since the last search are part of, rows it wrapped joined, into those
+;; lines' rows; not in the line of the cursor, which is the input being
+;; typed (its rows are copied again when the cursor leaves).
+(def (scan-links! (term : live-terminal)) => :void
+  (let* ((b (terminal-buffer term))
+         (urls? (buffer-local-value terminal-enable-url-detection b))
+         (files? (buffer-local-value terminal-enable-file-detection b))
+         (directory (or (terminal-directory term) (buffer-default-directory b)))
+         (cursor (let (row term.cursor-row) (and row (node-attribute row 'number))))
+         (exists (make-hash-table)))
+    (for-each
+     (lambda ((store : row-store))
+       (let ((numbers (hash-keys (row-store-unscanned store)))
+             (seen (make-hash-table-eqv))
+             (final (make-hash-table-eqv)))
+         (hash-clear! (row-store-unscanned store))
+         (def (row-of (number : :integer)) => (Maybe :pair)
+           (or (hash-get final number)
+               (let (n (row-store-row store number))
+                 (and n (cons (node-attribute n 'runs) (node-attribute n 'wrap))))))
+         (def (resolve (path : :string)) => (Maybe :string)
+           (let (absolute (if (string-prefix? "/" path) path (path-expand path directory)))
+             (let (known (hash-ref exists absolute 'unknown))
+               (if (eq? known 'unknown)
+                 (let (there (and (file-exists? absolute) absolute))
+                   (hash-put! exists absolute there)
+                   there)
+                 known))))
+         (when (or urls? files?)
+           (for-each
+            (lambda (number)
+              (unless (or (hash-get seen number) (not (row-store-row store number)))
+                (let* ((start (let back ((m number) (k 0))
+                                (let (previous (row-of (- m 1)))
+                                  (if (and previous (cdr previous) (< k link-line-rows)) (back (- m 1) (+ k 1)) m))))
+                       (end (let forward ((m number) (k 0))
+                              (let (row (row-of m))
+                                (if (and row (cdr row) (row-of (+ m 1)) (< k link-line-rows)) (forward (+ m 1) (+ k 1)) m)))))
+                  (let mark ((m start)) (when (<= m end) (hash-put! seen m #t) (mark (+ m 1))))
+                  (unless (and cursor (eq? store (current-store term)) (<= start cursor end))
+                    (link-line! final row-of start end urls? files? resolve)))))
+            numbers))
+         (hash-for-each (lambda (number (row : :pair))
+                          (let (n (row-store-row store number))
+                            (when n (set-node-attribute! n 'runs (car row)))))
+                        final)))
+     [term.primary term.alternate])))
+
+;; The store TERM's root shows.
+(def (current-store (term : live-terminal)) => row-store
+  (if (eq? term.screen 'alternate) term.alternate term.primary))
 
 ;; How many rows of one line of the program's are joined to find links
 ;; in (ghostel--soft-wrap-row-limit).
@@ -970,15 +1246,12 @@
 ;; Find links in rows START to END, one line of the program's, and put
 ;; the rows that get any in FINAL.
 (def (link-line! (final : HashTable) (row-of : :procedure) (start : :integer) (end : :integer)
-                 (urls? : :boolean) (files? : :boolean) (directory : :string))
+                 (urls? : :boolean) (files? : :boolean) (resolve : :procedure))
   => :void
   (let* ((numbers (let lp ((m end) (out [])) (if (< m start) out (lp (- m 1) (cons m out)))))
          (rows (map row-of numbers))
          (texts (map (lambda ((row : :pair)) (row-text (car row))) rows))
-         (links (find-links (apply string-append texts) urls? files?
-                            (lambda ((path : :string))
-                              (let (absolute (if (string-prefix? "/" path) path (path-expand path directory)))
-                                (and (file-exists? absolute) absolute))))))
+         (links (find-links (apply string-append texts) urls? files? resolve)))
     (unless (null? links)
       (let lp ((numbers numbers) (rows rows) (texts texts) (offset 0))
         (match numbers
@@ -1014,9 +1287,9 @@
   (if (terminal-render-held? mirror)
     (let (since term.held-since)
       (cond
-       ((not since) (set! term.held-since (now)) (restart-timer term.timer) (set! term.sync-due? #t))
+       ((not since) (set! term.held-since (now)) (set! term.sync-due? #t) (schedule-redraw! term))
        ((> (- (now) since) 1.0) (terminal-end-render-hold! mirror) (set! term.held-since #f))
-       (else (set! term.sync-due? #t) (restart-timer term.timer))))
+       (else (set! term.sync-due? #t) (schedule-redraw! term))))
     (set! term.held-since #f)))
 
 ;; TERM's last row node, as an item, or #f.
@@ -1082,12 +1355,11 @@
 (def (size-text (term : live-terminal)) => :string
   (string-append (number->string term.columns) "x" (number->string term.rows)))
 
-;; Ask TERM's helper for TERM's size. Its snapshot after resizing replaces
-;; the mirror, so output written for the old size is never parsed at the
-;; new.
+;; Ask TERM's helper for TERM's size. The mirror takes it where the
+;; helper's `resized` falls in the output, so output written for the old
+;; size is never parsed at the new.
 (def (request-size! (term : live-terminal)) => :void
-  (send! term 'resize (resize-payload (make-resize-request term.columns term.rows term.cell-width term.cell-height)))
-  (send! term 'snapshot-request))
+  (send! term 'resize (resize-payload (make-resize-request term.columns term.rows term.cell-width term.cell-height))))
 
 ;; Parse a page's measurements, as JSON: [{view, terminal, columns, rows,
 ;; cellWidth, cellHeight}, ...]; #f when they are not.
@@ -1191,6 +1463,7 @@
 ;; The rows of TERM's current screen, each (RUNS . WRAP?), and the number
 ;; of the first.
 (def (screen-rows (term : live-terminal)) => :values
+  (fill-all-rows! term)
   (let* ((store (if (eq? term.screen 'alternate) term.alternate term.primary))
          (first (row-store-base store)))
     (values (let lp ((n (- (row-store-end store) 1)) (out []))
@@ -1209,6 +1482,7 @@
 ;; lands past the prompt on its first line; a prompt such as starship's
 ;; begins with an empty line).
 (def (screen-prompts (term : live-terminal)) => :list
+  (fill-all-rows! term)
   (let* ((store (if (eq? term.screen 'alternate) term.alternate term.primary))
          (first (row-store-base store))
          (end (row-store-end store)))
@@ -1271,6 +1545,7 @@
       (begin
         (when term.line (leave-line-mode! self term #t))
         (sync! self term)
+        (scan-links! term)
         (let-values (((rows first) (screen-rows term)))
           (let* ((c (rows->copy-text rows))
                  (t (new-text (copy-text-text c)))
@@ -1641,6 +1916,9 @@
 (def (program-ended! (self : terminals-state) (term : live-terminal) (status : :fixnum)) => :void
   (unless (terminal-exit-status term)
     (set! term.exit-status status)
+    ;; Its helper removes it too, once it hears this was seen.
+    (let (path (saved-screen-path term))
+      (when path (delete-saved-screen! path)))
     (sync! self term)
     (run-hook-safely terminal-exit-hook term status)
     (send! term 'exit-ack)
@@ -1655,15 +1933,155 @@
           (terminal-write! mirror (string->utf8 "\x1b;[!p\x1b;[?2026l\r\n[Process exited]\r\n"))
           (sync! self term))))))
 
-;; The helper went away without its program's exit: show so; the terminal
-;; stays, dead.
-(def (helper-gone! (self : terminals-state) (term : live-terminal)) => :void
+;; TERM's helper could not be started: say so; the terminal stays, dead.
+(def (helper-failed! (self : terminals-state) (term : live-terminal) (why : :string)) => :void
+  (message (string-append (terminal-id-name term) ": " why))
+  (with-catch void (lambda () (delete-saved-screen! (path-expand (string-append (terminal-id term) ".restore")
+                                                                 (path-directory term.socket)))))
   (unless (terminal-exit-status term)
     (set! term.exit-status 255)
     (let (mirror term.mirror)
       (when mirror
-        (terminal-write! mirror (string->utf8 "\x1b;[!p\x1b;[?2026l\r\n[Terminal helper gone]\r\n"))
+        (terminal-write! mirror (string->utf8 (string-append "\x1b;[!p\x1b;[?2026l\r\n[Terminal helper failed: " why "]\r\n")))
         (sync! self term)))))
+
+;;; Compression
+
+;; Once TERM's mirror has had no output for terminal-compress-after
+;; seconds, compress its scrollback (in its helper too, which the helper
+;; does itself); until then, wait the rest of the delay.
+(def (compress-when-quiet! (term : live-terminal)) => :void
+  (let ((delay (buffer-local-value terminal-compress-after (terminal-buffer term)))
+        (mirror term.mirror))
+    (when (and (real? delay) (> delay 0) mirror (not term.compressed?))
+      (let (quiet (- (now) term.arrived))
+        (if (>= quiet delay)
+          (begin
+            (terminal-compress! mirror mode: 'full)
+            (set! term.compressed? #t))
+          (restart-timer term.compress-timer seconds: (- delay quiet)))))))
+
+;;; Restored terminals
+
+;; The folder for saved screens, private, in Tuna's state folder; #f when
+;; the session keeps no files. Made once for each state folder.
+(def (saved-screens-directory) => (Maybe :string)
+  (with-catch (lambda (e) #f)
+              (lambda ()
+                (let (folder (path-expand "terminals" (state-directory)))
+                  (unless (equal? folder made-saved-screens-directory)
+                    (make-private-directory folder)
+                    (set! made-saved-screens-directory folder))
+                  folder))))
+
+(def made-saved-screens-directory #f)
+
+(def (saved-screen-path (term : live-terminal)) => (Maybe :string)
+  (let (folder (saved-screens-directory))
+    (and folder (path-expand (string-append (terminal-id term) ".screen") folder))))
+
+;; What TERM's helper should do on its own, from TERM's buffer's settings.
+(def (helper-settings-of (term : live-terminal)) => helper-settings
+  (let* ((b (terminal-buffer term))
+         (path (and (buffer-local-value terminal-save-screen b) (saved-screen-path term)))
+         (interval (buffer-local-value terminal-save-interval b))
+         (rows (buffer-local-value terminal-saved-scrollback-rows b))
+         (compress (buffer-local-value terminal-compress-after b)))
+    (make-helper-settings (or path "")
+                          (if (and (fixnum? interval) (fx> interval 0)) (fxmin interval 65535) 30)
+                          (and (exact-integer? rows) (>= rows 0) rows)
+                          (and (real? compress) (> compress 0) (fxmin 65535 (exact (ceiling compress)))))))
+
+;; Tell TERM's helper its settings when ALWAYS? (connecting, and Tuna
+;; stopping, when it saves at once) or when they changed.
+(def (send-settings! (term : live-terminal) (always? : :boolean)) => :void
+  (when term.link
+    (let (settings (helper-settings-of term))
+      (when (or always? (not (equal? settings term.sent-settings)))
+        (set! term.sent-settings settings)
+        (send! term 'settings (helper-settings-payload settings))))))
+
+;; NOTE (terminal-restored-note) with %t, %d and %% replaced.
+(def (restored-note (format : :string) (saved : :string) (folder : :string)) => :string
+  (let ((out (open-output-string))
+        (size (string-length format)))
+    (let lp ((i 0))
+      (when (fx< i size)
+        (let (c (string-ref format i))
+          (if (and (char=? c #\%) (fx< (fx1+ i) size))
+            (begin
+              (case (string-ref format (fx1+ i))
+                ((#\t) (write-string saved out))
+                ((#\d) (write-string folder out))
+                ((#\%) (write-char #\% out))
+                (else (write-char c out) (write-char (string-ref format (fx1+ i)) out)))
+              (lp (fx+ i 2)))
+            (begin (write-char c out) (lp (fx1+ i)))))))
+    (get-output-string out)))
+
+;; The folder a restored TERM's new shell starts in: where its shell last
+;; said it was (OSC 7), else where it started, else home, whichever exists.
+(def (revive-directory (term : live-terminal)) => :string
+  (or (find (lambda (folder) (and (string? folder) (file-exists? folder)
+                                  (eq? (file-info-type (file-info folder)) 'directory)))
+            [(terminal-directory term) term.start-directory (getenv "HOME" #f)])
+      "/"))
+
+;; TERM's helper is gone (a reboot, or it was killed) and its program with
+;; it: show the screen it last had (the mirror's, else the one its helper
+;; saved) under terminal-restored-note, then start a new shell in its
+;; folder, at once or on RET (terminal-restore-start). Commands are never
+;; run again.
+(def (revive! (self : terminals-state) (term : live-terminal)) => :void
+  (unless (or (terminal-exit-status term) term.foreign? term.restored)
+    (let* ((path (saved-screen-path term))
+           (mirror term.mirror)
+           (saved (if mirror
+                    (terminal->snapshot-bytes mirror)
+                    (and path (buffer-local-value terminal-save-screen (terminal-buffer term)) (read-saved-screen path))))
+           (when-saved (if (or mirror (not saved)) (now) (file-info-last-modification-time* path)))
+           (folder (revive-directory term))
+           (note (restored-note (buffer-local-value terminal-restored-note (terminal-buffer term))
+                                (local-time-text (exact (floor when-saved))) (abbreviated folder)))
+           (restored (restored-terminal saved term.columns term.rows note))
+           (bytes (terminal->snapshot-bytes restored)))
+      (set! term.link #f)
+      (set! term.helper-pid 0)
+      (set! term.child-pid 0)
+      (set! term.restored bytes)
+      (adopt-mirror! self term restored)
+      ;; A new shell whose helper went away again at once waits for RET,
+      ;; rather than starting again and again.
+      (if (or (eq? (buffer-local-value terminal-restore-start (terminal-buffer term)) 'key)
+              (< (- (now) term.revived-at) revive-again-after))
+        (begin
+          (terminal-write! restored (string->utf8 "Press RET to start it.\r\n"))
+          (set-node-keymap! term.root self.restored-map)
+          (source-changed! term.status)
+          (if (shown? term) (sync! self term) (owe! self term)))
+        (start-revived! self term)))))
+
+;; Seconds after a revive within which another waits for RET.
+(def revive-again-after 10)
+
+(def (file-info-last-modification-time* (path :? :string)) => :real
+  (with-catch (lambda (e) (now))
+              (lambda () (time->seconds (file-info-last-modification-time (file-info path))))))
+
+;; Start the new shell of restored TERM: a helper whose terminal starts as
+;; the restored screen, in the folder the note named.
+(def (start-revived! (self : terminals-state) (term : live-terminal)) => :void
+  (let (bytes term.restored)
+    (when bytes
+      (let* ((folder (socket-directory))
+             (restore (path-expand (string-append (terminal-id term) ".restore") folder)))
+        (write-saved-screen! restore bytes)
+        (with-catch void (lambda () (delete-file term.socket)))
+        (set! term.restored #f)
+        (set! term.revived-at (now))
+        (set-node-keymap! term.root (if (eq? term.input-mode 'char) self.char-map self.semi-char))
+        (source-changed! term.status)
+        (start-reader! self term (terminal-launch term (revive-directory term) restore))))))
 
 ;; Whether a command, not just the shell, runs in TERM: OSC 133 says so,
 ;; or the terminal's foreground process group is not the shell's.
@@ -1702,6 +2120,7 @@
 (def (forget! (self : terminals-state) (term : live-terminal) (kill? : :boolean)) => :void
   (hash-remove! self.terms (terminal-id term))
   (hash-remove! self.by-buffer (terminal-buffer term))
+  (set! self.owed (remq term self.owed))
   (when (eq? self.focused term) (set! self.focused #f))
   (let (c term.link)
     (when c
@@ -1711,6 +2130,14 @@
   (set! term.link #f)
   (let (j term.reader) (when j (job-cancel! j)))
   (let (t term.timer) (when t (cancel-timer t)))
+  (let (t term.link-timer) (when t (cancel-timer t)))
+  (let (t term.fill-timer) (when t (cancel-timer t)))
+  (let (t term.compress-timer) (when t (cancel-timer t)))
+  ;; Killed on purpose: nothing to bring back.
+  (when kill?
+    (let (path (saved-screen-path term))
+      (when path (delete-saved-screen! path))))
+  (let (b term.inbox) (when b (frame-inbox-close! b)))
   (let (mirror term.mirror)
     (when mirror (terminal-close! mirror)))
   (set! term.mirror #f))
@@ -1733,9 +2160,24 @@
          (size (terminal-size-guess self))
          (initial (setting-value terminal-initial-input-mode))
          (mode (if (eq? initial 'char) 'char 'semi-char))
-         (term (new-live-terminal self id socket name mode (car size) (cdr size)))
-         (b (terminal-buffer term))
-         (environment (terminal-process-environment (setting-value terminal-environment)
+         (term (new-live-terminal self id socket name mode (car size) (cdr size) (without-final-slash directory)))
+         (b (terminal-buffer term)))
+    (set-buffer-setting! b default-directory directory)
+    ;; Line mode starts at the first prompt (ghostel).
+    (when (eq? initial 'line) (set! (live-terminal-line-paused? term) #t))
+    (switch-to-buffer b)
+    (start-reader! self term (terminal-launch term directory ""))
+    term))
+
+(def (without-final-slash (directory : :string)) => :string
+  (if (string-suffix? "/" directory)
+    (substring directory 0 (fxmax 1 (fx1- (string-length directory))))
+    directory))
+
+;; The helper launch that starts TERM's program, the shell, in DIRECTORY,
+;; its terminal starting as the snapshot file RESTORE ("" for a new one).
+(def (terminal-launch (term : live-terminal) (directory : :string) (restore : :string)) => helper-launch
+  (let* ((environment (terminal-process-environment (setting-value terminal-environment)
                                                     (setting-value terminal-term)
                                                     (:- (plugin-option terminals 'terminfo) :string)
                                                     directory (process-environment)))
@@ -1743,22 +2185,15 @@
                        (shell-integration (shell-command)
                                           (:- (plugin-option terminals 'shell-integration-directory) :string)
                                           environment (and (setting-value terminal-shell-integration-title) #t))
-                       (cons (shell-command) [])))
-         (launch (make-helper-launch (:- (plugin-option terminals 'helper) :string) socket (car size) (cdr size)
-                                     (setting-value terminal-max-scrollback)
-                                     (if (string-suffix? "/" directory)
-                                       (substring directory 0 (fxmax 1 (fx1- (string-length directory))))
-                                       directory)
-                                     (path-expand (string-append id ".log") (path-directory socket))
-                                     (car integrated)
-                                     (first-entries (append (cdr integrated) environment))
-                                     (and (leave-scope?) (string-append "tuna-terminal-" id)))))
-    (set-buffer-setting! b default-directory directory)
-    ;; Line mode starts at the first prompt (ghostel).
-    (when (eq? initial 'line) (set! (live-terminal-line-paused? term) #t))
-    (switch-to-buffer b)
-    (start-reader! self term launch)
-    term))
+                       (cons (shell-command) []))))
+    (make-helper-launch (:- (plugin-option terminals 'helper) :string) term.socket term.columns term.rows
+                        (setting-value terminal-max-scrollback)
+                        (without-final-slash directory)
+                        (path-expand (string-append (terminal-id term) ".log") (path-directory term.socket))
+                        restore
+                        (car integrated)
+                        (first-entries (append (cdr integrated) environment))
+                        (and (leave-scope?) (string-append "tuna-terminal-" (terminal-id term))))))
 
 ;; The terminal buffer named NAME, made when there is none.
 (def (find-or-start! (self : terminals-state) (name : :string)) => :void
@@ -1770,12 +2205,15 @@
 
 ;;; The session
 
-;; Each live terminal: (ID SOCKET BUFFER-NAME INPUT-MODE VIEW-IDS).
+;; Each live terminal: (ID SOCKET BUFFER-NAME INPUT-MODE VIEW-IDS
+;; DIRECTORY), DIRECTORY where a new shell would start if it comes back
+;; without its helper.
 (def (save-terminals (self : terminals-state)) => :list
   (filter-map (lambda ((term : live-terminal))
                 (and (not (terminal-exit-status term))
                      [(terminal-id term) term.socket (buffer-name (terminal-buffer term))
-                      term.input-mode (map view-id (views-showing term))]))
+                      term.input-mode (map view-id (views-showing term))
+                      (or (terminal-directory term) term.start-directory)]))
               (hash-values self.terms)))
 
 (def (restore-terminals! (self : terminals-state) (data : :t)) => :void
@@ -1783,10 +2221,11 @@
     (for-each
      (lambda (entry)
        (match entry
-         ([(? string? id) (? string? socket) (? string? name) (? symbol? mode) (? list? view-ids)]
-          (when (and (file-exists? socket) (not (hash-get self.terms id)))
+         ([(? string? id) (? string? socket) (? string? name) (? symbol? mode) (? list? view-ids) (? string? directory)]
+          ;; Its helper connects again, or, gone, it is brought back.
+          (unless (hash-get self.terms id)
             (let* ((term (new-live-terminal self id socket (unique-buffer-name name) (if (eq? mode 'char) 'char 'semi-char)
-                                            80 24)))
+                                            80 24 directory)))
               ;; Copy mode does not outlive Tuna; line mode comes back.
               (when (eq? mode 'line) (set! (live-terminal-line-paused? term) #t))
               (start-reader! self term #f)
@@ -1797,7 +2236,24 @@
                               (set-view-buffer v (terminal-buffer term))))
                           (view-list))))))
          (else (void))))
-     data)))
+     data)
+    (forget-unlisted-screens! self data)))
+
+;; Remove the saved screens, and the snapshots new helpers were to start
+;; from, of terminals neither in the session DATA nor live: nothing will
+;; bring them back.
+(def (forget-unlisted-screens! (self : terminals-state) (data : :list)) => :void
+  (let ((listed (filter-map (lambda (entry) (and (pair? entry) (string? (car entry)) (car entry))) data))
+        (saved (saved-screens-directory)))
+    (for-each (lambda ((folder : :string))
+                (for-each (lambda ((name : :string))
+                            (let (id (cond ((string-suffix? ".screen" name) (substring name 0 (fx- (string-length name) 7)))
+                                           ((string-suffix? ".restore" name) (substring name 0 (fx- (string-length name) 8)))
+                                           (else #f)))
+                              (when (and id (not (member id listed)) (not (hash-get self.terms id)))
+                                (delete-saved-screen! (path-expand name folder)))))
+                          (with-catch (lambda (e) []) (lambda () (directory-files folder)))))
+              (if saved [saved] []))))
 
 ;;; Focus
 
@@ -1910,8 +2366,10 @@
   (record-read! term.status)
   (let ((identification (status-line-format (buffer-local-value terminal-status-line-format (terminal-buffer term))
                                             (terminal-title term) (terminal-directory term)))
-        (mode (case term.input-mode
-                ((char) ":Char") ((copy) ":Copy") ((line) ":Line") (else #f))))
+        (mode (if term.restored
+                ":Restored"
+                (case term.input-mode
+                  ((char) ":Char") ((copy) ":Copy") ((line) ":Line") (else #f)))))
     (cond
      ((and identification mode) (string-append identification " " mode))
      (else (or identification mode)))))
@@ -1945,11 +2403,11 @@
   (add-stylesheet 'rules "rules.css")
   (using (self (terminals-state ctx: ctx terms: (make-hash-table) by-buffer: (make-hash-table-eq)
                                 semi-char: (new-keymap) char-map: (new-keymap) quote-map: (new-keymap)
-                                copy-map: (new-keymap) copy-fast-map: (new-keymap)
+                                copy-map: (new-keymap) copy-fast-map: (new-keymap) restored-map: (new-keymap)
                                 line-map: (new-keymap) line-root-map: (new-keymap)
                                 jobs: (new-job-group ctx) encoder: (make-key-encoder)
                                 mouse-encoder: (make-mouse-encoder size: (mouse-encoder-size 80 24 1 1 0 0 0 0)) sizes: (make-hash-table-eq)
-                                quoting: [] poster: #f focused: #f yank: 0 waiting: [] colors: #f stopping?: #f)
+                                quoting: [] poster: #f focused: #f yank: 0 waiting: [] owed: [] colors: #f stopping?: #f)
                : terminals-state)
     (context-define-node-kind! ctx 'terminal doc: "A terminal: its rows, scrollback then screen." items: 'children)
     (context-define-node-kind! ctx 'terminal-rows doc: "A run of a terminal's rows." items: 'children)
@@ -2019,7 +2477,11 @@
     (context-add-hook! ctx post-command-hook 'terminal-focus
                        (lambda ()
                          (refocus-terminal-views! self)
-                         (track-focus! self)))
+                         (track-focus! self)
+                         ;; A command may have changed what helpers do on
+                         ;; their own (saving, compressing).
+                         (for-each (cut send-settings! <> #f) (hash-values self.terms))))
+    (context-add-hook! ctx task-finished-hook 'terminal (lambda (id name how) (draw-owed! self)))
     (context-add-hook! ctx task-started-hook 'terminal
                        (lambda (id name)
                          (let (waiting self.waiting)
@@ -2029,7 +2491,7 @@
                                          (when (eq? (hash-get self.terms (terminal-id term)) term)
                                            (start-reader! self term #f)))
                                        (reverse waiting))))))
-    (context-add-session-slot! ctx 'terminals version: 1
+    (context-add-session-slot! ctx 'terminals version: 2
                                save: (lambda () (save-terminals self))
                                restore: (lambda (data) (restore-terminals! self data)))
 
@@ -2147,6 +2609,10 @@
     (define-command ctx (terminal-line-mode-history-next) "Show the line sent after the one shown."
       (let (state (live-terminal-line (this-terminal self)))
         (when state (line-mode-history! state -1))))
+    (define-command ctx (terminal-revive) "Start the new shell of a restored terminal, in the folder its note names."
+      (start-revived! self (this-terminal self)))
+    (define-command ctx (terminal-restored-key) "Say that a restored terminal starts its new shell on RET."
+      (message "This terminal was restored; RET starts a new shell in it"))
     (define-command ctx (terminal-semi-char-mode) "Send most keys to the terminal's program, keeping C-c, C-x, M-x and the like."
       (set-input-mode! self (this-terminal self) 'semi-char))
     (define-command ctx (terminal-char-mode) "Send every key to the terminal's program; M-RET goes back to semi-char mode."
@@ -2202,14 +2668,24 @@
       (for-each (lambda ((keys : :string)) (bind self.char-map keys 'terminal-semi-char-mode))
                 ["M-RET" "C-M-m"])
       (bind self.char-map "<paste>" 'terminal-paste)
+      ;; A restored terminal waiting for RET: keys a program would get only
+      ;; say so.
+      (for-each (cut bind self.restored-map <> 'terminal-restored-key) (terminal-key-names exceptions #f))
+      (bind self.restored-map printing-char-key 'terminal-restored-key)
+      (bind self.restored-map "RET" 'terminal-revive)
       (for-each (cut bind self.quote-map <> 'terminal-quoted-key)
                 (append (terminal-key-names [] #t) [printing-char-key "C-q" "C-x" "C-c" "M-x" "C-u" "C-h"])))
 
     ;; Turning off leaves every helper running: it is how a swap, a reload
-    ;; or Tuna stopping keep their programs.
+    ;; or Tuna stopping keep their programs. Removing the plugin from
+    ;; init.ss does too: as for any plugin, the session keeps its slot, so
+    ;; turning it on again later finds its terminals as they are.
     (context-defer! ctx
                     (lambda ()
                       (set! self.stopping? #t)
+                      ;; Each helper saves its screen at once (a clean
+                      ;; shutdown, or the plugin turning off).
+                      (for-each (cut send-settings! <> #t) (hash-values self.terms))
                       (for-each (lambda ((term : live-terminal))
                                   (let (b (terminal-buffer term))
                                     (forget! self term #f)

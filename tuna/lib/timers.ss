@@ -43,13 +43,15 @@ prelude: :gerbil/core
   (set! t.thread (spawn-thread (lambda () (countdown-thread t t.seconds t.repeat))
                                'tuna-timer)))
 
-;; Run T once more, its first delay from now (Emacs `timer-activate`):
+;; Run T once more, its first delay from now (Emacs `timer-activate`),
+;; SECONDS from now when given, which T keeps for its later restarts:
 ;; unless T is cancelled, or its callback is still due (it has not yet
 ;; started, or T repeats). So a one-shot timer can be armed again and
 ;; again, as a change asks, while it owns one countdown at a time. Call on
 ;; the baton.
-(def (restart-timer (t : timer)) => :void
+(def (restart-timer (t : timer) seconds: (seconds :? :real := #f)) => :void
   (unless (or t.cancelled? t.counting?)
+    (when seconds (set! t.seconds seconds))
     (start-countdown! t)))
 
 ;; Stop T and cancel its callback tasks. Call on the baton.

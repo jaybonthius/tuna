@@ -21,10 +21,15 @@
 
 ### Terminal (after stage 2; plan `agents/plans/terminal.md`)
 
-- [ ] A helper killed by a signal leaves its socket; the terminal then comes back as "[Terminal helper gone]". Clean up stale sockets, and offer to start a new shell there (with stage 5's revive).
-- [ ] Removing the `terminals` plugin from `init.ss` leaves its helpers running with no one to see their programs exit. Decide whether turning the plugin off for good should end them, and how that differs from a reload.
-- [ ] Each resize sends a whole snapshot and copies every row again; with a full 5 MB scrollback that is a noticeable pause per resize. Consider resizing the mirror itself at a marked point in the stream instead.
-- [ ] Rows of a hidden terminal are still copied (ghostel defers until shown).
+- [x] A helper killed by a signal leaves its socket; the terminal then comes back as "[Terminal helper gone]". (Stage 5: the stale socket is deleted and the terminal is revived with a new shell.)
+- [x] Removing the `terminals` plugin from `init.ss` leaves its helpers running with no one to see their programs exit. (Stage 5, decided: kept, as a reload does; the session keeps the slot, so putting the plugin back finds them. ADR 18.)
+- [x] Each resize sends a whole snapshot and copies every row again. (Stage 5: the mirror resizes at the helper's mark in the stream; a column change still copies every row again, as a reflow renumbers them.)
+- [x] Rows of a hidden terminal are still copied (ghostel defers until shown). (Stage 5.)
+- [ ] A view scrolled far up during a sustained flood shows the older rows blank until the flood pauses (stage 5 copies only rows near the bottom while output goes on).
+- [ ] The mirror and its helper prune scrollback by whole pages as their own pages fill, so after many resizes or a long flood their scrollback lengths differ; a reconnect then shows the helper's (shorter or longer) history.
+- [ ] Saved screens are libghostty snapshots: one written by an older libghostty may not read after an upgrade, and the terminal then comes back empty, with its note. Research 02 suggests a plain styled-text copy beside each.
+- [ ] Helpers from before protocol version 3 (and terminals saved in session slot version 1) are not reconnected after this upgrade; they run on unseen until ended by hand.
+- [ ] Gambit's heap does not shrink: a flood raises Tuna's resident memory by 20–50 MB once, and it stays.
 - [ ] Copy mode shows only the rows' palette foreground colours and links (one face per character): no bold, backgrounds, inverse or exact colours, and fallback-font glyphs are not held to the cell grid there.
 - [ ] OSC 52's browser copy is best effort: Firefox writes only soon after a key, Safari is expected to refuse. Offer "press a key to copy" when the browser refuses (research 04, C.4).
 - [ ] Line mode adopts nothing already typed at the prompt and has no `TAB` completion (ghostel adopts with OSC 133 input marks and completes through capfs). Stage 4's shell integration now gives the input marks (row nodes carry them); completion at point is still missing.

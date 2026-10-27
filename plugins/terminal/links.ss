@@ -40,14 +40,18 @@ prelude: :gerbil/core
         (lp (fx1+ i) (if (url-end-char? (string-ref text i)) (fx1+ i) last-good)))
        (else last-good)))))
 
-;; The index of NEEDLE in TEXT from FROM, or #f.
+;; The index of NEEDLE in TEXT from FROM, or #f; compared in place, since
+;; every row of a flood is searched.
 (def (search (text : :string) (needle : :string) (from : :fixnum)) => (Maybe :fixnum)
   (let ((size (string-length text))
         (n (string-length needle)))
     (let lp ((i from))
       (cond
        ((fx> (fx+ i n) size) #f)
-       ((string=? (substring text i (fx+ i n)) needle) i)
+       ((let same ((k 0))
+          (or (fx= k n)
+              (and (char=? (string-ref text (fx+ i k)) (string-ref needle k)) (same (fx1+ k)))))
+        i)
        (else (lp (fx1+ i)))))))
 
 ;; The http(s) URLs in TEXT: (START END URI), END exclusive.

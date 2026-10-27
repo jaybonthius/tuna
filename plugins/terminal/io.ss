@@ -39,12 +39,13 @@ prelude: :gerbil/core
         device-write-all
         close-device
         shutdown-device
-        errno-name)
+        errno-name
+        local-time-text)
 
 (C-ffi-macrology)
 (C-include "<errno.h>" "<fcntl.h>" "<signal.h>" "<stdint.h>" "<stdlib.h>" "<string.h>"
            "<termios.h>" "<unistd.h>" "<sys/ioctl.h>" "<sys/socket.h>" "<sys/stat.h>"
-           "<sys/types.h>" "<sys/un.h>" "<sys/wait.h>")
+           "<sys/types.h>" "<sys/un.h>" "<sys/wait.h>" "<time.h>")
 
 (C-declare #<<END-C
 /* Declared here rather than through _GNU_SOURCE, which the static build of
@@ -244,6 +245,14 @@ END-C
    ___return(n < 0 ? -errno : (int)n);")
 (def-C-lambda %shutdown (int) int "___return(shutdown(___arg1, SHUT_RDWR) < 0 ? -errno : 0);")
 (def-C-lambda %errno-name (int) char-string "___return(strerror(___arg1));")
+;; The local time SECONDS after the epoch names, as YYYY-MM-DD HH:MM.
+(def-C-lambda local-time-text (int64) char-string
+  "static char text[32];
+   time_t when = (time_t)___arg1;
+   struct tm local;
+   if (localtime_r(&when, &local) == NULL || strftime(text, sizeof text, \"%Y-%m-%d %H:%M\", &local) == 0)
+     text[0] = 0;
+   ___return(text);")
 (def-C-lambda %eagain () int "___return(EAGAIN);")
 (def-C-lambda %eio () int "___return(EIO);")
 

@@ -1,4 +1,4 @@
-.PHONY: all assets build deps test test-frontend demo-check run tokens voice-worker voice-worker-check voice-command-check terminfo
+.PHONY: all assets build deps test test-frontend demo-check run tokens voice-worker voice-worker-check voice-command-check terminfo terminal-flood-check
 
 ESBUILD ?= esbuild
 
@@ -112,6 +112,13 @@ voice-worker-check: voice-worker
 voice-command-check: build voice-worker
 	gerbil env gxi plugins/voice/tests/support/command-check.ss $(CURDIR)/.gerbil/bin/tuna-voice-worker \
 		demo/init.ss $(wildcard plugins/voice/tests/fixtures/*.f32) $(VOICE_SPEECH) $(VOICE_THUNDER)
+
+# Heavy output in a terminal: seq 1 2000000, then cat of a 50 MB file
+# (made in /tmp when missing), timing the editor's answers meanwhile. A
+# manual check; make test never runs it.
+terminal-flood-check: build
+	gerbil env gxi plugins/terminal/tests/support/flood-check.ss seq
+	gerbil env gxi plugins/terminal/tests/support/flood-check.ss cat
 
 # The demo configuration loads and its declarations are valid. demo/ is not
 # built into the package, so this is what keeps it from rotting.
