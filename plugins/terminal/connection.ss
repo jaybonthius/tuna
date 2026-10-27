@@ -4,9 +4,9 @@
 ;;;
 ;;; A helper is started through `setsid -f`, so it is in a session of its
 ;;; own and Tuna does not wait for it, and, when Tuna runs in a systemd
-;;; scope (`systemd-run --scope`, or a desktop terminal's scope), through
-;;; `systemd-run --user --scope` too, into a scope of its own, since a
-;;; scope's processes all die with it.
+;;; scope or service (`systemd-run --scope`, a desktop terminal's scope, or
+;;; Tuna as a user service), through `systemd-run --user --scope` too, into
+;;; a scope of its own, since a unit's processes all die with it.
 ;;;
 ;;; A connection sends frames from a thread of its own, in order, so the
 ;;; editor never waits on the socket; one other thread (the plugin's
@@ -20,7 +20,7 @@ prelude: :gerbil/core
         default-terminfo-directory
         default-shell-integration-directory
         (struct-out helper-launch)
-        in-systemd-scope?
+        in-systemd-unit?
         helper-command
         launch-helper!
         wait-for-socket
@@ -65,14 +65,14 @@ prelude: :gerbil/core
                           (unit :? :string))
   final: #t)
 
-;; Whether this process runs in a systemd scope, which kills every process
-;; in it when it stops.
-(def (in-systemd-scope?) => :boolean
+;; Whether this process runs in a systemd scope or service, which kills
+;; every process in it when it stops (a service's default KillMode).
+(def (in-systemd-unit?) => :boolean
   (:- (with-catch
        (lambda (e) #f)
        (lambda ()
          (let (lines (call-with-input-file "/proc/self/cgroup" (lambda (port) (read-all port read-line))))
-           (and (find (lambda ((line : :string)) (string-contains line ".scope")) lines) #t))))
+           (and (find (lambda ((line : :string)) (or (string-contains line ".scope") (string-contains line ".service"))) lines) #t))))
       :boolean))
 
 ;; The command that starts L's helper, detached.

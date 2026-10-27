@@ -478,12 +478,12 @@
         (make-private-directory folder)
         folder))))
 
-;; Whether helpers leave Tuna's systemd scope (the leave-scope option).
+;; Whether helpers leave Tuna's systemd scope or service (the leave-scope option).
 (def (leave-scope?) => :boolean
   (case (plugin-option terminals 'leave-scope)
     ((always) #t)
     ((never) #f)
-    (else (in-systemd-scope?))))
+    (else (in-systemd-unit?))))
 
 ;;; Terminals and their buffers
 
@@ -2706,7 +2706,7 @@
                     "The private folder holding helpers' sockets; \"\" for $XDG_RUNTIME_DIR/tuna/terminals."
                     string-type)
   (leave-scope 'auto
-               "Whether helpers leave Tuna's systemd scope, which would kill them with it: auto (when Tuna runs in one), always or never."
+               "Whether helpers leave Tuna's systemd scope or service, which would kill them with it: auto (when Tuna runs in one), always or never."
                scope-type)
   (keymap-exceptions default-keymap-exceptions
                      "The keys a terminal in semi-char mode keeps for Tuna (ghostel-keymap-exceptions)."
