@@ -95,6 +95,7 @@
 (def starter-page
   '((stylesheets tokens)
     (web-transport tokens) (web-transport rules)
+    (terminals tokens) (terminals rules)
     (layout tokens) (layout rules)
     (html-renderer tokens) (html-renderer rules)
     (buttons rules)

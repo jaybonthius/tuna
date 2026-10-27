@@ -4,6 +4,16 @@
 
 (def workspace-directory (path-expand (this-source-directory)))
 
+;; Where gerbil-libghostty is: its source, linked or cloned into the
+;; workspace's packages, and its native library, which its build staged
+;; under GERBIL_PATH. A program (the terminal helper) is linked statically,
+;; so its build compiles the binding's C again and needs the binding's
+;; own headers, not only the staged ones.
+(def libghostty-source
+  (or (getenv "GERBIL_LIBGHOSTTY" #f)
+      (path-expand "pkg/gerbil-libghostty" (gerbil-path))))
+(def libghostty-native (path-expand "lib/gerbil-libghostty/native" (gerbil-path)))
+
 ;; One make call per gerbil.pkg, with specs relative to that package.
 ;; This order follows package imports, not runtime service requirements.
 (def packages
@@ -46,6 +56,21 @@
                                        (directory-files "plugins/web/web"))))))
     ("plugins/files" "contract" "encoding" "line-diff" "watcher" "local-disk" "picker" "plugin")
     ("plugins/autosave" "plugin")
+    ("plugins/terminal"
+     "io"
+     "protocol"
+     "connection"
+     "contract"
+     "keys"
+     "screen"
+     "plugin"
+     ;; The helper links libghostty-vt where gerbil-libghostty staged it,
+     ;; by a path relative to the program.
+     (exe: "helper" bin: "tuna-terminal-helper"
+           "-cc-options" ,(string-append "-std=gnu11 -I" (path-expand "native" libghostty-source)
+                                         " -I" (path-expand "include" libghostty-native))
+           "-ld-options" ,(string-append "-L" (path-expand "lib" libghostty-native)
+                                         " -lghostty-vt -Wl,-rpath,$ORIGIN/../lib/gerbil-libghostty/native/lib")))
     ("plugins/microphone" "contract" "plugin")
     ("plugins/voice" "contract" "spoken" "plugin")))
 

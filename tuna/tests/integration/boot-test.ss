@@ -435,7 +435,7 @@
             (check (map (lambda ((d : declaration)) (plugin-name (declaration-target d)))
                         (configuration-declarations loaded))
                    => '(stylesheets commands keys web-transport settings session
-                        rope-text-store buffers autosave layout
+                        rope-text-store buffers autosave terminals layout
                         view-commands scrolling html-renderer buttons editing
                         minibuffer completion completion-list files
                         echo-area help

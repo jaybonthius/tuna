@@ -410,6 +410,26 @@ The autosave plugin knows nothing about visits: it asks the files contract wheth
 
 Three small additions outside the plugin made this possible: `completing-read` passes a `setup:` procedure the prompt handle (the picker wraps the answer in a node carrying its keys); the buffers contract gained `buffer-read-only` and kill queries (Emacs's `kill-buffer-query-functions`); and the renderer contract gained status-line parts, which is how `*` gets there. All file access goes through the file service, whose provider is the local disk; remote files can come later as another provider.
 
+## Terminals
+
+**Status:** stage 2 of the [terminal plan](../agents/plans/terminal.md) built (2026-10-27; brief [a terminal that outlives Tuna](briefs/2026-10-terminal.md), [ADR 18](../agents/adr/0018-terminals-in-helper-processes.md)). Copy mode, the mouse, the clipboard and links (stage 3), prompts and notifications (stage 4), and reboots (stage 5) are still to come.
+
+`M-x terminal` shows your shell in a buffer named `*terminal*` (`M-x terminal-new` starts another). Full-screen programs such as vim and htop work in it, its scrollback scrolls like any other view, and it follows [ghostel](https://github.com/dakra/ghostel), the Emacs terminal built on the same engine: Ghostty's terminal library, libghostty-vt, through the `gerbil-libghostty` binding.
+
+**The shell does not belong to Tuna.** Each terminal has a **terminal helper**: a small program, started by the `terminals` plugin, that holds the shell's pseudo-terminal and keeps its own copy of the screen. It runs in a session of its own and, when Tuna runs under systemd, in a scope of its own, so nothing that stops Tuna stops it. Tuna talks to it over a private socket in `$XDG_RUNTIME_DIR/tuna/terminals/`. So when Tuna restarts, crashes, or the plugin is swapped or reloaded, the shell carries on; Tuna reconnects, gets a snapshot of the screen, then the live output. When the shell exits, the buffer goes (`terminal-kill-buffer-on-exit`) and so does its helper; killing the buffer while a command runs asks first (`terminal-query-before-killing`).
+
+A concrete case: you run `while true; do date; sleep 1; done` and restart Tuna. The plugin's session slot listed the terminal's helper, so on start the plugin makes the `*terminal*` buffer again (before the layout puts it back in its view) and reconnects. The helper sends its screen, dates printed while Tuna was down included, and the dates keep coming.
+
+**Tuna keeps a mirror.** Besides the helper's copy, Tuna keeps its own libghostty terminal, restored from the helper's snapshot and fed the same bytes; a background job reads the socket, and the editor thread feeds the mirror. Every row, scrollback and screen, is a node of the terminal's buffer, so a view scrolls through them as through any items and draws only what is near; after output, only the rows that changed are copied, and a row that shows the same as before draws nothing. Rows are copied at once after a key (the echo) and otherwise about thirty times a second. A view at the bottom follows the output; one you scrolled up stays put, and typing brings it back. vim and htop use the **alternate screen**, shown as a grid of exactly the screen's rows with no scrollback; your scrollback is back when they quit.
+
+**Size.** A terminal is as many cells as fit in the smallest view showing it, as Emacs sizes a process's window; the plugin's page script measures each view and tells the server. Resizing asks the helper for a fresh snapshot, so the mirror never mixes output written for two sizes.
+
+**Keys.** In semi-char mode, the default, every key goes to the program except the few Tuna keeps (`C-c`, `C-x`, `C-u`, `C-h`, `M-x`, `M-:`, `C-\`; the `keymap-exceptions` option). `C-c C-c`, `C-c C-z`, `C-c C-d` and `C-c C-\` send interrupt, suspend, end of input and quit; `C-y` pastes the newest kill, and the browser's paste key pastes the clipboard, both bracketed when the program asks. `C-q` (or `C-c C-q`) sends the next key whatever it is, the way to send `C-x` or a key the browser keeps. `C-c M-d` switches to char mode, where every key goes to the program and `M-RET` comes back. Keys go through libghostty's key encoder, so a program gets what it asked for (application cursor keys, the Kitty keyboard protocol).
+
+**Colours** are the program's content, not Tuna's styling: the 256 palette colours are CSS variables in the plugin's `tokens.css` (the first 16 a theme's to set), and a colour a program gives exactly passes through on its text.
+
+**For package authors:** the terminal contract has hooks, each with the terminal first: `terminal-title-hook` (the program set its title), `terminal-directory-hook` (it reported its folder, which also becomes the buffer's `default-directory`), `terminal-bell-hook`, and `terminal-exit-hook`. Settings, with ghostel's defaults: `terminal-shell`, `terminal-term` (`xterm-ghostty`, with the terminfo `make` builds), `terminal-environment`, `terminal-max-scrollback` (5 MB), `terminal-timer-delay`, `terminal-adaptive-fps`, `terminal-immediate-redraw-interval`, `terminal-buffer-name`, `terminal-buffer-name-function` (rename by title or folder; off), `terminal-kill-buffer-on-exit`, `terminal-query-before-killing`, `terminal-initial-input-mode`, `terminal-scroll-on-input`, `terminal-ignore-cursor-change`.
+
 ## Where things are saved
 
 | What | Where | When |
@@ -420,6 +440,8 @@ Three small additions outside the plugin made this possible: `completing-read` p
 | Settings changed through Tuna's UI | `~/.config/tuna/custom.ss` (planned) | When changed |
 | Your configuration code | `~/.config/tuna/init.ss` | You edit it |
 | The start-up report | `~/.local/state/tuna/startup.log` | Replaced on every start |
+| Which terminal helpers are running (a session slot) | `~/.local/state/tuna/session.ss` | When idle, and on exit |
+| Terminal helpers' sockets, and a helper's log while it has something to say | `$XDG_RUNTIME_DIR/tuna/terminals/` (private to you) | While each helper runs |
 
 Autosave, the session file, `init.ss`, and the start-up report are built. A settings screen that saves to `custom.ss`, overriding `init.ss`, comes later ([roadmap](roadmap.md)).
 
@@ -491,4 +513,9 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 - **Design tokens**: the raw design scale (palette steps, sizes, fonts) as CSS custom properties, from the `stylesheets` plugin of the stylesheets package.
 - **Semantic tokens**: a plugin's own CSS custom properties naming what its parts mean, such as `--completion-selected-background`, defined with design tokens.
 - **Theme**: a plugin that replaces other plugins' stylesheets.
+- **Terminal helper**: the small program that holds one terminal's shell and screen, outside Tuna, so the shell survives Tuna restarting.
+- **Pseudo-terminal**: the kernel's connection between a shell and whatever shows it; when its holder exits, the shell is hung up.
+- **Mirror** (of a terminal): Tuna's own copy of a terminal's screen, restored from the helper's snapshot and fed the same output, which Tuna draws from.
+- **Alternate screen**: the second screen a full-screen program (vim, htop) draws on, leaving the shell's scrollback alone.
+- **OSC code**: an escape code a program prints to tell the terminal something (its title, its folder).
 - **Session slot**: a named piece of one plugin's state that the session plugin saves while Tuna is idle and on exit, and hands back on the next start.

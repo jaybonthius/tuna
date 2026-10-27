@@ -19,6 +19,7 @@
         :tuna/plugins/text-store/plugin
         :tuna/plugins/buffers/plugin
         :tuna/plugins/autosave/plugin
+        :tuna/plugins/terminal/plugin
         :tuna/plugins/layout/plugin
         :tuna/plugins/view-commands/plugin
         :tuna/plugins/scrolling/plugin
@@ -62,6 +63,8 @@
 (use-plugin rope-text-store)
 (use-plugin buffers)
 (use-plugin autosave)
+(use-plugin terminals)           ; M-x terminal: a shell whose helper outlives Tuna; before
+                                 ; layout, so its buffers are back when the views restore
 (use-plugin layout)
 (use-plugin view-commands)
 (use-plugin scrolling)           ; views scroll natively; the server draws what is near

@@ -14,7 +14,19 @@
 
 - [ ] **gerbil-datastar's "header predicate is strict" test fails** (`httpd-test.ss`, found 2026-10-22 during drawing stage 4): it fails the same way at `a0d020c`, before stage 4's changes. Gerbil's HTTP server trims header values, so the test's expectation cannot hold. Fix the test or the predicate, or mark it as expected to fail.
 
+- [ ] **gerbil-libghostty: `gerbil pkg build` leaves an untracked `manifest.ss`** in the binding's checkout (found in terminal stage 2, `e2f51ca`). Ignore it in the binding's `.gitignore`.
+- [ ] **gerbil-libghostty: a statically linked program needs the binding's private `native/*.h`** (the terminal helper's build passes `-I` to the binding's source through `.gerbil/pkg/gerbil-libghostty`). Stage those headers with the library, or document the flags a static program needs.
+
 ## Tuna
+
+### Terminal (after stage 2; plan `agents/plans/terminal.md`)
+
+- [ ] A helper killed by a signal leaves its socket; the terminal then comes back as "[Terminal helper gone]". Clean up stale sockets, and offer to start a new shell there (with stage 5's revive).
+- [ ] Removing the `terminals` plugin from `init.ss` leaves its helpers running with no one to see their programs exit. Decide whether turning the plugin off for good should end them, and how that differs from a reload.
+- [ ] Each resize sends a whole snapshot and copies every row again; with a full 5 MB scrollback that is a noticeable pause per resize. Consider resizing the mirror itself at a marked point in the stream instead.
+- [ ] Colour queries (OSC 4/10/11) and the colour-scheme report go unanswered: the helper does not know the theme. Tell the helper the theme's colours.
+- [ ] Rows of a hidden terminal are still copied (ghostel defers until shown).
+- [ ] The title is not in the status line (ghostel's `ghostel-buffer-identification-format`): needs a status-line part.
 
 ### Error recovery: the editor must never become unusable (owner priority, 2026-10-23)
 

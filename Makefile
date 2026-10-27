@@ -1,11 +1,16 @@
-.PHONY: all assets build deps test test-frontend demo-check run tokens voice-worker voice-worker-check voice-command-check
+.PHONY: all assets build deps test test-frontend demo-check run tokens voice-worker voice-worker-check voice-command-check terminfo
 
 ESBUILD ?= esbuild
 
-all: assets build
+# The checkout of gerbil-libghostty (the libghostty-vt binding the terminal
+# plugin uses), linked into .gerbil/pkg until it is published. Its first
+# build fetches and builds the pinned Ghostty with Zig 0.16.
+GERBIL_LIBGHOSTTY ?= /home/jay/Code/workbench-gerbil/gerbil-libghostty
+
+all: assets terminfo build
 
 assets: plugins/web/web/tuna-input.js plugins/microphone/web/microphone.js plugins/microphone/web/microphone-worklet.js \
-	plugins/files/web/files.js
+	plugins/files/web/files.js plugins/terminal/web/terminal.js
 
 plugins/web/web/tuna-input.js: plugins/web/frontend/tuna-input.ts plugins/web/frontend/input-sender.ts plugins/web/frontend/tuna-keyboard.ts \
 		plugins/web/frontend/tuna-pointer.ts plugins/web/frontend/tuna-scroll.ts \
@@ -23,6 +28,11 @@ plugins/microphone/web/microphone-worklet.js: plugins/microphone/frontend/microp
 	$(ESBUILD) $< --bundle --format=esm --minify \
 		--platform=browser --target=es2022 --legal-comments=none --outfile=$@
 
+# The terminal plugin's page script.
+plugins/terminal/web/terminal.js: plugins/terminal/frontend/terminal.ts Makefile
+	$(ESBUILD) $< --bundle --external:datastar --format=esm --minify \
+		--platform=browser --target=es2022 --legal-comments=none --outfile=$@
+
 # The files plugin's page script.
 plugins/files/web/files.js: plugins/files/frontend/files.ts Makefile
 	$(ESBUILD) $< --bundle --external:datastar --format=esm --minify \
@@ -33,11 +43,20 @@ build:
 
 deps:
 	gerbil deps -i
+	test -e .gerbil/pkg/gerbil-libghostty || gerbil pkg link gerbil-libghostty $(GERBIL_LIBGHOSTTY)
+	gerbil pkg build gerbil-libghostty
+
+# The terminal plugin's terminfo entry, which its programs find through
+# TERMINFO.
+terminfo: .gerbil/terminfo/x/xterm-ghostty
+
+.gerbil/terminfo/x/xterm-ghostty: plugins/terminal/terminfo/xterm-ghostty.terminfo
+	tic -x -o .gerbil/terminfo $<
 
 # `gerbil test` exits 0 even when a test fails (TODO.md), so success is
 # read from its last line of output, which is OK only when every test passed
 # and gerbil test itself exited 0.
-test: build test-frontend demo-check
+test: build terminfo test-frontend demo-check
 	{ gerbil test ./tuna/... ./plugins/... ./tests/... ./demo/... || echo "make test: gerbil test exited $$?"; } | tee .gerbil/test.out
 	@test "$$(tail -n 1 .gerbil/test.out)" = OK || { echo "make test: Gerbil tests failed" >&2; exit 1; }
 
