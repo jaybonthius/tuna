@@ -63,6 +63,8 @@ Follow the numbers for the main loop:
 
 The browser opens the plain `http://127.0.0.1:PORT/` URL (or `localhost`): no launch token, cookie, or sign-in. Tuna still listens only on loopback and rejects foreign Host/Origin headers, so other web pages can't drive it; to use it through an HTTPS front end such as `tailscale serve`, add that name to the web plugin's `hosts:` option. Behind a reverse proxy on another address (Caddy with Authelia, for example), `listen-also` adds that address and `proxy-secret-file` names a secret the proxy must send, so nothing else on that network can reach Tuna. Serving the page makes a new **tab id**, which the page holds as a Datastar signal and sends with every request; each tab numbers its input from 1 on its own. A page whose tab Tuna no longer knows (after a server restart) has its numbering start at its next item. Failed network requests retry the same numbered item; malformed or excessive waiting input is logged, not shown in the echo area. [How input stays in order](diagrams/input-ordering.svg) shows the implemented flow.
 
+The tab shows Tuna's icon. The web plugin links the icons and a web app manifest in the page's head and serves them from `plugins/web/web/icons/`, with `favicon.ico` also at `/favicon.ico`; its `icons:` option names a folder of your own files with the same names instead.
+
 Around that loop:
 
 - **Plugins** add the commands, key bindings, and hooks the editor uses.
