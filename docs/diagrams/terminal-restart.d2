@@ -1,0 +1,20 @@
+# What happens to a terminal when Tuna restarts? (planned 2026-10-27; nothing built yet)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+old: "Tuna, before"
+new: "Tuna, after the restart"
+helper: "Terminal helper"
+shell: "claude in your shell"
+
+shell -> helper: "1. output keeps flowing; the helper keeps its screen up to date"
+old -> old: "2. Tuna stops: its socket closes,\nthe helper and shell carry on"
+shell -> helper: "3. claude keeps working while Tuna is down"
+new -> helper: "4. Tuna starts, reads its saved list of helpers, reconnects"
+helper -> new: "5. a snapshot of the screen, then the live output"
+new -> new: "6. the screen redraws exactly as it was"

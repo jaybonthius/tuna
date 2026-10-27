@@ -1,0 +1,28 @@
+# What are the pieces of a terminal, and who holds the shell? (planned 2026-10-27; nothing built yet)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+direction: down
+
+browser: "Browser tabs\n(draw the rows they show)"
+tuna: "Tuna (planned)" {
+  plugin: "Terminal plugin\nterminal node, keymaps, hooks"
+  copy: "Tuna's copy of the screen\n(Ghostty library)"
+  others: "Other plugins\nclipboard, notifications, agents"
+}
+helper: "Terminal helper (planned)\nits own process, one per terminal" {
+  screen: "Helper's copy of the screen\n(Ghostty library)"
+}
+shell: "Your shell and programs\n(bash, vim, claude)"
+state: "Tuna's state folder\nsaved screens, list of helpers"
+
+browser -> tuna.plugin: "keys, scrolling"
+tuna.plugin -> browser: "changed rows"
+tuna.plugin <-> helper: "private socket: keys in,\nsnapshot then output out"
+tuna.plugin -> tuna.copy: "output"
+tuna.plugin -> tuna.others: "hooks: copy, notify,\nprogram status"
+helper <-> shell: "holds its pseudo-terminal:\nthe shell lives as long as the helper"
+helper -> state: "saves its screen now and then\n(for reboots)"

@@ -11,3 +11,5 @@ Emacs gives a buffer exactly one major mode, so a file mixing languages (JavaScr
 - **A language plugin only says where the regions are;** the modes system does the rest. The tooling must make writing such a plugin straightforward even if the first version ships without one.
 
 Open questions for the brief: what a mode owns (keymaps, settings, highlighting, indentation, language server); how minor modes combine with region modes; how regions nest; how the status line shows the mode at the cursor.
+
+**First user: the terminal** (owner, 2026-10-27). The terminal's key handling (semi-char, char, copy and line, as in eat and ghostel) is built first as keymaps switched on the terminal node ([terminal brief](../briefs/2026-10-terminal.md)). When modes are built, those keymaps must be removed and replaced by terminal modes, not kept alongside them.

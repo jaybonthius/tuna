@@ -2,7 +2,11 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: none in progress; files finished (2026-10-27)
+## Current work: terminal (brief drafted 2026-10-27, awaiting owner approval)
+
+Brief `docs/briefs/2026-10-terminal.md` (diagrams `docs/diagrams/terminal-pieces` and `terminal-restart`), research `agents/research/terminal/`. Owner decisions 2026-10-27: extend `gerbil-libghostty` beyond Racket parity (first commit, then the additions Tuna needs); key handling as terminal-node keymaps now, replaced by modes later (recorded in `docs/ideas/modes.md`); colours as CSS-variable palette plus pass-through exact colours (ghostel's model); reboot restore follows best practice (owner open to the recommendation). Open: whether the saved screen for reboots is on by default.
+
+## Previous: files finished (2026-10-27)
 
 Files, all four stages (plan `agents/plans/files.md`, reports `/home/jay/Code/workbench-gerbil/scratch/files/stage{1,2,3,4}-report.md`): open and save, recent files and remembered places (with completion sources), changes on disk, autosave and recovery of file buffers; plus word commands, the reverse-proxy listener (tuna.tungo.org behind Authelia), DEL in the picker. Next in tier 0: buffer switching (`C-x b`, in view-commands) and error recovery (owner: deep dive later).
 
