@@ -73,6 +73,8 @@
                                          " -I" (path-expand "include" libghostty-native))
            "-ld-options" ,(string-append "-L" (path-expand "lib" libghostty-native)
                                          " -lghostty-vt -Wl,-rpath,$ORIGIN/../lib/gerbil-libghostty/native/lib")))
+    ("plugins/program-status" "contract" "plugin")
+    ("plugins/notifications" "plugin")
     ("plugins/microphone" "contract" "plugin")
     ("plugins/voice" "contract" "spoken" "plugin")))
 
