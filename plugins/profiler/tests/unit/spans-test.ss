@@ -1,0 +1,156 @@
+;;; The profiler's span trees, driven as the general hooks drive them
+;;; (plugin.ss wires the hooks): a key's tree from its arrival to each
+;;; tab's paint, the page's own durations, branches that end unchanged,
+;;; trees finished incomplete, and trees forgotten once written.
+(import :std/test
+        (only-in :std/encoding/json string->json current-json-read-options JSONReadOptions)
+        :tuna/plugins/profiler/spans)
+(export spans-test)
+
+(def finished [])
+
+(def (new-test-recorder patience: (patience 10000.))
+  (set! finished [])
+  (new-recorder finish: (lambda (tree) (set! finished (cons tree finished))) patience: patience))
+
+(def (parsed tree)
+  (parameterize ((current-json-read-options (JSONReadOptions object-as-hash: #t)))
+    (string->json (tree->json tree))))
+
+(def (child json name)
+  (find (lambda (c) (equal? (hash-ref c "name") name)) (hash-ref json "children")))
+
+(def (child-names json)
+  (map (lambda (c) (hash-ref c "name")) (hash-ref json "children")))
+
+(def (detail json name)
+  (hash-get (hash-ref json "details") name))
+
+(def key-a [(cons 'kind "key") (cons 'key "a")])
+
+;; Key 1 of tab A runs self-insert-command, which starts job 77; tabs A
+;; and B are drawn.
+(def (type-key! r)
+  (recorder-arrived! r 'a "aaaa" 1 key-a)
+  (recorder-resolved! r 'a "aaaa" 1 key-a 'self-insert-command)
+  (recorder-task-started! r 10 'self-insert-command)
+  (recorder-command-hook! r 10 'pre-command 'first #f)
+  (recorder-command-hook! r 10 'pre-command 'last 'self-insert-command)
+  (recorder-job-started! r 10 77 '(highlight 1))
+  (recorder-command-hook! r 10 'post-command 'first #f)
+  (recorder-command-hook! r 10 'post-command 'last #f)
+  (recorder-task-finished! r 10 'returned)
+  (recorder-job-finished! r 77 'returned)
+  (recorder-redraw-started! r 'a "aaaa")
+  (recorder-redraw-finished! r 'a 3 5 1200)
+  (recorder-redraw-started! r 'b "bbbb")
+  (recorder-redraw-finished! r 'b 1 7 900))
+
+(def spans-test
+  (test-suite "profiler: span trees"
+    (test-case "a key's tree runs from its arrival through its command and redraw to each tab's paint"
+      (let (r (new-test-recorder))
+        (type-key! r)
+        (recorder-screen-ready! r 'a 5 1)
+        (recorder-screen-ready! r 'b 6 0)
+        (recorder-screen-sent! r 'a 1 2 5 1200)
+        (recorder-screen-sent! r 'b 3 4 6 900)
+        (recorder-screen-applied! r 'a 1 2 [(cons 'revision 5) (cons 'through 1) (cons 'morph 2.) (cons 'settle .5)
+                                             (cons 'keys [[1 1.5 30.]])])
+        (recorder-screen-applied! r 'b 3 4 [(cons 'revision 6) (cons 'through 0) (cons 'morph 3.) (cons 'settle .25)])
+        ;; Not finished until both tabs painted.
+        (check finished => [])
+        (recorder-screen-applied! r 'a 1 2 [(cons 'painted [[1 2 8.]])])
+        (check finished => [])
+        (recorder-screen-applied! r 'b 3 4 [(cons 'painted [[3 4 9.]])])
+        (check (length finished) => 1)
+        (check (recorder-trees-in-flight r) => [])
+        (let* ((tree (car finished))
+               (root (hash-ref (parsed tree) "span")))
+          (check (item-tree-complete? tree) => #t)
+          (check (hash-ref (parsed tree) "tab") => "aaaa")
+          (check (hash-ref (parsed tree) "sequence") => 1)
+          (check (hash-ref root "name") => "input")
+          (check (detail root "key") => "a")
+          (check (detail root "command") => "self-insert-command")
+          (check (detail root "key-to-screen") => 34.)
+          (check (detail root "key-to-paint") => 42.)
+          (check (child-names root)
+                 => ["queue" "task self-insert-command" "tab aaaa" "tab bbbb" "browser: key to send" "network"])
+          (check (hash-ref (child root "browser: key to send") "start") => (void))
+          (check (hash-ref (child root "browser: key to send") "duration") => 1.5)
+          (let (network (child root "network"))
+            (check (detail network "round-trip") => 30.)
+            (check (<= (hash-ref network "duration") 30.) => #t))
+          (let (task (child root "task self-insert-command"))
+            (check (child-names task) => ["pre-command-hook" "command self-insert-command" "post-command-hook"])
+            (check (detail task "ended") => "returned")
+            (let (job (child (child task "command self-insert-command") "job (highlight 1)"))
+              (check (detail job "ended") => "returned")
+              (check (>= (hash-ref job "allocated") 0) => #t)))
+          (let (a (child root "tab aaaa"))
+            (check (child-names a) => ["redraw" "waiting for the tab" "write" "network and browser"])
+            (check (map (cut detail (child a "redraw") <>) ["drawn" "reused" "bytes"]) => [3 5 1200])
+            (check (detail (child a "write") "bytes") => 1200)
+            (check (child-names (child a "network and browser")) => ["browser: morph" "browser: settle" "browser: paint"])
+            (check (hash-ref (child (child a "network and browser") "browser: paint") "duration") => 8.))
+          (let (b (child root "tab bbbb"))
+            (check (detail (child b "redraw") "drawn") => 1)
+            (check (hash-ref (child (child b "network and browser") "browser: morph") "duration") => 3.)))))
+
+    (test-case "a tab whose screen did not change ends after its redraw"
+      (let (r (new-test-recorder))
+        (type-key! r)
+        (recorder-screen-ready! r 'a #f 1)
+        (recorder-screen-ready! r 'b #f 0)
+        (check (length finished) => 1)
+        (let (root (hash-ref (parsed (car finished)) "span"))
+          (check (detail (child root "tab aaaa") "screen") => "unchanged")
+          (check (child-names (child root "tab bbbb")) => ["redraw"]))))
+
+    (test-case "a later redisplay does not join an item already drawn; a later item gets its own"
+      (let (r (new-test-recorder))
+        (type-key! r)
+        (recorder-screen-ready! r 'a 5 1)
+        (recorder-screen-ready! r 'b #f 0)
+        (recorder-arrived! r 'a "aaaa" 2 key-a)
+        (recorder-resolved! r 'a "aaaa" 2 key-a #f)
+        (recorder-redraw-started! r 'a "aaaa")
+        (recorder-redraw-finished! r 'a 2 6 1300)
+        (recorder-screen-ready! r 'a 7 2)
+        (let (trees (recorder-trees-in-flight r))
+          (check (length trees) => 2)
+          (for-each (lambda (tree)
+                      (let (root (hash-ref (parsed tree) "span"))
+                        (check (length (filter (lambda (n) (equal? n "tab aaaa")) (child-names root))) => 1)))
+                    trees))))
+
+    (test-case "a tree whose task ended and that nothing happens to is finished incomplete; one waiting is not"
+      (let (r (new-test-recorder patience: 0.))
+        (recorder-arrived! r 'a "aaaa" 1 key-a)
+        (recorder-resolved! r 'a "aaaa" 1 key-a #f)
+        ;; Waiting in the queue, or in its task, is what is measured.
+        (recorder-arrived! r 'a "aaaa" 2 key-a)
+        (recorder-arrived! r 'a "aaaa" 3 key-a)
+        (recorder-resolved! r 'a "aaaa" 3 key-a 'slow-command)
+        (recorder-task-started! r 12 'slow-command)
+        (thread-sleep! 0.01)
+        (recorder-expire! r)
+        (check (map item-tree-sequence finished) => [1])
+        (check (item-tree-complete? (car finished)) => #f)
+        ;; A stopping recorder finishes the rest.
+        (recorder-flush! r)
+        (check (length finished) => 3)
+        (check (recorder-trees-in-flight r) => [])))
+
+    (test-case "an item no transport announced starts its tree when the input service takes it"
+      (let (r (new-test-recorder))
+        (recorder-resolved! r #f "none" 3 key-a 'forward-char)
+        (recorder-task-started! r 11 'forward-char)
+        (recorder-task-finished! r 11 'returned)
+        (recorder-redraw-started! r #f "none")
+        (recorder-redraw-finished! r #f 1 1 100)
+        (recorder-screen-ready! r #f #f 3)
+        (check (length finished) => 1)
+        (check (child-names (hash-ref (parsed (car finished)) "span"))
+               => ["queue" "task forward-char" "tab none"])))))

@@ -3,11 +3,13 @@
 ;;; Production modules must not import or include anything in
 ;;; tuna/test-support/; tuna/kernel/boundary-test.ss checks this.
 (import (only-in :tuna/kernel/plugins activate-plugin!)
+        (only-in :tuna/kernel/hooks hook-callback-names)
         (only-in :tuna/kernel/state new-kernel current-kernel)
         :tuna/kernel
         (only-in :tuna/lib/memo set-memo-checking!)
         (only-in :tuna/lib/plain-data set-plain-data-checking!))
 (export activate-plugin!
+        hook-callback-names                 ; whether a plugin left a listener behind
         call-with-fresh-kernel
         wait-until)
 
