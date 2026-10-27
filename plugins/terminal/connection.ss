@@ -18,6 +18,7 @@ prelude: :gerbil/core
         ./protocol)
 (export default-helper-path
         default-terminfo-directory
+        default-shell-integration-directory
         (struct-out helper-launch)
         in-systemd-scope?
         helper-command
@@ -39,6 +40,8 @@ prelude: :gerbil/core
 
 (def default-helper-path (path-expand "bin/tuna-terminal-helper" checkout-gerbil-directory))
 (def default-terminfo-directory (path-expand "terminfo" checkout-gerbil-directory))
+;; The shell integration scripts, beside this source.
+(def default-shell-integration-directory (path-expand "shell" (path-expand (this-source-directory))))
 
 ;; What a helper is started with: the helper program, its socket, the
 ;; program's size, scrollback (bytes), folder and log file, the program and

@@ -2,18 +2,40 @@
 ;;; program reports.
 (import :std/test
         :tuna/plugins/terminal/screen
-        (only-in :tuna/plugins/terminal/plugin parse-directory-report terminal-process-environment)
+        (only-in :tuna/plugins/terminal/plugin parse-directory-report terminal-process-environment
+                 unknown-sequence-number shell-integration)
+        (only-in :tuna/plugins/terminal/connection default-shell-integration-directory)
         (only-in :gerbil-libghostty/ghostty make-terminal terminal-write! terminal-copy-rows))
 (export screen-test)
 
 ;; Row N of a terminal that was written BYTES, as runs.
 (def (runs-after (bytes : :string) (n : :fixnum))
+  (row-runs (row-after bytes n)))
+
+;; Row N of a terminal that was written BYTES, as libghostty copies it.
+(def (row-after (bytes : :string) (n : :fixnum))
   (let (term (make-terminal 20 4))
     (terminal-write! term (string->utf8 bytes))
-    (row-runs (vector-ref (terminal-copy-rows term n (+ n 1)) 0))))
+    (vector-ref (terminal-copy-rows term n (+ n 1)) 0)))
 
 (def screen-test
   (test-suite "tuna/plugins/terminal: rows"
+    (test-case "a shell's prompt rows know where the prompt ends and whether input was typed"
+      (let (bytes "\x1b;]133;A\x07;one> \x1b;]133;B\x07;ls\r\n\x1b;]133;C\x07;out")
+        (check (row-prompt-mark (row-after bytes 0)) => (vector 'prompt 5 #t))
+        (check (row-prompt-mark (row-after bytes 1)) => #f))
+      ;; A prompt that starts with an empty line, its input on the next.
+      (let (bytes "\x1b;]133;A\x07;\r\n> \x1b;]133;B\x07;")
+        (check (row-prompt-mark (row-after bytes 0)) => (vector 'prompt #f #f))
+        (check (row-prompt-mark (row-after bytes 1)) => (vector 'prompt-continuation 2 #f)))
+      (check (row-prompt-mark (row-after "plain" 0)) => #f))
+
+    (test-case "an unknown OSC sequence's number"
+      (check (unknown-sequence-number "7777;a;b") => 7777)
+      (check (unknown-sequence-number "633") => 633)
+      (check (unknown-sequence-number "x;1") => #f)
+      (check (unknown-sequence-number "") => #f))
+
     (test-case "styled runs become classes; exact colours pass through as properties"
       (check (runs-after "plain \x1b;[1;31mred\x1b;[0m" 0)
              => (vector (vector 0 6 "plain " "" #f #f) (vector 6 3 "red" "terminal-fg-1 terminal-bold" #f #f)))
@@ -69,4 +91,25 @@
       (check (and (member "TERM=xterm-256color"
                           (terminal-process-environment [] "xterm-ghostty" "/nowhere" "/" []))
                   #t)
-             => #t))))
+             => #t))
+
+    (test-case "bash, zsh and fish start with the shell integration, as ghostel injects its own"
+      (let* ((d default-shell-integration-directory)
+             (bootstrap (path-expand "bootstrap" d))
+             (common [(string-append "TUNA_SHELL_INTEGRATION_DIR=" d) "TUNA_SHELL_FEATURES=title"]))
+        (check (shell-integration ["/bin/bash" "-l"] d ["HOME=/h" "ENV=/e"] #t)
+               => (cons ["/bin/bash" "--posix" "-l"]
+                        (append [(string-append "ENV=" bootstrap "/bash/inject.bash") "TUNA_BASH_INJECT=1 -l"
+                                 "TUNA_BASH_ENV=/e" "HISTFILE=/h/.bash_history" "TUNA_BASH_UNEXPORT_HISTFILE=1"]
+                                common)))
+        (check (shell-integration ["/usr/bin/zsh"] d ["ZDOTDIR=/z"] #t)
+               => (cons ["/usr/bin/zsh"]
+                        (append [(string-append "ZDOTDIR=" bootstrap "/zsh") "TUNA_ZSH_ZDOTDIR=/z"] common)))
+        (check (shell-integration ["fish"] d [] #f)
+               => (cons ["fish"]
+                        [(string-append "XDG_DATA_DIRS=" bootstrap ":/usr/local/share:/usr/share")
+                         (string-append "TUNA_SHELL_INTEGRATION_XDG_DIR=" bootstrap)
+                         (string-append "TUNA_SHELL_INTEGRATION_DIR=" d) "TUNA_SHELL_FEATURES="]))
+        (check (shell-integration ["/bin/sh"] d [] #t) => (cons ["/bin/sh"] []))
+        ;; Without the scripts, the shell starts as it is.
+        (check (shell-integration ["/bin/bash"] "/nowhere" [] #t) => (cons ["/bin/bash"] []))))))

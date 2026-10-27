@@ -33,6 +33,14 @@
 ;;; default-directory) and bell run the contract's hooks; when it ends the
 ;;; buffer goes (`terminal-kill-buffer-on-exit`), and killing a buffer whose
 ;;; program is busy asks first (`terminal-query-before-killing`).
+;;;
+;;; What else programs say (stage 4) runs the contract's hooks and nothing
+;;; more, as ghostel's terminal leaves it to ghostel-status and the hooks:
+;;; a shell's prompts and commands (OSC 133), notifications (OSC 9, 777),
+;;; progress (OSC 9;4), program status (OSC 7501), full resets and
+;;; sequences libghostty does not know. The plugin itself uses the prompt
+;;; marks for prompt navigation (C-c M-n, C-c M-p), which enters copy mode
+;;; as ghostel's does.
 
 (import (only-in :gerbil/runtime/hash HashTable)
         (only-in :std/encoding/json string->json current-json-read-options JSONReadOptions)
@@ -62,6 +70,15 @@
                  terminal-set-scrollback-max-bytes! terminal-set-title-changed-handler!
                  terminal-set-pwd-changed-handler! terminal-set-bell-handler!
                  terminal-set-semantic-prompt-handler! semantic-prompt-event-kind
+                 semantic-prompt-event-prompt-kind semantic-prompt-event-exit-code semantic-prompt-event-command
+                 terminal-set-desktop-notification-handler! desktop-notification-title desktop-notification-body
+                 terminal-set-progress-handler! progress-report-state progress-report-progress
+                 terminal-set-program-status-handler! program-status-state program-status-kind
+                 program-status-progress program-status-id program-status-app program-status-title
+                 program-status-message
+                 terminal-set-reset-handler!
+                 terminal-set-unknown-sequence-handler! terminal-set-unknown-max-bytes!
+                 unknown-sequence-tag unknown-sequence-content unknown-sequence-truncated? unknown-sequence-terminator
                  terminal-copy-changed-rows! terminal-copy-rows
                  row-changes-numbering row-changes-rows row-changes-frozen-start row-changes-frozen-end
                  row-changes-cursor row-changes-held?
@@ -74,7 +91,8 @@
                  make-mouse-encoder mouse-encoder-size mouse-encoder-set-size! mouse-encoder-set-any-button-pressed!
                  mouse-encoder-encode mouse-event
                  clipboard-content-mime clipboard-content-data)
-        (rename-in (only-in :gerbil-libghostty/ghostty key-event) (key-event ghostty-key-event))
+        (rename-in (only-in :gerbil-libghostty/ghostty key-event terminal)
+                   (key-event ghostty-key-event) (terminal vt-terminal))
         ./protocol
         ./io
         ./connection
@@ -108,7 +126,13 @@
         terminal-line-mode-history-size
         terminal-mark-activation-input-mode
         terminal-mouse-drag-input-mode
+        terminal-prompt-navigation-input-mode
+        terminal-unknown-sequence-max-bytes
+        terminal-shell-integration
+        terminal-shell-integration-title
+        shell-integration
         parse-directory-report
+        unknown-sequence-number
         parse-colors-report
         status-line-format
         terminal-process-environment)
@@ -151,6 +175,14 @@
   "What setting the mark (C-SPC) in semi-char mode does (ghostel-mark-activation-input-mode): 'default or 'copy enters copy mode with the mark at the cursor; #f leaves C-SPC to the program.")
 (defsetting terminal-mouse-drag-input-mode 'default
   "What a left click or drag in a terminal in semi-char mode does when its program does not take the mouse (ghostel-mouse-drag-input-mode): 'default or 'copy enters copy mode with point at the click, or the region dragged over; #f does nothing, leaving the browser's own selection.")
+(defsetting terminal-prompt-navigation-input-mode 'default
+  "What prompt navigation (C-c M-n, C-c M-p, from a shell's OSC 133 marks) does outside copy mode (ghostel-prompt-navigation-input-mode): 'default or 'copy enters copy mode and moves point to the prompt; #f scrolls the views to it, staying in the mode.")
+(defsetting terminal-unknown-sequence-max-bytes 4096
+  "How many bytes of an OSC or APC sequence the terminal does not know reach terminal-unknown-sequence-hook; longer ones arrive cut. #f sends none.")
+(defsetting terminal-shell-integration #t
+  "Whether a terminal's shell (bash, zsh or fish) starts with Tuna's shell integration, which reports its folder (OSC 7) and marks its prompts and commands (OSC 133), without changes to its startup files (ghostel-shell-integration).")
+(defsetting terminal-shell-integration-title #t
+  "Whether Tuna's bash and zsh integration set the title, to the folder at the prompt and the command while it runs, as Ghostty's title feature does (fish sets its own). ghostel's integration leaves the title to the shell.")
 (defsetting terminal-confirm-close-tab #t
   "Whether closing a plain browser tab asks first while its selected view shows a terminal whose program runs, since C-w and other keys close tabs there. An installed app is never asked.")
 (defsetting terminal-enable-url-detection #t
@@ -183,14 +215,15 @@
 (defclass copy-state ((text-node : node)
                       (copy     : copy-text)
                       (first    : :integer)
-                      (previous : :symbol))
+                      (previous : :symbol)
+                      (prompts  : :list))    ; (ROW . INDEX) where prompts start, ascending
   final: #t)
 
 (defclass (live-terminal terminal)
   ((socket       : :string)
    (link         :? connection)       ; to its helper, once connected
    (reader       :? job)
-   (mirror       :? :t)                 ; libghostty terminal, from the helper's snapshot
+   (mirror       :? vt-terminal)        ; libghostty terminal, from the helper's snapshot
    (helper-pid   : :fixnum)
    (child-pid    : :fixnum)
    (root         : node)
@@ -213,6 +246,8 @@
    (sync-due?    : :boolean)
    (held-since   :? :real)
    (running?     : :boolean)            ; a command runs, by OSC 133
+   (started      :? :real)              ; when that command started (OSC 133 C)
+   (failure      :? :string)            ; the last failure reported
    (refusals     : :fixnum)
    (last-client  :? :t)                 ; the client that last typed into it
    (copy         :? copy-state)         ; while in copy mode
@@ -271,6 +306,66 @@
   (or (file-exists? (path-expand "x/xterm-ghostty" directory))
       (file-exists? (path-expand "78/xterm-ghostty" directory))))
 
+;; ENTRIES, "NAME=value" strings, the first for each name kept, a bare
+;; "NAME" removing it.
+(def (first-entries (entries : :list)) => :list
+  (let (seen (make-hash-table))
+    (filter-map (lambda ((entry : :string))
+                  (let* ((equals (string-index entry #\=))
+                         (name (if equals (substring entry 0 equals) entry)))
+                    (and (not (hash-get seen name))
+                         (begin (hash-put! seen name #t) equals)
+                         entry)))
+                entries)))
+
+;; The value of NAME in ENVIRONMENT, "NAME=value" strings, or #f.
+(def (environment-value (environment : :list) (name : :string)) => (Maybe :string)
+  (let* ((prefix (string-append name "="))
+         (entry (find (cut string-prefix? prefix <>) environment)))
+    (and entry (substring entry (string-length prefix) (string-length entry)))))
+
+;; The shell PROGRAM (a path and its arguments) with Tuna's shell
+;; integration, from the scripts in DIRECTORY, as ghostel injects its own
+;; (ghostel--setup-local-integration), given the ENVIRONMENT it would
+;; have: (PROGRAM . ENTRIES), the entries to put before that environment.
+;; bash runs in POSIX mode, which reads ENV, naming a file that leaves it
+;; and reads the startup files; zsh gets a ZDOTDIR whose .zshenv gives
+;; ZDOTDIR back; fish finds a vendor configuration file through
+;; XDG_DATA_DIRS. Any other program, or a missing script, is left alone.
+(def (shell-integration (program : :list) (directory : :string) (environment : :list) (title? : :boolean))
+  => :pair
+  (let* ((shell (path-strip-directory (car program)))
+         (common [(string-append "TUNA_SHELL_INTEGRATION_DIR=" directory)
+                  (string-append "TUNA_SHELL_FEATURES=" (if title? "title" ""))])
+         (bootstrap (path-expand "bootstrap" directory))
+         (old (lambda ((name : :string) (saved : :string))
+                (let (value (environment-value environment name))
+                  (if value [(string-append saved "=" value)] [])))))
+    (cond
+     ((and (string-contains shell "bash") (file-exists? (path-expand "bash/inject.bash" bootstrap)))
+      (cons (cons* (car program) "--posix" (cdr program))
+            (append [(string-append "ENV=" (path-expand "bash/inject.bash" bootstrap))
+                     (string-append "TUNA_BASH_INJECT=1 " (string-join (cdr program) " "))]
+                    (old "ENV" "TUNA_BASH_ENV")
+                    (if (environment-value environment "HISTFILE")
+                      []
+                      [(string-append "HISTFILE=" (path-expand ".bash_history" (or (environment-value environment "HOME") "~")))
+                       "TUNA_BASH_UNEXPORT_HISTFILE=1"])
+                    common)))
+     ((and (string-contains shell "zsh") (file-exists? (path-expand "zsh/.zshenv" bootstrap)))
+      (cons program
+            (append [(string-append "ZDOTDIR=" (path-expand "zsh" bootstrap))]
+                    (old "ZDOTDIR" "TUNA_ZSH_ZDOTDIR")
+                    common)))
+     ((and (string-contains shell "fish")
+           (file-exists? (path-expand "fish/vendor_conf.d/tuna-shell-integration.fish" bootstrap)))
+      (cons program
+            (cons* (string-append "XDG_DATA_DIRS=" bootstrap ":"
+                                  (or (environment-value environment "XDG_DATA_DIRS") "/usr/local/share:/usr/share"))
+                   (string-append "TUNA_SHELL_INTEGRATION_XDG_DIR=" bootstrap)
+                   common)))
+     (else (cons program [])))))
+
 ;; The environment of a terminal's program, as ghostel builds it: the
 ;; terminal-environment setting first, then what says this is a Tuna
 ;; terminal and which TERM, then PWD, then BASE (Tuna's own); the first
@@ -286,15 +381,8 @@
              "TERM_PROGRAM_VERSION=1.3.2" "COLORTERM=truecolor"])
            (else ["TERM=xterm-256color" "COLORTERM=truecolor"])))
          (entries (append extra ["INSIDE_TUNA=terminal"] term-entries
-                          [(string-append "PWD=" directory)] base))
-         (seen (make-hash-table)))
-    (filter-map (lambda ((entry : :string))
-                  (let* ((equals (string-index entry #\=))
-                         (name (if equals (substring entry 0 equals) entry)))
-                    (and (not (hash-get seen name))
-                         (begin (hash-put! seen name #t) equals)
-                         entry)))
-                entries)))
+                          [(string-append "PWD=" directory)] base)))
+    (first-entries entries)))
 
 (def (process-environment) => :list
   (map (lambda ((pair : :pair)) (string-append (car pair) "=" (cdr pair)))
@@ -363,14 +451,15 @@
                               cursor-row: #f columns: columns rows: rows cell-width: 0 cell-height: 0
                               effects: [] input-mode: mode initial-name: name managed-name: name
                               follow: (make-hash-table-eq) last-input: 0 last-output: 0 timer: #f
-                              sync-due?: #f held-since: #f running?: #f refusals: 0 last-client: #f copy: #f line: #f line-paused?: #f history: []
+                              sync-due?: #f held-since: #f running?: #f started: #f failure: #f refusals: 0 last-client: #f copy: #f line: #f line-paused?: #f history: []
                               status: (new-source))))
     (add-buffer! b)
     (hash-put! self.terms id term)
     (hash-put! self.by-buffer b term)
     (set! (live-terminal-timer term)
       (context-run-with-timer! self.ctx (setting-value terminal-timer-delay) #f
-                               (lambda () (when (live-terminal-sync-due? term) (sync! self term)))
+                               (lambda () (when (live-terminal-sync-due? term)
+                                            (guarded! term "redraw" (lambda () (sync! self term)))))
                                name: 'terminal-redraw))
     term))
 
@@ -441,7 +530,8 @@
      ((and (pair? result) (eq? (car result) 'connected))
       (set! term.link (cdr result)))
      ((and (pair? result) (eq? (car result) 'frames))
-      (for-each (cut receive-frame! self term <>) (cdr result)))
+      (for-each (lambda ((f : frame)) (guarded! term "output" (lambda () (receive-frame! self term f))))
+                (cdr result)))
      ((and (pair? result) (eq? (car result) 'failed))
       (message (string-append (terminal-id-name term) ": " (cdr result)))
       (helper-gone! self term))
@@ -449,6 +539,23 @@
       (set! term.link #f)
       (unless (terminal-exit-status term)
         (helper-gone! self term))))))
+
+;; Run THUNK, WHAT for TERM, reporting a failure as the kernel reports a
+;; failing hook, in the echo area and Tuna's log, once while it repeats,
+;; and carrying on: the next output and redraw still happen.
+(def (guarded! (term : live-terminal) (what : :string) (thunk : :procedure)) => :void
+  (with-catch
+   (lambda (e)
+     (if (quit-condition? e)
+       (raise e)
+       (let (report (string-append "Terminal " (terminal-id-name term) ": " what " failed: " (exception-summary e)))
+         (unless (equal? report term.failure)
+           (set! term.failure report)
+           (let (port (current-error-port))
+             (display report port)
+             (newline port))
+           (message report)))))
+   thunk))
 
 (def (terminal-id-name (term : live-terminal)) => :string
   (buffer-name (terminal-buffer term)))
@@ -514,8 +621,16 @@
            (when text (push-effect! term (cons 'copy text)))
            'success)
          'denied)))
-    (terminal-set-semantic-prompt-handler! mirror
-                                           (lambda (event) (push-effect! term (cons 'prompt (semantic-prompt-event-kind event)))))
+    (terminal-set-semantic-prompt-handler! mirror (lambda (event) (push-effect! term (cons 'prompt event))))
+    (terminal-set-desktop-notification-handler! mirror (lambda (n) (push-effect! term (cons 'notification n))))
+    (terminal-set-progress-handler! mirror (lambda (report) (push-effect! term (cons 'progress report))))
+    ;; The helper answers the program's OSC 7501 query; this only listens.
+    (terminal-set-program-status-handler! mirror (lambda (report) (push-effect! term (cons 'status report))))
+    (terminal-set-reset-handler! mirror (lambda () (push-effect! term '(reset))))
+    (let (limit (setting-value terminal-unknown-sequence-max-bytes))
+      (when (and (fixnum? limit) (fx> limit 0))
+        (terminal-set-unknown-max-bytes! mirror limit)
+        (terminal-set-unknown-sequence-handler! mirror (lambda (sequence) (push-effect! term (cons 'unknown sequence))))))
     (set! term.mirror mirror)
     ;; A new mirror numbers its rows anew: every row is copied again.
     (set! (row-store-generation term.primary) #f)
@@ -537,13 +652,68 @@
          ((directory) (directory-reported! self term (lenient-utf8 (cdr effect))))
          ((bell) (run-hook-safely terminal-bell-hook term))
          ((copy) (program-copied! self term (cdr effect)))
-         ((prompt)
-          (case (cdr effect)
-            ((output-start) (set! term.running? #t))
-            ((prompt-start command-end) (set! term.running? #f))
-            (else (void))))
+         ((prompt) (shell-reported! self term (cdr effect)))
+         ((notification)
+          (let (n (cdr effect))
+            (run-hook-safely terminal-notification-hook term
+                             (lenient-utf8 (desktop-notification-title n)) (lenient-utf8 (desktop-notification-body n)))))
+         ((progress)
+          (let (report (cdr effect))
+            (run-hook-safely terminal-progress-hook term (progress-report-state report) (progress-report-progress report))))
+         ((status) (program-status-reported! term (cdr effect)))
+         ((reset) (run-hook-safely terminal-reset-hook term))
+         ((unknown)
+          (let* ((sequence (cdr effect))
+                 (content (lenient-utf8 (unknown-sequence-content sequence)))
+                 (kind (unknown-sequence-tag sequence)))
+            (run-hook-safely terminal-unknown-sequence-hook term kind
+                             (and (eq? kind 'osc) (unknown-sequence-number content))
+                             content (unknown-sequence-truncated? sequence) (unknown-sequence-terminator sequence))))
          (else (void))))
      effects)))
+
+;; A shell integration event (OSC 133), EVENT: whether a command runs,
+;; when it started, and the hooks.
+(def (shell-reported! (self : terminals-state) (term : live-terminal) (event : :t)) => :void
+  (case (semantic-prompt-event-kind event)
+    ((prompt-start)
+     ;; No D comes for a command that replaced the shell (exec zsh).
+     (set! term.running? #f)
+     (set! term.started #f)
+     (run-hook-safely terminal-prompt-hook term (semantic-prompt-event-prompt-kind event)))
+    ((output-start)
+     (set! term.running? #t)
+     (set! term.started (now))
+     (let (command (lenient-utf8 (semantic-prompt-event-command event)))
+       (run-hook-safely terminal-command-start-hook term (and (not (string-empty? command)) command))))
+    ((command-end)
+     (let (started term.started)
+       (set! term.running? #f)
+       (set! term.started #f)
+       (run-hook-safely terminal-command-finish-hook term (semantic-prompt-event-exit-code event)
+                        (and started (- (now) started)))))
+    (else (void))))
+
+;; An OSC 7501 REPORT, checked by libghostty: a record cleared ("" for
+;; all), or reported.
+(def (program-status-reported! (term : live-terminal) (report : :t)) => :void
+  (def (text (bytes : :u8vector)) => (Maybe :string)
+    (and (fx> (u8vector-length bytes) 0) (lenient-utf8 bytes)))
+  (let ((id (lenient-utf8 (program-status-id report)))
+        (state (program-status-state report)))
+    (if (eq? state 'clear)
+      (run-hook-safely terminal-program-status-clear-hook term id)
+      (run-hook-safely terminal-program-status-hook term
+                       (make-program-status-report id state (program-status-kind report) (program-status-progress report)
+                                                   (text (program-status-app report)) (text (program-status-title report))
+                                                   (text (program-status-message report)))))))
+
+;; The number an OSC sequence's CONTENT starts with, before its first ;,
+;; or #f.
+(def (unknown-sequence-number (content : :string)) => (Maybe :fixnum)
+  (let* ((end (or (string-index content #\;) (string-length content)))
+         (n (and (fx> end 0) (string->number (substring content 0 end) 10))))
+    (and (fixnum? n) (fx>= n 0) n)))
 
 (def (lenient-utf8 (bytes : :u8vector)) => :string
   (:- (with-catch (lambda (e) (list->string (map integer->char (u8vector->list bytes))))
@@ -709,6 +879,7 @@
              (first (row-numbering-first-row numbering))
              (end (+ first (row-numbering-total-rows numbering)))
              (copied (make-hash-table-eqv))
+             (prompts (make-hash-table-eqv))
              (cursor (row-changes-cursor changes)))
         (if (eqv? (row-store-generation store) (row-numbering-generation numbering))
           (begin
@@ -716,14 +887,18 @@
             (row-store-extend! store end)
             (let ((from (max first (row-changes-frozen-start changes)))
                   (to (min end (row-changes-frozen-end changes))))
-              (when (< from to) (copy-rows! copied mirror from to)))
-            (vector-for-each (cut keep-row! copied <>) (row-changes-rows changes)))
+              (when (< from to) (copy-rows! copied prompts mirror from to)))
+            (vector-for-each (cut keep-row! copied prompts <>) (row-changes-rows changes)))
           (begin
             (row-store-reset! store (row-numbering-generation numbering) first)
             (row-store-extend! store end)
-            (copy-rows! copied mirror first end)
-            (vector-for-each (cut keep-row! copied <>) (row-changes-rows changes))))
+            (copy-rows! copied prompts mirror first end)
+            (vector-for-each (cut keep-row! copied prompts <>) (row-changes-rows changes))))
         (set-rows! term store copied (and cursor (row-cursor-visible? cursor) (row-cursor-row cursor)))
+        (hash-for-each (lambda (number prompt)
+                         (let (n (row-store-row store number))
+                           (when n (set-node-attribute! n 'prompt prompt))))
+                       prompts)
         (move-cursor! term store cursor)
         (let (blocks (row-store-blocks store))
           (unless (and (eq? screen term.screen) (equal? (map node-id blocks) (map node-id (node-children term.root))))
@@ -736,17 +911,21 @@
         (end-long-hold! term mirror)
         (for-each (cut place-at-bottom! term <>) following)))))
 
-;; Copy rows FROM to TO of MIRROR into COPIED, a thousand at a time.
-(def (copy-rows! (copied : HashTable) (mirror : :t) (from : :integer) (to : :integer)) => :void
+;; Copy rows FROM to TO of MIRROR into COPIED and PROMPTS, a thousand at
+;; a time.
+(def (copy-rows! (copied : HashTable) (prompts : HashTable) (mirror : vt-terminal) (from : :integer) (to : :integer))
+  => :void
   (let lp ((from from))
     (when (< from to)
       (let (upto (min to (+ from 1000)))
-        (vector-for-each (cut keep-row! copied <>) (terminal-copy-rows mirror from upto))
+        (vector-for-each (cut keep-row! copied prompts <>) (terminal-copy-rows mirror from upto))
         (lp upto)))))
 
-;; Keep ROW, a styled row, in COPIED: its number -> (RUNS . WRAP?).
-(def (keep-row! (copied : HashTable) (row : :t)) => :void
-  (hash-put! copied (styled-row-number row) (cons (row-runs row) (styled-row-wrap? row))))
+;; Keep ROW, a styled row, in COPIED, its number -> (RUNS . WRAP?), and
+;; PROMPTS, its number -> its prompt mark (row-prompt-mark).
+(def (keep-row! (copied : HashTable) (prompts : HashTable) (row : :t)) => :void
+  (hash-put! copied (styled-row-number row) (cons (row-runs row) (styled-row-wrap? row)))
+  (hash-put! prompts (styled-row-number row) (row-prompt-mark row)))
 
 ;; Set the rows COPIED holds on their nodes in STORE, each attribute
 ;; once, with the plain links (ghostel-links) found in the program's
@@ -831,7 +1010,7 @@
 
 ;; Synchronized output holds the drawn frame; a program that never lets go
 ;; is let go after a second.
-(def (end-long-hold! (term : live-terminal) (mirror : :t)) => :void
+(def (end-long-hold! (term : live-terminal) (mirror : vt-terminal)) => :void
   (if (terminal-render-held? mirror)
     (let (since term.held-since)
       (cond
@@ -941,7 +1120,8 @@
     (let (c (current-client)) (when c (set! term.last-client c)))
     (when (setting-value terminal-scroll-on-input)
       (for-each (cut place-at-bottom! term <>) (views-showing term)))
-    (send! term 'input bytes)))
+    (send! term 'input bytes)
+    (run-hook-safely terminal-input-hook term)))
 
 ;; The terminal of the current buffer, or an error saying there is none.
 (def (this-terminal (self : terminals-state)) => live-terminal
@@ -1021,6 +1201,46 @@
                       (cons (cons (node-attribute r 'runs) (node-attribute r 'wrap)) out)))))
             first)))
 
+;; Where each prompt on TERM's current screen has its input, ascending,
+;; each (ROW . INDEX): the row, counted from the screen's first, and the
+;; index in its text. A prompt is a row marked where one starts and the
+;; continuation rows after it; its input is on the first of them holding
+;; typed input, else the last with prompt cells, after those (ghostel
+;; lands past the prompt on its first line; a prompt such as starship's
+;; begins with an empty line).
+(def (screen-prompts (term : live-terminal)) => :list
+  (let* ((store (if (eq? term.screen 'alternate) term.alternate term.primary))
+         (first (row-store-base store))
+         (end (row-store-end store)))
+    (def (mark (n : :integer)) => (Maybe :vector)
+      (let (r (row-store-row store n))
+        (and r (let (m (node-attribute r 'prompt)) (and (vector? m) m)))))
+    ;; From row N of a prompt, the first when FIRST?; TARGET is the best
+    ;; row so far, (NUMBER . CELL).
+    (def (landing (n : :integer) (target :? :pair) (first? : :boolean)) => (Maybe :pair)
+      (let (m (and (< n end) (mark n)))
+        (if (or (not m) (and (not first?) (not (eq? (vector-ref m 0) 'prompt-continuation))))
+          target
+          (let ((cell (vector-ref m 1))
+                (input? (vector-ref m 2)))
+            (cond
+             ((and input? cell) (cons n cell))
+             (input? (or target (cons n 0)))
+             (else (landing (+ n 1) (if cell (cons n cell) target) #f)))))))
+    (let lp ((n first) (out []))
+      (if (>= n end)
+        (reverse out)
+        (let (m (mark n))
+          (if (and m (eq? (vector-ref m 0) 'prompt))
+            (let (target (landing n #f #t))
+              (lp (+ n 1)
+                  (if target
+                    (cons (cons (- (car target) first)
+                                (cell->index (node-attribute (row-store-row store (car target)) 'runs) (cdr target)))
+                          out)
+                    out)))
+            (lp (+ n 1) out)))))))
+
 ;; Where TERM's cursor is in the copy C of rows from FIRST, or its end.
 (def (cursor-copy-position (term : live-terminal) (c : copy-text) (first : :integer)) => :fixnum
   (let* ((row term.cursor-row)
@@ -1058,7 +1278,8 @@
                  (point (cursor-copy-position term c first))
                  (placements (map (lambda ((v : view)) (cons v (view-placement v))) (views-showing term)))
                  (state (copy-state text-node: n copy: c first: first
-                                    previous: (if (eq? term.input-mode 'char) 'char 'semi-char))))
+                                    previous: (if (eq? term.input-mode 'char) 'char 'semi-char)
+                                    prompts: (screen-prompts term))))
             (set-highlights! t 'terminal (copy-text-spans c))
             (set! term.copy state)
             (set! term.input-mode 'copy)
@@ -1387,6 +1608,34 @@
       (goto-char target)
       (message "No links in this terminal"))))
 
+;;; Prompt navigation
+
+;; Move to the next or previous prompt (ghostel-next-prompt,
+;; ghostel-previous-prompt), from the marks a shell's integration leaves
+;; (OSC 133): in copy mode, point goes to where the prompt's input starts;
+;; otherwise terminal-prompt-navigation-input-mode enters copy mode first,
+;; or, when #f, scrolls TERM's views to the prompt's row.
+(def (goto-prompt! (self : terminals-state) (term : live-terminal) (direction : :symbol)) => :void
+  (if (or term.copy (buffer-local-value terminal-prompt-navigation-input-mode (terminal-buffer term)))
+    (let* ((state (enter-copy-mode! self term))
+           (target (copy-text-prompt-target (copy-state-copy state) (copy-state-prompts state) (point) direction)))
+      (if target
+        (goto-char target)
+        (message (if (eq? direction 'next) "No next prompt" "No previous prompt"))))
+    (let* ((v (selected-view))
+           (store (if (eq? term.screen 'alternate) term.alternate term.primary))
+           (top (let (target (placement-target (view-placement v)))
+                  (and target (node-attribute (item-node target) 'number))))
+           (numbers (map (lambda ((p : :pair)) (+ (row-store-base store) (car p))) (screen-prompts term)))
+           (here (if (integer? top) top (row-store-end store)))
+           (number (if (eq? direction 'next)
+                     (find (cut > <> here) numbers)
+                     (find (cut < <> here) (reverse numbers))))
+           (row (and number (row-store-row store number))))
+      (if row
+        (for-each (lambda ((v : view)) (place-view! v (node-item row) 'top)) (views-showing term))
+        (message (if (eq? direction 'next) "No next prompt" "No previous prompt"))))))
+
 ;;; Exits and kills
 
 (def (program-ended! (self : terminals-state) (term : live-terminal) (status : :fixnum)) => :void
@@ -1486,17 +1735,23 @@
          (mode (if (eq? initial 'char) 'char 'semi-char))
          (term (new-live-terminal self id socket name mode (car size) (cdr size)))
          (b (terminal-buffer term))
+         (environment (terminal-process-environment (setting-value terminal-environment)
+                                                    (setting-value terminal-term)
+                                                    (:- (plugin-option terminals 'terminfo) :string)
+                                                    directory (process-environment)))
+         (integrated (if (setting-value terminal-shell-integration)
+                       (shell-integration (shell-command)
+                                          (:- (plugin-option terminals 'shell-integration-directory) :string)
+                                          environment (and (setting-value terminal-shell-integration-title) #t))
+                       (cons (shell-command) [])))
          (launch (make-helper-launch (:- (plugin-option terminals 'helper) :string) socket (car size) (cdr size)
                                      (setting-value terminal-max-scrollback)
                                      (if (string-suffix? "/" directory)
                                        (substring directory 0 (fxmax 1 (fx1- (string-length directory))))
                                        directory)
                                      (path-expand (string-append id ".log") (path-directory socket))
-                                     (shell-command)
-                                     (terminal-process-environment (setting-value terminal-environment)
-                                                                   (setting-value terminal-term)
-                                                                   (:- (plugin-option terminals 'terminfo) :string)
-                                                                   directory (process-environment))
+                                     (car integrated)
+                                     (first-entries (append (cdr integrated) environment))
                                      (and (leave-scope?) (string-append "tuna-terminal-" id)))))
     (set-buffer-setting! b default-directory directory)
     ;; Line mode starts at the first prompt (ghostel).
@@ -1855,6 +2110,10 @@
       (goto-hyperlink! self (this-terminal self) 'next))
     (define-command ctx (terminal-previous-hyperlink) "Enter copy mode and move to the link before point, from the end after the first."
       (goto-hyperlink! self (this-terminal self) 'previous))
+    (define-command ctx (terminal-next-prompt) "Move to the next prompt a shell's integration marked; outside copy mode, as terminal-prompt-navigation-input-mode says."
+      (goto-prompt! self (this-terminal self) 'next))
+    (define-command ctx (terminal-previous-prompt) "Move to the previous prompt a shell's integration marked; outside copy mode, as terminal-prompt-navigation-input-mode says."
+      (goto-prompt! self (this-terminal self) 'previous))
     (define-command ctx (terminal-set-mark) "Enter copy mode, as terminal-mark-activation-input-mode says, and set the mark at the cursor."
       (let (term (this-terminal self))
         (when (and (buffer-local-value terminal-mark-activation-input-mode (terminal-buffer term))
@@ -1908,7 +2167,8 @@
                   ("C-c C-j" . terminal-semi-char-mode) ("C-c M-d" . terminal-char-mode)
                   ("C-y" . terminal-yank) ("S-<insert>" . terminal-yank) ("M-y" . terminal-yank-pop)
                   ("<paste>" . terminal-paste) ("C-c C-t" . terminal-copy-mode)
-                  ("C-c C-n" . terminal-next-hyperlink) ("C-c C-p" . terminal-previous-hyperlink)))
+                  ("C-c C-n" . terminal-next-hyperlink) ("C-c C-p" . terminal-previous-hyperlink)
+                  ("C-c M-n" . terminal-next-prompt) ("C-c M-p" . terminal-previous-prompt)))
       (unless (member "C-SPC" exceptions) (bind self.semi-char "C-SPC" 'terminal-set-mark))
       ;; Copy and line mode: the C-c commands (ghostel-mode-map's), then
       ;; copy mode's own keys.
@@ -1918,7 +2178,8 @@
                               ("C-c C-\\" . terminal-send-C-backslash) ("C-c C-d" . terminal-send-C-d)
                               ("C-c C-t" . terminal-copy-mode) ("C-c C-j" . terminal-semi-char-mode)
                               ("C-c M-d" . terminal-char-mode) ("C-c C-l" . terminal-line-mode)
-                              ("C-c C-n" . terminal-next-hyperlink) ("C-c C-p" . terminal-previous-hyperlink))))
+                              ("C-c C-n" . terminal-next-hyperlink) ("C-c C-p" . terminal-previous-hyperlink)
+                              ("C-c M-n" . terminal-next-prompt) ("C-c M-p" . terminal-previous-prompt))))
                 ;; The input's own map too: its C-c C-c would hide the
                 ;; root's other C-c keys.
                 [self.copy-map self.copy-fast-map self.line-root-map self.line-map])
@@ -1962,6 +2223,9 @@
   (terminfo default-terminfo-directory
             "The folder of the compiled xterm-ghostty terminfo entry; `make` builds it into .gerbil/terminfo."
             string-type)
+  (shell-integration-directory default-shell-integration-directory
+                               "The folder of the shell integration scripts (terminal-shell-integration): tuna.bash, tuna.zsh, tuna.fish and their bootstrap folder."
+                               string-type)
   (socket-directory ""
                     "The private folder holding helpers' sockets; \"\" for $XDG_RUNTIME_DIR/tuna/terminals."
                     string-type)

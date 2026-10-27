@@ -70,6 +70,13 @@
           ;; Dark: CSI ? 997 ; 1 n.
           (check (wait-for (lambda () (string-contains (test-client-text client) "[?997;1n"))) ? values))))
 
+    (test-case "it answers a program's program status query (OSC 7501 ?)"
+      (with-helper "stty -echo -icanon; read go; printf '\\033]7501;?\\007'; dd bs=1 count=40 2>/dev/null | od -An -c | tr -d ' \\n'; echo; sleep 30"
+        (lambda (folder socket client)
+          (check (wait-for (lambda () (test-client-mirror client))) => #t)
+          (connection-send! (test-client-connection client) 'input (string->utf8 "go\n"))
+          (check (wait-for (lambda () (string-contains (test-client-text client) "7501;?:states=idle"))) ? values))))
+
     (test-case "kill hangs up the program and ends the helper"
       (with-helper "trap '' INT; sleep 60"
         (lambda (folder socket client)

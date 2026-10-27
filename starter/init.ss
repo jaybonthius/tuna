@@ -47,6 +47,8 @@
         :tuna/plugins/buffers/plugin
         :tuna/plugins/autosave/plugin
         :tuna/plugins/terminal/plugin
+        :tuna/plugins/program-status/plugin
+        :tuna/plugins/notifications/plugin
         :tuna/plugins/layout/plugin
         :tuna/plugins/view-commands/plugin
         :tuna/plugins/scrolling/plugin
@@ -78,6 +80,8 @@
 (use-plugin autosave)
 (use-plugin terminals)           ; M-x terminal: a shell whose helper outlives Tuna; before
                                  ; layout, so its buffers are back when the views restore
+(use-plugin program-status)      ; a terminal program's status (OSC 7501) in its status line
+(use-plugin notifications)       ; what terminal programs ask to be told, in the echo area
 (use-plugin layout)
 (use-plugin view-commands)
 ;; To select the view on a side with Shift and an arrow (Emacs's windmove;
