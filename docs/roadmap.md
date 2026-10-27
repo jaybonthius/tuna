@@ -78,6 +78,7 @@ Tiers are ordered by what blocks daily use, then by what each piece builds on. W
 4. **`modal-editing`** (Helix-like, inspired by Hel), as a plugin.
 5. **`which-key`:** prefix-key help.
 6. **In-buffer completion** (Corfu-like) as part of `completion`, or `completion-popup` beside `completion-list` if it must be swappable on its own.
+7. **Transient-style menus** (owner, 2026-10-27), after Emacs's Transient (Magit's popups): a command opens a menu of keys, switches and arguments, which stays up while you set options and runs a command with them. Needs temporary keymaps (Emacs's `set-transient-map`), which `repeat-mode` and Hydra-like key maps also use. Needed before `git` (tier 3).
 
 ### Tier 2: IDE
 
