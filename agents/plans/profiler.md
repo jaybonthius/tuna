@@ -10,7 +10,7 @@ Brief: [`docs/briefs/2026-10-profiler.md`](../../docs/briefs/2026-10-profiler.md
   - **Spans:** a timed tree per input item.
   - **Sampler:** call stacks on a timer, which finds slow code that no span names.
 - **Emitters never know the profiler.** Places that own a moment announce it through a general hook ("started" / "finished", with plain details such as the item number, command or job). They cost one check when nobody listens. The `profiler` plugin is one listener; nothing else imports it, and turning it off removes everything.
-- **The record is Tuna's own data:** a tree of spans. Each span has a name, start, duration, bytes allocated, GC time, details, and child spans. The plugin keeps recent trees in memory for future in-editor views.
+- **The record is Tuna's own data:** a tree of spans. Each span has a name, start, duration, bytes allocated, GC time, details, and child spans. A tree is held only while its input item is in flight, then written out and dropped. Keeping recent trees in memory waits for the in-editor views that would read them.
 - **Files:** each finished tree is written as one JSON object per line, in a profile folder under Tuna's state folder. The sampler writes text lines, `stack;of;frames count`.
   - Every input item is recorded in full by default.
   - Options: the folder, starting a new file past a size, and a minimum duration below which items are skipped (default 0).
