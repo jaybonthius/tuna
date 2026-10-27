@@ -12,9 +12,10 @@
 ;;;   `file-size` bytes is followed by a new one; items shorter than
 ;;;   `minimum` milliseconds are not written.
 ;;; - `profiler-commands` turns it on and off (`profiler-mode`) and runs the
-;;;   sampler (sampler.ss): `profiler-start`, then `profiler-stop` writes
-;;;   samples-<time>.folded, a `stack;of;frames count` line per stack,
-;;;   each starting with the input item it was taken during.
+;;;   sampler (sampler.ss): `profiler-start`, then `profiler-stop` writes,
+;;;   off the editor thread, samples-<time>.folded, a `stack;of;frames
+;;;   count` line per stack, each starting with the input item it was
+;;;   taken during.
 
 (import (only-in :gerbil/runtime/hash HashTable)
         (only-in :gerbil/runtime/thread spawn-thread)
@@ -25,6 +26,7 @@
         :tuna/configuration
         :tuna/lib/plugin-options
         :tuna/lib/jobs
+        (only-in :tuna/lib/background off-thread)
         :tuna/plugins/clients/contract
         :tuna/plugins/commands/contract
         :tuna/plugins/keys/contract
@@ -58,11 +60,10 @@
                      (if (string-prefix? "/" xdg) xdg (path-expand ".local/state" (getenv "HOME" "/")))))
       (path-expand given))))
 
-;; A new file in the profile folder named PREFIX-<UTC time>SUFFIX, made
-;; unique with a counter.
-(def (new-profile-path (prefix : :string) (suffix : :string)) => :string
-  (let* ((folder (profile-folder))
-         (stamp (date->string (current-date) "%Y%m%dT%H%M%SZ")))
+;; A new file in FOLDER named PREFIX-<UTC time>SUFFIX, made unique with a
+;; counter.
+(def (new-profile-path (folder : :string) (prefix : :string) (suffix : :string)) => :string
+  (let (stamp (date->string (current-date) "%Y%m%dT%H%M%SZ"))
     (create-directory* folder)
     (let lp ((n 0))
       (let (path (path-expand (string-append prefix "-" stamp (if (fxzero? n) "" (string-append "-" (number->string n)))
@@ -74,7 +75,8 @@
 
 ;; Writes each finished tree it is sent as a line, and every second
 ;; finishes trees nothing happened to; stops when sent 'stop.
-(defclass span-writer ((path      :? :string)
+(defclass span-writer ((folder    : :string)
+                       (path      :? :string)
                        (port      : :t)          ; the open file, or #f
                        (written   : :fixnum)
                        (file-size : :fixnum)
@@ -92,7 +94,7 @@
 (def (write-line! (self : span-writer) (line : :string)) => :void
   (when (or (not self.port) (fx> self.written self.file-size))
     (when self.port (close-port self.port))
-    (let (path (new-profile-path "spans" ".jsonl"))
+    (let (path (new-profile-path self.folder "spans" ".jsonl"))
       (set! self.path path)
       (set! self.port (open-output-file [path: path append: #t]))
       (set! self.written 0)
@@ -168,7 +170,7 @@
   ;; The module's contracts: hooks of the commands, renderer and web
   ;; contracts; the configuration only for profiler-commands.
   optional: [commands-service renderer-service page-service configuration-service]
-  (let* ((writer (span-writer path: #f port: #f written: 0
+  (let* ((writer (span-writer folder: (profile-folder) path: #f port: #f written: 0
                               file-size: (plugin-option profiler 'file-size)
                               minimum: (exact->inexact (plugin-option profiler 'minimum))))
          (thread #f)
@@ -262,23 +264,29 @@
       (activate-plugin! profiler)
       (string-append "Profiler on: span trees go to " (profile-folder)))))
 
-;; Stop the sampler, if running, and write what it took. Returns the file
-;; written, or #f.
-(def (stop-sampler!) => (Maybe :string)
-  (and (sampler-running?)
-       (let ((samples (sampler-stop!))
-             (path (new-profile-path "samples" ".folded")))
-         (call-with-output-file path
-           (lambda (port)
-             (for-each (lambda ((line : :string)) (display line port) (newline port))
-                       (folded-lines samples))))
-         path)))
+;; Write SAMPLES, as sampler-stop! returns them, to a new samples file in
+;; FOLDER and return its path. Slow for a long run: never call it on the
+;; editor thread.
+(def (write-samples (samples : :list) (folder : :string)) => :string
+  (let (path (new-profile-path folder "samples" ".folded"))
+    (call-with-output-file path
+      (lambda (port)
+        (for-each (lambda ((line : :string)) (display line port) (newline port))
+                  (folded-lines samples))))
+    path))
 
 (defplugin (profiler-commands ctx)
   "M-x profiler-mode turns the profiler on and off; M-x profiler-start and profiler-stop sample call stacks."
   requires: [commands-service]
   optional: [configuration-service renderer-service page-service]
-  (context-defer! ctx (lambda () (stop-sampler!)))
+  ;; Turned off while sampling: the samples are written on a thread of
+  ;; their own, since no command waits for them.
+  (context-defer! ctx (lambda ()
+                        (when (sampler-running?)
+                          (let ((samples (sampler-stop!))
+                                (folder (profile-folder)))
+                            (spawn-thread (lambda () (write-samples samples folder))
+                                          'tuna-profiler-samples)))))
   (define-command ctx (profiler-mode) "Turn the profiler, which writes each input item's span tree, on or off."
     (message (toggle-profiler!)))
   (define-command ctx (profiler-start) "Start sampling call stacks, until profiler-stop."
@@ -287,6 +295,13 @@
       (begin
         (sampler-start! (/ (plugin-option profiler 'sample-interval) 1000.) current-item-label)
         (message "Sampling call stacks; M-x profiler-stop writes them"))))
+  ;; The samples are written off the editor thread; the command waits
+  ;; there (off-thread) while the editor goes on.
   (define-command ctx (profiler-stop) "Stop sampling call stacks, and write them to the profile folder."
-    (let (path (stop-sampler!))
-      (message (if path (string-append "Samples written to " path) "The sampler is not running")))))
+    (if (sampler-running?)
+      (let (samples (sampler-stop!))
+        (message "Writing samples…")
+        (message (string-append "Samples written to "
+                                (off-thread (lambda ((folder : :string)) (write-samples samples folder))
+                                            (profile-folder)))))
+      (message "The sampler is not running"))))

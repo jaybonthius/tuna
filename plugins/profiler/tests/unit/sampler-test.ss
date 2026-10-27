@@ -46,7 +46,7 @@
         (check (> b a) => #t)
         (check (< 40. (- b a) 500.) => #t)))
 
-    (test-case "sampling on the heartbeat takes stacks of named procedures, labelled; stopping restores it"
+    (test-case "sampling on the heartbeat takes labelled stacks, folded with procedure names; stopping restores it"
       (let (interval (heartbeat-interval))
         (sampler-start! .001 (lambda () "item tab#1 a"))
         (check (sampler-running?) => #t)
@@ -57,11 +57,8 @@
           (check (heartbeat-interval) => interval)
           (check (> (length samples) 50) => #t)
           (check (andmap (lambda (s) (equal? (car s) "item tab#1 a")) samples) => #t)
-          (check (and (find (lambda (s) (find (lambda (frame) (string-contains frame "sort")) (caddr s)))
-                            samples)
-                      #t)
-                 => #t)
           (let (lines (folded-lines samples))
+            (check (and (find (lambda (line) (string-contains line "sort")) lines) #t) => #t)
             (check (pair? lines) => #t)
             (for-each (lambda (line)
                         (let (fields (string-split line #\space))

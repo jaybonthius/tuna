@@ -43,27 +43,18 @@ prelude: :gerbil/core
   (##interrupt-vector-set! 2 sample-heartbeat!))
 
 ;; Stop sampling and return the samples taken, oldest first, each [label
-;; thread frames] with FRAMES procedure names, outermost first.
+;; thread frames] with FRAMES the creators of the sample's frames,
+;; innermost first; folded-lines names them. Quick, so it may run on the
+;; editor thread.
 (def (sampler-stop!) => :list
   (if running?
     (begin
       (##set-heartbeat-interval! previous-interval)
       (##interrupt-vector-set! 2 ##thread-heartbeat!)
       (set! running? #f)
-      (let ((taken samples)
-            ;; ##procedure-name searches for a procedure's name, so each
-            ;; creator is named once, as gxprof does.
-            (names (make-hash-table-eq)))
+      (let (taken samples)
         (set! samples [])
-        (map (lambda ((sample : :list))
-               [(car sample) (cadr sample)
-                (reverse (map (lambda (creator)
-                                (or (hash-get names creator)
-                                    (let (name (frame-name creator))
-                                      (hash-put! names creator name)
-                                      name)))
-                              (caddr sample)))])
-             (reverse taken))))
+        (reverse taken)))
     []))
 
 ;; The heartbeat handler: take a sample, then preempt as usual.
@@ -100,9 +91,17 @@ prelude: :gerbil/core
 
 ;; SAMPLES, as sampler-stop! returns them, as folded stacks: one line per
 ;; distinct stack, "label;thread;outermost;...;innermost count", the most
-;; frequent first.
+;; frequent first. ##procedure-name searches for a procedure's name, so
+;; each creator is named once, as gxprof does. It takes a while for a long
+;; run, so the profiler calls it off the editor thread.
 (def (folded-lines (samples : :list)) => :list
-  (let (counts (make-hash-table))
+  (let ((counts (make-hash-table))
+        (names (make-hash-table-eq)))
+    (def (name (creator : :t)) => :string
+      (or (hash-get names creator)
+          (let (text (frame-name creator))
+            (hash-put! names creator text)
+            text)))
     (for-each (lambda ((sample : :list))
                 (let (stack (string-join
                              (map folded-frame
@@ -111,7 +110,7 @@ prelude: :gerbil/core
                                            (cond ((symbol? thread) (symbol->string thread))
                                                  ((string? thread) thread)
                                                  (else "thread")))
-                                         (caddr sample)))
+                                         (reverse (map name (caddr sample)))))
                              ";"))
                   (hash-update! counts stack (lambda (n) (fx1+ n)) 0)))
               samples)
