@@ -24,11 +24,30 @@
       (let (runs (vector (vector 0 2 "ab" "" #f) (vector 4 2 "cd" "terminal-bold" #f)))
         (check (row-sxml runs #f) => '("ab" "  " (span (@ (class "terminal-run terminal-bold")) "cd")))
         (check (row-sxml runs (vector 1 'block #f))
-               => '((span "a" (span (@ (class "terminal-cursor terminal-cursor-block")) "b")) "  "
-                    (span (@ (class "terminal-run terminal-bold")) "cd")))
+               => '((span "a" (span (@ (class "terminal-cell terminal-cell-1 terminal-cursor terminal-cursor-block")) "b"))
+                    "  " (span (@ (class "terminal-run terminal-bold")) "cd")))
         (check (row-sxml runs (vector 8 'bar #t))
                => '("ab" "  " (span (@ (class "terminal-run terminal-bold")) "cd") "  "
-                    (span (@ (class "terminal-cursor terminal-cursor-bar terminal-cursor-blink")) " ")))))
+                    (span (@ (class "terminal-cell terminal-cell-1 terminal-cursor terminal-cursor-bar terminal-cursor-blink"))
+                          " ")))))
+
+    ;; btop's columns drifted: braille and box drawing come from a fallback
+    ;; font with other widths unless each such cell is sized on the grid.
+    (test-case "every grapheme outside ASCII is a cell as wide as libghostty says"
+      (let* ((term (make-terminal 20 4))
+             (row (begin (terminal-write! term (string->utf8 "a\x28ff;\x4e2d;e\x301;\x2502;z\r\n"))
+                         (vector-ref (terminal-copy-rows term 0 1) 0))))
+        (check (row-sxml (row-runs row) #f)
+               => '((span "a"
+                          (span (@ (class "terminal-cell terminal-cell-1")) "\x28ff;")
+                          (span (@ (class "terminal-cell terminal-cell-2")) "\x4e2d;")
+                          (span (@ (class "terminal-cell terminal-cell-1")) "e\x301;")
+                          (span (@ (class "terminal-cell terminal-cell-1")) "\x2502;")
+                          "z"))))
+      (check (row-sxml (vector (vector 0 3 "\x4e2d;x" "terminal-bold" #f)) (vector 0 'block #f))
+             => '((span (@ (class "terminal-run terminal-bold"))
+                        (span (@ (class "terminal-cell terminal-cell-2 terminal-cursor terminal-cursor-block")) "\x4e2d;")
+                        "x"))))
 
     (test-case "a folder report names a local folder"
       (check (parse-directory-report "file://myhost/home/me/a%20b" "myhost") => "/home/me/a b")

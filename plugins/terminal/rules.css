@@ -31,11 +31,29 @@
   pointer-events: none;
 }
 
+/* A run fills its row's whole height, so its background leaves no gap
+   between rows. */
 :where(.terminal-run) {
+  display: inline-block;
+  vertical-align: top;
+  block-size: 1lh;
   color: var(--terminal-run-fg, var(--terminal-foreground));
   background-color: var(--terminal-run-bg, transparent);
   text-decoration-color: var(--terminal-run-underline-color, currentColor);
 }
+
+/* A grapheme outside ASCII is exactly the cells libghostty gives it,
+   whichever font draws it: a glyph the terminal's font lacks (braille,
+   box drawing, icons) comes from a fallback font with other widths.
+   1ch is a cell of the terminal's monospace font. */
+:where(.terminal-cell) {
+  display: inline-block;
+  vertical-align: top;
+  block-size: 1lh;
+  text-decoration: inherit;
+}
+:where(.terminal-cell-1) { inline-size: 1ch; }
+:where(.terminal-cell-2) { inline-size: 2ch; }
 
 :where(.terminal-bold) { font-weight: bold; }
 :where(.terminal-italic) { font-style: italic; }

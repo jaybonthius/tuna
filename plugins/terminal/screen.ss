@@ -111,15 +111,61 @@ prelude: :gerbil/core
       (lp (fx1+ i))
       (substring text 0 (fxmin i (string-length text))))))
 
-(def (run-element (classes : :string) (style :? :string) (body : :list)) => :t
-  (if (and (string-empty? classes) (not style))
-    (if (and (pair? body) (null? (cdr body))) (car body) `(span ,@body))
-    `(span (@ (class ,(string-append "terminal-run " classes)) ,@(if style [['style style]] [])) ,@body)))
+;; The class sizing a cell that holds GRAPHEME to its cells on the grid:
+;; terminal-cell-1 or terminal-cell-2.
+(def (cell-class (grapheme : :string)) => :string
+  (if (and (fx> (string-length grapheme) 0) (fx= 2 (char-cells (string-ref grapheme 0))))
+    "terminal-cell terminal-cell-2"
+    "terminal-cell terminal-cell-1"))
 
+;; TEXT, part of a row, as SXML that keeps the cell grid whichever font
+;; draws a glyph: runs of ASCII stay text, which the terminal's monospace
+;; font draws one cell each; every other grapheme is a span exactly as
+;; wide as the cells libghostty gives it, since a glyph missing from that
+;; font (braille, box drawing, icons) comes from another font with other
+;; widths.
+(def (grid-pieces (text : :string)) => :list
+  (let ((size (string-length text))
+        (ascii? (lambda (i) (fx< (char->integer (string-ref text i)) #x80))))
+    (def (cell (i : :fixnum) (out : :list)) => :list
+      (let (grapheme (first-cell (substring text i size)))
+        (lp (fx+ i (string-length grapheme)) (cons `(span (@ (class ,(cell-class grapheme))) ,grapheme) out))))
+    (def (lp (i : :fixnum) (out : :list)) => :list
+      (cond
+       ((fx= i size) (reverse out))
+       ((ascii? i)
+        (let ascii ((j (fx1+ i)))
+          (cond
+           ((and (fx< j size) (ascii? j)) (ascii (fx1+ j)))
+           ;; A combining mark after it: the last ASCII character and
+           ;; its marks are one grapheme.
+           ((and (fx< j size) (fx= 0 (char-cells (string-ref text j))))
+            (cell (fx1- j) (if (fx> (fx1- j) i) (cons (substring text i (fx1- j)) out) out)))
+           (else (lp j (cons (substring text i j) out))))))
+       (else (cell i out))))
+    (lp 0 [])))
+
+;; BODY, strings and elements, with each string kept on the grid.
+(def (grid-body (body : :list)) => :list
+  (let lp ((body body) (out []))
+    (match body
+      ([] (reverse out))
+      ([(? string? piece) . more] (lp more (append (reverse (grid-pieces piece)) out)))
+      ([piece . more] (lp more (cons piece out))))))
+
+(def (run-element (classes : :string) (style :? :string) (body : :list)) => :t
+  (let (body (grid-body body))
+    (if (and (string-empty? classes) (not style))
+      (if (and (pair? body) (null? (cdr body)) (string? (car body))) (car body) `(span ,@body))
+      `(span (@ (class ,(string-append "terminal-run " classes)) ,@(if style [['style style]] [])) ,@body))))
+
+;; The cursor over TEXT, one grapheme, sized to its cells like any cell.
 (def (cursor-element (cursor : :vector) (text : :string)) => :t
-  `(span (@ (class ,(string-append "terminal-cursor terminal-cursor-" (symbol->string (vector-ref cursor 1))
-                                   (if (vector-ref cursor 2) " terminal-cursor-blink" ""))))
-         ,(if (string-empty? text) " " text)))
+  (let (text (if (string-empty? text) " " text))
+    `(span (@ (class ,(string-append (cell-class text) " terminal-cursor terminal-cursor-"
+                                     (symbol->string (vector-ref cursor 1))
+                                     (if (vector-ref cursor 2) " terminal-cursor-blink" ""))))
+           ,text)))
 
 ;; The row of RUNS, with CURSOR (#(COLUMN STYLE BLINKING?) or #f) drawn
 ;; in it, as SXML: each run a span, blank columns between runs spaces.
