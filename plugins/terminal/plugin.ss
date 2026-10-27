@@ -144,7 +144,6 @@
         terminal-status-line-format
         terminal-enable-osc52
         terminal-paste-protection
-        terminal-confirm-close-tab
         terminal-enable-url-detection
         terminal-enable-file-detection
         terminal-readonly-fast-exit
@@ -224,8 +223,6 @@
   "Whether a terminal's shell (bash, zsh or fish) starts with Tuna's shell integration, which reports its folder (OSC 7) and marks its prompts and commands (OSC 133), without changes to its startup files (ghostel-shell-integration).")
 (defsetting terminal-shell-integration-title #t
   "Whether Tuna's bash and zsh integration set the title, to the folder at the prompt and the command while it runs, as Ghostty's title feature does (fish sets its own). ghostel's integration leaves the title to the shell.")
-(defsetting terminal-confirm-close-tab #t
-  "Whether closing a plain browser tab asks first while its selected view shows a terminal whose program runs, since C-w and other keys close tabs there. An installed app is never asked.")
 (defsetting terminal-enable-url-detection #t
   "Whether plain http(s) URLs in a terminal's output are links (ghostel-enable-url-detection).")
 (defsetting terminal-enable-file-detection #t
@@ -1770,14 +1767,9 @@
       "select")
      (else ""))))
 
-;; TERM's root's attributes for its page script: its mouse mode, and
-;; whether closing a plain browser tab showing it asks first.
+;; TERM's root's attributes for its page script: its mouse mode.
 (def (refresh-root-attributes! (self : terminals-state) (term : live-terminal)) => :void
-  (set-node-attribute! term.root 'mouse (mouse-mode term))
-  (set-node-attribute! term.root 'confirm-close
-                       (and (not (terminal-exit-status term))
-                            (buffer-local-value terminal-confirm-close-tab (terminal-buffer term))
-                            #t)))
+  (set-node-attribute! term.root 'mouse (mouse-mode term)))
 
 (def (fact (facts : :t) (key : :string)) => :t
   (and (hash-table? facts) (hash-get facts key)))
@@ -2380,8 +2372,7 @@
   `(div (@ (class ,(if (eq? (node-attribute n 'screen) 'alternate) "terminal terminal-alternate" "terminal"))
            (data-terminal ,(node-attribute n 'id))
            (data-size ,(or (node-attribute n 'size) ""))
-           (data-mouse ,(or (node-attribute n 'mouse) ""))
-           ,@(if (node-attribute n 'confirm-close) '((data-confirm-close "")) []))
+           (data-mouse ,(or (node-attribute n 'mouse) "")))
         (div (@ (class "terminal-row terminal-measure") (aria-hidden "true")) "MMMMMMMMMM")
         ,@children))
 

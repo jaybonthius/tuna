@@ -398,13 +398,3 @@ action({
     if (typeof uri === "string" && /^https?:\/\//.test(uri)) window.open(uri, "_blank", "noopener,noreferrer");
   },
 });
-
-// Closing a plain browser tab asks first while it shows a live terminal
-// in the selected view (data-confirm-close): Ctrl-W reaches no program in
-// a tab. An installed app (display-mode: standalone) gets Ctrl-W itself.
-window.addEventListener("beforeunload", (evt) => {
-  if (matchMedia("(display-mode: standalone)").matches) return;
-  if (document.querySelector(".view[data-selected] [data-terminal][data-confirm-close]") === null) return;
-  evt.preventDefault();
-  evt.returnValue = "";
-});
