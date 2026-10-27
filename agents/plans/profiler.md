@@ -2,6 +2,8 @@
 
 Brief: [`docs/briefs/2026-10-profiler.md`](../../docs/briefs/2026-10-profiler.md) (decided 2026-10-12; resumed 2026-10-27 because the editor lags). Research: [`agents/research/profiling/`](../research/profiling/), especially `01`–`03` (2026-10-27) and `racket-profiler-extraction-research.md`. ADRs 1, 2, 3, 7, 12, 17.
 
+**Approved 2026-10-27 (owner): build stages 1–3.**
+
 **Purpose now:** let the agents find what makes Tuna lag. Profiling views inside Tuna (Koyo-style) come later and will read the same records.
 
 ## Design
@@ -38,7 +40,6 @@ Brief: [`docs/briefs/2026-10-profiler.md`](../../docs/briefs/2026-10-profiler.md
    The kernel does not grow.
 2. **The `profiler` plugin.** Span trees, the JSON-lines file, and `M-x profiler-mode`.
 3. **The sampler.** `M-x profiler-start` / `profiler-stop`, copied from Gerbil's `gxprof`. Each sample is tagged with the current input item, so the two tools line up. A test fails loudly if the Gambit internals it uses change.
-4. **Find the lag.** Profile typing, scrolling a large file, terminal output and several tabs, and report where the time goes.
-5. **Fix it.** One fix at a time, each in the plugin that owns the slow part.
+4. **Find the lag, together with the owner** (owner, 2026-10-27: build the profiling first; no lag analysis or fixes by the implementer).
 
 **Not now:** profiling views inside Tuna, and tracking performance across builds.
