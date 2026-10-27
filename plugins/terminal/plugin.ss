@@ -1374,6 +1374,19 @@
               (when (and mark (not (fx= mark point)) (service-there? editing-service))
                 (set-temporary-region! mark)))))))))
 
+;; Enter copy mode and move point to the next or previous link
+;; (ghostel-next-hyperlink), wrapping around.
+(def (goto-hyperlink! (self : terminals-state) (term : live-terminal) (direction : :symbol)) => :void
+  (let* ((state (enter-copy-mode! self term))
+         (starts (map copy-link-start (copy-text-links (copy-state-copy state))))
+         (here (point))
+         (target (if (eq? direction 'next)
+                   (or (find (cut fx> <> here) starts) (and (pair? starts) (car starts)))
+                   (or (find (cut fx< <> here) (reverse starts)) (and (pair? starts) (last starts))))))
+    (if target
+      (goto-char target)
+      (message "No links in this terminal"))))
+
 ;;; Exits and kills
 
 (def (program-ended! (self : terminals-state) (term : live-terminal) (status : :fixnum)) => :void
@@ -1838,6 +1851,10 @@
       (let* ((term (this-terminal self))
              (state (live-terminal-copy term)))
         (when state (goto-char (cursor-copy-position term (copy-state-copy state) (copy-state-first state))))))
+    (define-command ctx (terminal-next-hyperlink) "Enter copy mode and move to the next link, from the start after the last."
+      (goto-hyperlink! self (this-terminal self) 'next))
+    (define-command ctx (terminal-previous-hyperlink) "Enter copy mode and move to the link before point, from the end after the first."
+      (goto-hyperlink! self (this-terminal self) 'previous))
     (define-command ctx (terminal-set-mark) "Enter copy mode, as terminal-mark-activation-input-mode says, and set the mark at the cursor."
       (let (term (this-terminal self))
         (when (and (buffer-local-value terminal-mark-activation-input-mode (terminal-buffer term))
@@ -1890,7 +1907,8 @@
                   ("C-c C-q" . terminal-send-next-key) ("C-c C-y" . terminal-yank)
                   ("C-c C-j" . terminal-semi-char-mode) ("C-c M-d" . terminal-char-mode)
                   ("C-y" . terminal-yank) ("S-<insert>" . terminal-yank) ("M-y" . terminal-yank-pop)
-                  ("<paste>" . terminal-paste) ("C-c C-t" . terminal-copy-mode)))
+                  ("<paste>" . terminal-paste) ("C-c C-t" . terminal-copy-mode)
+                  ("C-c C-n" . terminal-next-hyperlink) ("C-c C-p" . terminal-previous-hyperlink)))
       (unless (member "C-SPC" exceptions) (bind self.semi-char "C-SPC" 'terminal-set-mark))
       ;; Copy and line mode: the C-c commands (ghostel-mode-map's), then
       ;; copy mode's own keys.
@@ -1899,7 +1917,8 @@
                             '(("C-c C-c" . terminal-send-C-c) ("C-c C-z" . terminal-send-C-z)
                               ("C-c C-\\" . terminal-send-C-backslash) ("C-c C-d" . terminal-send-C-d)
                               ("C-c C-t" . terminal-copy-mode) ("C-c C-j" . terminal-semi-char-mode)
-                              ("C-c M-d" . terminal-char-mode) ("C-c C-l" . terminal-line-mode))))
+                              ("C-c M-d" . terminal-char-mode) ("C-c C-l" . terminal-line-mode)
+                              ("C-c C-n" . terminal-next-hyperlink) ("C-c C-p" . terminal-previous-hyperlink))))
                 ;; The input's own map too: its C-c C-c would hide the
                 ;; root's other C-c keys.
                 [self.copy-map self.copy-fast-map self.line-root-map self.line-map])

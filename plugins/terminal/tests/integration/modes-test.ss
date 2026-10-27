@@ -64,6 +64,13 @@
         (check (screen-has? "*terminal*" "$ ") => #t)
         (thunk))))))
 
+;; How many shell prompts the screen shows.
+(def (prompt-count) => :fixnum
+  (let (text (screen-text "*terminal*"))
+    (let lp ((from 0) (n 0))
+      (let (at (string-contains text "$ " from))
+        (if at (lp (+ at 2) (+ n 1)) n)))))
+
 (def (run! (command : :string)) => :void
   (paste command)
   (press "RET"))
@@ -126,8 +133,11 @@
          (check (screen-has? "*terminal*" "after-reset") => #t)
          (type! "x" "y" "z")
          (check (screen-has? "*terminal*" "xyz") => #t)
-         (on-editor (lambda () (call-command 'terminal-line-mode-interrupt)))
-         (check (wait-for (lambda () (equal? (focused-text) ""))) => #t)
+         (let (prompts (prompt-count))
+           (on-editor (lambda () (call-command 'terminal-line-mode-interrupt)))
+           (check (wait-for (lambda () (equal? (focused-text) ""))) => #t)
+           ;; The shell's new prompt, before typing at it.
+           (check (wait-for (lambda () (> (prompt-count) prompts))) => #t))
          ;; Leaving hands the line to the program as typed.
          (type! "a" "b" "c" "C-c" "C-j")
          (check (wait-for (lambda () (not (string-contains (status) ":Line")))) => #t)
@@ -187,4 +197,11 @@
          (post-to-page-address "link"
                                (string-append "{\"terminal\":\"" (root-attribute 'id)
                                               "\",\"uri\":\"https://example.com/x\"}"))
-         (check (wait-for (lambda () (member ["terminalOpen" "https://example.com/x"] (page-instructions)))) ? values))))))
+         (check (wait-for (lambda () (member ["terminalOpen" "https://example.com/x"] (page-instructions)))) ? values)
+         ;; C-c C-n goes to a link in copy mode.
+         (type! "C-c" "C-n")
+         (check (wait-for in-copy-mode?) => #t)
+         (check (on-editor (lambda ()
+                             (let (t (current-text))
+                               (text-substring t (point) (fxmin (fx1+ (text-size t)) (fx+ (point) 21))))))
+                => "https://example.com/x"))))))
