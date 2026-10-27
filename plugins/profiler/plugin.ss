@@ -26,7 +26,6 @@
         :tuna/configuration
         :tuna/lib/plugin-options
         :tuna/lib/jobs
-        (only-in :tuna/lib/background off-thread)
         :tuna/plugins/clients/contract
         :tuna/plugins/commands/contract
         :tuna/plugins/keys/contract
@@ -265,14 +264,17 @@
       (string-append "Profiler on: span trees go to " (profile-folder)))))
 
 ;; Write SAMPLES, as sampler-stop! returns them, to a new samples file in
-;; FOLDER and return its path. Slow for a long run: never call it on the
-;; editor thread.
+;; FOLDER and return its path. The file appears whole: it is written under
+;; another name first. Slow for a long run: never call it on the editor
+;; thread.
 (def (write-samples (samples : :list) (folder : :string)) => :string
-  (let (path (new-profile-path folder "samples" ".folded"))
-    (call-with-output-file path
+  (let* ((path (new-profile-path folder "samples" ".folded"))
+         (partial (string-append path ".part")))
+    (call-with-output-file partial
       (lambda (port)
         (for-each (lambda ((line : :string)) (display line port) (newline port))
                   (folded-lines samples))))
+    (rename-file partial path)
     path))
 
 (defplugin (profiler-commands ctx)
@@ -295,13 +297,16 @@
       (begin
         (sampler-start! (/ (plugin-option profiler 'sample-interval) 1000.) current-item-label)
         (message "Sampling call stacks; M-x profiler-stop writes them"))))
-  ;; The samples are written off the editor thread; the command waits
-  ;; there (off-thread) while the editor goes on.
-  (define-command ctx (profiler-stop) "Stop sampling call stacks, and write them to the profile folder."
-    (if (sampler-running?)
-      (let (samples (sampler-stop!))
-        (message "Writing samples…")
-        (message (string-append "Samples written to "
-                                (off-thread (lambda ((folder : :string)) (write-samples samples folder))
-                                            (profile-folder)))))
-      (message "The sampler is not running"))))
+  ;; The command hands the samples to a job and returns at once: naming,
+  ;; folding and writing them run off the editor thread, and the job's
+  ;; result, the file's path, is shown when it is done.
+  (let (jobs (new-job-group ctx))
+    (define-command ctx (profiler-stop) "Stop sampling call stacks, and write them to the profile folder."
+      (if (sampler-running?)
+        (let (samples (sampler-stop!))
+          (job-group-start! jobs 'samples
+                            input: (profile-folder)
+                            run: (lambda ((folder : :string) cancelled? post!) (write-samples samples folder))
+                            apply: (lambda ((path : :string)) (message (string-append "Samples written to " path))))
+          (message "Writing samples…"))
+        (message "The sampler is not running")))))

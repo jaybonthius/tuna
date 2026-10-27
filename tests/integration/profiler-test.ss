@@ -3,6 +3,9 @@
 ;;; the profile folder once both tabs' pages painted the screen; turning
 ;;; it off leaves no listener on any hook it used.
 (import :std/error
+        (only-in :gerbil/runtime/thread spawn-thread)
+        :std/sync/completion
+        (only-in :tuna/prelude advise!)
         :std/interface
         :std/io
         :std/test
@@ -161,6 +164,20 @@
                   (and (pair? names) names)))
               followed-hooks))
 
+;; Whether NAME is a written samples file (not one still being written).
+(def (samples-file? name)
+  (and (string-prefix? "samples-" name) (string-suffix? ".folded" name)))
+
+;; Holds the profiler's writing of samples until the test opens GATE, so a
+;; test can see profiler-stop return while the write still waits.
+(def gate #f)
+(defplugin (gated-samples ctx)
+  "Makes the profiler's sample writing wait for the test's gate."
+  (advise! ctx (function :tuna/plugins/profiler/plugin write-samples) 'gate
+           around: (lambda (original samples folder)
+                     (completion-wait! gate)
+                     (original samples folder))))
+
 (def profiler-test
   (test-suite "integration: the profiler"
     (test-case "a key typed in one of two tabs is written as one tree, from the key to both tabs' paints"
@@ -260,6 +277,30 @@
               (check (length (profiler-callbacks)) => (length followed-hooks))))
           (finally (set-plugin-options! profiler []))))))
 
+    (test-case "profiler-stop returns at once; the samples are written off the editor thread"
+      (call-with-profile-folder
+       (lambda (folder)
+         (set! gate (make-completion))
+         (set-plugin-options! profiler [(cons 'folder folder)])
+         (try
+          (call-with-fresh-kernel (append profiled-plugins [gated-samples])
+            (lambda ()
+              (start-editor-loop!)
+              (call-on-editor-loop (lambda () (call-command 'profiler-start)))
+              (list-sort < (iota 3000))
+              ;; The command finishes while the write waits at the gate.
+              (let (stopping (spawn-thread (lambda () (call-on-editor-loop (lambda () (call-command 'profiler-stop))))))
+                (check (thread-join! stopping 5 'still-waiting) ? (lambda (v) (not (eq? v 'still-waiting)))))
+              (check (filter samples-file?
+                             (if (file-exists? folder) (directory-files folder) []))
+                     => [])
+              (completion-post! gate #t)
+              (check (wait-for (lambda () (and (file-exists? folder)
+                                               (pair? (filter samples-file?
+                                                              (directory-files folder))))))
+                     => #t)))
+          (finally (set-plugin-options! profiler []))))))
+
     (test-case "profiler-start and profiler-stop write the samples taken, a stack per line"
       (call-with-profile-folder
        (lambda (folder)
@@ -272,7 +313,9 @@
               (let (deadline (+ (time->seconds (current-time)) .3))
                 (let lp () (when (< (time->seconds (current-time)) deadline) (list-sort < (iota 300)) (lp))))
               (call-on-editor-loop (lambda () (call-command 'profiler-stop)))
-              (let (files (filter (cut string-prefix? "samples-" <>) (directory-files folder)))
+              (wait-for (lambda () (and (file-exists? folder)
+                                        (pair? (filter samples-file? (directory-files folder))))))
+              (let (files (filter samples-file? (directory-files folder)))
                 (check (length files) => 1)
                 (let (lines (call-with-input-file (path-expand (car files) folder)
                               (lambda (port) (read-all port read-line))))

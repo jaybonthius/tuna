@@ -73,6 +73,6 @@ Also: `memo-cache-last-drawn` / `-last-reused` (memo library), `html-size` (rend
 - *B, wrap the provider in the kernel:* `service-provider` returns an advised wrapper, covering every caller. Grows the kernel (an ADR 12 amendment and an owner decision).
 Recorded in `TODO.md` as an open design question for the owner.
 
-`profiler-stop` stops the heartbeat sampler on the editor thread (quick) and names, folds and writes the samples off it (`off-thread`), so a long run never stalls the editor; frame names are cached per procedure, as gxprof does.
+`profiler-stop` stops the heartbeat sampler on the editor thread (quick), hands the samples to a job of `profiler-commands`' job group and returns at once; the job names, folds and writes them (under a `.part` name, then renamed) and its result shows the path in the echo area. Frame names are cached per procedure, as gxprof does.
 
 **Limits:** the off-baton hooks (arrival, sent, applied) run on transport threads; a callback that raised there would be removed and reported through Messages off the baton, so the profiler's callbacks never raise. The sampler takes over Gambit's heartbeat interrupt (it chains to `##thread-heartbeat!`, so threads are still preempted); samples are taken only while a thread runs, and labels name the last input item taken.
