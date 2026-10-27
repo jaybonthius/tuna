@@ -104,6 +104,6 @@ Tiers are ordered by what blocks daily use, then by what each piece builds on. W
 - Per-tab frames (each tab its own part of the layout), if wanted; client-side reactivity where it pays off.
 - A settings screen like `M-x customize`, in `configuration`: changes saved as plain data in `custom.ss`, overriding `init.ss`.
 - Compressed screen stream (Brotli or Zstandard streaming compression; needs Gerbil packages the owner builds).
-- The optional [profiler plugin](briefs/2026-10-profiler.md), with service-operation advice.
+- The optional [profiler plugin](briefs/2026-10-profiler.md): *stages 1–3 built 2026-10-27* (span trees per input item from the key to the paint, as JSON lines; call-stack sampling as folded stacks; [how it works](overview.md#profiling)). Next: finding the lag with the owner (stage 4). Service-operation advice is an open question (`TODO.md`); views inside Tuna and benchmark tracking come later.
 - Advice targets that declare their dependency (`TODO.md`).
 - `completing-read` moves into the minibuffer contract, completion becomes the engine plugged into it, and M-x moves to `commands` (`TODO.md`).

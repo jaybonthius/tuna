@@ -1,6 +1,6 @@
 # 1. Typed Gerbil core and open Tuna package functions
 
-Status: accepted (2026-10-11); amended 2026-10-15 after the approved [hooks-and-advice brief](../../docs/briefs/2026-10-hooks-and-advice.md). Open functions, function and command advice, and `describe-advice` are built (2026-10-16). Service-operation advice is deferred to the profiler milestone.
+Status: accepted (2026-10-11); amended 2026-10-15 after the approved [hooks-and-advice brief](../../docs/briefs/2026-10-hooks-and-advice.md). Open functions, function and command advice, and `describe-advice` are built (2026-10-16). Service-operation advice is deferred to the profiler milestone; *2026-10-27:* the profiler's stages 1–3 were built without it (hooks and sampling sufficed), and how to build it is an open owner question (`TODO.md`, the profiler plan's as-built notes).
 
 ## Context
 
