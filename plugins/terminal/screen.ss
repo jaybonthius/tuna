@@ -5,6 +5,9 @@
 ;;; attributes are plain data, its runs and the cursor on it, so setting a
 ;;; row to what it already shows changes nothing and draws nothing.
 ;;;
+;;; A row node's attributes are its NUMBER (fixed), its RUNS, WRAP (whether
+;;; the program's line goes on in the next row) and the CURSOR on it.
+;;;
 ;;; Rows are grouped under block nodes of `block-size` rows, so adding a
 ;;; row, or trimming the oldest, changes one block's children and not a
 ;;; list of every row. A row's number comes from the mirror
@@ -12,9 +15,10 @@
 ;;; (a reflow, a reset, a cleared scrollback) numbers every row anew, and
 ;;; its rows are new nodes.
 ;;;
-;;; A run is a vector #(COLUMN WIDTH TEXT CLASSES STYLE): the cells it
-;;; starts at and covers, its text, its class names and the custom
-;;; properties of its exact colours (#f for none). Palette colours are
+;;; A run is a vector #(COLUMN WIDTH TEXT CLASSES STYLE LINK): the cells it
+;;; starts at and covers, its text, its class names, the custom
+;;; properties of its exact colours (#f for none), and the URI it links
+;;; to, from OSC 8 or found in the text (links.ss), or #f. Palette colours are
 ;;; classes, which the plugin's stylesheet maps to CSS variables, so a
 ;;; theme decides them; a colour the program gave exactly passes through.
 prelude: :gerbil/core
@@ -23,7 +27,7 @@ prelude: :gerbil/core
         :tuna/plugins/buffers/contract
         (only-in :gerbil-libghostty/ghostty
                  styled-row-number styled-row-runs
-                 styled-run-column styled-run-width styled-run-text styled-run-style
+                 styled-run-column styled-run-width styled-run-text styled-run-style styled-run-hyperlink
                  render-style-foreground render-style-background render-style-underline-color
                  render-style-bold? render-style-italic? render-style-faint? render-style-blink?
                  render-style-inverse? render-style-invisible? render-style-strikethrough?
@@ -32,6 +36,7 @@ prelude: :gerbil/core
                  color-rgb-r color-rgb-g color-rgb-b
                  unicode-codepoint-width))
 (export row-runs
+        char-cells
         row-sxml
         block-size
         (struct-out row-store)
@@ -42,7 +47,8 @@ prelude: :gerbil/core
         row-store-row
         row-store-end
         row-store-blocks
-        row-store-last-row)
+        row-store-last-row
+        row-store-set-extra!)
 
 ;;; Rows as values
 
@@ -89,8 +95,13 @@ prelude: :gerbil/core
   (vector-map (lambda (run)
                 (let (parts (style-parts (styled-run-style run)))
                   (vector (styled-run-column run) (styled-run-width run) (styled-run-text run)
-                          (car parts) (cdr parts))))
+                          (car parts) (cdr parts) (hyperlink-text (styled-run-hyperlink run)))))
               (styled-row-runs row)))
+
+;; An OSC 8 link's URI, or #f.
+(def (hyperlink-text (bytes :? :u8vector)) => (Maybe :string)
+  (and bytes (fx> (u8vector-length bytes) 0)
+       (with-catch (lambda (e) #f) (lambda () (utf8->string bytes)))))
 
 ;; The cells character C takes.
 (def (char-cells (c : :char)) => :fixnum
@@ -111,15 +122,61 @@ prelude: :gerbil/core
       (lp (fx1+ i))
       (substring text 0 (fxmin i (string-length text))))))
 
-(def (run-element (classes : :string) (style :? :string) (body : :list)) => :t
-  (if (and (string-empty? classes) (not style))
-    (if (and (pair? body) (null? (cdr body))) (car body) `(span ,@body))
-    `(span (@ (class ,(string-append "terminal-run " classes)) ,@(if style [['style style]] [])) ,@body)))
+;; The class sizing a cell that holds GRAPHEME to its cells on the grid:
+;; terminal-cell-1 or terminal-cell-2.
+(def (cell-class (grapheme : :string)) => :string
+  (if (and (fx> (string-length grapheme) 0) (fx= 2 (char-cells (string-ref grapheme 0))))
+    "terminal-cell terminal-cell-2"
+    "terminal-cell terminal-cell-1"))
 
+;; TEXT, part of a row, as SXML that keeps the cell grid whichever font
+;; draws a glyph: runs of ASCII stay text, which the terminal's monospace
+;; font draws one cell each; every other grapheme is a span exactly as
+;; wide as the cells libghostty gives it, since a glyph missing from that
+;; font (braille, box drawing, icons) comes from another font with other
+;; widths.
+(def (grid-pieces (text : :string)) => :list
+  (let ((size (string-length text))
+        (ascii? (lambda (i) (fx< (char->integer (string-ref text i)) #x80))))
+    (def (cell (i : :fixnum) (out : :list)) => :list
+      (let (grapheme (first-cell (substring text i size)))
+        (lp (fx+ i (string-length grapheme)) (cons `(span (@ (class ,(cell-class grapheme))) ,grapheme) out))))
+    (def (lp (i : :fixnum) (out : :list)) => :list
+      (cond
+       ((fx= i size) (reverse out))
+       ((ascii? i)
+        (let ascii ((j (fx1+ i)))
+          (cond
+           ((and (fx< j size) (ascii? j)) (ascii (fx1+ j)))
+           ;; A combining mark after it: the last ASCII character and
+           ;; its marks are one grapheme.
+           ((and (fx< j size) (fx= 0 (char-cells (string-ref text j))))
+            (cell (fx1- j) (if (fx> (fx1- j) i) (cons (substring text i (fx1- j)) out) out)))
+           (else (lp j (cons (substring text i j) out))))))
+       (else (cell i out))))
+    (lp 0 [])))
+
+;; BODY, strings and elements, with each string kept on the grid.
+(def (grid-body (body : :list)) => :list
+  (let lp ((body body) (out []))
+    (match body
+      ([] (reverse out))
+      ([(? string? piece) . more] (lp more (append (reverse (grid-pieces piece)) out)))
+      ([piece . more] (lp more (cons piece out))))))
+
+(def (run-element (classes : :string) (style :? :string) (body : :list)) => :t
+  (let (body (grid-body body))
+    (if (and (string-empty? classes) (not style))
+      (if (and (pair? body) (null? (cdr body)) (string? (car body))) (car body) `(span ,@body))
+      `(span (@ (class ,(string-append "terminal-run " classes)) ,@(if style [['style style]] [])) ,@body))))
+
+;; The cursor over TEXT, one grapheme, sized to its cells like any cell.
 (def (cursor-element (cursor : :vector) (text : :string)) => :t
-  `(span (@ (class ,(string-append "terminal-cursor terminal-cursor-" (symbol->string (vector-ref cursor 1))
-                                   (if (vector-ref cursor 2) " terminal-cursor-blink" ""))))
-         ,(if (string-empty? text) " " text)))
+  (let (text (if (string-empty? text) " " text))
+    `(span (@ (class ,(string-append (cell-class text) " terminal-cursor terminal-cursor-"
+                                     (symbol->string (vector-ref cursor 1))
+                                     (if (vector-ref cursor 2) " terminal-cursor-blink" ""))))
+           ,text)))
 
 ;; The row of RUNS, with CURSOR (#(COLUMN STYLE BLINKING?) or #f) drawn
 ;; in it, as SXML: each run a span, blank columns between runs spaces.
@@ -138,6 +195,7 @@ prelude: :gerbil/core
                (text (vector-ref run 2))
                (classes (vector-ref run 3))
                (style (vector-ref run 4))
+               (link (and (fx> (vector-length run) 5) (vector-ref run 5)))
                (gap (if (fx> start column) [(make-string (fx- start column) #\space)] []))
                (out (append (reverse gap) out)))
           (if (and at (not drawn?) (fx<= start at) (fx< at (fx+ start width)))
@@ -146,8 +204,20 @@ prelude: :gerbil/core
                    (after (substring (cdr split) (string-length under) (string-length (cdr split))))
                    (body (filter (lambda (part) (not (equal? part "")))
                                  [(car split) (cursor-element cursor under) after])))
-              (lp (fx1+ i) (fx+ start width) (cons (run-element classes style body) out) #t))
-            (lp (fx1+ i) (fx+ start width) (cons (run-element classes style [text]) out) drawn?)))))))
+              (lp (fx1+ i) (fx+ start width) (cons (linked (run-element classes style body) link) out) #t))
+            (lp (fx1+ i) (fx+ start width) (cons (linked (run-element classes style [text]) link) out) drawn?)))))))
+
+;; ELEMENT, a run, as a link to URI when there is one: a web address is an
+;; <a> the browser opens in a new tab; any other the page script hands to
+;; the plugin (data-terminal-link).
+(def (linked (element : :t) (uri :? :string)) => :t
+  (cond
+   ((not uri) element)
+   ((or (string-prefix? "http://" uri) (string-prefix? "https://" uri))
+    `(a (@ (class "terminal-link") (href ,uri) (target "_blank") (rel "noopener noreferrer")
+           (data-terminal-link ,uri))
+        ,element))
+   (else `(span (@ (class "terminal-link") (data-terminal-link ,uri) (title ,uri)) ,element))))
 
 ;;; The rows of one screen as nodes
 
@@ -158,16 +228,33 @@ prelude: :gerbil/core
 ;; (row number divided by block-size) -> its node, holding its rows of
 ;; ROWS. GENERATION is the mirror's numbering they were made in, #f
 ;; before any.
+;; EXTRA is a node shown after one row, (NODE . ROW-NUMBER), or #f: line
+;; mode's input, after the cursor's row.
 (defclass row-store ((generation :? :fixnum)
                      (base       : :integer)
                      (rows       : :vector)
                      (start      : :fixnum)
                      (count      : :fixnum)
-                     (block-nodes : HashTable))
+                     (block-nodes : HashTable)
+                     (extra      :? :pair))
   final: #t)
 
 (def (new-row-store) => row-store
-  (row-store generation: #f base: 0 rows: (make-vector 256 #f) start: 0 count: 0 block-nodes: (make-hash-table-eqv)))
+  (row-store generation: #f base: 0 rows: (make-vector 256 #f) start: 0 count: 0 block-nodes: (make-hash-table-eqv)
+             extra: #f))
+
+;; Show EXTRA-NODE after row NUMBER, or nothing extra with #f.
+(def (row-store-set-extra! (s : row-store) (extra-node :? node) (number :? :integer)) => :void
+  (let ((old s.extra)
+        (new (and extra-node number (cons extra-node number))))
+    (unless (and old new (eq? (car old) (car new)) (= (cdr old) (cdr new)))
+      (set! s.extra new)
+      (when old (refresh-block! s (block-of (cdr old))))
+      (when new
+        ;; A block a new generation replaced may still hold it.
+        (let (parent (node-parent (car new)))
+          (when parent (set-node-children! parent (remq (car new) (node-children parent)))))
+        (refresh-block! s (block-of (cdr new)))))))
 
 ;; Forget every row; rows from now on are numbered in GENERATION, the
 ;; first BASE.
@@ -177,6 +264,7 @@ prelude: :gerbil/core
   (set! s.rows (make-vector 256 #f))
   (set! s.start 0)
   (set! s.count 0)
+  (set! s.extra #f)
   (hash-clear! s.block-nodes))
 
 ;; The number after S's last row.
@@ -199,8 +287,12 @@ prelude: :gerbil/core
 (def (refresh-block! (s : row-store) (b : :integer)) => :void
   (let* ((from (max s.base (* b block-size)))
          (to (min (row-store-end s) (* (+ b 1) block-size)))
+         (extra s.extra)
          (rows (let lp ((n (- to 1)) (out []))
-                 (if (< n from) out (lp (- n 1) (cons (row-store-row s n) out)))))
+                 (if (< n from)
+                   out
+                   (lp (- n 1) (let (out (cons (row-store-row s n) out))
+                                 (if (and extra (= (cdr extra) n)) (cons (car out) (cons (car extra) (cdr out))) out))))))
          (existing (hash-get s.block-nodes b)))
     (cond
      ((null? rows) (hash-remove! s.block-nodes b))
@@ -240,7 +332,8 @@ prelude: :gerbil/core
         (let lp ((n old-end))
           (when (< n end)
             (vector-set! rows (fx+ s.start (- n s.base))
-                         (new-node 'terminal-row attributes: [(cons 'runs #()) (cons 'cursor #f)]))
+                         (new-node 'terminal-row attributes: [(cons 'number n) (cons 'runs #()) (cons 'wrap #f)
+                                                              (cons 'cursor #f)]))
             (lp (+ n 1))))
         (set! s.count count)
         (let lp ((b (block-of old-end)))

@@ -362,6 +362,8 @@ To restyle Tuna:
 - **Use a theme:** a plugin that replaces other plugins' stylesheets. Turning it off restores what it replaced, and your `init.ss` beats any theme. The demo's `theme-terminal` (`C-c T`) is one: flat, monospace, reverse video.
 - **Check:** `M-x describe-stylesheets` lists the page's stylesheets in order, and warns about a replacement for a file its plugin does not add and about any `var(--x)` without a fallback that nothing defines. After editing a file, `M-x reload-stylesheets` reads them again; the browser fetches only the files that changed.
 
+Tuna ships its monospace font, Fira Code Nerd Font (Fira Code with the Nerd Font icons), which the page, code and terminals use: the `stylesheets` plugin's `(stylesheets fonts)` file puts it first in the `--font-mono` token. Replace that file to use another font.
+
 The default look follows the system's light or dark setting, keeps the cursor visible in forced-colours (high contrast) mode, fills a phone's screen above its browser toolbar, and gives tabs, buttons, completion rows and clickable status lines finger-sized targets on touch screens.
 
 ## Files
@@ -412,7 +414,7 @@ Three small additions outside the plugin made this possible: `completing-read` p
 
 ## Terminals
 
-**Status:** stage 2 of the [terminal plan](../agents/plans/terminal.md) built (2026-10-27; brief [a terminal that outlives Tuna](briefs/2026-10-terminal.md), [ADR 18](../agents/adr/0018-terminals-in-helper-processes.md)). Copy mode, the mouse, the clipboard and links (stage 3), prompts and notifications (stage 4), and reboots (stage 5) are still to come.
+**Status:** stages 2 and 3 of the [terminal plan](../agents/plans/terminal.md) built (2026-10-27 and 2026-10-28; brief [a terminal that outlives Tuna](briefs/2026-10-terminal.md), [ADR 18](../agents/adr/0018-terminals-in-helper-processes.md)). Prompts and notifications (stage 4) and reboots (stage 5) are still to come.
 
 `M-x terminal` shows your shell in a buffer named `*terminal*` (`M-x terminal-new` starts another). Full-screen programs such as vim and htop work in it, its scrollback scrolls like any other view, and it follows [ghostel](https://github.com/dakra/ghostel), the Emacs terminal built on the same engine: Ghostty's terminal library, libghostty-vt, through the `gerbil-libghostty` binding.
 
@@ -426,9 +428,21 @@ A concrete case: you run `while true; do date; sleep 1; done` and restart Tuna. 
 
 **Keys.** In semi-char mode, the default, every key goes to the program except the few Tuna keeps (`C-c`, `C-x`, `C-u`, `C-h`, `M-x`, `M-:`, `C-\`; the `keymap-exceptions` option). `C-c C-c`, `C-c C-z`, `C-c C-d` and `C-c C-\` send interrupt, suspend, end of input and quit; `C-y` pastes the newest kill, and the browser's paste key pastes the clipboard, both bracketed when the program asks. `C-q` (or `C-c C-q`) sends the next key whatever it is, the way to send `C-x` or a key the browser keeps. `C-c M-d` switches to char mode, where every key goes to the program and `M-RET` comes back. Keys go through libghostty's key encoder, so a program gets what it asked for (application cursor keys, the Kitty keyboard protocol).
 
-**Colours** are the program's content, not Tuna's styling: the 256 palette colours are CSS variables in the plugin's `tokens.css` (the first 16 a theme's to set), and a colour a program gives exactly passes through on its text.
+**Colours** are the program's content, not Tuna's styling: the 256 palette colours are CSS variables in the plugin's `tokens.css` (the first 16 a theme's to set), and a colour a program gives exactly passes through on its text. The page script reads the colours the theme gives a terminal and tells the server, which passes them to each helper, so a program that asks for the background (vim, Claude Code, Neovim choosing light or dark) gets the theme's answer (`terminal-colors` overrides them). Every character outside ASCII is drawn exactly one or two cells wide, as the terminal engine counts it, whichever font has its glyph, so box drawing, braille graphs (btop) and icons keep their columns.
 
-**For package authors:** the terminal contract has hooks, each with the terminal first: `terminal-title-hook` (the program set its title), `terminal-directory-hook` (it reported its folder, which also becomes the buffer's `default-directory`), `terminal-bell-hook`, and `terminal-exit-hook`. Settings, with ghostel's defaults: `terminal-shell`, `terminal-term` (`xterm-ghostty`, with the terminfo `make` builds), `terminal-environment`, `terminal-max-scrollback` (5 MB), `terminal-timer-delay`, `terminal-adaptive-fps`, `terminal-immediate-redraw-interval`, `terminal-buffer-name`, `terminal-buffer-name-function` (rename by title or folder; off), `terminal-kill-buffer-on-exit`, `terminal-query-before-killing`, `terminal-initial-input-mode`, `terminal-scroll-on-input`, `terminal-ignore-cursor-change`.
+**Copy mode** (`C-c C-t`) freezes the screen so you can move over it, select and copy with Tuna's ordinary keys: the rows, scrollback included, become a read-only text in their place, coloured as before, while output goes on underneath. `M-w` copies the region as the program wrote it (lines it only wrapped are joined), `RET` copies and leaves, and any key that types leaves and goes to the program (`terminal-readonly-fast-exit`). `C-SPC` enters it with the mark at the cursor, and so does pressing and dragging over the rows, a double click, or a click in a terminal you are already in. Why a copy and not the rows themselves: Tuna's editing commands work in one text at a time, and every row is a node of its own.
+
+**Line mode** (`C-c C-l`) lets you edit a command with Tuna's keys before the program sees it: the line you type sits over the prompt, `RET` sends it, `M-p` and `M-n` go through the lines sent. A full-screen program pauses it until it quits.
+
+**The mouse.** A program that asks for the mouse (vim with `:set mouse=a`, htop) gets clicks, drags and the wheel, encoded as it asked; otherwise the wheel scrolls the view. **Links** that programs print (OSC 8), web addresses and `file:line` references to files that exist are underlined: a web link opens in a new browser tab, a file in its buffer at that line; `C-c C-n` and `C-c C-p` go from link to link.
+
+**The clipboard.** `C-y` and the browser's paste key send text as a paste, bracketed when the program asks. A program may copy to the kill ring and your clipboard (OSC 52, for example Neovim or tmux over ssh) only with `terminal-enable-osc52` on, as in ghostel: any output could otherwise replace what you are about to paste. Programs can never read the clipboard.
+
+**Closing the tab.** In a plain browser tab, `Ctrl-W` reaches no program, so closing a tab whose terminal still runs asks first (`terminal-confirm-close-tab`). Installed as an app, Tuna gets those keys and never asks.
+
+The status line shows the program's title after the buffer's name (`terminal-status-line-format`) and the input mode when it is not semi-char.
+
+**For package authors:** the terminal contract has hooks, each with the terminal first: `terminal-title-hook` (the program set its title), `terminal-directory-hook` (it reported its folder, which also becomes the buffer's `default-directory`), `terminal-bell-hook`, and `terminal-exit-hook`. Settings, with ghostel's defaults: `terminal-shell`, `terminal-term` (`xterm-ghostty`, with the terminfo `make` builds), `terminal-environment`, `terminal-max-scrollback` (5 MB), `terminal-timer-delay`, `terminal-adaptive-fps`, `terminal-immediate-redraw-interval`, `terminal-buffer-name`, `terminal-buffer-name-function` (rename by title or folder; off), `terminal-kill-buffer-on-exit`, `terminal-query-before-killing`, `terminal-initial-input-mode` (semi-char, char or line), `terminal-scroll-on-input`, `terminal-ignore-cursor-change`, `terminal-readonly-fast-exit`, `terminal-mark-activation-input-mode`, `terminal-mouse-drag-input-mode`, `terminal-line-mode-history-size`, `terminal-enable-osc52` (off), `terminal-paste-protection` (off), `terminal-enable-url-detection`, `terminal-enable-file-detection`, `terminal-colors`, `terminal-status-line-format`, `terminal-confirm-close-tab`.
 
 ## Where things are saved
 

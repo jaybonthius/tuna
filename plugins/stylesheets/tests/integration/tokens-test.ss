@@ -93,16 +93,25 @@
                        #t)
                   => #t)))))
 
-    (test-case "the plugin adds its variant's file as (stylesheets tokens)"
+    (test-case "the plugin adds its variant's file as (stylesheets tokens), then Tuna's font"
       (call-with-fresh-kernel [stylesheets]
         (lambda ()
           (let (sheets (page-stylesheets))
-            (check (length sheets) => 1)
+            (check (map (lambda (s) [(stylesheet-owner s) (stylesheet-name s)]) sheets)
+                   => '((stylesheets tokens) (stylesheets fonts)))
             (let (s (car sheets))
-              (check [(stylesheet-owner s) (stylesheet-name s)] => '(stylesheets tokens))
               (check (stylesheet-path s) => (path-expand "stellar-default.css" tokens-directory))
               (check (stylesheet-warning s) => #f)
-              (check (stylesheet-text s) => (read-file-string (stylesheet-path s))))))))
+              (check (stylesheet-text s) => (read-file-string (stylesheet-path s))))
+            (let (fonts (cadr sheets))
+              (check (stylesheet-warning fonts) => #f)
+              ;; The monospace token prefers the shipped font, whose files are
+              ;; beside the stylesheet, where the page serves them.
+              (check (and (string-contains (stylesheet-text fonts) "--font-mono:\n    \"FiraCode Nerd Font\"") #t) => #t)
+              (for-each (lambda (file)
+                          (check [file (file-exists? (path-expand file tokens-directory))] => [file #t]))
+                        ["fonts/FiraCodeNerdFont-Regular.woff2" "fonts/FiraCodeNerdFont-Bold.woff2"
+                         "fonts/FiraCodeNerdFont-LICENSE.txt"]))))))
 
     (test-case "the file defines every token plugins may use"
       (let (text (read-file-string (path-expand "stellar-default.css" tokens-directory)))

@@ -18,8 +18,10 @@
 (def folder-count 0)
 
 ;; Call PROC with a new private folder, removed afterwards with what is in
-;; it.
+;; it. Helpers an earlier test run left behind, when it was killed before
+;; it could stop them, are stopped first.
 (def (call-with-test-folder (proc : :procedure)) => :t
+  (stop-orphan-helpers!)
   (set! folder-count (+ folder-count 1))
   (let (folder (string-append "/tmp/tuna-terminal-test-" (number->string (current-process-id))
                               "-" (number->string folder-count)))
@@ -30,6 +32,25 @@
       (for-each (lambda (name) (with-catch void (lambda () (delete-file (path-expand name folder)))))
                 (directory-files folder))
       (with-catch void (lambda () (delete-directory folder)))))))
+
+;; Stop, by its pid, each helper started for a test run whose process is
+;; gone: its command line names /tmp/tuna-terminal-test-PID-N/.
+(def (stop-orphan-helpers!) => :void
+  (for-each
+   (lambda (name)
+     (let (helper (string->number name))
+       (when helper
+         (let* ((cmd (with-catch (lambda (e) #f)
+                                 (lambda () (call-with-input-file (string-append "/proc/" name "/cmdline") read-line))))
+                (prefix "/tmp/tuna-terminal-test-")
+                (at (and (string? cmd) (string-contains cmd "tuna-terminal-helper") (string-contains cmd prefix))))
+           (when at
+             (let* ((rest (substring cmd (+ at (string-length prefix)) (string-length cmd)))
+                    (dash (string-index rest #\-))
+                    (owner (and dash (string->number (substring rest 0 dash)))))
+               (when (and owner (not (pid-alive? owner)))
+                 (kill-pid! helper))))))))
+   (directory-files "/proc")))
 
 (def (pid-alive? (pid : :fixnum)) => :boolean
   (and (fx> pid 0) (file-exists? (string-append "/proc/" (number->string pid)))

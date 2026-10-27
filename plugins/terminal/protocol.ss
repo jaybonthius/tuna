@@ -11,7 +11,8 @@
 ;;; the program's status once it ended; or `refused` with a reason, and
 ;;; closes. Tuna sends `input` (bytes for the program), `resize`, `focus`,
 ;;; `snapshot-request` (answered by `snapshot`, after which output resumes),
-;;; `kill`, and `exit-ack` once it has shown the exit.
+;;; `colors` (the theme's colours, which the helper's terminal answers
+;;; colour queries with), `kill`, and `exit-ack` once it has shown the exit.
 prelude: :gerbil/core
 
 (export protocol-version
@@ -24,10 +25,12 @@ prelude: :gerbil/core
         hello-payload parse-hello
         helper-hello-payload (struct-out helper-hello) parse-helper-hello
         resize-payload (struct-out resize-request) parse-resize
-        exit-payload parse-exit)
+        exit-payload parse-exit
+        (struct-out theme-colors) colors-payload parse-colors)
 
-;; A helper and a plugin with different versions do not talk.
-(def protocol-version 1)
+;; A helper and a plugin with different versions do not talk. Version 2
+;; added `colors`.
+(def protocol-version 2)
 
 ;; The largest payload either side accepts: a snapshot of a terminal with a
 ;; very large scrollback fits.
@@ -35,7 +38,8 @@ prelude: :gerbil/core
 
 (def frame-types
   '((hello . 1) (refused . 2) (snapshot . 3) (output . 4) (exit . 5)
-    (input . 65) (resize . 66) (focus . 67) (snapshot-request . 68) (kill . 69) (exit-ack . 70)))
+    (input . 65) (resize . 66) (focus . 67) (snapshot-request . 68) (kill . 69) (exit-ack . 70)
+    (colors . 71)))
 
 ;; One message: TYPE, a symbol of frame-types, and its PAYLOAD.
 (defstruct frame ((type : :symbol) (payload : :u8vector))
@@ -175,3 +179,55 @@ prelude: :gerbil/core
 
 (def (parse-exit (payload : :u8vector)) => :fixnum
   (if (fx>= (u8vector-length payload) 2) (bytes-u16 payload 0) 255))
+
+;; The theme's colours, each #xRRGGBB or #f for the library's default:
+;; FOREGROUND, BACKGROUND, CURSOR, and PALETTE, a vector of the first
+;; entries of the 256-colour palette (the rest keep their defaults).
+(defstruct theme-colors ((foreground :? :fixnum)
+                            (background :? :fixnum)
+                            (cursor :? :fixnum)
+                            (palette : :vector))
+  final: #t)
+
+(def (rgb-bytes (color : :fixnum)) => :u8vector
+  (u8vector (fxand (fxarithmetic-shift-right color 16) 255) (fxand (fxarithmetic-shift-right color 8) 255)
+            (fxand color 255)))
+
+(def (bytes-rgb (bytes : :u8vector) (at : :fixnum)) => :fixnum
+  (fx+ (fx* 65536 (u8vector-ref bytes at)) (fx* 256 (u8vector-ref bytes (fx1+ at))) (u8vector-ref bytes (fx+ at 2))))
+
+;; A flags byte (1 foreground, 2 background, 4 cursor), each colour given
+;; as three bytes, then the palette's length (two bytes) and its colours.
+(def (colors-payload (c : theme-colors)) => :u8vector
+  (let ((given (filter values [(theme-colors-foreground c) (theme-colors-background c)
+                                (theme-colors-cursor c)]))
+        (palette (theme-colors-palette c)))
+    (apply u8vector-append
+           (u8vector (fxior (if (theme-colors-foreground c) 1 0) (if (theme-colors-background c) 2 0)
+                            (if (theme-colors-cursor c) 4 0)))
+           (append (map rgb-bytes given)
+                   [(u16-bytes (vector-length palette))]
+                   (map rgb-bytes (vector->list palette))))))
+
+;; The colours a payload names, or #f when it is too short.
+(def (parse-colors (payload : :u8vector)) => (Maybe theme-colors)
+  (let ((size (u8vector-length payload)))
+    (and (fx> size 0)
+         (let* ((flags (u8vector-ref payload 0))
+                (at 1)
+                (take (lambda (bit)
+                        (and (fx> (fxand flags bit) 0) (fx<= (fx+ at 3) size)
+                             (let (color (bytes-rgb payload at)) (set! at (fx+ at 3)) color))))
+                (foreground (take 1))
+                (background (take 2))
+                (cursor (take 4)))
+           (and (fx<= (fx+ at 2) size)
+                (let ((count (bytes-u16 payload at)))
+                  (and (fx<= (fx+ at 2 (fx* 3 count)) size) (fx<= count 256)
+                       (make-theme-colors foreground background cursor
+                                             (let (v (make-vector count 0))
+                                               (let lp ((i 0))
+                                                 (when (fx< i count)
+                                                   (vector-set! v i (bytes-rgb payload (fx+ at 2 (fx* 3 i))))
+                                                   (lp (fx1+ i))))
+                                               v)))))))))

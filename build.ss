@@ -63,6 +63,8 @@
      "contract"
      "keys"
      "screen"
+     "copy-text"
+     "links"
      "plugin"
      ;; The helper links libghostty-vt where gerbil-libghostty staged it,
      ;; by a path relative to the program.

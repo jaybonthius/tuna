@@ -14,6 +14,9 @@
   --terminal-inactive-cursor-outline: var(--neutral-7, GrayText);
   --terminal-faint-opacity: 0.5;
   --terminal-cursor-blink-duration: 1s;
+  --terminal-link-decoration: underline;
+  --terminal-selection-background: var(--primary-3, Highlight);
+  --terminal-line-input-background: var(--terminal-background);
   --terminal-color-0: #1d1f21; /* black */
   --terminal-color-1: #cc6666; /* red */
   --terminal-color-2: #b5bd68; /* green */

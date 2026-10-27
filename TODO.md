@@ -24,9 +24,13 @@
 - [ ] A helper killed by a signal leaves its socket; the terminal then comes back as "[Terminal helper gone]". Clean up stale sockets, and offer to start a new shell there (with stage 5's revive).
 - [ ] Removing the `terminals` plugin from `init.ss` leaves its helpers running with no one to see their programs exit. Decide whether turning the plugin off for good should end them, and how that differs from a reload.
 - [ ] Each resize sends a whole snapshot and copies every row again; with a full 5 MB scrollback that is a noticeable pause per resize. Consider resizing the mirror itself at a marked point in the stream instead.
-- [ ] Colour queries (OSC 4/10/11) and the colour-scheme report go unanswered: the helper does not know the theme. Tell the helper the theme's colours.
 - [ ] Rows of a hidden terminal are still copied (ghostel defers until shown).
-- [ ] The title is not in the status line (ghostel's `ghostel-buffer-identification-format`): needs a status-line part.
+- [ ] Copy mode shows only the rows' palette foreground colours and links (one face per character): no bold, backgrounds, inverse or exact colours, and fallback-font glyphs are not held to the cell grid there.
+- [ ] OSC 52's browser copy is best effort: Firefox writes only soon after a key, Safari is expected to refuse. Offer "press a key to copy" when the browser refuses (research 04, C.4).
+- [ ] Line mode adopts nothing already typed at the prompt and has no `TAB` completion (ghostel adopts with OSC 133 input marks and completes through capfs): with shell integration (stage 4) and completion at point.
+- [ ] Tuna has no isearch, so "isearch enters copy mode" and ghostel's point-leave input mode are not built.
+- [ ] An error inside a terminal's redraw (the reader job's apply) is swallowed silently; report it once in the echo area.
+- [ ] Building after editing a plugin module can fail in `tuna/boot`, which expands `starter/init.ss` and loads the changed plugin from source against older compiled modules ("unresolved type"); compiling the changed modules with `gxc -O -d .gerbil/lib` first works around it.
 
 ### Error recovery: the editor must never become unusable (owner priority, 2026-10-23)
 
