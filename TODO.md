@@ -14,7 +14,7 @@
 
 - [ ] **gerbil-datastar's "header predicate is strict" test fails** (`httpd-test.ss`, found 2026-10-22 during drawing stage 4): it fails the same way at `a0d020c`, before stage 4's changes. Gerbil's HTTP server trims header values, so the test's expectation cannot hold. Fix the test or the predicate, or mark it as expected to fail.
 
-- [ ] **gerbil-libghostty: `gerbil pkg build` leaves an untracked `manifest.ss`** in the binding's checkout (found in terminal stage 2, `e2f51ca`). Ignore it in the binding's `.gitignore`.
+- [x] **gerbil-libghostty: `gerbil pkg build` leaves an untracked `manifest.ss`** (ignored 2026-10-27) in the binding's checkout (found in terminal stage 2, `e2f51ca`). Ignore it in the binding's `.gitignore`.
 - [ ] **gerbil-libghostty: a statically linked program needs the binding's private `native/*.h`** (the terminal helper's build passes `-I` to the binding's source through `.gerbil/pkg/gerbil-libghostty`). Stage those headers with the library, or document the flags a static program needs.
 
 ## Tuna
