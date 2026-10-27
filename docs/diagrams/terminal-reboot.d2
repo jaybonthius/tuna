@@ -1,0 +1,21 @@
+# What happens to a terminal when the machine reboots? (built 2026-10-28, terminal stage 5)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+helper: "Terminal helper"
+disk: "Tuna's state folder\n(owner-only files)"
+tuna: "Tuna, after the reboot"
+fresh: "New helper and shell"
+
+helper -> disk: "1. saves its screen every 30 s while it changes"
+helper -> disk: "2. shutdown: asked to end, saves it once more, ends"
+tuna -> tuna: "3. starts; its session lists the terminal,\nwhose helper is gone"
+disk -> tuna: "4. the saved screen"
+tuna -> tuna: "5. shows it, a \"Restored\" line below it"
+tuna -> fresh: "6. starts a new shell in the saved folder\n(at once, or on RET); nothing runs again"
+fresh -> tuna: "7. the new prompt, below the old screen"
