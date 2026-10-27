@@ -47,6 +47,12 @@
     ("plugins/scrolling" "plugin")
     ("plugins/configuration" "plugin")
     ("plugins/proced" "plugin")
+    ("plugins/web" "contract" "embed" "proxy"
+     (gxc: "plugin"
+           (extra-inputs: ,(map (cut string-append "web/" <>)
+                               (directory-files "plugins/web/web")))))
+    ("plugins/files" "contract" "encoding" "line-diff" "watcher" "local-disk" "picker" "plugin")
+    ("plugins/autosave" "plugin")
     ("plugins/terminal"
      "io"
      "protocol"
@@ -62,12 +68,6 @@
                                          " -I" (path-expand "include" libghostty-native))
            "-ld-options" ,(string-append "-L" (path-expand "lib" libghostty-native)
                                          " -lghostty-vt -Wl,-rpath,$ORIGIN/../lib/gerbil-libghostty/native/lib")))
-    ("plugins/web" "contract" "embed" "proxy"
-     (gxc: "plugin"
-           (extra-inputs: ,(map (cut string-append "web/" <>)
-                               (directory-files "plugins/web/web")))))
-    ("plugins/files" "contract" "encoding" "line-diff" "watcher" "local-disk" "picker" "plugin")
-    ("plugins/autosave" "plugin")
     ("plugins/microphone" "contract" "plugin")
     ("plugins/voice" "contract" "spoken" "plugin")))
 
