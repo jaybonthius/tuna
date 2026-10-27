@@ -1,5 +1,7 @@
 # Plan: profiler
 
+**On hold (2026-10-27, owner): no design decisions until the prior-art research is in** (`agents/research/profiling/01-language-runtime-profilers.md`, `02-interactive-latency-profiling.md`, `03-formats-viewers-tracking.md`). Everything below, including where results are stored, is a draft to revise from that research.
+
 Brief (decided 2026-10-12; deferred by the owner 2026-10-16; resumed 2026-10-27 because the editor lags): [`docs/briefs/2026-10-profiler.md`](../../docs/briefs/2026-10-profiler.md). Research: [`agents/research/profiling/`](../research/profiling/), above all `racket-profiler-extraction-research.md` (how the Racket profiler leaked into the core; never again). ADRs 1 (advice), 2 (receipts), 3 (jobs), 7 (screens and `/applied`), 12 (small kernel), 17 (memo and sources).
 
 ## Invariants
