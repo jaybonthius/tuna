@@ -35,7 +35,6 @@
     ("plugins/completion-list" "plugin")
     ("plugins/view-commands" "plugin")
     ("plugins/scrolling" "plugin")
-    ("plugins/autosave" "plugin")
     ("plugins/configuration" "plugin")
     ("plugins/proced" "plugin")
     ("plugins/web" "contract" "embed" "proxy"
@@ -43,6 +42,7 @@
            (extra-inputs: ,(map (cut string-append "web/" <>)
                                (directory-files "plugins/web/web")))))
     ("plugins/files" "contract" "encoding" "line-diff" "watcher" "local-disk" "picker" "plugin")
+    ("plugins/autosave" "plugin")
     ("plugins/microphone" "contract" "plugin")
     ("plugins/voice" "contract" "spoken" "plugin")))
 

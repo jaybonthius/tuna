@@ -1,11 +1,14 @@
 ;;; The files plugin through its keys: the picker (C-x C-f) with its ~/
-;;; key, saving (C-x C-s, C-x s), the unsaved marker in the status
-;;; line, C-x k asking before killing an unsaved file buffer, saving over a
-;;; file another program changed, and revert-buffer.
+;;; key, saving (C-x C-s, C-x s; C-x C-s asking for a file in a buffer
+;;; without one), the unsaved marker in the status
+;;; line (cleared by undoing back to the saved text), C-x k asking before
+;;; killing an unsaved file buffer, saving over a file another program
+;;; changed (one key: o or r), and revert-buffer.
 prelude: :gerbil/core
 (import :std/test
         :tuna/kernel
         :tuna/plugins/buffers/contract
+        :tuna/plugins/layout/contract
         :tuna/plugins/renderer/contract
         :tuna/plugins/minibuffer/contract
         :tuna/plugins/completion/contract
@@ -73,7 +76,7 @@ prelude: :gerbil/core
   (put-string! (string-append folder "a.txt") "other\n")
   (check (eventually (lambda () (equal? (current-message) "a.txt changed on disk"))) => #t))
 
-(def conflict-question "a.txt changed on disk: overwrite with yours, or reload theirs? ")
+(def conflict-question "a.txt changed on disk; save anyway? [o]verwrite with yours, [r]eload theirs, C-g cancels ")
 
 (def (type-string! (s : :string)) => :void
   (for-each (lambda (c) (press (if (char=? c #\space) "SPC" (string c)))) (string->list s)))
@@ -130,6 +133,44 @@ prelude: :gerbil/core
          (type! "h" "i" "C-x" "C-s")
          (check (shown-buffer) => "fresh.md")
          (check (string-of (string-append folder "fresh.md")) => "hi"))))
+    (test-case "undoing back to the saved text clears the unsaved marker"
+      (with-picker
+       (lambda (folder)
+         (type! "C-x" "C-f")
+         (type-string! "a.t")
+         (type! "RET" "x" "y")
+         (check (contains? (screen) "a.txt * · line") => #t)
+         (type! "C-/")
+         (check (buffer-text) => "alpha\n")
+         (check (contains? (screen) "a.txt · line") => #t)
+         (type! "z")
+         (check (contains? (screen) "a.txt * · line") => #t))))
+    (test-case "C-x C-s in a changed buffer with no file asks for one, saves there, and visits it"
+      (with-picker
+       (lambda (folder)
+         (type! "C-x" "C-s")
+         (check (question) => #f)
+         (check (current-message) => "(No changes need to be saved)")
+         (type! "h" "i" "C-x" "C-s")
+         (check (question) => "File to save in: ")
+         (type-string! "s.txt")
+         (type! "RET")
+         (check (question) => #f)
+         (check (string-of (string-append folder "s.txt")) => "hi")
+         (check (shown-buffer) => "s.txt")
+         (check (on-editor (lambda () (buffer-file (current-buffer)))) => (string-append folder "s.txt"))
+         (check (contains? (screen) "s.txt · line") => #t))))
+    (test-case "C-x C-s in a buffer that is not one text says nothing needs saving"
+      (with-picker
+       (lambda (folder)
+         (on-editor
+          (lambda ()
+            (let (b (new-buffer "*rich*" (new-node 'column children: [(new-text-node (new-text "x"))])))
+              (add-buffer! b)
+              (set-view-buffer (selected-view) b))))
+         (type! "C-x" "C-s")
+         (check (question) => #f)
+         (check (current-message) => "(No changes need to be saved)"))))
     (test-case "C-x k asks before killing an unsaved file buffer"
       (with-picker
        (lambda (folder)
@@ -172,7 +213,7 @@ prelude: :gerbil/core
          (check (question) => #f)
          (check (string-of (string-append folder "a.txt")) => "1alpha\n")
          (check (string-of (string-append folder "b.txt")) => "beta\n"))))
-    (test-case "saving over a file another program changed asks; overwrite writes yours"
+    (test-case "saving over a file another program changed asks; other keys are refused; o overwrites with yours"
       (with-picker
        (lambda (folder)
          (conflict! folder)
@@ -180,19 +221,22 @@ prelude: :gerbil/core
          (check (contains? (screen) "a.txt * changed on disk · line") => #t)
          (type! "C-x" "C-s")
          (check (question) => conflict-question)
-         (type-string! "overwrite")
+         (type! "x")
+         (check (question) => conflict-question)
+         (check (current-message) => "Please answer o, r")
          (type! "RET")
+         (check (question) => conflict-question)
+         (type! "o")
          (check (question) => #f)
          (check (string-of (string-append folder "a.txt")) => "xalpha\n")
          (check (contains? (screen) "a.txt · line") => #t))))
-    (test-case "answering reload takes their file, and undo brings yours back"
+    (test-case "r reloads their file, and undo brings yours back"
       (with-picker
        (lambda (folder)
          (conflict! folder)
          (type! "C-x" "C-s")
          (check (question) => conflict-question)
-         (type-string! "reload")
-         (type! "RET")
+         (type! "r")
          (check (question) => #f)
          (check (buffer-text) => "other\n")
          (check (string-of (string-append folder "a.txt")) => "other\n")

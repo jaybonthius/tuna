@@ -240,7 +240,7 @@
              ;; The session file is written right after the autosave files.
              (thread-sleep! 0.2)
              (check (assq 'buffers (cddr (read-session-datum directory)))
-                    => ['buffers 1 [["*scratch*" 2 "%2Ascratch%2A" (on-baton (lambda () (node-id (buffer-root (current-buffer)))))] ]])
+                    => ['buffers 2 [["*scratch*" 2 "%2Ascratch%2A" (on-baton (lambda () (node-id (buffer-root (current-buffer))))) #f] ]])
              (let (stamp (file-info-last-modification-time (file-info (session-file directory))))
                (thread-sleep! 2.5)
                (check (time->seconds (file-info-last-modification-time
@@ -350,11 +350,13 @@
     (test-case "a session cannot point autosave outside its directory"
       (call-with-state-directory
        (lambda (directory)
-         (write-session! directory "(tuna-session 1 (buffers 1 ((\"evil\" 1 \"../evil\"))))")
+         (write-session! directory (string-append "(tuna-session 1 (buffers 2 ((\"evil\" 1 \"../evil\" 1 #f)"
+                                                  " (\"evil.txt\" 1 \"../evil\" 2 (\"/evil.txt\" \"/evil.txt\" utf-8 #f lf #t #f)))))"))
          (call-with-output-file (path-expand "evil" directory) (lambda (port) (display "secret" port)))
          (run-tuna directory
            (lambda ()
-             (check (on-baton (lambda () (get-buffer "evil"))) => #f))))))
+             (check (on-baton (lambda () (get-buffer "evil"))) => #f)
+             (check (on-baton (lambda () (get-buffer "evil.txt"))) => #f))))))
 
     (test-case "files are replaced atomically: a failed write leaves the old file"
       (call-with-state-directory

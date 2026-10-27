@@ -104,6 +104,24 @@
                 (check (eq? (find-file-noselect path) b) => #t))))
            (check (string-of path) => "well, hello\n")
            (check (folder-names folder) => ["a.txt"])))))
+    (test-case "a text edited back to what was saved is unmodified; one of the same size but other characters is not"
+      (with-files
+       (lambda (folder)
+         (let (path (string-append folder "a.txt"))
+           (put-string! path "one\r\ntwo\r\n")
+           (on-editor
+            (lambda ()
+              (let* ((b (find-file-noselect path))
+                     (t (text-of b)))
+                (edit! b 1 "x")
+                (check (buffer-modified? b) => #t)
+                (text-replace! t 1 2 "")
+                (check (text-string t) => "one\ntwo\n")
+                (check (buffer-modified? b) => #f)
+                (text-replace! t 1 2 "O")
+                (check (buffer-modified? b) => #t)
+                (text-replace! t 1 2 "o")
+                (check (buffer-modified? b) => #f))))))))
     (test-case "a byte-order mark and Windows line endings are written back byte for byte"
       (with-files
        (lambda (folder)
