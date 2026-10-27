@@ -20,10 +20,15 @@
 
 (def screen-test
   (test-suite "tuna/plugins/terminal: rows"
-    (test-case "a row a shell's prompt starts on knows where its input starts"
-      (check (row-prompt-cell (row-after "\x1b;]133;A\x07;one> \x1b;]133;B\x07;ls\r\nout" 0)) => 5)
-      (check (row-prompt-cell (row-after "\x1b;]133;A\x07;one> \x1b;]133;B\x07;ls\r\nout" 1)) => #f)
-      (check (row-prompt-cell (row-after "plain" 0)) => #f))
+    (test-case "a shell's prompt rows know where the prompt ends and whether input was typed"
+      (let (bytes "\x1b;]133;A\x07;one> \x1b;]133;B\x07;ls\r\n\x1b;]133;C\x07;out")
+        (check (row-prompt-mark (row-after bytes 0)) => (vector 'prompt 5 #t))
+        (check (row-prompt-mark (row-after bytes 1)) => #f))
+      ;; A prompt that starts with an empty line, its input on the next.
+      (let (bytes "\x1b;]133;A\x07;\r\n> \x1b;]133;B\x07;")
+        (check (row-prompt-mark (row-after bytes 0)) => (vector 'prompt #f #f))
+        (check (row-prompt-mark (row-after bytes 1)) => (vector 'prompt-continuation 2 #f)))
+      (check (row-prompt-mark (row-after "plain" 0)) => #f))
 
     (test-case "an unknown OSC sequence's number"
       (check (unknown-sequence-number "7777;a;b") => 7777)

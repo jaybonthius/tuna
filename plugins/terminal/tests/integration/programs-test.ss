@@ -117,7 +117,8 @@
       (with-recorded-shell
        (lambda ()
          (run! (string-append "clear; printf '\\033]133;A\\007one> \\033]133;B\\007first\\n\\033]133;C\\007out1\\n"
-                              "\\033]133;D;0\\007\\033]133;A\\007two> \\033]133;B\\007second\\n\\033]133;C\\007out2\\n"
+                              ;; This prompt starts with an empty line, as starship's does.
+                              "\\033]133;D;0\\007\\033]133;A\\007\\ntwo> \\033]133;B\\007second\\n\\033]133;C\\007out2\\n"
                               "\\033]133;D;0\\007'"))
          (check (screen-has? "*terminal*" "out2") => #t)
          (type! "C-c" "M-p")

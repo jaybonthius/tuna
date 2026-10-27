@@ -23,7 +23,7 @@ builtin typeset -g _tuna_executing= _tuna_marked_ps1= _tuna_saved_ps1= _tuna_sav
 # REPLY: $1 percent-encoded, for 133;C's cmdline_url.
 _tuna_urlencode() {
     builtin emulate -L zsh
-    builtin local LC_ALL=C text=$1 out= c
+    builtin local LC_ALL=C text="$1" out= c
     builtin integer i
     for (( i = 1; i <= ${#text}; i++ )); do
         c=${text[i]}

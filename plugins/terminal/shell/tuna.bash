@@ -33,7 +33,7 @@ __tuna_osc7() {
 
 # REPLY: $1 percent-encoded, for 133;C's cmdline_url.
 __tuna_urlencode() {
-    builtin local LC_ALL=C text=$1 out= c i
+    builtin local LC_ALL=C text="$1" out= c i
     for ((i = 0; i < ${#text}; i++)); do
         c=${text:i:1}
         case $c in

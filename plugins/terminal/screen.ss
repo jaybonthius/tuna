@@ -6,9 +6,8 @@
 ;;; row to what it already shows changes nothing and draws nothing.
 ;;;
 ;;; A row node's attributes are its NUMBER (fixed), its RUNS, WRAP (whether
-;;; the program's line goes on in the next row), PROMPT (the cell its input
-;;; starts at, when a shell's prompt starts on it, else #f) and the CURSOR
-;;; on it.
+;;; the program's line goes on in the next row), PROMPT (how a shell's
+;;; integration marked it, row-prompt-mark) and the CURSOR on it.
 ;;;
 ;;; Rows are grouped under block nodes of `block-size` rows, so adding a
 ;;; row, or trimming the oldest, changes one block's children and not a
@@ -39,7 +38,7 @@ prelude: :gerbil/core
                  color-rgb-r color-rgb-g color-rgb-b
                  unicode-codepoint-width))
 (export row-runs
-        row-prompt-cell
+        row-prompt-mark
         char-cells
         row-sxml
         block-size
@@ -102,18 +101,28 @@ prelude: :gerbil/core
                           (car parts) (cdr parts) (hyperlink-text (styled-run-hyperlink run)))))
               (styled-row-runs row)))
 
-;; Where the input starts in ROW, a styled row, when a prompt starts on it
-;; (OSC 133 A, libghostty's row mark): the cell after its last prompt
-;; cell, 0 when none is marked; #f for any other row.
-(def (row-prompt-cell (row : :t)) => (Maybe :fixnum)
-  (and (eq? (styled-row-semantic-prompt row) 'prompt)
-       (let lp ((runs (vector->list (styled-row-runs row))) (end 0))
-         (match runs
-           ([] end)
-           ([run . more]
-            (lp more (if (eq? (styled-run-semantic-content run) 'prompt)
-                       (fx+ (styled-run-column run) (styled-run-width run))
-                       end)))))))
+;; Whether TEXT is only white space.
+(def (blank? (text : :string)) => :boolean
+  (let lp ((i 0))
+    (or (fx= i (string-length text))
+        (and (char-whitespace? (string-ref text i)) (lp (fx1+ i))))))
+
+;; What a shell's integration marked ROW, a styled row, as (OSC 133 and
+;; libghostty's row marks): #f for no prompt, else #(KIND END INPUT?),
+;; KIND 'prompt where a prompt starts or 'prompt-continuation for its
+;; later rows, END the cell after its last prompt cell (#f with none) and
+;; INPUT? whether it holds typed input.
+(def (row-prompt-mark (row : :t)) => (Maybe :vector)
+  (let (kind (styled-row-semantic-prompt row))
+    (and (memq kind '(prompt prompt-continuation))
+         (let lp ((runs (vector->list (styled-row-runs row))) (end #f) (input? #f))
+           (match runs
+             ([] (vector kind end input?))
+             ([run . more]
+              (case (styled-run-semantic-content run)
+                ((prompt) (lp more (fx+ (styled-run-column run) (styled-run-width run)) input?))
+                ((input) (lp more end (or input? (not (blank? (styled-run-text run))))))
+                (else (lp more end input?)))))))))
 
 ;; An OSC 8 link's URI, or #f.
 (def (hyperlink-text (bytes :? :u8vector)) => (Maybe :string)

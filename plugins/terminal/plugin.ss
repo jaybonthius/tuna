@@ -922,10 +922,10 @@
         (lp upto)))))
 
 ;; Keep ROW, a styled row, in COPIED, its number -> (RUNS . WRAP?), and
-;; PROMPTS, its number -> the cell its input starts at, or #f.
+;; PROMPTS, its number -> its prompt mark (row-prompt-mark).
 (def (keep-row! (copied : HashTable) (prompts : HashTable) (row : :t)) => :void
   (hash-put! copied (styled-row-number row) (cons (row-runs row) (styled-row-wrap? row)))
-  (hash-put! prompts (styled-row-number row) (row-prompt-cell row)))
+  (hash-put! prompts (styled-row-number row) (row-prompt-mark row)))
 
 ;; Set the rows COPIED holds on their nodes in STORE, each attribute
 ;; once, with the plain links (ghostel-links) found in the program's
@@ -1201,21 +1201,45 @@
                       (cons (cons (node-attribute r 'runs) (node-attribute r 'wrap)) out)))))
             first)))
 
-;; The rows of TERM's current screen a prompt starts on, ascending, each
-;; (ROW . INDEX): the row, counted from the screen's first, and the index
-;; in the row's text its input starts at.
+;; Where each prompt on TERM's current screen has its input, ascending,
+;; each (ROW . INDEX): the row, counted from the screen's first, and the
+;; index in its text. A prompt is a row marked where one starts and the
+;; continuation rows after it; its input is on the first of them holding
+;; typed input, else the last with prompt cells, after those (ghostel
+;; lands past the prompt on its first line; a prompt such as starship's
+;; begins with an empty line).
 (def (screen-prompts (term : live-terminal)) => :list
   (let* ((store (if (eq? term.screen 'alternate) term.alternate term.primary))
-         (first (row-store-base store)))
-    (let lp ((n (- (row-store-end store) 1)) (out []))
-      (if (< n first)
-        out
-        (let* ((r (row-store-row store n))
-               (cell (node-attribute r 'prompt)))
-          (lp (- n 1)
-              (if (fixnum? cell)
-                (cons (cons (- n first) (cell->index (node-attribute r 'runs) cell)) out)
-                out)))))))
+         (first (row-store-base store))
+         (end (row-store-end store)))
+    (def (mark (n : :integer)) => (Maybe :vector)
+      (let (r (row-store-row store n))
+        (and r (let (m (node-attribute r 'prompt)) (and (vector? m) m)))))
+    ;; From row N of a prompt, the first when FIRST?; TARGET is the best
+    ;; row so far, (NUMBER . CELL).
+    (def (landing (n : :integer) (target :? :pair) (first? : :boolean)) => (Maybe :pair)
+      (let (m (and (< n end) (mark n)))
+        (if (or (not m) (and (not first?) (not (eq? (vector-ref m 0) 'prompt-continuation))))
+          target
+          (let ((cell (vector-ref m 1))
+                (input? (vector-ref m 2)))
+            (cond
+             ((and input? cell) (cons n cell))
+             (input? (or target (cons n 0)))
+             (else (landing (+ n 1) (if cell (cons n cell) target) #f)))))))
+    (let lp ((n first) (out []))
+      (if (>= n end)
+        (reverse out)
+        (let (m (mark n))
+          (if (and m (eq? (vector-ref m 0) 'prompt))
+            (let (target (landing n #f #t))
+              (lp (+ n 1)
+                  (if target
+                    (cons (cons (- (car target) first)
+                                (cell->index (node-attribute (row-store-row store (car target)) 'runs) (cdr target)))
+                          out)
+                    out)))
+            (lp (+ n 1) out)))))))
 
 ;; Where TERM's cursor is in the copy C of rows from FIRST, or its end.
 (def (cursor-copy-position (term : live-terminal) (c : copy-text) (first : :integer)) => :fixnum
