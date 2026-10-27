@@ -122,8 +122,10 @@
 }
 
 /* Line mode's input, over its row from the cursor's column on, hiding
-   what the row shows there. */
+   what the row shows there: positioned, so it paints over the row's
+   cells, which are inline blocks. */
 :where(.terminal-line-input) {
+  position: relative;
   margin-block-start: -1lh;
   padding-inline-start: calc(var(--terminal-line-input-column, 0) * 1ch);
 }

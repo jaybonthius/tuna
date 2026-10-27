@@ -725,11 +725,12 @@
             (vector-for-each (cut keep-row! copied <>) (row-changes-rows changes))))
         (set-rows! term store copied (and cursor (row-cursor-visible? cursor) (row-cursor-row cursor)))
         (move-cursor! term store cursor)
-        (follow-line-mode! self term screen)
         (let (blocks (row-store-blocks store))
           (unless (and (eq? screen term.screen) (equal? (map node-id blocks) (map node-id (node-children term.root))))
             (set-node-attribute! term.root 'screen screen)
             (set-node-children! term.root blocks)))
+        ;; Once the rows are the root's, so a view can focus the input.
+        (follow-line-mode! self term screen)
         (set! term.screen screen)
         (refresh-root-attributes! self term)
         (end-long-hold! term mirror)
@@ -1106,17 +1107,31 @@
         (for-each (cut place-at-bottom! term <>) (views-showing term))
         (resize-to-views! self term)))))
 
-;; A view showing TERM whose point is in a copy that is gone, as one that
-;; left TERM's buffer in copy mode finds on coming back, shows the rows.
-(def (forget-stale-copies! (self : terminals-state)) => :void
+;; After each command, every view showing a terminal edits what it should:
+;; copy mode's text or line mode's input, or nothing, in case it came
+;; back to the buffer, or was restored, after the mode began or ended.
+(def (refocus-terminal-views! (self : terminals-state)) => :void
   (when (service-there? layout-service)
     (for-each (lambda ((v : view))
                 (let* ((term (hash-get self.by-buffer (view-showing v)))
                        (n (and term (view-node v))))
-                  (when (and n (not (and (live-terminal-copy term) (eq? n (copy-state-text-node (live-terminal-copy term))))))
-                    (reset-view! v (terminal-buffer term) #f 1 0)
-                    (place-at-bottom! term v))))
+                  (when term
+                    (let (wanted (current-text-node term))
+                      (cond
+                       ((and n (eq? n wanted)) (void))
+                       (wanted (set-view-focus! v wanted (fx1+ (text-size (text-node-content wanted)))))
+                       (n (reset-view! v (terminal-buffer term) #f 1 0)
+                          (place-at-bottom! term v)))))))
               (view-list))))
+
+;; The text node TERM's views edit now, in copy or line mode, or #f.
+(def (current-text-node (term : live-terminal)) => (Maybe node)
+  (let ((copy term.copy)
+        (line term.line))
+    (cond
+     (copy (copy-state-text-node copy))
+     (line (line-state-text-node line))
+     (else #f))))
 
 ;; Copy the region of TERM's copy, without the line ends that only wrap
 ;; and with each line's trailing spaces dropped, onto the kill ring.
@@ -1735,7 +1750,7 @@
                                                                        " has a running process; kill it? "))))))
     (context-add-hook! ctx post-command-hook 'terminal-focus
                        (lambda ()
-                         (forget-stale-copies! self)
+                         (refocus-terminal-views! self)
                          (track-focus! self)))
     (context-add-hook! ctx task-started-hook 'terminal
                        (lambda (id name)
@@ -1885,7 +1900,9 @@
                               ("C-c C-\\" . terminal-send-C-backslash) ("C-c C-d" . terminal-send-C-d)
                               ("C-c C-t" . terminal-copy-mode) ("C-c C-j" . terminal-semi-char-mode)
                               ("C-c M-d" . terminal-char-mode) ("C-c C-l" . terminal-line-mode))))
-                [self.copy-map self.copy-fast-map self.line-root-map])
+                ;; The input's own map too: its C-c C-c would hide the
+                ;; root's other C-c keys.
+                [self.copy-map self.copy-fast-map self.line-root-map self.line-map])
       (for-each (lambda ((keymap : entry-table))
                   (for-each (lambda ((binding : :pair)) (bind keymap (car binding) (cdr binding)))
                             '(("M-w" . terminal-copy-mode-copy) ("C-w" . terminal-copy-mode-copy)

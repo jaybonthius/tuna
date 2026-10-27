@@ -119,10 +119,19 @@
          (check (focused-text) => "")
          (press "M-p")
          (check (wait-for (lambda () (equal? (focused-text) "echo hi"))) => #t)
+         ;; A full reset numbers the rows anew; the input stays shown.
+         (on-editor (lambda () (goto-char 1) (call-command 'terminal-line-mode-send)))
+         (paste "printf '\\033c'; echo after-reset")
+         (press "RET")
+         (check (screen-has? "*terminal*" "after-reset") => #t)
+         (type! "x" "y" "z")
+         (check (screen-has? "*terminal*" "xyz") => #t)
+         (on-editor (lambda () (call-command 'terminal-line-mode-interrupt)))
+         (check (wait-for (lambda () (equal? (focused-text) ""))) => #t)
          ;; Leaving hands the line to the program as typed.
-         (type! "C-c" "C-j")
+         (type! "a" "b" "c" "C-c" "C-j")
          (check (wait-for (lambda () (not (string-contains (status) ":Line")))) => #t)
-         (check (screen-has? "*terminal*" "$ echo hi") => #t))))
+         (check (screen-has? "*terminal*" "$ abc") => #t))))
 
     (test-case "a program copies to the kill ring (OSC 52) only when allowed"
       (with-shell

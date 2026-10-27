@@ -250,7 +250,11 @@ prelude: :gerbil/core
     (unless (and old new (eq? (car old) (car new)) (= (cdr old) (cdr new)))
       (set! s.extra new)
       (when old (refresh-block! s (block-of (cdr old))))
-      (when new (refresh-block! s (block-of (cdr new)))))))
+      (when new
+        ;; A block a new generation replaced may still hold it.
+        (let (parent (node-parent (car new)))
+          (when parent (set-node-children! parent (remq (car new) (node-children parent)))))
+        (refresh-block! s (block-of (cdr new)))))))
 
 ;; Forget every row; rows from now on are numbered in GENERATION, the
 ;; first BASE.
