@@ -4,8 +4,9 @@
 ;;; own libghostty-vt terminal fed with every byte the program writes, and
 ;;; serves one Tuna at a time on a private socket (protocol.ss): a snapshot
 ;;; of its terminal, then the live output; keys and sizes come back. It
-;;; answers the program's queries (cursor position, device attributes)
-;;; itself, since it is the one always there. It ends when its program has
+;;; answers the program's queries (cursor position, device attributes,
+;;; and colours: Tuna tells it the theme's, `colors`) itself, since it is
+;;; the one always there. It ends when its program has
 ;;; ended and a Tuna has seen that, or when Tuna asks it to kill the
 ;;; program.
 ;;;
@@ -50,6 +51,7 @@ prelude: :gerbil/core
                   (rows      : :fixnum)
                   (cell-width : :fixnum)
                   (cell-height : :fixnum)
+                  (scheme    :? :symbol)         ; light or dark, from Tuna's colours
                   (status    :? :fixnum)         ; the program's, once it ended
                   (killed?   : :boolean)
                   (done      : :thread))         ; main, waiting to be told to end
@@ -183,6 +185,7 @@ prelude: :gerbil/core
        (do-with-lock h.lock
          (when (eq? h.client device)
            (send-to-client! h (frame-bytes 'snapshot (terminal->snapshot-bytes h.term))))))
+      ((colors) (let (c (parse-colors payload)) (when c (set-colors! h c))))
       ((kill) (kill-program! h))
       ((exit-ack) (when h.status (thread-send h.done 'end)))
       (else (void)))))
@@ -214,6 +217,42 @@ prelude: :gerbil/core
               (set! h.writer (spawn/name 'terminal-client-writer (lambda () (client-writer-thread h device))))
               (spawn/name 'terminal-client-reader (lambda () (client-reader-thread h device))))))
         (lp)))))
+
+;;; Colours
+
+(def (rgb-color (n :? :fixnum)) => :t
+  (and n (color-rgb (fxand (fxarithmetic-shift-right n 16) 255) (fxand (fxarithmetic-shift-right n 8) 255)
+                    (fxand n 255))))
+
+;; Make C the terminal's default colours, which it answers OSC 4, 10, 11
+;; and 12 queries with, and its background's lightness the colour scheme
+;; it reports (CSI ? 996 n); a program that asked to hear of changes
+;; (mode 2031) hears of a new scheme.
+(def (set-colors! (h : helper) (c : theme-colors)) => :void
+  (let (report
+        (do-with-lock h.lock
+          (let ((term h.term)
+                (background (rgb-color (theme-colors-background c)))
+                (palette (theme-colors-palette c)))
+            (terminal-set-default-foreground! term (rgb-color (theme-colors-foreground c)))
+            (terminal-set-default-background! term background)
+            (terminal-set-default-cursor-color! term (rgb-color (theme-colors-cursor c)))
+            (terminal-set-default-palette!
+             term
+             (and (fx> (vector-length palette) 0)
+                  (let (full (color-default-palette))
+                    (let lp ((i 0))
+                      (when (fx< i (fxmin 256 (vector-length palette)))
+                        (vector-set! full i (rgb-color (vector-ref palette i)))
+                        (lp (fx1+ i))))
+                    full)))
+            (let ((scheme (and background (if (< (color-perceived-luminance background) 0.5) 'dark 'light)))
+                  (old h.scheme))
+              (set! h.scheme scheme)
+              (and scheme (not (eq? scheme old))
+                   (terminal-mode-enabled? term (cdr (assq 'color-scheme-report (terminal-modes))))
+                   (color-scheme-report-encode scheme))))))
+    (when report (thread-send h.pty-writer report))))
 
 ;;; The program
 
@@ -298,9 +337,10 @@ prelude: :gerbil/core
                       listener: listener socket: (options-socket o) lock: (make-mutex 'terminal-helper)
                       client: #f writer: #f live?: #f queued: 0 pty-writer: (current-thread)
                       replies: [] columns: columns rows: rows cell-width: 0 cell-height: 0
-                      status: #f killed?: #f done: (current-thread))))
+                      scheme: #f status: #f killed?: #f done: (current-thread))))
       (terminal-set-scrollback-max-bytes! term (options-scrollback o))
       (terminal-set-pty-write-handler! term (lambda (bytes) (set! (helper-replies h) (cons bytes (helper-replies h)))))
+      (terminal-set-color-scheme-handler! term (lambda () (helper-scheme h)))
       (terminal-set-size-handler! term (lambda ()
                                          (terminal-size (helper-rows h) (helper-columns h)
                                                         (helper-cell-width h) (helper-cell-height h))))

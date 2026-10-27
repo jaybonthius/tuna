@@ -108,6 +108,290 @@
 :where(.terminal-bg-rgb) { --terminal-run-bg: var(--terminal-run-background, transparent); }
 :where(.terminal-underline-rgb) { --terminal-run-underline-color: var(--terminal-run-underline, currentColor); }
 
+/* Links (OSC 8, and URLs and file references found in the output). */
+:where(.terminal-link) {
+  color: inherit;
+  text-decoration-line: var(--terminal-link-decoration);
+  cursor: pointer;
+}
+
+/* What the browser selects while a drag over the rows goes on, before
+   copy mode shows its own region. */
+:where(.terminal) ::selection {
+  background-color: var(--terminal-selection-background);
+}
+
+/* Line mode's input, over its row from the cursor's column on, hiding
+   what the row shows there. */
+:where(.terminal-line-input) {
+  margin-block-start: -1lh;
+  padding-inline-start: calc(var(--terminal-line-input-column, 0) * 1ch);
+}
+:where(.terminal-line-input > *) {
+  background-color: var(--terminal-line-input-background);
+}
+
+/* Copy mode's text: the rows' palette colours and links, as faces. */
+:where(.face-terminal-link) {
+  text-decoration-line: var(--terminal-link-decoration);
+}
+:where(.face-terminal-fg-0) { color: var(--terminal-color-0); }
+:where(.face-terminal-fg-1) { color: var(--terminal-color-1); }
+:where(.face-terminal-fg-2) { color: var(--terminal-color-2); }
+:where(.face-terminal-fg-3) { color: var(--terminal-color-3); }
+:where(.face-terminal-fg-4) { color: var(--terminal-color-4); }
+:where(.face-terminal-fg-5) { color: var(--terminal-color-5); }
+:where(.face-terminal-fg-6) { color: var(--terminal-color-6); }
+:where(.face-terminal-fg-7) { color: var(--terminal-color-7); }
+:where(.face-terminal-fg-8) { color: var(--terminal-color-8); }
+:where(.face-terminal-fg-9) { color: var(--terminal-color-9); }
+:where(.face-terminal-fg-10) { color: var(--terminal-color-10); }
+:where(.face-terminal-fg-11) { color: var(--terminal-color-11); }
+:where(.face-terminal-fg-12) { color: var(--terminal-color-12); }
+:where(.face-terminal-fg-13) { color: var(--terminal-color-13); }
+:where(.face-terminal-fg-14) { color: var(--terminal-color-14); }
+:where(.face-terminal-fg-15) { color: var(--terminal-color-15); }
+:where(.face-terminal-fg-16) { color: var(--terminal-color-16); }
+:where(.face-terminal-fg-17) { color: var(--terminal-color-17); }
+:where(.face-terminal-fg-18) { color: var(--terminal-color-18); }
+:where(.face-terminal-fg-19) { color: var(--terminal-color-19); }
+:where(.face-terminal-fg-20) { color: var(--terminal-color-20); }
+:where(.face-terminal-fg-21) { color: var(--terminal-color-21); }
+:where(.face-terminal-fg-22) { color: var(--terminal-color-22); }
+:where(.face-terminal-fg-23) { color: var(--terminal-color-23); }
+:where(.face-terminal-fg-24) { color: var(--terminal-color-24); }
+:where(.face-terminal-fg-25) { color: var(--terminal-color-25); }
+:where(.face-terminal-fg-26) { color: var(--terminal-color-26); }
+:where(.face-terminal-fg-27) { color: var(--terminal-color-27); }
+:where(.face-terminal-fg-28) { color: var(--terminal-color-28); }
+:where(.face-terminal-fg-29) { color: var(--terminal-color-29); }
+:where(.face-terminal-fg-30) { color: var(--terminal-color-30); }
+:where(.face-terminal-fg-31) { color: var(--terminal-color-31); }
+:where(.face-terminal-fg-32) { color: var(--terminal-color-32); }
+:where(.face-terminal-fg-33) { color: var(--terminal-color-33); }
+:where(.face-terminal-fg-34) { color: var(--terminal-color-34); }
+:where(.face-terminal-fg-35) { color: var(--terminal-color-35); }
+:where(.face-terminal-fg-36) { color: var(--terminal-color-36); }
+:where(.face-terminal-fg-37) { color: var(--terminal-color-37); }
+:where(.face-terminal-fg-38) { color: var(--terminal-color-38); }
+:where(.face-terminal-fg-39) { color: var(--terminal-color-39); }
+:where(.face-terminal-fg-40) { color: var(--terminal-color-40); }
+:where(.face-terminal-fg-41) { color: var(--terminal-color-41); }
+:where(.face-terminal-fg-42) { color: var(--terminal-color-42); }
+:where(.face-terminal-fg-43) { color: var(--terminal-color-43); }
+:where(.face-terminal-fg-44) { color: var(--terminal-color-44); }
+:where(.face-terminal-fg-45) { color: var(--terminal-color-45); }
+:where(.face-terminal-fg-46) { color: var(--terminal-color-46); }
+:where(.face-terminal-fg-47) { color: var(--terminal-color-47); }
+:where(.face-terminal-fg-48) { color: var(--terminal-color-48); }
+:where(.face-terminal-fg-49) { color: var(--terminal-color-49); }
+:where(.face-terminal-fg-50) { color: var(--terminal-color-50); }
+:where(.face-terminal-fg-51) { color: var(--terminal-color-51); }
+:where(.face-terminal-fg-52) { color: var(--terminal-color-52); }
+:where(.face-terminal-fg-53) { color: var(--terminal-color-53); }
+:where(.face-terminal-fg-54) { color: var(--terminal-color-54); }
+:where(.face-terminal-fg-55) { color: var(--terminal-color-55); }
+:where(.face-terminal-fg-56) { color: var(--terminal-color-56); }
+:where(.face-terminal-fg-57) { color: var(--terminal-color-57); }
+:where(.face-terminal-fg-58) { color: var(--terminal-color-58); }
+:where(.face-terminal-fg-59) { color: var(--terminal-color-59); }
+:where(.face-terminal-fg-60) { color: var(--terminal-color-60); }
+:where(.face-terminal-fg-61) { color: var(--terminal-color-61); }
+:where(.face-terminal-fg-62) { color: var(--terminal-color-62); }
+:where(.face-terminal-fg-63) { color: var(--terminal-color-63); }
+:where(.face-terminal-fg-64) { color: var(--terminal-color-64); }
+:where(.face-terminal-fg-65) { color: var(--terminal-color-65); }
+:where(.face-terminal-fg-66) { color: var(--terminal-color-66); }
+:where(.face-terminal-fg-67) { color: var(--terminal-color-67); }
+:where(.face-terminal-fg-68) { color: var(--terminal-color-68); }
+:where(.face-terminal-fg-69) { color: var(--terminal-color-69); }
+:where(.face-terminal-fg-70) { color: var(--terminal-color-70); }
+:where(.face-terminal-fg-71) { color: var(--terminal-color-71); }
+:where(.face-terminal-fg-72) { color: var(--terminal-color-72); }
+:where(.face-terminal-fg-73) { color: var(--terminal-color-73); }
+:where(.face-terminal-fg-74) { color: var(--terminal-color-74); }
+:where(.face-terminal-fg-75) { color: var(--terminal-color-75); }
+:where(.face-terminal-fg-76) { color: var(--terminal-color-76); }
+:where(.face-terminal-fg-77) { color: var(--terminal-color-77); }
+:where(.face-terminal-fg-78) { color: var(--terminal-color-78); }
+:where(.face-terminal-fg-79) { color: var(--terminal-color-79); }
+:where(.face-terminal-fg-80) { color: var(--terminal-color-80); }
+:where(.face-terminal-fg-81) { color: var(--terminal-color-81); }
+:where(.face-terminal-fg-82) { color: var(--terminal-color-82); }
+:where(.face-terminal-fg-83) { color: var(--terminal-color-83); }
+:where(.face-terminal-fg-84) { color: var(--terminal-color-84); }
+:where(.face-terminal-fg-85) { color: var(--terminal-color-85); }
+:where(.face-terminal-fg-86) { color: var(--terminal-color-86); }
+:where(.face-terminal-fg-87) { color: var(--terminal-color-87); }
+:where(.face-terminal-fg-88) { color: var(--terminal-color-88); }
+:where(.face-terminal-fg-89) { color: var(--terminal-color-89); }
+:where(.face-terminal-fg-90) { color: var(--terminal-color-90); }
+:where(.face-terminal-fg-91) { color: var(--terminal-color-91); }
+:where(.face-terminal-fg-92) { color: var(--terminal-color-92); }
+:where(.face-terminal-fg-93) { color: var(--terminal-color-93); }
+:where(.face-terminal-fg-94) { color: var(--terminal-color-94); }
+:where(.face-terminal-fg-95) { color: var(--terminal-color-95); }
+:where(.face-terminal-fg-96) { color: var(--terminal-color-96); }
+:where(.face-terminal-fg-97) { color: var(--terminal-color-97); }
+:where(.face-terminal-fg-98) { color: var(--terminal-color-98); }
+:where(.face-terminal-fg-99) { color: var(--terminal-color-99); }
+:where(.face-terminal-fg-100) { color: var(--terminal-color-100); }
+:where(.face-terminal-fg-101) { color: var(--terminal-color-101); }
+:where(.face-terminal-fg-102) { color: var(--terminal-color-102); }
+:where(.face-terminal-fg-103) { color: var(--terminal-color-103); }
+:where(.face-terminal-fg-104) { color: var(--terminal-color-104); }
+:where(.face-terminal-fg-105) { color: var(--terminal-color-105); }
+:where(.face-terminal-fg-106) { color: var(--terminal-color-106); }
+:where(.face-terminal-fg-107) { color: var(--terminal-color-107); }
+:where(.face-terminal-fg-108) { color: var(--terminal-color-108); }
+:where(.face-terminal-fg-109) { color: var(--terminal-color-109); }
+:where(.face-terminal-fg-110) { color: var(--terminal-color-110); }
+:where(.face-terminal-fg-111) { color: var(--terminal-color-111); }
+:where(.face-terminal-fg-112) { color: var(--terminal-color-112); }
+:where(.face-terminal-fg-113) { color: var(--terminal-color-113); }
+:where(.face-terminal-fg-114) { color: var(--terminal-color-114); }
+:where(.face-terminal-fg-115) { color: var(--terminal-color-115); }
+:where(.face-terminal-fg-116) { color: var(--terminal-color-116); }
+:where(.face-terminal-fg-117) { color: var(--terminal-color-117); }
+:where(.face-terminal-fg-118) { color: var(--terminal-color-118); }
+:where(.face-terminal-fg-119) { color: var(--terminal-color-119); }
+:where(.face-terminal-fg-120) { color: var(--terminal-color-120); }
+:where(.face-terminal-fg-121) { color: var(--terminal-color-121); }
+:where(.face-terminal-fg-122) { color: var(--terminal-color-122); }
+:where(.face-terminal-fg-123) { color: var(--terminal-color-123); }
+:where(.face-terminal-fg-124) { color: var(--terminal-color-124); }
+:where(.face-terminal-fg-125) { color: var(--terminal-color-125); }
+:where(.face-terminal-fg-126) { color: var(--terminal-color-126); }
+:where(.face-terminal-fg-127) { color: var(--terminal-color-127); }
+:where(.face-terminal-fg-128) { color: var(--terminal-color-128); }
+:where(.face-terminal-fg-129) { color: var(--terminal-color-129); }
+:where(.face-terminal-fg-130) { color: var(--terminal-color-130); }
+:where(.face-terminal-fg-131) { color: var(--terminal-color-131); }
+:where(.face-terminal-fg-132) { color: var(--terminal-color-132); }
+:where(.face-terminal-fg-133) { color: var(--terminal-color-133); }
+:where(.face-terminal-fg-134) { color: var(--terminal-color-134); }
+:where(.face-terminal-fg-135) { color: var(--terminal-color-135); }
+:where(.face-terminal-fg-136) { color: var(--terminal-color-136); }
+:where(.face-terminal-fg-137) { color: var(--terminal-color-137); }
+:where(.face-terminal-fg-138) { color: var(--terminal-color-138); }
+:where(.face-terminal-fg-139) { color: var(--terminal-color-139); }
+:where(.face-terminal-fg-140) { color: var(--terminal-color-140); }
+:where(.face-terminal-fg-141) { color: var(--terminal-color-141); }
+:where(.face-terminal-fg-142) { color: var(--terminal-color-142); }
+:where(.face-terminal-fg-143) { color: var(--terminal-color-143); }
+:where(.face-terminal-fg-144) { color: var(--terminal-color-144); }
+:where(.face-terminal-fg-145) { color: var(--terminal-color-145); }
+:where(.face-terminal-fg-146) { color: var(--terminal-color-146); }
+:where(.face-terminal-fg-147) { color: var(--terminal-color-147); }
+:where(.face-terminal-fg-148) { color: var(--terminal-color-148); }
+:where(.face-terminal-fg-149) { color: var(--terminal-color-149); }
+:where(.face-terminal-fg-150) { color: var(--terminal-color-150); }
+:where(.face-terminal-fg-151) { color: var(--terminal-color-151); }
+:where(.face-terminal-fg-152) { color: var(--terminal-color-152); }
+:where(.face-terminal-fg-153) { color: var(--terminal-color-153); }
+:where(.face-terminal-fg-154) { color: var(--terminal-color-154); }
+:where(.face-terminal-fg-155) { color: var(--terminal-color-155); }
+:where(.face-terminal-fg-156) { color: var(--terminal-color-156); }
+:where(.face-terminal-fg-157) { color: var(--terminal-color-157); }
+:where(.face-terminal-fg-158) { color: var(--terminal-color-158); }
+:where(.face-terminal-fg-159) { color: var(--terminal-color-159); }
+:where(.face-terminal-fg-160) { color: var(--terminal-color-160); }
+:where(.face-terminal-fg-161) { color: var(--terminal-color-161); }
+:where(.face-terminal-fg-162) { color: var(--terminal-color-162); }
+:where(.face-terminal-fg-163) { color: var(--terminal-color-163); }
+:where(.face-terminal-fg-164) { color: var(--terminal-color-164); }
+:where(.face-terminal-fg-165) { color: var(--terminal-color-165); }
+:where(.face-terminal-fg-166) { color: var(--terminal-color-166); }
+:where(.face-terminal-fg-167) { color: var(--terminal-color-167); }
+:where(.face-terminal-fg-168) { color: var(--terminal-color-168); }
+:where(.face-terminal-fg-169) { color: var(--terminal-color-169); }
+:where(.face-terminal-fg-170) { color: var(--terminal-color-170); }
+:where(.face-terminal-fg-171) { color: var(--terminal-color-171); }
+:where(.face-terminal-fg-172) { color: var(--terminal-color-172); }
+:where(.face-terminal-fg-173) { color: var(--terminal-color-173); }
+:where(.face-terminal-fg-174) { color: var(--terminal-color-174); }
+:where(.face-terminal-fg-175) { color: var(--terminal-color-175); }
+:where(.face-terminal-fg-176) { color: var(--terminal-color-176); }
+:where(.face-terminal-fg-177) { color: var(--terminal-color-177); }
+:where(.face-terminal-fg-178) { color: var(--terminal-color-178); }
+:where(.face-terminal-fg-179) { color: var(--terminal-color-179); }
+:where(.face-terminal-fg-180) { color: var(--terminal-color-180); }
+:where(.face-terminal-fg-181) { color: var(--terminal-color-181); }
+:where(.face-terminal-fg-182) { color: var(--terminal-color-182); }
+:where(.face-terminal-fg-183) { color: var(--terminal-color-183); }
+:where(.face-terminal-fg-184) { color: var(--terminal-color-184); }
+:where(.face-terminal-fg-185) { color: var(--terminal-color-185); }
+:where(.face-terminal-fg-186) { color: var(--terminal-color-186); }
+:where(.face-terminal-fg-187) { color: var(--terminal-color-187); }
+:where(.face-terminal-fg-188) { color: var(--terminal-color-188); }
+:where(.face-terminal-fg-189) { color: var(--terminal-color-189); }
+:where(.face-terminal-fg-190) { color: var(--terminal-color-190); }
+:where(.face-terminal-fg-191) { color: var(--terminal-color-191); }
+:where(.face-terminal-fg-192) { color: var(--terminal-color-192); }
+:where(.face-terminal-fg-193) { color: var(--terminal-color-193); }
+:where(.face-terminal-fg-194) { color: var(--terminal-color-194); }
+:where(.face-terminal-fg-195) { color: var(--terminal-color-195); }
+:where(.face-terminal-fg-196) { color: var(--terminal-color-196); }
+:where(.face-terminal-fg-197) { color: var(--terminal-color-197); }
+:where(.face-terminal-fg-198) { color: var(--terminal-color-198); }
+:where(.face-terminal-fg-199) { color: var(--terminal-color-199); }
+:where(.face-terminal-fg-200) { color: var(--terminal-color-200); }
+:where(.face-terminal-fg-201) { color: var(--terminal-color-201); }
+:where(.face-terminal-fg-202) { color: var(--terminal-color-202); }
+:where(.face-terminal-fg-203) { color: var(--terminal-color-203); }
+:where(.face-terminal-fg-204) { color: var(--terminal-color-204); }
+:where(.face-terminal-fg-205) { color: var(--terminal-color-205); }
+:where(.face-terminal-fg-206) { color: var(--terminal-color-206); }
+:where(.face-terminal-fg-207) { color: var(--terminal-color-207); }
+:where(.face-terminal-fg-208) { color: var(--terminal-color-208); }
+:where(.face-terminal-fg-209) { color: var(--terminal-color-209); }
+:where(.face-terminal-fg-210) { color: var(--terminal-color-210); }
+:where(.face-terminal-fg-211) { color: var(--terminal-color-211); }
+:where(.face-terminal-fg-212) { color: var(--terminal-color-212); }
+:where(.face-terminal-fg-213) { color: var(--terminal-color-213); }
+:where(.face-terminal-fg-214) { color: var(--terminal-color-214); }
+:where(.face-terminal-fg-215) { color: var(--terminal-color-215); }
+:where(.face-terminal-fg-216) { color: var(--terminal-color-216); }
+:where(.face-terminal-fg-217) { color: var(--terminal-color-217); }
+:where(.face-terminal-fg-218) { color: var(--terminal-color-218); }
+:where(.face-terminal-fg-219) { color: var(--terminal-color-219); }
+:where(.face-terminal-fg-220) { color: var(--terminal-color-220); }
+:where(.face-terminal-fg-221) { color: var(--terminal-color-221); }
+:where(.face-terminal-fg-222) { color: var(--terminal-color-222); }
+:where(.face-terminal-fg-223) { color: var(--terminal-color-223); }
+:where(.face-terminal-fg-224) { color: var(--terminal-color-224); }
+:where(.face-terminal-fg-225) { color: var(--terminal-color-225); }
+:where(.face-terminal-fg-226) { color: var(--terminal-color-226); }
+:where(.face-terminal-fg-227) { color: var(--terminal-color-227); }
+:where(.face-terminal-fg-228) { color: var(--terminal-color-228); }
+:where(.face-terminal-fg-229) { color: var(--terminal-color-229); }
+:where(.face-terminal-fg-230) { color: var(--terminal-color-230); }
+:where(.face-terminal-fg-231) { color: var(--terminal-color-231); }
+:where(.face-terminal-fg-232) { color: var(--terminal-color-232); }
+:where(.face-terminal-fg-233) { color: var(--terminal-color-233); }
+:where(.face-terminal-fg-234) { color: var(--terminal-color-234); }
+:where(.face-terminal-fg-235) { color: var(--terminal-color-235); }
+:where(.face-terminal-fg-236) { color: var(--terminal-color-236); }
+:where(.face-terminal-fg-237) { color: var(--terminal-color-237); }
+:where(.face-terminal-fg-238) { color: var(--terminal-color-238); }
+:where(.face-terminal-fg-239) { color: var(--terminal-color-239); }
+:where(.face-terminal-fg-240) { color: var(--terminal-color-240); }
+:where(.face-terminal-fg-241) { color: var(--terminal-color-241); }
+:where(.face-terminal-fg-242) { color: var(--terminal-color-242); }
+:where(.face-terminal-fg-243) { color: var(--terminal-color-243); }
+:where(.face-terminal-fg-244) { color: var(--terminal-color-244); }
+:where(.face-terminal-fg-245) { color: var(--terminal-color-245); }
+:where(.face-terminal-fg-246) { color: var(--terminal-color-246); }
+:where(.face-terminal-fg-247) { color: var(--terminal-color-247); }
+:where(.face-terminal-fg-248) { color: var(--terminal-color-248); }
+:where(.face-terminal-fg-249) { color: var(--terminal-color-249); }
+:where(.face-terminal-fg-250) { color: var(--terminal-color-250); }
+:where(.face-terminal-fg-251) { color: var(--terminal-color-251); }
+:where(.face-terminal-fg-252) { color: var(--terminal-color-252); }
+:where(.face-terminal-fg-253) { color: var(--terminal-color-253); }
+:where(.face-terminal-fg-254) { color: var(--terminal-color-254); }
+:where(.face-terminal-fg-255) { color: var(--terminal-color-255); }
+
 /* The palette. */
 :where(.terminal-fg-0) { --terminal-run-fg: var(--terminal-color-0); }
 :where(.terminal-fg-1) { --terminal-run-fg: var(--terminal-color-1); }

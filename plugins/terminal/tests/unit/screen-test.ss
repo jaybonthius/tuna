@@ -16,9 +16,12 @@
   (test-suite "tuna/plugins/terminal: rows"
     (test-case "styled runs become classes; exact colours pass through as properties"
       (check (runs-after "plain \x1b;[1;31mred\x1b;[0m" 0)
-             => (vector (vector 0 6 "plain " "" #f) (vector 6 3 "red" "terminal-fg-1 terminal-bold" #f)))
+             => (vector (vector 0 6 "plain " "" #f #f) (vector 6 3 "red" "terminal-fg-1 terminal-bold" #f #f)))
       (check (vector-ref (runs-after "\x1b;[38;2;1;2;3;4mx" 0) 0)
-             => (vector 0 1 "x" "terminal-fg-rgb terminal-underline-single" "--terminal-run-foreground:#010203")))
+             => (vector 0 1 "x" "terminal-fg-rgb terminal-underline-single" "--terminal-run-foreground:#010203" #f))
+      ;; An OSC 8 link stays with its run.
+      (check (vector-ref (runs-after "\x1b;]8;;https://example.com\x1b;\\link\x1b;]8;;\x1b;\\" 0) 0)
+             => (vector 0 4 "link" "" #f "https://example.com")))
 
     (test-case "a row draws its runs, the gaps between them, and the cursor"
       (let (runs (vector (vector 0 2 "ab" "" #f) (vector 4 2 "cd" "terminal-bold" #f)))

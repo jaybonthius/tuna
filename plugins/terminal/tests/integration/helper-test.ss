@@ -57,6 +57,19 @@
             (check (wait-for (lambda () (string-contains (test-client-text again) "then more"))) ? values)
             (close-connection! (test-client-connection again))))))
 
+    (test-case "it answers colour queries with the colours Tuna sends, and reports dark or light"
+      ;; The program asks for the background (OSC 11) and the colour scheme
+      ;; (CSI ? 996 n) once it has read a line, then prints the replies.
+      (with-helper "stty -echo -icanon; read go; printf '\\033]11;?\\007\\033[?996n'; dd bs=1 count=33 2>/dev/null | od -An -c | tr -d ' \\n'; echo; sleep 30"
+        (lambda (folder socket client)
+          (check (wait-for (lambda () (test-client-mirror client))) => #t)
+          (connection-send! (test-client-connection client) 'colors
+                            (colors-payload (make-theme-colors #xc5c8c6 #x1d1f21 #f (vector #x000000 #xcc6666))))
+          (connection-send! (test-client-connection client) 'input (string->utf8 "go\n"))
+          (check (wait-for (lambda () (string-contains (test-client-text client) "rgb:1d1d/1f1f/2121"))) ? values)
+          ;; Dark: CSI ? 997 ; 1 n.
+          (check (wait-for (lambda () (string-contains (test-client-text client) "[?997;1n"))) ? values))))
+
     (test-case "kill hangs up the program and ends the helper"
       (with-helper "trap '' INT; sleep 60"
         (lambda (folder socket client)

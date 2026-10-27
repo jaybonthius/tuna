@@ -26,7 +26,12 @@
                => '(100 30 9 18)))
       (check (parse-resize (resize-payload (make-resize-request 0 30 9 18))) => #f)
       (check (parse-exit (exit-payload 130)) => 130)
-      (check (parse-hello (hello-payload)) => protocol-version))
+      (check (parse-hello (hello-payload)) => protocol-version)
+      (let (c (parse-colors (colors-payload (make-theme-colors #x102030 #f #xffffff (vector #x010203 #xa0b0c0)))))
+        (check (list (theme-colors-foreground c) (theme-colors-background c) (theme-colors-cursor c)
+                     (theme-colors-palette c))
+               => [#x102030 #f #xffffff (vector #x010203 #xa0b0c0)]))
+      (check (parse-colors (u8vector 1 0)) => #f))
 
     (test-case "a frame of no known type is refused"
       (check (with-catch (lambda (e) 'refused)

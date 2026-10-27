@@ -49,10 +49,13 @@
         :tuna/plugins/clients/contract
         :tuna/plugins/stylesheets/contract
         :tuna/plugins/minibuffer/contract
-        (only-in :tuna/plugins/editing/contract editing-service current-kill)
+        (only-in :tuna/plugins/renderer/contract renderer-service context-add-status-line-part!)
+        (only-in :tuna/lib/memo source new-source record-read! source-changed!)
+        (only-in :tuna/plugins/editing/contract editing-service current-kill kill-new
+                 region-active? region-beginning region-end set-temporary-region!)
         (only-in :tuna/plugins/files/contract files-service file-system-service
-                 default-directory buffer-default-directory)
-        (only-in :tuna/plugins/web/contract page-service add-script context-add-page-address!)
+                 default-directory buffer-default-directory find-file-noselect)
+        (only-in :tuna/plugins/web/contract page-service add-script context-add-page-address! page-instruct!)
         :tuna/plugins/terminal/contract
         (only-in :gerbil-libghostty/ghostty
                  snapshot-bytes->terminal terminal-write! terminal-close! terminal-resize!
@@ -64,13 +67,21 @@
                  row-changes-cursor row-changes-held?
                  row-numbering-screen row-numbering-generation row-numbering-first-row row-numbering-total-rows
                  row-cursor-row row-cursor-x row-cursor-visible? row-cursor-style row-cursor-blinking?
-                 styled-row-number terminal-render-held? terminal-end-render-hold!
-                 make-key-encoder key-encoder-encode paste-encode terminal-mode-enabled? terminal-modes)
+                 styled-row-number styled-row-wrap? terminal-render-held? terminal-end-render-hold!
+                 make-key-encoder key-encoder-encode paste-encode paste-safe? terminal-mode-enabled? terminal-modes
+                 terminal-set-clipboard-write-handler! clipboard-write-contents
+                 terminal-mouse-tracking? terminal-row-numbering row-numbering-active-row
+                 make-mouse-encoder mouse-encoder-size mouse-encoder-set-size! mouse-encoder-set-any-button-pressed!
+                 mouse-encoder-encode mouse-event
+                 clipboard-content-mime clipboard-content-data)
+        (rename-in (only-in :gerbil-libghostty/ghostty key-event) (key-event ghostty-key-event))
         ./protocol
         ./io
         ./connection
         ./keys
-        ./screen)
+        ./screen
+        ./copy-text
+        ./links)
 (export terminals
         terminal-shell
         terminal-term
@@ -86,7 +97,20 @@
         terminal-initial-input-mode
         terminal-scroll-on-input
         terminal-ignore-cursor-change
+        terminal-colors
+        terminal-status-line-format
+        terminal-enable-osc52
+        terminal-paste-protection
+        terminal-confirm-close-tab
+        terminal-enable-url-detection
+        terminal-enable-file-detection
+        terminal-readonly-fast-exit
+        terminal-line-mode-history-size
+        terminal-mark-activation-input-mode
+        terminal-mouse-drag-input-mode
         parse-directory-report
+        parse-colors-report
+        status-line-format
         terminal-process-environment)
 
 ;;; Settings (ghostel's defcustoms, with its defaults)
@@ -114,13 +138,53 @@
 (defsetting terminal-query-before-killing 'auto
   "Whether killing a terminal's buffer asks first: #t while its program runs, #f never, 'auto while a command runs in it.")
 (defsetting terminal-initial-input-mode 'semi-char
-  "The input mode a new terminal starts in: 'semi-char or 'char.")
+  "The input mode a new terminal starts in: 'semi-char, 'char, or 'line (from its first prompt).")
+(defsetting terminal-line-mode-history-size 200
+  "How many lines line mode remembers for M-p and M-n (ghostel-line-mode-history-size).")
 (defsetting terminal-scroll-on-input #t
   "Whether typing in a terminal scrolled up brings its views back to the bottom.")
 (defsetting terminal-ignore-cursor-change #f
   "Whether a terminal ignores its program's cursor style and draws a block cursor.")
+(defsetting terminal-readonly-fast-exit #t
+  "Whether copy mode ends at q, C-g or any key that types, which then goes to the program (ghostel-readonly-fast-exit). Off, copy mode ends only with C-c C-t or another input mode.")
+(defsetting terminal-mark-activation-input-mode 'default
+  "What setting the mark (C-SPC) in semi-char mode does (ghostel-mark-activation-input-mode): 'default or 'copy enters copy mode with the mark at the cursor; #f leaves C-SPC to the program.")
+(defsetting terminal-mouse-drag-input-mode 'default
+  "What a left click or drag in a terminal in semi-char mode does when its program does not take the mouse (ghostel-mouse-drag-input-mode): 'default or 'copy enters copy mode with point at the click, or the region dragged over; #f does nothing, leaving the browser's own selection.")
+(defsetting terminal-confirm-close-tab #t
+  "Whether closing a plain browser tab asks first while its selected view shows a terminal whose program runs, since C-w and other keys close tabs there. An installed app is never asked.")
+(defsetting terminal-enable-url-detection #t
+  "Whether plain http(s) URLs in a terminal's output are links (ghostel-enable-url-detection).")
+(defsetting terminal-enable-file-detection #t
+  "Whether FILE:LINE[:COLUMN] references to files that exist, in a terminal's output, are links that open the file there (ghostel-enable-file-detection).")
+(defsetting terminal-enable-osc52 #f
+  "Whether programs may copy text to the kill ring and the browser's clipboard (OSC 52). Off, as in ghostel: any output, a file you cat included, could replace what you are about to paste. Programs never read the clipboard.")
+(defsetting terminal-paste-protection #f
+  "Whether pasting text that could run commands (a newline, or the end of a bracketed paste) into a program that did not ask for bracketed paste asks first, as Ghostty's clipboard-paste-protection does. Off, as in ghostel.")
+(defsetting terminal-colors #f
+  "The colours a terminal answers programs' colour queries with (OSC 4, 10, 11, 12, the light or dark report): #f for the theme's, as the browser draws them, or an alist of foreground, background, cursor (\"#rrggbb\") and palette (a list of them) whose entries win over the theme's.")
+(defsetting terminal-status-line-format "(%.30t)"
+  "What a terminal shows in its status line after the buffer's name (ghostel-buffer-identification-format): %t its title, %d its folder, %.Nt or %.Nd at most N characters of them, %% a %; nothing when it names the title and there is none. #f shows nothing.")
 
 ;;; State
+
+;; While in line mode: the input, a text in TEXT-NODE, under WRAPPER (a
+;; terminal-line-input node shown after the cursor's row, over the rest of
+;; it); the lines sent, newest first, and which one M-p and M-n show.
+(defclass line-state ((text-node : node)
+                      (wrapper   : node)
+                      (history   : :list)
+                      (index     :? :fixnum))
+  final: #t)
+
+;; While in copy mode: the frozen copy of the rows (COPY, in the text
+;; node TEXT-NODE), the number of its first row, and the input mode to go back
+;; to.
+(defclass copy-state ((text-node : node)
+                      (copy     : copy-text)
+                      (first    : :integer)
+                      (previous : :symbol))
+  final: #t)
 
 (defclass (live-terminal terminal)
   ((socket       : :string)
@@ -149,7 +213,13 @@
    (sync-due?    : :boolean)
    (held-since   :? :real)
    (running?     : :boolean)            ; a command runs, by OSC 133
-   (refusals     : :fixnum))
+   (refusals     : :fixnum)
+   (last-client  :? :t)                 ; the client that last typed into it
+   (copy         :? copy-state)         ; while in copy mode
+   (line         :? line-state)         ; while in line mode
+   (line-paused? : :boolean)            ; line mode waits for the alternate screen to end
+   (history      : :list)               ; line mode's lines sent, newest first
+   (status       : source))             ; changes with what its status line shows
   final: #t)
 
 (defclass terminals-state ((ctx       : context)
@@ -158,14 +228,20 @@
                            (semi-char : entry-table)
                            (char-map  : entry-table)
                            (quote-map : entry-table)
+                           (copy-map  : entry-table)      ; copy mode
+                           (copy-fast-map : entry-table)  ; copy mode with fast exit
+                           (line-map  : entry-table)      ; line mode's input
+                           (line-root-map : entry-table)  ; line mode, around the input
                            (jobs      : job-group)
                            (encoder   : :t)
+                           (mouse-encoder : :t)
                            (sizes     : HashTable)        ; client -> list of measured views
                            (quoting   : :list)            ; prompts waiting for a key, newest first
                            (poster    :? :procedure)
                            (focused   :? live-terminal)
                            (yank      : :fixnum)
                            (waiting   : :list)            ; terminals to connect once the loop runs
+                           (colors    :? theme-colors) ; the theme's, as a browser last measured them
                            (stopping? : :boolean))
   final: #t)
 
@@ -287,7 +363,8 @@
                               cursor-row: #f columns: columns rows: rows cell-width: 0 cell-height: 0
                               effects: [] input-mode: mode initial-name: name managed-name: name
                               follow: (make-hash-table-eq) last-input: 0 last-output: 0 timer: #f
-                              sync-due?: #f held-since: #f running?: #f refusals: 0)))
+                              sync-due?: #f held-since: #f running?: #f refusals: 0 last-client: #f copy: #f line: #f line-paused?: #f history: []
+                              status: (new-source))))
     (add-buffer! b)
     (hash-put! self.terms id term)
     (hash-put! self.by-buffer b term)
@@ -304,7 +381,9 @@
 (def (views-showing (term : live-terminal)) => :list
   (if (service-there? layout-service)
     (filter (lambda ((v : view)) (eq? (view-showing v) (terminal-buffer term))) (view-list))
-    []))
+    ;; Without a layout, the buffers service's one view.
+    (let (v (selected-view))
+      (if (eq? (view-showing v) (terminal-buffer term)) [v] []))))
 
 ;; Start the job reading TERM's helper: it starts the helper with LAUNCH
 ;; first when one is given, waits for its socket, connects, and posts the
@@ -387,6 +466,7 @@
              (set! term.columns (helper-hello-columns h))
              (set! term.rows (helper-hello-rows h))
              (set-node-attribute! term.root 'size (size-text term))
+             (send-colors! self term)
              ;; Views measured while it was starting, or since the last
              ;; Tuna saw it, may want another size.
              (resize-to-views! self term))
@@ -425,6 +505,15 @@
     (terminal-set-title-changed-handler! mirror (lambda (title) (push-effect! term (cons 'title title))))
     (terminal-set-pwd-changed-handler! mirror (lambda (directory) (push-effect! term (cons 'directory directory))))
     (terminal-set-bell-handler! mirror (lambda () (push-effect! term '(bell))))
+    ;; OSC 52 copies: the reply is the policy answer, the copy itself waits.
+    (terminal-set-clipboard-write-handler!
+     mirror
+     (lambda (request)
+       (if (buffer-local-value terminal-enable-osc52 (terminal-buffer term))
+         (let (text (clipboard-text request))
+           (when text (push-effect! term (cons 'copy text)))
+           'success)
+         'denied)))
     (terminal-set-semantic-prompt-handler! mirror
                                            (lambda (event) (push-effect! term (cons 'prompt (semantic-prompt-event-kind event)))))
     (set! term.mirror mirror)
@@ -447,6 +536,7 @@
          ((title) (title-changed! self term (lenient-utf8 (cdr effect))))
          ((directory) (directory-reported! self term (lenient-utf8 (cdr effect))))
          ((bell) (run-hook-safely terminal-bell-hook term))
+         ((copy) (program-copied! self term (cdr effect)))
          ((prompt)
           (case (cdr effect)
             ((output-start) (set! term.running? #t))
@@ -464,10 +554,67 @@
   (with-catch (lambda (e) (message (string-append "Terminal hook failed: " (error-message e))))
               (lambda () (apply run-hook hook args))))
 
+;;; OSC 52
+
+;; The text an OSC 52 write carries, or #f to clear or for nothing to copy.
+(def (clipboard-text (request : :t)) => (Maybe :string)
+  (let* ((contents (vector->list (clipboard-write-contents request)))
+         (text (or (find (lambda (c) (string-prefix? "text/plain" (lenient-utf8 (clipboard-content-mime c)))) contents)
+                   (and (pair? contents) (car contents)))))
+    (and text (fx> (u8vector-length (clipboard-content-data text)) 0)
+         (lenient-utf8 (clipboard-content-data text)))))
+
+;; TERM's program copied TEXT (OSC 52): onto the kill ring, and the
+;; browser's clipboard through the tab that last typed into TERM, as
+;; ghostel puts it on the kill ring and the system clipboard. Best effort:
+;; a browser may refuse a write no key or click came just before, and the
+;; web transport then says so.
+(def (program-copied! (self : terminals-state) (term : live-terminal) (text : :string)) => :void
+  (when (service-there? editing-service)
+    (parameterize ((current-client term.last-client))
+      (kill-new text))))
+
+;;; Links
+
+;; Open URI, a link in TERM, as ghostel does (ghostel--open-link): a file
+;; (file://, fileref: or a path, with :LINE[:COLUMN]) in its buffer, in
+;; another view, at that line; a web address in a new browser tab, through
+;; the tab that asked (or last typed into TERM), since Tuna has no
+;; browse-url of its own.
+(def (open-link! (self : terminals-state) (term : live-terminal) (uri : :string)) => :void
+  (let* ((directory (or (terminal-directory term) (buffer-default-directory (terminal-buffer term))))
+         (file (link-file-target uri directory (host-name))))
+    (cond
+     ((web-link? uri)
+      (let (c (or (current-client) term.last-client))
+        (if (and c (service-there? page-service))
+          (page-instruct! c "terminalOpen" uri)
+          (message (string-append "No browser tab to open " uri " in")))))
+     ((and file (service-there? files-service) (file-exists? (car file)))
+      (let* ((b (find-file-noselect (car file)))
+             (v (if (service-there? layout-service) (display-buffer b) (selected-view))))
+        (when (service-there? layout-service) (select-view v))
+        (unless (service-there? layout-service) (switch-to-buffer b))
+        (let (line (cadr file))
+          (when line
+            (let (t (current-text))
+              (goto-char (text-position-at t (fxmax 1 (fxmin line (text-line-count t)))
+                                           (fxmax 0 (fx1- (or (caddr file) 1))))))))))
+     (else (message (string-append "Cannot open " uri))))))
+
+;; The link a page script says was clicked in the terminal ID: open it
+;; (open-link! opens only web addresses and files that exist).
+(def (link-clicked! (self : terminals-state) (c : :t) (id : :string) (uri : :string)) => :void
+  (let (term (hash-get self.terms id))
+    (when term
+      (parameterize ((current-client c))
+        (open-link! self term uri)))))
+
 ;;; Titles and folders
 
 (def (title-changed! (self : terminals-state) (term : live-terminal) (title : :string)) => :void
   (set! term.title title)
+  (source-changed! term.status)
   (when (eq? (buffer-local-value terminal-buffer-name-function (terminal-buffer term)) 'title)
     (rename-managed! self term (if (string-empty? title)
                                  term.initial-name
@@ -506,16 +653,6 @@
      ((string-prefix? "/" report) report)
      (else #f))))
 
-(def (percent-decode (s : :string)) => :string
-  (let (bytes (string->utf8 s))
-    (let lp ((i 0) (out []))
-      (cond
-       ((fx>= i (u8vector-length bytes)) (lenient-utf8 (list->u8vector (reverse out))))
-       ((and (fx= (u8vector-ref bytes i) 37) (fx< (fx+ i 2) (u8vector-length bytes))
-             (string->number (utf8->string (subu8vector bytes (fx1+ i) (fx+ i 3))) 16))
-        => (lambda (n) (lp (fx+ i 3) (cons n out))))
-       (else (lp (fx1+ i) (cons (u8vector-ref bytes i) out)))))))
-
 (def (host-name) => :string
   (:- (with-catch (lambda (e) "")
                   (lambda () (string-trim (call-with-input-file "/proc/sys/kernel/hostname" read-line))))
@@ -531,6 +668,7 @@
       (let ((b (terminal-buffer term))
             (folder (if (string-suffix? "/" path) path (string-append path "/"))))
         (set! term.directory path)
+        (source-changed! term.status)
         (set-buffer-setting! b default-directory folder)
         (when (eq? (buffer-local-value terminal-buffer-name-function b) 'directory)
           (rename-managed! self term (string-append "*terminal: " (abbreviated path) "*")))
@@ -561,47 +699,121 @@
 (def (sync! (self : terminals-state) (term : live-terminal)) => :void
   (set! term.sync-due? #f)
   (let (mirror term.mirror)
-    (when mirror
+    ;; Copy mode freezes the rows; output goes on into the mirror.
+    (when (and mirror (not term.copy))
       (let* ((following (filter (cut following? self term <>) (views-showing term)))
              (changes (terminal-copy-changed-rows! mirror))
              (numbering (row-changes-numbering changes))
              (screen (row-numbering-screen numbering))
              (store (if (eq? screen 'alternate) term.alternate term.primary))
              (first (row-numbering-first-row numbering))
-             (end (+ first (row-numbering-total-rows numbering))))
+             (end (+ first (row-numbering-total-rows numbering)))
+             (copied (make-hash-table-eqv))
+             (cursor (row-changes-cursor changes)))
         (if (eqv? (row-store-generation store) (row-numbering-generation numbering))
           (begin
             (row-store-trim! store first)
             (row-store-extend! store end)
             (let ((from (max first (row-changes-frozen-start changes)))
                   (to (min end (row-changes-frozen-end changes))))
-              (when (< from to) (copy-rows! store mirror from to)))
-            (vector-for-each (lambda (row) (set-row! store row)) (row-changes-rows changes)))
+              (when (< from to) (copy-rows! copied mirror from to)))
+            (vector-for-each (cut keep-row! copied <>) (row-changes-rows changes)))
           (begin
             (row-store-reset! store (row-numbering-generation numbering) first)
             (row-store-extend! store end)
-            (copy-rows! store mirror first end)
-            (vector-for-each (lambda (row) (set-row! store row)) (row-changes-rows changes))))
-        (move-cursor! term store (row-changes-cursor changes))
+            (copy-rows! copied mirror first end)
+            (vector-for-each (cut keep-row! copied <>) (row-changes-rows changes))))
+        (set-rows! term store copied (and cursor (row-cursor-visible? cursor) (row-cursor-row cursor)))
+        (move-cursor! term store cursor)
+        (follow-line-mode! self term screen)
         (let (blocks (row-store-blocks store))
           (unless (and (eq? screen term.screen) (equal? (map node-id blocks) (map node-id (node-children term.root))))
             (set-node-attribute! term.root 'screen screen)
             (set-node-children! term.root blocks)))
         (set! term.screen screen)
+        (refresh-root-attributes! self term)
         (end-long-hold! term mirror)
         (for-each (cut place-at-bottom! term <>) following)))))
 
-;; Copy rows FROM to TO of MIRROR into STORE, a thousand at a time.
-(def (copy-rows! (store : row-store) (mirror : :t) (from : :integer) (to : :integer)) => :void
+;; Copy rows FROM to TO of MIRROR into COPIED, a thousand at a time.
+(def (copy-rows! (copied : HashTable) (mirror : :t) (from : :integer) (to : :integer)) => :void
   (let lp ((from from))
     (when (< from to)
       (let (upto (min to (+ from 1000)))
-        (vector-for-each (lambda (row) (set-row! store row)) (terminal-copy-rows mirror from upto))
+        (vector-for-each (cut keep-row! copied <>) (terminal-copy-rows mirror from upto))
         (lp upto)))))
 
-(def (set-row! (store : row-store) (row : :t)) => :void
-  (let (n (row-store-row store (styled-row-number row)))
-    (when n (set-node-attribute! n 'runs (row-runs row)))))
+;; Keep ROW, a styled row, in COPIED: its number -> (RUNS . WRAP?).
+(def (keep-row! (copied : HashTable) (row : :t)) => :void
+  (hash-put! copied (styled-row-number row) (cons (row-runs row) (styled-row-wrap? row))))
+
+;; Set the rows COPIED holds on their nodes in STORE, each attribute
+;; once, with the plain links (ghostel-links) found in the program's
+;; lines they are part of, rows it wrapped joined; not in the line of the
+;; cursor's row CURSOR, which is the input being typed.
+(def (set-rows! (term : live-terminal) (store : row-store) (copied : HashTable) (cursor :? :integer)) => :void
+  (let* ((b (terminal-buffer term))
+         (urls? (buffer-local-value terminal-enable-url-detection b))
+         (files? (buffer-local-value terminal-enable-file-detection b))
+         (final (hash-copy copied)))
+    (def (row-of (number : :integer)) => (Maybe :pair)
+      (or (hash-get final number)
+          (let (n (row-store-row store number))
+            (and n (cons (node-attribute n 'runs) (node-attribute n 'wrap))))))
+    (when (or urls? files?)
+      (let ((seen (make-hash-table-eqv))
+            (directory (or (terminal-directory term) (buffer-default-directory b))))
+        (for-each
+         (lambda (number)
+           (unless (hash-get seen number)
+             (let* ((start (let back ((m number) (k 0))
+                             (let (previous (row-of (- m 1)))
+                               (if (and previous (cdr previous) (< k link-line-rows)) (back (- m 1) (+ k 1)) m))))
+                    (end (let forward ((m number) (k 0))
+                           (let (row (row-of m))
+                             (if (and row (cdr row) (row-of (+ m 1)) (< k link-line-rows)) (forward (+ m 1) (+ k 1)) m)))))
+               (let mark ((m start)) (when (<= m end) (hash-put! seen m #t) (mark (+ m 1))))
+               (unless (and cursor (<= start cursor end))
+                 (link-line! final row-of start end urls? files? directory)))))
+         (hash-keys copied))))
+    (hash-for-each (lambda (number (row : :pair))
+                     (let (n (row-store-row store number))
+                       (when n
+                         (set-node-attribute! n 'runs (car row))
+                         (set-node-attribute! n 'wrap (cdr row)))))
+                   final)))
+
+;; How many rows of one line of the program's are joined to find links
+;; in (ghostel--soft-wrap-row-limit).
+(def link-line-rows 50)
+
+;; Find links in rows START to END, one line of the program's, and put
+;; the rows that get any in FINAL.
+(def (link-line! (final : HashTable) (row-of : :procedure) (start : :integer) (end : :integer)
+                 (urls? : :boolean) (files? : :boolean) (directory : :string))
+  => :void
+  (let* ((numbers (let lp ((m end) (out [])) (if (< m start) out (lp (- m 1) (cons m out)))))
+         (rows (map row-of numbers))
+         (texts (map (lambda ((row : :pair)) (row-text (car row))) rows))
+         (links (find-links (apply string-append texts) urls? files?
+                            (lambda ((path : :string))
+                              (let (absolute (if (string-prefix? "/" path) path (path-expand path directory)))
+                                (and (file-exists? absolute) absolute))))))
+    (unless (null? links)
+      (let lp ((numbers numbers) (rows rows) (texts texts) (offset 0))
+        (match numbers
+          ([number . more]
+           (let* ((size (string-length (car texts)))
+                  (local (filter-map (lambda ((l : :list))
+                                       (let ((from (fxmax 0 (fx- (car l) offset)))
+                                             (to (fxmin size (fx- (cadr l) offset))))
+                                         (and (fx< from to) [from to (caddr l)])))
+                                     links)))
+             (when (pair? local)
+               (let (row (car rows))
+                 (hash-put! final number (cons (link-runs (car row) local) (cdr row)))))
+             (lp more (cdr rows) (cdr texts) (fx+ offset size))))
+          (else (void)))))))
 
 (def (move-cursor! (term : live-terminal) (store : row-store) (cursor : :t)) => :void
   (let* ((number (and cursor (row-cursor-visible? cursor) (row-cursor-row cursor)))
@@ -665,6 +877,10 @@
 ;; Size TERM to the smallest view showing it, as Emacs sizes a process's
 ;; window (window-adjust-process-window-size-smallest).
 (def (resize-to-views! (self : terminals-state) (term : live-terminal)) => :void
+  ;; Not while copy mode holds the screen still (vterm, ghostel).
+  (unless term.copy (resize-to-measured-views! self term)))
+
+(def (resize-to-measured-views! (self : terminals-state) (term : live-terminal)) => :void
   (let* ((view-ids (map view-id (views-showing term)))
          (sizes (filter (lambda ((m : :list)) (and (memv (car m) view-ids) (equal? (cadr m) (terminal-id term))))
                         (apply append (hash-values self.sizes)))))
@@ -721,6 +937,7 @@
 (def (send-input! (self : terminals-state) (term : live-terminal) (bytes : :u8vector)) => :void
   (when (and (fx> (u8vector-length bytes) 0) term.link (not (terminal-exit-status term)))
     (set! term.last-input (now))
+    (let (c (current-client)) (when c (set! term.last-client c)))
     (when (setting-value terminal-scroll-on-input)
       (for-each (cut place-at-bottom! term <>) (views-showing term)))
     (send! term 'input bytes)))
@@ -747,12 +964,26 @@
         (mode (assq name (terminal-modes))))
     (and mirror mode (terminal-mode-enabled? mirror (cdr mode)))))
 
-;; Send TEXT as a paste: bracketed when the program asked for it.
+;; Send TEXT as a paste through libghostty's paste encoder: bracketed
+;; when the program asked for it. With terminal-paste-protection on, text
+;; that could run commands in a program that did not ask for bracketed
+;; paste is sent only once the user says yes.
 (def (paste! (self : terminals-state) (term : live-terminal) (text : :string)) => :void
-  (send-input! self term (paste-encode (string->utf8 text) bracketed?: (mode-on? term 'bracketed-paste))))
+  (let ((bytes (string->utf8 text))
+        (bracketed? (mode-on? term 'bracketed-paste)))
+    (when (or bracketed? (paste-safe? bytes)
+              (not (buffer-local-value terminal-paste-protection (terminal-buffer term)))
+              (not (service-there? minibuffer-service))
+              (yes-or-no? "The text to paste could run commands; paste it? "))
+      (send-input! self term (paste-encode bytes bracketed?: bracketed?)))))
 
 (def (set-input-mode! (self : terminals-state) (term : live-terminal) (mode : :symbol)) => :void
+  (when term.copy (leave-copy-mode! self term))
+  (when term.line (leave-line-mode! self term #t))
+  (set! term.line-paused? #f)
   (set! term.input-mode mode)
+  (source-changed! term.status)
+  (refresh-root-attributes! self term)
   (set-node-keymap! term.root (if (eq? mode 'char) self.char-map self.semi-char))
   (message (if (eq? mode 'char)
              "Terminal char mode: every key goes to the program; M-RET goes back"
@@ -772,6 +1003,361 @@
                   (set! self.quoting (remq asked self.quoting)))))
     (when (key-event? event)
       (send-input! self term (key-bytes self term event)))))
+
+;;; Copy mode
+
+
+;; The rows of TERM's current screen, each (RUNS . WRAP?), and the number
+;; of the first.
+(def (screen-rows (term : live-terminal)) => :values
+  (let* ((store (if (eq? term.screen 'alternate) term.alternate term.primary))
+         (first (row-store-base store)))
+    (values (let lp ((n (- (row-store-end store) 1)) (out []))
+              (if (< n first)
+                out
+                (lp (- n 1)
+                    (let (r (row-store-row store n))
+                      (cons (cons (node-attribute r 'runs) (node-attribute r 'wrap)) out)))))
+            first)))
+
+;; Where TERM's cursor is in the copy C of rows from FIRST, or its end.
+(def (cursor-copy-position (term : live-terminal) (c : copy-text) (first : :integer)) => :fixnum
+  (let* ((row term.cursor-row)
+         (cursor (and row (node-attribute row 'cursor))))
+    (if (vector? cursor)
+      (copy-text-position c (- (node-attribute row 'number) first)
+                          (cell->index (node-attribute row 'runs) (vector-ref cursor 0)))
+      (fx1+ (string-length (copy-text-text c))))))
+
+;; The position in TERM's copy of character INDEX of row NUMBER, or #f
+;; when that row is not in it.
+(def (copy-row-position (term : live-terminal) (number :? :integer) (index : :fixnum)) => (Maybe :fixnum)
+  (let ((state term.copy))
+    (and state (integer? number)
+         (let (i (- number (copy-state-first state)))
+           (and (fx<= 0 i) (fx< i (vector-length (copy-text-row-starts (copy-state-copy state))))
+                (copy-text-position (copy-state-copy state) i index))))))
+
+;; Freeze TERM's screen as a read-only text, which motion, mark and
+;; kill-ring commands work over, its rows' palette colours and links as
+;; highlights; every view showing TERM shows the same rows as before, with
+;; point at the cursor. Output goes on into the mirror; the rows are drawn
+;; again when copy mode ends. A text node, not the rows themselves:
+;; editing commands work in one focused text node, and a region cannot
+;; span nodes.
+(def (enter-copy-mode! (self : terminals-state) (term : live-terminal)) => copy-state
+  (or term.copy
+      (begin
+        (when term.line (leave-line-mode! self term #t))
+        (sync! self term)
+        (let-values (((rows first) (screen-rows term)))
+          (let* ((c (rows->copy-text rows))
+                 (t (new-text (copy-text-text c)))
+                 (n (new-text-node t))
+                 (point (cursor-copy-position term c first))
+                 (placements (map (lambda ((v : view)) (cons v (view-placement v))) (views-showing term)))
+                 (state (copy-state text-node: n copy: c first: first
+                                    previous: (if (eq? term.input-mode 'char) 'char 'semi-char))))
+            (set-highlights! t 'terminal (copy-text-spans c))
+            (set! term.copy state)
+            (set! term.input-mode 'copy)
+            (source-changed! term.status)
+            (set-node-children! term.root [n])
+            (refresh-root-attributes! self term)
+            (set-node-keymap! term.root (if (buffer-local-value terminal-readonly-fast-exit (terminal-buffer term))
+                                          self.copy-fast-map
+                                          self.copy-map))
+            (set-buffer-setting! (terminal-buffer term) buffer-read-only #t)
+            (for-each (lambda ((pair : :pair))
+                        (let ((v (car pair))
+                              (p (cdr pair)))
+                          (set-view-focus! v n point)
+                          (place-copy-view! term v p)))
+                      placements)
+            (message (if (buffer-local-value terminal-readonly-fast-exit (terminal-buffer term))
+                       "Copy mode: press any printable key to exit"
+                       "Copy mode: C-c C-t or C-c C-j to exit"))
+            state)))))
+
+;; Put V back where placement P had it, now that it shows TERM's copy.
+(def (place-copy-view! (term : live-terminal) (v : view) (p : placement)) => :void
+  (let* ((state term.copy)
+         (n (copy-state-text-node state))
+         (target (placement-target p))
+         (position (and target (copy-row-position term (node-attribute (item-node target) 'number) 0))))
+    (if position
+      (place-view! v (node-line-item n position) (placement-align p) offset: (placement-offset p))
+      (place-view! v (node-line-item n (view-point v)) 'bottom))))
+
+;; Draw TERM's rows again, as they are now, and go back to the input mode
+;; before copy mode, the views following the output.
+(def (leave-copy-mode! (self : terminals-state) (term : live-terminal)) => :void
+  (let (state term.copy)
+    (when state
+      (let ((b (terminal-buffer term))
+            (mode (copy-state-previous state)))
+        (set! term.copy #f)
+        (set! term.input-mode mode)
+        (source-changed! term.status)
+        (set-buffer-setting! b buffer-read-only #f)
+        (set-node-keymap! term.root (if (eq? mode 'char) self.char-map self.semi-char))
+        (for-each (lambda ((v : view)) (reset-view! v b #f 1 0)) (views-showing term))
+        (sync! self term)
+        (for-each (cut place-at-bottom! term <>) (views-showing term))
+        (resize-to-views! self term)))))
+
+;; A view showing TERM whose point is in a copy that is gone, as one that
+;; left TERM's buffer in copy mode finds on coming back, shows the rows.
+(def (forget-stale-copies! (self : terminals-state)) => :void
+  (when (service-there? layout-service)
+    (for-each (lambda ((v : view))
+                (let* ((term (hash-get self.by-buffer (view-showing v)))
+                       (n (and term (view-node v))))
+                  (when (and n (not (and (live-terminal-copy term) (eq? n (copy-state-text-node (live-terminal-copy term))))))
+                    (reset-view! v (terminal-buffer term) #f 1 0)
+                    (place-at-bottom! term v))))
+              (view-list))))
+
+;; Copy the region of TERM's copy, without the line ends that only wrap
+;; and with each line's trailing spaces dropped, onto the kill ring.
+(def (copy-region! (term : live-terminal)) => :boolean
+  (let (state term.copy)
+    (and state (service-there? editing-service) (region-active?)
+         (let (text (copy-text-clean (copy-state-copy state) (region-beginning) (region-end)))
+           (kill-new text)
+           (message (string-append "Copied " (number->string (string-length text)) " characters"))
+           #t))))
+
+;;; Line mode
+
+;; Edit a line locally, with ordinary Tuna editing, and send it whole on
+;; RET (ghostel-line-mode, eat's line mode): the input is a text shown
+;; over the cursor's row from the cursor on. The program sees nothing
+;; until RET. On the alternate screen line mode waits, in semi-char mode,
+;; until the program leaves it (ghostel's pause), unless the user asked
+;; for it there. Typing already at the prompt is not taken into the
+;; input: ghostel adopts it from OSC 133 input marks, which come with
+;; shell integration (stage 4).
+(def (enter-line-mode! (self : terminals-state) (term : live-terminal)) => :void
+  (when term.copy (leave-copy-mode! self term))
+  (unless term.line
+    (let* ((t (new-text ""))
+           (n (new-text-node t))
+           (wrapper (new-node 'terminal-line-input children: [n] attributes: [(cons 'column 0)])))
+      (set-node-keymap! n self.line-map)
+      (set! term.line (line-state text-node: n wrapper: wrapper history: term.history index: #f))
+      (set! term.line-paused? #f)
+      (set! term.input-mode 'line)
+      (source-changed! term.status)
+      (set-node-keymap! term.root self.line-root-map)
+      (refresh-root-attributes! self term)
+      (place-line-input! term)
+      (for-each (lambda ((v : view)) (set-view-focus! v n 1)) (views-showing term))
+      (message "Line mode: RET sends the whole line; C-c C-j to leave"))))
+
+;; Show line mode's input after the cursor's row, from the cursor's
+;; column on.
+(def (place-line-input! (term : live-terminal)) => :void
+  (let (state term.line)
+    (when state
+      (let* ((row (or term.cursor-row (row-store-last-row term.primary)))
+             (cursor (and row (node-attribute row 'cursor)))
+             (wrapper (line-state-wrapper state)))
+        (set-node-attribute! wrapper 'column (if (vector? cursor) (vector-ref cursor 0) 0))
+        (row-store-set-extra! term.primary wrapper (and row (node-attribute row 'number)))))))
+
+;; After a redraw: keep the input at the cursor; on the alternate screen,
+;; pause line mode; back on the primary screen, resume it.
+(def (follow-line-mode! (self : terminals-state) (term : live-terminal) (screen : :symbol)) => :void
+  (cond
+   ((and term.line (eq? screen 'alternate))
+    (leave-line-mode! self term #f)
+    (set! term.input-mode 'semi-char)
+    (set-node-keymap! term.root self.semi-char)
+    (set! term.line-paused? #t)
+    (source-changed! term.status)
+    (message "Line mode paused; it comes back when the full-screen program ends"))
+   ((and term.line-paused? (eq? screen 'primary) term.cursor-row)
+    (enter-line-mode! self term))
+   (term.line (place-line-input! term))))
+
+;; End line mode: the input goes to the program as typed, without RET,
+;; when HAND-BACK? (ghostel's teardown), or is dropped.
+(def (leave-line-mode! (self : terminals-state) (term : live-terminal) (hand-back? : :boolean)) => :void
+  (let (state term.line)
+    (when state
+      (let ((input (text-string (text-node-content (line-state-text-node state)))))
+        (set! term.history (line-state-history state))
+        (set! term.line #f)
+        (row-store-set-extra! term.primary #f #f)
+        (for-each (lambda ((v : view)) (reset-view! v (terminal-buffer term) #f 1 0) (place-at-bottom! term v))
+                  (views-showing term))
+        (when (and hand-back? (not (string-empty? input)))
+          (send-input! self term (string->utf8 input)))))))
+
+;; The bytes the key KEY (a libghostty physical key) sends TERM's program.
+(def (encoded-key (self : terminals-state) (term : live-terminal) (key : :symbol)) => :u8vector
+  (let (mirror term.mirror)
+    (if mirror
+      (key-encoder-encode self.encoder (ghostty-key-event 'press key) terminal: mirror)
+      (u8vector 13))))
+
+;; Send line mode's input and RET, remember it, and start a new line.
+(def (line-mode-send! (self : terminals-state) (term : live-terminal)) => :void
+  (let (state term.line)
+    (when state
+      (let* ((t (text-node-content (line-state-text-node state)))
+             (input (text-string t))
+             (history (line-state-history state)))
+        (unless (or (string-empty? input) (and (pair? history) (equal? (car history) input)))
+          (set! (line-state-history state)
+            (let (kept (cons input history))
+              (if (fx> (length kept) (setting-value terminal-line-mode-history-size))
+                (take kept (setting-value terminal-line-mode-history-size))
+                kept))))
+        (set! (line-state-index state) #f)
+        (line-mode-replace! state "")
+        (text-clear-undo! t)
+        (send-input! self term (u8vector-append (string->utf8 input) (encoded-key self term 'enter)))))))
+
+;; Make line mode's input TEXT, point at its end.
+(def (line-mode-replace! (state : line-state) (text : :string)) => :void
+  (let (t (text-node-content (line-state-text-node state)))
+    (text-replace! t 1 (fx1+ (text-size t)) text)
+    (when (eq? (view-node (selected-view)) (line-state-text-node state))
+      (goto-char (fx1+ (string-length text))))))
+
+;; Show the line sent STEP lines before (1) or after (-1) the one shown.
+(def (line-mode-history! (state : line-state) (step : :fixnum)) => :void
+  (let* ((history (line-state-history state))
+         (index (line-state-index state))
+         (next (if index (fx+ index step) (if (fx> step 0) 0 -1))))
+    (cond
+     ((and (fx>= next 0) (fx< next (length history)))
+      (set! (line-state-index state) next)
+      (line-mode-replace! state (list-ref history next)))
+     ((fx< next 0)
+      (set! (line-state-index state) #f)
+      (line-mode-replace! state ""))
+     (else (void)))))
+
+;;; The mouse
+
+;; What a press over TERM's rows does, for its page script (data-mouse):
+;; "program" or "program-motion" (every movement too) while its program
+;; takes the mouse in semi-char or char mode; "select" in semi-char mode
+;; when terminal-mouse-drag-input-mode enters copy mode; "" otherwise. Copy
+;; and line mode keep Tuna's own mouse, as ghostel's do.
+(def (mouse-mode (term : live-terminal)) => :string
+  (let (mirror term.mirror)
+    (cond
+     ((and mirror (memq term.input-mode '(semi-char char)) (not (terminal-exit-status term))
+           (terminal-mouse-tracking? mirror))
+      (if (mode-on? term 'any-mouse) "program-motion" "program"))
+     ((and (eq? term.input-mode 'semi-char)
+           (buffer-local-value terminal-mouse-drag-input-mode (terminal-buffer term)))
+      "select")
+     (else ""))))
+
+;; TERM's root's attributes for its page script: its mouse mode, and
+;; whether closing a plain browser tab showing it asks first.
+(def (refresh-root-attributes! (self : terminals-state) (term : live-terminal)) => :void
+  (set-node-attribute! term.root 'mouse (mouse-mode term))
+  (set-node-attribute! term.root 'confirm-close
+                       (and (not (terminal-exit-status term))
+                            (buffer-local-value terminal-confirm-close-tab (terminal-buffer term))
+                            #t)))
+
+(def (fact (facts : :t) (key : :string)) => :t
+  (and (hash-table? facts) (hash-get facts key)))
+
+(def (view-by-id (id : :t)) => (Maybe view)
+  (and (fixnum? id)
+       (if (service-there? layout-service)
+         (find (lambda ((v : view)) (fx= (view-id v) id)) (view-list))
+         (let (v (selected-view)) (and (fx= (view-id v) id) v)))))
+
+;; Select the view a mouse event came from, as a click does.
+(def (select-view-of! (v :? view)) => :void
+  (when (and v (not (eq? v (selected-view))) (service-there? layout-service))
+    (select-view v)))
+
+;; A page's mouse event over a terminal whose program takes the mouse:
+;; FACTS {terminal, view, kind (press, release, motion), button (left,
+;; middle, right, four, five or null), count, buttons, row, column, y,
+;; alt, ctrl, meta, shift}. Encoded by libghostty's mouse encoder for the
+;; modes the program asked for, and sent.
+(def (mouse-reported! (self : terminals-state) (c : :t) (facts : :t)) => :void
+  (let* ((id (fact facts "terminal"))
+         (term (and (string? id) (hash-get self.terms id)))
+         (mirror (and term (live-terminal-mirror term))))
+    (when (and term mirror (not (live-terminal-copy term)) (not (terminal-exit-status term)))
+      (let ((kind (fact facts "kind"))
+            (button (fact facts "button"))
+            (row (fact facts "row"))
+            (column (fact facts "column"))
+            (y (fact facts "y"))
+            (count (fact facts "count")))
+        (when (and (member kind ["press" "release" "motion"]) (integer? row) (real? column) (real? y)
+                   (or (not button) (member button ["left" "middle" "right" "four" "five"])))
+          (unless (equal? kind "motion") (select-view-of! (view-by-id (fact facts "view"))))
+          (when c (set! (live-terminal-last-client term) c))
+          (let* ((width (fxmax 1 (live-terminal-cell-width term)))
+                 (height (fxmax 1 (live-terminal-cell-height term)))
+                 (screen-row (- row (row-numbering-active-row (terminal-row-numbering mirror))))
+                 (x (* (min column (+ (live-terminal-columns term) 1)) width))
+                 (y (* (+ (max -1 (min screen-row (live-terminal-rows term))) y) height))
+                 (modifiers (filter-map (lambda ((pair : :pair)) (and (eq? (fact facts (car pair)) #t) (cdr pair)))
+                                        '(("shift" . shift) ("ctrl" . ctrl) ("alt" . alt) ("meta" . super))))
+                 (event (with-catch (lambda (e) #f)
+                                    (lambda () (mouse-event (string->symbol kind) (and button (string->symbol button))
+                                                            x y modifiers: modifiers))))
+                 (encoder self.mouse-encoder))
+            (when event
+              (mouse-encoder-set-size! encoder (mouse-encoder-size (* (live-terminal-columns term) width) (* (live-terminal-rows term) height)
+                                                                   width height 0 0 0 0))
+              (mouse-encoder-set-any-button-pressed! encoder (and (fixnum? (fact facts "buttons"))
+                                                                  (fx> (fact facts "buttons") 0)))
+              (let (bytes (with-catch (lambda (e) (u8vector))
+                                      (lambda () (mouse-encoder-encode encoder event terminal: mirror))))
+                (when (fx> (u8vector-length bytes) 0)
+                  (set! (live-terminal-last-input term) (now))
+                  (let lp ((n (if (and (fixnum? count) (fx< 0 count 100)) count 1)))
+                    (when (fx> n 0)
+                      (send! term 'input bytes)
+                      (lp (fx1- n)))))))))))))
+
+;; What a page selected over a terminal's rows in select mode, or where
+;; it was clicked: FACTS {terminal, view, start: {row, index}, end, clicks,
+;; wasSelected}. The view is selected; then, as ghostel does
+;; (ghostel-mouse-drag-input-mode), a drag, a double or triple click, or a
+;; click in a view that was already selected enters copy mode with point
+;; at the end and the region from the start.
+(def (selection-reported! (self : terminals-state) (c : :t) (facts : :t)) => :void
+  (let* ((id (fact facts "terminal"))
+         (term (and (string? id) (hash-get self.terms id)))
+         (v (view-by-id (fact facts "view")))
+         (start (fact facts "start"))
+         (end (fact facts "end"))
+         (place (lambda (p) (and (hash-table? p) (integer? (hash-get p "row")) (fixnum? (hash-get p "index"))
+                                 (cons (hash-get p "row") (hash-get p "index")))))
+         (from (place start))
+         (to (place end))
+         (clicks (fact facts "clicks")))
+    (when (and term v from to (not (live-terminal-copy term)) (eq? (view-showing v) (terminal-buffer term)))
+      (select-view-of! v)
+      (when (and (buffer-local-value terminal-mouse-drag-input-mode (terminal-buffer term))
+                 (eq? (live-terminal-input-mode term) 'semi-char)
+                 (or (eq? (fact facts "wasSelected") #t) (and (fixnum? clicks) (fx> clicks 1))
+                     (not (equal? from to))))
+        (parameterize ((current-client c))
+          (enter-copy-mode! self term)
+          (let ((mark (copy-row-position term (car from) (cdr from)))
+                (point (copy-row-position term (car to) (cdr to))))
+            (when point
+              (goto-char point)
+              (when (and mark (not (fx= mark point)) (service-there? editing-service))
+                (set-temporary-region! mark)))))))))
 
 ;;; Exits and kills
 
@@ -868,7 +1454,8 @@
          (id (new-terminal-id))
          (socket (path-expand (string-append id ".sock") (socket-directory)))
          (size (terminal-size-guess self))
-         (mode (if (eq? (setting-value terminal-initial-input-mode) 'char) 'char 'semi-char))
+         (initial (setting-value terminal-initial-input-mode))
+         (mode (if (eq? initial 'char) 'char 'semi-char))
          (term (new-live-terminal self id socket name mode (car size) (cdr size)))
          (b (terminal-buffer term))
          (launch (make-helper-launch (:- (plugin-option terminals 'helper) :string) socket (car size) (cdr size)
@@ -884,6 +1471,8 @@
                                                                    directory (process-environment))
                                      (and (leave-scope?) (string-append "tuna-terminal-" id)))))
     (set-buffer-setting! b default-directory directory)
+    ;; Line mode starts at the first prompt (ghostel).
+    (when (eq? initial 'line) (set! (live-terminal-line-paused? term) #t))
     (switch-to-buffer b)
     (start-reader! self term launch)
     term))
@@ -913,7 +1502,10 @@
        (match entry
          ([(? string? id) (? string? socket) (? string? name) (? symbol? mode) (? list? view-ids)]
           (when (and (file-exists? socket) (not (hash-get self.terms id)))
-            (let* ((term (new-live-terminal self id socket (unique-buffer-name name) mode 80 24)))
+            (let* ((term (new-live-terminal self id socket (unique-buffer-name name) (if (eq? mode 'char) 'char 'semi-char)
+                                            80 24)))
+              ;; Copy mode does not outlive Tuna; line mode comes back.
+              (when (eq? mode 'line) (set! (live-terminal-line-paused? term) #t))
               (start-reader! self term #f)
               ;; A swap left these views showing another buffer.
               (when (service-there? layout-service)
@@ -936,12 +1528,119 @@
       (when term (send! term 'focus (u8vector 1)))
       (set! self.focused term))))
 
+;; A page script's JSON post as hash tables, or #f.
+(def (parse-facts (bytes : :u8vector)) => :t
+  (with-catch (lambda (e) #f)
+              (lambda ()
+                (parameterize ((current-json-read-options (JSONReadOptions object-as-hash: #t)))
+                  (string->json (utf8->string bytes))))))
+
+;;; Colours
+
+(def (parse-hex-color (text : :t)) => (Maybe :fixnum)
+  (and (string? text) (fx= (string-length text) 7) (char=? (string-ref text 0) #\#)
+       (string->number (substring text 1 7) 16)))
+
+;; A page's measured colours, as JSON {foreground, background, cursor,
+;; palette: [256]}, each "#rrggbb" or null; #f when they are not.
+(def (parse-colors-report (bytes : :u8vector)) => (Maybe theme-colors)
+  (with-catch
+   (lambda (e) #f)
+   (lambda ()
+     (let (data (parameterize ((current-json-read-options (JSONReadOptions object-as-hash: #t)))
+                  (string->json (utf8->string bytes))))
+       (and (hash-table? data)
+            (let ((palette (hash-get data "palette")))
+              (and (list? palette) (fx<= (length palette) 256)
+                   (make-theme-colors (parse-hex-color (hash-get data "foreground"))
+                                         (parse-hex-color (hash-get data "background"))
+                                         (parse-hex-color (hash-get data "cursor"))
+                                         ;; An entry the page could not resolve keeps the
+                                         ;; palette's default from there on.
+                                         (let lp ((palette palette) (out []))
+                                           (let (color (and (pair? palette) (parse-hex-color (car palette))))
+                                             (if color
+                                               (lp (cdr palette) (cons color out))
+                                               (list->vector (reverse out)))))))))))))
+
+;; The colours terminals answer with: the terminal-colors setting's
+;; entries, then what a browser measured.
+(def (effective-colors (self : terminals-state)) => (Maybe theme-colors)
+  (let ((measured self.colors)
+        (setting (setting-value terminal-colors)))
+    (if (not (list? setting))
+      measured
+      (let ((given (lambda (key)
+                     (let (entry (assq key setting)) (and (pair? entry) (parse-hex-color (cdr entry))))))
+            (from-page (lambda (get) (and measured (get measured)))))
+        (make-theme-colors (or (given 'foreground) (from-page theme-colors-foreground))
+                              (or (given 'background) (from-page theme-colors-background))
+                              (or (given 'cursor) (from-page theme-colors-cursor))
+                              (let (palette (assq 'palette setting))
+                                (if (and (pair? palette) (list? (cdr palette)))
+                                  (list->vector (filter-map parse-hex-color (cdr palette)))
+                                  (or (from-page theme-colors-palette) (vector)))))))))
+
+(def (send-colors! (self : terminals-state) (term : live-terminal)) => :void
+  (let (colors (effective-colors self))
+    (when colors (send! term 'colors (colors-payload colors)))))
+
+(def (colors-measured! (self : terminals-state) (colors : theme-colors)) => :void
+  (unless (equal? colors self.colors)
+    (set! self.colors colors)
+    (for-each (cut send-colors! self <>) (hash-values self.terms))))
+
+;;; The status line
+
+;; FORMAT (terminal-status-line-format) for a terminal titled TITLE in
+;; FOLDER (#f for none), or #f to show nothing.
+(def (status-line-format (format :? :string) (title : :string) (folder :? :string)) => (Maybe :string)
+  (and format
+       (let ((out (open-output-string))
+             (size (string-length format))
+             (titled? #t))
+         (let lp ((i 0))
+           (when (fx< i size)
+             (let (c (string-ref format i))
+               (if (and (char=? c #\%) (fx< (fx1+ i) size))
+                 ;; %[.N](t|d|%)
+                 (let* ((dot? (char=? (string-ref format (fx1+ i)) #\.))
+                        (digits-end (let digits ((j (if dot? (fx+ i 2) (fx1+ i))))
+                                      (if (and (fx< j size) (char-numeric? (string-ref format j))) (digits (fx1+ j)) j)))
+                        (limit (and dot? (string->number (substring format (fx+ i 2) digits-end))))
+                        (spec (and (fx< digits-end size) (string-ref format digits-end)))
+                        (cut-to (lambda ((text : :string))
+                                  (if (and limit (fx> (string-length text) limit)) (substring text 0 limit) text))))
+                   (case spec
+                     ((#\t) (when (string-empty? title) (set! titled? #f)) (write-string (cut-to title) out))
+                     ((#\d) (write-string (cut-to (if folder (abbreviated folder) "")) out))
+                     ((#\%) (write-char #\% out))
+                     (else (write-string (substring format i (fxmin size (fx1+ digits-end))) out)))
+                   (lp (fxmin size (fx1+ digits-end))))
+                 (begin (write-char c out) (lp (fx1+ i)))))))
+         (and titled? (let (text (get-output-string out)) (and (not (string-empty? text)) text))))))
+
+;; What TERM's status line shows after the buffer's name: its title, as
+;; terminal-status-line-format says, then the input mode unless semi-char
+;; (ghostel's mode-line-process).
+(def (status-line-part (term : live-terminal)) => (Maybe :string)
+  (record-read! term.status)
+  (let ((identification (status-line-format (buffer-local-value terminal-status-line-format (terminal-buffer term))
+                                            (terminal-title term) (terminal-directory term)))
+        (mode (case term.input-mode
+                ((char) ":Char") ((copy) ":Copy") ((line) ":Line") (else #f))))
+    (cond
+     ((and identification mode) (string-append identification " " mode))
+     (else (or identification mode)))))
+
 ;;; Drawing nodes
 
 (def (render-terminal (self : terminals-state) (n : node) (children : :list)) => :t
   `(div (@ (class ,(if (eq? (node-attribute n 'screen) 'alternate) "terminal terminal-alternate" "terminal"))
            (data-terminal ,(node-attribute n 'id))
-           (data-size ,(or (node-attribute n 'size) "")))
+           (data-size ,(or (node-attribute n 'size) ""))
+           (data-mouse ,(or (node-attribute n 'mouse) ""))
+           ,@(if (node-attribute n 'confirm-close) '((data-confirm-close "")) []))
         (div (@ (class "terminal-row terminal-measure") (aria-hidden "true")) "MMMMMMMMMM")
         ,@children))
 
@@ -957,16 +1656,28 @@
 (defplugin (terminals ctx)
   "M-x terminal: a shell in a buffer, in a helper process that survives Tuna restarting."
   requires: [commands-service input-service settings-service buffers-service session-service]
-  optional: [layout-service minibuffer-service editing-service files-service file-system-service page-service]
+  optional: [layout-service minibuffer-service editing-service files-service file-system-service page-service
+             renderer-service]
   (add-stylesheet 'tokens "tokens.css")
   (add-stylesheet 'rules "rules.css")
   (using (self (terminals-state ctx: ctx terms: (make-hash-table) by-buffer: (make-hash-table-eq)
                                 semi-char: (new-keymap) char-map: (new-keymap) quote-map: (new-keymap)
-                                jobs: (new-job-group ctx) encoder: (make-key-encoder) sizes: (make-hash-table-eq)
-                                quoting: [] poster: #f focused: #f yank: 0 waiting: [] stopping?: #f)
+                                copy-map: (new-keymap) copy-fast-map: (new-keymap)
+                                line-map: (new-keymap) line-root-map: (new-keymap)
+                                jobs: (new-job-group ctx) encoder: (make-key-encoder)
+                                mouse-encoder: (make-mouse-encoder size: (mouse-encoder-size 80 24 1 1 0 0 0 0)) sizes: (make-hash-table-eq)
+                                quoting: [] poster: #f focused: #f yank: 0 waiting: [] colors: #f stopping?: #f)
                : terminals-state)
     (context-define-node-kind! ctx 'terminal doc: "A terminal: its rows, scrollback then screen." items: 'children)
     (context-define-node-kind! ctx 'terminal-rows doc: "A run of a terminal's rows." items: 'children)
+    (context-define-node-kind! ctx 'terminal-line-input doc: "Line mode's input, over the rest of the cursor's row."
+                               items: 'children)
+    (context-define-node-renderer! ctx 'terminal-line-input
+                                   (lambda (n children)
+                                     `(div (@ (class "terminal-line-input")
+                                              (style ,(string-append "--terminal-line-input-column:"
+                                                                     (number->string (node-attribute n 'column)))))
+                                           ,@children)))
     (context-define-node-kind! ctx 'terminal-row doc: "One row of a terminal." items: 'whole
                                project: (lambda (n) (apply string-append
                                                            (map (cut vector-ref <> 2)
@@ -975,7 +1686,7 @@
     (context-define-node-renderer! ctx 'terminal-rows (lambda (n children) `(div (@ (class "terminal-rows")) ,@children)))
     (context-define-node-renderer! ctx 'terminal-row
                                    (lambda (n children)
-                                     `(div (@ (class "terminal-row"))
+                                     `(div (@ (class "terminal-row") (data-row ,(number->string (node-attribute n 'number))))
                                            ,@(row-sxml (node-attribute n 'runs) (node-attribute n 'cursor)))))
     (when (service-there? page-service)
       (add-script ctx "web/terminal.js")
@@ -985,6 +1696,30 @@
                                          (post self.poster))
                                      (when (and measured post)
                                        (post 'terminal-size (lambda () (sizes-measured! self c measured))))))))
+    (when (service-there? page-service)
+      (for-each (lambda ((address : :pair))
+                  (context-add-page-address! ctx (car address)
+                                             (lambda (c bytes)
+                                               (let ((facts (parse-facts bytes))
+                                                     (post self.poster))
+                                                 (when (and facts post)
+                                                   (post 'terminal-mouse (lambda () ((cdr address) c facts))))))))
+                [(cons "mouse" (lambda (c facts) (mouse-reported! self c facts)))
+                 (cons "select" (lambda (c facts) (selection-reported! self c facts)))
+                 (cons "link" (lambda (c facts)
+                                (let ((id (fact facts "terminal"))
+                                      (uri (fact facts "uri")))
+                                  (when (and (string? id) (string? uri)) (link-clicked! self c id uri)))))])
+      (context-add-page-address! ctx "colors"
+                                 (lambda (c bytes)
+                                   (let ((colors (parse-colors-report bytes))
+                                         (post self.poster))
+                                     (when (and colors post)
+                                       (post 'terminal-colors (lambda () (colors-measured! self colors))))))))
+    (context-add-status-line-part! ctx 'terminal
+                                   (lambda ((b : buffer))
+                                     (let (term (hash-get self.by-buffer b))
+                                       (and term (status-line-part term)))))
     (context-add-hook! ctx client-gone-hook 'terminal
                        (lambda (c) (hash-remove! self.sizes c)))
     (context-add-hook! ctx kill-buffer-hook 'terminal
@@ -998,7 +1733,10 @@
                                             (not (service-there? minibuffer-service))
                                             (yes-or-no? (string-append "Buffer " (buffer-name b)
                                                                        " has a running process; kill it? "))))))
-    (context-add-hook! ctx post-command-hook 'terminal-focus (lambda () (track-focus! self)))
+    (context-add-hook! ctx post-command-hook 'terminal-focus
+                       (lambda ()
+                         (forget-stale-copies! self)
+                         (track-focus! self)))
     (context-add-hook! ctx task-started-hook 'terminal
                        (lambda (id name)
                          (let (waiting self.waiting)
@@ -1051,6 +1789,73 @@
             (set! self.yank (fx1+ self.yank))
             (send-input! self term (make-u8vector (string-length previous) 127))
             (paste! self term (current-kill self.yank))))))
+    (define-command ctx (terminal-copy-mode) "Freeze the terminal's screen to move over it, select and copy; again, go back."
+      (let (term (this-terminal self))
+        (if (live-terminal-copy term) (leave-copy-mode! self term) (enter-copy-mode! self term))))
+    (define-command ctx (terminal-copy-mode-exit) "Leave copy mode, back to the input mode before it."
+      (leave-copy-mode! self (this-terminal self)))
+    (define-command ctx (terminal-copy-mode-exit-and-send) "Leave copy mode and send the key typed to the program."
+      (let (term (this-terminal self))
+        (leave-copy-mode! self term)
+        (send-key! self (last-command-event))))
+    (define-command ctx (terminal-copy-mode-copy) "Copy the region, as the program wrote it, onto the kill ring; with fast exit, leave copy mode."
+      (let (term (this-terminal self))
+        (copy-region! term)
+        (when (buffer-local-value terminal-readonly-fast-exit (terminal-buffer term))
+          (leave-copy-mode! self term))))
+    (define-command ctx (terminal-copy-mode-done) "Open the link at point, or copy the region onto the kill ring; leave copy mode."
+      (let* ((term (this-terminal self))
+             (state (live-terminal-copy term))
+             (link (and state (copy-text-link-at (copy-state-copy state) (point)))))
+        (unless link (copy-region! term))
+        (leave-copy-mode! self term)
+        (when link (open-link! self term link))))
+    (define-command ctx (terminal-copy-mode-yank) "Leave copy mode and send the newest killed text to the program, as a paste."
+      (let (term (this-terminal self))
+        (leave-copy-mode! self term)
+        (when (service-there? editing-service) (paste! self term (current-kill 0)))))
+    (define-command ctx (terminal-copy-mode-paste) "Leave copy mode and send the text the browser pasted to the program."
+      (let ((term (this-terminal self))
+            (event (last-command-event)))
+        (leave-copy-mode! self term)
+        (when (paste-event? event) (paste! self term (paste-event-text event)))))
+    (define-command ctx (terminal-copy-mode-end) "Move point to the terminal's cursor."
+      (let* ((term (this-terminal self))
+             (state (live-terminal-copy term)))
+        (when state (goto-char (cursor-copy-position term (copy-state-copy state) (copy-state-first state))))))
+    (define-command ctx (terminal-set-mark) "Enter copy mode, as terminal-mark-activation-input-mode says, and set the mark at the cursor."
+      (let (term (this-terminal self))
+        (when (and (buffer-local-value terminal-mark-activation-input-mode (terminal-buffer term))
+                   (service-there? editing-service))
+          (enter-copy-mode! self term)
+          (call-command 'set-mark-command))))
+    (define-command ctx (terminal-line-mode) "Edit a line locally and send it whole on RET; on the alternate screen, once the program leaves it."
+      (let (term (this-terminal self))
+        (if (and (eq? (live-terminal-screen term) 'alternate) (not (live-terminal-line term)))
+          (begin (set! (live-terminal-line-paused? term) #t)
+                 (message "Line mode waits for the full-screen program to end"))
+          (enter-line-mode! self term))))
+    (define-command ctx (terminal-line-mode-send) "Send the line to the program, with RET."
+      (line-mode-send! self (this-terminal self)))
+    (define-command ctx (terminal-line-mode-newline) "Put a line break in the line, sent with it."
+      (insert "\n"))
+    (define-command ctx (terminal-line-mode-interrupt) "Drop the line and send C-c, an interrupt, to the program."
+      (let* ((term (this-terminal self))
+             (state (live-terminal-line term)))
+        (when state (line-mode-replace! state ""))
+        (send-input! self term (u8vector 3))))
+    (define-command ctx (terminal-line-mode-delete-char-or-eof) "Delete the next character, or send C-d, an end of input, when the line is empty."
+      (let* ((term (this-terminal self))
+             (state (live-terminal-line term)))
+        (if (and state (fx= 0 (text-size (text-node-content (line-state-text-node state)))))
+          (send-input! self term (u8vector 4))
+          (call-command 'delete-char))))
+    (define-command ctx (terminal-line-mode-history-previous) "Show the line sent before the one shown."
+      (let (state (live-terminal-line (this-terminal self)))
+        (when state (line-mode-history! state 1))))
+    (define-command ctx (terminal-line-mode-history-next) "Show the line sent after the one shown."
+      (let (state (live-terminal-line (this-terminal self)))
+        (when state (line-mode-history! state -1))))
     (define-command ctx (terminal-semi-char-mode) "Send most keys to the terminal's program, keeping C-c, C-x, M-x and the like."
       (set-input-mode! self (this-terminal self) 'semi-char))
     (define-command ctx (terminal-char-mode) "Send every key to the terminal's program; M-RET goes back to semi-char mode."
@@ -1070,7 +1875,31 @@
                   ("C-c C-q" . terminal-send-next-key) ("C-c C-y" . terminal-yank)
                   ("C-c C-j" . terminal-semi-char-mode) ("C-c M-d" . terminal-char-mode)
                   ("C-y" . terminal-yank) ("S-<insert>" . terminal-yank) ("M-y" . terminal-yank-pop)
-                  ("<paste>" . terminal-paste)))
+                  ("<paste>" . terminal-paste) ("C-c C-t" . terminal-copy-mode)))
+      (unless (member "C-SPC" exceptions) (bind self.semi-char "C-SPC" 'terminal-set-mark))
+      ;; Copy and line mode: the C-c commands (ghostel-mode-map's), then
+      ;; copy mode's own keys.
+      (for-each (lambda ((keymap : entry-table))
+                  (for-each (lambda ((binding : :pair)) (bind keymap (car binding) (cdr binding)))
+                            '(("C-c C-c" . terminal-send-C-c) ("C-c C-z" . terminal-send-C-z)
+                              ("C-c C-\\" . terminal-send-C-backslash) ("C-c C-d" . terminal-send-C-d)
+                              ("C-c C-t" . terminal-copy-mode) ("C-c C-j" . terminal-semi-char-mode)
+                              ("C-c M-d" . terminal-char-mode) ("C-c C-l" . terminal-line-mode))))
+                [self.copy-map self.copy-fast-map self.line-root-map])
+      (for-each (lambda ((keymap : entry-table))
+                  (for-each (lambda ((binding : :pair)) (bind keymap (car binding) (cdr binding)))
+                            '(("M-w" . terminal-copy-mode-copy) ("C-w" . terminal-copy-mode-copy)
+                              ("RET" . terminal-copy-mode-done) ("M->" . terminal-copy-mode-end)
+                              ("C-y" . terminal-copy-mode-yank) ("<paste>" . terminal-copy-mode-paste))))
+                [self.copy-map self.copy-fast-map])
+      (for-each (lambda ((binding : :pair)) (bind self.line-map (car binding) (cdr binding)))
+                '(("RET" . terminal-line-mode-send) ("S-RET" . terminal-line-mode-newline)
+                  ("C-c C-c" . terminal-line-mode-interrupt) ("C-d" . terminal-line-mode-delete-char-or-eof)
+                  ("M-p" . terminal-line-mode-history-previous) ("M-n" . terminal-line-mode-history-next)))
+      (bind self.semi-char "C-c C-l" 'terminal-line-mode)
+      (for-each (lambda ((binding : :pair)) (bind self.copy-fast-map (car binding) (cdr binding)))
+                [(cons printing-char-key 'terminal-copy-mode-exit-and-send)
+                 '("q" . terminal-copy-mode-exit) '("C-g" . terminal-copy-mode-exit)])
       (unless (member "C-q" exceptions) (bind self.semi-char "C-q" 'terminal-send-next-key))
       (unless (member "C-g" exceptions) (bind self.semi-char "C-g" 'terminal-send-C-g))
       (for-each (lambda ((keys : :string)) (bind self.char-map keys 'terminal-semi-char-mode))
