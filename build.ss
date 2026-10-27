@@ -51,6 +51,10 @@
      "io"
      "protocol"
      "connection"
+     "contract"
+     "keys"
+     "screen"
+     "plugin"
      ;; The helper links libghostty-vt where gerbil-libghostty staged it,
      ;; by a path relative to the program.
      (exe: "helper" bin: "tuna-terminal-helper"
