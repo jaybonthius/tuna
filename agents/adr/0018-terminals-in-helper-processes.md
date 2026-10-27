@@ -40,4 +40,4 @@ The decision held; these are the details it left open (plan, stage 2 notes):
 - **Exit.** The helper reports the program's exit and ends once a Tuna acknowledges it (`exit-ack`), so a program that ends while Tuna is down is still reported on reconnect; `kill` hangs up the program's group (SIGKILL a second later) and ends the helper.
 - **Resizing.** Tuna sends the new size, then asks for a snapshot; the snapshot, taken after the helper resized, replaces the mirror, so the mirror never parses output written for another size.
 - **Restoring order.** The plugin is declared before the layout, so its session slot makes the terminal buffers before the layout restores the views that show them; a restore during start-up connects once the editor loop runs.
-
+- **Colours (stage 3).** Tuna tells each helper the theme's colours (protocol version 2, `colors`), which its terminal answers colour queries with; a helper of another version is reported and left running.
