@@ -57,6 +57,26 @@
             (check (wait-for (lambda () (string-contains (test-client-text again) "then more"))) ? values)
             (close-connection! (test-client-connection again))))))
 
+    (test-case "it marks where in the output it resized; a mirror resizing there stays as its screen"
+      (with-helper "i=0; while [ $i -lt 3000 ]; do i=$((i+1)); echo \"row $i, long enough to wrap in a narrow terminal\"; done; echo resized-done; sleep 30"
+        (lambda (folder socket client)
+          (check (wait-for (lambda () (test-client-mirror client))) => #t)
+          (for-each (lambda (size)
+                      (connection-send! (test-client-connection client) 'resize
+                                        (resize-payload (make-resize-request (car size) (cadr size) 8 16)))
+                      (thread-sleep! 0.05))
+                    [[40 10] [120 40] [33 9] [80 24]])
+          (check (wait-for (lambda () (string-contains (test-client-text client) "resized-done")) 20) ? values)
+          (check (and (memq 'resized (test-client-frames client)) #t) => #t)
+          (close-connection! (test-client-connection client))
+          (check (wait-for (lambda () (test-client-ended? client))) => #t)
+          (let* ((again (connect-test-client socket))
+                 (lines (lambda ((c : test-client)) (string-split (test-client-text c) #\newline))))
+            (check (wait-for (lambda () (string-contains (test-client-text again) "resized-done"))) ? values)
+            ;; The screens they share agree: the last 24 lines.
+            (check (take-right (lines again) 24) => (take-right (lines client) 24))
+            (close-connection! (test-client-connection again))))))
+
     (test-case "it answers colour queries with the colours Tuna sends, and reports dark or light"
       ;; The program asks for the background (OSC 11) and the colour scheme
       ;; (CSI ? 996 n) once it has read a line, then prints the replies.

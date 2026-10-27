@@ -181,15 +181,14 @@ prelude: :gerbil/core
            (thread-send h.pty-writer (focus-encode (if (and (fx> (u8vector-length payload) 0)
                                                             (fx= (u8vector-ref payload 0) 1))
                                                      'gained 'lost))))))
-      ((snapshot-request)
-       (do-with-lock h.lock
-         (when (eq? h.client device)
-           (send-to-client! h (frame-bytes 'snapshot (terminal->snapshot-bytes h.term))))))
       ((colors) (let (c (parse-colors payload)) (when c (set-colors! h c))))
       ((kill) (kill-program! h))
       ((exit-ack) (when h.status (thread-send h.done 'end)))
       (else (void)))))
 
+;; Resize the terminal, and tell the connected Tuna where in the output
+;; that happened, so its mirror resizes at the same point and never
+;; parses output written for one size at another.
 (def (resize! (h : helper) (columns : :fixnum) (rows : :fixnum) (width : :fixnum) (height : :fixnum))
   => :void
   (do-with-lock h.lock
@@ -197,7 +196,9 @@ prelude: :gerbil/core
     (set! h.rows rows)
     (set! h.cell-width width)
     (set! h.cell-height height)
-    (terminal-resize! h.term columns rows cell-width-px: width cell-height-px: height))
+    (terminal-resize! h.term columns rows cell-width-px: width cell-height-px: height)
+    (when h.live?
+      (send-to-client! h (frame-bytes 'resized (resize-payload (make-resize-request columns rows width height))))))
   (pty-resize (device-fd h.pty) columns rows (fx* columns width) (fx* rows height))
   (void))
 

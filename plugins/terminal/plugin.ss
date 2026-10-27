@@ -33,8 +33,9 @@
 ;;;
 ;;; Each terminal is as big as the smallest view showing it, in cells, as
 ;;; Emacs sizes a process's window; the plugin's page script measures the
-;;; views (web/terminal.js). A resize asks the helper for a fresh snapshot,
-;;; so the mirror never parses output written for another size.
+;;; views (web/terminal.js). The helper marks where in its output it
+;;; resized, and the mirror resizes there, so it never parses output
+;;; written for another size; only connecting sends a whole snapshot.
 ;;;
 ;;; The program's title (OSC 0/2), folder (OSC 7, the buffer's
 ;;; default-directory) and bell run the contract's hooks; when it ends the
@@ -625,6 +626,13 @@
            (set! term.arrived (now))
            (apply-effects! self term)
            (output-arrived! self term))))
+      ((resized)
+       (let ((r (parse-resize payload))
+             (mirror term.mirror))
+         (when (and r mirror)
+           (terminal-resize! mirror (resize-request-columns r) (resize-request-rows r)
+                             cell-width-px: (resize-request-cell-width r) cell-height-px: (resize-request-cell-height r))
+           (if (shown? term) (sync! self term) (begin (set! term.sync-due? #t) (owe! self term))))))
       ((exit) (program-ended! self term (parse-exit payload)))
       ((refused)
        (set! term.link #f)
@@ -1281,12 +1289,11 @@
 (def (size-text (term : live-terminal)) => :string
   (string-append (number->string term.columns) "x" (number->string term.rows)))
 
-;; Ask TERM's helper for TERM's size. Its snapshot after resizing replaces
-;; the mirror, so output written for the old size is never parsed at the
-;; new.
+;; Ask TERM's helper for TERM's size. The mirror takes it where the
+;; helper's `resized` falls in the output, so output written for the old
+;; size is never parsed at the new.
 (def (request-size! (term : live-terminal)) => :void
-  (send! term 'resize (resize-payload (make-resize-request term.columns term.rows term.cell-width term.cell-height)))
-  (send! term 'snapshot-request))
+  (send! term 'resize (resize-payload (make-resize-request term.columns term.rows term.cell-width term.cell-height))))
 
 ;; Parse a page's measurements, as JSON: [{view, terminal, columns, rows,
 ;; cellWidth, cellHeight}, ...]; #f when they are not.

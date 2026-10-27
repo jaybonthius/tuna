@@ -7,10 +7,10 @@
 ;;; Tuna speaks first, with `hello` and the protocol version it speaks. The
 ;;; helper answers `hello` with its version, its own pid, its program's pid
 ;;; and its size, then `snapshot` (its terminal as libghostty snapshot
-;;; bytes), then every byte the program writes as `output`, and `exit` with
-;;; the program's status once it ended; or `refused` with a reason, and
+;;; bytes), then every byte the program writes as `output`, `resized` where
+;;; in that output its terminal took a new size, and `exit` with the
+;;; program's status once it ended; or `refused` with a reason, and
 ;;; closes. Tuna sends `input` (bytes for the program), `resize`, `focus`,
-;;; `snapshot-request` (answered by `snapshot`, after which output resumes),
 ;;; `colors` (the theme's colours, which the helper's terminal answers
 ;;; colour queries with), `kill`, and `exit-ack` once it has shown the exit.
 prelude: :gerbil/core
@@ -29,16 +29,17 @@ prelude: :gerbil/core
         (struct-out theme-colors) colors-payload parse-colors)
 
 ;; A helper and a plugin with different versions do not talk. Version 2
-;; added `colors`.
-(def protocol-version 2)
+;; added `colors`; version 3 `resized`, in place of a snapshot after each
+;; resize.
+(def protocol-version 3)
 
 ;; The largest payload either side accepts: a snapshot of a terminal with a
 ;; very large scrollback fits.
 (def maximum-payload (* 256 1024 1024))
 
 (def frame-types
-  '((hello . 1) (refused . 2) (snapshot . 3) (output . 4) (exit . 5)
-    (input . 65) (resize . 66) (focus . 67) (snapshot-request . 68) (kill . 69) (exit-ack . 70)
+  '((hello . 1) (refused . 2) (snapshot . 3) (output . 4) (exit . 5) (resized . 6)
+    (input . 65) (resize . 66) (focus . 67) (kill . 69) (exit-ack . 70)
     (colors . 71)))
 
 ;; One message: TYPE, a symbol of frame-types, and its PAYLOAD.
@@ -154,7 +155,8 @@ prelude: :gerbil/core
                        (bytes-u16 payload 10) (bytes-u16 payload 12))
     (make-helper-hello (if (fx>= (u8vector-length payload) 2) (bytes-u16 payload 0) 0) 0 0 0 0)))
 
-;; A new size: COLUMNS x ROWS cells, each CELL-WIDTH x CELL-HEIGHT px.
+;; A new size: COLUMNS x ROWS cells, each CELL-WIDTH x CELL-HEIGHT px; the
+;; payload of `resize` and of `resized`.
 (defstruct resize-request ((columns : :fixnum)
                            (rows : :fixnum)
                            (cell-width : :fixnum)
