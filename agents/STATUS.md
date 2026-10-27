@@ -2,7 +2,11 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: none in progress; terminal finished (2026-10-27, `eeddcaf`)
+## Current work: profiler (resumed 2026-10-27; plan `agents/plans/profiler.md`)
+
+Owner 2026-10-27: "serious lag" in the editor; build the profiler (brief decided 2026-10-12) to find bottlenecks, then fix them.
+
+## Previous: terminal finished (2026-10-27, `eeddcaf`)
 
 All five stages merged (reports `/home/jay/Code/workbench-gerbil/scratch/terminal/stage{1..5}-report.md`; open items in `TODO.md`'s Terminal section). The owner's 9450 Tuna was restarted on the finished terminal with cleared state (2026-10-27). Next in tier 0: buffer switching (`C-x b`) and error recovery.
 
