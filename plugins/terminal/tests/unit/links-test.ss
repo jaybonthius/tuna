@@ -17,6 +17,8 @@
       (let (resolve (lambda (path) (and (member path ["src/a.ss" "./b.c"]) (string-append "/repo/" path))))
         (check (find-links "error at src/a.ss:12:3: oops, see ./b.c:7 and x/missing.ss:1" #f #t resolve)
                => [[9 22 "fileref:/repo/src/a.ss:12:3"] [34 41 "fileref:/repo/./b.c:7"]])
+        (check (find-links "at /abs/f.ss:3 ok" #f #t (lambda (path) (and (equal? path "/abs/f.ss") path)))
+               => [[3 14 "fileref:/abs/f.ss:3"]])
         ;; A URL is not also a file reference.
         (check (map caddr (find-links "https://h/src/a.ss:1" #t #t resolve)) => ["https://h/src/a.ss:1"])))
 

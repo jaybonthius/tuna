@@ -88,7 +88,8 @@ prelude: :gerbil/core
     (let lp ((i 0) (out []))
       (cond
        ((fx>= i size) (reverse out))
-       ((and (or (fx= i 0) (path-before-ok? (string-ref text (fx1- i)))) (path-head-char? (string-ref text i)))
+       ((and (or (fx= i 0) (path-before-ok? (string-ref text (fx1- i))))
+             (or (path-head-char? (string-ref text i)) (char=? (string-ref text i) #\/)))
         ;; The head, then a slash, then the rest.
         (let* ((slash (let head ((j i))
                         (cond
