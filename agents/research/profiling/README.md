@@ -19,3 +19,9 @@ Owner-facing proposal: [`docs/briefs/2026-10-profiler.md`](../../../docs/briefs/
 - No profiler vocabulary in the kernel, service contracts, or default plugins (ADR 12, AGENTS.md "Keep the kernel small"). Only general-purpose hooks, lifecycle events, and advice.
 - Core modules compile with `block` and cannot be advised (ADR 1); they are covered by lifecycle events and sampling.
 - Spans are thread-scoped (parameters); background jobs start with a cleared dynamic environment (ADR 3), so job spans are correlated through the job lifecycle events, not inherited parameters.
+
+## Prior art (2026-10-27)
+
+- [`01-language-runtime-profilers.md`](01-language-runtime-profilers.md): Go, JVM/Clojure, Erlang/Elixir, Python, Rust, Node, Racket, Gambit/Gerbil. Two separate tools everywhere: a sampler and a span/event channel with attachable subscribers; a flight-recorder ring.
+- [`02-interactive-latency-profiling.md`](02-interactive-latency-profiling.md): editors, browsers (Event Timing, INP, LoAF), game frame profilers, typing latency. Join browser and server by ID and durations, never by clock; the stages from key to paint.
+- [`03-formats-viewers-tracking.md`](03-formats-viewers-tracking.md): Chrome Trace Event JSON for spans, folded stacks for samples, viewers (Perfetto, speedscope, Firefox Profiler), benchstat for tracking across builds.
