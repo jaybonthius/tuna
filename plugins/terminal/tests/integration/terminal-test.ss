@@ -107,11 +107,11 @@
             (lambda ()
               (restore-session)
               (start-editor-loop!)
-              (on-editor void)
+              ;; A layout would show it again in its view; its rows are
+              ;; copied once a view shows it.
+              (on-editor (lambda () (switch-to-buffer (get-buffer "*terminal*"))))
               (check (screen-has? "*terminal*" "green") => #t)
               (check (screen-text "*terminal*") => before)
-              ;; A layout would show it again in its view.
-              (on-editor (lambda () (switch-to-buffer (get-buffer "*terminal*"))))
               (paste "echo after")
               (press "RET")
               (check (screen-has? "*terminal*" "\nafter\n") => #t)))))))
@@ -135,8 +135,8 @@
             (on-editor (lambda ()
                          (activate-plugin! terminals)
                          (restore-session)))
-            (check (screen-has? "*terminal*" "\nbefore-swap\n") => #t)
             (on-editor (lambda () (switch-to-buffer (get-buffer "*terminal*"))))
+            (check (screen-has? "*terminal*" "\nbefore-swap\n") => #t)
             (paste "echo after-swap")
             (press "RET")
             (check (screen-has? "*terminal*" "\nafter-swap\n") => #t))))))

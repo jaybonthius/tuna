@@ -255,19 +255,23 @@ prelude: :gerbil/core
 ;; ROWS. GENERATION is the mirror's numbering they were made in, #f
 ;; before any.
 ;; EXTRA is a node shown after one row, (NODE . ROW-NUMBER), or #f: line
-;; mode's input, after the cursor's row.
+;; mode's input, after the cursor's row. UNSCANNED holds the numbers of
+;; rows copied since links were last looked for in them; UNFILLED those
+;; of rows whose nodes are still empty, to be copied when output pauses.
 (defclass row-store ((generation :? :fixnum)
                      (base       : :integer)
                      (rows       : :vector)
                      (start      : :fixnum)
                      (count      : :fixnum)
                      (block-nodes : HashTable)
-                     (extra      :? :pair))
+                     (extra      :? :pair)
+                     (unscanned  : HashTable)
+                     (unfilled   : HashTable))
   final: #t)
 
 (def (new-row-store) => row-store
   (row-store generation: #f base: 0 rows: (make-vector 256 #f) start: 0 count: 0 block-nodes: (make-hash-table-eqv)
-             extra: #f))
+             extra: #f unscanned: (make-hash-table-eqv) unfilled: (make-hash-table-eqv)))
 
 ;; Show EXTRA-NODE after row NUMBER, or nothing extra with #f.
 (def (row-store-set-extra! (s : row-store) (extra-node :? node) (number :? :integer)) => :void
@@ -291,7 +295,9 @@ prelude: :gerbil/core
   (set! s.start 0)
   (set! s.count 0)
   (set! s.extra #f)
-  (hash-clear! s.block-nodes))
+  (hash-clear! s.block-nodes)
+  (hash-clear! s.unscanned)
+  (hash-clear! s.unfilled))
 
 ;; The number after S's last row.
 (def (row-store-end (s : row-store)) => :integer
@@ -337,6 +343,10 @@ prelude: :gerbil/core
       (set! s.start (fx+ s.start drop))
       (set! s.count (fx- s.count drop))
       (set! s.base first)
+      (for-each (lambda ((table : HashTable))
+                  (when (fx> (hash-length table) 0)
+                    (for-each (lambda (n) (when (< n first) (hash-remove! table n))) (hash-keys table))))
+                [s.unscanned s.unfilled])
       (let lp ((b (block-of old-base)))
         (when (< b (block-of first))
           (hash-remove! s.block-nodes b)

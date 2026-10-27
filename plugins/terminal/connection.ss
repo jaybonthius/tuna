@@ -30,7 +30,12 @@ prelude: :gerbil/core
         open-connection
         connection-send!
         close-connection!
-        read-frames)
+        read-frames
+        frame-inbox
+        new-frame-inbox
+        frame-inbox-put!
+        frame-inbox-take!
+        frame-inbox-close!)
 
 ;; This checkout's build: beside this source, two folders up, in .gerbil
 ;; (`make` builds both).
@@ -136,6 +141,94 @@ prelude: :gerbil/core
 ;; End C after the frames sent so far; its reader then sees the end.
 (def (close-connection! (c : connection)) => :void
   (thread-send c.writer 'close))
+
+;;; The inbox
+
+;; Frames read from a helper that the editor has not yet taken: the
+;; reader's thread puts them, the editor takes them all at once, so a
+;; flood costs the editor one task per batch, not one per frame. While
+;; more than LIMIT bytes wait, the reader waits too: it stops reading the
+;; socket, the helper's queue fills, and the helper stops reading the
+;; program, so a slow editor holds the program back instead of Tuna's
+;; memory growing.
+(defclass frame-inbox ((lock    : :mutex)
+                 (taken   : :condvar)              ; the editor took the frames
+                 (frames  : :list)                 ; newest first
+                 (bytes   : :fixnum)               ; of their payloads
+                 (limit   : :fixnum)
+                 (closed? : :boolean))
+  final: #t)
+
+(def (new-frame-inbox (limit : :fixnum)) => frame-inbox
+  (frame-inbox lock: (make-mutex 'terminal-inbox) taken: (make-condition-variable 'terminal-inbox)
+         frames: [] bytes: 0 limit: limit closed?: #f))
+
+;; On the reader's thread: add FRAMES, after waiting while more than the
+;; limit waits; whether the inbox was empty, so the editor must be told.
+;; Nothing is added once the inbox is closed.
+(def (frame-inbox-put! (b : frame-inbox) (frames : :list)) => :boolean
+  (let wait ()
+    (mutex-lock! b.lock)
+    (if (and (fx> b.bytes b.limit) (not b.closed?))
+      (begin (mutex-unlock! b.lock b.taken) (wait))
+      (let (empty? (null? b.frames))
+        (unless b.closed?
+          (for-each (lambda ((f : frame))
+                      (set! b.frames (cons f b.frames))
+                      (set! b.bytes (fx+ b.bytes (u8vector-length (frame-payload f)))))
+                    frames))
+        (mutex-unlock! b.lock)
+        (and empty? (not b.closed?))))))
+
+;; On the editor: every frame waiting, oldest first, the payloads of
+;; output frames that follow each other joined into one; the reader may
+;; go on.
+(def (frame-inbox-take! (b : frame-inbox)) => :list
+  (let (frames (do-with-lock b.lock
+                 (let (frames b.frames)
+                   (set! b.frames [])
+                   (set! b.bytes 0)
+                   (condition-variable-broadcast! b.taken)
+                   frames)))
+    (join-output frames)))
+
+;; Close B: the reader no longer waits, and what it puts is dropped.
+(def (frame-inbox-close! (b : frame-inbox)) => :void
+  (do-with-lock b.lock
+    (set! b.closed? #t)
+    (set! b.frames [])
+    (set! b.bytes 0)
+    (condition-variable-broadcast! b.taken)))
+
+;; NEWEST-FIRST, frames newest first, oldest first, with each run of
+;; output frames one frame.
+(def (join-output (newest-first : :list)) => :list
+  (let lp ((frames newest-first) (run []) (out []))
+    (match frames
+      ([] (with-run run out))
+      ([f . more]
+       (if (eq? (frame-type f) 'output)
+         (lp more (cons f run) out)
+         (lp more [] (cons f (with-run run out))))))))
+
+;; OUT with RUN, output frames oldest first, before it as one frame.
+(def (with-run (run : :list) (out : :list)) => :list
+  (cond
+   ((null? run) out)
+   ((null? (cdr run)) (cons (car run) out))
+   (else (cons (make-frame 'output (joined-payloads run)) out))))
+
+;; The payloads of FRAMES, one after another, in one vector.
+(def (joined-payloads (frames : :list)) => :u8vector
+  (let (out (make-u8vector (foldl (lambda ((f : frame) (n : :fixnum)) (fx+ n (u8vector-length (frame-payload f))))
+                                  0 frames)
+                           0))
+    (foldl (lambda ((f : frame) (at : :fixnum))
+             (let (payload (frame-payload f))
+               (subu8vector-move! payload 0 (u8vector-length payload) out at)
+               (fx+ at (u8vector-length payload))))
+           0 frames)
+    out))
 
 ;; On the reader's thread: the next frames from C's DEVICE, waiting for
 ;; them, with READER and BUFFER kept between calls; #f once the connection
