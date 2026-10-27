@@ -50,7 +50,10 @@
     ("plugins/web" "contract" "embed" "proxy"
      (gxc: "plugin"
            (extra-inputs: ,(map (cut string-append "web/" <>)
-                               (directory-files "plugins/web/web")))))
+                               (filter (lambda ((name : :string))
+                                         (eq? (file-info-type (file-info (path-expand name "plugins/web/web")))
+                                              'regular))
+                                       (directory-files "plugins/web/web"))))))
     ("plugins/files" "contract" "encoding" "line-diff" "watcher" "local-disk" "picker" "plugin")
     ("plugins/autosave" "plugin")
     ("plugins/terminal"

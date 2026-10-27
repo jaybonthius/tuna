@@ -61,6 +61,10 @@
 ;;; redisplay, published with the screen, and sent whole as one morph
 ;;; before the screen whenever it differs from what a stream last got.
 ;;;
+;;; The head also links Tuna's icons and web app manifest, served from the
+;;; `icons` option's folder (web/icons/ by default) at /icons/<file>, and
+;;; the browser's /favicon.ico is that folder's favicon.ico.
+;;;
 ;;; The transport provides the page service (contract.ss): after its own
 ;;; input module, the head loads every plugin's page script as a module,
 ;;; served at /js/<n>/<hash>/<file> with the files beside it; a POST to
@@ -81,6 +85,7 @@
         :std/net/mime/file
         :std/net/uri
         :std/net/url
+        :std/source
         :std/text/markup/sxml/print
         (only-in :std/crypto/random random-bytes)
         (only-in :std/crypto/digest sha256)
@@ -124,6 +129,7 @@
    (hosts       : :list)        ; every Host accepted (ADR 10)
    (origins     : :list)        ; every Origin accepted, when one is sent
    (secret      :? :u8vector)   ; required from peers that are not loopback (ADR 10)
+   (icons       : :string)      ; the folder the page's icons are served from
    (admission   : :mutex)       ; guards each tab's input ordering and submission
    (slot-numbers : HashTable)   ; (owner . name) -> n in /css/<n>/; editor thread only
    (stylesheets-seen : :fixnum) ; the stylesheets generation HEAD shows; editor thread only
@@ -621,6 +627,11 @@
      (meta (@ (name "viewport")
               (content "width=device-width, initial-scale=1, interactive-widget=resizes-content, viewport-fit=cover")))
      (title "Tuna")
+     (link (@ (rel "icon") (href "/icons/favicon.ico") (sizes "16x16 32x32 48x48")))
+     (link (@ (rel "icon") (href "/icons/favicon-32x32.png") (sizes "32x32") (type "image/png")))
+     (link (@ (rel "icon") (href "/icons/favicon-16x16.png") (sizes "16x16") (type "image/png")))
+     (link (@ (rel "apple-touch-icon") (href "/icons/apple-touch-icon.png") (sizes "180x180")))
+     (link (@ (rel "manifest") (href "/icons/site.webmanifest")))
      ,@(map (lambda ((s : served-stylesheet))
               `(link (@ (id ,(served-stylesheet-id s)) (rel "stylesheet")
                         (href ,(string-append (served-stylesheet-prefix s)
@@ -641,6 +652,12 @@
      ((string=? type "text/css") "text/css; charset=utf-8")
      ((or (string-prefix? "font/" type) (string-prefix? "image/" type)) type)
      (else #f))))
+
+;; File types served from the icons folder: images and web app manifests.
+(def (icon-content-type (path : :string)) => (Maybe :string)
+  (let (type (mime-file-type path))
+    (and (or (string-prefix? "image/" type) (string=? type "application/manifest+json"))
+         type)))
 
 ;; A relative path of plain segments: no empty segment, no . or .., and no
 ;; escapes or backslashes that could spell them.
@@ -787,6 +804,10 @@
       (serve-css self request response path))
      ((and (string=? method "GET") (string-prefix? "/js/" path))
       (serve-script self request response path))
+     ((and (string=? method "GET") (string=? path "/favicon.ico"))
+      (serve-asset request response self.icons "favicon.ico" icon-content-type))
+     ((and (string=? method "GET") (string-prefix? "/icons/" path))
+      (serve-asset request response self.icons (substring path 7 (string-length path)) icon-content-type))
      ((and (string=? method "POST") (string-prefix? "/plugin/" path))
       (accept-page-post self request response path))
      ((and (string=? method "GET") (hash-get static-assets path))
@@ -1297,6 +1318,7 @@
                               host: host
                               hosts: hosts
                               secret: secret
+                              icons: (path-expand (plugin-option web-transport 'icons))
                               origins: (foldr (lambda ((h : :string) (rest : :list))
                                                 (cons* (string-append "http://" h) (string-append "https://" h) rest))
                                               [] hosts)
@@ -1349,6 +1371,9 @@
                     (lambda (v) (and (list? v) (andmap string? v)))
                     (lambda ((text : :string)) (string-split text #\,))))
 
+;; Tuna's own icons, in web/icons/ beside this source.
+(def default-icons-directory (path-expand "web/icons" (path-expand (this-source-directory))))
+
 (defplugin-options web-transport
   (port 0 "The loopback port to listen on; 0 picks a free one."
         (integer-type 0 65535) flag: "--port")
@@ -1362,4 +1387,7 @@
                   (integer-type 1 60000))
   (tab-grace 60000
              "Milliseconds a tab whose screen streams have all closed is kept; a stream reopening in time keeps its place."
-             (integer-type 1 86400000)))
+             (integer-type 1 86400000))
+  (icons default-icons-directory
+         "The folder holding the page's icons, with the names of those in Tuna's own: favicon.ico, favicon-16x16.png, favicon-32x32.png, apple-touch-icon.png, android-chrome-192x192.png, android-chrome-512x512.png and site.webmanifest."
+         string-type))
