@@ -29,3 +29,15 @@ Options considered (research 02, section 6):
 - Helpers built from an older Tuna keep running after an upgrade. The protocol carries a version; a helper too old to speak to is reported, and its terminal keeps running until the user restarts it. Handing a live pseudo-terminal to a new helper (`SCM_RIGHTS`, as herdr does) is possible later.
 - Tuna's build now depends on `gerbil-libghostty` and its native library (Zig, pinned Ghostty).
 - Starting programs on a pseudo-terminal lives in the helper until a second user needs it, then moves to the planned process library.
+
+## As built (stage 2, 2026-10-27)
+
+The decision held; these are the details it left open (plan, stage 2 notes):
+
+- **Detaching.** The plugin starts a helper as `setsid -f [systemd-run --user --scope --collect --unit tuna-terminal-ID] tuna-terminal-helper …`, the scope when Tuna's own cgroup is a scope (the `leave-scope` option). The helper also calls `setsid` and drops its standard ports.
+- **Who replies.** The helper answers the program's queries (cursor position, device attributes, sizes), since it is there even while no Tuna is; the mirror never writes to the program.
+- **One Tuna at a time.** A second connection gets `refused "busy"`; the plugin retries for a few seconds, which covers a swap whose old connection the helper has not yet seen close.
+- **Exit.** The helper reports the program's exit and ends once a Tuna acknowledges it (`exit-ack`), so a program that ends while Tuna is down is still reported on reconnect; `kill` hangs up the program's group (SIGKILL a second later) and ends the helper.
+- **Resizing.** Tuna sends the new size, then asks for a snapshot; the snapshot, taken after the helper resized, replaces the mirror, so the mirror never parses output written for another size.
+- **Restoring order.** The plugin is declared before the layout, so its session slot makes the terminal buffers before the layout restores the views that show them; a restore during start-up connects once the editor loop runs.
+

@@ -89,7 +89,7 @@ Tiers are ordered by what blocks daily use, then by what each piece builds on. W
 ### Tier 3: big tools
 
 1. **`git`** (Magit-like): sections are nodes, which Tuna's buffers already are.
-2. **`terminal`:** Ghostty-based (the owner's libghostty web spike is in `~/Code/shux/spikes/libghostty-terminal/`).
+2. **`terminal`:** Ghostty-based, after ghostel ([brief](briefs/2026-10-terminal.md), [plan](../agents/plans/terminal.md), [ADR 18](../agents/adr/0018-terminals-in-helper-processes.md)). *Stage 1 done (2026-10-27):* the `gerbil-libghostty` binding covers libghostty-vt's C API. *Stage 2 done (2026-10-27, branch `terminal-2`):* `M-x terminal`, a shell in a buffer whose terminal helper outlives Tuna: restarts, crashes and plugin swaps reconnect to the same screen; rows as scrolling items drawn by value, the alternate screen, size from the smallest view, semi-char and char keys with `C-q`, title, folder, bell and exit hooks, ghostel's settings. Next: copy mode, line mode, mouse, clipboard and links (stage 3); prompts, notifications and program status (stage 4); reboots and floods (stage 5).
 3. **`actions`** (Embark-like): act on the candidate or the thing at the cursor.
 4. **`workspaces`.**
 
