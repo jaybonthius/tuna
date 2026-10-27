@@ -313,4 +313,9 @@ prelude: :gerbil/core
       (let (writer (do-with-lock (helper-lock h) (let (w (helper-writer h)) (drop-client! h) w)))
         (when writer (with-catch void (lambda () (thread-join! writer 2.0)))))
       (with-catch void (lambda () (delete-file (options-socket o))))
+      ;; A log with nothing in it says nothing.
+      (let (log (options-log o))
+        (with-catch void (lambda ()
+                           (when (and (not (string-empty? log)) (zero? (file-info-size (file-info log))))
+                             (delete-file log)))))
       (exit 0))))

@@ -67,7 +67,7 @@ function report(): void {
   if (body === last && !(differs && now - lastSent > 1000)) return;
   last = body;
   lastSent = now;
-  void fetch("/plugin/terminal/size", {
+  void fetch("/plugin/terminals/size", {
     method: "POST",
     headers: { "Tuna-Tab": String(getPath("tab")) },
     body,

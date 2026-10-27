@@ -19,7 +19,10 @@
 
 (defmethod {add-session-slot! remembering-session}
   (lambda (self ctx slot priority)
-    (set! (remembering-session-slots self) (append (remembering-session-slots self) [slot]))))
+    (set! (remembering-session-slots self) (append (remembering-session-slots self) [slot]))
+    (context-defer! ctx (lambda ()
+                          (set! (remembering-session-slots self)
+                            (remq slot (remembering-session-slots self)))))))
 
 (defmethod {save-session! remembering-session}
   (lambda (self)

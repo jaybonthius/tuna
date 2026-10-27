@@ -173,6 +173,44 @@
               (press "RET")
               (check (screen-has? "*terminal*" "\nafter\n") => #t)))))))
 
+    (test-case "turning the plugin off and on again, as a swap or a reload does, reconnects"
+      (with-terminals
+       (lambda (folder)
+         (start-kernel
+          (lambda ()
+            (start-editor-loop!)
+            (on-editor (lambda () (call-command 'terminal)))
+            (check (screen-has? "*terminal*" "$ ") => #t)
+            (paste "echo before-swap")
+            (press "RET")
+            (check (screen-has? "*terminal*" "\nbefore-swap\n") => #t)
+            (on-editor (lambda ()
+                         (save-session)
+                         (deactivate-plugin! terminals)))
+            (check (named-terminal "*terminal*") => #f)
+            (check (length (helper-pids)) => 1)
+            (on-editor (lambda ()
+                         (activate-plugin! terminals)
+                         (restore-session)))
+            (check (screen-has? "*terminal*" "\nbefore-swap\n") => #t)
+            (on-editor (lambda () (switch-to-buffer (get-buffer "*terminal*"))))
+            (paste "echo after-swap")
+            (press "RET")
+            (check (screen-has? "*terminal*" "\nafter-swap\n") => #t))))))
+
+    (test-case "killing a terminal's buffer ends its program and its helper"
+      (with-terminals
+       (lambda (folder)
+         (start-kernel
+          (lambda ()
+            (start-editor-loop!)
+            (on-editor (lambda () (call-command 'terminal)))
+            (check (screen-has? "*terminal*" "$ ") => #t)
+            (let (helpers (helper-pids))
+              (check (length helpers) => 1)
+              (on-editor (lambda () (kill-buffer (get-buffer "*terminal*"))))
+              (check (wait-for (lambda () (not (pid-alive? (car helpers)))) 10) => #t)))))))
+
     (test-case "the alternate screen shows the screen's rows only, and the scrollback comes back after it"
       (with-terminals
        (lambda (folder)
