@@ -16,6 +16,7 @@ prelude: :gerbil/core
         cell->index
         copy-text-row-of
         copy-text-position
+        copy-text-prompt-target
         copy-text-clean
         copy-text-link-at)
 
@@ -133,6 +134,20 @@ prelude: :gerbil/core
                 (fx1- (vector-ref starts (fx1+ row)))
                 (fx1+ (string-length (copy-text-text c))))))
     (fxmax start (fxmin end (fx+ start index)))))
+
+;; Where prompt navigation from POINT goes in C (ghostel-next-prompt,
+;; ghostel-previous-prompt): to where the input starts on the first row
+;; after POINT's row a prompt starts on, when DIRECTION is 'next, or the
+;; last one before it, 'previous; #f when there is none. PROMPTS are
+;; those rows, ascending, each (ROW . INDEX): the row (from 0) and the
+;; index in its line the input starts at.
+(def (copy-text-prompt-target (c : copy-text) (prompts : :list) (point : :fixnum) (direction : :symbol))
+  => (Maybe :fixnum)
+  (let* ((here (copy-text-row-of c point))
+         (prompt (if (eq? direction 'next)
+                   (find (lambda ((p : :pair)) (fx> (car p) here)) prompts)
+                   (find (lambda ((p : :pair)) (fx< (car p) here)) (reverse prompts)))))
+    (and prompt (copy-text-position c (car prompt) (cdr prompt)))))
 
 ;; The text from START to END, the wrapping line ends dropped and each
 ;; line's trailing spaces with them.

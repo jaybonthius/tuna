@@ -6,7 +6,9 @@
 ;;; row to what it already shows changes nothing and draws nothing.
 ;;;
 ;;; A row node's attributes are its NUMBER (fixed), its RUNS, WRAP (whether
-;;; the program's line goes on in the next row) and the CURSOR on it.
+;;; the program's line goes on in the next row), PROMPT (the cell its input
+;;; starts at, when a shell's prompt starts on it, else #f) and the CURSOR
+;;; on it.
 ;;;
 ;;; Rows are grouped under block nodes of `block-size` rows, so adding a
 ;;; row, or trimming the oldest, changes one block's children and not a
@@ -26,8 +28,9 @@ prelude: :gerbil/core
 (import (only-in :gerbil/runtime/hash HashTable)
         :tuna/plugins/buffers/contract
         (only-in :gerbil-libghostty/ghostty
-                 styled-row-number styled-row-runs
+                 styled-row-number styled-row-runs styled-row-semantic-prompt
                  styled-run-column styled-run-width styled-run-text styled-run-style styled-run-hyperlink
+                 styled-run-semantic-content
                  render-style-foreground render-style-background render-style-underline-color
                  render-style-bold? render-style-italic? render-style-faint? render-style-blink?
                  render-style-inverse? render-style-invisible? render-style-strikethrough?
@@ -36,6 +39,7 @@ prelude: :gerbil/core
                  color-rgb-r color-rgb-g color-rgb-b
                  unicode-codepoint-width))
 (export row-runs
+        row-prompt-cell
         char-cells
         row-sxml
         block-size
@@ -97,6 +101,19 @@ prelude: :gerbil/core
                   (vector (styled-run-column run) (styled-run-width run) (styled-run-text run)
                           (car parts) (cdr parts) (hyperlink-text (styled-run-hyperlink run)))))
               (styled-row-runs row)))
+
+;; Where the input starts in ROW, a styled row, when a prompt starts on it
+;; (OSC 133 A, libghostty's row mark): the cell after its last prompt
+;; cell, 0 when none is marked; #f for any other row.
+(def (row-prompt-cell (row : :t)) => (Maybe :fixnum)
+  (and (eq? (styled-row-semantic-prompt row) 'prompt)
+       (let lp ((runs (vector->list (styled-row-runs row))) (end 0))
+         (match runs
+           ([] end)
+           ([run . more]
+            (lp more (if (eq? (styled-run-semantic-content run) 'prompt)
+                       (fx+ (styled-run-column run) (styled-run-width run))
+                       end)))))))
 
 ;; An OSC 8 link's URI, or #f.
 (def (hyperlink-text (bytes :? :u8vector)) => (Maybe :string)

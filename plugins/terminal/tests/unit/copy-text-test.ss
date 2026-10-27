@@ -43,4 +43,19 @@
         (check (cell->index runs 3) => 2)
         (check (cell->index runs 5) => 4)
         (check (cell->index runs 6) => 5)
-        (check (cell->index runs 9) => 8)))))
+        (check (cell->index runs 9) => 8)))
+
+    (test-case "prompt navigation goes to the input of the prompt rows after or before point's row"
+      (let* ((c (rows->copy-text [(cons (vector (run 0 "one> first")) #f)
+                                  (cons (vector (run 0 "out")) #f)
+                                  (cons (vector (run 0 "two> second")) #f)
+                                  (cons (vector (run 0 "$ ")) #f)]))
+             (prompts [(cons 0 5) (cons 2 5)])
+             (end (fx1+ (string-length (copy-text-text c)))))
+        (check (copy-text-prompt-target c prompts end 'previous) => 21)
+        (check (copy-text-prompt-target c prompts 21 'previous) => 6)
+        ;; From within a prompt's own row, previous is the one before.
+        (check (copy-text-prompt-target c prompts 16 'previous) => 6)
+        (check (copy-text-prompt-target c prompts 6 'previous) => #f)
+        (check (copy-text-prompt-target c prompts 6 'next) => 21)
+        (check (copy-text-prompt-target c prompts 21 'next) => #f)))))

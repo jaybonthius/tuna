@@ -35,7 +35,7 @@ prelude: :gerbil/core
 (def sighup 1)
 (def sigkill 9)
 
-(defclass helper ((term      : :t)               ; libghostty terminal
+(defclass helper ((term      : terminal)         ; libghostty terminal
                   (pty       : :t)               ; the master, as a device
                   (child     : :fixnum)          ; the program's pid
                   (listener  : :t)               ; device
@@ -341,6 +341,10 @@ prelude: :gerbil/core
       (terminal-set-scrollback-max-bytes! term (options-scrollback o))
       (terminal-set-pty-write-handler! term (lambda (bytes) (set! (helper-replies h) (cons bytes (helper-replies h)))))
       (terminal-set-color-scheme-handler! term (lambda () (helper-scheme h)))
+      ;; With a program status handler set, libghostty answers a program's
+      ;; OSC 7501 query (Claude Code asks before it reports); Tuna's mirror
+      ;; keeps the records.
+      (terminal-set-program-status-handler! term void)
       (terminal-set-size-handler! term (lambda ()
                                          (terminal-size (helper-rows h) (helper-columns h)
                                                         (helper-cell-width h) (helper-cell-height h))))

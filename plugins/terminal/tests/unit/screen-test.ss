@@ -2,18 +2,34 @@
 ;;; program reports.
 (import :std/test
         :tuna/plugins/terminal/screen
-        (only-in :tuna/plugins/terminal/plugin parse-directory-report terminal-process-environment)
+        (only-in :tuna/plugins/terminal/plugin parse-directory-report terminal-process-environment
+                 unknown-sequence-number)
         (only-in :gerbil-libghostty/ghostty make-terminal terminal-write! terminal-copy-rows))
 (export screen-test)
 
 ;; Row N of a terminal that was written BYTES, as runs.
 (def (runs-after (bytes : :string) (n : :fixnum))
+  (row-runs (row-after bytes n)))
+
+;; Row N of a terminal that was written BYTES, as libghostty copies it.
+(def (row-after (bytes : :string) (n : :fixnum))
   (let (term (make-terminal 20 4))
     (terminal-write! term (string->utf8 bytes))
-    (row-runs (vector-ref (terminal-copy-rows term n (+ n 1)) 0))))
+    (vector-ref (terminal-copy-rows term n (+ n 1)) 0)))
 
 (def screen-test
   (test-suite "tuna/plugins/terminal: rows"
+    (test-case "a row a shell's prompt starts on knows where its input starts"
+      (check (row-prompt-cell (row-after "\x1b;]133;A\x07;one> \x1b;]133;B\x07;ls\r\nout" 0)) => 5)
+      (check (row-prompt-cell (row-after "\x1b;]133;A\x07;one> \x1b;]133;B\x07;ls\r\nout" 1)) => #f)
+      (check (row-prompt-cell (row-after "plain" 0)) => #f))
+
+    (test-case "an unknown OSC sequence's number"
+      (check (unknown-sequence-number "7777;a;b") => 7777)
+      (check (unknown-sequence-number "633") => 633)
+      (check (unknown-sequence-number "x;1") => #f)
+      (check (unknown-sequence-number "") => #f))
+
     (test-case "styled runs become classes; exact colours pass through as properties"
       (check (runs-after "plain \x1b;[1;31mred\x1b;[0m" 0)
              => (vector (vector 0 6 "plain " "" #f #f) (vector 6 3 "red" "terminal-fg-1 terminal-bold" #f #f)))
