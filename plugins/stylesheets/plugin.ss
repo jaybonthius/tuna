@@ -4,7 +4,9 @@
 ;;; stylesheet, (stylesheets tokens), first on the page when init.ss
 ;;; declares this plugin first. The variant: option picks one of the
 ;;; pregenerated files in tokens/; agents/guides/design-tokens.md names
-;;; the tokens other plugins may use.
+;;; the tokens other plugins may use. A second stylesheet, (stylesheets
+;;; fonts), tokens/fonts.css, ships Tuna's monospace font (Fira Code Nerd
+;;; Font, in tokens/fonts/) and puts it first in the monospace tokens.
 ;;;
 ;;; tokens/stellar-default.css is Stellar's output for
 ;;; tokens/stellar.config.json; `make tokens` regenerates it with the
@@ -26,10 +28,11 @@
                     string->symbol))
 
 (defplugin (stylesheets ctx)
-  "Adds the design tokens stylesheet that the variant: option names."
+  "Adds the design tokens stylesheet that the variant: option names, and Tuna's monospace font."
   (add-stylesheet 'tokens (string-append "tokens/"
                                          (symbol->string (plugin-option stylesheets 'variant))
-                                         ".css")))
+                                         ".css"))
+  (add-stylesheet 'fonts "tokens/fonts.css"))
 
 (defplugin-options stylesheets
   (variant 'stellar-default "Which shipped design tokens file to use." variant-type))

@@ -1,0 +1,42 @@
+/* Tuna's monospace font: Fira Code Nerd Font (Fira Code with the Nerd
+   Font icons; SIL Open Font License 1.1, fonts/FiraCodeNerdFont-LICENSE.txt),
+   shipped with Tuna so every page draws code and terminals the same way.
+   The design tokens' monospace lists keep their fonts as fallbacks. A
+   theme or init.ss replaces this stylesheet, (stylesheets fonts), to use
+   another font. */
+
+@font-face {
+  font-family: "FiraCode Nerd Font";
+  src: url("fonts/FiraCodeNerdFont-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "FiraCode Nerd Font";
+  src: url("fonts/FiraCodeNerdFont-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  --font-mono:
+    "FiraCode Nerd Font",
+    "Dank Mono",
+    "Operator Mono",
+    Inconsolata,
+    "Fira Mono",
+    ui-monospace,
+    "SF Mono",
+    Monaco,
+    "Droid Sans Mono",
+    "Source Code Pro",
+    "Cascadia Code",
+    Menlo,
+    Consolas,
+    "DejaVu Sans Mono",
+    monospace;
+  --font-monospace-code: var(--font-mono);
+}

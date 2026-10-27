@@ -93,7 +93,7 @@
   (check (stylesheet-warnings) => []))
 
 (def starter-page
-  '((stylesheets tokens)
+  '((stylesheets tokens) (stylesheets fonts)
     (web-transport tokens) (web-transport rules)
     (terminals tokens) (terminals rules)
     (layout tokens) (layout rules)

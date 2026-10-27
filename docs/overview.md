@@ -362,6 +362,8 @@ To restyle Tuna:
 - **Use a theme:** a plugin that replaces other plugins' stylesheets. Turning it off restores what it replaced, and your `init.ss` beats any theme. The demo's `theme-terminal` (`C-c T`) is one: flat, monospace, reverse video.
 - **Check:** `M-x describe-stylesheets` lists the page's stylesheets in order, and warns about a replacement for a file its plugin does not add and about any `var(--x)` without a fallback that nothing defines. After editing a file, `M-x reload-stylesheets` reads them again; the browser fetches only the files that changed.
 
+Tuna ships its monospace font, Fira Code Nerd Font (Fira Code with the Nerd Font icons), which the page, code and terminals use: the `stylesheets` plugin's `(stylesheets fonts)` file puts it first in the `--font-mono` token. Replace that file to use another font.
+
 The default look follows the system's light or dark setting, keeps the cursor visible in forced-colours (high contrast) mode, fills a phone's screen above its browser toolbar, and gives tabs, buttons, completion rows and clickable status lines finger-sized targets on touch screens.
 
 ## Files
