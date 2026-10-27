@@ -128,6 +128,9 @@
         terminal-mouse-drag-input-mode
         terminal-prompt-navigation-input-mode
         terminal-unknown-sequence-max-bytes
+        terminal-shell-integration
+        terminal-shell-integration-title
+        shell-integration
         parse-directory-report
         unknown-sequence-number
         parse-colors-report
@@ -176,6 +179,10 @@
   "What prompt navigation (C-c M-n, C-c M-p, from a shell's OSC 133 marks) does outside copy mode (ghostel-prompt-navigation-input-mode): 'default or 'copy enters copy mode and moves point to the prompt; #f scrolls the views to it, staying in the mode.")
 (defsetting terminal-unknown-sequence-max-bytes 4096
   "How many bytes of an OSC or APC sequence the terminal does not know reach terminal-unknown-sequence-hook; longer ones arrive cut. #f sends none.")
+(defsetting terminal-shell-integration #t
+  "Whether a terminal's shell (bash, zsh or fish) starts with Tuna's shell integration, which reports its folder (OSC 7) and marks its prompts and commands (OSC 133), without changes to its startup files (ghostel-shell-integration).")
+(defsetting terminal-shell-integration-title #t
+  "Whether Tuna's bash and zsh integration set the title, to the folder at the prompt and the command while it runs, as Ghostty's title feature does (fish sets its own). ghostel's integration leaves the title to the shell.")
 (defsetting terminal-confirm-close-tab #t
   "Whether closing a plain browser tab asks first while its selected view shows a terminal whose program runs, since C-w and other keys close tabs there. An installed app is never asked.")
 (defsetting terminal-enable-url-detection #t
@@ -299,6 +306,66 @@
   (or (file-exists? (path-expand "x/xterm-ghostty" directory))
       (file-exists? (path-expand "78/xterm-ghostty" directory))))
 
+;; ENTRIES, "NAME=value" strings, the first for each name kept, a bare
+;; "NAME" removing it.
+(def (first-entries (entries : :list)) => :list
+  (let (seen (make-hash-table))
+    (filter-map (lambda ((entry : :string))
+                  (let* ((equals (string-index entry #\=))
+                         (name (if equals (substring entry 0 equals) entry)))
+                    (and (not (hash-get seen name))
+                         (begin (hash-put! seen name #t) equals)
+                         entry)))
+                entries)))
+
+;; The value of NAME in ENVIRONMENT, "NAME=value" strings, or #f.
+(def (environment-value (environment : :list) (name : :string)) => (Maybe :string)
+  (let* ((prefix (string-append name "="))
+         (entry (find (cut string-prefix? prefix <>) environment)))
+    (and entry (substring entry (string-length prefix) (string-length entry)))))
+
+;; The shell PROGRAM (a path and its arguments) with Tuna's shell
+;; integration, from the scripts in DIRECTORY, as ghostel injects its own
+;; (ghostel--setup-local-integration), given the ENVIRONMENT it would
+;; have: (PROGRAM . ENTRIES), the entries to put before that environment.
+;; bash runs in POSIX mode, which reads ENV, naming a file that leaves it
+;; and reads the startup files; zsh gets a ZDOTDIR whose .zshenv gives
+;; ZDOTDIR back; fish finds a vendor configuration file through
+;; XDG_DATA_DIRS. Any other program, or a missing script, is left alone.
+(def (shell-integration (program : :list) (directory : :string) (environment : :list) (title? : :boolean))
+  => :pair
+  (let* ((shell (path-strip-directory (car program)))
+         (common [(string-append "TUNA_SHELL_INTEGRATION_DIR=" directory)
+                  (string-append "TUNA_SHELL_FEATURES=" (if title? "title" ""))])
+         (bootstrap (path-expand "bootstrap" directory))
+         (old (lambda ((name : :string) (saved : :string))
+                (let (value (environment-value environment name))
+                  (if value [(string-append saved "=" value)] [])))))
+    (cond
+     ((and (string-contains shell "bash") (file-exists? (path-expand "bash/inject.bash" bootstrap)))
+      (cons (cons* (car program) "--posix" (cdr program))
+            (append [(string-append "ENV=" (path-expand "bash/inject.bash" bootstrap))
+                     (string-append "TUNA_BASH_INJECT=1 " (string-join (cdr program) " "))]
+                    (old "ENV" "TUNA_BASH_ENV")
+                    (if (environment-value environment "HISTFILE")
+                      []
+                      [(string-append "HISTFILE=" (path-expand ".bash_history" (or (environment-value environment "HOME") "~")))
+                       "TUNA_BASH_UNEXPORT_HISTFILE=1"])
+                    common)))
+     ((and (string-contains shell "zsh") (file-exists? (path-expand "zsh/.zshenv" bootstrap)))
+      (cons program
+            (append [(string-append "ZDOTDIR=" (path-expand "zsh" bootstrap))]
+                    (old "ZDOTDIR" "TUNA_ZSH_ZDOTDIR")
+                    common)))
+     ((and (string-contains shell "fish")
+           (file-exists? (path-expand "fish/vendor_conf.d/tuna-shell-integration.fish" bootstrap)))
+      (cons program
+            (cons* (string-append "XDG_DATA_DIRS=" bootstrap ":"
+                                  (or (environment-value environment "XDG_DATA_DIRS") "/usr/local/share:/usr/share"))
+                   (string-append "TUNA_SHELL_INTEGRATION_XDG_DIR=" bootstrap)
+                   common)))
+     (else (cons program [])))))
+
 ;; The environment of a terminal's program, as ghostel builds it: the
 ;; terminal-environment setting first, then what says this is a Tuna
 ;; terminal and which TERM, then PWD, then BASE (Tuna's own); the first
@@ -314,15 +381,8 @@
              "TERM_PROGRAM_VERSION=1.3.2" "COLORTERM=truecolor"])
            (else ["TERM=xterm-256color" "COLORTERM=truecolor"])))
          (entries (append extra ["INSIDE_TUNA=terminal"] term-entries
-                          [(string-append "PWD=" directory)] base))
-         (seen (make-hash-table)))
-    (filter-map (lambda ((entry : :string))
-                  (let* ((equals (string-index entry #\=))
-                         (name (if equals (substring entry 0 equals) entry)))
-                    (and (not (hash-get seen name))
-                         (begin (hash-put! seen name #t) equals)
-                         entry)))
-                entries)))
+                          [(string-append "PWD=" directory)] base)))
+    (first-entries entries)))
 
 (def (process-environment) => :list
   (map (lambda ((pair : :pair)) (string-append (car pair) "=" (cdr pair)))
@@ -1651,17 +1711,23 @@
          (mode (if (eq? initial 'char) 'char 'semi-char))
          (term (new-live-terminal self id socket name mode (car size) (cdr size)))
          (b (terminal-buffer term))
+         (environment (terminal-process-environment (setting-value terminal-environment)
+                                                    (setting-value terminal-term)
+                                                    (:- (plugin-option terminals 'terminfo) :string)
+                                                    directory (process-environment)))
+         (integrated (if (setting-value terminal-shell-integration)
+                       (shell-integration (shell-command)
+                                          (:- (plugin-option terminals 'shell-integration-directory) :string)
+                                          environment (and (setting-value terminal-shell-integration-title) #t))
+                       (cons (shell-command) [])))
          (launch (make-helper-launch (:- (plugin-option terminals 'helper) :string) socket (car size) (cdr size)
                                      (setting-value terminal-max-scrollback)
                                      (if (string-suffix? "/" directory)
                                        (substring directory 0 (fxmax 1 (fx1- (string-length directory))))
                                        directory)
                                      (path-expand (string-append id ".log") (path-directory socket))
-                                     (shell-command)
-                                     (terminal-process-environment (setting-value terminal-environment)
-                                                                   (setting-value terminal-term)
-                                                                   (:- (plugin-option terminals 'terminfo) :string)
-                                                                   directory (process-environment))
+                                     (car integrated)
+                                     (first-entries (append (cdr integrated) environment))
                                      (and (leave-scope?) (string-append "tuna-terminal-" id)))))
     (set-buffer-setting! b default-directory directory)
     ;; Line mode starts at the first prompt (ghostel).
@@ -2133,6 +2199,9 @@
   (terminfo default-terminfo-directory
             "The folder of the compiled xterm-ghostty terminfo entry; `make` builds it into .gerbil/terminfo."
             string-type)
+  (shell-integration-directory default-shell-integration-directory
+                               "The folder of the shell integration scripts (terminal-shell-integration): tuna.bash, tuna.zsh, tuna.fish and their bootstrap folder."
+                               string-type)
   (socket-directory ""
                     "The private folder holding helpers' sockets; \"\" for $XDG_RUNTIME_DIR/tuna/terminals."
                     string-type)

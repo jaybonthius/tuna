@@ -3,7 +3,8 @@
 (import :std/test
         :tuna/plugins/terminal/screen
         (only-in :tuna/plugins/terminal/plugin parse-directory-report terminal-process-environment
-                 unknown-sequence-number)
+                 unknown-sequence-number shell-integration)
+        (only-in :tuna/plugins/terminal/connection default-shell-integration-directory)
         (only-in :gerbil-libghostty/ghostty make-terminal terminal-write! terminal-copy-rows))
 (export screen-test)
 
@@ -85,4 +86,25 @@
       (check (and (member "TERM=xterm-256color"
                           (terminal-process-environment [] "xterm-ghostty" "/nowhere" "/" []))
                   #t)
-             => #t))))
+             => #t))
+
+    (test-case "bash, zsh and fish start with the shell integration, as ghostel injects its own"
+      (let* ((d default-shell-integration-directory)
+             (bootstrap (path-expand "bootstrap" d))
+             (common [(string-append "TUNA_SHELL_INTEGRATION_DIR=" d) "TUNA_SHELL_FEATURES=title"]))
+        (check (shell-integration ["/bin/bash" "-l"] d ["HOME=/h" "ENV=/e"] #t)
+               => (cons ["/bin/bash" "--posix" "-l"]
+                        (append [(string-append "ENV=" bootstrap "/bash/inject.bash") "TUNA_BASH_INJECT=1 -l"
+                                 "TUNA_BASH_ENV=/e" "HISTFILE=/h/.bash_history" "TUNA_BASH_UNEXPORT_HISTFILE=1"]
+                                common)))
+        (check (shell-integration ["/usr/bin/zsh"] d ["ZDOTDIR=/z"] #t)
+               => (cons ["/usr/bin/zsh"]
+                        (append [(string-append "ZDOTDIR=" bootstrap "/zsh") "TUNA_ZSH_ZDOTDIR=/z"] common)))
+        (check (shell-integration ["fish"] d [] #f)
+               => (cons ["fish"]
+                        [(string-append "XDG_DATA_DIRS=" bootstrap ":/usr/local/share:/usr/share")
+                         (string-append "TUNA_SHELL_INTEGRATION_XDG_DIR=" bootstrap)
+                         (string-append "TUNA_SHELL_INTEGRATION_DIR=" d) "TUNA_SHELL_FEATURES="]))
+        (check (shell-integration ["/bin/sh"] d [] #t) => (cons ["/bin/sh"] []))
+        ;; Without the scripts, the shell starts as it is.
+        (check (shell-integration ["/bin/bash"] "/nowhere" [] #t) => (cons ["/bin/bash"] []))))))
