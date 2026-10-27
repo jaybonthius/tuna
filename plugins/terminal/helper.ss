@@ -73,6 +73,7 @@ prelude: :gerbil/core
                   (saved-at  : :real)            ; when it was last saved
                   (output-at : :real)            ; when the program last wrote
                   (compressed? : :boolean)       ; nothing written since compressing
+                  (saver     : :thread)          ; saves and compresses, woken by output
                   (done      : :thread))         ; main, waiting to be told to end
   final: #t)
 
@@ -290,7 +291,8 @@ prelude: :gerbil/core
     (when (and old (not (equal? (helper-settings-save-path old) (helper-settings-save-path s)))
                (not (string-empty? (helper-settings-save-path old))))
       (delete-saved-screen! (helper-settings-save-path old)))
-    (save-screen! h #t)))
+    (save-screen! h #t)
+    (thread-send h.saver 'settings)))
 
 ;; Write the terminal's snapshot, trimmed to the rows of scrollback the
 ;; settings keep, to the file they name: when ALWAYS?, or when the screen
@@ -319,10 +321,15 @@ prelude: :gerbil/core
 
 ;; Now and then: save the screen once its interval has passed since the
 ;; last save and it changed, and compress the scrollback once the program
-;; has been quiet for the settings' delay.
+;; has been quiet for the settings' delay. With nothing to do it sleeps
+;; until output or new settings wake it.
 (def (saver-thread (h : helper)) => :void
   (let lp ()
-    (thread-sleep! tick-interval)
+    (let (s h.wanted)
+      (thread-receive (and s (or (and h.changed? (fx> (helper-settings-save-interval s) 0))
+                                 (and (helper-settings-compress-after s) (not h.compressed?)))
+                           tick-interval)
+                      #f))
     (let ((s h.wanted)
           (t (now)))
       (when s
@@ -356,6 +363,7 @@ prelude: :gerbil/core
                 (do-with-lock h.lock
                   (set! h.replies [])
                   (terminal-write! h.term buffer start: 0 end: n)
+                  (unless (and h.changed? (not h.compressed?)) (thread-send h.saver 'output))
                   (set! h.changed? #t)
                   (set! h.compressed? #f)
                   (set! h.output-at (now))
@@ -437,7 +445,7 @@ prelude: :gerbil/core
                       client: #f writer: #f live?: #f queued: 0 pty-writer: (current-thread)
                       replies: [] columns: columns rows: rows cell-width: 0 cell-height: 0
                       scheme: #f status: #f killed?: #f wanted: #f changed?: #t saved-at: 0 output-at: (now)
-                      compressed?: #f done: (current-thread))))
+                      compressed?: #f saver: (current-thread) done: (current-thread))))
       (terminal-set-scrollback-max-bytes! term (options-scrollback o))
       (terminal-set-pty-write-handler! term (lambda (bytes) (set! (helper-replies h) (cons bytes (helper-replies h)))))
       (terminal-set-color-scheme-handler! term (lambda () (helper-scheme h)))
@@ -452,7 +460,7 @@ prelude: :gerbil/core
       (let (reader (spawn/name 'terminal-pty-reader (lambda () (pty-reader-thread h))))
         (spawn/name 'terminal-watcher (lambda () (watcher-thread h reader))))
       (spawn/name 'terminal-acceptor (lambda () (acceptor-thread h)))
-      (spawn/name 'terminal-saver (lambda () (saver-thread h)))
+      (set! (helper-saver h) (spawn/name 'terminal-saver (lambda () (saver-thread h))))
       ;; Asked to end (a shutdown, or kill): save the screen first, so the
       ;; terminal comes back after the reboot.
       (add-signal-handler! SIGTERM (lambda () (thread-send (helper-done h) 'terminate)))

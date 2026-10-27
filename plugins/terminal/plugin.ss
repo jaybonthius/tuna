@@ -304,6 +304,7 @@
    (start-directory : :string)          ; where its program started
    (foreign?     : :boolean)            ; its helper is from another version of Tuna
    (restored     :? :u8vector)          ; while a restored terminal waits for RET: its screen
+   (revived-at   : :real)               ; when it was last revived
    (compress-timer :? :t)
    (compressed?  : :boolean)            ; nothing arrived since its mirror was compressed
    (sent-settings :? helper-settings))  ; what its helper was last told
@@ -506,7 +507,7 @@
                               effects: [] input-mode: mode initial-name: name managed-name: name
                               follow: (make-hash-table-eq) last-input: 0 last-output: 0 timer: #f
                               link-timer: #f fill-timer: #f arrived: 0 scheduled?: #f inbox: #f sync-due?: #f held-since: #f running?: #f started: #f failure: #f refusals: 0 last-client: #f copy: #f line: #f line-paused?: #f history: []
-                              status: (new-source) start-directory: directory foreign?: #f restored: #f
+                              status: (new-source) start-directory: directory foreign?: #f restored: #f revived-at: 0
                               compress-timer: #f compressed?: #f sent-settings: #f)))
     (add-buffer! b)
     (hash-put! self.terms id term)
@@ -576,7 +577,7 @@
      (lambda ()
        (when launch (launch-helper! launch))
        (if (not (wait-for-socket socket (if launch 10 0.5)))
-         'gone
+         (if launch (cons 'failed "the terminal helper did not start") 'gone)
          (let ((c (or (with-catch
                        (lambda (e)
                          ;; No helper listens there: its socket is stale.
@@ -680,7 +681,9 @@
            (terminal-write! mirror payload)
            (set! term.arrived (now))
            (set! term.compressed? #f)
-           (restart-timer term.compress-timer)
+           (let (delay (buffer-local-value terminal-compress-after (terminal-buffer term)))
+             (when (and (real? delay) (> delay 0))
+               (restart-timer term.compress-timer seconds: delay)))
            (apply-effects! self term)
            (output-arrived! self term))))
       ((resized)
@@ -2047,13 +2050,19 @@
       (set! term.child-pid 0)
       (set! term.restored bytes)
       (adopt-mirror! self term restored)
-      (if (eq? (buffer-local-value terminal-restore-start (terminal-buffer term)) 'key)
+      ;; A new shell whose helper went away again at once waits for RET,
+      ;; rather than starting again and again.
+      (if (or (eq? (buffer-local-value terminal-restore-start (terminal-buffer term)) 'key)
+              (< (- (now) term.revived-at) revive-again-after))
         (begin
           (terminal-write! restored (string->utf8 "Press RET to start it.\r\n"))
           (set-node-keymap! term.root self.restored-map)
           (source-changed! term.status)
           (if (shown? term) (sync! self term) (owe! self term)))
         (start-revived! self term)))))
+
+;; Seconds after a revive within which another waits for RET.
+(def revive-again-after 10)
 
 (def (file-info-last-modification-time* (path :? :string)) => :real
   (with-catch (lambda (e) (now))
@@ -2069,6 +2078,7 @@
         (write-saved-screen! restore bytes)
         (with-catch void (lambda () (delete-file term.socket)))
         (set! term.restored #f)
+        (set! term.revived-at (now))
         (set-node-keymap! term.root (if (eq? term.input-mode 'char) self.char-map self.semi-char))
         (source-changed! term.status)
         (start-reader! self term (terminal-launch term (revive-directory term) restore))))))
