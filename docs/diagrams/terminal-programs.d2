@@ -1,0 +1,26 @@
+# How does what a program says about itself reach you? (built 2026-10-28, terminal stage 4)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+direction: down
+
+program: "A program in the terminal\n(Claude Code, a build, your shell)"
+terminal: "Terminal plugin (built)" {
+  label.near: top-left
+  mirror: "Tuna's copy of the screen\nreads the sequence"
+  hooks: "Runs the terminal hooks\nand acts on none"
+}
+status: "Program status plugin\n(built)\nkeeps each program's records"
+notify: "Notifications plugin\n(built)\necho area today,\nbrowser notifications later"
+statusline: "The terminal's status line\n[claude-code: blocked: permission]"
+echo: "The echo area\nclaude-code: Allow edit?"
+
+program -> terminal.mirror: "1. prints OSC 7501\nstate=blocked"
+terminal.mirror -> terminal.hooks: "2. a status report"
+terminal.hooks -> status: "3. program status hook"
+status -> statusline: "4a. label"
+status -> notify: "4b. change hook,\nif you are not looking"
+notify -> echo: "5. message"
