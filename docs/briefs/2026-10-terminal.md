@@ -1,6 +1,6 @@
 # Brief: a terminal that outlives Tuna
 
-**Date:** 2026-10-27. **Status:** draft, for the owner's approval. Evidence: [`agents/research/terminal/`](../../agents/research/terminal/) (ghostel and Emacs's terminals; how tmux-style persistence works; the owner's earlier libghostty work and the binding's gaps; escape codes and browser keys). Roadmap: tier 3, `terminal`.
+**Date:** 2026-10-27. **Status:** approved 2026-10-27 (owner: make things configurable; follow ghostel closely). Plan: [`agents/plans/terminal.md`](../../agents/plans/terminal.md); ADR 18. Evidence: [`agents/research/terminal/`](../../agents/research/terminal/) (ghostel and Emacs's terminals; how tmux-style persistence works; the owner's earlier libghostty work and the binding's gaps; escape codes and browser keys). Roadmap: tier 3, `terminal`.
 
 ## What we're building and why
 
@@ -50,7 +50,7 @@ A notifications plugin listening to terminals, without knowing anything else abo
 
 ## Decisions for the owner
 
-1. **Should the saved screen for reboots be on by default?** Scrollback can contain secrets, such as a token you printed. VS Code and iTerm2 save it by default; herdr and zellij don't. *Recommendation: on*, saved owner-only in Tuna's state folder, with a setting to turn it off. Tuna already autosaves unsaved buffers there, and the restored screen is most of what makes a reboot painless.
+1. *Decided 2026-10-27: on, and configurable.* **Should the saved screen for reboots be on by default?** Scrollback can contain secrets, such as a token you printed. VS Code and iTerm2 save it by default; herdr and zellij don't. *Recommendation: on*, saved owner-only in Tuna's state folder, with a setting to turn it off. Tuna already autosaves unsaved buffers there, and the restored screen is most of what makes a reboot painless.
 
 ## New terms
 

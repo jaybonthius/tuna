@@ -2,9 +2,9 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: terminal (brief drafted 2026-10-27, awaiting owner approval)
+## Current work: terminal (brief approved 2026-10-27; plan `agents/plans/terminal.md`, ADR 18)
 
-Brief `docs/briefs/2026-10-terminal.md` (diagrams `docs/diagrams/terminal-pieces` and `terminal-restart`), research `agents/research/terminal/`. Owner decisions 2026-10-27: extend `gerbil-libghostty` beyond Racket parity (first commit, then the additions Tuna needs); key handling as terminal-node keymaps now, replaced by modes later (recorded in `docs/ideas/modes.md`); colours as CSS-variable palette plus pass-through exact colours (ghostel's model); reboot restore follows best practice (owner open to the recommendation). Open: whether the saved screen for reboots is on by default.
+Brief `docs/briefs/2026-10-terminal.md` (diagrams `docs/diagrams/terminal-pieces` and `terminal-restart`), research `agents/research/terminal/`. Owner decisions 2026-10-27: extend `gerbil-libghostty` beyond Racket parity (first commit, then the additions Tuna needs); key handling as terminal-node keymaps now, replaced by modes later (recorded in `docs/ideas/modes.md`); colours as CSS-variable palette plus pass-through exact colours (ghostel's model); reboot restore follows best practice (owner open to the recommendation). Saved screen for reboots: on, configurable. Owner 2026-10-27: make everything configurable; follow ghostel (`/home/jay/Code/ghostel`, 42de3eb) closely; change and extend `gerbil-libghostty` freely to cover the libghostty-vt C API idiomatically; orchestrate to completion. `gerbil-libghostty` first commit `5791d54`.
 
 ## Previous: files finished (2026-10-27)
 
