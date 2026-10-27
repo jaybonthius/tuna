@@ -2,7 +2,11 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: files (brief approved 2026-10-26; plan `agents/plans/files.md`; stage 1, open and save, merged; stage 2, recent files and remembered places with completion sources, built on branch `files-2`; stage 3, changes on disk, next)
+## Current work: none in progress; files finished (2026-10-27)
+
+Files, all four stages (plan `agents/plans/files.md`, reports `/home/jay/Code/workbench-gerbil/scratch/files/stage{1,2,3,4}-report.md`): open and save, recent files and remembered places (with completion sources), changes on disk, autosave and recovery of file buffers; plus word commands, the reverse-proxy listener (tuna.tungo.org behind Authelia), DEL in the picker. Next in tier 0: buffer switching (`C-x b`, in view-commands) and error recovery (owner: deep dive later).
+
+## Previous: files
 
 ## Previous: voice dictation and spoken commands finished (2026-10-24)
 
