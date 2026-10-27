@@ -186,6 +186,36 @@
          (check (reply-status (http "GET" "/static/tuna-input.js")) => 200)
          (check (reply-status (http "GET" "/elsewhere")) => 404))))
 
+    (test-case "the head links the icons and the manifest; /favicon.ico is served, from the icons option's folder"
+      (with-tuna
+       (lambda ()
+         (let (page (reply-body (http "GET" "/")))
+           (for-each (lambda (link) (check (and (string-search link page) #t) => #t))
+                     ["<link rel=\"icon\" href=\"/icons/favicon.ico\""
+                      "<link rel=\"icon\" href=\"/icons/favicon-32x32.png\" sizes=\"32x32\" type=\"image/png\">"
+                      "<link rel=\"apple-touch-icon\" href=\"/icons/apple-touch-icon.png\""
+                      "<link rel=\"manifest\" href=\"/icons/site.webmanifest\">"]))
+         (let (reply (http-bytes "/favicon.ico"))
+           (check (reply-status reply) => 200)
+           (check (reply-header reply "Content-Type") => "image/vnd.microsoft.icon"))
+         (check (reply-header (http-bytes "/icons/android-chrome-512x512.png") "Content-Type") => "image/png")
+         (let (reply (http "GET" "/icons/site.webmanifest"))
+           (check (reply-header reply "Content-Type") => "application/manifest+json")
+           (check (and (string-search "\"name\":\"Tuna\"" (reply-body reply)) #t) => #t))
+         (check (reply-status (http "GET" "/icons/../plugin.ss")) => 404)))
+      (let (folder (path-expand (string-append "tuna-icons-" (number->string (random-integer 1000000000)))
+                                (or (getenv "TMPDIR" #f) "/tmp")))
+        (create-directory folder)
+        (call-with-output-file (path-expand "favicon.ico" folder) (cut write-u8vector (u8vector 1 2 3) <>))
+        (set-plugin-options! web-transport [(cons 'icons folder)])
+        (unwind-protect
+          (with-tuna
+           (lambda ()
+             (check (reply-body (http-bytes "/favicon.ico")) => (u8vector 1 2 3))
+             (check (reply-status (http "GET" "/icons/site.webmanifest")) => 404)))
+          (set-plugin-options! web-transport [])
+          (delete-file-or-directory folder #t))))
+
     (test-case "a foreign Host or Origin is refused on every route"
       (with-tuna
        (lambda ()

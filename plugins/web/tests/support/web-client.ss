@@ -10,6 +10,7 @@
         "../../../../tuna/tests/support/kernel")
 (export with-web-tuna
         http
+        http-bytes
         current-tab
         new-tab!
         unknown-tab!
@@ -111,6 +112,26 @@
     (let (text (read-until socket (lambda (text) #f)))
       (Socket-close socket)
       (parse-reply text))))
+
+;; GET PATH, for a reply whose body may be any bytes, such as an image:
+;; a reply whose body is a u8vector.
+(def (http-bytes path)
+  (let ((socket (connect port))
+        (buffer (make-u8vector 4096)))
+    (send! socket (request-text "GET" path [(cons "Host" (host))] ""))
+    (let* ((reader (StreamSocket-reader socket))
+           (bytes (let lp ((chunks []))
+                    (let (count (with-catch (lambda (e) (if (premature-end-of-input-error? e) 0 (raise e)))
+                                            (lambda () (Reader-read reader buffer 0 4096 1))))
+                      (if (zero? count)
+                        (apply u8vector-append (reverse chunks))
+                        (lp (cons (subu8vector buffer 0 count) chunks))))))
+           (split (let lp ((i 0))
+                    (if (equal? (subu8vector bytes i (+ i 4)) (u8vector 13 10 13 10)) i (lp (+ i 1)))))
+           (head (parse-reply (utf8->string (subu8vector bytes 0 (+ split 4))))))
+      (Socket-close socket)
+      (make-reply (reply-status head) (reply-headers head)
+                  (subu8vector bytes (+ split 4) (u8vector-length bytes))))))
 
 ;;; Tabs: every page names its tab (ADR 16)
 
