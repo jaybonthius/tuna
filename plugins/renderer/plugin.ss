@@ -938,12 +938,15 @@
 ;; otherwise drawn again, through the pieces kept. Before drawing, each
 ;; view shown gets C's view of it, so drawing makes none.
 (def (render-screen! (self : html-rendering) (c :? client)) => :t
+  (run-hook redraw-started-hook c)
   (render-layout 'views (lambda (v selected? start) (view-client v c)))
   (let* ((command (current-task-name))
          (screen (call-with-memo-pass self.pieces c
                    (lambda ()
                      (memo '(screen) [command] (lambda (inputs) (draw-screen self c (car inputs))))))))
     (after-drawing! self c screen)
+    (run-hook redraw-finished-hook c (memo-cache-last-drawn self.pieces) (memo-cache-last-reused self.pieces)
+              screen)
     screen))
 
 (defmethod {render-screen html-rendering}

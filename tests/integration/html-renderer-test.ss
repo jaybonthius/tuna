@@ -294,6 +294,26 @@
           (let (html (screen))
             (check (and (offset "hello" html) #t) => #t)
             (check (offset "data-clickable" html) => #f)))))
+    (test-case "each screen drawn runs the redraw hooks, with the pieces drawn and reused and its HTML"
+      (let (heard [])
+        (defplugin (redraw-listener ctx)
+          "Records redraws."
+          (context-add-hook! ctx redraw-started-hook 'listener (lambda (c) (set! heard (cons ['started c] heard))))
+          (context-add-hook! ctx redraw-finished-hook 'listener
+                             (lambda (c drawn reused html)
+                               (set! heard (cons ['finished c drawn reused (html-size html)] heard)))))
+        (call-with-fresh-kernel (append renderer-plugins [redraw-listener])
+          (lambda ()
+            (insert "hello")
+            (let* ((first (screen-html))
+                   (again (screen-html)))
+              (match (reverse heard)
+                ([['started #f] ['finished #f drawn 0 size] ['started #f] ['finished #f 0 reused size-again]]
+                 (check (> drawn 1) => #t)
+                 (check (> reused 0) => #t)
+                 (check size => (u8vector-length (string->utf8 (html->string first))))
+                 (check size-again => size))
+                (other (check other => 'two-redraws))))))))
     (test-case "*scratch* renders its one text node, with its text's revision, and the cursor"
       (call-with-fresh-kernel renderer-plugins
        (lambda ()

@@ -64,6 +64,6 @@ action({
       altLeft: evt.altKey && altLeft,
       altRight: evt.altKey && altRight,
       altGraph: evt.getModifierState("AltGraph"),
-    });
+    }, evt.timeStamp);
   },
 });

@@ -442,11 +442,23 @@
 
 (defmethod {resolve! global-keys}
   (lambda (self event)
-    (cond
-     ((pointer-event? event) (resolve-pointer! self event))
-     ((scroll-event? event) (resolve-scroll! self event))
-     ((paste-event? event) (resolve-key! self event paste-key))
-     (else (resolve-key! self event (key-description event))))))
+    (let (resolved (cond
+                    ((pointer-event? event) (resolve-pointer! self event))
+                    ((scroll-event? event) (resolve-scroll! self event))
+                    ((paste-event? event) (resolve-key! self event paste-key))
+                    (else (resolve-key! self event (key-description event)))))
+      (run-hook input-resolved-hook (event-client event) (event-sequence event) event
+                (and resolved (car resolved)))
+      resolved)))
+
+;; The page-load sequence number of EVENT, an input item.
+(def (event-sequence (event : :t)) => :fixnum
+  (cond
+   ((key-event? event) (key-event-sequence event))
+   ((pointer-event? event) (pointer-event-sequence event))
+   ((scroll-event? event) (scroll-event-sequence event))
+   ((paste-event? event) (paste-event-sequence event))
+   (else 0)))
 
 ;; Quit (Emacs `keyboard-quit`). Unless the quit key that ran this
 ;; cancelled a pending prefix, first quit one command waiting in

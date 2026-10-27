@@ -1,7 +1,8 @@
 ;;; The renderer service (ADR 7): editor state to a screen. The screen is
 ;;; the layout drawn from the frame (ADR 13): everything on it, the
 ;;; minibuffer, the echo area and help included, is a buffer in a view.
-;;; This module also holds the settings renderers read.
+;;; This module also holds the settings renderers read, and the hooks a
+;;; renderer runs around drawing a screen.
 prelude: :gerbil/core
 
 (import :std/interface
@@ -12,7 +13,10 @@ prelude: :gerbil/core
         :tuna/plugins/buffers/contract)
 (export (interface-out Renderer)
         renderer-service
+        redraw-started-hook
+        redraw-finished-hook
         html-for-each
+        html-size
         html->string
         show-status-line
         face-remapping
@@ -34,16 +38,35 @@ prelude: :gerbil/core
   (new-service 'renderer is-Renderer? tier: 'live
                doc: "Turns editor state into a screen."))
 
+;; Both run on the baton, around each screen a renderer draws (each
+;; render-screen), so callbacks must be quick and must not change what is
+;; drawn.
+(def redraw-started-hook
+  (new-hook 'redraw-started
+            doc: "Runs with a client (#f for none) as the renderer starts drawing its screen."))
+
+;; Arguments: the client, the pieces drawn again, the pieces reused (each
+;; counting what was under it; ADR 17), and the screen's HTML, which
+;; html-for-each and html-size read.
+(def redraw-finished-hook
+  (new-hook 'redraw-finished
+            doc: "Runs with a client, the pieces drawn and reused, and the screen's HTML, once the renderer has drawn it."))
+
 ;; Call WRITE with each u8vector of HTML H, in order.
 (def (html-for-each (write : :procedure) (h : :t)) => :void
   (if (u8vector? h)
     (write h)
     (vector-for-each (lambda (part) (html-for-each write part)) h)))
 
-;; HTML H as one string.
-(def (html->string (h : :t)) => :string
+;; The number of bytes in HTML H.
+(def (html-size (h : :t)) => :fixnum
   (let (size 0)
     (html-for-each (lambda ((bytes : :u8vector)) (set! size (fx+ size (u8vector-length bytes)))) h)
+    size))
+
+;; HTML H as one string.
+(def (html->string (h : :t)) => :string
+  (let (size (html-size h))
     (let ((out (make-u8vector size))
           (at 0))
       (html-for-each (lambda ((bytes : :u8vector))

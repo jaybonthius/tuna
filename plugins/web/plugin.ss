@@ -104,7 +104,7 @@
                    (client client-type))
         (only-in :tuna/plugins/keys/contract key-event make-key-event pointer-event make-pointer-event
                  scroll-event make-scroll-event paste-event make-paste-event
-                 posn make-posn)
+                 posn make-posn input-resolved-hook)
         (only-in :tuna/plugins/editing/contract editing-service kill-new-hook)
         :tuna/plugins/renderer/contract
         :tuna/plugins/stylesheets/contract
@@ -161,6 +161,8 @@
    ;; Guarded by the server's mutex:
    (rendered  : :t)             ; the newest screen for it, the renderer's HTML
    (revision  : :fixnum)        ; RENDERED's revision
+   (through   : :fixnum)        ; the last input sequence of it the input service took
+   (rendered-through : :fixnum) ; THROUGH when RENDERED was drawn: the last input it includes
    (owed      : :boolean)       ; a scroll report, pointer movement or copy awaits a screen
    (wanted?   : :boolean)       ; a screen must be rendered for it before it is sent one
    (copy      :? :string)       ; a text its page is to copy to the clipboard, after its next screen
@@ -222,22 +224,27 @@
 
 ;; What a screen sent as REVISION carries on its root element: as the
 ;; COUNTth screen sent on STREAM, a data-init telling the page to confirm
-;; it once applied (go-latest-frame-spike's /next); then REVISION as
-;; data-revision, so that pointer items can name the screen they were
-;; computed on (ADR 7). The page's first screen has no data-init.
-(def (screen-stamps (revision : :fixnum) (stream :? :fixnum) (count :? :fixnum)) => :u8vector
+;; it once applied (go-latest-frame-spike's /next), with what it measured
+;; (tunaApplied); then REVISION as data-revision, so that pointer items
+;; can name the screen they were computed on (ADR 7), and THROUGH as
+;; data-through, the last input sequence of the tab that the screen
+;; includes. The page's first screen has no data-init.
+(def (screen-stamps (revision : :fixnum) (through : :fixnum) (stream :? :fixnum) (count :? :fixnum))
+  => :u8vector
   (string->utf8
    (string-append
     (if (and stream count)
-      (string-append " data-init=\"@post('/applied?stream=" (number->string stream)
+      (string-append " data-init=\"@tunaApplied('/applied?stream=" (number->string stream)
                      "&amp;count=" (number->string count) "'); el.removeAttribute('data-init')\"")
       "")
-    " data-revision=\"" (number->string revision) "\"")))
+    " data-revision=\"" (number->string revision) "\""
+    " data-through=\"" (number->string through) "\"")))
 
 ;; SCREEN's bytes to OUT, with STAMPS (text with a leading space) after its
 ;; root element's tag name: before the first space, tab, newline, > or /
 ;; after its first byte, which must be <; without them when it is not.
-(def (write-stamped-screen (out : BufferedWriter) (screen : :t) (stamps : :u8vector)) => :void
+;; Returns the number of SCREEN's bytes written.
+(def (write-stamped-screen (out : BufferedWriter) (screen : :t) (stamps : :u8vector)) => :fixnum
   (let ((state 'start)                  ; start, name (in the tag name) or done
         (seen 0))
     (html-for-each
@@ -267,7 +274,8 @@
      screen)
     ;; A screen that is all tag name: the stamps go at its end.
     (when (and (eq? state 'name) (fx> seen 1))
-      (BufferedWriter-write out stamps))))
+      (BufferedWriter-write out stamps))
+    seen))
 
 ;; Only the editor loop redisplays, so revisions are assigned in order.
 ;; It also holds the baton, so it may read the stylesheets registry and
@@ -284,10 +292,14 @@
                      (filter (lambda ((tab : web-tab)) (or tab.wanted? (fx> tab.streams 0)))
                              (hash-values self.tabs)))))
         (publish-screens! self
-                          (map (lambda ((tab : web-tab)) (cons tab (render-screen tab.client))) tabs)
+                          (map (lambda ((tab : web-tab))
+                                 ;; THROUGH changes only on this thread.
+                                 (let (through tab.through)
+                                   [tab (render-screen tab.client) through]))
+                               tabs)
                           head served)))))
 
-;; Give each of SCREENS, (tab . rendered) pairs, the next revision and send
+;; Give each of SCREENS, [tab rendered through] lists, the next revision and send
 ;; it to its tab when it differs from the tab's last screen or the tab is
 ;; owed a screen, and with HEAD for SERVED stylesheets, when given, to every
 ;; tab. A screen is drawn only from editor state, so the same screen as a
@@ -296,23 +308,30 @@
 ;; last time, which is told apart without reading it. A page sends one
 ;; scroll report, or one pointer movement, at a time and waits for a
 ;; screen before the next, so such a report is always answered with one
-;; (paced-report?).
+;; (paced-report?). Then screen-ready-hook runs for each tab.
 (def (publish-screens! (self : web-server) (screens : :list) (head : :t) (served : :t)) => :void
-  (do-with-lock self.mutex
-    (when served
-      (set! self.head head)
-      (set! self.served served))
-    (for-each (lambda ((screen : :pair))
-                (using (tab (car screen) : web-tab)
-                  (let (rendered (cdr screen))
-                    (when (or served tab.owed
-                              (not (or (eq? rendered tab.rendered) (equal? rendered tab.rendered))))
-                      (let (revision (fx1+ self.revision))
-                        (set! self.revision revision)
-                        (give-screen! tab rendered revision)))
-                    (set! tab.wanted? #f))))
-              screens)
-    (condition-variable-broadcast! self.changed)))
+  (let (ready
+        (do-with-lock self.mutex
+          (when served
+            (set! self.head head)
+            (set! self.served served))
+          (let (ready
+                (map (lambda ((screen : :list))
+                       (using (tab (car screen) : web-tab)
+                         (let ((rendered (cadr screen))
+                               (through (: (caddr screen) :fixnum)))
+                           (set! tab.wanted? #f)
+                           (if (or served tab.owed
+                                   (not (or (eq? rendered tab.rendered) (equal? rendered tab.rendered))))
+                             (let (revision (fx1+ self.revision))
+                               (set! self.revision revision)
+                               (give-screen! tab rendered revision through)
+                               [tab.client revision through])
+                             [tab.client #f through]))))
+                     screens))
+            (condition-variable-broadcast! self.changed)
+            ready)))
+    (for-each (lambda ((r : :list)) (apply run-hook screen-ready-hook r)) ready)))
 
 ;; Send TAB its last screen again, under a new revision: the answer to a
 ;; scroll report or pointer movement that no task runs for.
@@ -321,14 +340,15 @@
     (unless (eq? tab.rendered empty-screen)
       (let (revision (fx1+ self.revision))
         (set! self.revision revision)
-        (give-screen! tab tab.rendered revision)
+        (give-screen! tab tab.rendered revision tab.rendered-through)
         (condition-variable-broadcast! self.changed)))))
 
-;; Make RENDERED, as REVISION, TAB's newest screen. Call with the server's
-;; mutex held.
-(def (give-screen! (tab : web-tab) (rendered : :t) (revision : :fixnum)) => :void
+;; Make RENDERED, as REVISION, including input up to THROUGH, TAB's newest
+;; screen. Call with the server's mutex held.
+(def (give-screen! (tab : web-tab) (rendered : :t) (revision : :fixnum) (through : :fixnum)) => :void
   (set! tab.rendered rendered)
   (set! tab.revision revision)
+  (set! tab.rendered-through through)
   (set! tab.owed #f))
 
 ;; Have the tab of client C (#f for none) copy TEXT to the clipboard after
@@ -379,8 +399,8 @@
                         (data-init ,(string-append "@" action "(JSON.parse(el.textContent)); el.remove()")))
                      ,json)))
 
-;; TAB's newest screen as [revision head screen copy instructions], the
-;; instructions oldest first, once STREAM's page
+;; TAB's newest screen as [revision head screen copy instructions through],
+;; the instructions oldest first, once STREAM's page
 ;; has applied its COUNTth screen and one newer than SENT exists, and no
 ;; screen is being rendered for TAB; the newest again when the page has
 ;; not confirmed within SELF's timeout; 'heartbeat
@@ -396,7 +416,7 @@
              ;; COPY, TAB's pending copy, and its instructions go with this
              ;; screen only.
              (newest (lambda () (let (newest [tab.revision self.head tab.rendered tab.copy
-                                              (reverse tab.instructions)])
+                                              (reverse tab.instructions) tab.rendered-through])
                                   (set! tab.copy #f)
                                   (set! tab.instructions [])
                                   (mutex-unlock! self.mutex)
@@ -440,7 +460,7 @@
                 (mutex-unlock! self.mutex self.changed left)
                 (mutex-lock! self.mutex)
                 (lp))
-              (let (page (page-html id self.head tab.rendered tab.revision))
+              (let (page (page-html id self.head tab.rendered tab.revision tab.rendered-through))
                 (mutex-unlock! self.mutex)
                 page))))))))
 
@@ -706,10 +726,11 @@
                                   (read-file-u8vector file))))
       (respond-text response Not-Found (string-append "Not found: " rest)))))
 
-(def (page-html (tab : :string) (head : :string) (screen : :t) (revision : :fixnum)) => :u8vector
+(def (page-html (tab : :string) (head : :string) (screen : :t) (revision : :fixnum) (through : :fixnum))
+  => :u8vector
   (let (out (open-buffered-writer #f))
     (BufferedWriter-write-string-utf8 out (page-start tab head))
-    (write-stamped-screen out screen (screen-stamps revision #f #f))
+    (write-stamped-screen out screen (screen-stamps revision through #f #f))
     (BufferedWriter-write-string-utf8 out "</body></html>")
     (get-memory-output-u8vector out)))
 
@@ -843,7 +864,7 @@
   (or (hash-get self.tabs id)
       (let (tab (web-tab client: (make-client id)
                          next: 1 pending: (make-hash-table-eqv) numbered?: #f
-                         rendered: empty-screen revision: 0
+                         rendered: empty-screen revision: 0 through: 0 rendered-through: 0
                          owed: #f wanted?: #f copy: #f instructions: []
                          applied: (make-hash-table-eqv) streams: 0 closings: 0))
         (hash-put! self.tabs id tab)
@@ -940,13 +961,15 @@
          (lambda (session)
            (let lp ((sent -1) (sent-head "") (count 0))
              (match (await-screen self tab stream sent count)
-               ([revision head screen copy instructions]
+               ([revision head screen copy instructions through]
                 (unless (string=? head sent-head)
                   (patch-elements session head))
-                (let (stamps (screen-stamps revision stream (fx1+ count)))
+                (let* ((stamps (screen-stamps revision through stream (fx1+ count)))
+                       (bytes 0))
                   (call-with-patch-elements
                    session
-                   (lambda (out) (write-stamped-screen out screen stamps))))
+                   (lambda (out) (set! bytes (write-stamped-screen out screen stamps))))
+                  (run-hook screen-sent-hook (web-tab-client tab) stream (fx1+ count) revision through bytes))
                 (when copy
                   (patch-elements session (copy-instruction copy) selector: "body" mode: 'append))
                 (for-each (lambda ((instruction : :string))
@@ -966,10 +989,13 @@
           (forget-later! self tab))))))
 
 ;; POST /applied?stream=S&count=N from a tab: its page applied stream S's
-;; Nth screen.
+;; Nth screen; its body is the page's signals, its tab among them, and
+;; `applied`, what the page measured (parse-page-measurements), which
+;; screen-applied-hook gets. A count no newer than the last only reports.
 (def (accept-applied (self : web-server) (request : Request) (response : ResponseHandler)) => :void
-  ;; Read the signals Datastar posts before answering, as accept-event does.
-  (let (id (signals-tab-id (with-catch (lambda (e) #f) (lambda () (read-signals request)))))
+  ;; Read the body before answering, as accept-event does.
+  (let* ((signals (with-catch (lambda (e) #f) (lambda () (read-signals request))))
+         (id (signals-tab-id signals)))
     (ResponseHandler-write! response No-Content [] #u8())
     (let* ((query (form-url-decode (or (URL-query (Request-url request)) "")))
            (number (lambda (name)
@@ -978,11 +1004,55 @@
            (stream (number "stream"))
            (count (number "count")))
       (when (and id (fixnum? stream) (fixnum? count))
-        (do-with-lock self.mutex
-          (let (tab (hash-get self.tabs id))
-            (when (and tab (fx> count (: (hash-ref (web-tab-applied tab) stream 0) :fixnum)))
-              (hash-put! (web-tab-applied tab) stream count)
-              (condition-variable-broadcast! self.changed))))))))
+        (let (tab (do-with-lock self.mutex
+                    (let (tab (hash-get self.tabs id))
+                      (when (and tab (fx> count (: (hash-ref (web-tab-applied tab) stream 0) :fixnum)))
+                        (hash-put! (web-tab-applied tab) stream count)
+                        (condition-variable-broadcast! self.changed))
+                      tab)))
+          (when tab
+            (run-hook screen-applied-hook (web-tab-client tab) stream count
+                      (parse-page-measurements (hash-get (: signals HashTable) "applied")))))))))
+
+;; The longest durations and key lists a page may report.
+(def page-measure-limit 3600000.)
+(def page-keys-limit 256)
+
+;; What a page measured of a screen, from the JSON object VALUE, as the
+;; alist screen-applied-hook passes (web contract): each part that is
+;; well formed, durations as flonum milliseconds.
+(def (parse-page-measurements (value : :t)) => :list
+  (let* ((duration (lambda (v)
+                     (and (real? v) (<= 0 v page-measure-limit) (exact->inexact v))))
+         (count (lambda (v) (and (fixnum? v) (fx>= v 0) v)))
+         (field (lambda (name) (and (hash-table? value) (hash-get value name))))
+         (keys (let (v (field "keys"))
+                 (and (list? v) (fx<= (length v) page-keys-limit)
+                      (filter-map (lambda (entry)
+                                    (match entry
+                                      ([seq to-send to-received]
+                                       (and (count seq) (or (void? to-send) (duration to-send))
+                                            (duration to-received)
+                                            [seq (and (not (void? to-send)) (duration to-send))
+                                                 (duration to-received)]))
+                                      (else #f)))
+                                  v))))
+         (painted (let (v (field "painted"))
+                    (and (list? v) (fx<= (length v) page-keys-limit)
+                         (filter-map (lambda (entry)
+                                       (match entry
+                                         ([stream n ms]
+                                          (and (count stream) (count n) (duration ms)
+                                               [stream n (duration ms)]))
+                                         (else #f)))
+                                     v)))))
+    (filter cdr
+            [(cons 'revision (count (field "revision")))
+             (cons 'through (count (field "through")))
+             (cons 'morph (duration (field "morph")))
+             (cons 'settle (duration (field "settle")))
+             (cons 'keys keys)
+             (cons 'painted painted)])))
 
 (def (json-content-type? (request : Request)) => :boolean
   (let (type (header request "Content-Type"))
@@ -1020,6 +1090,7 @@
       (admit-event! self tab (hash-ref value "sequence") 'dropped)
       (show-message! self event))
      (event
+      (run-hook input-arrived-hook (web-tab-client tab) (hash-ref value "sequence") event)
       (admit-event! self tab (hash-ref value "sequence") event))
      ;; A rejected item still takes its place in its tab's order, so the
      ;; items after it are not left waiting for it.
@@ -1283,6 +1354,15 @@
 
 ;;; The plugin
 
+;; The input service took the item numbered SEQUENCE from client C (#f
+;; for none): the next screen drawn for its tab includes it. Editor thread.
+(def (note-input-taken! (self : web-server) (c :? client-type) (sequence : :fixnum)) => :void
+  (when c
+    (do-with-lock self.mutex
+      (let (tab (hash-get self.tabs (client-id c)))
+        (when (and tab (eq? (web-tab-client tab) c) (fx> sequence (web-tab-through tab)))
+          (set! (web-tab-through tab) sequence))))))
+
 (def (stop-web-transport! (self : web-server)) => :void
   (do-with-lock self.mutex
     (set! self.stopped? #t)
@@ -1358,6 +1438,8 @@
     (set! (web-server-keeper self) (spawn-thread (lambda () (tab-keeping-thread self)) 'tuna-tabs))
     (context-add-hook! ctx kill-new-hook 'web-transport
                        (lambda ((text : :string)) (copy-for-client! self (current-client) text)))
+    (context-add-hook! ctx input-resolved-hook 'web-transport
+                       (lambda (c (sequence : :fixnum) item name) (note-input-taken! self c sequence)))
     (Server-start! server)
     (context-defer! ctx (lambda () (stop-web-transport! self)))
     (context-provide! ctx display-service self)

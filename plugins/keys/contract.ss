@@ -97,7 +97,8 @@ prelude: :gerbil/core
         key-binding
         printing-char-key
         last-command-event
-        this-command-keys-shift-translated?)
+        this-command-keys-shift-translated?
+        input-resolved-hook)
 
 ;; One keydown from CLIENT (#f for none), with its page-load sequence
 ;; number (ADR 7, ADR 10, ADR 16). The web transport submits it as an input
@@ -213,6 +214,17 @@ prelude: :gerbil/core
 
 ;; The key paste events are looked up under.
 (def paste-key "<paste>")
+
+;; Arguments: the item's client (#f for none), its page-load sequence
+;; number, the item (a key, pointer, scroll or paste event), and the name
+;; of the task it starts, or #f when it starts none. Runs on the baton as
+;; the input service takes each queued item, before its task runs, so
+;; that whoever follows input (a transport saying which input a screen
+;; includes, a lossage list, a log) sees every item in order. Callbacks
+;; must be quick.
+(def input-resolved-hook
+  (new-hook 'input-resolved
+            doc: "Runs with an input item's client, sequence number, the item and the task it starts (#f for none), as the input service takes it from the queue."))
 
 ;; The names EVENT is looked up under, most specific first: modifiers,
 ;; then `double-` or `triple-`, then `down-` or `drag-`, then

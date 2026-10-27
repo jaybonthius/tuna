@@ -17,6 +17,7 @@
         :tuna/plugins/keys/contract
         :tuna/plugins/renderer/contract
         :tuna/plugins/web/plugin
+        :tuna/plugins/web/contract
         "../support/web-client"
         :tuna/plugins/editing/contract
         (only-in "../../../../tuna/tests/support/string-input" test-input test-messages current-message))
@@ -160,6 +161,47 @@
   "Records the clients that went away."
   (context-add-hook! ctx client-gone-hook 'gone-recorder
                      (lambda (c) (set! gone (cons [(client-id c) (current-task-name)] gone)))))
+
+;; What the transport announced (web contract), newest first, each a list
+;; starting with the hook's name. Hooks run on request and stream
+;; threads, hence the lock.
+(def announced [])
+(def announced-lock (make-mutex 'announced))
+(def (announce! . event)
+  (mutex-lock! announced-lock)
+  (set! announced (cons event announced))
+  (mutex-unlock! announced-lock))
+(def (announced-events kind)
+  (mutex-lock! announced-lock)
+  (let (events (filter (lambda (e) (eq? (car e) kind)) (reverse announced)))
+    (mutex-unlock! announced-lock)
+    events))
+
+(defplugin (transport-listener ctx)
+  "Records what the web transport announces."
+  (context-add-hook! ctx input-arrived-hook 'listener
+                     (lambda (c sequence item) (announce! 'arrived (client-id c) sequence (key-event-key item))))
+  (context-add-hook! ctx screen-ready-hook 'listener
+                     (lambda (c revision through) (announce! 'ready (client-id c) revision through)))
+  (context-add-hook! ctx screen-sent-hook 'listener
+                     (lambda (c stream count revision through bytes)
+                       (announce! 'sent (client-id c) count revision through bytes)))
+  (context-add-hook! ctx screen-applied-hook 'listener
+                     (lambda (c stream count measured) (announce! 'applied (client-id c) count measured))))
+
+;; An input provider that takes each key as the keys plugin does: it
+;; announces the item (input-resolved-hook) and runs nothing.
+(defclass taking-keys () final: #t)
+(defmethod {resolve! taking-keys}
+  (lambda (self item)
+    (run-hook input-resolved-hook (key-event-client item) (key-event-sequence item) item #f)
+    #f))
+(defmethod {arrival taking-keys}
+  (lambda (self item) 'queue))
+(defplugin (taking-input ctx)
+  "Announces each key it takes."
+  provides: [input-service]
+  (context-provide! ctx input-service (taking-keys)))
 
 ;; The data-revision of each screen event in TEXT, oldest first.
 (def (screen-revisions text)
@@ -625,7 +667,7 @@
            (Socket-close socket)
            (check (length (recorded-items 1)) => 1)))))
 
-    (test-case "a screen's event: its parts in order, data-init then data-revision after the tag name"
+    (test-case "a screen's event: its parts in order, data-init, data-revision then data-through after the tag name"
       (with-counting-tuna
        (lambda ()
          (let* ((stream (open-screen-stream))
@@ -637,16 +679,63 @@
                 (n (number->string shown))
                 (event (string-append
                         "event: datastar-patch-elements\n"
-                        "data: elements <main data-init=\"@post('/applied?stream=" stream-number
+                        "data: elements <main data-init=\"@tunaApplied('/applied?stream=" stream-number
                         "&amp;count=1'); el.removeAttribute('data-init')\" data-revision=\""
-                        (number->string revision) "\" id=\"screen\"><p>" n "\n"
+                        (number->string revision) "\" data-through=\"0\" id=\"screen\"><p>" n "\n"
                         "data: elements " n "</p></main>\n\n")))
            (check (and (string-search event text) #t) => #t)
            ;; The page shows the screen with its revision only.
            (let (page (reply-body (http "GET" "/")))
              (check (and (string-search (string-append "<body><main data-revision=\"") page) #t) => #t)
-             (check (and (string-search (string-append "\" id=\"screen\"><p>" n "\n" n "</p></main></body></html>") page) #t)
+             (check (and (string-search (string-append "\" data-through=\"0\" id=\"screen\"><p>" n "\n" n "</p></main></body></html>") page) #t)
                     => #t))
+           (Socket-close stream)))))
+
+    (test-case "the transport announces an input arriving, screens ready, sent and applied, and what the page measured"
+      (set! announced [])
+      (with-web-tuna [taking-input counting-renderer web-transport transport-listener]
+       (lambda ()
+         (let* ((stream (open-screen-stream))
+                (first (read-until stream has-screen?))
+                (first-revision (car (screen-revisions first))))
+           (check (and (string-search "data-through=\"0\"" first) #t) => #t)
+           (check (reply-status (post-key "a")) => 204)
+           (check (wait-until (lambda () (pair? (announced-events 'arrived)))) => #t)
+           (check (announced-events 'arrived) => [['arrived (current-tab) 1 "a"]])
+           ;; The key is taken, and the redisplay after it changes nothing;
+           ;; the next screen includes it.
+           (check (wait-until (lambda () (any (lambda (e) (equal? e ['ready (current-tab) #f 1]))
+                                              (announced-events 'ready))))
+                  => #t)
+           (change-screen!)
+           (check (reply-status
+                   (post-applied (applied-path first)
+                                 applied: (string-append
+                                           "{\"revision\":" (number->string first-revision)
+                                           ",\"through\":0,\"morph\":4,\"settle\":1.5"
+                                           ",\"keys\":[[1,2,20],[2,null,7],[\"bad\"]]"
+                                           ",\"painted\":[[1,0,15]],\"stray\":3}")))
+                  => 204)
+           (let* ((second (read-until stream (newer-than first)))
+                  (revision (apply max (screen-revisions second))))
+             (check (and (string-search "data-through=\"1\"" second) #t) => #t)
+             (check (wait-until (lambda () (>= (length (announced-events 'sent)) 2))) => #t)
+             (check (any (lambda (e) (equal? e ['ready (current-tab) revision 1])) (announced-events 'ready))
+                    => #t)
+             (match (cadr (announced-events 'sent))
+               (['sent id 2 (? (cut eqv? <> revision)) 1 bytes]
+                (check id => (current-tab))
+                (check (> bytes 0) => #t))
+               (other (check other => 'a-second-screen-sent)))
+             (check (wait-until (lambda () (pair? (announced-events 'applied)))) => #t)
+             (check (car (announced-events 'applied))
+                    => ['applied (current-tab) 1
+                        [(cons 'revision first-revision) (cons 'through 0) (cons 'morph 4.) (cons 'settle 1.5)
+                         (cons 'keys [[1 2. 20.] [2 #f 7.]]) (cons 'painted [[1 0 15.]])]])
+             ;; A report of only a paint names the screen again.
+             (check (reply-status (post-applied (applied-path first) applied: "{\"painted\":[[1,1,9]]}")) => 204)
+             (check (wait-until (lambda () (= (length (announced-events 'applied)) 2))) => #t)
+             (check (cadr (announced-events 'applied)) => ['applied (current-tab) 1 [(cons 'painted [[1 1 9.]])]]))
            (Socket-close stream)))))
 
     (test-case "reading a stream for a screen that never comes stops at its deadline"

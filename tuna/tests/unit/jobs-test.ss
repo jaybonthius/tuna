@@ -388,6 +388,39 @@
                               apply: (lambda (result) (set! applied (cons result applied))))))
          (check (applied-after 2) => '(posted x)))))
 
+    (test-case "job-started-hook and job-finished-hook announce each job with its id and key, on the baton"
+      (let (heard [])
+        (defplugin (job-listener ctx)
+          "Records job announcements."
+          (context-add-hook! ctx job-started-hook 'listener
+                             (lambda (id key) (set! heard (cons ['started id key (and (running-task) #t)] heard))))
+          (context-add-hook! ctx job-finished-hook 'listener
+                             (lambda (id key how) (set! heard (cons ['finished id key how] heard)))))
+        (call-with-fresh-kernel [test-input job-starter job-listener]
+          (lambda ()
+            (start-editor-loop!)
+            (let* ((gate (make-completion))
+                   (target (new-target))
+                   (first (start-gated-job! 'same 'first gate target))
+                   (raising (on-baton (lambda ()
+                                        (job-group-start! starter 'raising input: #f
+                                                          run: (lambda (input cancelled? post!) (error "no"))
+                                                          apply: void))))
+                   (cancelled (start-cancellable-job! 'other 'cancelled target)))
+              (check (noted? 'cancelled (lambda () ran)) => #t)
+              (on-baton (lambda () (job-cancel! cancelled)))
+              (completion-post! gate #t)
+              (check (wait-until (lambda () (= (length heard) 6))) => #t)
+              (let (events (reverse heard))
+                (check (list (car events) (cadr events) (caddr events))
+                       => [['started (job-id first) 'same #t] ['started (job-id raising) 'raising #t]
+                           ['started (job-id cancelled) 'other #t]])
+                (check (list-sort (lambda (a b) (< (cadr a) (cadr b))) (list-tail events 3))
+                       => [['finished (job-id first) 'same 'returned]
+                           ['finished (job-id raising) 'raising 'raised]
+                           ['finished (job-id cancelled) 'other 'cancelled]]))
+              (check (< (job-id first) (job-id raising) (job-id cancelled)) => #t))))))
+
     (test-case "a closed group refuses new jobs"
       (with-jobs
        (lambda ()
