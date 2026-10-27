@@ -31,7 +31,15 @@
         (check (list (theme-colors-foreground c) (theme-colors-background c) (theme-colors-cursor c)
                      (theme-colors-palette c))
                => [#x102030 #f #xffffff (vector #x010203 #xa0b0c0)]))
-      (check (parse-colors (u8vector 1 0)) => #f))
+      (check (parse-colors (u8vector 1 0)) => #f)
+      (let (s (parse-helper-settings (helper-settings-payload (make-helper-settings "/state/terminals/ab.screen" 30 1000 45))))
+        (check (list (helper-settings-save-path s) (helper-settings-save-interval s) (helper-settings-saved-rows s)
+                     (helper-settings-compress-after s))
+               => ["/state/terminals/ab.screen" 30 1000 45]))
+      (let (s (parse-helper-settings (helper-settings-payload (make-helper-settings "" 30 #f #f))))
+        (check (list (helper-settings-save-path s) (helper-settings-saved-rows s) (helper-settings-compress-after s))
+               => ["" #f #f]))
+      (check (parse-helper-settings (u8vector 0 1)) => #f))
 
     (test-case "a frame of no known type is refused"
       (check (with-catch (lambda (e) 'refused)

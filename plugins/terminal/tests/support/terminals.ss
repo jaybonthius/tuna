@@ -62,18 +62,27 @@
                                             (string->number name))))))))
               (directory-files "/proc")))
 
-;; Run PROC with the plugins on, terminals' sockets in a test folder, and
-;; afterwards stop every helper started under it, and its program.
+;; Run PROC with the plugins on, terminals' sockets in a test folder,
+;; which is also the session's state folder (saved screens go in its
+;; terminals folder), and afterwards stop every helper started under it,
+;; and its program.
 (def (with-terminals (proc : :procedure)) => :t
   (forget-memory-session!)
   (call-with-test-folder
    (lambda (folder)
      (set-plugin-options! terminals [(cons 'socket-directory folder) (cons 'leave-scope 'never)])
+     (set-memory-session-state-directory! folder)
      (try
       (proc folder)
       (finally
        (set-plugin-options! terminals [])
-       (for-each (lambda (pid) (kill-pid! pid)) (helper-pids)))))))
+       (set-memory-session-state-directory! #f)
+       (for-each (lambda (pid) (kill-pid! pid)) (helper-pids))
+       (let (saved (path-expand "terminals" folder))
+         (when (file-exists? saved)
+           (for-each (lambda (name) (with-catch void (lambda () (delete-file (path-expand name saved)))))
+                     (directory-files saved))
+           (with-catch void (lambda () (delete-directory saved))))))))))
 
 (def (start-kernel (thunk : :procedure) (more : :list := [])) => :t
   (call-with-fresh-kernel (append terminal-plugins [test-terminal-settings] more) thunk))

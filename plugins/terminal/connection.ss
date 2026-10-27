@@ -49,9 +49,9 @@ prelude: :gerbil/core
 (def default-shell-integration-directory (path-expand "shell" (path-expand (this-source-directory))))
 
 ;; What a helper is started with: the helper program, its socket, the
-;; program's size, scrollback (bytes), folder and log file, the program and
-;; its arguments, the environment, and whether to leave Tuna's scope as
-;; UNIT.
+;; program's size, scrollback (bytes), folder and log file, the snapshot
+;; file its terminal starts from ("" for none), the program and its
+;; arguments, the environment, and whether to leave Tuna's scope as UNIT.
 (defstruct helper-launch ((helper : :string)
                           (socket : :string)
                           (columns : :fixnum)
@@ -59,6 +59,7 @@ prelude: :gerbil/core
                           (scrollback : :integer)
                           (directory : :string)
                           (log : :string)
+                          (restore : :string)
                           (program : :list)
                           (environment : :list)
                           (unit :? :string))
@@ -87,8 +88,10 @@ prelude: :gerbil/core
            "--rows" (number->string (helper-launch-rows l))
            "--scrollback" (number->string (helper-launch-scrollback l))
            "--directory" (helper-launch-directory l)
-           "--log" (helper-launch-log l)
-           "--"]
+           "--log" (helper-launch-log l)]
+          (let (restore (helper-launch-restore l))
+            (if (string-empty? restore) [] ["--restore" restore]))
+          ["--"]
           (helper-launch-program l)))
 
 ;; Start L's helper and return once it is detached; raises when the

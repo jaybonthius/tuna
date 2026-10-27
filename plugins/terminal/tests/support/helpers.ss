@@ -9,6 +9,7 @@
         pid-alive?
         kill-pid!
         test-environment
+        resident-kib
         start-test-helper
         (struct-out test-client)
         connect-test-client
@@ -62,6 +63,15 @@
                             (let (close (string-rindex stat #\)))
                               (and close (char=? (string-ref stat (+ close 2)) #\Z)))))))))
 
+;; The resident memory of process PID, in KiB, or 0.
+(def (resident-kib (pid : :fixnum)) => :integer
+  (with-catch (lambda (e) 0)
+              (lambda ()
+                (let* ((lines (call-with-input-file (string-append "/proc/" (number->string pid) "/status")
+                                (lambda (port) (read-all port read-line))))
+                       (line (find (cut string-prefix? "VmRSS:" <>) lines)))
+                  (or (and line (find values (map string->number (string-split line #\space)))) 0)))))
+
 ;; Stop PID with SIGKILL unless it has ended.
 (def (kill-pid! (pid : :fixnum)) => :void
   (when (pid-alive? pid)
@@ -73,11 +83,12 @@
 ;; Start a helper in FOLDER, named NAME, running PROGRAM; returns its socket
 ;; path once it is there.
 (def (start-test-helper (folder : :string) (name : :string) (program : :list)
-                        columns: (columns : :fixnum := 80) rows: (rows : :fixnum := 24))
+                        columns: (columns : :fixnum := 80) rows: (rows : :fixnum := 24)
+                        scrollback: (scrollback : :integer := 1000000))
   => :string
   (let (socket (path-expand (string-append name ".sock") folder))
-    (launch-helper! (make-helper-launch default-helper-path socket columns rows 1000000 folder
-                                        (path-expand (string-append name ".log") folder)
+    (launch-helper! (make-helper-launch default-helper-path socket columns rows scrollback folder
+                                        (path-expand (string-append name ".log") folder) ""
                                         program test-environment #f))
     (unless (wait-for-socket socket 5) (error "The test helper did not start" name))
     socket))

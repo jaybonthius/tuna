@@ -12,10 +12,17 @@
 ;;;
 ;;; Usage: gxi flood-check.ss seq|cat [FILE]
 ;;; FILE, for cat, is made (base64 of random bytes) when it is missing.
+;;;
+;;; gxi flood-check.ss many on|off instead runs `seq 1 300000` in eight
+;;; terminals, each keeping its 5 MB of scrollback, and prints the memory
+;;; Tuna and the helpers hold, then again ten seconds after the output
+;;; stopped, with terminal-compress-after 2 (on) or #f (off).
 (import :tuna/kernel
         :tuna/plugins/commands/contract
         :tuna/plugins/buffers/contract
         :tuna/plugins/terminal/contract
+        :tuna/plugins/settings/contract
+        :tuna/plugins/terminal/plugin
         (only-in :tuna/lib/memo set-memo-checking!)
         (only-in :tuna/lib/plain-data set-plain-data-checking!)
         "../../../keys/tests/support/keys"
@@ -56,7 +63,47 @@
       (process-status p)
       (close-port p))))
 
+;; Whether the many check compresses.
+(def compress? #t)
+
+(defplugin (compression-setting ctx)
+  "Compresses quiet terminals after two seconds, or never."
+  requires: [settings-service]
+  (context-set-setting! ctx terminal-compress-after (and compress? 2)))
+
+(def (helpers-kib) => :integer
+  (apply + (map resident-kib (helper-pids))))
+
+(def (many-terminals) => :void
+  (with-terminals
+   (lambda (folder)
+     (start-kernel
+      (lambda ()
+        (set-memo-checking! #f)
+        (set-plain-data-checking! #f)
+        (start-editor-loop!)
+        (let lp ((i 0))
+          (when (< i 8)
+            (on-editor (lambda () (call-command 'terminal-new)))
+            (thread-sleep! 0.5)
+            (paste "seq 1 300000")
+            (press "RET")
+            (thread-sleep! 1.5)
+            (lp (+ i 1))))
+        (thread-sleep! 1)
+        (##gc)
+        (displayln "eight terminals, compression " (if compress? "after 2 s" "off"))
+        (displayln "  at once: Tuna " (round (resident-mib)) " MiB, helpers " (round (/ (helpers-kib) 1024.)) " MiB")
+        (thread-sleep! 10)
+        (##gc)
+        (displayln "  10 s later: Tuna " (round (resident-mib)) " MiB, helpers " (round (/ (helpers-kib) 1024.)) " MiB"))
+      [compression-setting]))))
+
 (def (main kind . rest)
+  (when (equal? kind "many")
+    (set! compress? (not (equal? rest ["off"])))
+    (many-terminals)
+    (exit 0))
   (let* ((file (if (pair? rest) (car rest) "/tmp/tuna-flood-50mb.txt"))
          (stamp (string-append "/tmp/tuna-flood-ended-" (number->string (random-integer 1000000000))))
          (command (if (equal? kind "seq") "seq 1 2000000" (begin (ensure-file! file) (string-append "cat " file)))))
