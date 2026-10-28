@@ -47,7 +47,6 @@
     ("plugins/scrolling" "plugin")
     ("plugins/configuration" "plugin")
     ("plugins/proced" "plugin")
-    ("plugins/profiler" "clock" "spans" "sampler" "plugin")
     ("plugins/web" "contract" "embed" "proxy"
      (gxc: "plugin"
            (extra-inputs: ,(map (cut string-append "web/" <>)
@@ -55,6 +54,7 @@
                                          (eq? (file-info-type (file-info (path-expand name "plugins/web/web")))
                                               'regular))
                                        (directory-files "plugins/web/web"))))))
+    ("plugins/profiler" "clock" "spans" "sampler" "plugin")
     ("plugins/files" "contract" "encoding" "line-diff" "watcher" "local-disk" "picker" "plugin")
     ("plugins/autosave" "plugin")
     ("plugins/terminal"
