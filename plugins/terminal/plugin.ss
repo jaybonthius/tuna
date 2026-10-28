@@ -76,7 +76,7 @@
         (only-in :tuna/plugins/editing/contract editing-service current-kill kill-new
                  region-active? region-beginning region-end set-temporary-region!)
         (only-in :tuna/plugins/files/contract files-service file-system-service
-                 default-directory buffer-default-directory find-file-noselect)
+                 default-directory buffer-default-directory find-file-at-line)
         (only-in :tuna/plugins/web/contract page-service add-script context-add-page-address! page-instruct!)
         (only-in :tuna/plugins/session/contract state-directory)
         :tuna/plugins/terminal/contract
@@ -859,15 +859,7 @@
           (page-instruct! c "terminalOpen" uri)
           (message (string-append "No browser tab to open " uri " in")))))
      ((and file (service-there? files-service) (file-exists? (car file)))
-      (let* ((b (find-file-noselect (car file)))
-             (v (if (service-there? layout-service) (display-buffer b) (selected-view))))
-        (when (service-there? layout-service) (select-view v))
-        (unless (service-there? layout-service) (switch-to-buffer b))
-        (let (line (cadr file))
-          (when line
-            (let (t (current-text))
-              (goto-char (text-position-at t (fxmax 1 (fxmin line (text-line-count t)))
-                                           (fxmax 0 (fx1- (or (caddr file) 1))))))))))
+      (find-file-at-line (car file) (cadr file) (caddr file) other-view?: #t))
      (else (message (string-append "Cannot open " uri))))))
 
 ;; The link a page script says was clicked in the terminal ID: open it

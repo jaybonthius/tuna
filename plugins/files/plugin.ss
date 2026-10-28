@@ -744,8 +744,8 @@
   (let lp ((initial (abbreviate-file-name (buffer-default-directory (current-buffer)))))
     (let* ((from (buffer-default-directory (current-buffer)))
            (sources (if recent?
-                      [(recent-file-table (existing-recent-files! self) "Recent files" initial) (file-table from)]
-                      [(file-table from)]))
+                      [(recent-file-table (existing-recent-files! self) "Recent files" initial) (file-completion-table from)]
+                      [(file-completion-table from)]))
            (answer (completing-read question sources
                                     require-match: #f initial: initial history: 'file
                                     setup: (lambda ((p : Prompt))

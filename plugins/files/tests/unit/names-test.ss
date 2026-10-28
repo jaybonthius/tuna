@@ -21,6 +21,14 @@
         (check (abbreviate-file-name (string-append home "/a/b")) => "~/a/b")
         (check (abbreviate-file-name home) => "~")
         (check (abbreviate-file-name (string-append home "x/y")) => (string-append home "x/y"))))
+    (test-case "find-file-references finds FILE:LINE[:COLUMN] for files that exist"
+      (let (exists? (lambda (path) (member path ["src/a.ss" "./b.c" "/abs/f.ss"])))
+        (check (find-file-references "error at src/a.ss:12:3: oops, see ./b.c:7 and x/missing.ss:1" exists?)
+               => [[9 22 "src/a.ss" "12" "3"] [34 41 "./b.c" "7" #f]])
+        (check (find-file-references "at /abs/f.ss ok, (src/a.ss)." exists?)
+               => [[3 12 "/abs/f.ss" #f #f] [18 26 "src/a.ss" #f #f]])
+        ;; A name without a slash, or ending in one, is not a reference.
+        (check (find-file-references "a.ss:3 src/" (lambda (path) #t)) => [])))
     (test-case "folder and name parts"
       (check (file-name-directory "/a/b/c.txt") => "/a/b/")
       (check (file-name-nondirectory "/a/b/c.txt") => "c.txt")

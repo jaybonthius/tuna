@@ -33,6 +33,11 @@
 ;;; `recover-file-buffer` makes the buffer again after a restart: visiting
 ;;; the file, holding the text unsaved, and in conflict when the file
 ;;; changed on disk meanwhile.
+;;;
+;;; For other plugins it also offers a completion table of a folder's
+;;; files (the file picker's "This folder"), visiting a file at a line,
+;;; and finding FILE:LINE[:COLUMN] references in text, as a terminal's
+;;; output or a chat's tool output holds them.
 prelude: :gerbil/core
 
 (import :std/interface
@@ -40,7 +45,8 @@ prelude: :gerbil/core
         :tuna/lib/memo
         :tuna/plugins/settings/contract
         :tuna/plugins/buffers/contract
-        :tuna/plugins/layout/contract)
+        :tuna/plugins/layout/contract
+        :tuna/plugins/completion/contract)
 (export (struct-out file-stat folder-entry)
         (interface-out FileSystem)
         file-system-service
@@ -51,7 +57,7 @@ prelude: :gerbil/core
         visit-conflict visit-conflict? visit-editable? visit-changes
         (interface-out Files)
         files-service
-        find-file-noselect find-file
+        find-file-noselect find-file find-file-at-line
         text-visit buffer-visit buffer-file buffer-modified? file-buffers
         save-buffer write-file revert-buffer
         buffer-recovery-data recover-file-buffer
@@ -61,7 +67,9 @@ prelude: :gerbil/core
         save-takeover-hook context-add-save-takeover! run-save-takeovers
         default-directory buffer-default-directory
         home-directory expand-file-name abbreviate-file-name
-        file-name-directory file-name-nondirectory file-name-as-directory)
+        file-name-directory file-name-nondirectory file-name-as-directory
+        file-completion-table
+        find-file-references)
 
 ;;; The file service
 
@@ -203,6 +211,25 @@ prelude: :gerbil/core
 (def (find-file (path : :string)) => buffer
   (let (b (find-file-noselect path))
     (set-view-buffer (selected-view) b)
+    b))
+
+;; Visit PATH in the selected view, or with OTHER-VIEW? in another view,
+;; which is then selected (display-buffer); with no layout service, in the
+;; selected view. With LINE, put point at that line (from 1, kept within
+;; the text) and COLUMN (from 1), as a FILE:LINE:COLUMN reference is
+;; opened (compile-goto-error).
+(def (find-file-at-line (path : :string) (line :? :fixnum) (column :? :fixnum)
+                        other-view?: (other-view? : :boolean := #f))
+  => buffer
+  (let (b (find-file-noselect path))
+    (cond
+     ((not (service-provider layout-service)) (switch-to-buffer b))
+     (other-view? (select-view (display-buffer b)))
+     (else (set-view-buffer (selected-view) b)))
+    (when line
+      (let (t (current-text))
+        (goto-char (text-position-at t (fxmax 1 (fxmin line (text-line-count t)))
+                                     (fxmax 0 (fx1- (or column 1)))))))
     b))
 
 (def (text-visit (t : text)) => (Maybe visit)
@@ -384,3 +411,96 @@ prelude: :gerbil/core
      ((string-prefix? (string-append home "/") name)
       (string-append "~" (substring name (string-length home) (string-length name))))
      (else name))))
+
+;;; Completing file names
+
+;; Where INPUT's folder part points: (FOLDER-PART . FOLDER), the folder
+;; part as typed (up to its last "/") and expanded from FROM.
+(def (input-folder (input : :string) (from : :string)) => :pair
+  (let (folder-part (file-name-directory input))
+    (cons folder-part
+          (file-name-as-directory
+           (expand-file-name (if (string-empty? folder-part) "." folder-part) from)))))
+
+;; A completion table, category 'file, titled "This folder", of the files
+;; in the folder the input names: relative names start from FROM, a
+;; folder name ending in "/". Each candidate is written as the folder part
+;; typed plus the entry's name, folders ending in "/", so any matching
+;; style works on whole names; its value is the absolute name. The folder
+;; is listed again only when the folder typed changes.
+(def (file-completion-table (from : :string)) => completion-table
+  (let ((listed-folder #f) (listed []))
+    (make-completion-table
+     category: 'file
+     title: "This folder"
+     items: (lambda ((input : :string))
+              (let* ((where (input-folder input from))
+                     (folder-part (car where))
+                     (folder (cdr where)))
+                (unless (equal? folder listed-folder)
+                  (set! listed-folder folder)
+                  (set! listed (with-catch (lambda (e) []) (lambda () (list-folder folder)))))
+                (map (lambda ((entry : folder-entry))
+                       (let* ((folder? (eq? (file-stat-kind (folder-entry-stat entry)) 'folder))
+                              (suffix (if folder? "/" ""))
+                              (text (string-append folder-part (folder-entry-name entry) suffix)))
+                         (make-candidate text: text
+                                         value: (string-append folder (folder-entry-name entry) suffix)
+                                         key: text)))
+                     (list-sort (lambda ((a : folder-entry) (b : folder-entry))
+                                  (string<? (folder-entry-name a) (folder-entry-name b)))
+                                listed)))))))
+
+;;; File references in text
+
+;; As ghostel-file-detection-path-regex, by hand: a path is word
+;; characters, ~, ., _ and -, then a slash, then any characters but
+;; these, not ending in sentence punctuation.
+(def (path-head-char? (c : :char)) => :boolean
+  (or (char-alphabetic? c) (char-numeric? c) (memv c '(#\~ #\_ #\. #\-))))
+(def (path-char? (c : :char)) => :boolean
+  (not (or (char-whitespace? c) (memv c '(#\] #\: #\" #\< #\> #\( #\) #\{ #\} #\[ #\` #\')))))
+(def (path-before-ok? (c : :char)) => :boolean
+  (not (or (char-alphabetic? c) (char-numeric? c) (memv c '(#\_ #\. #\/ #\~ #\-)))))
+(def (path-end-char? (c : :char)) => :boolean
+  (not (memv c '(#\. #\, #\; #\: #\! #\?))))
+
+;; The FILE:LINE[:COLUMN] references in TEXT, such as "src/a.ss:12:3" in a
+;; compiler's or a tool's output, whose file EXISTS? (a procedure of the
+;; path as written): (START END PATH LINE COLUMN), START and END indices
+;; into TEXT (END exclusive), LINE and COLUMN digit strings or #f.
+(def (find-file-references (text : :string) (exists? : :procedure)) => :list
+  (let ((size (string-length text)))
+    (def (digits-end (i : :fixnum)) => :fixnum
+      (if (and (fx< i size) (char-numeric? (string-ref text i))) (digits-end (fx1+ i)) i))
+    (let lp ((i 0) (out []))
+      (cond
+       ((fx>= i size) (reverse out))
+       ((and (or (fx= i 0) (path-before-ok? (string-ref text (fx1- i))))
+             (or (path-head-char? (string-ref text i)) (char=? (string-ref text i) #\/)))
+        ;; The head, then a slash, then the rest.
+        (let* ((slash (let head ((j i))
+                        (cond
+                         ((fx= j size) #f)
+                         ((char=? (string-ref text j) #\/) j)
+                         ((path-head-char? (string-ref text j)) (head (fx1+ j)))
+                         (else #f))))
+               (raw-end (and slash (let rest ((j (fx1+ slash)))
+                                     (if (and (fx< j size) (path-char? (string-ref text j))) (rest (fx1+ j)) j))))
+               (end (and raw-end (let back ((j raw-end))
+                                   (if (and (fx> j (fx1+ slash)) (not (path-end-char? (string-ref text (fx1- j)))))
+                                     (back (fx1- j))
+                                     j)))))
+          (if (and end (fx> end slash) (not (char=? (string-ref text (fx1- end)) #\/)))
+            (let* ((path (substring text i end))
+                   (line-end (and (fx< end size) (char=? (string-ref text end) #\:) (digits-end (fx1+ end))))
+                   (line (and line-end (fx> line-end (fx1+ end)) (substring text (fx1+ end) line-end)))
+                   (column-end (and line (fx< line-end size) (char=? (string-ref text line-end) #\:)
+                                    (digits-end (fx1+ line-end))))
+                   (column (and column-end (fx> column-end (fx1+ line-end)) (substring text (fx1+ line-end) column-end)))
+                   (stop (cond (column column-end) (line line-end) (else end))))
+              (if (exists? path)
+                (lp stop (cons [i stop path line column] out))
+                (lp (fxmax (fx1+ i) end) out)))
+            (lp (fx1+ i) out))))
+       (else (lp (fx1+ i) out))))))
