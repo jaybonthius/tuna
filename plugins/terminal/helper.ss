@@ -30,6 +30,7 @@ prelude: :gerbil/core
 (import (rename-in :gerbil-libghostty/ghostty (terminal? ghostty-terminal?))
         (only-in :std/os/signal SIGTERM)
         (only-in :std/os/signal-handler add-signal-handler!)
+        :tuna/lib/unix
         ./io
         ./protocol
         ./saved-screen)

@@ -3,7 +3,7 @@
 ;;; modes ended.
 (import :std/test
         :gerbil-libghostty/ghostty
-        :tuna/plugins/terminal/io
+        :tuna/lib/unix
         :tuna/plugins/terminal/saved-screen)
 (export saved-screen-test)
 

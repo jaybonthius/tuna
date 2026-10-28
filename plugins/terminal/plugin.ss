@@ -109,6 +109,9 @@
                  clipboard-content-mime clipboard-content-data)
         (rename-in (only-in :gerbil-libghostty/ghostty key-event terminal)
                    (key-event ghostty-key-event) (terminal vt-terminal))
+        (only-in :tuna/lib/unix make-private-directory)
+        (only-in :tuna/lib/helper-processes helper-socket-directory helper-socket-path helper-leaves-scope?
+                 wait-for-socket)
         ./protocol
         ./io
         ./connection
@@ -460,27 +463,13 @@
     b))
 
 ;; The folder holding helpers' sockets: the socket-directory option, or
-;; $XDG_RUNTIME_DIR/tuna/terminals (/tmp/tuna-UID/terminals without one),
-;; made private.
+;; $XDG_RUNTIME_DIR/tuna/terminals, made private.
 (def (socket-directory) => :string
-  (let ((option (:- (plugin-option terminals 'socket-directory) :string)))
-    (if (not (string-empty? option))
-      (begin (make-private-directory option) option)
-      (let* ((runtime (getenv "XDG_RUNTIME_DIR" #f))
-             (base (if (and runtime (not (string-empty? runtime)))
-                     (path-expand "tuna" runtime)
-                     (string-append "/tmp/tuna-" (number->string (current-user-id)))))
-             (folder (path-expand "terminals" base)))
-        (make-private-directory base)
-        (make-private-directory folder)
-        folder))))
+  (helper-socket-directory "terminals" (:- (plugin-option terminals 'socket-directory) :string)))
 
 ;; Whether helpers leave Tuna's systemd scope or service (the leave-scope option).
 (def (leave-scope?) => :boolean
-  (case (plugin-option terminals 'leave-scope)
-    ((always) #t)
-    ((never) #f)
-    (else (in-systemd-unit?))))
+  (helper-leaves-scope? (:- (plugin-option terminals 'leave-scope) :symbol)))
 
 ;;; Terminals and their buffers
 
@@ -2148,7 +2137,7 @@
   (keep-poster! self)
   (let* ((directory (buffer-default-directory (current-buffer)))
          (id (new-terminal-id))
-         (socket (path-expand (string-append id ".sock") (socket-directory)))
+         (socket (helper-socket-path (socket-directory) id))
          (size (terminal-size-guess self))
          (initial (setting-value terminal-initial-input-mode))
          (mode (if (eq? initial 'char) 'char 'semi-char))
