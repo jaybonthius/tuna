@@ -74,6 +74,7 @@ Another plugin hands text to a chat through the pi contract, without knowing how
 - **The helper is a small Gerbil program, one per chat.** It passes Pi's lines through unchanged and remembers only what a reconnecting Tuna can't ask Pi for: the reply still being written, running tools, open questions, the latest queue and status texts. With no Tuna attached and Pi idle for a minute, it stops Pi and exits. The terminal's private code for starting a helper and its private socket moves into a shared process library, which ADR 18 planned for the second user.
 - **The menu lives in the chat plugin** (single-key choices in the minibuffer, like Emacs's transient). It becomes a shared `menus` plugin when a second plugin wants one.
 - **Status and notifications are keyed by buffer.** Today they accept only terminals; they will accept any buffer, so the terminal and the chat feed them the same way.
+- **Pi only, in a plugin named `pi`** (owner, 2026-10-28). Other agents (Claude Code, Codex, Gemini) all speak ACP, the Agent Client Protocol, natively or through an adapter; if wanted later, a separate `acp` plugin covers them all, and the chat buffer code both share moves into a common library then, not before.
 - **Not in the first version:** pictures in prompts and replies, a session tree browser (Pi has no command to move within a session's tree; Pilish rewrites session files to do it), extension widgets, approving edits before they happen, and sending an error log (Tuna has none yet).
 
 ## Decisions for the owner
