@@ -10,7 +10,7 @@
         :tuna/plugins/settings/contract
         :tuna/plugins/terminal/contract
         :tuna/plugins/terminal/plugin
-        (only-in :tuna/plugins/terminal/io current-process-id)
+        (only-in :tuna/lib/unix current-process-id)
         "../../../../tuna/tests/support/kernel"
         "../../../keys/tests/support/keys"
         "../support/helpers"

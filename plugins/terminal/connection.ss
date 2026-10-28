@@ -1,29 +1,22 @@
 ;;; Tuna's side of a terminal helper (ADR 18): starting a helper outside
-;;; Tuna, and the connection to it. No editor state here: the plugin owns
-;;; what arrives.
+;;; Tuna, detached as the process library does it
+;;; (:tuna/lib/helper-processes), and the connection to it. No editor
+;;; state here: the plugin owns what arrives.
 ;;;
-;;; A helper is started through `setsid -f`, so it is in a session of its
-;;; own and Tuna does not wait for it, and, when Tuna runs in a systemd
-;;; scope or service (`systemd-run --scope`, a desktop terminal's scope, or
-;;; Tuna as a user service), through `systemd-run --user --scope` too, into
-;;; a scope of its own, since a unit's processes all die with it.
-;;;
-;;; A connection sends frames from a thread of its own, in order, so the
+;;; A connection sends frames through a device writer, in order, so the
 ;;; editor never waits on the socket; one other thread (the plugin's
 ;;; reader job) reads it, and closes it once it has ended.
 prelude: :gerbil/core
 
 (import :std/source
-        ./io
+        :tuna/lib/unix
+        :tuna/lib/helper-processes
         ./protocol)
 (export default-helper-path
         default-terminfo-directory
         default-shell-integration-directory
         (struct-out helper-launch)
-        in-systemd-unit?
-        helper-command
         launch-helper!
-        wait-for-socket
         connection
         connection?
         connection-device
@@ -65,24 +58,9 @@ prelude: :gerbil/core
                           (unit :? :string))
   final: #t)
 
-;; Whether this process runs in a systemd scope or service, which kills
-;; every process in it when it stops (a service's default KillMode).
-(def (in-systemd-unit?) => :boolean
-  (:- (with-catch
-       (lambda (e) #f)
-       (lambda ()
-         (let (lines (call-with-input-file "/proc/self/cgroup" (lambda (port) (read-all port read-line))))
-           (and (find (lambda ((line : :string)) (or (string-contains line ".scope") (string-contains line ".service"))) lines) #t))))
-      :boolean))
-
-;; The command that starts L's helper, detached.
-(def (helper-command (l : helper-launch)) => :list
-  (append ["-f"]
-          (let (unit (helper-launch-unit l))
-            (if unit
-              ["systemd-run" "--user" "--scope" "--quiet" "--collect" (string-append "--unit=" unit)]
-              []))
-          [(helper-launch-helper l)
+;; L's helper program and its arguments.
+(def (helper-arguments (l : helper-launch)) => :list
+  (append [(helper-launch-helper l)
            "--socket" (helper-launch-socket l)
            "--columns" (number->string (helper-launch-columns l))
            "--rows" (number->string (helper-launch-rows l))
@@ -97,53 +75,27 @@ prelude: :gerbil/core
 ;; Start L's helper and return once it is detached; raises when the
 ;; command to start it fails.
 (def (launch-helper! (l : helper-launch)) => :void
-  (let* ((process (open-process [path: "setsid" arguments: (helper-command l)
-                                 environment: (helper-launch-environment l)
-                                 stdin-redirection: #t stdout-redirection: #f stderr-redirection: #f]))
-         (status (begin (close-output-port process) (process-status process 10 #f))))
-    (close-port process)
-    (unless (eqv? status 0)
-      (error "Cannot start the terminal helper" (helper-launch-helper l) status))))
-
-;; Wait up to SECONDS for the socket at PATH to appear: whether it did.
-(def (wait-for-socket (path : :string) (seconds : :real)) => :boolean
-  (let lp ((left seconds))
-    (cond
-     ((file-exists? path) #t)
-     ((<= left 0) #f)
-     (else (thread-sleep! 0.02) (lp (- left 0.02))))))
+  (launch-detached! (helper-arguments l) (helper-launch-environment l) (helper-launch-unit l)))
 
 (defclass connection ((device : :t)
-                      (writer : :thread))
+                      (writer : device-writer))
   final: #t)
-
-(def (writer-thread (device : :t)) => :void
-  (with-catch
-   void
-   (lambda ()
-     (let lp ()
-       (let (message (thread-receive))
-         (when (u8vector? message)
-           (device-write-all device message)
-           (lp))))))
-  (with-catch void (lambda () (shutdown-device device))))
 
 ;; A connection to the helper at socket PATH, which has said hello;
 ;; raises when there is none to connect to.
 (def (open-connection (path : :string)) => connection
   (let* ((device (unix-connect path))
-         (c (connection device: device
-                        writer: (spawn/name 'terminal-writer (lambda () (writer-thread device))))))
+         (c (connection device: device writer: (new-device-writer device 'terminal-writer))))
     (connection-send! c 'hello (hello-payload))
     c))
 
 ;; Send a frame of TYPE with PAYLOAD, after those sent before.
 (def (connection-send! (c : connection) (type : :symbol) (payload : :u8vector := (u8vector))) => :void
-  (thread-send c.writer (frame-bytes type payload)))
+  (device-writer-send! c.writer (frame-bytes type payload)))
 
 ;; End C after the frames sent so far; its reader then sees the end.
 (def (close-connection! (c : connection)) => :void
-  (thread-send c.writer 'close))
+  (device-writer-close! c.writer))
 
 ;;; The inbox
 

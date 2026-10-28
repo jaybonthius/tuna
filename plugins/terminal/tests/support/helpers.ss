@@ -1,7 +1,9 @@
 ;;; Running terminal helpers in tests: a private folder for their sockets,
 ;;; a helper's connection read on a thread of the test's own, and stopping
 ;;; every process a test started, by its exact pid.
-(import :tuna/plugins/terminal/io
+(import :tuna/lib/unix
+        :tuna/lib/helper-processes
+        :tuna/plugins/terminal/io
         :tuna/plugins/terminal/protocol
         :tuna/plugins/terminal/connection
         (rename-in :gerbil-libghostty/ghostty (terminal? ghostty-terminal?)))

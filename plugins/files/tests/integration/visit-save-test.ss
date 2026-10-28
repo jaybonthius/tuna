@@ -10,7 +10,6 @@
         :tuna/plugins/settings/plugin :tuna/plugins/buffers/plugin :tuna/plugins/layout/plugin
         :tuna/plugins/minibuffer/plugin :tuna/plugins/completion/plugin
         :tuna/plugins/files/plugin
-        (only-in :tuna/plugins/files/picker file-table)
         "../../../../tuna/tests/support/kernel"
         "../../../../plugins/session/tests/support/session"
         "../support/folder")
@@ -281,7 +280,30 @@
                 (check (buffer-name b) => "out.txt")
                 (check (buffer-modified? b) => #f))))
            (check (string-of path) => "scratch text")))))
-    (test-case "the picker's table lists the folder typed, folders with a /"
+    (test-case "find-file-at-line visits a file at a line and column, here or in another view"
+      (with-files
+       (lambda (folder)
+         (let (path (string-append folder "lines.txt"))
+           (put-string! path "one\ntwo\nthree\n")
+           (on-editor
+            (lambda ()
+              (let* ((start (selected-view))
+                     (b (find-file-at-line path 2 3))
+                     (other (new-buffer "other" (new-text-node (new-text "")))))
+                (check (eq? (selected-view) start) => #t)
+                (check (eq? (view-showing start) b) => #t)
+                (check (point) => 7)
+                ;; A line past the end goes to the last.
+                (find-file-at-line path 99 #f)
+                (check (point) => (text-position-at (text-of b) (text-line-count (text-of b)) 0))
+                (add-buffer! other)
+                (set-view-buffer start other)
+                (find-file-at-line path 3 #f other-view?: #t)
+                (check (eq? (selected-view) start) => #f)
+                (check (eq? (view-showing start) other) => #t)
+                (check (eq? (current-buffer) b) => #t)
+                (check (point) => 9))))))))
+    (test-case "the file completion table lists the folder typed, folders with a /"
       (with-files
        (lambda (folder)
          (create-directory (string-append folder "sub"))
@@ -289,7 +311,7 @@
          (put-string! (string-append folder "sub/c.txt") "")
          (on-editor
           (lambda ()
-            (let* ((table (file-table folder))
+            (let* ((table (file-completion-table folder))
                    (items (completion-table-items table)))
               (check (completion-table-category table) => 'file)
               (check (map candidate-text (items "")) => ["b.txt" "sub/"])

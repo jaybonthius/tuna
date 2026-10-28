@@ -197,6 +197,33 @@
          (say! ". Next")
          (check (text-becomes "Notes:\n. Next") => "Notes:\n. Next"))))
 
+    (test-case "punctuation does not go after a piece whose text has become read-only"
+      (with-voice
+       (lambda ()
+         (match (call-on-editor-loop
+                 (lambda ()
+                   (let* ((said (new-text-node (new-text "")))
+                          (section (new-node 'section children: [said]))
+                          (prompt (new-text-node (new-text "")))
+                          (b (new-buffer "chat" (new-node 'chat children: [section prompt]))))
+                     (add-buffer! b)
+                     (switch-to-buffer b)
+                     (set-view-focus! (selected-view) said 1)
+                     [section said prompt])))
+           ([section said prompt]
+            (let (text-of (lambda (n) (call-on-editor-loop (lambda () (text-string (text-node-content n))))))
+              (press-keys "C-c" "v")
+              (check (wait-until (lambda () (hash-key? captures tab))) => #t)
+              (say! "hello")
+              (check (wait-until (lambda () (equal? (text-of said) "hello"))) => #t)
+              (call-on-editor-loop
+               (lambda ()
+                 (set-node-attribute! section 'read-only #t)
+                 (set-view-focus! (selected-view) prompt 1)))
+              (say! ". Next")
+              (check (wait-until (lambda () (equal? (text-of prompt) ". Next"))) => #t)
+              (check (text-of said) => "hello")))))))
+
     (test-case "a piece without leading punctuation goes wholly at point"
       (with-voice
        (lambda ()

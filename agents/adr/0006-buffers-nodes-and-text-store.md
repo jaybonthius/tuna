@@ -33,6 +33,8 @@ Evidence on text storage is split: a mutable gap buffer had excellent local-edit
 - A persistent default makes job snapshots free ([ADR 3](0003-command-loop-and-jobs.md)) and makes a native undo tree possible later.
 - Performance must be measured in Gerbil on the real edit-render path before the rope is considered final.
 
+*Status note (2026-10-28, agent chat stage 2):* read-only text is a node attribute, not a text property: a node whose `read-only` attribute is true makes the text nodes under it read-only to editing commands (the buffers contract's `check-writable`, which `insert`, `delete-region` and undo call), as Emacs's `read-only` property does for characters. The plugin that owns the buffer still writes with `text-replace!`, as it does in a `buffer-read-only` buffer. Read-only character ranges inside one text are not supported; such text becomes its own text node.
+
 ## Alternatives considered
 
 - **Everything is one text buffer with properties and overlays (Emacs).** Rejected: rich UI is the point of browser rendering.

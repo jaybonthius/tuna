@@ -1,12 +1,13 @@
 ;;; Links in a terminal's output, as ghostel finds and opens them
 ;;; (lisp/ghostel-links.el): OSC 8 hyperlinks come with the runs; plain
-;;; http(s) URLs and FILE:LINE[:COLUMN] references to files that exist are
-;;; found in each line of the program's, rows it wrapped joined first,
-;;; and become links too. A link's target is a URI: http(s), file://, or
+;;; http(s) URLs and FILE:LINE[:COLUMN] references to files that exist
+;;; (the files contract's find-file-references) are found in each line of
+;;; the program's, rows it wrapped joined first, and become links too. A link's target is a URI: http(s), file://, or
 ;;; fileref:PATH[:LINE[:COLUMN]] for a reference found in the text.
 prelude: :gerbil/core
 
-(import (only-in ./screen char-cells))
+(import (only-in :tuna/plugins/files/contract find-file-references)
+        (only-in ./screen char-cells))
 (export find-links
         link-runs
         web-link?
@@ -71,55 +72,6 @@ prelude: :gerbil/core
                 (if (fx> end scheme-end)
                   (lp end (cons [http end (substring text http end)] out))
                   (lp scheme-end out))))))))))
-
-;; ghostel-file-detection-path-regex, by hand: a path is word characters,
-;; ~, ., _ and -, then a slash, then any characters but these, not ending
-;; in sentence punctuation.
-(def (path-head-char? (c : :char)) => :boolean
-  (or (char-alphabetic? c) (char-numeric? c) (memv c '(#\~ #\_ #\. #\-))))
-(def (path-char? (c : :char)) => :boolean
-  (not (or (char-whitespace? c) (memv c '(#\] #\: #\" #\< #\> #\( #\) #\{ #\} #\[ #\` #\')))))
-(def (path-before-ok? (c : :char)) => :boolean
-  (not (or (char-alphabetic? c) (char-numeric? c) (memv c '(#\_ #\. #\/ #\~ #\-)))))
-
-;; The FILE:LINE[:COLUMN] references in TEXT whose file EXISTS? (a
-;; procedure of the path as written): (START END PATH LINE COLUMN), LINE
-;; and COLUMN strings or #f.
-(def (find-file-references (text : :string) (exists? : :procedure)) => :list
-  (let ((size (string-length text)))
-    (def (digits-end (i : :fixnum)) => :fixnum
-      (if (and (fx< i size) (char-numeric? (string-ref text i))) (digits-end (fx1+ i)) i))
-    (let lp ((i 0) (out []))
-      (cond
-       ((fx>= i size) (reverse out))
-       ((and (or (fx= i 0) (path-before-ok? (string-ref text (fx1- i))))
-             (or (path-head-char? (string-ref text i)) (char=? (string-ref text i) #\/)))
-        ;; The head, then a slash, then the rest.
-        (let* ((slash (let head ((j i))
-                        (cond
-                         ((fx= j size) #f)
-                         ((char=? (string-ref text j) #\/) j)
-                         ((path-head-char? (string-ref text j)) (head (fx1+ j)))
-                         (else #f))))
-               (raw-end (and slash (let rest ((j (fx1+ slash)))
-                                     (if (and (fx< j size) (path-char? (string-ref text j))) (rest (fx1+ j)) j))))
-               (end (and raw-end (let back ((j raw-end))
-                                   (if (and (fx> j (fx1+ slash)) (not (url-end-char? (string-ref text (fx1- j)))))
-                                     (back (fx1- j))
-                                     j)))))
-          (if (and end (fx> end slash) (not (char=? (string-ref text (fx1- end)) #\/)))
-            (let* ((path (substring text i end))
-                   (line-end (and (fx< end size) (char=? (string-ref text end) #\:) (digits-end (fx1+ end))))
-                   (line (and line-end (fx> line-end (fx1+ end)) (substring text (fx1+ end) line-end)))
-                   (column-end (and line (fx< line-end size) (char=? (string-ref text line-end) #\:)
-                                    (digits-end (fx1+ line-end))))
-                   (column (and column-end (fx> column-end (fx1+ line-end)) (substring text (fx1+ line-end) column-end)))
-                   (stop (cond (column column-end) (line line-end) (else end))))
-              (if (exists? path)
-                (lp stop (cons [i stop path line column] out))
-                (lp (fxmax (fx1+ i) end) out)))
-            (lp (fx1+ i) out))))
-       (else (lp (fx1+ i) out))))))
 
 ;; The links in TEXT, one line of the program's: (START END URI), URLs
 ;; when URLS?, file references when FILES? with RESOLVE (a procedure of

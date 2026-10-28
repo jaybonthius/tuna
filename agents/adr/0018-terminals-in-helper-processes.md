@@ -30,6 +30,8 @@ Options considered (research 02, section 6):
 - Tuna's build now depends on `gerbil-libghostty` and its native library (Zig, pinned Ghostty).
 - Starting programs on a pseudo-terminal lives in the helper until a second user needs it, then moves to the planned process library.
 
+*Status note (2026-10-28, agent chat stage 2):* the process library exists, for the Pi helper, the second user. `tuna/lib/unix.ss` has the system calls a helper and Tuna share (private folders, Unix sockets with the `SO_PEERCRED` user check, raw device reads and writes, a session of its own, standard ports dropped); `tuna/lib/helper-processes.ss` has each kind's private socket folder (`$XDG_RUNTIME_DIR/tuna/KIND`) and socket paths, starting a helper detached (`setsid -f`, and `systemd-run --user --scope` when it leaves Tuna's scope), waiting for its socket, and a device writer so the editor never waits. Starting a program on plain pipes needs no C: Gambit's `open-process`, with standard error left to the helper's log. The pseudo-terminal, libghostty and the framed terminal protocol stay in `plugins/terminal/`. Program status no longer belongs to terminals: the `program-status-report` record and `report-program-status!` are the program-status contract's, records are kept by buffer, and `terminal-program-status-hook` runs with the record's fields, so the terminal and program-status packages do not import each other.
+
 ## As built (stage 2, 2026-10-27)
 
 The decision held; these are the details it left open (plan, stage 2 notes):

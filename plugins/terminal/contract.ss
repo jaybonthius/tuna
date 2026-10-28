@@ -26,7 +26,6 @@ prelude: :gerbil/core
         terminal-command-finish-hook
         terminal-notification-hook
         terminal-progress-hook
-        (struct-out program-status-report)
         terminal-program-status-hook
         terminal-program-status-clear-hook
         terminal-reset-hook
@@ -93,25 +92,9 @@ prelude: :gerbil/core
   (new-hook 'terminal-progress
             doc: "Runs with a terminal, a state ('remove, 'set, 'error, 'indeterminate or 'pause) and a percentage or #f when its program reports progress (ConEmu's OSC 9;4); a full reset reports 'remove."))
 
-;; One program status report (OSC 7501, the Program Status Protocol,
-;; revision 0.4): the record ID (a /-separated path, "" for the program
-;; itself) is now in STATE ('idle, 'working, 'done, 'blocked or 'error),
-;; with KIND ('permission, 'question or 'auth, for 'blocked), PROGRESS
-;; (0-100, for 'working or 'blocked) and the APP, TITLE and MESSAGE the
-;; program sent, or #f. libghostty has checked the report: its text holds
-;; no control characters.
-(defstruct program-status-report ((id       : :string)
-                                  (state    : :symbol)
-                                  (kind     :? :symbol)
-                                  (progress :? :fixnum)
-                                  (app      :? :string)
-                                  (title    :? :string)
-                                  (message  :? :string))
-  final: #t)
-
 (def terminal-program-status-hook
   (new-hook 'terminal-program-status
-            doc: "Runs with a terminal and a program-status-report when its program reports a status record (OSC 7501); the report replaces the record."))
+            doc: "Runs with a terminal and the record its program reported (OSC 7501, checked by libghostty), which replaces the record of that id: the id (a /-separated path, \"\" for the program itself), the state ('idle, 'working, 'done, 'blocked or 'error), the kind ('permission, 'question or 'auth, for 'blocked) or #f, the progress (0-100) or #f, and the app, title and message strings or #f; the program-status contract's program-status-report has the same fields."))
 
 (def terminal-program-status-clear-hook
   (new-hook 'terminal-program-status-clear

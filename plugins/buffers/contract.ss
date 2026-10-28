@@ -107,7 +107,7 @@ prelude: :gerbil/core
         internal-buffer?
         buffer-list get-buffer add-buffer! context-add-buffer! kill-buffer kill-buffer-hook
         context-add-kill-buffer-query! kill-buffer-allowed?
-        buffer-read-only
+        buffer-read-only node-read-only? check-writable
         buffer-list-update-hook
         other-buffer buffer-texts
         ;; views
@@ -1680,16 +1680,33 @@ prelude: :gerbil/core
   (set-view-point! (selected-view) position))
 
 ;; Emacs's `buffer-read-only`: editing commands may not change the text
-;; of a buffer whose value is true. The editing primitives below check it
-;; for the current buffer; text-replace! does not, so the plugin that owns
-;; a buffer can still change it.
+;; of a buffer whose value is true. A node's `read-only` attribute does
+;; the same for the text nodes in it (Emacs's `read-only` text property):
+;; a chat's transcript can be moved through, selected and copied beside
+;; an editable prompt in the same buffer. The editing primitives below
+;; check both for the focused text; text-replace! does not, so the plugin
+;; that owns a buffer can still change it (Emacs's `inhibit-read-only`).
 (defsetting buffer-read-only #f
   "Whether editing commands may not change this buffer's text.")
 
+;; Whether N or a node above it has a true `read-only` attribute.
+(def (node-read-only? (n : node)) => :boolean
+  (let up ((m n))
+    (or (and (node-attribute m 'read-only) #t)
+        (let (parent (node-parent m))
+          (and parent (up parent))))))
+
+;; Signal unless editing commands may change the focused text of the
+;; current buffer: the buffer is not read-only, and neither is the focused
+;; node (node-read-only?). Commands that change text by other means than
+;; insert and delete-region, such as undo, call it first.
 (def (check-writable) => :void
   (let (b (current-buffer))
     (when (buffer-local-value buffer-read-only b)
-      (error "Buffer is read-only:" (buffer-name b)))))
+      (error "Buffer is read-only:" (buffer-name b)))
+    (let (n (current-text-node))
+      (when (and n (node-read-only? n))
+        (error "Text is read-only")))))
 
 ;; Insert INSERTION at point, leaving point after it.
 (def (insert (insertion : :string)) => :void
