@@ -1,0 +1,179 @@
+/* Markdown drawn as nodes (.markdown-…), and the faces of Markdown being
+   typed (.face-markdown-…). Blocks are items, or hold items, so they are
+   spaced with padding, never margins: the browser's measurements of a
+   view must add up exactly. */
+
+:where(.markdown-paragraph, .markdown-heading, .markdown-quote, .markdown-list, .markdown-links) {
+  font-family: var(--markdown-prose-font);
+}
+
+:where(.markdown-paragraph, .markdown-heading, .markdown-code, .markdown-links) {
+  padding: var(--markdown-block-padding);
+}
+
+:where(.markdown-heading) {
+  font-weight: var(--markdown-heading-weight);
+}
+
+:where(.markdown-heading[data-level="1"]) { font-size: var(--markdown-heading-1-size); }
+:where(.markdown-heading[data-level="2"]) { font-size: var(--markdown-heading-2-size); }
+:where(.markdown-heading[data-level="3"]) { font-size: var(--markdown-heading-3-size); }
+:where(.markdown-heading[data-level="4"]) { font-size: var(--markdown-heading-4-size); }
+:where(.markdown-heading[data-level="5"]) { font-size: var(--markdown-heading-5-size); }
+:where(.markdown-heading[data-level="6"]) { font-size: var(--markdown-heading-6-size); }
+
+:where(.markdown-code) {
+  position: relative;
+  font-family: var(--markdown-code-font);
+  font-size: var(--markdown-code-size);
+  color: var(--markdown-code-foreground);
+  background: var(--markdown-code-background);
+  border-block: 1px solid var(--markdown-code-border);
+}
+
+/* The code's language, in the block's corner; it takes no room. */
+:where(.markdown-code-language) {
+  position: absolute;
+  inset-block-start: 0.125rem;
+  inset-inline-end: 0.5rem;
+  color: var(--markdown-code-language-foreground);
+  font-size: 0.75rem;
+}
+
+:where(.markdown-quote) {
+  margin: 0;
+  padding-inline-start: 0.5rem;
+  border-inline-start: 3px solid var(--markdown-quote-border);
+  color: var(--markdown-quote-foreground);
+}
+
+:where(.markdown-list) {
+  margin: 0;
+  padding: 0;
+  padding-inline-start: 0.5rem;
+  list-style: none;
+}
+
+:where(.markdown-item) {
+  position: relative;
+  padding-inline-start: var(--markdown-item-indent);
+}
+
+/* An item's bullet, number or task box, in the indent; it takes no room. */
+:where(.markdown-marker, .markdown-task) {
+  position: absolute;
+  inset-inline-start: 0.25rem;
+  inset-block-start: 0.25rem;
+  margin: 0;
+  color: var(--markdown-marker-color);
+}
+
+/* A tight list's items sit close together. */
+:where(.markdown-list[data-tight]) :where(.markdown-paragraph) {
+  padding-block: 0;
+}
+
+:where(.markdown-list[data-tight]) :where(.markdown-marker, .markdown-task) {
+  inset-block-start: 0;
+}
+
+:where(.markdown-rule) {
+  margin: 0;
+  padding: 0;
+  block-size: 0;
+  border: 0;
+  border-block-start: 1px solid var(--markdown-rule);
+}
+
+:where(.markdown-table) {
+  padding: var(--markdown-block-padding);
+  overflow-x: auto;
+  font-family: var(--markdown-prose-font);
+}
+
+:where(.markdown-table) table {
+  border-collapse: collapse;
+}
+
+:where(.markdown-table) :where(th, td) {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--markdown-table-border);
+  text-align: start;
+}
+
+:where(.markdown-table) th {
+  background: var(--markdown-table-header-background);
+}
+
+:where(.markdown-table) [data-align="center"] { text-align: center; }
+:where(.markdown-table) [data-align="right"] { text-align: end; }
+
+:where(.markdown-table) code {
+  font-family: var(--markdown-code-font);
+  font-size: var(--markdown-code-size);
+}
+
+:where(.markdown-links) {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  font-size: 0.875rem;
+}
+
+:where(.markdown-link, .markdown-table a) {
+  color: var(--markdown-link-foreground);
+}
+
+:where(.markdown-link)::before {
+  content: "↗ ";
+}
+
+/* Faces. A face names every style its run has (faces.ss), as in
+   face-markdown-strong-emphasis or face-markdown-heading-1-marker, so each
+   style applies wherever its part appears in a face's name. */
+:where([class*="face-markdown"][class*="-strong"]) {
+  font-weight: var(--markdown-strong-weight);
+}
+
+:where([class*="face-markdown"][class*="-emphasis"]) {
+  font-style: italic;
+}
+
+:where([class*="face-markdown"][class*="-strikethrough"]) {
+  text-decoration: line-through;
+}
+
+:where([class*="face-markdown"][class*="-code"]) {
+  font-family: var(--markdown-code-font);
+  font-size: var(--markdown-code-size);
+  color: var(--markdown-code-foreground);
+  background: var(--markdown-code-background);
+}
+
+:where([class*="face-markdown"][class*="-link"]) {
+  color: var(--markdown-link-foreground);
+  text-decoration: underline;
+}
+
+:where([class*="face-markdown"][class*="-fence"]) {
+  font-family: var(--markdown-code-font);
+  font-size: var(--markdown-code-size);
+}
+
+:where([class*="face-markdown"][class*="-heading-"]) {
+  font-weight: var(--markdown-heading-weight);
+}
+
+:where([class*="face-markdown"][class*="-heading-1"]) { font-size: var(--markdown-heading-1-size); }
+:where([class*="face-markdown"][class*="-heading-2"]) { font-size: var(--markdown-heading-2-size); }
+:where([class*="face-markdown"][class*="-heading-3"]) { font-size: var(--markdown-heading-3-size); }
+:where([class*="face-markdown"][class*="-heading-4"]) { font-size: var(--markdown-heading-4-size); }
+:where([class*="face-markdown"][class*="-heading-5"]) { font-size: var(--markdown-heading-5-size); }
+:where([class*="face-markdown"][class*="-heading-6"]) { font-size: var(--markdown-heading-6-size); }
+
+/* Last, so a mark keeps its colour inside a link. */
+:where([class*="face-markdown"][class*="-marker"]) {
+  color: var(--markdown-marker-foreground);
+  text-decoration: none;
+}

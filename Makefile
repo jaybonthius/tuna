@@ -7,6 +7,11 @@ ESBUILD ?= esbuild
 # build fetches and builds the pinned Ghostty with Zig 0.16.
 GERBIL_LIBGHOSTTY ?= /home/jay/Code/workbench-gerbil/gerbil-libghostty
 
+# The checkout of gerbil-md4c (the Markdown parser the markdown plugin
+# uses), linked into .gerbil/pkg the same way. md4c is vendored in it, so
+# its build needs only a C compiler.
+GERBIL_MD4C ?= /home/jay/Code/workbench-gerbil/gerbil-md4c
+
 all: assets terminfo build
 
 assets: plugins/web/web/tuna-input.js plugins/microphone/web/microphone.js plugins/microphone/web/microphone-worklet.js \
@@ -45,6 +50,8 @@ deps:
 	gerbil deps -i
 	test -e .gerbil/pkg/gerbil-libghostty || gerbil pkg link gerbil-libghostty $(GERBIL_LIBGHOSTTY)
 	gerbil pkg build gerbil-libghostty
+	test -e .gerbil/pkg/gerbil-md4c || gerbil pkg link gerbil-md4c $(GERBIL_MD4C)
+	gerbil pkg build gerbil-md4c
 
 # The terminal plugin's terminfo entry, which its programs find through
 # TERMINFO.

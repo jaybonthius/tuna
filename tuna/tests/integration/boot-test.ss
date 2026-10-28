@@ -454,7 +454,7 @@
                         (configuration-declarations loaded))
                    => '(stylesheets commands keys web-transport settings session
                         rope-text-store buffers autosave terminals program-status notifications layout
-                        view-commands scrolling html-renderer buttons editing
+                        view-commands scrolling html-renderer buttons markdown editing
                         minibuffer completion completion-list files
                         echo-area help
                         configuration))

@@ -477,6 +477,21 @@ The status line shows the program's title after the buffer's name (`terminal-sta
 
 **For package authors:** the terminal contract has hooks, each with the terminal first: `terminal-title-hook` (the program set its title), `terminal-directory-hook` (it reported its folder, which also becomes the buffer's `default-directory`), `terminal-bell-hook`, `terminal-exit-hook`, `terminal-input-hook` (you sent the program input), `terminal-prompt-hook`, `terminal-command-start-hook` (with the command line) and `terminal-command-finish-hook` (with the exit code and the seconds it took), `terminal-notification-hook` (title and body), `terminal-progress-hook`, `terminal-program-status-hook` (a `program-status-report`), `terminal-program-status-clear-hook`, `terminal-reset-hook`, and `terminal-unknown-sequence-hook` (any OSC or APC sequence the engine does not know, up to `terminal-unknown-sequence-max-bytes`). The program status contract has `program-status-change-hook`, with a record's id and its value before and after. Settings, with ghostel's defaults: `terminal-shell`, `terminal-term` (`xterm-ghostty`, with the terminfo `make` builds), `terminal-environment`, `terminal-max-scrollback` (5 MB), `terminal-timer-delay`, `terminal-adaptive-fps`, `terminal-immediate-redraw-interval`, `terminal-plain-link-detection-delay`, `terminal-input-buffer-size`, `terminal-save-screen` (on), `terminal-saved-scrollback-rows` (1,000), `terminal-save-interval` (30 s), `terminal-restore-start` (`'auto` or `'key`), `terminal-restored-note`, `terminal-compress-after` (30 s), `terminal-buffer-name`, `terminal-buffer-name-function` (rename by title or folder; off), `terminal-kill-buffer-on-exit`, `terminal-query-before-killing`, `terminal-initial-input-mode` (semi-char, char or line), `terminal-scroll-on-input`, `terminal-ignore-cursor-change`, `terminal-readonly-fast-exit`, `terminal-mark-activation-input-mode`, `terminal-mouse-drag-input-mode`, `terminal-line-mode-history-size`, `terminal-enable-osc52` (off), `terminal-paste-protection` (off), `terminal-enable-url-detection`, `terminal-enable-file-detection`, `terminal-colors`, `terminal-status-line-format`, `terminal-prompt-navigation-input-mode`, `terminal-shell-integration`, `terminal-shell-integration-title`, `terminal-unknown-sequence-max-bytes`; and the program status and notifications plugins' `program-status-acknowledge-on-input`, `program-status-labels`, `program-status-show-app` and `notify-program-status-states`.
 
+## Markdown
+
+**Status:** built (the first stage of the [Pi chat](briefs/2026-10-agent-chat.md)); the chat that uses it is planned.
+
+The `markdown` plugin does two things with Markdown, for text nobody vetted, such as a language model's reply:
+
+- **Draws it.** `markdown-blocks` turns Markdown into one node per block. Paragraphs, headings, list items, quotes and code are text, so the cursor, selection and copying work on them; bold, italics, code and links are highlight spans on that text. A block's links are listed under it, and open in a new browser tab. A table is one item, drawn as a real table. Prose is in a proportional font and code in monospace, both set in the plugin's `tokens.css`.
+- **Styles it as it is typed.** `markdown-style-text!` styles an editable text's own Markdown in place: headings larger, bold bold, code monospace, and the marks that make them (`#`, `**`, fences) dimmed. It styles it again after every change, so a chat's prompt looks like what it will send.
+
+Markdown is read by md4c, a small C parser, through Tuna's own `gerbil-md4c` package. Raw HTML in the input is shown as text, never as markup, and only `http`, `https` and `mailto` links become links.
+
+**Streaming.** Each block node remembers its place and its Markdown. `markdown-update-blocks` takes the nodes drawn last time and the longer text, keeps every node whose block has not changed, and builds the rest, so a reply streaming in redraws only its last block.
+
+The demo shows it: `C-c m` opens `*markdown*`, a sample drawn above the same Markdown as you type it, and every change redraws the drawing.
+
 ## Where things are saved
 
 | What | Where | When |
@@ -572,3 +587,5 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 - **Span**: one timed step in a profile, such as "command self-insert-command", with what it allocated; an input item's spans form its tree.
 - **Sampling**: noting, every millisecond, which code is running, to see where time goes statistically.
 - **Session slot**: a named piece of one plugin's state that the session plugin saves while Tuna is idle and on exit, and hands back on the next start.
+- **Markdown block**: one paragraph, heading, list, quote, code block, table or rule of a Markdown text, drawn as one node.
+- **Live styling** (of Markdown): styling a text's raw Markdown in place, in its own highlight layer, again after every change.
