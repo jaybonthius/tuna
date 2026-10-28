@@ -1,0 +1,138 @@
+/* A Pi chat (.pi-…): messages in a proportional font, tool output and
+   diffs monospace, a status bar and the prompt at the bottom. Blocks are
+   items, or hold items, so they are spaced with padding, never margins:
+   the browser's measurements of a view must add up exactly. */
+
+:where(.pi-chat) {
+  font-family: var(--pi-chat-font);
+}
+
+:where(.pi-message) {
+  padding: var(--pi-message-padding);
+  border-block-end: 1px solid var(--pi-message-border);
+}
+
+:where(.pi-message[data-role="user"]) {
+  background: var(--pi-user-background);
+}
+
+:where(.pi-role) {
+  padding-block-end: 0.125rem;
+  color: var(--pi-role-foreground);
+  font-size: var(--pi-role-size);
+  font-weight: var(--pi-role-weight);
+}
+
+/* Pi's thinking: quieter than its reply. */
+:where(.pi-thinking) {
+  color: var(--pi-thinking-foreground);
+}
+
+:where(.pi-thinking-text) {
+  padding-inline-start: 1rem;
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+:where(.pi-header) {
+  color: var(--pi-header-foreground);
+  cursor: pointer;
+}
+
+:where(.pi-tool) {
+  margin: 0;
+  padding: 0.125rem 0.5rem;
+  border-inline-start: 3px solid var(--pi-tool-border);
+  background: var(--pi-tool-background);
+}
+
+:where(.pi-tool[data-state="error"]) {
+  border-inline-start-color: var(--pi-tool-failed-border);
+}
+
+:where(.pi-tool) :where(.pi-header) {
+  font-family: var(--pi-chat-code-font);
+  font-size: var(--pi-chat-code-size);
+}
+
+:where(.pi-tool-body) {
+  padding-inline-start: 1rem;
+  font-family: var(--pi-chat-code-font);
+  font-size: var(--pi-chat-code-size);
+  color: var(--pi-tool-body-foreground);
+  white-space: pre-wrap;
+}
+
+:where(.pi-notice) {
+  color: var(--pi-notice-foreground);
+  white-space: pre-wrap;
+}
+
+:where(.pi-notice[data-level="error"]) {
+  padding: 0.25rem 0.5rem;
+  color: var(--pi-notice-error-foreground);
+  background: var(--pi-notice-error-background);
+}
+
+:where(.pi-notice[data-level="error"]) :where(.text) {
+  font-family: var(--pi-chat-code-font);
+  font-size: var(--pi-chat-code-size);
+}
+
+:where(.pi-question) {
+  padding: var(--pi-message-padding);
+  border: 1px solid var(--pi-question-border);
+  background: var(--pi-question-background);
+  white-space: pre-wrap;
+}
+
+:where(.pi-status) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.5rem;
+  padding: 0.25rem 0.75rem;
+  border-block: 1px solid var(--pi-status-border);
+  color: var(--pi-status-foreground);
+  background: var(--pi-status-background);
+  font-size: var(--pi-status-size);
+}
+
+:where(.pi-status-part + .pi-status-part)::before {
+  content: "· ";
+}
+
+:where(.pi-prompt) {
+  padding: var(--pi-message-padding);
+  border-inline-start: 3px solid var(--pi-prompt-border);
+  background: var(--pi-prompt-background);
+  white-space: pre-wrap;
+}
+
+/* Faces (transcript.ss). */
+:where(.face-pi-tool-name) {
+  font-weight: var(--pi-tool-name-weight);
+}
+
+:where(.face-pi-tool-argument) {
+  color: var(--pi-tool-argument-foreground);
+}
+
+:where(.face-pi-tool-meta) {
+  color: var(--pi-tool-meta-foreground);
+}
+
+:where(.face-pi-tool-done) {
+  color: var(--pi-tool-done-foreground);
+}
+
+:where(.face-pi-tool-failed) {
+  color: var(--pi-tool-failed-foreground);
+}
+
+:where(.face-pi-diff-added) {
+  color: var(--pi-diff-added-foreground);
+}
+
+:where(.face-pi-diff-removed) {
+  color: var(--pi-diff-removed-foreground);
+}
