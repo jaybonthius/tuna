@@ -1,4 +1,4 @@
-.PHONY: all assets build deps test test-frontend demo-check run tokens voice-worker voice-worker-check voice-command-check terminfo terminal-flood-check
+.PHONY: all assets build deps deps-seed test test-frontend demo-check run tokens voice-worker voice-worker-check voice-command-check terminfo terminal-flood-check
 
 ESBUILD ?= esbuild
 
@@ -46,7 +46,28 @@ plugins/files/web/files.js: plugins/files/frontend/files.ts Makefile
 build:
 	gerbil build
 
-deps:
+# A new worktree's .gerbil is empty. Its first `make deps` copies the
+# dependencies already compiled in the main checkout, keeping their times, so
+# `gerbil deps` and `gerbil pkg build` find them up to date instead of
+# compiling them again (gerbil-libghostty alone takes minutes). A dependency
+# whose sources are newer than the copy is still rebuilt. Tuna's own modules
+# are never copied: they are compiled from this checkout's sources.
+MAIN_CHECKOUT := $(shell git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
+
+deps-seed:
+	@main="$(MAIN_CHECKOUT)/.gerbil"; \
+	if [ -n "$(MAIN_CHECKOUT)" ] && [ "$(MAIN_CHECKOUT)" != "$(CURDIR)" ] \
+	   && [ -d "$$main/lib" ] && [ ! -d .gerbil/lib ]; then \
+	  echo "make deps: copying compiled dependencies from $$main"; \
+	  mkdir -p .gerbil/lib/static .gerbil/pkg; \
+	  for d in "$$main"/lib/*; do \
+	    case "$${d##*/}" in tuna|static) ;; *) cp -a "$$d" .gerbil/lib/ ;; esac; done; \
+	  for f in "$$main"/lib/static/*; do \
+	    case "$${f##*/}" in tuna__*) ;; *) cp -a "$$f" .gerbil/lib/static/ ;; esac; done; \
+	  cp -a "$$main"/pkg/. .gerbil/pkg/; \
+	fi
+
+deps: deps-seed
 	gerbil deps -i
 	test -e .gerbil/pkg/gerbil-libghostty || gerbil pkg link gerbil-libghostty $(GERBIL_LIBGHOSTTY)
 	gerbil pkg build gerbil-libghostty
