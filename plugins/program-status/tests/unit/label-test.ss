@@ -1,7 +1,7 @@
-;;; What a terminal's status line shows of its program's status records,
+;;; What a buffer's status line shows of its program's status records,
 ;;; as ghostel-status's mode-line label does.
 (import :std/test
-        :tuna/plugins/terminal/contract
+        :tuna/plugins/program-status/contract
         :tuna/plugins/program-status/plugin)
 (export label-test)
 

@@ -801,10 +801,9 @@
         (state (program-status-state report)))
     (if (eq? state 'clear)
       (run-hook-safely terminal-program-status-clear-hook term id)
-      (run-hook-safely terminal-program-status-hook term
-                       (make-program-status-report id state (program-status-kind report) (program-status-progress report)
-                                                   (text (program-status-app report)) (text (program-status-title report))
-                                                   (text (program-status-message report)))))))
+      (run-hook-safely terminal-program-status-hook term id state (program-status-kind report) (program-status-progress report)
+                       (text (program-status-app report)) (text (program-status-title report))
+                       (text (program-status-message report))))))
 
 ;; The number an OSC sequence's CONTENT starts with, before its first ;,
 ;; or #f.

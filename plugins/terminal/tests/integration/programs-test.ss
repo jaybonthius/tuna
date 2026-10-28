@@ -35,10 +35,8 @@
   (context-add-hook! ctx terminal-notification-hook 'test (lambda (term title body) (note! ['notify title body])))
   (context-add-hook! ctx terminal-progress-hook 'test (lambda (term state percent) (note! ['progress state percent])))
   (context-add-hook! ctx terminal-program-status-hook 'test
-                     (lambda (term report)
-                       (note! ['status (program-status-report-id report) (program-status-report-state report)
-                               (program-status-report-progress report) (program-status-report-app report)
-                               (program-status-report-title report)])))
+                     (lambda (term id state kind progress app title message)
+                       (note! ['status id state progress app title])))
   (context-add-hook! ctx terminal-program-status-clear-hook 'test (lambda (term id) (note! ['clear id])))
   (context-add-hook! ctx terminal-reset-hook 'test (lambda (term) (note! ['reset])))
   (context-add-hook! ctx terminal-unknown-sequence-hook 'test
