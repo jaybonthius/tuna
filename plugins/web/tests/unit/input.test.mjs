@@ -70,6 +70,9 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
                        elementFromPoint = () => null, tab = "tab-1",
                        { documentListeners = {}, caret = {}, clipboard } = {}) {
   const posts = [];
+  // The page's clock, which tests move, and its animation frames.
+  const clock = { now: 0 };
+  const frames = [];
   const errors = [];
   // The page's MutationObservers: each records what it observes.
   const observers = [];
@@ -97,6 +100,9 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
                 addEventListener(type, listener) { (documentListeners[type] ??= []).push(listener); },
                 ...caret },
     setTimeout(callback, delay) { retries.push({ callback, delay }); },
+    performance: { now: () => clock.now },
+    requestAnimationFrame(callback) { frames.push(callback); },
+    URLSearchParams,
     fetch(url, options) {
       return new Promise((resolve, reject) => {
         posts.push({ url, options, body: JSON.parse(options.body), resolve, reject });
@@ -115,9 +121,9 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
   });
   await module.evaluate();
   assert.deepEqual(Object.keys(actions).sort(),
-                   ["tunaCopy", "tunaKeyboard", "tunaPaste", "tunaPlace", "tunaPointer", "tunaScroll"]);
+                   ["tunaApplied", "tunaCopy", "tunaKeyboard", "tunaPaste", "tunaPlace", "tunaPointer", "tunaScroll"]);
   return {
-    posts, errors, retries,
+    posts, errors, retries, clock, frames,
     fire,
     // A new screen with REVISION applied: its root's data-revision changes.
     apply(revision) {
@@ -130,6 +136,7 @@ async function harness(screen = new Element({ "data-revision": 7 }), platform = 
     place: (el) => actions.tunaPlace.apply({ el }),
     paste: (evt) => actions.tunaPaste.apply({ evt }),
     copy: (el) => actions.tunaCopy.apply({ el }),
+    applied: (el, path) => actions.tunaApplied.apply({ el }, path),
   };
 }
 
@@ -888,4 +895,55 @@ test("after a report from a spacer, the page reports what the next screen drew t
   v.scroller.attributes["data-effect"] = "...";
   h.scroll(v.scroller, "moved");
   assert.equal(h.posts.length, 3);
+});
+
+test("a screen applied is confirmed with what the page measured; its paint goes with the next confirmation, or alone", async () => {
+  const documentListeners = {};
+  const h = await harness(undefined, undefined, undefined, undefined, { documentListeners });
+  const key = new KeyboardEvent("a");
+  Object.defineProperty(key, "timeStamp", { value: 8 });
+  h.clock.now = 10;
+  h.send(key);
+  const second = new KeyboardEvent("b");
+  Object.defineProperty(second, "timeStamp", { value: 9 });
+  h.send(second);
+  // Datastar dispatches the screen's event on document: the page notes it
+  // arriving (capturing on window) and applied (after Datastar's listener).
+  const event = (revision) => Object.assign(new Event("datastar-fetch"), {
+    detail: { type: "datastar-patch-elements",
+              argsRaw: { elements: `<main data-init="@tunaApplied('/applied?stream=2&amp;count=3')" data-revision="${revision}" data-through="1">` } },
+  });
+  h.clock.now = 30;
+  h.fire(event(5));
+  h.clock.now = 34;
+  documentListeners["datastar-fetch"].forEach((listener) => listener(event(5)));
+  h.clock.now = 35;
+  const screen = new Element({ "data-revision": 5, "data-through": 1 });
+  h.applied(screen, "/applied?stream=2&count=3");
+  const confirmation = h.posts[2];
+  assert.equal(confirmation.url, "/applied?stream=2&count=3");
+  assert.equal(confirmation.options.headers["Content-Type"], "application/json");
+  assert.deepEqual(confirmation.body, {
+    tab: "tab-1",
+    applied: { revision: 5, through: 1, keys: [[1, 2, 20]], morph: 4, settle: 1 },
+  });
+  // The paint: the first task after the next animation frame.
+  h.frames.shift()();
+  h.clock.now = 50;
+  h.retries.pop().callback();
+  // A screen confirmed soon after carries it, and the key it is the first
+  // to include.
+  const next = new Element({ "data-revision": 6, "data-through": 2 });
+  h.clock.now = 60;
+  h.applied(next, "/applied?stream=2&count=4");
+  assert.deepEqual(h.posts[3].body.applied, { revision: 6, through: 2, keys: [[2, 1, 50]],
+                                              painted: [[2, 3, 15]] });
+  // With no confirmation after it, a paint is reported alone.
+  h.frames.shift()();
+  h.clock.now = 70;
+  h.retries.pop().callback();
+  h.retries.pop().callback();
+  assert.equal(h.posts[4].url, "/applied?stream=2&count=4");
+  assert.deepEqual(h.posts[4].body, { tab: "tab-1", applied: { painted: [[2, 4, 10]] } });
+  assert.deepEqual(h.errors, []);
 });

@@ -36,6 +36,7 @@
         (only-in :tuna/kernel current-context)
         :tuna/plugins/configuration/plugin
         :tuna/plugins/proced/plugin
+        :tuna/plugins/profiler/plugin
         :tuna/plugins/microphone/plugin
         :tuna/plugins/voice/plugin
         "../tests/support/endless-commands"
@@ -105,6 +106,10 @@
 (use-plugin sidebar-demo)        ; C-c d: a sidebar of buffer buttons pinned to the left, or killed
 (use-plugin proced               ; C-c P: *Processes*, read from /proc every second
   config: (keymap-set "C-c P" 'proced))
+(use-plugin profiler)            ; each input item's span tree, key to paint, as a JSON line in
+                                 ; $XDG_STATE_HOME/tuna/profile/spans-*.jsonl
+(use-plugin profiler-commands)   ; M-x profiler-mode turns it off and on; M-x profiler-start and
+                                 ; profiler-stop sample call stacks into samples-*.folded
 (use-plugin microphone)          ; a tab's microphone, for voice
 ;; C-c v: dictate at point; C-c v again or C-g stops. C-c c: say a
 ;; command's name to run it; listening ends by itself. Both need the

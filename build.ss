@@ -47,6 +47,7 @@
     ("plugins/scrolling" "plugin")
     ("plugins/configuration" "plugin")
     ("plugins/proced" "plugin")
+    ("plugins/profiler" "clock" "spans" "sampler" "plugin")
     ("plugins/web" "contract" "embed" "proxy"
      (gxc: "plugin"
            (extra-inputs: ,(map (cut string-append "web/" <>)

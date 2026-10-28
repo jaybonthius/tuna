@@ -211,11 +211,14 @@
                              "\"sequence\":" (number->string (next-sequence! from)) ","
                              "\"outcome\":" outcome ",\"reason\":" reason "}")))
 
-;; Post PATH, a screen's /applied path, as tab FROM's page does.
-(def (post-applied path tab: (from tab))
+;; Post PATH, a screen's /applied path, as tab FROM's page does, with
+;; APPLIED, raw JSON, as what the page measured.
+(def (post-applied path tab: (from tab) applied: (applied #f))
   (http "POST" path
         headers: [(cons "Datastar-Request" "true") (cons "Content-Type" "application/json")]
-        body: (string-append "{\"tab\":" (tab-json from) "}")))
+        body: (string-append "{\"tab\":" (tab-json from)
+                             (if applied (string-append ",\"applied\":" applied) "")
+                             "}")))
 
 ;; A pointer item as JSON: a left click on tab-line:30 on screen 0 from the
 ;; current tab, with the fields in CHANGES, each (name . raw-json), or (name

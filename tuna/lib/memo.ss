@@ -31,6 +31,7 @@ prelude: :gerbil/core
         record-read! source-changed!
         memo-drawing? memo-from-scratch? check-not-drawing!
         memo-cache memo-cache? new-memo-cache memo-cache-size
+        memo-cache-last-drawn memo-cache-last-reused
         call-with-memo-pass memo memo-forget-client!
         current-memo-draw-observer
         set-memo-checking! memo-checking?)
@@ -83,13 +84,17 @@ prelude: :gerbil/core
   final: #t)
 
 ;; PIECES: key -> the pieces kept for it. CLIENTS: client -> the pieces
-;; its last pass used (piece -> #t).
-(defclass memo-cache ((pieces  : HashTable)
-                      (clients : HashTable))
+;; its last pass used (piece -> #t). LAST-DRAWN and LAST-REUSED count the
+;; pieces the last pass through it drew and reused (a reused piece counts
+;; once, with everything under it).
+(defclass memo-cache ((pieces      : HashTable)
+                      (clients     : HashTable)
+                      (last-drawn  : :fixnum)
+                      (last-reused : :fixnum))
   final: #t)
 
 (def (new-memo-cache) => memo-cache
-  (memo-cache pieces: (make-hash-table) clients: (make-hash-table-eq)))
+  (memo-cache pieces: (make-hash-table) clients: (make-hash-table-eq) last-drawn: 0 last-reused: 0))
 
 ;; How many pieces CACHE keeps.
 (def (memo-cache-size (cache : memo-cache)) => :fixnum
@@ -98,11 +103,14 @@ prelude: :gerbil/core
 
 ;; One pass: drawing for CLIENT through CACHE, or from scratch when CACHE
 ;; is #f. MARKED holds the pieces it used; KEYS, in test mode, the keys.
+;; DRAWN and REUSED count its pieces drawn and reused.
 (defclass memo-pass ((cache  :? memo-cache)
                      (client : :t)
                      (number : :fixnum)
                      (marked : HashTable)
-                     (keys   :? HashTable))
+                     (keys   :? HashTable)
+                     (drawn  : :fixnum)
+                     (reused : :fixnum))
   final: #t)
 
 ;; What one piece being drawn has read so far.
@@ -218,8 +226,12 @@ prelude: :gerbil/core
                             (draw-piece pass key inputs draw)))))
               (using (p : piece)
                 (if kept
-                  (mark! pass p)
-                  (hash-put! pass.marked p #t))
+                  (begin
+                    (set! pass.reused (fx1+ pass.reused))
+                    (mark! pass p))
+                  (begin
+                    (set! pass.drawn (fx1+ pass.drawn))
+                    (hash-put! pass.marked p #t)))
                 (set! f.reads (cons p f.reads))
                 (when p.per-client?
                   (set! f.per-client? #t))
@@ -233,7 +245,7 @@ prelude: :gerbil/core
 (def (new-pass (cache :? memo-cache) (client : :t)) => memo-pass
   (set! last-pass-number (fx1+ last-pass-number))
   (memo-pass cache: cache client: client number: last-pass-number marked: (make-hash-table-eq)
-             keys: (and checking? (make-hash-table))))
+             keys: (and checking? (make-hash-table)) drawn: 0 reused: 0))
 
 (def (run-pass (pass : memo-pass) (draw : :procedure)) => :t
   (parameterize ((current-memo-frame (new-frame pass)))
@@ -296,6 +308,8 @@ prelude: :gerbil/core
   (let* ((pass (new-pass cache client))
          (value (run-pass pass draw)))
     (commit! cache pass)
+    (set! (memo-cache-last-drawn cache) (memo-pass-drawn pass))
+    (set! (memo-cache-last-reused cache) (memo-pass-reused pass))
     (when checking?
       (let (fresh (run-pass (new-pass #f client) draw))
         (unless (equal? value fresh)

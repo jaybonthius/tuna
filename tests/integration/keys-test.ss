@@ -86,6 +86,27 @@
               (keydown "g" ctrl?: #t meta?: #t)
               (pointer 'view 1)])
             (check (Input-arrival input (keydown "g" ctrl?: #t)) => 'interrupt)))))
+    (test-case "every item the input service takes is announced with its client, sequence and task"
+      (let (heard [])
+        (defplugin (input-listener ctx)
+          "Records the items taken, and binds C-c x."
+          requires: [input-service]
+          (keymap-set ctx "C-c x" 'keyboard-quit)
+          (context-add-hook! ctx input-resolved-hook 'listener
+                             (lambda (c sequence item name) (set! heard (cons [c sequence item name] heard)))))
+        (call-with-fresh-kernel [commands keys input-listener]
+          (lambda ()
+            (let* ((from (make-client "tab-1"))
+                   (input (Input (service-provider input-service)))
+                   (prefix (make-key-event 7 from "c" "" 0 #f #f #f #t #f #f #f #f #f #f))
+                   (bound (make-key-event 8 from "x" "" 0 #f #f #f #f #f #f #f #f #f #f))
+                   (click (pointer 'view 1 client: from)))
+              (Input-resolve! input prefix)
+              (Input-resolve! input bound)
+              (Input-resolve! input click)
+              (check (map (lambda (h) (list (car h) (cadr h) (caddr h))) (reverse heard))
+                     => [[from 7 prefix] [from 8 bound] [from 1 click]])
+              (check (cadddr (cadr (reverse heard))) => 'keyboard-quit))))))
     (test-case "optional key queries accept an input provider with no Keys interface"
       (call-with-fresh-kernel [test-input]
         (lambda ()

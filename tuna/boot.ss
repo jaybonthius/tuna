@@ -237,12 +237,22 @@ prelude: :gerbil/core
 ;; terminates a thread either). If it has not stopped after stop-grace,
 ;; the watchdog says so on stderr at once, and this keeps waiting for it.
 ;; Returns (ok . value) or (raised . exception).
+;;
+;; The stop is sent by a helper whose thread-interrupt! waits on a mutex
+;; the activating thread owns until the interrupt returns; an interrupt
+;; that raises never returns, so the helper would wait forever, and Gambit
+;; lends a waiter's priority to the mutex's owner: this thread would then
+;; outrank every ordinary thread for good, and starve them whenever it
+;; computes (a later watchdog included). So once the activation is over,
+;; the helper is ended; it holds nothing but that wait.
 (def (call-with-activation-time-limit (what : :string) (activate : :procedure)) => :pair
   (let* ((limit (activation-time-limit))
          (target (current-thread))
          ;; Read by the interrupt, which runs in this thread, so a stop
          ;; that arrives after ACTIVATE has returned does nothing.
          (armed? #t)
+         ;; The thread sending the stop, set by itself before sending it.
+         (stopper #f)
          (watchdog
           (spawn-thread
            (lambda ()
@@ -251,6 +261,7 @@ prelude: :gerbil/core
                ;; escapes into a handler, so a helper sends it.
                (spawn-thread
                 (lambda ()
+                  (set! stopper (current-thread))
                   (with-catch void
                               (lambda ()
                                 (thread-interrupt!
@@ -279,6 +290,9 @@ prelude: :gerbil/core
                                   (set! armed? #f)
                                   (cons 'ok value))))))
     (thread-send watchdog 'done)
+    (let (helper stopper)
+      (when helper
+        (thread-terminate! helper)))
     outcome))
 
 ;;; Loading

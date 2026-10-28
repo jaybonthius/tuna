@@ -70,6 +70,21 @@
 (def (contains? (text : :string) (part : :string)) => :boolean
   (and (string-contains text part) #t))
 
+;; The live threads named tuna-activation-stop: helpers that sent an
+;; activation a stop and still wait for it.
+(def (waiting-stoppers)
+  (let root ((g (thread-thread-group (current-thread))))
+    (let (parent (thread-group-parent g))
+      (if parent
+        (root parent)
+        (let walk ((g g))
+          (append (filter (lambda (t)
+                            (and (eq? (thread-name t) 'tuna-activation-stop)
+                                 (not (thread-state-normally-terminated? (thread-state t)))
+                                 (not (thread-state-abnormally-terminated? (thread-state t)))))
+                          (thread-group->thread-list g))
+                  (apply append (map walk (thread-group->thread-group-list g)))))))))
+
 (def boot-test
   (test-suite "start-up from init.ss"
     (test-case "a user's config block may use undeclared services but turns off with its target"
@@ -342,6 +357,9 @@
                         => '(("stubborn-provider" failed) ("good" on)
                              ("dependent" skipped) ("your own code (plugin init)" on)))
                  (check (detail report "stubborn-provider") => "stubborn-provider gave up")
+                 ;; The stop it swallowed left no thread waiting on this one,
+                 ;; which would lend this thread its priority for good.
+                 (check (waiting-stoppers) => [])
                  ;; Rolled back: no provider is left without its plugin.
                  (check (probe-on? 'stubborn) => #f)
                  (check (service-provider probe-service) => #f)

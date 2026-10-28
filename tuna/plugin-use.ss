@@ -2,7 +2,8 @@
 ;;; contexts and receipts describe ownership. Neither requires per-call checks.
 prelude: :gerbil/core
 
-(import (only-in :gerbil/expander
+(import (only-in :gerbil/runtime/hash HashTable)
+        (only-in :gerbil/expander
                  import-module __module-registry module-context module-context? module-context-id module-context-path
                  module-context-import module-context-export import-set? import-set-source
                  module-import? module-import-source module-export-context module-export-phi
@@ -27,7 +28,16 @@ prelude: :gerbil/core
 
 ;; Only bindings defined here count. In particular, the kernel facade's
 ;; re-exports of its consumed seams do not make it a service contract.
-(def (module-values (module : module-context)) => :list
+;; Each value is found by evaluating its binding, which is slow, so one
+;; check remembers every module's values in MEMO (module -> values): a
+;; plugin with many private modules imports the same contracts many times.
+(def (module-values (module : module-context) (memo : HashTable)) => :list
+  (or (hash-get memo module)
+      (let (values (exported-values module))
+        (hash-put! memo module values)
+        values)))
+
+(def (exported-values (module : module-context)) => :list
   (filter-map
    (lambda (export)
      (and (fx= (module-export-phi export) 0)
@@ -40,12 +50,12 @@ prelude: :gerbil/core
 
 ;; Modules are already evaluated by init.ss's imports. Identity finds the
 ;; defining module even through renamed imports and re-exporting aggregators.
-(def (plugin-module (p : plugin)) => (Maybe module-context)
+(def (plugin-module (p : plugin) (memo : HashTable)) => (Maybe module-context)
   (let (found #f)
     (hash-for-each
      (lambda (_ module)
        (when (and (not found) (module-context? module)
-                  (memq p (module-values module)))
+                  (memq p (module-values module memo)))
          (set! found module)))
      __module-registry)
     (or found
@@ -90,7 +100,9 @@ prelude: :gerbil/core
 ;; including for filtered vocabulary-only imports; this is deliberately an
 ;; import rule, not an attempt to infer which execution paths call a method.
 (def (check-plugin-declarations! (p : plugin)) => :void
-  (let ((root (plugin-module p)) (source (plugin-source-path p)))
+  (let* ((memo (make-hash-table-eq))
+         (root (plugin-module p memo))
+         (source (plugin-source-path p)))
     ;; Source-less distributions lack the original gerbil.pkg root: .ssi
     ;; records only a module directory. Refuse rather than miss siblings.
     (when (and source (not (file-exists? source)))
@@ -113,7 +125,7 @@ prelude: :gerbil/core
                 (let ((private []) (visited (cons module seen)))
                   (for-each
                    (lambda (imported)
-                     (let (services (filter service? (module-values imported)))
+                     (let (services (filter service? (module-values imported memo)))
                        (for-each
                         (lambda ((svc : service))
                           (unless (ormap (lambda ((use : service))

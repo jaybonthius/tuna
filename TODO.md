@@ -41,6 +41,13 @@
 - [x] An error inside a terminal's redraw (the reader job's apply) is swallowed silently; report it once in the echo area. (Stage 4: output and redraw failures are reported once in the echo area and the log, and output goes on.)
 - [ ] Building after editing a plugin module can fail in `tuna/boot`, which expands `starter/init.ss` and loads the changed plugin from source against older compiled modules ("unresolved type"); compiling the changed modules with `gxc -O -d .gerbil/lib` first works around it.
 
+### Profiler (after stages 1–3; plan `agents/plans/profiler.md`)
+
+- [ ] **Owner decision: advice on service operations.** Not built in the profiler's stages 1–3 (supervisor, 2026-10-27). Callers reach a provider three ways: contract dispatchers through the kernel's `with-service-provider`, direct casts such as `(TextStore store)`, and the kernel's own calls to Display, Input and Messages. Option A (opt-in advisable operations at contract dispatchers, in the advice library; no kernel change, but misses direct casts and the kernel, and changes dispatchers for one consumer) or option B (the kernel's `service-provider` returns an advised wrapper; covers every caller, grows the kernel, needs an ADR 12 amendment). Details in the plan's as-built notes.
+- [ ] Hooks run on transport threads (`input-arrived-hook`, `screen-sent-hook`, `screen-applied-hook`): a callback that raises there is removed and reported through Messages off the editor thread. Either give the kernel's `run-hook` a thread-safe failure path or document that such callbacks must not raise (the profiler's never do).
+- [ ] Allocation and GC per span are whole-process counters, so other threads' work (HTTP, terminal readers) counts in a span open meanwhile. Gambit has no per-thread allocation counter.
+- [ ] Sampler labels name the last input item taken, also while other threads run; split by thread name in the folded stacks.
+
 ### Error recovery: the editor must never become unusable (owner priority, 2026-10-23)
 
 **The goal, not just the trigger:** one bad command, plugin swap, reload, or plugin bug must never leave the editor unusable or require a restart. The incident below is one instance; treat these as general requirements across the kernel's plugin runtime, the layout, the session, and every default plugin. Probably worth a brief (owner approval) before building, since it touches the kernel's activation rules and several contracts.

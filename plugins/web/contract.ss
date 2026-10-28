@@ -24,6 +24,17 @@
 ;;;
 ;;; Each registration belongs to the registering plugin's context and goes
 ;;; away when that plugin turns off.
+;;;
+;;; The transport also announces what happens to input and screens on
+;;; their way between a tab and the editor, for anything that follows them
+;;; (a sync indicator, an input log, a profiler): an input item arriving,
+;;; a screen made ready for a tab, written to it, and applied by its page,
+;;; with the durations the page measured on its own clock. Keys are named
+;;; by (client, sequence), screens by (client, stream, count) and their
+;;; revision; each screen says the last input sequence of its tab that it
+;;; includes. The arrival, writing and applying hooks run on the request's
+;;; or the stream's own thread, never the editor thread: their callbacks
+;;; must be quick, must not touch editor state and must not fail.
 prelude: :gerbil/core
 
 (import :std/interface
@@ -35,7 +46,11 @@ prelude: :gerbil/core
         page-service
         add-script
         context-add-page-address!
-        page-instruct!)
+        page-instruct!
+        input-arrived-hook
+        screen-ready-hook
+        screen-sent-hook
+        screen-applied-hook)
 
 (interface Page
   ;; Add the module at PATH, an absolute path, to every page, for CTX's
@@ -51,6 +66,50 @@ prelude: :gerbil/core
 (def page-service
   (new-service 'page is-Page? tier: 'startup
                doc: "Adds plugins' scripts to the browser page, takes their posts, and sends one-time instructions."))
+
+;; Arguments: the client, the item's page-load sequence number, and the
+;; item (the keys contract's key, pointer, scroll or paste event). Runs on
+;; the request's thread as a valid item arrives, before it waits for its
+;; turn in its tab's order.
+(def input-arrived-hook
+  (new-hook 'input-arrived
+            doc: "Runs with a client, a sequence number and an input item as the item arrives from the client's page."))
+
+;; Arguments: the client, the revision of its new screen, or #f when its
+;; screen did not change and nothing will be sent, and the last input
+;; sequence of the client that the screen includes. Runs on the editor
+;; thread after each redisplay, for each tab drawn.
+(def screen-ready-hook
+  (new-hook 'screen-ready
+            doc: "Runs with a client, its new screen's revision (#f for none) and the last input it includes, after a redisplay."))
+
+;; Arguments: the client, the stream and the screen's count on it, the
+;; screen's revision, the last input sequence it includes, and the bytes
+;; of HTML written. Runs on the stream's thread once the screen is
+;; written, which happens only after the page applied the one before.
+(def screen-sent-hook
+  (new-hook 'screen-sent
+            doc: "Runs with a client, stream, count, revision, last input included and bytes, once a screen is written to the client's page."))
+
+;; Arguments: the client, the stream and count the page names, and what
+;; it measured, an alist of plain data with durations in milliseconds of
+;; its own clock:
+;;   (revision . N) (through . S)  the screen and the last input it includes;
+;;   (morph . MS)                  applying the screen's event;
+;;   (settle . MS)                 from then until the page saw it applied;
+;;   (keys . ((SEQ KEY-TO-SEND SEND-TO-RECEIVED) ...))
+;;                                 each input of the page this screen is the
+;;                                 first to include: from its event to its
+;;                                 post (#f when not a key), and from its
+;;                                 post to this screen arriving;
+;;   (painted . ((STREAM COUNT MS) ...))
+;;                                 earlier screens, each from applied to the
+;;                                 frame after it was painted.
+;; Any of them may be missing. A report of only a paint names the screen
+;; again (its count is not newer). Runs on the request's thread.
+(def screen-applied-hook
+  (new-hook 'screen-applied
+            doc: "Runs with a client, stream, count and the page's own measurements when its page reports a screen applied or painted."))
 
 (def (resolve-script-path (path : :string) (directory :? :string)) => :string
   (cond

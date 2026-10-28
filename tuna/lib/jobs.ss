@@ -21,6 +21,10 @@
 ;;; procedure receives a check it should call now and then to stop early;
 ;;; `job-sleep` waits on the job's thread and wakes as soon as the job is
 ;;; cancelled.
+;;;
+;;; `job-started-hook` and `job-finished-hook` announce each job's thread
+;;; starting and its outcome arriving back on the baton, with the job's id
+;;; and key, for anything that follows jobs (a busy indicator, a log).
 prelude: :gerbil/core
 
 (import (only-in :gerbil/runtime/hash HashTable)
@@ -34,8 +38,12 @@ prelude: :gerbil/core
         job-group-start!
         job
         job?
+        job-id
+        job-key
         job-cancel!
-        job-sleep)
+        job-sleep
+        job-started-hook
+        job-finished-hook)
 
 ;; What a job's results apply to, such as a text.
 (interface JobTarget
@@ -50,7 +58,8 @@ prelude: :gerbil/core
 ;; Only the baton changes STATE, under LOCK, because the job's thread reads
 ;; it through its cancellation check. LATEST and LATEST? are shared with
 ;; the job's thread too, under LOCK.
-(defclass job ((key      : :t)
+(defclass job ((id       : :fixnum)          ; unique (next-id!)
+               (key      : :t)
                (input    : :t)
                (run      : :procedure)       ; input, cancelled?, post! -> result, on the job's thread
                (apply    : :procedure)       ; result -> void, on the baton
@@ -76,6 +85,17 @@ prelude: :gerbil/core
 (defclass job-slot ((running :? job)
                     (pending :? job))
   final: #t)
+
+;; Both run on the baton and must be quick.
+(def job-started-hook
+  (new-hook 'job-started
+            doc: "Runs with a job's id and key as its thread starts."))
+
+;; Arguments: the job's id, its key, and how it ended: returned, raised,
+;; or cancelled (its result is not applied).
+(def job-finished-hook
+  (new-hook 'job-finished
+            doc: "Runs with a job's id, key and how it ended, once its outcome is back on the baton."))
 
 (def validity-policies '(exact-revision target-alive rebase))
 (def coalescing-policies '(queue latest))
@@ -137,7 +157,7 @@ prelude: :gerbil/core
     (error "Unknown job validity policy" validity))
   (unless (memq coalesce coalescing-policies)
     (error "Unknown job coalescing policy" coalesce))
-  (let* ((new (job key: key input: input run: run apply: apply validity: validity
+  (let* ((new (job id: (next-id!) key: key input: input run: run apply: apply validity: validity
                    target: target revision: (if target (JobTarget-job-revision target) 0)
                    coalesce: coalesce state: 'pending thread: #f latest: #f latest?: #f
                    lock: (make-mutex 'tuna-job)))
@@ -186,6 +206,7 @@ prelude: :gerbil/core
 (def (run-job! (slots : HashTable) (slot : job-slot) (j : job)) => :void
   (change-job-state! j 'running)
   (set! slot.running j)
+  (run-hook job-started-hook j.id j.key)
   (let* ((post (result-poster))
          (run j.run)
          (input j.input)
@@ -246,11 +267,14 @@ prelude: :gerbil/core
       (if (and next (not (eq? (job-state next) 'cancelled)))
         (run-job! slots slot next)
         (hash-remove! slots j.key))))
-  (unless (eq? j.state 'cancelled)
-    (change-job-state! j 'done)
-    (if (car outcome)
-      (message (string-append "Job failed: " (exception-summary (cdr outcome))))
-      (apply-result! j (cdr outcome)))))
+  (let (cancelled? (eq? j.state 'cancelled))
+    (unless cancelled?
+      (change-job-state! j 'done)
+      (if (car outcome)
+        (message (string-append "Job failed: " (exception-summary (cdr outcome))))
+        (apply-result! j (cdr outcome))))
+    (run-hook job-finished-hook j.id j.key
+              (cond (cancelled? 'cancelled) ((car outcome) 'raised) (else 'returned)))))
 
 ;; (list RESULT), adjusted for the job's policy, or #f to drop it.
 (def (valid-result (j : job) (result : :t)) => (Maybe :pair)

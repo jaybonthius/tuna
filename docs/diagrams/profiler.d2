@@ -27,27 +27,42 @@ classes: {
       font-size: 18
     }
   }
+  file: {
+    shape: page
+    style: {
+      fill: "#f4f4f4"
+      stroke: "#555555"
+      font-color: "#222222"
+      font-size: 16
+    }
+  }
 }
 
 legend: |md
-  **Status:** proposed. Nothing on the left knows the profiler exists;
-  it only offers general-purpose hooks that any plugin can use.
+  **Status:** built 2026-10-27, stages 1 to 3 of the plan.
+  Nothing on the left knows the profiler exists: each offers
+  general hooks that any plugin can use. Not built: advice on
+  service operations (an open question for the owner).
 |
 
-loop: Editor loop (kernel)\nlifecycle events: task started/finished,\njob started/finished, redraw {class: part}
-keys: Key handling plugin\npre-command and post-command hooks {class: part}
-web: Browser connection plugin\nkey arrived, screen delivered {class: part}
-services: Any service\nits methods can be advised {class: part}
-yours: Any package function\ninstrumented by name, no code change {class: part}
-sampler: Clock tick\nsampled call stacks {class: part}
+page: Browser page\nmeasures on its own clock:\nkey to send, morph, paint {class: part}
+web: Browser connection plugin\ninput arrived, screen ready,\nsent, applied (with the page's times) {class: part}
+keys: Key handling plugin\ninput item taken {class: part}
+loop: Editor thread (kernel)\ntask started and finished {class: part}
+commands: Commands\npre-command and post-command {class: part}
+jobs: Jobs library\njob started and finished {class: part}
+renderer: Renderer\nredraw started and finished,\npieces rebuilt and reused {class: part}
+tick: Clock tick\ncall stacks while sampling {class: part}
 
-profiler: Profiler plugin (optional)\nturn on with M-x profiler-mode {class: prof}
-report: "*profile* buffer\na tree per key press" {class: prof}
+profiler: Profiler plugin (optional)\nM-x profiler-mode,\nprofiler-start / profiler-stop {class: prof}
+files: "Profile folder\nspans-*.jsonl: one tree per input item\nsamples-*.folded: stack;of;frames count" {class: file}
 
-loop -> profiler: events
-keys -> profiler: hooks
+page -> web: "/applied"
 web -> profiler: hooks
-services -> profiler: advice
-yours -> profiler: advice
-sampler -> profiler: samples
-profiler -> report: shows
+keys -> profiler: hook
+loop -> profiler: hooks
+commands -> profiler: hooks
+jobs -> profiler: hooks
+renderer -> profiler: hooks
+tick -> profiler: samples
+profiler -> files: writes
