@@ -2,7 +2,11 @@
 
 Read this first when resuming work. Last updated 2026-10-22. It records where the project stands, what the owner has decided, and what comes next. Keep it current at every milestone boundary.
 
-## Current work: profiler (resumed 2026-10-27; plan `agents/plans/profiler.md`)
+## Current work: agent chat (Pi coding agent in Tuna; started 2026-10-28)
+
+Owner 2026-10-28: build a Pi coding-agent chat plugin, prior art Pilish (dnouri/pilish). Profiling lag hunt is paused ("deal with it later"). Settled with the owner: Pi's RPC mode (`pi --mode rpc`), the owner's own `~/.pi/agent`, `--approve` like Pilish; Pi keeps running across Tuna restarts through a helper holding its pipes (idle helpers exit when no Tuna is attached; after a reboot chats reopen from Pi's session files); the prompt is an editable text node at the bottom of the chat buffer; Pi edits files on disk normally and Tuna's watcher reloads open buffers; NO Tuna extension inside Pi and NO routing Pi's tools into Tuna buffers (owner rejected strongly); RET on file:line in tool output opens the file; a transient-style menu (model, thinking level, session actions). Not monospace by default; the prompt's Markdown is rendered as the owner types. Markdown parser may live in a new repo under /home/jay/Code/workbench-gerbil. Owner wants the cleanest, simplest, most robust, non-hacky, lean but slick and full-featured design; no overengineering. Research in `agents/research/agent-chat/`; brief `docs/briefs/2026-10-agent-chat.md`. **The owner pre-approved implementing the brief end to end** (2026-10-28) and testing with agent-browser using cheap models at low thinking (configurable in the menu).
+
+## Paused: profiler (resumed 2026-10-27; plan `agents/plans/profiler.md`)
 
 Owner 2026-10-27: "serious lag" in the editor; build the profiler (brief decided 2026-10-12) to find bottlenecks, then fix them. Stages 1–3 merged 2026-10-27 (`8b5bedd`, build order `0d43be2`): span trees as JSON lines in `~/.local/state/tuna/profile/spans-*.jsonl` (on in the owner's Tuna via demo/init.ss), sampler `samples-*.folded` via M-x profiler-start/stop. Also fixed: start-up watchdog helper left waiting (starved the test thread), declared-use check memoized (terminals 3.6–6.1 s → fast). Next: stage 4, finding the lag together with the owner (no fixes without him).
 
