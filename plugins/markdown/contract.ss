@@ -1,5 +1,5 @@
 ;;; Markdown: Markdown text drawn as buffer nodes, and Markdown being typed
-;;; styled in place (docs/briefs/2026-10-agent-chat.md). The input is
+;;; styled in place (docs/briefs/2026-10-pi-chat.md). The input is
 ;;; untrusted, such as a language model's reply: raw HTML is shown as
 ;;; text, and only http, https and mailto links open.
 ;;;

@@ -1,6 +1,6 @@
-# Plan: agent chat (Pi in Tuna)
+# Plan: Pi chat (the `pi` plugin)
 
-Brief (owner pre-approved 2026-10-28): [`docs/briefs/2026-10-agent-chat.md`](../../docs/briefs/2026-10-agent-chat.md). Research: [`agents/research/agent-chat/`](../research/agent-chat/) (`pilish.md`, `pi-rpc-and-helper.md`, `markdown.md`, `tuna-fit.md`). ADRs 6 (nodes), 7 (rendering), 12 (small kernel), 15 (scrolling), 17 (memo), 18 (helpers).
+Brief (owner pre-approved 2026-10-28): [`docs/briefs/2026-10-pi-chat.md`](../../docs/briefs/2026-10-pi-chat.md). Research: [`agents/research/pi-chat/`](../research/pi-chat/) (`pilish.md`, `pi-rpc-and-helper.md`, `markdown.md`, `tuna-fit.md`). ADRs 6 (nodes), 7 (rendering), 12 (small kernel), 15 (scrolling), 17 (memo), 18 (helpers).
 
 **Reference implementation: Pilish** (`~/.config/emacs/var/elpaca/sources/pilish`). Read how it does a behaviour before designing it; copy its decisions, not its Emacs workarounds (`pilish.md` §8 lists essential / defer / avoid).
 

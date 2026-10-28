@@ -1,6 +1,6 @@
 # Pilish (Emacs Pi frontend): what to copy, what to skip
 
-Research for Tuna's Pi agent-chat plugin (`pi --mode rpc`). Read-only study.
+Research for Tuna's Pi chat plugin (`pi`) (`pi --mode rpc`). Read-only study.
 
 - Source studied: `/home/jay/.config/emacs/var/elpaca/sources/pilish` (git, 294 commits,
   HEAD `7ca4ee5`, v3.1.0+). The path given in the task

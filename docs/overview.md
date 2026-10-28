@@ -481,7 +481,7 @@ The status line shows the program's title after the buffer's name (`terminal-sta
 
 ## Markdown
 
-**Status:** built (the first stage of the [Pi chat](briefs/2026-10-agent-chat.md)); the chat that uses it is planned.
+**Status:** built (the first stage of the [Pi chat](briefs/2026-10-pi-chat.md)); the chat that uses it is planned.
 
 The `markdown` plugin does two things with Markdown, for text nobody vetted, such as a language model's reply:
 
