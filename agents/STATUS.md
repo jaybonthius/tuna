@@ -4,7 +4,7 @@ Read this first when resuming work. Last updated 2026-10-22. It records where th
 
 ## Current work: profiler (resumed 2026-10-27; plan `agents/plans/profiler.md`)
 
-Owner 2026-10-27: "serious lag" in the editor; build the profiler (brief decided 2026-10-12) to find bottlenecks, then fix them.
+Owner 2026-10-27: "serious lag" in the editor; build the profiler (brief decided 2026-10-12) to find bottlenecks, then fix them. Stages 1–3 merged 2026-10-27 (`8b5bedd`, build order `0d43be2`): span trees as JSON lines in `~/.local/state/tuna/profile/spans-*.jsonl` (on in the owner's Tuna via demo/init.ss), sampler `samples-*.folded` via M-x profiler-start/stop. Also fixed: start-up watchdog helper left waiting (starved the test thread), declared-use check memoized (terminals 3.6–6.1 s → fast). Next: stage 4, finding the lag together with the owner (no fixes without him).
 
 ## Previous: terminal finished (2026-10-27, `eeddcaf`)
 
