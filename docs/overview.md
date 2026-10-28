@@ -20,7 +20,7 @@ Tuna itself is a small, fixed **kernel**, plus the program that starts it. Every
 
 - **Plugins** (each package's `plugin.ss`) do everything you'd recognize as Tuna: keys and commands, buffers and the text store, editing, the echo area and minibuffer, the layout, drawing the screen, the browser connection, settings, and saving your session. A plugin imports Tuna, the contracts it uses and its own files, never another plugin. Plugin names are plain: `(use-plugin buffers)`.
 - **Contracts** (each concept package's `contract.ss`) say what each slot promises, such as "a text store can insert, delete and read a line", so a different plugin can fill it. A contract also holds the shared types that go with its promise: the buffers contract, for example, defines the record of what an edit changed. The one contract Tuna owns itself is configuration (`tuna/configuration.ss`): reload, swap, evaluation, and the moments plugins can join (after start-up, around a swap, before shutdown).
-- **Shared libraries** (`tuna/lib/`) are conveniences built only from the kernel's public parts: timers, background jobs, plugin options, what loading `init.ss` collects, and the **process library** for helper programs that live outside Tuna (starting one detached, its private socket folder and socket, checking that the other end is you, writing to it without waiting). They have no special access; a plugin could write its own. The buffers contract uses the jobs library; the terminal uses the process library, and the Pi chat will.
+- **Shared libraries** (`tuna/lib/`) are conveniences built only from the kernel's public parts: timers, background jobs, plugin options, what loading `init.ss` collects, and the **process library** for helper programs that live outside Tuna (starting one detached, its private socket folder and socket, checking that the other end is you, writing to it without waiting). They have no special access; a plugin could write its own. The buffers contract uses the jobs library; the terminal uses the process library, and the Pi chat does.
 - **The kernel** (`tuna/kernel.ss`, its public face, and `tuna/kernel/`) holds four things and no editor features:
   1. **Plugins:** turn a plugin on and off, undo everything it added (including stopping its running commands), connect it to the services it declares, and check that it uses only those. Each service has one plugin filling it. When that plugin is replaced, the plugins that use it are turned off and on again; restoring their saved data happens outside the kernel ([below](#swapping-out-a-part)). Turning a plugin on or off finishes as a whole: `C-g` waits until it is done (a third `C-g` still forces a stop).
   2. **The editor thread:** one task at a time changes editor state, a task can pause for a question, `C-g` stops it, and input waits in an ordered queue. The kernel never looks inside an **input item**. The browser connection hands items in through a function the kernel gave it when the plugin turned on, and the plugin filling the input slot (the keys plugin) decides what each item means, including which key means "quit".
@@ -468,7 +468,7 @@ The status line shows the program's title after the buffer's name (`terminal-sta
 
 **Programs talking to Tuna.** Programs say more than what is on the screen, in escape sequences: where a shell's prompts and commands are and how each command ended (OSC 133), "tell the user" (OSC 9 and 777), how far along they are (OSC 9;4), and their status, such as Claude Code waiting for your permission (OSC 7501, the Program Status Protocol). The terminal plugin reads them in its copy of the screen and runs a hook for each; it acts on none of them itself except prompt navigation, as ghostel's terminal does. Two small plugins answer the hooks:
 
-- **Program status** (the `program-status` plugin, after ghostel-status) keeps each program's status records, by the buffer that shows it, as the protocol says (a new prompt or the program ending drops "working" and "blocked", your typing drops "done" and "error", a full reset clears them) and shows the most pressing one in that buffer's status line, such as `[claude-code: blocked: permission]` or `[40%]`. Programs outside terminals report through the same plugin: the Pi chat will report its agent's status for its buffer.
+- **Program status** (the `program-status` plugin, after ghostel-status) keeps each program's status records, by the buffer that shows it, as the protocol says (a new prompt or the program ending drops "working" and "blocked", your typing drops "done" and "error", a full reset clears them) and shows the most pressing one in that buffer's status line, such as `[claude-code: blocked: permission]` or `[40%]`. Programs outside terminals report through the same plugin: a Pi chat reports its agent's status for its buffer.
 - **Notifications** (the `notifications` plugin) shows what a program asks to be told, and a status record turning blocked, done or error while you look at something else, in the echo area, as ghostel does when Emacs has no alert package. Browser notifications for a tab out of sight come later.
 
 ![How what a program says about itself reaches you](diagrams/terminal-programs.svg)
@@ -481,7 +481,7 @@ The status line shows the program's title after the buffer's name (`terminal-sta
 
 ## Markdown
 
-**Status:** built (the first stage of the [Pi chat](briefs/2026-10-pi-chat.md)); the chat that uses it is planned.
+**Status:** built (the first stage of the [Pi chat](briefs/2026-10-pi-chat.md)); the [Pi chat](#pi-chats) draws its messages with it.
 
 The `markdown` plugin does two things with Markdown, for text nobody vetted, such as a language model's reply:
 
@@ -493,6 +493,33 @@ Markdown is read by md4c, a small C parser, through Tuna's own `gerbil-md4c` pac
 **Streaming.** Each block node remembers its place and its Markdown. `markdown-update-blocks` takes the nodes drawn last time and the longer text, keeps every node whose block has not changed, and builds the rest, so a reply streaming in redraws only its last block.
 
 The demo shows it: `C-c m` opens `*markdown*`, a sample drawn above the same Markdown as you type it, and every change redraws the drawing.
+
+## Pi chats
+
+**Status:** built (stages 1 to 3 of the [Pi chat plan](../agents/plans/pi-chat.md), 2026-10-28; brief [a Pi chat in Tuna](briefs/2026-10-pi-chat.md)). The chat menu, sending a region, the `@` file picker and session actions (stage 4) are planned.
+
+`M-x pi` opens a chat with the [Pi coding agent](https://pi.dev) for the project of the buffer you are in (its git root, else its folder); `M-x pi-new` starts another there. The buffer is `*pi: tuna*`: your messages and Pi's replies above, a status bar, and the prompt at the bottom. It is Pi itself, in its RPC mode (`pi --mode rpc`), with your own models, logins, skills and extensions; Tuna adds no extension to it and Pi edits files on disk as always.
+
+**What you see.** Your messages and Pi's replies are Markdown, drawn by the markdown plugin in a proportional font with code in monospace; the transcript is read-only, but you move through it, select and copy as anywhere. Pi's thinking streams in, then folds to one line. Each tool call is a block: its name and what it works on (`bash make test`, `read plugins/pi/plugin.ss`), how long it took and ✓ or ✗, then a preview of its output (10 lines, the last 5 of a command's) or an edit's −/+ diff; `TAB` unfolds all of it, and `RET` on the block's header opens its file, at the changed line for an edit, or on a `FILE:LINE` in the output opens that. `n` and `p` move between your messages. The bar says `Claude Haiku 4.5 · low · running bash · 23% · $0.04`: the model, the thinking level, what Pi does, how full its context is, what the chat cost, how many messages wait, and what your extensions report. Streamed text is drawn at most every 50 ms. A view at the bottom of the chat stays at the bottom as it grows; one you scrolled up stays put.
+
+**The prompt.** It is styled as Markdown while you type. `RET` sends; while Pi works, Pi queues the message until it is done (`M-RET` hands it over after the current tool instead). `S-RET` starts a new line, `C-c C-k` stops Pi and puts what was queued back in the prompt, `M-p` and `M-n` bring back earlier prompts. The queue is Pi's own: Tuna only shows it.
+
+**Questions.** When an extension asks something (a choice, a yes or no, some text), the question waits in the chat with an Answer button; `RET` on it or the button asks in the minibuffer, and `C-g` answers that you cancelled. It never takes focus, and the bar says `blocked` until you answer or the question's time runs out.
+
+**Chats outlive Tuna.** Each chat has a **Pi helper**, `tuna-pi-helper`: a small program, started detached as the terminal helper is (the process library), that holds Pi's pipes and serves one Tuna at a time on a private socket in `$XDG_RUNTIME_DIR/tuna/pi/`. The chat plugin keeps its chats in a session slot. When Tuna restarts, it reconnects and the helper replays what Pi is in the middle of, so the chat looks as it did and keeps streaming.
+
+![What happens when Tuna restarts mid-reply](diagrams/pi-chat-restart.svg)
+
+*Built.* The diagram's steps happen as drawn: the helper keeps reading Pi while Tuna is down, and on reconnect sends Pi's state and finished messages, then the reply still being written, then everything live.
+
+A helper with no Tuna and Pi idle for a minute (the `idle-exit` option) ends Pi and itself; a reboot ends both. Either way the chat comes back from Pi's own session file, with a new helper. Pi stopping on its own shows its standard error once in the chat, with a Restart button; `M-x pi-reload` starts a new helper on the same session and retires the old one only once the new one is up. Killing the chat's buffer asks first if Pi is working, and ends its helper.
+
+**For package authors.** The pi contract (`plugins/pi/contract.ss`) gives the chats (`pi-chats`, each with its buffer, folder and state), `pi-add-to-prompt!`, `pi-send!`, and `pi-chat-state-hook`, which runs as a chat becomes `working`, `blocked`, `done` or `error`; the same states go to the program-status service, so the status line and notifications show them as they do a terminal program's.
+
+```scheme
+(use-plugin pi model: "anthropic/claude-haiku-4-5" thinking: 'low)   ; init.ss: new chats' defaults
+(pi-add-to-prompt! (car (pi-chats)) "```\nmake: *** [test] Error 1\n```\n")
+```
 
 ## Where things are saved
 
@@ -507,6 +534,9 @@ The demo shows it: `C-c m` opens `*markdown*`, a sample drawn above the same Mar
 | Which terminal helpers are running, and each terminal's folder (a session slot) | `~/.local/state/tuna/session.ss` | When idle, and on exit |
 | Each terminal's saved screen, for after a reboot (owner-only) | `~/.local/state/tuna/terminals/` | Every 30 s while it changes, when its helper is asked to end, and when Tuna stops |
 | Terminal helpers' sockets, and a helper's log while it has something to say | `$XDG_RUNTIME_DIR/tuna/terminals/` (private to you) | While each helper runs |
+| Which Pi chats are open: each one's helper, Pi session file, folder, unsent prompt and prompt history (a session slot) | `~/.local/state/tuna/session.ss` | When idle, and on exit |
+| Each Pi chat's conversation | Pi's own session files, `~/.pi/agent/sessions/` | As Pi writes them |
+| Pi helpers' sockets and logs (a log is kept only when Pi failed on its own) | `$XDG_RUNTIME_DIR/tuna/pi/` (private to you) | While each helper runs |
 
 Autosave, the session file, `init.ss`, and the start-up report are built. A settings screen that saves to `custom.ss`, overriding `init.ss`, comes later ([roadmap](roadmap.md)).
 
@@ -519,6 +549,10 @@ See [Tuna and Emacs](emacs-equivalents.md): a table of what corresponds to what,
 ## Words used here
 
 - **Buffer**: a named piece of UI, made of a tree of nodes: a file, the minibuffer, `*Help*`, a sidebar.
+- **Pi helper**: the small program that holds one chat's Pi, outside Tuna, so Pi keeps working while Tuna restarts.
+- **RPC mode**: Pi's mode for editors: commands in and events out, one JSON object per line.
+- **Transcript**: the read-only part of a chat buffer, above the prompt.
+- **Replay**: what a Pi helper sends a Tuna that connects while Pi works: Pi's state and finished messages, then what is still open, such as the reply being written.
 - **Visiting**: a text is linked to a file; saving writes the text to it. The **visit record** on the text holds the file's name, what was on disk at the last read or save, and how its bytes became characters.
 - **File service**: the replaceable layer all file reading, writing and listing goes through; today's provider is the local disk.
 - **File picker**: `C-x C-f`'s completion over the files of the folder typed so far.

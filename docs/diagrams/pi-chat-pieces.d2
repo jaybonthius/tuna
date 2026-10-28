@@ -1,4 +1,4 @@
-# What are the pieces of a Pi chat, and where does Pi run? (planned 2026-10-28; nothing built yet)
+# What are the pieces of a Pi chat, and where does Pi run? (built 2026-10-28, but the menu and the pickers, which are planned)
 vars: {
   d2-config: {
     layout-engine: dagre
@@ -8,12 +8,12 @@ vars: {
 direction: down
 
 browser: "Browser tab\n(draws the chat buffer)"
-tuna: "Tuna (planned)" {
-  chat: "Pi chat plugin\nchat buffer, prompt, menu, commands"
+tuna: "Tuna" {
+  chat: "Pi chat plugin\nchat buffer, prompt, commands\n(menu: planned)"
   md: "Markdown plugin\ntext to styled blocks"
   others: "Existing plugins\nfiles, pickers, status, notifications"
 }
-helper: "Pi helper (planned)\nits own process, one per chat"
+helper: "Pi helper\nits own process, one per chat"
 pi: "pi --mode rpc\n(your Pi: models, skills, extensions)"
 disk: "Your files and\nPi's session file"
 
@@ -25,4 +25,4 @@ pi -> helper: "5. events: text, thinking, tool calls"
 helper -> tuna.chat: "6. passed on unchanged"
 tuna.chat -> tuna.md: "7. reply text"
 tuna.chat -> browser: "8. redrawn every 50 ms while streaming"
-tuna.chat -> tuna.others: "open file, pickers, working / done"
+tuna.chat -> tuna.others: "open file, working / done\n(pickers: planned)"

@@ -1,0 +1,38 @@
+/* The pi plugin's semantic tokens: a chat's prose is proportional, its
+   tool output and diffs monospace. Each is a design token (stylesheets
+   plugin) with a fallback. */
+:root {
+  --pi-chat-font: var(--font-sans, system-ui, sans-serif);
+  --pi-chat-code-font: var(--font-mono, ui-monospace, monospace);
+  --pi-chat-code-size: 0.875em;
+  --pi-message-padding: 0.5rem 0.75rem;
+  --pi-message-border: var(--neutral-4, ButtonBorder);
+  --pi-user-background: var(--primary-2, Canvas);
+  --pi-role-foreground: var(--neutral-9, GrayText);
+  --pi-role-size: 0.8rem;
+  --pi-role-weight: var(--font-weight-semi-bold, bold);
+  --pi-thinking-foreground: var(--neutral-9, GrayText);
+  --pi-header-foreground: var(--neutral-11, CanvasText);
+  --pi-tool-background: var(--neutral-2, Canvas);
+  --pi-tool-border: var(--neutral-5, ButtonBorder);
+  --pi-tool-name-weight: var(--font-weight-bold, bold);
+  --pi-tool-argument-foreground: var(--neutral-12, CanvasText);
+  --pi-tool-meta-foreground: var(--neutral-9, GrayText);
+  --pi-tool-done-foreground: var(--primary-10, CanvasText);
+  --pi-tool-failed-foreground: var(--error-10, CanvasText);
+  --pi-tool-failed-border: var(--error-7, ButtonBorder);
+  --pi-tool-body-foreground: var(--neutral-11, CanvasText);
+  --pi-diff-added-foreground: var(--code-inserted, CanvasText);
+  --pi-diff-removed-foreground: var(--code-deleted, GrayText);
+  --pi-notice-foreground: var(--neutral-11, CanvasText);
+  --pi-notice-error-foreground: var(--error-11, CanvasText);
+  --pi-notice-error-background: var(--error-2, Canvas);
+  --pi-question-background: var(--tertiary-3, Mark);
+  --pi-question-border: var(--tertiary-8, ButtonBorder);
+  --pi-status-background: var(--neutral-3, Canvas);
+  --pi-status-foreground: var(--neutral-11, CanvasText);
+  --pi-status-border: var(--neutral-6, ButtonBorder);
+  --pi-status-size: 0.85rem;
+  --pi-prompt-background: var(--neutral-1, Canvas);
+  --pi-prompt-border: var(--primary-7, ButtonBorder);
+}
