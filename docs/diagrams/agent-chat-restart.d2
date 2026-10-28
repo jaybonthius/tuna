@@ -1,0 +1,23 @@
+# What happens to a Pi chat when Tuna restarts or the machine reboots? (planned 2026-10-28; nothing built yet)
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    theme-id: 0
+  }
+}
+shape: sequence_diagram
+
+old: "Tuna, before"
+new: "Tuna, after"
+helper: "Pi helper"
+pi: "pi --mode rpc"
+file: "Pi's session file"
+
+pi -> helper: "1. Pi is writing a reply"
+old -> old: "2. Tuna stops; the helper and Pi carry on"
+pi -> file: "3. each finished message is saved"
+new -> helper: "4. Tuna starts, reads its saved list of chats, reconnects"
+helper -> new: "5. finished messages, then the unfinished reply so far, then live events"
+new -> new: "6. the chat looks exactly as before and keeps streaming"
+helper -> helper: "7. later: no Tuna attached and Pi idle for a minute, so the helper stops Pi and exits"
+new -> pi: "8. after a reboot or an idle exit: a new helper starts Pi on the same session file"
