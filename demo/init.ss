@@ -2,7 +2,7 @@
 ;;; The demo configuration, for development only: run
 ;;; `tuna --config demo/init.ss`. It declares the starter's plugins
 ;;; (starter/init.ss) plus the demo: the demo plugins (demo.ss,
-;;; hungry-delete.ss, sidebar.ss, long-buffer.ss, rows.ss, mixed.ss) and the command fixtures from tuna/test-support/ that
+;;; hungry-delete.ss, sidebar.ss, long-buffer.ss, rows.ss, mixed.ss, markdown.ss) and the command fixtures from tuna/test-support/ that
 ;;; it builds on. Tuna's
 ;;; executable does not link any of them; they load from source.
 
@@ -27,6 +27,7 @@
         :tuna/plugins/scrolling/plugin
         :tuna/plugins/renderer/plugin
         :tuna/plugins/buttons/plugin
+        :tuna/plugins/markdown/plugin
         :tuna/plugins/editing/plugin
         :tuna/plugins/minibuffer/plugin
         :tuna/plugins/completion/plugin
@@ -50,7 +51,8 @@
         "sidebar"
         "long-buffer"
         "rows"
-        "mixed")
+        "mixed"
+        "markdown")
 
 (use-plugin stylesheets        ; colours, sizes and fonts other stylesheets use;
   variant: stellar-default)      ; first, so later stylesheets can redefine them
@@ -75,6 +77,7 @@
 (use-plugin scrolling)           ; views scroll natively; the server draws what is near
 (use-plugin html-renderer)
 (use-plugin buttons)             ; buttons in buffers: a click runs their action
+(use-plugin markdown)            ; Markdown drawn as text and tables, and styled as it is typed
 (use-plugin editing)             ; typing and moving; C-SPC, C-x C-x and shift-select (the
                                  ; delete-selection setting); C-w, M-w, C-y, M-y; clicking and dragging
 (use-plugin hungry-delete)       ; Backspace deletes the spaces before point in one edit (hungry-delete.ss)
@@ -103,6 +106,7 @@
 (use-plugin long-buffer-demo)    ; C-c g: *long*, 50,000 generated lines, for scrolling
 (use-plugin rows-demo)           ; C-c G: *rows*, 10,000 row nodes, scrolled the same way
 (use-plugin mixed-demo)          ; C-c M: *mixed*, headings, text, code, cards and pictures
+(use-plugin markdown-demo)       ; C-c m: *markdown*, Markdown drawn above the same Markdown being typed
 (use-plugin sidebar-demo)        ; C-c d: a sidebar of buffer buttons pinned to the left, or killed
 (use-plugin proced               ; C-c P: *Processes*, read from /proc every second
   config: (keymap-set "C-c P" 'proced))

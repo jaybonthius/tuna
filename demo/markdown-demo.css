@@ -1,0 +1,21 @@
+/* The Markdown demo: the preview, a label, then the Markdown as typed,
+   proportional like the preview, its marks dimmed by the markdown
+   plugin's faces. Spaced with padding, never margins (mixed.css). */
+:root {
+  --markdown-demo-rule: color-mix(in srgb, var(--neutral-12, CanvasText) 12%, transparent);
+  --markdown-demo-label-foreground: var(--neutral-8, GrayText);
+  --markdown-demo-source-font: var(--font-sans, system-ui, sans-serif);
+}
+
+:where(.markdown-demo-label) {
+  margin: 0;
+  padding: 1rem 0.75rem 0.25rem;
+  font-size: 0.875rem;
+  color: var(--markdown-demo-label-foreground);
+  border-block-start: 1px solid var(--markdown-demo-rule);
+}
+
+:where(.markdown-demo-source) {
+  padding: 0.25rem 0.75rem;
+  font-family: var(--markdown-demo-source-font);
+}

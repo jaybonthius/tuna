@@ -1,0 +1,33 @@
+/* The markdown plugin's semantic tokens: the fonts, sizes and colours of
+   Markdown drawn as nodes and of Markdown being typed. Each is a design
+   token (stylesheets plugin) with a fallback, so the page stays readable
+   without one. */
+:root {
+  /* Prose is proportional; code, inline and in blocks, is monospace. */
+  --markdown-prose-font: var(--font-sans, system-ui, sans-serif);
+  --markdown-code-font: var(--font-mono, ui-monospace, monospace);
+  --markdown-code-size: 0.9em;
+  --markdown-block-padding: 0.25rem 0.75rem;
+  --markdown-heading-weight: var(--font-weight-bold, bold);
+  --markdown-heading-1-size: var(--font-size-3, 1.6rem);
+  --markdown-heading-2-size: var(--font-size-2, 1.35rem);
+  --markdown-heading-3-size: var(--font-size-1, 1.15rem);
+  --markdown-heading-4-size: var(--font-size-0, 1rem);
+  --markdown-heading-5-size: var(--font-size-0, 1rem);
+  --markdown-heading-6-size: var(--font-size--1, 0.9rem);
+  --markdown-strong-weight: var(--font-weight-bold, bold);
+  --markdown-code-background: var(--neutral-3, Canvas);
+  --markdown-code-foreground: var(--neutral-12, CanvasText);
+  --markdown-code-border: var(--neutral-5, ButtonBorder);
+  --markdown-code-language-foreground: var(--neutral-8, GrayText);
+  --markdown-link-foreground: var(--primary-9, LinkText);
+  /* The marks Markdown is written with (`#`, `**`, fences), while typed. */
+  --markdown-marker-foreground: var(--neutral-8, GrayText);
+  --markdown-quote-border: var(--neutral-6, GrayText);
+  --markdown-quote-foreground: var(--neutral-11, CanvasText);
+  --markdown-item-indent: 1.5rem;
+  --markdown-marker-color: var(--neutral-9, GrayText);
+  --markdown-rule: var(--neutral-6, GrayText);
+  --markdown-table-border: var(--neutral-5, ButtonBorder);
+  --markdown-table-header-background: var(--neutral-2, Canvas);
+}

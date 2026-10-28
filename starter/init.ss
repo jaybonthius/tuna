@@ -54,6 +54,7 @@
         :tuna/plugins/scrolling/plugin
         :tuna/plugins/renderer/plugin
         :tuna/plugins/buttons/plugin
+        :tuna/plugins/markdown/plugin
         :tuna/plugins/editing/plugin
         :tuna/plugins/minibuffer/plugin
         :tuna/plugins/completion/plugin
@@ -90,6 +91,7 @@
 (use-plugin scrolling)           ; views scroll natively; the server draws what is near
 (use-plugin html-renderer)
 (use-plugin buttons)             ; buttons in buffers: a click runs their action
+(use-plugin markdown)            ; Markdown drawn as text and tables, and styled as it is typed
 (use-plugin editing)             ; typing and moving; C-SPC, C-x C-x and shift-select (the
                                  ; delete-selection setting); C-w, M-w, C-y, M-y; clicking and dragging
 (use-plugin minibuffer)

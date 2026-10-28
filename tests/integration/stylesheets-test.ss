@@ -99,6 +99,7 @@
     (layout tokens) (layout rules)
     (html-renderer tokens) (html-renderer rules)
     (buttons rules)
+    (markdown tokens) (markdown rules)
     (minibuffer rules)
     (completion-list tokens) (completion-list rules)
     (files rules)
@@ -117,7 +118,7 @@
       (with-configuration (path-expand "demo/init.ss" repository-directory)
         (lambda ()
           (check (page) => (append starter-page
-                                   '((digit-highlighter rules) (tree-buffer rules) (rows-demo rules) (mixed-demo rules)
+                                   '((digit-highlighter rules) (tree-buffer rules) (rows-demo rules) (mixed-demo rules) (markdown-demo rules)
                                      (proced tokens) (proced rules))))
           (check-clean-page))))
 

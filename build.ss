@@ -14,6 +14,13 @@
       (path-expand "pkg/gerbil-libghostty" (gerbil-path))))
 (def libghostty-native (path-expand "lib/gerbil-libghostty/native" (gerbil-path)))
 
+;; Where gerbil-md4c is. md4c is compiled into its foreign module, so the
+;; statically linked tuna program, which links the markdown plugin through
+;; the starter configuration, compiles that C again from md4c's sources.
+(def md4c-source
+  (or (getenv "GERBIL_MD4C" #f)
+      (path-expand "pkg/gerbil-md4c" (gerbil-path))))
+
 ;; One make call per gerbil.pkg, with specs relative to that package.
 ;; This order follows package imports, not runtime service requirements.
 (def packages
@@ -25,7 +32,8 @@
      "configuration" "prelude" "config" "plugin-use" "config-blocks"
      (gxc: "boot" (extra-inputs: ("../starter/init.ss")))
      "control"
-     (exe: "main" bin: "tuna"))
+     (exe: "main" bin: "tuna"
+           "-cc-options" ,(string-append "-I" (path-expand "native" md4c-source))))
     ("plugins/clients" "contract")
     ("plugins/commands" "contract" "plugin")
     ("plugins/stylesheets" "contract" "plugin")
@@ -38,6 +46,7 @@
     ("plugins/renderer" "contract" "plugin")
     ("plugins/echo-area" "contract" "plugin")
     ("plugins/buttons" "contract" "plugin")
+    ("plugins/markdown" "contract" "faces" "style" "nodes" "plugin")
     ("plugins/editing" "contract" "words" "mouse" "plugin")
     ("plugins/minibuffer" "contract" "plugin")
     ("plugins/completion" "contract" "plugin")
