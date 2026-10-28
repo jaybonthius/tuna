@@ -261,10 +261,11 @@
 
 ;;; Dictation
 
-;; The text the last dictated piece went into, LAST-TEXT; where the piece
-;; starts and ends there, LAST-START and LAST-END, valid at LAST-REVISION,
-;; the text's character revision after the piece; and when, LAST-TIME.
-(defclass dictation ((last-text     :? text)
+;; The text node the last dictated piece went into, LAST-NODE; where the
+;; piece starts and ends in its text, LAST-START and LAST-END, valid at
+;; LAST-REVISION, the text's character revision after the piece; and
+;; when, LAST-TIME.
+(defclass dictation ((last-node     :? node)
                      (last-start    : :fixnum)
                      (last-end      : :fixnum)
                      (last-revision : :fixnum)
@@ -297,24 +298,32 @@
       (lp (fx1+ i))
       (substring s i (string-length s)))))
 
-;; Where D's last piece ends now, when punctuation can go there: its
-;; text is alive, some of the piece is left, and the character before its
-;; end is not whitespace. Otherwise #f.
-(def (last-piece-end (d : dictation)) => (Maybe :fixnum)
-  (let (t d.last-text)
-    (and t
-         (text-live? t)
-         (let ((start (relocate-position t d.last-start d.last-revision))
-               (end (relocate-position t d.last-end d.last-revision)))
-           (and (fx< start end)
-                (not (whitespace-before? t end))
-                end)))))
+;; The text D's last piece went into, or #f.
+(def (last-text (d : dictation)) => (Maybe text)
+  (let (n d.last-node)
+    (and n (text-node-content n))))
 
-(def (remember-piece! (d : dictation) (t : text) (start : :fixnum) (end : :fixnum) (now : :real)) => :void
-  (set! d.last-text t)
+;; Where D's last piece ends now, when punctuation can go there: its
+;; text is alive and not read-only (node-read-only?), some of the piece
+;; is left, and the character before its end is not whitespace.
+;; Otherwise #f.
+(def (last-piece-end (d : dictation)) => (Maybe :fixnum)
+  (let (n d.last-node)
+    (and n
+         (not (node-read-only? n))
+         (let (t (text-node-content n))
+           (and (text-live? t)
+                (let ((start (relocate-position t d.last-start d.last-revision))
+                      (end (relocate-position t d.last-end d.last-revision)))
+                  (and (fx< start end)
+                       (not (whitespace-before? t end))
+                       end)))))))
+
+(def (remember-piece! (d : dictation) (n : node) (start : :fixnum) (end : :fixnum) (now : :real)) => :void
+  (set! d.last-node n)
   (set! d.last-start start)
   (set! d.last-end end)
-  (set! d.last-revision (text-chars-revision t))
+  (set! d.last-revision (text-chars-revision (text-node-content n)))
   (set! d.last-time now))
 
 ;; Insert PIECE: its leading punctuation after the last piece, when that
@@ -328,20 +337,21 @@
          (t (and n (text-node-content n)))
          (punctuation-length (leading-punctuation-length piece))
          (end (and (fx> punctuation-length 0) (last-piece-end d)))
-         (attach-end (and end (not (and (eq? t d.last-text) (fx= end (point)))) end))
+         (attach-end (and end (not (and (eq? n d.last-node) (fx= end (point)))) end))
          (rest (if attach-end (substring piece punctuation-length (string-length piece)) piece)))
-    (let (last d.last-text)
+    (let (last (last-text d))
       (when (and last
                  (or attach-end (eq? t last))
                  (fx= d.last-revision (text-chars-revision last))
                  (< (- now d.last-time) undo-pause-seconds))
         (undo-amalgamate! last 1000000)))
     (when attach-end
-      (let* ((last (:- d.last-text text))
+      (let* ((last-node (:- d.last-node node))
+             (last (text-node-content last-node))
              (start (relocate-position last d.last-start d.last-revision)))
         (text-replace! last attach-end attach-end (substring piece 0 punctuation-length)
                        point-before: (and (eq? t last) (point)))
-        (remember-piece! d last start (fx+ attach-end punctuation-length) now)))
+        (remember-piece! d last-node start (fx+ attach-end punctuation-length) now)))
     (cond
      ((string-empty? rest) (void))
      ((not t) (message "No text here to dictate into"))
@@ -350,7 +360,7 @@
              (rest (if (whitespace-before? t start) (string-trim-start rest) rest)))
         (unless (string-empty? rest)
           (insert rest)
-          (remember-piece! d t start (point) now)))))))
+          (remember-piece! d n start (point) now)))))))
 
 ;; The keys that run COMMAND, for the echo area, or M-x COMMAND.
 (def (keys-for (command : :symbol)) => :string
@@ -360,7 +370,7 @@
       (string-append "M-x " (symbol->string command)))))
 
 (def (start-dictation!) => :void
-  (let (d (dictation last-text: #f last-start: 1 last-end: 1 last-revision: 0 last-time: 0))
+  (let (d (dictation last-node: #f last-start: 1 last-end: 1 last-revision: 0 last-time: 0))
     (voice-start! (lambda ((piece : :string)) (insert-dictated! d piece)))
     (message (string-append "Listening… (" (keys-for 'voice-dictate) " to stop)"))))
 

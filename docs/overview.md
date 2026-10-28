@@ -204,6 +204,8 @@ In Emacs a buffer is always a flat piece of text with decorations. In Tuna a buf
 
 Positions in a buffer count characters from 1, as in Emacs, because they are something people read.
 
+A node can be **read-only** (its `read-only` attribute): no editing command changes the text nodes under it, though you can move through them, select and copy, while an editable text node beside it in the same buffer works as usual. A chat's transcript and its prompt are the case in mind. The plugin that owns the buffer still changes that text itself, as it can in a read-only buffer (`buffer-read-only`).
+
 A buffer is a generic piece of UI, not just a file: the minibuffer, the echo area, `*Help*`, and a sidebar of buttons are all buffers. Saving to a file will belong to the buffer's text, not to the buffer.
 
 ![Two views on one file](diagrams/who-owns-what.svg)

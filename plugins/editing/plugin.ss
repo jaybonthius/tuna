@@ -293,6 +293,7 @@
   (defcommand (end-of-buffer) "Move point to the end of the text."
     (goto-char (point-max)))
   (defcommand (undo) "Undo the last command's changes; repeat to undo earlier ones."
+    (check-writable)
     (goto-char (text-undo! (current-text) (eq? (last-command) 'undo)))
     (message "Undo"))
   (defcommand (forward-word) "Move point to the end of the next word."
