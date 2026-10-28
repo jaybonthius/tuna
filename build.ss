@@ -87,6 +87,8 @@
                                          " -lghostty-vt -Wl,-rpath,$ORIGIN/../lib/gerbil-libghostty/native/lib")))
     ("plugins/program-status" "contract" "plugin")
     ("plugins/notifications" "plugin")
+    ("plugins/pi" "jsonl" "replay"
+     (exe: "helper" bin: "tuna-pi-helper"))
     ("plugins/microphone" "contract" "plugin")
     ("plugins/voice" "contract" "spoken" "plugin")))
 
