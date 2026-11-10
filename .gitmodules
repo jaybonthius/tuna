@@ -1,0 +1,3 @@
+[submodule "lib/chez-lang"]
+	path = lib/chez-lang
+	url = https://github.com/jaybonthius/chez-lang.git
