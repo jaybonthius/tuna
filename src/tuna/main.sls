@@ -3,7 +3,9 @@
 (library (tuna main)
   (export main)
   (import (chezscheme) (chez-lang loader) (tuna version) (tuna core changes)
-          (tuna core modules) (except (tuna core main-thread) exit) (tuna top-level))
+          (tuna core modules) (except (tuna core main-thread) exit) (tuna top-level)
+          (only (tuna plugin-manager) start-plugins! plugin-root checked-plugin-root
+                install-missing-plugin! plugin-roots))
 
   ;; Exit status 2 marks a usage error, as in most command-line programs.
   (define (main program arguments own-directories)
@@ -26,14 +28,14 @@
        (exit 2)]))
 
   (define (start home library own-directories)
-    (let ([configuration (string-append home "/.config/tuna")])
+    (let* ([configuration (string-append home "/.config/tuna")]
+           [lib (string-append configuration "/lib")])
       (compile-file-message #f)
       (optimize-level 2)
-      (install-module-lookup! own-directories
-        (string-append configuration "/lib")
-        (string-append home "/.local/share/tuna/plugins")
-        library
-        (string-append home "/.cache/tuna"))
+      (start-plugins! home (string-append configuration "/init.ss") lib library
+        (string-append home "/.local/share/tuna/plugins"))
+      (install-module-lookup! own-directories lib library (string-append home "/.cache/tuna")
+        plugin-root checked-plugin-root install-missing-plugin! plugin-roots)
       (install-loader!)
       ;; Top-level forms are evaluated without inspector information, and
       ;; the modules they import are compiled within them; modules keep it

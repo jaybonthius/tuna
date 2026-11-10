@@ -1,0 +1,24 @@
+; An index's line comes before the lines that rely on it: consult's line
+; ran before the index was installed, so its import raised, saying the
+; line has no source, and installed nothing.
+! import: the line for consult has no source: give it a git or local clause, or use an index that names it
+> (memq 'consult (installed-plugins))
+#f
+> (installed-plugins)
+(sources)
+> (use-plugin magit)
+! import: the line for magit has no source: give it a git or local clause, or use an index that names it
+; Once the index is installed, its lines are known.
+> (use-plugin consult)
+> (consult:buffer)
+"compat buffer"
+; A plugin that holds no main module, or a missing commit, installs
+; nothing.
+> (install-plugin! '(use-plugin empty (git "https://github.com/bob/empty")))
+! install-plugin!: plugin empty holds no module (empty)
+> (use-plugin empty (git "https://github.com/bob/empty"))
+! import: plugin empty holds no module (empty)
+> (use-plugin vertico (git "https://github.com/minad/vertico") (commit "0000000"))
+! import: commit 0000000 not found in https://github.com/minad/vertico
+> (installed-plugins)
+(consult sources compat)

@@ -1,0 +1,5 @@
+(import (tuna) (tuna plugins))
+(use-plugin other (local "~/src/other"))
+(use-plugin sources (git "https://github.com/groucho/tuna-sources"))
+(use-plugin consult)
+(use-plugin consult (git "https://example.org/second/consult"))

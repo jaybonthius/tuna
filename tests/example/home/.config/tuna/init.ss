@@ -1,5 +1,8 @@
-(import (tuna))
-(import (spell) (files) (fill) (prog) (greet))
+(import (tuna) (tuna plugins))
+(use-plugin spell (git "https://github.com/bob/spell") (commit "8f4a734"))
+(use-plugin files)
+(use-plugin fill)
+(use-plugin prog)
 
 (set-option! spell:language "en-GB"
              fill:column 80
@@ -18,3 +21,6 @@
   (lambda ()
     (set-option-local! fill:column 100)
     (add-local-hook! files:before-save prog:indent-buffer -10)))
+
+(when-installed (vertico)
+  (set-option! vertico:count 15))

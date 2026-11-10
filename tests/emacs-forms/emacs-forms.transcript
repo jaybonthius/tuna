@@ -1,0 +1,75 @@
+; Twenty common forms of an Emacs configuration, written for Tuna, run
+; with no report.
+> (gptel/org:branching-context)
+#t
+> (and (plugin-commit 'vertico) #t)
+#t
+> (compile-angel:verbose)
+#f
+> (recentf:enabled?)
+#t
+> (eq? (table-ref keys:global "C-x m") ghostel:ghostel)
+#t
+> (browse-file-remote)
+"browsing"
+> (files:save! "cal.org")
+"cal.org"
+> exported
+("cal.org")
+; A command defined by a plugin's macro in the configuration.
+> (list (open-notes) (eq? (table-ref commands:all 'open-notes) open-notes))
+("notes" #t)
+> (table-ref compile-angel:excluded "/init.el")
+#t
+> (line-numbers:width)
+3
+> theme-state-file
+"~/.local/state/theme"
+> (hel:minibuffer?)
+#f
+> (eq? (table-ref files:modes "go") go-ts:mode)
+#t
+; A plugin's internal module, loaded by its main module.
+> (eq? (table-ref org/mouse:keymap "<mouse-1>") org:open-at-mouse)
+#t
+; Local values set from a mode hook, in the scope the buffer makes current.
+> (buffers-stub:enter!)
+> (prog:mode)
+> (list (corfu:auto) (corfu:auto-delay) (corfu:auto-prefix))
+(#t 0.1 2)
+> (table-owner keys:global "C-x m")
+(init)
+> (project:root)
+"/home/groucho/src"
+> (gui-presentation:start!)
+presenting
+> (eq? (table-ref keys:global "C-c g o") browse-file-remote)
+#t
+> (table-ref geiser/mode:keymap "M-.")
+#f
+> (prompts:yes-or-no? "Quit?")
+y-or-n
+> (list (org/agenda:agenda 'week) agenda-refreshes)
+((agenda week) 1)
+> (vertico:count)
+15
+; A command the macro defines in a module is changeable and exported.
+> (call-with-output-file "~/.config/tuna/lib/my-commands.sls"
+    (lambda (p)
+      (put-string p "#!tuna\n(import (commands))\n(commands:define-command (hello) \"hello\")\n")))
+> (import (my-commands))
+> (set! my-commands:hello (lambda () "hi"))
+> (list (my-commands:hello) (map car (definition-changes my-commands:hello)))
+("hi" ((repl) (my-commands)))
+; A module may define a name #!tuna provides, such as map.
+> (call-with-output-file "~/.config/tuna/lib/mapper.sls"
+    (lambda (p) (put-string p "#!tuna\n(define-table map)\n")))
+> (import (mapper))
+> (table? mapper:map)
+#t
+; A module named like a library built into Chez is Chez's.
+> (call-with-output-file "~/.config/tuna/lib/scheme.sls"
+    (lambda (p) (put-string p "#!tuna\n(define (mode) 'scheme)\n")))
+> (import (scheme))
+> (guard (c [#t 'chez-library]) scheme:mode)
+chez-library

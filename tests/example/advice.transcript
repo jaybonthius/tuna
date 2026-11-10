@@ -1,3 +1,5 @@
+; These examples take the plugin greet as used.
+> (use-plugin greet)
 > (define (shout text name) (string-upcase (text name)))
 > (advice-add! greet:text shout)
 > (greet:text "Zeppo")

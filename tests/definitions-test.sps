@@ -19,8 +19,8 @@
 ")
 
 (compile-file-message #f)
-(install-module-lookup! (library-directories) (string-append root "/lib") (string-append root "/plugins")
-  (string-append root "/library") (string-append root "/cache"))
+(install-module-lookup! (library-directories) (string-append root "/lib") (string-append root "/library")
+  (string-append root "/cache") (lambda (name) #f) (lambda (name) #f) (lambda (name) #f) (lambda () '()))
 (install-loader!)
 
 (define env (environment '(tuna) '(racer)))

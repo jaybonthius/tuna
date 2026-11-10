@@ -1,0 +1,10 @@
+> (list (compat:who) (consult:buffer))
+("bob's compat" "bob's compat buffer")
+> (list (embark-consult:version) (embark:integrated))
+("1c2d3e4" #t)
+> (notes:where)
+"notes from a local folder"
+> (procedure? files:save!)
+#t
+> (installed-plugins)
+(sources compat consult embark-consult notes embark)

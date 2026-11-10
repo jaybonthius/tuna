@@ -1,0 +1,52 @@
+; Lines are read before the configuration runs; a second line for one id
+; is reported, and the first is the one known.
+! use-plugin: a second line for consult
+; A module (compat) is looked for only in the plugin compat, which the
+; index gives, not in another plugin that holds compat.sls.
+> (compat:who)
+"upstream compat"
+; A line imports its plugin's main module: the next form sees its names.
+> (consult:buffer)
+"compat buffer"
+; A line typed at the REPL is read before it is evaluated, so it installs
+; a plugin the index does not name.
+> (use-plugin vertico (git "https://github.com/minad/vertico"))
+> (vertico:count)
+10
+; Lines go only in the configuration and at the REPL; plugin lines only in
+; an index's main module.
+> (import (uses))
+! use-plugin: a use-plugin line in a module (use-plugin vertico) at line 3, char 1 of ~/.config/tuna/lib/uses.sls
+> (use-plugin plain (local "~/src/plain"))
+! plugin: a plugin line outside an index's main module (plugin compat (git "https://github.com/bob/compat")) at line 4, char 1 of ~/src/plain/plain.sls
+> (plugin compat (git "https://github.com/bob/compat"))
+! plugin: a plugin line outside an index's main module (plugin compat (git "https://github.com/bob/compat"))
+> (import (only (tuna plugins) integration))
+! missing import for integration (only (tuna plugins) integration)
+; The configuration's lines' plugins in order, then the others by id.
+> (installed-plugins)
+(other sources consult compat greet plain vertico)
+; Only greet has no line and was found by no import.
+> (remove-unused-plugins!)
+> (installed-plugins)
+(other sources consult compat plain vertico)
+> (file-exists? "~/.local/share/tuna/plugins/greet")
+#f
+; Tuna writes init.ss only through its commands.
+> (display (call-with-input-file "~/.config/tuna/init.ss" get-string-all))
+(import (tuna) (tuna plugins))
+(use-plugin other (local "~/src/other"))
+(use-plugin sources (git "https://github.com/groucho/tuna-sources"))
+(use-plugin consult)
+(use-plugin consult (git "https://example.org/second/consult"))
+; Removing a local plugin deletes its line, never its folder.
+> (remove-plugin! 'other)
+> (list (memq 'other (installed-plugins)) (file-exists? "~/src/other/other.sls"))
+(#f #t)
+> (other:name)
+! other:name: module (other) is unloaded
+> (display (call-with-input-file "~/.config/tuna/init.ss" get-string-all))
+(import (tuna) (tuna plugins))
+(use-plugin sources (git "https://github.com/groucho/tuna-sources"))
+(use-plugin consult)
+(use-plugin consult (git "https://example.org/second/consult"))

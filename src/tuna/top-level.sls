@@ -6,6 +6,7 @@
     eval-text
     eval-file)
   (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna core modules)
+          (only (tuna plugin-manager) read-configuration-lines! read-configuration-line! read-repl-line!)
           (only (chez-lang body) definition-form? form-defined-names))
 
   (define home #f)
@@ -162,6 +163,8 @@
       (cond
         [(and (pair? form) (eq? (car form) 'import) (list? form))
          (filter values (map import-spec-library (cdr form)))]
+        [(and (pair? form) (eq? (car form) 'use-plugin) (pair? (cdr form)) (symbol? (cadr form)))
+         (list (list (cadr form)))]
         [(and (pair? form) (eq? (car form) 'begin) (list? form))
          (apply append (map top-level-imports (cdr form)))]
         [else '()])))
@@ -173,6 +176,8 @@
   ;; defined in the configuration prints as one typed at the REPL does, with
   ;; no source position.
   (define (eval-top-level form)
+    (when (equal? (current-owner) '(repl))
+      (read-repl-line! (unwrap form)))
     (call-with-quit-safe-library-lock sync-modules!)
     (call-loading-modules
       (lambda ()
@@ -204,6 +209,7 @@
       (as-module '(init)
         (call-reporting
           (lambda ()
+            (read-configuration-lines!)
             (read-annotated-forms configuration-file
               (lambda (form) (call-reporting (lambda () (eval-top-level form))))))))))
 
@@ -232,7 +238,9 @@
               [eval-form (cond
                            [module (lambda (form) (eval-in-module form module))]
                            [(and path (string=? path configuration-file))
-                            (lambda (form) (as-module '(init) (eval-top-level form)))]
+                            (lambda (form)
+                              (read-configuration-line! form)
+                              (as-module '(init) (eval-top-level form)))]
                            [else (lambda (form) (as-module '(repl) (eval-top-level form)))])])
          (let loop ([forms (read-all text)] [results (list (void))])
            (if (null? forms)
@@ -247,7 +255,8 @@
         [module
          (if (module-loaded? module)
              (reload-module! module)
-             (load-module! module))]
+             (load-module! module))
+         (void)]
         [(string=? path configuration-file)
          (take-back-changes! '(init) '())
          (load-configuration!)]

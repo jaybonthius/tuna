@@ -1,0 +1,4 @@
+(import (tuna) (tuna plugins))
+(use-plugin spell (git "https://github.com/bob/spell") (commit "8f4a734"))
+(set-option! spell:language "en-GB")
+(set! spell:dictionary-path (lambda () "/home/groucho/words"))

@@ -20,6 +20,45 @@ if [ -d "$folder/library" ]; then
   cp -R "$folder/library/." "$dir/library/"
 fi
 
+# A user's git settings, such as signing or address rewrites, would change
+# commits or addresses.
+export GIT_CONFIG_NOSYSTEM=1
+unset XDG_CONFIG_HOME
+export HOME="$dir/home"
+
+# Fixed names and dates keep commit ids the same on every run, so a
+# transcript can name them.
+if [ -e "$folder/remotes" ]; then
+  export GIT_AUTHOR_NAME=Tuna GIT_AUTHOR_EMAIL=tuna@example.org GIT_AUTHOR_DATE='1767225600 +0000'
+  export GIT_COMMITTER_NAME=Tuna GIT_COMMITTER_EMAIL=tuna@example.org GIT_COMMITTER_DATE='1767225600 +0000'
+  for fixture in "$folder"/remotes/*/*/; do
+    fixture=${fixture%/}
+    repository=$dir/remotes/${fixture#"$folder"/remotes/}
+    mkdir -p "$repository"
+    git init -q --bare -b main "$repository"
+    for commit in $(ls "$fixture" | grep -E '^[0-9]+(-[a-z0-9-]+)?$' | sort -n); do
+      case $commit in
+        *-*) branch=${commit#*-} ;;
+        *) branch=main ;;
+      esac
+      if [ -f "$fixture/$commit.message" ]; then
+        message=$fixture/$commit.message
+      else
+        message=$dir/message
+        echo "commit $commit" > "$message"
+      fi
+      rm -f "$dir/index"
+      GIT_INDEX_FILE=$dir/index git --git-dir="$repository" --work-tree="$fixture/$commit" add -A .
+      tree=$(GIT_INDEX_FILE=$dir/index git --git-dir="$repository" write-tree)
+      parent=$(git --git-dir="$repository" rev-parse -q --verify "refs/heads/$branch" ||
+               git --git-dir="$repository" rev-parse -q --verify refs/heads/main || true)
+      id=$(git --git-dir="$repository" commit-tree "$tree" ${parent:+-p "$parent"} -F "$message")
+      git --git-dir="$repository" update-ref "refs/heads/$branch" "$id"
+    done
+  done
+  printf '[url "file://%s/remotes/"]\n\tinsteadOf = https://github.com/\n' "$dir" > "$dir/home/.gitconfig"
+fi
+
 : > "$dir/input"
 : > "$dir/expected"
 awk -v input="$dir/input" -v expected="$dir/expected" '
@@ -32,10 +71,11 @@ awk -v input="$dir/input" -v expected="$dir/expected" '
 # The working folder is empty, so nothing beside the test is found by a
 # relative path.
 status=0
-(cd "$dir/work" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" "$tuna" < "$dir/input" > "$dir/actual" 2>&1) || status=$?
+(cd "$dir/work" && TUNA_LIBRARY="$dir/library" "$tuna" < "$dir/input" > "$dir/actual" 2>&1) || status=$?
 
-# Each run has a fresh home folder, so a transcript writes its path as ~.
-sed "s|$dir/home|~|g" "$dir/actual" > "$dir/shown"
+# Each run has a fresh home folder, so a transcript writes its path as ~,
+# and the remotes' as remotes.
+sed -e "s|$dir/home|~|g" -e "s|$dir/remotes|remotes|g" "$dir/actual" > "$dir/shown"
 
 if [ "$status" -ne 0 ]; then
   echo "$transcript: FAIL: exit status $status"

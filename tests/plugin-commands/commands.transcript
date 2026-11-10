@@ -1,0 +1,153 @@
+; The example configuration, with three lines that rely on an index.
+> (plugin-commit 'spell)
+"8f4a7345babf351f103b3a03a5d290d170e5e95e"
+> (consult:buffer)
+"compat buffer"
+; embark-consult is a folder of embark's repository, at its newest commit,
+; and embark comes from the index too.
+> (list (embark-consult:version) (embark:integrated))
+("newest" #t)
+> (installed-plugins)
+(spell sources consult embark-consult compat embark greet)
+> (define (show-lines)
+    (call-with-input-file "~/.config/tuna/init.ss"
+      (lambda (p)
+        (let loop ()
+          (let ([form (read p)])
+            (unless (eof-object? form)
+              (when (and (pair? form) (eq? (car form) 'use-plugin))
+                (write form)
+                (newline))
+              (loop)))))))
+; install-plugin! writes its line after the last line, with the full
+; commit, keeping the rest of the file, and loads nothing.
+> (install-plugin! '(use-plugin vertico (git "https://github.com/minad/vertico")))
+> (display (call-with-input-file "~/.config/tuna/init.ss" get-string-all))
+(import (tuna) (tuna plugins))
+(use-plugin spell (git "https://github.com/bob/spell") (commit "8f4a734"))
+(use-plugin files)
+(use-plugin fill)
+(use-plugin prog)
+
+(set-option! spell:language "en-GB"
+             fill:column 80
+             files:autosave-seconds 30)
+
+(set! spell:dictionary-path (lambda () "/home/groucho/words"))
+
+(define (announce save! path)
+  (display (string-append "saving " path))
+  (save! path))
+(advice-add! files:save! announce)
+
+(remove-hook! files:after-save spell:check)
+
+(add-hook! prog:mode-hook
+  (lambda ()
+    (set-option-local! fill:column 100)
+    (add-local-hook! files:before-save prog:indent-buffer -10)))
+
+(when-installed (vertico)
+  (set-option! vertico:count 15))
+(use-plugin sources (git "https://github.com/groucho/tuna-sources"))
+(use-plugin consult)
+(use-plugin embark-consult)
+(use-plugin vertico (git "https://github.com/minad/vertico") (commit "5f76a5364d614d437df7fff40ce52ac7db52ae83"))
+> (list (and (memq 'vertico (installed-plugins)) #t) (module-changes '(vertico)))
+(#t ())
+> (install-plugin! '(use-plugin vertico (git "https://github.com/minad/vertico")))
+! install-plugin!: the configuration has a line for the plugin with irritant vertico
+; A line typed at the REPL loads it; when-installed then runs its body.
+> (use-plugin vertico)
+> (vertico:count)
+10
+> (when-installed (vertico) (set-option! vertico:count 15))
+> (vertico:count)
+15
+; update-plugin! fetches the newest commit, writes it into the line, and
+; reloads the plugin's loaded modules, keeping the configuration's
+; override.
+> (define (announce-load load name) (display name) (load name))
+> (advice-add! module-loaded announce-load)
+> (update-plugin! 'spell)
+(spell)
+> (list (spell:dictionary-path) (plugin-commit 'spell))
+("/home/groucho/words" "624c3038631852c7011bc1be6dfb1aed74fd271a")
+> (update-plugin! 'spell "8f4a734")
+(spell)
+> (plugin-commit 'spell)
+"8f4a7345babf351f103b3a03a5d290d170e5e95e"
+> (advice-remove! module-loaded announce-load)
+; A plugin an index gave gets a line with only its commit, which takes its
+; source from the index.
+> (update-plugin! 'compat "5ecc38a")
+> (show-lines)
+(use-plugin spell (git "https://github.com/bob/spell") (commit "8f4a7345babf351f103b3a03a5d290d170e5e95e"))
+(use-plugin files)
+(use-plugin fill)
+(use-plugin prog)
+(use-plugin sources (git "https://github.com/groucho/tuna-sources"))
+(use-plugin consult)
+(use-plugin embark-consult)
+(use-plugin vertico (git "https://github.com/minad/vertico") (commit "5f76a5364d614d437df7fff40ce52ac7db52ae83"))
+(use-plugin compat (commit "5ecc38a88d05e60def075308cf4d4d9eec4558ee"))
+> (consult:buffer)
+"compat buffer"
+; When a module fails to load, the plugin goes back to its commit and its
+; line is unchanged.
+> (install-plugin! '(use-plugin flaky (git "https://github.com/bob/flaky") (commit "5a8f694")))
+> (use-plugin flaky)
+> (flaky:version)
+1
+> (update-plugin! 'flaky)
+! flaky: broken
+> (list (flaky:version) (plugin-commit 'flaky))
+(1 "5a8f6943897459be214b5eb6183f5e7ac331d74f")
+> (update-plugin! 'flaky "nope")
+! update-plugin!: commit nope not found in https://github.com/bob/flaky
+; Going back puts back only the plugin's own line, so a line another task
+; wrote while git ran stays.
+> (begin
+    (post! (lambda () (install-plugin! '(use-plugin notes (local "~/src/notes"))) (display "posted ran") (newline)))
+    (update-plugin! 'flaky))
+posted ran
+! flaky: broken
+> (show-lines)
+(use-plugin spell (git "https://github.com/bob/spell") (commit "8f4a7345babf351f103b3a03a5d290d170e5e95e"))
+(use-plugin files)
+(use-plugin fill)
+(use-plugin prog)
+(use-plugin sources (git "https://github.com/groucho/tuna-sources"))
+(use-plugin consult)
+(use-plugin embark-consult)
+(use-plugin vertico (git "https://github.com/minad/vertico") (commit "5f76a5364d614d437df7fff40ce52ac7db52ae83"))
+(use-plugin compat (commit "5ecc38a88d05e60def075308cf4d4d9eec4558ee"))
+(use-plugin flaky (git "https://github.com/bob/flaky") (commit "5a8f6943897459be214b5eb6183f5e7ac331d74f"))
+(use-plugin notes (local "~/src/notes"))
+; remove-plugin! unloads the plugin's modules, then deletes its line and
+; its folder.
+> (remove-plugin! 'vertico)
+> (list (memq 'vertico (installed-plugins)) (file-exists? "~/.local/share/tuna/plugins/vertico"))
+(#f #f)
+> (vertico:count)
+! vertico:count: module (vertico) is unloaded
+; A branch's newest commit.
+> (install-plugin! '(use-plugin vertico (git "https://github.com/minad/vertico") (branch "dev")))
+> (use-plugin vertico)
+> (vertico:count)
+20
+; greet has no line, and no import found it since Tuna started.
+> (remove-unused-plugins!)
+> (installed-plugins)
+(spell sources consult embark-consult compat flaky notes vertico embark)
+> (import (nowhere))
+! import: no plugin line for (nowhere): add (use-plugin nowhere (git "...")) to init.ss
+> (sort string<? (directory-list "~/.local/share/tuna/plugins"))
+("compat" "compat.installed" "consult" "consult.installed" "embark" "embark-consult" "embark-consult.installed" "embark.installed" "flaky" "flaky.installed" "notes.installed" "sources" "sources.installed" "spell" "spell.installed" "vertico" "vertico.installed")
+; Arguments are checked.
+> (update-plugin! 'files)
+! update-plugin!: not installed with irritant files
+> (remove-plugin! 'nothing)
+! remove-plugin!: not installed with irritant nothing
+> (install-plugin! 'vertico)
+! install-plugin!: not a use-plugin line with irritant vertico

@@ -1,3 +1,5 @@
+; These examples take the plugin greet as used.
+> (use-plugin greet)
 > (list (documentation greet:text) (documentation files:after-save) (documentation fill:column)
         (documentation files:modes) (documentation files:before-save) (documentation car)
         (documentation 1))

@@ -1,0 +1,55 @@
+; A copy of a plugin that Tuna's own library holds goes when the
+; configuration's line for it has no source and no index names it.
+! import: removed ~/.local/share/tuna/plugins/files: its line finds the plugin in Tuna's own library
+> (files:who)
+"bundled"
+> (installed-plugins)
+(other sources consult compat)
+> (define (write-mine! text)
+    (call-with-output-file "~/.config/tuna/lib/mine.sls"
+      (lambda (p) (put-string p text))
+      'replace))
+> (import (tuna eval))
+; Chez keeps the library of a removed plugin, and reloading another module
+; looks up the source of every library Chez has; that neither raises nor
+; installs the plugin again.
+> (remove-plugin! 'other)
+> (write-mine! "#!tuna\n(define (text) \"two\")\n")
+> (eval-file "~/.config/tuna/lib/mine.sls")
+> (mine:text)
+"two"
+> (remove-plugin! 'consult)
+> (installed-plugins)
+(sources compat)
+> (write-mine! "#!tuna\n(define (text) \"three\")\n")
+> (eval-file "~/.config/tuna/lib/mine.sls")
+> (list (mine:text) (installed-plugins))
+("three" (sources compat))
+; A line typed at the REPL installs a removed plugin again.
+> (use-plugin other (local "~/src/other"))
+> (other:name)
+"other"
+; A module that comes to import a plugin an index names installs it.
+> (write-mine! "#!tuna\n(import (embark))\n(define (text) (embark:act))\n")
+> (eval-file "~/.config/tuna/lib/mine.sls")
+> (list (mine:text) (installed-plugins))
+("embark act" (sources compat embark other))
+; A line evaluated as part of the configuration is a configuration line.
+> (eval-text "(use-plugin vertico (git \"https://github.com/minad/vertico\"))" "~/.config/tuna/init.ss")
+> (vertico:count)
+10
+> (installed-plugins)
+(sources vertico compat embark other)
+; An id names a folder, so a path is not an id.
+> (remove-plugin! '|.|)
+! remove-plugin!: not a plugin id with irritant \x2E;
+> (remove-plugin! '..)
+! remove-plugin!: not a plugin id with irritant \x2E;.
+> (update-plugin! '..)
+! update-plugin!: not a plugin id with irritant \x2E;.
+> (plugin-commit '|a/b|)
+! plugin-commit: not a plugin id with irritant a/b
+> (install-plugin! '(use-plugin |.| (local "~/src/other")))
+! install-plugin!: not a use-plugin line with irritant (use-plugin \x2E; (local "~/src/other"))
+> (sort string<? (directory-list "~/.local/share/tuna"))
+("plugins")
