@@ -3,8 +3,7 @@
 (library (tuna main)
   (export main)
   (import (chezscheme) (chez-lang loader) (tuna version) (tuna core changes)
-          (only (tuna core definitions) call-reporting)
-          (tuna core modules) (tuna top-level))
+          (tuna core modules) (except (tuna core main-thread) exit) (tuna top-level))
 
   ;; Exit status 2 marks a usage error, as in most command-line programs.
   (define (main program arguments own-directories)
@@ -17,8 +16,7 @@
          (start (normal-path home)
            (normal-path (or (getenv "TUNA_LIBRARY") (path-build (path-parent program) "plugins")))
            own-directories))
-       (as-module '(repl) (console-repl))
-       (exit 0)]
+       (run-main-loop)]
       [(equal? arguments '("--version"))
        (printf "tuna ~a\n" tuna-version)
        (exit 0)]
@@ -46,7 +44,27 @@
             (parameterize ([generate-inspector-information #t])
               (compile-library source object)))))
       (start-top-level! home (string-append configuration "/init.ss"))
-      (load-configuration!)))
+      (install-exit-handler!)
+      (post-task! load-configuration! '(init) (lambda () (fork-thread read-console)))))
+
+  ;; Unloading runs every module's unload actions, for what Tuna cannot
+  ;; undo itself, such as a process a module started. An exit called while
+  ;; unloading, as from an unload action, ends the process with the first
+  ;; exit's status.
+  (define (install-exit-handler!)
+    (let ([exit-process (exit-handler)] [exit-arguments #f])
+      (exit-handler
+        (lambda arguments
+          (unless exit-arguments
+            (set! exit-arguments arguments)
+            (close-queue!)
+            (parameterize ([quits-allowed #f])
+              (for-each (lambda (owner) (take-back-changes! owner '())) '((repl) (init)))
+              (unload-all-modules!)
+              (run-queued!))
+            (fresh-line (current-output-port))
+            (flush-output-port (current-output-port)))
+          (apply exit-process exit-arguments)))))
 
   (define (print-values . results)
     (let ([out (current-output-port)])
@@ -60,12 +78,35 @@
       (fresh-line out)
       (flush-output-port out)))
 
-  (define (console-repl)
-    (unless (eof-object?
-              (call-reporting
-                (lambda ()
-                  (let ([form (read)])
-                    (unless (eof-object? form)
-                      (call-with-values (lambda () (eval-top-level form)) print-values))
-                    form))))
-      (console-repl))))
+  ;; Chez's console input and output are one port under one mutex, which a
+  ;; read holds while it waits, so the main thread could not write until
+  ;; the next line came. The port is kept for the life of the process:
+  ;; collecting it would close standard input.
+  (define console-input
+    (transcoded-port (standard-input-port (buffer-mode block)) (native-transcoder)))
+
+  (define (next-input)
+    (guard (c [#t (lambda () (raise c))])
+      (let ([form (read console-input)])
+        (if (eof-object? form)
+            form
+            (lambda () (call-with-values (lambda () (eval-top-level form)) print-values))))))
+
+  ;; Each form runs to its end, pauses included, before the next is read,
+  ;; as at Chez's own REPL.
+  (define (read-console)
+    (let ([m (make-mutex)] [finished (make-condition)] [finished? #f])
+      (let loop ()
+        (let ([input (next-input)])
+          (cond
+            [(eof-object? input) (post! exit)]
+            [else
+             (with-mutex m (set! finished? #f))
+             (post-task! input '(repl)
+               (lambda () (with-mutex m (set! finished? #t) (condition-signal finished))))
+             (with-mutex m
+               (let wait ()
+                 (unless finished?
+                   (condition-wait finished m)
+                   (wait))))
+             (loop)]))))))

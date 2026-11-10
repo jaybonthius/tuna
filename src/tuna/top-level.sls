@@ -25,6 +25,9 @@
     (set! home home-folder)
     (set! configuration-file configuration)
     (set! repl-environment (copy-environment (scheme-environment) #t))
+    ;; Chez's exit ends only the thread that calls it, unless that is the
+    ;; main thread.
+    (eval '(import (only (tuna core main-thread) exit)) repl-environment)
     (define-top-level-syntax check-keyword check-top-level-form repl-environment))
 
   (define (prefixed? symbol)
@@ -170,7 +173,7 @@
   ;; defined in the configuration prints as one typed at the REPL does, with
   ;; no source position.
   (define (eval-top-level form)
-    (sync-modules!)
+    (call-with-quit-safe-library-lock sync-modules!)
     (call-loading-modules
       (lambda ()
         (let ([imports (top-level-imports form)])
@@ -178,7 +181,8 @@
           (call-with-values
             (lambda ()
               (parameterize ([generate-inspector-information #f])
-                (eval (list check-keyword form) repl-environment)))
+                (call-with-locked-expansion
+                  (lambda () (eval (list check-keyword form) repl-environment)))))
             (lambda results
               (run-modules! imports)
               (apply values results)))))))
@@ -222,6 +226,7 @@
       [(text path)
        (unless (string? text) (assertion-violation 'eval-text "not a string" text))
        (unless (or (not path) (string? path)) (assertion-violation 'eval-text "not a path" path))
+       (check-main-thread 'eval-text)
        (let* ([path (and path (normal-path (expand-home path)))]
               [module (and path (path-module 'eval-text path))]
               [eval-form (cond
@@ -236,6 +241,7 @@
 
   (define (eval-file path)
     (unless (string? path) (assertion-violation 'eval-file "not a path" path))
+    (check-main-thread 'eval-file)
     (let* ([path (normal-path (expand-home path))] [module (path-module 'eval-file path)])
       (cond
         [module
@@ -243,7 +249,6 @@
              (reload-module! module)
              (load-module! module))]
         [(string=? path configuration-file)
-         (check-main-thread 'eval-file)
          (take-back-changes! '(init) '())
          (load-configuration!)]
         [else

@@ -46,15 +46,26 @@
            (or (and subform (position-text subform)) (position-text form) "")))]
       [else ""]))
 
+  ;; Chez's display-condition lists a condition without a message over
+  ;; several lines; a report is one line, so the types stand in for it.
+  (define (types-text c)
+    (format "~{~a~^ ~}"
+      (append
+        (map (lambda (simple) (record-type-name (record-rtd simple)))
+             (remp (lambda (simple) (or (who-condition? simple) (irritants-condition? simple)))
+                   (simple-conditions c)))
+        (if (irritants-condition? c)
+            (list (format "with irritants ~s" (condition-irritants c)))
+            '()))))
+
   (define (raw-condition-text c)
     (cond
       [(not (condition? c)) (format "non-condition value ~s" c)]
-      [(message-condition? c)
+      [else
        (string-append
          (if (who-condition? c) (format "~a: " (condition-who c)) "")
-         (message-text c)
-         (source-text c))]
-      [else (call-with-string-output-port (lambda (p) (display-condition c p)))]))
+         (if (message-condition? c) (message-text c) (types-text c))
+         (source-text c))]))
 
   ;; A condition's irritants or a record's writer can raise, and the caller
   ;; is often the code that reports a raise.

@@ -46,5 +46,39 @@ output=$(cd "$dir/work" && echo "(import (tuna extra))" | env -u TUNA_LIBRARY HO
 [ "$output" = '! library (tuna extra) not found' ] || fail "(tuna extra) from the working folder: $output"
 [ ! -e "$dir/work/tuna/extra.so" ] || fail "(tuna extra) was compiled in the working folder"
 
+# exit's status is the process's, whichever thread calls it, even when
+# the console's end of input comes while the modules unload.
+mkdir -p "$dir/slow/.config/tuna"
+printf '(import (tuna))\n(on-unload (lambda () (sleep (make-time (quote time-duration) 100000000 0))))\n' \
+  > "$dir/slow/.config/tuna/init.ss"
+for form in '(exit 4)' '(thread-join (fork-thread (lambda () (exit 4))))'; do
+  status=0
+  echo "$form" | HOME="$dir/slow" "$tuna" > /dev/null 2>&1 || status=$?
+  [ "$status" -eq 4 ] || fail "$form exited with status $status, not 4"
+done
+
+# The main thread writes and exits while the console waits for input.
+mkdir -p "$dir/waiting/.config/tuna"
+cat > "$dir/waiting/.config/tuna/init.ss" <<'END'
+(import (tuna))
+(fork-thread
+  (lambda ()
+    (sleep (make-time 'time-duration 200000000 0))
+    (post! (lambda () (display "posted") (newline)))
+    (sleep (make-time 'time-duration 300000000 0))
+    (exit 5)))
+END
+mkfifo "$dir/input"
+sleep 5 > "$dir/input" &
+writer=$!
+start=$(date +%s%N)
+status=0
+output=$(HOME="$dir/waiting" "$tuna" < "$dir/input" 2>&1) || status=$?
+elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
+kill "$writer"
+[ "$status" -eq 5 ] || fail "exit while the console waits exited with status $status, not 5"
+[ "$output" = posted ] || fail "a write while the console waits printed: $output"
+[ "$elapsed" -lt 3000 ] || fail "exit while the console waits took $elapsed ms"
+
 echo "$0: $failures failures"
 [ "$failures" -eq 0 ]

@@ -1,0 +1,28 @@
+; tick runs on the main thread about every thousand procedure calls; a
+; profiler advises it.
+> (define samples 0)
+> (define threads '())
+> (define (sample tick)
+    (set! samples (+ samples 1))
+    (unless (memv (get-thread-id) threads) (set! threads (cons (get-thread-id) threads)))
+    (tick))
+> (advice-add! tick sample)
+> (define (busy n) (if (= n 0) 0 (+ 1 (busy (- n 1)))))
+> (let loop ([i 0]) (when (< i 200) (busy 10000) (loop (+ i 1))))
+> (list (> samples 100) (length threads))
+(#t 1)
+> (advice-remove! tick sample)
+> (define before samples)
+> (busy 100000)
+100000
+> (= samples before)
+#t
+; Advice on tick that raises is reported, and the code it interrupted
+; goes on.
+> (define raised 0)
+> (define (failing tick) (when (= raised 0) (set! raised 1) (error 'profiler "broken")) (tick))
+> (advice-add! tick failing)
+> (busy 100000)
+! profiler: broken
+100000
+> (advice-remove! tick failing)

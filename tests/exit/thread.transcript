@@ -1,0 +1,6 @@
+; On another thread, exit posts the shutdown to the main thread; what the
+; console reads after it never runs.
+> (thread-join (fork-thread (lambda () (exit) (display "never"))))
+configuration unloading
+keeper unloading
+> (display "never runs")

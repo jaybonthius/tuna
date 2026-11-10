@@ -1,4 +1,4 @@
 (library (tuna)
-  (export)
-  (import (only (chezscheme) export))
+  (export spawn-task suspend current-task task-done? join-task signal-task task?)
+  (import (only (chezscheme) export) (tuna core main-thread))
   (export (import (tuna base))))

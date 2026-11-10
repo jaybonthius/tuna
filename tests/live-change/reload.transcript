@@ -97,3 +97,5 @@ saving e
 speller unloading
 > loads
 ((speller))
+; Tuna exits at the end of its input, unloading every module.
+speller unloading

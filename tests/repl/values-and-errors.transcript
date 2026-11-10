@@ -39,7 +39,7 @@ partial
 5
 ; After a read error the rest of the line is read as the next forms.
 > #<y
-! read: invalid sharp-sign prefix #<
+! read: invalid sharp-sign prefix #< before file-position 575 of #<input port stdin>; the character position might differ
 ! variable y is not bound
 > x
 5

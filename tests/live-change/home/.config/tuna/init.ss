@@ -6,9 +6,12 @@
 ;; compiled in would count as compiled.
 (define (put-version! version path)
   (sleep (make-time 'time-duration 10000000 0))
-  (let ([home (getenv "HOME")])
+  (let* ([home (getenv "HOME")] [file (string-append home "/" path)])
     (let ([text (call-with-input-file (string-append home "/versions/" version) get-string-all)])
-      (with-output-to-file (string-append home "/" path)
+      ;; git keeps no empty folder, so lib/ is made by the first module put there.
+      (unless (file-exists? (path-parent file))
+        (mkdir (path-parent file)))
+      (with-output-to-file file
         (lambda () (put-string (current-output-port) text))
         'replace))))
 

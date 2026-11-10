@@ -11,8 +11,15 @@
     on-unload
     advice-add!
     advice-remove!
+    post!
+    request-quit!
+    &quit
+    quit-condition?
     report
-    module-loaded)
-  (import (only (chezscheme) export) (tuna core changes) (tuna core definitions) (tuna core modules))
+    tick
+    module-loaded
+    exit)
+  (import (only (chezscheme) export) (tuna core changes) (tuna core definitions) (tuna core modules)
+          (tuna core main-thread))
   ;; sleep would block the main thread.
-  (export (import (except (chezscheme) sleep))))
+  (export (import (except (chezscheme) sleep exit))))

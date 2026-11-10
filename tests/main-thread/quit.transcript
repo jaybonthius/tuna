@@ -1,0 +1,48 @@
+; request-quit! from another thread ends runaway REPL input, and the REPL
+; goes on.
+> (begin
+    (fork-thread
+      (lambda ()
+        (sleep (make-time 'time-duration 200000000 0))
+        (request-quit!)))
+    (void))
+> (let loop () (loop))
+! &quit
+> (+ 1 2)
+3
+; &quit is serious, and a guard that catches every condition catches it.
+> (guard (c [(quit-condition? c) (list (serious-condition? c) (error? c))])
+    (request-quit!)
+    (let loop () (loop)))
+(#t #f)
+> (guard (c [#t 'caught]) (request-quit!) (let loop () (loop)))
+caught
+> (quit-condition? (make-error))
+#f
+; The first request can be handled and continued.
+> (define quits 0)
+> (with-exception-handler
+    (lambda (c) (if (quit-condition? c) (set! quits (+ quits 1)) (raise c)))
+    (lambda ()
+      (request-quit!)
+      (let loop () (if (= quits 0) (loop) 'continued))))
+continued
+; A second request before the first is handled cannot be continued.
+> (with-exception-handler
+    (lambda (c)
+      (if (quit-condition? c)
+          (begin (request-quit!) (let loop () (loop)))
+          (raise c)))
+    (lambda () (request-quit!) (let loop () (loop))))
+! &quit
+> (with-exception-handler
+    (lambda (c) (if (quit-condition? c) 'ignored (raise c)))
+    (lambda () (request-quit!) (request-quit!) (let loop () (loop))))
+! &non-continuable
+; A quit ends a posted thunk too, and a module body, which is then unloaded.
+> (post! (lambda () (request-quit!) (let loop () (loop))))
+! &quit
+> (import (runaway))
+! &quit
+> (module-changes '(runaway))
+()

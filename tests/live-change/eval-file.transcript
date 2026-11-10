@@ -67,3 +67,6 @@ assigned
 > (put-version! "fresh.sls" ".config/tuna/lib/magit.sls")
 > (eval-file "~/.local/share/tuna/plugins/magit/magit.sls")
 ! eval-file: ~/.local/share/tuna/plugins/magit/magit.sls is not a module: module (magit) is ~/.config/tuna/lib/magit.sls
+; Tuna exits at the end of its input, unloading every module, the
+; configuration first.
+configuration unloading

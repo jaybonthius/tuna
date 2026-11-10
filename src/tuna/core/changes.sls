@@ -15,12 +15,17 @@
     change-thing
     change-detail
     change-sequence
+    check-current-owner
     record-change!
+    forget-change!
     take-back!
     owner-changes
     module-changes
 
-    check-main-thread)
+    on-main-thread?
+    check-main-thread
+    quits-allowed
+    with-quit-safe-mutex)
   (import (chezscheme))
 
   (define (module-name? x)
@@ -52,6 +57,17 @@
     (unless (on-main-thread?)
       (assertion-violation who "only the main thread makes changes")))
 
+  ;; A quit lands only where this is true: in a task's own code, never in
+  ;; the bookkeeping of changes and modules, which a raise half way through
+  ;; would leave inconsistent. A request made meanwhile waits.
+  (define quits-allowed (make-thread-parameter #f))
+
+  ;; with-mutex is not atomic: a quit raised just after it takes the mutex,
+  ;; or just before it lets it go, would leave the mutex held.
+  (define-syntax with-quit-safe-mutex
+    (syntax-rules ()
+      [(_ m e1 e2 ...) (parameterize ([quits-allowed #f]) (with-mutex m e1 e2 ...))]))
+
   ;; A band is wider than the number of ranks one process takes.
   (define outside-band 0)
   (define lib-band (expt 2 40))
@@ -80,10 +96,10 @@
   (define (rank-module! name lib?)
     (unless (hashtable-contains? ranks name)
       (let ([rank (take-rank! (if lib? lib-band outside-band))])
-        (with-mutex ranks-mutex (hashtable-set! ranks name rank)))))
+        (with-quit-safe-mutex ranks-mutex (hashtable-set! ranks name rank)))))
 
   (define (unrank-module! name)
-    (with-mutex ranks-mutex (hashtable-delete! ranks name)))
+    (with-quit-safe-mutex ranks-mutex (hashtable-delete! ranks name)))
 
   ;; An importer takes its rank only after its imports have run, so a fresh
   ;; rank puts the import before it.
@@ -91,13 +107,13 @@
     (let ([rank (hashtable-ref ranks name #f)])
       (when (and rank (>= rank lib-band))
         (let ([rank (take-rank! outside-band)])
-          (with-mutex ranks-mutex (hashtable-set! ranks name rank)))
+          (with-quit-safe-mutex ranks-mutex (hashtable-set! ranks name rank)))
         (for-each (lambda (c) ((change-reorder c))) (owner-changes name)))))
 
   (define (call-as-module name thunk)
     (unless (module-name? name)
       (assertion-violation 'as-module "not a module name" name))
-    (unless (and (with-mutex ranks-mutex (owner-rank name)) (not (equal? name '(tuna))))
+    (unless (and (with-quit-safe-mutex ranks-mutex (owner-rank name)) (not (equal? name '(tuna))))
       (assertion-violation 'as-module "not a loaded module" name))
     (parameterize ([current-owner name]) (thunk)))
 
@@ -117,20 +133,35 @@
   (define (owner-changes owner)
     (hashtable-ref changes owner '()))
 
+  ;; A task of an unloaded module that catches &quit goes on running on its
+  ;; behalf; a change it made would never be taken back.
+  (define (check-current-owner who)
+    (let ([owner (current-owner)])
+      (unless (owner-rank owner)
+        (assertion-violation who "not a loaded module" owner))
+      owner))
+
+  ;; The timer interrupt runs tick's advice, which may change things too,
+  ;; so the ledger is updated with interrupts disabled, never half.
   (define (record-change! who kind thing detail undo reorder)
     (check-main-thread who)
-    (let ([owner (current-owner)])
-      (set! next-sequence (+ next-sequence 1))
-      (let ([c (make-change owner kind thing detail next-sequence undo reorder)])
-        (hashtable-update! changes owner (lambda (cs) (cons c cs)) '())
-        c)))
+    (let ([owner (check-current-owner who)])
+      (with-interrupts-disabled
+        (set! next-sequence (+ next-sequence 1))
+        (let ([c (make-change owner kind thing detail next-sequence undo reorder)])
+          (hashtable-update! changes owner (lambda (cs) (cons c cs)) '())
+          c))))
 
   (define (forget-change! c)
-    (hashtable-update! changes (change-owner c) (lambda (cs) (remq c cs)) '()))
+    (with-interrupts-disabled
+      (let ([owner (change-owner c)])
+        (when (hashtable-contains? changes owner)
+          (hashtable-update! changes owner (lambda (cs) (remq c cs)) '())))))
 
   (define (take-back! c)
-    (forget-change! c)
-    ((change-undo c)))
+    (parameterize ([quits-allowed #f])
+      (forget-change! c)
+      ((change-undo c))))
 
   (define (module-changes name)
     (unless (module-name? name)
