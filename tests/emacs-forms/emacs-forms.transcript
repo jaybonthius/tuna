@@ -53,6 +53,9 @@ y-or-n
 ((agenda week) 1)
 > (vertico:count)
 15
+> (set-saved! search-ring '("tuna"))
+> (search-ring)
+("tuna")
 ; A command the macro defines in a module is changeable and exported.
 > (call-with-output-file "~/.config/tuna/lib/my-commands.sls"
     (lambda (p)

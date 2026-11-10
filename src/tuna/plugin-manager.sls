@@ -15,7 +15,8 @@
     remove-plugin!
     remove-unused-plugins!
     installed-plugins
-    plugin-commit)
+    plugin-commit
+    module-plugin-source)
   (import (chezscheme) (tuna process)
           (only (tuna core changes) check-main-thread on-main-thread?)
           (only (tuna core definitions) report-safely)
@@ -311,6 +312,14 @@
   (define (known-line id)
     (let ([line (or (configuration-line id) (repl-line id))])
       (if line (resolve-line line) (index-line id))))
+
+  (define (module-plugin-source name)
+    (let* ([id (car name)] [found (and (plugin-id? id) (installed-source id))])
+      (cond
+        [(lib-module? name) 'user]
+        [(and found (module-file (install-root id found) name))
+         (or (install-source-git found) (install-source-local found) (plugin-folder id))]
+        [else 'tuna])))
 
   (define (plugin-modules id)
     (filter (lambda (name) (and (eq? (car name) id) (not (lib-module? name)))) (loaded-modules)))

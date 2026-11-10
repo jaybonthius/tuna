@@ -5,7 +5,8 @@
   (import (chezscheme) (chez-lang loader) (tuna version) (tuna core changes)
           (tuna core modules) (except (tuna core main-thread) exit) (tuna top-level)
           (only (tuna plugin-manager) start-plugins! plugin-root checked-plugin-root
-                install-missing-plugin! plugin-roots))
+                install-missing-plugin! plugin-roots)
+          (only (tuna storage) start-storage!) (only (tuna saved) finish-saved-data!))
 
   ;; Exit status 2 marks a usage error, as in most command-line programs.
   (define (main program arguments own-directories)
@@ -34,6 +35,7 @@
       (optimize-level 2)
       (start-plugins! home (string-append configuration "/init.ss") lib library
         (string-append home "/.local/share/tuna/plugins"))
+      (start-storage! (string-append home "/.local/share/tuna/saved"))
       (install-module-lookup! own-directories lib library (string-append home "/.cache/tuna")
         plugin-root checked-plugin-root install-missing-plugin! plugin-roots)
       (install-loader!)
@@ -63,7 +65,8 @@
             (parameterize ([quits-allowed #f])
               (for-each (lambda (owner) (take-back-changes! owner '())) '((repl) (init)))
               (unload-all-modules!)
-              (run-queued!))
+              (run-queued!)
+              (finish-saved-data!))
             (fresh-line (current-output-port))
             (flush-output-port (current-output-port)))
           (apply exit-process exit-arguments)))))

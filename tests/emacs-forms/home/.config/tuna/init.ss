@@ -68,3 +68,5 @@
 (when (file-exists? "/bin/sh")
   (when-installed (vertico)
     (set-option! vertico:count 15)))
+;; savehist-additional-variables
+(define-saved search-ring '() list?)

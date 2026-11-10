@@ -1,0 +1,114 @@
+; A datum starts as its initial value; evaluating its form again keeps the
+; value.
+> (define-saved answers '() list?)
+> (answers)
+()
+> (set-saved! answers '("yes"))
+> (answers)
+("yes")
+> (define-saved answers '() list?)
+> (answers)
+("yes")
+> (list (saved? answers) (saved? car) (saved? (lambda () '())))
+(#t #f #f)
+; Evaluating the form again with a check its value fails moves the value
+; aside, as at load; a value that is still the initial one is replaced.
+> (define-saved kind '(1 2) list?)
+> (set-saved! kind '(1 2 3))
+> (define-saved kind 0 fixnum?)
+! define-saved: ~/.local/share/tuna/saved/user/repl/kind.ss holds a value that fails its check; it is moved to ~/.local/share/tuna/saved/user/repl/kind.ss.rejected
+> (kind)
+0
+> (define-saved kind "none" string?)
+> (kind)
+"none"
+; Setting checks the value, and only set-saved! sets it.
+> (set-saved! answers 5)
+! set-saved!: 5 is not a valid value for answers
+> (set-saved! answers (list car))
+! set-saved!: not plain data with irritant (#<procedure car>)
+> (set-saved! car '())
+! set-saved!: not saved data with irritant #<procedure car>
+> (answers '("no"))
+! answers: saved data is set with set-saved!
+> (answers)
+("yes")
+; Removing it gives the initial value back.
+> (remove-saved! answers)
+> (answers)
+()
+> (remove-saved! car)
+! remove-saved!: not saved data with irritant #<procedure car>
+; The initial value must be valid too.
+> (define-saved wrong 'x list?)
+! define-saved: x is not a valid value for wrong
+> (define-saved wrong (vector car) vector?)
+! define-saved: not plain data with irritant #(#<procedure car>)
+> (define-saved wrong '() 'list?)
+! define-saved: not a procedure with irritant list?
+; Any thread may set saved data, but only the main thread defines it.
+> (thread-join (fork-thread (lambda () (set-saved! answers '("from a thread")))))
+> (answers)
+("from a thread")
+> (thread-join (fork-thread (lambda () (remove-saved! answers))))
+> (answers)
+()
+> (let ([outcome #f])
+    (thread-join
+      (fork-thread
+        (lambda ()
+          (set! outcome (guard (c [#t (condition-message c)]) (define-saved x 0 fixnum?) x)))))
+    outcome)
+"only the main thread makes changes"
+; The configuration's datum is its own: the REPL's of the same name is
+; another datum.
+> (history)
+("start")
+> (define-saved history '() list?)
+> (history)
+()
+; A module's stored value is read when it loads; one that cannot be read,
+; is not plain data or fails its check is moved aside and reported, and the
+; datum starts from its initial value.
+> (import (hist))
+! define-saved: ~/.local/share/tuna/saved/user/hist/broken.ss cannot be read; it is moved to ~/.local/share/tuna/saved/user/hist/broken.ss.rejected
+! define-saved: ~/.local/share/tuna/saved/user/hist/trailing.ss cannot be read; it is moved to ~/.local/share/tuna/saved/user/hist/trailing.ss.rejected
+! define-saved: ~/.local/share/tuna/saved/user/hist/empty.ss cannot be read; it is moved to ~/.local/share/tuna/saved/user/hist/empty.ss.rejected
+! define-saved: ~/.local/share/tuna/saved/user/hist/boxed.ss holds a value that is not plain data; it is moved to ~/.local/share/tuna/saved/user/hist/boxed.ss.rejected
+! define-saved: ~/.local/share/tuna/saved/user/hist/cyclic.ss holds a value that is not plain data; it is moved to ~/.local/share/tuna/saved/user/hist/cyclic.ss.rejected
+! define-saved: ~/.local/share/tuna/saved/user/hist/wrong.ss holds a value that fails its check; it is moved to ~/.local/share/tuna/saved/user/hist/wrong.ss.rejected
+> (list (hist:entries) (hist:stored) (hist:broken) (hist:trailing) (hist:empty) (hist:boxed) (hist:cyclic) (hist:wrong))
+(("first") 42 0 0 0 0 () 0)
+> (sort string<?
+    (filter (lambda (f) (member (path-extension f) '("ss" "rejected")))
+      (directory-list "~/.local/share/tuna/saved/user/hist")))
+("boxed.ss.rejected" "broken.ss.rejected" "cyclic.ss.rejected" "empty.ss.rejected" "stored.ss" "trailing.ss.rejected" "wrong.ss.rejected")
+; A check that never returns can be ended, and the stored file stays.
+> (begin
+    (fork-thread
+      (lambda ()
+        (sleep (make-time 'time-duration 200000000 0))
+        (request-quit!)))
+    (void))
+> (import (looping))
+! &quit
+> (file-exists? "~/.local/share/tuna/saved/user/looping/x.ss")
+#t
+; Setting saved data is not a change, and unloading a module leaves it: a
+; procedure held from before still reads and sets it, and the module, loaded
+; again, keeps its value.
+> (module-changes '(hist))
+()
+> (define held hist:entries)
+> (unload-module! '(hist))
+> (held)
+("first")
+> (set-saved! held '("kept"))
+> (load-module! '(hist))
+> (list (hist:entries) (eq? held hist:entries))
+(("first" "kept") #t)
+; Evaluating the configuration again keeps its datum's value.
+> (import (tuna eval))
+> (eval-file "~/.config/tuna/init.ss")
+> (history)
+("start" "start")
