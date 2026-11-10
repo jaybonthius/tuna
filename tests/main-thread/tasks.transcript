@@ -94,9 +94,16 @@ from-thread
 > (map car (module-changes '(waiter)))
 (task define define define)
 > (begin
+    (as-module '(waiter)
+      (post! (lambda ()
+               (guard (c [(quit-condition? c) (display "waiter's posted task quit") (newline)])
+                 (suspend (lambda (resume) (void)))))))
+    (void))
+> (begin
     (as-module '(waiter) (waiter:later))
     (unload-module! '(waiter)))
 waiter's task quit
+waiter's posted task quit
 ; A thunk posted by a module unloaded before it runs never runs, and a
 ; task that goes on after its module is unloaded makes no change.
 > (load-module! '(waiter))

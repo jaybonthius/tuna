@@ -1,0 +1,15 @@
+; Each form's basic use.
+> (define (autosave) #t)
+> (define autosave-timer (run-with-timer 60 autosave 60))
+> (define-worker (match-names query)
+    (emit (string-append "matches for " query)))
+; A timer is its owner's change; the predicates.
+> (map car (module-changes '(repl)))
+(timer)
+> (list (eq? (timer-procedure autosave-timer) autosave) (timer? autosave-timer)
+        (hook? files:after-save) (option? fill:column) (table? files:modes) (scope? (make-scope))
+        (task? (current-task)) (worker? match-names) (worker? car) (job? car))
+(#t #t #t #t #t #t #t #t #f #f)
+; The worker's result reaches on-result.
+> (suspend (lambda (resume) (start-job match-names "spe" (lambda (v) (resume (lambda () v))))))
+"matches for spe"

@@ -1,0 +1,2 @@
+#!tuna
+(define (greeting) "hello")

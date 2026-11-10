@@ -5,6 +5,7 @@
     request-quit!
     report-on-main-thread
     &quit
+    make-quit-condition
     quit-condition?
     spawn-task
     suspend
@@ -19,7 +20,7 @@
     run-queued!)
   (import (except (chezscheme) exit) (prefix (only (chezscheme) exit) chez:)
           (tuna core changes) (tuna core definitions) (tuna core conditions)
-          (only (tuna core modules) running-module-body))
+          (only (tuna core modules) running-module-body add-module-unloaded-handler!))
 
   (define-condition-type &quit &serious make-quit-condition quit-condition?)
 
@@ -131,8 +132,13 @@
          (run-task-body t)]
         [else (finish! t 'failed (make-quit-condition))])))
 
+  ;; A task whose resume is dropped can never continue, so it is held
+  ;; weakly.
+  (define paused-tasks (make-weak-eq-hashtable))
+
   (define (continue! t state k thunk)
     (when (and (eq? (task-state t) state) (eq? (task-continuation t) k))
+      (hashtable-delete! paused-tasks t)
       (task-state-set! t 'running)
       (set! running-task t)
       (k thunk)))
@@ -196,6 +202,7 @@
            (receiver (make-resume t k))
            (task-continuation-set! t k)
            (task-state-set! t 'paused)
+           (hashtable-set! paused-tasks t #t)
            (return-to-loop (void)))))))
 
   (define (check-task who v)
@@ -314,6 +321,16 @@
       (when item
         (run-item! item)
         (run-queued!))))
+
+  ;; Only a spawned task is a change, but every paused task of a module
+  ;; would otherwise run its code after the module is gone.
+  (add-module-unloaded-handler!
+    (lambda (name)
+      (vector-for-each
+        (lambda (t)
+          (when (and (eq? (task-state t) 'paused) (equal? (task-owner t) name))
+            (stop-task! t)))
+        (hashtable-keys paused-tasks))))
 
   (record-writer (record-type-descriptor task)
     (lambda (t p wr) (display "#<task>" p))))

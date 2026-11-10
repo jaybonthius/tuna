@@ -1,0 +1,33 @@
+; sleep-for pauses the current task, and the main thread goes on.
+> (define napping #f)
+> (begin
+    (set! napping (spawn-task (lambda () (sleep-for 0.3) 'rested)))
+    (sleep-for 0.05)
+    (task-done? napping))
+#f
+> (join-task napping)
+rested
+; Sleeping tasks wake in the order of their times.
+> (begin
+    (spawn-task (lambda () (sleep-for 0.2) (note! 'second)))
+    (spawn-task (lambda () (sleep-for 0.1) (note! 'first)))
+    (sleep-for 0.3)
+    (reverse log))
+(first second)
+; join-task raises the condition a task raised after it slept.
+> (define failing (spawn-task (lambda () (sleep-for 0.05) (error 'nap "woke badly"))))
+> (join-task failing)
+! nap: woke badly
+! nap: woke badly
+; signal-task raises in a sleeping task.
+> (define waiting (spawn-task (lambda () (sleep-for 100))))
+> (signal-task waiting 'stop)
+! non-condition value stop
+> (guard (c [#t c]) (join-task waiting))
+stop
+; Only a task can sleep.
+> (on-thread (lambda () (sleep-for 1)))
+"not in a task"
+> (sleep-for -1)
+! sleep-for: not a number of seconds with irritant -1
+> (sleep-for 0)
