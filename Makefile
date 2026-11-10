@@ -8,7 +8,7 @@ SCRIPT_TESTS := $(sort $(wildcard tests/*-test.sh))
 TRANSCRIPTS := $(sort $(wildcard tests/*/*.transcript))
 RUNS := $(TESTS:%=run/%) $(SCRIPT_TESTS:%=run/%) $(TRANSCRIPTS:%=run/%)
 
-.PHONY: build test repl exe clean $(RUNS)
+.PHONY: build test bench repl exe clean $(RUNS)
 
 # Phony so that Chez, which tracks what each object was built against,
 # decides what is stale.
@@ -27,6 +27,10 @@ $(SCRIPT_TESTS:%=run/%): run/%: exe
 
 $(TRANSCRIPTS:%=run/%): run/%: exe
 	@timeout $(TEST_TIMEOUT) sh tests/run-transcript.sh build/bin/tuna $*
+
+bench: exe
+	sh bench/calls.sh build/bin/tuna
+	sh bench/startup.sh build/bin/tuna $(SCHEME)
 
 repl: build
 	$(SCHEME) --libdirs $(LIBDIRS) --compile-imported-libraries

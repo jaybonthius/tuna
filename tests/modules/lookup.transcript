@@ -1,0 +1,33 @@
+; (x …) is looked for in lib/, then only in the plugin x, then in Tuna's
+; own library.
+> (import (shadowed))
+> (shadowed:where)
+"lib/"
+> (import (shadowed part))
+> (shadowed/part:where)
+"Tuna's own library"
+> (import (files))
+> (files:where)
+"Tuna's own library"
+> (import (other))
+> (other:name)
+other
+; Another plugin's compat.sls is not the module (compat).
+> (import (compat))
+> (compat:who)
+"the plugin compat"
+; Tuna's own names resolve only to Tuna's libraries.
+> (import (tuna extra))
+! library (tuna extra) not found
+> (import (only (tuna core) where))
+! library (tuna core) not found
+; The owners' names, and names that would replace Chez's own prefixed
+; REPL names, are not module names.
+> (import (init))
+! import: a module cannot be named (init)
+> (import (repl))
+! import: a module cannot be named (repl)
+> (import (csv7 tools))
+! import: a module cannot be named (csv7 tools)
+> (import (r6rs))
+! import: a module cannot be named (r6rs)

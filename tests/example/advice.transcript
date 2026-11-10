@@ -1,0 +1,44 @@
+> (define (shout text name) (string-upcase (text name)))
+> (advice-add! greet:text shout)
+> (greet:text "Zeppo")
+"HELLO, ZEPPO!"
+; The configuration's advice runs, and stays when the target is redefined.
+> (files:save! "a.txt")
+saving a.txt
+"a.txt"
+> (import (tuna eval))
+> (eval-text "(define (save! path) (display \"[saved]\") path)"
+    (string-append (getenv "TUNA_LIBRARY") "/files.sls"))
+> (files:save! "a.txt")
+saving a.txt[saved]
+"a.txt"
+; The last advice is outermost; adding it twice from one module does
+; nothing.
+> (define (exclaim save! path) (display "!") (save! path))
+> (advice-add! files:save! exclaim)
+> (advice-add! files:save! exclaim)
+> (files:save! "a.txt")
+!saving a.txt[saved]
+"a.txt"
+; Removing (init)'s advice from the REPL is (repl)'s change.
+> (advice-remove! files:save! announce)
+> (definition-changes files:save!)
+(((repl) removal #<procedure announce>) ((repl) advice #<procedure exclaim>) ((init) advice #<procedure announce>) ((files) define #f))
+> (files:save! "b")
+![saved]
+"b"
+; Removing one's own advice takes the change back.
+> (advice-remove! files:save! exclaim)
+> (map cadr (module-changes '(repl)))
+(files:save! greet:text)
+> (advice-add! files:save! (lambda (save! . arguments) (apply save! arguments)))
+> (files:save! "c")
+[saved]
+"c"
+; The target must be a changeable definition.
+> (advice-add! files:make-entry exclaim)
+! advice-add!: not a changeable definition files:make-entry in (advice-add! files:make-entry exclaim)
+> (advice-add! car exclaim)
+! advice-add!: not a changeable definition car in (advice-add! car exclaim)
+> (advice-add! files:save! 'exclaim)
+! advice-add!: not a procedure with irritant exclaim

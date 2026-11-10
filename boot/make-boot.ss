@@ -16,9 +16,10 @@
                  [else '()])))
            (sort string<? (directory-list dir))))))
 
-;; All of chez-lang goes in, because a file's language and the libraries
-;; a language uses must load with no source tree on disk.
-(define roots (cons '(tuna main) (library-names "lib/chez-lang/src")))
+;; All of Tuna's libraries and chez-lang go in, because a file's language
+;; and the libraries a language uses must load with no source tree on disk.
+(define roots
+  (append (remove '(tuna test) (library-names "src")) (library-names "lib/chez-lang/src")))
 
 ;; library-requirements needs the library's compile-time and run-time
 ;; information loaded, and lists only direct requirements, so walk them

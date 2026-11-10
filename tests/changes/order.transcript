@@ -1,0 +1,10 @@
+; A module under lib/ goes after the modules outside lib/, unless one of
+; them imports it: then it goes before its importer.
+> (import (groucho words))
+> (spell:language)
+"groucho"
+> (import (prog2))
+> (spell:language)
+"prog2"
+> (definition-changes spell:language)
+(((prog2) override #f) ((groucho words) override #f) ((spell) define #f))

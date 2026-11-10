@@ -1,3 +1,3 @@
 (import (chezscheme) (tuna main))
 
-(main (command-line-arguments))
+(main (car (command-line)) (command-line-arguments) (library-directories))

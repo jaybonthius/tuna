@@ -1,0 +1,58 @@
+; A module may define a name #!tuna provides; its own code means its own
+; definition, and other code sees the prefixed name.
+> (import (lists))
+> (lists:twice '(1))
+(mine)
+> (list (lists:map car '(1)) (map - '(1)))
+((mine) (-1))
+> (lists:both '(1 2))
+((mine) (-1 -2))
+; A module cannot define a keyword its own code uses.
+> (import (redefine))
+! attempt to reference unbound identifier g at line 3, char 10 of ~/.config/tuna/lib/redefine.sls
+; define-public and macros built on it export their names; Chez's
+; definition forms export theirs when written at the top level, and a name
+; a macro defines with them stays inside the module.
+> (import (macros))
+> (macros:greeting)
+"hi"
+> (set! macros:hello (lambda () "hi"))
+> (list (macros:hello) (map car (definition-changes macros:hello)))
+("hi" ((repl) (macros)))
+> (macros:entry-key (macros:make-entry 'k))
+k
+> (list macros:low macros:high)
+(1 9)
+> (macros:origin)
+(0 10)
+> macros:make-pt
+! variable macros:make-pt is not bound
+> macros:limit
+! variable macros:limit is not bound
+; Only define makes a changeable definition.
+> (set! macros:low 2)
+! attempt to assign immutable variable macros:low
+> (advice-add! macros:make-entry (lambda (make . arguments) (apply make arguments)))
+! advice-add!: not a changeable definition macros:make-entry in (advice-add! macros:make-entry (lambda (make . arguments) (apply make arguments)))
+> (import (nodefiner))
+! no visible binding for define-property key definer at line 3, char 20 of ~/.config/tuna/lib/nodefiner.sls
+; Definitions come before expressions; Chez reports the first definition
+; after an expression as Tuna expands it.
+> (import (late))
+! invalid context for definition (define-syntax f (changeable-transformer (syntax cell) (quote (...))))
+; Both languages withhold sleep, and #!tuna/base is a module language too.
+> (import (sleeper))
+! attempt to reference unbound identifier sleep at line 2, char 16 of ~/.config/tuna/lib/sleeper.sls
+> (import (base-sleeper))
+! attempt to reference unbound identifier sleep at line 2, char 16 of ~/.config/tuna/lib/base-sleeper.sls
+> (import (base))
+> (base:name)
+(base)
+; A module's own set! assigns its definition, from any thread.
+> (import (assign))
+> (list (assign:bump!) (assign:bump!) assign:count)
+(1 2 2)
+> (let ([t (fork-thread assign:bump!)]) (thread-join t) assign:count)
+3
+> (module-changes '(repl))
+((override macros:hello #f))

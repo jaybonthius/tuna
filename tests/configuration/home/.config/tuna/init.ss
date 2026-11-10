@@ -1,0 +1,18 @@
+(import (tuna))
+(import (spell) (files) (magit))
+(set! spell:dictionary-path (lambda () "/home/groucho/words"))
+(set! magit/git:run (lambda () 'mine))
+
+(define (announce save! path)
+  (display (string-append "saving " path))
+  (save! path))
+(advice-add! files:save! announce)
+
+(define loaded-by (this-module))
+(import (boom))
+(define after-boom (this-module))
+(set! spell:language (lambda () "fr"))
+(car '())
+(define after-error 'ran)
+(set! spell:missing 1)
+(define (spell:check path) "mine")

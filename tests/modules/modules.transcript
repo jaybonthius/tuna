@@ -1,0 +1,42 @@
+; A module is named by its path under a library root, and a plain import
+; gives its definitions with the module's prefix, parts joined by /.
+> (import (greet))
+> (greet:text "Harpo")
+"Hello, Harpo!"
+> (greet:module-name)
+(greet)
+> (this-module)
+(repl)
+> (import (greet util))
+> (greet/util:user-name)
+"Groucho"
+; Every caller uses the definition in effect, and a procedure's name used
+; as a value is the same procedure each time, which calls it.
+> (define held greet:text)
+> (eq? held greet:text)
+#t
+> (set! greet:text (lambda (name) (string-append "Hi, " name)))
+> (list (held "Chico") (greet:text "Chico"))
+("Hi, Chico" "Hi, Chico")
+> (procedure-arity-mask held)
+-1
+; Outside a module, define-public is Chez's define.
+> (define-public (outside) 'plain)
+> (outside)
+plain
+> (definition-changes outside)
+! definition-changes: not a changeable definition outside in (definition-changes outside)
+; A module whose body raises leaves the owner as it was, so the next
+; change is the REPL's.
+> (import (boom))
+! boom: failed
+> (this-module)
+(repl)
+> (set! greet/util:user-name (lambda () "Zeppo"))
+> (definition-changes greet/util:user-name)
+(((repl) override #f) ((greet util) define #f))
+; A set! of a name that an import earlier in the same form binds is an
+; override, though the module has not run when the form is checked.
+> (begin (import (fresh)) (set! fresh:y (lambda () 2)))
+> (fresh:y)
+2

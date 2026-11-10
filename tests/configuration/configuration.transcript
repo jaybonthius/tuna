@@ -1,0 +1,55 @@
+; The configuration loads form by form as (init); a form that raises goes
+; to report, and the next form runs.
+! boom: failed
+! car: () is not a pair
+! set!: no loaded module exports spell:missing
+! define: spell:check is (spell)'s definition; override it with (set! spell:check value)
+> (list loaded-by after-error (this-module))
+((init) ran (repl))
+; A module whose body raises leaves the owner (init).
+> after-boom
+(init)
+> (definition-changes spell:language)
+(((init) override #f) ((spell) define #f))
+; Its set! overrides a module's definition, which the module's own code
+; then uses, as do the module's own internal modules.
+> (spell:check "a.txt")
+checking a.txt against /home/groucho/words
+> (magit:status)
+mine
+; The configuration and the REPL see every loaded module's names, an
+; internal module's record procedures included.
+> (magit/git:thing-a (magit/git:make-thing 5))
+5
+; A module loaded within a form is seen from the next form.
+> (begin (magit:load-later!) magit/later:x)
+! variable magit/later:x is not bound
+> magit/later:x
+later-x
+; The REPL checks its definitions as the configuration's are checked.
+> (define (spell:check path) "mine")
+! define: spell:check is (spell)'s definition; override it with (set! spell:check value)
+> (define-record-type files:entry (fields a))
+! define-record-type: files:entry is (files)'s definition and cannot be defined again
+; A definition a macro produces is not checked.
+> (define-syntax define-quietly (syntax-rules () [(_ n v) (define n v)]))
+> (define-quietly files:save! 'shadowed)
+> files:save!
+shadowed
+; A set! of a prefixed name that no loaded module exports raises, so it
+; cannot silently make a variable; a name defined at the top level is set.
+> (set! nothere:x 1)
+! set!: no loaded module exports nothere:x
+> (define mine:x 1)
+> (set! mine:x 2)
+> mine:x
+2
+; A module load that replaces a top-level definition of one of its names
+; says so.
+> (define magit/extra:y 'user)
+> (magit:load-extra!)
+> magit/extra:y
+! import: (magit extra) replaces the top-level definition of magit/extra:y
+extra-y
+> (define-public (spell:check path) "mine")
+! define-public: spell:check is (spell)'s definition; override it with (set! spell:check value)
