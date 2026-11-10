@@ -1,0 +1,53 @@
+; Unloading a module removes its options, hooks and tables with every
+; owner's changes to them, and the local hook entries of its procedures
+; in every scope.
+> (define s1 (make-scope))
+> (define s2 (make-scope))
+> (current-scope s1)
+> (prog:mode)
+> (current-scope s2)
+> (prog:mode)
+> (files:save! "x")
+[indenting]
+"x"
+> (fill:column)
+100
+> (map (lambda (change) (list-head change 2)) (module-changes '(init)))
+((hook-entry files:before-save) (local-value fill:column) (hook-entry files:before-save) (local-value fill:column) (hook-entry prog:mode-hook) (removal files:after-save) (override spell:dictionary-path) (setting files:autosave-seconds) (setting fill:column) (setting spell:language))
+> (define column fill:column)
+> (define mode-hook prog:mode-hook)
+> (unload-module! '(prog))
+> (files:save! "x")
+"x"
+> (current-scope s1)
+> (files:save! "x")
+"x"
+> (map (lambda (change) (list-head change 2)) (module-changes '(init)))
+((local-value fill:column) (local-value fill:column) (removal files:after-save) (override spell:dictionary-path) (setting files:autosave-seconds) (setting fill:column) (setting spell:language))
+> (hook? mode-hook)
+#t
+> (add-hook! mode-hook car)
+! prog:mode-hook: module (prog) is unloaded
+> (unload-module! '(fill))
+> (map (lambda (change) (list-head change 2)) (module-changes '(init)))
+((removal files:after-save) (override spell:dictionary-path) (setting files:autosave-seconds) (setting spell:language))
+> (column)
+70
+> (set-option! column 1)
+! fill:column: module (fill) is unloaded
+> (fill:column)
+! fill:column: module (fill) is unloaded
+; Loaded again, it defines its option afresh.
+> (load-module! '(fill))
+> (fill:column)
+70
+> (set-option! fill:column 81)
+> (option-settings fill:column)
+(((repl) 81))
+> (eq? column fill:column)
+#f
+; Unloading the module that defined a table removes every owner's entries.
+> (table-set! files:modes "rkt" 'racket)
+> (unload-module! '(files))
+> (module-changes '(repl))
+((setting fill:column #f))

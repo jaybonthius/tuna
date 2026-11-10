@@ -2,6 +2,7 @@
   (export
     module-name?
     prefixed-symbol
+    definition-symbol
     current-owner
     this-module
     as-module
@@ -42,6 +43,11 @@
               (loop (cdr parts))))
           (put-char p #\:)
           (display name p)))))
+
+  ;; The configuration, the REPL and Tuna itself define their names at the
+  ;; top level, where names carry no prefix.
+  (define (definition-symbol owner name)
+    (if (member owner '((init) (repl) (tuna))) name (prefixed-symbol owner name)))
 
   (define current-owner (make-thread-parameter '(repl)))
 

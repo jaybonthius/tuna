@@ -1,0 +1,23 @@
+; Who set what: definitions, options, tables and the changes of a module.
+> (table-set! files:modes "rkt" 'racket)
+> (definition-changes spell:dictionary-path)
+(((init) override #f) ((spell) define #f))
+> (option-settings spell:language)
+(((init) "en-GB"))
+> (table-owner files:modes "rkt")
+(repl)
+> (map car (module-changes '(init)))
+(hook-entry removal advice override setting setting setting)
+> (map cadr (module-changes '(init)))
+(prog:mode-hook files:after-save files:save! spell:dictionary-path files:autosave-seconds fill:column spell:language)
+> (map car (module-changes '(spell)))
+(hook-entry define define)
+> (module-changes '(prog))
+((setting fill:column #f) (define prog:mode #f) (define prog:indent-buffer #f))
+; Evaluating the configuration again takes back its changes, then runs it.
+> (import (tuna eval))
+> (eval-file "~/.config/tuna/init.ss")
+> (length (module-changes '(init)))
+7
+> (list (fill:column) (spell:language))
+(80 "en-GB")

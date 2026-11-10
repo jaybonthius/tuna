@@ -25,6 +25,8 @@ k
 (1 9)
 > (macros:origin)
 (0 10)
+> (macros:verbose)
+#f
 > macros:make-pt
 ! variable macros:make-pt is not bound
 > macros:limit
@@ -32,6 +34,8 @@ k
 ; Only define makes a changeable definition.
 > (set! macros:low 2)
 ! attempt to assign immutable variable macros:low
+> (set! macros:verbose 2)
+! attempt to assign immutable variable macros:verbose
 > (advice-add! macros:make-entry (lambda (make . arguments) (apply make arguments)))
 ! advice-add!: not a changeable definition macros:make-entry in (advice-add! macros:make-entry (lambda (make . arguments) (apply make arguments)))
 > (import (nodefiner))
@@ -48,6 +52,9 @@ k
 > (import (base))
 > (base:name)
 (base)
+; #!tuna/base is #!tuna without the standard library.
+> (import (base-option))
+! attempt to reference unbound identifier define-option at line 2, char 2 of ~/.config/tuna/lib/base-option.sls
 ; A module's own set! assigns its definition, from any thread.
 > (import (assign))
 > (list (assign:bump!) (assign:bump!) assign:count)

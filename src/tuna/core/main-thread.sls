@@ -3,6 +3,7 @@
     post!
     post-task!
     request-quit!
+    report-on-main-thread
     &quit
     quit-condition?
     spawn-task
@@ -276,14 +277,17 @@
       (when (quits-allowed)
         (quit-if-requested!))))
 
+  (define (report-on-main-thread c)
+    (if (on-main-thread?)
+        (report-safely c)
+        (enqueue! (lambda () (report-safely c)))))
+
   ;; Every thread forked after the loop starts inherits this handler. Each
   ;; task handles its own raises, so on the main thread only the loop's
   ;; code gets here; on another thread, reset ends the thread, as
   ;; fork-thread arranges.
   (define (unhandled-raise c)
-    (if (on-main-thread?)
-        (report-safely c)
-        (enqueue! (lambda () (report-safely c))))
+    (report-on-main-thread c)
     (unless (warning-only? c)
       (reset)))
 

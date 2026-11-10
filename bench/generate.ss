@@ -77,9 +77,9 @@
       (list "#!tuna")
       (if (null? imports) '() (list (format "(import ~{~a~^ ~})" imports)))
       (list
-        "(define (width) 70)"
-        "(define (enabled) #t)"
-        "(define (after-run v) v)"
+        "(define-option width 70 fixnum? \"Width of the output.\")"
+        "(define-option enabled #t boolean? \"Whether the plugin acts.\")"
+        "(define-hook after-run \"Called with each result.\")"
         "(define-record-type entry (fields key (mutable value)))"
         "(define-syntax with-entry"
         "  (syntax-rules () [(_ (k v) body ...) (let ([e (make-entry k v)]) body ...)]))")
@@ -88,16 +88,16 @@
       (if (null? dependencies)
           '()
           (list
-            "(define (on-dependency-run run v) (run (h0 (list v) 1)))"
-            (format "(advice-add! ~a:after-run on-dependency-run)" (car dependencies)))))))
+            "(define (on-dependency-run v) (h0 (list v) 1))"
+            (format "(add-hook! ~a:after-run on-dependency-run)" (car dependencies)))))))
 
 (define (extra-module)
   (append
     (list
       "#!tuna"
       "(define-record-type entry (fields key (mutable value)))"
-      "(define (enabled) #t)"
-      "(define (after-run v) v)"
+      "(define-option enabled #t boolean? \"Whether the extra acts.\")"
+      "(define-hook after-run \"Called with each result.\")"
       "(define (width) 60)")
     (helpers-of 10)
     (apply append (map (lambda (k) (command k '())) (iota commands)))))
@@ -117,5 +117,5 @@
     (list "(import (tuna))")
     (map (lambda (i) (format "(import (~a))" (plugin-id i))) (iota plugins))
     (list
-      "(set! p010:width (lambda () 80))"
+      "(set-option! p010:width 80 p020:enabled #f)"
       "(printf \"configured-ms ~a check ~s\\n\" (real-time) (p000:cmd0 \"x\"))")))

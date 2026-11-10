@@ -1,0 +1,71 @@
+; Each form's basic use.
+> (import (racket) (compile) (keys))
+> (table-set! files:modes "rkt" racket:mode)
+> (table-set! compile:excluded "init.ss")
+> (eq? (table-ref files:modes "rkt") racket:mode)
+#t
+> (table-entries compile:excluded)
+(("init.ss" . #t))
+> (keys:bind! keys:global "C-x m" 'mail)
+> (list (table-ref keys:global "C-x m") (table-owner keys:global "C-x m"))
+(mail (repl))
+; A module under lib/ removes the REPL's binding, and unloading it
+; restores the binding.
+> (load-module! '(groucho keys))
+> (list (table-ref keys:global "C-x m") (table-ref keys:global "C-x m" 'none) (table-owner keys:global "C-x m"))
+(#f none #f)
+> (module-changes '(groucho keys))
+((removal keys:global "C-x m"))
+> (unload-module! '(groucho keys))
+> (table-owner keys:global "C-x m")
+(repl)
+; The value in effect is the last in the order of changes, so the REPL's
+; wins over a module's.
+> (as-module '(keys) (table-set! keys:global "C-x m" 'compose))
+> (table-ref keys:global "C-x m")
+mail
+; Removing a key takes back one's own value, and removes the others',
+; whichever module set them, as one's own change.
+> (table-remove! keys:global "C-x m")
+> (list (table-ref keys:global "C-x m") (table-owner keys:global "C-x m"))
+(#f #f)
+> (table-set! keys:global "C-x b" 'buffers)
+> (table-set! keys:global "C-x a" 'abbrevs)
+> (table-set! keys:global "C-x b" 'switch)
+> (table-entries keys:global)
+(("C-x b" . switch) ("C-x a" . abbrevs))
+> (module-changes '(repl))
+((table-entry keys:global "C-x b") (table-entry keys:global "C-x a") (removal keys:global "C-x m") (table-entry compile:excluded "init.ss") (table-entry files:modes "rkt"))
+; The removal stays when the module sets the key again, until it is taken
+; back.
+> (as-module '(keys) (table-set! keys:global "C-x m" 'compose))
+> (table-ref keys:global "C-x m")
+#f
+> (as-module '(keys) (table-remove! keys:global "C-x m"))
+> (as-module '(spell) (table-set! keys:global "C-x m" 'spell))
+> (table-entries keys:global)
+(("C-x m" . spell) ("C-x b" . switch) ("C-x a" . abbrevs))
+; Evaluating define-table again keeps the entries.
+> (define-table colours "Named colours.")
+> (table-set! colours "sea" 'blue)
+> (define-table colours)
+> (table-entries colours)
+(("sea" . blue))
+; Either the configuration or the REPL evaluating the other's
+; define-table keeps the entries.
+> (import (tuna eval))
+> (eval-text "(define-table shared)" "~/.config/tuna/init.ss")
+> (table-set! shared "sea" 'blue)
+> (define-table shared)
+> (table-entries shared)
+(("sea" . blue))
+> (eval-text "(define-table shared)" "~/.config/tuna/init.ss")
+> (table-entries shared)
+(("sea" . blue))
+; Other threads read tables too.
+> (let ([v #f]) (thread-join (fork-thread (lambda () (set! v (table-ref colours "sea"))))) v)
+blue
+> (table-set! 'colours "sea" 'green)
+! table-set!: not a table with irritant colours
+> (list (table? colours) (table? 'colours))
+(#t #f)

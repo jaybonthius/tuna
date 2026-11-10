@@ -1,6 +1,7 @@
 (library (tuna core definitions)
   (export
     define-public
+    define-exported
     module-property
     advice-add!
     advice-remove!
@@ -20,7 +21,10 @@
     raise-removed
     changeable-symbol?
     changeable-symbol-module
-    changeable-identifier?)
+    changeable-identifier?
+    changeable-procedure-module
+    changeable-procedure-documentation
+    set-changeable-documentation!)
   (import (chezscheme) (tuna core changes) (tuna core conditions)
           (only (chez-lang body) unbound-identifier?))
 
@@ -55,8 +59,9 @@
       (lambda (new)
         (lambda (module symbol)
           (letrec ([c (new module symbol
-                        (lambda arguments (apply (cell-callee c) arguments))
+                        (make-wrapper-procedure (lambda arguments (apply (cell-callee c) arguments)) -1 #f)
                         #f #f '() '() '() '() 'loaded #t #f '() #f #f)])
+            (set-wrapper-procedure-data! (cell-forwarder c) c)
             c)))))
 
   (define-record-type layer
@@ -100,6 +105,22 @@
   (define (changeable-symbol-module symbol)
     (let ([c (loaded-cell symbol)])
       (and c (cell-module c))))
+
+  (define (forwarder-cell p)
+    (and (wrapper-procedure? p)
+         (let ([c (wrapper-procedure-data p)])
+           (and (cell? c) c))))
+
+  (define (changeable-procedure-module p)
+    (let ([c (forwarder-cell p)])
+      (and c (cell-module c))))
+
+  (define (changeable-procedure-documentation p)
+    (let ([c (forwarder-cell p)])
+      (and c (cell-doc c))))
+
+  (define (set-changeable-documentation! symbol doc)
+    (cell-doc-set! (hashtable-ref cells symbol #f) doc))
 
   (define (layer<? a b)
     (let ([ca (layer-change a)] [cb (layer-change b)])
@@ -365,6 +386,18 @@
                          (define-changeable name cell module symbol expr doc)
                          (export (rename (name symbol)))))
                    #'(define head body ...))))]))))
+
+  (define-syntax define-exported
+    (lambda (x)
+      (lambda (lookup)
+        (syntax-case x ()
+          [(_ name expr)
+           (identifier? #'name)
+           (let ([module (site-module #'name lookup)])
+             (if module
+                 (with-syntax ([symbol (datum->syntax #'name (prefixed-symbol module (syntax->datum #'name)))])
+                   #'(begin (define name expr) (export (rename (name symbol)))))
+                 #'(define name expr)))]))))
 
   (define-syntax advice-add!
     (lambda (x)

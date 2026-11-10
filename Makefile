@@ -31,6 +31,8 @@ $(TRANSCRIPTS:%=run/%): run/%: exe
 bench: exe
 	sh bench/calls.sh build/bin/tuna
 	sh bench/tick.sh build/bin/tuna
+	sh bench/options.sh build/bin/tuna
+	sh bench/hooks.sh build/bin/tuna
 	sh bench/startup.sh build/bin/tuna $(SCHEME)
 
 repl: build

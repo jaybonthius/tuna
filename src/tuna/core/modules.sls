@@ -20,6 +20,7 @@
     call-with-locked-expansion
     call-with-quit-safe-library-lock
     on-unload
+    add-module-unloaded-handler!
     take-back-changes!
     eval-in-module)
   (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna core conditions)
@@ -397,16 +398,20 @@
     (and (symbol? name)
          (equal? (changeable-symbol-module (prefixed-symbol module name)) module)))
 
+  (define (documentation-string body)
+    (and (pair? body) (string? (car body)) (pair? (cdr body)) (car body)))
+
   (define (definition->assignment module form)
     (if (and (pair? form) (eq? (car form) 'define) (pair? (cdr form)))
         (let ([head (cadr form)])
           (cond
             [(and (pair? head) (own-changeable? module (car head)))
-             `(set! ,(car head) (lambda ,(cdr head) ,@(cddr form)))]
+             (values `(set! ,(car head) (lambda ,(cdr head) ,@(cddr form)))
+                     (car head) (documentation-string (cddr form)))]
             [(and (own-changeable? module head) (pair? (cddr form)) (null? (cdddr form)))
-             `(set! ,head ,(caddr form))]
-            [else form]))
-        form))
+             (values `(set! ,head ,(caddr form)) head #f)]
+            [else (values form #f #f)]))
+        (values form #f #f)))
 
   (define (eval-in-module form name)
     (unless (module-name? name)
@@ -415,11 +420,16 @@
     (unless (module-loaded? name)
       (assertion-violation 'eval-in-module "not a loaded module" name))
     (let ([scope (prefixed-symbol name '%scope)])
-      (as-module name
-        (call-with-locked-expansion
-          (lambda ()
-            (eval (list scope (definition->assignment name form))
-                  (scope-environment name scope)))))))
+      (let-values ([(form defined doc) (definition->assignment name form)])
+        (as-module name
+          (call-with-locked-expansion
+            (lambda ()
+              (call-with-values
+                (lambda () (eval (list scope form) (scope-environment name scope)))
+                (lambda results
+                  (when defined
+                    (set-changeable-documentation! (prefixed-symbol name defined) doc))
+                  (apply values results)))))))))
 
   (define (object-path name)
     (let-values ([(source object found?) (search-library 'load-module! name)])
@@ -486,6 +496,14 @@
                             ordered
                             (loaded-importers name)))]))))
 
+  (define module-unloaded-handlers '())
+
+  ;; Defining an option, hook or table is not a change, so module-changes
+  ;; does not list it; what such a definition needs when its module
+  ;; unloads, and not when it reloads, is done by a handler.
+  (define (add-module-unloaded-handler! handler)
+    (set! module-unloaded-handlers (append module-unloaded-handlers (list handler))))
+
   (define (on-unload thunk)
     (unless (procedure? thunk)
       (assertion-violation 'on-unload "not a procedure" thunk))
@@ -510,6 +528,7 @@
                 (loaded-importers name))
       (take-back-changes! name '())
       (unload-definitions! name)
+      (for-each (lambda (handler) (handler name)) module-unloaded-handlers)
       (let ([m (hashtable-ref modules name #f)])
         (module-state-loaded?-set! m #f)
         (module-state-stale?-set! m #t)

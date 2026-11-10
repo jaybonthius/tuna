@@ -1,0 +1,163 @@
+; Each form's basic use.
+> (define-option column 70 fixnum? "Width of filled lines.")
+> (column)
+70
+> (with-options ([fill:column 100]) (fill:column))
+100
+> (option-settings fill:column)
+(((init) 80) ((prog) 90))
+> (set-option! fill:column 80 spell:language "en-GB")
+> (fill:column)
+80
+> (current-scope (make-scope))
+> (import (corfu))
+> (set-option-local! corfu:auto #t corfu:auto-delay 0.1)
+> (list (corfu:auto) (corfu:auto-delay))
+(#t 0.1)
+> (current-scope #f)
+; The configuration's setting wins over a module's, and a module's is in
+; effect when the configuration has none.
+> (list (fill:column) (corfu:auto-delay) (spell:language) (files:autosave-seconds))
+(80 0.2 "en-GB" 30)
+; The configuration's mode hook sets a local value, which with-options
+; binds over.
+> (define s (make-scope))
+> (current-scope s)
+> (prog:mode)
+> (fill:column)
+100
+> (with-options ([fill:column 60]) (fill:column))
+60
+; A binding wins in every scope, and a setting or local value made inside
+; it takes effect when it ends.
+> (with-options ([fill:column 61])
+    (current-scope #f)
+    (set-option! fill:column 75)
+    (list (fill:column) (begin (current-scope s) (fill:column))))
+(61 61)
+> (fill:column)
+100
+> (current-scope #f)
+> (fill:column)
+75
+> (option-settings fill:column)
+(((repl) 75) ((init) 80) ((prog) 90))
+; Threads forked in with-options inherit the binding; other threads read
+; the setting.
+> (with-options ([fill:column 62])
+    (let ([v #f]) (thread-join (fork-thread (lambda () (set! v (fill:column))))) v))
+62
+> (let ([v #f]) (thread-join (fork-thread (lambda () (set! v (fill:column))))) v)
+75
+; option-changed and on-change see each new value once.
+> (define changed '())
+> (add-hook! option-changed (lambda (o v) (set! changed (cons (list (eq? o fill:column) v) changed))))
+> (set-option! fill:column 76)
+> (set-option! fill:column 76)
+> changed
+((#t 76))
+> (define seen '())
+> (define-option width 10 fixnum? #f (lambda (v) (set! seen (cons (list v (current-scope)) seen))))
+> (set-option! width 12)
+> (set-option! width 12)
+> (remove-option! width)
+> seen
+((10 #f) (12 #f))
+> (current-scope s)
+> (set-option-local! width 14)
+> (eq? (cadar seen) s)
+#t
+> (remove-option-local! width)
+> (map car seen)
+(10 14 10 12)
+> (current-scope #f)
+; A raise from on-change goes to report, and the setting stays.
+> (define-option height 1 fixnum? #f (lambda (v) (error 'height "no")))
+> (set-option! height 2)
+! height: no
+> (height)
+2
+; Evaluating define-option again keeps the settings.
+> (define-option height 1 fixnum? "Rows.")
+> (height)
+2
+; Values are checked, every one before any is stored.
+> (set-option! fill:column "wide")
+! set-option!: "wide" is not a valid value for fill:column
+> (set-option! fill:column 77 spell:language 'en)
+! set-option!: en is not a valid value for spell:language
+> (fill:column)
+76
+> (guard (c [#t (condition-message c)]) (set-option! fill:column))
+"an option without a value"
+> (with-options ([fill:column 'wide]) (fill:column))
+! with-options: wide is not a valid value for fill:column
+> (define-option "width" 1 fixnum?)
+! invalid syntax (define-option "width" 1 fixnum?)
+> (define-option depth 'deep fixnum?)
+! define-option: the default deep is not a valid value for depth
+> (set-option! car 1)
+! set-option!: not an option with irritant #<procedure car>
+; parameterize refuses an option.
+> (parameterize ([fill:column 3]) (fill:column))
+! fill:column: an option is bound with with-options, not parameterize
+> (fill:column)
+76
+; option-default and option-setting ignore bindings and scopes.
+> (current-scope s)
+> (with-options ([fill:column 1])
+    (list (option-default fill:column) (option-setting fill:column) (fill:column)))
+(70 76 1)
+; Removing takes back only the current owner's setting or local value.
+> (remove-option! fill:column)
+> (fill:column)
+100
+> (current-scope #f)
+> (fill:column)
+80
+> (remove-option-local! fill:column)
+! remove-option-local!: the current scope is #f
+> (set-option-local! fill:column 1)
+! set-option-local!: the current scope is #f
+> (list (option? fill:column) (option? files:save!) (option? 1))
+(#t #f #f)
+; Naming an option twice in one call notifies once, of the value in effect.
+> (define-option twice 1 fixnum? #f (lambda (v) (display (list 'changed v))))
+> (set-option! twice 2 twice 3)
+(changed 3)
+> (twice)
+3
+> (remove-option! twice)
+(changed 1)
+; Either the configuration or the REPL evaluating the other's
+; define-option keeps the settings.
+> (import (tuna eval))
+> (eval-text "(define-option shared-width 1 fixnum?)" "~/.config/tuna/init.ss")
+> (set-option! shared-width 5)
+> (define-option shared-width 1 fixnum?)
+> (shared-width)
+5
+> (eval-text "(define-option shared-width 1 fixnum?)" "~/.config/tuna/init.ss")
+> (shared-width)
+5
+; A quit ends on-change and an option-changed entry while a change is
+; taken back, by removing it or by unloading the module that made it, and
+; the change is still taken back.
+> (define looping? #f)
+> (define (loop-until-quit . _) (when looping? (request-quit!) (let loop () (loop))))
+> (define-option patient 1 fixnum? #f loop-until-quit)
+> (add-hook! option-changed loop-until-quit)
+> (set-option! patient 2)
+> (set! looping? #t)
+> (remove-option! patient)
+! &quit
+! &quit
+> (set! looping? #f)
+> (as-module '(corfu) (set-option! patient 3))
+> (set! looping? #t)
+> (unload-module! '(corfu))
+! &quit
+! &quit
+> (set! looping? #f)
+> (list (patient) (option-settings patient))
+(1 ())

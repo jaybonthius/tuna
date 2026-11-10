@@ -1,0 +1,43 @@
+; Reloading a module keeps its options, hooks and tables, and other
+; owners' changes to them.
+> (put-version! "spell-1.sls" ".local/share/tuna/plugins/spell/spell.sls")
+> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
+> (put-version! "speller.sls" ".config/tuna/lib/speller.sls")
+> (import (speller))
+> (speller:go)
+(v1 "z")
+> (define held spell:language)
+> (put-version! "spell-2.sls" ".local/share/tuna/plugins/spell/spell.sls")
+> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
+; The module that uses spell's changed macro is recompiled.
+> (speller:go)
+(v2 "z")
+; The configuration's override, setting and removal stay.
+> (spell:dictionary-path)
+"/home/groucho/words"
+> (list (spell:language) (eq? held spell:language))
+("en-GB" #t)
+> (files:after-save "x")
+> (map car (module-changes '(spell)))
+(hook-entry define define)
+; A failed reload is reported, and the previous version runs again.
+> (put-version! "spell-broken.sls" ".local/share/tuna/plugins/spell/spell.sls")
+> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
+! car: () is not a pair
+> (speller:go)
+(v2 "z")
+> (spell:language)
+"en-GB"
+; Reloading files, which defines hooks, an option and a table, keeps the
+; entries, settings and table entries that other modules made.
+> (put-version! "spell-2.sls" ".local/share/tuna/plugins/spell/spell.sls")
+> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
+> (define (noted path) (display "[noted]"))
+> (add-hook! files:after-save noted)
+> (table-set! files:modes "rkt" 'racket)
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/files.sls"))
+> (files:save! "y")
+[noted]
+"y"
+> (list (files:autosave-seconds) (table-ref files:modes "rkt"))
+(30 racket)

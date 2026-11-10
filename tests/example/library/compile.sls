@@ -1,0 +1,2 @@
+#!tuna
+(define-table excluded)
