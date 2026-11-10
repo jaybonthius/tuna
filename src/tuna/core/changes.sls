@@ -7,14 +7,17 @@
     as-module
     owner-rank
     rank-module!
+    unrank-module!
     move-before-importers!
 
     change-owner
     change-kind
+    change-thing
     change-detail
     change-sequence
     record-change!
     take-back!
+    owner-changes
     module-changes
 
     check-main-thread)
@@ -78,6 +81,9 @@
     (unless (hashtable-contains? ranks name)
       (let ([rank (take-rank! (if lib? lib-band outside-band))])
         (with-mutex ranks-mutex (hashtable-set! ranks name rank)))))
+
+  (define (unrank-module! name)
+    (with-mutex ranks-mutex (hashtable-delete! ranks name)))
 
   ;; An importer takes its rank only after its imports have run, so a fresh
   ;; rank puts the import before it.

@@ -1,0 +1,16 @@
+; A reloaded module keeps its place in the order of changes; one loaded
+; again after unloading counts as loaded then.
+> (import (tuna eval))
+> (import (prog))
+> (import (prog2))
+> (spell:language)
+"prog2"
+> (eval-file "~/.local/share/tuna/plugins/prog/prog.sls")
+> (spell:language)
+"prog2"
+> (unload-module! '(prog))
+> (spell:language)
+"prog2"
+> (load-module! '(prog))
+> (spell:language)
+"prog"

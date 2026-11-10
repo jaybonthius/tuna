@@ -1,0 +1,69 @@
+; Evaluating the configuration again takes back its changes, then runs it.
+> (module-changes '(init))
+((advice files:save! #<procedure announce>) (override spell:dictionary-path #f))
+> (eval-file "~/.config/tuna/init.ss")
+> (module-changes '(init))
+((advice files:save! #<procedure announce>) (override spell:dictionary-path #f))
+> (put-version! "init-2.ss" ".config/tuna/init.ss")
+> (eval-file "~/.config/tuna/init.ss")
+> (map car (module-changes '(init)))
+(unload-action override)
+> (spell:dictionary-path)
+"/home/groucho/other-words"
+> (files:save! "b")
+[spell] 
+"b"
+; Its unload actions run first.
+> (eval-file "~/.config/tuna/init.ss")
+configuration unloading
+> (map car (module-changes '(init)))
+(unload-action override)
+; Any other file is loaded into the REPL's environment as (repl).
+> (put-version! "scratch.ss" "scratch.ss")
+> (eval-file "~/scratch.ss")
+> (list scratch-value scratch-path)
+((repl) "/home/groucho/other-words")
+> (module-changes '(repl))
+()
+> (eval-file "~/nothere.ss")
+! open-file-input-port: failed for ~/nothere.ss: no such file or directory
+> (eval-file 'scratch)
+! eval-file: not a path with irritant scratch
+; A module's file that no import has loaded loads it.
+> (put-version! "fresh.sls" ".config/tuna/lib/fresh.sls")
+> (eval-file "~/.config/tuna/lib/fresh.sls")
+> (fresh:x)
+fresh
+; eval-in-module: a define of the module's name assigns it, which is not
+; a change; any other definition raises.
+> (eval-in-module '(define (x) 'assigned) '(fresh))
+> (fresh:x)
+assigned
+> (module-changes '(fresh))
+((define fresh:x #f))
+> (eval-in-module '(this-module) '(fresh))
+(fresh)
+> (eval-in-module '(define-syntax y (syntax-rules () [(_) 1])) '(fresh))
+! invalid definition in immutable environment (define-syntax y (syntax-rules () ((...) 1)))
+; A tool advises a name chosen at run time, as its own change.
+> (put-version! "tool.sls" ".config/tuna/lib/tool.sls")
+> (import (tool))
+> (tool:run '(fresh) 'x (lambda (x) (list (x))))
+> (fresh:x)
+(assigned)
+> (map car (module-changes '(tool)))
+(advice define define)
+; A module's file is found by any path to it.
+> (put-version! "removed-1.sls" ".config/tuna/lib/removed.sls")
+> (import (removed))
+> (define loads '())
+> (advice-add! module-loaded (lambda (loaded name) (set! loads (cons name loads)) (loaded name)))
+> (eval-file "~/.config/tuna/lib//removed.sls")
+> (eval-file "~/.config/tuna/../tuna/lib/./removed.sls")
+> (eval-file "../home/.config/tuna/lib/removed.sls")
+> loads
+((removed) (removed) (removed))
+; A #!tuna file that its name's lookup does not find is not a module.
+> (put-version! "fresh.sls" ".config/tuna/lib/magit.sls")
+> (eval-file "~/.local/share/tuna/plugins/magit/magit.sls")
+! eval-file: ~/.local/share/tuna/plugins/magit/magit.sls is not a module: module (magit) is ~/.config/tuna/lib/magit.sls

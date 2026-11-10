@@ -22,7 +22,7 @@ mine
 > (magit/git:thing-a (magit/git:make-thing 5))
 5
 ; A module loaded within a form is seen from the next form.
-> (begin (magit:load-later!) magit/later:x)
+> (begin (load-module! '(magit later)) magit/later:x)
 ! variable magit/later:x is not bound
 > magit/later:x
 later-x
@@ -47,7 +47,7 @@ shadowed
 ; A module load that replaces a top-level definition of one of its names
 ; says so.
 > (define magit/extra:y 'user)
-> (magit:load-extra!)
+> (load-module! '(magit extra))
 > magit/extra:y
 ! import: (magit extra) replaces the top-level definition of magit/extra:y
 extra-y

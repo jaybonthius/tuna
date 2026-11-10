@@ -3,6 +3,7 @@
 (library (tuna main)
   (export main)
   (import (chezscheme) (chez-lang loader) (tuna version) (tuna core changes)
+          (only (tuna core definitions) call-reporting)
           (tuna core modules) (tuna top-level))
 
   ;; Exit status 2 marks a usage error, as in most command-line programs.
@@ -13,7 +14,8 @@
          (unless home
            (fprintf (console-error-port) "tuna: HOME is not set\n")
            (exit 1))
-         (start home (or (getenv "TUNA_LIBRARY") (path-build (path-parent program) "plugins"))
+         (start (normal-path home)
+           (normal-path (or (getenv "TUNA_LIBRARY") (path-build (path-parent program) "plugins")))
            own-directories))
        (as-module '(repl) (console-repl))
        (exit 0)]

@@ -1,0 +1,41 @@
+; A module whose body raises on its first load is unloaded: its unload
+; actions run, its changes are taken back, and the condition goes to
+; report.
+> (put-version! "boom.sls" ".config/tuna/lib/boom.sls")
+> (import (boom))
+boom unloading
+! car: () is not a pair
+> (files:save! "a")
+saving a [spell] 
+"a"
+> (boom:x)
+! boom:x: module (boom) is unloaded
+> (module-changes '(boom))
+()
+> (this-module)
+(repl)
+; A module whose import raises on its first load is unloaded too.
+> (put-version! "outer.sls" ".config/tuna/lib/outer.sls")
+> (import (outer))
+boom unloading
+! car: () is not a pair
+> (outer:y)
+! outer:y: module (outer) is unloaded
+> (load-module! '(outer))
+boom unloading
+! car: () is not a pair
+; Loading it after its import's file is fixed reads the saved file.
+> (put-version! "boom-fixed.sls" ".config/tuna/lib/boom.sls")
+> (load-module! '(outer))
+> (outer:y)
+2
+> (boom:x)
+2
+; So does importing a module whose first load failed.
+> (put-version! "boom.sls" ".config/tuna/lib/fizzle.sls")
+> (import (fizzle))
+boom unloading
+! car: () is not a pair
+> (put-version! "boom-fixed.sls" ".config/tuna/lib/fizzle.sls")
+> (begin (import (fizzle)) (fizzle:x))
+2

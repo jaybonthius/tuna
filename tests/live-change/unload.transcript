@@ -1,0 +1,128 @@
+; Unloading a module unloads its importers first, running their unload
+; actions.
+> (put-version! "speller-plain.sls" ".config/tuna/lib/speller.sls")
+> (import (speller))
+> (map car (module-changes '(speller)))
+(unload-action define)
+> (define held spell:check)
+> (unload-module! '(spell))
+speller unloading
+; A call to its changeable definitions raises, by name or through a
+; procedure the name gave, and so does any other use of its names.
+> (spell:check "a")
+! spell:check: module (spell) is unloaded
+> (held "a")
+! spell:check: module (spell) is unloaded
+> spell:checked
+! spell:checked: module (spell) is unloaded
+> (speller:go)
+! speller:go: module (speller) is unloaded
+> (set! spell:language (lambda () "fr"))
+! set!: no loaded module exports spell:language
+; Its changes, and every owner's changes to its definitions, are gone.
+> (module-changes '(spell))
+()
+> (module-changes '(speller))
+()
+> (module-changes '(init))
+((advice files:save! #<procedure announce>))
+> (map car (definition-changes files:save!))
+((init) (files))
+> (files:save! "a")
+saving a 
+"a"
+; It is not loaded any more.
+> (as-module '(spell) 1)
+! as-module: not a loaded module with irritant (spell)
+> (eval-in-module '(language) '(spell))
+! eval-in-module: not a loaded module with irritant (spell)
+> (unload-module! '(spell))
+! unload-module!: not a loaded module with irritant (spell)
+; Loaded again, it is a new instance: its body runs, without the
+; configuration's override, and a held procedure calls it.
+> (define loads '())
+> (advice-add! module-loaded (lambda (loaded name) (set! loads (cons name loads)) (loaded name)))
+> (load-module! '(spell))
+> loads
+((spell))
+> (spell:dictionary-path)
+"/usr/share/dict/en"
+> (held "b")
+checking b against /usr/share/dict/en
+> (map car (module-changes '(spell)))
+(advice define define define define define)
+; Loading a loaded module does nothing.
+> (load-module! '(spell))
+> loads
+((spell))
+; The importer stays unloaded until it is loaded again.
+> (speller:go)
+! speller:go: module (speller) is unloaded
+> (load-module! '(speller))
+> (speller:go)
+checking z against /usr/share/dict/en
+; An internal module: its importers are unloaded, and every one of its
+; names is shadowed, a record constructor's included; a procedure taken
+; from a name that is not a changeable definition still runs.
+> (import (magit))
+> (define make magit/git:make-thing)
+> (unload-module! '(magit git))
+> (magit/git:run)
+! magit/git:run: module (magit git) is unloaded
+> magit/git:make-thing
+! magit/git:make-thing: module (magit git) is unloaded
+> magit/git:version
+! magit/git:version: module (magit git) is unloaded
+> (magit:status)
+! magit:status: module (magit) is unloaded
+> (record? (make 5))
+#t
+; Loading the importer loads its unloaded import too, and rebinds the
+; names of both.
+> (load-module! '(magit))
+> (list magit/git:version (magit/git:run) (magit:status))
+(1 git-default git-default)
+; A changeable definition called within the form that unloads it raises.
+> (begin (unload-module! '(magit git)) (magit:status))
+! magit:status: module (magit) is unloaded
+; Unloading a module that others import, from the configuration's lib/
+; down to Tuna's own library, takes the importers' changes too.
+> (unload-module! '(files))
+speller unloading
+> (files:save! "x")
+! files:save!: module (files) is unloaded
+> (spell:check "x")
+! spell:check: module (spell) is unloaded
+> (module-changes '(init))
+()
+> (load-module! '(spell))
+> (files:save! "y")
+[spell] 
+"y"
+> (load-module! '(nothere))
+! load-module!: not a module with irritant (nothere)
+> (load-module! '(tuna))
+! load-module!: not a module with irritant (tuna)
+> (load-module! '(chezscheme))
+! load-module!: not a module with irritant (chezscheme)
+> (load-module! '(init))
+! load-module!: a module cannot be named (init)
+> (unload-module! 'spell)
+! unload-module!: not a module name with irritant spell
+; Unload actions run newest first; one that raises goes to report, and
+; the rest run.
+> (put-version! "actions.sls" ".config/tuna/lib/actions.sls")
+> (import (actions))
+> (unload-module! '(actions))
+third 
+! second: failed
+first 
+; Unloading a module that removed another's advice restores the advice.
+> (put-version! "remover.sls" ".config/tuna/lib/remover.sls")
+> (import (remover))
+> (files:save! "z")
+"z"
+> (unload-module! '(remover))
+> (files:save! "z")
+[spell] 
+"z"

@@ -6,6 +6,9 @@
     definition-changes
     module-changes
     eval-in-module
+    load-module!
+    unload-module!
+    on-unload
     advice-add!
     advice-remove!
     report

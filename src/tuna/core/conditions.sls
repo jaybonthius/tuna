@@ -1,6 +1,9 @@
 (library (tuna core conditions)
-  (export condition-text write-condition)
+  (export condition-text write-condition warning-only?)
   (import (chezscheme))
+
+  (define (warning-only? c)
+    (and (warning? c) (not (serious-condition? c))))
 
   (define (message-text c)
     (let ([message (condition-message c)]

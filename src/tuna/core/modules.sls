@@ -3,39 +3,75 @@
     tuna-module-body
     import-spec-library
     install-module-lookup!
+    module-loaded?
     loaded-modules
-    source-module
+    unloaded-modules
+    module-generation
+    normal-path
+    path-module
+    call-loading-modules
+    load-unloaded-modules!
     run-modules!
+    load-module!
+    unload-module!
+    reload-module!
+    on-unload
+    take-back-changes!
     eval-in-module)
-  (import (chezscheme) (tuna core changes) (tuna core definitions)
-          (only (chez-lang body) form-defined-names))
+  (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna core conditions)
+          (only (chez-lang body) form-defined-names)
+          (only (chez-lang language) call-with-library-lock)
+          (only (chez-lang reload) reload-library))
 
   (define-record-type found
     (nongenerative)
     (sealed #t)
     (fields source lib?))
 
+  (define source-roots '())
+
+  ;; A module is stale once its library instance has run and the module has
+  ;; been unloaded: Chez runs a library's body once per instance, so running
+  ;; it again needs a new instance. The generation counts the instances and
+  ;; unloads, so the top level can tell when to import or shadow its names.
   (define-record-type module-state
     (nongenerative)
     (sealed #t)
-    (fields imports (mutable loaded?)))
+    (fields (mutable imports) (mutable loaded?) (mutable stale?) (mutable generation)))
 
   ;; Only the libraries whose body runs, the #!tuna files, become modules.
   (define found-libraries (make-hashtable equal-hash equal?))
   (define modules (make-hashtable equal-hash equal?))
   (define load-order '())
 
+  (define running-bodies '())
+
   (define (module-loaded? name)
     (let ([m (hashtable-ref modules name #f)])
       (and m (module-state-loaded? m))))
 
+  ;; A stale module is recompiled only when it is loaded again, so its
+  ;; source may have gone or stopped compiling in the meantime.
+  (define (reloadable-importer? library)
+    (not (module-stale? library)))
+
+  (define (module-stale? name)
+    (let ([m (hashtable-ref modules name #f)])
+      (and m (module-state-stale? m))))
+
   (define (loaded-modules) (reverse load-order))
 
-  (define (source-module path)
-    (find (lambda (name)
-            (let ([found (hashtable-ref found-libraries name #f)])
-              (and found (string=? (found-source found) path))))
-          (loaded-modules)))
+  (define (unloaded-modules)
+    (filter module-stale? (vector->list (hashtable-keys modules))))
+
+  (define (module-generation name)
+    (let ([m (hashtable-ref modules name #f)])
+      (if m (module-state-generation m) 0)))
+
+  (define (loaded-importers name)
+    (filter (lambda (importer)
+              (member name (module-state-imports (hashtable-ref modules importer #f))))
+            load-order))
 
   (define (import-spec-library spec)
     (cond
@@ -51,12 +87,15 @@
     (let ([found (hashtable-ref found-libraries name #f)])
       (and found (found-lib? found))))
 
+  ;; A module named (csv7 …) or (r6rs …) would replace Chez's own top-level
+  ;; names of that prefix at the REPL, and (init) and (repl) are owners.
+  (define (refused-module-name? name)
+    (or (member name '((init) (repl))) (memq (car name) '(csv7 r6rs))))
+
   ;; (x …) is looked for only in lib/, the plugin x and Tuna's own library,
   ;; in that order, so a plugin cannot supply another plugin's modules.
   ;; Tuna's own names resolve only to Tuna's libraries, so no file in a root
-  ;; or the working folder replaces the core. A module named (csv7 …) or
-  ;; (r6rs …) would replace Chez's own top-level names of that prefix at the
-  ;; REPL, and (init) and (repl) are owners.
+  ;; or the working folder replaces the core.
   (define (install-module-lookup! own-directories lib-root plugins-root library-root cache-root)
     (define (directory-pair source cache) (cons source (string-append cache-root "/" cache)))
     (let* ([lib (directory-pair lib-root "lib")]
@@ -74,13 +113,14 @@
         (cond
           [(assq (car name) plugins) => (lambda (plugin) (list lib (cdr plugin) library))]
           [else (list lib library)]))
+      (set! source-roots (map car (cons lib (append (map cdr plugins) (list library)))))
       (library-directories (append own-directories (list lib) (map cdr plugins) (list library)))
       (library-search-handler
         (lambda (who name directories extensions)
           (cond
             [(memq (car name) '(tuna chez-lang))
              (search-own who name own-directories extensions)]
-            [(or (member name '((init) (repl))) (memq (car name) '(csv7 r6rs)))
+            [(refused-module-name? name)
              (errorf who "a module cannot be named ~s" name)]
             [else
              (let-values ([(source object found?)
@@ -94,6 +134,61 @@
     (let ([n (string-length prefix)])
       (and (fx<= n (string-length s)) (string=? prefix (substring s 0 n)))))
 
+  (define (search-library who name)
+    ((library-search-handler) who name (library-directories) (library-extensions)))
+
+  (define (split-path path)
+    (let loop ([chars (string->list path)] [part '()] [parts '()])
+      (cond
+        [(null? chars) (reverse (cons (list->string (reverse part)) parts))]
+        [(char=? (car chars) #\/) (loop (cdr chars) '() (cons (list->string (reverse part)) parts))]
+        [else (loop (cdr chars) (cons (car chars) part) parts)])))
+
+  ;; Paths are compared as strings with the paths the lookup found, which
+  ;; are absolute and have no "." or ".." parts and no repeated "/".
+  (define (normal-path path)
+    (let loop ([parts (split-path (if (path-absolute? path)
+                                      path
+                                      (string-append (current-directory) "/" path)))]
+               [kept '()])
+      (cond
+        [(null? parts)
+         (if (null? kept)
+             "/"
+             (call-with-string-output-port
+               (lambda (p) (for-each (lambda (part) (put-char p #\/) (put-string p part)) (reverse kept)))))]
+        [(member (car parts) '("" ".")) (loop (cdr parts) kept)]
+        [(string=? (car parts) "..") (loop (cdr parts) (if (null? kept) kept (cdr kept)))]
+        [else (loop (cdr parts) (cons (car parts) kept))])))
+
+  (define (tuna-file? path)
+    (and (file-exists? path)
+         (call-with-input-file path (lambda (p) (equal? (get-string-n p 6) "#!tuna")))))
+
+  ;; A file under a library root is the module its path names only if the
+  ;; lookup finds that file for the name; an earlier root may hold another,
+  ;; and then evaluating a #!tuna file as plain forms would fail on its
+  ;; first line.
+  (define (path-module who path)
+    (or (find (lambda (name) (string=? (found-source (hashtable-ref found-libraries name #f)) path))
+              (vector->list (hashtable-keys found-libraries)))
+        (exists
+          (lambda (root)
+            (let ([prefix (string-append root "/")])
+              (and (string-prefix? prefix path)
+                   (let ([name (map string->symbol
+                                    (split-path (path-root (substring path (string-length prefix)
+                                                                      (string-length path)))))])
+                     (and (not (refused-module-name? name))
+                          (let-values ([(source object found?) (search-library who name)])
+                            (cond
+                              [(not source) #f]
+                              [(string=? source path) name]
+                              [(tuna-file? path)
+                               (errorf who "~a is not a module: module ~s is ~a" path name source)]
+                              [else #f])))))))
+          source-roots)))
+
   ;; Chez runs the bodies of the imports a module refers to before the
   ;; module's own; Tuna runs the others too, so every imported module has
   ;; run, on its own behalf, before the importer's body.
@@ -101,19 +196,52 @@
     (let ([imported (filter (lambda (import) (and import (hashtable-contains? found-libraries import)))
                             (map import-spec-library specs))]
           [lib? (lib-library? name)])
+      (let ([m (or (hashtable-ref modules name #f)
+                   (let ([m (make-module-state '() #f #f 0)])
+                     (hashtable-set! modules name m)
+                     m))])
+        (module-state-imports-set! m imported)
+        (module-state-stale?-set! m #f)
+        (module-state-generation-set! m (+ (module-state-generation m) 1)))
+      (set! running-bodies (cons name running-bodies))
+      (module-definitions-started! name)
       (run-modules! imported)
       (unless lib?
         (for-each move-imported-lib-module! imported))
-      (unless (hashtable-contains? modules name)
-        (hashtable-set! modules name (make-module-state imported #f)))
       (hashtable-delete! scope-environments name)
       (rank-module! name lib?)
       (let ([previous (current-owner)])
         (current-owner name)
         previous)))
 
+  (define (run-module! name)
+    (unless (module-loaded? name)
+      (when (module-stale? name)
+        (load-again! name))
+      (guard (c [(not (warning-only? c)) (mark-failed! name) (raise c)])
+        (invoke-library name))))
+
   (define (run-modules! names)
-    (for-each invoke-library (filter (lambda (name) (hashtable-contains? found-libraries name)) names)))
+    (for-each run-module! (filter (lambda (name) (hashtable-contains? found-libraries name)) names)))
+
+  ;; Chez runs the bodies of the imports a library refers to before the
+  ;; library's own, so a raise there leaves a module whose body never
+  ;; started; it is unloaded all the same, so its names are shadowed and the
+  ;; next load starts from a new instance. library-requirements raises for
+  ;; a library loaded only to be run.
+  (define (mark-failed! name)
+    (when (and (hashtable-contains? found-libraries name) (not (member name running-bodies)))
+      (let ([m (hashtable-ref modules name #f)])
+        (cond
+          [m (module-state-stale?-set! m #t)
+             (module-state-generation-set! m (+ (module-state-generation m) 1))]
+          [else
+           (hashtable-set! modules name
+             (make-module-state
+               (filter (lambda (import) (hashtable-contains? found-libraries import))
+                       (guard (c [(violation? c) '()])
+                         (library-requirements name (library-requirements-options import))))
+               #f #t 1))]))))
 
   (define (move-imported-lib-module! name)
     (when (lib-library? name)
@@ -121,12 +249,17 @@
         (when m (for-each move-imported-lib-module! (module-state-imports m))))
       (move-before-importers! name)))
 
+  ;; A raise from module-loaded's advice must not fail the body: Chez would
+  ;; run the body of a library whose invocation failed again on its next
+  ;; reference.
   (define (module-finished! name previous-owner)
+    (set! running-bodies (remove name running-bodies))
+    (unload-removed-definitions! name)
     (let ([m (hashtable-ref modules name #f)])
       (unless (module-state-loaded? m)
         (module-state-loaded?-set! m #t)
         (set! load-order (cons name load-order))))
-    (module-loaded name)
+    (call-reporting (lambda () (module-loaded name)))
     (current-owner previous-owner))
 
   (meta define (import-specs forms)
@@ -235,4 +368,194 @@
     (let ([scope (prefixed-symbol name '%scope)])
       (as-module name
         (eval (list scope (definition->assignment name form))
-              (scope-environment name scope))))))
+              (scope-environment name scope)))))
+
+  (define (object-path name)
+    (let-values ([(source object found?) (search-library 'load-module! name)])
+      object))
+
+  ;; Loading a library's object file again installs a new instance of the
+  ;; same compiled code, whose body runs at the next invocation; code
+  ;; compiled against the library keeps working, since the instance's
+  ;; locations are the object's own.
+  (define (load-object! bytes)
+    (call-with-library-lock
+      (lambda () (load-compiled-from-port (open-bytevector-input-port bytes)))))
+
+  (define (object-bytes name)
+    (let ([object (object-path name)])
+      (and object (file-exists? object)
+           (call-with-port (open-file-input-port object) get-bytevector-all))))
+
+  (define (load-again! name)
+    (let ([bytes (object-bytes name)])
+      (unless bytes
+        (errorf 'load-module! "~s cannot load again: it has no object file" name))
+      (load-object! bytes)
+      (module-state-stale?-set! (hashtable-ref modules name #f) #f)))
+
+  ;; Recompiling an import puts its importers out of date, so every module
+  ;; is recompiled before any body runs.
+  (define (install-again! names)
+    (let ([recompiled (fold-left (lambda (recompiled name)
+                                   (append (reload-library name reloadable-importer?) recompiled))
+                                 '() names)])
+      (for-each
+        (lambda (name)
+          (if (member name recompiled)
+              (module-state-stale?-set! (hashtable-ref modules name #f) #f)
+              (load-again! name)))
+        names)))
+
+  ;; Imports come first, so that each importer is recompiled against its
+  ;; imports' new versions.
+  (define (with-stale-imports name)
+    (let ([seen (make-hashtable equal-hash equal?)])
+      (reverse
+        (let visit ([name name] [ordered '()])
+          (cond
+            [(or (hashtable-contains? seen name) (not (module-stale? name))) ordered]
+            [else
+             (hashtable-set! seen name #t)
+             (cons name
+                   (fold-left (lambda (ordered import) (visit import ordered))
+                              ordered
+                              (module-state-imports (hashtable-ref modules name #f))))])))))
+
+  ;; Each comes before its importers, the order their bodies must run in.
+  (define (with-loaded-importers name)
+    (let ([seen (make-hashtable equal-hash equal?)])
+      (let visit ([name name] [ordered '()])
+        (cond
+          [(hashtable-contains? seen name) ordered]
+          [else
+           (hashtable-set! seen name #t)
+           (cons name
+                 (fold-left (lambda (ordered importer) (visit importer ordered))
+                            ordered
+                            (loaded-importers name)))]))))
+
+  (define (on-unload thunk)
+    (unless (procedure? thunk)
+      (assertion-violation 'on-unload "not a procedure" thunk))
+    (record-change! 'on-unload 'unload-action thunk #f void void)
+    (void))
+
+  (define (take-back-changes! owner kept-kinds)
+    (for-each
+      (lambda (c)
+        (when (eq? (change-kind c) 'unload-action)
+          (take-back! c)
+          (parameterize ([current-owner owner])
+            (call-reporting (change-thing c)))))
+      (owner-changes owner))
+    (for-each take-back! (remp (lambda (c) (memq (change-kind c) kept-kinds)) (owner-changes owner))))
+
+  ;; In a diamond an importer is unloaded through another importer first.
+  (define (unload-instance! name)
+    (for-each (lambda (importer) (when (module-loaded? importer) (unload-instance! importer)))
+              (loaded-importers name))
+    (take-back-changes! name '())
+    (unload-definitions! name)
+    (let ([m (hashtable-ref modules name #f)])
+      (module-state-loaded?-set! m #f)
+      (module-state-stale?-set! m #t)
+      (module-state-generation-set! m (+ (module-state-generation m) 1)))
+    (set! load-order (remove name load-order))
+    (hashtable-delete! scope-environments name)
+    (unrank-module! name))
+
+  ;; A module in kept is being reloaded and gets its previous version back;
+  ;; any other body a raise left unfinished was a first load.
+  (define (drop-failed-bodies! depth kept)
+    (let loop ()
+      (when (fx> (length running-bodies) depth)
+        (let ([name (car running-bodies)])
+          (set! running-bodies (cdr running-bodies))
+          (unless (member name kept)
+            (unload-instance! name))
+          (loop)))))
+
+  ;; Every entry that can run module bodies goes through here, so a body
+  ;; that raises leaves neither its owner nor a half-loaded module behind.
+  (define (call-loading-modules thunk)
+    (let ([depth (length running-bodies)])
+      (parameterize ([current-owner (current-owner)])
+        (call-with-values
+          (lambda ()
+            (guard (c [(not (warning-only? c))
+                       (drop-failed-bodies! depth '())
+                       (raise c)])
+              (thunk)))
+          (lambda results
+            (drop-failed-bodies! depth '())
+            (apply values results))))))
+
+  (define (load-unloaded-modules! names)
+    (for-each (lambda (name) (when (module-stale? name) (load-module! name))) names))
+
+  (define (load-module! name)
+    (unless (module-name? name)
+      (assertion-violation 'load-module! "not a module name" name))
+    (check-main-thread 'load-module!)
+    (unless (module-loaded? name)
+      (let-values ([(source object found?) (search-library 'load-module! name)])
+        (unless (and source (hashtable-contains? found-libraries name))
+          (assertion-violation 'load-module! "not a module" name)))
+      (call-loading-modules
+        (lambda ()
+          (install-again! (with-stale-imports name))
+          (run-module! name)))
+      (unless (module-loaded? name)
+        (assertion-violation 'load-module! "not a module" name))))
+
+  (define (unload-module! name)
+    (unless (module-name? name)
+      (assertion-violation 'unload-module! "not a module name" name))
+    (check-main-thread 'unload-module!)
+    (unless (module-loaded? name)
+      (assertion-violation 'unload-module! "not a loaded module" name))
+    (unload-instance! name))
+
+  (define running-objects (make-hashtable equal-hash equal?))
+
+  (define (running-object name)
+    (or (hashtable-ref running-objects name #f) (object-bytes name)))
+
+  (define (take-back-for-reload! order)
+    (for-each (lambda (name) (take-back-changes! name '(define))) (reverse order)))
+
+  (define (restore! order previous depth)
+    (drop-failed-bodies! depth order)
+    (take-back-for-reload! order)
+    (for-each
+      (lambda (name bytes)
+        (when bytes
+          (load-object! bytes)
+          (hashtable-set! running-objects name bytes)))
+      order previous)
+    (call-reporting
+      (lambda () (call-loading-modules (lambda () (for-each invoke-library order))))))
+
+  ;; reload-library puts the previous versions back after a compile error,
+  ;; but not after a body raises, and not the version running after an
+  ;; earlier failed reload, which differs from the object on disk; so the
+  ;; objects running now are kept here.
+  (define (reload-module! name)
+    (check-main-thread 'eval-file)
+    (unless (module-loaded? name)
+      (assertion-violation 'eval-file "not a loaded module" name))
+    (let* ([order (with-loaded-importers name)]
+           [previous (map running-object order)]
+           [depth (length running-bodies)])
+      (parameterize ([current-owner (current-owner)])
+        (guard (c [#t (report-safely c) (restore! order previous depth)])
+          (call-with-warnings-reported
+            (lambda ()
+              (take-back-for-reload! order)
+              (let ([recompiled (reload-library name reloadable-importer?)])
+                (for-each (lambda (module) (unless (member module recompiled) (load-again! module)))
+                          order))
+              (for-each invoke-library order)
+              (for-each (lambda (module) (hashtable-delete! running-objects module)) order)))
+          (drop-failed-bodies! depth '()))))))

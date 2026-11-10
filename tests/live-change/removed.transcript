@@ -1,0 +1,41 @@
+; A definition that a module's running version no longer makes goes after
+; a reload, with every owner's changes to it, by name or through the
+; procedure the name gave.
+> (put-version! "removed-1.sls" ".config/tuna/lib/removed.sls")
+> (import (removed))
+> (define held-g removed:g)
+> (advice-add! removed:g (lambda (g) (list 'advised (g))))
+> (removed:g)
+(advised g)
+> (put-version! "removed-3.sls" ".config/tuna/lib/removed.sls")
+> (eval-file "~/.config/tuna/lib/removed.sls")
+> (removed:f)
+3
+> (removed:g)
+! removed:g: module (removed) no longer defines it
+> (held-g)
+! removed:g: module (removed) no longer defines it
+> (set! removed:g (lambda () 'set))
+! set!: no loaded module exports removed:g
+> (module-changes '(removed))
+((define removed:f #f))
+> (module-changes '(repl))
+()
+; Defining it again brings it back, without the changes taken back.
+> (put-version! "removed-1.sls" ".config/tuna/lib/removed.sls")
+> (eval-file "~/.config/tuna/lib/removed.sls")
+> (removed:g)
+g
+> (held-g)
+g
+> (module-changes '(removed))
+((define removed:g #f) (define removed:f #f))
+; A definition made only by a version whose body raised goes when the
+; previous version is loaded again.
+> (put-version! "removed-2.sls" ".config/tuna/lib/removed.sls")
+> (eval-file "~/.config/tuna/lib/removed.sls")
+! car: () is not a pair
+> (removed:f)
+1
+> (module-changes '(removed))
+((define removed:g #f) (define removed:f #f))

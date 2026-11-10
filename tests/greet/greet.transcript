@@ -2,9 +2,24 @@
 ; advice typed next takes effect.
 > (greet:text "Harpo")
 "Hello, Harpo!"
+; Editing greet.sls and evaluating its file changes what the next call
+; prints. The pause keeps the edit out of the file-time tick in which the
+; module was compiled.
+> (import (tuna eval))
+> (sleep (make-time 'time-duration 10000000 0))
+> (with-output-to-file (string-append (getenv "HOME") "/.config/tuna/lib/greet.sls")
+    (lambda () (display "#!tuna\n(define (text name) (string-append \"Howdy, \" name \"!\"))\n"))
+    'replace)
+> (eval-file "~/.config/tuna/lib/greet.sls")
+> (greet:text "Harpo")
+"Howdy, Harpo!"
 > (set! greet:text (lambda (name) (string-append "Hi, " name "!")))
 > (greet:text "Harpo")
 "Hi, Harpo!"
 > (advice-add! greet:text (lambda (text name) (string-upcase (text name))))
 > (greet:text "Harpo")
 "HI, HARPO!"
+; Unloading the module makes its names raise.
+> (unload-module! '(greet))
+> (greet:text "Harpo")
+! greet:text: module (greet) is unloaded

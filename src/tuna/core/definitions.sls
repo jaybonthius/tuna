@@ -6,7 +6,15 @@
     advice-remove!
     definition-changes
     report
+    report-safely
+    call-with-warnings-reported
+    call-reporting
     module-loaded
+    module-definitions-started!
+    unload-removed-definitions!
+    unload-definitions!
+    raise-unloaded
+    raise-removed
     changeable-symbol?
     changeable-symbol-module
     changeable-identifier?)
@@ -34,6 +42,8 @@
             (mutable advice)
             (mutable removals)
             (mutable history)
+            (mutable state)
+            (mutable redefined?)
             (mutable override-in-effect)
             (mutable advice-in-effect)
             (mutable value)
@@ -43,7 +53,7 @@
         (lambda (module symbol)
           (letrec ([c (new module symbol
                         (lambda arguments (apply (cell-callee c) arguments))
-                        #f #f '() '() '() '() #f '() #f #f)])
+                        #f #f '() '() '() '() 'loaded #t #f '() #f #f)])
             c)))))
 
   (define-record-type layer
@@ -59,16 +69,24 @@
   ;; A cell outlives its module's instance, so a procedure a name gave and
   ;; the changes made to it survive the module running its body again.
   (define cells (make-eq-hashtable))
+  (define module-cells (make-hashtable equal-hash equal?))
 
   ;; Changes are made on the main thread only, but a module assigns its own
   ;; definitions from any thread; each cell update is done whole under it.
   (define cells-mutex (make-mutex))
 
+  (define (cell-loaded? c)
+    (eq? (cell-state c) 'loaded))
+
+  (define (loaded-cell symbol)
+    (let ([c (hashtable-ref cells symbol #f)])
+      (and c (cell-loaded? c) c)))
+
   (define (changeable-symbol? symbol)
-    (hashtable-contains? cells symbol))
+    (and (loaded-cell symbol) #t))
 
   (define (changeable-symbol-module symbol)
-    (let ([c (hashtable-ref cells symbol #f)])
+    (let ([c (loaded-cell symbol)])
       (and c (cell-module c))))
 
   (define (layer<? a b)
@@ -83,15 +101,29 @@
                    (member (change-owner (layer-change layer)) (removal-owners removal))))
             (cell-removals c)))
 
+  (define (raise-not-loaded who message)
+    (raise (condition (make-violation) (make-who-condition who) (make-message-condition message))))
+
+  (define (raise-unloaded who module)
+    (raise-not-loaded who (format "module ~s is unloaded" module)))
+
+  (define (raise-removed who module)
+    (raise-not-loaded who (format "module ~s no longer defines it" module)))
+
+  (define (raise-cell-not-loaded c)
+    ((if (eq? (cell-state c) 'removed) raise-removed raise-unloaded) (cell-symbol c) (cell-module c)))
+
   (define (rebuild! c)
-    (let ([value (let ([override (cell-override-in-effect c)])
-                   (if override (layer-value override) (cell-definition c)))])
-      (cell-value-set! c value)
-      (cell-callee-set! c
-        (fold-left
-          (lambda (inner advice) (lambda arguments (apply advice inner arguments)))
-          value
-          (cell-advice-in-effect c)))))
+    (if (cell-loaded? c)
+        (let ([value (let ([override (cell-override-in-effect c)])
+                       (if override (layer-value override) (cell-definition c)))])
+          (cell-value-set! c value)
+          (cell-callee-set! c
+            (fold-left
+              (lambda (inner advice) (lambda arguments (apply advice inner arguments)))
+              value
+              (cell-advice-in-effect c))))
+        (cell-callee-set! c (lambda arguments (raise-cell-not-loaded c)))))
 
   (define (choose-in-effect! c)
     (let ([override (and (pair? (cell-overrides c))
@@ -109,7 +141,12 @@
     (syntax-rules ()
       [(_ c e ...) (with-mutex cells-mutex e ... (choose-in-effect! c))]))
 
+  (define (check-loaded c)
+    (unless (cell-loaded? c)
+      (raise-cell-not-loaded c)))
+
   (define (cell-reference c)
+    (check-loaded c)
     (let ([v (cell-value c)])
       (if (procedure? v) (cell-forwarder c) v)))
 
@@ -118,8 +155,11 @@
     (let ([c (or (hashtable-ref cells symbol #f)
                  (let ([c (make-cell module symbol)])
                    (hashtable-set! cells symbol c)
+                   (hashtable-update! module-cells module (lambda (cs) (cons c cs)) '())
                    c))])
+      (cell-redefined?-set! c #t)
       (with-cell-update c
+        (cell-state-set! c 'loaded)
         (cell-definition-set! c value)
         (cell-doc-set! c doc))
       (when (null? (cell-history c))
@@ -148,6 +188,7 @@
         [(equal? owner (cell-module c)) (cell-assign! c v)]
         [else
          (check-main-thread 'set!)
+         (check-loaded c)
          (let ([previous (find (lambda (layer) (equal? (change-owner (layer-change layer)) owner))
                                (cell-overrides c))])
            (when previous (take-back! (layer-change previous))))
@@ -166,6 +207,7 @@
 
   (define (cell-advise! c advice)
     (check-main-thread 'advice-add!)
+    (check-loaded c)
     (unless (procedure? advice)
       (assertion-violation 'advice-add! "not a procedure" advice))
     (let ([owner (current-owner)])
@@ -190,6 +232,7 @@
   ;; module adds again, until the remover's change is taken back.
   (define (cell-unadvise! c advice)
     (check-main-thread 'advice-remove!)
+    (check-loaded c)
     (let* ([owner (current-owner)]
            [visible (remp (lambda (layer) (hidden? c layer)) (cell-advice c))]
            [matching (filter (lambda (layer) (eq? (layer-value layer) advice)) visible)]
@@ -210,6 +253,30 @@
           (with-cell-update c
             (cell-removals-set! c (cons removal (cell-removals c)))
             (add-history! c (removal-change removal)))))))
+
+  ;; The cells stay, so that a procedure a name gave raises rather than runs
+  ;; stale code, and works again when the module defines the name again.
+  (define (unload-cell! c state)
+    (for-each take-back! (cell-history c))
+    (with-cell-update c
+      (cell-history-set! c '())
+      (cell-state-set! c state)))
+
+  (define (unload-definitions! module)
+    (for-each (lambda (c) (unload-cell! c 'unloaded)) (hashtable-ref module-cells module '())))
+
+  (define (module-definitions-started! module)
+    (for-each (lambda (c) (cell-redefined?-set! c #f)) (hashtable-ref module-cells module '())))
+
+  ;; Once a module is recompiled, Chez refuses code bound to its previous
+  ;; instance, so a name the running instance no longer defines cannot be
+  ;; kept working; it goes with its changes, as on unload.
+  (define (unload-removed-definitions! module)
+    (for-each
+      (lambda (c)
+        (unless (or (cell-redefined? c) (eq? (cell-state c) 'removed))
+          (unload-cell! c 'removed)))
+      (hashtable-ref module-cells module '())))
 
   (define (cell-changes c)
     (map (lambda (change)
@@ -300,5 +367,27 @@
           [(_ id) #`(cell-changes #,(identifier-cell 'definition-changes x #'id lookup))]))))
 
   (define-changeable report (tuna) report write-condition #f)
+
+  (define (report-safely c)
+    (guard (e [#t (write-condition c) (write-condition e)])
+      (report c)))
+
+  ;; Chez runs its source optimizer twice, so one compile warning can be
+  ;; raised twice; each text is reported once per call.
+  (define (call-with-warnings-reported thunk)
+    (let ([warned '()])
+      (with-exception-handler
+        (lambda (c)
+          (if (warning-only? c)
+              (let ([text (condition-text c)])
+                (unless (member text warned)
+                  (set! warned (cons text warned))
+                  (report-safely c)))
+              (raise-continuable c)))
+        thunk)))
+
+  (define (call-reporting thunk)
+    (guard (c [#t (report-safely c)])
+      (call-with-warnings-reported thunk)))
 
   (define-changeable module-loaded (tuna) module-loaded (lambda (name) (void)) #f))

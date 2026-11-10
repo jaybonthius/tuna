@@ -3,18 +3,19 @@
     start-top-level!
     load-configuration!
     eval-top-level
-    call-reporting
-    eval-text)
+    eval-text
+    eval-file)
   (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna core modules)
-          (tuna core conditions) (only (chez-lang body) definition-form? form-defined-names))
+          (only (chez-lang body) definition-form? form-defined-names))
 
   (define home #f)
   (define configuration-file #f)
   (define repl-environment #f)
   (define check-keyword (gensym "check-top-level-form"))
 
-  (define imported (make-hashtable equal-hash equal?))
+  (define seen-generations (make-hashtable equal-hash equal?))
   (define exporters (make-eq-hashtable))
+  (define imported-exports (make-hashtable equal-hash equal?))
 
   ;; Prefixed names defined at the top level, so that a module load that
   ;; replaces one can say so.
@@ -102,6 +103,12 @@
     (let ([exports (library-exports name)])
       (for-each
         (lambda (symbol)
+          (unless (memq symbol exports)
+            (shadow! symbol (raising-keyword #'raise-removed symbol name))))
+        (hashtable-ref imported-exports name '()))
+      (hashtable-set! imported-exports name exports)
+      (for-each
+        (lambda (symbol)
           (when (hashtable-contains? top-level-definitions symbol)
             (hashtable-delete! top-level-definitions symbol)
             (report-safely
@@ -112,15 +119,37 @@
                   (format "~s replaces the top-level definition of ~s" name symbol))))))
         exports)
       (eval `(import ,name) repl-environment)
-      (hashtable-set! imported name #t)
       (for-each (lambda (symbol) (hashtable-set! exporters symbol name)) exports)))
 
-  (define (import-loaded-modules!)
-    (for-each
-      (lambda (name)
-        (unless (hashtable-contains? imported name)
-          (import-module! name)))
-      (loaded-modules)))
+  ;; Chez cannot remove a binding from an environment, so the names of an
+  ;; unloaded module, and those a reloaded one no longer exports, are
+  ;; replaced by keywords that raise when used.
+  (define (raising-keyword raiser symbol name)
+    (make-variable-transformer
+      (lambda (x)
+        (with-syntax ([raiser raiser]
+                      [symbol (datum->syntax raiser symbol)]
+                      [name (datum->syntax raiser name)])
+          #'(raiser 'symbol 'name)))))
+
+  (define (shadow! symbol keyword)
+    (hashtable-delete! exporters symbol)
+    (define-top-level-syntax symbol keyword repl-environment))
+
+  (define (shadow-module! name)
+    (for-each (lambda (symbol) (shadow! symbol (raising-keyword #'raise-unloaded symbol name)))
+              (library-exports name)))
+
+  ;; A module loaded again or reloaded is a new instance, which the top
+  ;; level imports again.
+  (define (sync-modules!)
+    (define (sync! name act!)
+      (let ([generation (module-generation name)])
+        (unless (eqv? generation (hashtable-ref seen-generations name #f))
+          (act! name)
+          (hashtable-set! seen-generations name generation))))
+    (for-each (lambda (name) (sync! name shadow-module!)) (unloaded-modules))
+    (for-each (lambda (name) (sync! name import-module!)) (loaded-modules)))
 
   (define (unwrap x)
     (if (annotation? x) (annotation-stripped x) x))
@@ -135,39 +164,24 @@
         [else '()])))
 
   ;; Chez runs a library's body only when code refers to one of its
-  ;; variables; Tuna runs every imported module's body. Without inspector
-  ;; information a procedure defined in the configuration prints as one
-  ;; typed at the REPL does, with no source position. A module's body sets
-  ;; the owner until it ends, so the owner is restored when one raises.
+  ;; variables; Tuna runs every imported module's body. An unloaded module's
+  ;; library has run its body already, so it is loaded again before the
+  ;; form is compiled against it. Without inspector information a procedure
+  ;; defined in the configuration prints as one typed at the REPL does, with
+  ;; no source position.
   (define (eval-top-level form)
-    (import-loaded-modules!)
-    (parameterize ([current-owner (current-owner)])
-      (call-with-values
-        (lambda ()
-          (parameterize ([generate-inspector-information #f])
-            (eval (list check-keyword form) repl-environment)))
-        (lambda results
-          (run-modules! (top-level-imports form))
-          (apply values results)))))
-
-  (define (report-safely c)
-    (guard (e [#t (write-condition c) (write-condition e)])
-      (report c)))
-
-  ;; Chez runs its source optimizer twice, so one compile warning can be
-  ;; raised twice; each text is reported once per call.
-  (define (call-reporting thunk)
-    (let ([warned '()])
-      (guard (c [#t (report-safely c)])
-        (with-exception-handler
-          (lambda (c)
-            (if (and (warning? c) (not (serious-condition? c)))
-                (let ([text (condition-text c)])
-                  (unless (member text warned)
-                    (set! warned (cons text warned))
-                    (report-safely c)))
-                (raise-continuable c)))
-          thunk))))
+    (sync-modules!)
+    (call-loading-modules
+      (lambda ()
+        (let ([imports (top-level-imports form)])
+          (load-unloaded-modules! imports)
+          (call-with-values
+            (lambda ()
+              (parameterize ([generate-inspector-information #f])
+                (eval (list check-keyword form) repl-environment)))
+            (lambda results
+              (run-modules! imports)
+              (apply values results)))))))
 
   (define (read-annotated-forms path consume)
     (let ([sfd (call-with-port (open-file-input-port path) (lambda (p) (make-source-file-descriptor path p)))])
@@ -208,8 +222,8 @@
       [(text path)
        (unless (string? text) (assertion-violation 'eval-text "not a string" text))
        (unless (or (not path) (string? path)) (assertion-violation 'eval-text "not a path" path))
-       (let* ([path (and path (expand-home path))]
-              [module (and path (source-module path))]
+       (let* ([path (and path (normal-path (expand-home path)))]
+              [module (and path (path-module 'eval-text path))]
               [eval-form (cond
                            [module (lambda (form) (eval-in-module form module))]
                            [(and path (string=? path configuration-file))
@@ -218,4 +232,19 @@
          (let loop ([forms (read-all text)] [results (list (void))])
            (if (null? forms)
                (apply values results)
-               (loop (cdr forms) (call-with-values (lambda () (eval-form (car forms))) list)))))])))
+               (loop (cdr forms) (call-with-values (lambda () (eval-form (car forms))) list)))))]))
+
+  (define (eval-file path)
+    (unless (string? path) (assertion-violation 'eval-file "not a path" path))
+    (let* ([path (normal-path (expand-home path))] [module (path-module 'eval-file path)])
+      (cond
+        [module
+         (if (module-loaded? module)
+             (reload-module! module)
+             (load-module! module))]
+        [(string=? path configuration-file)
+         (check-main-thread 'eval-file)
+         (take-back-changes! '(init) '())
+         (load-configuration!)]
+        [else
+         (as-module '(repl) (read-annotated-forms path eval-top-level))]))))
