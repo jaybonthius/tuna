@@ -3,10 +3,16 @@
     module-name?
     prefixed-symbol
     definition-symbol
+
+    owner-name
+    owner-rank
+    find-owner
+    loaded-owner
     current-owner
+    set-current-owner!
+    call-as-owner
     this-module
     as-module
-    owner-rank
     rank-module!
     unrank-module!
     move-before-importers!
@@ -26,7 +32,22 @@
     on-main-thread?
     check-main-thread
     quits-allowed
-    with-quit-safe-mutex)
+    set-quits-allowed!
+    with-quits-allowed
+    with-quit-safe-mutex
+
+    make-thread-state
+    current-thread-state
+    this-thread-state
+    thread-state-thread
+    thread-state-owner
+    thread-state-owner-set!
+    thread-state-quits-allowed
+    thread-state-bound
+    thread-state-bound-set!
+    thread-state-bindings
+    thread-state-bindings-set!
+    no-binding)
   (import (chezscheme))
 
   (define (module-name? x)
@@ -44,16 +65,13 @@
           (put-char p #\:)
           (display name p)))))
 
+  (define (fixed-owner-name? name)
+    (member name '((init) (repl) (tuna))))
+
   ;; The configuration, the REPL and Tuna itself define their names at the
   ;; top level, where names carry no prefix.
-  (define (definition-symbol owner name)
-    (if (member owner '((init) (repl) (tuna))) name (prefixed-symbol owner name)))
-
-  (define current-owner (make-thread-parameter '(repl)))
-
-  (define-syntax this-module
-    (syntax-rules ()
-      [(_) (current-owner)]))
+  (define (definition-symbol module name)
+    (if (fixed-owner-name? module) name (prefixed-symbol module name)))
 
   (define main-thread-id (get-thread-id))
 
@@ -63,65 +81,160 @@
     (unless (on-main-thread?)
       (assertion-violation who "only the main thread makes changes")))
 
-  ;; A quit lands only where this is true: in a task's own code, never in
-  ;; the bookkeeping of changes and modules, which a raise half way through
-  ;; would leave inconsistent. A request made meanwhile waits.
-  (define quits-allowed (make-thread-parameter #f))
-
-  ;; with-mutex is not atomic: a quit raised just after it takes the mutex,
-  ;; or just before it lets it go, would leave the mutex held.
-  (define-syntax with-quit-safe-mutex
-    (syntax-rules ()
-      [(_ m e1 e2 ...) (parameterize ([quits-allowed #f]) (with-mutex m e1 e2 ...))]))
-
   ;; A band is wider than the number of ranks one process takes.
   (define outside-band 0)
   (define lib-band (expt 2 40))
   (define init-rank (expt 2 41))
   (define repl-rank (+ init-rank 1))
 
-  (define ranks (make-hashtable equal-hash equal?))
-  (define next-rank 1)
+  ;; An owner outlives its rank: a module that unloads keeps its record, so
+  ;; a module loaded again has the same owner with a fresh rank. Its
+  ;; changes are a list linked both ways through the changes themselves,
+  ;; so taking one back costs the same however many the owner has.
+  (define-record-type owner
+    (nongenerative)
+    (sealed #t)
+    (fields name (mutable rank) (mutable newest-change))
+    (protocol (lambda (new) (lambda (name rank) (new name rank #f)))))
 
-  ;; as-module reads ranks on any thread. The main thread, their only
-  ;; writer, reads them without the lock.
-  (define ranks-mutex (make-mutex))
+  (define owners
+    (let ([owners (make-hashtable equal-hash equal?)])
+      (for-each (lambda (name rank) (hashtable-set! owners name (make-owner name rank)))
+                '((tuna) (init) (repl))
+                (list 0 init-rank repl-rank))
+      owners))
+
+  ;; Any thread looks owners up. The main thread, their only writer, reads
+  ;; them without the lock.
+  (define owners-mutex (make-mutex))
+
+  (define (find-owner name)
+    (if (on-main-thread?)
+        (hashtable-ref owners name #f)
+        (with-quit-safe-mutex owners-mutex (hashtable-ref owners name #f))))
+
+  (define (loaded-owner name)
+    (let ([o (find-owner name)])
+      (and o (owner-rank o) o)))
+
+  ;; A thread's owner, its quits-allowed flag and its option bindings are
+  ;; fields of one record, so switching one is a field write: writing a
+  ;; thread parameter takes Chez's thread-context mutex, which costs more
+  ;; than the rest of a switch. bound counts the options bound, so that a
+  ;; read outside any binding looks at no vector.
+  (define-record-type thread-state
+    (nongenerative)
+    (sealed #t)
+    (fields thread (mutable owner) (mutable quits-allowed) (mutable bound) (mutable bindings))
+    (protocol
+      (lambda (new)
+        (lambda (owner)
+          (new (get-thread-id) owner #f 0 (make-vector 8 no-binding))))))
+
+  (define no-binding (string->uninterned-symbol "no-binding"))
+
+  ;; Written once per thread: fork-thread gives a new thread its parent's
+  ;; record, which only the parent may change.
+  (define current-thread-state
+    (make-thread-parameter (make-thread-state (hashtable-ref owners '(repl) #f))))
+
+  ;; A thread forked with Chez's own fork-thread acts for the owner its
+  ;; parent has when the thread first needs a record, not at the fork.
+  (define (this-thread-state)
+    (let ([s (current-thread-state)])
+      (if (fx= (thread-state-thread s) (get-thread-id))
+          s
+          (let ([own (make-thread-state (thread-state-owner s))])
+            (current-thread-state own)
+            own))))
+
+  (define (current-owner)
+    (thread-state-owner (this-thread-state)))
+
+  ;; For a module's body, which cannot be wrapped: the code that runs
+  ;; bodies puts back the owner around them.
+  (define (set-current-owner! owner)
+    (thread-state-owner-set! (this-thread-state) owner))
+
+  ;; A module's body sets the owner directly, so the winders swap, as
+  ;; parameterize's do: a body left and re-entered gets back the owner it
+  ;; had. Critical, since a quit landing between a switch and Chez
+  ;; recording it would leave the switch in place.
+  (define (call-as-owner owner thunk)
+    (let ([s (this-thread-state)] [other owner])
+      (define (swap!)
+        (let ([outer (thread-state-owner s)])
+          (thread-state-owner-set! s other)
+          (set! other outer)))
+      (dynamic-wind #t swap! thunk swap!)))
+
+  (define-syntax this-module
+    (syntax-rules ()
+      [(_) (owner-name (current-owner))]))
+
+  ;; A quit lands only where this is true: in a task's own code, never in
+  ;; the bookkeeping of changes and modules, which a raise half way through
+  ;; would leave inconsistent. A request made meanwhile waits.
+  (define (quits-allowed)
+    (thread-state-quits-allowed (this-thread-state)))
+
+  (define (set-quits-allowed! allowed)
+    (thread-state-quits-allowed-set! (this-thread-state) allowed))
+
+  ;; Swapped as the owner is, and for the same reasons.
+  (define (call-with-quits-allowed allowed thunk)
+    (let ([s (this-thread-state)] [other allowed])
+      (define (swap!)
+        (let ([outer (thread-state-quits-allowed s)])
+          (thread-state-quits-allowed-set! s other)
+          (set! other outer)))
+      (dynamic-wind #t swap! thunk swap!)))
+
+  (define-syntax with-quits-allowed
+    (syntax-rules ()
+      [(_ allowed e1 e2 ...) (call-with-quits-allowed allowed (lambda () e1 e2 ...))]))
+
+  ;; with-mutex is not atomic: a quit raised just after it takes the mutex,
+  ;; or just before it lets it go, would leave the mutex held.
+  (define-syntax with-quit-safe-mutex
+    (syntax-rules ()
+      [(_ m e1 e2 ...) (with-quits-allowed #f (with-mutex m e1 e2 ...))]))
+
+  (define next-rank 1)
 
   (define (take-rank! band)
     (let ([rank (+ band next-rank)])
       (set! next-rank (+ next-rank 1))
       rank))
 
-  (define (owner-rank owner)
-    (cond
-      [(equal? owner '(repl)) repl-rank]
-      [(equal? owner '(init)) init-rank]
-      [(equal? owner '(tuna)) 0]
-      [else (hashtable-ref ranks owner #f)]))
-
   (define (rank-module! name lib?)
-    (unless (hashtable-contains? ranks name)
-      (let ([rank (take-rank! (if lib? lib-band outside-band))])
-        (with-quit-safe-mutex ranks-mutex (hashtable-set! ranks name rank)))))
+    (unless (or (fixed-owner-name? name) (loaded-owner name))
+      (let ([rank (take-rank! (if lib? lib-band outside-band))] [o (find-owner name)])
+        (if o
+            (owner-rank-set! o rank)
+            (with-quit-safe-mutex owners-mutex
+              (hashtable-set! owners name (make-owner name rank)))))))
 
   (define (unrank-module! name)
-    (with-quit-safe-mutex ranks-mutex (hashtable-delete! ranks name)))
+    (unless (fixed-owner-name? name)
+      (let ([o (find-owner name)])
+        (when o (owner-rank-set! o #f)))))
 
   ;; An importer takes its rank only after its imports have run, so a fresh
   ;; rank puts the import before it.
   (define (move-before-importers! name)
-    (let ([rank (hashtable-ref ranks name #f)])
-      (when (and rank (>= rank lib-band))
-        (let ([rank (take-rank! outside-band)])
-          (with-quit-safe-mutex ranks-mutex (hashtable-set! ranks name rank)))
+    (let ([o (and (not (fixed-owner-name? name)) (loaded-owner name))])
+      (when (and o (>= (owner-rank o) lib-band))
+        (owner-rank-set! o (take-rank! outside-band))
         (for-each (lambda (c) ((change-reorder c))) (owner-changes name)))))
 
   (define (call-as-module name thunk)
     (unless (module-name? name)
       (assertion-violation 'as-module "not a module name" name))
-    (unless (and (with-quit-safe-mutex ranks-mutex (owner-rank name)) (not (equal? name '(tuna))))
-      (assertion-violation 'as-module "not a loaded module" name))
-    (parameterize ([current-owner name]) (thunk)))
+    (let ([owner (loaded-owner name)])
+      (unless (and owner (not (equal? name '(tuna))))
+        (assertion-violation 'as-module "not a loaded module" name))
+      (call-as-owner owner thunk)))
 
   (define-syntax as-module
     (syntax-rules ()
@@ -131,20 +244,26 @@
   (define-record-type change
     (nongenerative)
     (sealed #t)
-    (fields owner kind thing detail sequence undo reorder))
+    (fields owner kind thing detail sequence undo reorder (mutable newer) (mutable older))
+    (protocol
+      (lambda (new)
+        (lambda (owner kind thing detail sequence undo reorder)
+          (new owner kind thing detail sequence undo reorder #f (owner-newest-change owner))))))
 
-  (define changes (make-hashtable equal-hash equal?))
   (define next-sequence 0)
 
-  (define (owner-changes owner)
-    (hashtable-ref changes owner '()))
+  ;; Newest first, the order they are taken back in.
+  (define (owner-changes name)
+    (let ([o (find-owner name)])
+      (let loop ([c (and o (owner-newest-change o))])
+        (if c (cons c (loop (change-older c))) '()))))
 
   ;; A task of an unloaded module that catches &quit goes on running on its
   ;; behalf; a change it made would never be taken back.
   (define (check-current-owner who)
     (let ([owner (current-owner)])
       (unless (owner-rank owner)
-        (assertion-violation who "not a loaded module" owner))
+        (assertion-violation who "not a loaded module" (owner-name owner)))
       owner))
 
   ;; The timer interrupt runs tick's advice, which may change things too,
@@ -155,17 +274,24 @@
       (with-interrupts-disabled
         (set! next-sequence (+ next-sequence 1))
         (let ([c (make-change owner kind thing detail next-sequence undo reorder)])
-          (hashtable-update! changes owner (lambda (cs) (cons c cs)) '())
+          (let ([older (change-older c)])
+            (when older (change-newer-set! older c)))
+          (owner-newest-change-set! owner c)
           c))))
 
+  ;; A change already forgotten has no newer change and is not its owner's
+  ;; newest.
   (define (forget-change! c)
     (with-interrupts-disabled
-      (let ([owner (change-owner c)])
-        (when (hashtable-contains? changes owner)
-          (hashtable-update! changes owner (lambda (cs) (remq c cs)) '())))))
+      (let ([o (change-owner c)] [newer (change-newer c)] [older (change-older c)])
+        (when (or newer (eq? (owner-newest-change o) c))
+          (if newer (change-older-set! newer older) (owner-newest-change-set! o older))
+          (when older (change-newer-set! older newer))
+          (change-newer-set! c #f)
+          (change-older-set! c #f)))))
 
   (define (take-back! c)
-    (parameterize ([quits-allowed #f])
+    (with-quits-allowed #f
       (forget-change! c)
       ((change-undo c))))
 

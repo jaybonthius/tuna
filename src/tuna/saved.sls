@@ -42,7 +42,7 @@
     (check-main-thread 'define-saved)
     (unless (procedure? check)
       (assertion-violation 'define-saved "not a procedure" check))
-    (let* ([owner (current-owner)] [symbol (definition-symbol owner name)])
+    (let* ([owner (owner-name (current-owner))] [symbol (definition-symbol owner name)])
       (check-value 'define-saved symbol check initial)
       (let ([file (saved-file owner name)])
         (cond
@@ -104,7 +104,7 @@
           (set! pending (cons st pending))
           (unless write-posted?
             (set! write-posted? #t)
-            (post-task! write-pending! '(tuna) #f))))
+            (post-task! write-pending! (find-owner '(tuna)) #f))))
       (void)))
 
   (define (drop-pending! st)

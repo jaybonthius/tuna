@@ -17,9 +17,5 @@
     quit-condition?
     report
     tick
-    module-loaded
-    exit)
-  (import (only (chezscheme) export) (tuna core changes) (tuna core definitions) (tuna core modules)
-          (tuna core main-thread))
-  ;; sleep would block the main thread.
-  (export (import (except (chezscheme) sleep exit))))
+    module-loaded)
+  (import (tuna core changes) (tuna core definitions) (tuna core modules) (tuna core main-thread)))

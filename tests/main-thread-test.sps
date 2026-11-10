@@ -123,7 +123,7 @@
   ;; no mutex is left held. The round ends in a loop, so its quit always
   ;; lands inside the guard.
   (test "a quit never leaves a change half made"
-    (let* ([env (environment '(tuna) '(racer))]
+    (let* ([env (environment '(chezscheme) '(tuna) '(racer))]
            [compiled (lambda (form) (eval form env))]
            [call-f (compiled '(lambda (x) (racer:f x)))]
            [advise! (compiled '(lambda (p) (advice-add! racer:f p)))]

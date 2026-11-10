@@ -18,11 +18,11 @@
     plugin-commit
     module-plugin-source)
   (import (chezscheme) (tuna process)
-          (only (tuna core changes) check-main-thread on-main-thread?)
+          (only (tuna core changes) check-main-thread on-main-thread? find-owner)
           (only (tuna core definitions) report-safely)
           (only (tuna core modules) import-spec-library loaded-modules
                 module-loaded? module-generation unload-module! reload-module! normal-path)
-          (only (tuna core main-thread) post! suspend))
+          (only (tuna core main-thread) post-task! suspend))
 
   (define home #f)
   (define configuration-file #f)
@@ -498,7 +498,9 @@
 
   ;; A quit ends the task while git may still fill the plugin's folders,
   ;; so the id stays taken until both git and the task are done. git's end
-  ;; is posted before the resume, so it is counted first when no quit came.
+  ;; is posted before the resume, so it is counted first when no quit came,
+  ;; and on behalf of (tuna), so that it runs whichever module is unloaded
+  ;; meanwhile.
   (define (call-paused who id thunk)
     (check-not-fetching who id)
     (set! fetching (cons id fetching))
@@ -515,7 +517,7 @@
                             (lambda ()
                               (let ([result (guard (c [#t (lambda () (raise c))])
                                               (let ([v (thunk)]) (lambda () v)))])
-                                (post! done!)
+                                (post-task! done! (find-owner '(tuna)) #f)
                                 (resume result)))))))])
         (done!)
         result)))

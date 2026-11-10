@@ -28,12 +28,14 @@ $(SCRIPT_TESTS:%=run/%): run/%: exe
 $(TRANSCRIPTS:%=run/%): run/%: exe
 	@timeout $(TEST_TIMEOUT) sh tests/run-transcript.sh build/bin/tuna $*
 
+# Every benchmark runs, so that one failed gate hides none of the others.
 bench: exe
-	sh bench/calls.sh build/bin/tuna
-	sh bench/tick.sh build/bin/tuna
-	sh bench/options.sh build/bin/tuna
-	sh bench/hooks.sh build/bin/tuna
-	sh bench/startup.sh build/bin/tuna $(SCHEME)
+	@status=0; \
+	sh bench/hot-paths.sh build/bin/tuna || status=1; \
+	sh bench/tick.sh build/bin/tuna || status=1; \
+	sh bench/startup.sh build/bin/tuna $(SCHEME) || status=1; \
+	sh bench/reload.sh build/bin/tuna || status=1; \
+	exit $$status
 
 repl: build
 	$(SCHEME) --libdirs $(LIBDIRS) --compile-imported-libraries

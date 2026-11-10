@@ -5,7 +5,10 @@
 "bundled"
 > (installed-plugins)
 (other sources consult compat)
+; File times are coarse: a file written in the tick its object was
+; compiled in would not look newer, so each write waits a little first.
 > (define (write-mine! text)
+    (sleep-for 0.02)
     (call-with-output-file "~/.config/tuna/lib/mine.sls"
       (lambda (p) (put-string p text))
       'replace))

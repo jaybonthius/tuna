@@ -109,17 +109,18 @@
     (let ([outcome
            (call/cc
              (lambda (end)
-               (parameterize ([current-owner (task-owner t)]
-                              [reset-handler (lambda () (end '(done)))]
-                              [quits-allowed #t])
-                 (call-reporting-raises
-                   (lambda ()
-                     (call-with-values (task-thunk t) (lambda results (cons 'done results))))
-                   (lambda (c)
-                     (when (debug-on-exception)
-                       (debug-condition c)
-                       (debug))
-                     (end (cons 'failed c)))))))])
+               (parameterize ([reset-handler (lambda () (end '(done)))])
+                 (with-quits-allowed #t
+                   (call-as-owner (task-owner t)
+                     (lambda ()
+                       (call-reporting-raises
+                         (lambda ()
+                           (call-with-values (task-thunk t) (lambda results (cons 'done results))))
+                         (lambda (c)
+                           (when (debug-on-exception)
+                             (debug-condition c)
+                             (debug))
+                           (end (cons 'failed c))))))))))])
       (finish! t (car outcome) (cdr outcome))
       (return-to-loop (void))))
 
@@ -303,7 +304,7 @@
   ;; that it runs even after the thread's module is unloaded.
   (define (exit . arguments)
     (unless (on-main-thread?)
-      (post-task! (lambda () (apply chez:exit arguments)) '(tuna) #f))
+      (post-task! (lambda () (apply chez:exit arguments)) (find-owner '(tuna)) #f))
     (apply chez:exit arguments))
 
   (define (run-main-loop)
@@ -328,7 +329,7 @@
     (lambda (name)
       (vector-for-each
         (lambda (t)
-          (when (and (eq? (task-state t) 'paused) (equal? (task-owner t) name))
+          (when (and (eq? (task-state t) 'paused) (equal? (owner-name (task-owner t)) name))
             (stop-task! t)))
         (hashtable-keys paused-tasks))))
 

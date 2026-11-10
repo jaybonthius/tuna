@@ -1,0 +1,23 @@
+; A thread forked by a module acts for that module, even when it first
+; calls Tuna while the main thread runs other code.
+> (import (forker))
+> (begin
+    (set-box! forker:go #t)
+    (let loop () (unless (unbox forker:posted) (loop))))
+> (map car (module-changes '(forker)))
+(unload-action define define)
+> (map car (module-changes '(repl)))
+()
+> (unload-module! '(forker))
+forker's unload action
+; So does a thread forked at the top level.
+> (let ([go #f] [seen #f])
+    (let ([t (as-module '(init)
+               (fork-thread
+                 (lambda ()
+                   (let loop () (unless go (loop)))
+                   (set! seen (this-module)))))])
+      (set! go #t)
+      (thread-join t)
+      seen))
+(init)

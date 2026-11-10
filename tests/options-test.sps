@@ -42,11 +42,16 @@
       (parameterize ([current-scope s]) (remove-option-local! level))
       (remove-option! level)))
 
-  (test "a binding holds on its own thread, and threads forked in it inherit it"
+  (test "a binding holds only on its own thread; a thread forked in it starts with none"
     (set-option! level 3)
     (with-options ([level 7])
       (check-equal? 7 (level))
-      (check-equal? 7 (in-thread level))
+      (check-equal? 3 (in-thread level))
+      (check-equal? '(4 3)
+        (in-thread (lambda () (list (with-options ([level 4]) (level)) (level)))))
+      (check-equal? 3 (in-thread (lambda () (in-thread level))))
+      (check-equal? '(repl) (in-thread (lambda () (owner-name (current-owner)))))
+      (check-equal? 7 (level))
       (with-options ([level 8])
         (check-equal? 8 (level)))
       (check-equal? 7 (level)))

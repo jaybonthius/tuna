@@ -31,7 +31,34 @@
   (define-record-type (table new-table table?)
     (nongenerative)
     (sealed #t)
-    (fields symbol module (mutable doc) keys (mutable order) mutex (mutable defined?)))
+    (fields symbol module (mutable doc)
+            (mutable symbol-keys) (mutable eqv-keys) (mutable string-keys) (mutable equal-keys)
+            (mutable order) mutex (mutable defined?)))
+
+  ;; An equal-hash lookup costs several times a symbol, eqv or string one,
+  ;; so keys whose equal? is eq?, eqv? or string=? have hashtables of their
+  ;; own, each made when the first key of its kind is stored; make? is true
+  ;; only on the main thread, holding the table's mutex. A macro, so that a
+  ;; lookup carries no code for making one.
+  (define-syntax key-table
+    (syntax-rules ()
+      [(_ t key make?)
+       (let-syntax ([kind (syntax-rules ()
+                            [(_ keys keys-set! make-keys)
+                             (or (keys t) (and make? (let ([new make-keys]) (keys-set! t new) new)))])])
+         (cond
+           [(symbol? key) (kind table-symbol-keys table-symbol-keys-set! (make-hashtable symbol-hash eq?))]
+           [(or (fixnum? key) (char? key) (boolean? key))
+            (kind table-eqv-keys table-eqv-keys-set! (make-eqv-hashtable))]
+           [(string? key) (kind table-string-keys table-string-keys-set! (make-hashtable string-hash string=?))]
+           [else (kind table-equal-keys table-equal-keys-set! (make-hashtable equal-hash equal?))]))]))
+
+  (define (key-tables t)
+    (filter values (list (table-symbol-keys t) (table-eqv-keys t) (table-string-keys t) (table-equal-keys t))))
+
+  (define (find-key-state t key)
+    (let ([keys (key-table t key #f)])
+      (and keys (hashtable-ref keys key #f))))
 
   (define-syntax with-table-read
     (syntax-rules ()
@@ -61,12 +88,12 @@
     (check-main-thread 'define-table)
     (unless (or (not doc) (string? doc))
       (assertion-violation 'define-table "not a documentation string" doc))
-    (let* ([module (current-owner)] [symbol (definition-symbol module name)])
+    (let* ([module (owner-name (current-owner))] [symbol (definition-symbol module name)])
       (cond
         [(hashtable-ref tables symbol #f)
          => (lambda (t) (table-doc-set! t doc) t)]
         [else
-         (let ([t (new-table symbol module doc (make-hashtable equal-hash equal?) '() (make-mutex) #t)])
+         (let ([t (new-table symbol module doc #f #f #f #f '() (make-mutex) #t)])
            (hashtable-set! tables symbol t)
            t)])))
 
@@ -82,25 +109,25 @@
   ;; A removal hides values by owner, not the values it found, so that a
   ;; value its module sets again when it reloads stays removed.
   (define (hidden? ks l)
-    (exists (lambda (r) (member (layer-owner l) (key-removal-owners r))) (key-state-removals ks)))
+    (exists (lambda (r) (memq (layer-owner l) (key-removal-owners r))) (key-state-removals ks)))
 
   (define (update! ks)
     (key-state-in-effect-set! ks
       (list-sort layer>? (remp (lambda (l) (hidden? ks l)) (key-state-layers ks)))))
 
   (define (existing-key-state t key)
-    (with-table-read t (hashtable-ref (table-keys t) key #f)))
+    (with-table-read t (find-key-state t key)))
 
   (define (key-state-for! t key)
-    (or (hashtable-ref (table-keys t) key #f)
+    (or (find-key-state t key)
         (let ([ks (make-key-state '() '() '())])
           (with-quit-safe-mutex (table-mutex t)
-            (hashtable-set! (table-keys t) key ks))
+            (hashtable-set! (key-table t key #t) key ks))
           (table-order-set! t (cons key (table-order t)))
           ks)))
 
   (define (owned-by? owner)
-    (lambda (l) (equal? (layer-owner l) owner)))
+    (lambda (l) (eq? (layer-owner l) owner)))
 
   (define table-set!
     (case-lambda
@@ -152,14 +179,14 @@
 
   (define (table-owner t key)
     (let ([l (in-effect (existing-key-state (table-of 'table-owner t) key))])
-      (and l (layer-owner l))))
+      (and l (owner-name (layer-owner l)))))
 
   (define (table-entries t)
     (table-of 'table-entries t)
     (with-table-read t
       (fold-left
         (lambda (entries key)
-          (let ([l (in-effect (hashtable-ref (table-keys t) key #f))])
+          (let ([l (in-effect (find-key-state t key))])
             (if l (cons (cons key (layer-value l)) entries) entries)))
         '()
         (table-order t))))
@@ -174,13 +201,16 @@
           (when (equal? (table-module t) name)
             (hashtable-delete! tables symbol)
             (table-defined?-set! t #f)
-            (vector-for-each
-              (lambda (ks)
-                (for-each (lambda (l) (forget-change! (layer-change l))) (key-state-layers ks))
-                (for-each (lambda (r) (forget-change! (key-removal-change r))) (key-state-removals ks)))
-              (hashtable-values (table-keys t)))
+            (for-each
+              (lambda (keys)
+                (vector-for-each
+                  (lambda (ks)
+                    (for-each (lambda (l) (forget-change! (layer-change l))) (key-state-layers ks))
+                    (for-each (lambda (r) (forget-change! (key-removal-change r))) (key-state-removals ks)))
+                  (hashtable-values keys)))
+              (key-tables t))
             (with-quit-safe-mutex (table-mutex t)
-              (hashtable-clear! (table-keys t)))
+              (for-each hashtable-clear! (key-tables t)))
             (table-order-set! t '())))
         symbols ts)))
 

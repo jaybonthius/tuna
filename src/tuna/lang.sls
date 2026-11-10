@@ -4,5 +4,5 @@
 
   (define language
     (make-s-exp-language default-readtable (read-mode chez)
-      '((tuna) (only (tuna core modules) tuna-module-body))
+      '((chezscheme) (tuna) (only (tuna core modules) tuna-module-body))
       'tuna-module-body)))

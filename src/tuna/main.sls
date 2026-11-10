@@ -39,17 +39,19 @@
       (install-module-lookup! own-directories lib library (string-append home "/.cache/tuna")
         plugin-root checked-plugin-root install-missing-plugin! plugin-roots)
       (install-loader!)
-      ;; Top-level forms are evaluated without inspector information, and
-      ;; the modules they import are compiled within them; modules keep it
-      ;; for the debugger.
+      ;; Modules are compiled within top-level forms, which are evaluated
+      ;; without inspector information. Modules keep each procedure's
+      ;; source for backtraces but not the rest of inspector information,
+      ;; which makes every module object slower to load.
       (compile-library-handler
         (let ([compile-library (compile-library-handler)])
           (lambda (source object)
-            (parameterize ([generate-inspector-information #t])
+            (parameterize ([generate-inspector-information #f]
+                           [generate-procedure-source-information #t])
               (compile-library source object)))))
       (start-top-level! home (string-append configuration "/init.ss"))
       (install-exit-handler!)
-      (post-task! load-configuration! '(init) (lambda () (fork-thread read-console)))))
+      (post-task! load-configuration! (find-owner '(init)) (lambda () (fork-thread read-console)))))
 
   ;; Unloading runs every module's unload actions, for what Tuna cannot
   ;; undo itself, such as a process a module started. An exit called while
@@ -62,7 +64,7 @@
           (unless exit-arguments
             (set! exit-arguments arguments)
             (close-queue!)
-            (parameterize ([quits-allowed #f])
+            (with-quits-allowed #f
               (for-each (lambda (owner) (take-back-changes! owner '())) '((repl) (init)))
               (unload-all-modules!)
               (run-queued!)
@@ -104,10 +106,10 @@
       (let loop ()
         (let ([input (next-input)])
           (cond
-            [(eof-object? input) (post! exit)]
+            [(eof-object? input) (post-task! exit (find-owner '(repl)) #f)]
             [else
              (with-mutex m (set! finished? #f))
-             (post-task! input '(repl)
+             (post-task! input (find-owner '(repl))
                (lambda () (with-mutex m (set! finished? #t) (condition-signal finished))))
              (with-mutex m
                (let wait ()

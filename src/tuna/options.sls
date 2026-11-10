@@ -21,17 +21,15 @@
     (fields owner value change))
 
   ;; settings and a scope's local values are replaced, never changed in
-  ;; place, since other threads read them.
+  ;; place, since other threads read them. An option no scope has held a
+  ;; local value of is read without looking at the current scope, which
+  ;; would cost as much as the rest of the read.
   (define-record-type option-state
     (nongenerative)
     (sealed #t)
     (fields symbol module key
             (mutable default) (mutable check) (mutable doc) (mutable on-change)
-            (mutable settings) (mutable defined?) (mutable procedure)))
-
-  ;; One parameter for every option, so that reading an option outside any
-  ;; binding reads one known parameter, which Chez compiles in place.
-  (define bindings (make-thread-parameter '()))
+            (mutable settings) (mutable localized?) (mutable defined?) (mutable procedure)))
 
   (define (setting st)
     (let ([layers (option-state-settings st)])
@@ -42,23 +40,38 @@
       (if layers (layer-value (car layers)) (setting st))))
 
   (define (unbound-value st)
-    (let ([s (current-scope)])
-      (if s (scope-value st s) (setting st))))
+    (if (option-state-localized? st)
+        (let ([s (current-scope)])
+          (if s (scope-value st s) (setting st)))
+        (setting st)))
+
+  ;; A thread forked inside a binding holds its parent's record until it
+  ;; takes its own, and sees none of its parent's bindings.
+  (define (bound-value ts st)
+    (if (fx= (thread-state-thread ts) (get-thread-id))
+        (let ([bindings (thread-state-bindings ts)] [key (option-state-key st)])
+          (if (fx< key (vector-length bindings))
+              (let ([v (vector-ref bindings key)])
+                (if (eq? v no-binding) (unbound-value st) v))
+              (unbound-value st)))
+        (unbound-value st)))
 
   (define (option-value st)
-    (let ([b (bindings)])
-      (if (null? b)
+    (let ([ts (current-thread-state)])
+      (if (fx= (thread-state-bound ts) 0)
           (unbound-value st)
-          (let ([e (assq st b)])
-            (if e (cdr e) (unbound-value st))))))
+          (bound-value ts st))))
 
   (define (option? v)
     (and (wrapper-procedure? v) (option-state? (wrapper-procedure-data v))))
 
+  ;; wrapper-procedure-data checks its argument again, which costs as much
+  ;; as the rest of with-options' checks, so it is called once.
   (define (option-state-of who o)
-    (unless (option? o)
-      (assertion-violation who "not an option" o))
-    (wrapper-procedure-data o))
+    (let ([st (and (wrapper-procedure? o) (wrapper-procedure-data o))])
+      (unless (option-state? st)
+        (assertion-violation who "not an option" o))
+      st))
 
   (define (changing-option who o)
     (let ([st (option-state-of who o)])
@@ -85,7 +98,7 @@
       (assertion-violation 'define-option "not a documentation string" doc))
     (unless (or (not on-change) (procedure? on-change))
       (assertion-violation 'define-option "not a procedure" on-change))
-    (let* ([module (current-owner)] [symbol (definition-symbol module name)])
+    (let* ([module (owner-name (current-owner))] [symbol (definition-symbol module name)])
       (unless (check default)
         (assertion-violation 'define-option
           (format "the default ~s is not a valid value for ~s" default symbol)))
@@ -98,7 +111,7 @@
               (option-state-on-change-set! st on-change)
               (option-state-procedure st))]
         [else
-         (let* ([st (make-option-state symbol module (make-local-key) default check doc on-change '() #t #f)]
+         (let* ([st (make-option-state symbol module (make-local-key) default check doc on-change '() #f #t #f)]
                 [o (make-wrapper-procedure
                      (case-lambda
                        [() (option-value st)]
@@ -124,13 +137,18 @@
 
   ;; Taking a change back notifies too, where no quit may land; on-change
   ;; is a module's code, which a quit must still end, and call-reporting
-  ;; keeps the quit from reaching the change.
+  ;; keeps the quit from reaching the change. parameterize costs more than
+  ;; the rest of a notification, so the scope is bound only when it is not
+  ;; already current.
   (define (notify st s v)
-    (parameterize ([current-scope s])
+    (define (run)
       (let ([on-change (option-state-on-change st)])
         (when on-change
-          (call-reporting (lambda () (parameterize ([quits-allowed #t]) (on-change v))))))
-      (option-changed (option-state-procedure st) v)))
+          (call-reporting (lambda () (with-quits-allowed #t (on-change v))))))
+      (option-changed (option-state-procedure st) v))
+    (if (eq? (current-scope) s)
+        (run)
+        (parameterize ([current-scope s]) (run))))
 
   (define (notify-if-changed st s before)
     (let ([after (value-of st s)])
@@ -141,7 +159,7 @@
     (> (owner-rank (layer-owner a)) (owner-rank (layer-owner b))))
 
   (define (own-layer layers owner)
-    (find (lambda (l) (equal? (layer-owner l) owner)) layers))
+    (find (lambda (l) (eq? (layer-owner l) owner)) layers))
 
   (define (option-pairs who arguments)
     (let loop ([arguments arguments] [pairs '()])
@@ -159,9 +177,10 @@
     (if s (or (scope-local s (option-state-key st)) '()) (option-state-settings st)))
 
   (define (layers-set! st s layers)
-    (if s
-        (scope-local-set! s (option-state-key st) (and (pair? layers) layers))
-        (option-state-settings-set! st layers)))
+    (cond
+      [s (when (pair? layers) (option-state-localized?-set! st #t))
+         (scope-local-set! s (option-state-key st) (and (pair? layers) layers))]
+      [else (option-state-settings-set! st layers)]))
 
   (define (value-of st s)
     (if s (scope-value st s) (setting st)))
@@ -234,21 +253,60 @@
     (setting (option-state-of 'option-setting o)))
 
   (define (option-settings o)
-    (map (lambda (l) (list (layer-owner l) (layer-value l)))
+    (map (lambda (l) (list (owner-name (layer-owner l)) (layer-value l)))
          (option-state-settings (option-state-of 'option-settings o))))
 
   (define (option-documentation o)
     (option-state-doc (option-state-of 'documentation o)))
 
-  (define (binding who o v)
-    (let ([st (option-state-of who o)])
-      (cons st (checked who st v))))
+  (define (ensure-room! ts key)
+    (let ([bindings (thread-state-bindings ts)])
+      (unless (fx< key (vector-length bindings))
+        (let ([longer (make-vector (fxmax (fx+ key 1) (fx* 2 (vector-length bindings))) no-binding)])
+          (do ([i 0 (fx+ i 1)]) ((fx= i (vector-length bindings)))
+            (vector-set! longer i (vector-ref bindings i)))
+          (thread-state-bindings-set! ts longer)))))
 
+  ;; Nothing assigns a binding while it is in effect, so the winders need
+  ;; not swap, as parameterize's do: entering, also again through a
+  ;; continuation, puts the binding in place, and leaving puts back the
+  ;; value it hid. Critical, since a quit landing between a winder and
+  ;; Chez recording it would leave the binding in place for good.
+  (define (call-with-binding st v thunk)
+    (let* ([ts (this-thread-state)] [key (option-state-key st)])
+      (ensure-room! ts key)
+      (let* ([outer (vector-ref (thread-state-bindings ts) key)] [delta (if (eq? outer no-binding) 1 0)])
+        (dynamic-wind #t
+          (lambda ()
+            (vector-set! (thread-state-bindings ts) key v)
+            (thread-state-bound-set! ts (fx+ (thread-state-bound ts) delta)))
+          thunk
+          (lambda ()
+            (vector-set! (thread-state-bindings ts) key outer)
+            (thread-state-bound-set! ts (fx- (thread-state-bound ts) delta)))))))
+
+  (define (bind-option o v thunk)
+    (let ([st (option-state-of 'with-options o)])
+      (call-with-binding st (checked 'with-options st v) thunk)))
+
+  ;; Every option and value is checked before any is bound. The first
+  ;; binding of an option named twice wins, as the innermost.
   (define-syntax with-options
+    (lambda (x)
+      (syntax-case x ()
+        [(_ ([o v]) b1 b2 ...) #'(bind-option o v (lambda () b1 b2 ...))]
+        [(_ ([o v] ...) b1 b2 ...)
+         (with-syntax ([(st ...) (generate-temporaries #'(o ...))]
+                       [(value ...) (generate-temporaries #'(o ...))])
+           #'(let* ([st (option-state-of 'with-options o)] ...)
+               (let* ([value (checked 'with-options st v)] ...)
+                 (bind-options ((st value) ...) (lambda () b1 b2 ...)))))])))
+
+  (define-syntax bind-options
     (syntax-rules ()
-      [(_ ([o v] ...) b1 b2 ...)
-       (parameterize ([bindings (cons* (binding 'with-options o v) ... (bindings))])
-         b1 b2 ...)]))
+      [(_ () thunk) (thunk)]
+      [(_ ((st v) more ...) thunk)
+       (bind-options (more ...) (lambda () (call-with-binding st v thunk)))]))
 
   (define (module-unloaded! name)
     (let-values ([(symbols states) (hashtable-entries option-states)])

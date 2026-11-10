@@ -43,12 +43,16 @@ k
 ; Definitions come before expressions; Chez reports the first definition
 ; after an expression as Tuna expands it.
 > (import (late))
-! invalid context for definition (define-syntax f (changeable-transformer (syntax cell) (quote (...))))
+! invalid context for definition (define-syntax f changeable-keyword)
 ; Both languages withhold sleep, and #!tuna/base is a module language too.
 > (import (sleeper))
-! attempt to reference unbound identifier sleep at line 2, char 16 of ~/.config/tuna/lib/sleeper.sls
+! sleep: withheld because it would block the main thread (sleep (make-time (quote time-duration) 0 0)) at line 2, char 15 of ~/.config/tuna/lib/sleeper.sls
 > (import (base-sleeper))
-! attempt to reference unbound identifier sleep at line 2, char 16 of ~/.config/tuna/lib/base-sleeper.sls
+! sleep: withheld because it would block the main thread (sleep (make-time (quote time-duration) 0 0)) at line 2, char 15 of ~/.config/tuna/lib/base-sleeper.sls
+; A module may define sleep and exit too.
+> (import (shadows))
+> (shadows:both)
+((slept 1) stayed)
 > (import (base))
 > (base:name)
 (base)

@@ -16,6 +16,31 @@
 (define markers (map marker (iota 6)))
 
 (define (tests)
+  ;; Moving a lib module out of the lib band sorts a hook's entries afresh,
+  ;; so the order kept as entries come and go must match it.
+  (test "entries kept in order as they are added, removed and taken back match a fresh sort"
+    (let ([procedures (map marker (iota 5))] [mismatches 0])
+      (do ([round 0 (+ round 1)]) ((= round 200))
+        (let ([lib (list 'hook-lib (string->symbol (format "r~a" round)))])
+          (rank-module! lib #t)
+          (do ([i 0 (+ i 1)]) ((= i 20))
+            (let ([owner (list-ref (list '(repl) '(init) lib) (random 3))]
+                  [p (list-ref procedures (random 5))])
+              (as-module owner
+                (case (random 3)
+                  [(0 1) (add-hook! changed p (list-ref '(-1 0 0 0.5 1) (random 5)))]
+                  [else (remove-hook! changed p)]))))
+          (when (fxzero? (random 10)) (take-back-changes! '(init) '()))
+          (as-module lib (add-hook! changed (car procedures) 2))
+          (let ([kept (hook-entries changed)])
+            (move-before-importers! lib)
+            (unless (equal? kept (hook-entries changed))
+              (set! mismatches (+ mismatches 1))))
+          (take-back-changes! lib '())))
+      (check-equal? 0 mismatches)
+      (for-each (lambda (owner) (take-back-changes! owner '())) '((repl) (init)))
+      (check-equal? '() (hook-entries changed))))
+
   (test "a call on another thread runs each entry once, in order, while the main thread changes them"
     (let ([stop? #f] [bad '()] [calls 0] [mutex (make-mutex)])
       (define (caller)

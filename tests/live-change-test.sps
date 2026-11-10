@@ -32,7 +32,7 @@
 
 ;; Compiled once, against the first instance: a caller compiled earlier
 ;; must follow every later instance.
-(define env (environment '(tuna) '(racer)))
+(define env (environment '(chezscheme) '(tuna) '(racer)))
 (define (compiled form) (eval form env))
 (define call-f (compiled '(lambda (x) (racer:f x))))
 (define call-h (compiled '(lambda (x) (racer:h x))))

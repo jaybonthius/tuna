@@ -23,7 +23,7 @@
   (string-append root "/cache") (lambda (name) #f) (lambda (name) #f) (lambda (name) #f) (lambda () '()))
 (install-loader!)
 
-(define env (environment '(tuna) '(racer)))
+(define env (environment '(chezscheme) '(tuna) '(racer)))
 (define (compiled form) (eval form env))
 
 (define call-f (compiled '(lambda (x) (racer:f x))))
@@ -139,7 +139,7 @@
     (for-each thread-join threads)
     (check-equal? '() bad)
     (check-equal? '(((loaded39) define #f))
-      (eval '(definition-changes loaded39:f) (environment '(tuna) '(loaded39))))))
+      (eval '(definition-changes loaded39:f) (environment '(chezscheme) '(tuna) '(loaded39))))))
 
 (system (format "rm -rf '~a'" root))
 (test-exit)

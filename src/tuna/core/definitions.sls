@@ -131,7 +131,7 @@
   (define (hidden? c layer)
     (exists (lambda (removal)
               (and (eq? (removal-procedure removal) (layer-value layer))
-                   (member (change-owner (layer-change layer)) (removal-owners removal))))
+                   (memq (change-owner (layer-change layer)) (removal-owners removal))))
             (cell-removals c)))
 
   (define (raise-not-loaded who message)
@@ -164,7 +164,7 @@
       (cell-override-in-effect-set! c
         (and override
              (>= (owner-rank (change-owner (layer-change override)))
-                 (owner-rank (cell-module c)))
+                 (owner-rank (find-owner (cell-module c))))
              override))
       (cell-advice-in-effect-set! c
         (map layer-value (list-sort layer<? (remp (lambda (layer) (hidden? c layer)) (cell-advice c)))))
@@ -197,8 +197,8 @@
           (cell-definition-set! c value)
           (cell-doc-set! c doc))
         (when (null? (cell-history c))
-          (let ([change (parameterize ([current-owner module])
-                          (record-change! 'define 'define symbol #f void void))])
+          (let ([change (call-as-owner (find-owner module)
+                          (lambda () (record-change! 'define 'define symbol #f void void)))])
             (cell-history-set! c (list change))))
         c)))
 
@@ -219,13 +219,13 @@
   (define (cell-override! c v)
     (let ([owner (current-owner)])
       (cond
-        [(equal? owner (cell-module c)) (cell-assign! c v)]
+        [(equal? (owner-name owner) (cell-module c)) (cell-assign! c v)]
         [else
          (check-main-thread 'set!)
          (check-current-owner 'set!)
          (check-loaded c)
          (with-cells-locked
-           (let ([previous (find (lambda (layer) (equal? (change-owner (layer-change layer)) owner))
+           (let ([previous (find (lambda (layer) (eq? (change-owner (layer-change layer)) owner))
                                  (cell-overrides c))])
              (when previous (take-back! (layer-change previous))))
            (letrec ([layer
@@ -249,7 +249,7 @@
     (let ([owner (check-current-owner 'advice-add!)])
       (unless (exists (lambda (layer)
                         (and (eq? (layer-value layer) advice)
-                             (equal? (change-owner (layer-change layer)) owner)))
+                             (eq? (change-owner (layer-change layer)) owner)))
                       (cell-advice c))
         (with-cells-locked
           (letrec ([layer
@@ -273,7 +273,7 @@
     (let* ([owner (check-current-owner 'advice-remove!)]
            [visible (remp (lambda (layer) (hidden? c layer)) (cell-advice c))]
            [matching (filter (lambda (layer) (eq? (layer-value layer) advice)) visible)]
-           [own (filter (lambda (layer) (equal? (change-owner (layer-change layer)) owner)) matching)]
+           [own (filter (lambda (layer) (eq? (change-owner (layer-change layer)) owner)) matching)]
            [others (remp (lambda (layer) (memq layer own)) matching)])
       (with-cells-locked
         (for-each (lambda (layer) (take-back! (layer-change layer))) own)
@@ -319,7 +319,7 @@
 
   (define (cell-changes c)
     (map (lambda (change)
-           (list (change-owner change) (change-kind change)
+           (list (owner-name (change-owner change)) (change-kind change)
                  (and (memq (change-kind change) '(advice removal)) (change-detail change))))
          (cell-history c)))
 
@@ -334,31 +334,34 @@
   (meta define (identifier-cell who x id lookup)
     (or (and (identifier? id)
              (not (unbound-identifier? id))
-             (lookup id #'cell-property))
+             (let ([definition (lookup id #'cell-property)])
+               (and definition (car definition))))
         (syntax-violation who "not a changeable definition" x id)))
 
-  ;; Every changeable definition's keyword is made by this one procedure,
-  ;; so a module's object file holds a call to it, not a transformer of its
-  ;; own.
-  (meta define (changeable-transformer cell module)
+  ;; Every changeable definition's keyword is this one transformer, which
+  ;; finds the definition's cell and module through the keyword's
+  ;; property, so a module's object file holds no transformer of its own.
+  (meta define changeable-keyword
     (make-variable-transformer
       (lambda (x)
         (lambda (lookup)
+          (define (definition id) (lookup id #'cell-property))
           (syntax-case x ()
             [(s id v)
              (and (identifier? #'s) (free-identifier=? #'s #'set!))
-             (if (equal? (site-module #'id lookup) module)
-                 #`(cell-assign! #,cell v)
-                 #`(cell-override! #,cell v))]
-            [(_ argument ...) #`((cell-callee #,cell) argument ...)]
-            [_ (identifier? x) #`(cell-reference #,cell)])))))
+             (let ([d (definition #'id)])
+               (if (equal? (site-module #'id lookup) (cdr d))
+                   #`(cell-assign! #,(car d) v)
+                   #`(cell-override! #,(car d) v)))]
+            [(k argument ...) #`((cell-callee #,(car (definition #'k))) argument ...)]
+            [k (identifier? #'k) #`(cell-reference #,(car (definition #'k)))])))))
 
   (define-syntax define-changeable
     (syntax-rules ()
       [(_ name cell module symbol expr doc)
        (begin
-         (define-syntax name (changeable-transformer #'cell 'module))
-         (define-property name cell-property #'cell)
+         (define-syntax name changeable-keyword)
+         (define-property name cell-property (cons #'cell 'module))
          (define cell (define-cell! 'symbol 'module expr doc)))]))
 
   (define-syntax define-public
@@ -381,6 +384,7 @@
              (let ([module (site-module name lookup)])
                (if module
                    (with-syntax ([name name] [expr expr] [doc doc] [module (datum->syntax name module)]
+                                 [(cell) (generate-temporaries '(cell))]
                                  [symbol (datum->syntax name (prefixed-symbol module (syntax->datum name)))])
                      #'(begin
                          (define-changeable name cell module symbol expr doc)

@@ -33,10 +33,14 @@
 
   (define (new-entries) (make-entries '() '() '()))
 
+  ;; A hook no scope has held local entries of is called without looking
+  ;; at the current scope, which would add a thread parameter's read and a
+  ;; scope lookup to every call.
   (define-record-type hook-state
     (nongenerative)
     (sealed #t)
-    (fields symbol module key (mutable doc) global (mutable defined?) (mutable procedure)))
+    (fields symbol module key (mutable doc) global (mutable localized?) (mutable defined?)
+            (mutable procedure)))
 
   (define (entry<? a b)
     (let ([da (entry-depth a)] [db (entry-depth b)])
@@ -45,60 +49,92 @@
                (< (change-sequence (entry-change a)) (change-sequence (entry-change b)))))))
 
   (define (owned-by? owner)
-    (lambda (e) (equal? (entry-owner e) owner)))
+    (lambda (e) (eq? (entry-owner e) owner)))
 
   ;; A removal hides entries by owner, not the entries it found, so that
   ;; an entry its module adds again when it reloads stays removed.
   (define (hidden? es e)
     (exists (lambda (r)
               (and (eq? (entry-removal-procedure r) (entry-procedure e))
-                   (member (entry-owner e) (entry-removal-owners r))))
+                   (memq (entry-owner e) (entry-removal-owners r))))
             (entries-removals es)))
 
   (define (update! es)
     (entries-in-effect-set! es
       (list-sort entry<? (remp (lambda (e) (hidden? es e)) (entries-all es)))))
 
+  ;; Adding or taking back one entry places only that entry: sorting them
+  ;; all again would cost most of the change in a hook of a few entries.
+  (define (insert-entry e entries)
+    (if (or (null? entries) (entry<? e (car entries)))
+        (cons e entries)
+        (cons (car entries) (insert-entry e (cdr entries)))))
+
   (define (current-entries st)
-    (let ([global (entries-in-effect (hook-state-global st))] [s (current-scope)])
-      (let ([es (and s (scope-local s (hook-state-key st)))])
-        (if es (merge entry<? global (entries-in-effect es)) global))))
+    (let ([global (entries-in-effect (hook-state-global st))])
+      (if (hook-state-localized? st)
+          (let* ([s (current-scope)] [es (and s (scope-local s (hook-state-key st)))])
+            (if es (merge entry<? global (entries-in-effect es)) global))
+          global)))
 
-  ;; call-reporting with one handler instead of two, since a hook pays for
-  ;; it once per entry. An entry is a module's code, which a quit must end
-  ;; even where the hook's caller lets none land, as while a change is
-  ;; taken back; the handler keeps the quit from reaching the caller.
-  (define (call-entry e arguments)
-    (call/cc
-      (lambda (k)
-        (with-exception-handler
-          (lambda (c)
-            (report-on-main-thread c)
-            (unless (warning-only? c) (k (void))))
-          (lambda ()
-            (if (quits-allowed)
-                (apply (entry-procedure e) arguments)
-                (parameterize ([quits-allowed #t]) (apply (entry-procedure e) arguments))))))))
+  ;; One escape and one handler per call, not per entry, since a hook pays
+  ;; for them on every call: the handler reports a raise in its dynamic
+  ;; context, as call-reporting does, and the call goes on after the entry
+  ;; that raised. An entry of the caller's owner runs as a plain call;
+  ;; another's runs inside a critical wind that switches the owner, so that
+  ;; a raise, an escape, a quit or a task's pause and resume puts the
+  ;; caller's owner back.
+  (define (run-entries s caller entries invoke)
+    (define (restore-caller) (thread-state-owner-set! s caller))
+    (let run ([entries entries])
+      (unless (null? entries)
+        (run (call/1cc
+               (lambda (k)
+                 (let ([at entries])
+                   (with-exception-handler
+                     (lambda (c)
+                       (report-on-main-thread c)
+                       (unless (warning-only? c) (k (cdr at))))
+                     (lambda ()
+                       (let loop ([es entries])
+                         (if (null? es)
+                             '()
+                             (let* ([e (car es)] [owner (entry-owner e)])
+                               (set! at es)
+                               (if (eq? owner caller)
+                                   (invoke (entry-procedure e))
+                                   (dynamic-wind #t
+                                     (lambda () (thread-state-owner-set! s owner))
+                                     (lambda () (invoke (entry-procedure e)))
+                                     restore-caller))
+                               (loop (cdr es))))))))))))))
 
-  ;; An entry whose owner is already current needs no parameterize, which
-  ;; costs more than the rest of the call.
-  (define (call-hook st arguments)
-    (let ([owner (current-owner)])
-      (for-each
-        (lambda (e)
-          (if (equal? (entry-owner e) owner)
-              (call-entry e arguments)
-              (parameterize ([current-owner (entry-owner e)]) (call-entry e arguments))))
-        (current-entries st)))
-    (void))
+  ;; An entry is a module's code, which a quit must end even where the
+  ;; hook's caller lets none land, as while a change is taken back; the
+  ;; handler keeps the quit from reaching the caller.
+  (define (call-hook st invoke)
+    (let ([entries (current-entries st)])
+      (unless (null? entries)
+        (let* ([s (this-thread-state)] [caller (thread-state-owner s)])
+          (if (thread-state-quits-allowed s)
+              (run-entries s caller entries invoke)
+              (with-quits-allowed #t (run-entries s caller entries invoke)))))))
+
+  (define (hook-procedure st)
+    (case-lambda
+      [() (call-hook st (lambda (p) (p)))]
+      [(a) (call-hook st (lambda (p) (p a)))]
+      [(a b) (call-hook st (lambda (p) (p a b)))]
+      [arguments (call-hook st (lambda (p) (apply p arguments)))]))
 
   (define (hook? v)
     (and (wrapper-procedure? v) (hook-state? (wrapper-procedure-data v))))
 
   (define (hook-state-of who h)
-    (unless (hook? h)
-      (assertion-violation who "not a hook" h))
-    (wrapper-procedure-data h))
+    (let ([st (and (wrapper-procedure? h) (wrapper-procedure-data h))])
+      (unless (hook-state? st)
+        (assertion-violation who "not a hook" h))
+      st))
 
   (define (changing-hook who h)
     (let ([st (hook-state-of who h)])
@@ -108,8 +144,8 @@
       st))
 
   (define (make-hook symbol module doc)
-    (let* ([st (make-hook-state symbol module (make-local-key) doc (new-entries) #t #f)]
-           [h (make-wrapper-procedure (lambda arguments (call-hook st arguments)) -1 st)])
+    (let* ([st (make-hook-state symbol module (make-local-key) doc (new-entries) #f #t #f)]
+           [h (make-wrapper-procedure (hook-procedure st) -1 st)])
       (hook-state-procedure-set! st h)
       h))
 
@@ -122,7 +158,7 @@
     (check-main-thread 'define-hook)
     (unless (or (not doc) (string? doc))
       (assertion-violation 'define-hook "not a documentation string" doc))
-    (let* ([module (current-owner)] [symbol (definition-symbol module name)])
+    (let* ([module (owner-name (current-owner))] [symbol (definition-symbol module name)])
       (cond
         [(hashtable-ref hook-states symbol #f)
          => (lambda (st)
@@ -146,7 +182,7 @@
 
   (define (owner-runner proc owner)
     (lambda arguments
-      (parameterize ([current-owner owner]) (apply proc arguments))))
+      (call-as-owner owner (lambda () (apply proc arguments)))))
 
   (define (add-entry! who h proc depth scope)
     (let ([st (changing-hook who h)])
@@ -158,6 +194,7 @@
             [es (if scope
                     (or (scope-local scope (hook-state-key st))
                         (let ([es (new-entries)])
+                          (hook-state-localized?-set! st #t)
                           (scope-local-set! scope (hook-state-key st) es)
                           es))
                     (hook-state-global st))])
@@ -167,11 +204,12 @@
             (letrec* ([change (record! who 'hook-entry st proc scope
                                 (lambda ()
                                   (entries-all-set! es (remq entry (entries-all es)))
-                                  (update! es))
+                                  (entries-in-effect-set! es (remq entry (entries-in-effect es))))
                                 (lambda () (update! es)))]
                       [entry (make-entry proc owner depth change (owner-runner proc owner))])
               (entries-all-set! es (cons entry (entries-all es)))
-              (update! es)))))))
+              (unless (hidden? es entry)
+                (entries-in-effect-set! es (insert-entry entry (entries-in-effect es))))))))))
 
   (define (remove-entry! who h proc scope)
     (let* ([st (changing-hook who h)]

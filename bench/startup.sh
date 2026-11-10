@@ -1,4 +1,5 @@
 #!/bin/sh
+# Pinned to one CPU, so that each median compares like with like.
 set -eu
 tuna=${1:?usage: startup.sh TUNA SCHEME}
 scheme=${2:?usage: startup.sh TUNA SCHEME}
@@ -6,14 +7,16 @@ case $tuna in
   /*) ;;
   *) tuna=$PWD/$tuna ;;
 esac
-runs=5
+cpu=${BENCH_CPU:-6}
+runs=9
+limit_ms=170
 dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-bench-startup.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 mkdir "$dir/library"
 
 start() {
   t0=$(date +%s%N)
-  output=$(cd "$dir" && HOME="$dir/$1" TUNA_LIBRARY="$dir/library" "$tuna" < /dev/null 2>&1)
+  output=$(cd "$dir" && HOME="$dir/$1" TUNA_LIBRARY="$dir/library" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
   t1=$(date +%s%N)
   case $output in
     configured-ms*) ;;
@@ -26,6 +29,7 @@ median() {
   sort -n | awk '{ v[NR] = $1 } END { print v[int((NR + 1) / 2)] }'
 }
 
+failed=0
 for shape in few all; do
   "$scheme" -q --script bench/generate.ss "$dir/$shape" "$shape"
   cold=$(start "$shape")
@@ -35,7 +39,12 @@ for shape in few all; do
     start "$shape" >> "$dir/warm"
     i=$((i + 1))
   done
+  warm=$(cut -d' ' -f2 "$dir/warm" | median)
   echo "$shape: cold $(echo "$cold" | awk '{ print $1 " ms (process " $2 " ms)" }');" \
-    "warm median $(cut -d' ' -f1 "$dir/warm" | median) ms" \
-    "(process $(cut -d' ' -f2 "$dir/warm" | median) ms) of $runs"
+    "warm median $(cut -d' ' -f1 "$dir/warm" | median) ms (process $warm ms) of $runs"
+  if [ "$shape" = few ]; then
+    if [ "$warm" -le "$limit_ms" ]; then verdict=pass; else verdict=FAIL; failed=1; fi
+    printf '%-24s %10s ms  limit %7s ms  %s\n' startup-few-warm "$warm" "$limit_ms" "$verdict"
+  fi
 done
+exit $failed

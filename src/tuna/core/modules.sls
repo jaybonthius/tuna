@@ -152,7 +152,7 @@
       ;; as an invalid library name.
       (set! find-module
         (lambda (who name extensions install?)
-          (parameterize ([quits-allowed #f])
+          (with-quits-allowed #f
             (cond
               [(memq (car name) '(tuna chez-lang))
                (search-own who name own-directories extensions)]
@@ -249,12 +249,12 @@
   ;; Chez runs the bodies of the imports a module refers to before the
   ;; module's own; Tuna runs the others too, so every imported module has
   ;; run, on its own behalf, before the importer's body. A library's body
-  ;; cannot be wrapped in parameterize, so the owner and quits-allowed are
-  ;; set here for it, and module-finished! puts back the invoking code's.
+  ;; cannot be wrapped, so the owner and quits-allowed are set here for it,
+  ;; and module-finished! puts back the invoking code's.
   (define (module-started! name specs)
     (check-main-thread 'import)
     (let ([previous (cons (current-owner) (quits-allowed))])
-      (parameterize ([quits-allowed #f])
+      (with-quits-allowed #f
         (let ([imported (filter (lambda (import) (and import (hashtable-contains? found-libraries import)))
                                 (map import-spec-library specs))]
               [lib? (lib-library? name)])
@@ -272,8 +272,8 @@
             (for-each move-imported-lib-module! imported))
           (hashtable-delete! scope-environments name)
           (rank-module! name lib?)))
-      (current-owner name)
-      (quits-allowed #t)
+      (set-current-owner! (find-owner name))
+      (set-quits-allowed! #t)
       previous))
 
   (define (run-module! name)
@@ -283,24 +283,34 @@
       (with-exception-handler
         (lambda (c)
           (unless (warning-only? c)
-            (parameterize ([quits-allowed #f]) (mark-failed! name)))
+            (with-quits-allowed #f (mark-failed! name)))
           (raise-continuable c))
         (lambda () (invoke-module! name)))))
 
   ;; Quits wait outside the bodies, so none lands between a body's end and
   ;; Chez recording the library as invoked: Chez would run the body again.
   (define (invoke-module! name)
-    (parameterize ([quits-allowed #f])
+    (with-quits-allowed #f
       (call-with-library-lock (lambda () (invoke-library name)))))
 
   ;; The lock is taken and let go with quits deferred, as with
   ;; with-quit-safe-mutex, but the code holding it keeps the caller's
-  ;; quits-allowed, so that a long compile can be quit.
+  ;; quits-allowed, so that a long compile or a runaway macro can be quit.
   (define (call-with-quit-safe-library-lock thunk)
     (let ([allowed (quits-allowed)])
-      (parameterize ([quits-allowed #f])
+      (with-quits-allowed #f
         (call-with-library-lock
-          (lambda () (parameterize ([quits-allowed allowed]) (thunk)))))))
+          (lambda () (with-quits-allowed allowed (thunk)))))))
+
+  ;; Chez's check of whether a library needs recompiling treats any raise
+  ;; while it reads an object file as a reason to recompile, and so would
+  ;; swallow a quit. reload-library runs that check on every library it
+  ;; reaches, so quits wait through it. An import expanded at the top level
+  ;; runs the check too, but deferring there would defer the whole
+  ;; expansion; a quit lost there must be requested again.
+  (define (reload-module-library name)
+    (with-quits-allowed #f
+      (reload-library name reloadable-importer?)))
 
   ;; Chez's library manager is shared by every thread, so the main thread
   ;; expands, and so loads libraries, under the lock that other threads'
@@ -344,16 +354,16 @@
   ;; run the body of a library whose invocation failed again on its next
   ;; reference.
   (define (module-finished! name previous)
-    (quits-allowed #f)
+    (set-quits-allowed! #f)
     (set! running-bodies (remove name running-bodies))
     (unload-removed-definitions! name)
     (let ([m (hashtable-ref modules name #f)])
       (unless (module-state-loaded? m)
         (module-state-loaded?-set! m #t)
         (set! load-order (cons name load-order))))
-    (call-reporting (lambda () (parameterize ([quits-allowed #t]) (module-loaded name))))
-    (current-owner (car previous))
-    (quits-allowed (cdr previous)))
+    (call-reporting (lambda () (with-quits-allowed #t (module-loaded name))))
+    (set-current-owner! (car previous))
+    (set-quits-allowed! (cdr previous)))
 
   (meta define (import-specs forms)
     (let loop ([forms forms] [specs '()])
@@ -405,10 +415,19 @@
           [(k name previous form rest ...)
            #'(begin form (k name previous rest ...))]))))
 
+  (define (module-name-transformer x)
+    (lambda (lookup)
+      (syntax-case x ()
+        [(k) #`'#,(datum->syntax #'k (lookup #'k #'module-property))])))
+
   ;; this-module and %scope are captured on purpose, from the keyword the
   ;; loader writes in the module's own context. A form given to %scope takes
   ;; that context, so it sees what the module's top-level code sees; that is
-  ;; how eval-in-module works.
+  ;; how eval-in-module works. The author's forms go in a module nested
+  ;; inside the import of Tuna's exit and sleep, so that they may define
+  ;; those names too. Each module's this-module is the one shared
+  ;; transformer: a transformer written here would carry this library's
+  ;; context into every module's object file.
   (define-syntax tuna-module-body
     (lambda (x)
       (syntax-case x ()
@@ -416,18 +435,23 @@
          (with-syntax ([this-module (datum->syntax #'k 'this-module)]
                        [%scope (datum->syntax #'k '%scope)]
                        [scope-symbol (datum->syntax #'k (prefixed-symbol (syntax->datum #'name) '%scope))]
+                       [replaced (datum->syntax #'k '(tuna core replaced))]
                        [specs (datum->syntax #'k (import-specs #'(form ...)))])
            #'(begin
                (implicit-exports #t)
-               (define-syntax this-module (syntax-rules () [(_) 'name]))
-               (define-property this-module module-property 'name)
-               (define-syntax %scope
-                 (lambda (y)
-                   (syntax-case y ()
-                     [(_ e) (datum->syntax #'%scope (syntax->datum #'e))])))
-               (export (rename (%scope scope-symbol)))
-               (define previous (module-started! 'name 'specs))
-               (module-forms name previous form ...)))])))
+               (import replaced)
+               (module body ()
+                 (implicit-exports #t)
+                 (define-syntax this-module module-name-transformer)
+                 (define-property this-module module-property 'name)
+                 (define-syntax %scope
+                   (lambda (y)
+                     (syntax-case y ()
+                       [(_ e) (datum->syntax #'%scope (syntax->datum #'e))])))
+                 (export (rename (%scope scope-symbol)))
+                 (define previous (module-started! 'name 'specs))
+                 (module-forms name previous form ...))
+               (export (import body))))])))
 
   ;; Chez never frees an environment, so each module instance has one.
   (define scope-environments (make-hashtable equal-hash equal?))
@@ -503,7 +527,7 @@
   ;; is recompiled before any body runs.
   (define (install-again! names)
     (let ([recompiled (fold-left (lambda (recompiled name)
-                                   (append (reload-library name reloadable-importer?) recompiled))
+                                   (append (reload-module-library name) recompiled))
                                  '() names)])
       (for-each
         (lambda (name)
@@ -555,19 +579,19 @@
     (void))
 
   (define (take-back-changes! owner kept-kinds)
-    (parameterize ([quits-allowed #f])
+    (with-quits-allowed #f
       (for-each
         (lambda (c)
           (when (eq? (change-kind c) 'unload-action)
             (take-back! c)
-            (parameterize ([current-owner owner] [quits-allowed #t])
-              (call-reporting (change-thing c)))))
+            (with-quits-allowed #t
+              (call-as-owner (find-owner owner) (lambda () (call-reporting (change-thing c)))))))
         (owner-changes owner))
       (for-each take-back! (remp (lambda (c) (memq (change-kind c) kept-kinds)) (owner-changes owner)))))
 
   ;; In a diamond an importer is unloaded through another importer first.
   (define (unload-instance! name)
-    (parameterize ([quits-allowed #f])
+    (with-quits-allowed #f
       (for-each (lambda (importer) (when (module-loaded? importer) (unload-instance! importer)))
                 (loaded-importers name))
       (take-back-changes! name '())
@@ -584,7 +608,7 @@
   ;; A module in kept is being reloaded and gets its previous version back;
   ;; any other body a raise left unfinished was a first load.
   (define (drop-failed-bodies! depth kept)
-    (parameterize ([quits-allowed #f])
+    (with-quits-allowed #f
       (let loop ()
         (when (fx> (length running-bodies) depth)
           (let ([name (car running-bodies)])
@@ -600,11 +624,12 @@
   ;; a task pauses, so a pause drops nothing.
   (define (call-loading-modules thunk)
     (let ([depth (length running-bodies)])
-      (parameterize ([current-owner (current-owner)])
-        (dynamic-wind
-          void
-          thunk
-          (lambda () (drop-failed-bodies! depth '()))))))
+      (call-as-owner (current-owner)
+        (lambda ()
+          (dynamic-wind
+            void
+            thunk
+            (lambda () (drop-failed-bodies! depth '())))))))
 
   (define (load-unloaded-modules! names)
     (for-each (lambda (name) (when (module-stale? name) (load-module! name))) names))
@@ -641,7 +666,7 @@
   ;; Newest first, so each module goes before what it imports.
   (define (unload-all-modules!)
     (check-main-thread 'exit)
-    (parameterize ([quits-allowed #f])
+    (with-quits-allowed #f
       (for-each (lambda (name) (when (module-loaded? name) (call-reporting (lambda () (unload-instance! name)))))
                 load-order)))
 
@@ -654,7 +679,7 @@
     (for-each (lambda (name) (take-back-changes! name '(define))) (reverse order)))
 
   (define (restore! order previous depth)
-    (parameterize ([quits-allowed #f])
+    (with-quits-allowed #f
       (drop-failed-bodies! depth order)
       (take-back-for-reload! order)
       (for-each
@@ -677,16 +702,17 @@
     (let* ([order (with-loaded-importers name)]
            [previous (map running-object order)]
            [depth (length running-bodies)])
-      (parameterize ([current-owner (current-owner)])
-        (guard (c [#t (report-safely c) (restore! order previous depth) #f])
-          (call-with-warnings-reported
-            (lambda ()
-              (take-back-for-reload! order)
-              (let ([recompiled (reload-library name reloadable-importer?)])
-                (for-each (lambda (module) (unless (member module recompiled) (load-again! module)))
-                          order))
-              (for-each invoke-module! order)
-              (parameterize ([quits-allowed #f])
-                (for-each (lambda (module) (hashtable-delete! running-objects module)) order))))
-          (drop-failed-bodies! depth '())
-          #t)))))
+      (call-as-owner (current-owner)
+        (lambda ()
+          (guard (c [#t (report-safely c) (restore! order previous depth) #f])
+            (call-with-warnings-reported
+              (lambda ()
+                (take-back-for-reload! order)
+                (let ([recompiled (reload-module-library name)])
+                  (for-each (lambda (module) (unless (member module recompiled) (load-again! module)))
+                            order))
+                (for-each invoke-module! order)
+                (with-quits-allowed #f
+                  (for-each (lambda (module) (hashtable-delete! running-objects module)) order))))
+            (drop-failed-bodies! depth '())
+            #t))))))

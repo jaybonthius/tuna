@@ -10,8 +10,39 @@
     result))
 
 (define-table keymap)
+(define-table symbols-only)
 
 (define (tests)
+  (test "a key of a kind the table has never held is not found, on any thread"
+    (table-set! symbols-only 'a 1)
+    (for-each
+      (lambda (key)
+        (check-equal? 'none (table-ref symbols-only key 'none))
+        (check-equal? 'none (in-thread (lambda () (table-ref symbols-only key 'none)))))
+      (list "a" #\a 1 '(a)))
+    (check-equal? '((a . 1)) (table-entries symbols-only))
+    (take-back-changes! '(repl) '()))
+
+  (test "keys of every kind are found by equal?"
+    (let ([keys (list 'sym "str" #\c 42 #t #f '() (list 'C-c #\l 3) 1.5 (expt 10 30) (vector 1 "v") 1 1.0)])
+      (for-each (lambda (k i) (table-set! keymap k i)) keys (iota (length keys)))
+      (for-each
+        (lambda (k i)
+          (check-equal? i (table-ref keymap (if (string? k) (string-copy k) k)))
+          (check-equal? '(repl) (table-owner keymap k)))
+        keys (iota (length keys)))
+      (check-equal? 'none (table-ref keymap 'other 'none))
+      (check-equal? 'none (table-ref keymap "other" 'none))
+      (check-equal? 'none (table-ref keymap 2 'none))
+      (check-equal? (map cons keys (iota (length keys))) (table-entries keymap))
+      (as-module '(init) (table-set! keymap (string-copy "str") 'init))
+      (check-equal? 1 (table-ref keymap "str"))
+      (take-back-changes! '(repl) '())
+      (check-equal? 'init (table-ref keymap "str"))
+      (check-equal? '(init) (table-owner keymap (string-copy "str")))
+      (as-module '(init) (table-remove! keymap (string-copy "str")))
+      (check-equal? '() (table-entries keymap))))
+
   ;; Adding keys grows the table's hashtable while other threads look keys
   ;; up in it.
   (test "other threads read a table while the main thread adds keys"

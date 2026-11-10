@@ -42,11 +42,11 @@
 75
 > (option-settings fill:column)
 (((repl) 75) ((init) 80) ((prog) 90))
-; Threads forked in with-options inherit the binding; other threads read
-; the setting.
+; A binding holds on its own thread only: a thread forked in with-options
+; starts with no bindings and reads the setting.
 > (with-options ([fill:column 62])
-    (let ([v #f]) (thread-join (fork-thread (lambda () (set! v (fill:column))))) v))
-62
+    (let ([v #f]) (thread-join (fork-thread (lambda () (set! v (fill:column))))) (list (fill:column) v)))
+(62 75)
 > (let ([v #f]) (thread-join (fork-thread (lambda () (set! v (fill:column))))) v)
 75
 ; option-changed and on-change see each new value once.

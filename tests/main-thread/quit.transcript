@@ -10,6 +10,17 @@
 ! &quit
 > (+ 1 2)
 3
+; So does a runaway macro.
+> (begin
+    (fork-thread
+      (lambda ()
+        (sleep (make-time 'time-duration 200000000 0))
+        (request-quit!)))
+    (void))
+> (let-syntax ([m (lambda (x) (let loop () (loop)))]) (m))
+! &quit
+> 'after
+after
 ; &quit is serious, and a guard that catches every condition catches it.
 > (guard (c [(quit-condition? c) (list (serious-condition? c) (error? c))])
     (request-quit!)

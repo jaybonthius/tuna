@@ -10,7 +10,7 @@
     delete-saved-file!
     wait-for-saved-files!)
   (import (chezscheme)
-          (only (tuna core changes) with-quit-safe-mutex)
+          (only (tuna core changes) with-quit-safe-mutex find-owner)
           (only (tuna core definitions) report-safely)
           (only (tuna core main-thread) post-task! quit-condition?)
           (only (tuna plugin-manager) module-plugin-source) (tuna plain-data))
@@ -173,7 +173,7 @@
   (define (failed! c)
     (with-mutex writer-mutex
       (set! failures (cons c failures)))
-    (post-task! report-failures! '(tuna) #f))
+    (post-task! report-failures! (find-owner '(tuna)) #f))
 
   (define (report-failures!)
     (for-each report-safely

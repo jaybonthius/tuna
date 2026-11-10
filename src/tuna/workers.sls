@@ -107,11 +107,10 @@
                     (k (void))))
                 (lambda ()
                   (let ([p (worker-procedure! (job-worker j))])
-                    (parameterize ([quits-allowed #t])
-                      (p input))))))))
+                    (with-quits-allowed #t (p input))))))))
         (lambda ()
           (set-timer 0)
-          (post-task! (lambda () (forget-change! (job-change j))) '(tuna) #f)))))
+          (post-task! (lambda () (forget-change! (job-change j))) (find-owner '(tuna)) #f)))))
 
   (define (start-job w input on-result)
     (unless (worker? w)
@@ -121,7 +120,7 @@
     (unless (procedure? on-result)
       (assertion-violation 'start-job "not a procedure" on-result))
     (let ([j (make-job w (current-owner) on-result)])
-      (parameterize ([quits-allowed #f])
+      (with-quits-allowed #f
         (job-change-set! j
           (record-change! 'start-job 'job j #f
             (lambda () (job-taken-back?-set! j #t) (job-stop?-set! j #t))

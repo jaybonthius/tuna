@@ -27,8 +27,9 @@
     (set! configuration-file configuration)
     (set! repl-environment (copy-environment (scheme-environment) #t))
     ;; Chez's exit ends only the thread that calls it, unless that is the
-    ;; main thread.
-    (eval '(import (only (tuna core main-thread) exit)) repl-environment)
+    ;; main thread, and Chez's fork-thread does not give the child the
+    ;; owner of the code that forked it.
+    (eval '(import (only (tuna core replaced) exit fork-thread)) repl-environment)
     (define-top-level-syntax check-keyword check-top-level-form repl-environment))
 
   (define (prefixed? symbol)
@@ -176,7 +177,7 @@
   ;; defined in the configuration prints as one typed at the REPL does, with
   ;; no source position.
   (define (eval-top-level form)
-    (when (equal? (current-owner) '(repl))
+    (when (equal? (owner-name (current-owner)) '(repl))
       (read-repl-line! (unwrap form)))
     (call-with-quit-safe-library-lock sync-modules!)
     (call-loading-modules

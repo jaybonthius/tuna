@@ -123,7 +123,7 @@
       (set! live-timers (remq t live-timers))))
 
   (define (add-timer! who t)
-    (parameterize ([quits-allowed #f])
+    (with-quits-allowed #f
       (timer-change-set! t (record-change! who 'timer t #f (lambda () (remove-timer! t)) void))
       (with-quit-safe-mutex timers-mutex
         (set! live-timers (append live-timers (list t)))
@@ -133,7 +133,7 @@
   ;; A timer cancelled after its run was posted does not run.
   (define (run-timer! t)
     (when (timer-live? t)
-      (parameterize ([quits-allowed #f])
+      (with-quits-allowed #f
         (cond
           [(timer-repeat t) (with-quit-safe-mutex timers-mutex (timer-waiting?-set! t #f))]
           [(timer-idle t) (void)]
