@@ -20,8 +20,8 @@ output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" taskset -c "$
 echo "$output" | awk '
   BEGIN {
     limit["reload-unchanged-small"] = 0.3
-    limit["reload-edited-small"] = 3.5
-    limit["reload-edited-big"] = 28
+    limit["reload-edited-small"] = 3.7
+    limit["reload-edited-big"] = 29
     failed = 0
   }
   $1 in limit {

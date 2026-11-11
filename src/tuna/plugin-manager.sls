@@ -18,7 +18,7 @@
     module-plugin-source)
   (import (chezscheme) (tuna process) (tuna files)
           (only (tuna core changes) check-main-thread on-main-thread? find-owner)
-          (only (tuna core definitions) report-safely)
+          (only (tuna core definitions) report-safely report-warning)
           (only (tuna core modules) import-spec-library loaded-modules
                 module-loaded? module-generation unload-module! reload-module! normal-path)
           (only (tuna core main-thread) post-task! suspend))
@@ -66,16 +66,7 @@
        ,@(remp (lambda (c) (eq? (car c) 'commit)) (cddr line))
        ,@(if commit `((commit ,commit)) '())))
 
-  (define (expand-home path)
-    (if (and (fx>= (string-length path) 2) (string=? (substring path 0 2) "~/"))
-        (string-append home (substring path 1 (string-length path)))
-        path))
-
-  (define (local-folder folder) (normal-path (expand-home folder)))
-
-  (define (string-prefix? prefix s)
-    (let ([n (string-length prefix)])
-      (and (fx<= n (string-length s)) (string=? prefix (substring s 0 n)))))
+  (define (local-folder folder) (normal-path (expand-home folder home)))
 
   (define (source-extensions) (map car (library-extensions)))
 
@@ -230,7 +221,7 @@
     (let ([found (installed-source id)])
       (and found (not (install-source-local found)) (checked-out-commit (plugin-folder id)))))
 
-  (define (git-address url) (expand-home url))
+  (define (git-address url) (expand-home url home))
 
   (define (installed-from? line id found)
     (let ([local (line-clause line 'local)])
@@ -353,8 +344,7 @@
   ;; plugins/ is Tuna's to manage, but a copy may have been put there by
   ;; hand, so a lookup never replaces or removes one silently.
   (define (report-lookup-warning message folder)
-    (report-safely
-      (condition (make-warning) (make-who-condition 'import) (make-message-condition (format message folder)))))
+    (report-warning 'import (format message folder)))
 
   ;; Installing over an installed plugin would replace the files a running
   ;; module came from.

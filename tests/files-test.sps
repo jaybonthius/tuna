@@ -30,5 +30,18 @@
     (call-with-port (open-file-output-port file (file-options no-fail)) (lambda (p) (void)))
     (check-equal? "" (read-text-file file))))
 
+(test "a path starting with ~/ is under the home folder, and no other"
+  (check-equal? "/h/a/b" (expand-home "~/a/b" "/h"))
+  (check-equal? "~a" (expand-home "~a" "/h"))
+  (check-equal? "/x/~/a" (expand-home "/x/~/a" "/h"))
+  (check-equal? "~" (expand-home "~" "/h")))
+
+(test "string-prefix?"
+  (check (string-prefix? "" "abc"))
+  (check (string-prefix? "ab" "abc"))
+  (check (string-prefix? "abc" "abc"))
+  (check (not (string-prefix? "abcd" "abc")))
+  (check (not (string-prefix? "b" "abc"))))
+
 (system (format "rm -rf '~a'" root))
 (test-exit)

@@ -7,7 +7,8 @@
     eval-file)
   (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna core modules)
           (only (tuna plugin-manager) read-configuration-lines! read-configuration-line! read-repl-line!)
-          (only (chez-lang body) definition-form? form-defined-names))
+          (only (chez-lang body) definition-form? form-defined-names)
+          (only (tuna files) expand-home))
 
   (define home #f)
   (define configuration-file #f)
@@ -116,12 +117,7 @@
         (lambda (symbol)
           (when (hashtable-contains? top-level-definitions symbol)
             (hashtable-delete! top-level-definitions symbol)
-            (report-safely
-              (condition
-                (make-warning)
-                (make-who-condition 'import)
-                (make-message-condition
-                  (format "~s replaces the top-level definition of ~s" name symbol))))))
+            (report-warning 'import (format "~s replaces the top-level definition of ~s" name symbol))))
         exports)
       (eval `(import ,name) repl-environment)
       (for-each (lambda (symbol) (hashtable-set! exporters symbol name)) exports)))
@@ -214,11 +210,6 @@
             (read-annotated-forms configuration-file
               (lambda (form) (call-reporting (lambda () (eval-top-level form))))))))))
 
-  (define (expand-home path)
-    (if (and (fx>= (string-length path) 2) (string=? (substring path 0 2) "~/"))
-        (string-append home (substring path 1 (string-length path)))
-        path))
-
   (define (read-all text)
     (let ([p (open-input-string text)])
       (let loop ([forms '()])
@@ -234,7 +225,7 @@
        (unless (string? text) (assertion-violation 'eval-text "not a string" text))
        (unless (or (not path) (string? path)) (assertion-violation 'eval-text "not a path" path))
        (check-main-thread 'eval-text)
-       (let* ([path (and path (normal-path (expand-home path)))]
+       (let* ([path (and path (normal-path (expand-home path home)))]
               [module (and path (path-module 'eval-text path))]
               [eval-form (cond
                            [module (lambda (form) (eval-in-module form module))]
@@ -251,7 +242,7 @@
   (define (eval-file path)
     (unless (string? path) (assertion-violation 'eval-file "not a path" path))
     (check-main-thread 'eval-file)
-    (let* ([path (normal-path (expand-home path))] [module (path-module 'eval-file path)])
+    (let* ([path (normal-path (expand-home path home))] [module (path-module 'eval-file path)])
       (cond
         [module
          (if (module-loaded? module)

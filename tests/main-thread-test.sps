@@ -169,7 +169,6 @@
       (check-equal? '() (module-changes '(init)))
       (check-equal? 2 (call-f 1))))
 
-  ;; As above, for loading and unloading a module with many definitions.
   (test "a quit never leaves a module half loaded or half unloaded"
     (write-library! "big"
       (call-with-string-output-port

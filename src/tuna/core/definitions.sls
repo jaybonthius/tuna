@@ -3,11 +3,13 @@
     define-public
     define-exported
     module-property
+    site-module
     advice-add!
     advice-remove!
     definition-changes
     report
     report-safely
+    report-warning
     report-warning-once
     call-with-warnings-reported
     call-reporting
@@ -370,6 +372,9 @@
   (define (report-safely c)
     (guard (e [#t (write-condition c) (write-condition e)])
       (report c)))
+
+  (define (report-warning who text)
+    (report-safely (condition (make-warning) (make-who-condition who) (make-message-condition text))))
 
   ;; Chez runs its source optimizer twice, so one compile warning can be
   ;; raised twice; a warning whose text was reported already is not

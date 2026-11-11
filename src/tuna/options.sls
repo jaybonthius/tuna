@@ -13,7 +13,7 @@
     option-changed
     option-documentation)
   (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna scopes) (tuna registry)
-          (only (tuna core main-thread) quit-condition?) (only (tuna hooks) make-hook))
+          (only (tuna storage) check-accepts?) (only (tuna hooks) make-hook))
 
   ;; setting is the setting in effect or the default, kept in the record
   ;; because reading it through the settings' layers costs a tenth more.
@@ -112,25 +112,17 @@
           (reject-kept-values! st)
           st))))
 
-  ;; A check that raises rejects the value, but a quit goes through, so a
-  ;; check that never returns can be ended.
-  (define (accepts? st v)
-    (guard (c [(not (quit-condition? c)) #f])
-      ((option-state-check st) v)))
-
   ;; Settings and local values kept from before were checked only with the
   ;; previous check.
   (define (reject-kept-values! st)
     (define (reject-failing! ls what)
       (for-each
         (lambda (l)
-          (unless (accepts? st (layer-value l))
+          (unless (check-accepts? (option-state-check st) (layer-value l))
             (take-back! (layer-change l))
-            (report-safely
-              (condition (make-warning) (make-who-condition 'define-option)
-                (make-message-condition
-                  (format "~a ~s of ~s made by ~s fails its check; it is taken back"
-                    what (layer-value l) (option-state-symbol st) (owner-name (layer-owner l))))))))
+            (report-warning 'define-option
+              (format "~a ~s of ~s made by ~s fails its check; it is taken back"
+                what (layer-value l) (option-state-symbol st) (owner-name (layer-owner l))))))
         (layers-all ls)))
     (reject-failing! (option-state-settings st) "the setting")
     (for-each

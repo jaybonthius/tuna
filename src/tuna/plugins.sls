@@ -12,14 +12,8 @@
   (import (chezscheme)
           (only (tuna plugin-manager) plugin-line? index-module? install-plugin!
                 update-plugin! remove-plugin! remove-unused-plugins! installed-plugins plugin-commit)
-          (only (tuna core definitions) module-property)
-          (only (tuna core modules) module-exists? load-module!)
-          (only (chez-lang body) unbound-identifier?))
-
-  (meta define (site-module id lookup)
-    (let ([probe (datum->syntax id 'this-module)])
-      (and (not (unbound-identifier? probe))
-           (lookup probe #'module-property))))
+          (only (tuna core definitions) site-module)
+          (only (tuna core modules) module-exists? load-module!))
 
   (meta define line-shape
     "expected an id and clauses (git url), (commit hex), (branch name), (dir path) or (local folder)")

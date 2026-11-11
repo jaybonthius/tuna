@@ -28,7 +28,8 @@
   (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna core conditions)
           (only (chez-lang body) form-defined-names)
           (only (chez-lang language) call-with-library-lock)
-          (only (chez-lang reload) reload-library))
+          (only (chez-lang reload) reload-library)
+          (only (tuna files) string-prefix?))
 
   (define lib-prefix #f)
   (define source-roots (lambda () '()))
@@ -176,10 +177,6 @@
     (guard (c [(assertion-violation? c) #f])
       (library-version name)
       #t))
-
-  (define (string-prefix? prefix s)
-    (let ([n (string-length prefix)])
-      (and (fx<= n (string-length s)) (string=? prefix (substring s 0 n)))))
 
   (define (search-library who name)
     (find-module who name (library-extensions) #f))

@@ -11,7 +11,7 @@
     wait-for-saved-files!)
   (import (chezscheme)
           (only (tuna core changes) with-quit-safe-mutex find-owner)
-          (only (tuna core definitions) report-safely)
+          (only (tuna core definitions) report-safely report-warning)
           (only (tuna core main-thread) post-task! quit-condition?)
           (tuna plain-data) (tuna files))
 
@@ -74,13 +74,11 @@
     (string-append file ".rejected"))
 
   (define (report-rejection! file reason)
-    (report-safely
-      (condition (make-warning) (make-who-condition 'define-saved)
-        (make-message-condition (format "~a ~a; it is moved to ~a" file reason (rejected-file file))))))
+    (report-warning 'define-saved (format "~a ~a; it is moved to ~a" file reason (rejected-file file))))
 
   (define (reject! file reason)
     (report-rejection! file reason)
-    (guard (c [#t (report-safely c)])
+    (guard (c [(i/o-error? c) (report-safely c)])
       (rename-file file (rejected-file file))))
 
   (define (read-saved-file file check)
