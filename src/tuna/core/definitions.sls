@@ -43,38 +43,27 @@
   (define-record-type cell
     (nongenerative)
     (sealed #t)
-    (fields module symbol forwarder
+    (fields module symbol forwarder overrides advice
             (mutable definition)
             (mutable doc)
-            (mutable overrides)
-            (mutable advice)
-            (mutable removals)
-            (mutable history)
+            (mutable defined)
             (mutable state)
             (mutable redefined?)
-            (mutable override-in-effect)
-            (mutable advice-in-effect)
             (mutable value)
             (mutable callee)
             (mutable advised))
     (protocol
       (lambda (new)
         (lambda (module symbol)
-          (letrec ([c (new module symbol
-                        (make-wrapper-procedure (lambda arguments (apply (cell-callee c) arguments)) -1 #f)
-                        #f #f '() '() '() '() 'loaded #t #f '() #f #f '())])
+          (letrec* ([c (new module symbol
+                         (make-wrapper-procedure (lambda arguments (apply (cell-callee c) arguments)) -1 #f)
+                         (make-value-layers 'override symbol layer-after?
+                           (lambda (ls before l) (overrides-updated! c ls)) #f)
+                         (make-procedure-layers 'advice symbol layer-after?
+                           (lambda (ls before l) (advice-updated! c ls)) '())
+                         #f #f #f 'loaded #t #f #f '())])
             (set-wrapper-procedure-data! (cell-forwarder c) c)
             c)))))
-
-  (define-record-type layer
-    (nongenerative)
-    (sealed #t)
-    (fields change value))
-
-  (define-record-type removal
-    (nongenerative)
-    (sealed #t)
-    (fields change procedure owners))
 
   ;; A cell outlives its module's instance, so a procedure a name gave and
   ;; the changes made to it survive the module running its body again.
@@ -128,18 +117,6 @@
   (define (set-changeable-documentation! symbol doc)
     (cell-doc-set! (hashtable-ref cells symbol #f) doc))
 
-  (define (layer<? a b)
-    (let ([ca (layer-change a)] [cb (layer-change b)])
-      (let ([ra (owner-rank (change-owner ca))] [rb (owner-rank (change-owner cb))])
-        (or (< ra rb)
-            (and (= ra rb) (< (change-sequence ca) (change-sequence cb)))))))
-
-  (define (hidden? c layer)
-    (exists (lambda (removal)
-              (and (eq? (removal-procedure removal) (layer-value layer))
-                   (memq (change-owner (layer-change layer)) (removal-owners removal))))
-            (cell-removals c)))
-
   (define (raise-not-loaded who message)
     (raise (condition (make-violation) (make-who-condition who) (make-message-condition message))))
 
@@ -154,40 +131,39 @@
 
   (define (rebuild! c)
     (if (cell-loaded? c)
-        (let ([value (let ([override (cell-override-in-effect c)])
+        (let ([value (let ([override (layers-value (cell-overrides c))])
                        (if override (layer-value override) (cell-definition c)))])
           (cell-value-set! c value)
           (cell-callee-set! c
-            (fold-left
-              (lambda (inner advice) (lambda arguments (apply advice inner arguments)))
+            (fold-right
+              (lambda (advice inner) (lambda arguments (apply advice inner arguments)))
               value
-              (cell-advice-in-effect c))))
+              (layers-value (cell-advice c)))))
         (cell-callee-set! c (lambda arguments (raise-cell-not-loaded c)))))
 
-  (define (choose-in-effect! c)
-    (let ([override (and (pair? (cell-overrides c))
-                         (car (last-pair (list-sort layer<? (cell-overrides c)))))])
-      (cell-override-in-effect-set! c
-        (and override
-             (>= (owner-rank (change-owner (layer-change override)))
-                 (owner-rank (find-owner (cell-module c))))
-             override))
-      (cell-advice-in-effect-set! c
-        (map layer-value
-             (list-sort layer<?
-               (remp (lambda (layer)
-                       (or (hidden? c layer) (changeable-procedure-unloaded? (layer-value layer))))
-                     (cell-advice c)))))
+  ;; The definition is a change too, so an override is in effect only if
+  ;; it comes after the definition in the order of changes.
+  (define (overrides-updated! c ls)
+    (with-cells-locked
+      (layers-value-set! ls
+        (let ([in-effect (layers-in-effect ls)])
+          (and (pair? in-effect)
+               (>= (owner-rank (layer-owner (car in-effect))) (owner-rank (find-owner (cell-module c))))
+               (car in-effect))))
       (rebuild! c)))
-
-  (define-syntax with-cell-update
-    (syntax-rules ()
-      [(_ c e ...) (with-cells-locked e ... (choose-in-effect! c))]))
 
   ;; Advice that is an unloaded module's changeable procedure would only
   ;; raise, so it is left out while that module is unloaded.
+  (define (advice-updated! c ls)
+    (with-cells-locked
+      (layers-value-set! ls
+        (map layer-value
+             (remp (lambda (l) (changeable-procedure-unloaded? (layer-value l)))
+                   (layers-in-effect ls))))
+      (rebuild! c)))
+
   (define (update-advised! c)
-    (for-each (lambda (advised) (with-cell-update advised)) (cell-advised c)))
+    (for-each (lambda (advised) (refresh-layers! (cell-advice advised))) (cell-advised c)))
 
   (define (check-loaded c)
     (unless (cell-loaded? c)
@@ -207,15 +183,17 @@
                      c))])
         (cell-redefined?-set! c #t)
         (let ([unloaded? (eq? (cell-state c) 'unloaded)])
-          (with-cell-update c
-            (cell-state-set! c 'loaded)
-            (cell-definition-set! c value)
-            (cell-doc-set! c doc))
+          (cell-state-set! c 'loaded)
+          (cell-definition-set! c value)
+          (cell-doc-set! c doc)
+          (refresh-layers! (cell-overrides c))
           (when unloaded? (update-advised! c)))
-        (when (null? (cell-history c))
-          (let ([change (call-as-owner (find-owner module)
-                          (lambda () (record-change! 'define 'define symbol #f void void)))])
-            (cell-history-set! c (list change))))
+        (unless (cell-defined c)
+          (cell-defined-set! c
+            (call-as-owner (find-owner module)
+              (lambda ()
+                (record-change! 'define 'define symbol #f void
+                  (lambda () (refresh-layers! (cell-overrides c))))))))
         c)))
 
   (define (cell-assign! c v)
@@ -223,18 +201,8 @@
       (cell-definition-set! c v)
       (rebuild! c)))
 
-  (define (add-layer! c who kind detail field field-set! make)
-    (letrec* ([change (record-change! who kind (cell-symbol c) detail
-                        (lambda ()
-                          (with-cell-update c
-                            (field-set! c (remq layer (field c)))
-                            (cell-history-set! c (remq change (cell-history c)))))
-                        (lambda () (with-cell-update c)))]
-              [layer (make change)])
-      (with-cell-update c
-        (field-set! c (cons layer (field c)))
-        (cell-history-set! c (cons change (cell-history c))))))
-
+  ;; Adding and removing layers update the cell with interrupts disabled,
+  ;; where waiting for the mutex is unsafe, so they take it before.
   (define (cell-override! c v)
     (let ([owner (current-owner)])
       (cond
@@ -243,66 +211,38 @@
          (check-main-thread 'set!)
          (check-current-owner 'set!)
          (check-loaded c)
-         (with-cells-locked
-           (let ([previous (find (lambda (layer) (eq? (change-owner (layer-change layer)) owner))
-                                 (cell-overrides c))])
-             (when previous (take-back! (layer-change previous))))
-           (add-layer! c 'set! 'override #f cell-overrides cell-overrides-set!
-             (lambda (change) (make-layer change v))))])))
+         (with-cells-locked (add-layer! (cell-overrides c) owner #f v))])))
 
   (define (cell-advise! c advice)
     (check-main-thread 'advice-add!)
     (check-loaded c)
     (unless (procedure? advice)
       (assertion-violation 'advice-add! "not a procedure" advice))
-    (let ([owner (check-current-owner 'advice-add!)])
-      (unless (exists (lambda (layer)
-                        (and (eq? (layer-value layer) advice)
-                             (eq? (change-owner (layer-change layer)) owner)))
-                      (cell-advice c))
-        (with-cells-locked
-          (let ([advice-cell (forwarder-cell advice)])
-            (when (and advice-cell (not (memq c (cell-advised advice-cell))))
-              (cell-advised-set! advice-cell (cons c (cell-advised advice-cell)))))
-          (add-layer! c 'advice-add! 'advice advice cell-advice cell-advice-set!
-            (lambda (change) (make-layer change advice)))))))
+    (let ([owner (check-current-owner 'advice-add!)] [advice-cell (forwarder-cell advice)])
+      (with-cells-locked
+        (when (and advice-cell (not (memq c (cell-advised advice-cell))))
+          (cell-advised-set! advice-cell (cons c (cell-advised advice-cell))))
+        (add-layer! (cell-advice c) owner advice advice))))
 
-  ;; Each removal is a change of its own, so that advice another module's
-  ;; removal hides stays hidden while either removal stands; only the
-  ;; remover's own earlier removal makes another one redundant.
-  (define (removed-already? c owner advice others)
-    (exists (lambda (removal)
-              (and (eq? (removal-procedure removal) advice)
-                   (eq? (change-owner (removal-change removal)) owner)
-                   (for-all (lambda (layer) (memq (change-owner (layer-change layer)) (removal-owners removal)))
-                            others)))
-            (cell-removals c)))
-
-  ;; Removing another module's advice hides it, and keeps hiding what that
-  ;; module adds again, until the remover's change is taken back.
   (define (cell-unadvise! c advice)
     (check-main-thread 'advice-remove!)
     (check-loaded c)
-    (let* ([owner (check-current-owner 'advice-remove!)]
-           [matching (filter (lambda (layer) (eq? (layer-value layer) advice)) (cell-advice c))]
-           [own (filter (lambda (layer) (eq? (change-owner (layer-change layer)) owner)) matching)]
-           [others (remp (lambda (layer) (memq layer own)) matching)])
-      (with-cells-locked
-        (for-each (lambda (layer) (take-back! (layer-change layer))) own)
-        (unless (or (null? others) (removed-already? c owner advice others))
-          (add-layer! c 'advice-remove! 'removal advice cell-removals cell-removals-set!
-            (lambda (change)
-              (make-removal change advice (map (lambda (layer) (change-owner (layer-change layer))) others))))))))
+    (let ([owner (check-current-owner 'advice-remove!)])
+      (with-cells-locked (remove-layers! (cell-advice c) owner advice advice))))
+
+  (define (cell-change-list c)
+    (let ([changes (append (layers-changes (cell-overrides c)) (layers-changes (cell-advice c)))])
+      (if (cell-defined c) (cons (cell-defined c) changes) changes)))
 
   ;; The cells stay, so that a procedure a name gave raises rather than runs
   ;; stale code, and works again when the module defines the name again.
   (define (unload-cell! c state)
+    (for-each take-back! (cell-change-list c))
     (with-cells-locked
-      (for-each take-back! (cell-history c))
-      (with-cell-update c
-        (cell-history-set! c '())
-        (cell-state-set! c state))
-      (update-advised! c)))
+      (cell-defined-set! c #f)
+      (cell-state-set! c state)
+      (rebuild! c))
+    (update-advised! c))
 
   (define (unload-definitions! module)
     (for-each (lambda (c) (unload-cell! c 'unloaded)) (hashtable-ref module-cells module '())))
@@ -324,7 +264,7 @@
     (map (lambda (change)
            (list (owner-name (change-owner change)) (change-kind change)
                  (and (memq (change-kind change) '(advice removal)) (change-detail change))))
-         (cell-history c)))
+         (list-sort (lambda (a b) (> (change-sequence a) (change-sequence b))) (cell-change-list c))))
 
   (define (changeable-identifier? id lookup)
     (and (lookup id #'cell-property) #t))

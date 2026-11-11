@@ -1,5 +1,6 @@
 (import (chezscheme) (tuna test) (tuna core changes) (tuna core modules)
-        (except (tuna core main-thread) exit) (tuna options) (tuna scopes))
+        (except (tuna core main-thread) exit) (tuna options) (tuna scopes)
+        (only (tuna hooks) add-hook! remove-hook!))
 
 (define (raised-message thunk)
   (guard (c [#t (if (message-condition? c) (condition-message c) c)]) (thunk) #f))
@@ -97,6 +98,21 @@
         (map (lambda (s) (parameterize ([current-scope s]) (level))) kept))
       (for-each (lambda (s) (parameterize ([current-scope s]) (remove-option-local! level))) kept)
       (check-equal? '() (module-changes '(repl)))))
+
+  (test "moving a module before its importers notifies of the setting it brings into effect"
+    (let ([seen '()])
+      (define (note o v) (set! seen (cons v seen)))
+      (rank-module! '(earlier-lib) #t)
+      (rank-module! '(later-lib) #t)
+      (as-module '(earlier-lib) (set-option! level 1))
+      (as-module '(later-lib) (set-option! level 2))
+      (add-hook! option-changed note)
+      (move-before-importers! '(later-lib))
+      (check-equal? '(1) seen)
+      (check-equal? 1 (level))
+      (remove-hook! option-changed note)
+      (take-back-changes! '(earlier-lib) '())
+      (take-back-changes! '(later-lib) '())))
 
   (test "a quit never leaves a setting half made"
     (let ([s (make-scope)] [changing? #f] [quits-while-changing 0])

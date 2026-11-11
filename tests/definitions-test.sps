@@ -1,4 +1,5 @@
-(import (chezscheme) (tuna test) (chez-lang loader) (tuna core modules))
+(import (chezscheme) (tuna test) (chez-lang loader) (tuna core modules)
+        (only (tuna core changes) rank-module! move-before-importers!))
 
 (define root
   (let ([dir (format "/tmp/tuna-definitions-test-~a" (get-process-id))])
@@ -23,6 +24,7 @@
   (string-append root "/cache") (lambda (name) #f) (lambda (name) #f) (lambda (name) #f) (lambda () '()))
 (install-loader!)
 
+(rank-module! '(early-lib) #t)
 (define env (environment '(chezscheme) '(tuna) '(racer)))
 (define (compiled form) (eval form env))
 
@@ -140,6 +142,18 @@
     (check-equal? '() bad)
     (check-equal? '(((loaded39) define #f))
       (eval '(definition-changes loaded39:f) (environment '(chezscheme) '(tuna) '(loaded39))))))
+
+;; A module imported from outside lib/ goes before its importer, which can
+;; put an override that was beneath its definition after it.
+(test "an override comes into effect when its definition's module moves before it"
+  (let ([override-as (compiled '(lambda (owner g) (as-module owner (set! racer:f g))))])
+    (take-back-changes! '(repl) '())
+    (override-as '(early-lib) plus-100)
+    (check-equal? 2 (call-f 1))
+    (move-before-importers! '(racer))
+    (check-equal? 101 (call-f 1))
+    (take-back-changes! '(early-lib) '())
+    (check-equal? 2 (call-f 1))))
 
 (system (format "rm -rf '~a'" root))
 (test-exit)

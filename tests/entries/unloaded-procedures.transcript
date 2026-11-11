@@ -24,6 +24,19 @@ hello Zeppo
 "[Zeppo]"
 > (length (hook-entries target:greeted))
 1
+; So is an entry of option-changed, a hook define-hook did not make.
+> (define-option level 1 fixnum? #f)
+> (add-hook! option-changed helper:noted)
+> (set-option! level 2)
+(noted 2)
+> (unload-module! '(helper))
+> (set-option! level 3)
+> (length (hook-entries option-changed))
+0
+> (load-module! '(helper))
+> (set-option! level 4)
+(noted 4)
+> (remove-hook! option-changed helper:noted)
 ; A definition its loaded module no longer defines is not skipped: a call
 ; raises, naming it.
 > (put-version! "helper-without-shout.sls" ".config/tuna/lib/helper.sls")

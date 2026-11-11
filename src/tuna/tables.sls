@@ -10,21 +10,6 @@
     table-documentation)
   (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna core modules))
 
-  (define-record-type layer
-    (nongenerative)
-    (sealed #t)
-    (fields owner value change))
-
-  (define-record-type key-removal
-    (nongenerative)
-    (sealed #t)
-    (fields owners change))
-
-  (define-record-type key-state
-    (nongenerative)
-    (sealed #t)
-    (fields (mutable layers) (mutable removals) (mutable in-effect)))
-
   ;; Only the main thread changes a table. It reads without the mutex;
   ;; other threads take it, since a hashtable read while another thread
   ;; adds to it can see it half changed.
@@ -56,7 +41,7 @@
   (define (key-tables t)
     (filter values (list (table-symbol-keys t) (table-eqv-keys t) (table-string-keys t) (table-equal-keys t))))
 
-  (define (find-key-state t key)
+  (define (find-key-layers t key)
     (let ([keys (key-table t key #f)])
       (and keys (hashtable-ref keys key #f))))
 
@@ -103,91 +88,45 @@
         [(_ id) (identifier? #'id) #'(define-table id #f)]
         [(_ id doc) (identifier? #'id) #'(define-exported id (make-table 'id doc))])))
 
-  (define (layer>? a b)
-    (> (owner-rank (layer-owner a)) (owner-rank (layer-owner b))))
+  (define (existing-key-layers t key)
+    (with-table-read t (find-key-layers t key)))
 
-  ;; A removal hides values by owner, not the values it found, so that a
-  ;; value its module sets again when it reloads stays removed.
-  (define (hidden? ks l)
-    (exists (lambda (r) (memq (layer-owner l) (key-removal-owners r))) (key-state-removals ks)))
+  (define (no-update ls before l) (void))
 
-  (define (update! ks)
-    (key-state-in-effect-set! ks
-      (list-sort layer>? (remp (lambda (l) (hidden? ks l)) (key-state-layers ks)))))
-
-  (define (existing-key-state t key)
-    (with-table-read t (find-key-state t key)))
-
-  (define (key-state-for! t key)
-    (or (find-key-state t key)
-        (let ([ks (make-key-state '() '() '())])
+  (define (key-layers! t key)
+    (or (find-key-layers t key)
+        (let ([ls (make-value-layers 'table-entry (table-symbol t) layer-after? no-update #f)])
           (with-quit-safe-mutex (table-mutex t)
-            (hashtable-set! (key-table t key #t) key ks))
+            (hashtable-set! (key-table t key #t) key ls))
           (table-order-set! t (cons key (table-order t)))
-          ks)))
-
-  (define (owned-by? owner)
-    (lambda (l) (eq? (layer-owner l) owner)))
+          ls)))
 
   (define table-set!
     (case-lambda
       [(t key) (table-set! t key #t)]
       [(t key v)
        (changing-table 'table-set! t)
-       (let* ([owner (check-current-owner 'table-set!)] [ks (key-state-for! t key)])
-         (with-interrupts-disabled
-           (let ([previous (find (owned-by? owner) (key-state-layers ks))])
-             (when previous
-               (forget-change! (layer-change previous))
-               (key-state-layers-set! ks (remq previous (key-state-layers ks)))))
-           (letrec* ([change (record-change! 'table-set! 'table-entry (table-symbol t) key
-                               (lambda ()
-                                 (key-state-layers-set! ks (remq layer (key-state-layers ks)))
-                                 (update! ks))
-                               (lambda () (update! ks)))]
-                     [layer (make-layer owner v change)])
-             (key-state-layers-set! ks (cons layer (key-state-layers ks)))
-             (update! ks))))]))
-
-  ;; Each removal is a change of its own, so that a value another module's
-  ;; removal hides stays hidden while either removal stands; only the
-  ;; remover's own earlier removal makes another one redundant.
-  (define (removed-already? ks owner others)
-    (exists (lambda (r)
-              (and (eq? (change-owner (key-removal-change r)) owner)
-                   (for-all (lambda (l) (memq (layer-owner l) (key-removal-owners r))) others)))
-            (key-state-removals ks)))
+       (let ([owner (check-current-owner 'table-set!)])
+         (add-layer! (key-layers! t key) owner key v))]))
 
   (define (table-remove! t key)
     (changing-table 'table-remove! t)
-    (let ([owner (check-current-owner 'table-remove!)] [ks (existing-key-state t key)])
-      (when ks
-        (let ([own (find (owned-by? owner) (key-state-layers ks))]
-              [others (remp (owned-by? owner) (key-state-layers ks))])
-          (when own (take-back! (layer-change own)))
-          (unless (or (null? others) (removed-already? ks owner others))
-            (with-interrupts-disabled
-              (letrec* ([change (record-change! 'table-remove! 'removal (table-symbol t) key
-                                  (lambda ()
-                                    (key-state-removals-set! ks (remq removal (key-state-removals ks)))
-                                    (update! ks))
-                                  (lambda () (update! ks)))]
-                        [removal (make-key-removal (map layer-owner others) change)])
-                (key-state-removals-set! ks (cons removal (key-state-removals ks)))
-                (update! ks))))))))
+    (let ([owner (check-current-owner 'table-remove!)] [ls (existing-key-layers t key)])
+      (when ls
+        (remove-layers! ls owner key #f))))
 
-  (define (in-effect ks)
-    (and ks (pair? (key-state-in-effect ks)) (car (key-state-in-effect ks))))
+  (define (in-effect ls)
+    (and ls (pair? (layers-in-effect ls)) (car (layers-in-effect ls))))
 
   (define table-ref
     (case-lambda
       [(t key) (table-ref t key #f)]
       [(t key default)
-       (let ([l (in-effect (existing-key-state (table-of 'table-ref t) key))])
+       (let ([l (in-effect (existing-key-layers (table-of 'table-ref t) key))])
          (if l (layer-value l) default))]))
 
   (define (table-owner t key)
-    (let ([l (in-effect (existing-key-state (table-of 'table-owner t) key))])
+    (let ([l (in-effect (existing-key-layers (table-of 'table-owner t) key))])
       (and l (owner-name (layer-owner l)))))
 
   (define (table-entries t)
@@ -195,7 +134,7 @@
     (with-table-read t
       (fold-left
         (lambda (entries key)
-          (let ([l (in-effect (find-key-state t key))])
+          (let ([l (in-effect (find-key-layers t key))])
             (if l (cons (cons key (layer-value l)) entries) entries)))
         '()
         (table-order t))))
@@ -213,9 +152,7 @@
             (for-each
               (lambda (keys)
                 (vector-for-each
-                  (lambda (ks)
-                    (for-each (lambda (l) (forget-change! (layer-change l))) (key-state-layers ks))
-                    (for-each (lambda (r) (forget-change! (key-removal-change r))) (key-state-removals ks)))
+                  forget-layers!
                   (hashtable-values keys)))
               (key-tables t))
             (with-quit-safe-mutex (table-mutex t)

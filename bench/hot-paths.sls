@@ -113,6 +113,7 @@
           (unless (fx= i n) (add-hook! changed entry) (remove-hook! changed entry) (loop (fx+ i 1))))))))
 
 (define (spawn-tasks n)
+  (collect-rendezvous)
   (let ([start (now-ns)])
     (suspend
       (lambda (resume)

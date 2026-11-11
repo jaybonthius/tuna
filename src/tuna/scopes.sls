@@ -6,27 +6,26 @@
     the-current-scope
     make-local-key
     scope-local
-    scope-local-set!
     scopes-with-locals
-    record-scope-change!
-    forget-scope-change!)
+    scope-layers!
+    forget-local-layers!)
   (import (chezscheme) (tuna core changes))
 
   ;; A scope's local values are kept apart from the scope, so that the
   ;; guardian can hand them back once the scope is collected and the
-  ;; changes made in it can be forgotten. The changes refer to the locals,
-  ;; never to the scope, so they do not keep it alive.
+  ;; changes made in it can be forgotten. The changes refer to the local
+  ;; values, never to the scope, so they do not keep it alive.
   (define-record-type locals
     (nongenerative)
     (sealed #t)
-    (fields (mutable values) (mutable changes)))
+    (fields (mutable values)))
 
   (define-record-type (scope new-scope scope?)
     (nongenerative)
     (sealed #t)
     (fields locals))
 
-  (define (make-scope) (new-scope (make-locals '#() '())))
+  (define (make-scope) (new-scope (make-locals '#())))
 
   (define current-scope
     (make-thread-parameter #f
@@ -59,7 +58,7 @@
   (define (forget-collected-scopes!)
     (let ([locals (collected)])
       (when locals
-        (for-each forget-change! (locals-changes locals))
+        (vector-for-each (lambda (ls) (when ls (forget-layers! ls))) (locals-values locals))
         (forget-collected-scopes!))))
 
   (define (scope-local-set! s key v)
@@ -74,22 +73,21 @@
   (define (scopes-with-locals)
     (vector->list (hashtable-keys scopes)))
 
-  (define (record-scope-change! s who kind thing detail undo reorder)
-    (check-main-thread who)
+  (define (scope-layers! s key make)
     (forget-collected-scopes!)
-    (let ([locals (scope-locals s)])
-      (unless (hashtable-contains? scopes s)
-        (hashtable-set! scopes s #t)
-        (collected s locals))
-      (letrec ([c (record-change! who kind thing detail
-                    (lambda ()
-                      (locals-changes-set! locals (remq c (locals-changes locals)))
-                      (undo))
-                    reorder)])
-        (locals-changes-set! locals (cons c (locals-changes locals)))
-        c)))
+    (or (scope-local s key)
+        (let ([ls (make)])
+          (unless (hashtable-contains? scopes s)
+            (hashtable-set! scopes s #t)
+            (collected s (scope-locals s)))
+          (scope-local-set! s key ls)
+          ls)))
 
-  (define (forget-scope-change! s c)
-    (let ([locals (scope-locals s)])
-      (locals-changes-set! locals (remq c (locals-changes locals)))
-      (forget-change! c))))
+  (define (forget-local-layers! key)
+    (for-each
+      (lambda (s)
+        (let ([ls (scope-local s key)])
+          (when ls
+            (forget-layers! ls)
+            (scope-local-set! s key #f))))
+      (scopes-with-locals))))

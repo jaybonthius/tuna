@@ -95,6 +95,19 @@
         (check-equal? '(1 0) (unbox seen)))
       (take-back-changes! '(repl) '())))
 
+  (test "hook-entries gives the same procedures on every thread"
+    (let ([procedures (map (lambda (i) (lambda (calls) i)) (iota 2000))])
+      (for-each (lambda (p) (add-hook! changed p)) procedures)
+      (let* ([results (map (lambda (i) (box #f)) (iota 4))]
+             [threads (map (lambda (b) (fork-thread (lambda () (set-box! b (hook-entries changed)))))
+                           results)])
+        (for-each thread-join threads)
+        (let ([entries (hook-entries changed)])
+          (check-equal? 2000 (length entries))
+          (for-each (lambda (b) (check (for-all eq? entries (unbox b)))) results)))
+      (for-each (lambda (p) (remove-hook! changed p)) procedures)
+      (check-equal? '() (hook-entries changed))))
+
   (test "a quit never leaves a hook entry half made"
     (let ([s (make-scope)] [changing? #f] [quits-while-changing 0])
       (define (burn n) (if (fx= n 0) 0 (fx+ 1 (burn (fx- n 1)))))

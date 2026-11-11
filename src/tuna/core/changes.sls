@@ -31,6 +31,23 @@
     owner-changes
     module-changes
 
+    layer-owner
+    layer-value
+    layer-data
+    layer-change
+    layer-after?
+    make-value-layers
+    make-procedure-layers
+    layers-all
+    layers-in-effect
+    layers-value
+    layers-value-set!
+    layers-changes
+    forget-layers!
+    add-layer!
+    remove-layers!
+    refresh-layers!
+
     on-main-thread?
     check-main-thread
     quits-allowed
@@ -292,35 +309,190 @@
 
   ;; The timer interrupt runs tick's advice, which may change things too,
   ;; so the ledger is updated with interrupts disabled, never half.
+  (define (link-change! owner kind thing detail undo reorder)
+    (set! next-sequence (+ next-sequence 1))
+    (let ([c (make-change owner kind thing detail next-sequence undo reorder)])
+      (let ([older (change-older c)])
+        (when older (change-newer-set! older c)))
+      (owner-newest-change-set! owner c)
+      c))
+
   (define (record-change! who kind thing detail undo reorder)
     (check-main-thread who)
     (let ([owner (check-current-owner who)])
-      (with-interrupts-disabled
-        (set! next-sequence (+ next-sequence 1))
-        (let ([c (make-change owner kind thing detail next-sequence undo reorder)])
-          (let ([older (change-older c)])
-            (when older (change-newer-set! older c)))
-          (owner-newest-change-set! owner c)
-          c))))
+      (with-interrupts-disabled (link-change! owner kind thing detail undo reorder))))
 
   ;; A change already forgotten has no newer change and is not its owner's
   ;; newest.
+  (define (unlink-change! c)
+    (let ([o (change-owner c)] [newer (change-newer c)] [older (change-older c)])
+      (when (or newer (eq? (owner-newest-change o) c))
+        (if newer (change-older-set! newer older) (owner-newest-change-set! o older))
+        (when older (change-newer-set! older newer))
+        (change-newer-set! c #f)
+        (change-older-set! c #f))))
+
   (define (forget-change! c)
-    (with-interrupts-disabled
-      (let ([o (change-owner c)] [newer (change-newer c)] [older (change-older c)])
-        (when (or newer (eq? (owner-newest-change o) c))
-          (if newer (change-older-set! newer older) (owner-newest-change-set! o older))
-          (when older (change-newer-set! older newer))
-          (change-newer-set! c #f)
-          (change-older-set! c #f)))))
+    (with-interrupts-disabled (unlink-change! c)))
+
+  (define (undo-change! c)
+    (forget-change! c)
+    ((change-undo c)))
 
   (define (take-back! c)
-    (with-quits-allowed #f
-      (forget-change! c)
-      ((change-undo c))))
+    (with-quits-allowed #f (undo-change! c)))
 
   (define (module-changes name)
     (unless (module-name? name)
       (assertion-violation 'module-changes "not a module name" name))
     (map (lambda (c) (list (change-kind c) (change-thing c) (change-detail c)))
-         (owner-changes name))))
+         (owner-changes name)))
+
+  ;; The layers in effect, and the value worked out from them, are updated
+  ;; at each change, so that a read costs a field read. The timer
+  ;; interrupt runs tick's advice, which may change the same layers, so
+  ;; each change is made with interrupts disabled. Adding and removing call
+  ;; updated inside, so that a quit cannot land before it; taking back,
+  ;; reordering and refreshing, which run where quits wait, call it after,
+  ;; since it may then run a module's code.
+  (define-record-type layer
+    (nongenerative)
+    (sealed #t)
+    (fields owner value data change))
+
+  (define-record-type removal
+    (nongenerative)
+    (sealed #t)
+    (fields value owners change))
+
+  (define-record-type layers
+    (nongenerative)
+    (sealed #t)
+    (fields kind thing one-per-owner? order updated
+            (mutable all) (mutable removals) (mutable in-effect) (mutable value))
+    (protocol
+      (lambda (new)
+        (lambda (kind thing one-per-owner? order updated value)
+          (new kind thing one-per-owner? order updated '() '() '() value)))))
+
+  (define (make-value-layers kind thing order updated value)
+    (make-layers kind thing #t order updated value))
+
+  (define (make-procedure-layers kind thing order updated value)
+    (make-layers kind thing #f order updated value))
+
+  (define (layer-after? a b)
+    (let ([ra (owner-rank (layer-owner a))] [rb (owner-rank (layer-owner b))])
+      (or (> ra rb)
+          (and (= ra rb) (> (change-sequence (layer-change a)) (change-sequence (layer-change b)))))))
+
+  ;; A removal hides layers by owner, not the layers it found, so that a
+  ;; layer its owner makes again when it reloads stays removed.
+  (define (hidden? ls l)
+    (let ([removals (layers-removals ls)])
+      (and (pair? removals)
+           (exists (lambda (r)
+                     (and (memq (layer-owner l) (removal-owners r))
+                          (or (layers-one-per-owner? ls) (eq? (removal-value r) (layer-value l)))))
+                   removals))))
+
+  (define (visible-in-order ls)
+    (list-sort (layers-order ls) (remp (lambda (l) (hidden? ls l)) (layers-all ls))))
+
+  ;; Adding one layer places only that layer: sorting them all again would
+  ;; cost most of the change when there are a few.
+  (define (insert-layer ls l in-effect)
+    (let ([before? (layers-order ls)])
+      (let insert ([in-effect in-effect])
+        (if (or (null? in-effect) (before? l (car in-effect)))
+            (cons l in-effect)
+            (cons (car in-effect) (insert (cdr in-effect)))))))
+
+  ;; Should tick's advice change the layers between a change and updated,
+  ;; before is older than the value, never newer.
+  (define-syntax update-layers!
+    (syntax-rules ()
+      [(_ ls e1 e2 ...)
+       (let* ([before (layers-in-effect ls)] [l (begin e1 e2 ...)])
+         ((layers-updated ls) ls before l))]))
+
+  (define (sort-layers! ls)
+    (update-layers! ls
+      (with-interrupts-disabled (layers-in-effect-set! ls (visible-in-order ls)))
+      #f))
+
+  (define (drop-layer! ls l)
+    (update-layers! ls
+      (with-interrupts-disabled
+        (layers-all-set! ls (remq l (layers-all ls)))
+        (layers-in-effect-set! ls (remq l (layers-in-effect ls))))
+      l))
+
+  ;; The caller has checked that the owner may make changes. The owner's
+  ;; layer of a value it sets is replaced without being taken back, so that
+  ;; the value in effect does not change twice.
+  (define add-layer!
+    (case-lambda
+      [(ls owner detail value) (add-layer! ls owner detail value #f)]
+      [(ls owner detail value data)
+       (let* ([one? (layers-one-per-owner? ls)]
+              [previous (find (lambda (l) (and (eq? (layer-owner l) owner) (or one? (eq? (layer-value l) value))))
+                              (layers-all ls))])
+         (unless (and previous (not one?))
+           (with-interrupts-disabled
+             (update-layers! ls
+               (when previous
+                 (unlink-change! (layer-change previous))
+                 (layers-all-set! ls (remq previous (layers-all ls)))
+                 (layers-in-effect-set! ls (remq previous (layers-in-effect ls))))
+               (letrec* ([change (link-change! owner (layers-kind ls) (layers-thing ls) detail
+                                   (lambda () (drop-layer! ls l))
+                                   (lambda () (sort-layers! ls)))]
+                         [l (make-layer owner value data change)])
+                 (layers-all-set! ls (cons l (layers-all ls)))
+                 (unless (hidden? ls l)
+                   (layers-in-effect-set! ls (insert-layer ls l (layers-in-effect ls))))
+                 l)))))]))
+
+  ;; Each removal is a change of its own, so that a layer another owner's
+  ;; removal hides stays hidden while either removal stands; only the
+  ;; remover's own earlier removal makes another one redundant.
+  (define (removed-already? ls owner value others)
+    (exists (lambda (r)
+              (and (eq? (change-owner (removal-change r)) owner)
+                   (or (layers-one-per-owner? ls) (eq? (removal-value r) value))
+                   (for-all (lambda (l) (memq (layer-owner l) (removal-owners r))) others)))
+            (layers-removals ls)))
+
+  ;; Taking back the owner's own layers and hiding other owners' is one
+  ;; piece of bookkeeping, which a quit must not cut in half.
+  (define (remove-layers! ls owner detail value)
+    (with-quits-allowed #f
+      (let* ([one? (layers-one-per-owner? ls)]
+             [matching (filter (lambda (l) (or one? (eq? (layer-value l) value))) (layers-all ls))]
+             [others (remp (lambda (l) (eq? (layer-owner l) owner)) matching)])
+        (for-each (lambda (l) (unless (memq l others) (undo-change! (layer-change l)))) matching)
+        (unless (or (null? others) (removed-already? ls owner value others))
+          (with-interrupts-disabled
+            (update-layers! ls
+              (letrec* ([change (link-change! owner 'removal (layers-thing ls) detail
+                                  (lambda ()
+                                    (with-interrupts-disabled
+                                      (layers-removals-set! ls (remq r (layers-removals ls))))
+                                    (sort-layers! ls))
+                                  (lambda () (sort-layers! ls)))]
+                        [r (make-removal value (map layer-owner others) change)])
+                (layers-removals-set! ls (cons r (layers-removals ls)))
+                (layers-in-effect-set! ls (visible-in-order ls))
+                #f)))))))
+
+  ;; A value can depend on more than its layers, such as on whether a
+  ;; procedure's module is loaded.
+  (define (refresh-layers! ls)
+    ((layers-updated ls) ls (layers-in-effect ls) #f))
+
+  (define (layers-changes ls)
+    (append (map layer-change (layers-all ls)) (map removal-change (layers-removals ls))))
+
+  (define (forget-layers! ls)
+    (for-each forget-change! (layers-changes ls))))

@@ -15,35 +15,32 @@
   (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna core modules) (tuna scopes)
           (only (tuna hooks) make-hook))
 
-  (define-record-type layer
-    (nongenerative)
-    (sealed #t)
-    (fields owner value change))
-
-  ;; settings and a scope's local values are replaced, never changed in
-  ;; place, since other threads read them. An option no scope has held a
-  ;; local value of is read without looking at the current scope, which
-  ;; would cost as much as the rest of the read.
+  ;; setting is the setting in effect or the default, kept in the record
+  ;; because reading it through the settings' layers costs a tenth more.
+  ;; A setting is read without looking at the current scope when no scope
+  ;; has held a local value of the option, since that would cost as much
+  ;; as the rest of the read.
   (define-record-type option-state
     (nongenerative)
     (sealed #t)
     (fields symbol module key
             (mutable default) (mutable check) (mutable doc) (mutable on-change)
-            (mutable settings) (mutable localized?) (mutable defined?) (mutable procedure)))
+            (mutable settings) (mutable setting) (mutable localized?) (mutable defined?) (mutable procedure)))
 
-  (define (setting st)
-    (let ([layers (option-state-settings st)])
-      (if (null? layers) (option-state-default st) (layer-value (car layers)))))
+  (define no-setting (string->uninterned-symbol "no-setting"))
 
   (define (scope-value st s)
-    (let ([layers (scope-local s (option-state-key st))])
-      (if layers (layer-value (car layers)) (setting st))))
+    (let ([ls (scope-local s (option-state-key st))])
+      (if ls
+          (let ([v (layers-value ls)])
+            (if (eq? v no-setting) (option-state-setting st) v))
+          (option-state-setting st))))
 
   (define (unbound-value st)
     (if (option-state-localized? st)
         (let ([s (current-scope)])
-          (if s (scope-value st s) (setting st)))
-        (setting st)))
+          (if s (scope-value st s) (option-state-setting st)))
+        (option-state-setting st)))
 
   ;; A thread forked inside a binding holds its parent's record until it
   ;; takes its own, and sees none of its parent's bindings.
@@ -106,12 +103,13 @@
         [(hashtable-ref option-states symbol #f)
          => (lambda (st)
               (option-state-default-set! st default)
+              (option-state-setting-set! st (value-in-effect (option-state-settings st) st #f))
               (option-state-check-set! st check)
               (option-state-doc-set! st doc)
               (option-state-on-change-set! st on-change)
               (option-state-procedure st))]
         [else
-         (let* ([st (make-option-state symbol module (make-local-key) default check doc on-change '() #f #t #f)]
+         (let* ([st (make-option-state symbol module (make-local-key) default check doc on-change #f default #f #t #f)]
                 [o (make-wrapper-procedure
                      (case-lambda
                        [() (option-value st)]
@@ -120,6 +118,7 @@
                      3
                      st)])
            (option-state-procedure-set! st o)
+           (option-state-settings-set! st (option-layers 'setting st #f))
            (hashtable-set! option-states symbol st)
            o)])))
 
@@ -147,16 +146,40 @@
         (run)
         (parameterize ([current-scope s]) (run))))
 
+  (define (value-of st s)
+    (if s (scope-value st s) (option-state-setting st)))
+
   (define (notify-if-changed st s before)
     (let ([after (value-of st s)])
       (unless (eqv? after before)
         (notify st s after))))
 
-  (define (layer>? a b)
-    (> (owner-rank (layer-owner a)) (owner-rank (layer-owner b))))
+  (define (value-in-effect ls st held)
+    (let ([in-effect (layers-in-effect ls)])
+      (cond
+        [(pair? in-effect) (layer-value (car in-effect))]
+        [held no-setting]
+        [else (option-state-default st)])))
 
-  (define (own-layer layers owner)
-    (find (lambda (l) (eq? (layer-owner l) owner)) layers))
+  ;; A layer that came is set-option!'s, which notifies once all its
+  ;; options are set, so that each sees the others' new values. A local
+  ;; value's layers hold their scope weakly, so that the ledger does not
+  ;; keep it alive; once it is collected, its changes are forgotten.
+  (define (option-layers kind st held)
+    (make-value-layers kind (option-state-symbol st) layer-after?
+      (lambda (ls before l)
+        (let ([s (and held (car held))])
+          (define (update!)
+            (let ([v (value-in-effect ls st held)])
+              (if held (layers-value-set! ls v) (option-state-setting-set! st v))))
+          (cond
+            [(bwp-object? s)]
+            [(and l (memq l (layers-all ls))) (update!)]
+            [else
+             (let ([before (value-of st s)])
+               (update!)
+               (notify-if-changed st s before))])))
+      no-setting))
 
   (define (option-pairs who arguments)
     (let loop ([arguments arguments] [pairs '()])
@@ -168,90 +191,55 @@
          (let ([st (changing-option who (car arguments))])
            (loop (cddr arguments) (cons (cons st (checked who st (cadr arguments))) pairs)))])))
 
-  (define (sorted-layers layers) (list-sort layer>? layers))
-
   (define (layers-of st s)
-    (if s (or (scope-local s (option-state-key st)) '()) (option-state-settings st)))
+    (if s
+        (scope-layers! s (option-state-key st)
+          (lambda ()
+            (option-state-localized?-set! st #t)
+            (option-layers 'local-value st (weak-cons s '()))))
+        (option-state-settings st)))
 
-  (define (layers-set! st s layers)
-    (cond
-      [s (when (pair? layers) (option-state-localized?-set! st #t))
-         (scope-local-set! s (option-state-key st) (and (pair? layers) layers))]
-      [else (option-state-settings-set! st layers)]))
-
-  (define (value-of st s)
-    (if s (scope-value st s) (setting st)))
-
-  ;; A change in a scope holds the scope weakly, so that the ledger does
-  ;; not keep it alive; once it is collected, its changes are forgotten.
-  (define (with-held-scope held proc)
-    (let ([s (and held (car held))])
-      (unless (bwp-object? s) (proc s))))
-
-  (define (set-layers! who kind s arguments)
+  (define (set-layers! who s arguments)
     (check-main-thread who)
     (let* ([owner (check-current-owner who)]
            [pairs (option-pairs who arguments)]
            [states (fold-right (lambda (p sts) (if (memq (car p) sts) sts (cons (car p) sts))) '() pairs)]
            [before (map (lambda (st) (value-of st s)) states)])
-      (for-each
-        (lambda (p)
-          (let ([st (car p)])
-            (with-interrupts-disabled
-              (let ([previous (own-layer (layers-of st s) owner)])
-                (when previous
-                  (if s
-                      (forget-scope-change! s (layer-change previous))
-                      (forget-change! (layer-change previous)))
-                  (layers-set! st s (remq previous (layers-of st s)))))
-              (letrec* ([held (and s (weak-cons s '()))]
-                        [undo (lambda ()
-                                (with-held-scope held
-                                  (lambda (s)
-                                    (let ([before (value-of st s)])
-                                      (layers-set! st s (remq layer (layers-of st s)))
-                                      (notify-if-changed st s before)))))]
-                        [reorder (lambda ()
-                                   (with-held-scope held
-                                     (lambda (s) (layers-set! st s (sorted-layers (layers-of st s))))))]
-                        [change (if s
-                                    (record-scope-change! s who kind (option-state-symbol st) #f undo reorder)
-                                    (record-change! who kind (option-state-symbol st) #f undo reorder))]
-                        [layer (make-layer owner (cdr p) change)])
-                (layers-set! st s (sorted-layers (cons layer (layers-of st s))))))))
-        pairs)
+      (for-each (lambda (p) (add-layer! (layers-of (car p) s) owner #f (cdr p))) pairs)
       (for-each (lambda (st before) (notify-if-changed st s before)) states before)))
 
-  (define (remove-layers! who s options)
+  (define (remove-own! who s options)
     (check-main-thread who)
     (let ([owner (check-current-owner who)])
       (for-each
         (lambda (o)
-          (let ([layer (own-layer (layers-of (changing-option who o) s) owner)])
-            (when layer (take-back! (layer-change layer)))))
+          (let* ([st (changing-option who o)]
+                 [ls (if s (scope-local s (option-state-key st)) (option-state-settings st))]
+                 [l (and ls (find (lambda (l) (eq? (layer-owner l) owner)) (layers-all ls)))])
+            (when l (take-back! (layer-change l)))))
         options)))
 
   (define (set-option! . arguments)
-    (set-layers! 'set-option! 'setting #f arguments))
+    (set-layers! 'set-option! #f arguments))
 
   (define (remove-option! . options)
-    (remove-layers! 'remove-option! #f options))
+    (remove-own! 'remove-option! #f options))
 
   (define (set-option-local! . arguments)
-    (set-layers! 'set-option-local! 'local-value (the-current-scope 'set-option-local!) arguments))
+    (set-layers! 'set-option-local! (the-current-scope 'set-option-local!) arguments))
 
   (define (remove-option-local! . options)
-    (remove-layers! 'remove-option-local! (the-current-scope 'remove-option-local!) options))
+    (remove-own! 'remove-option-local! (the-current-scope 'remove-option-local!) options))
 
   (define (option-default o)
     (option-state-default (option-state-of 'option-default o)))
 
   (define (option-setting o)
-    (setting (option-state-of 'option-setting o)))
+    (option-state-setting (option-state-of 'option-setting o)))
 
   (define (option-settings o)
     (map (lambda (l) (list (owner-name (layer-owner l)) (layer-value l)))
-         (option-state-settings (option-state-of 'option-settings o))))
+         (layers-in-effect (option-state-settings (option-state-of 'option-settings o)))))
 
   (define (option-documentation o)
     (option-state-doc (option-state-of 'documentation o)))
@@ -312,15 +300,10 @@
           (when (equal? (option-state-module st) name)
             (hashtable-delete! option-states symbol)
             (option-state-defined?-set! st #f)
-            (for-each (lambda (l) (forget-change! (layer-change l))) (option-state-settings st))
-            (option-state-settings-set! st '())
-            (for-each
-              (lambda (s)
-                (let ([layers (scope-local s (option-state-key st))])
-                  (when layers
-                    (for-each (lambda (l) (forget-scope-change! s (layer-change l))) layers)
-                    (scope-local-set! s (option-state-key st) #f))))
-              (scopes-with-locals))))
+            (forget-layers! (option-state-settings st))
+            (option-state-settings-set! st (option-layers 'setting st #f))
+            (option-state-setting-set! st (option-state-default st))
+            (forget-local-layers! (option-state-key st))))
         symbols states)))
 
   (add-module-unloaded-handler! module-unloaded!))
