@@ -17,6 +17,7 @@
     tick
     tick-changed?
     module-loaded
+    module-failed
     module-definitions-started!
     unload-removed-definitions!
     unload-definitions!
@@ -367,10 +368,16 @@
         (syntax-case x ()
           [(_ id) #`(cell-changes #,(identifier-cell 'definition-changes x #'id lookup))]))))
 
-  (define-changeable report report-cell (tuna) report write-condition #f)
+  ;; Every report runs as the module the raising code ran for, a job's
+  ;; included, so the current owner names it.
+  (define (write-report c)
+    (let ([name (owner-name (current-owner))])
+      (write-condition c (and (not (member name '((init) (repl) (tuna)))) name))))
+
+  (define-changeable report report-cell (tuna) report write-report #f)
 
   (define (report-safely c)
-    (guard (e [#t (write-condition c) (write-condition e)])
+    (guard (e [#t (write-report c) (write-report e)])
       (report c)))
 
   (define (report-warning who text)
@@ -417,4 +424,6 @@
   (define (tick-changed?)
     (not (eq? (cell-callee tick-cell) do-nothing)))
 
-  (define-changeable module-loaded module-loaded-cell (tuna) module-loaded (lambda (name) (void)) #f))
+  (define-changeable module-loaded module-loaded-cell (tuna) module-loaded (lambda (name) (void)) #f)
+
+  (define-changeable module-failed module-failed-cell (tuna) module-failed (lambda (name) (void)) #f))

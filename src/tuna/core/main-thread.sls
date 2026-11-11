@@ -331,7 +331,8 @@
   (define (report-on-main-thread c)
     (if (on-main-thread?)
         (report-safely c)
-        (enqueue! (lambda () (report-safely c)))))
+        (let ([owner (current-owner)])
+          (enqueue! (lambda () (call-as-owner owner (lambda () (report-safely c))))))))
 
   ;; Every thread forked after the loop starts inherits this handler. On
   ;; another thread, reset ends the thread, as fork-thread arranges.

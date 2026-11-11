@@ -17,5 +17,6 @@
     quit-condition?
     report
     tick
-    module-loaded)
+    module-loaded
+    module-failed)
   (import (tuna core changes) (tuna core definitions) (tuna core modules) (tuna core main-thread)))

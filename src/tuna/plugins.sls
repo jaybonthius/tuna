@@ -16,10 +16,13 @@
           (only (tuna core modules) module-exists? load-module!))
 
   (meta define line-shape
-    "expected an id and clauses (git url), (commit hex), (branch name), (dir path) or (local folder)")
+    "expected an id and clauses (git url), (commit hex), (branch name), (dir path) or (local folder), then (config form ...) only in a top-level line")
 
+  ;; The evaluator of top-level forms takes a line's config clause off
+  ;; before the line reaches the expander, so one here is misplaced.
   (meta define (line-syntax? id clauses)
-    (and (identifier? id) (plugin-line? (syntax->datum #`(use-plugin #,id #,@clauses)))))
+    (let ([line (syntax->datum #`(use-plugin #,id #,@clauses))])
+      (and (identifier? id) (plugin-line? line) (not (assq 'config (cddr line))))))
 
   ;; The plugin's main module is named by the line's own id, so its names
   ;; are visible where the line stands.

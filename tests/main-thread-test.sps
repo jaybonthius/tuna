@@ -127,6 +127,21 @@
       (check went-on?)
       (advice-remove! report capture)))
 
+  (test "a raise on another thread is reported as the owner that thread ran for"
+    (let ([reports '()])
+      (define (capture report c)
+        (set! reports (cons (owner-name (current-owner)) reports)))
+      (advice-add! report capture)
+      (let ([threads (map (lambda (name)
+                            (fork-thread (lambda () (call-as-owner (find-owner name) (lambda () (car 5))))))
+                          '((init) (repl) (init) (tuna)))])
+        (for-each thread-join threads))
+      (wait-until-called (lambda (done) (post! done)))
+      (advice-remove! report capture)
+      (check-equal? '((init) (init) (repl) (tuna))
+                    (list-sort (lambda (a b) (string<? (symbol->string (car a)) (symbol->string (car b))))
+                               reports))))
+
   ;; Each round requests a quit after a random number of calls, so quits
   ;; land all over the changes and posts that follow; whatever they
   ;; interrupt, the change ledger and the definition agree afterwards, and

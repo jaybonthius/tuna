@@ -6,7 +6,9 @@
     eval-text
     eval-file)
   (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna core modules)
-          (only (tuna plugin-manager) read-configuration-lines! read-configuration-line! read-repl-line!)
+          (only (tuna plugin-manager) read-configuration-lines! read-configuration-line! read-repl-line!
+                plugin-line?)
+          (only (tuna core conditions) call-with-only-handler)
           (only (chez-lang body) definition-form? form-defined-names)
           (only (tuna files) expand-home))
 
@@ -172,7 +174,7 @@
   ;; form is compiled against it. Without inspector information a procedure
   ;; defined in the configuration prints as one typed at the REPL does, with
   ;; no source position.
-  (define (eval-top-level form)
+  (define (eval-form form)
     (when (equal? (owner-name (current-owner)) '(repl))
       (read-repl-line! (unwrap form)))
     (call-with-quit-safe-library-lock sync-modules!)
@@ -188,6 +190,36 @@
             (lambda results
               (run-modules! imports)
               (apply values results)))))))
+
+  ;; A line's config forms run after the line, each as a top-level form, so
+  ;; that they see the names of every module the line loaded; a line that
+  ;; raises skips them.
+  (define (eval-top-level form)
+    (let ([line (unwrap form)])
+      (if (and (plugin-line? line) (assq 'config (cddr line)))
+          (begin
+            (eval-form (list-head line (fx- (length line) 1)))
+            (for-each (lambda (f) (call-reporting-form f (lambda () (eval-top-level f))))
+                      (cdr (parts (car (last-pair (parts form)))))))
+          (eval-form form))))
+
+  (define (parts x)
+    (if (annotation? x) (annotation-expression x) x))
+
+  ;; A raise at run time carries no form, so the report of one from a form
+  ;; read from a file names the form and its position.
+  (define (call-reporting-form form thunk)
+    (call/cc
+      (lambda (k)
+        (call-with-only-handler
+          (lambda (c)
+            (report-safely
+              (if (or (not (condition? c)) (source-condition? c) (syntax-violation? c)
+                      (not (syntax->annotation form)))
+                  c
+                  (condition c (make-source-condition form))))
+            (k (void)))
+          (lambda () (call-with-warnings-reported thunk))))))
 
   (define (read-annotated-forms path consume)
     (let ([sfd (call-with-port (open-file-input-port path) (lambda (p) (make-source-file-descriptor path p)))])
@@ -208,7 +240,7 @@
           (lambda ()
             (read-configuration-lines!)
             (read-annotated-forms configuration-file
-              (lambda (form) (call-reporting (lambda () (eval-top-level form))))))))))
+              (lambda (form) (call-reporting-form form (lambda () (eval-top-level form))))))))))
 
   (define (read-all text)
     (let ([p (open-input-string text)])

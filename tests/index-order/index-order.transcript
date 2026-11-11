@@ -1,7 +1,7 @@
 ; An index's line comes before the lines that rely on it: consult's line
 ; ran before the index was installed, so its import raised, saying the
 ; line has no source, and installed nothing.
-! import: the line for consult has no source: give it a git or local clause, or use an index that names it
+! import: the line for consult has no source: give it a git or local clause, or use an index that names it (use-plugin consult) at line 2, char 1 of ~/.config/tuna/init.ss
 > (memq 'consult (installed-plugins))
 #f
 > (installed-plugins)

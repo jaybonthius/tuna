@@ -46,12 +46,28 @@
       (compile-library-handler
         (let ([compile-library (compile-library-handler)])
           (lambda (source object)
-            (parameterize ([generate-inspector-information #f]
-                           [generate-procedure-source-information #t])
-              (compile-library source object)))))
+            (with-exception-handler
+              (lambda (c)
+                (if (positionless-syntax-error? c)
+                    (raise (condition (make-who-condition source) c))
+                    (raise-continuable c)))
+              (lambda ()
+                (parameterize ([generate-inspector-information #f]
+                               [generate-procedure-source-information #t])
+                  (compile-library source object)))))))
       (start-top-level! home (string-append configuration "/init.ss"))
       (install-exit-handler!)
       (post-task! load-configuration! (find-owner '(init)) (lambda () (fork-thread read-console)))))
+
+  ;; Chez reports a definition after an expression on Tuna's expansion of
+  ;; the definition, which has no position, so the file stands in as the
+  ;; error's who. An error that has a who already, such as one from a file
+  ;; compiled for this one, keeps it.
+  (define (positionless-syntax-error? c)
+    (and (syntax-violation? c)
+         (not (who-condition? c))
+         (not (syntax->annotation (syntax-violation-form c)))
+         (not (syntax->annotation (syntax-violation-subform c)))))
 
   ;; Unloading runs every module's unload actions, for what Tuna cannot
   ;; undo itself, such as a process a module started. An exit called while

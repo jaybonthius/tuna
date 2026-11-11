@@ -41,9 +41,13 @@ k
 > (import (nodefiner))
 ! no visible binding for define-property key definer at line 3, char 20 of ~/.config/tuna/lib/nodefiner.sls
 ; Definitions come before expressions; Chez reports the first definition
-; after an expression as Tuna expands it.
+; after an expression as Tuna expands it, with no position, so the report
+; names the file.
 > (import (late))
-! invalid context for definition (define-syntax f changeable-keyword)
+! ~/.config/tuna/lib/late.sls: invalid context for definition (define-syntax f changeable-keyword)
+; Compiled for an importer, the error still names the file that holds it.
+> (import (useslate))
+! ~/.config/tuna/lib/late.sls: invalid context for definition (define-syntax f changeable-keyword)
 ; Both languages withhold sleep, and #!tuna/base is a module language too.
 > (import (sleeper))
 ! sleep: withheld because it would block the main thread (sleep (make-time (quote time-duration) 0 0)) at line 2, char 15 of ~/.config/tuna/lib/sleeper.sls

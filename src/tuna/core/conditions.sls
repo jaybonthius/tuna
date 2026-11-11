@@ -64,7 +64,8 @@
     (format "~{~a~^ ~}"
       (append
         (map (lambda (simple) (record-type-name (record-rtd simple)))
-             (remp (lambda (simple) (or (who-condition? simple) (irritants-condition? simple)))
+             (remp (lambda (simple)
+                     (or (who-condition? simple) (irritants-condition? simple) (source-condition? simple)))
                    (simple-conditions c)))
         (if (irritants-condition? c)
             (list (format "with irritants ~s" (condition-irritants c)))
@@ -87,9 +88,11 @@
 
   ;; Standard output is flushed first, so that text written before the raise
   ;; comes before the report when both streams go to one file.
-  (define (write-condition c)
+  (define (write-condition c module)
     (let ([out (current-output-port)] [err (console-error-port)])
       (fresh-line out)
       (flush-output-port out)
-      (fprintf err "! ~a\n" (condition-text c))
+      (if module
+          (fprintf err "! ~s ~a\n" module (condition-text c))
+          (fprintf err "! ~a\n" (condition-text c)))
       (flush-output-port err))))

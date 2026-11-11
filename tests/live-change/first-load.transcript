@@ -3,7 +3,7 @@
 ; back.
 > (put-version! "boom.sls" ".config/tuna/lib/boom.sls")
 > (import (boom))
-! car: () is not a pair
+! (boom) car: () is not a pair
 boom unloading
 > (files:save! "a")
 saving a [spell] 
@@ -17,12 +17,12 @@ saving a [spell]
 ; A module whose import raises on its first load is unloaded too.
 > (put-version! "outer.sls" ".config/tuna/lib/outer.sls")
 > (import (outer))
-! car: () is not a pair
+! (boom) car: () is not a pair
 boom unloading
 > (outer:y)
 ! outer:y: module (outer) is unloaded
 > (load-module! '(outer))
-! car: () is not a pair
+! (boom) car: () is not a pair
 boom unloading
 ; Loading it after its import's file is fixed reads the saved file.
 > (put-version! "boom-fixed.sls" ".config/tuna/lib/boom.sls")
@@ -34,7 +34,7 @@ boom unloading
 ; So does importing a module whose first load failed.
 > (put-version! "boom.sls" ".config/tuna/lib/fizzle.sls")
 > (import (fizzle))
-! car: () is not a pair
+! (fizzle) car: () is not a pair
 boom unloading
 > (put-version! "boom-fixed.sls" ".config/tuna/lib/fizzle.sls")
 > (begin (import (fizzle)) (fizzle:x))

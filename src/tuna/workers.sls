@@ -107,7 +107,7 @@
                     (k (void))))
                 (lambda ()
                   (let ([p (worker-procedure! (job-worker j))])
-                    (with-quits-allowed #t (p input))))))))
+                    (with-quits-allowed #t (call-as-owner (job-owner j) (lambda () (p input))))))))))
         (lambda ()
           (set-timer 0)
           (post-task! (lambda () (forget-change! (job-change j))) (find-owner '(tuna)) #f)))))

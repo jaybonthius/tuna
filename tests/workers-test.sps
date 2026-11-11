@@ -123,6 +123,29 @@
                                reported))
       (check-equal? '(went-on) results)))
 
+  ;; Jobs from two modules fail at once, so their reports interleave on
+  ;; the main thread with whatever owner it runs then.
+  (test "a job's raise is reported as the module that started the job"
+    (write-library! "starter" "#!tuna\n(define x 1)\n")
+    (load-module! '(starter))
+    (let ([reported '()])
+      (define (note report c)
+        (set! reported (cons (cons (owner-name (current-owner)) (car (condition-irritants c))) reported)))
+      (define (running?)
+        (exists (lambda (change) (eq? (car change) 'job))
+                (append (module-changes '(repl)) (module-changes '(starter)))))
+      (advice-add! report note)
+      (do ([i 0 (+ i 1)]) ((= i 20))
+        (start-job fails i void)
+        (as-module '(starter) (start-job fails (- -1 i) void)))
+      (let loop ([n 0])
+        (when (and (running?) (< n 1000))
+          (sleep-for 0.01)
+          (loop (+ n 1))))
+      (advice-remove! report note)
+      (check-equal? 40 (length reported))
+      (check (for-all (lambda (r) (equal? (car r) (if (>= (cdr r) 0) '(repl) '(starter)))) reported))))
+
   (test "only the main thread starts a job, and only a worker emits"
     (let ([messages '()])
       (thread-join

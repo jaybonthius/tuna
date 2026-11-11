@@ -9,7 +9,7 @@
 > (scoped:count)
 1
 > (eval-in-module 'n '(scoped))
-! attempt to reference assigned hence unexported library variable n
+! (scoped) attempt to reference assigned hence unexported library variable n
 ; A define or set! of the module's own name assigns its definition, on its
 ; behalf, and is no change; any other definition raises.
 > (eval-in-module '(define (text) "assigned") '(scoped))
@@ -21,7 +21,7 @@
 > (map car (definition-changes scoped:text))
 ((scoped))
 > (eval-in-module '(define fresh 1) '(scoped))
-! invalid definition in immutable environment (define fresh 1)
+! (scoped) invalid definition in immutable environment (define fresh 1)
 > (eval-in-module '(this-module) '(scoped))
 (scoped)
 > (eval-in-module '(text) '(greet))

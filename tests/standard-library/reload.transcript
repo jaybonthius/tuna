@@ -23,7 +23,7 @@
 ; A failed reload is reported, and the previous version runs again.
 > (put-version! "spell-broken.sls" ".local/share/tuna/plugins/spell/spell.sls")
 > (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
-! car: () is not a pair
+! (spell) car: () is not a pair
 > (speller:go)
 (v2 "z")
 > (spell:language)

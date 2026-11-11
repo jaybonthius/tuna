@@ -1,0 +1,54 @@
+; A use-plugin line's config forms run after the line has loaded the
+; plugin, each as a top-level form of the configuration: they see every
+; loaded module's names, an internal module's and a macro included, and a
+; define is a top-level definition.
+[spell body]
+[spell config]
+(internal found a macro word)
+(hook B)
+(after found b in en-GB X)
+; Their changes belong to (init).
+> (module-changes '(init))
+((hook-entry spell:after-check #<procedure proc>) (setting spell:language #f))
+; Evaluating the configuration again takes back its changes and runs the
+; forms again; the plugin keeps running.
+> (define init (string-append (getenv "HOME") "/.config/tuna/init.ss"))
+> (eval-file init)
+[spell config]
+(internal found a macro word)
+(hook B)
+(after found b in en-GB X)
+> (list (spell:language) (length (module-changes '(init))))
+("en-GB" 2)
+; Evaluating the line alone runs its forms again, adding to the changes.
+> (eval-text "(use-plugin spell (config (set-option! spell:language \"de\") (add-hook! spell:after-check (lambda (w) (display \"[again]\")))))" init)
+> (list (spell:language) (length (module-changes '(init))))
+("de" 3)
+; A reload of the plugin keeps the forms' changes and does not run them.
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/spell.sls"))
+[spell body]
+> (list (spell:language) (length (module-changes '(init))))
+("de" 3)
+; Unloading takes back the forms' changes to the plugin's names, and
+; loading it again does not run them.
+> (unload-module! '(spell))
+> (module-changes '(init))
+()
+> (load-module! '(spell))
+[spell body]
+> (list (spell:language) (length (module-changes '(init))))
+("en" 0)
+; A line typed at the REPL runs its forms as the REPL's.
+> (use-plugin spell (config (set-option! spell:language "fr") (display "[typed]\n")))
+[typed]
+> (list (spell:language) (module-changes '(repl)))
+("fr" ((setting spell:language #f)))
+; A form that raises is reported, and the next runs.
+> (use-plugin spell (config (car '()) (display "[next]\n")))
+! car: () is not a pair
+[next]
+; config is the last clause, and only of a top-level line.
+> (begin (use-plugin spell (config (display "nested"))))
+! use-plugin: expected an id and clauses (git url), (commit hex), (branch name), (dir path) or (local folder), then (config form ...) only in a top-level line (use-plugin spell (config (display "nested")))
+> (use-plugin spell (config (display "first")) (local "~/src/spell"))
+! use-plugin: expected an id and clauses (git url), (commit hex), (branch name), (dir path) or (local folder), then (config form ...) only in a top-level line (use-plugin spell (config (display "first")) (local "~/src/spell"))

@@ -44,7 +44,7 @@ assigned
 > (eval-in-module '(this-module) '(fresh))
 (fresh)
 > (eval-in-module '(define-syntax y (syntax-rules () [(_) 1])) '(fresh))
-! invalid definition in immutable environment (define-syntax y (syntax-rules () ((...) 1)))
+! (fresh) invalid definition in immutable environment (define-syntax y (syntax-rules () ((...) 1)))
 ; A tool advises a name chosen at run time, as its own change.
 > (put-version! "tool.sls" ".config/tuna/lib/tool.sls")
 > (import (tool))

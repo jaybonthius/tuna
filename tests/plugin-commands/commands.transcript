@@ -102,7 +102,7 @@
 > (flaky:version)
 1
 > (update-plugin! 'flaky)
-! flaky: broken
+! (flaky) flaky: broken
 > (list (flaky:version) (plugin-commit 'flaky))
 (1 "5a8f6943897459be214b5eb6183f5e7ac331d74f")
 > (update-plugin! 'flaky "nope")
@@ -113,7 +113,7 @@
     (post! (lambda () (install-plugin! '(use-plugin notes (local "~/src/notes"))) (display "posted ran") (newline)))
     (update-plugin! 'flaky))
 posted ran
-! flaky: broken
+! (flaky) flaky: broken
 > (show-lines)
 (use-plugin spell (git "https://github.com/bob/spell") (commit "8f4a7345babf351f103b3a03a5d290d170e5e95e"))
 (use-plugin files)
@@ -126,8 +126,19 @@ posted ran
 (use-plugin compat (commit "5ecc38a88d05e60def075308cf4d4d9eec4558ee"))
 (use-plugin flaky (git "https://github.com/bob/flaky") (commit "5a8f6943897459be214b5eb6183f5e7ac331d74f"))
 (use-plugin notes (local "~/src/notes"))
-; remove-plugin! unloads the plugin's modules, then deletes its line and
-; its folder.
+; A line typed at the REPL has none in the configuration to put back, so
+; going back takes out the line update-plugin! wrote.
+> (remove-plugin! 'flaky)
+> (use-plugin flaky (git "https://github.com/bob/flaky") (commit "5a8f694"))
+> (let ([before (call-with-input-file "~/.config/tuna/init.ss" get-string-all)])
+    (update-plugin! 'flaky)
+    (string=? before (call-with-input-file "~/.config/tuna/init.ss" get-string-all)))
+! (flaky) flaky: broken
+#t
+> (list (flaky:version) (plugin-commit 'flaky))
+(1 "5a8f6943897459be214b5eb6183f5e7ac331d74f")
+; remove-plugin! unloads the plugin's modules, then comments out its line
+; and deletes its folder.
 > (remove-plugin! 'vertico)
 > (list (memq 'vertico (installed-plugins)) (file-exists? "~/.local/share/tuna/plugins/vertico"))
 (#f #f)
@@ -141,7 +152,7 @@ posted ran
 ; greet has no line, and no import found it since Tuna started.
 > (remove-unused-plugins!)
 > (installed-plugins)
-(spell sources consult embark-consult compat flaky notes vertico embark)
+(spell sources consult embark-consult compat notes vertico embark flaky)
 > (import (nowhere))
 ! import: no plugin line for (nowhere): add (use-plugin nowhere (git "...")) to init.ss
 > (sort string<? (directory-list "~/.local/share/tuna/plugins"))

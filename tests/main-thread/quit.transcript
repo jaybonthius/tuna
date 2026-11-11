@@ -54,6 +54,6 @@ continued
 > (post! (lambda () (request-quit!) (let loop () (loop))))
 ! &quit
 > (import (runaway))
-! &quit
+! (runaway) &quit
 > (module-changes '(runaway))
 ()

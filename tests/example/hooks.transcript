@@ -137,6 +137,6 @@ saving x
     (lambda (p)
       (put-string p "#!tuna\n(import (files))\n(define x (begin (add-hook! files:after-save (lambda (path) (display \"bad entry\"))) (car '())))\n")))
 > (import (bad))
-! car: () is not a pair
+! (bad) car: () is not a pair
 > (list (module-changes '(bad)) (files:after-save "p"))
 (() #<void>)

@@ -59,7 +59,7 @@ speller unloading
 > (put-version! "spell-raises.sls" ".local/share/tuna/plugins/spell/spell.sls")
 > (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
 speller unloading
-! car: () is not a pair
+! (spell) car: () is not a pair
 > loads
 ((speller) (spell))
 > (speller:go)

@@ -339,7 +339,8 @@
                (filter (lambda (import) (hashtable-contains? found-libraries import))
                        (guard (c [(violation? c) '()])
                          (library-requirements name (library-requirements-options import))))
-               #t 1))]))))
+               #t 1))])
+        (set! failed-loads (cons name failed-loads)))))
 
   (define (move-imported-lib-module! name)
     (when (lib-library? name)
@@ -608,9 +609,22 @@
         (when (fx> (length running-bodies) depth)
           (let ([name (car running-bodies)])
             (set! running-bodies (cdr running-bodies))
+            (set! failed-loads (cons name failed-loads))
             (unless (member name kept)
               (unload-instance! name))
             (loop))))))
+
+  (define failed-loads '())
+
+  ;; The modules are unloaded or restored, so module-failed runs on behalf
+  ;; of the code that loaded them.
+  (define (call-module-failed owner)
+    (unless (null? failed-loads)
+      (let ([names (reverse failed-loads)])
+        (set! failed-loads '())
+        (call-as-owner owner
+          (lambda ()
+            (for-each (lambda (name) (call-module-code (lambda () (module-failed name)))) names))))))
 
   ;; Every entry that can run module bodies goes through here, so a body
   ;; that raises leaves neither its owner nor a half-loaded module behind.
@@ -619,14 +633,16 @@
   ;; of thunk, since one landing before the drop would skip it. No body is
   ;; running when a task pauses, so a pause drops nothing.
   (define (call-loading-modules thunk)
-    (let ([depth (length running-bodies)] [allowed (quits-allowed)])
-      (call-as-owner (current-owner)
+    (let ([depth (length running-bodies)] [allowed (quits-allowed)] [owner (current-owner)])
+      (call-as-owner owner
         (lambda ()
           (with-quits-allowed #f
             (dynamic-wind
               void
               (lambda () (with-quits-allowed allowed (thunk)))
-              (lambda () (drop-failed-bodies! depth '()))))))))
+              (lambda ()
+                (drop-failed-bodies! depth '())
+                (call-module-failed owner))))))))
 
   (define (load-unloaded-modules! names)
     (for-each (lambda (name) (when (module-stale? name) (load-module! name))) names))
@@ -697,8 +713,9 @@
     (let* ([order (with-loaded-importers name)]
            [previous (map running-object order)]
            [depth (length running-bodies)]
-           [allowed (quits-allowed)])
-      (call-as-owner (current-owner)
+           [allowed (quits-allowed)]
+           [owner (current-owner)])
+      (call-as-owner owner
         (lambda ()
           (with-quits-allowed #f
             (or (call/1cc
@@ -719,5 +736,7 @@
                         ;; A body may have caught the raise of an import's
                         ;; body, which then never finished.
                         (drop-failed-bodies! depth '())
+                        (call-module-failed owner)
                         #t))))
-                (begin (restore! order previous depth) #f))))))))
+                ;; The raising body left its own module as the owner.
+                (begin (call-as-owner owner (lambda () (restore! order previous depth))) #f))))))))

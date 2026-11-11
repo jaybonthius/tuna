@@ -34,7 +34,7 @@ g
 ; previous version is loaded again.
 > (put-version! "removed-2.sls" ".config/tuna/lib/removed.sls")
 > (eval-file "~/.config/tuna/lib/removed.sls")
-! car: () is not a pair
+! (removed) car: () is not a pair
 > (removed:f)
 1
 > (module-changes '(removed))

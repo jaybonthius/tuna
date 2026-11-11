@@ -48,9 +48,15 @@
                 (not (char=? (string-ref s 0) #\.))
                 (not (memv #\/ (string->list s)))))))
 
+  (define (config-clause? c)
+    (and (pair? c) (eq? (car c) 'config) (list? c)))
+
   (define (plugin-line? x)
     (and (list? x) (fx>= (length x) 2) (eq? (car x) 'use-plugin) (plugin-id? (cadr x))
-         (for-all clause? (cddr x))))
+         (let loop ([cs (cddr x)])
+           (or (null? cs)
+               (and (null? (cdr cs)) (config-clause? (car cs)))
+               (and (clause? (car cs)) (loop (cdr cs)))))))
 
   (define (line-id line) (cadr line))
 
@@ -62,9 +68,11 @@
     (and (or (line-clause line 'git) (line-clause line 'local)) #t))
 
   (define (line-with-commit line commit)
-    `(use-plugin ,(line-id line)
-       ,@(remp (lambda (c) (eq? (car c) 'commit)) (cddr line))
-       ,@(if commit `((commit ,commit)) '())))
+    (let-values ([(config clauses) (partition config-clause? (cddr line))])
+      `(use-plugin ,(line-id line)
+         ,@(remp (lambda (c) (eq? (car c) 'commit)) clauses)
+         ,@(if commit `((commit ,commit)) '())
+         ,@config)))
 
   (define (local-folder folder) (normal-path (expand-home folder home)))
 
@@ -510,7 +518,7 @@
   (define-record-type span
     (nongenerative)
     (sealed #t)
-    (fields start end datum))
+    (fields start end datum annotation))
 
   (define (top-level-spans text)
     (let ([p (open-string-input-port text)]
@@ -522,7 +530,7 @@
             [(annotation? form)
              (let ([source (annotation-source form)])
                (loop end (cons (make-span (source-object-bfp source) (source-object-efp source)
-                                 (annotation-stripped form))
+                                 (annotation-stripped form) form)
                                spans)))]
             [else (loop end spans)])))))
 
@@ -546,11 +554,26 @@
 
   (define (line-text line) (format "~s" line))
 
+  (define (text-with text start end new)
+    (string-append (substring text 0 start) new (substring text end (string-length text))))
+
   (define (insert-configuration-line! who line)
     (let* ([text (configuration-text)] [at (insertion-point who (top-level-spans text))])
-      (write-configuration!
-        (string-append (substring text 0 at) "\n" (line-text line) (substring text at (string-length text))))
+      (write-configuration! (text-with text at at (string-append "\n" (line-text line))))
       (set-configuration-line! (line-id line) line)))
+
+  ;; Only the commit's text changes, so the rest of the line, its comments
+  ;; and its config clause's code stay as written.
+  (define (text-with-commit text line commit)
+    (let* ([parts (cdr (annotation-expression line))]
+           [old (find (lambda (c) (eq? (car (annotation-stripped c)) 'commit)) (cdr parts))])
+      (if old
+          (let ([s (annotation-source (cadr (annotation-expression old)))])
+            (text-with text (source-object-bfp s) (source-object-efp s) (format "~s" commit)))
+          (let ([at (source-object-efp
+                      (annotation-source
+                        (car (last-pair (remp (lambda (c) (config-clause? (annotation-stripped c))) parts)))))])
+            (text-with text at at (format " (commit ~s)" commit))))))
 
   ;; The line as the file holds it now, which may have been edited since
   ;; the configuration last ran.
@@ -558,27 +581,33 @@
     (let* ([id (line-id line)] [text (configuration-text)] [span (line-span id (top-level-spans text))])
       (cond
         [span
-         (let ([line (line-with-commit (span-datum span) commit)])
-           (replace-line-text! id (line-text line))
-           (set-configuration-line! id line))]
+         (write-configuration! (text-with-commit text (span-annotation span) commit))
+         (set-configuration-line! id (line-with-commit (span-datum span) commit))]
         [else (insert-configuration-line! who (line-with-commit line commit))])))
 
   ;; Other tasks may have edited the file while this one paused, so only
-  ;; the plugin's own line is touched, in the text as it is now.
+  ;; the plugin's own line is touched, in the text as it is now. With no
+  ;; replacement, the newline insert-configuration-line! put before the
+  ;; line goes with it.
   (define (replace-line-text! id replacement)
     (let* ([text (configuration-text)] [span (line-span id (top-level-spans text))])
       (when span
-        (let ([end (if (and (not replacement)
-                            (fx< (span-end span) (string-length text))
-                            (char=? (string-ref text (span-end span)) #\newline))
-                       (fx+ (span-end span) 1)
-                       (span-end span))])
-          (write-configuration!
-            (string-append (substring text 0 (span-start span)) (or replacement "")
-                           (substring text end (string-length text))))))))
+        (write-configuration!
+          (if replacement
+              (text-with text (span-start span) (span-end span) replacement)
+              (let ([start (span-start span)])
+                (text-with text
+                  (if (and (fx> start 0) (char=? (string-ref text (fx- start 1)) #\newline))
+                      (fx- start 1)
+                      start)
+                  (span-end span) "")))))))
 
-  (define (delete-configuration-line! id)
-    (replace-line-text! id #f)
+  ;; Commented out rather than deleted, so that a config clause's code is
+  ;; kept for the user.
+  (define (comment-out-configuration-line! id)
+    (let* ([text (configuration-text)] [span (line-span id (top-level-spans text))])
+      (when span
+        (write-configuration! (text-with text (span-start span) (span-start span) "#;"))))
     (set-configuration-line! id #f))
 
   (define (install-plugin! line)
@@ -674,7 +703,7 @@
       (assertion-violation 'remove-plugin! "not installed" id))
     (for-each (lambda (name) (when (module-loaded? name) (unload-module! name)))
               (reverse (plugin-modules id)))
-    (delete-configuration-line! id)
+    (comment-out-configuration-line! id)
     (uninstall! id))
 
   (define (remove-unused-plugins!)

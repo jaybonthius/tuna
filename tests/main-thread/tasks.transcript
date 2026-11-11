@@ -72,7 +72,7 @@ inside
 > (on-thread (lambda () (suspend (lambda (resume) (resume void)))))
 "not in a task"
 > (import (pauser))
-! suspend: the body of module (pauser) is running
+! (pauser) suspend: the body of module (pauser) is running
 ; spawn-task is a change, which only the main thread makes.
 > (on-thread (lambda () (spawn-task void)))
 "only the main thread makes changes"
@@ -111,7 +111,7 @@ waiter's posted task quit
 > (begin
     (as-module '(waiter) (post! (lambda () (display "never runs"))))
     (unload-module! '(waiter)))
-! on-unload: not a loaded module with irritant (waiter)
+! (waiter) on-unload: not a loaded module with irritant (waiter)
 > (module-changes '(waiter))
 ()
 ; A finished task is no longer a change of its module.

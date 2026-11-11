@@ -115,7 +115,7 @@ speller unloading
 > (import (actions))
 > (unload-module! '(actions))
 third 
-! second: failed
+! (actions) second: failed
 first 
 ; Unloading a module that removed another's advice restores the advice.
 > (put-version! "remover.sls" ".config/tuna/lib/remover.sls")

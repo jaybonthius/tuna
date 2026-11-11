@@ -1,0 +1,41 @@
+(config w ok)
+[dict config]
+; update-plugin! writes only the commit into the line: it replaces the
+; commit string, or adds a commit clause after the last source clause, and
+; the rest of the file, the line's comments and config forms included,
+; stays as written. The reload does not run the config forms again.
+> (update-plugin! 'spell)
+> (update-plugin! 'dict)
+> (list (spell:check "w") (spell:language))
+("w checked" "en-GB")
+> (display (call-with-input-file "~/.config/tuna/init.ss" get-string-all))
+(import (tuna) (tuna plugins) (tuna eval)) ; spelling below
+(use-plugin spell (git "https://github.com/bob/spell") ; bob's fork
+  (commit "7e1f36a8755af21be2cfd921e5222832515f049e")   ; pinned
+  (config
+    ;; British
+    (set-option! spell:language "en-GB")
+    (display (list 'config (spell:check "w")))
+    (newline)))
+(use-plugin dict (git "https://github.com/bob/dict") (commit "cec7bd830047ec245168f9b553e4309681ec6ac8") ; newest
+  (config (display "[dict config]\n")))
+; remove-plugin! comments out the line, config forms and all.
+> (remove-plugin! 'spell)
+> (display (call-with-input-file "~/.config/tuna/init.ss" get-string-all))
+(import (tuna) (tuna plugins) (tuna eval)) ; spelling below
+#;(use-plugin spell (git "https://github.com/bob/spell") ; bob's fork
+  (commit "7e1f36a8755af21be2cfd921e5222832515f049e")   ; pinned
+  (config
+    ;; British
+    (set-option! spell:language "en-GB")
+    (display (list 'config (spell:check "w")))
+    (newline)))
+(use-plugin dict (git "https://github.com/bob/dict") (commit "cec7bd830047ec245168f9b553e4309681ec6ac8") ; newest
+  (config (display "[dict config]\n")))
+> (installed-plugins)
+(dict)
+; Evaluating the configuration again runs neither the line nor its forms.
+> (eval-file "~/.config/tuna/init.ss")
+[dict config]
+> (spell:check "w")
+! spell:check: module (spell) is unloaded

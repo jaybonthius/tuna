@@ -25,8 +25,8 @@
 > (when-installed (nothing here) (display "never"))
 > (installed-plugins)
 (vertico)
-; Rewriting a line keeps the rest of the file, but not comments inside
-; the line.
+; Updating writes only the commit, after the last source clause when the
+; line has none, so the rest of the file, comments included, stays.
 > (call-with-output-file "~/.config/tuna/init.ss"
     (lambda (p)
       (put-string p "(import (tuna) (tuna plugins))\n(use-plugin vertico ; the completion UI\n  (git \"https://github.com/minad/vertico\"))  ; pinned below\n(when-installed (vertico)\n  (set-option! vertico:count 15))\n"))
@@ -34,13 +34,14 @@
 > (update-plugin! 'vertico)
 > (display (call-with-input-file "~/.config/tuna/init.ss" get-string-all))
 (import (tuna) (tuna plugins))
-(use-plugin vertico (git "https://github.com/minad/vertico") (commit "5f76a5364d614d437df7fff40ce52ac7db52ae83"))  ; pinned below
+(use-plugin vertico ; the completion UI
+  (git "https://github.com/minad/vertico") (commit "5f76a5364d614d437df7fff40ce52ac7db52ae83"))  ; pinned below
 (when-installed (vertico)
   (set-option! vertico:count 15))
 ; A malformed form fails where it is written.
 > (use-plugin vertico (git 1))
-! use-plugin: expected an id and clauses (git url), (commit hex), (branch name), (dir path) or (local folder) (use-plugin vertico (git 1))
+! use-plugin: expected an id and clauses (git url), (commit hex), (branch name), (dir path) or (local folder), then (config form ...) only in a top-level line (use-plugin vertico (git 1))
 > (when-installed vertico 1)
 ! when-installed: expected (when-installed (module-name ...) body ...) (when-installed vertico 1)
 > (plugin "x")
-! plugin: expected an id and clauses (git url), (commit hex), (branch name), (dir path) or (local folder) (plugin "x")
+! plugin: expected an id and clauses (git url), (commit hex), (branch name), (dir path) or (local folder), then (config form ...) only in a top-level line (plugin "x")

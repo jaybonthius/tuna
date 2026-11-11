@@ -32,7 +32,7 @@ plain
 ; A module whose body raises leaves the owner as it was, so the next
 ; change is the REPL's.
 > (import (boom))
-! boom: failed
+! (boom) boom: failed
 > (this-module)
 (repl)
 > (set! greet/util:user-name (lambda () "Zeppo"))
