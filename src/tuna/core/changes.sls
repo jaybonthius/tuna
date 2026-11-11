@@ -156,39 +156,38 @@
   (define (set-current-owner! owner)
     (thread-state-owner-set! (this-thread-state) owner))
 
-  ;; A module's body sets the owner directly, so the winders swap, as
-  ;; parameterize's do: a body left and re-entered gets back the owner it
-  ;; had. Critical, since a quit landing between a switch and Chez
-  ;; recording it would leave the switch in place.
-  (define (call-as-owner owner thunk)
-    (let ([s (this-thread-state)] [other owner])
+  ;; A module's body sets its owner and quits-allowed directly, so the
+  ;; winders swap, as parameterize's do: code left and re-entered gets back
+  ;; the value it had. Critical, since a quit landing between a switch and
+  ;; Chez recording it would leave the switch in place.
+  (define (call-swapping field field-set! value thunk)
+    (let ([s (this-thread-state)] [other value])
       (define (swap!)
-        (let ([outer (thread-state-owner s)])
-          (thread-state-owner-set! s other)
+        (let ([outer (field s)])
+          (field-set! s other)
           (set! other outer)))
       (dynamic-wind #t swap! thunk swap!)))
+
+  (define (call-as-owner owner thunk)
+    (call-swapping thread-state-owner thread-state-owner-set! owner thunk))
 
   (define-syntax this-module
     (syntax-rules ()
       [(_) (owner-name (current-owner))]))
 
-  ;; A quit lands only where this is true: in a task's own code, never in
+  ;; A quit lands only where this is true: in a module's own code, never in
   ;; the bookkeeping of changes and modules, which a raise half way through
-  ;; would leave inconsistent. A request made meanwhile waits.
+  ;; would leave inconsistent. A request made meanwhile waits. An update
+  ;; that takes no lock and runs no module's code disables interrupts
+  ;; instead, which costs less and keeps tick's advice out of it too.
   (define (quits-allowed)
     (thread-state-quits-allowed (this-thread-state)))
 
   (define (set-quits-allowed! allowed)
     (thread-state-quits-allowed-set! (this-thread-state) allowed))
 
-  ;; Swapped as the owner is, and for the same reasons.
   (define (call-with-quits-allowed allowed thunk)
-    (let ([s (this-thread-state)] [other allowed])
-      (define (swap!)
-        (let ([outer (thread-state-quits-allowed s)])
-          (thread-state-quits-allowed-set! s other)
-          (set! other outer)))
-      (dynamic-wind #t swap! thunk swap!)))
+    (call-swapping thread-state-quits-allowed thread-state-quits-allowed-set! allowed thunk))
 
   (define-syntax with-quits-allowed
     (syntax-rules ()

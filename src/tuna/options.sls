@@ -135,16 +135,13 @@
   (define option-changed
     (make-hook 'option-changed '(tuna) "Called with an option and its new value whenever its on-change procedure would be."))
 
-  ;; Taking a change back notifies too, where no quit may land; on-change
-  ;; is a module's code, which a quit must still end, and call-reporting
-  ;; keeps the quit from reaching the change. parameterize costs more than
-  ;; the rest of a notification, so the scope is bound only when it is not
-  ;; already current.
+  ;; parameterize costs more than the rest of a notification, so the scope
+  ;; is bound only when it is not already current.
   (define (notify st s v)
     (define (run)
       (let ([on-change (option-state-on-change st)])
         (when on-change
-          (call-reporting (lambda () (with-quits-allowed #t (on-change v))))))
+          (call-module-code (lambda () (on-change v)))))
       (option-changed (option-state-procedure st) v))
     (if (eq? (current-scope) s)
         (run)

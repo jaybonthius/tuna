@@ -308,7 +308,6 @@
     (apply chez:exit arguments))
 
   (define (run-main-loop)
-    (check-main-thread 'run-main-loop)
     (timer-interrupt-handler main-timer-interrupt)
     (base-exception-handler unhandled-raise)
     (reset-handler (lambda () (return-to-loop (void))))

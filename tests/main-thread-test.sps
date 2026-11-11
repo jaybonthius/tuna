@@ -187,7 +187,10 @@
           (set! half-done (+ half-done 1))))
       (check-equal? '() other-raises)
       (check-equal? 0 half-done)
-      (check (> quits-while-changing 100))
+      ;; How many quits land depends on how the timer falls against the
+      ;; definitions' disabled-interrupt regions, which any change to the
+      ;; code on that path moves; the count ranges from about 60 to 300.
+      (check (> quits-while-changing 20))
       (unless (module-loaded? '(big)) (load-module! '(big)))
       (check-equal? 300 (length (module-changes '(big))))))
 

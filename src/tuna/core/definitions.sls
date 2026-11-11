@@ -11,6 +11,7 @@
     call-with-warnings-reported
     call-reporting-raises
     call-reporting
+    call-module-code
     tick
     tick-changed?
     module-loaded
@@ -72,7 +73,7 @@
   (define-record-type removal
     (nongenerative)
     (sealed #t)
-    (fields change procedure owners))
+    (fields procedure owners))
 
   ;; A cell outlives its module's instance, so a procedure a name gave and
   ;; the changes made to it survive the module running its body again.
@@ -184,7 +185,6 @@
       (if (procedure? v) (cell-forwarder c) v)))
 
   (define (define-cell! symbol module value doc)
-    (check-main-thread 'define)
     (with-cells-locked
       (let ([c (or (hashtable-ref cells symbol #f)
                    (let ([c (make-cell module symbol)])
@@ -207,14 +207,17 @@
       (cell-definition-set! c v)
       (rebuild! c)))
 
-  (define (add-history! c change)
-    (cell-history-set! c (cons change (cell-history c))))
-
-  (define (drop-history! c change)
-    (cell-history-set! c (remq change (cell-history c))))
-
-  (define (reorder c)
-    (lambda () (with-cell-update c)))
+  (define (add-layer! c who kind detail field field-set! make)
+    (letrec* ([change (record-change! who kind (cell-symbol c) detail
+                        (lambda ()
+                          (with-cell-update c
+                            (field-set! c (remq layer (field c)))
+                            (cell-history-set! c (remq change (cell-history c)))))
+                        (lambda () (with-cell-update c)))]
+              [layer (make change)])
+      (with-cell-update c
+        (field-set! c (cons layer (field c)))
+        (cell-history-set! c (cons change (cell-history c))))))
 
   (define (cell-override! c v)
     (let ([owner (current-owner)])
@@ -228,18 +231,8 @@
            (let ([previous (find (lambda (layer) (eq? (change-owner (layer-change layer)) owner))
                                  (cell-overrides c))])
              (when previous (take-back! (layer-change previous))))
-           (letrec ([layer
-                     (make-layer
-                       (record-change! 'set! 'override (cell-symbol c) #f
-                         (lambda ()
-                           (with-cell-update c
-                             (cell-overrides-set! c (remq layer (cell-overrides c)))
-                             (drop-history! c (layer-change layer))))
-                         (reorder c))
-                       v)])
-             (with-cell-update c
-               (cell-overrides-set! c (cons layer (cell-overrides c)))
-               (add-history! c (layer-change layer)))))])))
+           (add-layer! c 'set! 'override #f cell-overrides cell-overrides-set!
+             (lambda (change) (make-layer change v))))])))
 
   (define (cell-advise! c advice)
     (check-main-thread 'advice-add!)
@@ -252,18 +245,8 @@
                              (eq? (change-owner (layer-change layer)) owner)))
                       (cell-advice c))
         (with-cells-locked
-          (letrec ([layer
-                    (make-layer
-                      (record-change! 'advice-add! 'advice (cell-symbol c) advice
-                        (lambda ()
-                          (with-cell-update c
-                            (cell-advice-set! c (remq layer (cell-advice c)))
-                            (drop-history! c (layer-change layer))))
-                        (reorder c))
-                      advice)])
-            (with-cell-update c
-              (cell-advice-set! c (cons layer (cell-advice c)))
-              (add-history! c (layer-change layer))))))))
+          (add-layer! c 'advice-add! 'advice advice cell-advice cell-advice-set!
+            (lambda (change) (make-layer change advice)))))))
 
   ;; Removing another module's advice hides it, and keeps hiding what that
   ;; module adds again, until the remover's change is taken back.
@@ -278,19 +261,9 @@
       (with-cells-locked
         (for-each (lambda (layer) (take-back! (layer-change layer))) own)
         (unless (null? others)
-          (letrec ([removal
-                    (make-removal
-                      (record-change! 'advice-remove! 'removal (cell-symbol c) advice
-                        (lambda ()
-                          (with-cell-update c
-                            (cell-removals-set! c (remq removal (cell-removals c)))
-                            (drop-history! c (removal-change removal))))
-                        (reorder c))
-                      advice
-                      (map (lambda (layer) (change-owner (layer-change layer))) others))])
-            (with-cell-update c
-              (cell-removals-set! c (cons removal (cell-removals c)))
-              (add-history! c (removal-change removal))))))))
+          (add-layer! c 'advice-remove! 'removal advice cell-removals cell-removals-set!
+            (lambda (change)
+              (make-removal advice (map (lambda (layer) (change-owner (layer-change layer))) others))))))))
 
   ;; The cells stay, so that a procedure a name gave raises rather than runs
   ;; stale code, and works again when the module defines the name again.
@@ -452,6 +425,11 @@
     (call/cc
       (lambda (k)
         (call-reporting-raises thunk (lambda (c) (k (void)))))))
+
+  ;; Bookkeeping, where quits wait, runs a module's code through this, so
+  ;; that a quit ends that code alone and the bookkeeping goes on.
+  (define (call-module-code thunk)
+    (call-reporting (lambda () (with-quits-allowed #t (thunk)))))
 
   (define (do-nothing) (void))
 
