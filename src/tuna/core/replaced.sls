@@ -1,9 +1,9 @@
 (library (tuna core replaced)
   (export exit sleep fork-thread)
-  (import (only (chezscheme) define define-syntax lambda let quote unless procedure?
+  (import (only (chezscheme) define define-syntax lambda let let* quote unless procedure?
                 syntax-violation assertion-violation)
           (prefix (only (chezscheme) fork-thread) chez:)
-          (only (tuna core changes) current-owner current-thread-state make-thread-state)
+          (only (tuna core changes) current-owner current-instance current-thread-state make-thread-state)
           (only (tuna core main-thread) exit))
 
   (define-syntax sleep
@@ -15,8 +15,8 @@
   (define (fork-thread thunk)
     (unless (procedure? thunk)
       (assertion-violation 'fork-thread "not a procedure" thunk))
-    (let ([owner (current-owner)])
+    (let* ([owner (current-owner)] [instance (current-instance owner)])
       (chez:fork-thread
         (lambda ()
-          (current-thread-state (make-thread-state owner))
+          (current-thread-state (make-thread-state owner instance))
           (thunk))))))

@@ -1,0 +1,35 @@
+; A quit requested while a module's failed first load is reported, before
+; anything unwinds, never leaves the module's body counted as running,
+; which would keep every task from pausing. The advice on report asks for
+; a second quit while the first is reported and lets it land after a
+; random number of calls, so that it falls anywhere in the report and
+; what follows it.
+> (import (only (tuna core modules) running-module-body))
+> (put-version! "looper-runaway.sls" ".config/tuna/lib/looper.sls")
+> (define asked? #f)
+> (define (burn n) (if (fx= n 0) 0 (fx+ 1 (burn (fx- n 1)))))
+> (define (ask-again report c)
+    (cond
+      [(not (quit-condition? c)) (report c)]
+      [(not asked?)
+       (set! asked? #t)
+       (request-quit!)
+       (guard (q [(quit-condition? q) #f]) (burn (random 1500)))]))
+> (advice-add! report ask-again)
+> (define (take-quit) (guard (c [(quit-condition? c) #f]) (burn 3000)))
+> (define body-left-running 0)
+> (define (try)
+    (set! asked? #f)
+    (guard (c [(quit-condition? c) #f])
+      (call/cc
+        (lambda (k)
+          (with-exception-handler
+            (lambda (c) (report c) (k #f))
+            (lambda () (load-module! '(looper)))))))
+    (take-quit)
+    (when (running-module-body)
+      (set! body-left-running (+ body-left-running 1))))
+> (do ([i 0 (+ i 1)]) ((= i 2000))
+    (guard (c [(quit-condition? c) #f]) (try)))
+> body-left-running
+0

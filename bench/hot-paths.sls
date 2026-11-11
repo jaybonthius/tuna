@@ -124,13 +124,30 @@
 (define (tasks)
   (printf "spawn-task-20000 ~,2f\n" (median (map (lambda (k) (spawn-tasks 20000)) (iota 5)))))
 
+(define (bytes-allocated-so-far)
+  (sstats-bytes (statistics)))
+
+;; Every event handed to the main thread pays this, and what it allocates
+;; decides how often a burst of events makes the collector run.
+(define (posted-item-bytes n)
+  (let ([start (bytes-allocated-so-far)])
+    (suspend
+      (lambda (resume)
+        (do ([i 0 (+ i 1)]) ((= i n)) (post! void))
+        (post! (lambda () (resume void)))))
+    (/ (- (bytes-allocated-so-far) start) (exact->inexact n))))
+
+(define (posts)
+  (printf "posted-item-bytes ~,2f\n" (median (map (lambda (k) (posted-item-bytes 100000)) (iota 5)))))
+
 (define (run)
   (calls)
   (options)
   (hooks)
   (tables)
   (changes)
-  (tasks))
+  (tasks)
+  (posts))
 
 (for-each (lambda (p) (add-hook! other10 p)) (entries 10))
 (add-hook! other1 (car (entries 1)))

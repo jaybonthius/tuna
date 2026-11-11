@@ -21,3 +21,18 @@ forker's unload action
       (thread-join t)
       seen))
 (init)
+; What a thread forked by a module posts belongs to the module's instance
+; at the fork: once that instance has unloaded, the post never runs, even
+; under the module's next instance.
+> (import (poster))
+> (define old-go poster:go)
+> (define old-posted poster:posted)
+> (begin
+    (unload-module! '(poster))
+    (load-module! '(poster))
+    (set-box! old-go #t)
+    (let loop () (unless (unbox old-posted) (loop))))
+> (begin
+    (set-box! poster:go #t)
+    (let loop () (unless (unbox poster:posted) (loop))))
+poster's thread posted

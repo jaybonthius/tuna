@@ -6,6 +6,8 @@
 
     owner-name
     owner-rank
+    owner-instance
+    current-instance
     find-owner
     loaded-owner
     current-owner
@@ -43,6 +45,7 @@
     thread-state-owner
     thread-state-owner-set!
     thread-state-quits-allowed
+    thread-state-quits-allowed-set!
     thread-state-bound
     thread-state-bound-set!
     thread-state-bindings
@@ -88,14 +91,17 @@
   (define repl-rank (+ init-rank 1))
 
   ;; An owner outlives its rank: a module that unloads keeps its record, so
-  ;; a module loaded again has the same owner with a fresh rank. Its
-  ;; changes are a list linked both ways through the changes themselves,
-  ;; so taking one back costs the same however many the owner has.
+  ;; a module loaded again has the same owner with a fresh rank. instance
+  ;; counts those loads, so that work posted before an unload never runs
+  ;; under the next instance; the rank cannot tell, since moving a module
+  ;; before its importers changes it too. Its changes are a list linked
+  ;; both ways through the changes themselves, so taking one back costs the
+  ;; same however many the owner has.
   (define-record-type owner
     (nongenerative)
     (sealed #t)
-    (fields name (mutable rank) (mutable newest-change))
-    (protocol (lambda (new) (lambda (name rank) (new name rank #f)))))
+    (fields name (mutable rank) (mutable instance) (mutable newest-change))
+    (protocol (lambda (new) (lambda (name rank) (new name rank 0 #f)))))
 
   (define owners
     (let ([owners (make-hashtable equal-hash equal?)])
@@ -121,15 +127,20 @@
   ;; fields of one record, so switching one is a field write: writing a
   ;; thread parameter takes Chez's thread-context mutex, which costs more
   ;; than the rest of a switch. bound counts the options bound, so that a
-  ;; read outside any binding looks at no vector.
+  ;; read outside any binding looks at no vector. A thread forked by Tuna
+  ;; acts for the instance its owner had at the fork, so that what it posts
+  ;; once that instance has unloaded never runs under the next; a thread
+  ;; forked by Chez cannot know it.
   (define-record-type thread-state
     (nongenerative)
     (sealed #t)
-    (fields thread (mutable owner) (mutable quits-allowed) (mutable bound) (mutable bindings))
+    (fields thread (mutable owner) forked-owner forked-instance (mutable quits-allowed)
+            (mutable bound) (mutable bindings))
     (protocol
       (lambda (new)
-        (lambda (owner)
-          (new (get-thread-id) owner #f 0 (make-vector 8 no-binding))))))
+        (case-lambda
+          [(owner) (new (get-thread-id) owner #f #f #f 0 (make-vector 8 no-binding))]
+          [(owner instance) (new (get-thread-id) owner owner instance #f 0 (make-vector 8 no-binding))]))))
 
   (define no-binding (string->uninterned-symbol "no-binding"))
 
@@ -150,6 +161,12 @@
 
   (define (current-owner)
     (thread-state-owner (this-thread-state)))
+
+  (define (current-instance owner)
+    (let ([s (this-thread-state)])
+      (if (eq? owner (thread-state-forked-owner s))
+          (thread-state-forked-instance s)
+          (owner-instance owner))))
 
   ;; For a module's body, which cannot be wrapped: the code that runs
   ;; bodies puts back the owner around them.
@@ -194,10 +211,16 @@
       [(_ allowed e1 e2 ...) (call-with-quits-allowed allowed (lambda () e1 e2 ...))]))
 
   ;; with-mutex is not atomic: a quit raised just after it takes the mutex,
-  ;; or just before it lets it go, would leave the mutex held.
+  ;; or just before it lets it go, would leave the mutex held. One wind
+  ;; does both, since posting to the main thread takes a mutex this way.
   (define-syntax with-quit-safe-mutex
     (syntax-rules ()
-      [(_ m e1 e2 ...) (with-quits-allowed #f (with-mutex m e1 e2 ...))]))
+      [(_ m e1 e2 ...)
+       (let* ([s (this-thread-state)] [allowed (thread-state-quits-allowed s)])
+         (dynamic-wind
+           (lambda () (thread-state-quits-allowed-set! s #f) (mutex-acquire m))
+           (lambda () e1 e2 ...)
+           (lambda () (mutex-release m) (thread-state-quits-allowed-set! s allowed))))]))
 
   (define next-rank 1)
 
@@ -210,7 +233,9 @@
     (unless (or (fixed-owner-name? name) (loaded-owner name))
       (let ([rank (take-rank! (if lib? lib-band outside-band))] [o (find-owner name)])
         (if o
-            (owner-rank-set! o rank)
+            (begin
+              (owner-rank-set! o rank)
+              (owner-instance-set! o (+ (owner-instance o) 1)))
             (with-quit-safe-mutex owners-mutex
               (hashtable-set! owners name (make-owner name rank)))))))
 

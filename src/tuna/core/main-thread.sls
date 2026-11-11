@@ -27,7 +27,7 @@
   (define-record-type task
     (nongenerative)
     (sealed #t)
-    (fields thunk owner
+    (fields thunk owner instance
             (mutable state)
             (mutable continuation)
             (mutable result)
@@ -37,13 +37,17 @@
     (protocol
       (lambda (new)
         (lambda (thunk owner finishers)
-          (new thunk owner 'waiting #f #f finishers #f #f)))))
+          (new thunk owner (current-instance owner) 'waiting #f #f finishers #f #f)))))
 
   (define queue-mutex (make-mutex))
   (define queue-ready (make-condition))
   (define queue-head '())
   (define queue-tail '())
   (define queue-closed? #f)
+
+  ;; Taking all the waiting items at once takes the mutex once per burst,
+  ;; not per item.
+  (define taken '())
 
   (define (enqueue! item)
     (with-quit-safe-mutex queue-mutex
@@ -62,33 +66,57 @@
   (define (close-queue!)
     (with-quit-safe-mutex queue-mutex
       (set! queue-closed? #t)
-      (set! queue-head '())))
+      (set! queue-head '())
+      (set! taken '())))
 
   (define (dequeue! wait?)
-    (with-quit-safe-mutex queue-mutex
-      (let loop ()
-        (cond
-          [(pair? queue-head)
-           (let ([item (car queue-head)])
-             (set! queue-head (cdr queue-head))
-             item)]
-          [wait? (condition-wait queue-ready queue-mutex) (loop)]
-          [else #f]))))
+    (when (null? taken)
+      (with-quit-safe-mutex queue-mutex
+        (let loop ()
+          (cond
+            [(pair? queue-head)
+             (set! taken queue-head)
+             (set! queue-head '())]
+            [wait? (condition-wait queue-ready queue-mutex) (loop)]))))
+    (and (pair? taken)
+         (let ([item (car taken)])
+           (set! taken (cdr taken))
+           item)))
 
   (define running-task #f)
+
+  ;; Code leaving for the loop passes a thunk, since what follows, such as
+  ;; finishing a task, must run outside the task's dynamic context.
   (define return-to-loop #f)
 
   (define (current-task)
     (and (on-main-thread?) running-task))
 
-  (define (run-item! item)
-    (let ([outer-return return-to-loop] [outer-task running-task])
-      (clear-quit-requests!)
-      (call/cc
-        (lambda (k)
-          (set! return-to-loop k)
-          (set! running-task #f)
-          (item)))
+  ;; Most items return normally, so the loop takes its continuation once,
+  ;; not per item, and a task sets its owner and quits-allowed without a
+  ;; wind: it leaves only by returning or through return-to-loop, which
+  ;; puts back the loop's. A raise no item handles reaches unhandled-raise,
+  ;; so no item installs a handler of its own; the loop runs under it
+  ;; alone, since the exit handler runs queued items inside whatever
+  ;; handlers its caller set.
+  (define (run-items! wait?)
+    (let* ([outer-return return-to-loop] [outer-task running-task]
+           [s (this-thread-state)] [loop-owner (thread-state-owner s)]
+           [loop-allowed (thread-state-quits-allowed s)])
+      (call-with-only-handler unhandled-raise
+        (lambda ()
+          (let ([after (call/cc (lambda (k) (set! return-to-loop k) void))])
+            (thread-state-owner-set! s loop-owner)
+            (thread-state-quits-allowed-set! s loop-allowed)
+            (set! running-task #f)
+            (after))
+          (let loop ()
+            (let ([item (dequeue! wait?)])
+              (when item
+                (clear-quit-requests!)
+                (set! warned '())
+                (if (task? item) (start! item) (item))
+                (loop))))))
       (set! return-to-loop outer-return)
       (set! running-task outer-task)
       (clear-quit-requests!)))
@@ -103,35 +131,56 @@
       (task-finishers-set! t '())
       (for-each (lambda (finish) (finish)) finishers)))
 
-  ;; A raise no handler takes is reported before the stack unwinds, so
-  ;; advice on report and Chez's debugger see where it was raised.
+  ;; A task that has paused runs on the stack it paused on, whose loop may
+  ;; have returned, so it ends through the running loop.
   (define (run-task-body t)
-    (let ([outcome
-           (call/cc
-             (lambda (end)
-               (parameterize ([reset-handler (lambda () (end '(done)))])
-                 (with-quits-allowed #t
-                   (call-as-owner (task-owner t)
-                     (lambda ()
-                       (call-reporting-raises
-                         (lambda ()
-                           (call-with-values (task-thunk t) (lambda results (cons 'done results))))
-                         (lambda (c)
-                           (when (debug-on-exception)
-                             (debug-condition c)
-                             (debug))
-                           (end (cons 'failed c))))))))))])
-      (finish! t (car outcome) (cdr outcome))
-      (return-to-loop (void))))
+    (let* ([s (this-thread-state)] [outer-owner (thread-state-owner s)]
+           [outer-allowed (thread-state-quits-allowed s)])
+      (enter-task! s t)
+      (let ([results (call-with-values (task-thunk t) list)])
+        (thread-state-quits-allowed-set! s outer-allowed)
+        (thread-state-owner-set! s outer-owner)
+        (set! running-task #f)
+        (if (task-continuation t)
+            (return-to-loop (lambda () (finish! t 'done results)))
+            (finish! t 'done results)))))
 
+  (define (enter-task! s t)
+    (thread-state-owner-set! s (task-owner t))
+    (thread-state-quits-allowed-set! s #t)
+    (set! running-task t))
+
+  ;; Chez runs its source optimizer twice, so one compile warning can be
+  ;; raised twice; an item reports each text once. A compile cannot pause,
+  ;; so the twice-raised warnings come within one item.
+  (define warned '())
+
+  ;; A raise is reported before the stack unwinds, so advice on report and
+  ;; Chez's debugger see where it was raised.
+  (define (task-raised t c)
+    (cond
+      [(warning-only? c)
+       (let ([text (condition-text c)])
+         (unless (member text warned)
+           (set! warned (cons text warned))
+           (report-safely c)))]
+      [else
+       (report-safely c)
+       (when (debug-on-exception)
+         (debug-condition c)
+         (debug))
+       (return-to-loop (lambda () (finish! t 'failed c)))]))
+
+  ;; Work posted by an instance of a module that has since unloaded must not
+  ;; run under the module's next instance.
   (define (start! t)
     (when (eq? (task-state t) 'waiting)
-      (cond
-        [(owner-rank (task-owner t))
-         (task-state-set! t 'running)
-         (set! running-task t)
-         (run-task-body t)]
-        [else (finish! t 'failed (make-quit-condition))])))
+      (let ([owner (task-owner t)])
+        (cond
+          [(and (owner-rank owner) (= (owner-instance owner) (task-instance t)))
+           (task-state-set! t 'running)
+           (run-task-body t)]
+          [else (finish! t 'failed (make-quit-condition))]))))
 
   ;; A task whose resume is dropped can never continue, so it is held
   ;; weakly.
@@ -141,12 +190,11 @@
     (when (and (eq? (task-state t) state) (eq? (task-continuation t) k))
       (hashtable-delete! paused-tasks t)
       (task-state-set! t 'running)
-      (set! running-task t)
+      (enter-task! (this-thread-state) t)
       (k thunk)))
 
   (define (post-task! thunk owner finished)
-    (let ([t (make-task thunk owner (if finished (list finished) '()))])
-      (enqueue! (lambda () (start! t)))))
+    (enqueue! (make-task thunk owner (if finished (list finished) '()))))
 
   (define (post! thunk)
     (unless (procedure? thunk)
@@ -158,7 +206,7 @@
       (assertion-violation 'spawn-task "not a procedure" thunk))
     (let ([t (make-task thunk (current-owner) '())])
       (task-change-set! t (record-change! 'spawn-task 'task t #f (lambda () (stop-task! t)) void))
-      (enqueue! (lambda () (start! t)))
+      (enqueue! t)
       t))
 
   (define (stop-task! t)
@@ -204,7 +252,7 @@
            (task-continuation-set! t k)
            (task-state-set! t 'paused)
            (hashtable-set! paused-tasks t #t)
-           (return-to-loop (void)))))))
+           (return-to-loop void))))))
 
   (define (check-task who v)
     (unless (task? v)
@@ -290,14 +338,17 @@
         (report-safely c)
         (enqueue! (lambda () (report-safely c)))))
 
-  ;; Every thread forked after the loop starts inherits this handler. Each
-  ;; task handles its own raises, so on the main thread only the loop's
-  ;; code gets here; on another thread, reset ends the thread, as
-  ;; fork-thread arranges.
+  ;; Every thread forked after the loop starts inherits this handler. On
+  ;; another thread, reset ends the thread, as fork-thread arranges.
   (define (unhandled-raise c)
-    (report-on-main-thread c)
-    (unless (warning-only? c)
-      (reset)))
+    (cond
+      [(not (on-main-thread?))
+       (report-on-main-thread c)
+       (unless (warning-only? c) (reset))]
+      [running-task => (lambda (t) (task-raised t c))]
+      [else
+       (report-safely c)
+       (unless (warning-only? c) (reset))]))
 
   ;; fork-thread makes exit end only its own thread, so on another thread
   ;; the exit is posted to the main thread first, on behalf of (tuna), so
@@ -310,17 +361,15 @@
   (define (run-main-loop)
     (timer-interrupt-handler main-timer-interrupt)
     (base-exception-handler unhandled-raise)
-    (reset-handler (lambda () (return-to-loop (void))))
+    (reset-handler
+      (lambda ()
+        (let ([t running-task])
+          (return-to-loop (if t (lambda () (finish! t 'done '())) void)))))
     (set-timer timer-ticks)
-    (let loop ()
-      (run-item! (dequeue! #t))
-      (loop)))
+    (run-items! #t))
 
   (define (run-queued!)
-    (let ([item (dequeue! #f)])
-      (when item
-        (run-item! item)
-        (run-queued!))))
+    (run-items! #f))
 
   ;; Only a spawned task is a change, but every paused task of a module
   ;; would otherwise run its code after the module is gone.

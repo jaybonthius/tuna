@@ -21,6 +21,7 @@
     call-with-locked-expansion
     call-with-quit-safe-library-lock
     on-unload
+    add-module-loaded-handler!
     add-module-unloaded-handler!
     take-back-changes!
     eval-in-module)
@@ -269,16 +270,19 @@
       (set-quits-allowed! #t)
       previous))
 
+  ;; A body that fails is marked as the stack unwinds, where quits wait: a
+  ;; handler runs with the raising body's quits allowed, so a quit could
+  ;; land before it marked anything.
   (define (run-module! name)
     (unless (module-loaded? name)
       (when (module-stale? name)
         (load-again! name))
-      (with-exception-handler
-        (lambda (c)
-          (unless (warning-only? c)
-            (with-quits-allowed #f (mark-failed! name)))
-          (raise-continuable c))
-        (lambda () (invoke-module! name)))))
+      (let ([invoked? #f])
+        (with-quits-allowed #f
+          (dynamic-wind
+            void
+            (lambda () (invoke-module! name) (set! invoked? #t))
+            (lambda () (unless invoked? (mark-failed! name))))))))
 
   ;; Quits wait outside the bodies, so none lands between a body's end and
   ;; Chez recording the library as invoked: Chez would run the body again.
@@ -357,6 +361,7 @@
       (unless (module-state-loaded? m)
         (module-state-loaded?-set! m #t)
         (set! load-order (cons name load-order))))
+    (for-each (lambda (handler) (handler name)) module-loaded-handlers)
     (call-module-code (lambda () (module-loaded name)))
     (set-current-owner! (car previous))
     (set-quits-allowed! (cdr previous)))
@@ -554,11 +559,15 @@
                             ordered
                             (loaded-importers name)))]))))
 
+  (define module-loaded-handlers '())
   (define module-unloaded-handlers '())
 
   ;; Defining an option, hook or table is not a change, so module-changes
   ;; does not list it; what such a definition needs when its module
   ;; unloads, and not when it reloads, is done by a handler.
+  (define (add-module-loaded-handler! handler)
+    (set! module-loaded-handlers (append module-loaded-handlers (list handler))))
+
   (define (add-module-unloaded-handler! handler)
     (set! module-unloaded-handlers (append module-unloaded-handlers (list handler))))
 
@@ -609,16 +618,18 @@
   ;; Every entry that can run module bodies goes through here, so a body
   ;; that raises leaves neither its owner nor a half-loaded module behind.
   ;; Failed bodies are dropped as the stack unwinds, not in a handler, so
-  ;; a raise reaches report with its stack intact. No body is running when
-  ;; a task pauses, so a pause drops nothing.
+  ;; a raise reaches report with its stack intact; quits wait from the end
+  ;; of thunk, since one landing before the drop would skip it. No body is
+  ;; running when a task pauses, so a pause drops nothing.
   (define (call-loading-modules thunk)
-    (let ([depth (length running-bodies)])
+    (let ([depth (length running-bodies)] [allowed (quits-allowed)])
       (call-as-owner (current-owner)
         (lambda ()
-          (dynamic-wind
-            void
-            thunk
-            (lambda () (drop-failed-bodies! depth '())))))))
+          (with-quits-allowed #f
+            (dynamic-wind
+              void
+              (lambda () (with-quits-allowed allowed (thunk)))
+              (lambda () (drop-failed-bodies! depth '()))))))))
 
   (define (load-unloaded-modules! names)
     (for-each (lambda (name) (when (module-stale? name) (load-module! name))) names))
@@ -679,28 +690,37 @@
   ;; reload-library puts the previous versions back after a compile error,
   ;; but not after a body raises, and not the version running after an
   ;; earlier failed reload, which differs from the object on disk; so the
-  ;; objects running now are kept.
+  ;; objects running now are kept. The failure is reported by the only
+  ;; handler, so a quit landing in the report ends the report alone, and
+  ;; quits wait from the escape until the previous versions are back.
   (define (reload-module! name)
     (check-main-thread 'eval-file)
     (unless (module-loaded? name)
       (assertion-violation 'eval-file "not a loaded module" name))
     (let* ([order (with-loaded-importers name)]
            [previous (map running-object order)]
-           [depth (length running-bodies)])
+           [depth (length running-bodies)]
+           [allowed (quits-allowed)])
       (call-as-owner (current-owner)
         (lambda ()
-          (guard (c [#t (report-safely c) (restore! order previous depth) #f])
-            (call-with-warnings-reported
-              (lambda ()
-                (take-back-for-reload! order)
-                (let ([recompiled (reload-module-library name)])
-                  (for-each (lambda (module) (unless (member module recompiled) (load-again! module)))
-                            order))
-                (for-each invoke-module! order)
-                (with-quits-allowed #f
-                  (for-each (lambda (module) (module-state-running-object-set! (hashtable-ref modules module #f) #f))
-                            order))))
-            ;; A body may have caught the raise of an import's body, which
-            ;; then never finished.
-            (drop-failed-bodies! depth '())
-            #t))))))
+          (with-quits-allowed #f
+            (or (call/1cc
+                  (lambda (k)
+                    (call-with-only-handler
+                      (lambda (c) (report-safely c) (k #f))
+                      (lambda ()
+                        (with-quits-allowed allowed
+                          (call-with-warnings-reported
+                            (lambda ()
+                              (take-back-for-reload! order)
+                              (let ([recompiled (reload-module-library name)])
+                                (for-each (lambda (module) (unless (member module recompiled) (load-again! module)))
+                                          order))
+                              (for-each invoke-module! order))))
+                        (for-each (lambda (module) (module-state-running-object-set! (hashtable-ref modules module #f) #f))
+                                  order)
+                        ;; A body may have caught the raise of an import's
+                        ;; body, which then never finished.
+                        (drop-failed-bodies! depth '())
+                        #t))))
+                (begin (restore! order previous depth) #f))))))))

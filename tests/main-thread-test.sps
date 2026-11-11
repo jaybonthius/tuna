@@ -52,6 +52,16 @@
               (equal? ns (iota posts))))
           (iota threads)))))
 
+  ;; Allocation is deterministic, so the bound is loose only to leave room
+  ;; for small changes; make bench holds the exact figure.
+  (test "posting an item and running it allocates a few hundred bytes"
+    (let ([n 100000] [start (sstats-bytes (statistics))])
+      (wait-until-called
+        (lambda (done)
+          (do ([i 0 (+ i 1)]) ((= i n)) (post! void))
+          (post! done)))
+      (check (< (/ (- (sstats-bytes (statistics)) start) n) 400))))
+
   (test "when threads race to resume a task, one resumes it and the rest raise"
     (do ([trial 0 (+ trial 1)]) ((= trial 50))
       (let* ([resume #f]
@@ -246,7 +256,38 @@
       (advice-remove! report note)
       (check (> ticks 100))
       (check-equal? 0 other-threads)
-      (check-equal? 1 reported))))
+      (check-equal? 1 reported)))
+
+  ;; The advice on report asks for a second quit while the first is
+  ;; reported, and lets it land after a random number of calls, so that
+  ;; it falls anywhere in the report and what follows it.
+  (test "a quit requested while a quit is reported never escapes a task or module code"
+    (let ([asked? #f] [unfinished 0] [escaped 0])
+      (define (burn n) (if (fx= n 0) 0 (fx+ 1 (burn (fx- n 1)))))
+      (define (ask-again report c)
+        (when (and (quit-condition? c) (not asked?))
+          (set! asked? #t)
+          (request-quit!)
+          (guard (q [(quit-condition? q) #f])
+            (burn (random 1200)))))
+      (define (runaway) (request-quit!) (let loop () (loop)))
+      (advice-add! report ask-again)
+      (do ([i 0 (+ i 1)]) ((= i 1000))
+        (set! asked? #f)
+        (let ([t (spawn-task runaway)])
+          (wait-until-called (lambda (done) (post! done)))
+          (unless (task-done? t) (set! unfinished (+ unfinished 1)))))
+      (do ([i 0 (+ i 1)]) ((= i 1000))
+        (set! asked? #f)
+        (let ([in-module-code? #t])
+          (guard (c [(quit-condition? c) (when in-module-code? (set! escaped (+ escaped 1)))])
+            (with-quits-allowed #f
+              (call-module-code runaway)
+              (set! in-module-code? #f))
+            (burn 3000))))
+      (advice-remove! report ask-again)
+      (check-equal? 0 unfinished)
+      (check-equal? 0 escaped))))
 
 (post! (lambda ()
          (tests)

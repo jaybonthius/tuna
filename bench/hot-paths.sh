@@ -21,7 +21,9 @@ output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" taskset -c "$
 # documented Chez allows: an option read calls the record's thread
 # parameter across a library, and a critical dynamic-wind, which
 # with-options and an owner switch need so that a quit cannot leave them
-# half done, costs about 19 ns while the timer is set.
+# half done, costs about 19 ns while the timer is set. Allocation does
+# not vary between runs, so the limit on posted-item-bytes, a fifth above
+# its figure, leaves room for small changes rather than for noise.
 echo "$output" | awk '
   BEGIN {
     limit["changeable-call"] = 1.2
@@ -38,13 +40,16 @@ echo "$output" | awk '
     limit["set-option!"] = 150
     limit["add-hook!-remove-hook!"] = 400
     limit["spawn-task-20000"] = 1000
+    limit["posted-item-bytes"] = 326
+    unit["posted-item-bytes"] = "B"
     failed = 0
   }
   $1 in limit {
     seen[$1] = 1
     verdict = ($2 <= limit[$1]) ? "pass" : "FAIL"
     if (verdict == "FAIL") failed = 1
-    printf "%-24s %10.2f ns  limit %7.1f ns  %s\n", $1, $2, limit[$1], verdict
+    u = ($1 in unit) ? unit[$1] : "ns"
+    printf "%-24s %10.2f %-2s  limit %7.1f %-2s  %s\n", $1, $2, u, limit[$1], u, verdict
     next
   }
   { print }

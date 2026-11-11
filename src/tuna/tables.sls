@@ -149,14 +149,23 @@
              (key-state-layers-set! ks (cons layer (key-state-layers ks)))
              (update! ks))))]))
 
+  ;; Each removal is a change of its own, so that a value another module's
+  ;; removal hides stays hidden while either removal stands; only the
+  ;; remover's own earlier removal makes another one redundant.
+  (define (removed-already? ks owner others)
+    (exists (lambda (r)
+              (and (eq? (change-owner (key-removal-change r)) owner)
+                   (for-all (lambda (l) (memq (layer-owner l) (key-removal-owners r))) others)))
+            (key-state-removals ks)))
+
   (define (table-remove! t key)
     (changing-table 'table-remove! t)
     (let ([owner (check-current-owner 'table-remove!)] [ks (existing-key-state t key)])
       (when ks
         (let ([own (find (owned-by? owner) (key-state-layers ks))]
-              [others (remp (owned-by? owner) (key-state-in-effect ks))])
+              [others (remp (owned-by? owner) (key-state-layers ks))])
           (when own (take-back! (layer-change own)))
-          (unless (null? others)
+          (unless (or (null? others) (removed-already? ks owner others))
             (with-interrupts-disabled
               (letrec* ([change (record-change! 'table-remove! 'removal (table-symbol t) key
                                   (lambda ()

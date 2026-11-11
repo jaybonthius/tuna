@@ -1,0 +1,32 @@
+; A hook entry or advice whose procedure is a changeable definition of an
+; unloaded module is skipped while that module is unloaded, whoever added
+; it, and runs again once the module loads.
+> (import (target) (helper))
+> (add-hook! target:greeted helper:shout)
+> (advice-add! target:text helper:wrap)
+> (begin (target:greeted "Harpo") (target:text "Harpo"))
+hello Harpo
+"[Harpo]"
+> (unload-module! '(helper))
+> (begin (target:greeted "Chico") (target:text "Chico"))
+"Chico"
+; hook-entries leaves the entry out too, so calling what it gives cannot
+; raise; module-changes and definition-changes still list both.
+> (length (hook-entries target:greeted))
+0
+> (map car (module-changes '(repl)))
+(advice hook-entry)
+> (map cadr (definition-changes target:text))
+(advice define)
+> (load-module! '(helper))
+> (begin (target:greeted "Zeppo") (target:text "Zeppo"))
+hello Zeppo
+"[Zeppo]"
+> (length (hook-entries target:greeted))
+1
+; A definition its loaded module no longer defines is not skipped: a call
+; raises, naming it.
+> (put-version! "helper-without-shout.sls" ".config/tuna/lib/helper.sls")
+> (eval-file "~/.config/tuna/lib/helper.sls")
+> (target:greeted "Gummo")
+! helper:shout: module (helper) no longer defines it

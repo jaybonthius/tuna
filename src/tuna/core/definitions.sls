@@ -9,7 +9,6 @@
     report
     report-safely
     call-with-warnings-reported
-    call-reporting-raises
     call-reporting
     call-module-code
     tick
@@ -24,6 +23,7 @@
     changeable-symbol-module
     changeable-identifier?
     changeable-procedure-module
+    changeable-procedure-unloaded?
     changeable-procedure-documentation
     set-changeable-documentation!)
   (import (chezscheme) (tuna core changes) (tuna core conditions)
@@ -55,13 +55,14 @@
             (mutable override-in-effect)
             (mutable advice-in-effect)
             (mutable value)
-            (mutable callee))
+            (mutable callee)
+            (mutable advised))
     (protocol
       (lambda (new)
         (lambda (module symbol)
           (letrec ([c (new module symbol
                         (make-wrapper-procedure (lambda arguments (apply (cell-callee c) arguments)) -1 #f)
-                        #f #f '() '() '() '() 'loaded #t #f '() #f #f)])
+                        #f #f '() '() '() '() 'loaded #t #f '() #f #f '())])
             (set-wrapper-procedure-data! (cell-forwarder c) c)
             c)))))
 
@@ -73,7 +74,7 @@
   (define-record-type removal
     (nongenerative)
     (sealed #t)
-    (fields procedure owners))
+    (fields change procedure owners))
 
   ;; A cell outlives its module's instance, so a procedure a name gave and
   ;; the changes made to it survive the module running its body again.
@@ -115,6 +116,10 @@
   (define (changeable-procedure-module p)
     (let ([c (forwarder-cell p)])
       (and c (cell-module c))))
+
+  (define (changeable-procedure-unloaded? p)
+    (let ([c (forwarder-cell p)])
+      (and c (eq? (cell-state c) 'unloaded))))
 
   (define (changeable-procedure-documentation p)
     (let ([c (forwarder-cell p)])
@@ -168,12 +173,21 @@
                  (owner-rank (find-owner (cell-module c))))
              override))
       (cell-advice-in-effect-set! c
-        (map layer-value (list-sort layer<? (remp (lambda (layer) (hidden? c layer)) (cell-advice c)))))
+        (map layer-value
+             (list-sort layer<?
+               (remp (lambda (layer)
+                       (or (hidden? c layer) (changeable-procedure-unloaded? (layer-value layer))))
+                     (cell-advice c)))))
       (rebuild! c)))
 
   (define-syntax with-cell-update
     (syntax-rules ()
       [(_ c e ...) (with-cells-locked e ... (choose-in-effect! c))]))
+
+  ;; Advice that is an unloaded module's changeable procedure would only
+  ;; raise, so it is left out while that module is unloaded.
+  (define (update-advised! c)
+    (for-each (lambda (advised) (with-cell-update advised)) (cell-advised c)))
 
   (define (check-loaded c)
     (unless (cell-loaded? c)
@@ -192,10 +206,12 @@
                      (hashtable-update! module-cells module (lambda (cs) (cons c cs)) '())
                      c))])
         (cell-redefined?-set! c #t)
-        (with-cell-update c
-          (cell-state-set! c 'loaded)
-          (cell-definition-set! c value)
-          (cell-doc-set! c doc))
+        (let ([unloaded? (eq? (cell-state c) 'unloaded)])
+          (with-cell-update c
+            (cell-state-set! c 'loaded)
+            (cell-definition-set! c value)
+            (cell-doc-set! c doc))
+          (when unloaded? (update-advised! c)))
         (when (null? (cell-history c))
           (let ([change (call-as-owner (find-owner module)
                           (lambda () (record-change! 'define 'define symbol #f void void)))])
@@ -245,8 +261,22 @@
                              (eq? (change-owner (layer-change layer)) owner)))
                       (cell-advice c))
         (with-cells-locked
+          (let ([advice-cell (forwarder-cell advice)])
+            (when (and advice-cell (not (memq c (cell-advised advice-cell))))
+              (cell-advised-set! advice-cell (cons c (cell-advised advice-cell)))))
           (add-layer! c 'advice-add! 'advice advice cell-advice cell-advice-set!
             (lambda (change) (make-layer change advice)))))))
+
+  ;; Each removal is a change of its own, so that advice another module's
+  ;; removal hides stays hidden while either removal stands; only the
+  ;; remover's own earlier removal makes another one redundant.
+  (define (removed-already? c owner advice others)
+    (exists (lambda (removal)
+              (and (eq? (removal-procedure removal) advice)
+                   (eq? (change-owner (removal-change removal)) owner)
+                   (for-all (lambda (layer) (memq (change-owner (layer-change layer)) (removal-owners removal)))
+                            others)))
+            (cell-removals c)))
 
   ;; Removing another module's advice hides it, and keeps hiding what that
   ;; module adds again, until the remover's change is taken back.
@@ -254,16 +284,15 @@
     (check-main-thread 'advice-remove!)
     (check-loaded c)
     (let* ([owner (check-current-owner 'advice-remove!)]
-           [visible (remp (lambda (layer) (hidden? c layer)) (cell-advice c))]
-           [matching (filter (lambda (layer) (eq? (layer-value layer) advice)) visible)]
+           [matching (filter (lambda (layer) (eq? (layer-value layer) advice)) (cell-advice c))]
            [own (filter (lambda (layer) (eq? (change-owner (layer-change layer)) owner)) matching)]
            [others (remp (lambda (layer) (memq layer own)) matching)])
       (with-cells-locked
         (for-each (lambda (layer) (take-back! (layer-change layer))) own)
-        (unless (null? others)
+        (unless (or (null? others) (removed-already? c owner advice others))
           (add-layer! c 'advice-remove! 'removal advice cell-removals cell-removals-set!
             (lambda (change)
-              (make-removal advice (map (lambda (layer) (change-owner (layer-change layer))) others))))))))
+              (make-removal change advice (map (lambda (layer) (change-owner (layer-change layer))) others))))))))
 
   ;; The cells stay, so that a procedure a name gave raises rather than runs
   ;; stale code, and works again when the module defines the name again.
@@ -272,7 +301,8 @@
       (for-each take-back! (cell-history c))
       (with-cell-update c
         (cell-history-set! c '())
-        (cell-state-set! c state))))
+        (cell-state-set! c state))
+      (update-advised! c)))
 
   (define (unload-definitions! module)
     (for-each (lambda (c) (unload-cell! c 'unloaded)) (hashtable-ref module-cells module '())))
@@ -416,15 +446,12 @@
 
   ;; A raise is reported in its own dynamic context, before anything
   ;; unwinds, so that advice on report can inspect it there.
-  (define (call-reporting-raises thunk give-up)
-    (with-exception-handler
-      (lambda (c) (report-safely c) (give-up c))
-      (lambda () (call-with-warnings-reported thunk))))
-
   (define (call-reporting thunk)
     (call/cc
       (lambda (k)
-        (call-reporting-raises thunk (lambda (c) (k (void)))))))
+        (call-with-only-handler
+          (lambda (c) (report-safely c) (k (void)))
+          (lambda () (call-with-warnings-reported thunk))))))
 
   ;; Bookkeeping, where quits wait, runs a module's code through this, so
   ;; that a quit ends that code alone and the bookkeeping goes on.

@@ -1,6 +1,18 @@
 (library (tuna core conditions)
-  (export condition-text write-condition warning-only?)
+  (export condition-text write-condition warning-only? call-with-only-handler)
   (import (chezscheme))
+
+  ;; with-exception-handler runs its handler with the handlers outside it,
+  ;; so a quit landing while the handler reports a raise would escape to
+  ;; them. The only handler of a fresh exception state takes the raises in
+  ;; itself too.
+  (define (call-with-only-handler handler thunk)
+    (let ([state (create-exception-state handler)])
+      (define (swap!)
+        (let ([outer (current-exception-state)])
+          (current-exception-state state)
+          (set! state outer)))
+      (dynamic-wind #t swap! thunk swap!)))
 
   (define (warning-only? c)
     (and (warning? c) (not (serious-condition? c))))

@@ -117,3 +117,16 @@ waiter's posted task quit
 ; A finished task is no longer a change of its module.
 > (module-changes '(repl))
 ()
+; Posted work belongs to the instance that posted it: a thunk posted
+; before its module is unloaded and loaded again never runs, while one
+; posted before a reload runs.
+> (load-module! '(waiter))
+> (begin
+    (as-module '(waiter) (post! (lambda () (display "stale instance"))))
+    (unload-module! '(waiter))
+    (load-module! '(waiter)))
+> (import (tuna eval))
+> (begin
+    (as-module '(waiter) (post! (lambda () (display "reloaded instance") (newline))))
+    (eval-file "~/.config/tuna/lib/waiter.sls"))
+reloaded instance
