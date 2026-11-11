@@ -11,7 +11,7 @@
     hook-documentation)
   (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna core modules)
           (only (tuna core conditions) warning-only? call-with-only-handler) (only (tuna core main-thread) report-on-main-thread)
-          (tuna scopes))
+          (tuna scopes) (tuna registry))
 
   (define (entry-depth e) (car (layer-data e)))
 
@@ -75,37 +75,34 @@
   ;; reports ends the entry too, rather than reaching the hook's caller;
   ;; and quits wait from the escape until the next entry, which a quit
   ;; requested during the report then ends. An entry of the caller's owner
-  ;; runs as a plain call; another's runs inside a critical wind that
-  ;; switches the owner, so that a raise, an escape, a quit or a task's
-  ;; pause and resume puts the caller's owner back.
-  (define (run-entries s caller entries invoke)
-    (define (restore-caller) (thread-state-owner-set! s caller))
-    (let run ([entries entries])
-      (unless (null? entries)
-        (run (call/1cc
-               (lambda (k)
-                 (let ([at entries])
-                   (call-with-only-handler
-                     (lambda (c)
-                       (report-on-main-thread c)
-                       (unless (warning-only? c)
-                         (thread-state-quits-allowed-set! s #f)
-                         (k (cdr at))))
-                     (lambda ()
-                       (thread-state-quits-allowed-set! s #t)
-                       (let loop ([es entries])
-                         (if (null? es)
-                             '()
-                             (let* ([e (car es)] [owner (layer-owner e)])
-                               (set! at es)
-                               (if (eq? owner caller)
-                                   (invoke (layer-value e))
-                                   (dynamic-wind #t
-                                     (lambda () (thread-state-owner-set! s owner))
-                                     (lambda () (invoke (layer-value e)))
-                                     restore-caller))
-                               (loop (cdr es)))))))))))))
-    (thread-state-quits-allowed-set! s #t))
+  ;; is called without a switch, which costs a wind.
+  (define (run-entries entries invoke)
+    (with-owner-switch (call-as caller)
+      (let run ([entries entries] [after-raise? #f])
+        (let ([rest (call/1cc
+                      (lambda (k)
+                        (let ([at entries])
+                          (call-with-only-handler
+                            (lambda (c)
+                              (report-on-main-thread c)
+                              (unless (warning-only? c)
+                                (set-quits-allowed! #f)
+                                (k (cdr at))))
+                            (lambda ()
+                              (when after-raise? (set-quits-allowed! #t))
+                              (let loop ([es entries])
+                                (unless (null? es)
+                                  (let* ([e (car es)] [owner (layer-owner e)])
+                                    (set! at es)
+                                    (if (eq? owner caller)
+                                        (invoke (layer-value e))
+                                        (call-as owner (lambda () (invoke (layer-value e)))))
+                                    (loop (cdr es)))))
+                              #f)))))])
+          (when rest
+            (if (null? rest)
+                (set-quits-allowed! #t)
+                (run rest #t)))))))
 
   ;; An entry is a module's code, which a quit must end even where the
   ;; hook's caller lets none land, as while a change is taken back; the
@@ -113,10 +110,9 @@
   (define (call-hook st invoke)
     (let ([entries (current-entries st)])
       (unless (null? entries)
-        (let* ([s (this-thread-state)] [caller (thread-state-owner s)])
-          (if (thread-state-quits-allowed s)
-              (run-entries s caller entries invoke)
-              (with-quits-allowed #t (run-entries s caller entries invoke)))))))
+        (if (quits-allowed)
+            (run-entries entries invoke)
+            (with-quits-allowed #t (run-entries entries invoke))))))
 
   (define (hook-procedure st)
     (case-lambda
@@ -152,25 +148,24 @@
       (hashtable-set! hooks st #t)
       h))
 
-  ;; Keyed by the defined name, not the owner: the configuration and the
-  ;; REPL define the same names, so either evaluating the other's form
-  ;; keeps the entries.
-  (define hook-states (make-eq-hashtable))
+  (define (forget-hook! st)
+    (hook-state-defined?-set! st #f)
+    (let ([es (hook-state-global st)])
+      (forget-layers! es)
+      (hashtable-delete! skipping es))
+    (hook-state-global-set! st (make-entries (hook-state-symbol st)))
+    (forget-local-layers! (hook-state-key st)))
+
+  (define hook-states (make-registry hook-state-module forget-hook!))
 
   (define (define-hook-procedure name doc)
     (check-main-thread 'define-hook)
     (unless (or (not doc) (string? doc))
       (assertion-violation 'define-hook "not a documentation string" doc))
-    (let* ([module (owner-name (current-owner))] [symbol (definition-symbol module name)])
-      (cond
-        [(hashtable-ref hook-states symbol #f)
-         => (lambda (st)
-              (hook-state-doc-set! st doc)
-              (hook-state-procedure st))]
-        [else
-         (let ([h (make-hook symbol module doc)])
-           (hashtable-set! hook-states symbol (wrapper-procedure-data h))
-           h)])))
+    (hook-state-procedure
+      (registry-define! hook-states name
+        (lambda (symbol module) (wrapper-procedure-data (make-hook symbol module doc)))
+        (lambda (st) (hook-state-doc-set! st doc) st))))
 
   (define-syntax define-hook
     (lambda (x)
@@ -225,23 +220,8 @@
   (define (hook-documentation h)
     (hook-state-doc (hook-state-of 'documentation h)))
 
-  (define (forget-hook! st)
-    (hook-state-defined?-set! st #f)
-    (let ([es (hook-state-global st)])
-      (forget-layers! es)
-      (hashtable-delete! skipping es))
-    (hook-state-global-set! st (make-entries (hook-state-symbol st)))
-    (forget-local-layers! (hook-state-key st)))
-
   ;; A local entry of an unloaded module's procedure would only raise.
   (define (module-unloaded! name)
-    (let-values ([(symbols states) (hashtable-entries hook-states)])
-      (vector-for-each
-        (lambda (symbol st)
-          (when (equal? (hook-state-module st) name)
-            (hashtable-delete! hook-states symbol)
-            (forget-hook! st)))
-        symbols states))
     (let ([states (hashtable-keys hooks)])
       (vector-for-each (lambda (st) (refresh-layers! (hook-state-global st))) states)
       (for-each

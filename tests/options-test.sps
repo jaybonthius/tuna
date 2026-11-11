@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna test) (tuna core changes) (tuna core modules)
+(import (chezscheme) (tuna-test) (tuna core changes) (tuna core modules)
         (except (tuna core main-thread) exit) (tuna options) (tuna scopes)
         (only (tuna hooks) add-hook! remove-hook!))
 

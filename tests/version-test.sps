@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna test) (tuna version))
+(import (chezscheme) (tuna-test) (tuna version))
 
 (test "the version is a dotted triple of numbers"
   (let ([parts (let split ([chars (string->list tuna-version)] [part '()])

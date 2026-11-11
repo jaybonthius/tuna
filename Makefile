@@ -2,6 +2,7 @@ SCHEME ?= /usr/lib/csv10.4.1/ta6le/scheme
 CHEZ_DIR := $(patsubst %/,%,$(dir $(SCHEME)))
 OBJ := build/obj
 LIBDIRS := src::$(OBJ)/src:lib/chez-lang/src::$(OBJ)/lib/chez-lang/src
+TEST_LIBDIRS := $(LIBDIRS):tests/lib::$(OBJ)/tests/lib
 TEST_TIMEOUT ?= 60
 TESTS := $(sort $(wildcard tests/*-test.sps))
 SCRIPT_TESTS := $(sort $(wildcard tests/*-test.sh))
@@ -20,7 +21,7 @@ build:
 test: $(RUNS)
 
 $(TESTS:%=run/%): run/%: build
-	@timeout $(TEST_TIMEOUT) $(SCHEME) --libdirs $(LIBDIRS) --program $(OBJ)/$(*:.sps=.so)
+	@timeout $(TEST_TIMEOUT) $(SCHEME) --libdirs $(TEST_LIBDIRS) --program $(OBJ)/$(*:.sps=.so)
 
 $(SCRIPT_TESTS:%=run/%): run/%: exe
 	@timeout $(TEST_TIMEOUT) sh $* build/bin/tuna

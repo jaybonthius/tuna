@@ -8,7 +8,7 @@
     table-owner
     table?
     table-documentation)
-  (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna core modules))
+  (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna registry))
 
   ;; Only the main thread changes a table. It reads without the mutex;
   ;; other threads take it, since a hashtable read while another thread
@@ -64,23 +64,22 @@
       (raise-unloaded (table-symbol t) (table-module t)))
     t)
 
-  ;; Keyed by the defined name, not the owner: the configuration and the
-  ;; REPL define the same names, so either evaluating the other's form
-  ;; keeps the entries.
-  (define tables (make-eq-hashtable))
+  (define (forget-table! t)
+    (table-defined?-set! t #f)
+    (for-each (lambda (keys) (vector-for-each forget-layers! (hashtable-values keys))) (key-tables t))
+    (with-quit-safe-mutex (table-mutex t)
+      (for-each hashtable-clear! (key-tables t)))
+    (table-order-set! t '()))
+
+  (define tables (make-registry table-module forget-table!))
 
   (define (make-table name doc)
     (check-main-thread 'define-table)
     (unless (or (not doc) (string? doc))
       (assertion-violation 'define-table "not a documentation string" doc))
-    (let* ([module (owner-name (current-owner))] [symbol (definition-symbol module name)])
-      (cond
-        [(hashtable-ref tables symbol #f)
-         => (lambda (t) (table-doc-set! t doc) t)]
-        [else
-         (let ([t (new-table symbol module doc #f #f #f #f '() (make-mutex) #t)])
-           (hashtable-set! tables symbol t)
-           t)])))
+    (registry-define! tables name
+      (lambda (symbol module) (new-table symbol module doc #f #f #f #f '() (make-mutex) #t))
+      (lambda (t) (table-doc-set! t doc) t)))
 
   (define-syntax define-table
     (lambda (x)
@@ -140,24 +139,4 @@
         (table-order t))))
 
   (define (table-documentation t)
-    (table-doc (table-of 'documentation t)))
-
-  (define (module-unloaded! name)
-    (let-values ([(symbols ts) (hashtable-entries tables)])
-      (vector-for-each
-        (lambda (symbol t)
-          (when (equal? (table-module t) name)
-            (hashtable-delete! tables symbol)
-            (table-defined?-set! t #f)
-            (for-each
-              (lambda (keys)
-                (vector-for-each
-                  forget-layers!
-                  (hashtable-values keys)))
-              (key-tables t))
-            (with-quit-safe-mutex (table-mutex t)
-              (for-each hashtable-clear! (key-tables t)))
-            (table-order-set! t '())))
-        symbols ts)))
-
-  (add-module-unloaded-handler! module-unloaded!))
+    (table-doc (table-of 'documentation t))))

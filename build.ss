@@ -10,10 +10,12 @@
        source-roots))
 (compile-imported-libraries #t)
 (optimize-level 2)
-;; Keeps the frame of a failing call, so a backtrace or a test failure
-;; points at the faulting expression.
+;; Keeps the frame of a failing call, so a backtrace points at the call.
 (debug-level 2)
-(generate-inspector-information #t)
+;; Without inspector information a procedure that Tuna's libraries make,
+;; such as the one a changeable definition's name gives, prints with no
+;; position in Tuna's source; a module's procedures keep their own.
+(generate-inspector-information #f)
 (compile-file-message #f)
 
 (define compiled 0)
@@ -96,12 +98,19 @@
 (build-each maybe-compile-library
   (apply append (map (lambda (root) (find-files root "sls")) source-roots)))
 
+(build-each maybe-compile-program '("bin/tuna.sps"))
+
 ;; Test programs are compiled here too, so they get the same debug
 ;; information and their warnings fail the build. Not recursive: a
 ;; transcript's folder holds the files of a home, which the program under
-;; test compiles, not the build.
-(build-each maybe-compile-program
-  (cons "bin/tuna.sps"
+;; test compiles, not the build. The tests' own libraries are on the path
+;; only here, so that the program cannot import them.
+;; With inspector information, a test failure points at the faulting
+;; expression.
+(parameterize ([library-directories
+                (append (library-directories) (list (cons "tests/lib" (string-append object-root "/tests/lib"))))]
+               [generate-inspector-information #t])
+  (build-each maybe-compile-program
     (map (lambda (f) (string-append "tests/" f))
          (filter (lambda (f) (equal? (path-extension f) "sps"))
                  (sort string<? (directory-list "tests"))))))

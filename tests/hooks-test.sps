@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna test) (tuna core changes) (tuna core definitions) (tuna core modules)
+(import (chezscheme) (tuna-test) (tuna core changes) (tuna core definitions) (tuna core modules)
         (except (tuna core main-thread) exit) (tuna hooks) (tuna scopes))
 
 (define (raised-message thunk)

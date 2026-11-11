@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna test) (tuna core changes) (tuna core definitions)
+(import (chezscheme) (tuna-test) (tuna core changes) (tuna core definitions)
         (only (tuna core modules) take-back-changes!) (except (tuna core main-thread) exit)
         (tuna hooks) (tuna options) (prefix (only (tuna core replaced) fork-thread) tuna:))
 
@@ -154,6 +154,23 @@
           (set! go #t)
           (thread-join child)))
       (check-equal? '(b) seen)))
+
+  (test "a thread slot's binding is the innermost, holds only on its own thread, and goes on an escape"
+    (let* ([a (make-thread-slot)]
+           [b (car (reverse (map (lambda (i) (make-thread-slot)) (iota 20))))])
+      (define (now) (list (thread-slot-ref a 'none) (thread-slot-ref b 'none)))
+      (check-equal? '(none none) (now))
+      (call-with-thread-slot a 1
+        (lambda ()
+          (call-with-thread-slot a 2
+            (lambda ()
+              (check-equal? '(2 none) (now))
+              (check-equal? '(none none) (in-thread now))))
+          (check-equal? '(1 none) (now))
+          (check-equal? 'out (call/cc (lambda (k) (call-with-thread-slot b 3 (lambda () (k 'out))))))
+          (check-equal? '(1 none) (now))
+          (call-with-thread-slot b #f (lambda () (check-equal? '(1 #f) (now))))))
+      (check-equal? '(none none) (now))))
 
   (test "an escape and a guard put back the owner and the binding"
     (check-equal? 'out

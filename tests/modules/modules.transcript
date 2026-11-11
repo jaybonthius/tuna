@@ -20,6 +20,9 @@
 ("Hi, Chico" "Hi, Chico")
 > (procedure-arity-mask held)
 -1
+; It prints without the name.
+> held
+#<procedure>
 ; Outside a module, define-public is Chez's define.
 > (define-public (outside) 'plain)
 > (outside)

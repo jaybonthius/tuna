@@ -7,7 +7,7 @@ case $tuna in
   /*) ;;
   *) tuna=$PWD/$tuna ;;
 esac
-cpu=${BENCH_CPU:-6}
+cpu=${BENCH_CPU:-$(($(nproc) - 1))}
 runs=9
 limit_ms=170
 dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-bench-startup.XXXXXX")

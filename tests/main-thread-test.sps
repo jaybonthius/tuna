@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna test) (chez-lang loader) (chez-lang language)
+(import (chezscheme) (tuna-test) (chez-lang loader) (chez-lang language)
         (tuna core changes) (tuna core definitions) (tuna core modules)
         (except (tuna core main-thread) exit))
 
@@ -16,7 +16,7 @@
 
 (compile-file-message #f)
 (install-module-lookup! (library-directories) (string-append root "/lib") (string-append root "/library")
-  (string-append root "/cache") (lambda (name) #f) (lambda (name) #f) (lambda (name) #f) (lambda () '()))
+  (string-append root "/cache") (lambda (name install?) #f) (lambda (name) #f) (lambda () '()))
 (install-loader!)
 
 (define main-thread-id (get-thread-id))

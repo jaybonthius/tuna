@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna test) (chez-lang loader) (tuna core modules))
+(import (chezscheme) (tuna-test) (chez-lang loader) (tuna core modules))
 
 (define root
   (let ([dir (format "/tmp/tuna-live-change-test-~a" (get-process-id))])
@@ -25,10 +25,18 @@
 
 (compile-file-message #f)
 (install-module-lookup! (library-directories) (string-append root "/lib") (string-append root "/library")
-  (string-append root "/cache") (lambda (name) #f) (lambda (name) #f) (lambda (name) #f) (lambda () '()))
+  (string-append root "/cache") (lambda (name install?) #f) (lambda (name) #f) (lambda () '()))
 (install-loader!)
 
 (load-module! '(racer))
+
+;; The lookup tells whether a library is loaded, and which modules a module
+;; whose body failed imports, only from these raises, whose condition types
+;; Chez does not document. This program imports the test harness only to
+;; run it.
+(test "Chez raises the condition types the module lookup relies on"
+  (check-raises assertion-violation? (library-version '(tuna no-such-library)))
+  (check-raises violation? (library-requirements '(tuna-test) (library-requirements-options import))))
 
 ;; Compiled once, against the first instance: a caller compiled earlier
 ;; must follow every later instance.

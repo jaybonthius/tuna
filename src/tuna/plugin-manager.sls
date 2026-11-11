@@ -2,7 +2,6 @@
   (export
     start-plugins!
     plugin-root
-    checked-plugin-root
     install-missing-plugin!
     plugin-roots
     read-configuration-lines!
@@ -17,7 +16,7 @@
     installed-plugins
     plugin-commit
     module-plugin-source)
-  (import (chezscheme) (tuna process)
+  (import (chezscheme) (tuna process) (tuna files)
           (only (tuna core changes) check-main-thread on-main-thread? find-owner)
           (only (tuna core definitions) report-safely)
           (only (tuna core modules) import-spec-library loaded-modules
@@ -97,22 +96,14 @@
   (define (repl-line id)
     (find (lambda (line) (eq? (line-id line) id)) repl-lines))
 
-  (define (read-utf8-file path)
-    (call-with-port
-      (open-file-input-port path (file-options) (buffer-mode block)
-        (make-transcoder (utf-8-codec) (eol-style lf) (error-handling-mode replace)))
-      (lambda (p)
-        (let ([s (get-string-all p)])
-          (if (eof-object? s) "" s)))))
-
   (define (configuration-text)
-    (if (file-exists? configuration-file) (read-utf8-file configuration-file) ""))
+    (if (file-exists? configuration-file) (read-text-file configuration-file) ""))
 
   ;; A read error ends the configuration where it stands, as when it runs.
   (define (configuration-forms)
     (let ([p (open-string-input-port (configuration-text))])
       (let loop ([forms '()])
-        (let ([form (guard (c [#t (eof-object)]) (read p))])
+        (let ([form (guard (c [(lexical-violation? c) (eof-object)]) (read p))])
           (if (eof-object? form)
               (reverse forms)
               (loop (cons form forms)))))))
@@ -158,7 +149,7 @@
     (let ([file (install-source-file id)] [folder (plugin-folder id)])
       (cond
         [(file-exists? file)
-         (let* ([data (guard (c [#t '()]) (call-with-input-file file read))]
+         (let* ([data (guard (c [(i/o-error? c) '()]) (call-with-input-file file read))]
                 [clauses (if (list? data) (filter clause? data) '())]
                 [clause (lambda (key) (let ([c (assq key clauses)]) (and c (cadr c))))]
                 [found (make-install-source (clause 'git) (clause 'dir) (clause 'branch) (clause 'local))])
@@ -273,7 +264,7 @@
     (and (pair? form) (eq? (car form) 'plugin) (plugin-line? (cons 'use-plugin (cdr form)))))
 
   (define (read-index-lines file)
-    (guard (c [#t '()])
+    (guard (c [(i/o-error? c) '()])
       (call-with-input-file file
         (lambda (p)
           (let ([language (get-line p)])
@@ -326,18 +317,15 @@
 
   (define found-plugins (make-eq-hashtable))
 
-  (define (plugin-root name)
+  (define (plugin-root name install?)
     (let ([id (car name)])
       (and (plugin-id? id)
-           (let ([found (installed-source id)])
-             (and found (install-root id found))))))
-
-  (define (checked-plugin-root name)
-    (let ([id (car name)])
-      (and (plugin-id? id)
-           (let ([root (checked-root id)])
-             (when root (hashtable-set! found-plugins id #t))
-             root))))
+           (if install?
+               (let ([root (checked-root id)])
+                 (when root (hashtable-set! found-plugins id #t))
+                 root)
+               (let ([found (installed-source id)])
+                 (and found (install-root id found)))))))
 
   ;; A plugin whose modules are loaded keeps its files until it is updated
   ;; or Tuna starts again, so that a lookup never changes code that runs.
@@ -384,11 +372,6 @@
              (let ([root (install-line! 'import line)])
                (hashtable-set! found-plugins id #t)
                root)))))
-
-  (define (make-folders! path)
-    (unless (file-directory? path)
-      (make-folders! (path-parent path))
-      (mkdir path)))
 
   (define (delete-tree path)
     (cond

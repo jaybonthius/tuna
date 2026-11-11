@@ -13,12 +13,14 @@
           (only (tuna core changes) with-quit-safe-mutex find-owner)
           (only (tuna core definitions) report-safely)
           (only (tuna core main-thread) post-task! quit-condition?)
-          (only (tuna plugin-manager) module-plugin-source) (tuna plain-data))
+          (tuna plain-data) (tuna files))
 
   (define saved-folder #f)
+  (define module-plugin-source #f)
 
-  (define (start-storage! folder)
-    (set! saved-folder folder))
+  (define (start-storage! folder module-source)
+    (set! saved-folder folder)
+    (set! module-plugin-source module-source))
 
   ;; Each part becomes one file or folder name, and different parts give
   ;; different names: no part can hold a "/" or be "." or "..".
@@ -102,39 +104,39 @@
           (write v p)
           (newline p)))))
 
-  ;; Only a file's last state matters, so a file has at most one job
-  ;; waiting.
-  (define-record-type job
+  ;; Only a file's last state matters, so a file has at most one write
+  ;; request waiting.
+  (define-record-type write-request
     (nongenerative)
     (sealed #t)
     (fields file bytes))
 
   (define writer-mutex (make-mutex))
-  (define jobs-waiting (make-condition))
+  (define requests-waiting (make-condition))
   (define writes-finished (make-condition))
-  (define jobs '())
+  (define requests '())
   (define writing? #f)
   (define writer-started? #f)
   (define failures '())
 
-  ;; A file queued again goes to the back, so jobs run in the order they
-  ;; were last queued.
-  (define (queue-job! file bytes)
+  ;; A file queued again goes to the back, so requests run in the order
+  ;; they were last queued.
+  (define (queue-request! file bytes)
     (with-quit-safe-mutex writer-mutex
-      (set! jobs (append (remp (lambda (j) (string=? (job-file j) file)) jobs)
-                         (list (make-job file bytes))))
+      (set! requests (append (remp (lambda (r) (string=? (write-request-file r) file)) requests)
+                             (list (make-write-request file bytes))))
       (unless writer-started?
         (set! writer-started? #t)
-        (fork-thread write-jobs))
-      (condition-signal jobs-waiting)))
+        (fork-thread write-requests))
+      (condition-signal requests-waiting)))
 
   ;; Serialized on the caller's thread, so the writer holds bytes that no
   ;; other code can change.
   (define (write-saved-file! file v)
-    (queue-job! file (string->utf8 (saved-text v))))
+    (queue-request! file (string->utf8 (saved-text v))))
 
   (define (delete-saved-file! file)
-    (queue-job! file #f))
+    (queue-request! file #f))
 
   ;; The copy is queued before the deletion, so a crash between them cannot
   ;; lose the value, and a write of the file already in flight lands first.
@@ -142,28 +144,28 @@
     (write-saved-file! (rejected-file file) v)
     (delete-saved-file! file))
 
-  (define (next-job!)
+  (define (next-request!)
     (with-mutex writer-mutex
       (let wait ()
         (cond
-          [(pair? jobs)
-           (let ([j (car jobs)])
-             (set! jobs (cdr jobs))
+          [(pair? requests)
+           (let ([r (car requests)])
+             (set! requests (cdr requests))
              (set! writing? #t)
-             j)]
+             r)]
           [else
            (set! writing? #f)
            (condition-broadcast writes-finished)
-           (condition-wait jobs-waiting writer-mutex)
+           (condition-wait requests-waiting writer-mutex)
            (wait)]))))
 
-  (define (write-jobs)
+  (define (write-requests)
     (let loop ()
-      (let ([j (next-job!)])
+      (let ([r (next-request!)])
         (guard (c [#t (failed! c)])
-          (if (job-bytes j)
-              (replace-file! (job-file j) (job-bytes j))
-              (let ([file (job-file j)])
+          (if (write-request-bytes r)
+              (replace-file! (write-request-file r) (write-request-bytes r))
+              (let ([file (write-request-file r)])
                 (guard (c [(not (file-exists? file #f)) (void)])
                   (delete-file file #t)))))
         (loop))))
@@ -186,17 +188,10 @@
   (define (wait-for-saved-files!)
     (with-quit-safe-mutex writer-mutex
       (let wait ()
-        (when (or writing? (pair? jobs))
+        (when (or writing? (pair? requests))
           (condition-wait writes-finished writer-mutex)
           (wait))))
     (report-failures!))
-
-  ;; Another Tuna may make the same folder at the same moment.
-  (define (make-folders! path)
-    (unless (file-directory? path)
-      (make-folders! (path-parent path))
-      (guard (c [(file-directory? path) (void)])
-        (mkdir path))))
 
   ;; Without fsync a rename can reach the disk before the data it names, so
   ;; a crash could leave an empty or partial file in place of the old one.

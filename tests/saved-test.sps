@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna test) (tuna core changes) (tuna core definitions)
+(import (chezscheme) (tuna-test) (tuna core changes) (tuna core definitions)
         (except (tuna core main-thread) exit) (tuna plugin-manager) (tuna storage) (tuna saved))
 
 (define root
@@ -19,7 +19,7 @@
   (call-with-input-file file read))
 
 (start-plugins! root (path "config" "init.ss") (path "config" "lib") (path "library") (path "plugins"))
-(start-storage! (path "saved"))
+(start-storage! (path "saved") module-plugin-source)
 
 (define (yield)
   (suspend (lambda (resume) (post! (lambda () (resume void))))))
@@ -93,6 +93,21 @@
     (check-equal? (path "saved" "tuna" "fetched" "other" "hits.ss") (saved-file '(fetched other) 'hits))
     (check-equal? (path "saved" "user" "init" "a%2Fb%25c.ss") (saved-file '(init) (string->symbol "a/b%c")))
     (check-equal? (path "saved" "user" "repl" "%2E..ss") (saved-file '(repl) (string->symbol ".."))))
+
+  ;; The plugin manager is a tool the configuration imports; what every
+  ;; module imports must not depend on it. library-requirements needs a
+  ;; library's information loaded, and lists only direct requirements.
+  (test "the standard library needs no plugin manager"
+    (check (not (member '(tuna plugin-manager)
+                  (let loop ([todo '((tuna))] [seen '()])
+                    (cond
+                      [(null? todo) seen]
+                      [(member (car todo) seen) (loop (cdr todo) seen)]
+                      [else
+                       (environment (car todo))
+                       (invoke-library (car todo))
+                       (loop (append (library-requirements (car todo)) (cdr todo))
+                             (cons (car todo) seen))]))))))
 
   (test "sets from many threads: each file holds its datum's last value"
     (run-threads

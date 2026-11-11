@@ -6,7 +6,7 @@ case $tuna in
   /*) ;;
   *) tuna=$PWD/$tuna ;;
 esac
-cpu=${BENCH_CPU:-6}
+cpu=${BENCH_CPU:-$(($(nproc) - 1))}
 dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-bench-hot-paths.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 lib=$dir/home/.config/tuna/lib

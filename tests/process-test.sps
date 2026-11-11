@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna test) (tuna process))
+(import (chezscheme) (tuna-test) (tuna process))
 
 (define home
   (let ([dir (format "/tmp/tuna-process-test-~a" (get-process-id))])

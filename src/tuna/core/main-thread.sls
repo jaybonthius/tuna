@@ -150,20 +150,15 @@
     (thread-state-quits-allowed-set! s #t)
     (set! running-task t))
 
-  ;; Chez runs its source optimizer twice, so one compile warning can be
-  ;; raised twice; an item reports each text once. A compile cannot pause,
-  ;; so the twice-raised warnings come within one item.
+  ;; A compile cannot pause, so a warning raised twice comes within one
+  ;; item.
   (define warned '())
 
   ;; A raise is reported before the stack unwinds, so advice on report and
   ;; Chez's debugger see where it was raised.
   (define (task-raised t c)
     (cond
-      [(warning-only? c)
-       (let ([text (condition-text c)])
-         (unless (member text warned)
-           (set! warned (cons text warned))
-           (report-safely c)))]
+      [(warning-only? c) (set! warned (report-warning-once c warned))]
       [else
        (report-safely c)
        (when (debug-on-exception)

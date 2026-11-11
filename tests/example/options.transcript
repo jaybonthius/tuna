@@ -81,6 +81,25 @@
 > (define-option height 1 fixnum? "Rows.")
 > (height)
 2
+; Evaluating it again with another check takes back each setting and
+; local value the new check rejects, with a warning; a check that raises
+; rejects the value.
+> (define-option size 5 fixnum?)
+> (set-option! size 9)
+> (as-module '(corfu) (set-option! size 4))
+> (current-scope s)
+> (set-option-local! size 8)
+> (current-scope #f)
+> (define-option size 5 (lambda (v) (and (fixnum? v) (< v 6))))
+! define-option: the setting 9 of size made by (repl) fails its check; it is taken back
+! define-option: the local value 8 of size made by (repl) fails its check; it is taken back
+> (list (size) (option-settings size) (begin (current-scope s) (size)))
+(4 (((corfu) 4)) 4)
+> (current-scope #f)
+> (define-option size 5 (lambda (v) (if (eqv? v 4) (error 'size "four") #t)))
+! define-option: the setting 4 of size made by (corfu) fails its check; it is taken back
+> (list (size) (option-settings size))
+(5 ())
 ; Values are checked, every one before any is stored.
 > (set-option! fill:column "wide")
 ! set-option!: "wide" is not a valid value for fill:column

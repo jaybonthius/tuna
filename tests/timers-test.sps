@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna test) (tuna core changes) (except (tuna core main-thread) exit) (tuna timers))
+(import (chezscheme) (tuna-test) (tuna core changes) (except (tuna core main-thread) exit) (tuna timers))
 
 (define (seconds-now)
   (let ([t (current-time 'time-monotonic)])

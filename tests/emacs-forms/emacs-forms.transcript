@@ -1,4 +1,4 @@
-; Twenty common forms of an Emacs configuration, written for Tuna, run
+; Common forms of an Emacs configuration, written for Tuna, run
 ; with no report.
 > (gptel/org:branching-context)
 #t

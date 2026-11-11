@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna test) (tuna plain-data))
+(import (chezscheme) (tuna-test) (tuna plain-data))
 
 (define (cpu-seconds thunk)
   (let ([start (cpu-time)])

@@ -1,5 +1,6 @@
-(import (chezscheme) (tuna test) (chez-lang loader)
-        (tuna core changes) (tuna core modules) (except (tuna core main-thread) exit)
+(import (chezscheme) (tuna-test) (chez-lang loader)
+        (tuna core changes) (only (tuna core definitions) tick report advice-add! advice-remove!)
+        (tuna core modules) (except (tuna core main-thread) exit)
         (tuna plugin-manager))
 
 (define root
@@ -37,7 +38,7 @@
 (compile-file-message #f)
 (start-plugins! root (path "config" "init.ss") (path "config" "lib") (path "library") (path "plugins"))
 (install-module-lookup! (library-directories) (path "config" "lib") (path "library") (path "cache")
-  plugin-root checked-plugin-root install-missing-plugin! plugin-roots)
+  plugin-root install-missing-plugin! plugin-roots)
 (install-loader!)
 
 (define (line id) `(use-plugin ,id (git ,(format "file://~a" (path "remotes" (symbol->string id))))))
@@ -61,6 +62,35 @@
   (guard (c [#t (if (message-condition? c) (condition-message c) c)]) (thunk) #f))
 
 (define (tests)
+  ;; Each round requests a quit at a later timer tick, so quits land all
+  ;; over the reading.
+  (test "a quit while the configuration's lines are read ends the reading rather than cutting the lines short"
+    (write-file! (path "config" "init.ss")
+      (call-with-string-output-port
+        (lambda (p)
+          (put-string p "(import (tuna) (tuna plugins))\n")
+          (do ([i 0 (+ i 1)]) ((= i 2000))
+            (fprintf p "(set-option! fill:column ~a)\n" i)))))
+    (let* ([ticks 0] [quit-at #f]
+           [counter (lambda (tick)
+                      (tick)
+                      (set! ticks (+ ticks 1))
+                      (when (eqv? ticks quit-at) (request-quit!)))])
+      (advice-add! tick counter)
+      (read-configuration-lines!)
+      (let ([total ticks])
+        (check (> total 20))
+        (check-equal? '()
+          (filter
+            (lambda (n)
+              (set! ticks 0)
+              (set! quit-at n)
+              (not (eq? 'quit (guard (c [(quit-condition? c) 'quit]) (read-configuration-lines!) 'read))))
+            (map add1 (iota (quotient total 2))))))
+      (advice-remove! tick counter))
+    (write-file! (path "config" "init.ss") "(import (tuna) (tuna plugins))\n")
+    (read-configuration-lines!))
+
   (test "installs of different plugins run at once, while the main thread goes on"
     (let* ([finished-meanwhile #f]
            [tasks (map (lambda (id) (spawn-task (lambda () (install-plugin! (line id))))) ids)])
@@ -142,10 +172,14 @@
       (write-file! script "#!/bin/sh\nsleep 0.5\nexit 1\n")
       (chmod script #o755)
       (putenv "GIT_SSH_COMMAND" script)
-      (let ([first (spawn-task (lambda () (install-plugin! line)))])
+      (let ([first (spawn-task (lambda () (install-plugin! line)))] [reported '()])
+        (define (keep original c) (set! reported (cons c reported)))
         (yield)
+        (advice-add! report keep)
         (signal-task first (make-quit-condition))
         (check (quit-condition? (guard (c [#t c]) (join-task first))))
+        (advice-remove! report keep)
+        (check (and (= (length reported) 1) (quit-condition? (car reported))))
         (check-equal? "git is running for the plugin" (raised-message (lambda () (install-plugin! line))))
         (suspend
           (lambda (resume)

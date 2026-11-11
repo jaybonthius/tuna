@@ -54,7 +54,7 @@
         (call-with-quit-safe-library-lock
           (lambda ()
             (or (worker-procedure w)
-                (let ([p (eval `(let () (import (tuna worker) ,@(worker-imports w)) ,(worker-source w))
+                (let ([p (eval `(let () (import (tuna worker-body) ,@(worker-imports w)) ,(worker-source w))
                                (scheme-environment))])
                   (for-each (lambda (spec) (invoke-library (import-spec-library spec))) (worker-imports w))
                   (worker-procedure-set! w p)

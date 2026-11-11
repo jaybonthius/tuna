@@ -1,4 +1,4 @@
-(library (tuna test)
+(library (tuna-test)
   (export test check check-equal? check-raises test-exit)
   (import (chezscheme))
 

@@ -12,8 +12,8 @@
     option?
     option-changed
     option-documentation)
-  (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna core modules) (tuna scopes)
-          (only (tuna hooks) make-hook))
+  (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna scopes) (tuna registry)
+          (only (tuna core main-thread) quit-condition?) (only (tuna hooks) make-hook))
 
   ;; setting is the setting in effect or the default, kept in the record
   ;; because reading it through the settings' layers costs a tenth more.
@@ -25,7 +25,7 @@
     (sealed #t)
     (fields symbol module key
             (mutable default) (mutable check) (mutable doc) (mutable on-change)
-            (mutable settings) (mutable setting) (mutable localized?) (mutable defined?) (mutable procedure)))
+            (mutable settings) (mutable setting) (mutable localized?) (mutable defined?) (mutable procedure) slot))
 
   (define no-setting (string->uninterned-symbol "no-setting"))
 
@@ -41,23 +41,6 @@
         (let ([s (current-scope)])
           (if s (scope-value st s) (option-state-setting st)))
         (option-state-setting st)))
-
-  ;; A thread forked inside a binding holds its parent's record until it
-  ;; takes its own, and sees none of its parent's bindings.
-  (define (bound-value ts st)
-    (if (fx= (thread-state-thread ts) (get-thread-id))
-        (let ([bindings (thread-state-bindings ts)] [key (option-state-key st)])
-          (if (fx< key (vector-length bindings))
-              (let ([v (vector-ref bindings key)])
-                (if (eq? v no-binding) (unbound-value st) v))
-              (unbound-value st)))
-        (unbound-value st)))
-
-  (define (option-value st)
-    (let ([ts (current-thread-state)])
-      (if (fx= (thread-state-bound ts) 0)
-          (unbound-value st)
-          (bound-value ts st))))
 
   (define (option? v)
     (and (wrapper-procedure? v) (option-state? (wrapper-procedure-data v))))
@@ -82,12 +65,20 @@
         (format "~s is not a valid value for ~s" v (option-state-symbol st))))
     v)
 
-  ;; Keyed by the defined name, not the owner: the configuration and the
-  ;; REPL define the same names, so either evaluating the other's form
-  ;; keeps the settings.
-  (define option-states (make-eq-hashtable))
+  (define (forget-option! st)
+    (option-state-defined?-set! st #f)
+    (forget-layers! (option-state-settings st))
+    (option-state-settings-set! st (option-layers 'setting st #f))
+    (option-state-setting-set! st (option-state-default st))
+    (forget-local-layers! (option-state-key st)))
+
+  (define option-states (make-registry option-state-module forget-option!))
 
   (define (make-option name default check doc on-change)
+    (define (check-default symbol)
+      (unless (check default)
+        (assertion-violation 'define-option
+          (format "the default ~s is not a valid value for ~s" default symbol))))
     (check-main-thread 'define-option)
     (unless (procedure? check)
       (assertion-violation 'define-option "not a procedure" check))
@@ -95,32 +86,58 @@
       (assertion-violation 'define-option "not a documentation string" doc))
     (unless (or (not on-change) (procedure? on-change))
       (assertion-violation 'define-option "not a procedure" on-change))
-    (let* ([module (owner-name (current-owner))] [symbol (definition-symbol module name)])
-      (unless (check default)
-        (assertion-violation 'define-option
-          (format "the default ~s is not a valid value for ~s" default symbol)))
-      (cond
-        [(hashtable-ref option-states symbol #f)
-         => (lambda (st)
-              (option-state-default-set! st default)
-              (option-state-setting-set! st (value-in-effect (option-state-settings st) st #f))
-              (option-state-check-set! st check)
-              (option-state-doc-set! st doc)
-              (option-state-on-change-set! st on-change)
-              (option-state-procedure st))]
-        [else
-         (let* ([st (make-option-state symbol module (make-local-key) default check doc on-change #f default #f #t #f)]
-                [o (make-wrapper-procedure
-                     (case-lambda
-                       [() (option-value st)]
-                       [(v) (assertion-violation symbol
-                              "an option is bound with with-options, not parameterize")])
-                     3
-                     st)])
-           (option-state-procedure-set! st o)
-           (option-state-settings-set! st (option-layers 'setting st #f))
-           (hashtable-set! option-states symbol st)
-           o)])))
+    (option-state-procedure
+      (registry-define! option-states name
+        (lambda (symbol module)
+          (check-default symbol)
+          (let* ([st (make-option-state symbol module (make-local-key) default check doc on-change
+                       #f default #f #t #f (make-thread-slot))]
+                 [o (make-wrapper-procedure
+                      (case-lambda
+                        [() (thread-slot-ref (option-state-slot st) (unbound-value st))]
+                        [(v) (assertion-violation symbol
+                               "an option is bound with with-options, not parameterize")])
+                      3
+                      st)])
+            (option-state-procedure-set! st o)
+            (option-state-settings-set! st (option-layers 'setting st #f))
+            st))
+        (lambda (st)
+          (check-default (option-state-symbol st))
+          (option-state-default-set! st default)
+          (option-state-setting-set! st (value-in-effect (option-state-settings st) st #f))
+          (option-state-check-set! st check)
+          (option-state-doc-set! st doc)
+          (option-state-on-change-set! st on-change)
+          (reject-kept-values! st)
+          st))))
+
+  ;; A check that raises rejects the value, but a quit goes through, so a
+  ;; check that never returns can be ended.
+  (define (accepts? st v)
+    (guard (c [(not (quit-condition? c)) #f])
+      ((option-state-check st) v)))
+
+  ;; Settings and local values kept from before were checked only with the
+  ;; previous check.
+  (define (reject-kept-values! st)
+    (define (reject-failing! ls what)
+      (for-each
+        (lambda (l)
+          (unless (accepts? st (layer-value l))
+            (take-back! (layer-change l))
+            (report-safely
+              (condition (make-warning) (make-who-condition 'define-option)
+                (make-message-condition
+                  (format "~a ~s of ~s made by ~s fails its check; it is taken back"
+                    what (layer-value l) (option-state-symbol st) (owner-name (layer-owner l))))))))
+        (layers-all ls)))
+    (reject-failing! (option-state-settings st) "the setting")
+    (for-each
+      (lambda (s)
+        (let ([ls (scope-local s (option-state-key st))])
+          (when ls (reject-failing! ls "the local value"))))
+      (scopes-with-locals)))
 
   (define-syntax define-option
     (lambda (x)
@@ -244,35 +261,9 @@
   (define (option-documentation o)
     (option-state-doc (option-state-of 'documentation o)))
 
-  (define (ensure-room! ts key)
-    (let ([bindings (thread-state-bindings ts)])
-      (unless (fx< key (vector-length bindings))
-        (let ([longer (make-vector (fxmax (fx+ key 1) (fx* 2 (vector-length bindings))) no-binding)])
-          (do ([i 0 (fx+ i 1)]) ((fx= i (vector-length bindings)))
-            (vector-set! longer i (vector-ref bindings i)))
-          (thread-state-bindings-set! ts longer)))))
-
-  ;; Nothing assigns a binding while it is in effect, so the winders need
-  ;; not swap, as parameterize's do: entering, also again through a
-  ;; continuation, puts the binding in place, and leaving puts back the
-  ;; value it hid. Critical, since a quit landing between a winder and
-  ;; Chez recording it would leave the binding in place for good.
-  (define (call-with-binding st v thunk)
-    (let* ([ts (this-thread-state)] [key (option-state-key st)])
-      (ensure-room! ts key)
-      (let* ([outer (vector-ref (thread-state-bindings ts) key)] [delta (if (eq? outer no-binding) 1 0)])
-        (dynamic-wind #t
-          (lambda ()
-            (vector-set! (thread-state-bindings ts) key v)
-            (thread-state-bound-set! ts (fx+ (thread-state-bound ts) delta)))
-          thunk
-          (lambda ()
-            (vector-set! (thread-state-bindings ts) key outer)
-            (thread-state-bound-set! ts (fx- (thread-state-bound ts) delta)))))))
-
   (define (bind-option o v thunk)
     (let ([st (option-state-of 'with-options o)])
-      (call-with-binding st (checked 'with-options st v) thunk)))
+      (call-with-thread-slot (option-state-slot st) (checked 'with-options st v) thunk)))
 
   ;; Every option and value is checked before any is bound. The first
   ;; binding of an option named twice wins, as the innermost.
@@ -291,19 +282,4 @@
     (syntax-rules ()
       [(_ () thunk) (thunk)]
       [(_ ((st v) more ...) thunk)
-       (bind-options (more ...) (lambda () (call-with-binding st v thunk)))]))
-
-  (define (module-unloaded! name)
-    (let-values ([(symbols states) (hashtable-entries option-states)])
-      (vector-for-each
-        (lambda (symbol st)
-          (when (equal? (option-state-module st) name)
-            (hashtable-delete! option-states symbol)
-            (option-state-defined?-set! st #f)
-            (forget-layers! (option-state-settings st))
-            (option-state-settings-set! st (option-layers 'setting st #f))
-            (option-state-setting-set! st (option-state-default st))
-            (forget-local-layers! (option-state-key st))))
-        symbols states)))
-
-  (add-module-unloaded-handler! module-unloaded!))
+       (bind-options (more ...) (lambda () (call-with-thread-slot (option-state-slot st) v thunk)))])))

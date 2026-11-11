@@ -13,6 +13,7 @@
     current-owner
     set-current-owner!
     call-as-owner
+    with-owner-switch
     this-module
     as-module
     rank-module!
@@ -58,16 +59,13 @@
     make-thread-state
     current-thread-state
     this-thread-state
-    thread-state-thread
     thread-state-owner
     thread-state-owner-set!
     thread-state-quits-allowed
     thread-state-quits-allowed-set!
-    thread-state-bound
-    thread-state-bound-set!
-    thread-state-bindings
-    thread-state-bindings-set!
-    no-binding)
+    make-thread-slot
+    thread-slot-ref
+    call-with-thread-slot)
   (import (chezscheme))
 
   (define (module-name? x)
@@ -140,26 +138,26 @@
     (let ([o (find-owner name)])
       (and o (owner-rank o) o)))
 
-  ;; A thread's owner, its quits-allowed flag and its option bindings are
-  ;; fields of one record, so switching one is a field write: writing a
-  ;; thread parameter takes Chez's thread-context mutex, which costs more
-  ;; than the rest of a switch. bound counts the options bound, so that a
-  ;; read outside any binding looks at no vector. A thread forked by Tuna
-  ;; acts for the instance its owner had at the fork, so that what it posts
-  ;; once that instance has unloaded never runs under the next; a thread
-  ;; forked by Chez cannot know it.
+  ;; A thread's owner, its quits-allowed flag and its slots are fields of
+  ;; one record, so switching one is a field write: writing a thread
+  ;; parameter takes Chez's thread-context mutex, which costs more than the
+  ;; rest of a switch. slots-in-use counts the slots bound, so that a read
+  ;; outside any binding looks at no vector. A thread forked by Tuna acts
+  ;; for the instance its owner had at the fork, so that what it posts once
+  ;; that instance has unloaded never runs under the next; a thread forked
+  ;; by Chez cannot know it.
   (define-record-type thread-state
     (nongenerative)
     (sealed #t)
     (fields thread (mutable owner) forked-owner forked-instance (mutable quits-allowed)
-            (mutable bound) (mutable bindings))
+            (mutable slots-in-use) (mutable slots))
     (protocol
       (lambda (new)
         (case-lambda
-          [(owner) (new (get-thread-id) owner #f #f #f 0 (make-vector 8 no-binding))]
-          [(owner instance) (new (get-thread-id) owner owner instance #f 0 (make-vector 8 no-binding))]))))
+          [(owner) (new (get-thread-id) owner #f #f #f 0 (make-vector 8 unbound-slot))]
+          [(owner instance) (new (get-thread-id) owner owner instance #f 0 (make-vector 8 unbound-slot))]))))
 
-  (define no-binding (string->uninterned-symbol "no-binding"))
+  (define unbound-slot (string->uninterned-symbol "unbound-slot"))
 
   ;; Written once per thread: fork-thread gives a new thread its parent's
   ;; record, which only the parent may change.
@@ -190,20 +188,30 @@
   (define (set-current-owner! owner)
     (thread-state-owner-set! (this-thread-state) owner))
 
-  ;; A module's body sets its owner and quits-allowed directly, so the
-  ;; winders swap, as parameterize's do: code left and re-entered gets back
-  ;; the value it had. Critical, since a quit landing between a switch and
-  ;; Chez recording it would leave the switch in place.
-  (define (call-swapping field field-set! value thunk)
-    (let ([s (this-thread-state)] [other value])
-      (define (swap!)
-        (let ([outer (field s)])
-          (field-set! s other)
-          (set! other outer)))
-      (dynamic-wind #t swap! thunk swap!)))
+  ;; Critical, since a quit landing between a switch and Chez recording it
+  ;; would leave the switch in place. Leaving puts back the owner from
+  ;; outside, which also undoes a module body's own switch; nothing
+  ;; re-enters a body, where no task can pause, so the winders need not
+  ;; swap as parameterize's do.
+  (define (call-as-owner-on s owner thunk)
+    (let ([outer (thread-state-owner s)])
+      (dynamic-wind #t
+        (lambda () (thread-state-owner-set! s owner))
+        thunk
+        (lambda () (thread-state-owner-set! s outer)))))
 
   (define (call-as-owner owner thunk)
-    (call-swapping thread-state-owner thread-state-owner-set! owner thunk))
+    (call-as-owner-on (this-thread-state) owner thunk))
+
+  ;; Looking up the thread's record for each switch would cost a hook about
+  ;; 2 ns per entry, so code that switches owners for many calls in a row
+  ;; looks it up once.
+  (define-syntax with-owner-switch
+    (syntax-rules ()
+      [(_ (call-as current) e1 e2 ...)
+       (let* ([s (this-thread-state)] [current (thread-state-owner s)])
+         (define (call-as owner thunk) (call-as-owner-on s owner thunk))
+         e1 e2 ...)]))
 
   (define-syntax this-module
     (syntax-rules ()
@@ -220,8 +228,17 @@
   (define (set-quits-allowed! allowed)
     (thread-state-quits-allowed-set! (this-thread-state) allowed))
 
+  ;; Unlike the owner, quits-allowed is also set directly outside module
+  ;; bodies, as a hook does after an entry raises, where a task can pause;
+  ;; so the winders swap, as parameterize's do: code left and re-entered
+  ;; gets back the value it had. Critical, as for the owner.
   (define (call-with-quits-allowed allowed thunk)
-    (call-swapping thread-state-quits-allowed thread-state-quits-allowed-set! allowed thunk))
+    (let ([s (this-thread-state)] [other allowed])
+      (define (swap!)
+        (let ([outer (thread-state-quits-allowed s)])
+          (thread-state-quits-allowed-set! s other)
+          (set! other outer)))
+      (dynamic-wind #t swap! thunk swap!)))
 
   (define-syntax with-quits-allowed
     (syntax-rules ()
@@ -238,6 +255,58 @@
            (lambda () (thread-state-quits-allowed-set! s #f) (mutex-acquire m))
            (lambda () e1 e2 ...)
            (lambda () (mutex-release m) (thread-state-quits-allowed-set! s allowed))))]))
+
+  (define next-thread-slot 0)
+  (define thread-slots-mutex (make-mutex))
+
+  (define (make-thread-slot)
+    (with-quit-safe-mutex thread-slots-mutex
+      (let ([key next-thread-slot])
+        (set! next-thread-slot (fx+ key 1))
+        key)))
+
+  ;; A macro, so that a read costs no call: Chez does not inline into
+  ;; another library a procedure that refers to this library's private
+  ;; bindings. A thread forked inside a binding holds its parent's record
+  ;; until it takes its own, and sees none of its parent's bindings.
+  (define-syntax thread-slot-ref
+    (syntax-rules ()
+      [(_ key unbound-expr)
+       (let ([ts (current-thread-state)])
+         (if (fx= (thread-state-slots-in-use ts) 0)
+             unbound-expr
+             (let ([v (if (fx= (thread-state-thread ts) (get-thread-id))
+                          (let ([slots (thread-state-slots ts)] [k key])
+                            (if (fx< k (vector-length slots)) (vector-ref slots k) unbound-slot))
+                          unbound-slot)])
+               (if (eq? v unbound-slot) unbound-expr v))))]))
+
+  (define (ensure-slot! ts key)
+    (let ([slots (thread-state-slots ts)])
+      (unless (fx< key (vector-length slots))
+        (let ([longer (make-vector (fxmax (fx+ key 1) (fx* 2 (vector-length slots))) unbound-slot)])
+          (do ([i 0 (fx+ i 1)]) ((fx= i (vector-length slots)))
+            (vector-set! longer i (vector-ref slots i)))
+          (thread-state-slots-set! ts longer)))))
+
+  ;; Nothing assigns a slot while a binding of it is in effect, so the
+  ;; winders need not swap, as parameterize's do: entering, also again
+  ;; through a continuation, puts the binding in place, and leaving puts
+  ;; back the value it hid. Critical, since a quit landing between a
+  ;; winder and Chez recording it would leave the binding in place for
+  ;; good.
+  (define (call-with-thread-slot key v thunk)
+    (let ([ts (this-thread-state)])
+      (ensure-slot! ts key)
+      (let* ([outer (vector-ref (thread-state-slots ts) key)] [delta (if (eq? outer unbound-slot) 1 0)])
+        (dynamic-wind #t
+          (lambda ()
+            (vector-set! (thread-state-slots ts) key v)
+            (thread-state-slots-in-use-set! ts (fx+ (thread-state-slots-in-use ts) delta)))
+          thunk
+          (lambda ()
+            (vector-set! (thread-state-slots ts) key outer)
+            (thread-state-slots-in-use-set! ts (fx- (thread-state-slots-in-use ts) delta)))))))
 
   (define next-rank 1)
 

@@ -106,7 +106,7 @@
   ;; Tuna's own names resolve only to Tuna's libraries, so no file in a root
   ;; or the working folder replaces the core.
   (define (install-module-lookup! own-directories lib-root library-root cache-root
-            plugin-root checked-plugin-root install-missing-plugin! plugin-roots)
+            plugin-root install-missing-plugin! plugin-roots)
     (define (directory-pair source cache) (cons source (string-append cache-root "/" cache)))
     (let ([lib (directory-pair lib-root "lib")]
           [library (directory-pair library-root "library")]
@@ -117,8 +117,8 @@
       ;; chez-lang names a library from its path under library-directories,
       ;; so each plugin's folder joins them before its modules compile; only
       ;; the main thread compiles modules.
-      (define (plugin-directory find-root name)
-        (let ([root (find-root name)] [id (car name)])
+      (define (plugin-directory root name)
+        (let ([id (car name)])
           (and root
                (let ([directory (directory-pair root (string-append "plugins/" (symbol->string id)))])
                  (when (and (on-main-thread?) (not (member (cons id directory) plugin-directories)))
@@ -130,13 +130,13 @@
         (let-values ([(source object found?) (default-library-search-handler who name (list lib) extensions)])
           (if (or source found?)
               (values source object found?)
-              (let ([plugin (plugin-directory (if install? checked-plugin-root plugin-root) name)])
+              (let ([plugin (plugin-directory (plugin-root name install?) name)])
                 (let-values ([(source object found?)
                               (default-library-search-handler who name
                                 (if plugin (list plugin library) (list library)) extensions)])
                   (if (or source found? (not install?))
                       (values source object found?)
-                      (let ([plugin (plugin-directory install-missing-plugin! name)])
+                      (let ([plugin (plugin-directory (install-missing-plugin! name) name)])
                         (if plugin
                             (default-library-search-handler who name (list plugin) extensions)
                             (values #f #f #f)))))))))

@@ -1,6 +1,6 @@
 (library (tuna process)
   (export run-program)
-  (import (chezscheme))
+  (import (chezscheme) (tuna files))
 
   ;; Chez's system keeps the exit status, which open-process-ports loses to
   ;; the collector, and it lets other threads collect while it waits; glibc
@@ -29,13 +29,6 @@
       (make-folders! folder)
       (format "~a/~a.out" folder (gensym->unique-string (gensym)))))
 
-  ;; Another thread may make the same folder at the same moment.
-  (define (make-folders! path)
-    (unless (file-directory? path)
-      (make-folders! (path-parent path))
-      (guard (c [(file-directory? path) (void)])
-        (mkdir path))))
-
   (define (shell-quote s)
     (call-with-string-output-port
       (lambda (p)
@@ -46,11 +39,4 @@
         (put-char p #\'))))
 
   (define (read-output path)
-    (if (file-exists? path)
-        (call-with-port
-          (open-file-input-port path (file-options) (buffer-mode block)
-            (make-transcoder (utf-8-codec) (eol-style lf) (error-handling-mode replace)))
-          (lambda (p)
-            (let ([s (get-string-all p)])
-              (if (eof-object? s) "" s))))
-        "")))
+    (if (file-exists? path) (read-text-file path) "")))

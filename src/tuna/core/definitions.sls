@@ -8,6 +8,7 @@
     definition-changes
     report
     report-safely
+    report-warning-once
     call-with-warnings-reported
     call-reporting
     call-module-code
@@ -371,16 +372,20 @@
       (report c)))
 
   ;; Chez runs its source optimizer twice, so one compile warning can be
-  ;; raised twice; each text is reported once per call.
+  ;; raised twice; a warning whose text was reported already is not
+  ;; reported again.
+  (define (report-warning-once c reported)
+    (let ([text (condition-text c)])
+      (if (member text reported)
+          reported
+          (begin (report-safely c) (cons text reported)))))
+
   (define (call-with-warnings-reported thunk)
-    (let ([warned '()])
+    (let ([reported '()])
       (with-exception-handler
         (lambda (c)
           (if (warning-only? c)
-              (let ([text (condition-text c)])
-                (unless (member text warned)
-                  (set! warned (cons text warned))
-                  (report-safely c)))
+              (set! reported (report-warning-once c reported))
               (raise-continuable c)))
         thunk)))
 
