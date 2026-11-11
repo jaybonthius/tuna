@@ -1,0 +1,10 @@
+; At start-up the line installs spell from its repository, and the
+; configuration sets and overrides spell's definitions, with no report.
+> (list (spell:dictionary-path) (spell:language))
+("/home/groucho/words" "en-GB")
+> (plugin-commit 'spell)
+"8f4a7345babf351f103b3a03a5d290d170e5e95e"
+> (definition-changes spell:dictionary-path)
+(((init) override #f) ((spell) define #f))
+> (option-settings spell:language)
+(((init) "en-GB"))

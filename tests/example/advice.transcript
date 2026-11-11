@@ -40,6 +40,8 @@ saving a.txt[saved]
 ; The target must be a changeable definition.
 > (advice-add! files:make-entry exclaim)
 ! advice-add!: not a changeable definition files:make-entry in (advice-add! files:make-entry exclaim)
+> (advice-add! fill:column exclaim)
+! advice-add!: not a changeable definition fill:column in (advice-add! fill:column exclaim)
 > (advice-add! car exclaim)
 ! advice-add!: not a changeable definition car in (advice-add! car exclaim)
 > (advice-add! files:save! 'exclaim)

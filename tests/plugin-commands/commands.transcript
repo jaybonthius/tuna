@@ -73,6 +73,8 @@
 (spell)
 > (list (spell:dictionary-path) (plugin-commit 'spell))
 ("/home/groucho/words" "624c3038631852c7011bc1be6dfb1aed74fd271a")
+> (call-with-input-file "~/.config/tuna/init.ss" (lambda (p) (read p) (read p)))
+(use-plugin spell (git "https://github.com/bob/spell") (commit "624c3038631852c7011bc1be6dfb1aed74fd271a"))
 > (update-plugin! 'spell "8f4a734")
 (spell)
 > (plugin-commit 'spell)
