@@ -76,13 +76,11 @@
   (define frozen-mutex (make-mutex))
   (define frozen-vectors (make-weak-eq-hashtable))
 
-  (define (frozen? v)
-    (and (immutable-vector? v)
-         (with-mutex frozen-mutex (eq-hashtable-contains? frozen-vectors v))))
+  (define (registered? v) (eq-hashtable-contains? frozen-vectors v))
 
-  ;; plain-data? would walk a frozen vector every time; here it counts as
-  ;; walked.
-  (define (sendable? v)
+  (define (frozen? v) (with-mutex frozen-mutex (registered? v)))
+
+  (define (plain-walk? v skip?)
     (if (or (pair? v) (vector? v))
         (let ([marks (make-eq-hashtable)])
           (define (walk v)
@@ -93,7 +91,7 @@
                  [(done) #t]
                  [(walking) #f]
                  [else
-                  (or (frozen? v)
+                  (or (and (immutable-vector? v) (skip? v))
                       (begin
                         (eq-hashtable-set! marks v 'walking)
                         (let ([n (vector-length v)])
@@ -118,6 +116,19 @@
             #t)
           (walk v))
         (plain-atom? v)))
+
+  ;; plain-data? would walk a frozen vector every time; here it counts as
+  ;; walked. The first walk sets each immutable vector aside and looks
+  ;; them all up at once, so a check takes the mutex once rather than once
+  ;; per frozen vector, and holds it during no walk. A vector set aside is
+  ;; not walked for cycles, so when one is not frozen the check walks
+  ;; again and looks each up as it reaches it.
+  (define (sendable? v)
+    (let ([held '()])
+      (and (plain-walk? v (lambda (v) (set! held (cons v held)) #t))
+           (or (null? held)
+               (with-mutex frozen-mutex (for-all registered? held))
+               (plain-walk? v frozen?)))))
 
   (define (check-sendable who v)
     (unless (sendable? v)
@@ -196,14 +207,22 @@
     (let ([jobs (hashtable-ref jobs-by-owner (job-owner j) #f)])
       (when jobs (eq-hashtable-delete! jobs j))))
 
+  ;; While a job's thread holds its mutex, the main thread retries for it,
+  ;; and a quit landing between tries would lose the count of every
+  ;; delivery until the job lets go; if those are the job's last values, it
+  ;; waits for room forever. The count runs as the in of Tuna's
+  ;; dynamic-wind, which holds quits off.
   (define (deliver! j n v)
     (unless (job-dropped? j)
-      (with-job-mutex j
-        (let ([half (fxsrl result-limit 1)] [before (fx- (job-sent j) (job-delivered j))])
-          (job-delivered-set! j (fxmax n (job-delivered j)))
-          (when (and (fx> before half) (fx<= (fx- (job-sent j) (job-delivered j)) half))
-            (condition-signal (job-wake j)))))
-      ((job-on-result j) v)))
+      (dynamic-wind
+        (lambda ()
+          (with-job-mutex j
+            (let ([half (fxsrl result-limit 1)] [before (fx- (job-sent j) (job-delivered j))])
+              (job-delivered-set! j (fxmax n (job-delivered j)))
+              (when (and (fx> before half) (fx<= (fx- (job-sent j) (job-delivered j)) half))
+                (condition-signal (job-wake j))))))
+        (lambda () ((job-on-result j) v))
+        void)))
 
   ;; What the body raised comes tagged, since it may be #f or stopped.
   (define (finish! j ended)

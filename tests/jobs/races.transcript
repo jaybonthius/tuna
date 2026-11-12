@@ -28,74 +28,96 @@
 > (wait-until (lambda () (= (length ended) 20)))
 > (for-all (lambda (e) (eq? e 'stopped)) ended)
 #t
-; Quits requested every millisecond land in the plugin's code on the main
-; thread, sending and delivering, and leave no mutex held: afterwards the
-; job still answers.
+; Vectors frozen on several threads at once, while a job sends values
+; holding them back, all arrive.
+> (jobs:define-worker (bounce x emit receive) (let loop () (emit (receive)) (loop)))
+> (define bounced 0)
+> (define bouncing (jobs:start bounce 0 (lambda (v) (set! bounced (+ bounced 1)))))
+> (do ([k 0 (+ k 1)]) ((= k 4))
+    (fork-thread
+      (lambda ()
+        (do ([i 0 (+ i 1)]) ((= i 2000))
+          (jobs:send! bouncing (list (jobs:freeze (vector k i)) (jobs:freeze (vector (list i)))))))))
+> (wait-until (lambda () (= bounced 8000)))
+> (jobs:stop! bouncing)
+> bounced
+8000
+; Quits land in the plugin's code on the main thread, sending, and leave
+; no mutex held: afterwards the job still answers. The thread asks for a
+; quit only while the main thread has armed it inside the guard, so every
+; quit lands there, however the threads are scheduled. The echo skips
+; what the stress sends, so its answer does not wait behind them.
 > (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
-> (jobs:define-worker (echo x emit receive) (let loop () (emit (receive)) (loop)))
-> (jobs:define-worker (flood n emit) (let loop () (emit n) (loop)))
+> (jobs:define-worker (echo x emit receive)
+    (let loop ()
+      (let ([v (receive)])
+        (unless (eq? v 'stress) (emit v)))
+      (loop)))
 > (define answers '())
 > (define echoing (jobs:start echo 0 (lambda (v) (set! answers (cons v answers)))))
-> (define flood-ended #f)
-> (define flooding (jobs:start flood 0 (lambda (v) (void)) (lambda (e) (set! flood-ended e))))
-> (define quitting #t)
+> (define armed (box #f))
+> (define quitting (box #t))
 > (define quits 0)
 > (define (quitter)
     (let loop ()
-      (when quitting
-        (request-quit!)
+      (when (unbox quitting)
         (chez:sleep (make-time 'time-duration 1000000 0))
+        (when (box-cas! armed #t #f) (request-quit!))
         (loop))))
-> (define (stress until)
-    (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (stress until)])
-      (let loop ()
-        (when (< (real-time) until)
-          (jobs:send! echoing 'stress)
-          (loop)))))
+> (define (stress n)
+    (let retry ()
+      (when (< quits n)
+        (guard (c [(quit-condition? c) (set! quits (+ quits 1))])
+          (set-box! armed #t)
+          (let loop ()
+            (jobs:send! echoing 'stress)
+            (loop)))
+        (retry))))
 > (begin
     (fork-thread quitter)
-    (stress (+ (real-time) 2000))
-    (set! quitting #f)
-    (> quits 100))
-#t
-> (sleep-for 0.1)
-> (set! answers '())
+    (stress 500)
+    (set-box! quitting #f)
+    quits)
+500
 > (jobs:send! echoing 'after)
 > (wait-until (lambda () (memq 'after answers)))
-> (and (memq 'after answers) #t)
-#t
-> (jobs:stop! flooding)
+> answers
+(after)
 > (jobs:stop! echoing)
-> (wait-until (lambda () flood-ended))
-> flood-ended
-stopped
 ; Quits requested as fast as a thread can, while the main thread delivers
 ; a job's values, lose no more than those deliveries: afterwards the job
-; still sends. The form waits paused, so that no quit lands in it, and
-; the reports, whose number varies, go to a string port.
+; still sends. The storm starts from an item posted by the form, which runs
+; only once the form has paused, so that no quit lands in it. The reports,
+; whose number varies, go to a port that only notes that one came, and the
+; storm goes on until one has.
+> (jobs:define-worker (flood n emit) (let loop () (emit n) (loop)))
 > (define delivered 0)
 > (define counting (jobs:start flood 0 (lambda (v) (set! delivered (+ delivered 1)))))
 > (define stderr (console-error-port))
-> (define reports (open-output-string))
+> (define reported (box #f))
+> (define reports
+    (make-custom-textual-output-port "reports"
+      (lambda (s start n) (set-box! reported #t) n) #f #f #f))
 > (define (after-storm thunk)
     (suspend
       (lambda (resume)
-        (fork-thread
+        (post!
           (lambda ()
-            (chez:sleep (make-time 'time-duration 20000000 0))
-            (let ([until (+ (real-time) 2000)])
-              (let loop () (when (< (real-time) until) (request-quit!) (loop))))
-            (chez:sleep (make-time 'time-duration 100000000 0))
-            (resume thunk))))))
+            (fork-thread
+              (lambda ()
+                (let ([until (+ (real-time) 2000)])
+                  (let loop ()
+                    (when (or (< (real-time) until) (not (unbox reported)))
+                      (request-quit!)
+                      (loop))))
+                (resume thunk))))))))
 > (console-error-port reports)
 > (after-storm
     (lambda ()
-      (let retry ()
-        (guard (c [(quit-condition? c) (retry)])
-          (let ([before delivered])
-            (sleep-for 0.2)
-            (console-error-port stderr)
-            (list (> delivered before) (> (string-length (get-output-string reports)) 0)))))))
+      (let ([before delivered])
+        (wait-until (lambda () (> delivered before)))
+        (console-error-port stderr)
+        (list (> delivered before) (unbox reported)))))
 (#t #t)
 > (jobs:stop! counting)
 ; A quit landing in jobs:start or jobs:stop! leaves no job half started:

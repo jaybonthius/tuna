@@ -210,6 +210,17 @@
 ! jobs:freeze: not a vector with irritant ("to" "be")
 > (jobs:freeze (vector "to" car))
 ! jobs:freeze: not plain data with irritant #("to" #<procedure car>)
+; An immutable vector that jobs:freeze did not make is walked: what it
+; holds is checked, beside frozen vectors, and a cycle through it is found.
+> (finished sizes (list words (vector->immutable-vector (vector "or" words))))
+(((3 2)) #f)
+> (jobs:freeze (vector words (vector->immutable-vector (vector car))))
+! jobs:freeze: not plain data with irritant #(#("to" "be" ("or" "not")) #(#<procedure car>))
+> (define looped (vector words))
+> (vector-set! looped 0 (vector->immutable-vector (vector words looped)))
+> (guard (c [(assertion-violation? c) (condition-message c)])
+    (jobs:send! (jobs:start sizes (list words) (lambda (v) (void))) (vector looped)))
+"not plain data"
 ; Each name the plugin offers is a changeable definition, so it can be
 ; advised.
 > (define starts 0)

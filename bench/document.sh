@@ -15,15 +15,13 @@ cp bench/document.sls "$lib/document-bench.sls"
 printf '(import (tuna) (document-bench))\n(document-bench:run)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
-# Most of a freeze is the jobs plugin's check, which takes a lock for each
-# frozen child, so the snapshot limit leaves room for that.
 echo "$output" | awk '
   BEGIN {
     split("1 10 100", sizes, " ")
     for (i in sizes) {
       s = "-" sizes[i] "mb"
       limit["insert" s] = 3000
-      limit["snapshot" s] = 8000
+      limit["snapshot" s] = 6000
       limit["line" s] = 2000
       limit["line-start" s] = 2000
       limit["char-offset" s] = 1000
