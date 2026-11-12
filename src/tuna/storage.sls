@@ -90,24 +90,12 @@
              [(check-accepts? check (car found)) found]
              [else (reject! file "holds a value that fails its check") #f]))))
 
-  ;; The printer's parameters are whatever the calling thread's code set;
-  ;; the stored text must read back as the same value in a later process.
-  ;; Plain data may share structure, which printed without labels can grow
-  ;; exponentially.
-  (define (saved-text v)
-    (call-with-string-output-port
-      (lambda (p)
-        (parameterize ([print-graph #t] [print-level #f] [print-length #f] [print-radix 10]
-                       [print-gensym #t] [print-char-name #f] [print-extended-identifiers #f])
-          (write v p)
-          (newline p)))))
-
   ;; Only a file's last state matters, so a file has at most one write
   ;; request waiting.
   (define-record-type write-request
     (nongenerative)
     (sealed #t)
-    (fields file bytes))
+    (fields file delete? value))
 
   (define writer-mutex (make-mutex))
   (define requests-waiting (make-condition))
@@ -119,22 +107,22 @@
 
   ;; A file queued again goes to the back, so requests run in the order
   ;; they were last queued.
-  (define (queue-request! file bytes)
+  (define (queue-request! file delete? v)
     (with-quit-safe-mutex writer-mutex
       (set! requests (append (remp (lambda (r) (string=? (write-request-file r) file)) requests)
-                             (list (make-write-request file bytes))))
+                             (list (make-write-request file delete? v))))
       (unless writer-started?
         (set! writer-started? #t)
         (fork-thread write-requests))
       (condition-signal requests-waiting)))
 
-  ;; Serialized on the caller's thread, so the writer holds bytes that no
-  ;; other code can change.
+  ;; Printed on the writer's thread, so v must be a value no other code
+  ;; changes, such as one from plain-data-copy.
   (define (write-saved-file! file v)
-    (queue-request! file (string->utf8 (saved-text v))))
+    (queue-request! file #f v))
 
   (define (delete-saved-file! file)
-    (queue-request! file #f))
+    (queue-request! file #t #f))
 
   ;; The copy is queued before the deletion, so a crash between them cannot
   ;; lose the value, and a write of the file already in flight lands first.
@@ -161,11 +149,11 @@
     (let loop ()
       (let ([r (next-request!)])
         (guard (c [#t (failed! c)])
-          (if (write-request-bytes r)
-              (replace-file! (write-request-file r) (write-request-bytes r))
-              (let ([file (write-request-file r)])
+          (let ([file (write-request-file r)])
+            (if (write-request-delete? r)
                 (guard (c [(not (file-exists? file #f)) (void)])
-                  (delete-file file #t)))))
+                  (delete-file file #t))
+                (replace-file! file (write-request-value r)))))
         (loop))))
 
   ;; Reported on the main thread, where report's advice runs; at exit the
@@ -198,17 +186,28 @@
       (load-shared-object #f)
       (foreign-procedure __collect_safe "fsync" (int) int)))
 
+  ;; The printer's parameters are whatever the thread's code set; the
+  ;; stored text must read back as the same value in a later process.
+  ;; Plain data may share structure, which printed without labels can grow
+  ;; exponentially.
+  (define (write-saved-value v p)
+    (parameterize ([print-graph #t] [print-level #f] [print-length #f] [print-radix 10]
+                   [print-gensym #t] [print-char-name #f] [print-extended-identifiers #f])
+      (write v p)
+      (newline p)))
+
   ;; The temporary name carries the process id, since two Tunas may write
   ;; the same datum at once.
-  (define (replace-file! file bytes)
+  (define (replace-file! file v)
     (make-folders! (path-parent file))
     (let ([temporary (format "~a.~a.new" file (get-process-id))])
       (guard (c [#t (delete-file temporary #f) (raise c)])
-        (let ([p (open-file-output-port temporary (file-options no-fail))])
+        (let ([p (open-file-output-port temporary (file-options no-fail) (buffer-mode block)
+                   (make-transcoder (utf-8-codec) (eol-style none)))])
           (dynamic-wind
             void
             (lambda ()
-              (put-bytevector p bytes)
+              (write-saved-value v p)
               (flush-output-port p)
               (unless (fx= (fsync (port-file-descriptor p)) 0)
                 (errorf 'set-saved! "cannot write ~a to disk" temporary)))

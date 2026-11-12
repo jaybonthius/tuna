@@ -1,5 +1,5 @@
 (library (tuna plain-data)
-  (export plain-data?)
+  (export plain-data? plain-data-copy)
   (import (chezscheme))
 
   (define (plain-atom? v)
@@ -41,4 +41,50 @@
             (for-each (lambda (p) (eq-hashtable-set! marks p 'done)) spine)
             #t)
           (walk v))
-        (plain-atom? v))))
+        (plain-atom? v)))
+
+  ;; Another thread may read the copy while the caller goes on changing
+  ;; the original, so the copy shares no mutable object with it. Shared
+  ;; structure is copied once, or the copy could grow exponentially.
+  (define (plain-data-copy who v)
+    (let ([copies (make-eq-hashtable)] [walking (list 'walking)])
+      (define (not-plain) (assertion-violation who "not plain data" v))
+      (define (copy v)
+        (cond
+          [(pair? v) (copy-list v '())]
+          [(vector? v)
+           (let ([c (eq-hashtable-ref copies v #f)])
+             (cond
+               [(eq? c walking) (not-plain)]
+               [c c]
+               [else
+                (eq-hashtable-set! copies v walking)
+                (let ([c (vector-map copy v)])
+                  (eq-hashtable-set! copies v c)
+                  c)]))]
+          [(string? v) (if (immutable-string? v) v (shared v string->immutable-string))]
+          [(bytevector? v) (if (immutable-bytevector? v) v (shared v bytevector->immutable-bytevector))]
+          [(plain-atom? v) v]
+          [else (not-plain)]))
+      (define (shared v make)
+        (or (eq-hashtable-ref copies v #f)
+            (let ([c (make v)])
+              (eq-hashtable-set! copies v c)
+              c)))
+      ;; Along the cdrs by iteration, so a long list needs no deep recursion.
+      (define (copy-list p spine)
+        (let ([c (and (pair? p) (eq-hashtable-ref copies p #f))])
+          (cond
+            [(eq? c walking) (not-plain)]
+            [(and (pair? p) (not c))
+             (eq-hashtable-set! copies p walking)
+             (copy-list (cdr p) (cons (cons p (copy (car p))) spine))]
+            [else
+             (fold-left
+               (lambda (tail walked)
+                 (let ([c (cons (cdr walked) tail)])
+                   (eq-hashtable-set! copies (car walked) c)
+                   c))
+               (or c (copy p))
+               spine)])))
+      (copy v))))

@@ -40,6 +40,11 @@
        (define-saved id initial check)
        (hashtable-set! names id 'id))]))
 
+(write-file! (saved-file '(repl) 'loaded) "(\"text\" #vu8(1 2) #(\"inner\"))\n")
+(define-test-saved loaded '() list?)
+(define-test-saved changed '() list?)
+(define-test-saved printing '() list?)
+(define-test-saved flag #t boolean?)
 (define-test-saved shared '() list?)
 (define-test-saved raced '() list?)
 (define-test-saved big '() list?)
@@ -121,6 +126,65 @@
     (check-equal? (make-list 8 299) (map stored each))
     (check-equal? (shared) (stored shared))
     (check-equal? 299 (cadr (shared))))
+
+  (test "the file holds the value as it was when set, though it changes in place after"
+    (let ([v (list (string-copy "before") (vector 1))])
+      (set-saved! changed v)
+      (string-set! (car v) 0 #\X)
+      (vector-set! (cadr v) 0 2)
+      (set-cdr! (cdr v) (list 'more))
+      (finish-saved-data!)
+      (check-equal? '("before" #(1)) (stored changed))))
+
+  (test "a stored value is read with immutable strings and bytevectors"
+    (check-equal? '("text" #vu8(1 2) #("inner")) (loaded))
+    (check (immutable-string? (car (loaded))))
+    (check (immutable-bytevector? (cadr (loaded))))
+    (check (immutable-string? (vector-ref (caddr (loaded)) 0))))
+
+  (test "#f is written as a value"
+    (set-saved! flag #f)
+    (finish-saved-data!)
+    (check (file-exists? (saved-file '(repl) 'flag)))
+    (check-equal? #f (read-file (saved-file '(repl) 'flag))))
+
+  (test "set-saved! refuses a cycle"
+    (let ([v (list 1 2)])
+      (set-cdr! (cdr v) v)
+      (check-raises (lambda (c) (and (assertion-violation? c) (eq? (condition-who c) 'set-saved!)))
+        (set-saved! changed v))))
+
+  ;; The other thread changes the first value in place while the writer
+  ;; may still be printing it, then sets a second.
+  (test "a set on another thread while the writer prints an earlier value"
+    (let* ([file (saved-file '(repl) 'printing)]
+           [first (map (lambda (i) (make-string 200 #\a)) (iota 5000))]
+           [stop? #f]
+           [partial 0]
+           [reader (fork-thread
+                     (lambda ()
+                       (let loop ()
+                         (unless stop?
+                           (when (file-exists? file)
+                             (let ([v (guard (c [#t #f]) (read-file file))])
+                               (unless (or (equal? v '("second"))
+                                           (and (list? v) (= (length v) 5000)
+                                                (for-all (lambda (s) (equal? s (make-string 200 #\a))) v)))
+                                 (set! partial (+ partial 1)))))
+                           (loop)))))])
+      (set-saved! printing first)
+      (yield)
+      (run-threads
+        (list (lambda ()
+                (do ([n 0 (+ n 1)]) ((= n 20))
+                  (for-each (lambda (s) (string-fill! s (if (even? n) #\b #\c))) first))
+                (set-car! first "changed")
+                (set-saved! printing '("second")))))
+      (finish-saved-data!)
+      (set! stop? #t)
+      (thread-join reader)
+      (check-equal? 0 partial)
+      (check-equal? '("second") (stored printing))))
 
   (test "a removal racing with sets never leaves the removed value's file behind"
     (do ([round 0 (+ round 1)]) ((= round 20))

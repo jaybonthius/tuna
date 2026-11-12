@@ -8,11 +8,14 @@
   (import (chezscheme) (tuna core changes) (tuna core definitions)
           (only (tuna core main-thread) post-task!) (tuna plain-data) (tuna storage))
 
+  ;; stored is value as it was when set, and initial-copy initial as it
+  ;; was when defined, in copies no other code holds, so the writer can
+  ;; print them while the originals change in place.
   (define-record-type saved-state
     (nongenerative)
     (sealed #t)
-    (fields symbol file (mutable initial) (mutable check) (mutable value) (mutable pending?)
-            (mutable procedure)))
+    (fields symbol file (mutable initial) (mutable initial-copy) (mutable check) (mutable value)
+            (mutable stored) (mutable pending?) (mutable procedure)))
 
   (define (saved? v)
     (and (wrapper-procedure? v) (saved-state? (wrapper-procedure-data v))))
@@ -22,9 +25,7 @@
       (assertion-violation who "not saved data" s))
     (wrapper-procedure-data s))
 
-  (define (check-value who symbol check v)
-    (unless (plain-data? v)
-      (assertion-violation who "not plain data" v))
+  (define (check-valid who symbol check v)
     (unless (check v)
       (assertion-violation who (format "~s is not a valid value for ~s" v symbol))))
 
@@ -42,8 +43,9 @@
     (check-main-thread 'define-saved)
     (unless (procedure? check)
       (assertion-violation 'define-saved "not a procedure" check))
-    (let* ([owner (current-owner)] [symbol (definition-symbol owner name)])
-      (check-value 'define-saved symbol check initial)
+    (let* ([owner (current-owner)] [symbol (definition-symbol owner name)]
+           [initial-copy (plain-data-copy 'define-saved initial)])
+      (check-valid 'define-saved symbol check initial)
       (let ([file (saved-file owner name)])
         (cond
           [(hashtable-ref saved-states file #f)
@@ -52,14 +54,19 @@
                               (with-quit-safe-mutex saved-mutex
                                 (let ([old-initial (saved-state-initial st)])
                                   (saved-state-initial-set! st initial)
+                                  (saved-state-initial-copy-set! st initial-copy)
                                   (saved-state-check-set! st check)
                                   (values (saved-state-value st) old-initial)))])
                   (unless (check-accepts? check kept)
                     (reject-kept-value! st kept old-initial)))
                 (saved-state-procedure st))]
           [else
-           (let* ([stored (read-saved-file file check)]
-                  [st (make-saved-state symbol file initial check (if stored (car stored) initial) #f #f)]
+           (let* ([found (read-saved-file file check)]
+                  [st (if found
+                          (make-saved-state symbol file initial initial-copy check
+                            (plain-data-copy 'define-saved (car found)) (car found) #f #f)
+                          (make-saved-state symbol file initial initial-copy check
+                            initial initial-copy #f #f))]
                   [s (make-wrapper-procedure
                        (case-lambda
                          [() (saved-state-value st)]
@@ -77,12 +84,12 @@
     (let ([file (saved-state-file st)])
       (when (with-quit-safe-mutex saved-mutex
               (and (eq? (saved-state-value st) kept)
-                   (begin
-                     (saved-state-value-set! st (saved-state-initial st))
+                   (let ([stored (saved-state-stored st)])
+                     (reset-to-initial! st)
                      (drop-pending! st)
                      (cond
                        [(eq? kept old-initial) (delete-saved-file! file) #f]
-                       [else (reject-saved-value! file kept) #t]))))
+                       [else (reject-saved-value! file stored) #t]))))
         (report-rejection! file "holds a value that fails its check"))))
 
   (define-syntax define-saved
@@ -95,10 +102,11 @@
   ;; Posted, so the file is written once after the code running on the
   ;; main thread finishes, however often that code sets the datum.
   (define (set-saved! s v)
-    (let ([st (saved-state-of 'set-saved! s)])
-      (check-value 'set-saved! (saved-state-symbol st) (saved-state-check st) v)
+    (let* ([st (saved-state-of 'set-saved! s)] [stored (plain-data-copy 'set-saved! v)])
+      (check-valid 'set-saved! (saved-state-symbol st) (saved-state-check st) v)
       (with-quit-safe-mutex saved-mutex
         (saved-state-value-set! st v)
+        (saved-state-stored-set! st stored)
         (unless (saved-state-pending? st)
           (saved-state-pending?-set! st #t)
           (set! pending (cons st pending))
@@ -106,6 +114,10 @@
             (set! write-posted? #t)
             (post-task! write-pending! (find-owner '(tuna))))))
       (void)))
+
+  (define (reset-to-initial! st)
+    (saved-state-value-set! st (saved-state-initial st))
+    (saved-state-stored-set! st (saved-state-initial-copy st)))
 
   (define (drop-pending! st)
     (when (saved-state-pending? st)
@@ -115,30 +127,22 @@
   (define (remove-saved! s)
     (let ([st (saved-state-of 'remove-saved! s)])
       (with-quit-safe-mutex saved-mutex
-        (saved-state-value-set! st (saved-state-initial st))
+        (reset-to-initial! st)
         (drop-pending! st)
         (delete-saved-file! (saved-state-file st)))
       (void)))
 
-  ;; Values are serialized under the mutex, so a removal on another thread
-  ;; cannot slip between serializing a value and queueing its file. A value
-  ;; changed in place since it was set may no longer be plain data, and
-  ;; printing it can raise.
+  ;; Queued under the mutex, so a removal on another thread cannot slip
+  ;; between taking a value and queueing its file.
   (define (write-pending!)
-    (for-each report-safely
-      (reverse
-        (with-quit-safe-mutex saved-mutex
-          (let ([states (reverse pending)])
-            (set! pending '())
-            (set! write-posted? #f)
-            (fold-left
-              (lambda (failures st)
-                (saved-state-pending?-set! st #f)
-                (guard (c [#t (cons c failures)])
-                  (write-saved-file! (saved-state-file st) (saved-state-value st))
-                  failures))
-              '()
-              states))))))
+    (with-quit-safe-mutex saved-mutex
+      (for-each
+        (lambda (st)
+          (saved-state-pending?-set! st #f)
+          (write-saved-file! (saved-state-file st) (saved-state-stored st)))
+        (reverse pending))
+      (set! pending '())
+      (set! write-posted? #f)))
 
   (define (finish-saved-data!)
     (write-pending!)

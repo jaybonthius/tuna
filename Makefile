@@ -44,6 +44,7 @@ bench: exe
 	sh bench/kill-ring.sh build/bin/tuna || status=1; \
 	sh bench/keys.sh build/bin/tuna || status=1; \
 	sh bench/layout.sh build/bin/tuna || status=1; \
+	sh bench/saved.sh build/bin/tuna || status=1; \
 	exit $$status
 
 repl: build
