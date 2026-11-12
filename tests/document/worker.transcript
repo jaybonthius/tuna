@@ -1,0 +1,80 @@
+; A job reads the version of a buffer it was given.
+> (define buffer (buffers:make (string-append (make-string 120 #\a) "\nshort\n" (make-string 101 #\b) "\n")))
+> (long-lines:check! buffer)
+#<job long-lines>
+> (sleep-for 0.2)
+(0 0 121)(0 127 229)
+> (buffers:replace! buffer 0 0 (make-string 10 #\c))
+> (long-lines:check! buffer)
+#<job long-lines>
+> (sleep-for 0.2)
+(1 0 131)(1 137 239)
+; Freezing passes only the parts made since the last freeze, and a frozen
+; document freezes to itself.
+> (define calls 0)
+> (define (counting-freeze v) (set! calls (+ calls 1)) (jobs:freeze v))
+> (define big (document:from-datum (make-string 100000 #\a) '(p ((k . "v")) "x" #(img ()))))
+> (define frozen (document:freeze big counting-freeze))
+> (list (eq? frozen (document:freeze frozen counting-freeze)) (equal? (document:datums frozen) (document:datums big)))
+(#t #t)
+> (set! calls 0)
+> (define edited (document:freeze (document:replace frozen 5 5 (document:from-datum "b")) counting-freeze))
+> calls
+3
+> (document:text edited 0 8)
+"aaaaabaa"
+; Jobs read versions of one document while the main thread makes new
+; ones from it: each job's answer is the main thread's for its version.
+> (jobs:define-worker (summarize version emit)
+    (import (document))
+    (let ([doc (cdr version)])
+      (emit (list (car version) (document:length doc) (document:line doc (document:length doc))
+                  (string-length (document:text doc)) (document:datums (document:slice doc 0 3))))))
+> (define (summary k doc)
+    (list k (document:length doc) (document:line doc (document:length doc))
+          (string-length (document:text doc)) (document:datums (document:slice doc 0 3))))
+> (define answers '())
+> (define expected
+    (let loop ([k 0] [doc (document:from-datum (make-string 50000 #\a) "\n" '(p () "x\ny"))] [acc '()])
+      (if (= k 60)
+          acc
+          (let ([f (document:freeze doc jobs:freeze)])
+            (jobs:start summarize (cons k f) (lambda (a) (set! answers (cons a answers))))
+            (loop (+ k 1)
+                  (document:replace f (* k 7) (+ (* k 7) 2) (document:from-datum (if (even? k) "\n\n\n" "λ")))
+                  (cons (summary k f) acc))))))
+> (wait-until (lambda () (= (length answers) 60)))
+> (equal? (list-sort (lambda (a b) (< (car a) (car b))) answers) (reverse expected))
+#t
+; Quits requested every millisecond land in this library's code on the
+; main thread and leave every document as it was: afterwards each still
+; reads the same and edits.
+> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+> (define base (document:from-datum (make-string 20000 #\a) '(p () "b")))
+> (define base-text (document:text base))
+> (define quitting #t)
+> (define quits 0)
+> (define (quitter)
+    (let loop ()
+      (when quitting
+        (request-quit!)
+        (chez:sleep (make-time 'time-duration 1000000 0))
+        (loop))))
+> (define (stress until)
+    (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (stress until)])
+      (let loop ([doc base] [k 0])
+        (when (< (real-time) until)
+          (let* ([p (mod (* k 7919) (document:length doc))]
+                 [doc (document:freeze (document:replace doc p p (document:from-datum "xy" '(q () "z"))) jobs:freeze)])
+            (document:text doc)
+            (loop (if (> (document:length doc) 40000) base doc) (+ k 1)))))))
+> (begin
+    (fork-thread quitter)
+    (stress (+ (real-time) 2000))
+    (set! quitting #f)
+    (> quits 100))
+#t
+> (list (string=? (document:text base) base-text) (document:length base))
+(#t 20003)
+> (document:text (document:replace base 0 20000 (document:from-datum "c")))
+"cb"

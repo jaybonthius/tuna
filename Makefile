@@ -36,6 +36,7 @@ bench: exe
 	sh bench/tick.sh build/bin/tuna || status=1; \
 	sh bench/startup.sh build/bin/tuna $(SCHEME) || status=1; \
 	sh bench/reload.sh build/bin/tuna || status=1; \
+	sh bench/document.sh build/bin/tuna || status=1; \
 	exit $$status
 
 repl: build
