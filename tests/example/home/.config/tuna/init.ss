@@ -24,3 +24,4 @@
 
 (when-installed (vertico)
   (set-option! vertico:count 15))
+(import (console))

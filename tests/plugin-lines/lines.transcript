@@ -39,6 +39,7 @@
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
 (use-plugin consult)
 (use-plugin consult (git "https://example.org/second/consult"))
+(import (console))
 ; Removing a local plugin comments out its line and never deletes its
 ; folder.
 > (remove-plugin! 'other)
@@ -52,3 +53,4 @@
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
 (use-plugin consult)
 (use-plugin consult (git "https://example.org/second/consult"))
+(import (console))

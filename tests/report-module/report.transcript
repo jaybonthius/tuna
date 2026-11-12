@@ -1,12 +1,10 @@
 [good body]
 ; A report names the module the raising code ran for, but not (init),
-; (repl) or (tuna). A job runs as the module that started it.
-> (wait-for-end (wk:go) '(repl))
-! car: 1 is not a pair
-> (wait-for-end (as-module '(wk) (wk:go)) '(wk))
-! (wk) car: 1 is not a pair
-> (as-module '(wk) (car '()))
-! (wk) car: () is not a pair
+; (repl) or (tuna).
+> (car '())
+! car: () is not a pair
+> (as-module '(good) (car '()))
+! (good) car: () is not a pair
 ; Advice written at the top level learns the module from current-owner.
 > (define events '())
 > (define (note! . e) (set! events (cons e events)))

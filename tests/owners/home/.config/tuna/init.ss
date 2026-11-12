@@ -9,3 +9,4 @@
         (lambda ()
           (set! result (guard (c [(message-condition? c) (condition-message c)]) (thunk))))))
     result))
+(import (console))

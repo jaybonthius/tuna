@@ -173,7 +173,7 @@
   (define (failed! c)
     (with-mutex writer-mutex
       (set! failures (cons c failures)))
-    (post-task! report-failures! (find-owner '(tuna)) #f))
+    (post-task! report-failures! (find-owner '(tuna))))
 
   (define (report-failures!)
     (for-each report-safely

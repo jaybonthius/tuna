@@ -25,8 +25,6 @@
 (define (make-remote! id)
   (let ([dir (path "remotes" (symbol->string id))])
     (write-file! (format "~a/~a.sls" dir id) (format "#!tuna\n(define (name) '~a)\n" id))
-    (write-file! (format "~a/~a/match.sls" dir id)
-      (format "(library (~a match) (export score) (import (chezscheme)) (define (score s) (string-length s)))\n" id))
     (unless (zero? (system (format "cd '~a' && git init -q -b main && git add -A && git -c user.name=t -c user.email=t@example.org -c commit.gpgsign=false commit -qm one" dir)))
       (error 'make-remote! "git failed" id))
     (format "file://~a" dir)))
@@ -109,29 +107,6 @@
       (join-task first)
       (check (memq 'shared (configuration-lines)))
       (check (plugin-commit 'shared))))
-
-  (test "other threads find a plugin's plain library while the main thread changes plugins"
-    (let ([missed 0] [stop? #f] [m (make-mutex)])
-      (let ([finders
-             (map (lambda (i)
-                    (fork-thread
-                      (lambda ()
-                        (let loop ()
-                          (unless stop?
-                            (let-values ([(source object found?)
-                                          ((library-search-handler) 'import '(shared match)
-                                           (library-directories) (library-extensions))])
-                              (unless source (with-mutex m (set! missed (+ missed 1)))))
-                            (loop))))))
-                  (iota 4))])
-        (do ([round 0 (+ round 1)]) ((= round 5))
-          (for-each remove-plugin! ids)
-          (for-each join-task
-            (map (lambda (id) (spawn-task (lambda () (install-plugin! (line id))))) ids)))
-        (set! stop? #t)
-        (for-each thread-join finders))
-      (check-equal? 0 missed)
-      (check-equal? (sorted (cons 'shared ids)) (sorted (configuration-lines)))))
 
   (test "the commands make changes, so only the main thread runs them"
     (let ([outcome #f])

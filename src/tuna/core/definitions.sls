@@ -384,8 +384,8 @@
         (syntax-case x ()
           [(_ id) #`(cell-changes #,(identifier-cell 'definition-changes x #'id lookup))]))))
 
-  ;; Every report runs as the module the raising code ran for, a job's
-  ;; included, so the current owner names it.
+  ;; Every report runs as the module the raising code ran for, so the
+  ;; current owner names it.
   (define (write-report c)
     (let ([name (current-owner)])
       (write-condition c (and (not (member name '((init) (repl) (tuna)))) name))))

@@ -32,6 +32,7 @@ built
 
 (define (exists? path)
   (file-exists? (string-append (getenv "HOME") "/" path)))
+(import (console))
 ; An update to the same commit builds again, and an update moves the
 ; submodules with the plugin.
 > (update-plugin! 'wrap "64d7a81")

@@ -16,7 +16,8 @@ fail() {
 mkdir -p "$dir/home/.config/tuna/lib" "$dir/library" "$dir/work"
 printf '#!tuna\n(define (text name) (string-append "Hello, " name "!"))\n' \
   > "$dir/home/.config/tuna/lib/greet.sls"
-printf '(import (tuna) (greet))\n' > "$dir/home/.config/tuna/init.ss"
+printf '(import (tuna) (greet))\n(import (console))\n' > "$dir/home/.config/tuna/init.ss"
+cp -R plugins/. "$dir/library/"
 
 run() {
   (cd "$dir/work" && echo '(greet:text "Harpo")' |
@@ -30,7 +31,7 @@ output=$(run "$tuna")
 # Compiling Tuna again gives each of its libraries a new identity, which
 # the cached object of greet was not compiled against.
 mkdir "$dir/source"
-tar cf - Makefile build.ss boot bin src lib/chez-lang/src tests/*.sps tests/lib | tar xf - -C "$dir/source"
+tar cf - Makefile build.ss boot bin src plugins lib/chez-lang/src tests/*.sps tests/lib | tar xf - -C "$dir/source"
 make -s -C "$dir/source" exe > "$dir/build.log" 2>&1 || fail "the second build failed: $(cat "$dir/build.log")"
 
 cp "$dir/home/.cache/tuna/lib/greet.so" "$dir/first.so"

@@ -28,7 +28,7 @@ trap 'rm -rf "$dir"' EXIT
 # Tuna's own options are read only at the start of the command line;
 # every other command line reaches the configuration and plugins.
 mkdir -p "$dir/arguments/.config/tuna"
-printf '(write (list (command-line-arguments) (cdr (command-line)) (string? (car (command-line)))))\n' \
+printf '(write (list (command-line-arguments) (cdr (command-line)) (string? (car (command-line)))))\n(exit)\n' \
   > "$dir/arguments/.config/tuna/init.ss"
 for case in 'notes.org +12|(("notes.org" "+12") ("notes.org" "+12") #t)' \
             '--version x|(("--version" "x") ("--version" "x") #t)' \
@@ -64,9 +64,11 @@ for case in exit:3 raise:255; do
 done
 
 # Without TUNA_LIBRARY, Tuna's own library is plugins/ beside the program,
-# however the program is started.
-mkdir -p "$dir/bin/plugins" "$dir/home"
+# however the program is started, and holds the bundled plugins.
+mkdir -p "$dir/bin/plugins" "$dir/home/.config/tuna"
 cp "$tuna" "$dir/bin/tuna"
+cp -R "$(dirname "$tuna")/plugins/." "$dir/bin/plugins/"
+printf '(import (console))\n' > "$dir/home/.config/tuna/init.ss"
 printf '#!tuna\n(define (where) "beside the program")\n' > "$dir/bin/plugins/own.sls"
 ln -s "$dir/bin/tuna" "$dir/linked-tuna"
 for program in "$dir/bin/tuna" "$dir/linked-tuna"; do
@@ -84,7 +86,7 @@ output=$(cd "$dir/work" && echo "(import (tuna extra))" | env -u TUNA_LIBRARY HO
 # exit's status is the process's, whichever thread calls it, even when
 # the console's end of input comes while the modules unload.
 mkdir -p "$dir/slow/.config/tuna"
-printf '(import (tuna))\n(import (rename (only (chezscheme) sleep) (sleep chez:sleep)))\n(on-unload (lambda () (chez:sleep (make-time (quote time-duration) 100000000 0))))\n' \
+printf '(import (tuna))\n(import (rename (only (chezscheme) sleep) (sleep chez:sleep)))\n(on-unload (lambda () (chez:sleep (make-time (quote time-duration) 100000000 0))))\n(import (console))\n' \
   > "$dir/slow/.config/tuna/init.ss"
 for form in '(exit 4)' '(thread-join (fork-thread (lambda () (exit 4))))'; do
   status=0
@@ -103,6 +105,7 @@ cat > "$dir/waiting/.config/tuna/init.ss" <<'END'
     (post! (lambda () (display "posted") (newline)))
     (chez:sleep (make-time 'time-duration 300000000 0))
     (exit 5)))
+(import (console))
 END
 mkfifo "$dir/input"
 sleep 5 > "$dir/input" &
@@ -115,6 +118,28 @@ kill "$writer"
 [ "$status" -eq 5 ] || fail "exit while the console waits exited with status $status, not 5"
 [ "$output" = posted ] || fail "a write while the console waits printed: $output"
 [ "$elapsed" -lt 3000 ] || fail "exit while the console waits took $elapsed ms"
+
+# Tuna reads no standard input: with no configuration it runs until a
+# signal ends it, and a configuration without the console ends with exit.
+mkdir -p "$dir/empty" "$dir/batch/.config/tuna"
+printf '(exit 6)\n' > "$dir/forms"
+HOME="$dir/empty" "$tuna" < "$dir/forms" > "$dir/empty-output" 2>&1 &
+idle=$!
+sleep 0.5
+if kill -0 "$idle" 2> /dev/null; then
+  kill "$idle"
+  status=0
+  wait "$idle" || status=$?
+  [ "$status" -eq 143 ] || fail "with no configuration, SIGTERM gave status $status"
+else
+  fail "with no configuration, Tuna ended by itself"
+fi
+[ ! -s "$dir/empty-output" ] || fail "with no configuration, Tuna printed: $(cat "$dir/empty-output")"
+printf '(display "done")\n(exit 7)\n' > "$dir/batch/.config/tuna/init.ss"
+status=0
+output=$(HOME="$dir/batch" "$tuna" < "$dir/forms" 2>&1) || status=$?
+[ "$status" -eq 7 ] || fail "a configuration ending in (exit 7) exited with status $status"
+[ "$output" = done ] || fail "a configuration ending in exit printed: $output"
 
 echo "$0: $failures failures"
 [ "$failures" -eq 0 ]

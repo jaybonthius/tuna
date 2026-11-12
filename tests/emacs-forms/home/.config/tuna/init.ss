@@ -70,3 +70,4 @@
     (set-option! vertico:count 15)))
 ;; savehist-additional-variables
 (define-saved search-ring '() list?)
+(import (console))

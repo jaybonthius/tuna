@@ -6,3 +6,4 @@
   (display (string-append "saving " path))
   (save! path))
 (advice-add! files:save! announce)
+(import (console))

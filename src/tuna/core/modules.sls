@@ -121,13 +121,12 @@
       (define (set-directories!)
         (library-directories (append own-directories (list lib) (map cdr plugin-directories) (list library))))
       ;; chez-lang names a library from its path under library-directories,
-      ;; so each plugin's folder joins them before its modules compile; only
-      ;; the main thread compiles modules.
+      ;; so each plugin's folder joins them before its modules compile.
       (define (plugin-directory root name)
         (let ([id (car name)])
           (and root
                (let ([directory (directory-pair root (string-append "plugins/" (symbol->string id)))])
-                 (when (and (on-main-thread?) (not (member (cons id directory) plugin-directories)))
+                 (unless (member (cons id directory) plugin-directories)
                    (set! plugin-directories
                      (cons (cons id directory) (remp (lambda (entry) (eq? (car entry) id)) plugin-directories)))
                    (set-directories!))
@@ -146,6 +145,16 @@
                         (if plugin
                             (default-library-search-handler who name (list plugin) extensions)
                             (values #f #f #f)))))))))
+      ;; Another thread looks only in the folders the main thread has
+      ;; added, since a full lookup changes the library directories and the
+      ;; known sources, and only to choose why it refuses.
+      (define (refuse-lookup who name extensions)
+        (let-values ([(source object found?)
+                      (default-library-search-handler who name
+                        (cons lib (append (map cdr plugin-directories) (list library))) extensions)])
+          (if (and source (not (tuna-file? source)))
+              (assertion-violation who "a library is first loaded on the main thread" name)
+              (check-main-thread who))))
       (set! lib-prefix (string-append lib-root "/"))
       (set! source-roots
         (lambda () (cons lib-root (append (map cdr (plugin-roots)) (list library-root)))))
@@ -159,14 +168,12 @@
                (search-own who name own-directories extensions)]
               [(refused-module-name? name)
                (errorf who "a module cannot be named ~s" name)]
-              [else
-               (let-values ([(source object found?)
-                             (search-roots who name extensions (and install? (on-main-thread?)))])
+              [(on-main-thread?)
+               (let-values ([(source object found?) (search-roots who name extensions install?)])
                  (when source
-                   (if (on-main-thread?)
-                       (hashtable-set! found-libraries name source)
-                       (when (tuna-file? source) (check-main-thread who))))
-                 (values source object found?))]))))
+                   (hashtable-set! found-libraries name source))
+                 (values source object found?))]
+              [else (refuse-lookup who name extensions)]))))
       (set-directories!)
       ;; Only Chez's own lookup for an import loads what it finds. Other
       ;; lookups only find sources, such as a reload's of every loaded

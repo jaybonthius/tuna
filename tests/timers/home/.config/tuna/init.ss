@@ -7,3 +7,4 @@
   (let ([result #f])
     (thread-join (fork-thread (lambda () (set! result (guard (c [#t (condition-message c)]) (thunk))))))
     result))
+(import (console))

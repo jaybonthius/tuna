@@ -118,4 +118,5 @@
     (map (lambda (i) (format "(import (~a))" (plugin-id i))) (iota plugins))
     (list
       "(set-option! p010:width 80 p020:enabled #f)"
-      "(printf \"configured-ms ~a check ~s\\n\" (real-time) (p000:cmd0 \"x\"))")))
+      "(printf \"configured-ms ~a check ~s\\n\" (real-time) (p000:cmd0 \"x\"))"
+      "(exit)")))

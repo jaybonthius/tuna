@@ -9,3 +9,4 @@
     (newline)))
 (display (list 'after (spell:check "b") (shout "x")))
 (newline)
+(import (console))

@@ -42,6 +42,6 @@ cat > "$lib/ticker.sls" <<'SCHEME'
     (printf "tick ~,1f ns per tick (~,3f s with the timer, ~,3f s without, ~a turns)\n"
       per-tick on off turns)))
 SCHEME
-printf '(import (tuna) (ticker))\n(ticker:report-ticks)\n' > "$dir/home/.config/tuna/init.ss"
+printf '(import (tuna) (ticker))\n(ticker:report-ticks)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
 (cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" "$tuna" < /dev/null 2>&1)

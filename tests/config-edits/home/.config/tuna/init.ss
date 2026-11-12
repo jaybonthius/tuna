@@ -8,3 +8,4 @@
     (newline)))
 (use-plugin dict (git "https://github.com/bob/dict") ; newest
   (config (display "[dict config]\n")))
+(import (console))

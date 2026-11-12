@@ -16,3 +16,4 @@
 (define after-error 'ran)
 (set! spell:missing 1)
 (define (spell:check path) "mine")
+(import (console))

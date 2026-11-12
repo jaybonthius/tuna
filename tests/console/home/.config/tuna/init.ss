@@ -1,0 +1,8 @@
+(import (tuna) (tuna eval))
+(define console-file (string-append (getenv "TUNA_LIBRARY") "/console.sls"))
+(import (console))
+(display "configuration paused")
+(newline)
+(sleep-for 0.2)
+(display "configuration resumed")
+(newline)

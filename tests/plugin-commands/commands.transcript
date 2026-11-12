@@ -53,6 +53,7 @@
 (use-plugin consult)
 (use-plugin embark-consult)
 (use-plugin vertico (git "https://github.com/minad/vertico") (commit "5f76a5364d614d437df7fff40ce52ac7db52ae83"))
+(import (console))
 > (list (and (memq 'vertico (installed-plugins)) #t) (module-changes '(vertico)))
 (#t ())
 > (install-plugin! '(use-plugin vertico (git "https://github.com/minad/vertico")))

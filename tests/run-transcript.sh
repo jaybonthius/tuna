@@ -14,8 +14,9 @@ mkdir "$dir/home" "$dir/work" "$dir/library"
 if [ -d "$folder/home" ]; then
   cp -R "$folder/home/." "$dir/home/"
 fi
-# Tuna's own library is the test's, so no transcript depends on what lies
-# beside the executable.
+# Tuna's own library is the source tree's plugins and the test's, so no
+# transcript depends on what lies beside the executable.
+cp -R "$(dirname "$0")/../plugins/." "$dir/library/"
 if [ -d "$folder/library" ]; then
   cp -R "$folder/library/." "$dir/library/"
 fi

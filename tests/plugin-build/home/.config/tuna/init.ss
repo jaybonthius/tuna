@@ -7,3 +7,4 @@
 
 (define (exists? path)
   (file-exists? (string-append (getenv "HOME") "/" path)))
+(import (console))

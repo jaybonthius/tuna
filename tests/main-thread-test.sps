@@ -234,39 +234,22 @@
       (unless (module-loaded? '(big)) (load-module! '(big)))
       (check-equal? 300 (length (module-changes '(big))))))
 
-  (test "another thread imports plain libraries while the main thread loads modules"
-    (do ([i 0 (+ i 1)]) ((= i 40))
-      (write-library! (format "plain~a" i)
-        (format "(library (plain~a) (export x) (import (chezscheme)) (define x ~a))" i i))
-      (write-library! (format "loaded~a" i) "#!tuna\n(define (f) 1)\n"))
-    (let* ([failures '()]
-           [importer
-            (fork-thread
-              (lambda ()
-                (do ([i 0 (+ i 1)]) ((= i 40))
-                  (guard (c [#t (set! failures (cons c failures))])
-                    (call-with-library-lock
-                      (lambda ()
-                        (unless (= i (eval 'x (environment (list (string->symbol (format "plain~a" i))))))
-                          (set! failures (cons i failures)))))))))])
-      (do ([i 0 (+ i 1)]) ((= i 40))
-        (load-module! (list (string->symbol (format "loaded~a" i)))))
-      (thread-join importer)
-      (check-equal? '() failures)
-      (check (module-loaded? '(loaded39)))))
-
-  (test "only the main thread loads a module"
+  (test "only the main thread looks up a module or a plain library"
     (write-library! "elsewhere" "#!tuna\n(define (f) 1)\n")
-    (let ([message #f])
+    (write-library! "plain-elsewhere" "(library (plain-elsewhere) (export x) (import (chezscheme)) (define x 1))")
+    (let ([messages '()])
       (thread-join
         (fork-thread
           (lambda ()
-            (set! message
-              (raised-message
-                (lambda () (call-with-library-lock (lambda () (environment '(elsewhere))))))))))
-      (check-equal? "only the main thread makes changes" message))
+            (set! messages
+              (map (lambda (name)
+                     (raised-message
+                       (lambda () (call-with-library-lock (lambda () (environment name))))))
+                   '((elsewhere) (plain-elsewhere)))))))
+      (check-equal? '("only the main thread makes changes" "a library is first loaded on the main thread") messages))
     (load-module! '(elsewhere))
-    (check (module-loaded? '(elsewhere))))
+    (check (module-loaded? '(elsewhere)))
+    (check-equal? 1 (eval 'x (environment '(plain-elsewhere)))))
 
   (test "tick runs only on the main thread, and advice that raises is reported"
     (let ([ticks 0] [other-threads 0] [reported 0])

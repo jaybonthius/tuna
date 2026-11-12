@@ -6,6 +6,7 @@
 (import (tuna) (tuna plugins))
 (when-installed (vertico)
   (set-option! vertico:count 15))
+(import (console))
 > (install-plugin! '(use-plugin vertico (git "https://github.com/minad/vertico")))
 > (import (tuna eval))
 > (eval-file "~/.config/tuna/init.ss")
@@ -16,6 +17,7 @@
 (use-plugin vertico (git "https://github.com/minad/vertico") (commit "5f76a5364d614d437df7fff40ce52ac7db52ae83"))
 (when-installed (vertico)
   (set-option! vertico:count 15))
+(import (console))
 ; Its body is the body of a let, and the module is loaded on its own
 ; behalf, so the setting is the configuration's.
 > (option-settings vertico:count)

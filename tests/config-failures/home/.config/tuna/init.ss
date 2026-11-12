@@ -19,3 +19,4 @@
     (display "[last form]\n")))
 (display (list 'after (spell:language)))
 (newline)
+(import (console))

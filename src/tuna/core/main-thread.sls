@@ -60,7 +60,7 @@
         (condition-signal queue-ready))))
 
   ;; Once the process is shutting down, what other threads post, such as
-  ;; the console's next form or a second exit, would run after the modules
+  ;; a job's next value or a second exit, would run after the modules
   ;; it uses are gone; only what the main thread queues while it unloads
   ;; runs.
   (define (close-queue!)
@@ -199,8 +199,8 @@
       (enter-task! (this-thread-state) t)
       (k thunk)))
 
-  (define (post-task! thunk owner finished)
-    (enqueue! (make-task thunk owner (if finished (list finished) '()))))
+  (define (post-task! thunk owner)
+    (enqueue! (make-task thunk owner '())))
 
   (define (post! thunk)
     (unless (procedure? thunk)
@@ -208,7 +208,7 @@
     (let ([owner (current-owner-record)])
       (when (eq? owner tuna-owner)
         (assertion-violation 'post! "this code acts for no module; name its module with as-module"))
-      (post-task! thunk owner #f)))
+      (post-task! thunk owner)))
 
   (define (spawn-task thunk)
     (unless (procedure? thunk)
@@ -365,7 +365,7 @@
   ;; that it runs even after the thread's module is unloaded.
   (define (exit . arguments)
     (unless (on-main-thread?)
-      (post-task! (lambda () (apply chez:exit arguments)) (find-owner '(tuna)) #f))
+      (post-task! (lambda () (apply chez:exit arguments)) (find-owner '(tuna))))
     (apply chez:exit arguments))
 
   (define (run-main-loop)

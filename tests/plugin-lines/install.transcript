@@ -7,12 +7,3 @@
 ran while git ran
 > (installed-plugins)
 (other sources consult vertico compat greet)
-; A worker's thread finds a plain library that a plugin holds beside its
-; modules.
-> (use-plugin fuzzy (local "~/src/fuzzy"))
-> (define results '())
-> (start-job fuzzy:match-names "abc" (lambda (v) (set! results (cons v results))))
-#<job>
-> (sleep-for 0.3)
-> results
-(3)

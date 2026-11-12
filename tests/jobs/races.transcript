@@ -1,0 +1,121 @@
+; Values from many jobs at once each arrive on the main thread, each
+; job's in order.
+> (jobs:define-worker (count-up input emit)
+    (do ([i 0 (+ i 1)]) ((= i (cdr input))) (emit (cons (car input) i))))
+> (define received (make-vector 8 '()))
+> (define off-main 0)
+> (do ([id 0 (+ id 1)]) ((= id 8))
+    (jobs:start count-up (cons id 2000)
+      (lambda (v)
+        (unless (task? (current-task)) (set! off-main (+ off-main 1)))
+        (vector-set! received (car v) (cons (cdr v) (vector-ref received (car v)))))))
+> (wait-until (lambda () (for-all (lambda (l) (= (length l) 2000)) (vector->list received))))
+> (list off-main (for-all (lambda (l) (equal? (reverse l) (iota 2000))) (vector->list received)))
+(0 #t)
+; Stops race the starts: stopping a job before its body runs, or while it
+; runs, ends it with stopped, and leaves the others running.
+> (jobs:define-worker (spin x emit) (let loop () (loop)))
+> (define ended '())
+> (define (start-spin) (jobs:start spin 0 void (lambda (e) (set! ended (cons e ended)))))
+> (define early (map (lambda (i) (start-spin)) (iota 10)))
+> (define late (map (lambda (i) (start-spin)) (iota 10)))
+> (for-each jobs:stop! early)
+> (wait-until (lambda () (= (length ended) 10)))
+> (sleep-for 0.05)
+> ended
+(stopped stopped stopped stopped stopped stopped stopped stopped stopped stopped)
+> (for-each jobs:stop! late)
+> (wait-until (lambda () (= (length ended) 20)))
+> (for-all (lambda (e) (eq? e 'stopped)) ended)
+#t
+; Quits requested every millisecond land in the plugin's code on the main
+; thread, sending and delivering, and leave no mutex held: afterwards the
+; job still answers.
+> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+> (jobs:define-worker (echo x emit receive) (let loop () (emit (receive)) (loop)))
+> (jobs:define-worker (flood n emit) (let loop () (emit n) (loop)))
+> (define answers '())
+> (define echoing (jobs:start echo 0 (lambda (v) (set! answers (cons v answers)))))
+> (define flood-ended #f)
+> (define flooding (jobs:start flood 0 (lambda (v) (void)) (lambda (e) (set! flood-ended e))))
+> (define quitting #t)
+> (define quits 0)
+> (define (quitter)
+    (let loop ()
+      (when quitting
+        (request-quit!)
+        (chez:sleep (make-time 'time-duration 1000000 0))
+        (loop))))
+> (define (stress until)
+    (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (stress until)])
+      (let loop ()
+        (when (< (real-time) until)
+          (jobs:send! echoing 'stress)
+          (loop)))))
+> (begin
+    (fork-thread quitter)
+    (stress (+ (real-time) 2000))
+    (set! quitting #f)
+    (> quits 100))
+#t
+> (sleep-for 0.1)
+> (set! answers '())
+> (jobs:send! echoing 'after)
+> (wait-until (lambda () (memq 'after answers)))
+> (and (memq 'after answers) #t)
+#t
+> (jobs:stop! flooding)
+> (jobs:stop! echoing)
+> (wait-until (lambda () flood-ended))
+> flood-ended
+stopped
+; Quits requested as fast as a thread can, while the main thread delivers
+; a job's values, lose no more than those deliveries: afterwards the job
+; still sends. The form waits paused, so that no quit lands in it, and
+; the reports, whose number varies, go to a string port.
+> (define delivered 0)
+> (define counting (jobs:start flood 0 (lambda (v) (set! delivered (+ delivered 1)))))
+> (define stderr (console-error-port))
+> (define reports (open-output-string))
+> (define (after-storm thunk)
+    (suspend
+      (lambda (resume)
+        (fork-thread
+          (lambda ()
+            (chez:sleep (make-time 'time-duration 20000000 0))
+            (let ([until (+ (real-time) 2000)])
+              (let loop () (when (< (real-time) until) (request-quit!) (loop))))
+            (chez:sleep (make-time 'time-duration 100000000 0))
+            (resume thunk))))))
+> (console-error-port reports)
+> (after-storm
+    (lambda ()
+      (let retry ()
+        (guard (c [(quit-condition? c) (retry)])
+          (let ([before delivered])
+            (sleep-for 0.2)
+            (console-error-port stderr)
+            (list (> delivered before) (> (string-length (get-output-string reports)) 0)))))))
+(#t #t)
+> (jobs:stop! counting)
+; A quit landing in jobs:start or jobs:stop! leaves no job half started:
+; every job started ends.
+> (jobs:define-worker (nothing x emit) (void))
+> (define started 0)
+> (define finished-jobs 0)
+> (define landed 0)
+> (do ([i 0 (+ i 1)]) ((= i 100))
+    (guard (c [(quit-condition? c) (set! landed (+ landed 1))])
+      (request-quit!)
+      (let loop ()
+        (jobs:stop! (jobs:start nothing 0 void (lambda (e) (set! finished-jobs (+ finished-jobs 1)))))
+        (set! started (+ started 1))
+        (loop))))
+> landed
+100
+> (wait-until (lambda () (>= finished-jobs started)))
+> (>= finished-jobs started)
+#t
+> (jobs:define-worker (echo-once x emit) (emit x))
+> (finished echo-once 'still-working)
+((still-working) #f)

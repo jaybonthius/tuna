@@ -1,8 +1,10 @@
 #!tuna
-;; The stop is seen in the worker's own thread, where it writes the file
-;; a test can wait for.
-(define-worker (count-slowly path)
-  (dynamic-wind
+(import (jobs))
+
+;; The critical wind's out, which a stop cannot skip, writes the file a
+;; test waits for.
+(jobs:define-worker (count-slowly path emit)
+  (dynamic-wind #t
     void
     (lambda ()
       (let loop ([i 0])

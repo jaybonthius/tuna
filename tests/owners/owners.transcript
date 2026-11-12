@@ -10,10 +10,10 @@
 ! variable this-module is not bound
 ; The loaded modules, in the order they loaded.
 > (loaded-modules)
-((greet) (spell) (display) (theme))
+((greet) (spell) (display) (theme) (console))
 > (unload-module! '(spell))
 > (loaded-modules)
-((greet) (display) (theme))
+((greet) (display) (theme) (console))
 ; A changeable procedure is named by its exported name.
 > (greet:text)
 ! incorrect number of arguments 0 to #<procedure greet:text>

@@ -66,7 +66,7 @@
                   (compile-library source object)))))))
       (start-top-level! home (string-append configuration "/init.ss"))
       (install-exit-handler!)
-      (post-task! load-configuration! (find-owner '(init)) (lambda () (fork-thread read-console)))))
+      (post-task! load-configuration! (find-owner '(init)))))
 
   ;; Chez reports a definition after an expression on Tuna's expansion of
   ;; the definition, which has no position, so the file stands in as the
@@ -96,49 +96,4 @@
               (finish-saved-data!))
             (fresh-line (current-output-port))
             (flush-output-port (current-output-port)))
-          (apply exit-process exit-arguments)))))
-
-  (define (print-values . results)
-    (let ([out (current-output-port)])
-      (for-each
-        (lambda (v)
-          (unless (eq? v (void))
-            (fresh-line out)
-            (write v out)
-            (newline out)))
-        results)
-      (fresh-line out)
-      (flush-output-port out)))
-
-  ;; Chez's console input and output are one port under one mutex, which a
-  ;; read holds while it waits, so the main thread could not write until
-  ;; the next line came. The port is kept for the life of the process:
-  ;; collecting it would close standard input.
-  (define console-input
-    (transcoded-port (standard-input-port (buffer-mode block)) (native-transcoder)))
-
-  (define (next-input)
-    (guard (c [#t (lambda () (raise c))])
-      (let ([form (read console-input)])
-        (if (eof-object? form)
-            form
-            (lambda () (call-with-values (lambda () (eval-top-level form)) print-values))))))
-
-  ;; Each form runs to its end, pauses included, before the next is read,
-  ;; as at Chez's own REPL.
-  (define (read-console)
-    (let ([m (make-mutex)] [finished (make-condition)] [finished? #f])
-      (let loop ()
-        (let ([input (next-input)])
-          (cond
-            [(eof-object? input) (post-task! exit (find-owner '(repl)) #f)]
-            [else
-             (with-mutex m (set! finished? #f))
-             (post-task! input (find-owner '(repl))
-               (lambda () (with-mutex m (set! finished? #t) (condition-signal finished))))
-             (with-mutex m
-               (let wait ()
-                 (unless finished?
-                   (condition-wait finished m)
-                   (wait))))
-             (loop)]))))))
+          (apply exit-process exit-arguments))))))

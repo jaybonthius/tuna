@@ -7,3 +7,4 @@
     (lambda ()
       (chez:sleep (make-time 'time-duration 100000000 0))
       (request-quit!))))
+(import (console))

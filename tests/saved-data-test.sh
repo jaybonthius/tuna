@@ -16,9 +16,11 @@ fail() {
 home=$dir/home
 saved=$home/.local/share/tuna/saved
 mkdir -p "$home/.config/tuna/lib" "$dir/library" "$dir/work"
+cp -R plugins/. "$dir/library/"
 cat > "$home/.config/tuna/init.ss" <<'END'
 (import (tuna) (tuna plugins))
 (define-saved answers '() list?)
+(import (console))
 END
 cat > "$home/.config/tuna/lib/hist.sls" <<'END'
 #!tuna
@@ -75,7 +77,7 @@ mkdir -p "$home/src/notes" "$home/src/notes-fork"
 printf '#!tuna\n(define-saved hits 0 fixnum?)\n' > "$home/src/notes/notes.sls"
 cp "$home/src/notes/notes.sls" "$home/src/notes-fork/notes.sls"
 use_notes() {
-  printf '(import (tuna) (tuna plugins))\n(use-plugin notes (local "~/src/%s"))\n' "$1" > "$home/.config/tuna/init.ss"
+  printf '(import (tuna) (tuna plugins))\n(use-plugin notes (local "~/src/%s"))\n(import (console))\n' "$1" > "$home/.config/tuna/init.ss"
 }
 folder() {
   printf '%s' "$home/src/$1" | sed 's|%|%25|g; s|/|%2F|g'

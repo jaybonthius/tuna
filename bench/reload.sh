@@ -14,7 +14,7 @@ trap 'rm -rf "$dir"' EXIT
 lib=$dir/home/.config/tuna/lib
 mkdir -p "$lib" "$dir/library"
 cp bench/reload.sls "$lib/reload.sls"
-printf '(import (tuna) (reload))\n(reload:run)\n' > "$dir/home/.config/tuna/init.ss"
+printf '(import (tuna) (reload))\n(reload:run)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
 echo "$output" | awk '

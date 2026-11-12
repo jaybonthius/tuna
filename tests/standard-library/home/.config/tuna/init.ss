@@ -27,3 +27,4 @@
   (lambda ()
     (set-option-local! fill:column 100)
     (add-local-hook! files:before-save prog:indent-buffer -10)))
+(import (console))

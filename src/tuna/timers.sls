@@ -61,7 +61,7 @@
     (+ due (* repeat (+ 1 (quotient (- now due) repeat)))))
 
   (define (posting t)
-    (lambda () (post-task! (lambda () (run-timer! t)) (timer-owner t) #f)))
+    (lambda () (post-task! (lambda () (run-timer! t)) (timer-owner t))))
 
   ;; Called with timers-mutex held.
   (define (take-due! now)

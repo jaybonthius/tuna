@@ -5,3 +5,4 @@
 (use-plugin embark-consult (commit "1c2d3e4"))
 (use-plugin files)
 (use-plugin notes (local "~/src/notes"))
+(import (console))

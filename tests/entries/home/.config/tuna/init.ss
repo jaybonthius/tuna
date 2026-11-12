@@ -11,3 +11,4 @@
         (put-string (current-output-port)
           (call-with-input-file (string-append home "/versions/" version) get-string-all)))
       'replace)))
+(import (console))

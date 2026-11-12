@@ -4,3 +4,4 @@
 (use-plugin consult)
 (use-plugin files)
 (import (mine))
+(import (console))

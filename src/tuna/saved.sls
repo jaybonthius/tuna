@@ -104,7 +104,7 @@
           (set! pending (cons st pending))
           (unless write-posted?
             (set! write-posted? #t)
-            (post-task! write-pending! (find-owner '(tuna)) #f))))
+            (post-task! write-pending! (find-owner '(tuna))))))
       (void)))
 
   (define (drop-pending! st)

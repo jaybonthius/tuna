@@ -17,7 +17,7 @@
     plugin-commit
     module-plugin-source)
   (import (chezscheme) (tuna process) (tuna files)
-          (only (tuna core changes) check-main-thread on-main-thread? find-owner)
+          (only (tuna core changes) check-main-thread find-owner)
           (only (tuna core definitions) report-safely report-warning)
           (only (tuna core modules) import-spec-library loaded-modules
                 module-loaded? module-generation unload-module! reload-module! normal-path)
@@ -158,19 +158,15 @@
         [(file-directory? folder) (make-install-source #f #f #f #f)]
         [else #f])))
 
-  ;; Other threads look up plain libraries that plugins hold for workers;
-  ;; they read the disk, since the cache belongs to the main thread.
   (define install-sources (make-eq-hashtable))
 
   (define (installed-source id)
-    (if (on-main-thread?)
-        (let ([known (hashtable-ref install-sources id 'unread)])
-          (if (eq? known 'unread)
-              (let ([found (read-install-source id)])
-                (hashtable-set! install-sources id found)
-                found)
-              known))
-        (read-install-source id)))
+    (let ([known (hashtable-ref install-sources id 'unread)])
+      (if (eq? known 'unread)
+          (let ([found (read-install-source id)])
+            (hashtable-set! install-sources id found)
+            found)
+          known)))
 
   (define (install-root id found)
     (or (install-source-local found)
@@ -459,10 +455,9 @@
     (unless (module-file root (list id))
       (errorf who "plugin ~a holds no module (~a)" id id)))
 
-  ;; Other threads may look up the plugin's plain libraries meanwhile, so
-  ;; the old folder is moved aside, not deleted, before the new one comes.
   ;; The build runs in the plugin's own folder, since what it makes may
-  ;; record its path, so the old folder is kept until the build succeeds.
+  ;; record its path, so the old folder is moved aside, not deleted, and
+  ;; kept until the build succeeds.
   (define (replace-folder! who line temporary run-build)
     (let* ([id (line-id line)] [dir (line-clause line 'dir)]
            [folder (plugin-folder id)] [old (format "~a/.~a.old" plugins-root id)])
@@ -537,7 +532,7 @@
                             (lambda ()
                               (let ([result (guard (c [#t (lambda () (raise c))])
                                               (let ([v (thunk)]) (lambda () v)))])
-                                (post-task! done! (find-owner '(tuna)) #f)
+                                (post-task! done! (find-owner '(tuna)))
                                 (resume result)))))))])
         (done!)
         result)))

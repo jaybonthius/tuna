@@ -11,7 +11,8 @@ fail() {
 
 # A runner that passed everything would make every transcript useless.
 transcript() {
-  mkdir -p "$dir/$1"
+  mkdir -p "$dir/$1/home/.config/tuna"
+  printf '(import (console))\n' > "$dir/$1/home/.config/tuna/init.ss"
   printf "$2" > "$dir/$1/t.transcript"
   sh tests/run-transcript.sh "$tuna" "$dir/$1/t.transcript" 2>&1
 }

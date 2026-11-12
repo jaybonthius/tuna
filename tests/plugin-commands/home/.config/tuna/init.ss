@@ -27,3 +27,4 @@
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
 (use-plugin consult)
 (use-plugin embark-consult)
+(import (console))

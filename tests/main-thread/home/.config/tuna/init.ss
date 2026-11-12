@@ -6,3 +6,4 @@
 ;; first form after the configuration has finished.
 (define answer
   (suspend (lambda (resume) (post! (lambda () (resume (lambda () 42)))))))
+(import (console))
