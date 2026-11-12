@@ -114,8 +114,10 @@
       (when ls
         (remove-layers! ls owner key #f))))
 
+  ;; The main thread replaces the list while other threads read it, so
+  ;; read it once.
   (define (in-effect ls)
-    (and ls (pair? (layers-in-effect ls)) (car (layers-in-effect ls))))
+    (and ls (let ([in-effect (layers-in-effect ls)]) (and (pair? in-effect) (car in-effect)))))
 
   (define table-ref
     (case-lambda

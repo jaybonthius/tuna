@@ -69,6 +69,43 @@
       (take-back-changes! '(repl) '())
       (check-equal? '() (table-entries keymap))))
 
+  ;; Re-setting a key replaces its layer while other threads read it,
+  ;; and the key stays bound throughout; removing a key empties its
+  ;; layers under a reader.
+  (test "other threads read a table while the main thread re-sets and removes keys"
+    (do ([k 0 (+ k 1)]) ((= k 10)) (table-set! keymap k 0))
+    (let ([stop? #f] [raised 0] [unbound 0] [reads 0] [mutex (make-mutex)])
+      (define (reader)
+        (fork-thread
+          (lambda ()
+            (let loop ([n 0] [r 0] [u 0])
+              (if stop?
+                  (with-mutex mutex
+                    (set! raised (+ raised r))
+                    (set! unbound (+ unbound u))
+                    (set! reads (+ reads n)))
+                  (case (guard (c [#t 'raised])
+                          (let ([k (random 10)])
+                            (do ([j 0 (fx+ j 1)]) ((fx= j 20))
+                              (table-ref keymap 'removed)
+                              (table-owner keymap 'removed))
+                            (and (table-ref keymap k) (table-owner keymap k)
+                                 (<= 10 (length (table-entries keymap)) 11))))
+                    [(raised) (loop (+ n 1) (+ r 1) u)]
+                    [(#f) (loop (+ n 1) r (+ u 1))]
+                    [else (loop (+ n 1) r u)]))))))
+      (let ([readers (list (reader) (reader) (reader) (reader))])
+        (do ([i 1 (+ i 1)]) ((= i 100000))
+          (table-set! keymap (fxmod i 10) i)
+          (if (fxeven? i) (table-set! keymap 'removed i) (table-remove! keymap 'removed)))
+        (set! stop? #t)
+        (for-each thread-join readers))
+      (check-equal? 0 raised)
+      (check-equal? 0 unbound)
+      (check (> reads 0))
+      (take-back-changes! '(repl) '())
+      (check-equal? '() (table-entries keymap))))
+
   (test "only the main thread changes tables"
     (for-each
       (lambda (thunk) (check-equal? "only the main thread makes changes" (in-thread (lambda () (raised-message thunk)))))

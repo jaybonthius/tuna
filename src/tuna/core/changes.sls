@@ -537,15 +537,16 @@
              (update-layers! ls
                (when previous
                  (unlink-change! (layer-change previous))
-                 (layers-all-set! ls (remq previous (layers-all ls)))
-                 (layers-in-effect-set! ls (remq previous (layers-in-effect ls))))
+                 (layers-all-set! ls (remq previous (layers-all ls))))
                (letrec* ([change (link-change! owner (layers-kind ls) (layers-thing ls) detail
                                    (lambda () (drop-layer! ls l))
                                    (lambda () (sort-layers! ls)))]
-                         [l (make-layer owner value data change)])
+                         [l (make-layer owner value data change)]
+                         [in-effect (if previous (remq previous (layers-in-effect ls)) (layers-in-effect ls))])
                  (layers-all-set! ls (cons l (layers-all ls)))
-                 (unless (hidden? ls l)
-                   (layers-in-effect-set! ls (insert-layer ls l (layers-in-effect ls))))
+                 ;; One write, since other threads may read the layers in
+                 ;; effect and would see the key unset between two.
+                 (layers-in-effect-set! ls (if (hidden? ls l) in-effect (insert-layer ls l in-effect)))
                  l)))))]))
 
   ;; Each removal is a change of its own, so that a layer another owner's
