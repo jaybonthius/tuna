@@ -6,7 +6,7 @@
 (module (request response-status response-header response-body open-page page-id
          page-connect! page-close! page-send! page-send-numbered! send-items page-send-all! page-send-range!
          page-confirm! page-goodbye! page-next page-events-closed? page-connect-and-next! heartbeats-seen
-         wait-for-server occupy-port! target-port set-port-source! percent-encode-all
+         wait-for-server occupy-port! target-port target-address source-address set-port-source! percent-encode-all
          flood auto-confirm)
 
   (define libc (load-shared-object "libc.so.6"))
@@ -32,13 +32,20 @@
 
   (define target-port (make-thread-parameter #f))
 
-  (define (address-of port)
-    (let ([address (make-immobile-bytevector 16 0)])
-      (bytevector-u16-native-set! address 0 2)
-      (bytevector-u16-set! address 2 port (endianness big))
-      (bytevector-u8-set! address 4 127)
-      (bytevector-u8-set! address 7 1)
-      address))
+  (define address-of
+    (case-lambda
+      [(port) (address-of "127.0.0.1" port)]
+      [(host port)
+       (let ([address (make-immobile-bytevector 16 0)])
+         (bytevector-u16-native-set! address 0 2)
+         (bytevector-u16-set! address 2 port (endianness big))
+         (for-each (lambda (i part) (bytevector-u8-set! address (fx+ 4 i) (string->number part)))
+                   '(0 1 2 3) (split host #\.))
+         address)]))
+
+  (define target-address (make-thread-parameter "127.0.0.1"))
+
+  (define source-address (make-thread-parameter #f))
 
   (define c-bind (foreign-procedure "bind" (int u8* int) int))
   (define c-listen (foreign-procedure "listen" (int int) int))
@@ -57,8 +64,18 @@
 
   (define (set-port-source! source) (set! port-source source))
 
-  (define (connect port)
-    (let* ([fd (c-socket 2 1 0)] [address (address-of port)])
+  (define connect
+    (case-lambda
+      [(port) (connect port "127.0.0.1" #f)]
+      [(port to from)
+       (let ([fd (c-socket 2 1 0)])
+         (unless (or (not from) (fx= 0 (c-bind fd (address-of from 0) 16)))
+           (c-close fd)
+           (error 'http "cannot bind" from))
+         (connect-socket fd port to))]))
+
+  (define (connect-socket fd port to)
+    (let ([address (address-of to port)])
       (unless (fx= 0 (c-connect fd address 16))
         (c-close fd)
         (error 'http "cannot connect" port))
@@ -181,10 +198,10 @@
   ;; A whole response; for an event stream, what came before the server
   ;; ended it, since this client asks for no keep-alive.
   (define (request method path headers body)
-    (let ([port (server-port)])
+    (let ([port (server-port)] [to (target-address)] [from (source-address)])
       (off-main-thread
         (lambda ()
-          (let ([c (connect port)])
+          (let ([c (connect port to from)])
             (send-all c (request-bytes port method path headers body))
             (let-values ([(status response-headers) (read-head c)])
               (let ([body (cond
@@ -476,6 +493,10 @@
 (define (encode s) (percent-encode-all s))
 
 (define (on-port port thunk) (parameterize ([target-port port]) (thunk)))
+
+(define (to-address address thunk) (parameterize ([target-address address]) (thunk)))
+
+(define (from-address address thunk) (parameterize ([source-address address]) (thunk)))
 
 ;; The client follows the server's port through a procedure, so that it
 ;; need not import the plugin it tests and is not reloaded with it.

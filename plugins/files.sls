@@ -453,6 +453,9 @@
          (for-all char-numeric? (cdr (string->list s)))
          (string->number (substring s 1 (string-length s)))))
 
+  (define (flag? s)
+    (and (fx>= (string-length s) 2) (char=? (string-ref s 0) #\-) (char=? (string-ref s 1) #\-)))
+
   (define (line-start doc line)
     (let ([last (document:line doc (document:length doc))])
       (fxmax 1 (document:line-start doc (fxmax 1 (fxmin line last))))))
@@ -469,6 +472,7 @@
                (layout:switch-to-buffer b)
                (when line
                  (views:set-point! (layout:selected-view) (line-start (buffers:document b) line)))))]
+          [(flag? (car arguments)) (loop (cdr arguments) line shown)]
           [(line-argument (car arguments)) => (lambda (n) (loop (cdr arguments) n shown))]
           [else
            (let ([b (guard (c [(not (quit-condition? c)) (report c) #f])

@@ -5,7 +5,7 @@
 ;; definition, which can change under a running thread.
 (module %internals
   (client-record? connected-clients give-screen! call-page start-server! restart-server!
-   stop-server! allow-hosts! refresh-head-files!)
+   stop-server! allow-hosts! refresh-head-files! post-start! home-path?)
 
   (define main-thread (get-thread-id))
   (define lock (make-mutex))
@@ -60,9 +60,11 @@
   (define outbox '())
   (define sender #f)
   (define server #f)
-  (define server-port #f)
+  (define server-settings #f)
   (define started? #f)
+  (define start-posted? #f)
   (define allowed '())
+  (define proxy-secret #f)
   (define reported-types '())
 
   (define stylesheet-entries '())
@@ -553,13 +555,20 @@
 
   (define forbidden (response 403 '(("content-type" . "text/plain")) "Forbidden\n"))
 
-  ;; A web page from elsewhere may send a request to the port, but its
-  ;; browser names that page's origin.
+  ;; Whoever reaches 127.0.0.1 is on this machine, which Tuna trusts; a
+  ;; peer at another address may be anyone on that network, such as a
+  ;; proxy's, so it passes only with the proxy's secret. A web page from
+  ;; elsewhere may send a request to the port, but its browser names that
+  ;; page's origin.
   (define (allowed? request)
-    (let ([names (with-lock allowed)]
-          [host (request-authority request)]
-          [origin (request-header request "origin")])
-      (and host
+    (let* ([state (with-lock (cons allowed proxy-secret))]
+           [names (car state)]
+           [host (request-authority request)]
+           [origin (request-header request "origin")])
+      (and (or (member (request-client-address request) '("127.0.0.1" "::1"))
+               (let ([given (request-header request "tuna-proxy-secret")] [secret (cdr state)])
+                 (and given secret (secret=? (string->utf8 given) secret))))
+           host
            (member (string-downcase host) names)
            (or (not origin)
                (let ([origin (string-downcase origin)])
@@ -567,6 +576,16 @@
                            (or (string=? origin (string-append "http://" name))
                                (string=? origin (string-append "https://" name))))
                          names))))))
+
+  ;; Every byte is compared whatever the first difference, so the time
+  ;; taken does not tell a guesser how much of the secret was right.
+  (define (secret=? a b)
+    (and (fx= (bytevector-length a) (bytevector-length b))
+         (let loop ([i 0] [difference 0])
+           (if (fx= i (bytevector-length a))
+               (fx= difference 0)
+               (loop (fx+ i 1)
+                     (fxlogor difference (fxlogxor (bytevector-u8-ref a i) (bytevector-u8-ref b i))))))))
 
   (define (checked handle)
     (handler (lambda (request) (if (allowed? request) (handle request) forbidden))))
@@ -613,24 +632,70 @@
           (for-each (lambda (send) (guard (e [#t (report-later e)]) (send))) work)
           (loop next)))))
 
+  (define (proxy-problem message path)
+    (report (condition (make-warning) (make-who-condition 'web:proxy-secret-file)
+              (make-message-condition message) (make-irritants-condition (list path)))))
+
+  (define (home-path? path)
+    (and (fx>= (string-length path) 2) (string=? (substring path 0 2) "~/")))
+
+  ;; The file's text is never put in a report, which may be logged.
+  (define (read-proxy-secret path)
+    (let ([file (if (home-path? path)
+                    (string-append (getenv "HOME") (substring path 1 (string-length path)))
+                    path)])
+      (guard (e [(i/o-error? e) (proxy-problem "cannot read the file" path) #f])
+        (cond
+          [(not (fx= 0 (fxand (get-mode file) #o077)))
+           (proxy-problem "other users can open the file; make its mode 600" path)
+           #f]
+          [else
+           (let* ([text (call-with-port (open-input-file file) get-string-all)]
+                  [text (if (eof-object? text) "" text)]
+                  [end (let trim ([end (string-length text)])
+                         (if (and (fx> end 0) (memv (string-ref text (fx- end 1)) '(#\newline #\return)))
+                             (trim (fx- end 1))
+                             end))])
+             (if (fx< end 16)
+                 (begin (proxy-problem "the secret is shorter than 16 characters" path) #f)
+                 (string->utf8 (substring text 0 end))))]))))
+
+  (define (proxy-address)
+    (let* ([address (listen-also)] [file (proxy-secret-file)] [secret (and file (read-proxy-secret file))])
+      (with-lock (set! proxy-secret secret))
+      (when (and address (not file))
+        (report (condition (make-warning) (make-who-condition 'web:listen-also)
+                  (make-message-condition "web:proxy-secret-file is not set, so only 127.0.0.1 is listened on"))))
+      (and secret address)))
+
+  (define (listen p addresses)
+    (start-server
+      (map (lambda (address) (http-listener address p)) addresses)
+      (list (make-host (list (format "127.0.0.1:~a" p))
+              (list (route "/screen" (checked screen) (compress (encodings zstd gzip)))
+                    (route "/input" (checked input))
+                    (route "/applied" (checked applied))
+                    (route "/goodbye" (checked goodbye))
+                    (route "/web/" (checked page-file))
+                    (route "/files/" (checked served-file))
+                    (route "/" (checked page)))))
+      (server-options [on-error report-later]
+                      [http1-request-io-timeout (* 4 heartbeat-seconds 1000)])))
+
+  (define (current-settings) (list (port) (listen-also) (proxy-secret-file)))
+
+  ;; An address that cannot be listened on, such as a proxy network not up
+  ;; yet, leaves Tuna on 127.0.0.1 rather than nowhere.
   (define (start-server!)
     (set! started? #t)
-    (let ([p (port)] [me (list 'sender)])
+    (let ([p (port)] [also (proxy-address)] [me (list 'sender)])
       (allow-hosts!)
       (set! server
-        (start-server
-          (list (http-listener "127.0.0.1" p))
-          (list (make-host (list (format "127.0.0.1:~a" p))
-                  (list (route "/screen" (checked screen) (compress (encodings zstd gzip)))
-                        (route "/input" (checked input))
-                        (route "/applied" (checked applied))
-                        (route "/goodbye" (checked goodbye))
-                        (route "/web/" (checked page-file))
-                        (route "/files/" (checked served-file))
-                        (route "/" (checked page)))))
-          (server-options [on-error report-later]
-                          [http1-request-io-timeout (* 4 heartbeat-seconds 1000)])))
-      (set! server-port p)
+        (if also
+            (guard (e [(not (quit-condition? e)) (report e) (listen p '("127.0.0.1"))])
+              (listen p (list "127.0.0.1" also)))
+            (listen p '("127.0.0.1"))))
+      (set! server-settings (current-settings))
       (with-lock (set! sender me))
       (fork-thread (lambda () (send-loop me)))
       (printf "Tuna is at http://127.0.0.1:~a/\n" p)
@@ -646,14 +711,22 @@
 
   ;; Taking back a setting, as at exit or when the configuration is
   ;; evaluated again, changes the port too, so the server moves only once
-  ;; the code running now has finished, and only if the port is new.
+  ;; the code running now has finished, and only if a setting is new.
   (define (restart-server!)
     (when started?
       (as-module (this-module)
         (post! (lambda ()
-                 (unless (and server (fx= server-port (port)))
+                 (unless (and server (equal? server-settings (current-settings)))
                    (stop-server!)
                    (start-server!)))))))
+
+  ;; Started after the batch the plugin loads in, so that what that batch
+  ;; posted runs first, such as settings from the command line, whichever
+  ;; plugin loaded first.
+  (define (post-start!)
+    (unless start-posted?
+      (set! start-posted? #t)
+      (post-as-web start-server!)))
 
   (record-writer (record-type-descriptor client)
     (lambda (c p wr) (fprintf p "#<client ~a>" (client-number c)))))
@@ -661,12 +734,25 @@
 (import %internals)
 
 (define-option port 7337 (lambda (v) (and (fixnum? v) (fx<= 1 v 65535)))
-  "The port Tuna listens on, on 127.0.0.1 only."
+  "The port Tuna listens on, on 127.0.0.1 and on web:listen-also."
   (lambda (v) (restart-server!)))
 
 (define-option hosts '() (lambda (v) (and (list? v) (for-all string? v)))
   "Host names, as a Host header gives them, that reach the port besides 127.0.0.1 and localhost."
   (lambda (v) (allow-hosts!)))
+
+(define-option listen-also #f (lambda (v) (or (not v) (string? v)))
+  "A second numeric address the port is listened on, for a reverse proxy; needs web:proxy-secret-file."
+  (lambda (v) (restart-server!)))
+
+(define-option proxy-secret-file #f
+  ;; Chez counts ~user/ as absolute too, but only ~/ is expanded here.
+  (lambda (v)
+    (or (not v)
+        (and (string? v) (path-absolute? v)
+             (or (home-path? v) (not (char=? (string-ref v 0) #\~))))))
+  "The file, of mode 600, whose text a request from a peer other than 127.0.0.1 or ::1 must give as Tuna-Proxy-Secret."
+  (lambda (v) (restart-server!)))
 
 (define-hook client-added "Called with a client when its page is served.")
 
@@ -710,8 +796,7 @@
 (advice-add! batch-ended
   (lambda (ended)
     (ended)
+    (post-start!)
     (refresh-head-files!)))
 
 (on-unload stop-server!)
-
-(post! start-server!)

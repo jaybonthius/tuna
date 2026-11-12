@@ -45,11 +45,12 @@ expect() {
   [ "$2" = "$3" ] || fail "$1: expected $(printf '%s' "$3" | tr '\n' '|'), got $(printf '%s' "$2" | tr '\n' '|')"
 }
 
-# The command line's files are visited, and the last is shown at +N.
+# The command line's files are visited, and the last is shown at +N; a
+# flag, which starts with --, is not a file.
 output=$(run '(wait-until (lambda () (showing? "b.txt")))
 (map buffers:name (files:buffers))
 (shown)
-(buffers:replace! (files:buffer-visiting "b.txt") 1 1 "unsaved ")' a.txt +3 b.txt)
+(buffers:replace! (files:buffer-visiting "b.txt") 1 1 "unsaved ")' --eval='(void)' a.txt +3 --other b.txt)
 expect "first start" "$output" '("a.txt" "b.txt")
 ("b.txt" 3)
 #<edit 1>'
