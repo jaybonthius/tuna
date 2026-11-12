@@ -1,0 +1,64 @@
+; The configuration's use-plugin line sets an option and binds a key.
+> (keys:right-option-meta?)
+#f
+> (define frame (layout:current-frame))
+> (press-all! frame "C-c" "g" "o")
+> groucho:browsed
+1
+; Binding a command and a prefix keymap.
+> (keys:bind! keys:global "C-x C-f" files:find-file)
+> (keys:bind! keys:global "C-c p" cape:prefix-map)
+> (press-all! frame "C-x" "C-f")
+> files:visits
+(("notes.txt" #f))
+> (map name-of (list (keys:lookup frame "C-c p") (keys:lookup frame "C-c p f")))
+(keymap cape:file)
+; Remapping in a keymap that is searched.
+> (keys:remap! vertico:keymap editing:next-line vertico:next)
+> (add-hook! keys:find-keymaps (lambda (frame) (list vertico:keymap)))
+> (keys:press! frame "C-n")
+> (list vertico:moves (editing:take!))
+(1 ())
+> (keys:lookup (layout:current-frame) "C-x C-f")
+#<procedure>
+> (eq? (keys:lookup (layout:current-frame) "C-x C-f") files:find-file)
+#t
+> (keys:where-is (layout:current-frame) layout:other-view)
+("C-x o")
+; Pressing keys.
+> (keys:press! frame "C-x")
+> (keys:pending frame)
+"C-x"
+> (keys:press! frame "o")
+> (keys:pending frame)
+#f
+> layout:switches
+1
+; A command reading the character typed.
+> (import (views) (buffers) (document))
+> (commands:define-command (insert-typed [char (keys:typed-char)])
+    "Inserts CHAR at point."
+    (let ([view (views:current)])
+      (buffers:replace! (views:buffer view) (views:point view) (views:point view) (string char))))
+> (keys:bind! keys:global "<printing-char>" insert-typed)
+> (define notes (views:make (buffers:make "notes" "")))
+> (views:with-view notes (press-all! frame "H" "i" "!"))
+> (document:text (buffers:document (views:buffer notes)))
+"!iH"
+; A temporary keymap that stays while its keys are typed.
+> (import (repeat))
+> (define end-repeat
+    (keys:push-keymap! (layout:current-frame) repeat:keymap
+      (lambda (found command) (eq? found repeat:keymap))))
+> (press-all! frame "o" "o")
+> (list layout:switches (map name-of (keys:active-keymaps frame)))
+(3 (keymap keymap keys:global))
+> (keys:press! frame "C-n")
+> (list layout:switches (map name-of (keys:active-keymaps frame)))
+(3 (keymap keys:global))
+> (end-repeat)
+; Browser keys.
+> (keys:item-key '(("type" . "key") ("key" . "x") ("code" . "KeyX") ("modifiers" . #("control"))))
+"C-x"
+> (keys:item-key '(("type" . "key") ("key" . "≈") ("code" . "KeyX") ("modifiers" . #("left-option"))))
+"M-x"
