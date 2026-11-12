@@ -1,0 +1,103 @@
+; The ring across threads: only the main thread changes it or reads
+; buffers; any thread reads it and sees whole states; quits leave it
+; whole and saved.
+> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+> (define b (buffers:make "b" "Hello world\n"))
+> (kill-ring:push! (list "first"))
+> (define p (kill-ring:piece b 1 6))
+> (define (on-thread thunk)
+    (let ([result #f])
+      (fork-thread
+        (lambda ()
+          (set! result
+            (guard (c [#t (list (condition-who c) (condition-message c))])
+              (thunk)))))
+      (wait-until (lambda () result))
+      result))
+> (map on-thread
+    (list (lambda () (kill-ring:push! (list "x")))
+          (lambda () (kill-ring:append! (list "x")))
+          (lambda () (kill-ring:prepend! (list "x")))
+          (lambda () (kill-ring:rotate! 1))
+          (lambda () (kill-ring:piece b 1 6))
+          (lambda () (kill-ring:insert! b 1 "x"))
+          (lambda () (kill-ring:current))
+          (lambda () (kill-ring:entries))
+          (lambda () (kill-ring:text (list p "two")))
+          (lambda () (kill-ring:piece? p))))
+((kill-ring:push! "not on the main thread") (kill-ring:append! "not on the main thread") (kill-ring:prepend! "not on the main thread") (kill-ring:rotate! "not on the main thread") (kill-ring:piece "not on the main thread") (kill-ring:insert! "not on the main thread") ("first") (("first")) "Hello\ntwo" #t)
+> (list (kill-ring:entries) (contents b))
+((("first")) "Hello world\n")
+; Threads reading while the main thread pushes, appends, prepends and
+; rotates past the cap see an entry and entries from one moment.
+> (set-option! kill-ring:skip-duplicates #f kill-ring:max 50)
+> (remove-hook! kill-ring:after-push note-push)
+> (define (whole-entry? e) (and (pair? e) (list? e) (for-all string? e)))
+> (define reading #t)
+> (define reads 0)
+> (define bad '())
+> (define (reader)
+    (let loop ()
+      (when reading
+        (let ([c (kill-ring:current)] [es (kill-ring:entries)])
+          (unless (and (or (not c) (whole-entry? c)) (list? es) (<= (length es) 50) (for-all whole-entry? es))
+            (set! bad (cons (list c es) bad))))
+        (set! reads (+ reads 1))
+        (loop))))
+> (define (change! i)
+    (case (mod i 4)
+      [(0) (kill-ring:push! (list (number->string i) "b"))]
+      [(1) (kill-ring:append! (list "+" "-"))]
+      [(2) (kill-ring:prepend! (list "<" ">"))]
+      [(3) (kill-ring:rotate! i)]))
+> (begin
+    (for-each (lambda (i) (fork-thread reader)) '(1 2 3 4))
+    (do ([i 0 (+ i 1)]) ((= i 40000)) (change! i))
+    (set! reading #f)
+    (list (> reads 1000) bad (length (kill-ring:entries)) (kill-ring:current)))
+(#t () 50 ("<39800+" ">b-"))
+; Quits requested every millisecond land inside pushes, appends and
+; rotations. Afterwards the ring is whole, rotating by its length comes
+; back to the same entry, and its text is saved.
+; A quit landing in batch-ended's advice or a hook entry is reported;
+; those reports are counted instead.
+> (define quits 0)
+> (define (count-quits report c)
+    (if (quit-condition? c) (set! quits (+ quits 1)) (report c)))
+> (advice-add! report count-quits)
+> (define quitting #t)
+> (define stopped #f)
+> (define (quitter)
+    (let loop ()
+      (if quitting
+          (begin
+            (request-quit!)
+            (chez:sleep (make-time 'time-duration 1000000 0))
+            (loop))
+          (set! stopped #t))))
+> (define (stress until)
+    (let again ([i 0])
+      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again (+ i 1))])
+        (let loop ([i i])
+          (when (< (real-time) until)
+            (change! i)
+            (loop (+ i 1)))))))
+> (begin
+    (fork-thread quitter)
+    (stress (+ (real-time) 1500))
+    (set! quitting #f)
+    (let wait ()
+      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (wait)])
+        (let spin () (unless stopped (spin)))
+        (let settle ([n 0]) (when (< n 100000) (settle (+ n 1))))))
+    (> quits 100))
+#t
+> (advice-remove! report count-quits)
+> (let* ([es (kill-ring:entries)] [c (kill-ring:current)])
+    (list (<= (length es) 50) (for-all whole-entry? es) (and (memq c es) #t)
+          (eq? (kill-ring:rotate! (length es)) c)))
+(#t #t #t #t)
+> (kill-ring:push! (list "settled"))
+> (wait-until (lambda () (equal? (saved-texts) (ring-texts))))
+> (equal? (saved-texts) (ring-texts))
+#t
