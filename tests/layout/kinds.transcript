@@ -1,0 +1,52 @@
+; layout:define-container requires a draw clause and refuses a clause
+; given twice or unknown.
+> (layout:define-container plain (neighbour car))
+! layout:define-container: a draw clause is required (layout:define-container plain (neighbour car))
+> (layout:define-container plain (draw car) (draw cdr))
+! layout:define-container: clause given twice (draw cdr) in (layout:define-container plain (draw car) (draw cdr))
+> (layout:define-container plain (draw car) (size 3))
+! layout:define-container: invalid clause (size 3) in (layout:define-container plain (draw car) (size 3))
+> (layout:define-container plain (draw car) (collapse 1))
+! layout:define-container: invalid clause (collapse 1) in (layout:define-container plain (draw car) (collapse 1))
+> (layout:define-container plain (draw car) (child-attributes "weight"))
+! layout:define-container: invalid clause (child-attributes "weight") in (layout:define-container plain (draw car) (child-attributes "weight"))
+> (layout:define-container (plain) (draw car))
+! layout:define-container: expected (layout:define-container id clause ...) (layout:define-container (plain) (draw car))
+> (raised (lambda () (layout:define-container plain (draw 'nothing)) #t))
+(layout:define-container "not a procedure")
+> (define keymap-of-nothing 3)
+> (raised (lambda () (layout:define-container plain (draw car) (keymap keymap-of-nothing)) #t))
+(layout:define-container "not a keymap or #f")
+; A kind the configuration defines takes the configuration's name.
+> (define (draw-column node children focused draw-child) (haml (:div.column (map draw-child children))))
+> (layout:define-container column (draw draw-column) (child-attributes share) (collapse))
+> (column '((title . "c")) (views:view '((view . 9) (buffer . "x"))))
+(column ((title . "c")) #(views:view ((view . 9) (buffer . "x"))))
+; A collapsing kind's child takes its place and the kind's child
+; attributes go: share here, weight in a split.
+> (define notes (buffers:make "notes" "one\n"))
+> (define a (views:make notes))
+> (define b (views:make notes))
+> (define c (views:make notes))
+> (set-parts! (split:container '((direction . row)) (column '((weight . 3) (title . "c")) (atom a '(share . 1) '(weight . 7)) (atom b)) (atom c)))
+> (layout:delete-part! (layout:view-node b))
+> (tree)
+(layout:root () (split:container ((direction . row)) #(views:view ((view . 2) (buffer . "notes") (weight . 3))) #(views:view ((view . 4) (buffer . "notes")))))
+; The frame's state and the layout survive a reload of layout, which
+; reloads split too.
+> (layout:select! c)
+> (commands:run layout:zoom)
+> (define before (tree))
+> (unload-module! '(layout))
+> (map (lambda (m) (member m (loaded-modules))) '((layout) (split)))
+(#f #f)
+> (load-module! '(split))
+> (equal? before (tree))
+#t
+> (list (selected) (ids))
+(4 (4))
+> (commands:run layout:zoom)
+> (ids)
+(2 4)
+> (eq? (views:find (views:id a)) a)
+#t

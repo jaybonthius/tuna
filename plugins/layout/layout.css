@@ -1,0 +1,39 @@
+/* Rules are wrapped in :where() so that a theme's rule wins. */
+:where(#screen) {
+  block-size: 100vh;
+  margin: 0;
+}
+
+:where(.layout-root) {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+}
+
+:where(.layout-main) {
+  display: flex;
+  flex: 1 1 0;
+  min-block-size: 0;
+}
+
+:where(.layout-bar) {
+  display: flex;
+  flex: none;
+}
+
+:where(.layout-part, .layout-view) {
+  display: flex;
+  flex: 1 1 0;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+
+:where(.layout-view) > :where(.view) {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+
+:where(.layout-view.selected) {
+  outline: 1px solid currentcolor;
+  outline-offset: -1px;
+}

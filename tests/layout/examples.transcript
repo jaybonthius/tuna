@@ -1,0 +1,39 @@
+; The documented examples of layout and split, in order. Tabs is not
+; loaded, so its container is a split here and the frame example runs a
+; split command instead of tabs:new-tab.
+> (list (eq? (layout:display-action) split:display-right) (map cdr (table-entries layout:display-rules)))
+(#t (#<procedure>))
+> (define client (web:add-client! 1))
+> (set-parts!
+    '(split:container ((direction . row))
+       #(views:view ((view . 1) (buffer . "notes.org")))
+       (split:container ((weight . 2) (direction . column))
+         #(views:view ((view . 2) (buffer . "*scratch*")))
+         #(views:view ((view . 3) (buffer . "init.ss")))))
+    '#(views:view ((view . 4) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+> (tree)
+(layout:root () (split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes.org"))) (split:container ((weight . 2) (direction . column)) #(views:view ((view . 2) (buffer . "*scratch*"))) #(views:view ((view . 3) (buffer . "init.ss"))))) #(views:view ((view . 4) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+> (layout:call-with-frame (layout:frame client)
+    (lambda () (commands:run split:split-below)))
+> (tree)
+(layout:root () (split:container ((direction . row)) (split:container ((direction . column)) #(views:view ((view . 1) (buffer . "notes.org"))) #(views:view ((view . 5) (buffer . "*Help*")))) (split:container ((weight . 2) (direction . column)) #(views:view ((view . 2) (buffer . "*scratch*"))) #(views:view ((view . 3) (buffer . "init.ss"))))) #(views:view ((view . 4) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+> (layout:neighbour (layout:selected-view) (layout:direction left))
+#f
+> (views:id (layout:neighbour (layout:selected-view) (layout:direction right)))
+2
+> (layout:select! (layout:display-buffer help:buffer))
+> (buffers:name (views:buffer (layout:selected-view)))
+"*Help*"
+> (define (compilation-buffer? buffer)
+    (string=? (buffers:name buffer) "*compilation*"))
+> (table-set! layout:display-rules compilation-buffer? split:display-below)
+> (set-parts!
+    '(split:container ((direction . column))
+       #(views:view ((view . 1) (buffer . "notes.org") (weight . 2)))
+       #(views:view ((view . 2) (buffer . "*scratch*")))))
+> (tree)
+(layout:root () (split:container ((direction . column)) #(views:view ((view . 1) (buffer . "notes.org") (weight . 2))) #(views:view ((view . 2) (buffer . "*scratch*")))))
+> (views:id (split:split-view! (layout:selected-view) (split:direction column)))
+6
+> (tree)
+(layout:root () (split:container ((direction . column)) #(views:view ((view . 1) (buffer . "notes.org") (weight . 1))) #(views:view ((view . 6) (buffer . "*Help*") (weight . 1))) #(views:view ((view . 2) (buffer . "*scratch*")))))
