@@ -40,6 +40,7 @@ bench: exe
 	sh bench/buffers.sh build/bin/tuna || status=1; \
 	sh bench/commands.sh build/bin/tuna || status=1; \
 	sh bench/web.sh build/bin/tuna || status=1; \
+	sh bench/views.sh build/bin/tuna || status=1; \
 	exit $$status
 
 repl: build

@@ -1,0 +1,106 @@
+; A view of a long buffer draws the lines in view and half a view height
+; on each side. Before the browser has measured the view it guesses 50
+; lines in view and draws no spacers, whose height is the measured
+; average.
+> (define b (buffers:make "long" (lines 300)))
+> (define v (views:make b))
+> (drawn v)
+(1 75 75 () ())
+> (placement v)
+(1 1 top)
+; A report puts the line it names at the top and moves the cursor into
+; view, keeping its column. The drawn lines go 20 lines either side of
+; the 40 in view, and spacers of the measured 20 pixels a line stand in
+; for the rest, so the scroll bar spans the buffer.
+> (views:set-point! v 4)
+> (report v 1 101 3.5 140 20.0)
+> (list (line-of v (views:top v)) (line-of v (views:point v)) (- (views:point v) (line-start v 101)))
+(101 101 3)
+> (drawn v)
+(81 160 80 (80 141) (1600 2820))
+; A report is a new placement for clients that have applied none, at the
+; reported line, without a new number.
+> (placement v)
+(1 101 top)
+; The drawn lines stay until the lines in view come within half the
+; margin of their edge.
+> (report v 1 103 0 142 20.0)
+> (drawn v)
+(81 160 80 (80 141) (1600 2820))
+> (report v 1 115 0 154 20.0)
+> (drawn v)
+(95 174 80 (94 127) (1880 2540))
+; A report measured before the newest placement reached its client is
+; ignored.
+> (views:scroll-to! v (line-start v 120) (views:align top))
+> (placement v)
+(2 120 top)
+> (report v 1 1 0 40 20.0)
+> (line-of v (views:top v))
+120
+> (report v 2 116 0 155 20.0)
+> (line-of v (views:top v))
+116
+; After a batch that moved the cursor out of view, the next draw scrolls
+; it back: by as few lines as needed up to scroll-conservatively, which
+; the configuration sets to 20, else to the centre.
+> (views:set-point! v (line-start v 160))
+> (placement v)
+(3 121 top)
+> (line-of v (views:top v))
+121
+> (views:set-point! v (line-start v 100))
+> (placement v)
+(4 100 center)
+> (views:set-point! v (line-start v 250))
+> (placement v)
+(5 250 center)
+> (line-of v (views:top v))
+230
+> (with-options ([views:scroll-conservatively 0])
+    (views:set-point! v (line-start v 271))
+    (placement v))
+(6 271 center)
+; Whichever moved last decides: a scroll leaves the cursor where it is
+; until a report, which moves it into view.
+> (views:scroll-to! v (line-start v 10) (views:align bottom))
+> (list (placement v) (line-of v (views:top v)) (line-of v (views:point v)))
+((7 10 bottom) 1 271)
+> (report v 7 5 0 44 20.0)
+> (line-of v (views:point v))
+44
+> (report v 7 50 0 89 20.0)
+> (line-of v (views:point v))
+50
+; scroll-margin keeps lines between the cursor and the edges, at most a
+; quarter of those in view: 2 of 8.
+> (set-option! views:scroll-margin 3)
+> (report v 7 100 0 139 20.0)
+> (line-of v (views:point v))
+103
+> (views:set-point! v (line-start v 138))
+> (placement v)
+(8 102 top)
+> (set-option! views:scroll-margin 30)
+> (report v 8 100 0 107 20.0)
+> (line-of v (views:point v))
+105
+> (remove-option! views:scroll-margin)
+; At the start of the buffer no margin is kept.
+> (report v 8 1 0 40 20.0)
+> (views:set-point! v 1)
+> (placement v)
+(8 1 top)
+; Alignment is an enumeration.
+> (views:align middle)
+! universe of align does not include specified symbol middle
+> (views:scroll-to! v 1 'middle)
+! views:scroll-to!: not an alignment with irritant middle
+; wrap-lines decides how the view lays out long lines; a view's own value
+; wins.
+> (define w (views:make b))
+> (and (search (html->string (views:draw w)) "white-space:pre\"" 0) #t)
+#t
+> (views:set-option! w views:wrap-lines #t)
+> (and (search (html->string (views:draw w)) "white-space:pre-wrap" 0) #t)
+#t

@@ -1,0 +1,57 @@
+; Views drawn from view atoms are saved data, written after each batch
+; that changed one; the plugin's body makes them again from it, at
+; start-up and at every reload.
+> (import (md) (tuna eval))
+> (define notes (buffers:make "notes" "one two\nthree four\nfive\n"))
+> (define layout
+    (buffers:make "*layout*" (md:doc '() (views:view '((view . 4) (buffer . "notes"))))))
+> (define v (views:atom-view (document:token (buffers:document layout) 1)))
+> (define loose (views:make notes))
+> (list (views:id v) (views:id loose))
+(4 5)
+> (views:set-point! v 10)
+> (views:set-mark! v 3)
+> (views:add-cursor! v 19)
+#<cursor>
+> (views:fold! v 13 17)
+> (views:narrow! v 1 20)
+> (views:set-option! v views:wrap-lines #t)
+> (views:set-option! v views:drawn-margin 1)
+> (import (fill))
+> (views:set-option! v fill:column 50)
+> (views:scroll-to! v 9 (views:align top))
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/views.sls"))
+> (define v2 (views:find 4))
+> (list (eq? v v2) (views:find (views:id loose)) (eq? (views:buffer v2) notes))
+(#f #f #t)
+> (list (views:point v2) (views:mark v2) (map views:cursor-point (views:cursors v2)) (views:top v2))
+(10 3 (10 19) 9)
+> (list (views:folded? v2 15) (call-with-values (lambda () (views:bounds v2)) list))
+(#t (1 20))
+> (views:with-view v2 (list (views:wrap-lines) (views:drawn-margin) (fill:column)))
+(#t 1 70)
+; New views take numbers after the saved ones.
+> (> (views:id (views:make notes)) 4)
+#t
+; Reloading buffers closes every buffer and reloads views: a view whose
+; buffer is not made yet draws empty, and shows it once it is made.
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/buffers.sls"))
+> (define v3 (views:find 4))
+> (list (views:buffer v3) (views:point v3))
+(#f 10)
+> (show v3)
+<div class="view" data-view="4"></div>
+> (define notes (buffers:make "notes" "one two\nthree four\nfive\n"))
+> (list (eq? (views:buffer v3) notes) (views:point v3) (views:mark v3) (views:folded? v3 15))
+(#t 10 3 #t)
+; A view keeps the name its buffer has now.
+> (buffers:rename! notes "todo")
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/views.sls"))
+> (eq? (views:buffer (views:find 4)) notes)
+#t
+; Saved positions beyond a shorter buffer's end are clamped.
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/buffers.sls"))
+> (define notes (buffers:make "todo" "one\n"))
+> (define v4 (views:find 4))
+> (list (views:point v4) (map views:cursor-point (views:cursors v4)) (call-with-values (lambda () (views:bounds v4)) list))
+(5 (5 5) (1 6))
