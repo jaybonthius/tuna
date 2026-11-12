@@ -210,8 +210,11 @@
   ;; While a job's thread holds its mutex, the main thread retries for it,
   ;; and a quit landing between tries would lose the count of every
   ;; delivery until the job lets go; if those are the job's last values, it
-  ;; waits for room forever. The count runs as the in of Tuna's
-  ;; dynamic-wind, which holds quits off.
+  ;; waits for room forever. A quit landing in on-result or on-end would
+  ;; lose a value or the end, and leave a task waiting for them paused
+  ;; forever, so they run with the count, as the in of Tuna's
+  ;; dynamic-wind, which holds quits off, as Emacs runs process filters
+  ;; and sentinels with quits inhibited.
   (define (deliver! j n v)
     (unless (job-dropped? j)
       (dynamic-wind
@@ -220,18 +223,23 @@
             (let ([half (fxsrl result-limit 1)] [before (fx- (job-sent j) (job-delivered j))])
               (job-delivered-set! j (fxmax n (job-delivered j)))
               (when (and (fx> before half) (fx<= (fx- (job-sent j) (job-delivered j)) half))
-                (condition-signal (job-wake j))))))
-        (lambda () ((job-on-result j) v))
+                (condition-signal (job-wake j)))))
+          ((job-on-result j) v))
+        void
         void)))
 
   ;; What the body raised comes tagged, since it may be #f or stopped.
   (define (finish! j ended)
     (unless (job-dropped? j)
-      (forget! j)
-      ((job-on-end j)
-       (if (pair? ended)
-           (let ([raised (cdr ended)]) (report raised) raised)
-           ended))))
+      (dynamic-wind
+        (lambda ()
+          (forget! j)
+          ((job-on-end j)
+           (if (pair? ended)
+               (let ([raised (cdr ended)]) (report raised) raised)
+               ended)))
+        void
+        void)))
 
   ;; Runs on the job's thread with stops held off, since it takes the
   ;; job's mutex.
