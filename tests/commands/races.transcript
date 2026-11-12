@@ -1,0 +1,137 @@
+; Commands across threads and tasks: only the main thread runs them; each
+; task keeps its own running command through pauses; quits leave no
+; command bookkeeping behind.
+> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+> (define events '())
+> (define (event! . e) (set! events (cons e events)))
+> (define (take-events!) (let ([e (reverse events)]) (set! events '()) e))
+> (define (name-of c) (and c (commands:command-name c)))
+> (commands:define-command (plain) "Does nothing." 'plain)
+> (commands:run plain)
+plain
+; Another thread may read the last command and the registry, and sees no
+; running command, even in a thread forked by a command; it cannot run a
+; command.
+> (define (on-thread thunk)
+    (let ([result #f])
+      (fork-thread
+        (lambda ()
+          (set! result
+            (guard (c [#t (list (condition-who c) (condition-message c))])
+              (thunk)))))
+      (wait-until (lambda () result))
+      result))
+> (map on-thread
+    (list (lambda () (commands:run plain))
+          (lambda () (commands:command? plain))
+          (lambda () (commands:command-name plain))
+          (lambda () (eq? (commands:command-named 'plain) plain))
+          (lambda () (commands:command-names))
+          (lambda () (eq? (commands:last-command) plain))))
+((commands:run "not on the main thread") #t plain #t (open-notes plain) #t)
+> (commands:define-command (forking) "Asks a thread for the running command."
+    (list (commands:this-command) (on-thread (lambda () (list 'running (commands:this-command))))))
+> (equal? (commands:run forking) (list forking '(running #f)))
+#t
+; A command paused in one task keeps its own running command and last
+; command while commands run and end in another.
+> (define resume-waiting #f)
+> (commands:define-command (waiting [x (suspend (lambda (resume) (set! resume-waiting resume)))])
+    "Pauses for its argument, then notes what it sees."
+    (event! 'waiting x (name-of (commands:this-command)) (name-of (commands:last-command)))
+    x)
+> (define paused (spawn-task (lambda () (commands:run waiting))))
+> (wait-until (lambda () resume-waiting))
+> (list (commands:this-command) (name-of (commands:last-command)))
+(#f forking)
+> (commands:run plain)
+plain
+> (begin (resume-waiting (lambda () 'resumed)) (join-task paused))
+resumed
+> (list (take-events!) (name-of (commands:last-command)))
+(((waiting resumed waiting forking)) waiting)
+; A raise or a signal reaching a paused command is reported when it
+; resumes, and its run ends.
+> (set! resume-waiting #f)
+> (define paused (spawn-task (lambda () (commands:run waiting))))
+> (wait-until (lambda () resume-waiting))
+> (begin (resume-waiting (lambda () (raise 'cancelled))) (call-with-values (lambda () (join-task paused)) list))
+! non-condition value cancelled
+()
+> (set! resume-waiting #f)
+> (define paused (spawn-task (lambda () (commands:run waiting))))
+> (wait-until (lambda () resume-waiting))
+> (begin (signal-task paused 'stop) (call-with-values (lambda () (join-task paused)) list))
+! non-condition value stop
+()
+> (list (take-events!) (map name-of (list-head recent-commands 5)))
+(() (waiting waiting waiting plain forking))
+; A report that pauses, as a debugger waiting for the user would, ends
+; the run once it returns, so after-command runs once.
+> (commands:define-command (broken) "Raises." (car '()))
+> (define (pausing-report report c) (sleep-for 0.01) (report c))
+> (advice-add! report pausing-report)
+> (set! recent-commands '())
+> (call-with-values (lambda () (join-task (spawn-task (lambda () (commands:run broken))))) list)
+! car: () is not a pair
+()
+> (advice-remove! report pausing-report)
+> (map name-of recent-commands)
+(broken)
+; Quits requested every millisecond land in runs, hooks and bookkeeping.
+; Afterwards nothing is left running, and a run calls each hook once.
+> (define quits-reported 0)
+> (define (count-quits report c)
+    (if (quit-condition? c) (set! quits-reported (+ quits-reported 1)) (report c)))
+> (advice-add! report count-quits)
+> (define quits-caught 0)
+> (define runs 0)
+> (commands:define-command (busy [n 200])
+    "Counts to N."
+    (let loop ([i 0]) (if (< i n) (loop (+ i 1)) (set! runs (+ runs 1)))))
+> (define quitting #t)
+> (define stopped #f)
+> (define (quitter)
+    (let loop ()
+      (if quitting
+          (begin
+            (request-quit!)
+            (chez:sleep (make-time 'time-duration 1000000 0))
+            (loop))
+          (set! stopped #t))))
+> (define (stress until)
+    (let again ()
+      (guard (c [(quit-condition? c) (set! quits-caught (+ quits-caught 1)) (again)])
+        (let loop ()
+          (when (< (real-time) until)
+            (commands:run busy)
+            (loop))))))
+; The quitter's last request may land after the stress ends, and a quit
+; lands up to a thousand calls after its request, so quits are absorbed
+; until it has stopped and for many calls after.
+> (begin
+    (fork-thread quitter)
+    (stress (+ (real-time) 1500))
+    (set! quitting #f)
+    (let wait ()
+      (guard (c [(quit-condition? c) (set! quits-caught (+ quits-caught 1)) (wait)])
+        (let spin () (unless stopped (spin)))
+        (let settle ([n 0]) (when (< n 100000) (settle (+ n 1))))))
+    (list (> quits-reported 100) (> runs 1000)))
+(#t #t)
+> (advice-remove! report count-quits)
+> (add-hook! commands:before-command (lambda (c) (event! 'before (name-of c))))
+> (add-hook! commands:after-command (lambda (c) (event! 'after (name-of c))))
+> (list (commands:this-command) (commands:run plain) (take-events!) (name-of (commands:last-command)))
+(#f plain ((before plain) (after plain)) plain)
+; Reloading the plugin reloads the modules that define commands, and
+; keeps the configuration's and the REPL's commands and hook entries.
+> (import (demo) (tuna eval))
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/commands.sls"))
+> (list (commands:command? plain) (commands:command? open-notes) (commands:command? demo:hello))
+(#t #t #t)
+> (commands:command-names)
+(open-notes plain forking waiting broken busy demo:hello demo:add demo:ordered demo:slow demo:which-task)
+> (set! recent-commands '())
+> (list (commands:run demo:hello) (recent-names))
+("Hello, you!" (demo:hello))

@@ -1,0 +1,110 @@
+; Defining commands: names, documentation, interactive expressions, the
+; registry as table entries of the defining module, and reloads.
+> (import (demo))
+> (list (commands:command? demo:hello) (commands:command? demo:add) (commands:command? car) (commands:command? 'demo:hello))
+(#t #t #f #f)
+> (map commands:command-name (list demo:hello demo:ordered))
+(demo:hello demo:ordered)
+> (documentation demo:hello)
+"Says hello to NAME."
+> (commands:command-names)
+(open-notes demo:hello demo:add demo:ordered demo:slow demo:which-task)
+> (eq? (commands:command-named 'demo:add) demo:add)
+#t
+> (commands:command-named 'demo:nothere)
+#f
+> (commands:command-named "demo:add")
+! commands:command-named: not a symbol with irritant "demo:add"
+> (commands:command-name car)
+! commands:command-name: not a command with irritant #<procedure car>
+; Code calls a command with every argument, as any procedure, and no
+; hook runs.
+> (demo:add 1 2)
+3
+> (demo:hello "Groucho")
+"Hello, Groucho!"
+> recent-commands
+()
+; With no arguments, the interactive expressions give them, in order, in
+; the running task; one may pause.
+> (commands:run demo:hello)
+"Hello, you!"
+> (commands:run demo:hello "Harpo")
+"Hello, Harpo!"
+> (commands:run demo:ordered)
+(a b c)
+> demo:order
+(c b a)
+> (commands:run demo:slow)
+slept
+> (let ([me (current-task)]) (eq? me (commands:run demo:which-task)))
+#t
+; A parameter without an expression must be given by the caller.
+> (commands:run demo:add)
+! commands:run: a parameter has no interactive expression; pass the arguments with irritant demo:add
+> (commands:run demo:add 2 3)
+5
+; Malformed definitions are syntax errors.
+> (commands:define-command (f) 'no-string)
+! commands:define-command: expected (commands:define-command (id parameter ...) doc-string body ...+) (commands:define-command (f) (quote no-string))
+> (commands:define-command (f) "Only a string.")
+! commands:define-command: expected (commands:define-command (id parameter ...) doc-string body ...+) (commands:define-command (f) "Only a string.")
+> (commands:define-command (f 1) "A number." 1)
+! commands:define-command: not an identifier or a pair of one and an expression 1 in (commands:define-command (f 1) "A number." 1)
+> (commands:define-command (f [x]) "No expression." x)
+! commands:define-command: not an identifier or a pair of one and an expression (x) in (commands:define-command (f (x)) "No expression." x)
+> (commands:define-command (f [x 1 2]) "Two expressions." x)
+! commands:define-command: not an identifier or a pair of one and an expression (x 1 2) in (commands:define-command (f (x 1 2)) "Two expressions." x)
+> (commands:define-command ("f") "A string name." 1)
+! commands:define-command: expected (commands:define-command (id parameter ...) doc-string body ...+) (commands:define-command ("f") "A string name." 1)
+; A command is a changeable definition: it can be overridden, and the
+; procedure its name gives calls what is in effect.
+> (define hello demo:hello)
+> (set! demo:hello (lambda args "overridden"))
+> (list (hello) (commands:run demo:hello) (commands:command? hello))
+("overridden" "overridden" #t)
+> (map (lambda (c) (list (car c) (cadr c))) (definition-changes demo:hello))
+(((repl) override) ((demo) define))
+> (remove-override! demo:hello)
+> (hello "Chico")
+"Hello, Chico!"
+; The configuration and the REPL define commands without a prefix, and
+; defining one again replaces it.
+> (list (commands:command? open-notes) (commands:command-name open-notes) (commands:run open-notes))
+(#t open-notes notes)
+; Outside a module, define-public is Chez's define, which keeps no
+; documentation.
+> (documentation open-notes)
+#f
+> (define old-notes open-notes)
+> (commands:define-command (open-notes) "Opens other notes." 'other)
+> (list (commands:command? old-notes) (commands:command? open-notes) (commands:run (commands:command-named 'open-notes)))
+(#f #t other)
+; Reloading the module keeps the procedure its name gives, so a key bound
+; to it keeps working; a command added to the file is registered.
+> (define-table keymap)
+> (table-set! keymap "C-h" demo:hello)
+> (let ([p (open-file-output-port (string-append (getenv "HOME") "/.config/tuna/lib/demo.sls")
+                                  (file-options no-fail no-truncate append) (buffer-mode block) (native-transcoder))])
+    (put-string p "\n(commands:define-command (later) \"Added later.\" 'later)\n")
+    (close-port p))
+> (import (tuna eval))
+> (eval-file "~/.config/tuna/lib/demo.sls")
+> (list (eq? hello demo:hello) (commands:command? hello) (commands:run (table-ref keymap "C-h")))
+(#t #t "Hello, you!")
+> (commands:command-names)
+(open-notes demo:hello demo:add demo:ordered demo:slow demo:which-task demo:later)
+> (commands:run demo:later)
+later
+; Unloading the module unregisters its commands; loading it again
+; registers the same procedures.
+> (unload-module! '(demo))
+> (list (commands:command? hello) (commands:command-named 'demo:hello) (commands:command-names))
+(#f #f (open-notes))
+> (commands:run hello)
+! commands:run: not a command with irritant #<procedure>
+> (load-module! '(demo))
+> (list (eq? hello (commands:command-named 'demo:hello)) (commands:command? hello) (commands:run hello))
+(#t #t "Hello, you!")
+> (module-changes '(demo))
+((table-entry commands:registry demo:later) (define demo:later #f) (table-entry commands:registry demo:which-task) (define demo:which-task #f) (table-entry commands:registry demo:slow) (define demo:slow #f) (table-entry commands:registry demo:ordered) (define demo:ordered #f) (table-entry commands:registry demo:add) (define demo:add #f) (table-entry commands:registry demo:hello) (define demo:hello #f) (define demo:note! #f) (define demo:order #f))

@@ -38,6 +38,7 @@ bench: exe
 	sh bench/reload.sh build/bin/tuna || status=1; \
 	sh bench/document.sh build/bin/tuna || status=1; \
 	sh bench/buffers.sh build/bin/tuna || status=1; \
+	sh bench/commands.sh build/bin/tuna || status=1; \
 	exit $$status
 
 repl: build
