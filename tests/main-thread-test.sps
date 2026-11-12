@@ -1,6 +1,6 @@
 (import (chezscheme) (tuna-test) (chez-lang loader) (chez-lang language)
         (tuna core changes) (tuna core definitions) (tuna core modules)
-        (except (tuna core main-thread) exit) (prefix (only (tuna core replaced) fork-thread) tuna:))
+        (except (tuna core main-thread) exit) (prefix (only (tuna core replaced) fork-thread dynamic-wind) tuna:))
 
 (define root
   (let ([dir (format "/tmp/tuna-main-thread-test-~a" (get-process-id))])
@@ -270,6 +270,89 @@
       (check (> ticks 100))
       (check-equal? 0 other-threads)
       (check-equal? 1 reported)))
+
+  ;; Re-entering a paused task redoes its winders one at a time; the
+  ;; outermost asks for a quit, and three hundred levels lie between it and
+  ;; the guard, whose handler comes back last. Each level is a Tuna wind
+  ;; and code that allows quits, as a hook entry does, around a Chez wind
+  ;; that spends calls as it is redone, so the quit falls among the
+  ;; winders.
+  (test "a quit requested as a task resumes lands inside its handlers"
+    (define (burn) (let loop ([i 0]) (when (< i 20) (loop (+ i 1)))))
+    (define (nested n thunk)
+      (if (= n 0)
+          thunk
+          (lambda ()
+            (tuna:dynamic-wind void
+              (lambda () (with-quits-allowed #t (dynamic-wind burn (nested (- n 1) thunk) void)))
+              void))))
+    (define (trial)
+      (let ([entered 0])
+        (tuna:dynamic-wind
+          (lambda () (set! entered (+ entered 1)) (when (= entered 2) (request-quit!)))
+          (nested 300
+            (lambda ()
+              (guard (c [(quit-condition? c) 'caught])
+                (suspend (lambda (resume) (resume void)))
+                (let spin ([i 0]) (if (< i 1000000) (spin (+ i 1)) 'not-quit)))))
+          void)))
+    (define (quiet report c) (unless (quit-condition? c) (report c)))
+    (advice-add! report quiet)
+    (let ([results (map (lambda (i) (guard (c [(quit-condition? c) 'killed]) (join-task (spawn-task trial))))
+                        (iota 20))])
+      (advice-remove! report quiet)
+      (check-equal? (make-list 20 'caught) results)))
+
+  ;; Leaving a task for the loop undoes its winders one at a time; the
+  ;; innermost asks for a quit, and three hundred winds lie between it and
+  ;; the guard.
+  (test "a quit requested as a task pauses lands in no handler of the paused task"
+    (define (nested n thunk)
+      (if (= n 0) thunk (lambda () (tuna:dynamic-wind void (nested (- n 1) thunk) void))))
+    (define (trial)
+      (let ([asked #f])
+        (guard (c [(quit-condition? c) 'caught])
+          ((nested 300
+             (lambda ()
+               (tuna:dynamic-wind
+                 void
+                 (lambda () (suspend (lambda (resume) (resume void))) 'finished)
+                 (lambda () (unless asked (set! asked #t) (request-quit!))))))))))
+    (let ([results (map (lambda (i) (guard (c [(quit-condition? c) 'killed]) (join-task (spawn-task trial))))
+                        (iota 20))])
+      (check-equal? (make-list 20 'finished) results)))
+
+  (test "quits from another thread never skip the guard of a task that pauses and resumes"
+    (let ([finished 0] [caught 0] [open-winds 0] [tasks 400])
+      (define (one)
+        (guard (c [(quit-condition? c) (set! caught (+ caught 1))])
+          (tuna:dynamic-wind
+            (lambda () (set! open-winds (+ open-winds 1)))
+            (lambda ()
+              (do ([i 0 (+ i 1)]) ((= i 100))
+                (suspend (lambda (resume) (resume void)))
+                (let burn ([j 0]) (when (< j 2000) (burn (+ j 1))))))
+            (lambda () (set! open-winds (- open-winds 1)))))
+        (set! finished (+ finished 1)))
+      (define (quiet report c) (unless (quit-condition? c) (report c)))
+      (advice-add! report quiet)
+      (wait-until-called
+        (lambda (done)
+          (do ([i 0 (+ i 1)]) ((= i tasks)) (spawn-task one))
+          (tuna:fork-thread
+            (lambda ()
+              (let ([until (+ (real-time) 1000)])
+                (let loop ()
+                  (when (< (real-time) until)
+                    (request-quit!)
+                    (sleep (make-time 'time-duration 100000 0))
+                    (loop))))
+              (let wait ([n 0]) (unless (or (= finished tasks) (= n 500)) (sleep-ms 10) (wait (+ n 1))))
+              (post! done)))))
+      (advice-remove! report quiet)
+      (check-equal? tasks finished)
+      (check (> caught 0))
+      (check-equal? 0 open-winds)))
 
   ;; The advice on report asks for a second quit while the first is
   ;; reported, and lets it land after a random number of calls, so that

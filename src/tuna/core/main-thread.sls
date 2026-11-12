@@ -94,6 +94,16 @@
   ;; finishing a task, must run outside the task's dynamic context.
   (define return-to-loop #f)
 
+  ;; Winders are redone one at a time, so between them the handlers in
+  ;; place belong to neither the task nor the loop: a quit landing there
+  ;; would skip the task's handlers, or be caught by one of a task already
+  ;; marked paused. Requests made meanwhile wait.
+  (define switching? #f)
+
+  (define (switch-to-loop! thunk)
+    (set! switching? #t)
+    (return-to-loop thunk))
+
   (define (current-task)
     (and (on-main-thread?) running-task))
 
@@ -114,6 +124,7 @@
             (thread-state-owner-set! s loop-owner)
             (thread-state-quits-allowed-set! s loop-allowed)
             (set! running-task #f)
+            (set! switching? #f)
             (after))
           (let loop ()
             (when (and batch-ran? (null? taken))
@@ -153,7 +164,7 @@
         (thread-state-owner-set! s outer-owner)
         (set! running-task #f)
         (if (task-continuation t)
-            (return-to-loop (lambda () (finish! t 'done results)))
+            (switch-to-loop! (lambda () (finish! t 'done results)))
             (finish! t 'done results)))))
 
   (define (enter-task! s t)
@@ -175,7 +186,7 @@
        (when (debug-on-exception)
          (debug-condition c)
          (debug))
-       (return-to-loop (lambda () (finish! t 'failed c)))]))
+       (switch-to-loop! (lambda () (finish! t 'failed c)))]))
 
   ;; Work posted by an instance of a module that has since unloaded must not
   ;; run under the module's next instance.
@@ -196,6 +207,7 @@
     (when (and (eq? (task-state t) state) (eq? (task-continuation t) k))
       (hashtable-delete! paused-tasks t)
       (task-state-set! t 'running)
+      (set! switching? #t)
       (enter-task! (this-thread-state) t)
       (k thunk)))
 
@@ -255,13 +267,16 @@
         (when signal
           (task-signal-set! t #f)
           (raise (car signal))))
-      ((call/cc
-         (lambda (k)
-           (receiver (make-resume t k))
-           (task-continuation-set! t k)
-           (task-state-set! t 'paused)
-           (hashtable-set! paused-tasks t #t)
-           (return-to-loop void))))))
+      (let ([thunk (call/cc
+                     (lambda (k)
+                       (receiver (make-resume t k))
+                       (set! switching? #t)
+                       (task-continuation-set! t k)
+                       (task-state-set! t 'paused)
+                       (hashtable-set! paused-tasks t #t)
+                       (return-to-loop void)))])
+        (set! switching? #f)
+        (thunk))))
 
   (define (check-task who v)
     (unless (task? v)
@@ -339,7 +354,7 @@
         (fluid-let ([ticking? #t])
           (guard (c [#t (report-safely c)])
             (tick))))
-      (when (quits-allowed)
+      (when (and (quits-allowed) (not switching?))
         (quit-if-requested!))))
 
   (define (report-on-main-thread c)
@@ -374,7 +389,7 @@
     (reset-handler
       (lambda ()
         (let ([t running-task])
-          (return-to-loop (if t (lambda () (finish! t 'done '())) void)))))
+          (switch-to-loop! (if t (lambda () (finish! t 'done '())) void)))))
     (set-timer timer-ticks)
     (run-items! #t))
 
