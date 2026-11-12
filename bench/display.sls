@@ -1,0 +1,190 @@
+#!tuna
+(import (document) (buffers) (views) (layout) (split) (web) (haml) (http))
+
+(define (now-ns)
+  (let ([t (current-time 'time-monotonic)])
+    (+ (* (time-second t) 1000000000) (time-nanosecond t))))
+
+(define (median xs)
+  (list-ref (list-sort < xs) (quotient (length xs) 2)))
+
+(define (ns-per-op count run)
+  (median
+    (map (lambda (k)
+           (collect-rendezvous)
+           (let ([start (now-ns)])
+             (do ([i 0 (fx+ i 1)]) ((fx= i count)) (run i))
+             (/ (- (now-ns) start) (exact->inexact count))))
+         (iota 9))))
+
+(define (show name value)
+  (printf "~a ~,2f\n" name value))
+
+(buffers:define-layer syntax (priority 10))
+
+(define (draw-paragraph node view) (haml (:div.p (views:draw-children view node))))
+
+(buffers:define-kind code (content nodes))
+(buffers:define-kind paragraph (draw draw-paragraph))
+
+(define (code-line k)
+  (format "  (define (name-~a x) (+ x ~a)) ; note\n" (mod k 997) (mod k 89)))
+
+(define (spans-of-line start line)
+  (let loop ([i 0] [acc '()] [n 0])
+    (cond
+      [(or (= n 4) (>= (+ i 6) (string-length line))) (reverse acc)]
+      [(char=? (string-ref line i) #\space) (loop (+ i 1) acc n)]
+      [else
+       (let ([end (let scan ([j i]) (if (or (= j (string-length line)) (char=? (string-ref line j) #\space)) j (scan (+ j 1))))])
+         (loop end (cons (list (+ start i) (+ start end) (if (even? n) '((face . keyword)) '((face . name)))) acc) (+ n 1)))])))
+
+(define (text-buffer name lines)
+  (let* ([texts (map code-line (iota lines))]
+         [b (buffers:make name (apply string-append texts))])
+    (let loop ([texts texts] [at 1] [spans '()])
+      (if (null? texts)
+          (buffers:set-spans! (buffers:layer b syntax) 0 (document:length (buffers:document b)) (reverse spans))
+          (loop (cdr texts) (+ at (string-length (car texts)))
+                (append (reverse (spans-of-line at (car texts))) spans))))
+    b))
+
+(define (node-buffer name lines)
+  (buffers:make name (apply code '() (map (lambda (k) (paragraph '() (code-line k))) (iota lines)))))
+
+(define (show-layout! b views)
+  (layout:reset-layout)
+  (let ([v (layout:selected-view)])
+    (layout:switch-to-buffer b)
+    (when (= views 3)
+      (let ([right (split:split-view! v (split:direction row))])
+        (layout:switch-to-buffer b)
+        (split:split-view! right (split:direction column))))
+    (for-each
+      (lambda (v)
+        (let* ([doc (buffers:document b)]
+               [middle (document:line-start doc (quotient (document:line doc (document:length doc)) 2))])
+          (views:set-point! v (+ middle 4))
+          (views:scroll-to! v middle (views:align center))))
+      (layout:views))
+    (layout:select! v)))
+
+;; Typing then deleting keeps every screen different and the buffer the
+;; same size.
+(define (edit! i)
+  (let* ([v (layout:selected-view)] [b (views:buffer v)] [p (views:point v)])
+    (if (even? i)
+        (begin (buffers:replace! b p p "x") (views:set-point! v (+ p 1)))
+        (buffers:replace! b (- p 1) p ""))))
+
+(define (screen-bytes client) (bytevector-length (html->bytevector (layout:screen client))))
+
+(define (lines-drawn client)
+  (let ([html (html->string (layout:screen client))])
+    (let loop ([i 0] [n 0])
+      (let ([j (let search ([k i])
+                 (cond [(> (+ k 11) (string-length html)) #f]
+                       [(string=? (substring html k (+ k 11)) "data-line=\"") k]
+                       [else (search (+ k 1))]))])
+        (if j (loop (+ j 11) (+ n 1)) n)))))
+
+(define (wait-for done?)
+  (let loop ([n 0])
+    (unless (or (done?) (= n 500))
+      (sleep-for 0.01)
+      (loop (+ n 1)))))
+
+;; The pages confirm no screen, so that their work does not share the
+;; CPUs with what display costs the main thread.
+(define (connect-pages! n)
+  (let ([before (length (web:clients))])
+    (for-each (lambda (i) (http:connect! (http:page))) (iota n))
+    (wait-for (lambda () (= (length (web:clients)) (+ before n))))))
+
+(define (number-after html name)
+  (let ([n (string-length name)])
+    (let search ([k 0])
+      (if (string=? (substring html k (+ k n)) name)
+          (let digits ([k (+ k n)] [v 0])
+            (if (char-numeric? (string-ref html k))
+                (digits (+ k 1) (+ (* v 10) (- (char->integer (string-ref html k)) 48)))
+                v))
+          (search (+ k 1))))))
+
+(define (drawn-range html)
+  (let loop ([i 0] [first #f] [last #f])
+    (let ([j (let search ([k i])
+               (cond [(> (+ k 11) (string-length html)) #f]
+                     [(string=? (substring html k (+ k 11)) "data-line=\"") k]
+                     [else (search (+ k 1))]))])
+      (if j
+          (let ([n (number-after (substring html j (min (string-length html) (+ j 30))) "data-line=\"")])
+            (loop (+ j 11) (or first n) n))
+          (values first last)))))
+
+(define (report! v client height)
+  (let ([html (html->string (views:draw v client))])
+    (let-values ([(first last) (drawn-range html)])
+      (let* ([doc (buffers:document (views:buffer v))]
+             [top (document:line doc (views:top v client))]
+             [shown (quotient height 22)])
+        ((table-ref web:input-handlers "scroll") client
+         `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,(number-after html "data-placement=\""))
+           ("report" . 1) ("top" . ,top) ("offset" . 0) ("lastVisible" . ,(+ top shown -1)) ("spacer" . null)
+           ("spacerDistance" . 0) ("before" . ,(- top first)) ("after" . ,(- last top))
+           ("drawnHeight" . ,(* 22 (+ 1 (- last first)))) ("above" . ,(* 22 (- top first)))
+           ("below" . ,(max 0 (- (* 22 (+ 1 (- last top))) height))) ("width" . 800) ("height" . ,height)
+           ("settled" . #t)))))))
+
+(define (measure-all!)
+  (for-each
+    (lambda (client k)
+      (let ([height (if (even? k) 990 800)] [vs (layout:views)])
+        (for-each
+          (lambda (v i)
+            (let ([h (if (and (= (length vs) 3) (> i 0)) (quotient height 2) height)])
+              (report! v client h)
+              (report! v client h)))
+          vs (iota (length vs)))))
+    (web:clients) (iota (length (web:clients)))))
+
+(define (draw-cost client)
+  (ns-per-op 200
+    (lambda (i)
+      (edit! i)
+      (web:send-screen! client (layout:screen client)))))
+
+(define (batch-cost client)
+  (ns-per-op 200
+    (lambda (i)
+      (edit! i)
+      (batch-ended))))
+
+(define (case! name b views)
+  (show-layout! b views)
+  (measure-all!)
+  (let ([client (car (web:clients))])
+    (printf "~a: ~a lines drawn, ~a bytes a screen\n" name (lines-drawn client) (screen-bytes client))
+    (show (string-append "draw-" name) (draw-cost client))))
+
+(define (run)
+  (http:use-port! (lambda () (web:port)))
+  (http:wait-for-server)
+  (let ([text (text-buffer "text" 22000)] [nodes (node-buffer "nodes" 22000)])
+    (collect (collect-maximum-generation))
+    (connect-pages! 1)
+    (show-layout! text 1)
+    (measure-all!)
+    (let ([client (car (web:clients))])
+      (show "batch-one-client" (batch-cost client))
+      (show "batch-unchanged" (ns-per-op 200 (lambda (i) (batch-ended))))
+      (connect-pages! 1)
+      (measure-all!)
+      (show "batch-two-clients" (batch-cost client))
+      (connect-pages! 2)
+      (measure-all!)
+      (show "batch-four-clients" (batch-cost client)))
+    (case! "text-one-view" text 1)
+    (case! "text-three-views" text 3)
+    (case! "nodes-one-view" nodes 1)
+    (case! "nodes-three-views" nodes 3)))

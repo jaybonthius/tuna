@@ -1,0 +1,5 @@
+; The test configuration gives its own layout in its lib/, which Tuna
+; finds before the plugin; display draws each client with it.
+> (define desktop (web:connect! 'desktop))
+> (last-shown desktop)
+"<p>Hello from Tuna</p>"
