@@ -65,7 +65,7 @@
 > (list (views:next-stop v 4) (views:previous-stop v 14) (views:next-stop v 3))
 (14 4 4)
 > (show v)
-<div class="view" data-view="1" data-placement="1" data-place-line="1" data-place-align="top" data-place-offset="0" style="overflow:auto;white-space:pre"><div class="line" id="v1-1" data-line="1"><span class="cursor primary"></span>one<span class="fold">…</span>r five six</div><div class="line" id="v1-3" data-line="3">seven</div><div class="line" id="v1-4" data-line="4"><br></div></div>
+<div class="view" data-view="1" data-placement="*" data-place-line="1" data-place-align="center" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre"><div class="view-lines"><div class="line" id="v1-1" data-line="1"><span class="cursor primary"></span>one<span class="fold">…</span>r five six</div><div class="line" id="v1-3" data-line="3">seven</div><div class="line" id="v1-4" data-line="4"><br></div></div></div>
 > (views:folded? w 9)
 #f
 ; Folds follow edits: text typed before a fold moves it, text typed at
@@ -94,7 +94,7 @@
 > (list (views:folded? v 1) (views:folded? v 2))
 (#f #f)
 > (show v)
-<div class="view" data-view="1" data-placement="1" data-place-line="1" data-place-align="top" data-place-offset="0" style="overflow:auto;white-space:pre"><div class="line" id="v1-1" data-line="1">x three</div><div class="line" id="v1-2" data-line="2">four fiv<span class="cursor primary"></span>e six</div><div class="line" id="v1-3" data-line="3">seven</div><div class="line" id="v1-4" data-line="4"><br></div></div>
+<div class="view" data-view="1" data-placement="*" data-place-line="2" data-place-align="center" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre"><div class="view-lines"><div class="line" id="v1-1" data-line="1">x three</div><div class="line" id="v1-2" data-line="2">four fiv<span class="cursor primary"></span>e six</div><div class="line" id="v1-3" data-line="3">seven</div><div class="line" id="v1-4" data-line="4"><br></div></div></div>
 ; Narrowing: the view draws and moves only within it; other views see
 ; all; the cursor moves inside.
 > (document:text (buffers:document notes))
@@ -111,7 +111,7 @@
 > (views:point v)
 15
 > (show v)
-<div class="view" data-view="1" data-placement="2" data-place-line="2" data-place-align="top" data-place-offset="0" style="overflow:auto;white-space:pre"><div class="line" id="v1-2" data-line="2"><span class="cursor primary"></span>ive six</div><div class="line" id="v1-3" data-line="3">sev</div></div>
+<div class="view" data-view="1" data-placement="*" data-place-line="2" data-place-align="center" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre"><div class="view-lines"><div class="line" id="v1-2" data-line="2"><span class="cursor primary"></span>ive six</div><div class="line" id="v1-3" data-line="3">sev</div></div></div>
 > (call-with-values (lambda () (views:bounds w)) list)
 (0 30)
 > (buffers:replace! notes 15 15 "x")
@@ -151,11 +151,11 @@
 ; A module's values go when it unloads.
 > (import (wide))
 > (as-module '(wide) (wide:widen-view! v))
-> (views:with-view v (views:drawn-margin))
-2
+> (views:with-view v (views:drawn-screens))
+3
 > (unload-module! '(wide))
-> (views:with-view v (views:drawn-margin))
-0.5
+> (views:with-view v (views:drawn-screens))
+2
 ; Node state is per view, and goes with its node.
 > (import (md))
 > (define m (buffers:make "m" (md:doc '() (md:para '() "a\n") (md:para '() "b\n"))))
@@ -232,14 +232,12 @@ gone
 ! views:set-cursor!: not a cursor of the view with irritant #<cursor>
 ; Numbers that are not finite are refused; a huge margin draws every
 ; line.
-> (set-option! views:drawn-margin +inf.0)
-! set-option!: +inf.0 is not a valid value for views:drawn-margin
-> (views:scrolled! v 1 +nan.0 1)
-! views:scrolled!: not a finite real number with irritant +nan.0
-> (views:set-option! v views:drawn-margin 1e300)
-> (html? (views:draw v))
+> (set-option! views:drawn-screens +inf.0)
+! set-option!: +inf.0 is not a valid value for views:drawn-screens
+> (views:set-option! v views:drawn-screens 1e300)
+> (html? (views:draw v #f))
 #t
-> (views:remove-option! v views:drawn-margin)
+> (views:remove-option! v views:drawn-screens)
 ; A dropped view is forgotten: no number finds it and nothing uses it.
 > (define gone (views:make notes))
 > (define gone-id (views:id gone))
@@ -256,7 +254,7 @@ gone
 ; shows another buffer.
 > (define host (buffers:make "host" (md:doc '() (views:view '((view . 40) (buffer . "notes"))))))
 > (define hv (views:make host))
-> (html? (views:draw hv))
+> (html? (views:draw hv #f))
 #t
 > (views:id (views:find 40))
 40

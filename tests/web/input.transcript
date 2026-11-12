@@ -96,6 +96,22 @@ Tuna is at http://127.0.0.1:19302/
 > (answer (lambda () "answered"))
 > (taken!)
 ("answered")
+; While an item runs, web:current-client is its client, also after the
+; item pauses, so a command its handler runs knows whose key ran it.
+> (table-set! web:input-handlers "whose"
+    (lambda (client item)
+      (note! (eq? (web:current-client) client))
+      (note! (eq? (suspend (lambda (resume) (set! answer resume))) (void)))
+      (note! (eq? (web:current-client) client))))
+> (http:send! p '(("type" . "whose")))
+204
+> (taken!)
+(#t)
+> (answer void)
+> (list (taken!) (web:current-client))
+((#t #t) #f)
+> (web:current-client 'nobody)
+! web:current-client: not a client or #f with irritant nobody
 ; Tuna is not idle while an item runs, and is idle once none waits.
 > (table-set! web:input-handlers "idle" (lambda (client item) (note! (idle-seconds))))
 > (http:send! p '(("type" . "idle")))

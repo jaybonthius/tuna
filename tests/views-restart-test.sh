@@ -19,7 +19,7 @@ fail() {
 home=$dir/home
 mkdir -p "$home/.config/tuna/lib" "$dir/library" "$dir/work"
 cp -R plugins/. "$dir/library/"
-cp tests/views/home/.config/tuna/lib/web.sls tests/views/home/.config/tuna/lib/haml.sls \
+cp tests/views/home/.config/tuna/lib/web.sls \
    tests/views/home/.config/tuna/lib/md.sls "$home/.config/tuna/lib/"
 cat > "$home/.config/tuna/init.ss" <<'END'
 (import (tuna) (tuna plugins) (document) (md))
@@ -72,7 +72,7 @@ draw_atoms='(define chat
       (views:view (quote ((buffer . "notes"))))
       (views:view (quote ((view . 3) (buffer . "notes"))))
       (views:view (quote ((view . 3) (buffer . "notes")))))))
-(views:draw (views:make chat))'
+(views:draw (views:make chat) #f)'
 count='(length (filter views:find (cdr (iota 40))))'
 output=$(run "$count
 $draw_atoms")

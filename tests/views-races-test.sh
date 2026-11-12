@@ -1,6 +1,6 @@
 #!/bin/sh
 # Quits requested every millisecond land in cursor moves, folds, edits,
-# scroll reports and draws on the main thread, and leave every view
+# two clients' scroll reports, draws and removals on the main thread, and leave every view
 # whole: found by its number, showing a live buffer, with each cursor at
 # a stop inside its bounds, and drawing; the view drawn from an atom
 # comes back from saved data as it is. A quit that lands in a hook entry
@@ -48,12 +48,11 @@ cat > "$dir/input" <<'END'
                 [(1) (buffers:replace! text p p "abcdef\n")]
                 [(2) (views:fold! v p (min (- size 1) (+ p 30)))]
                 [(3) (views:unfold! v p)]
-                [(4) (report v (views:with-view v (car (numbers-after (html->string (views:draw v)) "data-placement=\"")))
-                             (+ 1 (mod k 300)) 0 (+ 40 (mod k 300)) 18.5)]
+                [(4) (report! (if (even? k) desktop phone) v (+ 1 (mod k 300)) (mod k 7) (odd? (quotient k 9)))]
                 [(5) (if (null? (cdr (views:cursors v))) (views:add-cursor! v p) (views:remove-cursor! v (cadr (views:cursors v))))]
                 [(6) (buffers:replace! text p (min (- size 1) (+ p 5)) "")]
-                [(7) (views:scroll-to! v p (views:align center))]
-                [else (views:draw v)])
+                [(7) (views:scroll-to! v p (views:align center)) (when (zero? (mod k 63)) (web:client-removed phone))]
+                [else (views:draw v (if (even? k) desktop phone))])
               (loop (+ k 1))))))))
 (begin
     (fork-thread quitter)
@@ -71,11 +70,11 @@ cat > "$dir/input" <<'END'
         (for-all (lambda (c) (let ([p (views:cursor-point c)]) (and (<= lo p hi) (eqv? (buffers:stop text p) p))))
                  (views:cursors v))))
     all)
-(for-all (lambda (v) (string? (html->string (views:draw v)))) all)
-(define before (list (views:point atom) (views:top atom) (map views:cursor-point (views:cursors atom))))
+(for-all (lambda (v) (string? (html->string (views:draw v desktop)))) all)
+(define before (list (views:point atom) (map views:cursor-point (views:cursors atom))))
 (import (tuna eval))
 (eval-file (string-append (getenv "TUNA_LIBRARY") "/views.sls"))
-(equal? before (let ([v (views:find 50)]) (list (views:point v) (views:top v) (map views:cursor-point (views:cursors v)))))
+(equal? before (let ([v (views:find 50)]) (list (views:point v) (map views:cursor-point (views:cursors v)))))
 END
 output=$(cd "$dir/work" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" "$tuna" < "$dir/input" 2>&1 |
   grep -v -E '^! (\(views\) )?&quit$' || true)

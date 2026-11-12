@@ -19,3 +19,5 @@
     (set! connected (append connected (list c)))
     (client-added c)
     c))
+
+(define current-client (make-thread-parameter #f))

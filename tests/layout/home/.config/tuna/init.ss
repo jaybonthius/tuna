@@ -17,7 +17,20 @@
 
 (define (selected) (views:id (layout:selected-view)))
 
-(define (show-screen client) (display (html->string (layout:screen client))) (newline))
+;; Views number their placements from a random base.
+(define (show-screen client)
+  (let loop ([s (html->string (layout:screen client))] [from 0])
+    (let ([i (let find ([i from])
+               (cond
+                 [(> (+ i 16) (string-length s)) #f]
+                 [(string=? (substring s i (+ i 16)) "data-placement=\"") i]
+                 [else (find (+ i 1))]))])
+      (if i
+          (let end ([j (+ i 16)])
+            (if (char=? (string-ref s j) #\")
+                (loop (string-append (substring s 0 (+ i 16)) "*" (substring s j (string-length s))) (+ i 17))
+                (end (+ j 1))))
+          (begin (display s) (newline))))))
 (define (atom view . attributes)
   (views:view (cons* (cons 'view (views:id view)) (cons 'buffer (buffers:name (views:buffer view))) attributes)))
 

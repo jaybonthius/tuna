@@ -65,33 +65,70 @@
     (collect (collect-maximum-generation))
     b))
 
-;; A view of 45 lines in view, measured at 22 pixels a line, scrolled to
-;; the middle of its buffer, with a region and a diagnostic in view.
+(define (lines-drawn html)
+  (let loop ([i 0] [acc '()])
+    (let ([j (let search ([k i])
+               (cond [(> (+ k 11) (string-length html)) #f]
+                     [(string=? (substring html k (+ k 11)) "data-line=\"") k]
+                     [else (search (+ k 1))]))])
+      (if j
+          (let digits ([k (+ j 11)] [n 0])
+            (if (char-numeric? (string-ref html k))
+                (digits (+ k 1) (+ (* n 10) (- (char->integer (string-ref html k)) 48)))
+                (loop k (cons n acc))))
+          (reverse acc)))))
+
+(define (number-after html name)
+  (let ([n (string-length name)])
+    (let search ([k 0])
+      (if (string=? (substring html k (+ k n)) name)
+          (let digits ([k (+ k n)] [v 0])
+            (if (char-numeric? (string-ref html k))
+                (digits (+ k 1) (+ (* v 10) (- (char->integer (string-ref html k)) 48)))
+                v))
+          (search (+ k 1))))))
+
+(define (report-of v client top)
+  (let* ([html (html->string (views:draw v client))] [ls (lines-drawn html)]
+         [first (car ls)] [last (car (reverse ls))])
+    `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,(number-after html "data-placement=\""))
+      ("report" . 1) ("top" . ,top) ("offset" . 0) ("lastVisible" . ,(+ top 44)) ("spacer" . null)
+      ("spacerDistance" . 0) ("before" . ,(- top first)) ("after" . ,(- last top))
+      ("drawnHeight" . ,(* 22 (+ 1 (- last first)))) ("above" . ,(* 22 (- top first)))
+      ("below" . ,(max 0 (- (* 22 (+ 1 (- last top))) 990))) ("width" . 800) ("height" . 990) ("settled" . #f))))
+
+(define (report! v client top) ((table-ref web:input-handlers "scroll") client (report-of v client top)))
+
 (define (scrolled-view b)
   (let* ([v (views:make b)] [doc (buffers:document b)]
          [lines (document:line doc (document:length doc))]
          [top (quotient lines 2)]
          [p (document:line-start doc (+ top 20))])
-    ((table-ref web:input-handlers "scroll") 'bench
-     `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . 1)
-       ("top" . ,top) ("offset" . 0) ("last" . ,(+ top 44)) ("height" . 22.0)))
+    (views:scroll-to! v (document:line-start doc top) (views:align top))
+    (report! v #f top)
+    (report! v #f top)
     (views:set-point! v (+ p 4))
     (views:set-mark! v (document:line-start doc (+ top 18)))
     (buffers:add-span! (buffers:layer b diagnostics) (+ p 2) (+ p 9) '((face . warning) (title . "unused")))
-    (views:draw v)
+    (views:draw v #f)
     v))
 
-(define (draw-cost v)
-  (ns-per-op 200 (lambda (i) (html->string (views:draw v)))))
+(define (report-cost v)
+  (let* ([doc (buffers:document (views:buffer v))] [top (document:line doc (views:top v))]
+         [items (vector (report-of v #f top) (report-of v #f (+ top 1)))]
+         [handle (table-ref web:input-handlers "scroll")])
+    (ns-per-op 200 (lambda (i) (handle #f (vector-ref items (mod i 2)))))))
 
-(define (drawn-lines v)
-  (let ([html (html->string (views:draw v))])
-    (let loop ([i 0] [n 0])
-      (let ([j (let search ([k i])
-                 (cond [(> (+ k 11) (string-length html)) #f]
-                       [(string=? (substring html k (+ k 11)) "data-line=\"") k]
-                       [else (search (+ k 1))]))])
-        (if j (loop (+ j 11) (+ n 1)) n)))))
+(define (draw-cost v)
+  (ns-per-op 200 (lambda (i) (html->string (views:draw v #f)))))
+
+(define (two-clients-cost v)
+  (let ([desktop (web:make-client 1)] [phone (web:make-client 2)]
+        [top (document:line (buffers:document (views:buffer v)) (views:top v))])
+    (for-each (lambda (c) (report! v c top) (report! v c top)) (list desktop phone))
+    (ns-per-op 200 (lambda (i) (html->string (views:draw v desktop)) (html->string (views:draw v phone))))))
+
+(define (drawn-lines v) (length (lines-drawn (html->string (views:draw v #f)))))
 
 ;; Views drawn from atoms are saved after each batch that changed one;
 ;; the batch here moves one cursor among ten such views.
@@ -132,12 +169,14 @@
         [heavy (scrolled-view (file-buffer 10000 #t))]
         [nodes (scrolled-view (node-buffer 22000))])
     (printf "drawn lines: ~a typical, ~a heavy, ~a nodes\n" (drawn-lines typical) (drawn-lines heavy) (drawn-lines nodes))
-    (show "build-only-typical" (ns-per-op 200 (lambda (i) (views:draw typical))))
-    (let ([h (views:draw typical)]) (show "write-only-typical" (ns-per-op 200 (lambda (i) (html->string h)))))
+    (show "build-only-typical" (ns-per-op 200 (lambda (i) (views:draw typical #f))))
+    (let ([h (views:draw typical #f)]) (show "write-only-typical" (ns-per-op 200 (lambda (i) (html->string h)))))
     (show "draw-typical" (draw-cost typical))
     (show "draw-heavy" (draw-cost heavy))
-    (show "build-only-nodes" (ns-per-op 200 (lambda (i) (views:draw nodes))))
+    (show "draw-two-clients" (two-clients-cost typical))
+    (show "build-only-nodes" (ns-per-op 200 (lambda (i) (views:draw nodes #f))))
     (show "draw-nodes" (draw-cost nodes))
+    (show "report" (report-cost typical))
     (show "save" (save-cost (views:buffer typical)))
     (show "edit-ten-views" (edit-cost (file-buffer 1000 #f) (file-buffer 1000 #f)))
     (show "edit-other-views" (other-views-cost (file-buffer 1000 #f) (file-buffer 1000 #f)

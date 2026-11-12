@@ -155,7 +155,8 @@
       (lambda ()
         (unless (client-removed? c)
           (client-through-set! c seq)
-          (handle-item c item)))
+          (parameterize ([current-client c])
+            (handle-item c item))))
       (lambda ()
         (when (with-lock (fx= queued 0))
           (set-idle! #t)))))
@@ -676,6 +677,13 @@
 (define-table stylesheets "Maps a name to a CSS file that every page links.")
 
 (define-table scripts "Maps a name to a JavaScript module that every page loads.")
+
+(define current-client
+  (make-thread-parameter #f
+    (lambda (v)
+      (unless (or (not v) (client-record? v))
+        (assertion-violation 'web:current-client "not a client or #f" v))
+      v)))
 
 (define (clients) (connected-clients))
 

@@ -53,5 +53,5 @@
                (layout:delete-part! (layout:view-node v))
                (batch-ended))))
          2))
-    (advice-add! views:draw (lambda (draw view) (haml (:div))))
+    (advice-add! views:draw (lambda (draw view client) (haml (:div))))
     (show "screen-parts" (ns-per-op 200 (lambda () (html->bytevector (layout:screen client)))))))

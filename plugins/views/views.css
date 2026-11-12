@@ -1,0 +1,64 @@
+/* The last spacer's row takes what the rest leave of the scroll sizer's
+   height, whatever the drawn lines' real heights, so the view's total
+   height stays the same while it scrolls: Chrome drops a move of a
+   scroll bar thumb drag whenever the total height changed since the
+   last one.
+
+   The grid is the view itself, not a box around the rows, since the
+   browser would take such a box as its scroll anchor whenever only
+   spacers are in view, and it is a grid with or without spacers, since
+   changing its display when the first spacers arrive would rebuild the
+   drawn lines' boxes and lose the line the browser holds still. */
+.view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  grid-template-rows: auto auto 1fr;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.view:has(> .scroll-sizer):not(:has(> [data-spacer="below"])) {
+  grid-template-rows: 1fr auto;
+}
+
+.view > [data-spacer="above"] {
+  grid-area: 1 / 1;
+}
+
+.view:has(> .scroll-sizer):not(:has(> [data-spacer="below"])) > [data-spacer="above"] {
+  min-block-size: 0;
+}
+
+.view > .view-lines {
+  grid-area: 2 / 1;
+}
+
+.view > [data-spacer="below"] {
+  grid-area: 3 / 1;
+}
+
+.view > .scroll-sizer {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  block-size: var(--scroll-sizer-block-size, 0);
+  overflow-anchor: none;
+  pointer-events: none;
+}
+
+/* A spacer must never be the scroll anchor, or the browser would hold it
+   still instead of the lines being read, and has no margins, which would
+   fall outside what the page measures. Its faint lines read as text still
+   to come while a fast scroll outruns what is drawn. */
+.view > .view-spacer {
+  margin-block: 0;
+  overflow-anchor: none;
+  min-block-size: var(--spacer-block-size, 0);
+  background: repeating-linear-gradient(transparent 0 0.25lh,
+                                        color-mix(in srgb, currentColor 6%, transparent) 0.25lh 0.75lh,
+                                        transparent 0.75lh 1lh);
+}
+
+/* Margins would fall outside what the page measures of a line. */
+.view .line {
+  margin-block: 0;
+}

@@ -13,24 +13,25 @@ trap 'rm -rf "$dir"' EXIT
 lib=$dir/home/.config/tuna/lib
 mkdir -p "$lib"
 cp bench/views.sls "$lib/views-bench.sls"
-# Until Tuna's own library has the web plugin and the HTML library, the
-# test configuration's stand-ins take their place.
-for module in web haml; do
-  [ -f "$library/$module.sls" ] || cp "tests/views/home/.config/tuna/lib/$module.sls" "$lib/"
-done
+# The web plugin's stand-in spares the benchmark a server and makes its
+# clients.
+cp tests/views/home/.config/tuna/lib/web.sls "$lib/web.sls"
 printf '(import (tuna) (views-bench))\n(views-bench:run)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$library" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
-# The server's share of a keystroke is a millisecond: a view of two view
-# heights draws in 200 microseconds, and saving the views after a batch
-# that moved a cursor takes 50. A view of a node per line reads each
-# node's children from its document, about 2 microseconds a node, so it
-# draws in more. An edit costs the views of other buffers nothing; a
-# walk over a thousand of them would take microseconds.
+# The server's share of a keystroke is a millisecond. A view keeps two
+# view heights drawn beyond each edge, up to four before it trims, so a
+# view 45 lines high draws about 340 lines, at about 1.5 microseconds a
+# line; a view of a node per line reads each node's children from its
+# document, about 2 microseconds a node more. A report on the way takes
+# a few microseconds, and saving the views after a batch that moved a
+# cursor 50. An edit costs the views of other buffers nothing; a walk
+# over a thousand of them would take microseconds.
 echo "$output" | awk '
   BEGIN {
-    limit["draw-typical"] = 200000
-    limit["draw-nodes"] = 550000
+    limit["draw-typical"] = 600000
+    limit["draw-nodes"] = 1700000
+    limit["report"] = 20000
     limit["save"] = 50000
     limit["edit-other-views"] = 500
     failed = 0

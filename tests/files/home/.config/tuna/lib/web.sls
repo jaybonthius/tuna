@@ -5,3 +5,7 @@
 (define-table input-handlers)
 (define-table scripts)
 (define-table stylesheets)
+
+(define-hook client-removed)
+
+(define current-client (make-thread-parameter #f))

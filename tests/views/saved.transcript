@@ -16,19 +16,27 @@
 > (views:fold! v 13 17)
 > (views:narrow! v 1 20)
 > (views:set-option! v views:wrap-lines #t)
-> (views:set-option! v views:drawn-margin 1)
+> (views:set-option! v views:drawn-screens 1)
 > (import (fill))
 > (views:set-option! v fill:column 50)
 > (views:scroll-to! v 9 (views:align top))
+> (define applied (car (numbers-after (html-of v desktop) "data-placement=\"")))
 > (eval-file (string-append (getenv "TUNA_LIBRARY") "/views.sls"))
 > (define v2 (views:find 4))
+; A page compares placement numbers for equality, so a reload numbers
+; them from another base, far from any the page may have applied.
+> (> (abs (- (car (numbers-after (html-of v2 desktop) "data-placement=\"")) applied)) 1000000)
+#t
+; The view's position comes back too.
+> (placement v2 desktop)
+(new 2 top)
 > (list (eq? v v2) (views:find (views:id loose)) (eq? (views:buffer v2) notes))
 (#f #f #t)
 > (list (views:point v2) (views:mark v2) (map views:cursor-point (views:cursors v2)) (views:top v2))
 (10 3 (10 19) 9)
 > (list (views:folded? v2 15) (call-with-values (lambda () (views:bounds v2)) list))
 (#t (1 20))
-> (views:with-view v2 (list (views:wrap-lines) (views:drawn-margin) (fill:column)))
+> (views:with-view v2 (list (views:wrap-lines) (views:drawn-screens) (fill:column)))
 (#t 1 70)
 ; New views take numbers after the saved ones.
 > (> (views:id (views:make notes)) 4)

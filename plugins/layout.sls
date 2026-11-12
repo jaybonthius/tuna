@@ -342,19 +342,19 @@
          (let ([c (or (focused-child (current-index) n) (let ([cs (children n)]) (and (pair? cs) (car cs))))])
            (if c (title-of c) ""))])))
 
-  (define (draw-view-atom atom selected)
+  (define (draw-view-atom atom selected client)
     (let ([v (view-of atom)])
       (haml (:div.layout-view ([class (and (eqv? (atom-id atom) selected) "selected")])
-              (views:draw v)))))
+              (views:draw v client)))))
 
   (define (draw-plain shown draw-child)
     (haml (:div.layout-part (map draw-child shown))))
 
-  (define (draw-layout)
+  (define (draw-layout client)
     (let ([zoom-at (zoom-position)] [selected (selected-id)])
       (let draw ([n (root-node)])
         (cond
-          [(view-atom? n) (draw-view-atom n selected)]
+          [(view-atom? n) (draw-view-atom n selected client)]
           [(document:atom? n) '()]
           [else
            (let* ([shown (shown-children n zoom-at)]
@@ -584,7 +584,7 @@
   (unless (web:client? client)
     (assertion-violation 'layout:screen "not a client" client))
   (check-main-thread 'layout:screen)
-  (draw-layout))
+  (draw-layout client))
 
 (define selected-view
   (case-lambda

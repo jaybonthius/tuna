@@ -3,4 +3,4 @@
 ;; value back.
 (import (views))
 
-(define (widen-view! view) (views:set-option! view views:drawn-margin 2))
+(define (widen-view! view) (views:set-option! view views:drawn-screens 3))
