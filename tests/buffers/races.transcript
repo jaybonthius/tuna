@@ -81,27 +81,31 @@
             (loop))
           (set! stopped #t))))
 > (define (stress until)
+    (let loop ([k 0])
+      (when (< (real-time) until)
+        (let* ([size (document:length (buffers:document b))] [p (+ 1 (mod (* k 7919) (- size 2)))])
+          (case (mod k 5)
+            [(0) (buffers:replace! b p p "xy")]
+            [(1) (buffers:replace! b p (min (- size 1) (+ p 3)) "")]
+            [(2) (buffers:add-span! (buffers:layer b marks) p (min (- size 1) (+ p 4)) k)]
+            [(3) (buffers:add-span! (buffers:layer b carried) p (min (- size 1) (+ p 2)) (mod k 3))]
+            [else (buffers:anchor-position watched) (buffers:document b)])
+          (loop (+ k 1))))))
+> (define forked #f)
+; A quit lands up to a thousand calls after its request, and the
+; quitter's last request may come after the stress ends. One guard
+; holds from before the quitter starts until long after it stops,
+; since a quit landing between two guards would end the form. Quits
+; land at least a thousand calls apart, so none lands in the handler
+; before it enters the guard again.
+> (let ([until (+ (real-time) 2000)])
     (let again ()
       (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again)])
-        (let loop ([k 0])
-          (when (< (real-time) until)
-            (let* ([size (document:length (buffers:document b))] [p (+ 1 (mod (* k 7919) (- size 2)))])
-              (case (mod k 5)
-                [(0) (buffers:replace! b p p "xy")]
-                [(1) (buffers:replace! b p (min (- size 1) (+ p 3)) "")]
-                [(2) (buffers:add-span! (buffers:layer b marks) p (min (- size 1) (+ p 4)) k)]
-                [(3) (buffers:add-span! (buffers:layer b carried) p (min (- size 1) (+ p 2)) (mod k 3))]
-                [else (buffers:anchor-position watched) (buffers:document b)])
-              (loop (+ k 1))))))))
-; The quitter's last request may land after the stress ends, and a quit
-; lands up to a thousand calls after its request, so quits
-; are absorbed until it has stopped and for many calls after.
-> (begin
-    (fork-thread quitter)
-    (stress (+ (real-time) 2000))
-    (set! quitting #f)
-    (let wait ()
-      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (wait)])
+        (unless forked
+          (set! forked #t)
+          (fork-thread quitter))
+        (stress until)
+        (set! quitting #f)
         (let spin () (unless stopped (spin)))
         (let settle ([n 0]) (when (< n 100000) (settle (+ n 1))))))
     (> quits 100))
