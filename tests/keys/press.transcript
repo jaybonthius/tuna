@@ -201,7 +201,10 @@
     (let ([frame (string #\f)])
       (keys:push-keymap! frame first (lambda (found command) (eq? found frame)))
       (weak-cons frame '())))
-> (collect (collect-maximum-generation))
+; Other threads, such as the saved-data writer, may be running, and an
+; explicit collect refuses then; a rendezvous pauses them first.
+> (parameterize ([collect-request-handler (lambda () (collect (collect-maximum-generation)))])
+    (collect-rendezvous))
 > (bwp-object? (car gone))
 #t
 ; keys:keyboard-quit clears the pending keys and prefix argument; with
