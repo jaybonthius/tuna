@@ -93,12 +93,13 @@
                   (append x y)))))))
 
   ;; Large kills are left out, so writing the ring after a kill stays
-  ;; cheap whatever was killed before.
+  ;; cheap whatever was killed before. set-saved! copies every mutable
+  ;; string it is given, so each text is made immutable once, at its kill.
   (define stored-piece-limit 4096)
 
   (define (stored-form entry)
     (and (for-all (lambda (piece) (<= (piece-length piece) stored-piece-limit)) entry)
-         (map piece-text entry)))
+         (map (lambda (piece) (string->immutable-string (piece-text piece))) entry)))
 
   (define (stored-entries? v)
     (and (list? v)

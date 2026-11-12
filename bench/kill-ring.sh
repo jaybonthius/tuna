@@ -16,8 +16,9 @@ printf '(import (tuna) (kill-ring-bench))\n(kill-ring-bench:run)\n(exit)\n' > "$
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
 # A kill happens once per command, so the save's limit is a share of a
-# command's time, not of a keystroke's. A ring of 120 entries of 4,096
-# characters, the most it saves, takes the core over 2 ms to print.
+# command's time, not of a keystroke's. The core prints saved data on a
+# thread of its own, so the main thread's share does not grow with the
+# length of the entries.
 echo "$output" | awk '
   BEGIN {
     limit["push"] = 2000
@@ -26,10 +27,10 @@ echo "$output" | awk '
     limit["prepend"] = 2000
     limit["piece"] = 2000
     limit["insert-overhead"] = 1000
-    limit["save-20"] = 1500000
-    limit["save-200"] = 1500000
-    limit["save-1000"] = 1500000
-    limit["save-4096"] = 4000000
+    limit["save-20"] = 30000
+    limit["save-200"] = 30000
+    limit["save-1000"] = 30000
+    limit["save-4096"] = 30000
     split("rotate insert replace", r, " ")
     for (i in r) recorded[r[i]] = 1
     failed = 0

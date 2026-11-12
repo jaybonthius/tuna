@@ -51,15 +51,27 @@
       (buffers:add-span! (buffers:layer b responses) (fx+ 1 (fx* i 10)) (fx+ 6 (fx* i 10)) (list 'id i)))
     b))
 
-;; The core prints saved data in a task posted after the batch, so joining
-;; a task spawned after it includes the printing.
+;; The core queues saved data in a task posted after the batch, so joining
+;; a task spawned after it includes the queueing. The core's writer thread
+;; shares the one CPU the bench is pinned to, so wall time would charge
+;; its printing to the main thread; the main thread's CPU time is what a
+;; command waits for.
+(define (thread-ns)
+  (let ([t (current-time 'time-thread)])
+    (+ (* (time-second t) 1000000000) (time-nanosecond t))))
+
 (define (save-cost size)
   (fill-ring! size)
-  (ns-per-op 20
-    (lambda ()
-      (kill-ring:push! (list (make-string size #\z)))
-      (batch-ended)
-      (join-task (spawn-task void)))))
+  (median
+    (map (lambda (k)
+           (collect-rendezvous)
+           (let ([start (thread-ns)])
+             (do ([i 0 (fx+ i 1)]) ((fx= i 20))
+               (kill-ring:push! (list (make-string size #\z)))
+               (batch-ended)
+               (join-task (spawn-task void)))
+             (/ (- (thread-ns) start) 20.)))
+         (iota 9))))
 
 (define (run)
   ;; An after-push entry, as a clipboard adds.
