@@ -1,3 +1,6 @@
 [submodule "lib/chez-lang"]
 	path = lib/chez-lang
 	url = https://github.com/jaybonthius/chez-lang.git
+[submodule "plugins/chez-toolbelt"]
+	path = plugins/chez-toolbelt
+	url = https://github.com/jaybonthius/chez-toolbelt.git

@@ -67,7 +67,7 @@ done
 # however the program is started, and holds the bundled plugins.
 mkdir -p "$dir/bin/plugins" "$dir/home/.config/tuna"
 cp "$tuna" "$dir/bin/tuna"
-cp -R "$(dirname "$tuna")/plugins/." "$dir/bin/plugins/"
+sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/bin/plugins"
 printf '(import (console))\n' > "$dir/home/.config/tuna/init.ss"
 printf '#!tuna\n(define (where) "beside the program")\n' > "$dir/bin/plugins/own.sls"
 ln -s "$dir/bin/tuna" "$dir/linked-tuna"

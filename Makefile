@@ -39,6 +39,7 @@ bench: exe
 	sh bench/document.sh build/bin/tuna || status=1; \
 	sh bench/buffers.sh build/bin/tuna || status=1; \
 	sh bench/commands.sh build/bin/tuna || status=1; \
+	sh bench/web.sh build/bin/tuna || status=1; \
 	exit $$status
 
 repl: build
@@ -54,7 +55,7 @@ exe: build
 	cc -O2 -I$(CHEZ_DIR) -o build/bin/tuna boot/main.c build/boot/boot-files.o \
 	  $(CHEZ_DIR)/libkernel.a $(CHEZ_DIR)/liblz4.a $(CHEZ_DIR)/libz.a -lm -ltinfo
 	rm -rf build/bin/plugins
-	cp -R plugins build/bin/plugins
+	sh boot/copy-library.sh plugins build/bin/plugins
 	sh boot/build-plugins.sh build/bin/tuna
 
 clean:

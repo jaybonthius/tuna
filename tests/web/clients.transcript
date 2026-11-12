@@ -1,0 +1,100 @@
+> (http:wait-for-server)
+Tuna is at http://127.0.0.1:19304/
+> (add-hook! web:client-added (lambda (client) (note! (list 'added client (web:client? client)))))
+> (add-hook! web:client-removed (lambda (client) (note! (list 'removed client))))
+; Serving the page adds a client, whose id is 128 random bits.
+> (define a (http:page))
+> (define b (http:page))
+> (define c (http:page))
+> (taken!)
+((added #<client 1> #t) (added #<client 2> #t) (added #<client 3> #t))
+> (list (string-length (http:id a)) (string=? (http:id a) (http:id b)))
+(32 #f)
+> (list (web:client? 'a) (web:client? (http:page)))
+(#f #f)
+> (taken!)
+((added #<client 4> #t))
+; A client whose stream does not open is removed an hour after its page
+; was served.
+> (wait-until (lambda () (= 4 (length (timers)))))
+> (length (timers))
+4
+; web:clients gives the connected clients, in the order they were added.
+> (http:connect! c)
+> (http:connect! a)
+> (web:clients)
+(#<client 1> #<client 3>)
+; Opening its stream cancels a client's removal.
+> (wait-until (lambda () (= 2 (length (timers)))))
+> (for-each (lambda (timer) (cancel-timer! timer) ((timer-procedure timer))) (timers))
+> (taken!)
+((removed #<client 2>) (removed #<client 4>))
+; A second stream for a client, as when a hidden tab is shown again before
+; its first stream has closed, replaces the first.
+> (http:connect! a)
+> (web:clients)
+(#<client 1> #<client 3>)
+; An idle stream stays open, and gets a comment every 15 seconds even
+; while another client's stream is busy.
+> (sleep-for 6)
+> (list (web:clients) (http:next a 0.1))
+((#<client 1> #<client 3>) timeout)
+> (let ([seen (http:heartbeats c)])
+    (let loop ([n 0])
+      (if (or (> (http:heartbeats c) seen) (= n 40))
+          (list (> (http:heartbeats c) seen) (= n (length (http:take a n))))
+          (begin
+            (web:call-page! (car (web:clients)) "ping" n)
+            (sleep-for 0.5)
+            (loop (+ n 1))))))
+(#t #t)
+; A page that unloads says goodbye, which removes its client.
+> (http:goodbye! c)
+204
+> (wait-until (lambda () (= 1 (length (web:clients)))))
+> (list (web:clients) (taken!))
+((#<client 1>) ((removed #<client 3>)))
+; A removed client's open stream makes its page reload, and so does a
+; stream of a client Tuna does not know.
+> (http:take c 2)
+((script "location.reload()") closed)
+> (let ([first (http:show (http:connect-and-next! c))]) (list first (http:next c)))
+((script "location.reload()") closed)
+; A client whose stream closes is removed an hour later, unless its stream
+; opens again first. Tuna learns that a stream has closed when it next
+; writes to it.
+> (define (written-until done?)
+    (wait-until
+      (lambda ()
+        (for-each (lambda (client) (web:call-page! client "ping" 0)) (web:clients))
+        (done?))))
+> (http:close! a)
+> (written-until (lambda () (pair? (timers))))
+> (list (web:clients) (length (timers)))
+(() 1)
+> (http:connect! a)
+> (wait-until (lambda () (null? (timers))))
+> (list (web:clients) (timers))
+((#<client 1>) ())
+> (http:close! a)
+> (written-until (lambda () (pair? (timers))))
+> (let ([timer (car (timers))])
+    (cancel-timer! timer)
+    ((timer-procedure timer)))
+> (taken!)
+((removed #<client 1>))
+> (let ([first (http:show (http:connect-and-next! a))]) (list first (http:next a)))
+((script "location.reload()") closed)
+; Plugins keep per-client state in an eq hashtable keyed by the client.
+> (define names (make-eq-hashtable))
+> (add-hook! web:client-added (lambda (client) (hashtable-set! names client "a name")))
+> (add-hook! web:client-removed (lambda (client) (hashtable-delete! names client)))
+> (define d (http:page))
+> (http:connect! d)
+> (hashtable-ref names (car (web:clients)) #f)
+"a name"
+> (http:goodbye! d)
+204
+> (wait-until (lambda () (zero? (hashtable-size names))))
+> (hashtable-size names)
+0

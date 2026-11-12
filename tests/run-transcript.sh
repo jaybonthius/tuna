@@ -14,12 +14,16 @@ mkdir "$dir/home" "$dir/work" "$dir/library"
 if [ -d "$folder/home" ]; then
   cp -R "$folder/home/." "$dir/home/"
 fi
-# Tuna's own library is the source tree's plugins and the test's, so no
-# transcript depends on what lies beside the executable.
-cp -R "$(dirname "$0")/../plugins/." "$dir/library/"
+# Tuna's own library is the one built beside the executable, since some
+# of its plugins build native code, and the test's.
+sh "$(dirname "$0")/../boot/copy-library.sh" "$(dirname "$tuna")/plugins" "$dir/library"
 if [ -d "$folder/library" ]; then
   cp -R "$folder/library/." "$dir/library/"
 fi
+
+# A configuration that a folder's transcripts share tells them apart by
+# name, as when each needs a port of its own.
+export TRANSCRIPT="$(basename "$transcript" .transcript)"
 
 # A user's git settings, such as signing or address rewrites, would change
 # commits or addresses.

@@ -1,0 +1,68 @@
+> (http:wait-for-server)
+Tuna is at http://127.0.0.1:19306/
+> (define (file path) (let ([r (http:get path)]) (list (http:status r) (http:header r "content-type") (http:body r))))
+; A module's entry names a file beside the module, which every page links.
+> (import (styler))
+> (define p (http:page))
+> (http:head-files)
+("/files/1/styler.css?v=1")
+> (http:connect! p)
+> (file "/files/1/styler.css")
+(200 "text/css; charset=utf-8" "main { color: black; }\n")
+; Files beside it are served under the same prefix; nothing outside its
+; folder is.
+> (file "/files/1/fonts/mono.woff2")
+(200 "font/woff2" "wOF2")
+> (map (lambda (path) (http:status (http:get path)))
+       '("/files/1/%2e%2e/init.ss" "/files/1/../../init.ss" "/files/1/" "/files/2/styler.css" "/files/x/styler.css"))
+(404 404 404 404 404)
+; A theme replaces a plugin's stylesheet by setting the same name, and
+; connected pages get the change without reloading.
+> (import (dark))
+> (http:show (http:next p))
+(datastar-patch-elements ("elements" "<link id=\"tuna-stylesheet-1\" rel=\"stylesheet\" href=\"/files/1/dark.css?v=1\">"))
+> (file "/files/1/dark.css")
+(200 "text/css; charset=utf-8" "main { color: white; }\n")
+; Taking the theme's change back brings the plugin's file back.
+> (unload-module! '(dark))
+> (http:show (http:next p))
+(datastar-patch-elements ("elements" "<link id=\"tuna-stylesheet-1\" rel=\"stylesheet\" href=\"/files/1/styler.css?v=1\">"))
+; The configuration's and the REPL's entries are relative to the
+; configuration folder; a name set later comes later on the page.
+> (table-set! web:stylesheets 'extra "extra.css")
+> (http:show (http:next p))
+(datastar-patch-elements ("selector" "head") ("mode" "append") ("elements" "<link id=\"tuna-stylesheet-2\" rel=\"stylesheet\" href=\"/files/2/extra.css?v=1\">"))
+> (http:head-files)
+("/files/1/styler.css?v=1" "/files/2/extra.css?v=1")
+> (table-remove! web:stylesheets 'extra)
+> (http:show (http:next p))
+(datastar-patch-elements ("selector" "#tuna-stylesheet-2") ("mode" "remove"))
+; A file changed on disk is read again, checked when a screen is given at
+; most once a second, and reaches the page before the screen.
+> (with-output-to-file (string-append (getenv "HOME") "/.config/tuna/lib/styler.css")
+    (lambda () (display "main { color: blue; }\n"))
+    'replace)
+> (sleep-for 1.1)
+> (web:send-screen! (car (web:clients)) (haml (:p "after")))
+> (http:take p 2)
+((datastar-patch-elements ("elements" "<link id=\"tuna-stylesheet-1\" rel=\"stylesheet\" href=\"/files/1/styler.css?v=2\">")) (screen 1 0 "<p>after</p>"))
+> (file "/files/1/styler.css")
+(200 "text/css; charset=utf-8" "main { color: blue; }\n")
+; A file that cannot be read is left off the page, with a warning.
+> (table-set! web:stylesheets 'missing "missing.css")
+! web:stylesheets: cannot read the file with irritant "~/.config/tuna/missing.css"
+> (table-set! web:stylesheets 'number 42)
+! web:stylesheets: cannot read the file with irritant 42
+> (http:head-files)
+("/files/1/styler.css?v=2")
+> (http:next p 0.2)
+timeout
+; A script change makes connected pages reload, since a browser cannot
+; unload a module it has run.
+> (table-set! web:scripts 'clipboard "clipboard.js")
+> (http:take p 2)
+((script "location.reload()") closed)
+> (http:head-files)
+("/files/1/styler.css?v=2" "/files/4/clipboard.js?v=1")
+> (file "/files/4/clipboard.js")
+(200 "text/javascript; charset=utf-8" "export const loaded = true;\n")

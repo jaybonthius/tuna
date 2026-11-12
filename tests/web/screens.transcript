@@ -1,0 +1,108 @@
+> (http:wait-for-server)
+Tuna is at http://127.0.0.1:19303/
+; A client is connected while its stream is open.
+> (define p (http:page))
+> (web:clients)
+()
+> (http:connect! p)
+> (define c (car (web:clients)))
+> (web:send-screen! c (haml (:p "one")))
+> (http:show (http:next p))
+(screen 1 0 "<p>one</p>")
+; A screen whose bytes equal the last one given is not sent.
+> (web:send-screen! c (string->utf8 "<p>one</p>"))
+> (http:next p 0.2)
+timeout
+; One screen is in flight: a screen given meanwhile waits, replacing any
+; screen already waiting, and goes when the page confirms the one in flight.
+> (web:send-screen! c (haml (:p "two")))
+> (web:send-screen! c (haml (:p "three")))
+> (http:next p 0.2)
+timeout
+> (http:confirm! p 1)
+204
+> (http:show (http:next p))
+(screen 2 0 "<p>three</p>")
+> (http:confirm! p 1)
+204
+> (web:send-screen! c (haml (:p "four")))
+> (http:next p 0.2)
+timeout
+; A screen given when the one in flight was sent over a second before goes
+; at once.
+> (sleep-for 1.1)
+> (web:send-screen! c (haml (:p "five")))
+> (http:show (http:next p))
+(screen 3 0 "<p>five</p>")
+; A call goes after the screens already given to the client.
+> (http:confirm! p 3)
+204
+> (web:send-screen! c (haml (:p "six")))
+> (web:send-screen! c (haml (:p "seven")))
+> (web:call-page! c "copy" "text")
+> (http:show (http:next p))
+(screen 4 0 "<p>six</p>")
+> (http:next p 0.2)
+timeout
+> (http:confirm! p 4)
+204
+> (http:take p 2)
+((screen 5 0 "<p>seven</p>") (script "tuna.call(\"copy\", \"text\")"))
+> (http:confirm! p 5)
+204
+> (web:call-page! c "show-value" '(("a" . "</script>") ("b" . #(1 2.5 #t null))))
+> (http:show (http:next p))
+(script "tuna.call(\"show-value\", {\"a\":\"\\u003c/script\\u003e\",\"b\":[1,2.5,true,null]})")
+; A screen records the last item of its client that ran before it.
+> (table-set! web:input-handlers "draw" (lambda (client item) (web:send-screen! client (haml (:p "drawn")))))
+> (http:send-numbered! p 2 '(("type" . "draw")))
+204
+> (http:send-numbered! p 1 '(("type" . "noop")))
+! (web) web:input-handlers: no handler for items of type "noop"
+204
+> (http:show (http:next p))
+(screen 6 2 "<p>drawn</p>")
+> (http:confirm! p 6)
+204
+; The arguments are checked.
+> (web:send-screen! 'nobody (haml (:p "x")))
+! web:send-screen!: not a client with irritant nobody
+> (web:send-screen! c "<p>x</p>")
+! web:send-screen!: not html or a bytevector with irritant "<p>x</p>"
+> (web:call-page! 'nobody "copy" 1)
+! web:call-page!: not a client with irritant nobody
+> (web:call-page! c "copy text" 1)
+! web:call-page!: not 1 to 64 letters, digits and hyphens with irritant "copy text"
+> (web:call-page! c "" 1)
+! web:call-page!: not 1 to 64 letters, digits and hyphens with irritant ""
+> (web:call-page! c (make-string 65 #\a) 1)
+! web:call-page!: not 1 to 64 letters, digits and hyphens with irritant "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+> (web:call-page! c (make-string 64 #\a) 1)
+> (http:show (http:next p))
+(script "tuna.call(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", 1)")
+> (web:call-page! c "copy" car)
+! web:call-page!: (json) cannot write it with irritant #<procedure car>
+; A client whose stream has closed gets neither screens nor calls.
+> (http:close! p)
+> (wait-until (lambda () (web:call-page! c "ping" 0) (null? (web:clients))))
+> (web:clients)
+()
+> (web:send-screen! c (haml (:p "unseen")))
+> (web:call-page! c "copy" "unseen")
+; When a client's stream opens, the next screen given is sent even if
+; unchanged, and a batch ends, so a display that draws after each batch
+; sends it with no other input.
+> (advice-add! batch-ended
+    (lambda (ended)
+      (ended)
+      (for-each (lambda (client) (web:send-screen! client (haml (:p "drawn")))) (web:clients))))
+> (http:show (http:connect-and-next! p))
+(screen 7 2 "<p>drawn</p>")
+> (http:next p 0.2)
+timeout
+; The stream is compressed with zstd, or gzip for a browser without it.
+> (define (encoding accept)
+    (http:header (http:get (string-append "/screen?datastar=" (http:encode "{\"client\":\"nobody\"}")) accept)
+                 "content-encoding"))
+> (list (encoding '(("accept-encoding" . "gzip, deflate, br, zstd"))) (encoding '(("accept-encoding" . "gzip, deflate, br"))) (encoding '()))
+("zstd" "gzip" #f)
