@@ -7,7 +7,7 @@
          page-connect! page-close! page-send! page-send-numbered! send-items page-send-all! page-send-range!
          page-confirm! page-goodbye! page-next page-events-closed? page-connect-and-next! heartbeats-seen
          wait-for-server occupy-port! target-port target-address source-address set-port-source! percent-encode-all
-         flood auto-confirm)
+         flood auto-confirm open-raw-stream raw-stream-encoding raw-stream-next raw-stream-close!)
 
   (define libc (load-shared-object "libc.so.6"))
   (define c-socket (foreign-procedure "socket" (int int int) int))
@@ -295,6 +295,57 @@
           (c-close (connection-fd c))))
       (void)))
 
+  ;; Its events arrive compressed, which this client cannot read, so only
+  ;; the bytes of each chunk are counted.
+  (define-record-type raw-stream
+    (fields connection mutex arrived encoding (mutable sizes) (mutable closed?)))
+
+  (define (open-raw-stream page headers)
+    (let ([port (server-port)])
+      (off-main-thread
+        (lambda ()
+          (let ([c (connect port)])
+            (send-all c (request-bytes port "GET" (string-append "/screen?datastar=" (percent-encode-all (signals page)))
+                          headers #f))
+            (let-values ([(status response-headers) (read-head c)])
+              (let ([s (make-raw-stream c (make-mutex) (make-condition) (header response-headers "content-encoding") '() #f)])
+                (fork-thread
+                  (lambda ()
+                    (read-chunks c
+                      (lambda (bytes)
+                        (with-mutex (raw-stream-mutex s)
+                          (raw-stream-sizes-set! s (cons (bytevector-length bytes) (raw-stream-sizes s)))
+                          (condition-broadcast (raw-stream-arrived s)))))
+                    (with-mutex (raw-stream-mutex s)
+                      (raw-stream-closed?-set! s #t)
+                      (condition-broadcast (raw-stream-arrived s)))
+                    (c-close (connection-fd c))))
+                s)))))))
+
+  ;; A screen can come in several chunks, so its bytes are those of the
+  ;; chunks that arrive until none has for a tenth of a second.
+  (define (raw-stream-next s)
+    (off-main-thread
+      (lambda ()
+        (with-mutex (raw-stream-mutex s)
+          (let ([until (seconds->time 5)])
+            (let wait ()
+              (when (and (null? (raw-stream-sizes s)) (not (raw-stream-closed? s))
+                         (condition-wait (raw-stream-arrived s) (raw-stream-mutex s) until))
+                (wait))))
+          (let settle ()
+            (let ([n (length (raw-stream-sizes s))])
+              (condition-wait (raw-stream-arrived s) (raw-stream-mutex s) (seconds->time 0.1))
+              (unless (fx= n (length (raw-stream-sizes s)))
+                (settle))))
+          (let ([total (apply + (raw-stream-sizes s))])
+            (raw-stream-sizes-set! s '())
+            total)))))
+
+  (define (raw-stream-close! s)
+    (c-shutdown (connection-fd (raw-stream-connection s)) 2)
+    (void))
+
   (define (page-connect! page)
     (let ([port (server-port)])
       (off-main-thread (lambda () (open-stream! page port)))))
@@ -477,6 +528,14 @@
 (define (connect-and-next! p) (page-connect-and-next! p))
 
 (define (close! p) (page-close! p))
+
+(define (open-raw! p headers) (open-raw-stream p headers))
+
+(define (raw-encoding s) (raw-stream-encoding s))
+
+(define (raw-next s) (raw-stream-next s))
+
+(define (close-raw! s) (raw-stream-close! s))
 
 (define (send! p item) (page-send! p item))
 

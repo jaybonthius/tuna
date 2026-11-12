@@ -5,7 +5,7 @@
   (cdr (assoc (getenv "TRANSCRIPT")
               '(("examples" . 19301) ("input" . 19302) ("screens" . 19303) ("clients" . 19304)
                 ("server" . 19305) ("files" . 19306) ("races" . 19307) ("reload" . 19308)
-                ("proxy" . 19309)))))
+                ("proxy" . 19309) ("compression" . 19310)))))
 
 (use-plugin web
   (config

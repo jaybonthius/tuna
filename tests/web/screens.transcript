@@ -100,9 +100,3 @@ timeout
 (screen 7 2 "<p>drawn</p>")
 > (http:next p 0.2)
 timeout
-; The stream is compressed with zstd, or gzip for a browser without it.
-> (define (encoding accept)
-    (http:header (http:get (string-append "/screen?datastar=" (http:encode "{\"client\":\"nobody\"}")) accept)
-                 "content-encoding"))
-> (list (encoding '(("accept-encoding" . "gzip, deflate, br, zstd"))) (encoding '(("accept-encoding" . "gzip, deflate, br"))) (encoding '()))
-("zstd" "gzip" #f)

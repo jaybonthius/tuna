@@ -672,7 +672,13 @@
     (start-server
       (map (lambda (address) (http-listener address p)) addresses)
       (list (make-host (list (format "127.0.0.1:~a" p))
-              (list (route "/screen" (checked screen) (compress (encodings zstd gzip)))
+              ;; Each screen repeats most of the one before. Brotli finds it
+              ;; from quality 2 and gains little past 5; zstd from 9 keeps a
+              ;; 4 MB window, which avoided the occasional near-whole screen
+              ;; lower levels sent; gzip's 32 KB window never reaches it, so
+              ;; gzip stays at its fastest.
+              (list (route "/screen" (checked screen)
+                      (compress (encodings zstd br gzip) (qualities [zstd 9] [br 5] [gzip 1])))
                     (route "/input" (checked input))
                     (route "/applied" (checked applied))
                     (route "/goodbye" (checked goodbye))
