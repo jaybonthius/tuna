@@ -1,0 +1,7 @@
+; Layers move as Emacs moves overlays, and travelling layers as Emacs
+; moves a text property, on the same random edits, recorded from Emacs.
+> (import (emacs-checks))
+> (emacs-checks:overlay-results)
+(#t #t #t #t #t)
+> (emacs-checks:text-property-results)
+(#t #t #t #t #t #t #t #t #t #t #t #t #t #t #t #t #t #t #t #t)

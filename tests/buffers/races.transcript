@@ -1,0 +1,127 @@
+; Jobs read versions of a buffer while the main thread goes on editing
+; it: each job's answer is the main thread's for its version.
+> (import (jobs))
+> (jobs:define-worker (summarize version emit)
+    (import (document))
+    (let ([doc (cdr version)])
+      (emit (list (car version) (document:length doc) (document:line doc (document:length doc)) (document:text doc 0 40)))))
+> (define (summary b)
+    (let ([doc (buffers:document b)])
+      (list (buffers:version b) (document:length doc) (document:line doc (document:length doc)) (document:text doc 0 40))))
+> (define answers '())
+> (define lines (fresh (string-append (make-string 50000 #\a) "\n")))
+> (define expected
+    (let loop ([k 0] [acc '()])
+      (if (= k 60)
+          acc
+          (begin
+            (jobs:start summarize (cons (buffers:version lines) (buffers:document lines))
+              (lambda (a) (set! answers (cons a answers))))
+            (let ([now (summary lines)])
+              (buffers:replace! lines (+ 1 (* k 7)) (+ 3 (* k 7)) (if (even? k) "\n\n\n" "λ"))
+              (loop (+ k 1) (cons now acc)))))))
+> (define (wait-until done?)
+    (let loop ([n 0])
+      (unless (or (done?) (= n 1000))
+        (sleep-for 0.01)
+        (loop (+ n 1)))))
+> (wait-until (lambda () (= (length answers) 60)))
+> (equal? (list-sort (lambda (a b) (< (car a) (car b))) answers) (reverse expected))
+#t
+; Only the main thread changes a buffer.
+> (define from-thread #f)
+> (begin
+    (fork-thread
+      (lambda ()
+        (guard (c [#t (set! from-thread (list (condition-who c) (condition-message c)))])
+          (buffers:replace! lines 1 1 "x"))))
+    (wait-until (lambda () from-thread))
+    from-thread)
+(buffers:replace! "not on the main thread")
+; Reads that walk the log or the kinds are for the main thread too, since
+; it changes both.
+> (define (from-another-thread thunk)
+    (let ([answer #f])
+      (fork-thread
+        (lambda ()
+          (guard (c [#t (set! answer (list (condition-who c) (condition-message c)))])
+            (thunk))))
+      (wait-until (lambda () answer))
+      answer))
+> (define refusals
+    (map from-another-thread
+         (list (lambda () (buffers:edits-since lines 0))
+               (lambda () (buffers:map-position lines 1 0))
+               (lambda () (buffers:stop lines 1))
+               (lambda () (buffers:next-stop lines 1))
+               (lambda () (buffers:previous-stop lines 2)))))
+> (map car refusals)
+(buffers:edits-since buffers:map-position buffers:stop buffers:next-stop buffers:previous-stop)
+> (for-all (lambda (a) (equal? (cadr a) "not on the main thread")) refusals)
+#t
+; Quits requested every millisecond land in edits, span changes, anchor
+; reads and freezes on the main thread, and leave the buffer whole: its
+; log replays from its first document to its last, its spans lie inside
+; it, and an anchor is where the log puts it.
+> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+> (buffers:define-layer marks (sticky after))
+> (buffers:define-layer carried (travels) (sticky after))
+> (define b (fresh (string-append (make-string 2000 #\a) "\n")))
+> (define first-document (buffers:document b))
+> (define watched (buffers:anchor b 1000))
+> (define quitting #t)
+> (define stopped #f)
+> (define quits 0)
+> (define (quitter)
+    (let loop ()
+      (if quitting
+          (begin
+            (request-quit!)
+            (chez:sleep (make-time 'time-duration 1000000 0))
+            (loop))
+          (set! stopped #t))))
+> (define (stress until)
+    (let again ()
+      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again)])
+        (let loop ([k 0])
+          (when (< (real-time) until)
+            (let* ([size (document:length (buffers:document b))] [p (+ 1 (mod (* k 7919) (- size 2)))])
+              (case (mod k 5)
+                [(0) (buffers:replace! b p p "xy")]
+                [(1) (buffers:replace! b p (min (- size 1) (+ p 3)) "")]
+                [(2) (buffers:add-span! (buffers:layer b marks) p (min (- size 1) (+ p 4)) k)]
+                [(3) (buffers:add-span! (buffers:layer b carried) p (min (- size 1) (+ p 2)) (mod k 3))]
+                [else (buffers:anchor-position watched) (buffers:document b)])
+              (loop (+ k 1))))))))
+; The quitter's last request may land after the stress ends, and a quit
+; lands up to a thousand calls after its request, so quits
+; are absorbed until it has stopped and for many calls after.
+> (begin
+    (fork-thread quitter)
+    (stress (+ (real-time) 2000))
+    (set! quitting #f)
+    (let wait ()
+      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (wait)])
+        (let spin () (unless stopped (spin)))
+        (let settle ([n 0]) (when (< n 100000) (settle (+ n 1))))))
+    (> quits 100))
+#t
+> (define log (buffers:edits-since b 0))
+> (= (length log) (buffers:version b))
+#t
+> (define replayed
+    (fold-left
+      (lambda (doc e)
+        (let* ([start (buffers:edit-start e)] [end (+ start (document:length (buffers:edit-removed e)))])
+          (unless (equal? (document:datums (document:slice doc start end)) (document:datums (buffers:edit-removed e)))
+            (error 'replay "an edit removed what the document did not hold" (buffers:edit-version e)))
+          (document:replace doc start end (buffers:edit-inserted e))))
+      first-document log))
+> (equal? (document:datums replayed) (document:datums (buffers:document b)))
+#t
+> (let ([size (document:length (buffers:document b))])
+    (for-all (lambda (l) (for-all (lambda (s) (<= 0 (car s) (cadr s) size)) (buffers:spans l 0 size)))
+             (buffers:layers b)))
+#t
+> (= (buffers:anchor-position watched) (buffers:map-position b 1000 0))
+#t

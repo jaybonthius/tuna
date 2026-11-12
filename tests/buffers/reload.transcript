@@ -1,0 +1,31 @@
+; Reloading changed source keeps the types of the buffers, edits,
+; anchors, kinds and layer types made before it.
+> (buffers:define-layer hl (priority 5))
+> (buffers:define-kind foo (inline))
+> (define b (buffers:make "a" "hello world\n"))
+> (buffers:add-span! (buffers:layer b hl) 1 3 'x)
+> (define a (buffers:anchor b 3))
+> (define e (buffers:replace! b 1 1 "q"))
+> (define path (string-append (getenv "TUNA_LIBRARY") "/buffers.sls"))
+> (let ([p (open-file-output-port path (file-options no-fail no-truncate) (buffer-mode block) (native-transcoder))])
+    (set-port-position! p (port-length p))
+    (put-string p "\n(define (extra) 1)\n")
+    (close-port p))
+> (import (tuna eval))
+> (eval-file path)
+> (buffers:extra)
+1
+> (list (buffers:buffer? b) (buffers:live? b) (buffers:name b) (buffers:edit? e) (buffers:anchor? a))
+(#t #f "a" #t #t)
+> (list (buffers:kind? (buffers:kind 'foo)) (buffers:kind? (buffers:kind 'buffers:text)))
+(#t #t)
+> (buffers:replace! b 1 1 "q")
+! buffers:replace!: not a live buffer with irritant #<buffer a>
+; A layer type defined before the reload still moves spans and checks
+; edits.
+> (define c (buffers:make "c" "hello\n"))
+> (buffers:add-span! (buffers:layer c hl) 1 3 'y)
+> (buffers:replace! c 1 1 "zz")
+#<edit 1>
+> (buffers:spans (buffers:layer c hl) 0 8)
+((3 5 y))

@@ -1,0 +1,4 @@
+Edits recorded with the results Emacs 30.2 gave for them: overlays.ss
+holds overlays of each stickiness, some evaporating, under random inserts
+and deletions; text-properties.ss holds a text property of each
+stickiness under random typing, insertion, cuts, undo and yanks.

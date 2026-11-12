@@ -1,0 +1,163 @@
+; A file buffer: one root node of text, with a stop at every position
+; inside it, as in Emacs.
+> (define file (fresh "ab\ncd\n"))
+> (all-stops file)
+(1 2 3 4 5 6 7)
+> (backspace file 4)
+#<edit 1>
+> (root file)
+(buffers:text () "abcd\n")
+> (define file (fresh "ab\ncd\n"))
+> (define killed-text (kill file 2 5))
+> (yank file 3 killed-text)
+#<edit 2>
+> (root file)
+(buffers:text () "adb\nc\n")
+; A buffer that code built: C-f and C-b visit the same stops, one per
+; character and atom, plus the end.
+> (define md (fresh md-datum))
+> (equal? (root md) md-datum)
+#t
+> (define stops (all-stops md))
+> (equal? (let loop ([p (car (reverse stops))] [acc '()])
+            (if p (loop (buffers:previous-stop md p) (cons p acc)) acc))
+          stops)
+#t
+> (= (length stops) (+ 1 (string-length (document:text (buffers:document md)))))
+#t
+> (= (buffers:next-stop md (at md "Title|\n")) (at md "|Alpha"))
+#t
+> (= (buffers:previous-stop md (at md "|Alpha")) (at md "Title|\n"))
+#t
+; A link's edges are not sticky: each is one stop, outside the link.
+> (= (buffers:next-stop md (at md "Alpha| beta")) (at md "Alpha |beta"))
+#t
+> (kind-at md (at md "Alpha |beta"))
+md:para
+> (= (buffers:next-stop md (at md "Alpha |beta")) (at md "b|eta"))
+#t
+> (kind-at md (at md "beta| gamma"))
+md:para
+> (= (buffers:next-stop md (at md "beta| gamma")) (at md "beta |gamma"))
+#t
+; The image is an atom: one stop before it, and C-f passes it in one step.
+> (define before-image (at md "Last |@"))
+> (document:atom? (document:token (buffers:document md) before-image))
+#t
+> (= (buffers:next-stop md before-image) (+ before-image 1))
+#t
+; Backspace at the start of a block joins it to the one before, as
+; deleting a newline joins two lines.
+> (define md (fresh md-datum))
+> (backspace md (at md "|Alpha"))
+#<edit 1>
+> (car (children md))
+(md:heading ((level . 1)) "TitleAlpha " (md:link ((href . "https://x")) "beta") " gamma.\n")
+; A region from the middle of the paragraph to the middle of the second
+; item joins the item's rest to the paragraph and keeps the third item.
+> (define md (fresh md-datum))
+> (buffers:replace! md (at md "Al|pha") (at md "tw|o") "")
+#<edit 1>
+> (list-head (cdr (children md)) 2)
+((md:para () "Alo\n") (lists:bulleted () (md:item () "three\n")))
+; A kill from inside the link to inside the first item is open two deep
+; at each end, and its datum closes its open nodes.
+> (define md (fresh md-datum))
+> (define piece (kill md (at md "be|ta") (at md "on|e")))
+> (document:datums piece)
+((md:para () (md:link ((href . "https://x")) "ta") " gamma.\n") (lists:bulleted () (md:item () "on")))
+> (list (document:open-start piece) (document:open-end piece))
+(2 2)
+> (cadr (children md))
+(md:para () "Alpha " (md:link ((href . "https://x")) "bee\n"))
+; Yanking a kill splits the paragraph there and joins the kill's open
+; edges to the halves.
+> (define md (fresh md-datum))
+> (define piece (kill md (at md "Alpha |") (at md "on|e")))
+> (yank md (at md "Last |@") piece)
+#<edit 2>
+> (list-tail (children md) 3)
+((md:code ((lang . "scheme")) "(car x)\n") (md:para () "Last " (md:link ((href . "https://x")) "beta") " gamma.\n") (lists:bulleted () (md:item () "on" #(md:image ((src . "a.png"))) " line.\n")))
+> (document:text piece)
+"beta gamma.\non"
+; A whole item killed and yanked between two others comes back as an
+; item.
+> (define md (fresh md-datum))
+> (define piece (kill md (at md "|one") (at md "|two")))
+> (caddr (children md))
+(lists:bulleted () (md:item () "two\n") (md:item () "three\n"))
+> (yank md (at md "|three") piece)
+#<edit 2>
+> (caddr (children md))
+(lists:bulleted () (md:item () "two\n") (md:item () "one\n") (md:item () "three\n"))
+; A kind that is not loaded refuses edits inside its nodes; its node can
+; still be deleted whole.
+> (define md (fresh md-datum))
+> (unload-module! '(lists))
+> (refusal (lambda () (buffers:replace! md (at md "t|wo") (at md "t|wo") "x")))
+(refused "inside a node whose kind is not loaded")
+> (define the-list (document:enclosing (buffers:document md) (document:node-start (document:enclosing (buffers:document md) (at md "t|wo")))))
+> (buffers:replace! md (document:node-start the-list) (document:node-end the-list) "")
+#<edit 1>
+> (length (children md))
+4
+> (load-module! '(lists))
+; A form: labels are read-only and have no stops, fields hold one line.
+> (define form (fresh form-datum))
+> (define stops (all-stops form))
+> (filter (lambda (p) (eq? (kind-at form p) 'form:label)) stops)
+()
+> (= (car stops) (at form "|John"))
+#t
+> (kind-at form (at form "John|"))
+form:field
+> (kind-at form (buffers:next-stop form (at form "John|")))
+form:field
+> (buffers:replace! form (buffers:next-stop form (at form "John|")) (buffers:next-stop form (at form "John|")) "j@x.org")
+#<edit 1>
+> (car (children form))
+(form:row () (form:label () "Name: ") (form:field ((name . name)) "John") (form:label () "  Email: ") (form:field ((name . email)) "j@x.org") "\n")
+> (define form (fresh form-datum))
+> (refusal (lambda () (backspace form (at form "|John"))))
+(refused "the node refuses the edit")
+> (refusal (lambda () (delete-forward form (at form "John|"))))
+(refused "the node refuses the edit")
+> (refusal (lambda () (buffers:replace! form (at form "Jo|hn") (at form "fi|rst") "")))
+(refused "the node refuses the edit")
+> (refusal (lambda () (buffers:replace! form (at form "Jo|hn") (at form "Jo|hn") "\n")))
+(refused "the node refuses the edit")
+> (buffers:version form)
+0
+; A field's text copies flat and yanks into another field; blocks yanked
+; into a field go in as their text, which a field refuses when it holds
+; a newline; a link goes in as its text.
+> (define piece (document:slice (buffers:document form) (at form "|John") (at form "John|")))
+> (list (document:open-start piece) (document:open-end piece))
+(0 0)
+> (yank form (at form "|first") piece)
+#<edit 1>
+> (cadddr (cadr (children form)))
+(form:field ((name . notes)) "Johnfirst")
+> (define form (fresh form-datum))
+> (define md (fresh md-datum))
+> (define piece (kill md (at md "Alpha |") (at md "on|e")))
+> (refusal (lambda () (yank form (at form "|first") piece)))
+(refused "the node refuses the edit")
+> (define md (fresh md-datum))
+> (define piece (kill md (at md "Alpha |") (at md "gamma|.\n")))
+> (yank form (at form "|first") piece)
+#<edit 1>
+> (cadddr (cadr (children form)))
+(form:field ((name . notes)) "beta gammafirst")
+> (define form (fresh form-datum))
+> (document:atom? (document:token (buffers:document form) (buffers:next-stop form (at form "first|"))))
+#t
+> (buffers:next-stop form (buffers:next-stop form (at form "first|")))
+#f
+> (map (lambda (p)
+         (let ([t (document:token (buffers:document form) p)])
+           (if (and (document:node? t) (document:atom? t))
+               'button
+               (document:node-attribute (document:enclosing (buffers:document form) p) 'name))))
+       (all-stops form))
+(name name name name name email notes notes notes notes notes notes button)
