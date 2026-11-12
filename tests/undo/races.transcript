@@ -1,0 +1,118 @@
+; Races between the main thread, the log's writer and quits.
+> (import (tuna eval) (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+> (define (reload! name) (eval-file (string-append (getenv "TUNA_LIBRARY") "/" name ".sls")))
+> (define (states b) (map (lambda (s) (list (car s) (cadr s))) (cddr (undo:history b))))
+; An edit made while a reload of undo reads a buffer's log forms a group
+; of its own on top of the log's history, whichever finishes first.
+> (checks:write-text! "~/big.txt" "big\n")
+> (define big (files:visit "~/big.txt"))
+> (define chunk (make-string 1000 #\k))
+> (do ([i 0 (+ i 1)]) ((= i 1500)) (buffers:replace! big 1 1 chunk) (sleep-for 0))
+> (define before (states big))
+> (wait-until (lambda () (> (checks:log-size "~/big.txt") 1500000)))
+> (reload! "undo")
+> (buffers:replace! big 1 1 "during")
+#<edit 1501>
+; Asking for the history while the log is read waits for it.
+> (length (states big))
+1502
+> (let ([after (states big)])
+    (list (equal? (list-head after 1501) before) (cadr (list-ref after 1501)) (car (undo:history big))))
+(#t 1500 1501)
+> (buffers:with-buffer big (commands:run undo:undo 1))
+> (list (substring (text big) 0 6) (string-length (text big)))
+("kkkkkk" 1500004)
+; Unloading undo during a burst of batches waits for the writer, so the
+; log holds every group.
+> (checks:write-text! "~/burst.txt" "burst\n")
+> (define burst (files:visit "~/burst.txt"))
+> (do ([i 0 (+ i 1)]) ((= i 300)) (buffers:replace! burst 1 1 "b") (sleep-for 0))
+> (begin (unload-module! '(undo)) (load-module! '(undo)) (load-module! '(checks)))
+> (wait-until (lambda () (guard (c [#t #f]) (= (length (states burst)) 301))))
+> (length (states burst))
+301
+> (buffers:with-buffer burst (commands:run undo:undo 300))
+> (text burst)
+"burst\n"
+; Two visits of one file at once attach one history.
+> (checks:write-text! "~/twice.txt" "twice\n")
+> (define twice (files:visit "~/twice.txt"))
+> (buffers:with-buffer twice (commands:run checks:insert 1 "2"))
+#<edit 1>
+> (buffers:kill! twice)
+#t
+> (define visits (map join-task (map (lambda (i) (spawn-task (lambda () (files:visit "~/twice.txt")))) (iota 2))))
+> (list (eq? (car visits) (cadr visits)) (text (car visits)) (states (car visits)))
+(#t "twice\n" ((0 #f) (1 0)))
+> (buffers:with-buffer (car visits) (commands:run undo:redo 1))
+> (text (car visits))
+"2twice\n"
+; A quit that lands in an edit group's body undoes the body's edits.
+> (define q (buffers:make "quit" "\n"))
+> (guard (c [(quit-condition? c) 'quit])
+    (undo:with-edit-group q
+      (buffers:replace! q 1 1 "q")
+      (request-quit!)
+      (let loop () (loop))))
+quit
+> (list (text q) (states q))
+("\n" ((0 #f)))
+; Quits land in typing, undo and redo, in the hooks that record them and
+; in the bookkeeping after each batch. A quit that lands in undo leaves
+; redo nothing to do, so the storm reports are counted, not shown.
+; Afterwards the tree still matches the text, and the log replays to the
+; same tree and text.
+> (checks:write-text! "~/storm.txt" "storm\n")
+> (define storm (files:visit "~/storm.txt"))
+> (define quits 0)
+> (define reports 0)
+> (define (count-quits report c)
+    (if (quit-condition? c) (set! quits (+ quits 1)) (set! reports (+ reports 1))))
+> (advice-add! report count-quits)
+> (define armed (box #f))
+> (define quitting (box #t))
+> (define requests 0)
+> (define (quitter)
+    (let loop ()
+      (when (unbox quitting)
+        (chez:sleep (make-time 'time-duration 100000 0))
+        (when (box-cas! armed #t #f)
+          (request-quit!)
+          (set! requests (+ requests 1)))
+        (loop))))
+> (define steps 0)
+> (define (in-storm command . args) (buffers:with-buffer storm (apply commands:run command args)))
+> (define (stress until)
+    (let again ()
+      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again)])
+        (let loop ()
+          (when (< (real-time) until)
+            (set-box! armed #t)
+            (in-storm checks:type "s")
+            (in-storm checks:insert 1 "i")
+            (in-storm undo:undo 1)
+            (in-storm undo:redo 1)
+            (sleep-for 0)
+            (set! steps (+ steps 1))
+            (loop)))
+        (set-box! armed #f)
+        (sleep-for 0.05))))
+> (begin
+    (fork-thread quitter)
+    (stress (+ (real-time) 1500))
+    (set-box! quitting #f)
+    (list (> steps 30) (> requests 30)))
+(#t #t)
+> (advice-remove! report count-quits)
+> (define final (list (text storm) (states storm) (car (undo:history storm))))
+> (undo:go-to! storm 0)
+> (text storm)
+"storm\n"
+> (undo:go-to! storm (caddr final))
+> (equal? (list (text storm) (states storm) (car (undo:history storm))) final)
+#t
+> (reload! "buffers")
+> (wait-until (lambda () (= (length (files:buffers)) 4)))
+> (define storm (files:visit "~/storm.txt"))
+> (equal? (list (text storm) (states storm) (car (undo:history storm))) final)
+#t

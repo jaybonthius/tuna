@@ -1,0 +1,45 @@
+; The configuration binds C-z and C-Z, a shifted letter being its
+; capital.
+> (map (lambda (k) (commands:command-name (table-ref keys:global k))) '("C-z" "C-Z"))
+(undo:undo undo:redo)
+> (map (lambda (k) (commands:command-name (table-ref keys:global k))) '("C-/" "C-_" "C-x u" "C-?" "C-M-_"))
+(undo:undo undo:undo undo:undo undo:redo undo:redo)
+> (define notes (buffers:make "notes" "Buy milk.\n"))
+> (buffers:with-buffer notes
+    (undo:with-edit-group (buffers:current)
+      (buffers:replace! (buffers:current) 1 1 "a")
+      (buffers:replace! (buffers:current) 2 2 "b")))
+#<edit 2>
+> (text notes)
+"abBuy milk.\n"
+> (tree notes)
+(1 #f (0 #f) (1 0))
+> (buffers:with-buffer notes (commands:run undo:undo 1))
+> (text notes)
+"Buy milk.\n"
+> (buffers:with-buffer notes (commands:run undo:redo 1))
+> (text notes)
+"abBuy milk.\n"
+; undo:history: the current state, the saved state, then each state with
+; its parent and the time its group ended.
+> (define h (buffers:with-buffer notes (undo:history (buffers:current))))
+> (list (car h) (cadr h) (map (lambda (s) (list (car s) (cadr s) (and (integer? (caddr s)) (> (caddr s) 1700000000)))) (cddr h)))
+(1 #f ((0 #f #t) (1 0 #t)))
+> (buffers:with-buffer notes (set-option-local! undo:limit 0))
+> (buffers:with-buffer notes (undo:limit))
+0
+> (undo:limit)
+4000000
+> (set-option! undo:keep-log? (lambda (path) (not (string=? (path-extension path) "gpg"))))
+> (list ((undo:keep-log?) "/home/me/notes.gpg") ((undo:keep-log?) "/home/me/notes.txt"))
+(#f #t)
+; The default keeps no log under /tmp/ or /dev/shm/.
+> (map (option-default undo:keep-log?) '("/tmp/a.txt" "/dev/shm/a" "/home/me/a.txt" "/tmpfile"))
+(#f #f #t #t)
+; Typing a word undoes in one step.
+> (define w (buffers:make "word" "\n"))
+> (for-each (lambda (s) (buffers:with-buffer w (commands:run checks:type s))) '("w" "o" "r" "d"))
+#<edit 4>
+> (buffers:with-buffer w (commands:run (table-ref keys:global "C-/") 1))
+> (text w)
+"\n"
