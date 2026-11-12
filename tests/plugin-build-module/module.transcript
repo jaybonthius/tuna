@@ -1,0 +1,64 @@
+; A plugin's build may write its main module, so Tuna looks for the
+; module after the build. Commit 5f6001b deletes gen.sls, which its
+; build writes.
+> (gen:version)
+1
+> (update-plugin! 'gen "5f6001b")
+> (gen:version)
+2
+> (show ".cache/tuna/builds/gen.log")
+build of 5f6001bb7fdad8e837ea98a8b5d16a2d5978a82f, status 0
+wrote gen.sls
+; A build that succeeds but leaves no main module fails the update, which
+; goes back to the previous commit and builds it again.
+> (update-plugin! 'gen "6ac8df6")
+! update-plugin!: plugin gen holds no module (gen)
+> (plugin-commit 'gen)
+"5f6001bb7fdad8e837ea98a8b5d16a2d5978a82f"
+> (gen:version)
+2
+> (show ".cache/tuna/builds/gen.log")
+build of 6ac8df6db243549bbff6bdd419859adfbbec3160, status 0
+wrote out/gen.sls
+build of 5f6001bb7fdad8e837ea98a8b5d16a2d5978a82f, status 0
+wrote gen.sls
+; A failed build fails the update before any module is looked for.
+> (update-plugin! 'gen "cec7478")
+! update-plugin!: the build of gen failed with status 3: no compiler (output in ~/.cache/tuna/builds/gen.log)
+> (plugin-commit 'gen)
+"5f6001bb7fdad8e837ea98a8b5d16a2d5978a82f"
+> (gen:version)
+2
+> (show ".config/tuna/init.ss")
+(import (tuna) (tuna plugins))
+(use-plugin gen (git "https://github.com/bob/gen") (commit "5f6001bb7fdad8e837ea98a8b5d16a2d5978a82f"))
+
+(define (show path)
+  (display (call-with-input-file (string-append (getenv "HOME") "/" path) get-string-all)))
+
+(define (exists? path)
+  (file-exists? (string-append (getenv "HOME") "/" path)))
+(import (console))
+; An install, by an import or by install-plugin!, runs the build before
+; it looks for the main module.
+> (use-plugin made (git "https://github.com/bob/made"))
+> (made:where)
+"built"
+> (show ".cache/tuna/builds/made.log")
+build of fa12393a98926f791ef4d90c3cd908fc10535dfe, status 0
+wrote made.sls
+> (remove-plugin! 'made)
+> (install-plugin! '(use-plugin made (git "https://github.com/bob/made")))
+> (list (exists? ".local/share/tuna/plugins/made/made.sls") (plugin-commit 'made))
+(#t "fa12393a98926f791ef4d90c3cd908fc10535dfe")
+; An install whose build leaves no main module leaves the plugin as it
+; was, with the build's output in its log.
+> (install-plugin! '(use-plugin hollow (git "https://github.com/bob/hollow")))
+! install-plugin!: plugin hollow holds no module (hollow)
+> (use-plugin hollow (git "https://github.com/bob/hollow"))
+! import: plugin hollow holds no module (hollow)
+> (list (exists? ".local/share/tuna/plugins/hollow") (installed-plugins))
+(#f (gen made))
+> (show ".cache/tuna/builds/hollow.log")
+build of dca2d7a8f60e48b489fb69f1a70dbcbdfa6b7f4b, status 0
+nothing to build

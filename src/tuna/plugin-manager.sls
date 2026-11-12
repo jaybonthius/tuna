@@ -451,6 +451,8 @@
   (define (source-clauses found)
     (git-clauses (install-source-git found) (install-source-dir found) (install-source-branch found)))
 
+  ;; A build may write the plugin's main module, so installs and updates
+  ;; check for it after the build.
   (define (check-main-module who id root)
     (unless (module-file root (list id))
       (errorf who "plugin ~a holds no module (~a)" id id)))
@@ -460,7 +462,8 @@
   ;; kept until the build succeeds.
   (define (replace-folder! who line temporary run-build)
     (let* ([id (line-id line)] [dir (line-clause line 'dir)]
-           [folder (plugin-folder id)] [old (format "~a/.~a.old" plugins-root id)])
+           [folder (plugin-folder id)] [root (if dir (string-append folder "/" dir) folder)]
+           [old (format "~a/.~a.old" plugins-root id)])
       (delete-tree old)
       (when (file-exists? folder #f) (rename-file folder old))
       (rename-file temporary folder)
@@ -470,14 +473,12 @@
                     (raise c)])
         (run-build
           (lambda ()
-            (build! who id (git-address (line-clause line 'git)) folder
-              (if dir (string-append folder "/" dir) folder)))))
+            (build! who id (git-address (line-clause line 'git)) folder root)))
+        (check-main-module who id root))
       (delete-tree old)))
 
   (define (finish-install! who line temporary run-build)
-    (let* ([id (line-id line)] [dir (line-clause line 'dir)])
-      (guard (c [#t (delete-tree temporary) (raise c)])
-        (check-main-module who id (if dir (string-append temporary "/" dir) temporary)))
+    (let ([id (line-id line)])
       (replace-folder! who line temporary run-build)
       (write-install-source! id (line-git-clauses line))
       (hashtable-delete! index-lines-read id)
@@ -720,8 +721,8 @@
                           (fetch! 'update-plugin! url folder commit (and (not commit) (line-clause source 'branch)))))])
              (start-build-log! id)
              (guard (c [#t (go-back!) (raise c)])
-               (check-main-module 'update-plugin! id root)
-               (call-paused 'update-plugin! id (lambda () (build! 'update-plugin! id url folder root))))
+               (call-paused 'update-plugin! id (lambda () (build! 'update-plugin! id url folder root)))
+               (check-main-module 'update-plugin! id root))
              (write-install-source! id (line-git-clauses source))
              (hashtable-delete! index-lines-read id)
              (write-configuration-commit! 'update-plugin! line new)
