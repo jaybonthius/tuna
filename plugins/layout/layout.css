@@ -1,6 +1,15 @@
 /* Rules are wrapped in :where() so that a theme's rule wins. */
+/* The layout is the whole page: a body margin or a viewport unit that
+   counts the area under a phone's toolbar would let the page itself
+   scroll behind the views. */
+:where(body) {
+  margin: 0;
+  overflow: hidden;
+}
+
 :where(#screen) {
   block-size: 100vh;
+  block-size: 100dvh;
   margin: 0;
 }
 
