@@ -1,0 +1,296 @@
+; Encodings: every file saves byte for byte.
+> (define (bytes-of b) (disk-checks:read-bytes (files:path b)))
+> (define (local-final-newline-off! b) (buffers:with-buffer b (set-option-local! files:require-final-newline #f)))
+> (disk-checks:write-bytes! "~/bom.txt" #vu8(#xEF #xBB #xBF 97 13 10 98 13 10))
+> (define bom (files:visit "~/bom.txt"))
+> (text bom)
+"a\nb\n"
+> (buffers:replace! bom 2 2 "!")
+#<edit 1>
+> (files:save-buffer bom)
+> (bytes-of bom)
+#vu8(239 187 191 97 33 13 10 98 13 10)
+> (disk-checks:write-bytes! "~/mixed.txt" (string->utf8 "a\r\nb\nc"))
+> (define mixed (files:visit "~/mixed.txt"))
+> (text mixed)
+"a\r\nb\nc"
+> (local-final-newline-off! mixed)
+> (buffers:replace! mixed 1 1 "0")
+#<edit 1>
+> (files:save-buffer mixed)
+> (utf8->string (bytes-of mixed))
+"0a\r\nb\nc"
+; A carriage return that ends no line stays text in a CR LF file.
+> (disk-checks:write-bytes! "~/lone.txt" (string->utf8 "a\rb\r\n\r\r\n"))
+> (define lone (files:visit "~/lone.txt"))
+> (text lone)
+"a\rb\n\r\n"
+> (buffers:replace! lone 1 1 "-")
+#<edit 1>
+> (files:save-buffer lone)
+> (utf8->string (bytes-of lone))
+"-a\rb\r\n\r\r\n"
+; Bytes that are not UTF-8 are raw-byte atoms, written back as they were.
+> (disk-checks:write-bytes! "~/latin.txt" #vu8(99 97 102 233 10 255 254 10))
+> (define latin (files:visit "~/latin.txt"))
+> (document:datums (buffers:document latin))
+((buffers:text () "caf" #(document:raw-byte ((byte . 233))) "\n" #(document:raw-byte ((byte . 255))) #(document:raw-byte ((byte . 254))) "\n"))
+> (buffers:replace! latin 1 1 "Le ")
+#<edit 1>
+> (files:save-buffer latin)
+> (bytes-of latin)
+#vu8(76 101 32 99 97 102 233 10 255 254 10)
+; An empty file is an empty, unmodified buffer, and gains no line break.
+> (disk-checks:write-bytes! "~/empty.txt" #vu8())
+> (define empty (files:visit "~/empty.txt"))
+> (list (text empty) (files:modified? empty) (call-with-values (lambda () (files:fingerprint empty)) list))
+("" #f (0 2166136261))
+> (files:not-modified empty)
+> (files:save-buffer empty)
+> (bytes-of empty)
+#vu8()
+; A missing file gives an empty buffer that the first save creates; no
+; folder is ever made.
+> (define fresh (files:visit "~/fresh.txt"))
+> (list (text fresh) (files:modified? fresh) (disk-checks:exists? "~/fresh.txt"))
+("" #f #f)
+> (buffers:replace! fresh 1 1 "new")
+#<edit 1>
+> (files:save-buffer fresh)
+> (list (disk-checks:read-text "~/fresh.txt") (files:modified? fresh))
+("new\n" #f)
+> (define nowhere (files:visit "~/no/such/folder/x.txt"))
+> (files:path nowhere)
+"~/no/such/folder/x.txt"
+> (buffers:replace! nowhere 1 1 "x")
+#<edit 1>
+> (files:save-buffer nowhere)
+! files:save-buffer: no such folder with irritant "~/no/such/folder"
+> (list (disk-checks:exists? "~/no") (files:modified? nowhere))
+(#f #t)
+> (files:visit "~")
+! files:read-document: is a folder with irritant "~"
+; A save renames a new file over the old one, keeping its mode, and
+; leaves no temporary file.
+> (disk-checks:folder! "~/kept")
+> (disk-checks:write-text! "~/kept/mode.txt" "mode\n")
+> (disk-checks:set-mode! "~/kept/mode.txt" #o640)
+> (define moded (files:visit "~/kept/mode.txt"))
+> (buffers:replace! moded 1 1 "a ")
+#<edit 1>
+> (files:save-buffer moded)
+> (list (disk-checks:read-text "~/kept/mode.txt") (number->string (disk-checks:mode "~/kept/mode.txt") 8) (disk-checks:folder-files "~/kept"))
+("a mode\n" "640" ("mode.txt"))
+; Paths resolve through symbolic links: two names, one buffer, and a link
+; stays a link.
+> (disk-checks:write-text! "~/kept/target.txt" "target\n")
+> (disk-checks:symlink! "~/kept/target.txt" "~/kept/link.txt")
+0
+> (define linked (files:visit "~/kept/link.txt"))
+> (list linked (files:path linked) (eq? linked (files:visit "~/kept/target.txt")) (eq? linked (files:buffer-visiting "~/kept/./link.txt")))
+(#<buffer target.txt> "~/kept/target.txt" #t #t)
+> (buffers:replace! linked 1 1 "the ")
+#<edit 1>
+> (files:save-buffer linked)
+> (list (disk-checks:symlink? "~/kept/link.txt") (disk-checks:read-text "~/kept/link.txt"))
+(#t "the target\n")
+; A file with other hard links is written in place, so the links stay one
+; file.
+> (disk-checks:write-text! "~/kept/a.txt" "shared\n")
+> (disk-checks:link! "~/kept/a.txt" "~/kept/b.txt")
+0
+> (define hard (files:visit "~/kept/a.txt"))
+> (buffers:replace! hard 1 1 "still ")
+#<edit 1>
+> (files:save-buffer hard)
+> (list (disk-checks:link-count "~/kept/a.txt") (disk-checks:read-text "~/kept/b.txt"))
+(2 "still shared\n")
+; Files of one name are named after their folders; killing one renames
+; the other back. A buffer that is not a file's, or that the user
+; renamed, keeps its name.
+> (for-each disk-checks:folder! '("~/docs" "~/work" "~/x" "~/x/docs"))
+> (for-each (lambda (p) (disk-checks:write-text! p "n\n")) '("~/docs/n.txt" "~/work/n.txt" "~/x/docs/n.txt"))
+> (define docs (files:visit "~/docs/n.txt"))
+> (buffers:name docs)
+"n.txt"
+> (define work (files:visit "~/work/n.txt"))
+> (map buffers:name (list docs work))
+("n.txt<docs>" "n.txt<work>")
+> (define x-docs (files:visit "~/x/docs/n.txt"))
+> (map buffers:name (list docs work x-docs))
+("n.txt<home/docs>" "n.txt<home/work>" "n.txt<x/docs>")
+> (buffers:kill! x-docs)
+#t
+> (map buffers:name (list docs work))
+("n.txt<docs>" "n.txt<work>")
+> (buffers:kill! work)
+#t
+> (buffers:name docs)
+"n.txt"
+> (buffers:rename! docs "my notes")
+> (define work (files:visit "~/work/n.txt"))
+> (map buffers:name (list docs work))
+("my notes" "n.txt")
+> (define other-buffer (buffers:make "m.txt" "not a file"))
+> (disk-checks:write-text! "~/work/m.txt" "m\n")
+> (buffers:name (files:visit "~/work/m.txt"))
+"m.txt<work>"
+> (files:path other-buffer)
+#f
+; write-file makes a buffer visit a file, renamed after it, and writes
+; whatever the file holds.
+> (define draft (buffers:make "*draft*" "(+ 1 2)"))
+> (files:write-file "~/work/sum.ss" draft)
+> (list (buffers:name draft) (files:path draft) (disk-checks:read-text "~/work/sum.ss") (files:modified? draft))
+("sum.ss" "~/work/sum.ss" "(+ 1 2)\n" #f)
+> (disk-checks:write-text! "~/work/sum.ss" "elsewhere\n")
+> (buffers:replace! draft 1 1 ";")
+#<edit 2>
+> (files:save-buffer draft)
+! files:save-buffer: another program changed the file with irritant "~/work/sum.ss"
+> (guard (c [(files:changed-on-disk-condition? c) (list (error? c) (condition-who c))])
+    (files:save-buffer draft))
+(#t files:save-buffer)
+> (files:write-file "~/work/sum.ss" draft)
+> (disk-checks:read-text "~/work/sum.ss")
+";(+ 1 2)\n"
+> (files:write-file "~/work/total.ss" draft)
+> (list (buffers:name draft) (files:buffer-visiting "~/work/sum.ss") (disk-checks:read-text "~/work/total.ss"))
+("total.ss" #f ";(+ 1 2)\n")
+> (files:write-file "~/work/n.txt" draft)
+! files:write-file: another buffer visits the file with irritant "~/work/n.txt"
+; Modified means changed since the last read, save or not-modified.
+> (define m (files:visit "~/work/m.txt"))
+> (buffers:replace! m 1 1 "x")
+#<edit 1>
+> (buffers:replace! m 1 2 "")
+#<edit 2>
+> (files:modified? m)
+#t
+> (files:not-modified m)
+> (files:modified? m)
+#f
+> (files:save-buffer m)
+> (disk-checks:read-text "~/work/m.txt")
+"m\n"
+> (files:not-modified other-buffer)
+> (files:modified? other-buffer)
+#f
+; FNV-1a 32 of "m\n", as Python computes it.
+> (call-with-values (lambda () (files:fingerprint m)) list)
+(2 3173953654)
+> (disk-checks:fnv (disk-checks:read-bytes "~/work/m.txt"))
+3173953654
+; Revert replaces only the part that differs, as one edit; anchors
+; outside it stay.
+> (disk-checks:write-text! "~/rev.txt" "one\ntwo\nthree\n")
+> (define rev (files:visit "~/rev.txt"))
+> (define before (buffers:anchor rev 2))
+> (define after (buffers:anchor rev 12))
+> (disk-checks:write-text! "~/rev.txt" "one\nTWO!\nthree\n")
+> (buffers:replace! rev 1 1 "")
+#<edit 1>
+> (files:revert-buffer rev)
+> (list (text rev) (buffers:version rev) (files:modified? rev))
+("one\nTWO!\nthree\n" 2 #f)
+> (map buffers:edit-start (buffers:edits-since rev 1))
+(5)
+> (list (buffers:anchor-position before) (buffers:anchor-position after))
+(2 13)
+> (files:revert-buffer rev)
+> (buffers:version rev)
+2
+> (disk-checks:write-bytes! "~/rev.txt" #vu8(111 110 101 13 10 233 13 10))
+> (files:revert-buffer rev)
+> (list (string=? (text rev) "one\n\xFFFC;\n") (bytes-of rev))
+(#t #vu8(111 110 101 13 10 233 13 10))
+> (buffers:replace! rev 1 1 "#")
+#<edit 4>
+> (files:save-buffer rev)
+> (bytes-of rev)
+#vu8(35 111 110 101 13 10 233 13 10)
+> (disk-checks:write-bytes! "~/rev.txt" #vu8(35 111 110 101 13 10 234 13 10))
+> (files:revert-buffer rev)
+> (document:datums (buffers:document rev))
+((buffers:text () "#one\n" #(document:raw-byte ((byte . 234))) "\n"))
+> (map buffers:edit-start (buffers:edits-since rev 4))
+(6)
+> (delete-file (string-append (getenv "HOME") "/rev.txt"))
+#t
+> (files:revert-buffer rev)
+! files:revert-buffer: no such file with irritant "~/rev.txt"
+; Hooks get the buffer, with it current, so local entries run too. An
+; entry that raises is reported and the save goes on.
+> (define calls '())
+> (define (note name) (lambda (b) (set! calls (cons (list name (buffers:name b) (eq? b (buffers:current))) calls))))
+> (add-hook! files:after-visit (note 'after-visit))
+> (add-hook! files:after-save (note 'after-save))
+> (add-hook! files:after-revert (note 'after-revert))
+> (define (refuse b) (error 'hooked "refused"))
+> (add-hook! files:before-save refuse)
+> (disk-checks:write-text! "~/hooks.txt" "h\n")
+> (define hooked (files:visit "~/hooks.txt"))
+> (eq? hooked (files:visit "~/hooks.txt"))
+#t
+> (buffers:with-buffer hooked (add-local-hook! files:before-save (note 'local-before-save)))
+> (buffers:replace! hooked 1 1 "+")
+#<edit 1>
+> (files:save-buffer hooked)
+! hooked: refused
+> (files:save-buffer hooked)
+> (remove-hook! files:before-save refuse)
+> (files:revert-buffer hooked)
+> (reverse calls)
+((after-visit "hooks.txt" #t) (local-before-save "hooks.txt" #t) (after-save "hooks.txt" #t) (after-revert "hooks.txt" #t))
+; The final line break is an edit, and only for text that lacks one.
+> (disk-checks:write-text! "~/final.txt" "no break")
+> (define final (files:visit "~/final.txt"))
+> (buffers:replace! final 1 1 "a ")
+#<edit 1>
+> (files:save-buffer final)
+> (list (buffers:version final) (text final) (files:modified? final))
+(2 "a no break\n" #f)
+; Reading directly gives the document and the fingerprint.
+> (call-with-values (lambda () (files:read-document "~/final.txt"))
+    (lambda (doc length hash) (list (document:datums doc) length (= hash (disk-checks:fnv (disk-checks:read-bytes "~/final.txt"))))))
+(((buffers:text () "a no break\n")) 11 #t)
+; Killing a buffer forgets it.
+> (buffers:kill! final)
+#t
+> (list (files:buffer-visiting "~/final.txt") (memq final (files:buffers)) (files:modified? final))
+(#f #f #f)
+; Reading, saving, writing and reverting pause, so outside a task they
+; refuse at once and change nothing.
+> (define outside #f)
+> (define (call-outside-task batch-ended)
+    (unless outside
+      (set! outside
+        (map (lambda (call) (guard (c [#t (list (condition-who c) (condition-message c))]) (call)))
+             (list (lambda () (files:read-document "~/final.txt"))
+                   (lambda () (files:save-buffer hooked))
+                   (lambda () (files:write-file "~/elsewhere.txt" hooked))
+                   (lambda () (files:revert-buffer hooked))))))
+    (batch-ended))
+> (advice-add! batch-ended call-outside-task)
+> (sleep-for 0.05)
+> (advice-remove! batch-ended call-outside-task)
+> outside
+((files:read-document "not in a task") (files:save-buffer "not in a task") (files:write-file "not in a task") (files:revert-buffer "not in a task"))
+> (list (buffers:name hooked) (files:buffer-visiting "~/elsewhere.txt"))
+("hooks.txt" #f)
+; A worker's failure from a defect is a violation, not a disk error.
+> (import (only (files disk) failure failure-violation?))
+> (map (lambda (c) (failure-violation? (failure c)))
+       (list (make-assertion-violation) (make-i/o-write-error) 'raised))
+(#t #f #f)
+; Arguments are checked.
+> (files:visit 'notes)
+! files:visit: not a string with irritant notes
+> (files:save-buffer other-buffer)
+! files:save-buffer: the buffer visits no file with irritant #<buffer m.txt>
+> (files:fingerprint other-buffer)
+! files:fingerprint: the buffer visits no file with irritant #<buffer m.txt>
+> (files:path "notes")
+! files:path: not a buffer with irritant "notes"
+> (files:modified? #f)
+! files:modified?: not a buffer with irritant #f

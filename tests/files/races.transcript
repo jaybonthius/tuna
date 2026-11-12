@@ -1,0 +1,165 @@
+; Visits of one file at once make one buffer; files of one name visited
+; at once get names of their own.
+> (disk-checks:write-text! "~/one.txt" "one\n")
+> (define visitors (map (lambda (i) (spawn-task (lambda () (files:visit "~/one.txt")))) (iota 5)))
+> (define visited (map join-task visitors))
+> (list (for-all (lambda (b) (eq? b (car visited))) visited) (length (files:buffers)))
+(#t 1)
+> (for-each disk-checks:folder! '("~/p" "~/q"))
+> (for-each (lambda (p) (disk-checks:write-text! p "same\n")) '("~/p/same.txt" "~/q/same.txt"))
+> (define pair (map join-task (map (lambda (p) (spawn-task (lambda () (files:visit p)))) '("~/p/same.txt" "~/q/same.txt"))))
+> (map buffers:name pair)
+("same.txt<p>" "same.txt<q>")
+; Saves of one buffer take turns, so the second does not mistake the
+; first's write for another program's.
+> (define one (car visited))
+> (buffers:replace! one 1 1 "a")
+#<edit 1>
+> (define savers
+    (list (spawn-task (lambda () (files:save-buffer one)))
+          (spawn-task (lambda () (buffers:replace! one 1 1 "b") (files:save-buffer one)))
+          (spawn-task (lambda () (files:save-buffer one)))))
+> (for-each join-task savers)
+> (list (disk-checks:read-text "~/one.txt") (files:modified? one))
+("baone\n" #f)
+; A key typed while the job writes leaves the buffer modified: files
+; records the version the job wrote. The before-save entry queues the
+; edit, which runs while the save waits for its job.
+> (define (type-meanwhile b) (spawn-task (lambda () (buffers:replace! b 1 1 "typed "))))
+> (add-hook! files:before-save type-meanwhile)
+> (buffers:replace! one 1 1 "c")
+#<edit 3>
+> (files:save-buffer one)
+> (list (disk-checks:read-text "~/one.txt") (text one) (files:modified? one))
+("cbaone\n" "typed cbaone\n" #t)
+> (remove-hook! files:before-save type-meanwhile)
+; A save whose waiting task is signalled is still recorded, so the next
+; save sees no change on disk.
+> (define (signal-saver b) (let ([saver (current-task)]) (spawn-task (lambda () (signal-task saver 'stopped)))))
+> (add-hook! files:before-save signal-saver)
+> (guard (c [(symbol? c) c]) (files:save-buffer one))
+stopped
+> (remove-hook! files:before-save signal-saver)
+> (wait-until (lambda () (not (files:modified? one))))
+> (list (files:modified? one) (disk-checks:read-text "~/one.txt"))
+(#f "typed cbaone\n")
+> (buffers:replace! one 1 1 "d")
+#<edit 5>
+> (files:save-buffer one)
+> (disk-checks:read-text "~/one.txt")
+"dtyped cbaone\n"
+; A condition that is not serious, raised at a waiting saver, leaves the
+; buffer free for the next save.
+> (define (stop-saver b) (let ([saver (current-task)]) (spawn-task (lambda () (signal-task saver (make-message-condition "stop"))))))
+> (add-hook! files:before-save stop-saver)
+> (buffers:replace! one 1 1 "s")
+#<edit 6>
+> (guard (c [(message-condition? c) (condition-message c)]) (files:save-buffer one))
+"stop"
+> (remove-hook! files:before-save stop-saver)
+> (buffers:replace! one 1 1 "t")
+#<edit 7>
+> (define next-saver (spawn-task (lambda () (files:save-buffer one))))
+> (wait-until (lambda () (task-done? next-saver)))
+> (list (task-done? next-saver) (files:modified? one) (disk-checks:read-text "~/one.txt"))
+(#t #f "tsdtyped cbaone\n")
+; A buffer killed while its save waits is written, and gets no after-save.
+> (define saved-after '())
+> (define (note-save b) (set! saved-after (cons (buffers:name b) saved-after)))
+> (add-hook! files:after-save note-save)
+> (define (kill-meanwhile b) (spawn-task (lambda () (buffers:kill! b))))
+> (add-hook! files:before-save kill-meanwhile)
+> (buffers:replace! one 1 1 "e")
+#<edit 8>
+> (files:save-buffer one)
+> (remove-hook! files:before-save kill-meanwhile)
+> (list (buffers:live? one) (files:buffer-visiting "~/one.txt") saved-after (disk-checks:read-text "~/one.txt"))
+(#f #f () "etsdtyped cbaone\n")
+; An edit made while a revert reads the file is reverted too: the revert
+; reads again.
+> (define two (files:visit "~/one.txt"))
+> (disk-checks:write-text! "~/one.txt" "from disk\n")
+> (begin
+    (spawn-task (lambda () (buffers:replace! two 1 1 "typed ")))
+    (files:revert-buffer two))
+> (list (text two) (files:modified? two))
+("from disk\n" #f)
+; Unloading files ends the tasks waiting for its jobs, with an error.
+> (define big (make-string 8000000 #\x))
+> (call-with-output-file (string-append (getenv "HOME") "/big.txt") (lambda (p) (display big p)))
+> (define visitor (spawn-task (lambda () (files:visit "~/big.txt"))))
+> (define unloader (spawn-task (lambda () (unload-module! '(files)))))
+> (guard (c [(error? c) (list (condition-who c) (condition-message c))]) (join-task visitor))
+! files:read-document: the files plugin was unloaded
+(files:read-document "the files plugin was unloaded")
+> (load-module! '(files))
+> (wait-until (lambda () (files:buffer-visiting "~/one.txt")))
+> (list-sort string<? (map buffers:name (files:buffers)))
+("one.txt" "same.txt<p>" "same.txt<q>")
+; It also ends the tasks of other modules waiting for a buffer's turn.
+> (define large (files:visit "~/big.txt"))
+> (buffers:replace! large 1 1 "y")
+#<edit 1>
+> (define first-saver (spawn-task (lambda () (files:save-buffer large))))
+> (define second-saver (spawn-task (lambda () (files:save-buffer large))))
+> (define unloader (spawn-task (lambda () (unload-module! '(files)))))
+> (map (lambda (t) (guard (c [(error? c) (list (condition-who c) (condition-message c))]) (join-task t)))
+       (list first-saver second-saver))
+! files:save-buffer: the files plugin was unloaded
+! files:save-buffer: the files plugin was unloaded
+((files:save-buffer "the files plugin was unloaded") (files:save-buffer "the files plugin was unloaded"))
+> (load-module! '(files))
+> (wait-until (lambda () (files:buffer-visiting "~/big.txt")))
+> (buffers:kill! large)
+#t
+; Quits land in edits, saves, their jobs' deliveries and the bookkeeping.
+; Afterwards each buffer saves, and its file holds its text. The thread
+; asks for a quit every tenth of a millisecond, once for each time the
+; main thread arms it inside the guard, so no quit lands outside it but in
+; whatever runs while the guarded task waits for a job, reported there.
+; One made while a task pauses or resumes waits, and one made while no
+; task runs quits nothing, so how many land varies.
+> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+> (define quits 0)
+> (define (count-quits report c)
+    (if (quit-condition? c) (set! quits (+ quits 1)) (report c)))
+> (advice-add! report count-quits)
+> (define armed (box #f))
+> (define quitting (box #t))
+> (define requests 0)
+> (define (quitter)
+    (let loop ()
+      (when (unbox quitting)
+        (chez:sleep (make-time 'time-duration 100000 0))
+        (when (box-cas! armed #t #f)
+          (request-quit!)
+          (set! requests (+ requests 1)))
+        (loop))))
+> (define saves 0)
+> (define (stress until)
+    (let again ()
+      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again)])
+        (let loop ()
+          (when (< (real-time) until)
+            (for-each (lambda (b)
+                        (set-box! armed #t)
+                        (buffers:replace! b 1 1 "q")
+                        (set-box! armed #t)
+                        (files:save-buffer b)
+                        (set! saves (+ saves 1)))
+                      (files:buffers))
+            (loop)))
+        (set-box! armed #f)
+        (sleep-for 0.05))))
+> (begin
+    (fork-thread quitter)
+    (stress (+ (real-time) 1500))
+    (set-box! quitting #f)
+    (list (> saves 30) (> requests 30)))
+(#t #t)
+> (advice-remove! report count-quits)
+> (for-each (lambda (b) (buffers:replace! b 1 1 "!") (files:save-buffer b)) (files:buffers))
+> (map (lambda (b) (list (files:modified? b) (string=? (text b) (disk-checks:read-text (files:path b))))) (files:buffers))
+((#f #t) (#f #t) (#f #t))
+> (equal? (map (lambda (v) (vector-ref v 0)) (files:%visits)) (map files:path (files:buffers)))
+#t
