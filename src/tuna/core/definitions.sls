@@ -6,6 +6,7 @@
     site-module
     advice-add!
     advice-remove!
+    remove-override!
     definition-changes
     report
     report-safely
@@ -16,6 +17,8 @@
     call-module-code
     tick
     tick-changed?
+    batch-ended
+    batch-ended-changed?
     module-loaded
     module-failed
     module-definitions-started!
@@ -194,10 +197,7 @@
           (when unloaded? (update-advised! c)))
         (unless (cell-defined c)
           (cell-defined-set! c
-            (call-as-owner (find-owner module)
-              (lambda ()
-                (record-change! 'define 'define symbol #f void
-                  (lambda () (refresh-layers! (cell-overrides c))))))))
+            (record-definition! module symbol (lambda () (refresh-layers! (cell-overrides c))))))
         c)))
 
   (define (cell-assign! c v)
@@ -208,7 +208,7 @@
   ;; Adding and removing layers update the cell with interrupts disabled,
   ;; where waiting for the mutex is unsafe, so they take it before.
   (define (cell-override! c v)
-    (let ([owner (current-owner)])
+    (let ([owner (current-owner-record)])
       (cond
         [(equal? (owner-name owner) (cell-module c)) (cell-assign! c v)]
         [else
@@ -233,6 +233,12 @@
     (check-loaded c)
     (let ([owner (check-current-owner 'advice-remove!)])
       (with-cells-locked (remove-layers! (cell-advice c) owner advice advice))))
+
+  (define (cell-unoverride! c)
+    (check-main-thread 'remove-override!)
+    (check-loaded c)
+    (let ([owner (check-current-owner 'remove-override!)])
+      (with-cells-locked (remove-layers! (cell-overrides c) owner #f #f))))
 
   (define (cell-change-list c)
     (let ([changes (append (layers-changes (cell-overrides c)) (layers-changes (cell-advice c)))])
@@ -311,6 +317,10 @@
          (define-property name cell-property (cons #'cell 'module))
          (define cell (define-cell! 'symbol 'module expr doc)))]))
 
+  ;; Chez names a procedure after the variable it is bound to, and the
+  ;; value goes to the cell as an argument, so it is bound first to a
+  ;; variable named with the exported name: an error or a stack sample
+  ;; then says which module's definition it is.
   (define-syntax define-public
     (lambda (x)
       (lambda (lookup)
@@ -334,7 +344,7 @@
                                  [(cell) (generate-temporaries '(cell))]
                                  [symbol (datum->syntax name (prefixed-symbol module (syntax->datum name)))])
                      #'(begin
-                         (define-changeable name cell module symbol expr doc)
+                         (define-changeable name cell module symbol (let ([symbol expr]) symbol) doc)
                          (export (rename (name symbol)))))
                    #'(define head body ...))))]))))
 
@@ -362,6 +372,12 @@
         (syntax-case x ()
           [(_ id proc) #`(cell-unadvise! #,(identifier-cell 'advice-remove! x #'id lookup) proc)]))))
 
+  (define-syntax remove-override!
+    (lambda (x)
+      (lambda (lookup)
+        (syntax-case x ()
+          [(_ id) #`(cell-unoverride! #,(identifier-cell 'remove-override! x #'id lookup))]))))
+
   (define-syntax definition-changes
     (lambda (x)
       (lambda (lookup)
@@ -371,7 +387,7 @@
   ;; Every report runs as the module the raising code ran for, a job's
   ;; included, so the current owner names it.
   (define (write-report c)
-    (let ([name (owner-name (current-owner))])
+    (let ([name (current-owner)])
       (write-condition c (and (not (member name '((init) (repl) (tuna)))) name))))
 
   (define-changeable report report-cell (tuna) report write-report #f)
@@ -423,6 +439,11 @@
   ;; unchanged tick does nothing, so it need not be called at all.
   (define (tick-changed?)
     (not (eq? (cell-callee tick-cell) do-nothing)))
+
+  (define-changeable batch-ended batch-ended-cell (tuna) batch-ended do-nothing #f)
+
+  (define (batch-ended-changed?)
+    (not (eq? (cell-callee batch-ended-cell) do-nothing)))
 
   (define-changeable module-loaded module-loaded-cell (tuna) module-loaded (lambda (name) (void)) #f)
 

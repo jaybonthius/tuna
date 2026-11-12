@@ -11,10 +11,12 @@ lib=$dir/home/.config/tuna/lib
 mkdir -p "$lib" "$dir/library"
 
 # Each turn of the loop is one timer tick, so the loop ticks a million times
-# per thousand million turns. Turning the timer off leaves Chez's own event
-# checks, so the difference is what tick and the quit check cost.
+# per thousand million turns. Turning the timer off, which Tuna withholds
+# from modules, leaves Chez's own event checks, so the difference is what
+# tick and the quit check cost.
 cat > "$lib/ticker.sls" <<'SCHEME'
 #!tuna
+(import (rename (only (chezscheme) set-timer) (set-timer chez:set-timer)))
 (define turns 1000000000)
 
 (define (spin n)
@@ -33,9 +35,9 @@ cat > "$lib/ticker.sls" <<'SCHEME'
 (define (report-ticks)
   (let* ([on (best-of 9 (lambda () (spin turns)))]
          [off (best-of 9 (lambda ()
-                           (let ([ticks (set-timer 0)])
+                           (let ([ticks (chez:set-timer 0)])
                              (spin turns)
-                             (set-timer ticks))))]
+                             (chez:set-timer ticks))))]
          [per-tick (* 1e9 (/ (- on off) (/ turns 1000)))])
     (printf "tick ~,1f ns per tick (~,3f s with the timer, ~,3f s without, ~a turns)\n"
       per-tick on off turns)))

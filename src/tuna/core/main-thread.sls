@@ -85,6 +85,11 @@
 
   (define running-task #f)
 
+  ;; What a batch's items post, and what batch-ended's advice posts, waits
+  ;; for the next batch, so a flood of posts is cut into batches and never
+  ;; delays a batch's end.
+  (define batch-ran? #f)
+
   ;; Code leaving for the loop passes a thunk, since what follows, such as
   ;; finishing a task, must run outside the task's dynamic context.
   (define return-to-loop #f)
@@ -111,8 +116,14 @@
             (set! running-task #f)
             (after))
           (let loop ()
+            (when (and batch-ran? (null? taken))
+              (set! batch-ran? #f)
+              (when (batch-ended-changed?)
+                (clear-quit-requests!)
+                (call-as-owner tuna-owner (lambda () (call-module-code batch-ended)))))
             (let ([item (dequeue! wait?)])
               (when item
+                (set! batch-ran? #t)
                 (clear-quit-requests!)
                 (set! warned '())
                 (if (task? item) (start! item) (item))
@@ -194,12 +205,15 @@
   (define (post! thunk)
     (unless (procedure? thunk)
       (assertion-violation 'post! "not a procedure" thunk))
-    (post-task! thunk (current-owner) #f))
+    (let ([owner (current-owner-record)])
+      (when (eq? owner tuna-owner)
+        (assertion-violation 'post! "this code acts for no module; name its module with as-module"))
+      (post-task! thunk owner #f)))
 
   (define (spawn-task thunk)
     (unless (procedure? thunk)
       (assertion-violation 'spawn-task "not a procedure" thunk))
-    (let ([t (make-task thunk (current-owner) '())])
+    (let ([t (make-task thunk (current-owner-record) '())])
       (task-change-set! t (record-change! 'spawn-task 'task t #f (lambda () (stop-task! t)) void))
       (enqueue! t)
       t))
@@ -331,7 +345,7 @@
   (define (report-on-main-thread c)
     (if (on-main-thread?)
         (report-safely c)
-        (let ([owner (current-owner)])
+        (let ([owner (current-owner-record)])
           (enqueue! (lambda () (call-as-owner owner (lambda () (report-safely c))))))))
 
   ;; Every thread forked after the loop starts inherits this handler. On

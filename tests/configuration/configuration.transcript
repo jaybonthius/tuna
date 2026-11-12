@@ -4,7 +4,7 @@
 ! car: () is not a pair (car (quote ())) at line 15, char 1 of ~/.config/tuna/init.ss
 ! set!: no loaded module exports spell:missing (set! spell:missing 1) at line 17, char 1 of ~/.config/tuna/init.ss
 ! define: spell:check is (spell)'s definition; override it with (set! spell:check value) (define (spell:check path) "mine") at line 18, char 1 of ~/.config/tuna/init.ss
-> (list loaded-by after-error (this-module))
+> (list loaded-by after-error (current-owner))
 ((init) ran (repl))
 ; A module whose body raises leaves the owner (init).
 > after-boom

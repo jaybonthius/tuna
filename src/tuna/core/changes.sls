@@ -10,11 +10,12 @@
     current-instance
     find-owner
     loaded-owner
+    tuna-owner
+    current-owner-record
     current-owner
     set-current-owner!
     call-as-owner
     with-owner-switch
-    this-module
     as-module
     rank-module!
     unrank-module!
@@ -27,6 +28,7 @@
     change-sequence
     check-current-owner
     record-change!
+    record-definition!
     forget-change!
     take-back!
     owner-changes
@@ -125,6 +127,10 @@
                 (list 0 init-rank repl-rank))
       owners))
 
+  ;; (tuna) keeps a rank, so that Tuna's own posted work runs, but makes no
+  ;; change, since nothing would ever take one back.
+  (define tuna-owner (hashtable-ref owners '(tuna) #f))
+
   ;; Any thread looks owners up. The main thread, their only writer, reads
   ;; them without the lock.
   (define owners-mutex (make-mutex))
@@ -164,18 +170,27 @@
   (define current-thread-state
     (make-thread-parameter (make-thread-state (hashtable-ref owners '(repl) #f))))
 
-  ;; A thread forked with Chez's own fork-thread acts for the owner its
-  ;; parent has when the thread first needs a record, not at the fork.
+  ;; A thread forked with Chez's own fork-thread holds its parent's record
+  ;; until it needs one of its own. It acts for no module: the owner its
+  ;; parent has by then may be any module's. The record is made by a
+  ;; procedure of its own, which keeps this one small enough for Chez to
+  ;; inline.
   (define (this-thread-state)
     (let ([s (current-thread-state)])
       (if (fx= (thread-state-thread s) (get-thread-id))
           s
-          (let ([own (make-thread-state (thread-state-owner s))])
-            (current-thread-state own)
-            own))))
+          (own-thread-state!))))
+
+  (define (own-thread-state!)
+    (let ([s (make-thread-state tuna-owner)])
+      (current-thread-state s)
+      s))
+
+  (define (current-owner-record)
+    (thread-state-owner (this-thread-state)))
 
   (define (current-owner)
-    (thread-state-owner (this-thread-state)))
+    (owner-name (current-owner-record)))
 
   (define (current-instance owner)
     (let ([s (this-thread-state)])
@@ -212,10 +227,6 @@
        (let* ([s (this-thread-state)] [current (thread-state-owner s)])
          (define (call-as owner thunk) (call-as-owner-on s owner thunk))
          e1 e2 ...)]))
-
-  (define-syntax this-module
-    (syntax-rules ()
-      [(_) (owner-name (current-owner))]))
 
   ;; A quit lands only where this is true: in a module's own code, never in
   ;; the bookkeeping of changes and modules, which a raise half way through
@@ -369,12 +380,20 @@
         (if c (cons c (loop (change-older c))) '()))))
 
   ;; A task of an unloaded module that catches &quit goes on running on its
-  ;; behalf; a change it made would never be taken back.
+  ;; behalf, and (tuna) is no module's; a change either made would never be
+  ;; taken back. The refusal is a procedure of its own: written inline, it
+  ;; made the check too large for Chez to inline into other libraries, and
+  ;; set-option! cost about 6 ns more.
   (define (check-current-owner who)
-    (let ([owner (current-owner)])
-      (unless (owner-rank owner)
-        (assertion-violation who "not a loaded module" (owner-name owner)))
+    (let ([owner (current-owner-record)])
+      (unless (and (owner-rank owner) (not (eq? owner tuna-owner)))
+        (refuse-change who owner))
       owner))
+
+  (define (refuse-change who owner)
+    (if (eq? owner tuna-owner)
+        (assertion-violation who "this code acts for no module; name its module with as-module")
+        (assertion-violation who "not a loaded module" (owner-name owner))))
 
   ;; The timer interrupt runs tick's advice, which may change things too,
   ;; so the ledger is updated with interrupts disabled, never half.
@@ -390,6 +409,12 @@
     (check-main-thread who)
     (let ([owner (check-current-owner who)])
       (with-interrupts-disabled (link-change! owner kind thing detail undo reorder))))
+
+  ;; The core makes (tuna)'s definitions as its own library starts, which
+  ;; record-change! would refuse.
+  (define (record-definition! module thing reorder)
+    (with-interrupts-disabled
+      (link-change! (find-owner module) 'define thing #f void reorder)))
 
   ;; A change already forgotten has no newer change and is not its owner's
   ;; newest.

@@ -1,9 +1,10 @@
+> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 ; request-quit! from another thread ends runaway REPL input, and the REPL
 ; goes on.
 > (begin
     (fork-thread
       (lambda ()
-        (sleep (make-time 'time-duration 200000000 0))
+        (chez:sleep (make-time 'time-duration 200000000 0))
         (request-quit!)))
     (void))
 > (let loop () (loop))
@@ -14,7 +15,7 @@
 > (begin
     (fork-thread
       (lambda ()
-        (sleep (make-time 'time-duration 200000000 0))
+        (chez:sleep (make-time 'time-duration 200000000 0))
         (request-quit!)))
     (void))
 > (let-syntax ([m (lambda (x) (let loop () (loop)))]) (m))

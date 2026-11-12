@@ -1,6 +1,7 @@
 (library (tuna core modules)
   (export
     tuna-module-body
+    check-import
     import-spec-library
     install-module-lookup!
     module-exists?
@@ -26,6 +27,10 @@
     take-back-changes!
     eval-in-module)
   (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna core conditions)
+          (prefix (only (chezscheme) exit fork-thread dynamic-wind with-mutex sleep set-timer
+                        timer-interrupt-handler make-engine)
+                  chez:)
+          (prefix (only (rnrs) exit dynamic-wind) rnrs:)
           (only (chez-lang body) form-defined-names)
           (only (chez-lang language) call-with-library-lock)
           (only (chez-lang reload) reload-library)
@@ -163,12 +168,14 @@
                        (when (tuna-file? source) (check-main-thread who))))
                  (values source object found?))]))))
       (set-directories!)
-      ;; Chez looks up a library it has loaded only to find its source, as a
-      ;; reload does for every loaded library; installing there would bring
-      ;; back a plugin removed since, or raise for it.
+      ;; Only Chez's own lookup for an import loads what it finds. Other
+      ;; lookups only find sources, such as a reload's of every loaded
+      ;; library and of a name's parent; installing there would bring back
+      ;; a plugin removed since, or raise for a name no plugin holds. A
+      ;; loaded library is looked up only to find its source.
       (library-search-handler
         (lambda (who name directories extensions)
-          (find-module who name extensions (not (library-loaded? name)))))))
+          (find-module who name extensions (and (eq? who 'import) (not (library-loaded? name))))))))
 
   ;; library-list would build a list of every library for each of the many
   ;; lookups at start-up; Chez's only other test of a loaded library is
@@ -244,7 +251,7 @@
   ;; and module-finished! puts back the invoking code's.
   (define (module-started! name specs)
     (check-main-thread 'import)
-    (let ([previous (cons (current-owner) (quits-allowed))])
+    (let ([previous (cons (current-owner-record) (quits-allowed))])
       (with-quits-allowed #f
         (let ([imported (filter (lambda (import) (and import (hashtable-contains? found-libraries import)))
                                 (map import-spec-library specs))]
@@ -392,6 +399,43 @@
             (exists (lambda (keyword) (free-identifier=? #'head keyword)) chez-definition-keywords))]
       [_ #f]))
 
+  (meta define (import-form? form)
+    (syntax-case form ()
+      [(i . specs) (and (identifier? #'i) (free-identifier=? #'i #'import))]
+      [_ #f]))
+
+  ;; (rnrs)'s exit and dynamic-wind are bindings distinct from Chez's, and
+  ;; an import of (rnrs) gives them back too.
+  (meta define replaced-chez-bindings
+    (list (list 'exit #'chez:exit #'rnrs:exit)
+          (list 'fork-thread #'chez:fork-thread)
+          (list 'dynamic-wind #'chez:dynamic-wind #'rnrs:dynamic-wind)
+          (list 'with-mutex #'chez:with-mutex)
+          (list 'sleep #'chez:sleep)
+          (list 'set-timer #'chez:set-timer)
+          (list 'timer-interrupt-handler #'chez:timer-interrupt-handler)
+          (list 'make-engine #'chez:make-engine)))
+
+  ;; Follows an import, where the names it gave are bound in its context.
+  ;; A habitual (import (chezscheme)) would otherwise silently undo what
+  ;; Tuna replaces.
+  (define-syntax check-import
+    (lambda (x)
+      (syntax-case x ()
+        [(_ form)
+         (let ([back (map car
+                          (filter
+                            (lambda (entry)
+                              (let ([id (syntax-case #'form () [(i . specs) (datum->syntax #'i (car entry))])])
+                                (exists (lambda (chez) (free-identifier=? id chez)) (cdr entry))))
+                            replaced-chez-bindings))])
+           (unless (null? back)
+             (syntax-violation 'import
+               (format "gives back Chez's ~{~a~^, ~}, which Tuna replaces or withholds; import ~a under another name"
+                 back (if (null? (cdr back)) "it" "them"))
+               #'form))
+           #'(begin))])))
+
   (define-syntax module-forms
     (lambda (x)
       (lambda (lookup)
@@ -400,6 +444,9 @@
           [(k name previous (b form ...) rest ...)
            (and (identifier? #'b) (free-identifier=? #'b #'begin))
            #'(k name previous form ... rest ...)]
+          [(k name previous form rest ...)
+           (import-form? #'form)
+           #'(begin form (check-import form) (k name previous rest ...))]
           [(k name previous (d . definition) rest ...)
            (and (identifier? #'d) (free-identifier=? #'d #'define))
            #'(begin (define-public . definition) (k name previous rest ...))]
@@ -423,7 +470,7 @@
   ;; loader writes in the module's own context. A form given to %scope takes
   ;; that context, so it sees what the module's top-level code sees; that is
   ;; how eval-in-module works. The author's forms go in a module nested
-  ;; inside the import of Tuna's exit and sleep, so that they may define
+  ;; inside the import of the names Tuna replaces, so that they may define
   ;; those names too. Each module's this-module is the one shared
   ;; transformer: a transformer written here would carry this library's
   ;; context into every module's object file.
@@ -466,15 +513,20 @@
   (define (documentation-string body)
     (and (pair? body) (string? (car body)) (pair? (cdr body)) (car body)))
 
+  ;; Chez names a procedure after the variable it is first bound to, so a
+  ;; redefinition keeps its exported name only through this let.
   (define (definition->assignment module form)
+    (define (named name expr)
+      (let ([symbol (prefixed-symbol module name)])
+        `(let ([,symbol ,expr]) ,symbol)))
     (if (and (pair? form) (eq? (car form) 'define) (pair? (cdr form)))
         (let ([head (cadr form)])
           (cond
             [(and (pair? head) (own-changeable? module (car head)))
-             (values `(set! ,(car head) (lambda ,(cdr head) ,@(cddr form)))
+             (values `(set! ,(car head) ,(named (car head) `(lambda ,(cdr head) ,@(cddr form))))
                      (car head) (documentation-string (cddr form)))]
             [(and (own-changeable? module head) (pair? (cddr form)) (null? (cdddr form)))
-             (values `(set! ,head ,(caddr form)) head #f)]
+             (values `(set! ,head ,(named head (caddr form))) head #f)]
             [else (values form #f #f)]))
         (values form #f #f)))
 
@@ -633,7 +685,7 @@
   ;; of thunk, since one landing before the drop would skip it. No body is
   ;; running when a task pauses, so a pause drops nothing.
   (define (call-loading-modules thunk)
-    (let ([depth (length running-bodies)] [allowed (quits-allowed)] [owner (current-owner)])
+    (let ([depth (length running-bodies)] [allowed (quits-allowed)] [owner (current-owner-record)])
       (call-as-owner owner
         (lambda ()
           (with-quits-allowed #f
@@ -714,7 +766,7 @@
            [previous (map running-object order)]
            [depth (length running-bodies)]
            [allowed (quits-allowed)]
-           [owner (current-owner)])
+           [owner (current-owner-record)])
       (call-as-owner owner
         (lambda ()
           (with-quits-allowed #f

@@ -36,7 +36,7 @@
 
 (write-file! (path "config" "init.ss") "(import (tuna) (tuna plugins))\n")
 (compile-file-message #f)
-(start-plugins! root (path "config" "init.ss") (path "config" "lib") (path "library") (path "plugins"))
+(start-plugins! (string-append (current-directory) "/build/bin/tuna") root (path "config" "init.ss") (path "config" "lib") (path "library") (path "plugins"))
 (install-module-lookup! (library-directories) (path "config" "lib") (path "library") (path "cache")
   plugin-root install-missing-plugin! plugin-roots)
 (install-loader!)

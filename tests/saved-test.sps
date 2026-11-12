@@ -18,7 +18,7 @@
 (define (read-file file)
   (call-with-input-file file read))
 
-(start-plugins! root (path "config" "init.ss") (path "config" "lib") (path "library") (path "plugins"))
+(start-plugins! (string-append (current-directory) "/build/bin/tuna") root (path "config" "init.ss") (path "config" "lib") (path "library") (path "plugins"))
 (start-storage! (path "saved") module-plugin-source)
 
 (define (yield)

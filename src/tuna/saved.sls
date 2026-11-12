@@ -42,7 +42,7 @@
     (check-main-thread 'define-saved)
     (unless (procedure? check)
       (assertion-violation 'define-saved "not a procedure" check))
-    (let* ([owner (owner-name (current-owner))] [symbol (definition-symbol owner name)])
+    (let* ([owner (current-owner)] [symbol (definition-symbol owner name)])
       (check-value 'define-saved symbol check initial)
       (let ([file (saved-file owner name)])
         (cond

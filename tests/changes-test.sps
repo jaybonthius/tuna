@@ -46,7 +46,7 @@
           (unrank-module! name))
         '((tuna) (init) (repl)))
       (check-equal? before (map (lambda (name) (owner-rank (find-owner name))) '((tuna) (init) (repl))))
-      (check-equal? '(init) (as-module '(init) (this-module)))))
+      (check-equal? '(init) (as-module '(init) (current-owner)))))
 
   (test "a module ranked again counts as loaded then, with the same owner"
     (rank-module! '(first) #f)
@@ -82,7 +82,7 @@
             (let loop ([wrong 0])
               (if stop?
                   (with-mutex mutex (set! bad (+ bad wrong)))
-                  (loop (if (equal? '(init) (as-module '(init) (this-module))) wrong (+ wrong 1))))))))
+                  (loop (if (equal? '(init) (as-module '(init) (current-owner))) wrong (+ wrong 1))))))))
       (let ([readers (list (reader) (reader) (reader))])
         (do ([i 0 (+ i 1)]) ((= i 5000))
           (rank-module! (list 'ranked i) #f))

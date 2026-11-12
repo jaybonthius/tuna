@@ -16,7 +16,7 @@ forker's unload action
                (fork-thread
                  (lambda ()
                    (let loop () (unless go (loop)))
-                   (set! seen (this-module)))))])
+                   (set! seen (current-owner)))))])
       (set! go #t)
       (thread-join t)
       seen))

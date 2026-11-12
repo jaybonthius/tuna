@@ -1,0 +1,2 @@
+#!tuna
+(define (where) "local")

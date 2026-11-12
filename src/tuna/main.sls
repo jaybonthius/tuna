@@ -8,32 +8,34 @@
                 module-plugin-source)
           (only (tuna storage) start-storage!) (only (tuna saved) finish-saved-data!))
 
-  ;; Exit status 2 marks a usage error, as in most command-line programs.
+  ;; Tuna's own options are read only at the start of the command line, so
+  ;; any other command line, such as a file to open, is the plugins'.
   (define (main program arguments own-directories)
     (cond
-      [(null? arguments)
+      [(equal? arguments '("--version"))
+       (printf "tuna ~a\n" tuna-version)
+       (exit 0)]
+      ;; A plugin's build runs where no scheme program may be installed.
+      [(and (pair? arguments) (string=? (car arguments) "--script") (pair? (cdr arguments)))
+       (apply (scheme-script) (cdr arguments))]
+      [else
+       (command-line (cons program arguments))
+       (command-line-arguments arguments)
        (let ([home (getenv "HOME")])
          (unless home
            (fprintf (console-error-port) "tuna: HOME is not set\n")
            (exit 1))
-         (start (normal-path home)
+         (start program (normal-path home)
            (normal-path (or (getenv "TUNA_LIBRARY") (path-build (path-parent program) "plugins")))
            own-directories))
-       (run-main-loop)]
-      [(equal? arguments '("--version"))
-       (printf "tuna ~a\n" tuna-version)
-       (exit 0)]
-      [else
-       (fprintf (console-error-port) "tuna: unknown arguments ~s\nusage: tuna [--version]\n"
-         arguments)
-       (exit 2)]))
+       (run-main-loop)]))
 
-  (define (start home library own-directories)
+  (define (start program home library own-directories)
     (let* ([configuration (string-append home "/.config/tuna")]
            [lib (string-append configuration "/lib")])
       (compile-file-message #f)
       (optimize-level 2)
-      (start-plugins! home (string-append configuration "/init.ss") lib library
+      (start-plugins! program home (string-append configuration "/init.ss") lib library
         (string-append home "/.local/share/tuna/plugins"))
       (start-storage! (string-append home "/.local/share/tuna/saved") module-plugin-source)
       (install-module-lookup! own-directories lib library (string-append home "/.cache/tuna")
@@ -42,7 +44,10 @@
       ;; Modules are compiled within top-level forms, which are evaluated
       ;; without inspector information. Modules keep each procedure's
       ;; source for backtraces but not the rest of inspector information,
-      ;; which makes every module object slower to load.
+      ;; which makes every module object slower to load. The compile
+      ;; settings are thread parameters that code on the main thread may
+      ;; set; a module compiled unsafe could read past a vector's end, and
+      ;; one compiled without traps could not be quit.
       (compile-library-handler
         (let ([compile-library (compile-library-handler)])
           (lambda (source object)
@@ -53,7 +58,11 @@
                     (raise-continuable c)))
               (lambda ()
                 (parameterize ([generate-inspector-information #f]
-                               [generate-procedure-source-information #t])
+                               [generate-procedure-source-information #t]
+                               [optimize-level 2]
+                               [enable-unsafe-application #f]
+                               [enable-unsafe-variable-reference #f]
+                               [generate-interrupt-trap #t])
                   (compile-library source object)))))))
       (start-top-level! home (string-append configuration "/init.ss"))
       (install-exit-handler!)

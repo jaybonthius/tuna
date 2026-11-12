@@ -12,7 +12,7 @@ saving a [spell]
 ! boom:x: module (boom) is unloaded
 > (module-changes '(boom))
 ()
-> (this-module)
+> (current-owner)
 (repl)
 ; A module whose import raises on its first load is unloaded too.
 > (put-version! "outer.sls" ".config/tuna/lib/outer.sls")

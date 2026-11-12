@@ -23,13 +23,15 @@
                 module-loaded? module-generation unload-module! reload-module! normal-path)
           (only (tuna core main-thread) post-task! suspend))
 
+  (define tuna-program #f)
   (define home #f)
   (define configuration-file #f)
   (define lib-root #f)
   (define library-root #f)
   (define plugins-root #f)
 
-  (define (start-plugins! home-folder configuration lib library plugins)
+  (define (start-plugins! program home-folder configuration lib library plugins)
+    (set! tuna-program program)
     (set! home home-folder)
     (set! configuration-file configuration)
     (set! lib-root lib)
@@ -416,6 +418,32 @@
       (git who url "clone" "--quiet" "--no-checkout" url target)
       (check-out! who url target commit branch)))
 
+  (define (build-log id) (format "~a/.cache/tuna/builds/~a.log" home id))
+
+  ;; One install or update may build twice, when an update goes back, so
+  ;; the log is started once for it and each build adds to it.
+  (define (start-build-log! id)
+    (delete-file (build-log id) #f))
+
+  ;; Third-party code, Scheme included, comes in as submodules, so they are
+  ;; fetched for every plugin. The build runs in a process of its own, so
+  ;; one that crashes, loops, exits or changes its directory leaves Tuna
+  ;; running; it has no terminal, as git has none.
+  (define (build! who id url folder root)
+    (git who url "-C" folder "submodule" "--quiet" "update" "--init" "--recursive")
+    (when (file-exists? (string-append root "/build.ss"))
+      (let-values ([(status output)
+                    (run-program "setsid"
+                      (list "-w" "env" "-C" root "GIT_TERMINAL_PROMPT=0" tuna-program "--script" "build.ss"))])
+        (let ([log (build-log id)])
+          (make-folders! (path-parent log))
+          (call-with-output-file log
+            (lambda (p) (fprintf p "build of ~a, status ~a\n~a" (checked-out-commit folder) status output))
+            'append)
+          (unless (eqv? status 0)
+            (errorf who "the build of ~a failed with status ~a: ~a (output in ~a)"
+              id status (last-line output) log))))))
+
   (define (temporary-folder id) (format "~a/.~a.new" plugins-root id))
 
   (define (git-clauses url dir branch)
@@ -433,18 +461,29 @@
 
   ;; Other threads may look up the plugin's plain libraries meanwhile, so
   ;; the old folder is moved aside, not deleted, before the new one comes.
-  (define (replace-folder! id temporary)
-    (let ([folder (plugin-folder id)] [old (format "~a/.~a.old" plugins-root id)])
+  ;; The build runs in the plugin's own folder, since what it makes may
+  ;; record its path, so the old folder is kept until the build succeeds.
+  (define (replace-folder! who line temporary run-build)
+    (let* ([id (line-id line)] [dir (line-clause line 'dir)]
+           [folder (plugin-folder id)] [old (format "~a/.~a.old" plugins-root id)])
       (delete-tree old)
       (when (file-exists? folder #f) (rename-file folder old))
       (rename-file temporary folder)
+      (start-build-log! id)
+      (guard (c [#t (delete-tree folder)
+                    (when (file-exists? old #f) (rename-file old folder))
+                    (raise c)])
+        (run-build
+          (lambda ()
+            (build! who id (git-address (line-clause line 'git)) folder
+              (if dir (string-append folder "/" dir) folder)))))
       (delete-tree old)))
 
-  (define (finish-install! who line temporary)
+  (define (finish-install! who line temporary run-build)
     (let* ([id (line-id line)] [dir (line-clause line 'dir)])
       (guard (c [#t (delete-tree temporary) (raise c)])
         (check-main-module who id (if dir (string-append temporary "/" dir) temporary)))
-      (replace-folder! id temporary)
+      (replace-folder! who line temporary run-build)
       (write-install-source! id (line-git-clauses line))
       (hashtable-delete! index-lines-read id)
       (install-root id (installed-source id))))
@@ -466,7 +505,7 @@
           (let ([url (git-address (line-clause line 'git))] [temporary (temporary-folder id)])
             (make-folders! plugins-root)
             (clone! who url (line-clause line 'commit) (line-clause line 'branch) temporary)
-            (finish-install! who line temporary)))))
+            (finish-install! who line temporary (lambda (build) (build)))))))
 
   ;; While git runs for a plugin, its task pauses and the main thread goes
   ;; on, so another install of the same plugin could start and share its
@@ -511,7 +550,7 @@
             (make-folders! plugins-root)
             (call-paused who id
               (lambda () (clone! who url (line-clause line 'commit) (line-clause line 'branch) temporary)))
-            (finish-install! who line temporary)
+            (finish-install! who line temporary (lambda (build) (call-paused who id build)))
             (checked-out-commit (plugin-folder id))))))
 
   ;; Positions are in characters, so they index the text as read.
@@ -661,6 +700,7 @@
                 [url (git-address (line-clause source 'git))]
                 [folder (plugin-folder id)]
                 [dir (line-clause source 'dir)]
+                [root (if dir (string-append folder "/" dir) folder)]
                 [previous-commit (checked-out-commit folder)]
                 [previous-line-text (and span (substring text (span-start span) (span-end span)))]
                 [previous-line (configuration-line id)])
@@ -672,14 +712,21 @@
                  (when (install-source-git found)
                    (git 'update-plugin! url "-C" folder "remote" "set-url" "origin" (install-source-git found)))
                  (when previous-commit
-                   (git 'update-plugin! url "-C" folder "checkout" "--quiet" "--detach" previous-commit)))))
+                   (git 'update-plugin! url "-C" folder "checkout" "--quiet" "--detach" previous-commit))))
+             ;; The update has failed already, so a failed build of the
+             ;; previous commit is only reported.
+             (when previous-commit
+               (guard (c [#t (report-safely c)])
+                 (call-paused 'update-plugin! id (lambda () (build! 'update-plugin! id url folder root))))))
            (unless span
              (insertion-point 'update-plugin! (top-level-spans text)))
            (let ([new (call-paused 'update-plugin! id
                         (lambda ()
                           (fetch! 'update-plugin! url folder commit (and (not commit) (line-clause source 'branch)))))])
+             (start-build-log! id)
              (guard (c [#t (go-back!) (raise c)])
-               (check-main-module 'update-plugin! id (if dir (string-append folder "/" dir) folder)))
+               (check-main-module 'update-plugin! id root)
+               (call-paused 'update-plugin! id (lambda () (build! 'update-plugin! id url folder root))))
              (write-install-source! id (line-git-clauses source))
              (hashtable-delete! index-lines-read id)
              (write-configuration-commit! 'update-plugin! line new)

@@ -5,7 +5,7 @@
 ;; to its clock tick, so a source written in the tick its object was
 ;; compiled in would count as compiled.
 (define (put-version! version path)
-  (sleep (make-time 'time-duration 10000000 0))
+  (sleep-for 0.01)
   (let* ([home (getenv "HOME")] [file (string-append home "/" path)])
     (let ([text (call-with-input-file (string-append home "/versions/" version) get-string-all)])
       ;; git keeps no empty folder, so lib/ is made by the first module put there.

@@ -4,7 +4,7 @@
 ;; to its clock tick, so a source written in the tick its object was
 ;; compiled in would count as compiled.
 (define (put-version! version path)
-  (sleep (make-time 'time-duration 10000000 0))
+  (sleep-for 0.01)
   (let ([home (getenv "HOME")])
     (with-output-to-file (string-append home "/" path)
       (lambda ()

@@ -29,10 +29,9 @@
     (set! home home-folder)
     (set! configuration-file configuration)
     (set! repl-environment (copy-environment (scheme-environment) #t))
-    ;; Chez's exit ends only the thread that calls it, unless that is the
-    ;; main thread, and Chez's fork-thread does not give the child the
-    ;; owner of the code that forked it.
-    (eval '(import (only (tuna core replaced) exit fork-thread)) repl-environment)
+    ;; The configuration and the REPL run on the main thread, as modules
+    ;; do, so they get the same replaced and withheld names.
+    (eval '(import (tuna core replaced)) repl-environment)
     (define-top-level-syntax check-keyword check-top-level-form repl-environment))
 
   (define (prefixed? symbol)
@@ -102,6 +101,11 @@
            [(b sub ...)
             (and (identifier? #'b) (free-identifier=? #'b #'begin))
             #'(begin (k sub) ...)]
+           ;; Checked in a body first, so that an import refused never
+           ;; reaches the REPL's environment.
+           [(i spec ...)
+            (and (identifier? #'i) (free-identifier=? #'i #'import))
+            #'(begin (let () form (check-import form) (void)) form)]
            [_ (begin
                 (check-definition! #'form lookup)
                 (check-assignment! #'form lookup)
@@ -175,7 +179,7 @@
   ;; defined in the configuration prints as one typed at the REPL does, with
   ;; no source position.
   (define (eval-form form)
-    (when (equal? (owner-name (current-owner)) '(repl))
+    (when (equal? (current-owner) '(repl))
       (read-repl-line! (unwrap form)))
     (call-with-quit-safe-library-lock sync-modules!)
     (call-loading-modules

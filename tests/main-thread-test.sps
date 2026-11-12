@@ -1,6 +1,6 @@
 (import (chezscheme) (tuna-test) (chez-lang loader) (chez-lang language)
         (tuna core changes) (tuna core definitions) (tuna core modules)
-        (except (tuna core main-thread) exit))
+        (except (tuna core main-thread) exit) (prefix (only (tuna core replaced) fork-thread) tuna:))
 
 (define root
   (let ([dir (format "/tmp/tuna-main-thread-test-~a" (get-process-id))])
@@ -36,7 +36,7 @@
       (wait-until-called
         (lambda (done)
           (do ([i 0 (+ i 1)]) ((= i threads))
-            (fork-thread
+            (tuna:fork-thread
               (lambda ()
                 (do ([n 0 (+ n 1)]) ((= n posts))
                   (post! (lambda () (set! seen (cons (list i n (get-thread-id)) seen)))))
@@ -51,6 +51,22 @@
             (let ([ns (map cadr (filter (lambda (s) (= (car s) i)) (reverse seen)))])
               (equal? ns (iota posts))))
           (iota threads)))))
+
+  (test "the items the loop takes at once are one batch, and what they post waits for the next"
+    (let ([log '()] [outside '()])
+      (define (note! e) (set! log (cons e log)))
+      (define (ended batch-ended)
+        (note! 'ended)
+        (set! outside (cons (list (current-task) (current-owner)) outside))
+        (batch-ended))
+      (advice-add! batch-ended ended)
+      (wait-until-called
+        (lambda (done)
+          (post! (lambda () (note! 'a) (post! (lambda () (note! 'c) (done)))))
+          (post! (lambda () (note! 'b)))))
+      (advice-remove! batch-ended ended)
+      (check-equal? '(ended a b ended c ended) (reverse log))
+      (check (for-all (lambda (seen) (equal? seen '(#f (tuna)))) outside))))
 
   ;; Allocation is deterministic, so the bound is loose only to leave room
   ;; for small changes; make bench holds the exact figure.
@@ -130,7 +146,7 @@
   (test "a raise on another thread is reported as the owner that thread ran for"
     (let ([reports '()])
       (define (capture report c)
-        (set! reports (cons (owner-name (current-owner)) reports)))
+        (set! reports (cons (current-owner) reports)))
       (advice-add! report capture)
       (let ([threads (map (lambda (name)
                             (fork-thread (lambda () (call-as-owner (find-owner name) (lambda () (car 5))))))

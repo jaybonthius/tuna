@@ -51,7 +51,7 @@
       (check-equal? '(4 3)
         (in-thread (lambda () (list (with-options ([level 4]) (level)) (level)))))
       (check-equal? 3 (in-thread (lambda () (in-thread level))))
-      (check-equal? '(repl) (in-thread (lambda () (owner-name (current-owner)))))
+      (check-equal? '(tuna) (in-thread (lambda () (current-owner))))
       (check-equal? 7 (level))
       (with-options ([level 8])
         (check-equal? 8 (level)))

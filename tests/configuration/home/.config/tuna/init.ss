@@ -8,9 +8,9 @@
   (save! path))
 (advice-add! files:save! announce)
 
-(define loaded-by (this-module))
+(define loaded-by (current-owner))
 (import (boom))
-(define after-boom (this-module))
+(define after-boom (current-owner))
 (set! spell:language (lambda () "fr"))
 (car '())
 (define after-error 'ran)

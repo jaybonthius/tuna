@@ -12,8 +12,9 @@ trap 'rm -rf "$dir"' EXIT
 lib=$dir/home/.config/tuna/lib
 mkdir -p "$lib" "$dir/library"
 cp bench/hot-paths.sls "$lib/hot-paths.sls"
+cp bench/main-thread-paths.sls "$lib/main-thread-paths.sls"
 printf '#!tuna\n(define (add1 x) (fx+ x 1))\n' > "$lib/bench-callee.sls"
-printf '(import (tuna) (hot-paths))\n(hot-paths:run)\n' > "$dir/home/.config/tuna/init.ss"
+printf '(import (tuna) (hot-paths) (main-thread-paths))\n(hot-paths:run)\n(main-thread-paths:run)\n' > "$dir/home/.config/tuna/init.ss"
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
 # Each limit sits a tenth or more above the highest of repeated runs, so
@@ -41,6 +42,9 @@ echo "$output" | awk '
     limit["add-hook!-remove-hook!"] = 400
     limit["spawn-task-20000"] = 1000
     limit["posted-item-bytes"] = 326
+    limit["dynamic-wind"] = 78
+    limit["with-mutex"] = 106
+    limit["batch-ended"] = 186
     unit["posted-item-bytes"] = "B"
     failed = 0
   }

@@ -7,10 +7,10 @@
 ! (wk) car: 1 is not a pair
 > (as-module '(wk) (car '()))
 ! (wk) car: () is not a pair
-; Advice written at the top level learns the module from this-module.
+; Advice written at the top level learns the module from current-owner.
 > (define events '())
 > (define (note! . e) (set! events (cons e events)))
-> (define (note-report report c) (note! 'report (this-module)) (report c))
+> (define (note-report report c) (note! 'report (current-owner)) (report c))
 > (advice-add! report note-report)
 > (as-module '(good) (vector-ref (vector) 1))
 ! (good) vector-ref: 1 is not a valid index for #()
@@ -21,7 +21,7 @@
 ; import raised counts too: Chez may run the import before the module's
 ; own body starts.
 > (set! events '())
-> (advice-add! module-failed (lambda (failed name) (note! 'failed name (this-module)) (failed name)))
+> (advice-add! module-failed (lambda (failed name) (note! 'failed name (current-owner)) (failed name)))
 > (advice-add! module-loaded (lambda (loaded name) (note! 'loaded name) (loaded name)))
 > (import (dict))
 ! (dict) car: () is not a pair

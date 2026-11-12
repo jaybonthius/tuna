@@ -33,8 +33,8 @@
 #t
 ; Each entry runs on behalf of the module that added it.
 > (define owners '())
-> (add-hook! files:after-save (lambda (path) (set! owners (cons (this-module) owners))))
-> (as-module '(spell) (add-hook! files:after-save (lambda (path) (set! owners (cons (this-module) owners))) 20))
+> (add-hook! files:after-save (lambda (path) (set! owners (cons (current-owner) owners))))
+> (as-module '(spell) (add-hook! files:after-save (lambda (path) (set! owners (cons (current-owner) owners))) 20))
 > (remove-hook! files:after-save a)
 > (remove-hook! files:after-save b)
 > (remove-hook! files:after-save boom)

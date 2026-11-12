@@ -9,7 +9,7 @@
 ! set-option!: 42 is not a valid value for spell:language (set-option! spell:language 42) at line 14, char 5 of ~/.config/tuna/init.ss
 [second form]
 ! invalid syntax (let ((x)) x) at line 16, char 5 of ~/.config/tuna/init.ss
-! incorrect number of arguments 0 to #<procedure> (spell:check) at line 17, char 5 of ~/.config/tuna/init.ss
+! incorrect number of arguments 0 to #<procedure spell:check> (spell:check) at line 17, char 5 of ~/.config/tuna/init.ss
 ! &error (raise (make-error)) at line 18, char 5 of ~/.config/tuna/init.ss
 [last form]
 (after en)

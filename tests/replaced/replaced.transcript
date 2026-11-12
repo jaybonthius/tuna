@@ -1,0 +1,71 @@
+! import: gives back Chez's exit, dynamic-wind, which Tuna replaces or withholds; import them under another name (import (rnrs)) at line 2, char 1 of ~/.config/tuna/init.ss
+; An import that gives back a Chez name Tuna replaces or withholds is a
+; syntax error, in a module and at the top level, naming the import.
+> (import (old))
+! import: gives back Chez's exit, dynamic-wind, which Tuna replaces or withholds; import them under another name (import (rnrs)) at line 2, char 1 of ~/.config/tuna/lib/old.sls
+> (import (second))
+! import: gives back Chez's sleep, which Tuna replaces or withholds; import it under another name (import (only (chezscheme) sleep car)) at line 3, char 1 of ~/.config/tuna/lib/second.sls
+> (import (chezscheme))
+! import: gives back Chez's exit, fork-thread, dynamic-wind, with-mutex, sleep, set-timer, timer-interrupt-handler, make-engine, which Tuna replaces or withholds; import them under another name (import (chezscheme))
+> (begin (import (only (rnrs) exit)) 'imported)
+! import: gives back Chez's exit, which Tuna replaces or withholds; import it under another name (import (only (rnrs) exit))
+; A refused import leaves the REPL's names as they were.
+> (sleep (make-time 'time-duration 0 1))
+! sleep: withheld because it would block the main thread (sleep (make-time (quote time-duration) 0 1))
+; Under another name, Chez's procedures are imported as usual.
+> (import (renamed))
+> (list (renamed:nap) (renamed:chez-wind?))
+(rested #f)
+> (chez:sleep (make-time 'time-duration 1000000 0))
+; The configuration and the REPL get the names modules get.
+> (set-timer 0)
+! set-timer: withheld because the main thread's timer delivers quits and tick (set-timer 0)
+> (timer-interrupt-handler)
+! timer-interrupt-handler: withheld because the main thread's timer delivers quits and tick (timer-interrupt-handler)
+> (make-engine (lambda () 1))
+! make-engine: withheld because the main thread's timer delivers quits and tick (make-engine (lambda () 1))
+> (import (timer))
+! set-timer: withheld because the main thread's timer delivers quits and tick (set-timer 0) at line 2, char 15 of ~/.config/tuna/lib/timer.sls
+> (import (engine))
+! make-engine: withheld because the main thread's timer delivers quits and tick (make-engine thunk) at line 2, char 22 of ~/.config/tuna/lib/engine.sls
+> (import (basic))
+! sleep: withheld because it would block the main thread (sleep (make-time (quote time-duration) 0 1)) at line 2, char 17 of ~/.config/tuna/lib/basic.sls
+> (import (rename (only (chezscheme) dynamic-wind with-mutex) (dynamic-wind chez:dynamic-wind) (with-mutex chez:with-mutex)))
+> (eq? dynamic-wind chez:dynamic-wind)
+#f
+> (let ([m (make-mutex)]) (list (with-mutex m 'held) (chez:with-mutex m 'held)))
+(held held)
+; with-mutex releases its mutex however its body ends, a quit included,
+; and evaluates its mutex expression once.
+> (import (winds))
+> (guard (c [#t 'raised]) (winds:guarded (lambda () (car '()))))
+raised
+> (winds:free?)
+#t
+> (begin (quit-soon) (winds:guarded (lambda () (let loop () (loop)))))
+! &quit
+> (list (winds:free?) winds:evaluated)
+(#t 2)
+; dynamic-wind runs out whenever its body is left, a quit included, and
+; the body can be quit.
+> (begin (quit-soon) (winds:wound (lambda () (let loop () (loop)))))
+! &quit
+> winds:log
+(out in)
+> (winds:wound (lambda () 'body))
+body
+> (list (call/cc (lambda (k) (winds:wound (lambda () (k 'escaped))))) winds:log)
+(escaped (out in out in out in))
+; Tuna compiles modules safely, with interrupt traps, whatever the main
+; thread set.
+> (begin
+    (optimize-level 3)
+    (enable-unsafe-application #t)
+    (enable-unsafe-variable-reference #t)
+    (generate-interrupt-trap #f))
+> (import (unsafe))
+> (begin (optimize-level 2) (enable-unsafe-application #f) (enable-unsafe-variable-reference #f) (generate-interrupt-trap #t))
+> (unsafe:past-end)
+! vector-ref: 10 is not a valid index for #(1 2 3)
+> (unsafe:call 5)
+! attempt to apply non-procedure 5

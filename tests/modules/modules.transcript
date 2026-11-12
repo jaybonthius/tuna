@@ -5,7 +5,7 @@
 "Hello, Harpo!"
 > (greet:module-name)
 (greet)
-> (this-module)
+> (current-owner)
 (repl)
 > (import (greet util))
 > (greet/util:user-name)
@@ -33,7 +33,7 @@ plain
 ; change is the REPL's.
 > (import (boom))
 ! (boom) boom: failed
-> (this-module)
+> (current-owner)
 (repl)
 > (set! greet/util:user-name (lambda () "Zeppo"))
 > (definition-changes greet/util:user-name)

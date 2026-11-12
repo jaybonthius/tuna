@@ -1,6 +1,10 @@
 #!/bin/sh
 set -eu
 tuna=${1:?usage: program-test.sh TUNA}
+case $tuna in
+  /*) ;;
+  *) tuna=$PWD/$tuna ;;
+esac
 failures=0
 fail() {
   echo "$0: FAIL: $1"
@@ -14,22 +18,53 @@ printf '%s\n' "$version" | grep -Eqx 'tuna [0-9]+\.[0-9]+\.[0-9]+' ||
   fail "--version printed: $version"
 
 status=0
-usage=$("$tuna" --unknown 2>&1 > /dev/null) || status=$?
-[ "$status" -eq 2 ] || fail "unknown arguments exited with status $status, not 2"
-case $usage in
-  *usage:*) ;;
-  *) fail "unknown arguments printed no usage: $usage" ;;
-esac
-
-status=0
 message=$(env -u HOME "$tuna" 2>&1 < /dev/null) || status=$?
 [ "$status" -eq 1 ] || fail "no HOME exited with status $status, not 1"
 [ "$message" = "tuna: HOME is not set" ] || fail "no HOME printed: $message"
 
-# Without TUNA_LIBRARY, Tuna's own library is plugins/ beside the program,
-# however the program is started.
 dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-program-test.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
+
+# Tuna's own options are read only at the start of the command line;
+# every other command line reaches the configuration and plugins.
+mkdir -p "$dir/arguments/.config/tuna"
+printf '(write (list (command-line-arguments) (cdr (command-line)) (string? (car (command-line)))))\n' \
+  > "$dir/arguments/.config/tuna/init.ss"
+for case in 'notes.org +12|(("notes.org" "+12") ("notes.org" "+12") #t)' \
+            '--version x|(("--version" "x") ("--version" "x") #t)' \
+            '--script|(("--script") ("--script") #t)' \
+            'x --script y|(("x" "--script" "y") ("x" "--script" "y") #t)'; do
+  arguments=${case%%|*}
+  expected=${case#*|}
+  status=0
+  # The arguments are split on purpose.
+  # shellcheck disable=SC2086
+  output=$(HOME="$dir/arguments" "$tuna" $arguments 2>&1 < /dev/null) || status=$?
+  [ "$status" -eq 0 ] || fail "tuna $arguments exited with status $status"
+  [ "$output" = "$expected" ] || fail "tuna $arguments gave the configuration: $output"
+done
+
+# --script runs a Chez script as scheme --script does, loading no
+# configuration, and exits with its status.
+cat > "$dir/script.ss" <<'END'
+(write (list (command-line) (command-line-arguments)))
+(newline)
+(when (equal? (command-line-arguments) '("exit")) (exit 3))
+(when (equal? (command-line-arguments) '("raise")) (car '()))
+END
+status=0
+output=$(cd "$dir" && HOME="$dir/arguments" "$tuna" --script script.ss a "b c" 2>&1 < /dev/null) || status=$?
+[ "$status" -eq 0 ] || fail "--script exited with status $status, not 0"
+[ "$output" = '(("script.ss" "a" "b c") ("a" "b c"))' ] || fail "--script printed: $output"
+for case in exit:3 raise:255; do
+  status=0
+  (cd "$dir" && HOME="$dir/arguments" "$tuna" --script script.ss "${case%:*}" > /dev/null 2>&1 < /dev/null) ||
+    status=$?
+  [ "$status" -eq "${case#*:}" ] || fail "--script that ends by ${case%:*} exited with status $status"
+done
+
+# Without TUNA_LIBRARY, Tuna's own library is plugins/ beside the program,
+# however the program is started.
 mkdir -p "$dir/bin/plugins" "$dir/home"
 cp "$tuna" "$dir/bin/tuna"
 printf '#!tuna\n(define (where) "beside the program")\n' > "$dir/bin/plugins/own.sls"
@@ -49,7 +84,7 @@ output=$(cd "$dir/work" && echo "(import (tuna extra))" | env -u TUNA_LIBRARY HO
 # exit's status is the process's, whichever thread calls it, even when
 # the console's end of input comes while the modules unload.
 mkdir -p "$dir/slow/.config/tuna"
-printf '(import (tuna))\n(on-unload (lambda () (sleep (make-time (quote time-duration) 100000000 0))))\n' \
+printf '(import (tuna))\n(import (rename (only (chezscheme) sleep) (sleep chez:sleep)))\n(on-unload (lambda () (chez:sleep (make-time (quote time-duration) 100000000 0))))\n' \
   > "$dir/slow/.config/tuna/init.ss"
 for form in '(exit 4)' '(thread-join (fork-thread (lambda () (exit 4))))'; do
   status=0
@@ -61,11 +96,12 @@ done
 mkdir -p "$dir/waiting/.config/tuna"
 cat > "$dir/waiting/.config/tuna/init.ss" <<'END'
 (import (tuna))
+(import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 (fork-thread
   (lambda ()
-    (sleep (make-time 'time-duration 200000000 0))
+    (chez:sleep (make-time 'time-duration 200000000 0))
     (post! (lambda () (display "posted") (newline)))
-    (sleep (make-time 'time-duration 300000000 0))
+    (chez:sleep (make-time 'time-duration 300000000 0))
     (exit 5)))
 END
 mkfifo "$dir/input"

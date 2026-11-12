@@ -1,6 +1,7 @@
+> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 ; A timer runs its procedure once, as a task, on behalf of the module
 ; that started it; until then it is running and its owner's change.
-> (define (ring) (note! (list 'ring (this-module) (task? (current-task)))))
+> (define (ring) (note! (list 'ring (current-owner) (task? (current-task)))))
 > (define once #f)
 > (begin
     (set! once (run-with-timer 0.05 ring))
@@ -34,7 +35,7 @@
 > (define behind #f)
 > (begin
     (set! behind (run-with-timer 0.3 (lambda () (set! behind-runs (+ behind-runs 1))) 0.3))
-    (sleep (make-time 'time-duration 0 1)))
+    (chez:sleep (make-time 'time-duration 0 1)))
 > behind-runs
 1
 > (sleep-for 0.3)
@@ -46,7 +47,7 @@
 > (set! log '())
 > (cancel-timer! (run-with-timer 0.05 (lambda () (note! 'cancelled))))
 > (let ([t (run-with-timer 0 (lambda () (note! 'cancelled-while-waiting)))])
-    (sleep (make-time 'time-duration 100000000 0))
+    (chez:sleep (make-time 'time-duration 100000000 0))
     (cancel-timer! t))
 > (sleep-for 0.15)
 > log

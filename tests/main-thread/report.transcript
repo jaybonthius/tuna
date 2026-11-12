@@ -16,7 +16,7 @@ before
 ; A posted thunk runs on behalf of the module that posted it.
 > (import (waiter))
 > (define posted-by #f)
-> (as-module '(waiter) (post! (lambda () (set! posted-by (this-module)))))
+> (as-module '(waiter) (post! (lambda () (set! posted-by (current-owner)))))
 > posted-by
 (waiter)
 ; report receives a condition no handler takes before the stack unwinds.

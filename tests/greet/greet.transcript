@@ -1,3 +1,4 @@
+> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 ; The configuration imports the user's module lib/greet.sls; an override or
 ; advice typed next takes effect.
 > (greet:text "Harpo")
@@ -6,7 +7,7 @@
 ; prints. The pause keeps the edit out of the file-time tick in which the
 ; module was compiled.
 > (import (tuna eval))
-> (sleep (make-time 'time-duration 10000000 0))
+> (chez:sleep (make-time 'time-duration 10000000 0))
 > (with-output-to-file (string-append (getenv "HOME") "/.config/tuna/lib/greet.sls")
     (lambda () (display "#!tuna\n(define (text name) (string-append \"Howdy, \" name \"!\"))\n"))
     'replace)

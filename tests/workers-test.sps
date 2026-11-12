@@ -130,7 +130,7 @@
     (load-module! '(starter))
     (let ([reported '()])
       (define (note report c)
-        (set! reported (cons (cons (owner-name (current-owner)) (car (condition-irritants c))) reported)))
+        (set! reported (cons (cons (current-owner) (car (condition-irritants c))) reported)))
       (define (running?)
         (exists (lambda (change) (eq? (car change) 'job))
                 (append (module-changes '(repl)) (module-changes '(starter)))))

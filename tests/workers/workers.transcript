@@ -12,7 +12,7 @@
 #t
 > (define job #f)
 > (begin
-    (set! job (start-job match-names "x" (lambda (v) (note! (list (this-module) (task? (current-task)))))))
+    (set! job (start-job match-names "x" (lambda (v) (note! (list (current-owner) (task? (current-task)))))))
     (list (job? job) job (module-changes '(repl))))
 (#t #<job> ((job #<job> #f)))
 > (wait-for-end job)

@@ -67,6 +67,16 @@ assigned
 > (put-version! "fresh.sls" ".config/tuna/lib/magit.sls")
 > (eval-file "~/.local/share/tuna/plugins/magit/magit.sls")
 ! eval-file: ~/.local/share/tuna/plugins/magit/magit.sls is not a module: module (magit) is ~/.config/tuna/lib/magit.sls
+; A module whose name's first part names no module and no plugin
+; reloads like any other.
+> (put-version! "highlight-1.sls" ".config/tuna/lib/slice/highlight.sls")
+> (import (slice highlight))
+> (slice/highlight:color)
+red
+> (put-version! "highlight-2.sls" ".config/tuna/lib/slice/highlight.sls")
+> (eval-file "~/.config/tuna/lib/slice/highlight.sls")
+> (slice/highlight:color)
+blue
 ; Tuna exits at the end of its input, unloading every module, the
 ; configuration first.
 configuration unloading

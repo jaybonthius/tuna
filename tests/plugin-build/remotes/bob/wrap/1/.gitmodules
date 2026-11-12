@@ -1,0 +1,3 @@
+[submodule "vendor/cadd"]
+	path = vendor/cadd
+	url = https://github.com/bob/cadd

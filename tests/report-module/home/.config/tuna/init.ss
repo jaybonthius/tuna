@@ -10,5 +10,5 @@
 ;; written in the clock tick its object was compiled in would count as
 ;; unchanged.
 (define (write-module! path text)
-  (sleep (make-time 'time-duration 10000000 0))
+  (sleep-for 0.01)
   (call-with-output-file path (lambda (p) (put-string p text)) 'replace))

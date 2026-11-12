@@ -23,9 +23,9 @@ new check of b.txt
 (((init) override #f) ((spell) define #f))
 ; Forms in the configuration's file evaluate as (init), and in any other
 ; file, or without one, as (repl), returning the last form's values.
-> (eval-text "(this-module)" "~/.config/tuna/init.ss")
+> (eval-text "(current-owner)" "~/.config/tuna/init.ss")
 (init)
-> (eval-text "1 (values 2 (this-module))" "~/notes.ss")
+> (eval-text "1 (values 2 (current-owner))" "~/notes.ss")
 2
 (repl)
 > (eval-text "")

@@ -19,7 +19,7 @@
       registry))
 
   (define (registry-define! registry name make again)
-    (let* ([module (owner-name (current-owner))] [symbol (definition-symbol module name)])
+    (let* ([module (current-owner)] [symbol (definition-symbol module name)])
       (cond
         [(hashtable-ref registry symbol #f) => again]
         [else

@@ -17,12 +17,12 @@
 (define-hook paused)
 (define-hook reentered)
 
-(define (state) (list (this-module) (level) (quits-allowed)))
+(define (state) (list (current-owner) (level) (quits-allowed)))
 
 (define reports '())
 
 (define (note report c)
-  (set! reports (cons (list (this-module) c) reports)))
+  (set! reports (cons (list (current-owner) c) reports)))
 
 (define (tests)
   (rank-module! '(a) #f)
@@ -42,7 +42,7 @@
 
   (test "a warning in an entry is reported once, and the entry goes on as its owner"
     (let ([after #f])
-      (as-module '(a) (add-hook! ran (lambda () (warning 'entry "careful") (set! after (this-module)))))
+      (as-module '(a) (add-hook! ran (lambda () (warning 'entry "careful") (set! after (current-owner)))))
       (set! reports '())
       (ran)
       (check-equal? '(a) after)
@@ -107,9 +107,11 @@
       (take-back-changes! '(a) '())
       (take-back-changes! '(b) '())))
 
-  (test "a forked thread starts with its parent's owner and no bindings, and its switches stay its own"
-    (check-equal? '((a) 0 #f)
+  (test "a thread forked by Chez acts for no module and has no bindings, and its switches stay its own"
+    (check-equal? '((tuna) 0 #f)
       (as-module '(a) (with-options ([level 5]) (in-thread state))))
+    (check-equal? '((a) 0 #f)
+      (as-module '(a) (with-options ([level 5]) (in-thread (lambda () (as-module '(a) (state)))))))
     (let ([stop? #f] [leaked 0] [child-bad 0])
       (let ([child (fork-thread
                      (lambda ()
@@ -117,22 +119,22 @@
                          (unless stop?
                            (as-module '(b)
                              (with-options ([level 7])
-                               (unless (equal? '((b) 7) (list (this-module) (level)))
+                               (unless (equal? '((b) 7) (list (current-owner) (level)))
                                  (set! child-bad (+ child-bad 1)))))
                            (loop)))))])
         (do ([i 0 (+ i 1)]) ((= i 20000))
           (as-module '(a)
             (with-options ([level 3])
-              (unless (equal? '((a) 3) (list (this-module) (level)))
+              (unless (equal? '((a) 3) (list (current-owner) (level)))
                 (set! leaked (+ leaked 1)))))
-          (unless (equal? '((repl) 0) (list (this-module) (level)))
+          (unless (equal? '((repl) 0) (list (current-owner) (level)))
             (set! leaked (+ leaked 1))))
         (set! stop? #t)
         (thread-join child))
       (check-equal? 0 leaked)
       (check-equal? 0 child-bad)))
 
-  (test "Tuna's fork-thread gives the child the owner at the fork; Chez's, the parent's when the child first needs one"
+  (test "Tuna's fork-thread gives the child the owner at the fork; Chez's acts for no module, whatever its parent's owner"
     (let ([go #f] [seen #f])
       (let ([child (as-module '(a)
                      (with-options ([level 5])
@@ -149,11 +151,34 @@
                      (fork-thread
                        (lambda ()
                          (let loop () (unless go (loop)))
-                         (set! seen (this-module)))))])
+                         (set! seen (current-owner)))))])
         (as-module '(b)
           (set! go #t)
           (thread-join child)))
-      (check-equal? '(b) seen)))
+      (check-equal? '(tuna) seen)))
+
+  (test "code that acts for no module can neither change nor post, and names its module with as-module"
+    (define (refusal thunk)
+      (in-thread
+        (lambda ()
+          (guard (c [(and (assertion-violation? c) (message-condition? c))
+                     (list (condition-who c) (condition-message c))])
+            (thunk)
+            'allowed))))
+    (check-equal? '(post! "this code acts for no module; name its module with as-module")
+      (refusal (lambda () (post! void))))
+    (check-equal? '(test "this code acts for no module; name its module with as-module")
+      (refusal (lambda () (check-current-owner 'test))))
+    (let ([ran-as #f])
+      (check-equal? 'allowed
+        (in-thread (lambda () (as-module '(a) (post! (lambda () (set! ran-as (current-owner))))) 'allowed)))
+      (let-waiting-tasks-run)
+      (check-equal? '(a) ran-as))
+    (check-equal? '(tuna) (in-thread current-owner))
+    (check-equal? '((define report #f) (define tick #f) (define batch-ended #f) (define module-loaded #f)
+                    (define module-failed #f))
+      (filter (lambda (change) (memq (cadr change) '(report tick batch-ended module-loaded module-failed)))
+              (reverse (module-changes '(tuna))))))
 
   (test "a thread slot's binding is the innermost, holds only on its own thread, and goes on an escape"
     (let* ([a (make-thread-slot)]
@@ -177,7 +202,7 @@
       (call/cc (lambda (k) (as-module '(a) (with-options ([level 3]) (k 'out))))))
     (check-equal? '((repl) 0 #t) (state))
     (check-equal? '((repl) 0)
-      (guard (c [#t (list (this-module) (level))])
+      (guard (c [#t (list (current-owner) (level))])
         (as-module '(a) (with-options ([level 3]) (raise 'out)))))
     (check-equal? '((repl) 0 #t) (state)))
 

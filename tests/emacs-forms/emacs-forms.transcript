@@ -73,6 +73,6 @@ y-or-n
 ; A module named like a library built into Chez is Chez's.
 > (call-with-output-file "~/.config/tuna/lib/scheme.sls"
     (lambda (p) (put-string p "#!tuna\n(define (mode) 'scheme)\n")))
-> (import (scheme))
+> (import (only (scheme) car))
 > (guard (c [#t 'chez-library]) scheme:mode)
 chez-library

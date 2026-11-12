@@ -119,7 +119,7 @@
       (assertion-violation 'start-job "not plain data" input))
     (unless (procedure? on-result)
       (assertion-violation 'start-job "not a procedure" on-result))
-    (let ([j (make-job w (current-owner) on-result)])
+    (let ([j (make-job w (current-owner-record) on-result)])
       (with-quits-allowed #f
         (job-change-set! j
           (record-change! 'start-job 'job j #f

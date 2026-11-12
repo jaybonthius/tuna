@@ -14,10 +14,10 @@
 (define (owners ls) (map (lambda (l) (owner-name (layer-owner l))) (layers-in-effect ls)))
 
 (define (add-as! ls owner value)
-  (as-module owner (add-layer! ls (current-owner) #f value)))
+  (as-module owner (add-layer! ls (current-owner-record) #f value)))
 
 (define (remove-as! ls owner value)
-  (as-module owner (remove-layers! ls (current-owner) #f value)))
+  (as-module owner (remove-layers! ls (current-owner-record) #f value)))
 
 (define (take-back-all! . names)
   (for-each (lambda (name) (take-back-changes! name '())) names))
@@ -191,8 +191,8 @@
           (request-quit!)
           (set! changing? #t)
           (do ([j 0 (fx+ j 1)]) ((fx= j 10))
-            (add-layer! sets (current-owner) #f j #f)
-            (add-layer! adds (current-owner) #f (if (fxeven? j) car cdr) #f)
+            (add-layer! sets (current-owner-record) #f j #f)
+            (add-layer! adds (current-owner-record) #f (if (fxeven? j) car cdr) #f)
             (as-module '(init) (remove-as! adds '(init) car))
             (take-back-all! '(init)))
           (set! changing? #f)

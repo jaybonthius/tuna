@@ -149,14 +149,14 @@
        (unless (or (not repeat) (and (real? repeat) (positive? repeat) (finite? repeat)))
          (assertion-violation 'run-with-timer "not a number of seconds to repeat after" repeat))
        (add-timer! 'run-with-timer
-         (make-timer proc (current-owner) (and repeat (max 1 (seconds->ns repeat))) #f
+         (make-timer proc (current-owner-record) (and repeat (max 1 (seconds->ns repeat))) #f
            (+ (monotonic-ns) (seconds->ns seconds))))]))
 
   (define (run-with-idle-timer seconds proc)
     (check-seconds 'run-with-idle-timer seconds)
     (check-procedure 'run-with-idle-timer proc)
     (add-timer! 'run-with-idle-timer
-      (make-timer proc (current-owner) #f (seconds->ns seconds) #f)))
+      (make-timer proc (current-owner-record) #f (seconds->ns seconds) #f)))
 
   (define (check-timer who t)
     (unless (timer? t)

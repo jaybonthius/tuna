@@ -1,3 +1,4 @@
+> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 ; A datum starts as its initial value; evaluating its form again keeps the
 ; value.
 > (define-saved answers '() list?)
@@ -87,7 +88,7 @@
 > (begin
     (fork-thread
       (lambda ()
-        (sleep (make-time 'time-duration 200000000 0))
+        (chez:sleep (make-time 'time-duration 200000000 0))
         (request-quit!)))
     (void))
 > (import (looping))

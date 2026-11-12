@@ -49,6 +49,14 @@ if [ -e "$folder/remotes" ]; then
       fi
       rm -f "$dir/index"
       GIT_INDEX_FILE=$dir/index git --git-dir="$repository" --work-tree="$fixture/$commit" add -A .
+      # Each line of N.gitlinks puts a submodule at a path: the commit,
+      # by number, of a fixture repository made before this one.
+      if [ -f "$fixture/$commit.gitlinks" ]; then
+        while read -r path source number; do
+          linked=$(git --git-dir="$dir/remotes/$source" rev-list --reverse main | sed -n "${number}p")
+          GIT_INDEX_FILE=$dir/index git --git-dir="$repository" update-index --add --cacheinfo "160000,$linked,$path"
+        done < "$fixture/$commit.gitlinks"
+      fi
       tree=$(GIT_INDEX_FILE=$dir/index git --git-dir="$repository" write-tree)
       parent=$(git --git-dir="$repository" rev-parse -q --verify "refs/heads/$branch" ||
                git --git-dir="$repository" rev-parse -q --verify refs/heads/main || true)
@@ -56,7 +64,9 @@ if [ -e "$folder/remotes" ]; then
       git --git-dir="$repository" update-ref "refs/heads/$branch" "$id"
     done
   done
-  printf '[url "file://%s/remotes/"]\n\tinsteadOf = https://github.com/\n' "$dir" > "$dir/home/.gitconfig"
+  # Git refuses submodules from local paths unless allowed.
+  printf '[url "file://%s/remotes/"]\n\tinsteadOf = https://github.com/\n[protocol "file"]\n\tallow = always\n' \
+    "$dir" > "$dir/home/.gitconfig"
 fi
 
 : > "$dir/input"
