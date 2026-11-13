@@ -65,8 +65,8 @@
     (lambda (p)
       (string-for-each (lambda (c) (if (char=? c #\/) (put-string p "%2F") (put-char p c))) folder))))
 
-;; The main thread keeps running posted work while the threads run, so
-;; their sets race with the writes it starts.
+;; The main thread keeps running posted work while the threads run, so a
+;; failed write the writer posts is reported meanwhile.
 (define (run-threads thunks)
   (let ([m (make-mutex)] [finished 0])
     (let ([threads (map (lambda (thunk)
@@ -122,7 +122,7 @@
                  (set-saved! s n)
                  (set-saved! shared (list i n)))))
            each (iota 8)))
-    (finish-saved-data!)
+    (wait-for-saved-files!)
     (check-equal? (make-list 8 299) (map stored each))
     (check-equal? (shared) (stored shared))
     (check-equal? 299 (cadr (shared))))
@@ -133,7 +133,7 @@
       (string-set! (car v) 0 #\X)
       (vector-set! (cadr v) 0 2)
       (set-cdr! (cdr v) (list 'more))
-      (finish-saved-data!)
+      (wait-for-saved-files!)
       (check-equal? '("before" #(1)) (stored changed))))
 
   (test "a stored value is read with immutable strings and bytevectors"
@@ -144,7 +144,7 @@
 
   (test "#f is written as a value"
     (set-saved! flag #f)
-    (finish-saved-data!)
+    (wait-for-saved-files!)
     (check (file-exists? (saved-file '(repl) 'flag)))
     (check-equal? #f (read-file (saved-file '(repl) 'flag))))
 
@@ -180,7 +180,7 @@
                   (for-each (lambda (s) (string-fill! s (if (even? n) #\b #\c))) first))
                 (set-car! first "changed")
                 (set-saved! printing '("second")))))
-      (finish-saved-data!)
+      (wait-for-saved-files!)
       (set! stop? #t)
       (thread-join reader)
       (check-equal? 0 partial)
@@ -197,7 +197,7 @@
                        (set-saved! raced (list i n))))))
              (iota 4)))
       (when (odd? round) (remove-saved! raced))
-      (finish-saved-data!)
+      (wait-for-saved-files!)
       (if (null? (raced))
           (check (not (stored raced)))
           (check-equal? (raced) (stored raced)))))
@@ -220,7 +220,7 @@
       (do ([n 0 (+ n 1)]) ((= n 40))
         (set-saved! big (make-list 5000 (format "version ~a" n)))
         (yield))
-      (finish-saved-data!)
+      (wait-for-saved-files!)
       (set! stop? #t)
       (thread-join reader)
       (check (> reads 0))
@@ -228,12 +228,35 @@
       (check-equal? (big) (stored big))
       (check-equal? '() (filter (lambda (f) (equal? (path-extension f) "new")) (directory-list (path-parent file))))))
 
+  ;; A display redraws after every batch, so a batch made only to queue
+  ;; the advice's saved data would draw everything again for nothing.
+  (test "a datum set in batch-ended's advice makes no batch of its own"
+    (define (batches-while-idle set?)
+      (let ([batches 0])
+        (define (counting ended)
+          (set! batches (+ batches 1))
+          (when set? (set-saved! each-0 batches))
+          (ended))
+        (advice-add! batch-ended counting)
+        (suspend
+          (lambda (resume)
+            (fork-thread
+              (lambda ()
+                (sleep (make-time 'time-duration 50000000 0))
+                (post-task! (lambda () (resume void)) (find-owner '(repl)))))))
+        (advice-remove! batch-ended counting)
+        batches))
+    (let ([without (batches-while-idle #f)])
+      (check-equal? without (batches-while-idle #t))
+      (wait-for-saved-files!)
+      (check-equal? without (stored each-0))))
+
   ;; Printed in full, this value would take 2^40 conses.
   (test "shared structure is written once and read back shared"
     (let ([v (let loop ([i 0] [x '()]) (if (= i 40) x (loop (+ i 1) (cons x x))))]
           [file (saved-file '(repl) 'deep)])
       (set-saved! deep v)
-      (finish-saved-data!)
+      (wait-for-saved-files!)
       (check (< (bytevector-length (call-with-port (open-file-input-port file) get-bytevector-all)) 1000))
       (let ([read-back (read-file file)])
         (check (eq? (car read-back) (cdr read-back))))))
@@ -263,7 +286,7 @@
       (check (not (file-exists? temporary)))
       (check-equal? 0 (read-file file))
       (set-saved! blocked 2)
-      (finish-saved-data!)
+      (wait-for-saved-files!)
       (check-equal? 2 (read-file file)))))
 
 (post! (lambda ()

@@ -6,7 +6,7 @@
           (tuna core modules) (except (tuna core main-thread) exit) (tuna top-level)
           (only (tuna plugin-manager) start-plugins! plugin-root install-missing-plugin! plugin-roots
                 module-plugin-source)
-          (only (tuna storage) start-storage!) (only (tuna saved) finish-saved-data!))
+          (only (tuna storage) start-storage! wait-for-saved-files!))
 
   ;; Tuna's own options are read only at the start of the command line, so
   ;; any other command line, such as a file to open, is the plugins'.
@@ -93,7 +93,7 @@
               (for-each (lambda (owner) (take-back-changes! owner '())) '((repl) (init)))
               (unload-all-modules!)
               (run-queued!)
-              (finish-saved-data!))
+              (wait-for-saved-files!))
             (fresh-line (current-output-port))
             (flush-output-port (current-output-port)))
           (apply exit-process exit-arguments))))))

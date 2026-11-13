@@ -63,3 +63,15 @@
 > (define v4 (views:find 4))
 > (list (views:point v4) (map views:cursor-point (views:cursors v4)) (call-with-values (lambda () (views:bounds v4)) list))
 (5 (5 5) (1 6))
+; Writing the views after the batch that moved point makes no batch of
+; its own, so a display that redraws after each batch draws a key once.
+> (define batches 0)
+> (define (counting ended) (set! batches (+ batches 1)) (ended))
+> (advice-add! batch-ended counting)
+> (begin
+    (set! batches 0)
+    (post! (lambda () (views:set-point! v4 2)))
+    (sleep-for 0.05)
+    batches)
+2
+> (advice-remove! batch-ended counting)

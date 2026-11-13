@@ -24,13 +24,8 @@
 (define-saved ring '() list?)
 (define-saved history '() list?)
 
-;; The core writes saved data in a task posted after the code that set
-;; it, so joining a task spawned after the set includes the writing.
 (define (save-cost datum make-value)
-  (ns-per-op 20
-    (lambda ()
-      (set-saved! datum (make-value))
-      (join-task (spawn-task void)))))
+  (ns-per-op 20 (lambda () (set-saved! datum (make-value)))))
 
 (define (run)
   (let ([entries (map (lambda (i)

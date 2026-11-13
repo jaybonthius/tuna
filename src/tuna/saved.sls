@@ -3,10 +3,9 @@
     define-saved
     set-saved!
     remove-saved!
-    saved?
-    finish-saved-data!)
+    saved?)
   (import (chezscheme) (tuna core changes) (tuna core definitions)
-          (only (tuna core main-thread) post-task!) (tuna plain-data) (tuna storage))
+          (tuna plain-data) (tuna storage))
 
   ;; stored is value as it was when set, and initial-copy initial as it
   ;; was when defined, in copies no other code holds, so the writer can
@@ -15,7 +14,7 @@
     (nongenerative)
     (sealed #t)
     (fields symbol file (mutable initial) (mutable initial-copy) (mutable check) (mutable value)
-            (mutable stored) (mutable pending?) (mutable procedure)))
+            (mutable stored) (mutable procedure)))
 
   (define (saved? v)
     (and (wrapper-procedure? v) (saved-state? (wrapper-procedure-data v))))
@@ -30,10 +29,8 @@
       (assertion-violation who (format "~s is not a valid value for ~s" v symbol))))
 
   ;; Other threads set and remove saved data; the mutex keeps each value
-  ;; and the files waiting to be written in step.
+  ;; and the file queued for it in step.
   (define saved-mutex (make-mutex))
-  (define pending '())
-  (define write-posted? #f)
 
   ;; Keyed by file, which names the source of the module's plugin, so a
   ;; fork's datum is another datum.
@@ -64,9 +61,9 @@
            (let* ([found (read-saved-file file check)]
                   [st (if found
                           (make-saved-state symbol file initial initial-copy check
-                            (plain-data-copy 'define-saved (car found)) (car found) #f #f)
+                            (plain-data-copy 'define-saved (car found)) (car found) #f)
                           (make-saved-state symbol file initial initial-copy check
-                            initial initial-copy #f #f))]
+                            initial initial-copy #f))]
                   [s (make-wrapper-procedure
                        (case-lambda
                          [() (saved-state-value st)]
@@ -86,7 +83,6 @@
               (and (eq? (saved-state-value st) kept)
                    (let ([stored (saved-state-stored st)])
                      (reset-to-initial! st)
-                     (drop-pending! st)
                      (cond
                        [(eq? kept old-initial) (delete-saved-file! file) #f]
                        [else (reject-saved-value! file stored) #t]))))
@@ -99,51 +95,25 @@
          (identifier? #'id)
          #'(define-exported id (make-saved 'id initial check))])))
 
-  ;; Posted, so the file is written once after the code running on the
-  ;; main thread finishes, however often that code sets the datum.
+  ;; Queued at once, not posted: what batch-ended's advice posts runs as a
+  ;; batch of its own. The queue keeps one request per file, so a datum set
+  ;; again before the writer takes it is written once.
   (define (set-saved! s v)
     (let* ([st (saved-state-of 'set-saved! s)] [stored (plain-data-copy 'set-saved! v)])
       (check-valid 'set-saved! (saved-state-symbol st) (saved-state-check st) v)
       (with-quit-safe-mutex saved-mutex
         (saved-state-value-set! st v)
         (saved-state-stored-set! st stored)
-        (unless (saved-state-pending? st)
-          (saved-state-pending?-set! st #t)
-          (set! pending (cons st pending))
-          (unless write-posted?
-            (set! write-posted? #t)
-            (post-task! write-pending! (find-owner '(tuna))))))
+        (write-saved-file! (saved-state-file st) stored))
       (void)))
 
   (define (reset-to-initial! st)
     (saved-state-value-set! st (saved-state-initial st))
     (saved-state-stored-set! st (saved-state-initial-copy st)))
 
-  (define (drop-pending! st)
-    (when (saved-state-pending? st)
-      (saved-state-pending?-set! st #f)
-      (set! pending (remq st pending))))
-
   (define (remove-saved! s)
     (let ([st (saved-state-of 'remove-saved! s)])
       (with-quit-safe-mutex saved-mutex
         (reset-to-initial! st)
-        (drop-pending! st)
         (delete-saved-file! (saved-state-file st)))
-      (void)))
-
-  ;; Queued under the mutex, so a removal on another thread cannot slip
-  ;; between taking a value and queueing its file.
-  (define (write-pending!)
-    (with-quit-safe-mutex saved-mutex
-      (for-each
-        (lambda (st)
-          (saved-state-pending?-set! st #f)
-          (write-saved-file! (saved-state-file st) (saved-state-stored st)))
-        (reverse pending))
-      (set! pending '())
-      (set! write-posted? #f)))
-
-  (define (finish-saved-data!)
-    (write-pending!)
-    (wait-for-saved-files!)))
+      (void))))
