@@ -12,6 +12,16 @@
 (define-table keymap)
 (define-table symbols-only)
 
+(define-record-type point (fields x))
+
+(define-record-type pair-point (fields x))
+
+(record-type-equal-procedure (record-type-descriptor pair-point)
+  (lambda (a b equal?) (equal? (pair-point-x a) (pair-point-x b))))
+
+(record-type-hash-procedure (record-type-descriptor pair-point)
+  (lambda (p hash) (hash (pair-point-x p))))
+
 (define (tests)
   (test "a key of a kind the table has never held is not found, on any thread"
     (table-set! symbols-only 'a 1)
@@ -41,6 +51,23 @@
       (check-equal? 'init (table-ref keymap "str"))
       (check-equal? '(init) (table-owner keymap (string-copy "str")))
       (as-module '(init) (table-remove! keymap (string-copy "str")))
+      (check-equal? '() (table-entries keymap))))
+
+  (test "procedures and records are keys by eq?, unless their type compares them otherwise"
+    (let* ([f (lambda () 'f)] [g (lambda () 'g)] [a (make-point 1)] [b (make-point 1)]
+           [c (make-pair-point 1)] [keys (list f a g keymap b c)])
+      (for-each (lambda (k i) (table-set! keymap k i)) keys (iota (length keys)))
+      (check-equal? (map cons keys (iota (length keys))) (table-entries keymap))
+      (check-equal? '(0 1 2 3 4 5) (map (lambda (k) (table-ref keymap k)) keys))
+      (check-equal? 5 (table-ref keymap (make-pair-point 1)))
+      (check-equal? 'none (table-ref keymap (lambda () 'f) 'none))
+      (check-equal? 'none (table-ref keymap (make-point 1) 'none))
+      (check-equal? '(0 4) (in-thread (lambda () (list (table-ref keymap f) (table-ref keymap b)))))
+      (check-equal? '(repl) (table-owner keymap g))
+      (table-remove! keymap a)
+      (table-remove! keymap (make-pair-point 1))
+      (check-equal? (list (cons f 0) (cons g 2) (cons keymap 3) (cons b 4)) (table-entries keymap))
+      (take-back-changes! '(repl) '())
       (check-equal? '() (table-entries keymap))))
 
   ;; Adding keys grows the table's hashtable while other threads look keys

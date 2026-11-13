@@ -17,14 +17,17 @@
     (nongenerative)
     (sealed #t)
     (fields symbol module (mutable doc)
-            (mutable symbol-keys) (mutable eqv-keys) (mutable string-keys) (mutable equal-keys)
+            (mutable symbol-keys) (mutable eqv-keys) (mutable string-keys) (mutable eq-keys)
+            (mutable equal-keys)
             (mutable order) mutex (mutable defined?)))
 
   ;; An equal-hash lookup costs several times a symbol, eqv or string one,
-  ;; so keys whose equal? is eq?, eqv? or string=? have hashtables of their
-  ;; own, each made when the first key of its kind is stored; make? is true
-  ;; only on the main thread, holding the table's mutex. A macro, so that a
-  ;; lookup carries no code for making one.
+  ;; and equal-hash gives every procedure and every record one hash, so a
+  ;; table keyed by them would search its keys one at a time. So keys whose
+  ;; equal? is eq?, eqv? or string=? have hashtables of their own, each made
+  ;; when the first key of its kind is stored; make? is true only on the
+  ;; main thread, holding the table's mutex. A macro, so that a lookup
+  ;; carries no code for making one.
   (define-syntax key-table
     (syntax-rules ()
       [(_ t key make?)
@@ -36,10 +39,16 @@
            [(or (fixnum? key) (char? key) (boolean? key))
             (kind table-eqv-keys table-eqv-keys-set! (make-eqv-hashtable))]
            [(string? key) (kind table-string-keys table-string-keys-set! (make-hashtable string-hash string=?))]
+           [(eq-key? key) (kind table-eq-keys table-eq-keys-set! (make-eq-hashtable))]
            [else (kind table-equal-keys table-equal-keys-set! (make-hashtable equal-hash equal?))]))]))
 
+  (define (eq-key? key)
+    (or (procedure? key)
+        (and (record? key) (not (record-equal-procedure key key)) (not (default-record-equal-procedure)))))
+
   (define (key-tables t)
-    (filter values (list (table-symbol-keys t) (table-eqv-keys t) (table-string-keys t) (table-equal-keys t))))
+    (filter values (list (table-symbol-keys t) (table-eqv-keys t) (table-string-keys t) (table-eq-keys t)
+                         (table-equal-keys t))))
 
   (define (find-key-layers t key)
     (let ([keys (key-table t key #f)])
@@ -78,7 +87,7 @@
     (unless (or (not doc) (string? doc))
       (assertion-violation 'define-table "not a documentation string" doc))
     (registry-define! tables name
-      (lambda (symbol module) (new-table symbol module doc #f #f #f #f '() (make-mutex) #t))
+      (lambda (symbol module) (new-table symbol module doc #f #f #f #f #f '() (make-mutex) #t))
       (lambda (t) (table-doc-set! t doc) t)))
 
   (define-syntax define-table

@@ -37,6 +37,7 @@ echo "$output" | awk '
     limit["hook-one-entry-other"] = 84
     limit["table-ref-symbol"] = 8.5
     limit["table-ref-string"] = 26
+    limit["table-ref-procedure"] = 13
     limit["table-set!"] = 100
     limit["set-option!"] = 150
     limit["add-hook!-remove-hook!"] = 400

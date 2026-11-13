@@ -7,6 +7,7 @@
 (define-hook other1)
 (define-hook changed)
 (define-table keys)
+(define-table procedures)
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -48,6 +49,13 @@
       (table-set! keys (list 'C-c (integer->char (+ 97 (mod i 26))) i) 1))
     (iota 100))
   (table-set! keys #\a 1))
+
+;; Equal-hash gives every procedure one hash, so a thousand of them is
+;; where a table that hashed them so would search the longest.
+(define procedure-keys (list->vector (map (lambda (i) (lambda () i)) (iota 1000))))
+
+(define (fill-procedures!)
+  (vector-for-each (lambda (p) (table-set! procedures p 1)) procedure-keys))
 
 (define (calls)
   (measure "changeable-call" 20000000 1
@@ -98,7 +106,12 @@
     (measure-against "table-ref-string" 5000000 1 (key-loop strings)
       (lambda (n)
         (let loop ([i 0] [acc 0])
-          (if (fx= i n) acc (loop (fx+ i 1) (fx+ acc (table-ref keys (vector-ref strings (fxand i 63)) 0)))))))))
+          (if (fx= i n) acc (loop (fx+ i 1) (fx+ acc (table-ref keys (vector-ref strings (fxand i 63)) 0))))))))
+  (fill-procedures!)
+  (measure-against "table-ref-procedure" 5000000 1 (key-loop procedure-keys)
+    (lambda (n)
+      (let loop ([i 0] [acc 0])
+        (if (fx= i n) acc (loop (fx+ i 1) (fx+ acc (table-ref procedures (vector-ref procedure-keys (fxand i 63)) 0))))))))
 
 (define (changes)
   (as-module '(init)
