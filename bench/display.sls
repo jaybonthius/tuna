@@ -1,5 +1,5 @@
 #!tuna
-(import (document) (buffers) (views) (layout) (split) (web) (haml) (http))
+(import (document) (buffers) (views) (layout) (layout-split) (web) (haml) (http))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -57,9 +57,9 @@
   (let ([v (layout:selected-view)])
     (layout:switch-to-buffer b)
     (when (= views 3)
-      (let ([right (split:split-view! v (split:direction row))])
+      (let ([right (layout-split:split-view! v (layout-split:direction row))])
         (layout:switch-to-buffer b)
-        (split:split-view! right (split:direction column))))
+        (layout-split:split-view! right (layout-split:direction column))))
     (for-each
       (lambda (v)
         (let* ([doc (buffers:document b)]

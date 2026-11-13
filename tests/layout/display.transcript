@@ -1,6 +1,6 @@
-; The configuration makes split:display-right the display action and
+; The configuration makes layout-split:display-right the display action and
 ; shows help buffers below.
-> (eq? (layout:display-action) split:display-right)
+> (eq? (layout:display-action) layout-split:display-right)
 #t
 > (define notes (buffers:make "notes" "one\n"))
 > (define mail (buffers:make "mail" "Dear Harpo,\n"))
@@ -9,7 +9,7 @@
 > (views:id (layout:display-buffer notes))
 2
 > (tree)
-(layout:root () (split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 2) (buffer . "*scratch*")))))
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 2) (buffer . "*scratch*")))))
 > (selected)
 1
 ; A buffer already shown is shown where it is.
@@ -23,7 +23,7 @@
 > (views:id (layout:display-buffer help))
 3
 > (tree)
-(layout:root () (split:container ((direction . row)) (split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 3) (buffer . "*scratch*")))) #(views:view ((view . 2) (buffer . "*scratch*")))))
+(layout:root () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 3) (buffer . "*scratch*")))) #(views:view ((view . 2) (buffer . "*scratch*")))))
 ; Rules are tried newest first, then the caller's action, then the
 ; option's, then the selected view.
 > (define tried '())
@@ -38,7 +38,7 @@
 > (reverse tried)
 (newer older caller option)
 > (tree)
-(layout:root () (split:container ((direction . row)) (split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 3) (buffer . "*scratch*")))) #(views:view ((view . 2) (buffer . "*scratch*")))))
+(layout:root () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 3) (buffer . "*scratch*")))) #(views:view ((view . 2) (buffer . "*scratch*")))))
 > (raised (lambda () (layout:display-buffer mail (lambda (b) 'nonsense))))
 (layout:display-buffer "an action returned what is not a view or #f")
 > (raised (lambda () (layout:display-buffer 'mail)))
@@ -48,7 +48,7 @@
 ; use-other-view reuses a view showing the buffer, else the view selected
 ; least recently, never the selected one or a locked one.
 > (remove-option! layout:display-action)
-> (eq? (layout:display-action) split:display-right)
+> (eq? (layout:display-action) layout-split:display-right)
 #t
 > (set-option! layout:display-action layout:use-other-view)
 > (map (lambda (v) (cons (views:id v) (buffers:name (views:buffer v)))) (layout:views))
@@ -81,7 +81,7 @@
 ; The documented example of a rule.
 > (define (compilation-buffer? buffer)
     (string=? (buffers:name buffer) "*compilation*"))
-> (table-set! layout:display-rules compilation-buffer? split:display-below)
+> (table-set! layout:display-rules compilation-buffer? layout-split:display-below)
 > (define compilation (buffers:make "*compilation*" "make\n"))
 > (layout:select! (layout:display-buffer compilation))
 > (cons (selected) (buffers:name (views:buffer (layout:selected-view))))
@@ -109,7 +109,7 @@
 ; one, and refuses to change a locked part.
 > (define first (views:make notes))
 > (define second (views:make mail))
-> (set-parts! (split:container '((direction . row)) (atom first) (atom second)) (atom echo '(pinned . #t) '(locked . #t)))
+> (set-parts! (layout-split:container '((direction . row)) (atom first) (atom second)) (atom echo '(pinned . #t) '(locked . #t)))
 > (layout:select! first)
 > (layout:select! echo)
 > (layout:delete-part! (layout:view-node first))
@@ -122,7 +122,7 @@
 (7 4)
 > (define third (views:make notes))
 > (define fourth (views:make notes))
-> (set-parts! (split:container '((direction . row) (locked . #t)) (atom second) (atom third)) (atom echo '(pinned . #t) '(locked . #t)) (atom fourth))
+> (set-parts! (layout-split:container '((direction . row) (locked . #t)) (atom second) (atom third)) (atom echo '(pinned . #t) '(locked . #t)) (atom fourth))
 > (raised (lambda () (layout:reset-layout)))
 (layout:reset-layout "a locked part")
 ; An action's view must be in the layout.

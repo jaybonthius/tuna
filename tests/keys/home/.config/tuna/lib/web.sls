@@ -9,3 +9,21 @@
 (define-hook client-removed)
 
 (define current-client (make-thread-parameter #f))
+
+(define connected '())
+
+(define (clients) connected)
+
+(define (connect! c) (set! connected (append connected (list c))))
+
+(define (disconnect! c) (set! connected (remq c connected)))
+
+(define calls '())
+
+(define (call-page! client name value)
+  (set! calls (cons (list client name value) calls)))
+
+(define (take-calls!)
+  (let ([taken (reverse calls)])
+    (set! calls '())
+    taken))

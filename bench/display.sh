@@ -19,7 +19,7 @@ cat > "$dir/home/.config/tuna/init.ss" <<'END'
 (import (tuna) (tuna plugins))
 (use-plugin web (config (set-option! web:port 19398)))
 (use-plugin layout)
-(use-plugin split)
+(use-plugin layout-split)
 (use-plugin display)
 (import (display-bench))
 (display-bench:run)

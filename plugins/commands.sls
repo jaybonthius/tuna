@@ -4,11 +4,12 @@
   "Called with the command before each outermost run, before its interactive expressions.")
 
 (define-hook after-command
-  "Called with the last command after each outermost run, also after a raise or a quit.")
+  "Called with the command that ended last in each outermost run, also after a raise or a quit.")
 
 (module %internals
   (check-main-thread registry register! command-entry entry-procedure entry-reader
-   command-name-of call-outermost call-inner running-command running-previous prefix?)
+   command-name-of call-outermost call-inner running-command running-previous running-outermost
+   outermost-kept?-set! prefix?)
 
   (define main-thread (get-thread-id))
 
@@ -73,7 +74,7 @@
 
   (define-record-type outermost
     (sealed #t)
-    (fields previous (mutable ended)))
+    (fields previous (mutable ended) (mutable kept?)))
 
   (define current-command (make-thread-parameter #f))
   (define current-outermost (make-thread-parameter #f))
@@ -83,8 +84,11 @@
   (define (running-command)
     (and (main-thread?) (current-command)))
 
+  (define (running-outermost)
+    (and (main-thread?) (current-outermost)))
+
   (define (running-previous)
-    (let ([o (and (main-thread?) (current-outermost))])
+    (let ([o (running-outermost)])
       (if o (outermost-previous o) last)))
 
   (define (prefix? v)
@@ -108,7 +112,8 @@
   ;; reported, since report may pause too. The hooks run inside the run,
   ;; or an after-command entry that runs a command would call the hooks
   ;; again without end; a command a before-command entry runs is not the
-  ;; one the user ran, so it is not kept as the one that ended last.
+  ;; one the user ran, so neither the command that ended last nor a
+  ;; kept last command comes from it.
   ;; The raise is reported where it was raised, before the stack unwinds,
   ;; as the core reports one no handler takes; a warning goes on to the
   ;; caller's handler, which reports it and lets the command continue.
@@ -118,14 +123,15 @@
   ;; report, or a quit landing while it reports, too; that one is reported
   ;; as well, but no third, so a report that always raises cannot loop.
   (define (call-outermost command thunk)
-    (let ([o (make-outermost last #f)] [started? #f] [results #f] [reporting #f])
+    (let ([o (make-outermost last #f #f)] [started? #f] [results #f] [reporting #f])
       (parameterize ([current-command command] [current-outermost o])
         (dynamic-wind
           (lambda ()
             (unless started?
               (set! started? #t)
               (before-command command)
-              (outermost-ended-set! o #f)))
+              (outermost-ended-set! o #f)
+              (outermost-kept?-set! o #f)))
           (lambda ()
             (call/cc
               (lambda (k)
@@ -146,9 +152,10 @@
                     (lambda () (set! results (call-with-values thunk list))))))))
           (lambda ()
             (when (and results (not reporting))
-              (set! last (or (outermost-ended o) command))
-              (current-command last)
-              (after-command last)))))
+              (let ([ended (or (outermost-ended o) command)])
+                (unless (outermost-kept? o) (set! last ended))
+                (current-command ended)
+                (after-command ended))))))
       (apply values results)))
 
   (define (call-inner command thunk)
@@ -234,6 +241,13 @@
 (define (this-command) (running-command))
 
 (define (last-command) (running-previous))
+
+(define (keep-last-command!)
+  (check-main-thread 'commands:keep-last-command!)
+  (let ([o (running-outermost)])
+    (unless o
+      (assertion-violation 'commands:keep-last-command! "no command is running"))
+    (outermost-kept?-set! o #t)))
 
 (define prefix-argument
   (make-thread-parameter #f

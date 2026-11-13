@@ -168,3 +168,39 @@ done
 (4 (4))
 > (parameterize ([commands:prefix-argument '-]) (commands:run execute 'prefixed))
 (-1 -)
+; A run that keeps the last command leaves it as it was, as a prefix
+; command does; the hooks still see the command that ended.
+> (commands:define-command (prefix) "Keeps the last command." (commands:keep-last-command!))
+> (commands:define-command (run-prefix) "Runs prefix." (commands:run prefix))
+> (take-events!)
+((before prefixed prefixed owner) (after prefixed prefixed owner) (before execute execute prefixed) (after prefixed prefixed prefixed))
+> (commands:run inner 1)
+1
+> (take-events!)
+((before inner inner prefixed) (inner inner prefixed) (after inner inner prefixed))
+> (commands:run prefix)
+> (commands:run run-prefix)
+> (list (take-events!) (name-of (commands:last-command)))
+(((before prefix prefix inner) (after prefix prefix inner) (before run-prefix run-prefix inner) (after prefix prefix inner)) inner)
+> (commands:run inner 1)
+1
+> (take-events!)
+((before inner inner inner) (inner inner inner) (after inner inner inner))
+; A raise after the keep still keeps it.
+> (commands:define-command (prefix-broken) "Keeps the last command, then raises." (commands:keep-last-command!) (car '()))
+> (commands:run outer 1)
+2
+> (commands:run prefix-broken)
+! car: () is not a pair
+> (name-of (commands:last-command))
+inner
+> (take-events!)
+((before outer outer inner) (reading-inner) (inner inner inner) (outer outer inner) (after inner inner inner) (before prefix-broken prefix-broken inner) (after prefix-broken prefix-broken inner))
+; Outside a command there is no run to keep.
+> (commands:keep-last-command!)
+! commands:keep-last-command!: no command is running
+> (let ([result #f])
+    (fork-thread (lambda () (set! result (guard (c [#t (condition-message c)]) (commands:keep-last-command!)))))
+    (wait-until (lambda () result))
+    result)
+"not on the main thread"

@@ -1,4 +1,4 @@
-import { send } from "tuna";
+import { send, define } from "tuna";
 
 const mac = /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -35,6 +35,48 @@ function pasteKey(event) {
   return (v && event.ctrlKey && event.shiftKey) || (event.key === "Insert" && event.shiftKey && !event.ctrlKey);
 }
 
+// The quit keys are an option in Tuna, so until Tuna gives them no key
+// quits as it arrives.
+let settings = { quitKeys: [], leftOptionMeta: true, rightOptionMeta: true };
+
+define("keys-settings", (value) => {
+  settings = value;
+});
+
+const namedKeys = new Map([
+  [" ", "SPC"], ["Enter", "RET"], ["Tab", "TAB"], ["Escape", "ESC"], ["Backspace", "DEL"],
+  ["Delete", "<delete>"], ["Insert", "<insert>"], ["ArrowLeft", "<left>"], ["ArrowRight", "<right>"],
+  ["ArrowUp", "<up>"], ["ArrowDown", "<down>"], ["Home", "<home>"], ["End", "<end>"],
+  ["PageUp", "<prior>"], ["PageDown", "<next>"],
+]);
+
+const usKeys = new Map([
+  ["Backquote", "`~"], ["Minus", "-_"], ["Equal", "=+"], ["BracketLeft", "[{"], ["BracketRight", "]}"],
+  ["Backslash", "\\|"], ["Semicolon", ";:"], ["Quote", "'\""], ["Comma", ",<"], ["Period", ".>"],
+  ["Slash", "/?"], ["Space", "  "], ["Digit0", "0)"], ["Digit1", "1!"], ["Digit2", "2@"], ["Digit3", "3#"],
+  ["Digit4", "4$"], ["Digit5", "5%"], ["Digit6", "6^"], ["Digit7", "7&"], ["Digit8", "8*"], ["Digit9", "9("],
+]);
+
+function usKey(code, shift) {
+  if (/^Key[A-Z]$/.test(code)) return shift ? code[3] : code[3].toLowerCase();
+  const pair = usKeys.get(code);
+  return pair ? pair[shift ? 1 : 0] : null;
+}
+
+// This must name a key as keys:item-key does in Tuna: a quit key the two
+// named differently would quit only once the keys ahead of it had run.
+function keyName(item) {
+  const m = new Set(item.modifiers);
+  const graph = m.has("alt-graph");
+  const optionMeta = (m.has("left-option") && settings.leftOptionMeta) ||
+    (m.has("right-option") && settings.rightOptionMeta);
+  const meta = optionMeta || (m.has("alt") && !graph);
+  const name = (optionMeta && usKey(item.code, m.has("shift"))) || item.key;
+  const base = namedKeys.get(name) ?? ([...name].length === 1 ? name : `<${name.toLowerCase()}>`);
+  return (m.has("control") && !graph ? "C-" : "") + (meta ? "M-" : "") +
+    (m.has("shift") && [...base].length > 1 ? "S-" : "") + (m.has("super") ? "s-" : "") + base;
+}
+
 function modifiers(event, altGraph) {
   const names = [];
   if (altGraph) {
@@ -66,8 +108,6 @@ window.addEventListener("keydown", (event) => {
   event.preventDefault();
   const altGraph = event.getModifierState("AltGraph");
   const item = { type: "key", key, code: event.code, modifiers: modifiers(event, altGraph) };
-  if (key === "g" && event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && !altGraph) {
-    item.quit = true;
-  }
+  if (settings.quitKeys.includes(keyName(item))) item.quit = true;
   send(item);
 });

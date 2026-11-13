@@ -1,0 +1,40 @@
+; The quit keys are an option; the page script learns them, with the
+; options it needs to name keys, from the first batch after its client
+; connects and after every change.
+> (keys:quit-keys)
+("C-g")
+> (define (calls)
+    (map (lambda (call) (cons (web:client-number (car call)) (cdr call))) (web:take-calls!)))
+> (define c1 (web:make-client 1))
+> (define c2 (web:make-client 2))
+> (web:connect! c1)
+> (calls)
+((1 "keys-settings" (("quitKeys" . #("C-g")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #f))))
+> (calls)
+()
+> (set-option! keys:quit-keys '("C-g" "ESC") keys:left-option-meta? #f)
+> (web:connect! c2)
+> (calls)
+((1 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #f) ("rightOptionMeta" . #f))) (2 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #f) ("rightOptionMeta" . #f))))
+; A client whose stream closed may have missed them, so it gets them again
+; once connected.
+> (web:disconnect! c1)
+> (sleep-for 0)
+> (web:connect! c1)
+> (calls)
+((1 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #f) ("rightOptionMeta" . #f))))
+; Each quit key is one valid key.
+> (raised (lambda () (set-option! keys:quit-keys '("C-x C-g"))))
+(set-option! "(\"C-x C-g\") is not a valid value for keys:quit-keys")
+> (raised (lambda () (set-option! keys:quit-keys "C-g")))
+(set-option! "\"C-g\" is not a valid value for keys:quit-keys")
+> (raised (lambda () (set-option! keys:quit-keys '("S-a"))))
+(set-option! "(\"S-a\") is not a valid value for keys:quit-keys")
+> (remove-option! keys:quit-keys keys:left-option-meta?)
+> (calls)
+((2 "keys-settings" (("quitKeys" . #("C-g")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #f))) (1 "keys-settings" (("quitKeys" . #("C-g")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #f))))
+; What a quit key runs is its binding.
+> (set-option! keys:quit-keys '("ESC"))
+> (keys:bind! keys:global "ESC" keys:keyboard-quit)
+> (name-of (keys:lookup (layout:current-frame) "ESC"))
+keys:keyboard-quit

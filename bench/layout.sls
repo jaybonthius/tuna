@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (split) (views) (buffers) (document) (keys) (web) (haml))
+(import (layout) (layout-split) (views) (buffers) (document) (keys) (web) (haml))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -25,7 +25,7 @@
 (define (build! notes)
   (let loop ([n 23] [v (layout:selected-view)] [d 'row])
     (unless (= n 0)
-      (let ([new (split:split-view! v d)])
+      (let ([new (layout-split:split-view! v d)])
         (loop (- n 1) (if (even? n) new v) (if (eq? d 'row) 'column 'row)))))
   (layout:add-bar! (buffers:make "*Echo*" "")))
 
@@ -48,7 +48,7 @@
     (show "window-command"
       (/ (ns-per-op 200
            (lambda ()
-             (let ([v (split:split-view! (layout:selected-view) (split:direction row))])
+             (let ([v (layout-split:split-view! (layout:selected-view) (layout-split:direction row))])
                (batch-ended)
                (layout:delete-part! (layout:view-node v))
                (batch-ended))))

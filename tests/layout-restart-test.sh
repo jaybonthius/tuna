@@ -24,7 +24,7 @@ cp tests/layout/home/.config/tuna/lib/web.sls "$home/.config/tuna/lib/"
 cat > "$home/.config/tuna/init.ss" <<'END'
 (import (tuna) (tuna plugins) (document) (buffers))
 (define notes (if (getenv "NO_BUFFERS") #f (buffers:make "notes" "one\ntwo\nthree\n")))
-(use-plugin split)
+(use-plugin layout-split)
 (define (tree) (car (document:datums (buffers:document layout:buffer))))
 (import (console))
 END
@@ -37,17 +37,17 @@ expect() {
   [ "$2" = "$3" ] || fail "$1: expected $(printf '%s' "$3" | tr '\n' '|'), got $(printf '%s' "$2" | tr '\n' '|')"
 }
 
-output=$(run "(split:split-view! (layout:selected-view) (split:direction row))
+output=$(run "(layout-split:split-view! (layout:selected-view) (layout-split:direction row))
 (views:set-point! (views:find 2) 5)
 (layout:select! (views:find 2))
 (commands:run layout:zoom)
 (tree)")
 expect "first run" "$output" '#<view 2>
-(layout:root () (split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 2) (buffer . "notes")))))'
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 2) (buffer . "notes")))))'
 
 output=$(run "(tree)
 (list (views:id (layout:selected-view)) (map views:id (layout:views)) (views:point (views:find 2)))")
-expect "after a restart" "$output" '(layout:root () (split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 2) (buffer . "notes")))))
+expect "after a restart" "$output" '(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 2) (buffer . "notes")))))
 (2 (2) 5)'
 
 saved=$home/.local/share/tuna/saved/tuna/layout/saved-layout.ss
@@ -59,12 +59,12 @@ expect "a layout with no view that is not locked" "$(printf '%s\n' "$output" | s
 printf '%s\n' "$output" | grep -q 'saved-layout.ss' || fail "no warning names the set-aside file: $output"
 [ -f "$saved.rejected" ] || fail "the refused layout was not set aside"
 
-echo '(layout:root () (split:container ((direction . row)) "text"))' > "$saved"
+echo '(layout:root () (layout-split:container ((direction . row)) "text"))' > "$saved"
 output=$(run "(tree)")
 expect "a layout holding text" "$(printf '%s\n' "$output" | tail -n 1)" \
   '(layout:root () #(views:view ((view . 4) (buffer . "notes"))))'
 
-echo '(layout:root () (split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 1) (buffer . "notes")))))' > "$saved"
+echo '(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 1) (buffer . "notes")))))' > "$saved"
 output=$(run "(tree)")
 expect "a layout naming a view twice" "$(printf '%s\n' "$output" | tail -n 1)" \
   '(layout:root () #(views:view ((view . 5) (buffer . "notes"))))'

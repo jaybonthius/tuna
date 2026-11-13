@@ -155,13 +155,13 @@
 > (list exits (map name-of (keys:active-keymaps one)))
 ((first second) (keys:global))
 ; A keymap that a command pushes is not tested for the key that ran it.
-> (import (repeat))
-> (keys:bind! keys:global "C-c o" repeat:other-view-repeat)
+> (import (sticky))
+> (keys:bind! keys:global "C-c o" sticky:other-view-repeat)
 > (press-all! one "C-c" "o" "o" "o")
-> (list layout:switches repeat:ended)
+> (list layout:switches sticky:ended)
 (5 0)
 > (press-all! one "C-n")
-> (list layout:switches repeat:ended (editing:take!))
+> (list layout:switches sticky:ended (editing:take!))
 (5 1 ((next-line 1)))
 ; A keep or on-exit that raises is reported, and the keymap ends.
 > (define end-a (keys:push-keymap! one first (lambda (found command) (car '())) (exit-of 'a)))

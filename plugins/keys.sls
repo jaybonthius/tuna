@@ -4,21 +4,22 @@
 (define-table global "The global keymap, searched after every other.")
 
 (define-hook find-keymaps
-  "Called with a frame; each entry returns a list of the frame's keymaps, innermost first.")
+  "Called with a client; each entry returns a list of the client's keymaps, innermost first.")
 
 (define-option left-option-meta? #t boolean? "Whether the left Option key on a Mac is Meta.")
 
 (define-option right-option-meta? #t boolean? "Whether the right Option key on a Mac is Meta.")
 
 (module %internals
-  (check-main-thread check-key check-sequence check-keymap remember-name! bound-name
+  (check-main-thread check-key check-sequence check-keymap quit-keys? prefix-argument?
+   remember-name! bound-name
    sessions session-of session-pending session-pending-set! session-prefix session-prefix-set!
    session-temporaries session-running session-running-set!
    keymaps-of resolve-key resolve-sequence prefix-binding? lone-escape? remapped
    last-key key-count browser-key
    current-press make-press current-keys current-shifted current-session make-quit
    push-temporary! end-temporary! end-temporaries! end-owned! test-temporaries! quit-paused!
-   universal-arguments push-universal-arguments!)
+   set-prefix! universal-arguments push-universal-arguments! give-page-settings!)
 
   (define main-thread (get-thread-id))
 
@@ -93,6 +94,14 @@
   (define (check-keymap who keymap)
     (unless (table? keymap)
       (assertion-violation who "not a keymap" keymap)))
+
+  (define (quit-keys? v)
+    (and (list? v)
+         (for-all (lambda (key) (and (string? key) (valid-key? key 0 (string-length key)))) v)))
+
+  (define (prefix-argument? v)
+    (define (count? v) (and (integer? v) (exact? v)))
+    (or (not v) (count? v) (eq? v '-) (and (pair? v) (count? (car v)) (null? (cdr v)))))
 
   (define (last-space s)
     (let loop ([i (fx- (string-length s) 1)])
@@ -445,6 +454,10 @@
                 (session-running-set! s (remq (car es) (session-running s)))
                 (signal-task task (make-quit))))))))
 
+  (define (set-prefix! s prefix)
+    (session-prefix-set! s prefix)
+    (commands:keep-last-command!))
+
   (define-table universal-arguments)
 
   (define (push-universal-arguments! s)
@@ -452,9 +465,45 @@
       (unless (and (pair? ts) (eq? (temporary-keymap (car ts)) universal-arguments))
         (push-temporary! s universal-arguments
           (lambda (found command) (eq? found universal-arguments))
-          void (this-module))))))
+          void (this-module)))))
+
+  ;; The page script names each key as it is typed, so that a quit key
+  ;; quits before the keys queued ahead of it run. A client whose stream
+  ;; closed may have missed a change, so it gets the settings again once
+  ;; it is connected.
+  (define given '())
+
+  (define (page-settings)
+    (vector (quit-keys) (left-option-meta?) (right-option-meta?)))
+
+  (define (current-settings? v)
+    (and (eq? (vector-ref v 0) (quit-keys))
+         (eq? (vector-ref v 1) (left-option-meta?))
+         (eq? (vector-ref v 2) (right-option-meta?))))
+
+  (define (settings-value v)
+    (list (cons "quitKeys" (list->vector (vector-ref v 0)))
+          (cons "leftOptionMeta" (vector-ref v 1))
+          (cons "rightOptionMeta" (vector-ref v 2))))
+
+  (define (give-page-settings!)
+    (let ([clients (web:clients)])
+      (unless (and (fx= (length clients) (length given))
+                   (for-all (lambda (c g) (and (eq? c (car g)) (current-settings? (cdr g)))) clients given))
+        (set! given
+          (map (lambda (c)
+                 (let ([g (assq c given)])
+                   (if (and g (current-settings? (cdr g)))
+                       g
+                       (let ([v (page-settings)])
+                         (web:call-page! c "keys-settings" (settings-value v))
+                         (cons c v)))))
+               clients))))))
 
 (import %internals)
+
+(define-option quit-keys '("C-g") quit-keys?
+  "The keys that quit as they arrive, stopping the running command before the keys queued ahead of them run.")
 
 (define (bind! keymap keys binding)
   (check-main-thread 'keys:bind!)
@@ -602,6 +651,15 @@
 
 (define (item-key item) (browser-key item))
 
+(define (set-prefix-argument! prefix)
+  (check-main-thread 'keys:set-prefix-argument!)
+  (unless (prefix-argument? prefix)
+    (assertion-violation 'keys:set-prefix-argument! "not a prefix argument" prefix))
+  (let ([s (current-session)])
+    (unless s
+      (assertion-violation 'keys:set-prefix-argument! "no command a key ran is running"))
+    (set-prefix! s prefix)))
+
 (commands:define-command (keyboard-quit)
   "Clears the frame's pending keys and prefix argument; with none, also ends its temporary keymaps and quits the newest paused command its keys started."
   (let ([s (current-session)])
@@ -624,7 +682,7 @@
   (let ([s (current-session)])
     (when s
       (let ([p (commands:prefix-argument)])
-        (session-prefix-set! s (if (pair? p) (list (* 4 (car p))) '(4)))
+        (set-prefix! s (if (pair? p) (list (* 4 (car p))) '(4)))
         (push-universal-arguments! s)))))
 
 (commands:define-command (digit-argument)
@@ -634,7 +692,7 @@
       (let* ([key (last-key keys)] [c (string-ref key (fx- (string-length key) 1))])
         (when (char<=? #\0 c #\9)
           (let ([d (fx- (char->integer c) (char->integer #\0))] [p (commands:prefix-argument)])
-            (session-prefix-set! s
+            (set-prefix! s
               (cond
                 [(integer? p) (+ (* p 10) (if (< p 0) (- d) d))]
                 [(eq? p '-) (if (fx= d 0) '- (- d))]
@@ -646,7 +704,7 @@
   (let ([s (current-session)])
     (when s
       (let ([p (commands:prefix-argument)])
-        (session-prefix-set! s
+        (set-prefix! s
           (cond
             [(integer? p) (- p)]
             [(eq? p '-) #f]
@@ -664,5 +722,10 @@
 (bind! universal-arguments "-" negative-argument)
 
 (table-set! web:scripts 'keys "keys/keys.js")
+
+(advice-add! batch-ended
+  (lambda (ended)
+    (ended)
+    (give-page-settings!)))
 
 (on-unload (lambda () (end-owned! #f)))

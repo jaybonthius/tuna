@@ -1,0 +1,51 @@
+; A command hands a count to the next command with
+; keys:set-prefix-argument!, as Vim's 3dw needs.
+> (define one (layout:current-frame))
+> (define seen '())
+> (commands:define-command (note)
+    "Notes its prefix argument and the last command."
+    (set! seen (cons (list (commands:prefix-argument) (name-of (commands:last-command))) seen)))
+> (define (take-seen!) (let ([s (reverse seen)]) (set! seen '()) s))
+> (commands:define-command (count-three)
+    "Makes the next command's prefix argument 3."
+    (keys:set-prefix-argument! 3))
+> (commands:define-command (count-more)
+    "Multiplies the prefix argument by ten for the next command."
+    (keys:set-prefix-argument! (* 10 (commands:prefix-number))))
+> (keys:bind! keys:global "C-c n" note)
+> (keys:bind! keys:global "C-c 3" count-three)
+> (keys:bind! keys:global "C-c m" count-more)
+> (press-all! one "C-x" "o" "C-c" "3" "C-c" "n")
+> (take-seen!)
+((3 layout:other-view))
+> (press-all! one "C-c" "3" "C-c" "m" "C-c" "m" "C-c" "n" "C-c" "n")
+> (take-seen!)
+((300 note) (#f note))
+; A prefix command leaves the last command as it was, so the command
+; after a run of them sees the one before the run.
+> (press-all! one "C-x" "o" "C-u" "M-5" "-" "C-c" "n")
+> (press-all! one "M--" "C-u" "1" "C-c" "m" "C-c" "n")
+> (take-seen!)
+((-5 layout:other-view) (10 note))
+; The prefix is the client's; it clears when the next command runs, also
+; when a command sets it and then clears it.
+> (commands:define-command (count-none)
+    "Sets the prefix argument, then clears it."
+    (keys:set-prefix-argument! '(16))
+    (keys:set-prefix-argument! #f))
+> (keys:bind! keys:global "C-c 0" count-none)
+> (press-all! one "C-c" "3" "C-c" "0" "C-c" "n")
+> (press-all! (layout:other-frame) "C-c" "3")
+> (press-all! one "C-c" "n")
+> (take-seen!)
+((#f note) (#f note))
+; Only a command a key ran has a client to set it for.
+> (raised (lambda () (keys:set-prefix-argument! 3)))
+(keys:set-prefix-argument! "no command a key ran is running")
+> (commands:run count-three)
+! keys:set-prefix-argument!: no command a key ran is running
+> (map (lambda (v) (raised (lambda () (keys:set-prefix-argument! v))))
+    '(x 1.5 (4 4) ("4") +))
+((keys:set-prefix-argument! "not a prefix argument") (keys:set-prefix-argument! "not a prefix argument") (keys:set-prefix-argument! "not a prefix argument") (keys:set-prefix-argument! "not a prefix argument") (keys:set-prefix-argument! "not a prefix argument"))
+> (on-thread (lambda () (keys:set-prefix-argument! 3)))
+(keys:set-prefix-argument! "not on the main thread")

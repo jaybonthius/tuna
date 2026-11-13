@@ -315,7 +315,7 @@
 (("a\nc\n" ((3 #f))) ("b\n"))
 > (press! "M-0" "C-k")
 > (list (state) (kills 1))
-(("a\nc\n" ((3 #f))) (""))
+(("a\nc\n" ((3 #f))) ("b\n"))
 > (press! "M->" "M-2" "C-k")
 ! editing:kill-line: end of buffer
 ; Transposing.
@@ -597,3 +597,24 @@
 ! editing:forward-word: end of buffer
 > (press! "C-p" "C-p")
 ! editing:previous-line: beginning of buffer
+; Prefix commands leave the last command as it was, so a kill after
+; C-u joins the kill before it, C-n after M-1 keeps its goal column, and
+; M-y after M-2 still follows the yank.
+> (views:widen! (view))
+> (start! "a\nb\nc\nd\n" 1)
+("a\nb\nc\nd\n" ((1 #f)))
+> (press! "C-k" "C-u" "C-k")
+> (kills 1)
+("a\nb\nc\nd\n")
+> (start! "abcdef\nab\nabcdef" 5)
+("abcdef\nab\nabcdef" ((5 #f)))
+> (press! "C-n" "M-1" "C-n")
+> (views:point (view))
+15
+> (start! "x" 1)
+("x" ((1 #f)))
+> (kills 3)
+("a\nb\nc\nd\n" "FOUR ￼five" "oxne two three\n")
+> (press! "C-y" "M-2" "M-y")
+> (text)
+"oxne two three\nx"

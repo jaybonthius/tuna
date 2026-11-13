@@ -1,5 +1,5 @@
 #!tuna
-(import (commands) (keys))
+(import (commands) (keys) (web))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -82,6 +82,9 @@
   (show "lookup-global" (ns-per-op (lambda () (keys:lookup frame "C-c k d"))))
   (show "press-printing-char" (ns-per-op (lambda () (keys:press! frame "a"))))
   (show "press-two-keys" (ns-per-op (lambda () (keys:press! frame "C-x") (keys:press! frame "C-f"))))
+  (web:connect! (web:make-client 1))
+  (batch-ended)
+  (show "batch-ended-one-client" (ns-per-op batch-ended))
   (let ([press (bytes-per-op (lambda () (keys:press! frame "a")))]
         [run (bytes-per-op (lambda () (commands:run insert)))])
     (show "press-printing-char-bytes" press)

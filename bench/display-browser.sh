@@ -18,7 +18,7 @@ cat > "$dir/home/.config/tuna/init.ss" <<END
 (import (tuna) (tuna plugins))
 (use-plugin web (config (set-option! web:port $port)))
 (use-plugin layout)
-(use-plugin split)
+(use-plugin layout-split)
 (use-plugin display)
 (import (display-browser) (console))
 (display-browser:setup! 'text 1)

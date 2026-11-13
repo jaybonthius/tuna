@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (buffers) (document) (views) (keys) (commands) (web) (haml))
+(import (layout) (buffers) (document) (views) (keys) (repeat) (commands) (web) (haml))
 
 (define-enumeration direction (row column) directions)
 
@@ -105,16 +105,16 @@
 
 (define (split-view! view direction)
   (unless (views:view? view)
-    (assertion-violation 'split:split-view! "not a view" view))
+    (assertion-violation 'layout-split:split-view! "not a view" view))
   (unless (enum-set-member? direction (enum-set-universe (directions)))
-    (assertion-violation 'split:split-view! "not a split direction" direction))
+    (assertion-violation 'layout-split:split-view! "not a split direction" direction))
   (let ([atom (layout:view-node view)] [b (views:buffer view)] [kind (car (container '()))])
     (unless atom
-      (assertion-violation 'split:split-view! "not a view in the layout" view))
+      (assertion-violation 'layout-split:split-view! "not a view in the layout" view))
     (when (layout:locked? atom)
-      (assertion-violation 'split:split-view! "a locked view" view))
+      (assertion-violation 'layout-split:split-view! "a locked view" view))
     (unless b
-      (assertion-violation 'split:split-view! "the view shows no buffer" view))
+      (assertion-violation 'layout-split:split-view! "the view shows no buffer" view))
     (let* ([new (views:make b)]
            [new-datum (vector 'views:view (list (cons 'view (views:id new)) (cons 'buffer (buffers:name b))))]
            [d (node-datum atom)]
@@ -166,12 +166,12 @@
 
 (define (display-below b)
   (unless (buffers:buffer? b)
-    (assertion-violation 'split:display-below "not a buffer" b))
+    (assertion-violation 'layout-split:display-below "not a buffer" b))
   (%display-in b (direction column)))
 
 (define (display-right b)
   (unless (buffers:buffer? b)
-    (assertion-violation 'split:display-right "not a buffer" b))
+    (assertion-violation 'layout-split:display-right "not a buffer" b))
   (%display-in b (direction row)))
 
 (commands:define-command (split-below)
@@ -186,11 +186,11 @@
 
 (commands:define-command (enlarge [n (commands:prefix-number)])
   "Adds n tenths of its split's total weight to the part holding the selected view, taken evenly from its siblings."
-  (%resize! 'split:enlarge n 1))
+  (%resize! 'layout-split:enlarge n 1))
 
 (commands:define-command (shrink [n (commands:prefix-number)])
   "Takes n tenths of its split's total weight from the part holding the selected view, given evenly to its siblings."
-  (%resize! 'split:shrink n -1))
+  (%resize! 'layout-split:shrink n -1))
 
 (commands:define-command (balance)
   "Sets the weight of every child of every split in the frame's zoomed part to 1."
@@ -203,9 +203,15 @@
               (unless (equal? d b) (replace-node! child b))))
           (parts root))))))
 
+(define-table resize-keymap "Keys that go on resizing after C-x { or C-x }.")
+
 (keys:bind! keys:global "C-x 2" split-below)
 (keys:bind! keys:global "C-x 3" split-right)
 (keys:bind! keys:global "C-x }" enlarge)
 (keys:bind! keys:global "C-x {" shrink)
 (keys:bind! keys:global "C-x +" balance)
-(table-set! web:stylesheets 'split "split/split.css")
+
+(keys:bind! resize-keymap "}" enlarge)
+(keys:bind! resize-keymap "{" shrink)
+(table-set! repeat:keymaps resize-keymap)
+(table-set! web:stylesheets 'layout-split "layout-split/layout-split.css")

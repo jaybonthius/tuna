@@ -68,8 +68,8 @@
 ; Quits requested every millisecond land in presses, lookups, prefix
 ; arguments, commands and temporary keymaps. Afterwards each frame's
 ; session is whole: two C-g clear it, and keys work as before.
-> (import (repeat))
-> (keys:bind! keys:global "C-c o" repeat:other-view-repeat)
+> (import (sticky))
+> (keys:bind! keys:global "C-c o" sticky:other-view-repeat)
 > (keys:bind! keys:global "C-x C-f" files:find-file)
 > (keys:bind! keys:global "M-x" editing:next-line)
 > (define quits-reported 0)
@@ -133,7 +133,7 @@
 > (list exits (keys:pending one) (map name-of (keys:active-keymaps one)))
 (1 #f (keys:global))
 > (map (lambda (k) (name-of (keys:lookup one k))) '("C-c g o" "C-c o" "C-x o" "C-g" "M-5" "C-n"))
-(groucho:browse-remote repeat:other-view-repeat layout:other-view keys:keyboard-quit keys:digit-argument editing:next-line)
+(groucho:browse-remote sticky:other-view-repeat layout:other-view keys:keyboard-quit keys:digit-argument editing:next-line)
 > (press-all! one "C-u" "C-x" "C-f")
 > (files:take!)
 (("notes.txt" (4)))

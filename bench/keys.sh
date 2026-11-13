@@ -12,8 +12,8 @@ trap 'rm -rf "$dir"' EXIT
 lib=$dir/home/.config/tuna/lib
 mkdir -p "$lib"
 cp bench/keys.sls "$lib/keys-bench.sls"
-# Keys looks nothing up in the web plugin, so its stand-in spares the
-# benchmark a server.
+# The web stand-in offers every web name keys uses, so the benchmark
+# needs no server.
 cp tests/keys/home/.config/tuna/lib/web.sls "$lib/web.sls"
 printf '(import (tuna) (keys-bench))\n(keys-bench:run)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
@@ -28,6 +28,7 @@ echo "$output" | awk '
     limit["lookup-global"] = 3000
     limit["press-printing-char"] = 10000
     limit["press-two-keys"] = 10000
+    limit["batch-ended-one-client"] = 250
     limit["press-bytes-beyond-run"] = 2048; unit["press-bytes-beyond-run"] = "B"
     failed = 0
   }

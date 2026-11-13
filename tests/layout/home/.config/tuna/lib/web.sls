@@ -21,3 +21,5 @@
     c))
 
 (define current-client (make-thread-parameter #f))
+
+(define (call-page! client name value) (void))

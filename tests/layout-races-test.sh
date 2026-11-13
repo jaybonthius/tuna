@@ -45,16 +45,16 @@ cat > "$dir/input" <<'END'
               (attempt
                 (lambda ()
                   (case (mod k 11)
-                    [(0) (if many? (layout:delete-part! (layout:view-node (pick shown k))) (split:split-view! selected (split:direction row)))]
-                    [(1) (if many? (layout:delete-part! (layout:view-node (pick shown k))) (split:split-view! selected (split:direction column)))]
+                    [(0) (if many? (layout:delete-part! (layout:view-node (pick shown k))) (layout-split:split-view! selected (layout-split:direction row)))]
+                    [(1) (if many? (layout:delete-part! (layout:view-node (pick shown k))) (layout-split:split-view! selected (layout-split:direction column)))]
                     [(2) (layout:delete-part! (layout:view-node (pick shown (* k 31))))]
                     [(3) (layout:select! (pick shown (* k 7)))]
                     [(4) (layout:zoom)]
                     [(5) (layout:screen client)]
-                    [(6) (split:enlarge (- (mod k 5) 2))]
+                    [(6) (layout-split:enlarge (- (mod k 5) 2))]
                     [(7) (layout:display-buffer notes)]
                     [(8) (layout:other-view)]
-                    [(9) (split:balance)]
+                    [(9) (layout-split:balance)]
                     [else (layout:neighbour selected (pick '(left right up down) k))]))))
             (loop (+ k 1)))))))
 (begin

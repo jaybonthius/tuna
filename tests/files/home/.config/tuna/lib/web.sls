@@ -9,3 +9,7 @@
 (define-hook client-removed)
 
 (define current-client (make-thread-parameter #f))
+
+(define (clients) '())
+
+(define (call-page! client name value) (void))

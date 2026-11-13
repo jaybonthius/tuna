@@ -356,8 +356,14 @@
   (define killing? #f)
   (define kill-command #f)
 
+  ;; Only a run of the kill's own command that kills nothing forgets the
+  ;; kill: any other command either becomes the last command, which the
+  ;; next kill then does not join, or is a prefix command, which leaves
+  ;; the kill as the last command.
   (define (remember-kill! command)
-    (set! kill-command (and killing? command))
+    (cond
+      [killing? (set! kill-command command)]
+      [(eq? command kill-command) (set! kill-command #f)])
     (set! killing? #f))
 
   (define (after-kill?)

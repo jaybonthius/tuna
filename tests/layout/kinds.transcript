@@ -28,19 +28,19 @@
 > (define a (views:make notes))
 > (define b (views:make notes))
 > (define c (views:make notes))
-> (set-parts! (split:container '((direction . row)) (column '((weight . 3) (title . "c")) (atom a '(share . 1) '(weight . 7)) (atom b)) (atom c)))
+> (set-parts! (layout-split:container '((direction . row)) (column '((weight . 3) (title . "c")) (atom a '(share . 1) '(weight . 7)) (atom b)) (atom c)))
 > (layout:delete-part! (layout:view-node b))
 > (tree)
-(layout:root () (split:container ((direction . row)) #(views:view ((view . 2) (buffer . "notes") (weight . 3))) #(views:view ((view . 4) (buffer . "notes")))))
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 2) (buffer . "notes") (weight . 3))) #(views:view ((view . 4) (buffer . "notes")))))
 ; The frame's state and the layout survive a reload of layout, which
-; reloads split too.
+; reloads layout-split too.
 > (layout:select! c)
 > (commands:run layout:zoom)
 > (define before (tree))
 > (unload-module! '(layout))
-> (map (lambda (m) (member m (loaded-modules))) '((layout) (split)))
+> (map (lambda (m) (member m (loaded-modules))) '((layout) (layout-split)))
 (#f #f)
-> (load-module! '(split))
+> (load-module! '(layout-split))
 > (equal? before (tree))
 #t
 > (list (selected) (ids))

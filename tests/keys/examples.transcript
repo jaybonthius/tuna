@@ -46,10 +46,10 @@
 > (document:text (buffers:document (views:buffer notes)))
 "!iH"
 ; A temporary keymap that stays while its keys are typed.
-> (import (repeat))
+> (import (sticky))
 > (define end-repeat
-    (keys:push-keymap! (layout:current-frame) repeat:keymap
-      (lambda (found command) (eq? found repeat:keymap))))
+    (keys:push-keymap! (layout:current-frame) sticky:keymap
+      (lambda (found command) (eq? found sticky:keymap))))
 > (press-all! frame "o" "o")
 > (list layout:switches (map name-of (keys:active-keymaps frame)))
 (3 (keymap keymap keys:global))

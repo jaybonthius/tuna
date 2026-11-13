@@ -1,0 +1,33 @@
+; Layout-split's resize keymap repeats: after C-x }, each } or { goes on
+; resizing, and any other key ends it and runs as usual.
+> (define c1 (web:add-client! 1))
+> (press! c1 "C-x" "3")
+> (weights)
+(1 1)
+> (press! c1 "C-x" "}" "}" "}" "{")
+> (weights)
+(7/5 3/5)
+> (keymap-names c1)
+(layout-split:resize-keymap keys:global)
+> (press! c1 "C-x" "o")
+> (keymap-names c1)
+(keys:global)
+> (layout:selected-view)
+#<view 2>
+; A key bound in the keymap works only while it repeats.
+> (keys:bind! layout-split:resize-keymap "v" layout-split:shrink)
+> (press! c1 "C-x" "{" "v")
+> (weights)
+(9/5 1/5)
+> (press! c1 "C-g" "v")
+! v is undefined
+> (weights)
+(9/5 1/5)
+; Taken out of the table, the keymap no longer repeats.
+> (table-remove! repeat:keymaps layout-split:resize-keymap)
+> (press! c1 "C-x" "}" "}")
+! } is undefined
+> (weights)
+(8/5 2/5)
+> (keymap-names c1)
+(keys:global)

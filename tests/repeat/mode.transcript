@@ -1,0 +1,14 @@
+; A mode on keys: a temporary keymap that stays until its own command
+; ends it, while keys it does not bind reach the keymaps after it.
+> (import (resize-mode))
+> (define c1 (web:add-client! 1))
+> (press! c1 "C-x" "3" "C-c" "r" "}" "}")
+> (list (weights) (map (lambda (k) (eq? k resize-mode:keymap)) (keys:active-keymaps c1)))
+((7/5 3/5) (#t #f))
+> (press! c1 "C-x" "o" "{" "C-c" "r")
+> (list (layout:selected-view) (weights) (length (keys:active-keymaps c1)))
+(#<view 2> (8/5 2/5) 2)
+> (press! c1 "RET" "}")
+! } is undefined
+> (list (weights) (keymap-names c1))
+((8/5 2/5) (keys:global))

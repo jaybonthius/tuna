@@ -19,9 +19,9 @@
 (#t #f #t)
 > (raised (lambda () (layout:frame 'nobody)))
 (layout:frame "not a client")
-> (set-parts! (split:container '((direction . row)) (atom a) (boxes:box '() (atom b) (atom c))))
+> (set-parts! (layout-split:container '((direction . row)) (atom a) (boxes:box '() (atom b) (atom c))))
 > (tree)
-(layout:root () (split:container ((direction . row)) #(views:view ((view . 2) (buffer . "notes"))) (boxes:box () #(views:view ((view . 3) (buffer . "mail"))) #(views:view ((view . 4) (buffer . "notes"))))))
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 2) (buffer . "notes"))) (boxes:box () #(views:view ((view . 3) (buffer . "mail"))) #(views:view ((view . 4) (buffer . "notes"))))))
 > (selected)
 2
 > (ids)
@@ -124,7 +124,7 @@
 > (eq? echo (layout:add-bar! bar))
 #t
 > (tree)
-(layout:root () (split:container ((direction . row)) #(views:view ((view . 2) (buffer . "notes"))) (boxes:box () #(views:view ((view . 3) (buffer . "mail"))) #(views:view ((view . 4) (buffer . "notes"))))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 2) (buffer . "notes"))) (boxes:box () #(views:view ((view . 3) (buffer . "mail"))) #(views:view ((view . 4) (buffer . "notes"))))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
 > (layout:locked? (layout:view-node echo))
 #t
 > (layout:locked? (layout:view-node a))
@@ -165,7 +165,7 @@
 ; Deleting the selected view selects where the focused children lead.
 > (layout:delete-part! (layout:view-node c))
 > (tree)
-(layout:root () (split:container ((direction . row)) #(views:view ((view . 2) (buffer . "notes"))) (boxes:box () #(views:view ((view . 3) (buffer . "mail"))))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 2) (buffer . "notes"))) (boxes:box () #(views:view ((view . 3) (buffer . "mail"))))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
 > (selected)
 2
 > (layout:delete-part! (layout:view-node b))
@@ -182,7 +182,7 @@
 (#<view 2> #f #<view 5>)
 ; Titles.
 > (define titled (views:make mail))
-> (set-parts! (split:container '((title . "work")) (atom a) (atom titled '(title . "letters"))) (atom echo '(pinned . #t) '(locked . #t)))
+> (set-parts! (layout-split:container '((title . "work")) (atom a) (atom titled '(title . "letters"))) (atom echo '(pinned . #t) '(locked . #t)))
 > (layout:part-title (layout:view-node titled))
 "letters"
 > (layout:part-title (document:token (buffers:document layout:buffer) 1))
@@ -202,18 +202,18 @@
 refused
 > (try (lambda () (buffers:replace! layout:buffer 2 2 (views:view '((buffer . "notes"))))))
 refused
-> (try (lambda () (buffers:replace! layout:buffer 2 2 (split:container '()))))
+> (try (lambda () (buffers:replace! layout:buffer 2 2 (layout-split:container '()))))
 refused
 > (try (lambda () (buffers:replace! layout:buffer 1 (- (document:length (buffers:document layout:buffer)) 1) "")))
 refused
 > (try (lambda () (buffers:replace! layout:buffer 2 2 (atom a))))
 refused
-> (try (lambda () (set-parts! (split:container '() (atom a) (atom a)) (atom echo '(pinned . #t) '(locked . #t)))))
+> (try (lambda () (set-parts! (layout-split:container '() (atom a) (atom a)) (atom echo '(pinned . #t) '(locked . #t)))))
 refused
 > (try (lambda () (void (buffers:replace! layout:buffer 2 2 (boxes:box '() (atom (views:make notes)))))))
 "incorrect argument count in call ~a"
 > (tree)
-(layout:root () (split:container ((title . "work")) (boxes:box () #(views:view ((view . 7) (buffer . "notes")))) #(views:view ((view . 2) (buffer . "notes"))) #(views:view ((view . 6) (buffer . "mail") (title . "letters")))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () (layout-split:container ((title . "work")) (boxes:box () #(views:view ((view . 7) (buffer . "notes")))) #(views:view ((view . 2) (buffer . "notes"))) #(views:view ((view . 6) (buffer . "mail") (title . "letters")))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
 ; The layout buffer is never killed.
 > (buffers:kill! layout:buffer)
 #f

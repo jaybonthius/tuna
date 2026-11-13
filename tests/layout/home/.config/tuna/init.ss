@@ -1,9 +1,9 @@
 (import (tuna) (tuna plugins) (document) (haml) (web) (help) (boxes))
-(use-plugin split)
+(use-plugin layout-split)
 (use-plugin layout
   (config
-    (set-option! layout:display-action split:display-right)
-    (table-set! layout:display-rules help:buffer? split:display-below)))
+    (set-option! layout:display-action layout-split:display-right)
+    (table-set! layout:display-rules help:buffer? layout-split:display-below)))
 
 (define (raised thunk)
   (guard (c [#t (list (if (who-condition? c) (condition-who c) 'none)
