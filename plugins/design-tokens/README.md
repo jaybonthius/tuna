@@ -1,0 +1,3 @@
+# design-tokens
+
+Tuna's shared styling vocabulary: one stylesheet of CSS custom properties named `--tuna-…`. Primitives hold values (colour scales with a light and a dark value per step, type, space, sizes, borders, radii, shadows, stacking, motion, masks, gradients) and the `@keyframes` the animation tokens name; semantic tokens name a job, such as `--tuna-surface` or `--tuna-region`, and default to a primitive. Plugins read the tokens; a theme or the user's own file sets them. Every file declares the cascade layers `defaults`, `themes` and `preferences`; under reduced motion every duration is zero and every animation off.

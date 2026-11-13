@@ -28,4 +28,4 @@
 > (buffers:define-layer tags)
 > (buffers:add-span! (buffers:layer notes tags) 3 8 '((tag . "when") (face . bold)))
 > (show right)
-<div class="view" data-view="2" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="center" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v2-1" data-line="1" data-at="1">* <span class="bold" data-tag="when">Today</span>: Bu<span class="cursor primary"></span>y milk.</div><div class="line" id="v2-2" data-line="2"><br></div></div></div>
+<div class="view" data-view="2" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="center" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v2-1" data-line="1" data-at="1">* <span data-tag="when" data-face="bold">Today</span>: Bu<span class="cursor primary"></span>y milk.</div><div class="line" id="v2-2" data-line="2"><br></div></div></div>

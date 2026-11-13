@@ -1,0 +1,179 @@
+@layer defaults, themes, preferences;
+
+/* A family's descendants are matched inside :where(), so a rule for an
+   exact child name beats the family wherever it appears. A grandchild
+   matches two such families, so a child family follows its parent's. */
+@layer defaults {
+  [data-face="comment"], :where([data-face^="comment."]) {
+    color: var(--faces-comment-color, var(--tuna-gray-11));
+  }
+
+  [data-face="comment.documentation"], :where([data-face^="comment.documentation."]) {
+    color: var(--faces-comment-documentation-color, var(--tuna-green-11));
+  }
+
+  [data-face="string"], :where([data-face^="string."]) {
+    color: var(--faces-string-color, var(--tuna-green-11));
+  }
+
+  [data-face="string.escape"], :where([data-face^="string.escape."]) {
+    color: var(--faces-string-escape-color, var(--tuna-amber-11));
+  }
+
+  [data-face="string.regexp"], :where([data-face^="string.regexp."]) {
+    color: var(--faces-string-regexp-color, var(--tuna-orange-11));
+  }
+
+  [data-face="number"], :where([data-face^="number."]) {
+    color: var(--faces-number-color, var(--tuna-orange-11));
+  }
+
+  [data-face="constant"], :where([data-face^="constant."]) {
+    color: var(--faces-constant-color, var(--tuna-orange-11));
+  }
+
+  [data-face="keyword"], :where([data-face^="keyword."]) {
+    color: var(--faces-keyword-color, var(--tuna-violet-11));
+  }
+
+  [data-face="keyword.directive"], :where([data-face^="keyword.directive."]) {
+    color: var(--faces-keyword-directive-color, var(--tuna-pink-11));
+  }
+
+  [data-face="operator"], :where([data-face^="operator."]) {
+    color: var(--faces-operator-color, var(--tuna-text));
+  }
+
+  [data-face="punctuation"], :where([data-face^="punctuation."]) {
+    color: var(--faces-punctuation-color, var(--tuna-text));
+  }
+
+  [data-face="function"], :where([data-face^="function."]) {
+    color: var(--faces-function-color, var(--tuna-blue-11));
+  }
+
+  [data-face="function.call"], :where([data-face^="function.call."]) {
+    color: var(--faces-function-call-color, var(--tuna-blue-11));
+  }
+
+  [data-face="type"], :where([data-face^="type."]) {
+    color: var(--faces-type-color, var(--tuna-teal-11));
+  }
+
+  [data-face="variable"], :where([data-face^="variable."]) {
+    color: var(--faces-variable-color, var(--tuna-text));
+  }
+
+  [data-face="property"], :where([data-face^="property."]) {
+    color: var(--faces-property-color, var(--tuna-indigo-11));
+  }
+
+  [data-face="module"], :where([data-face^="module."]) {
+    color: var(--faces-module-color, var(--tuna-brown-11));
+  }
+
+  [data-face="attribute"], :where([data-face^="attribute."]) {
+    color: var(--faces-attribute-color, var(--tuna-purple-11));
+  }
+
+  [data-face="tag"], :where([data-face^="tag."]) {
+    color: var(--faces-tag-color, var(--tuna-red-11));
+  }
+
+  [data-face$=".builtin"] {
+    color: var(--faces-builtin-color, var(--tuna-cyan-11));
+  }
+
+  [data-face="markup.heading"], :where([data-face^="markup.heading."]) {
+    color: var(--faces-markup-heading-color, var(--tuna-blue-11));
+    font-weight: var(--tuna-font-weight-bold);
+  }
+
+  [data-face="markup.raw"], :where([data-face^="markup.raw."]) {
+    color: var(--faces-markup-raw-color, var(--tuna-teal-11));
+  }
+
+  [data-face="markup.link"], :where([data-face^="markup.link."]) {
+    color: var(--tuna-link);
+    text-decoration-line: underline;
+  }
+
+  [data-face="markup.quote"], :where([data-face^="markup.quote."]) {
+    color: var(--tuna-text-muted);
+  }
+
+  [data-face="markup.strong"], :where([data-face^="markup.strong."]) {
+    font-weight: var(--tuna-font-weight-bold);
+  }
+
+  [data-face="markup.italic"], :where([data-face^="markup.italic."]) {
+    font-style: italic;
+  }
+
+  [data-face="markup.underline"], :where([data-face^="markup.underline."]) {
+    text-decoration-line: underline;
+  }
+
+  [data-face="diff.plus"], :where([data-face^="diff.plus."]) {
+    background: var(--tuna-added-surface);
+    color: var(--tuna-added);
+  }
+
+  [data-face="diff.minus"], :where([data-face^="diff.minus."]) {
+    background: var(--tuna-removed-surface);
+    color: var(--tuna-removed);
+  }
+
+  [data-face="diff.delta"], :where([data-face^="diff.delta."]) {
+    background: var(--tuna-changed-surface);
+    color: var(--tuna-changed);
+  }
+
+  [data-face="diagnostic.error"], :where([data-face^="diagnostic.error."]) {
+    text-decoration: underline wavy var(--tuna-error);
+    text-decoration-skip-ink: none;
+  }
+
+  [data-face="diagnostic.warning"], :where([data-face^="diagnostic.warning."]) {
+    text-decoration: underline wavy var(--tuna-warning);
+    text-decoration-skip-ink: none;
+  }
+
+  [data-face="diagnostic.info"], :where([data-face^="diagnostic.info."]) {
+    text-decoration: underline wavy var(--tuna-info);
+    text-decoration-skip-ink: none;
+  }
+
+  [data-face="diagnostic.hint"], :where([data-face^="diagnostic.hint."]) {
+    text-decoration: underline wavy var(--tuna-text-muted);
+    text-decoration-skip-ink: none;
+  }
+
+  [data-face="highlight"], :where([data-face^="highlight."]) {
+    background: var(--tuna-hover);
+  }
+
+  [data-face="shadow"], :where([data-face^="shadow."]) {
+    color: var(--tuna-text-faint);
+  }
+
+  [data-face="match"], :where([data-face^="match."]) {
+    background: var(--tuna-match);
+  }
+
+  [data-face="match.other"], :where([data-face^="match.other."]) {
+    background: var(--tuna-match-other);
+  }
+
+  [data-face="error"], :where([data-face^="error."]) {
+    color: var(--tuna-error);
+  }
+
+  [data-face="warning"], :where([data-face^="warning."]) {
+    color: var(--tuna-warning);
+  }
+
+  [data-face="success"], :where([data-face^="success."]) {
+    color: var(--tuna-success);
+  }
+}

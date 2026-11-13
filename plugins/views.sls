@@ -766,11 +766,11 @@
 
   (define-record-type span-entry
     (sealed #t)
-    (fields start end rank open before after replace))
+    (fields start end rank open close before after replace))
 
   (define-record-type span-style
     (sealed #t)
-    (fields open before after replace))
+    (fields open close before after replace))
 
   (define-record-type insertion
     (sealed #t)
@@ -831,29 +831,27 @@
 
   ;; Attribute names come from users' tables, so the element is written
   ;; here rather than by haml, which takes names only as written in code.
-  (define (span-open value malformed!)
+  (define (put-element p value malformed!)
     (let loop ([value (if (list? value) value '())] [classes '()] [others '()])
       (cond
         [(null? value)
-         (call-with-string-output-port
-           (lambda (p)
-             (put-string p "<span")
-             (unless (null? classes)
-               (put-string p " class=\"")
-               (let ([classes (reverse classes)])
-                 (escape-attribute (car classes) p)
-                 (for-each (lambda (c) (put-char p #\space) (escape-attribute c p)) (cdr classes)))
-               (put-char p #\"))
-             (for-each
-               (lambda (a)
-                 (put-char p #\space)
-                 (put-string p (car a))
-                 (when (string? (cdr a))
-                   (put-string p "=\"")
-                   (escape-attribute (cdr a) p)
-                   (put-char p #\")))
-               (reverse others))
-             (put-char p #\>)))]
+         (put-string p "<span")
+         (unless (null? classes)
+           (put-string p " class=\"")
+           (let ([classes (reverse classes)])
+             (escape-attribute (car classes) p)
+             (for-each (lambda (c) (put-char p #\space) (escape-attribute c p)) (cdr classes)))
+           (put-char p #\"))
+         (for-each
+           (lambda (a)
+             (put-char p #\space)
+             (put-string p (car a))
+             (when (string? (cdr a))
+               (put-string p "=\"")
+               (escape-attribute (cdr a) p)
+               (put-char p #\")))
+           (reverse others))
+         (put-char p #\>)]
         [(and (pair? (car value)) (symbol? (caar value)) (table-ref span-properties (caar value) #f))
          => (lambda (proc)
               (let add ([as (let ([as (guard (c [(not (quit-condition? c)) (report c) '()])
@@ -874,6 +872,26 @@
                      (add (cdr as) classes (if t (cons (cons (caar as) t) others) others)))])))]
         [else (loop (cdr value) classes others)])))
 
+  ;; A list of faces is drawn as nested elements, the first innermost, so
+  ;; its rules win, as Emacs gives a list's earlier faces priority.
+  (define (span-open value malformed!)
+    (define (element-start value)
+      (call-with-string-output-port (lambda (p) (put-element p value malformed!))))
+    (let* ([faces (value-ref value 'face)]
+           [elements
+            (filter (lambda (open) (not (string=? open "<span>")))
+              (if (and (pair? faces) (list? faces))
+                  (let ([faces (reverse faces)])
+                    (cons (element-start (map (lambda (e) (if (and (pair? e) (eq? (car e) 'face)) (cons 'face (car faces)) e)) value))
+                          (map (lambda (face) (element-start (list (cons 'face face)))) (cdr faces))))
+                  (list (element-start value))))])
+      (values (and (pair? elements) (apply string-append elements)) (length elements))))
+
+  (define (span-closing n)
+    (if (fx= n 1)
+        span-close
+        (raw-html (apply string-append (make-list n "</span>")))))
+
   (define (value-ref value key)
     (and (list? value)
          (let ([e (find-first (lambda (e) (and (pair? e) (eq? (car e) key))) value)]) (and e (cdr e)))))
@@ -889,8 +907,9 @@
                                     (make-irritants-condition (list key as))))))
              (define (style value)
                (or (hashtable-ref styles value #f)
-                   (let ([style (make-span-style (let ([open (span-open value malformed!)]) (and (not (string=? open "<span>")) (raw-html open)))
-                                                 (value-ref value 'before) (value-ref value 'after) (value-ref value 'replace))])
+                   (let ([style (let-values ([(open n) (span-open value malformed!)])
+                                  (make-span-style (and open (raw-html open)) (span-closing n)
+                                                   (value-ref value 'before) (value-ref value 'after) (value-ref value 'replace)))])
                      (hashtable-set! styles value style)
                      style)))
              (let loop ([layers (buffers:layers b v)] [rank 0] [acc '()])
@@ -900,16 +919,19 @@
                          (fold-left
                            (lambda (acc s)
                              (let ([style (style (caddr s))])
-                               (cons (make-span-entry (car s) (cadr s) rank (span-style-open style) (span-style-before style)
+                               (cons (make-span-entry (car s) (cadr s) rank (span-style-open style) (span-style-close style)
+                                                      (span-style-before style)
                                                       (span-style-after style) (span-style-replace style))
                                      acc)))
                            acc (buffers:spans (car layers) ws we))))))]
+          ;; Innermost, as Emacs draws the region above faces, so a face's
+          ;; background cannot hide it.
           [regions
            (fold-left
              (lambda (acc c)
                (let ([p (point-of c)] [m (mark-of c)])
                  (if (and m (not (fx= p m)))
-                     (cons (make-span-entry (fxmin p m) (fxmax p m) -1 region-open #f #f #f) acc)
+                     (cons (make-span-entry (fxmin p m) (fxmax p m) (greatest-fixnum) region-open span-close #f #f #f) acc)
                      acc)))
              '() (view-record-cursors v))])
       (list->vector (list-sort (lambda (a b) (fx< (span-entry-start a) (span-entry-start b)))
@@ -972,13 +994,13 @@
                         [style (if (wrap-lines) "white-space:pre-wrap" "white-space:pre")])
               (when above?
                 (:div.view-spacer ([data-spacer "above"] [aria-hidden "true"]
-                                   [style "--spacer-block-size:" (px (fx- from first) average) "px"])))
+                                   [style "--views-spacer-block-size:" (px (fx- from first) average) "px"])))
               (:div.view-lines root-html)
               (when below?
                 (:div.view-spacer ([data-spacer "below"] [aria-hidden "true"])))
               (when (or above? below?)
                 (:div.scroll-sizer ([aria-hidden "true"]
-                                    [style "--scroll-sizer-block-size:" (px (fx+ (fx- last first) 1) average) "px"])))))))))
+                                    [style "--views-scroll-sizer-block-size:" (px (fx+ (fx- last first) 1) average) "px"])))))))))
 
   (define (empty-view-html v)
     (haml (:div.view ([data-view (view-record-id v)]))))
@@ -1313,7 +1335,7 @@
                   [else
                    (let* ([s (car spans)] [from (fxmax a (span-entry-start s))] [to (fxmin z (span-entry-end s))]
                           [acc (if (fx< a from) (cons (substring str (fx- a at) (fx- from at)) acc) acc)]
-                          [acc (cons (list (span-entry-open s) (substring str (fx- from at) (fx- to at)) span-close) acc)])
+                          [acc (cons (list (span-entry-open s) (substring str (fx- from at) (fx- to at)) (span-entry-close s)) acc)])
                      (if (fx<= (span-entry-end s) z)
                          (loop to (cdr spans) acc)
                          (next (cdr items) spans acc)))])))))))
@@ -1333,7 +1355,7 @@
                     (if (and (pair? rest)
                              (let ([t (list-tail (caar rest) depth)]) (and (pair? t) (eq? (car t) s))))
                         (take (cdr rest) (cons (car rest) run))
-                        (loop rest (cons (list (span-entry-open s) (nest (reverse run) (fx+ depth 1)) span-close) acc))))))))))
+                        (loop rest (cons (list (span-entry-open s) (nest (reverse run) (fx+ depth 1)) (span-entry-close s)) acc))))))))))
 
   (define (shown-buffer who v)
     (or (bound-buffer v)
@@ -1799,15 +1821,10 @@
           '())))
 
   (define (face-attributes face)
-    (let ([class (cond
-                   [(symbol? face) (symbol->string face)]
-                   [(string? face) face]
-                   [(and (list? face) (for-all symbol? face))
-                    (let loop ([fs face] [acc ""])
-                      (if (null? fs) acc (loop (cdr fs) (if (string=? acc "") (symbol->string (car fs))
-                                                            (string-append acc " " (symbol->string (car fs)))))))]
-                   [else #f])])
-      (if class (list (cons "class" class)) '())))
+    (cond
+      [(symbol? face) (list (cons "data-face" (symbol->string face)))]
+      [(string? face) (list (cons "data-face" face))]
+      [else '()]))
 
   (define (title-attributes title)
     (if (string? title) (list (cons "title" title)) '()))

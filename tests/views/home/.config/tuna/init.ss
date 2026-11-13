@@ -46,7 +46,7 @@
 (define (drawn view client)
   (let* ([html (html-of view client)] [ls (numbers-after html "data-line=\"")])
     (list (car ls) (car (reverse ls)) (length ls)
-          (numbers-after html "--spacer-block-size:") (numbers-after html "--scroll-sizer-block-size:"))))
+          (numbers-after html "--views-spacer-block-size:") (numbers-after html "--views-scroll-sizer-block-size:"))))
 
 (define seen '())
 

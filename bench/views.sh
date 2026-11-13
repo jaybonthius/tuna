@@ -25,12 +25,15 @@ output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$library" taskset -c "$cpu"
 # line; a view of a node per line reads each node's children from its
 # document, about 2 microseconds a node more. A report on the way takes
 # a few microseconds, and saving the views after a batch that moved a
-# cursor 50. An edit costs the views of other buffers nothing; a walk
-# over a thousand of them would take microseconds.
+# cursor 50. A region over a third of the drawn lines, cut at each
+# highlighted span inside it, about doubles a draw. An edit costs the
+# views of other buffers nothing; a walk over a thousand of them would
+# take microseconds.
 echo "$output" | awk '
   BEGIN {
     limit["draw-typical"] = 600000
     limit["draw-nodes"] = 1700000
+    limit["draw-region"] = 1200000
     limit["report"] = 20000
     limit["save"] = 50000
     limit["edit-other-views"] = 500

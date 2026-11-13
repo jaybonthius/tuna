@@ -1,54 +1,69 @@
-/* Rules are wrapped in :where() so that a theme's rule wins. */
-/* The layout is the whole page: a body margin or a viewport unit that
-   counts the area under a phone's toolbar would let the page itself
-   scroll behind the views. */
-:where(body) {
-  margin: 0;
-  overflow: hidden;
-}
+@layer defaults, themes, preferences;
 
-:where(#screen) {
-  block-size: 100vh;
-  block-size: 100dvh;
-  margin: 0;
-}
+@layer defaults {
+  /* The layout is the whole page: a body margin or a viewport unit that
+     counts the area under a phone's toolbar would let the page itself
+     scroll behind the views. */
+  :where(body) {
+    margin: 0;
+    overflow: hidden;
+  }
 
-:where(.layout-root) {
-  display: flex;
-  flex-direction: column;
-  block-size: 100%;
-}
+  :where(body > main) {
+    block-size: 100vh;
+    block-size: 100dvh;
+    margin: 0;
+  }
 
-:where(.layout-main) {
-  display: flex;
-  flex: 1 1 0;
-  min-block-size: 0;
-}
+  .layout-root {
+    display: flex;
+    flex-direction: column;
+    block-size: 100%;
+  }
 
-:where(.layout-bar) {
-  display: flex;
-  flex: none;
-}
+  .layout-main {
+    display: flex;
+    flex: 1 1 0;
+    min-block-size: 0;
+  }
 
-:where(.layout-part, .layout-view) {
-  display: flex;
-  flex: 1 1 0;
-  min-inline-size: 0;
-  min-block-size: 0;
-}
+  .layout-bar {
+    display: flex;
+    flex: none;
+  }
 
-:where(.layout-view) > :where(.view) {
-  flex: 1 1 0;
-  min-inline-size: 0;
-}
+  .layout-part,
+  .layout-view {
+    display: flex;
+    flex: 1 1 0;
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
 
-:where(.layout-view.selected) {
-  outline: 1px solid currentcolor;
-  outline-offset: -1px;
-}
+  /* Fluid sizes in container units then follow the view, which in a
+     split is a share of the window. */
+  .layout-view {
+    container-type: inline-size;
+  }
 
-/* The screen's element only names the layout's view for a click; the
-   root's element lays it out. */
-:where(.layout-screen) {
-  display: contents;
+  /* The selected view's outline is drawn inside it, where it would cover
+     a cursor in the first column. */
+  .layout-view > .view {
+    flex: 1 1 0;
+    min-inline-size: 0;
+    padding-inline: var(--tuna-space-2, 0.25rem);
+  }
+
+  /* Without the design tokens a width with no fallback makes the whole
+     outline invalid, and its colour's fallback never shows. */
+  .layout-view.selected {
+    outline: var(--tuna-focus-width, 2px) solid var(--tuna-focus, Highlight);
+    outline-offset: calc(-1 * var(--tuna-focus-width, 2px));
+  }
+
+  /* The screen's element only names the layout's view for a click; the
+     root's element lays it out. */
+  .layout-screen {
+    display: contents;
+  }
 }

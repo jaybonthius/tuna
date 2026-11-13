@@ -113,6 +113,12 @@
     (views:draw v #f)
     v))
 
+(define (region-view b)
+  (let* ([v (scrolled-view b)] [doc (buffers:document b)])
+    (views:set-mark! v (document:line-start doc (- (document:line doc (views:point v)) 120)))
+    (views:draw v #f)
+    v))
+
 (define (report-cost v)
   (let* ([doc (buffers:document (views:buffer v))] [top (document:line doc (views:top v))]
          [items (vector (report-of v #f top) (report-of v #f (+ top 1)))]
@@ -167,12 +173,14 @@
 (define (run)
   (let ([typical (scrolled-view (file-buffer 22000 #f))]
         [heavy (scrolled-view (file-buffer 10000 #t))]
-        [nodes (scrolled-view (node-buffer 22000))])
+        [nodes (scrolled-view (node-buffer 22000))]
+        [region (region-view (file-buffer 22000 #f))])
     (printf "drawn lines: ~a typical, ~a heavy, ~a nodes\n" (drawn-lines typical) (drawn-lines heavy) (drawn-lines nodes))
     (show "build-only-typical" (ns-per-op 200 (lambda (i) (views:draw typical #f))))
     (let ([h (views:draw typical #f)]) (show "write-only-typical" (ns-per-op 200 (lambda (i) (html->string h)))))
     (show "draw-typical" (draw-cost typical))
     (show "draw-heavy" (draw-cost heavy))
+    (show "draw-region" (draw-cost region))
     (show "draw-two-clients" (two-clients-cost typical))
     (show "build-only-nodes" (ns-per-op 200 (lambda (i) (views:draw nodes #f))))
     (show "draw-nodes" (draw-cost nodes))

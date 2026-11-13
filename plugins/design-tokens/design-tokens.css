@@ -1,0 +1,797 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  :root {
+    color-scheme: light dark;
+
+    --tuna-white: oklch(100% 0 0);
+    --tuna-black: oklch(0% 0 0);
+
+    /* Each chroma is at most the largest inside sRGB at the scale's hue and
+       the step's lightness: a browser clips a colour outside it channel
+       by channel, which changes its lightness and so its contrast. */
+    --tuna-gray-1: light-dark(oklch(99% 0.002 260), oklch(17% 0.004 260));
+    --tuna-gray-2: light-dark(oklch(97.5% 0.003 260), oklch(19.5% 0.005 260));
+    --tuna-gray-3: light-dark(oklch(95% 0.003 260), oklch(23% 0.005 260));
+    --tuna-gray-4: light-dark(oklch(92% 0.004 260), oklch(29% 0.006 260));
+    --tuna-gray-5: light-dark(oklch(90% 0.004 260), oklch(33% 0.006 260));
+    --tuna-gray-6: light-dark(oklch(86% 0.005 260), oklch(37% 0.006 260));
+    --tuna-gray-7: light-dark(oklch(79% 0.005 260), oklch(43% 0.006 260));
+    --tuna-gray-8: light-dark(oklch(62% 0.006 260), oklch(50% 0.006 260));
+    --tuna-gray-9: light-dark(oklch(55% 0.006 260), oklch(55% 0.006 260));
+    --tuna-gray-10: light-dark(oklch(51% 0.006 260), oklch(60% 0.006 260));
+    --tuna-gray-11: light-dark(oklch(48% 0.006 260), oklch(78% 0.005 260));
+    --tuna-gray-12: light-dark(oklch(22% 0.006 260), oklch(94% 0.004 260));
+
+    --tuna-stone-1: light-dark(oklch(99% 0.003 60), oklch(17% 0.005 60));
+    --tuna-stone-2: light-dark(oklch(97.5% 0.004 60), oklch(19.5% 0.006 60));
+    --tuna-stone-3: light-dark(oklch(95% 0.004 60), oklch(23% 0.006 60));
+    --tuna-stone-4: light-dark(oklch(92% 0.005 60), oklch(29% 0.007 60));
+    --tuna-stone-5: light-dark(oklch(90% 0.005 60), oklch(33% 0.008 60));
+    --tuna-stone-6: light-dark(oklch(86% 0.006 60), oklch(37% 0.008 60));
+    --tuna-stone-7: light-dark(oklch(79% 0.007 60), oklch(43% 0.008 60));
+    --tuna-stone-8: light-dark(oklch(62% 0.008 60), oklch(50% 0.008 60));
+    --tuna-stone-9: light-dark(oklch(55% 0.008 60), oklch(55% 0.008 60));
+    --tuna-stone-10: light-dark(oklch(51% 0.008 60), oklch(60% 0.008 60));
+    --tuna-stone-11: light-dark(oklch(48% 0.008 60), oklch(78% 0.007 60));
+    --tuna-stone-12: light-dark(oklch(22% 0.008 60), oklch(94% 0.005 60));
+
+    --tuna-red-1: light-dark(oklch(99% 0.004 25), oklch(17% 0.015 25));
+    --tuna-red-2: light-dark(oklch(97.5% 0.012 25), oklch(19.5% 0.025 25));
+    --tuna-red-3: light-dark(oklch(95% 0.024 25), oklch(23% 0.04 25));
+    --tuna-red-4: light-dark(oklch(92% 0.035 25), oklch(29% 0.07 25));
+    --tuna-red-5: light-dark(oklch(90% 0.05 25), oklch(33% 0.08 25));
+    --tuna-red-6: light-dark(oklch(86% 0.07 25), oklch(37% 0.09 25));
+    --tuna-red-7: light-dark(oklch(79% 0.09 25), oklch(43% 0.1 25));
+    --tuna-red-8: light-dark(oklch(62% 0.15 25), oklch(50% 0.13 25));
+    --tuna-red-9: light-dark(oklch(55% 0.2 25), oklch(55% 0.2 25));
+    --tuna-red-10: light-dark(oklch(51% 0.2 25), oklch(60% 0.2 25));
+    --tuna-red-11: light-dark(oklch(48% 0.15 25), oklch(78% 0.11 25));
+    --tuna-red-12: light-dark(oklch(22% 0.07 25), oklch(94% 0.03 25));
+
+    --tuna-orange-1: light-dark(oklch(99% 0.005 50), oklch(17% 0.015 50));
+    --tuna-orange-2: light-dark(oklch(97.5% 0.012 50), oklch(19.5% 0.025 50));
+    --tuna-orange-3: light-dark(oklch(95% 0.025 50), oklch(23% 0.04 50));
+    --tuna-orange-4: light-dark(oklch(92% 0.035 50), oklch(29% 0.07 50));
+    --tuna-orange-5: light-dark(oklch(90% 0.05 50), oklch(33% 0.08 50));
+    --tuna-orange-6: light-dark(oklch(86% 0.07 50), oklch(37% 0.09 50));
+    --tuna-orange-7: light-dark(oklch(79% 0.09 50), oklch(43% 0.1 50));
+    --tuna-orange-8: light-dark(oklch(62% 0.15 50), oklch(50% 0.13 50));
+    --tuna-orange-9: light-dark(oklch(55% 0.14 50), oklch(55% 0.14 50));
+    --tuna-orange-10: light-dark(oklch(51% 0.134 50), oklch(60% 0.14 50));
+    --tuna-orange-11: light-dark(oklch(48% 0.126 50), oklch(78% 0.11 50));
+    --tuna-orange-12: light-dark(oklch(22% 0.058 50), oklch(94% 0.033 50));
+
+    --tuna-amber-1: light-dark(oklch(99% 0.005 75), oklch(17% 0.015 75));
+    --tuna-amber-2: light-dark(oklch(97.5% 0.012 75), oklch(19.5% 0.025 75));
+    --tuna-amber-3: light-dark(oklch(95% 0.025 75), oklch(23% 0.04 75));
+    --tuna-amber-4: light-dark(oklch(92% 0.035 75), oklch(29% 0.061 75));
+    --tuna-amber-5: light-dark(oklch(90% 0.05 75), oklch(33% 0.069 75));
+    --tuna-amber-6: light-dark(oklch(86% 0.07 75), oklch(37% 0.078 75));
+    --tuna-amber-7: light-dark(oklch(79% 0.09 75), oklch(43% 0.09 75));
+    --tuna-amber-8: light-dark(oklch(62% 0.13 75), oklch(50% 0.105 75));
+    --tuna-amber-9: light-dark(oklch(55% 0.11 75), oklch(55% 0.11 75));
+    --tuna-amber-10: light-dark(oklch(51% 0.107 75), oklch(60% 0.11 75));
+    --tuna-amber-11: light-dark(oklch(48% 0.101 75), oklch(78% 0.11 75));
+    --tuna-amber-12: light-dark(oklch(22% 0.046 75), oklch(94% 0.04 75));
+
+    --tuna-yellow-1: light-dark(oklch(99% 0.005 95), oklch(17% 0.015 95));
+    --tuna-yellow-2: light-dark(oklch(97.5% 0.012 95), oklch(19.5% 0.025 95));
+    --tuna-yellow-3: light-dark(oklch(95% 0.025 95), oklch(23% 0.04 95));
+    --tuna-yellow-4: light-dark(oklch(92% 0.035 95), oklch(29% 0.059 95));
+    --tuna-yellow-5: light-dark(oklch(90% 0.05 95), oklch(33% 0.067 95));
+    --tuna-yellow-6: light-dark(oklch(86% 0.07 95), oklch(37% 0.075 95));
+    --tuna-yellow-7: light-dark(oklch(79% 0.09 95), oklch(43% 0.088 95));
+    --tuna-yellow-8: light-dark(oklch(62% 0.127 95), oklch(50% 0.102 95));
+    --tuna-yellow-9: light-dark(oklch(55% 0.11 95), oklch(55% 0.11 95));
+    --tuna-yellow-10: light-dark(oklch(51% 0.104 95), oklch(60% 0.11 95));
+    --tuna-yellow-11: light-dark(oklch(48% 0.098 95), oklch(78% 0.11 95));
+    --tuna-yellow-12: light-dark(oklch(22% 0.045 95), oklch(94% 0.04 95));
+
+    --tuna-lime-1: light-dark(oklch(99% 0.005 125), oklch(17% 0.015 125));
+    --tuna-lime-2: light-dark(oklch(97.5% 0.012 125), oklch(19.5% 0.025 125));
+    --tuna-lime-3: light-dark(oklch(95% 0.025 125), oklch(23% 0.04 125));
+    --tuna-lime-4: light-dark(oklch(92% 0.035 125), oklch(29% 0.07 125));
+    --tuna-lime-5: light-dark(oklch(90% 0.05 125), oklch(33% 0.08 125));
+    --tuna-lime-6: light-dark(oklch(86% 0.07 125), oklch(37% 0.09 125));
+    --tuna-lime-7: light-dark(oklch(79% 0.09 125), oklch(43% 0.1 125));
+    --tuna-lime-8: light-dark(oklch(62% 0.15 125), oklch(50% 0.125 125));
+    --tuna-lime-9: light-dark(oklch(55% 0.13 125), oklch(55% 0.13 125));
+    --tuna-lime-10: light-dark(oklch(51% 0.128 125), oklch(60% 0.13 125));
+    --tuna-lime-11: light-dark(oklch(48% 0.12 125), oklch(78% 0.11 125));
+    --tuna-lime-12: light-dark(oklch(22% 0.055 125), oklch(94% 0.04 125));
+
+    --tuna-green-1: light-dark(oklch(99% 0.005 145), oklch(17% 0.015 145));
+    --tuna-green-2: light-dark(oklch(97.5% 0.012 145), oklch(19.5% 0.025 145));
+    --tuna-green-3: light-dark(oklch(95% 0.025 145), oklch(23% 0.04 145));
+    --tuna-green-4: light-dark(oklch(92% 0.035 145), oklch(29% 0.07 145));
+    --tuna-green-5: light-dark(oklch(90% 0.05 145), oklch(33% 0.08 145));
+    --tuna-green-6: light-dark(oklch(86% 0.07 145), oklch(37% 0.09 145));
+    --tuna-green-7: light-dark(oklch(79% 0.09 145), oklch(43% 0.1 145));
+    --tuna-green-8: light-dark(oklch(62% 0.15 145), oklch(50% 0.13 145));
+    --tuna-green-9: light-dark(oklch(55% 0.17 145), oklch(55% 0.17 145));
+    --tuna-green-10: light-dark(oklch(51% 0.16 145), oklch(60% 0.17 145));
+    --tuna-green-11: light-dark(oklch(48% 0.15 145), oklch(78% 0.11 145));
+    --tuna-green-12: light-dark(oklch(22% 0.069 145), oklch(94% 0.04 145));
+
+    --tuna-teal-1: light-dark(oklch(99% 0.005 180), oklch(17% 0.015 180));
+    --tuna-teal-2: light-dark(oklch(97.5% 0.012 180), oklch(19.5% 0.025 180));
+    --tuna-teal-3: light-dark(oklch(95% 0.025 180), oklch(23% 0.04 180));
+    --tuna-teal-4: light-dark(oklch(92% 0.035 180), oklch(29% 0.052 180));
+    --tuna-teal-5: light-dark(oklch(90% 0.05 180), oklch(33% 0.059 180));
+    --tuna-teal-6: light-dark(oklch(86% 0.07 180), oklch(37% 0.067 180));
+    --tuna-teal-7: light-dark(oklch(79% 0.09 180), oklch(43% 0.078 180));
+    --tuna-teal-8: light-dark(oklch(62% 0.112 180), oklch(50% 0.09 180));
+    --tuna-teal-9: light-dark(oklch(55% 0.09 180), oklch(55% 0.09 180));
+    --tuna-teal-10: light-dark(oklch(51% 0.09 180), oklch(60% 0.09 180));
+    --tuna-teal-11: light-dark(oklch(48% 0.087 180), oklch(78% 0.11 180));
+    --tuna-teal-12: light-dark(oklch(22% 0.039 180), oklch(94% 0.04 180));
+
+    --tuna-cyan-1: light-dark(oklch(99% 0.005 215), oklch(17% 0.015 215));
+    --tuna-cyan-2: light-dark(oklch(97.5% 0.012 215), oklch(19.5% 0.025 215));
+    --tuna-cyan-3: light-dark(oklch(95% 0.025 215), oklch(23% 0.04 215));
+    --tuna-cyan-4: light-dark(oklch(92% 0.035 215), oklch(29% 0.051 215));
+    --tuna-cyan-5: light-dark(oklch(90% 0.05 215), oklch(33% 0.058 215));
+    --tuna-cyan-6: light-dark(oklch(86% 0.07 215), oklch(37% 0.065 215));
+    --tuna-cyan-7: light-dark(oklch(79% 0.09 215), oklch(43% 0.075 215));
+    --tuna-cyan-8: light-dark(oklch(62% 0.109 215), oklch(50% 0.088 215));
+    --tuna-cyan-9: light-dark(oklch(55% 0.09 215), oklch(55% 0.09 215));
+    --tuna-cyan-10: light-dark(oklch(51% 0.09 215), oklch(60% 0.09 215));
+    --tuna-cyan-11: light-dark(oklch(48% 0.084 215), oklch(78% 0.11 215));
+    --tuna-cyan-12: light-dark(oklch(22% 0.038 215), oklch(94% 0.04 215));
+
+    --tuna-blue-1: light-dark(oklch(99% 0.004 255), oklch(17% 0.015 255));
+    --tuna-blue-2: light-dark(oklch(97.5% 0.011 255), oklch(19.5% 0.025 255));
+    --tuna-blue-3: light-dark(oklch(95% 0.024 255), oklch(23% 0.04 255));
+    --tuna-blue-4: light-dark(oklch(92% 0.035 255), oklch(29% 0.07 255));
+    --tuna-blue-5: light-dark(oklch(90% 0.049 255), oklch(33% 0.08 255));
+    --tuna-blue-6: light-dark(oklch(86% 0.07 255), oklch(37% 0.09 255));
+    --tuna-blue-7: light-dark(oklch(79% 0.09 255), oklch(43% 0.1 255));
+    --tuna-blue-8: light-dark(oklch(62% 0.15 255), oklch(50% 0.13 255));
+    --tuna-blue-9: light-dark(oklch(55% 0.18 255), oklch(55% 0.18 255));
+    --tuna-blue-10: light-dark(oklch(51% 0.167 255), oklch(60% 0.18 255));
+    --tuna-blue-11: light-dark(oklch(48% 0.15 255), oklch(78% 0.11 255));
+    --tuna-blue-12: light-dark(oklch(22% 0.07 255), oklch(94% 0.029 255));
+
+    --tuna-indigo-1: light-dark(oklch(99% 0.004 275), oklch(17% 0.015 275));
+    --tuna-indigo-2: light-dark(oklch(97.5% 0.011 275), oklch(19.5% 0.025 275));
+    --tuna-indigo-3: light-dark(oklch(95% 0.023 275), oklch(23% 0.04 275));
+    --tuna-indigo-4: light-dark(oklch(92% 0.035 275), oklch(29% 0.07 275));
+    --tuna-indigo-5: light-dark(oklch(90% 0.048 275), oklch(33% 0.08 275));
+    --tuna-indigo-6: light-dark(oklch(86% 0.068 275), oklch(37% 0.09 275));
+    --tuna-indigo-7: light-dark(oklch(79% 0.09 275), oklch(43% 0.1 275));
+    --tuna-indigo-8: light-dark(oklch(62% 0.15 275), oklch(50% 0.13 275));
+    --tuna-indigo-9: light-dark(oklch(55% 0.2 275), oklch(55% 0.2 275));
+    --tuna-indigo-10: light-dark(oklch(51% 0.2 275), oklch(60% 0.2 275));
+    --tuna-indigo-11: light-dark(oklch(48% 0.15 275), oklch(78% 0.11 275));
+    --tuna-indigo-12: light-dark(oklch(22% 0.07 275), oklch(94% 0.028 275));
+
+    --tuna-violet-1: light-dark(oklch(99% 0.005 295), oklch(17% 0.015 295));
+    --tuna-violet-2: light-dark(oklch(97.5% 0.012 295), oklch(19.5% 0.025 295));
+    --tuna-violet-3: light-dark(oklch(95% 0.025 295), oklch(23% 0.04 295));
+    --tuna-violet-4: light-dark(oklch(92% 0.035 295), oklch(29% 0.07 295));
+    --tuna-violet-5: light-dark(oklch(90% 0.05 295), oklch(33% 0.08 295));
+    --tuna-violet-6: light-dark(oklch(86% 0.07 295), oklch(37% 0.09 295));
+    --tuna-violet-7: light-dark(oklch(79% 0.09 295), oklch(43% 0.1 295));
+    --tuna-violet-8: light-dark(oklch(62% 0.15 295), oklch(50% 0.13 295));
+    --tuna-violet-9: light-dark(oklch(55% 0.2 295), oklch(55% 0.2 295));
+    --tuna-violet-10: light-dark(oklch(51% 0.2 295), oklch(60% 0.2 295));
+    --tuna-violet-11: light-dark(oklch(48% 0.15 295), oklch(78% 0.11 295));
+    --tuna-violet-12: light-dark(oklch(22% 0.07 295), oklch(94% 0.031 295));
+
+    --tuna-purple-1: light-dark(oklch(99% 0.005 320), oklch(17% 0.015 320));
+    --tuna-purple-2: light-dark(oklch(97.5% 0.012 320), oklch(19.5% 0.025 320));
+    --tuna-purple-3: light-dark(oklch(95% 0.025 320), oklch(23% 0.04 320));
+    --tuna-purple-4: light-dark(oklch(92% 0.035 320), oklch(29% 0.07 320));
+    --tuna-purple-5: light-dark(oklch(90% 0.05 320), oklch(33% 0.08 320));
+    --tuna-purple-6: light-dark(oklch(86% 0.07 320), oklch(37% 0.09 320));
+    --tuna-purple-7: light-dark(oklch(79% 0.09 320), oklch(43% 0.1 320));
+    --tuna-purple-8: light-dark(oklch(62% 0.15 320), oklch(50% 0.13 320));
+    --tuna-purple-9: light-dark(oklch(55% 0.2 320), oklch(55% 0.2 320));
+    --tuna-purple-10: light-dark(oklch(51% 0.2 320), oklch(60% 0.2 320));
+    --tuna-purple-11: light-dark(oklch(48% 0.15 320), oklch(78% 0.11 320));
+    --tuna-purple-12: light-dark(oklch(22% 0.07 320), oklch(94% 0.04 320));
+
+    --tuna-pink-1: light-dark(oklch(99% 0.005 350), oklch(17% 0.015 350));
+    --tuna-pink-2: light-dark(oklch(97.5% 0.012 350), oklch(19.5% 0.025 350));
+    --tuna-pink-3: light-dark(oklch(95% 0.025 350), oklch(23% 0.04 350));
+    --tuna-pink-4: light-dark(oklch(92% 0.035 350), oklch(29% 0.07 350));
+    --tuna-pink-5: light-dark(oklch(90% 0.05 350), oklch(33% 0.08 350));
+    --tuna-pink-6: light-dark(oklch(86% 0.07 350), oklch(37% 0.09 350));
+    --tuna-pink-7: light-dark(oklch(79% 0.09 350), oklch(43% 0.1 350));
+    --tuna-pink-8: light-dark(oklch(62% 0.15 350), oklch(50% 0.13 350));
+    --tuna-pink-9: light-dark(oklch(55% 0.2 350), oklch(55% 0.2 350));
+    --tuna-pink-10: light-dark(oklch(51% 0.2 350), oklch(60% 0.2 350));
+    --tuna-pink-11: light-dark(oklch(48% 0.15 350), oklch(78% 0.11 350));
+    --tuna-pink-12: light-dark(oklch(22% 0.07 350), oklch(94% 0.035 350));
+
+    --tuna-brown-1: light-dark(oklch(99% 0.005 55), oklch(17% 0.015 55));
+    --tuna-brown-2: light-dark(oklch(97.5% 0.012 55), oklch(19.5% 0.025 55));
+    --tuna-brown-3: light-dark(oklch(95% 0.025 55), oklch(23% 0.04 55));
+    --tuna-brown-4: light-dark(oklch(92% 0.035 55), oklch(29% 0.07 55));
+    --tuna-brown-5: light-dark(oklch(90% 0.05 55), oklch(33% 0.07 55));
+    --tuna-brown-6: light-dark(oklch(86% 0.07 55), oklch(37% 0.07 55));
+    --tuna-brown-7: light-dark(oklch(79% 0.07 55), oklch(43% 0.07 55));
+    --tuna-brown-8: light-dark(oklch(62% 0.07 55), oklch(50% 0.07 55));
+    --tuna-brown-9: light-dark(oklch(55% 0.07 55), oklch(55% 0.07 55));
+    --tuna-brown-10: light-dark(oklch(51% 0.07 55), oklch(60% 0.07 55));
+    --tuna-brown-11: light-dark(oklch(48% 0.07 55), oklch(78% 0.07 55));
+    --tuna-brown-12: light-dark(oklch(22% 0.054 55), oklch(94% 0.035 55));
+
+    --tuna-font-sans: system-ui, sans-serif;
+    --tuna-font-serif: ui-serif, serif;
+    --tuna-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+    --tuna-font-transitional: Charter, "Bitstream Charter", "Sitka Text", Cambria, "Liberation Serif", serif;
+    --tuna-font-old-style: "Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", P052, serif;
+    --tuna-font-humanist: Seravek, "Gill Sans Nova", Ubuntu, Calibri, "DejaVu Sans", sans-serif;
+    --tuna-font-geometric-humanist: Avenir, "Avenir Next", Montserrat, Corbel, "URW Gothic", sans-serif;
+    --tuna-font-classical-humanist: Optima, Candara, "Noto Sans", "Linux Biolinum O", sans-serif;
+    --tuna-font-neo-grotesque: Inter, Roboto, "Helvetica Neue", "Arial Nova", "Nimbus Sans", Arial, sans-serif;
+    --tuna-font-monospace-slab-serif: "Nimbus Mono PS", "Courier Prime", "Courier New", Courier, monospace;
+    --tuna-font-monospace-code: ui-monospace, "Cascadia Code", "JetBrains Mono", "Source Code Pro", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+    --tuna-font-industrial: Bahnschrift, "DIN Alternate", "Franklin Gothic Medium", "Nimbus Sans Narrow", sans-serif-condensed, sans-serif;
+    --tuna-font-rounded-sans: ui-rounded, "SF Pro Rounded", Quicksand, Comfortaa, Manjari, "Arial Rounded MT", Calibri, sans-serif;
+    --tuna-font-slab-serif: Rockwell, "Rockwell Nova", "Roboto Slab", "DejaVu Serif", "Sitka Small", serif;
+    --tuna-font-antique: Superclarendon, "Bookman Old Style", "URW Bookman", "Georgia Pro", Georgia, serif;
+    --tuna-font-didone: Didot, "Bodoni MT", "Noto Serif Display", "Bodoni 72", P052, serif;
+    --tuna-font-handwritten: "Segoe Print", "Bradley Hand", Chilanka, "Comic Neue", casual, cursive;
+
+    --tuna-font-size-1: 0.75rem;
+    --tuna-font-size-2: 0.875rem;
+    --tuna-font-size-3: 1rem;
+    --tuna-font-size-4: 1.125rem;
+    --tuna-font-size-5: 1.25rem;
+    --tuna-font-size-6: 1.5rem;
+    --tuna-font-size-7: 1.875rem;
+    --tuna-font-size-8: 2.25rem;
+    --tuna-font-size-9: 3rem;
+    --tuna-font-size-10: 3.75rem;
+    --tuna-font-size-fluid-1: clamp(0.75rem, 2cqi, 1rem);
+    --tuna-font-size-fluid-2: clamp(1rem, 4cqi, 1.5rem);
+    --tuna-font-size-fluid-3: clamp(1.5rem, 6cqi, 2.5rem);
+    --tuna-font-size-fluid-4: clamp(2rem, 9cqi, 3.5rem);
+    --tuna-font-weight-thin: 100;
+    --tuna-font-weight-extralight: 200;
+    --tuna-font-weight-light: 300;
+    --tuna-font-weight-regular: 400;
+    --tuna-font-weight-medium: 500;
+    --tuna-font-weight-semibold: 600;
+    --tuna-font-weight-bold: 700;
+    --tuna-font-weight-extrabold: 800;
+    --tuna-font-weight-black: 900;
+    --tuna-line-height-0: 1;
+    --tuna-line-height-1: 1.15;
+    --tuna-line-height-2: 1.3;
+    --tuna-line-height-3: 1.5;
+    --tuna-line-height-4: 1.7;
+    --tuna-line-height-5: 2;
+    --tuna-letter-spacing-tighter: -0.05em;
+    --tuna-letter-spacing-tight: -0.025em;
+    --tuna-letter-spacing-normal: 0;
+    --tuna-letter-spacing-wide: 0.025em;
+    --tuna-letter-spacing-wider: 0.05em;
+    --tuna-letter-spacing-widest: 0.1em;
+
+    --tuna-space-0: 0;
+    --tuna-space-1: 0.125rem;
+    --tuna-space-2: 0.25rem;
+    --tuna-space-3: 0.375rem;
+    --tuna-space-4: 0.5rem;
+    --tuna-space-5: 0.75rem;
+    --tuna-space-6: 1rem;
+    --tuna-space-7: 1.5rem;
+    --tuna-space-8: 2rem;
+    --tuna-space-9: 3rem;
+    --tuna-space-10: 4rem;
+    --tuna-space-11: 6rem;
+    --tuna-space-12: 8rem;
+    --tuna-space-em-1: 0.125em;
+    --tuna-space-em-2: 0.25em;
+    --tuna-space-em-3: 0.375em;
+    --tuna-space-em-4: 0.5em;
+    --tuna-space-em-5: 0.75em;
+    --tuna-space-em-6: 1em;
+    --tuna-space-em-7: 1.5em;
+    --tuna-space-em-8: 2em;
+    --tuna-space-em-9: 3em;
+    --tuna-space-fluid-1: clamp(0.5rem, 1cqi, 1rem);
+    --tuna-space-fluid-2: clamp(1rem, 2cqi, 1.5rem);
+    --tuna-space-fluid-3: clamp(1.5rem, 3cqi, 2rem);
+    --tuna-space-fluid-4: clamp(2rem, 4cqi, 3rem);
+    --tuna-space-fluid-5: clamp(4rem, 5cqi, 5rem);
+    --tuna-space-fluid-6: clamp(5rem, 7cqi, 7.5rem);
+    --tuna-space-fluid-7: clamp(7.5rem, 10cqi, 10rem);
+    --tuna-space-fluid-8: clamp(10rem, 20cqi, 15rem);
+    --tuna-space-fluid-9: clamp(15rem, 30cqi, 20rem);
+    --tuna-space-fluid-10: clamp(20rem, 40cqi, 30rem);
+
+    --tuna-size-1: 10rem;
+    --tuna-size-2: 15rem;
+    --tuna-size-3: 20rem;
+    --tuna-size-4: 25rem;
+    --tuna-size-5: 30rem;
+    --tuna-size-6: 40rem;
+    --tuna-size-7: 50rem;
+    --tuna-size-8: 60rem;
+    --tuna-size-content-1: 20ch;
+    --tuna-size-content-2: 45ch;
+    --tuna-size-content-3: 60ch;
+    --tuna-size-content-4: 80ch;
+    --tuna-size-header-1: 20ch;
+    --tuna-size-header-2: 25ch;
+    --tuna-size-header-3: 35ch;
+    --tuna-ratio-square: 1;
+    --tuna-ratio-landscape: 4 / 3;
+    --tuna-ratio-portrait: 3 / 4;
+    --tuna-ratio-widescreen: 16 / 9;
+    --tuna-ratio-ultrawide: 21 / 9;
+    --tuna-ratio-golden: 1.618 / 1;
+    --tuna-z-1: 1;
+    --tuna-z-2: 2;
+    --tuna-z-3: 3;
+    --tuna-z-4: 4;
+    --tuna-z-5: 5;
+    --tuna-z-max: 2147483647;
+
+    --tuna-border-width-1: 1px;
+    --tuna-border-width-2: 2px;
+    --tuna-border-width-3: 3px;
+    --tuna-border-width-4: 4px;
+    --tuna-border-width-5: 8px;
+    --tuna-radius-0: 0;
+    --tuna-radius-1: 0.125rem;
+    --tuna-radius-2: 0.25rem;
+    --tuna-radius-3: 0.375rem;
+    --tuna-radius-4: 0.5rem;
+    --tuna-radius-5: 0.75rem;
+    --tuna-radius-6: 1rem;
+    --tuna-radius-full: 9999px;
+    --tuna-radius-conditional-1: clamp(0px, calc(100cqi - 100%) * 1e5, var(--tuna-radius-1));
+    --tuna-radius-conditional-2: clamp(0px, calc(100cqi - 100%) * 1e5, var(--tuna-radius-2));
+    --tuna-radius-conditional-3: clamp(0px, calc(100cqi - 100%) * 1e5, var(--tuna-radius-3));
+    --tuna-radius-conditional-4: clamp(0px, calc(100cqi - 100%) * 1e5, var(--tuna-radius-4));
+    --tuna-radius-conditional-5: clamp(0px, calc(100cqi - 100%) * 1e5, var(--tuna-radius-5));
+    --tuna-radius-conditional-6: clamp(0px, calc(100cqi - 100%) * 1e5, var(--tuna-radius-6));
+    --tuna-radius-blob-1: 42% 58% 63% 37% / 48% 39% 61% 52%;
+    --tuna-radius-blob-2: 61% 39% 34% 66% / 57% 63% 37% 43%;
+    --tuna-radius-blob-3: 35% 65% 52% 48% / 66% 41% 59% 34%;
+    --tuna-radius-blob-4: 57% 43% 71% 29% / 32% 58% 42% 68%;
+    --tuna-radius-blob-5: 46% 54% 38% 62% / 59% 27% 73% 41%;
+    --tuna-radius-drawn-1: 240px 18px 210px 14px / 14px 220px 20px 250px;
+    --tuna-radius-drawn-2: 18px 230px 16px 240px / 230px 14px 250px 18px;
+    --tuna-radius-drawn-3: 220px 30px 200px 24px / 26px 210px 32px 230px;
+    --tuna-radius-drawn-4: 255px 12px 245px 16px / 18px 240px 12px 250px;
+    --tuna-radius-drawn-5: 30px 180px 26px 200px / 190px 28px 210px 22px;
+    --tuna-radius-drawn-6: 200px 40px 180px 36px / 38px 190px 44px 210px;
+
+    --tuna-shadow-color: light-dark(oklch(25% 0.015 260 / 20%), oklch(0% 0 0 / 70%));
+    --tuna-shadow-1: 0 1px 2px 0 color-mix(in oklch, var(--tuna-shadow-color) 60%, transparent);
+    --tuna-shadow-2: 0 1px 2px -1px color-mix(in oklch, var(--tuna-shadow-color) 50%, transparent),
+      0 4px 8px -3px color-mix(in oklch, var(--tuna-shadow-color) 70%, transparent);
+    --tuna-shadow-3: 0 1px 2px -1px color-mix(in oklch, var(--tuna-shadow-color) 40%, transparent),
+      0 4px 6px -2px color-mix(in oklch, var(--tuna-shadow-color) 55%, transparent),
+      0 10px 18px -6px color-mix(in oklch, var(--tuna-shadow-color) 75%, transparent);
+    --tuna-shadow-4: 0 1px 3px -1px color-mix(in oklch, var(--tuna-shadow-color) 35%, transparent),
+      0 4px 8px -3px color-mix(in oklch, var(--tuna-shadow-color) 45%, transparent),
+      0 10px 20px -6px color-mix(in oklch, var(--tuna-shadow-color) 60%, transparent),
+      0 20px 34px -10px color-mix(in oklch, var(--tuna-shadow-color) 80%, transparent);
+    --tuna-shadow-5: 0 1px 3px -1px color-mix(in oklch, var(--tuna-shadow-color) 30%, transparent),
+      0 3px 7px -2px color-mix(in oklch, var(--tuna-shadow-color) 40%, transparent),
+      0 8px 16px -4px color-mix(in oklch, var(--tuna-shadow-color) 50%, transparent),
+      0 18px 30px -8px color-mix(in oklch, var(--tuna-shadow-color) 70%, transparent),
+      0 32px 52px -14px color-mix(in oklch, var(--tuna-shadow-color) 90%, transparent);
+    --tuna-shadow-6: 0 1px 3px -1px color-mix(in oklch, var(--tuna-shadow-color) 30%, transparent),
+      0 3px 6px -2px color-mix(in oklch, var(--tuna-shadow-color) 35%, transparent),
+      0 7px 14px -4px color-mix(in oklch, var(--tuna-shadow-color) 45%, transparent),
+      0 14px 26px -6px color-mix(in oklch, var(--tuna-shadow-color) 55%, transparent),
+      0 24px 42px -10px color-mix(in oklch, var(--tuna-shadow-color) 70%, transparent),
+      0 40px 64px -16px color-mix(in oklch, var(--tuna-shadow-color) 85%, transparent),
+      0 60px 96px -24px color-mix(in oklch, var(--tuna-shadow-color) 100%, transparent);
+    --tuna-shadow-inner-1: inset 0 1px 2px 0 var(--tuna-shadow-color);
+    --tuna-shadow-inner-2: inset 0 1px 4px 0 var(--tuna-shadow-color);
+    --tuna-shadow-inner-3: inset 0 2px 8px 0 var(--tuna-shadow-color);
+    --tuna-shadow-inner-4: inset 0 2px 14px 0 var(--tuna-shadow-color);
+
+    --tuna-duration-0: 0s;
+    --tuna-duration-1: 50ms;
+    --tuna-duration-2: 100ms;
+    --tuna-duration-3: 150ms;
+    --tuna-duration-4: 200ms;
+    --tuna-duration-5: 300ms;
+    --tuna-duration-6: 500ms;
+    --tuna-duration-7: 1s;
+    --tuna-duration-8: 2s;
+
+    --tuna-ease-1: cubic-bezier(0.3, 0.1, 0.3, 1);
+    --tuna-ease-2: cubic-bezier(0.3, 0.05, 0.2, 1);
+    --tuna-ease-3: cubic-bezier(0.3, 0, 0.15, 1);
+    --tuna-ease-4: cubic-bezier(0.35, 0, 0.1, 1);
+    --tuna-ease-5: cubic-bezier(0.4, 0, 0.05, 1);
+    --tuna-ease-in-1: cubic-bezier(0.35, 0, 0.9, 1);
+    --tuna-ease-in-2: cubic-bezier(0.45, 0, 1, 1);
+    --tuna-ease-in-3: cubic-bezier(0.6, 0, 1, 1);
+    --tuna-ease-in-4: cubic-bezier(0.75, 0, 1, 1);
+    --tuna-ease-in-5: cubic-bezier(1, 0, 1, 1);
+    --tuna-ease-out-1: cubic-bezier(0.1, 0, 0.65, 1);
+    --tuna-ease-out-2: cubic-bezier(0, 0, 0.55, 1);
+    --tuna-ease-out-3: cubic-bezier(0, 0, 0.4, 1);
+    --tuna-ease-out-4: cubic-bezier(0, 0, 0.25, 1);
+    --tuna-ease-out-5: cubic-bezier(0, 0, 0, 1);
+    --tuna-ease-in-out-1: cubic-bezier(0.45, 0, 0.55, 1);
+    --tuna-ease-in-out-2: cubic-bezier(0.55, 0, 0.45, 1);
+    --tuna-ease-in-out-3: cubic-bezier(0.65, 0, 0.35, 1);
+    --tuna-ease-in-out-4: cubic-bezier(0.8, 0, 0.2, 1);
+    --tuna-ease-in-out-5: cubic-bezier(0.9, 0, 0.1, 1);
+    --tuna-ease-elastic-in-1: cubic-bezier(0.5, 0, 0.65, -0.25);
+    --tuna-ease-elastic-in-2: cubic-bezier(0.5, 0, 0.65, -0.45);
+    --tuna-ease-elastic-in-3: cubic-bezier(0.55, 0, 0.7, -0.65);
+    --tuna-ease-elastic-in-4: cubic-bezier(0.55, 0, 0.7, -0.85);
+    --tuna-ease-elastic-in-5: cubic-bezier(0.6, 0, 0.75, -1.1);
+    --tuna-ease-elastic-out-1: cubic-bezier(0.35, 1.25, 0.5, 1);
+    --tuna-ease-elastic-out-2: cubic-bezier(0.35, 1.45, 0.5, 1);
+    --tuna-ease-elastic-out-3: cubic-bezier(0.3, 1.65, 0.45, 1);
+    --tuna-ease-elastic-out-4: cubic-bezier(0.3, 1.85, 0.45, 1);
+    --tuna-ease-elastic-out-5: cubic-bezier(0.25, 2.1, 0.4, 1);
+    --tuna-ease-elastic-in-out-1: cubic-bezier(0.5, -0.3, 0.5, 1.3);
+    --tuna-ease-elastic-in-out-2: cubic-bezier(0.5, -0.5, 0.5, 1.5);
+    --tuna-ease-elastic-in-out-3: cubic-bezier(0.5, -0.7, 0.5, 1.7);
+    --tuna-ease-elastic-in-out-4: cubic-bezier(0.5, -0.9, 0.5, 1.9);
+    --tuna-ease-elastic-in-out-5: cubic-bezier(0.5, -1.1, 0.5, 2.1);
+    --tuna-ease-step-1: steps(2);
+    --tuna-ease-step-2: steps(3);
+    --tuna-ease-step-3: steps(5);
+    --tuna-ease-step-4: steps(8);
+    --tuna-ease-step-5: steps(12);
+    --tuna-ease-spring-1: linear(0, 0.043, 0.148, 0.284, 0.429, 0.567, 0.691, 0.796, 0.879, 0.942, 0.988, 1.018, 1.035, 1.044, 1.046, 1.044, 1.038, 1.032, 1.025, 1.019, 1.014, 1.009, 1.005, 1.002, 1, 0.999, 0.998, 0.998, 1);
+    --tuna-ease-spring-2: linear(0, 0.07, 0.235, 0.44, 0.645, 0.822, 0.959, 1.052, 1.105, 1.125, 1.122, 1.104, 1.079, 1.053, 1.029, 1.01, 0.997, 0.988, 0.985, 0.984, 0.986, 0.989, 0.992, 0.995, 0.998, 1, 1.001, 1.002, 1);
+    --tuna-ease-spring-3: linear(0, 0.118, 0.389, 0.697, 0.961, 1.139, 1.223, 1.228, 1.18, 1.11, 1.041, 0.988, 0.956, 0.945, 0.951, 0.965, 0.982, 0.997, 1.007, 1.012, 1.013, 1.01, 1.006, 1.003, 1, 0.998, 0.997, 0.997, 1);
+    --tuna-ease-spring-4: linear(0, 0.201, 0.628, 1.041, 1.29, 1.342, 1.248, 1.095, 0.961, 0.89, 0.885, 0.925, 0.979, 1.021, 1.04, 1.038, 1.022, 1.004, 0.991, 0.986, 0.988, 0.994, 1, 1.004, 1.005, 1.004, 1.002, 1, 1);
+    --tuna-ease-spring-5: linear(0, 0.346, 0.988, 1.408, 1.415, 1.153, 0.886, 0.788, 0.862, 0.998, 1.086, 1.088, 1.032, 0.976, 0.955, 0.971, 1, 1.018, 1.019, 1.007, 0.995, 0.991, 0.994, 1, 1.004, 1.004, 1.001, 0.999, 1);
+    --tuna-ease-bounce-1: linear(0, 0.028 10.3%, 0.111 20.5%, 0.25 30.8%, 0.444 41%, 0.694 51.3%, 1 61.5%, 0.953 69.2%, 0.938 76.9%, 0.953 84.6%, 1 92.3%, 0.997 94.2%, 0.996 96.2%, 0.997 98.1%, 1);
+    --tuna-ease-bounce-2: linear(0, 0.028 8.6%, 0.111 17.1%, 0.25 25.7%, 0.444 34.3%, 0.694 42.8%, 1 51.4%, 0.908 60.4%, 0.878 69.4%, 0.908 78.4%, 1 87.4%, 0.989 90.6%, 0.985 93.7%, 0.989 96.9%, 1);
+    --tuna-ease-bounce-3: linear(0, 0.028 6.7%, 0.111 13.4%, 0.25 20.1%, 0.444 26.8%, 0.694 33.5%, 1 40.2%, 0.848 49.3%, 0.797 58.3%, 0.848 67.3%, 1 76.4%, 0.969 80.5%, 0.959 84.5%, 0.969 88.6%, 1 92.7%, 0.994 94.5%, 0.992 96.3%, 0.994 98.2%, 1);
+    --tuna-ease-bounce-4: linear(0, 0.028 5%, 0.111 10%, 0.25 15.1%, 0.444 20.1%, 0.694 25.1%, 1 30.1%, 0.773 38.4%, 0.698 46.7%, 0.773 54.9%, 1 63.2%, 0.931 67.8%, 0.908 72.3%, 0.931 76.9%, 1 81.4%, 0.979 83.9%, 0.972 86.5%, 0.979 89%, 1 91.5%, 0.994 92.8%, 0.992 94.2%, 0.994 95.6%, 1 97%, 0.998 97.7%, 0.997 98.5%, 0.998 99.2%, 1);
+    --tuna-ease-bounce-5: linear(0, 0.028 3.7%, 0.111 7.4%, 0.25 11%, 0.444 14.7%, 0.694 18.4%, 1 22.1%, 0.683 29.2%, 0.577 36.4%, 0.683 43.6%, 1 50.7%, 0.866 55.4%, 0.821 60.1%, 0.866 64.7%, 1 69.4%, 0.943 72.4%, 0.925 75.5%, 0.943 78.5%, 1 81.5%, 0.976 83.5%, 0.968 85.4%, 0.976 87.4%, 1 89.4%, 0.99 90.7%, 0.987 91.9%, 0.99 93.2%, 1 94.5%, 0.996 95.3%, 0.994 96.2%, 0.996 97%, 1 97.8%, 0.998 98.4%, 0.998 98.9%, 0.998 99.5%, 1);
+
+    --tuna-ease-sine-in: cubic-bezier(0.353, 0.005, 0.643, 0.438);
+    --tuna-ease-sine-out: cubic-bezier(0.357, 0.562, 0.647, 0.995);
+    --tuna-ease-sine-in-out: cubic-bezier(0.364, 0, 0.636, 1);
+    --tuna-ease-quad-in: cubic-bezier(0.279, 0, 0.617, 0.234);
+    --tuna-ease-quad-out: cubic-bezier(0.383, 0.766, 0.721, 1);
+    --tuna-ease-quad-in-out: cubic-bezier(0.477, 0.036, 0.523, 0.964);
+    --tuna-ease-cubic-in: cubic-bezier(0.384, 0, 0.679, 0.048);
+    --tuna-ease-cubic-out: cubic-bezier(0.321, 0.952, 0.616, 1);
+    --tuna-ease-cubic-in-out: cubic-bezier(0.654, 0, 0.346, 1);
+    --tuna-ease-quart-in: cubic-bezier(0.511, 0, 0.741, 0);
+    --tuna-ease-quart-out: cubic-bezier(0.259, 1, 0.489, 1);
+    --tuna-ease-quart-in-out: cubic-bezier(0.768, 0, 0.232, 1);
+    --tuna-ease-quint-in: cubic-bezier(0.64, 0, 0.784, 0);
+    --tuna-ease-quint-out: cubic-bezier(0.216, 1, 0.36, 1);
+    --tuna-ease-quint-in-out: cubic-bezier(0.839, 0, 0.161, 1);
+    --tuna-ease-expo-in: cubic-bezier(0.684, 0.005, 0.85, 0);
+    --tuna-ease-expo-out: cubic-bezier(0.15, 1, 0.316, 0.995);
+    --tuna-ease-expo-in-out: cubic-bezier(0.901, 0, 0.099, 1);
+    --tuna-ease-circ-in: cubic-bezier(0.537, 0.002, 0.995, 0.426);
+    --tuna-ease-circ-out: cubic-bezier(0.005, 0.574, 0.463, 0.998);
+    --tuna-ease-circ-in-out: cubic-bezier(0.868, 0.122, 0.132, 0.878);
+
+    --tuna-animation-fade-in: tuna-fade-in var(--tuna-duration-6) var(--tuna-ease-3);
+    --tuna-animation-fade-out: tuna-fade-out var(--tuna-duration-6) var(--tuna-ease-3);
+    --tuna-animation-scale-up: tuna-scale-up var(--tuna-duration-6) var(--tuna-ease-out-3);
+    --tuna-animation-scale-down: tuna-scale-down var(--tuna-duration-6) var(--tuna-ease-in-3);
+    --tuna-animation-slide-in-up: tuna-slide-in-up var(--tuna-duration-6) var(--tuna-ease-out-3);
+    --tuna-animation-slide-in-down: tuna-slide-in-down var(--tuna-duration-6) var(--tuna-ease-out-3);
+    --tuna-animation-slide-in-left: tuna-slide-in-left var(--tuna-duration-6) var(--tuna-ease-out-3);
+    --tuna-animation-slide-in-right: tuna-slide-in-right var(--tuna-duration-6) var(--tuna-ease-out-3);
+    --tuna-animation-slide-out-up: tuna-slide-out-up var(--tuna-duration-6) var(--tuna-ease-in-3);
+    --tuna-animation-slide-out-down: tuna-slide-out-down var(--tuna-duration-6) var(--tuna-ease-in-3);
+    --tuna-animation-slide-out-left: tuna-slide-out-left var(--tuna-duration-6) var(--tuna-ease-in-3);
+    --tuna-animation-slide-out-right: tuna-slide-out-right var(--tuna-duration-6) var(--tuna-ease-in-3);
+    --tuna-animation-shake-x: tuna-shake-x var(--tuna-duration-6) var(--tuna-ease-out-5);
+    --tuna-animation-shake-y: tuna-shake-y var(--tuna-duration-6) var(--tuna-ease-out-5);
+    --tuna-animation-shake-z: tuna-shake-z var(--tuna-duration-6) var(--tuna-ease-in-out-3);
+    --tuna-animation-spin: tuna-spin var(--tuna-duration-8) linear infinite;
+    --tuna-animation-ping: tuna-ping var(--tuna-duration-7) var(--tuna-ease-out-3) infinite;
+    --tuna-animation-blink: tuna-blink var(--tuna-duration-7) step-end infinite;
+    --tuna-animation-float: tuna-float 3s var(--tuna-ease-in-out-2) infinite;
+    --tuna-animation-bounce: tuna-bounce var(--tuna-duration-8) var(--tuna-ease-in-out-2) infinite;
+    --tuna-animation-pulse: tuna-pulse var(--tuna-duration-8) var(--tuna-ease-in-out-3) infinite;
+
+    --tuna-mask-fade-top: linear-gradient(to top, #000 calc(100% - 2em), #0000);
+    --tuna-mask-fade-right: linear-gradient(to right, #000 calc(100% - 2em), #0000);
+    --tuna-mask-fade-bottom: linear-gradient(to bottom, #000 calc(100% - 2em), #0000);
+    --tuna-mask-fade-left: linear-gradient(to left, #000 calc(100% - 2em), #0000);
+    --tuna-mask-fade-x: linear-gradient(to right, #0000, #000 2em, #000 calc(100% - 2em), #0000);
+    --tuna-mask-fade-y: linear-gradient(to bottom, #0000, #000 2em, #000 calc(100% - 2em), #0000);
+    --tuna-mask-edge-scoop-top: radial-gradient(0.5em at 50% 0, #0000 calc(100% - 0.5px), #000) top / 1em 0.5em repeat-x,
+      linear-gradient(#000 0 0) center / 100% calc(100% - 0.5em) no-repeat;
+    --tuna-mask-edge-scoop-bottom: radial-gradient(0.5em at 50% 100%, #0000 calc(100% - 0.5px), #000) bottom / 1em 0.5em repeat-x,
+      linear-gradient(#000 0 0) center / 100% calc(100% - 0.5em) no-repeat;
+    --tuna-mask-edge-scoop-vertical: radial-gradient(0.5em at 50% 0, #0000 calc(100% - 0.5px), #000) top / 1em 0.5em repeat-x,
+      radial-gradient(0.5em at 50% 100%, #0000 calc(100% - 0.5px), #000) bottom / 1em 0.5em repeat-x,
+      linear-gradient(#000 0 0) center / 100% calc(100% - 1em) no-repeat;
+    --tuna-mask-edge-scoop-left: radial-gradient(0.5em at 0 50%, #0000 calc(100% - 0.5px), #000) left / 0.5em 1em repeat-y,
+      linear-gradient(#000 0 0) center / calc(100% - 0.5em) 100% no-repeat;
+    --tuna-mask-edge-scoop-right: radial-gradient(0.5em at 100% 50%, #0000 calc(100% - 0.5px), #000) right / 0.5em 1em repeat-y,
+      linear-gradient(#000 0 0) center / calc(100% - 0.5em) 100% no-repeat;
+    --tuna-mask-edge-scoop-horizontal: radial-gradient(0.5em at 0 50%, #0000 calc(100% - 0.5px), #000) left / 0.5em 1em repeat-y,
+      radial-gradient(0.5em at 100% 50%, #0000 calc(100% - 0.5px), #000) right / 0.5em 1em repeat-y,
+      linear-gradient(#000 0 0) center / calc(100% - 1em) 100% no-repeat;
+    --tuna-mask-edge-scalloped: radial-gradient(0.5em at 50% 100%, #000 calc(100% - 0.5px), #0000) top / 1em 0.5em repeat-x,
+      radial-gradient(0.5em at 50% 0, #000 calc(100% - 0.5px), #0000) bottom / 1em 0.5em repeat-x,
+      radial-gradient(0.5em at 100% 50%, #000 calc(100% - 0.5px), #0000) left / 0.5em 1em repeat-y,
+      radial-gradient(0.5em at 0 50%, #000 calc(100% - 0.5px), #0000) right / 0.5em 1em repeat-y,
+      linear-gradient(#000 0 0) center / calc(100% - 1em) calc(100% - 1em) no-repeat;
+    --tuna-mask-edge-scalloped-top: radial-gradient(0.5em at 50% 100%, #000 calc(100% - 0.5px), #0000) top / 1em 0.5em repeat-x,
+      linear-gradient(#000 0 0) center / 100% calc(100% - 0.5em) no-repeat;
+    --tuna-mask-edge-scalloped-bottom: radial-gradient(0.5em at 50% 0, #000 calc(100% - 0.5px), #0000) bottom / 1em 0.5em repeat-x,
+      linear-gradient(#000 0 0) center / 100% calc(100% - 0.5em) no-repeat;
+    --tuna-mask-edge-scalloped-vertical: radial-gradient(0.5em at 50% 100%, #000 calc(100% - 0.5px), #0000) top / 1em 0.5em repeat-x,
+      radial-gradient(0.5em at 50% 0, #000 calc(100% - 0.5px), #0000) bottom / 1em 0.5em repeat-x,
+      linear-gradient(#000 0 0) center / 100% calc(100% - 1em) no-repeat;
+    --tuna-mask-edge-scalloped-left: radial-gradient(0.5em at 100% 50%, #000 calc(100% - 0.5px), #0000) left / 0.5em 1em repeat-y,
+      linear-gradient(#000 0 0) center / calc(100% - 0.5em) 100% no-repeat;
+    --tuna-mask-edge-scalloped-right: radial-gradient(0.5em at 0 50%, #000 calc(100% - 0.5px), #0000) right / 0.5em 1em repeat-y,
+      linear-gradient(#000 0 0) center / calc(100% - 0.5em) 100% no-repeat;
+    --tuna-mask-edge-scalloped-horizontal: radial-gradient(0.5em at 100% 50%, #000 calc(100% - 0.5px), #0000) left / 0.5em 1em repeat-y,
+      radial-gradient(0.5em at 0 50%, #000 calc(100% - 0.5px), #0000) right / 0.5em 1em repeat-y,
+      linear-gradient(#000 0 0) center / calc(100% - 1em) 100% no-repeat;
+    --tuna-mask-edge-drip-top: radial-gradient(0.35em 0.5em at 50% 100%, #000 calc(100% - 0.5px), #0000) top / 1em 0.5em repeat-x,
+      linear-gradient(#000 0 0) center / 100% calc(100% - 0.5em) no-repeat;
+    --tuna-mask-edge-drip-bottom: radial-gradient(0.35em 0.5em at 50% 0, #000 calc(100% - 0.5px), #0000) bottom / 1em 0.5em repeat-x,
+      linear-gradient(#000 0 0) center / 100% calc(100% - 0.5em) no-repeat;
+    --tuna-mask-edge-drip-vertical: radial-gradient(0.35em 0.5em at 50% 100%, #000 calc(100% - 0.5px), #0000) top / 1em 0.5em repeat-x,
+      radial-gradient(0.35em 0.5em at 50% 0, #000 calc(100% - 0.5px), #0000) bottom / 1em 0.5em repeat-x,
+      linear-gradient(#000 0 0) center / 100% calc(100% - 1em) no-repeat;
+    --tuna-mask-edge-drip-left: radial-gradient(0.5em 0.35em at 100% 50%, #000 calc(100% - 0.5px), #0000) left / 0.5em 1em repeat-y,
+      linear-gradient(#000 0 0) center / calc(100% - 0.5em) 100% no-repeat;
+    --tuna-mask-edge-drip-right: radial-gradient(0.5em 0.35em at 0 50%, #000 calc(100% - 0.5px), #0000) right / 0.5em 1em repeat-y,
+      linear-gradient(#000 0 0) center / calc(100% - 0.5em) 100% no-repeat;
+    --tuna-mask-edge-drip-horizontal: radial-gradient(0.5em 0.35em at 100% 50%, #000 calc(100% - 0.5px), #0000) left / 0.5em 1em repeat-y,
+      radial-gradient(0.5em 0.35em at 0 50%, #000 calc(100% - 0.5px), #0000) right / 0.5em 1em repeat-y,
+      linear-gradient(#000 0 0) center / calc(100% - 1em) 100% no-repeat;
+    --tuna-mask-edge-zig-zag-top: conic-gradient(from -45deg at 50% 100%, #000 90deg, #0000 0) top / 1em 0.5em repeat-x,
+      linear-gradient(#000 0 0) center / 100% calc(100% - 0.5em) no-repeat;
+    --tuna-mask-edge-zig-zag-bottom: conic-gradient(from 135deg at 50% 0, #000 90deg, #0000 0) bottom / 1em 0.5em repeat-x,
+      linear-gradient(#000 0 0) center / 100% calc(100% - 0.5em) no-repeat;
+    --tuna-mask-edge-zig-zag-vertical: conic-gradient(from -45deg at 50% 100%, #000 90deg, #0000 0) top / 1em 0.5em repeat-x,
+      conic-gradient(from 135deg at 50% 0, #000 90deg, #0000 0) bottom / 1em 0.5em repeat-x,
+      linear-gradient(#000 0 0) center / 100% calc(100% - 1em) no-repeat;
+    --tuna-mask-edge-zig-zag-left: conic-gradient(from 225deg at 100% 50%, #000 90deg, #0000 0) left / 0.5em 1em repeat-y,
+      linear-gradient(#000 0 0) center / calc(100% - 0.5em) 100% no-repeat;
+    --tuna-mask-edge-zig-zag-right: conic-gradient(from 45deg at 0 50%, #000 90deg, #0000 0) right / 0.5em 1em repeat-y,
+      linear-gradient(#000 0 0) center / calc(100% - 0.5em) 100% no-repeat;
+    --tuna-mask-edge-zig-zag-horizontal: conic-gradient(from 225deg at 100% 50%, #000 90deg, #0000 0) left / 0.5em 1em repeat-y,
+      conic-gradient(from 45deg at 0 50%, #000 90deg, #0000 0) right / 0.5em 1em repeat-y,
+      linear-gradient(#000 0 0) center / calc(100% - 1em) 100% no-repeat;
+    --tuna-mask-corner-cut-circles-1: radial-gradient(0.5em at 0 0, #0000 calc(100% - 0.5px), #000) top left / 51% 51% no-repeat,
+      radial-gradient(0.5em at 100% 0, #0000 calc(100% - 0.5px), #000) top right / 51% 51% no-repeat,
+      radial-gradient(0.5em at 0 100%, #0000 calc(100% - 0.5px), #000) bottom left / 51% 51% no-repeat,
+      radial-gradient(0.5em at 100% 100%, #0000 calc(100% - 0.5px), #000) bottom right / 51% 51% no-repeat;
+    --tuna-mask-corner-cut-circles-2: radial-gradient(1em at 0 0, #0000 calc(100% - 0.5px), #000) top left / 51% 51% no-repeat,
+      radial-gradient(1em at 100% 0, #0000 calc(100% - 0.5px), #000) top right / 51% 51% no-repeat,
+      radial-gradient(1em at 0 100%, #0000 calc(100% - 0.5px), #000) bottom left / 51% 51% no-repeat,
+      radial-gradient(1em at 100% 100%, #0000 calc(100% - 0.5px), #000) bottom right / 51% 51% no-repeat;
+    --tuna-mask-corner-cut-circles-3: radial-gradient(2em at 0 0, #0000 calc(100% - 0.5px), #000) top left / 51% 51% no-repeat,
+      radial-gradient(2em at 100% 0, #0000 calc(100% - 0.5px), #000) top right / 51% 51% no-repeat,
+      radial-gradient(2em at 0 100%, #0000 calc(100% - 0.5px), #000) bottom left / 51% 51% no-repeat,
+      radial-gradient(2em at 100% 100%, #0000 calc(100% - 0.5px), #000) bottom right / 51% 51% no-repeat;
+    --tuna-mask-corner-cut-squares-1: linear-gradient(#000 0 0) center / 100% calc(100% - 2 * 0.5em) no-repeat,
+      linear-gradient(#000 0 0) center / calc(100% - 2 * 0.5em) 100% no-repeat;
+    --tuna-mask-corner-cut-squares-2: linear-gradient(#000 0 0) center / 100% calc(100% - 2 * 1em) no-repeat,
+      linear-gradient(#000 0 0) center / calc(100% - 2 * 1em) 100% no-repeat;
+    --tuna-mask-corner-cut-squares-3: linear-gradient(#000 0 0) center / 100% calc(100% - 2 * 2em) no-repeat,
+      linear-gradient(#000 0 0) center / calc(100% - 2 * 2em) 100% no-repeat;
+    --tuna-mask-corner-cut-angles-1: linear-gradient(135deg, #0000 calc(0.5em * 0.7071), #000 0) top left / 51% 51% no-repeat,
+      linear-gradient(225deg, #0000 calc(0.5em * 0.7071), #000 0) top right / 51% 51% no-repeat,
+      linear-gradient(45deg, #0000 calc(0.5em * 0.7071), #000 0) bottom left / 51% 51% no-repeat,
+      linear-gradient(315deg, #0000 calc(0.5em * 0.7071), #000 0) bottom right / 51% 51% no-repeat;
+    --tuna-mask-corner-cut-angles-2: linear-gradient(135deg, #0000 calc(1em * 0.7071), #000 0) top left / 51% 51% no-repeat,
+      linear-gradient(225deg, #0000 calc(1em * 0.7071), #000 0) top right / 51% 51% no-repeat,
+      linear-gradient(45deg, #0000 calc(1em * 0.7071), #000 0) bottom left / 51% 51% no-repeat,
+      linear-gradient(315deg, #0000 calc(1em * 0.7071), #000 0) bottom right / 51% 51% no-repeat;
+    --tuna-mask-corner-cut-angles-3: linear-gradient(135deg, #0000 calc(2em * 0.7071), #000 0) top left / 51% 51% no-repeat,
+      linear-gradient(225deg, #0000 calc(2em * 0.7071), #000 0) top right / 51% 51% no-repeat,
+      linear-gradient(45deg, #0000 calc(2em * 0.7071), #000 0) bottom left / 51% 51% no-repeat,
+      linear-gradient(315deg, #0000 calc(2em * 0.7071), #000 0) bottom right / 51% 51% no-repeat;
+
+    --tuna-gradient-stripes: repeating-linear-gradient(45deg, color-mix(in srgb, currentcolor 15%, transparent) 0 0.5em, #0000 0 1em);
+    --tuna-gradient-checkerboard: repeating-conic-gradient(var(--tuna-gray-4) 0 25%, var(--tuna-gray-1) 0 50%) 0 0 / 2em 2em;
+    --tuna-gradient-hue: conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+    --tuna-gradient-1: linear-gradient(to bottom right, var(--tuna-blue-9), var(--tuna-violet-9));
+    --tuna-gradient-2: linear-gradient(to bottom right, var(--tuna-cyan-9), var(--tuna-blue-9));
+    --tuna-gradient-3: linear-gradient(to bottom right, var(--tuna-teal-9), var(--tuna-green-9));
+    --tuna-gradient-4: linear-gradient(to bottom right, var(--tuna-amber-9), var(--tuna-red-9));
+    --tuna-gradient-5: linear-gradient(to bottom right, var(--tuna-pink-9), var(--tuna-purple-9));
+    --tuna-gradient-6: linear-gradient(to bottom right, var(--tuna-lime-9), var(--tuna-teal-9));
+    --tuna-gradient-7: linear-gradient(to bottom right, var(--tuna-orange-9), var(--tuna-pink-9));
+    --tuna-gradient-8: linear-gradient(to bottom right, var(--tuna-indigo-9), var(--tuna-cyan-9));
+
+    /* Semantic tokens name primitives, never each other: a var() in a
+       custom property is resolved where it is declared, so a part that
+       redefines --tuna-text would not reach a token defined from it here. */
+    --tuna-surface: var(--tuna-gray-1);
+    --tuna-surface-subtle: var(--tuna-gray-2);
+    --tuna-surface-raised: var(--tuna-gray-2);
+    --tuna-text: var(--tuna-gray-12);
+    --tuna-text-muted: var(--tuna-gray-11);
+    --tuna-text-faint: var(--tuna-gray-9);
+    --tuna-bar: var(--tuna-gray-4);
+    --tuna-on-bar: var(--tuna-gray-12);
+    --tuna-bar-inactive: var(--tuna-gray-2);
+    --tuna-on-bar-inactive: var(--tuna-gray-11);
+    --tuna-border: var(--tuna-gray-6);
+    --tuna-border-strong: var(--tuna-gray-8);
+    --tuna-focus: var(--tuna-blue-8);
+    --tuna-accent: var(--tuna-blue-9);
+    --tuna-on-accent: var(--tuna-white);
+    --tuna-link: var(--tuna-blue-11);
+    --tuna-hover: var(--tuna-gray-4);
+    --tuna-pressed: var(--tuna-gray-5);
+    --tuna-selected: var(--tuna-blue-4);
+    --tuna-on-selected: var(--tuna-gray-12);
+    --tuna-control: var(--tuna-gray-3);
+    --tuna-cursor: var(--tuna-gray-12);
+    --tuna-region: var(--tuna-blue-5);
+    --tuna-line-current: var(--tuna-blue-2);
+    --tuna-match: var(--tuna-amber-6);
+    --tuna-match-other: var(--tuna-amber-3);
+    --tuna-error: var(--tuna-red-11);
+    --tuna-error-surface: var(--tuna-red-3);
+    --tuna-warning: var(--tuna-amber-11);
+    --tuna-warning-surface: var(--tuna-amber-3);
+    --tuna-success: var(--tuna-green-11);
+    --tuna-success-surface: var(--tuna-green-3);
+    --tuna-info: var(--tuna-blue-11);
+    --tuna-info-surface: var(--tuna-blue-3);
+    --tuna-added: var(--tuna-green-11);
+    --tuna-added-surface: var(--tuna-green-3);
+    --tuna-removed: var(--tuna-red-11);
+    --tuna-removed-surface: var(--tuna-red-3);
+    --tuna-changed: var(--tuna-amber-11);
+    --tuna-changed-surface: var(--tuna-amber-3);
+    --tuna-font-ui: var(--tuna-font-sans);
+    --tuna-font-code: var(--tuna-font-mono);
+    --tuna-font-size-ui: var(--tuna-font-size-2);
+    --tuna-font-size-code: var(--tuna-font-size-3);
+    --tuna-line-height-code: var(--tuna-line-height-3);
+    --tuna-control-radius: var(--tuna-radius-2);
+    --tuna-panel-radius: var(--tuna-radius-4);
+    --tuna-border-width: var(--tuna-border-width-1);
+    --tuna-focus-width: var(--tuna-border-width-2);
+    --tuna-shadow-raised: var(--tuna-shadow-2);
+    --tuna-duration: var(--tuna-duration-3);
+    --tuna-ease: var(--tuna-ease-out-5);
+  }
+
+  /* A custom property cannot hold a keyframe rule, so each one ships
+     beside the animation token that names it. */
+  @keyframes tuna-fade-in {
+    from { opacity: 0; }
+  }
+
+  @keyframes tuna-fade-out {
+    to { opacity: 0; }
+  }
+
+  @keyframes tuna-scale-up {
+    from { transform: scale(0.85); }
+  }
+
+  @keyframes tuna-scale-down {
+    to { transform: scale(0.85); }
+  }
+
+  @keyframes tuna-slide-in-up {
+    from { transform: translateY(100%); }
+  }
+
+  @keyframes tuna-slide-in-down {
+    from { transform: translateY(-100%); }
+  }
+
+  @keyframes tuna-slide-in-left {
+    from { transform: translateX(100%); }
+  }
+
+  @keyframes tuna-slide-in-right {
+    from { transform: translateX(-100%); }
+  }
+
+  @keyframes tuna-slide-out-up {
+    to { transform: translateY(-100%); }
+  }
+
+  @keyframes tuna-slide-out-down {
+    to { transform: translateY(100%); }
+  }
+
+  @keyframes tuna-slide-out-left {
+    to { transform: translateX(-100%); }
+  }
+
+  @keyframes tuna-slide-out-right {
+    to { transform: translateX(100%); }
+  }
+
+  @keyframes tuna-shake-x {
+    20%, 60% { transform: translateX(-0.375em); }
+    40%, 80% { transform: translateX(0.375em); }
+  }
+
+  @keyframes tuna-shake-y {
+    20%, 60% { transform: translateY(-0.375em); }
+    40%, 80% { transform: translateY(0.375em); }
+  }
+
+  @keyframes tuna-shake-z {
+    20%, 60% { transform: rotate(-3deg); }
+    40%, 80% { transform: rotate(3deg); }
+  }
+
+  @keyframes tuna-spin {
+    to { transform: rotate(1turn); }
+  }
+
+  @keyframes tuna-ping {
+    75%, 100% { transform: scale(1.8); opacity: 0; }
+  }
+
+  @keyframes tuna-blink {
+    50% { opacity: 0; }
+  }
+
+  @keyframes tuna-float {
+    50% { transform: translateY(-0.375em); }
+  }
+
+  @keyframes tuna-bounce {
+    30% { transform: translateY(-25%); }
+    50% { transform: translateY(0); }
+    65% { transform: translateY(-8%); }
+    80% { transform: translateY(0); }
+  }
+
+  @keyframes tuna-pulse {
+    50% { transform: scale(1.06); }
+  }
+}
+
+@layer preferences {
+  /* In this layer, so no theme can turn motion back on. */
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --tuna-duration: 0s;
+      --tuna-duration-0: 0s;
+      --tuna-duration-1: 0s;
+      --tuna-duration-2: 0s;
+      --tuna-duration-3: 0s;
+      --tuna-duration-4: 0s;
+      --tuna-duration-5: 0s;
+      --tuna-duration-6: 0s;
+      --tuna-duration-7: 0s;
+      --tuna-duration-8: 0s;
+      --tuna-animation-fade-in: none;
+      --tuna-animation-fade-out: none;
+      --tuna-animation-scale-up: none;
+      --tuna-animation-scale-down: none;
+      --tuna-animation-slide-in-up: none;
+      --tuna-animation-slide-in-down: none;
+      --tuna-animation-slide-in-left: none;
+      --tuna-animation-slide-in-right: none;
+      --tuna-animation-slide-out-up: none;
+      --tuna-animation-slide-out-down: none;
+      --tuna-animation-slide-out-left: none;
+      --tuna-animation-slide-out-right: none;
+      --tuna-animation-shake-x: none;
+      --tuna-animation-shake-y: none;
+      --tuna-animation-shake-z: none;
+      --tuna-animation-spin: none;
+      --tuna-animation-ping: none;
+      --tuna-animation-blink: none;
+      --tuna-animation-float: none;
+      --tuna-animation-bounce: none;
+      --tuna-animation-pulse: none;
+    }
+  }
+}

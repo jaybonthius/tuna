@@ -1,0 +1,71 @@
+; The token file declares 550 custom properties: 498 primitives, 194 of
+; them colours (16 scales of 12 steps, white and black), and 52 semantic
+; tokens, each naming a primitive.
+> (list (length tokens) (length primitives) (length colour-names))
+(550 498 194)
+> (unresolved-semantic)
+()
+> (map (lambda (n) (token n)) '("surface" "region" "cursor" "focus" "shadow-raised" "ease" "duration"))
+("var(--tuna-gray-1)" "var(--tuna-blue-5)" "var(--tuna-gray-12)" "var(--tuna-blue-8)" "var(--tuna-shadow-2)" "var(--tuna-ease-out-5)" "var(--tuna-duration-3)")
+; Each step is one light-dark() pair; translucency is mixed where used.
+> (map token '("blue-9" "gray-1" "white"))
+("light-dark(oklch(55% 0.18 255), oklch(55% 0.18 255))" "light-dark(oklch(99% 0.002 260), oklch(17% 0.004 260))" "oklch(100% 0 0)")
+> (token "shadow-2")
+"0 1px 2px -1px color-mix(in oklch, var(--tuna-shadow-color) 50%, transparent),\n      0 4px 8px -3px color-mix(in oklch, var(--tuna-shadow-color) 70%, transparent)"
+; Fluid sizes and conditional radii follow the view, not the window.
+> (map token '("font-size-fluid-3" "radius-conditional-6"))
+("clamp(1.5rem, 6cqi, 2.5rem)" "clamp(0px, calc(100cqi - 100%) * 1e5, var(--tuna-radius-6))")
+; Every colour is inside sRGB, so no browser clips it and changes its
+; contrast.
+> (outside-srgb)
+()
+; Every text-and-background pair the tokens are meant for meets its
+; contrast in light and dark: text 7:1 on its backgrounds, muted text,
+; links and every face's colour 4.5:1 on the page, the current line and
+; the region, and focus and the cursor 3:1.
+> (length pairs)
+126
+> (low-contrast)
+()
+; 21 animations, each naming a keyframe rule of the same name shipped
+; beside it; reduced motion makes every duration zero and every
+; animation none.
+> (list (length keyframes) (length (filter (lambda (d) (prefix? "--tuna-animation-" (car d))) tokens)))
+(21 21)
+> (animations-without-keyframes)
+()
+> (motion-left-on)
+()
+> (and (search tokens-css "@media (prefers-reduced-motion: reduce)" (search tokens-css "@layer preferences" 0)) #t)
+#t
+; Every Tuna stylesheet declares the three layers first, so their order
+; holds whichever file loads first; none uses !important, which would
+; reverse it.
+> (without-layer-order)
+()
+> (with-important)
+()
+; A design token a stylesheet reads is declared; any other custom
+; property it reads has a fallback.
+> (dangling-references)
+()
+; Without the token file the cursor, the region and the selected view's
+; outline still show in system colours, since nothing else in their rules
+; reads a token without a fallback. Only other cursors need the tokens.
+> (map (lambda (r) (apply bare-tokens r))
+       '(("views/views.css" ".cursor") ("views/views.css" ".cursor.primary") ("views/views.css" ".region")
+         ("layout/layout.css" ".layout-view > .view") ("layout/layout.css" ".layout-view.selected")))
+(("--tuna-text-muted") () () () ())
+; The file stays within its 50 KB budget.
+> (<= (string-length tokens-css) 51200)
+#t
+; Light and dark come from each device's setting.
+> (and (search tokens-css "color-scheme: light dark;" 0) #t)
+#t
+; The plugin's only work is registering its stylesheet, which goes when
+; it is turned off.
+> (table-ref web:stylesheets 'design-tokens #f)
+"design-tokens/design-tokens.css"
+> (unload-module! '(design-tokens))
+> (table-ref web:stylesheets 'design-tokens #f)
+#f

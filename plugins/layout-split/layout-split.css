@@ -1,29 +1,32 @@
-/* Rules are wrapped in :where() so that a theme's rule wins. */
-:where(.split) {
-  display: flex;
-  flex: 1 1 0;
-  min-inline-size: 0;
-  min-block-size: 0;
-}
+@layer defaults, themes, preferences;
 
-:where(.split.row) {
-  flex-direction: row;
-}
+@layer defaults {
+  .split {
+    display: flex;
+    flex: 1 1 0;
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
 
-:where(.split.column) {
-  flex-direction: column;
-}
+  .split.row {
+    flex-direction: row;
+  }
 
-:where(.split-child) {
-  display: flex;
-  min-inline-size: 0;
-  min-block-size: 0;
-}
+  .split.column {
+    flex-direction: column;
+  }
 
-:where(.split.row > .split-child + .split-child) {
-  border-inline-start: 1px solid currentcolor;
-}
+  .split-child {
+    display: flex;
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
 
-:where(.split.column > .split-child + .split-child) {
-  border-block-start: 1px solid currentcolor;
+  .split.row > .split-child + .split-child {
+    border-inline-start: var(--tuna-border-width) solid var(--tuna-border);
+  }
+
+  .split.column > .split-child + .split-child {
+    border-block-start: var(--tuna-border-width) solid var(--tuna-border);
+  }
 }
