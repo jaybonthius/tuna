@@ -70,9 +70,10 @@
 (import %internals)
 
 (define (%draw-split node children focused draw-child client)
-  (haml (:div.split ([class (if (column? node) "column" "row")])
-          (map (lambda (c) (haml (:div.split-child ([style "flex:" (weight-text c) " 1 0"]) (draw-child c))))
-               children))))
+  (let ([direction (if (column? node) "column" "row")] [part (layout:part-class node)])
+    (haml (:div.split ([class (if part (string-append direction " " part) direction)])
+            (map (lambda (c) (haml (:div.split-child ([style "flex:" (weight-text c) " 1 0"]) (draw-child c))))
+                 children)))))
 
 (define (%split-neighbour node child direction)
   (let-values ([(before after) (if (column? node) (values 'up 'down) (values 'left 'right))])
@@ -192,6 +193,14 @@
               (unless (equal? d b) (replace-node! child b))))
           (parts root))))))
 
+(commands:define-command (wrap-in-row)
+  "Wraps the selected part in a row split."
+  (layout:wrap! (lambda (parts) (apply container '((direction . row)) parts))))
+
+(commands:define-command (wrap-in-column)
+  "Wraps the selected part in a column split."
+  (layout:wrap! (lambda (parts) (apply container '((direction . column)) parts))))
+
 (define-table resize-keymap "Keys that go on resizing after C-x { or C-x }.")
 
 (keys:bind! keys:global "C-x 2" split-below)
@@ -200,6 +209,8 @@
 (keys:bind! keys:global "C-x {" shrink)
 (keys:bind! keys:global "C-x +" balance)
 
+(keys:bind! layout:part-mode-keymap "w r" wrap-in-row)
+(keys:bind! layout:part-mode-keymap "w c" wrap-in-column)
 (keys:bind! resize-keymap "}" enlarge)
 (keys:bind! resize-keymap "{" shrink)
 (table-set! repeat:keymaps resize-keymap)

@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (commands) (keys) (files) (undo log))
+(import (buffers) (document) (views) (commands) (keys) (files) (layout) (undo log))
 
 (define-option limit 4000000 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
   "How large a buffer's history may grow: the characters its edits removed and inserted, plus 32 per edit. 0 keeps no history and no log.")
@@ -1324,5 +1324,12 @@
 (keys:bind! keys:global "C-x u" undo)
 (keys:bind! keys:global "C-?" redo)
 (keys:bind! keys:global "C-M-_" redo)
+;; The part mode runs the keys it binds in the layout's own view, so
+;; there they undo window changes.
+(keys:bind! layout:part-mode-keymap "C-/" undo)
+(keys:bind! layout:part-mode-keymap "C-_" undo)
+(keys:bind! layout:part-mode-keymap "C-x u" undo)
+(keys:bind! layout:part-mode-keymap "C-?" redo)
+(keys:bind! layout:part-mode-keymap "C-M-_" redo)
 (on-unload stop-writer!)
 (spawn-task (attach-open-buffers))

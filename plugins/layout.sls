@@ -11,7 +11,10 @@
    the-frame frame-record? open-layout! opened-popups current-index index-atom index-of-id atom-of part-of
    view-of selected-id shown-views select-id! set-zoom! frame-zoom frame-order children root-node
    locked-node? locked-in? title-of draw-layout draw-popups neighbour-of remove-part! bar-view node-datum
-   note-batch save-now! focus-keymaps last-selected-unlocked-atom lead-down order-views)
+   note-batch save-now! focus-keymaps last-selected-unlocked-atom lead-down order-views
+   in-part-mode? enter-part-mode! leave-part-mode! selection-in choose-part! drawn-part-class
+   choose-datum! parent-part child-part sibling-part end-part shift-part! lift-part! lower-part! raise-part!
+   splice-part! wrap-part! deletion-successor check-holds-no-locked mode-key?)
 
   (define main-thread (get-thread-id))
 
@@ -30,23 +33,25 @@
   ;; Entries made by the configuration outlive a reload of this module,
   ;; so the record type stays the same.
   (define-record-type container
-    (nongenerative layout:container/draw/neighbour/child-attributes/collapse/show-focused)
+    (nongenerative layout:container/draw/neighbour/child-attributes/collapse/show-focused/adopt)
     (sealed #t)
-    (fields draw neighbour child-attributes collapse? show-focused?))
+    (fields draw neighbour child-attributes collapse? show-focused? adopt))
 
   (define-table containers)
 
   (define (container-entry kind) (table-ref containers kind #f))
 
-  (define (register-container! kind draw neighbour child-attributes collapse? show-focused?)
+  (define (register-container! kind draw neighbour child-attributes collapse? show-focused? adopt)
     (unless (procedure? draw)
       (assertion-violation 'layout:define-container "not a procedure" draw))
     (unless (or (not neighbour) (procedure? neighbour))
       (assertion-violation 'layout:define-container "not a procedure or #f" neighbour))
+    (unless (or (not adopt) (procedure? adopt))
+      (assertion-violation 'layout:define-container "not a procedure or #f" adopt))
     (let ([keymap (buffers:kind-keymap (buffers:kind kind))])
       (unless (or (not keymap) (table? keymap))
         (assertion-violation 'layout:define-container "not a keymap or #f" keymap)))
-    (table-set! containers kind (make-container draw neighbour child-attributes collapse? show-focused?)))
+    (table-set! containers kind (make-container draw neighbour child-attributes collapse? show-focused? adopt)))
 
   (define (attributes? a)
     (and (list? a) (for-all (lambda (p) (and (pair? p) (symbol? (car p)))) a)))
@@ -427,8 +432,8 @@
   ;; A popup is drawn outside the layout's screen view, so its element
   ;; carries no positions, which would name the layout's.
   (define (draw-view-atom atom selected client marks?)
-    (let ([v (view-of atom)])
-      (haml (:div.layout-view ([class (and (eqv? (atom-id atom) selected) "selected")]
+    (let ([v (view-of atom)] [part (and marks? (drawn-part-class atom))])
+      (haml (:div.layout-view ([class (if (eqv? (atom-id atom) selected) (if part "selected part-selected" "selected") part)]
                                [data-at (and marks? (document:node-start atom))]
                                [data-to (and marks? (document:node-end atom))])
               (views:draw v client)))))
@@ -454,8 +459,23 @@
                    ((container-draw entry) n shown (focused-child ix n) draw-child client))
                  (draw-plain shown draw)))]))))
 
+  ;; Kinds ask for the selected part's class as they draw, so the part is
+  ;; found once per screen, and the popups, whose positions may equal a
+  ;; part's, are drawn without it.
+  (define drawn-selection #f)
+
+  (define (drawn-part-class node)
+    (and drawn-selection
+         (fx= (document:node-start node) (car drawn-selection))
+         (fx= (document:node-end node) (cdr drawn-selection))
+         "part-selected"))
+
   (define (draw-layout client)
-    (draw-tree (current-index) (root-node) (zoom-position) client))
+    (let ([ix (current-index)])
+      (fluid-let ([drawn-selection (and mode-on?
+                                        (let ([n (selection-in ix)])
+                                          (and n (cons (document:node-start n) (document:node-end n)))))])
+        (draw-tree ix (root-node) (zoom-position) client))))
 
   (define (draw-popups client)
     (let ([px (popups-index)])
@@ -512,17 +532,22 @@
                 (let ([others (remp (lambda (c) (fx= (document:node-start c) s)) (kids-of ix p))]
                       [entry (kind-entry p)] [grand (parent-in ix p)])
                   (if (and grand entry (container-collapse? entry) (fx= (length others) 1))
-                      ;; A part's pinned attribute, like its kind's child
-                      ;; attributes, belongs to its place, which the child
-                      ;; takes.
-                      (let* ([child (car others)] [d (node-datum ix child)]
-                             [own (container-child-attributes entry)]
-                             [place (cons 'pinned (let ([g (kind-entry grand)]) (if g (container-child-attributes g) '())))]
-                             [kept (remp (lambda (a) (or (memq (car a) own) (memq (car a) place))) (datum-attributes d))]
-                             [moved (filter (lambda (a) (memq (car a) place)) (datum-attributes (node-datum ix p)))])
-                        (buffers:replace! b (document:node-start p) (document:node-end p)
-                          (with-attributes d (append kept moved))))
+                      (buffers:replace! b (document:node-start p) (document:node-end p)
+                        (take-place ix p (node-datum ix (car others))))
                       (buffers:replace! b s e "")))))))))
+
+  (define (child-attributes-of n)
+    (let ([entry (kind-entry n)]) (if entry (container-child-attributes entry) '())))
+
+  ;; A part's pinned attribute, like its kind's child attributes, belongs
+  ;; to its place, which the child takes.
+  (define (take-place ix container d)
+    (let* ([own (child-attributes-of container)]
+           [grand (parent-in ix container)]
+           [place (cons 'pinned (if grand (child-attributes-of grand) '()))]
+           [kept (remp (lambda (a) (or (memq (car a) own) (memq (car a) place))) (datum-attributes d))]
+           [moved (filter (lambda (a) (memq (car a) place)) (datum-attributes (node-datum ix container)))])
+      (with-attributes d (append kept moved))))
 
   (define (bar-view b)
     (let* ([root (root-node)] [bars (cdr (children root))])
@@ -604,6 +629,7 @@
       (vector-for-each
         (lambda (id) (unless (memv id ids) (hashtable-delete! registered id)))
         (hashtable-keys registered)))
+    (follow-focus!)
     (save-now!))
 
   (define (last-selected-unlocked-atom node)
@@ -632,6 +658,328 @@
     (set! known-ids (map atom-id (append (index-atoms) (index-atom-list (popups-index)))))
     layout-buffer)
 
+  (define mode-on? #f)
+
+  (define (in-part-mode?) mode-on?)
+
+  ;; The selected part is known by its first view and its length, which
+  ;; follow it wherever an edit such as an undo moves it, and by its
+  ;; positions, which keep its place when it goes. The start stays after
+  ;; text inserted at it and the end before, so a part added or removed
+  ;; beside it leaves the place on it.
+  (define selection-view #f)
+  (define selection-length #f)
+  (define selection-start #f)
+  (define selection-end #f)
+
+  (define (main-part ix) (car (kids-of ix (root-node))))
+
+  (define (position-in n nodes)
+    (let loop ([ns nodes] [k 0])
+      (if (fx= (document:node-start (car ns)) (document:node-start n)) k (loop (cdr ns) (fx+ k 1)))))
+
+  (define (visited? ix n)
+    (let ([m (main-part ix)])
+      (and (fx<= (document:node-start m) (document:node-start n))
+           (fx<= (document:node-end n) (document:node-end m))
+           (not (locked-in? ix n)))))
+
+  (define (part-at ix s e)
+    (let ([doc (index-doc ix)])
+      (and (fx< s (document:length doc))
+           (let ([t (document:token doc s)])
+             (and (document:node? t) (fx= (document:node-end t) e) (visited? ix t) t)))))
+
+  (define (covering-part ix lo hi)
+    (let ([m (main-part ix)])
+      (and (fx<= (document:node-start m) lo) (fx<= hi (document:node-end m)) (not (locked-in? ix m))
+           (let down ([n m])
+             (let ([c (find (lambda (c)
+                              (and (fx<= (document:node-start c) lo)
+                                   (if (fx= lo hi) (fx< hi (document:node-end c)) (fx<= hi (document:node-end c)))
+                                   (not (document:node-attribute c 'locked #f))))
+                            (kids-of ix n))])
+               (if c (down c) n))))))
+
+  (define (atom-part ix)
+    (let ([a (index-atom ix (selected-id))])
+      (and a (not (locked-in? ix a)) a)))
+
+  ;; A popup may be the selected view, and is no part of the layout.
+  (define (part-or-main ix)
+    (or (atom-part ix) (let ([m (main-part ix)]) (and (not (locked-in? ix m)) m))))
+
+  (define (set-selection! n)
+    (set! selection-view (first-view-id n))
+    (set! selection-length (fx- (document:node-end n) (document:node-start n)))
+    (set! selection-start (buffers:anchor-after layout-buffer (document:node-start n)))
+    (set! selection-end (buffers:anchor layout-buffer (document:node-end n))))
+
+  (define (located ix id len)
+    (let ([a (index-atom ix id)])
+      (and a (let climb ([n a])
+               (cond
+                 [(fx= (fx- (document:node-end n) (document:node-start n)) len) n]
+                 [(parent-in ix n) => climb]
+                 [else #f])))))
+
+  (define (selection-in ix)
+    (if mode-on?
+        (let* ([s (buffers:anchor-position selection-start)] [e (buffers:anchor-position selection-end)]
+               [n (or (let ([n (located ix selection-view selection-length)]) (and n (visited? ix n) n))
+                      (part-at ix s e) (covering-part ix (fxmin s e) (fxmax s e)) (part-or-main ix))])
+          (when (and n (not (and (fx= s (document:node-start n)) (fx= e (document:node-end n)))))
+            (set-selection! n))
+          n)
+        (atom-part ix)))
+
+  (define (focus-part! ix n)
+    (let ([a (let ([a (lead-down ix n)])
+               (if (and a (not (locked-in? ix a))) a (last-selected-unlocked-atom n)))])
+      (when a (select-id! (atom-id a)))))
+
+  ;; Code, a hand scroll or an edit the mode did not make can move focus
+  ;; or the selected part without the other. Drawing reads the selection,
+  ;; so the selection is moved to focus once, at the end of the batch. A
+  ;; part the mode chose whose views are all locked cannot take focus, so
+  ;; it stays selected until focus or the layout changes.
+  (define agreed-focus #f)
+  (define agreed-doc #f)
+
+  (define (agree!)
+    (set! agreed-focus (selected-id))
+    (set! agreed-doc (layout-doc)))
+
+  (define (follow-focus!)
+    (when (and mode-on? (not (and (eqv? (selected-id) agreed-focus) (eq? (layout-doc) agreed-doc))))
+      (let* ([ix (current-index)] [n (selection-in ix)] [a (atom-part ix)])
+        (when (and n a (not (holds-range? a (document:node-start n) (document:node-end n))))
+          (set-selection! a))
+        (agree!))))
+
+  (define (choose-part! ix n)
+    (when mode-on? (set-selection! n))
+    (focus-part! ix n)
+    (agree!))
+
+  (define (enter-part-mode!)
+    (let* ([ix (current-index)] [n (part-or-main ix)])
+      (unless n
+        (assertion-violation 'layout:part-mode "no part that is not locked"))
+      (set-selection! n)
+      (set! mode-on? #t)))
+
+  (define (leave-part-mode!)
+    (set! mode-on? #f))
+
+  ;; Keys the mode does not bind leave it before they are looked up, so
+  ;; they run as they would outside it.
+  (define (mode-key? keymap client key)
+    (and mode-on? (string? key)
+         (let ([pending (keys:pending client)])
+           (and (table-ref keymap (if pending (string-append pending " " key) key) #f) #t))))
+
+  (define (parent-part ix n)
+    (let ([p (parent-in ix n)]) (and p (parent-in ix p) p)))
+
+  (define (child-part ix n)
+    (let ([cs (filter (lambda (c) (not (locked-in? ix c))) (kids-of ix n))] [f (focused-child ix n)])
+      (and (pair? cs)
+           (or (and f (find (lambda (c) (fx= (document:node-start c) (document:node-start f))) cs))
+               (car cs)))))
+
+  (define (siblings ix n)
+    (let ([p (parent-part ix n)]) (if p (kids-of ix p) (list n))))
+
+  (define (sibling-part ix n step)
+    (let loop ([ns (if (fx> step 0) (siblings ix n) (reverse (siblings ix n)))])
+      (cond
+        [(fx= (document:node-start (car ns)) (document:node-start n))
+         (find (lambda (c) (not (locked-in? ix c))) (cdr ns))]
+        [else (loop (cdr ns))])))
+
+  (define (end-part ix n last?)
+    (find (lambda (c) (not (locked-in? ix c))) (if last? (reverse (siblings ix n)) (siblings ix n))))
+
+  (define (datum-length d)
+    (if (vector? d) 1 (fold-left (lambda (n c) (fx+ n (datum-length c))) 2 (cddr d))))
+
+  (define (first-view-number d)
+    (if (vector? d) (cdr (assq 'view (vector-ref d 1))) (first-view-number (caddr d))))
+
+  ;; Each verb's edit may collapse or adopt around the part it moves, so
+  ;; the part is found again afterwards by its first view, whose number
+  ;; is unique, and its length, which no ancestor shares.
+  (define (choose-datum! d)
+    (let* ([ix (current-index)] [n (and d (located ix (first-view-number d) (datum-length d)))])
+      (when n (choose-part! ix n))))
+
+  (define (without d names)
+    (with-attributes d (remp (lambda (a) (memq (car a) names)) (datum-attributes d))))
+
+  (define (with-children d children) (cons* (car d) (cadr d) children))
+
+  (define (collapses? n)
+    (let ([entry (kind-entry n)]) (and entry (container-collapse? entry))))
+
+  ;; A place attribute means something only to the kinds that name it,
+  ;; so a part moving to another kind sheds the old kind's and the new
+  ;; kind gives it its own.
+  (define (arrive from to d)
+    (if (eq? (document:node-kind from) (document:node-kind to))
+        d
+        (let* ([names (child-attributes-of to)]
+               [d (without d (remp (lambda (a) (memq a names)) (child-attributes-of from)))]
+               [entry (kind-entry to)])
+          (if (and entry (container-adopt entry))
+              (let ([r ((container-adopt entry) to d)])
+                (unless (same-part? r d)
+                  (assertion-violation 'layout:define-container "an adopt clause returned another part" r))
+                r)
+              d))))
+
+  (define (same-part? r d)
+    (if (vector? d)
+        (and (vector? r) (fx= (vector-length r) 2) (eq? (vector-ref r 0) (vector-ref d 0)) (attributes? (vector-ref r 1))
+             (equal? (assq 'view (vector-ref r 1)) (assq 'view (vector-ref d 1))))
+        (and (pair? r) (eq? (car r) (car d)) (pair? (cdr r)) (attributes? (cadr r)) (equal? (cddr r) (cddr d)))))
+
+  (define (datums ix nodes) (map (lambda (n) (node-datum ix n)) nodes))
+
+  (define (replacing ds k new)
+    (append (list-head ds k) new (list-tail ds (fx+ k 1))))
+
+  ;; One replacement of the children that changed, so anchors in the
+  ;; others, such as a strip's, stay where they are.
+  (define (set-children! ix node old new)
+    (let* ([kids (kids-of ix node)] [n (length old)] [m (length new)]
+           [p (let loop ([o old] [d new] [p 0])
+                (if (and (pair? o) (pair? d) (equal? (car o) (car d))) (loop (cdr o) (cdr d) (fx+ p 1)) p))]
+           [q (let loop ([o (reverse old)] [d (reverse new)] [q 0])
+                (if (and (fx< (fx+ p q) (fxmin n m)) (equal? (car o) (car d))) (loop (cdr o) (cdr d) (fx+ q 1)) q))]
+           [s (if (fx> p 0) (document:node-end (list-ref kids (fx- p 1))) (fx+ (document:node-start node) 1))]
+           [e (if (fx> q 0) (document:node-start (list-ref kids (fx- n q))) (fx- (document:node-end node) 1))]
+           [middle (list-head (list-tail new p) (fx- m (fx+ p q)))])
+      (buffers:replace! layout-buffer s e (if (null? middle) "" (apply document:from-datum middle)))))
+
+  (define (replace-child! ix child new)
+    (let* ([p (parent-in ix child)] [ks (kids-of ix p)] [old (datums ix ks)])
+      (set-children! ix p old (replacing old (position-in child ks) new))))
+
+  (define (check-unlocked who ix n)
+    (when (locked-in? ix n)
+      (assertion-violation who "a locked part" n)))
+
+  (define (holds-locked? ix n)
+    (or (locked-in? ix n)
+        (let below ([n n])
+          (exists (lambda (c) (or (document:node-attribute c 'locked #f) (below c))) (kids-of ix n)))))
+
+  (define (check-holds-no-locked who ix n)
+    (when (holds-locked? ix n)
+      (assertion-violation who "a locked part" n)))
+
+  (define (shift-part! who ix n step)
+    (let ([p (parent-part ix n)])
+      (and p
+           (let* ([ks (kids-of ix p)] [k (position-in n ks)] [j (fx+ k step)])
+             (and (fx>= j 0) (fx< j (length ks))
+                  (let ([old (datums ix ks)])
+                    (check-unlocked who ix (list-ref ks j))
+                    (set-children! ix p old
+                      (replacing (replacing old k (list (list-ref old j))) j (list (list-ref old k))))
+                    (list-ref old k)))))))
+
+  ;; From its container's first place a part goes before the container,
+  ;; and from any other after it, so the order on screen is kept.
+  (define (lift-part! ix n)
+    (let* ([c (parent-part ix n)] [g (and c (parent-part ix c))])
+      (and g
+           (let* ([ks (kids-of ix c)] [k (position-in n ks)] [d (node-datum ix n)]
+                  [rest (datums ix (remp (lambda (x) (fx= (document:node-start x) (document:node-start n))) ks))]
+                  [moved (if (null? rest) (take-place ix c d) (arrive c g d))]
+                  [left (cond
+                          [(null? rest) '()]
+                          [(and (null? (cdr rest)) (collapses? c)) (list (take-place ix c (car rest)))]
+                          [else (list (with-children (node-datum ix c) rest))])])
+             (replace-child! ix c (if (fx= k 0) (cons moved left) (append left (list moved))))
+             moved))))
+
+  ;; The container after the part takes it at its start, and one before
+  ;; it at its end, the places on screen nearest the part's own.
+  (define (lower-part! ix n)
+    (let ([c (parent-part ix n)])
+      (and c
+           (let* ([ks (kids-of ix c)] [k (position-in n ks)]
+                  [open? (lambda (x) (not (or (document:atom? x) (locked-in? ix x))))]
+                  [after (find open? (list-tail ks (fx+ k 1)))]
+                  [target (or after (find open? (reverse (list-head ks k))))])
+             (and target
+                  (let* ([moved (arrive c target (node-datum ix n))]
+                         [td (node-datum ix target)]
+                         [filled (with-children td (if after (cons moved (cddr td)) (append (cddr td) (list moved))))]
+                         [old (datums ix ks)]
+                         [new (remove-at (replacing old (position-in target ks) (list filled)) k)])
+                    (if (and (null? (cdr new)) (collapses? c))
+                        (replace-child! ix c (list (take-place ix c filled)))
+                        (set-children! ix c old new))
+                    moved))))))
+
+  (define (remove-at ds k) (append (list-head ds k) (list-tail ds (fx+ k 1))))
+
+  (define (unlocked-view-in? ix n)
+    (exists (lambda (a) (and (holds-range? a (document:node-start n) (document:node-end n)) (not (locked-node? a))))
+            (index-atoms)))
+
+  (define (raise-part! who ix n)
+    (let ([c (parent-part ix n)])
+      (and c
+           (begin
+             (for-each (lambda (x)
+                         (unless (fx= (document:node-start x) (document:node-start n))
+                           (check-holds-no-locked who ix x)))
+                       (kids-of ix c))
+             (unless (or (unlocked-view-in? ix n) (unlocked-atoms-outside (document:node-start c) (document:node-end c)))
+               (assertion-violation who "the last view that is not locked" n))
+             (let ([moved (take-place ix c (node-datum ix n))])
+               (replace-child! ix c (list moved))
+               moved)))))
+
+  ;; Layout does not know which attribute weighs a child, so the children
+  ;; share the container's numeric place attributes, such as a strip's
+  ;; size, equally.
+  (define (splice-part! who ix n)
+    (let ([g (parent-in ix n)] [ks (kids-of ix n)])
+      (and (pair? ks) (or (parent-in ix g) (null? (cdr ks)))
+           (begin
+             (for-each (lambda (x) (check-unlocked who ix x)) ks)
+             (let* ([names (child-attributes-of g)] [count (length ks)]
+                    [shares (filter (lambda (a) (and (memq (car a) names) (real? (cdr a))))
+                                    (datum-attributes (node-datum ix n)))]
+                    [moved (map (lambda (d)
+                                  (if (parent-in ix g)
+                                      (arrive n g (with-attributes d
+                                                    (append (remp (lambda (a) (assq (car a) shares)) (datum-attributes d))
+                                                            (map (lambda (a) (cons (car a) (/ (cdr a) count))) shares))))
+                                      (take-place ix n d)))
+                                (datums ix ks))])
+               (replace-child! ix n moved)
+               (car moved))))))
+
+  (define (wrap-part! who ix n make)
+    (let* ([place (cons 'pinned (child-attributes-of (parent-in ix n)))]
+           [d (node-datum ix n)]
+           [w (make (list (without d place)))])
+      (unless (and (list? w) (fx>= (length w) 3) (symbol? (car w)) (container-entry (car w)) (attributes? (cadr w)))
+        (assertion-violation who "not the datum of a container" w))
+      (let ([moved (with-attributes w (append (cadr w) (filter (lambda (a) (memq (car a) place)) (datum-attributes d))))])
+        (buffers:replace! layout-buffer (document:node-start n) (document:node-end n) moved)
+        moved)))
+
+  (define (deletion-successor ix n)
+    (let ([next (or (sibling-part ix n -1) (sibling-part ix n 1))])
+      (and next (node-datum ix next))))
+
   (record-writer (record-type-descriptor frame-record)
     (lambda (f p wr) (display "#<frame>" p))))
 
@@ -644,7 +992,7 @@
       [(_ id clause ...)
        (identifier? #'id)
        (let loop ([clauses #'(clause ...)] [seen '()] [draw #f] [neighbour #'#f] [keymap #'#f]
-                  [attributes '()] [collapse #'#f] [show-focused #'#f])
+                  [attributes '()] [collapse #'#f] [show-focused #'#f] [adopt #'#f])
          (if (null? clauses)
              (begin
                (unless draw
@@ -654,7 +1002,7 @@
                    (define-values ()
                      (begin
                        (register-container! (car (id '())) #,draw #,neighbour '#,(datum->syntax #'id attributes)
-                                            #,collapse #,show-focused)
+                                            #,collapse #,show-focused #,adopt)
                        (values)))))
              (let* ([c (car clauses)]
                     [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ (invalid c)])])
@@ -666,16 +1014,17 @@
                  (define (flag)
                    (syntax-case c () [(_) #'#t] [_ (invalid c)]))
                  (case name
-                   [(draw) (loop rest seen (expression) neighbour keymap attributes collapse show-focused)]
-                   [(neighbour) (loop rest seen draw (expression) keymap attributes collapse show-focused)]
-                   [(keymap) (loop rest seen draw neighbour (expression) attributes collapse show-focused)]
+                   [(draw) (loop rest seen (expression) neighbour keymap attributes collapse show-focused adopt)]
+                   [(neighbour) (loop rest seen draw (expression) keymap attributes collapse show-focused adopt)]
+                   [(keymap) (loop rest seen draw neighbour (expression) attributes collapse show-focused adopt)]
                    [(child-attributes)
                     (syntax-case c ()
                       [(_ a ...) (for-all identifier? #'(a ...))
-                       (loop rest seen draw neighbour keymap (syntax->datum #'(a ...)) collapse show-focused)]
+                       (loop rest seen draw neighbour keymap (syntax->datum #'(a ...)) collapse show-focused adopt)]
                       [_ (invalid c)])]
-                   [(collapse) (loop rest seen draw neighbour keymap attributes (flag) show-focused)]
-                   [(show-focused) (loop rest seen draw neighbour keymap attributes collapse (flag))]
+                   [(collapse) (loop rest seen draw neighbour keymap attributes (flag) show-focused adopt)]
+                   [(show-focused) (loop rest seen draw neighbour keymap attributes collapse (flag) adopt)]
+                   [(adopt) (loop rest seen draw neighbour keymap attributes collapse show-focused (expression))]
                    [else (invalid c)])))))]
       [_ (syntax-violation 'layout:define-container "expected (layout:define-container id clause ...)" x)])))
 
@@ -789,7 +1138,7 @@
 (buffers:define-kind popups-root (content nodes) (consent check-popup-parts))
 
 (define-values ()
-  (begin (register-container! (car (popups-root '())) %draw-popups #f '() #f #f) (values)))
+  (begin (register-container! (car (popups-root '())) %draw-popups #f '() #f #f #f) (values)))
 
 (define buffer (open-layout! (popups-root '())))
 
@@ -904,9 +1253,15 @@
       (when next (select! next)))))
 
 (commands:define-command (delete-view)
-  "Deletes the selected view's part."
-  (let* ([id (views:id (selected-view))] [ix (index-of-id id)])
-    (%delete! ix (index-atom ix id))))
+  "Deletes the selected view's part; in the part mode, the selected part, then selects the part before it, else the one after."
+  (if (in-part-mode?)
+      (let* ([ix (current-index)] [n (selection-in ix)] [next (and n (deletion-successor ix n))])
+        (when n
+          (check-holds-no-locked 'layout:delete-view ix n)
+          (%delete! ix n)
+          (choose-datum! next)))
+      (let* ([id (views:id (selected-view))] [ix (index-of-id id)])
+        (%delete! ix (index-atom ix id)))))
 
 (commands:define-command (zoom)
   "Zooms the frame to the selected view; when zoomed, shows the whole layout again."
@@ -962,11 +1317,117 @@
           (buffers:replace! buffer (document:node-start main) (document:node-end main) d))
         (select! v)))))
 
-(define (%handle-key client item)
-  (call-with-frame (frame client)
-    (lambda () (keys:press! client (keys:item-key item)))))
+(define-table part-mode-keymap
+  "The part mode's keymap. A key it does not bind leaves the mode and runs as it would outside it.")
 
-(define (%focus-keymaps client posn) (if posn '() (focus-keymaps)))
+(define (part-mode?) (in-part-mode?))
+
+(define (selected-part)
+  (check-main-thread 'layout:selected-part)
+  (selection-in (current-index)))
+
+(define (part-class node)
+  (unless (document:node? node)
+    (assertion-violation 'layout:part-class "not a node" node))
+  (drawn-part-class node))
+
+(define (wrap! make)
+  (unless (procedure? make)
+    (assertion-violation 'layout:wrap! "not a procedure" make))
+  (check-main-thread 'layout:wrap!)
+  (let* ([ix (current-index)] [n (selection-in ix)])
+    (unless n
+      (assertion-violation 'layout:wrap! "no part is selected"))
+    (choose-datum! (wrap-part! 'layout:wrap! ix n make))))
+
+(define (%select! choose)
+  (let* ([ix (current-index)] [n (selection-in ix)] [to (and n (choose ix n))])
+    (when to (choose-part! ix to))))
+
+(define (%edit! verb)
+  (let* ([ix (current-index)] [n (selection-in ix)])
+    (when n (choose-datum! (verb ix n)))))
+
+(commands:define-command (part-mode)
+  "Enters the part mode with the selected view's part selected: keys select parts of the layout and move them."
+  (enter-part-mode!))
+
+(commands:define-command (part-mode-leave)
+  "Leaves the part mode; the selected view stays."
+  (leave-part-mode!))
+
+(commands:define-command (select-parent)
+  "Selects the container of the selected part."
+  (%select! parent-part))
+
+(commands:define-command (select-child)
+  "Selects the focused child of the selected part, the one holding the view selected last."
+  (%select! child-part))
+
+(commands:define-command (select-previous)
+  "Selects the part before the selected one in its container."
+  (%select! (lambda (ix n) (sibling-part ix n -1))))
+
+(commands:define-command (select-next)
+  "Selects the part after the selected one in its container."
+  (%select! (lambda (ix n) (sibling-part ix n 1))))
+
+(commands:define-command (select-first)
+  "Selects the first part of the selected part's container."
+  (%select! (lambda (ix n) (end-part ix n #f))))
+
+(commands:define-command (select-last)
+  "Selects the last part of the selected part's container."
+  (%select! (lambda (ix n) (end-part ix n #t))))
+
+(commands:define-command (shift-backward)
+  "Swaps the selected part with the part before it in its container."
+  (%edit! (lambda (ix n) (shift-part! 'layout:shift-backward ix n -1))))
+
+(commands:define-command (shift-forward)
+  "Swaps the selected part with the part after it in its container."
+  (%edit! (lambda (ix n) (shift-part! 'layout:shift-forward ix n 1))))
+
+(commands:define-command (lift)
+  "Moves the selected part out of its container, to beside it."
+  (%edit! lift-part!))
+
+(commands:define-command (lower)
+  "Moves the selected part into the nearest container among its siblings after it, as its first child, else before it, as its last."
+  (%edit! lower-part!))
+
+(commands:define-command (raise)
+  "Makes the selected part take its container's place, deleting its siblings."
+  (%edit! (lambda (ix n) (raise-part! 'layout:raise ix n))))
+
+(commands:define-command (splice)
+  "Replaces the selected container with its children."
+  (%edit! (lambda (ix n) (splice-part! 'layout:splice ix n))))
+
+(define %mode-press (make-thread-parameter #f))
+
+;; A key the part mode binds acts on the layout, so it runs in the
+;; layout's own view, where undo's keys undo window changes.
+(define (%handle-key client item)
+  (let ([key (keys:item-key item)])
+    (cond
+      [(mode-key? part-mode-keymap client key)
+       (parameterize ([%mode-press #t])
+         (views:call-with-view screen-view (lambda () (keys:press! client key))))]
+      [else
+       (when (in-part-mode?) (leave-part-mode!))
+       (call-with-frame (frame client) (lambda () (keys:press! client key)))])))
+
+;; Clicks reach keys without the layout's key handler.
+(define (%leave-on-other-input command)
+  (when (and (in-part-mode?) (keys:command-keys) (not (%mode-press)))
+    (leave-part-mode!)))
+
+(define (%focus-keymaps client posn)
+  (cond
+    [posn '()]
+    [(in-part-mode?) (cons part-mode-keymap (focus-keymaps))]
+    [else (focus-keymaps)]))
 
 (define (%keep-layout b) (not (or (eq? b buffer) (eq? b popups-buffer))))
 
@@ -981,9 +1442,34 @@
 (keys:bind! keys:global "s-<left>" select-left)
 (keys:bind! keys:global "s-<down>" select-down)
 (keys:bind! keys:global "s-<right>" select-right)
+(keys:bind! keys:global "s-'" part-mode)
+(keys:bind! keys:global "C-x w" part-mode)
+(keys:bind! part-mode-keymap "RET" part-mode-leave)
+(keys:bind! part-mode-keymap "i" select-parent)
+(keys:bind! part-mode-keymap "k" select-child)
+(keys:bind! part-mode-keymap "j" select-previous)
+(keys:bind! part-mode-keymap "l" select-next)
+(keys:bind! part-mode-keymap "<up>" select-parent)
+(keys:bind! part-mode-keymap "<down>" select-child)
+(keys:bind! part-mode-keymap "<left>" select-previous)
+(keys:bind! part-mode-keymap "<right>" select-next)
+(keys:bind! part-mode-keymap "0" select-first)
+(keys:bind! part-mode-keymap "$" select-last)
+(keys:bind! part-mode-keymap "I" lift)
+(keys:bind! part-mode-keymap "K" lower)
+(keys:bind! part-mode-keymap "J" shift-backward)
+(keys:bind! part-mode-keymap "L" shift-forward)
+(keys:bind! part-mode-keymap "S-<up>" lift)
+(keys:bind! part-mode-keymap "S-<down>" lower)
+(keys:bind! part-mode-keymap "S-<left>" shift-backward)
+(keys:bind! part-mode-keymap "S-<right>" shift-forward)
+(keys:bind! part-mode-keymap "r" raise)
+(keys:bind! part-mode-keymap "-" splice)
+(keys:bind! part-mode-keymap "x" delete-view)
 (keys:bind! keymap "<mouse-1>" mouse-select-view)
 (keys:bind! keymap "<down-mouse-1>" keys:ignore)
 (add-hook! keys:find-keymaps %focus-keymaps)
+(add-hook! commands:before-command %leave-on-other-input)
 (add-hook! buffers:kill-queries %keep-layout)
 (table-set! web:input-handlers "key" %handle-key)
 (table-set! web:stylesheets 'layout "layout/layout.css")

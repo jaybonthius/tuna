@@ -71,6 +71,14 @@
     outline-offset: calc(-1 * var(--tuna-focus-width, 2px));
   }
 
+  /* Drawn over the part's edge, not outside it, where a neighbour or the
+     page's edge would hide it. */
+  .part-selected,
+  .layout-view.part-selected {
+    outline: calc(2 * var(--tuna-focus-width, 2px)) dashed var(--tuna-focus, Highlight);
+    outline-offset: calc(-2 * var(--tuna-focus-width, 2px));
+  }
+
   /* The screen's element only names the layout's view for a click; the
      root's element lays it out. */
   .layout-screen {

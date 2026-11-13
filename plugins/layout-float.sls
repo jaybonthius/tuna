@@ -109,7 +109,7 @@
     ;; can be selected.
     (let loop ([fs floats] [acc '()])
       (if (null? fs)
-          (haml (:div.float (when base-html (haml (:div.float-base base-html))) (reverse acc)))
+          (haml (:div.float ([class (layout:part-class node)]) (when base-html (haml (:div.float-base base-html))) (reverse acc)))
           (let* ([c (car fs)] [p (place-of c)]
                  [anchor (and p (eq? (car p) 'anchor) (views:find-anchor (cadr p)))]
                  [place (if (or anchor (and p (eq? (car p) 'box))) p '(box 1/2 1/2))])
@@ -131,11 +131,21 @@
 
 (define-table keymap "The keymap of float containers: keys that act on the floats around the selected view.")
 
+;; A part moved into a desktop without a base would otherwise become its
+;; base and fill it.
+(define (%adopt node d)
+  (if (assq 'place (if (vector? d) (vector-ref d 1) (cadr d)))
+      d
+      (if (vector? d)
+          (vector (vector-ref d 0) (append (vector-ref d 1) '((place box 1/2 1/2))))
+          (cons* (car d) (append (cadr d) '((place box 1/2 1/2))) (cddr d)))))
+
 (layout:define-container container
   (draw %draw-float)
   (neighbour %float-neighbour)
   (keymap keymap)
-  (child-attributes place width height))
+  (child-attributes place width height)
+  (adopt %adopt))
 
 (define (%popups-container)
   (let ([root (document:token (buffers:document layout:popups-buffer) 0)])
@@ -317,12 +327,17 @@
           (layout:select!
             (or (find (lambda (v) (memq v unlocked)) order) (car unlocked))))))))
 
+(commands:define-command (wrap-in-float)
+  "Wraps the selected part in a float container, as its base."
+  (layout:wrap! (lambda (parts) (apply container '() parts))))
+
 (on-unload
   (lambda ()
     (for-each (lambda (e) (set-cdr! e #f)) %made)
     (set! %made '())
     (%remove-popups!)))
 (keys:bind! keys:global "s-v" toggle)
+(keys:bind! layout:part-mode-keymap "w f" wrap-in-float)
 (keys:bind! keymap "s-V" cycle)
 (buffers:with-buffer layout:popups-buffer (set-option-local! undo:limit 0))
 (table-set! web:stylesheets 'layout-float "layout-float/layout-float.css")

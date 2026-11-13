@@ -130,16 +130,26 @@
              (cons focus (append (filling before-ids before-sizes) (filling (cdr ids) (cdr sizes))))]
             [else (loop (cdr ids) (cdr sizes) (cons (car ids) before-ids) (cons (car sizes) before-sizes))])))))
 
+;; A column moved along its strip keeps its number, so a strip is placed
+;; again when its focused column's place changes too; a placement the
+;; strip did not make, after a hand scroll, is kept.
+(define %placed (make-weak-eq-hashtable))
+
 (define (%draw-strip node children focused draw-child client)
   (let* ([scroller (scroller-of node %rested)]
          [center? (eq? (document:node-attribute node 'center 'never) 'always)]
          [shown (%focused focused children)]
-         [focus (item-id shown)])
-    (unless (eqv? (views:scroller-focus scroller) focus)
-      (views:place-scroller! scroller focus (if center? (views:scroller-align center) (views:scroller-align nearest)) focus))
+         [focus (item-id shown)]
+         [k (position-of shown children)])
+    (let ([placed (eq-hashtable-ref %placed scroller #f)])
+      (when (or (not (eqv? (views:scroller-focus scroller) focus))
+                (and placed (eqv? (car placed) focus) (not (eqv? (cdr placed) k))))
+        (views:place-scroller! scroller focus (if center? (views:scroller-align center) (views:scroller-align nearest)) focus))
+      (eq-hashtable-set! %placed scroller (cons focus k)))
     (let ([drawn (%drawn-ids children focus client scroller)])
       (views:draw-scroller scroller client (if (row? node) (views:axis row) (views:axis column))
-        (string-append "layout-strip " (if (row? node) "row" "column") (if center? " center" ""))
+        (let ([part (layout:part-class node)])
+          (string-append "layout-strip " (if (row? node) "row" "column") (if center? " center" "") (if part (string-append " " part) "")))
         (map (lambda (c)
                (let ([id (item-id c)])
                  (haml (:div.strip-item ([data-item id] [style "--strip-size:" (number->string (inexact (size-of c)))])
@@ -164,11 +174,15 @@
 
 (define-table keymap "The keymap of strips: keys that act on the column holding the selected view.")
 
+(define (%adopt node d)
+  (if (assq 'size (if (vector? d) (vector-ref d 1) (cadr d))) d (with-size d (default-size))))
+
 (layout:define-container container
   (draw %draw-strip)
   (neighbour %strip-neighbour)
   (keymap keymap)
-  (child-attributes size))
+  (child-attributes size)
+  (adopt %adopt))
 
 (define (%selected-strip who)
   (let ([atom (layout:view-node (layout:selected-view))])
@@ -348,6 +362,11 @@
   "Moves the selected view into the column after its own when it is alone there, else the part of its column holding it out into a new column after it."
   (%consume-or-expel! 'layout-scroll:consume-or-expel-right #t))
 
+(commands:define-command (wrap-in-strip)
+  "Wraps the selected part in a strip."
+  (layout:wrap! (lambda (parts) (apply container '() parts))))
+
+(keys:bind! layout:part-mode-keymap "w s" wrap-in-strip)
 (keys:bind! keymap "s-," consume)
 (keys:bind! keymap "s-." expel)
 (keys:bind! keymap "s-[" consume-or-expel-left)

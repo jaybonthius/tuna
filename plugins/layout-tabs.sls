@@ -32,7 +32,7 @@
   (let ([shown (or (and focused
                         (find (lambda (c) (fx= (document:node-start c) (document:node-start focused))) children))
                    (car children))])
-    (haml (:div.tabs
+    (haml (:div.tabs ([class (layout:part-class node)])
             (:div.tabs-strip ([role "tablist"])
               (map (lambda (c)
                      (haml (:div.tab ([role "tab"] [aria-selected (if (eq? c shown) "true" "false")]
@@ -147,9 +147,14 @@
                (layout:select! target)))]
           [else (layout:mouse-select-view event)])))))
 
+(commands:define-command (wrap-in-tabs)
+  "Wraps the selected part in tabs."
+  (layout:wrap! (lambda (parts) (apply container '() parts))))
+
 (keys:bind! keys:global "C-x t 2" new-tab)
 (keys:bind! keys:global "C-x t 0" close-tab)
 (keys:bind! keys:global "C-x t o" next-tab)
 (keys:bind! keys:global "C-x t O" previous-tab)
 (keys:bind! keymap "<mouse-1>" mouse-select-tab)
+(keys:bind! layout:part-mode-keymap "w t" wrap-in-tabs)
 (table-set! web:stylesheets 'layout-tabs "layout-tabs/layout-tabs.css")
