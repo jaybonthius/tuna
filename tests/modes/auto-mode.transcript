@@ -1,0 +1,108 @@
+; By the program a #! line names: the last part of its path; for env,
+; the first argument that neither starts with - nor contains =; as
+; written, then without a trailing version.
+> (table-set! auto-mode:interpreters "guile" text:mode)
+> (define n 0)
+> (define (first-line-mode line)
+    (set! n (+ n 1))
+    (let ([b (buffers:make (format "script~a" n) line)])
+      (auto-mode:by-interpreter b "script")))
+> (map first-line-mode
+       '("#!/usr/bin/python\nprint(1)\n"
+         "#!/usr/bin/env python3\n"
+         "#! /usr/bin/env -S VAR=1 python3.12 -u\n"
+         "#!/usr/local/bin/guile-3.0 -s\n"
+         "#!/usr/bin/env\n"
+         "#!/bin/sh\n"
+         "# python\n"
+         ""
+         "#!"))
+(python:mode python:mode python:mode text:mode #f #f #f #f #f)
+; By file name: the last part, without a trailing ~, whole, then from
+; each dot on, longest first; as written, then in lowercase.
+> (import (archive) (make))
+> (table-set! auto-mode:file-names "Makefile" make:mode)
+> (table-set! auto-mode:file-names "gz" text:mode)
+> (define b (buffers:make "b" "x"))
+> (map (lambda (name) (auto-mode:by-file-name b name))
+       '("/src/Makefile" "/src/makefile" "/x/a.tar.gz" "/x/a.gz" "/x/A.TAR.GZ" "/x/a.py~" "/x/a.py~~"
+         "a.PY" "/x.py/readme" "/x/SConstruct" "/x/.py" "/x/a.unknown" ""))
+(make:mode #f archive:mode text:mode archive:mode python:mode #f python:mode #f python:mode python:mode #f #f)
+; A procedure's result is the result, #f included: the lookup stops there.
+> (define seen '())
+> (define (looked buffer name) (set! seen (cons name seen)) #f)
+> (table-set! auto-mode:file-names "bak" looked)
+> (auto-mode:by-file-name b "/x/a.py.bak~")
+#f
+> seen
+("/x/a.py.bak")
+> (auto-mode:choose b "/x/a.py.bak")
+text:mode
+; Choosing calls the choosers by depth, then takes the default mode, read
+; in the buffer, so a local value counts.
+> (auto-mode:choose b "/x/a.nothing")
+text:mode
+> (buffers:with-buffer b (set-option-local! auto-mode:default-mode prog:mode))
+> (auto-mode:choose b "/x/a.nothing")
+prog:mode
+> (define plain-script (buffers:make "plain-script" "#!/usr/bin/env python\n"))
+> (list (auto-mode:choose plain-script "Makefile") (auto-mode:choose plain-script))
+(python:mode python:mode)
+> (remove-hook! auto-mode:choosers auto-mode:by-interpreter)
+> (add-hook! auto-mode:choosers auto-mode:by-interpreter 10)
+> (auto-mode:choose plain-script "Makefile")
+make:mode
+> (add-hook! auto-mode:choosers auto-mode:by-interpreter -10)
+> (raised (lambda () (auto-mode:choose "b")))
+(auto-mode:choose "not a buffer")
+> (raised (lambda () (auto-mode:choose b 'name)))
+(auto-mode:choose "not a string")
+> (raised (lambda () (auto-mode:by-file-name b 5)))
+(auto-mode:by-file-name "not a string")
+> (raised (lambda () (auto-mode:by-interpreter 'b "x")))
+(auto-mode:by-interpreter "not a buffer")
+> (raised (lambda () (auto-mode:by-interpreter b 5)))
+(auto-mode:by-interpreter "not a string")
+> (raised (lambda () (auto-mode:normal-mode "b")))
+(auto-mode:normal-mode "not a buffer")
+; A chooser that raises makes the visit's choice raise; the visit goes on
+; and the buffer keeps modes:fundamental.
+> (define (broken buffer name) (car '()))
+> (add-hook! auto-mode:choosers broken -100)
+> (disk:write-text! "~/one.py" "1\n")
+> (modes:major-mode (files:visit "~/one.py"))
+! car: () is not a pair
+modes:fundamental
+> (remove-hook! auto-mode:choosers broken)
+> (define one (files:visit "~/one.py"))
+; normal-mode chooses again; run by a key, its buffer is the current one.
+> (auto-mode:normal-mode one)
+> (modes:major-mode one)
+python:mode
+> (buffers:with-buffer one (modes:set-major-mode text:mode one) (commands:run auto-mode:normal-mode))
+> (modes:major-mode one)
+python:mode
+; The visit's entry runs before the user's entries at the default depth,
+; so their local values survive; a revert keeps the mode.
+> (add-hook! files:after-visit (lambda (b) (set-option-local! fill:column 40)))
+> (disk:write-text! "~/two.py" "2\n")
+> (define two (files:visit "~/two.py"))
+> (list (modes:major-mode two) (local fill:column two) (local editing:word-characters two))
+(python:mode 40 "_")
+> (buffers:with-buffer two (set-option-local! fill:column 41))
+> (disk:write-text! "~/two.py" "22\n")
+> (files:revert-buffer two)
+> (list (modes:major-mode two) (local fill:column two) (text two))
+(python:mode 41 "22\n")
+; Buffers open before auto-mode loads keep their mode; normal-mode
+; chooses again on request.
+> (unload-module! '(auto-mode))
+> (disk:write-text! "~/three.py" "3\n")
+> (define three (files:visit "~/three.py"))
+> (load-module! '(auto-mode))
+> (load-module! '(python))
+> (modes:major-mode three)
+modes:fundamental
+> (auto-mode:normal-mode three)
+> (modes:major-mode three)
+python:mode

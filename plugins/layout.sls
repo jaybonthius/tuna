@@ -11,7 +11,7 @@
    the-frame frame-record? open-layout! opened-popups current-index index-atom index-of-id atom-of part-of
    view-of selected-id shown-views select-id! set-zoom! frame-zoom frame-order children root-node
    locked-node? locked-in? title-of draw-layout draw-popups neighbour-of remove-part! bar-view node-datum
-   note-batch save-now! focus-keymaps last-selected-unlocked-atom lead-down order-views
+   note-batch save-now! selected-keymaps enclosing-keymaps last-selected-unlocked-atom lead-down order-views
    in-part-mode? enter-part-mode! leave-part-mode! selection-in choose-part! drawn-part-class
    choose-datum! parent-part child-part sibling-part end-part shift-part! lift-part! lower-part! raise-part!
    splice-part! wrap-part! deletion-successor check-holds-no-locked mode-key?)
@@ -558,15 +558,18 @@
                                         '(pinned . #t) '(locked . #t))))
             v))))
 
-  (define (focus-keymaps)
-    (let* ([id (selected-id)] [ix (index-of-id id)] [atom (index-atom ix id)]
-           [inner (views:keymaps (view-of atom))])
-      (let loop ([n (parent-in ix atom)] [acc '()])
+  (define (selected-keymaps)
+    (let* ([id (selected-id)] [ix (index-of-id id)])
+      (views:keymaps (view-of (index-atom ix id)))))
+
+  (define (enclosing-keymaps)
+    (let* ([id (selected-id)] [ix (index-of-id id)])
+      (let loop ([n (parent-in ix (index-atom ix id))] [acc '()])
         (if n
             (loop (parent-in ix n)
                   (let* ([kind (buffers:kind (document:node-kind n))] [k (and kind (buffers:kind-keymap kind))])
                     (if k (cons k acc) acc)))
-            (append inner (reverse acc))))))
+            (reverse acc)))))
 
   (define (order-views)
     (let ([ix (current-index)] [px last-popups-index])
@@ -1423,11 +1426,14 @@
   (when (and (in-part-mode?) (keys:command-keys) (not (%mode-press)))
     (leave-part-mode!)))
 
-(define (%focus-keymaps client posn)
+(define (cursor-keymaps client posn)
   (cond
     [posn '()]
-    [(in-part-mode?) (cons part-mode-keymap (focus-keymaps))]
-    [else (focus-keymaps)]))
+    [(in-part-mode?) (cons part-mode-keymap (selected-keymaps))]
+    [else (selected-keymaps)]))
+
+(define (container-keymaps client posn)
+  (if posn '() (enclosing-keymaps)))
 
 (define (%keep-layout b) (not (or (eq? b buffer) (eq? b popups-buffer))))
 
@@ -1468,7 +1474,8 @@
 (keys:bind! part-mode-keymap "x" delete-view)
 (keys:bind! keymap "<mouse-1>" mouse-select-view)
 (keys:bind! keymap "<down-mouse-1>" keys:ignore)
-(add-hook! keys:find-keymaps %focus-keymaps)
+(add-hook! keys:find-keymaps cursor-keymaps)
+(add-hook! keys:find-keymaps container-keymaps 90)
 (add-hook! commands:before-command %leave-on-other-input)
 (add-hook! buffers:kill-queries %keep-layout)
 (table-set! web:input-handlers "key" %handle-key)

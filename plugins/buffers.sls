@@ -1195,6 +1195,16 @@
   (check-buffer 'buffers:live? buffer)
   (buffer-live? buffer))
 
+;; Code inside with-buffer of this buffer has the old scope bound, so
+;; the innermost binding moves to the new one.
+(define (reset-scope! buffer)
+  (check-change 'buffers:reset-scope! buffer)
+  (let ([old (buffer-scope buffer)] [new (make-scope)])
+    (with-interrupts-disabled
+      (buffer-scope-set! buffer new)
+      (when (eq? (current-scope) old)
+        (current-scope new)))))
+
 (define (buffer? v) (buffer-record? v))
 
 (define-syntax with-buffer

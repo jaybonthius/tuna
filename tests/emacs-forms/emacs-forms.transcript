@@ -27,7 +27,7 @@
 "~/.local/state/theme"
 > (hel:minibuffer?)
 #f
-> (eq? (table-ref files:modes "go") go-ts:mode)
+> (eq? (table-ref auto-mode:file-names "go") go-ts:mode)
 #t
 ; A plugin's internal module, loaded by its main module.
 > (eq? (table-ref org/mouse:keymap "<mouse-1>") org:open-at-mouse)

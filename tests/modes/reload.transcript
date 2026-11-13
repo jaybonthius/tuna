@@ -1,0 +1,60 @@
+; Loading a module runs the mode hooks again where a mode was set, so a
+; reloaded plugin's local values come back and a newly loaded plugin's
+; entries reach buffers already open. Values set by hand stay.
+> (import (tuna eval))
+> (define library (getenv "TUNA_LIBRARY"))
+> (define (reload! name) (eval-file (string-append library "/" name ".sls")))
+> (disk:write-text! "~/a.py" "print(1)\n")
+> (disk:write-text! "~/notes.txt" "Buy milk.\n")
+> (define a (files:visit "~/a.py"))
+> (define notes (files:visit "~/notes.txt"))
+> (define plain (buffers:make "plain" "x"))
+> (buffers:with-buffer a (set-option-local! fill:column 33))
+> (define (state b) (list (modes:major-mode b) (local editing:word-characters b) (local fill:mode b) (local fill:column b)))
+> (state a)
+(python:mode "_" #t 33)
+> (reload! "python")
+> (state a)
+(python:mode "_" #t 33)
+> (map modes:major-mode (list a notes plain))
+(python:mode text:mode modes:fundamental)
+> (import (indent))
+> (list (local indent:width a) (local indent:width notes) (local indent:width plain))
+(2 8 8)
+; Unloading a mode's module takes back its entries: its buffers keep the
+; mode, which then has no parent, keymap or hook.
+> (show! a)
+#<buffer a.py>
+> (active-keymaps)
+(fill:keymap python:keymap prog:keymap layout:keymap keys:global)
+> (unload-module! '(python))
+> (list (modes:major-mode a) (table-ref modes:hooks 'python:mode) (modes:ancestry 'python:mode))
+(python:mode #f (python:mode))
+> (active-keymaps)
+(fill:keymap layout:keymap keys:global)
+> (local editing:word-characters a)
+"$%"
+> (modes:set-major-mode 'python:mode a)
+! modes:set-major-mode: not a major mode with irritant python:mode
+> (load-module! '(python))
+> (know! python:keymap 'python:keymap)
+> (state a)
+(python:mode "_" #t 33)
+> (active-keymaps)
+(fill:keymap python:keymap prog:keymap layout:keymap keys:global)
+; Reloading modes keeps each buffer's mode, by name, and runs no reset.
+> (reload! "modes")
+> (map modes:major-mode (list a notes plain))
+(python:mode text:mode modes:fundamental)
+> (state a)
+(python:mode "_" #t 33)
+> (local indent:width a)
+2
+> (active-keymaps)
+(fill:keymap python:keymap prog:keymap layout:keymap keys:global)
+; A buffer renamed while modes is unloaded is not found by its name.
+> (unload-module! '(modes))
+> (buffers:rename! notes "notes renamed")
+> (load-module! '(modes))
+> (list (modes:major-mode a) (modes:major-mode notes))
+(python:mode modes:fundamental)

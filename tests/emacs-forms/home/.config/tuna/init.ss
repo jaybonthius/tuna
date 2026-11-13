@@ -9,6 +9,7 @@
 (use-plugin keys)
 (use-plugin ghostel)
 (use-plugin files)
+(use-plugin auto-mode)
 (use-plugin commands)
 (use-plugin line-numbers)
 (use-plugin hel)
@@ -45,7 +46,7 @@
 ;; :init, read when used
 (set-option! hel:want-minibuffer #f)
 ;; :mode
-(table-set! files:modes "go" go-ts:mode)
+(table-set! auto-mode:file-names "go" go-ts:mode)
 ;; with-eval-after-load
 (keys:bind! org/mouse:keymap "<mouse-1>" org:open-at-mouse)
 ;; setq-local, kill-local-variable
