@@ -1,0 +1,242 @@
+> (define c1 (web:add-client! 1))
+> (define notes (buffers:make "notes" "one\ntwo\n"))
+> (define other (buffers:make "other" "other\n"))
+> (layout:switch-to-buffer notes)
+> (views:set-point! (layout:selected-view) 5)
+> (define (tabs-children)
+    (let* ([doc (buffers:document layout:buffer)] [tabs (document:token doc 1)] [acc '()])
+      (document:for-each-child tabs (+ (document:node-start tabs) 1) (- (document:node-end tabs) 1)
+        (lambda (c at) (when (document:node? c) (set! acc (cons c acc)))))
+      (reverse acc)))
+; C-x t 2 wraps a view in no tabs in a tabs container, as its first tab,
+; and selects a new view of its buffer at its point in a tab after it.
+> (press! c1 '("x" "control") '("t") '("2"))
+> (tree)
+(layout:root () (layout-tabs:container () #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 3) (buffer . "notes")))))
+> (list (selected) (views:point (layout:selected-view)))
+(3 5)
+; A tab is added after the tab holding the view.
+> (layout-tabs:add-tab! (views:find 1) other)
+#<view 4>
+> (tree)
+(layout:root () (layout-tabs:container () #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 4) (buffer . "other"))) #(views:view ((view . 3) (buffer . "notes")))))
+> (selected)
+3
+> (raised (lambda () (layout-tabs:add-tab! 'view other)))
+(layout-tabs:add-tab! "not a view")
+> (raised (lambda () (layout-tabs:add-tab! (views:find 1) "other")))
+(layout-tabs:add-tab! "not a buffer")
+> (raised (lambda () (layout-tabs:add-tab! (views:make other) other)))
+(layout-tabs:add-tab! "not a view in the layout")
+; Only the focused tab is drawn, under a strip of every tab's title; each
+; label marks its child's range in *layout*.
+> (show-screen c1)
+<div class="layout-screen" data-view="2" data-version="2" data-showing="0"><div class="layout-root"><div class="layout-main"><div class="tabs"><div class="tabs-strip" role="tablist"><div class="tab" role="tab" aria-selected="false" data-at="2" data-to="3">notes</div><div class="tab" role="tab" aria-selected="false" data-at="3" data-to="4">other</div><div class="tab" role="tab" aria-selected="true" data-at="4" data-to="5">notes</div></div><div class="tabs-panel" role="tabpanel"><div class="layout-view selected" data-at="4" data-to="5"><div class="view" data-view="3" data-version="0" data-showing="0" data-placement="*" data-place-line="2" data-place-align="center" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v3-1" data-line="1" data-at="1">one</div><div class="line" id="v3-2" data-line="2"><span class="cursor primary"></span>two</div><div class="line" id="v3-3" data-line="3"><br></div></div></div></div></div></div></div></div></div>
+; The frame shows only the views of focused tabs, so C-x o, reuse-view
+; and the default display action pass over the others.
+> (ids)
+(3)
+> (layout:reuse-view other)
+#f
+> (views:id (layout:reuse-view notes))
+3
+> (press! c1 '("x" "control") '("o"))
+> (selected)
+3
+> (set-option! layout:display-action layout:use-other-view)
+> (layout:display-buffer (buffers:make "elsewhere" ""))
+#<view 3>
+> (tree)
+(layout:root () (layout-tabs:container () #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 4) (buffer . "other"))) #(views:view ((view . 3) (buffer . "notes")))))
+; C-x t o and C-x t O move through the tabs cyclically, with a count from
+; the prefix argument.
+> (press! c1 '("x" "control") '("t") '("o"))
+> (selected)
+1
+> (press! c1 '("x" "control") '("t") '("o"))
+> (selected)
+4
+> (press! c1 '("x" "control") '("t") '("O" "shift"))
+> (selected)
+1
+> (press! c1 '("u" "control") '("2") '("x" "control") '("t") '("o"))
+> (selected)
+3
+> (press! c1 '("-" "alt") '("x" "control") '("t") '("o"))
+> (selected)
+4
+> (commands:run layout-tabs:previous-tab 4)
+> (selected)
+1
+> (raised (lambda () (layout-tabs:next-tab 'x)))
+(layout-tabs:next-tab "not an exact integer")
+> (raised (lambda () (layout-tabs:previous-tab 'x)))
+(layout-tabs:previous-tab "not an exact integer")
+; A tab whose child is a container leads to the view selected last in it,
+; not to its first.
+> (define a (views:make notes))
+> (define b (views:make notes))
+> (define c (views:make notes))
+> (define d (views:make other))
+> (set-parts! (layout-tabs:container '() (atom a) (layout-split:container '((direction . row)) (atom b) (atom c)) (atom d)))
+> (layout:select! c)
+> (layout:select! a)
+> (map (lambda (v) (views:id (layout:part-view (layout:view-node v)))) (list a b c d))
+(6 7 8 9)
+> (views:id (layout:part-view (car (cdr (tabs-children)))))
+8
+> (views:id (layout:part-view (document:token (buffers:document layout:buffer) 0)))
+6
+> (raised (lambda () (layout:part-view 'node)))
+(layout:part-view "not a node")
+> (press! c1 '("x" "control") '("t") '("o"))
+> (selected)
+8
+> (press! c1 '("x" "control") '("t") '("o"))
+> (selected)
+9
+; Tabs leave moving between views to the containers around them.
+> (map (lambda (dir) (layout:neighbour d dir)) '(left right up down))
+(#f #f #f #f)
+> (layout:select! b)
+> (views:id (layout:neighbour b (layout:direction right)))
+8
+; A click on a label selects the view its tab leads to, even when the
+; tab's first view starts where views places the click.
+> (define (click! . place)
+    (let ([s layout:screen-view])
+      (parameterize ([web:current-client c1])
+        (for-each
+          (lambda (action)
+            ((table-ref web:input-handlers "mouse") c1
+             (append place
+                     `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
+                       ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))
+                       ("showing" . ,(views:shown-count s))))))
+          '("down" "click")))))
+> (define (label-at v) (document:node-start (layout:view-node v)))
+> (layout:select! c)
+> (click! (cons "token" (label-at a)))
+> (selected)
+6
+> (click! (cons "token" (document:node-start (cadr (tabs-children)))))
+> (selected)
+8
+> (layout:select! d)
+> (layout:select! b)
+> (layout:select! d)
+> (click! (cons "token" (document:node-start (cadr (tabs-children)))))
+> (selected)
+7
+; A click deeper in a tab, on a view's own element, selects that view.
+> (click! (cons "token" (label-at c)))
+> (selected)
+8
+; A click on a tab closed since its screen was drawn is stale.
+> (define version (buffers:version layout:buffer))
+> (layout:delete-part! (layout:view-node a))
+> (click! (cons "token" 2) (cons "version" version))
+! Stale click: what was clicked is gone
+> (selected)
+8
+; C-x t 0 closes the tab holding the selected view with every part in it;
+; the view selected last before it is selected.
+> (layout:select! c)
+> (press! c1 '("x" "control") '("t") '("0"))
+> (tree)
+(layout:root () (layout-tabs:container () #(views:view ((view . 9) (buffer . "other")))))
+> (selected)
+9
+; Closing the only tab removes its container, and a split left with one
+; child collapses; a tabs container left with one tab stays.
+> (define e (views:make notes))
+> (define f (views:make notes))
+> (set-parts! (layout-split:container '((direction . column)) (atom e '(weight . 3)) (layout-tabs:container '((weight . 2)) (atom f))))
+> (layout:select! f)
+> (press! c1 '("x" "control") '("t") '("0"))
+> (tree)
+(layout:root () #(views:view ((view . 10) (buffer . "notes"))))
+> (selected)
+10
+> (press! c1 '("x" "control") '("t") '("0"))
+! layout-tabs:close-tab: the selected view is in no tabs
+> (raised (lambda () (layout-tabs:next-tab 1)))
+(layout-tabs:next-tab "the selected view is in no tabs")
+> (layout:select! (layout-tabs:add-tab! e notes))
+> (press! c1 '("x" "control") '("t") '("0"))
+> (tree)
+(layout:root () (layout-tabs:container () #(views:view ((view . 10) (buffer . "notes")))))
+> (raised (lambda () (layout-tabs:close-tab)))
+(layout:delete-part! "the last view that is not locked")
+; Wrapping a view gives the new tabs container the view's place: its
+; weight in a split and its pinned; its title stays with it.
+> (define g (views:make notes))
+> (set-parts! (layout-split:container '((direction . row)) (atom e '(weight . 2) '(pinned . #t) '(title . "main")) (atom g)))
+> (views:id (layout-tabs:add-tab! e other))
+14
+> (tree)
+(layout:root () (layout-split:container ((direction . row)) (layout-tabs:container ((weight . 2) (pinned . #t)) #(views:view ((view . 10) (buffer . "notes") (title . "main"))) #(views:view ((view . 14) (buffer . "other")))) #(views:view ((view . 13) (buffer . "notes")))))
+; Locked views take no tabs, and next-tab and clicks pass over a tab
+; leading to one.
+> (define echo (layout:add-bar! (buffers:make "*Echo*" "")))
+> (raised (lambda () (layout-tabs:add-tab! echo other)))
+(layout-tabs:add-tab! "a locked view")
+> (layout:select! echo)
+> (layout-tabs:display-in-new-tab other)
+#f
+> (define h (views:make notes))
+> (define k (views:make notes))
+> (set-parts! (layout-tabs:container '() (atom g) (atom h '(locked . #t)) (atom k)) (atom echo '(pinned . #t) '(locked . #t)))
+> (layout:select! g)
+> (commands:run layout-tabs:next-tab 1)
+> (selected)
+17
+> (commands:run layout-tabs:next-tab 1)
+> (selected)
+13
+> (click! (cons "token" (label-at h)))
+> (selected)
+13
+; A rule's new tab goes after the selected view's tab and is selected, so
+; it is shown.
+> (views:id (layout-tabs:display-in-new-tab other))
+18
+> (tree)
+(layout:root () (layout-tabs:container () #(views:view ((view . 13) (buffer . "notes"))) #(views:view ((view . 18) (buffer . "other"))) #(views:view ((view . 16) (buffer . "notes") (locked . #t))) #(views:view ((view . 17) (buffer . "notes")))) #(views:view ((view . 15) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+> (list (selected) (ids))
+(18 (18 15))
+; Under a zoom the strip shows only the tabs drawn: the zoomed one and the
+; pinned ones.
+> (define m (views:make notes))
+> (define n (views:make other))
+> (set-parts! (layout-tabs:container '() (atom g) (atom m '(pinned . #t)) (atom n)) (atom echo '(pinned . #t) '(locked . #t)))
+> (layout:select! n)
+> (commands:run layout:zoom)
+> (views:id (layout:zoomed-view))
+20
+> (show-screen c1)
+<div class="layout-screen" data-view="2" data-version="15" data-showing="0"><div class="layout-root"><div class="layout-main"><div class="tabs"><div class="tabs-strip" role="tablist"><div class="tab" role="tab" aria-selected="false" data-at="3" data-to="4">notes</div><div class="tab" role="tab" aria-selected="true" data-at="4" data-to="5">other</div></div><div class="tabs-panel" role="tabpanel"><div class="layout-view selected" data-at="4" data-to="5"><div class="view" data-view="20" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v20-1" data-line="1" data-at="1"><span class="cursor primary"></span>other</div><div class="line" id="v20-2" data-line="2"><br></div></div></div></div></div></div></div><div class="layout-bar"><div class="layout-view" data-at="6" data-to="7"><div class="view" data-view="15" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v15-1" data-line="1" data-at="1"><span class="cursor primary"></span><br></div></div></div></div></div></div></div>
+> (commands:run layout:zoom)
+> (layout:zoomed-view)
+#f
+; Balancing a split whose views tabs hide still balances it, as it is not
+; zoomed.
+> (set-parts! (layout-split:container '((direction . row)) (atom g '(weight . 3)) (layout-tabs:container '((weight . 2)) (atom m) (atom n))) (atom echo '(pinned . #t) '(locked . #t)))
+> (layout:select! g)
+> (press! c1 '("x" "control") '("+"))
+> (tree)
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 13) (buffer . "notes") (weight . 1))) (layout-tabs:container ((weight . 1)) #(views:view ((view . 19) (buffer . "notes"))) #(views:view ((view . 20) (buffer . "other"))))) #(views:view ((view . 15) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+; Tabs inside a tab: each strip is drawn, and a click on an inner label
+; is the inner container's.
+> (define p (views:make notes))
+> (define q (views:make notes))
+> (set-parts! (layout-tabs:container '() (atom g) (layout-tabs:container '() (atom p) (atom q))))
+> (layout:select! q)
+> (show-screen c1)
+<div class="layout-screen" data-view="2" data-version="18" data-showing="0"><div class="layout-root"><div class="layout-main"><div class="tabs"><div class="tabs-strip" role="tablist"><div class="tab" role="tab" aria-selected="false" data-at="2" data-to="3">notes</div><div class="tab" role="tab" aria-selected="true" data-at="3" data-to="7">notes</div></div><div class="tabs-panel" role="tabpanel"><div class="tabs"><div class="tabs-strip" role="tablist"><div class="tab" role="tab" aria-selected="false" data-at="4" data-to="5">notes</div><div class="tab" role="tab" aria-selected="true" data-at="5" data-to="6">notes</div></div><div class="tabs-panel" role="tabpanel"><div class="layout-view selected" data-at="5" data-to="6"><div class="view" data-view="22" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v22-1" data-line="1" data-at="1"><span class="cursor primary"></span>one</div><div class="line" id="v22-2" data-line="2">two</div><div class="line" id="v22-3" data-line="3"><br></div></div></div></div></div></div></div></div></div></div></div>
+> (click! (cons "token" (label-at p)))
+> (selected)
+21
+> (click! (cons "token" (label-at g)))
+> (selected)
+13

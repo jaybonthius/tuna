@@ -1,22 +1,19 @@
-; The documented examples of layout and layout-split, in order. Tabs is not
-; loaded, so its container is a split here and the frame example runs a
-; split command instead of tabs:new-tab.
 > (list (eq? (layout:display-action) layout-split:display-right) (map cdr (table-entries layout:display-rules)))
-(#t (#<procedure>))
+(#t (#<procedure> #<procedure>))
 > (define client (web:add-client! 1))
 > (set-parts!
     '(layout-split:container ((direction . row))
        #(views:view ((view . 1) (buffer . "notes.org")))
-       (layout-split:container ((weight . 2) (direction . column))
+       (layout-tabs:container ((weight . 2))
          #(views:view ((view . 2) (buffer . "*scratch*")))
          #(views:view ((view . 3) (buffer . "init.ss")))))
     '#(views:view ((view . 4) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes.org"))) (layout-split:container ((weight . 2) (direction . column)) #(views:view ((view . 2) (buffer . "*scratch*"))) #(views:view ((view . 3) (buffer . "init.ss"))))) #(views:view ((view . 4) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes.org"))) (layout-tabs:container ((weight . 2)) #(views:view ((view . 2) (buffer . "*scratch*"))) #(views:view ((view . 3) (buffer . "init.ss"))))) #(views:view ((view . 4) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
 > (layout:call-with-frame (layout:frame client)
-    (lambda () (commands:run layout-split:split-below)))
+    (lambda () (commands:run layout-tabs:new-tab)))
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "notes.org"))) #(views:view ((view . 5) (buffer . "*Help*")))) (layout-split:container ((weight . 2) (direction . column)) #(views:view ((view . 2) (buffer . "*scratch*"))) #(views:view ((view . 3) (buffer . "init.ss"))))) #(views:view ((view . 4) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () (layout-split:container ((direction . row)) (layout-tabs:container () #(views:view ((view . 1) (buffer . "notes.org"))) #(views:view ((view . 5) (buffer . "*Help*")))) (layout-tabs:container ((weight . 2)) #(views:view ((view . 2) (buffer . "*scratch*"))) #(views:view ((view . 3) (buffer . "init.ss"))))) #(views:view ((view . 4) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
 > (layout:neighbour (layout:selected-view) (layout:direction left))
 #f
 > (views:id (layout:neighbour (layout:selected-view) (layout:direction right)))
@@ -37,3 +34,20 @@
 6
 > (tree)
 (layout:root () (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "notes.org") (weight . 1))) #(views:view ((view . 6) (buffer . "*Help*") (weight . 1))) #(views:view ((view . 2) (buffer . "*scratch*")))))
+> (set-parts!
+    '(layout-tabs:container ()
+       #(views:view ((view . 1) (buffer . "notes.org")))
+       #(views:view ((view . 2) (buffer . "init.ss") (title . "config")))))
+> (tree)
+(layout:root () (layout-tabs:container () #(views:view ((view . 1) (buffer . "notes.org"))) #(views:view ((view . 2) (buffer . "init.ss") (title . "config")))))
+> (map (lambda (id) (layout:part-title (layout:view-node (views:find id)))) (list 1 2))
+("*Help*" "config")
+> (show-screen client)
+<div class="layout-screen" data-view="2" data-version="5" data-showing="0"><div class="layout-root"><div class="layout-main"><div class="tabs"><div class="tabs-strip" role="tablist"><div class="tab" role="tab" aria-selected="true" data-at="2" data-to="3">*Help*</div><div class="tab" role="tab" aria-selected="false" data-at="3" data-to="4">config</div></div><div class="tabs-panel" role="tabpanel"><div class="layout-view selected" data-at="2" data-to="3"><div class="view" data-view="1" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v1-1" data-line="1" data-at="1"><span class="cursor primary"></span>Help.</div><div class="line" id="v1-2" data-line="2"><br></div></div></div></div></div></div></div></div></div>
+> (define status (buffers:make "magit: tuna" ""))
+> (layout:display-buffer status)
+#<view 7>
+> (tree)
+(layout:root () (layout-tabs:container () #(views:view ((view . 1) (buffer . "notes.org"))) #(views:view ((view . 7) (buffer . "magit: tuna"))) #(views:view ((view . 2) (buffer . "init.ss") (title . "config")))))
+> (map views:id (layout:views))
+(7)

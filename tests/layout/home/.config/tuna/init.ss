@@ -1,5 +1,8 @@
-(import (tuna) (tuna plugins) (document) (haml) (web) (help) (boxes))
+(import (tuna) (tuna plugins) (document) (haml) (web) (help) (magit) (boxes))
 (use-plugin layout-split)
+(use-plugin layout-tabs
+  (config
+    (table-set! layout:display-rules magit:status-buffer? layout-tabs:display-in-new-tab)))
 (use-plugin layout
   (config
     (set-option! layout:display-action layout-split:display-right)

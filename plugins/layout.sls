@@ -30,15 +30,15 @@
   ;; Entries made by the configuration outlive a reload of this module,
   ;; so the record type stays the same.
   (define-record-type container
-    (nongenerative layout:container/draw/neighbour/child-attributes/collapse)
+    (nongenerative layout:container/draw/neighbour/child-attributes/collapse/show-focused)
     (sealed #t)
-    (fields draw neighbour child-attributes collapse?))
+    (fields draw neighbour child-attributes collapse? show-focused?))
 
   (define-table containers)
 
   (define (container-entry kind) (table-ref containers kind #f))
 
-  (define (register-container! kind draw neighbour child-attributes collapse?)
+  (define (register-container! kind draw neighbour child-attributes collapse? show-focused?)
     (unless (procedure? draw)
       (assertion-violation 'layout:define-container "not a procedure" draw))
     (unless (or (not neighbour) (procedure? neighbour))
@@ -46,7 +46,7 @@
     (let ([keymap (buffers:kind-keymap (buffers:kind kind))])
       (unless (or (not keymap) (table? keymap))
         (assertion-violation 'layout:define-container "not a keymap or #f" keymap)))
-    (table-set! containers kind (make-container draw neighbour child-attributes collapse?)))
+    (table-set! containers kind (make-container draw neighbour child-attributes collapse? show-focused?)))
 
   (define (attributes? a)
     (and (list? a) (for-all (lambda (p) (and (pair? p) (symbol? (car p)))) a)))
@@ -250,25 +250,51 @@
           (filter (lambda (c) (or (holds? c zoom-at) (pinned? c))) cs)
           cs)))
 
+  (define (shows-focused? n)
+    (let ([entry (kind-entry n)]) (and entry (container-show-focused? entry))))
+
+  (define (focused-or-first node shown)
+    (let ([f (focused-child (current-index) node)])
+      (or (and f (find (lambda (c) (fx= (document:node-start c) (document:node-start f))) shown))
+          (car shown))))
+
+  (define (atoms-under zoom-at visible?)
+    (reverse
+      (let walk ([n (root-node)] [acc '()])
+        (if (view-atom? n)
+            (cons n acc)
+            (let ([shown (shown-children n zoom-at)])
+              (fold-left (lambda (acc c) (walk c acc)) acc
+                (if (and visible? (pair? shown) (shows-focused? n)) (list (focused-or-first n shown)) shown)))))))
+
   (define-record-type shown-entry
     (sealed #t)
     (fields index zoom-at atoms))
 
-  (define shown-cache (make-shown-entry #f #f '()))
+  (define zoom-cache (make-shown-entry #f #f '()))
 
+  ;; Selecting a view in a part its container hides shows that part, so
+  ;; whether a selection ends the zoom asks only what the zoom leaves.
   (define (shown-atoms)
-    (let ([ix (current-index)] [zoom-at (zoom-position)])
-      (if (and (eq? (shown-entry-index shown-cache) ix) (eqv? (shown-entry-zoom-at shown-cache) zoom-at))
-          (shown-entry-atoms shown-cache)
-          (let ([atoms (reverse
-                         (let walk ([n (root-node)] [acc '()])
-                           (if (view-atom? n)
-                               (cons n acc)
-                               (fold-left (lambda (acc c) (walk c acc)) acc (shown-children n zoom-at)))))])
-            (set! shown-cache (make-shown-entry ix zoom-at atoms))
-            atoms))))
+    (let* ([ix (current-index)] [zoom-at (zoom-position)])
+      (unless (and (eq? (shown-entry-index zoom-cache) ix) (eqv? (shown-entry-zoom-at zoom-cache) zoom-at))
+        (set! zoom-cache (make-shown-entry ix zoom-at (atoms-under zoom-at #f))))
+      (shown-entry-atoms zoom-cache)))
 
-  (define (shown-views) (map view-of (shown-atoms)))
+  (define-record-type visible-entry
+    (sealed #t)
+    (fields index zoom-at order atoms))
+
+  (define visible-cache (make-visible-entry #f #f #f '()))
+
+  (define (visible-atoms)
+    (let* ([ix (current-index)] [zoom-at (zoom-position)] [order (frame-record-order the-frame)])
+      (unless (and (eq? (visible-entry-index visible-cache) ix) (eqv? (visible-entry-zoom-at visible-cache) zoom-at)
+                   (eq? (visible-entry-order visible-cache) order))
+        (set! visible-cache (make-visible-entry ix zoom-at order (atoms-under zoom-at #t))))
+      (visible-entry-atoms visible-cache)))
+
+  (define (shown-views) (map view-of (visible-atoms)))
 
   (define-record-type focus-entry
     (sealed #t)
@@ -531,7 +557,7 @@
       [(_ id clause ...)
        (identifier? #'id)
        (let loop ([clauses #'(clause ...)] [seen '()] [draw #f] [neighbour #'#f] [keymap #'#f]
-                  [attributes '()] [collapse #'#f])
+                  [attributes '()] [collapse #'#f] [show-focused #'#f])
          (if (null? clauses)
              (begin
                (unless draw
@@ -540,7 +566,8 @@
                    (buffers:define-kind id (content nodes) (consent check-parts) (keymap #,keymap))
                    (define-values ()
                      (begin
-                       (register-container! (car (id '())) #,draw #,neighbour '#,(datum->syntax #'id attributes) #,collapse)
+                       (register-container! (car (id '())) #,draw #,neighbour '#,(datum->syntax #'id attributes)
+                                            #,collapse #,show-focused)
                        (values)))))
              (let* ([c (car clauses)]
                     [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ (invalid c)])])
@@ -549,19 +576,19 @@
                (let ([seen (cons name seen)] [rest (cdr clauses)])
                  (define (expression)
                    (syntax-case c () [(_ e) #'e] [_ (invalid c)]))
+                 (define (flag)
+                   (syntax-case c () [(_) #'#t] [_ (invalid c)]))
                  (case name
-                   [(draw) (loop rest seen (expression) neighbour keymap attributes collapse)]
-                   [(neighbour) (loop rest seen draw (expression) keymap attributes collapse)]
-                   [(keymap) (loop rest seen draw neighbour (expression) attributes collapse)]
+                   [(draw) (loop rest seen (expression) neighbour keymap attributes collapse show-focused)]
+                   [(neighbour) (loop rest seen draw (expression) keymap attributes collapse show-focused)]
+                   [(keymap) (loop rest seen draw neighbour (expression) attributes collapse show-focused)]
                    [(child-attributes)
                     (syntax-case c ()
                       [(_ a ...) (for-all identifier? #'(a ...))
-                       (loop rest seen draw neighbour keymap (syntax->datum #'(a ...)) collapse)]
+                       (loop rest seen draw neighbour keymap (syntax->datum #'(a ...)) collapse show-focused)]
                       [_ (invalid c)])]
-                   [(collapse)
-                    (syntax-case c ()
-                      [(_) (loop rest seen draw neighbour keymap attributes #'#t)]
-                      [_ (invalid c)])]
+                   [(collapse) (loop rest seen draw neighbour keymap attributes (flag) show-focused)]
+                   [(show-focused) (loop rest seen draw neighbour keymap attributes collapse (flag))]
                    [else (invalid c)])))))]
       [_ (syntax-violation 'layout:define-container "expected (layout:define-container id clause ...)" x)])))
 
@@ -607,6 +634,16 @@
       (assertion-violation 'layout:select! "not a view in the layout" view))
     (select-id! id)
     (void)))
+
+(define zoomed-view
+  (case-lambda
+    [() (zoomed-view (current-frame))]
+    [(frame)
+     (unless (frame-record? frame)
+       (assertion-violation 'layout:zoomed-view "not a frame" frame))
+     (check-main-thread 'layout:zoomed-view)
+     (let ([z (frame-zoom)])
+       (and z (view-of (index-atom (current-index) z))))]))
 
 (define views
   (case-lambda
@@ -658,6 +695,10 @@
   (check-view 'layout:view-node view)
   (check-main-thread 'layout:view-node)
   (index-atom (current-index) (views:id view)))
+
+(define (part-view node)
+  (check-main-thread 'layout:part-view)
+  (view-of (lead-down (current-index) (check-part 'layout:part-view node))))
 
 (define (part-title node)
   (check-main-thread 'layout:part-title)

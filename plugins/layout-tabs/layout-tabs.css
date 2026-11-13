@@ -1,0 +1,52 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  .tabs {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
+
+  .tabs-strip {
+    display: flex;
+    flex: none;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-ui);
+    background: var(--layout-tabs-strip-background, var(--tuna-surface-subtle));
+    border-block-end: var(--tuna-border-width) solid var(--tuna-border);
+  }
+
+  .tab {
+    flex: none;
+    padding-inline: var(--layout-tabs-tab-padding, var(--tuna-space-4));
+    white-space: nowrap;
+    color: var(--layout-tabs-tab-text, var(--tuna-text-muted));
+    cursor: pointer;
+  }
+
+  .tab + .tab {
+    border-inline-start: var(--tuna-border-width) solid var(--tuna-border);
+  }
+
+  @media (hover: hover) {
+    .tab:hover {
+      background: var(--layout-tabs-hover-background, var(--tuna-hover));
+    }
+  }
+
+  .tab[aria-selected="true"] {
+    background: var(--layout-tabs-selected-background, var(--tuna-surface));
+    color: var(--layout-tabs-selected-text, var(--tuna-text));
+  }
+
+  .tabs-panel {
+    display: flex;
+    flex: 1 1 0;
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
+}

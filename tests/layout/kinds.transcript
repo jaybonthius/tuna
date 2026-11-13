@@ -8,6 +8,8 @@
 ! layout:define-container: invalid clause (size 3) in (layout:define-container plain (draw car) (size 3))
 > (layout:define-container plain (draw car) (collapse 1))
 ! layout:define-container: invalid clause (collapse 1) in (layout:define-container plain (draw car) (collapse 1))
+> (layout:define-container plain (draw car) (show-focused #t))
+! layout:define-container: invalid clause (show-focused #t) in (layout:define-container plain (draw car) (show-focused #t))
 > (layout:define-container plain (draw car) (child-attributes "weight"))
 ! layout:define-container: invalid clause (child-attributes "weight") in (layout:define-container plain (draw car) (child-attributes "weight"))
 > (layout:define-container (plain) (draw car))

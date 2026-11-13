@@ -5,7 +5,7 @@
 
 (module %internals
   (parts weight weight-text column? split-node? with-weight without node-datum replace-node!
-   holding-split balanced shown-atoms-hidden?)
+   holding-split balanced)
 
   (define (parts node)
     (let ([acc '()])
@@ -65,18 +65,7 @@
                             (let ([w (assq 'weight (datum-attributes c))])
                               (if (and w (not (eqv? (cdr w) 1)) (not (locked-datum? c))) (with-weight c 1) c)))
                           children)
-                     children)))))
-
-  (define (view-atoms node)
-    (if (document:atom? node)
-        (if (eq? (document:node-kind node) 'views:view) (list node) '())
-        (apply append (map view-atoms (parts node)))))
-
-  ;; Layout tells no zoom; only a zoomed frame shows fewer views than the
-  ;; layout holds.
-  (define (shown-atoms-hidden?)
-    (let ([doc (buffers:document layout:buffer)])
-      (not (fx= (length (layout:views)) (length (view-atoms (document:token doc 0))))))))
+                     children))))))
 
 (import %internals)
 
@@ -195,7 +184,7 @@
 (commands:define-command (balance)
   "Sets the weight of every child of every split in the frame's zoomed part to 1."
   (let ([root (document:token (buffers:document layout:buffer) 0)])
-    (unless (or (shown-atoms-hidden?) (layout:locked? root))
+    (unless (or (layout:zoomed-view) (layout:locked? root))
       (let ([kind (car (container '()))])
         (for-each
           (lambda (child)
