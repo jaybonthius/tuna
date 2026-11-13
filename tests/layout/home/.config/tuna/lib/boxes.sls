@@ -5,10 +5,10 @@
 
 (commands:define-command (box-command) "Does nothing." #f)
 
-(define (draw-box node children focused draw-child)
+(define (draw-box node children focused draw-child client)
   (haml (:section.box (map draw-child children))))
 
-(define (draw-broken node children focused draw-child)
+(define (draw-broken node children focused draw-child client)
   (car '()))
 
 (define (stray-neighbour node child direction)

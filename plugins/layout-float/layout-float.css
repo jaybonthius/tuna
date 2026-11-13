@@ -1,0 +1,60 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  /* Isolated, so that nothing a view stacks inside the base can cover a
+     float. */
+  .float {
+    display: flex;
+    flex: 1 1 0;
+    min-inline-size: 0;
+    min-block-size: 0;
+    position: relative;
+    isolation: isolate;
+  }
+
+  .float-base {
+    display: flex;
+    flex: 1 1 0;
+    min-inline-size: 0;
+    min-block-size: 0;
+    isolation: isolate;
+  }
+
+  /* In the views' font, so that sizes in characters and lines match
+     theirs. */
+  .float-child {
+    display: flex;
+    position: absolute;
+    box-sizing: border-box;
+    font-family: var(--tuna-font-code);
+    font-size: var(--tuna-font-size-code);
+    line-height: var(--tuna-line-height-code);
+    background: var(--layout-float-background, var(--tuna-surface, Canvas));
+    border: var(--tuna-border-width, 1px) solid var(--layout-float-border, var(--tuna-border, CanvasText));
+    box-shadow: var(--layout-float-shadow, var(--tuna-shadow-3, 0 4px 12px rgb(0 0 0 / 0.25)));
+    pointer-events: auto;
+  }
+
+  .float-child > * {
+    flex: 1 1 0;
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
+
+  /* No transform, filter or containment may sit on a popup's ancestors,
+     or it would be placed in them instead of the screen. */
+  .float-child.anchored {
+    position: fixed;
+    position-area: bottom span-right;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+    position-visibility: anchors-visible;
+  }
+
+  @supports not (position-anchor: --a) {
+    .float-child.anchored {
+      inset-block-start: 0;
+      inset-inline-start: 50%;
+      translate: -50% 0;
+    }
+  }
+}

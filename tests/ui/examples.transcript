@@ -42,7 +42,7 @@
 > (buffers:name (views:buffer (view)))
 "*buffer list*"
 > (map (lambda (r) (vector-ref r 0)) (cddr (car (datums buffer-list:list-buffer))))
-(ui:%list-row ui:%list-row ui:%list-row ui:%list-row ui:%list-row ui:%list-row)
+(ui:%list-row ui:%list-row ui:%list-row ui:%list-row ui:%list-row ui:%list-row ui:%list-row)
 > (press! "C-n")
 > (ui:selected-row (document:token (buffers:document buffer-list:list-buffer) 0) (view))
 1

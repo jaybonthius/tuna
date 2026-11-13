@@ -15,10 +15,20 @@
     margin: 0;
   }
 
+  /* Isolated, so that nothing stacked inside the layout covers the
+     popups drawn after it. */
   .layout-root {
     display: flex;
     flex-direction: column;
     block-size: 100%;
+    isolation: isolate;
+  }
+
+  .layout-popups {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    pointer-events: none;
   }
 
   .layout-main {

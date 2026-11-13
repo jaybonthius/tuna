@@ -7,11 +7,11 @@
   "Maps a predicate on buffers to the action that shows the buffers it accepts.")
 
 (module %internals
-  (check-main-thread check-view check-part check-direction register-container! check-parts
-   the-frame frame-record? open-layout! current-index index-atom view-of selected-id shown-views
-   select-id! set-zoom! frame-zoom frame-order children root-node locked-node? title-of draw-layout
-   neighbour-of remove-part! bar-view node-datum note-batch save-now! focus-keymaps
-   last-selected-unlocked-atom lead-down)
+  (check-main-thread check-view check-direction register-container! check-parts check-popup-parts
+   the-frame frame-record? open-layout! opened-popups current-index index-atom index-of-id atom-of part-of
+   view-of selected-id shown-views select-id! set-zoom! frame-zoom frame-order children root-node
+   locked-node? locked-in? title-of draw-layout draw-popups neighbour-of remove-part! bar-view node-datum
+   note-batch save-now! focus-keymaps last-selected-unlocked-atom lead-down order-views)
 
   (define main-thread (get-thread-id))
 
@@ -88,19 +88,29 @@
          (unlocked-view-datum? v)
          (distinct-ids? (datum-view-ids v '()))))
 
-  (define (check-parts node edit)
+  ;; A consent is not told which buffer it is asked for, so a view number
+  ;; already in either tree may be written again only where the edit
+  ;; replaces it.
+  (define (parts-fit? node edit empty-ok?)
     (let* ([inserted (buffers:edit-inserted edit)] [datums (document:datums inserted)])
       (and (for-all (lambda (d) (part-datum? d container-entry)) datums)
-           (fx> (fx+ (fx- (document:node-end node) (document:node-start node) 2)
-                     (fx- (document:length inserted) (document:length (buffers:edit-removed edit))))
-                0)
+           (or empty-ok?
+               (fx> (fx+ (fx- (document:node-end node) (document:node-start node) 2)
+                         (fx- (document:length inserted) (document:length (buffers:edit-removed edit))))
+                    0))
            (let ([ids (fold-left (lambda (acc d) (datum-view-ids d acc)) '() datums)])
              (and (distinct-ids? ids)
                   (or (not layout-buffer)
-                      (let* ([ix (current-index)] [s (buffers:edit-start edit)]
+                      (let* ([ix (current-index)] [px (popups-index)] [s (buffers:edit-start edit)]
                              [e (fx+ s (document:length (buffers:edit-removed edit)))])
-                        (for-all (lambda (id) (let ([a (index-atom ix id)]) (or (not a) (holds-range? a s e))))
+                        (for-all (lambda (id)
+                                   (let ([a (index-atom ix id)] [p (index-atom px id)])
+                                     (and (or (not a) (holds-range? a s e)) (or (not p) (holds-range? p s e)))))
                                  ids))))))))
+
+  (define (check-parts node edit) (parts-fit? node edit #f))
+
+  (define (check-popup-parts node edit) (parts-fit? node edit #t))
 
   (define-saved saved-layout #f (lambda (v) (or (not v) (layout-datum? v))))
 
@@ -127,11 +137,14 @@
   (define (frame-order) (current-index) (frame-record-order the-frame))
 
   (define layout-buffer #f)
+  (define popups-buffer #f)
   (define saved-key #f)
   (define frame-dirty? #f)
   (define known-ids '())
 
   (define (layout-doc) (buffers:document layout-buffer))
+
+  (define (popups-doc) (buffers:document popups-buffer))
 
   ;; Each node is known by its start, which no other node of a document
   ;; shares.
@@ -140,6 +153,7 @@
     (fields doc atom-list ids kids parents))
 
   (define last-index #f)
+  (define last-popups-index #f)
 
   (define (view-atom? n)
     (and (document:atom? n) (eq? (document:node-kind n) 'views:view)))
@@ -181,17 +195,33 @@
   ;; read, not in an edit's hook, so a quit landing in the check leaves it
   ;; to be made again at the next read.
   (define synced-doc #f)
+  (define synced-popups-doc #f)
 
   (define (current-index)
-    (let ([doc (layout-doc)])
+    (let ([doc (layout-doc)] [popups (popups-doc)])
       (unless (and last-index (eq? (index-doc last-index) doc))
         (set! last-index (build-index doc)))
-      (unless (eq? synced-doc doc)
-        (fix-frame! last-index)
-        (set! synced-doc doc))
+      (unless (and last-popups-index (eq? (index-doc last-popups-index) popups))
+        (set! last-popups-index (build-index popups)))
+      (unless (and (eq? synced-doc doc) (eq? synced-popups-doc popups))
+        (fix-frame! last-index last-popups-index)
+        (set! synced-doc doc)
+        (set! synced-popups-doc popups))
       last-index))
 
+  (define (popups-index) (current-index) last-popups-index)
+
   (define (index-atom ix id) (hashtable-ref (index-ids ix) id #f))
+
+  (define (index-of-id id)
+    (let ([ix (current-index)])
+      (cond
+        [(index-atom ix id) ix]
+        [(index-atom last-popups-index id) last-popups-index]
+        [else #f])))
+
+  (define (atom-of id)
+    (let ([ix (index-of-id id)]) (and ix (index-atom ix id))))
 
   (define (index-atoms) (index-atom-list (current-index)))
 
@@ -203,7 +233,6 @@
 
   (define (children n) (kids-of (current-index) n))
 
-  (define (parent n) (parent-in (current-index) n))
 
   ;; views:atom-view takes the first atom it is given in a batch for a
   ;; view's own, and gives a later one at another place a copy, so an atom
@@ -219,16 +248,34 @@
           (hashtable-set! registered (atom-id atom) #t)
           (views:atom-view atom))))
 
-  (define (check-part who node)
+  (define (token-like doc node)
+    (let* ([s (document:node-start node)] [t (and (fx< s (document:length doc)) (document:token doc s))])
+      (and (document:node? t) (fx= (document:node-end t) (document:node-end node))
+           (eq? (document:node-kind t) (document:node-kind node))
+           (or (view-atom? t) (not (document:atom? t)))
+           t)))
+
+  (define (first-view-id n)
+    (if (document:atom? n)
+        (and (view-atom? n) (atom-id n))
+        (let ([found #f])
+          (document:for-each-child n (fx+ (document:node-start n) 1) (fx- (document:node-end n) 1)
+            (lambda (c at) (when (and (not found) (document:node? c)) (set! found (first-view-id c)))))
+          found)))
+
+  ;; A node does not tell its document, and the two trees can each hold
+  ;; a part of one kind at the same range; the views in it, numbered
+  ;; uniquely across both, tell them apart.
+  (define (part-of who node)
     (unless (document:node? node)
       (assertion-violation who "not a node" node))
-    (let* ([doc (layout-doc)] [s (document:node-start node)]
-           [t (and (fx< s (document:length doc)) (document:token doc s))])
-      (unless (and (document:node? t) (fx= (document:node-end t) (document:node-end node))
-                   (eq? (document:node-kind t) (document:node-kind node))
-                   (or (view-atom? t) (not (document:atom? t))))
-        (assertion-violation who "not a part of the layout" node))
-      t))
+    (let* ([ix (current-index)] [px last-popups-index]
+           [t (token-like (index-doc ix) node)] [p (token-like (index-doc px) node)])
+      (cond
+        [(and t p) (if (eqv? (first-view-id node) (first-view-id p)) (values px p) (values ix t))]
+        [t (values ix t)]
+        [p (values px p)]
+        [else (assertion-violation who "not a part of the layout" node)])))
 
   (define (selected-id) (current-index) (car (frame-record-order the-frame)))
 
@@ -240,12 +287,14 @@
 
   (define (pinned? n) (document:node-attribute n 'pinned #f))
 
-  (define (locked-node? n)
+  (define (locked-in? ix n)
     (let loop ([n n])
-      (and n (or (and (document:node-attribute n 'locked #f) #t) (loop (parent n))))))
+      (and n (or (and (document:node-attribute n 'locked #f) #t) (loop (parent-in ix n))))))
 
-  (define (shown-children node zoom-at)
-    (let ([cs (children node)])
+  (define (locked-node? n) (locked-in? (current-index) n))
+
+  (define (shown-children ix node zoom-at)
+    (let ([cs (kids-of ix node)])
       (if (and zoom-at (holds? node zoom-at) (not (fx= zoom-at (document:node-start node))))
           (filter (lambda (c) (or (holds? c zoom-at) (pinned? c))) cs)
           cs)))
@@ -253,19 +302,20 @@
   (define (shows-focused? n)
     (let ([entry (kind-entry n)]) (and entry (container-show-focused? entry))))
 
-  (define (focused-or-first node shown)
-    (let ([f (focused-child (current-index) node)])
+  (define (focused-or-first ix node shown)
+    (let ([f (focused-child ix node)])
       (or (and f (find (lambda (c) (fx= (document:node-start c) (document:node-start f))) shown))
           (car shown))))
 
   (define (atoms-under zoom-at visible?)
-    (reverse
-      (let walk ([n (root-node)] [acc '()])
-        (if (view-atom? n)
-            (cons n acc)
-            (let ([shown (shown-children n zoom-at)])
-              (fold-left (lambda (acc c) (walk c acc)) acc
-                (if (and visible? (pair? shown) (shows-focused? n)) (list (focused-or-first n shown)) shown)))))))
+    (let ([ix (current-index)])
+      (reverse
+        (let walk ([n (root-node)] [acc '()])
+          (if (view-atom? n)
+              (cons n acc)
+              (let ([shown (shown-children ix n zoom-at)])
+                (fold-left (lambda (acc c) (walk c acc)) acc
+                  (if (and visible? (pair? shown) (shows-focused? n)) (list (focused-or-first ix n shown)) shown))))))))
 
   (define-record-type shown-entry
     (sealed #t)
@@ -301,14 +351,16 @@
     (fields index order table))
 
   (define focus-cache (make-focus-entry #f #f #f))
+  (define popups-focus-cache (make-focus-entry #f #f #f))
 
   ;; The first view of the order inside a container leads to it through
   ;; every container above it, so a later one stops where it meets one
   ;; known.
   (define (focus-table ix)
-    (let ([order (frame-record-order the-frame)])
-      (if (and (eq? (focus-entry-index focus-cache) ix) (eq? (focus-entry-order focus-cache) order))
-          (focus-entry-table focus-cache)
+    (let ([order (frame-record-order the-frame)]
+          [cache (if (eq? ix last-popups-index) popups-focus-cache focus-cache)])
+      (if (and (eq? (focus-entry-index cache) ix) (eq? (focus-entry-order cache) order))
+          (focus-entry-table cache)
           (let ([t (make-eqv-hashtable)])
             (for-each
               (lambda (id)
@@ -320,7 +372,9 @@
                           (hashtable-set! t (document:node-start p) child)
                           (climb p)))))))
               order)
-            (set! focus-cache (make-focus-entry ix order t))
+            (if (eq? ix last-popups-index)
+                (set! popups-focus-cache (make-focus-entry ix order t))
+                (set! focus-cache (make-focus-entry ix order t)))
             t))))
 
   (define (focused-child ix node)
@@ -342,15 +396,16 @@
       (frame-record-zoom-set! the-frame z)
       (set! frame-dirty? #t)))
 
+  ;; Popups are drawn over the whole layout, zoomed or not.
   (define (select-id! id)
-    (unless (exists (lambda (a) (eqv? (atom-id a) id)) (shown-atoms))
+    (unless (or (index-atom (popups-index) id) (exists (lambda (a) (eqv? (atom-id a) id)) (shown-atoms)))
       (set-zoom! #f))
     (set-order! (cons id (remv id (frame-record-order the-frame)))))
 
   ;; A deleted view leaves the order, so the first view left is where the
   ;; focused children lead from the root.
-  (define (fix-frame! ix)
-    (let* ([order (filter (lambda (id) (index-atom ix id)) (frame-record-order the-frame))])
+  (define (fix-frame! ix px)
+    (let* ([order (filter (lambda (id) (or (index-atom ix id) (index-atom px id))) (frame-record-order the-frame))])
       (set-order!
         (if (null? order)
             (let ([a (or (lead-down ix (root-node)) (car (index-atom-list ix)))]) (list (atom-id a)))
@@ -358,7 +413,7 @@
       (unless (and (frame-record-zoom the-frame) (index-atom ix (frame-record-zoom the-frame)))
         (set-zoom! #f))))
 
-  (define (title-of n)
+  (define (title-of ix n)
     (let ([title (document:node-attribute n 'title #f)])
       (cond
         [(string? title) title]
@@ -366,26 +421,29 @@
          (let* ([v (view-of n)] [b (views:buffer v)])
            (if b (buffers:name b) (let ([name (document:node-attribute n 'buffer "")]) (if (string? name) name ""))))]
         [else
-         (let ([c (or (focused-child (current-index) n) (let ([cs (children n)]) (and (pair? cs) (car cs))))])
-           (if c (title-of c) ""))])))
+         (let ([c (or (focused-child ix n) (let ([cs (kids-of ix n)]) (and (pair? cs) (car cs))))])
+           (if c (title-of ix c) ""))])))
 
-  (define (draw-view-atom atom selected client)
+  ;; A popup is drawn outside the layout's screen view, so its element
+  ;; carries no positions, which would name the layout's.
+  (define (draw-view-atom atom selected client marks?)
     (let ([v (view-of atom)])
       (haml (:div.layout-view ([class (and (eqv? (atom-id atom) selected) "selected")]
-                               [data-at (document:node-start atom)] [data-to (document:node-end atom)])
+                               [data-at (and marks? (document:node-start atom))]
+                               [data-to (and marks? (document:node-end atom))])
               (views:draw v client)))))
 
   (define (draw-plain shown draw-child)
     (haml (:div.layout-part (map draw-child shown))))
 
-  (define (draw-layout client)
-    (let ([zoom-at (zoom-position)] [selected (selected-id)])
-      (let draw ([n (root-node)])
+  (define (draw-tree ix root zoom-at client)
+    (let ([selected (selected-id)] [marks? (eq? ix last-index)])
+      (let draw ([n root])
         (cond
-          [(view-atom? n) (draw-view-atom n selected client)]
+          [(view-atom? n) (draw-view-atom n selected client marks?)]
           [(document:atom? n) '()]
           [else
-           (let* ([shown (shown-children n zoom-at)]
+           (let* ([shown (shown-children ix n zoom-at)]
                   [entry (container-entry (document:node-kind n))]
                   [draw-child (lambda (c)
                                 (unless (and (document:node? c) (exists (lambda (s) (fx= (document:node-start s) (document:node-start c))) shown))
@@ -393,14 +451,25 @@
                                 (draw c))])
              (if entry
                  (guard (c [(not (quit-condition? c)) (report c) (draw-plain shown draw)])
-                   ((container-draw entry) n shown (focused-child (current-index) n) draw-child))
+                   ((container-draw entry) n shown (focused-child ix n) draw-child client))
                  (draw-plain shown draw)))]))))
+
+  (define (draw-layout client)
+    (draw-tree (current-index) (root-node) (zoom-position) client))
+
+  (define (draw-popups client)
+    (let ([px (popups-index)])
+      (if (null? (index-atom-list px))
+          '()
+          (draw-tree px (document:token (popups-doc) 0) #f client))))
 
   (define (kind-entry n) (and (not (document:atom? n)) (container-entry (document:node-kind n))))
 
-  (define (neighbour-of atom direction)
+  ;; A kind may name the siblings in a cycle, so a walk across locked
+  ;; views stops where it started.
+  (define (neighbour-of ix atom direction)
     (let up ([n atom])
-      (let ([p (parent n)])
+      (let ([p (parent-in ix n)])
         (and p
              (let ([entry (kind-entry p)])
                (let across ([child n])
@@ -409,14 +478,15 @@
                    (cond
                      [(not sibling) (up p)]
                      [(not (and (document:node? sibling)
-                                (exists (lambda (c) (fx= (document:node-start c) (document:node-start sibling))) (children p))))
+                                (exists (lambda (c) (fx= (document:node-start c) (document:node-start sibling))) (kids-of ix p))))
                       (assertion-violation 'layout:neighbour "a kind's neighbour is not a child of its container" sibling)]
+                     [(fx= (document:node-start sibling) (document:node-start n)) #f]
                      [else
-                      (let ([a (lead-down (current-index) sibling)])
-                        (if (and a (not (locked-node? a))) (view-of a) (across sibling)))]))))))))
+                      (let ([a (lead-down ix sibling)])
+                        (if (and a (not (locked-in? ix a))) (view-of a) (across sibling)))]))))))))
 
-  (define (node-datum n)
-    (car (document:datums (document:slice (layout-doc) (document:node-start n) (document:node-end n)))))
+  (define (node-datum ix n)
+    (car (document:datums (document:slice (index-doc ix) (document:node-start n) (document:node-end n)))))
 
   (define (with-attributes d attributes)
     (if (vector? d) (vector (vector-ref d 0) attributes) (cons* (car d) attributes (cddr d))))
@@ -426,31 +496,33 @@
 
   (define (holds-range? a s e) (and (fx<= s (document:node-start a)) (fx<= (document:node-end a) e)))
 
-  ;; Removing and collapsing are one edit, so one undo restores both.
-  (define (remove-part! node)
-    (let loop ([n node])
-      (let ([p (parent n)])
-        (when (not p)
-          (assertion-violation 'layout:delete-part! "the root" node))
-        (if (and (parent p) (null? (cdr (children p))))
-            (loop p)
-            (let ([s (document:node-start n)] [e (document:node-end n)])
-              (unless (unlocked-atoms-outside s e)
-                (assertion-violation 'layout:delete-part! "the last view that is not locked" node))
-              (let ([others (remp (lambda (c) (fx= (document:node-start c) s)) (children p))]
-                    [entry (kind-entry p)] [grand (parent p)])
-                (if (and grand entry (container-collapse? entry) (fx= (length others) 1))
-                    ;; A part's pinned attribute, like its kind's child
-                    ;; attributes, belongs to its place, which the child
-                    ;; takes.
-                    (let* ([child (car others)] [d (node-datum child)]
-                           [own (container-child-attributes entry)]
-                           [place (cons 'pinned (let ([g (kind-entry grand)]) (if g (container-child-attributes g) '())))]
-                           [kept (remp (lambda (a) (or (memq (car a) own) (memq (car a) place))) (datum-attributes d))]
-                           [moved (filter (lambda (a) (memq (car a) place)) (datum-attributes (node-datum p)))])
-                      (buffers:replace! layout-buffer (document:node-start p) (document:node-end p)
-                        (with-attributes d (append kept moved))))
-                    (buffers:replace! layout-buffer s e ""))))))))
+  ;; Removing and collapsing are one edit, so one undo restores both. The
+  ;; popups may all go; the layout keeps a view that is not locked.
+  (define (remove-part! ix node)
+    (let ([layout? (eq? ix (current-index))])
+      (let loop ([n node])
+        (let ([p (parent-in ix n)] [b (if layout? layout-buffer popups-buffer)])
+          (when (not p)
+            (assertion-violation 'layout:delete-part! "the root" node))
+          (if (and (parent-in ix p) (null? (cdr (kids-of ix p))))
+              (loop p)
+              (let ([s (document:node-start n)] [e (document:node-end n)])
+                (unless (or (not layout?) (unlocked-atoms-outside s e))
+                  (assertion-violation 'layout:delete-part! "the last view that is not locked" node))
+                (let ([others (remp (lambda (c) (fx= (document:node-start c) s)) (kids-of ix p))]
+                      [entry (kind-entry p)] [grand (parent-in ix p)])
+                  (if (and grand entry (container-collapse? entry) (fx= (length others) 1))
+                      ;; A part's pinned attribute, like its kind's child
+                      ;; attributes, belongs to its place, which the child
+                      ;; takes.
+                      (let* ([child (car others)] [d (node-datum ix child)]
+                             [own (container-child-attributes entry)]
+                             [place (cons 'pinned (let ([g (kind-entry grand)]) (if g (container-child-attributes g) '())))]
+                             [kept (remp (lambda (a) (or (memq (car a) own) (memq (car a) place))) (datum-attributes d))]
+                             [moved (filter (lambda (a) (memq (car a) place)) (datum-attributes (node-datum ix p)))])
+                        (buffers:replace! b (document:node-start p) (document:node-end p)
+                          (with-attributes d (append kept moved))))
+                      (buffers:replace! b s e "")))))))))
 
   (define (bar-view b)
     (let* ([root (root-node)] [bars (cdr (children root))])
@@ -462,19 +534,26 @@
             v))))
 
   (define (focus-keymaps)
-    (let* ([atom (index-atom (current-index) (selected-id))]
+    (let* ([id (selected-id)] [ix (index-of-id id)] [atom (index-atom ix id)]
            [inner (views:keymaps (view-of atom))])
-      (let loop ([n (parent atom)] [acc '()])
+      (let loop ([n (parent-in ix atom)] [acc '()])
         (if n
-            (loop (parent n)
+            (loop (parent-in ix n)
                   (let* ([kind (buffers:kind (document:node-kind n))] [k (and kind (buffers:kind-keymap kind))])
                     (if k (cons k acc) acc)))
             (append inner (reverse acc))))))
 
+  (define (order-views)
+    (let ([ix (current-index)] [px last-popups-index])
+      (fold-right
+        (lambda (id acc)
+          (let ([a (or (index-atom ix id) (index-atom px id))]) (if a (cons (view-of a) acc) acc)))
+        '() (frame-record-order the-frame))))
+
   ;; An atom names its buffer so that a view restarts on it; the view's
   ;; buffer may have changed since the atom was written.
   (define (current-datum)
-    (let refresh ([d (node-datum (root-node))])
+    (let refresh ([d (node-datum (current-index) (root-node))])
       (if (vector? d)
           (let* ([id (cdr (assq 'view (vector-ref d 1)))] [v (views:find id)] [b (and v (views:buffer v))])
             (if b
@@ -497,14 +576,19 @@
           (unless (equal? d (saved-layout))
             (set-saved! saved-layout d)))
         (set! saved-key key)))
+    ;; Popups are never saved, so neither are their places in the order.
     (when frame-dirty?
-      (set-saved! saved-frame (list (frame-record-order the-frame) (frame-record-zoom the-frame)))
+      (let* ([ix (current-index)]
+             [state (list (filter (lambda (id) (index-atom ix id)) (frame-record-order the-frame))
+                          (frame-record-zoom the-frame))])
+        (unless (equal? state (saved-frame))
+          (set-saved! saved-frame state)))
       (set! frame-dirty? #f)))
 
   ;; Views whose atoms left the layout are dropped once the batch ends, so
   ;; a part moved by two edits keeps its views.
   (define (note-batch)
-    (let ([ids (map atom-id (index-atoms))])
+    (let ([ids (map atom-id (append (index-atoms) (index-atom-list (popups-index))))])
       (for-each
         (lambda (id)
           (unless (memv id ids)
@@ -531,18 +615,21 @@
           (and (pair? atoms) (car atoms)))))
 
   (define (first-buffer)
-    (find (lambda (b) (not (string=? (buffers:name b) "*layout*"))) (buffers:all)))
+    (find (lambda (b) (not (member (buffers:name b) '("*layout*" "*popups*")))) (buffers:all)))
 
   (define (default-datum)
     (let* ([b (or (first-buffer) (buffers:make "*scratch*" ""))] [v (views:make b)])
       (list 'layout:root '()
             (vector 'views:view (list (cons 'view (views:id v)) (cons 'buffer (buffers:name b)))))))
 
-  (define (open-layout!)
+  (define (opened-popups) popups-buffer)
+
+  (define (open-layout! popups-root)
     (set! layout-buffer
       (or (buffers:find "*layout*")
           (buffers:make "*layout*" (or (saved-layout) (default-datum)))))
-    (set! known-ids (map atom-id (index-atoms)))
+    (set! popups-buffer (or (buffers:find "*popups*") (buffers:make "*popups*" popups-root)))
+    (set! known-ids (map atom-id (append (index-atoms) (index-atom-list (popups-index)))))
     layout-buffer)
 
   (record-writer (record-type-descriptor frame-record)
@@ -615,7 +702,8 @@
   (check-main-thread 'layout:screen)
   (haml (:div.layout-screen ([data-view (views:id screen-view)] [data-version (buffers:version buffer)]
                              [data-showing (views:shown-count screen-view)])
-          (draw-layout client))))
+          (draw-layout client)
+          (draw-popups client))))
 
 (define selected-view
   (case-lambda
@@ -624,13 +712,13 @@
      (unless (frame-record? frame)
        (assertion-violation 'layout:selected-view "not a frame" frame))
      (check-main-thread 'layout:selected-view)
-     (view-of (index-atom (current-index) (selected-id)))]))
+     (view-of (atom-of (selected-id)))]))
 
 (define (select! view)
   (check-view 'layout:select! view)
   (check-main-thread 'layout:select!)
   (let ([id (views:id view)])
-    (unless (index-atom (current-index) id)
+    (unless (atom-of id)
       (assertion-violation 'layout:select! "not a view in the layout" view))
     (select-id! id)
     (void)))
@@ -658,12 +746,21 @@
   (check-view 'layout:neighbour view)
   (check-direction 'layout:neighbour direction)
   (check-main-thread 'layout:neighbour)
-  (let ([atom (index-atom (current-index) (views:id view))])
-    (unless atom
+  (let* ([id (views:id view)] [ix (index-of-id id)])
+    (unless ix
       (assertion-violation 'layout:neighbour "not a view in the layout" view))
-    (neighbour-of atom direction)))
+    (neighbour-of ix (index-atom ix id) direction)))
 
-(define (%draw-root node shown focused draw-child)
+(define selection-order
+  (case-lambda
+    [() (selection-order (current-frame))]
+    [(frame)
+     (unless (frame-record? frame)
+       (assertion-violation 'layout:selection-order "not a frame" frame))
+     (check-main-thread 'layout:selection-order)
+     (order-views)]))
+
+(define (%draw-root node shown focused draw-child client)
   (let ([parts (if (null? shown)
                    '()
                    (cons (haml (:div.layout-main (draw-child (car shown))))
@@ -685,7 +782,18 @@
 
 (define-container root (draw %draw-root) (neighbour %root-neighbour) (keymap keymap))
 
-(define buffer (open-layout!))
+(define (%draw-popups node shown focused draw-child client)
+  (haml (:div.layout-popups (map draw-child shown))))
+
+;; Popups come and go, so their root may be empty.
+(buffers:define-kind popups-root (content nodes) (consent check-popup-parts))
+
+(define-values ()
+  (begin (register-container! (car (popups-root '())) %draw-popups #f '() #f #f) (values)))
+
+(define buffer (open-layout! (popups-root '())))
+
+(define popups-buffer (opened-popups))
 
 ;; The layout's own drawing is a view of its buffer that no part shows,
 ;; so a click on it is a mouse key at a position in the buffer.
@@ -698,23 +806,29 @@
 
 (define (part-view node)
   (check-main-thread 'layout:part-view)
-  (view-of (lead-down (current-index) (check-part 'layout:part-view node))))
+  (let-values ([(ix n) (part-of 'layout:part-view node)])
+    (view-of (lead-down ix n))))
 
 (define (part-title node)
   (check-main-thread 'layout:part-title)
-  (title-of (check-part 'layout:part-title node)))
+  (let-values ([(ix n) (part-of 'layout:part-title node)])
+    (title-of ix n)))
 
 (define (locked? node)
   (check-main-thread 'layout:locked?)
-  (locked-node? (check-part 'layout:locked? node)))
+  (let-values ([(ix n) (part-of 'layout:locked? node)])
+    (locked-in? ix n)))
+
+(define (%delete! ix node)
+  (when (locked-in? ix node)
+    (assertion-violation 'layout:delete-part! "a locked part" node))
+  (remove-part! ix node)
+  (void))
 
 (define (delete-part! node)
   (check-main-thread 'layout:delete-part!)
-  (let ([node (check-part 'layout:delete-part! node)])
-    (when (locked-node? node)
-      (assertion-violation 'layout:delete-part! "a locked part" node))
-    (remove-part! node)
-    (void)))
+  (let-values ([(ix n) (part-of 'layout:delete-part! node)])
+    (%delete! ix n)))
 
 (define (add-bar! b)
   (unless (buffers:buffer? b)
@@ -725,7 +839,7 @@
 (define (%check-action-result who result)
   (unless (or (not result) (views:view? result))
     (assertion-violation who "an action returned what is not a view or #f" result))
-  (unless (or (not result) (index-atom (current-index) (views:id result)))
+  (unless (or (not result) (atom-of (views:id result)))
     (assertion-violation who "an action returned a view not in the layout" result))
   result)
 
@@ -776,8 +890,8 @@
 (define (switch-to-buffer b)
   (unless (buffers:buffer? b)
     (assertion-violation 'layout:switch-to-buffer "not a buffer" b))
-  (let ([v (selected-view)])
-    (if (locked-node? (view-node v))
+  (let* ([v (selected-view)] [ix (index-of-id (views:id v))])
+    (if (locked-in? ix (index-atom ix (views:id v)))
         (select! (display-buffer b))
         (unless (eq? (views:buffer v) b) (views:set-buffer! v b)))))
 
@@ -791,11 +905,12 @@
 
 (commands:define-command (delete-view)
   "Deletes the selected view's part."
-  (delete-part! (view-node (selected-view))))
+  (let* ([id (views:id (selected-view))] [ix (index-of-id id)])
+    (%delete! ix (index-atom ix id))))
 
 (commands:define-command (zoom)
   "Zooms the frame to the selected view; when zoomed, shows the whole layout again."
-  (set-zoom! (and (not (frame-zoom)) (views:id (selected-view))))
+  (set-zoom! (and (not (frame-zoom)) (view-node (selected-view)) (views:id (selected-view))))
   (void))
 
 (commands:define-command (mouse-select-view [event (keys:command-event)])
@@ -843,7 +958,7 @@
              [name (let ([b (views:buffer v)]) (if b (buffers:name b) (document:node-attribute atom 'buffer "")))]
              [d (vector 'views:view (list (cons 'view (views:id v)) (cons 'buffer name)))])
         (set-zoom! #f)
-        (unless (equal? (node-datum main) d)
+        (unless (equal? (node-datum (current-index) main) d)
           (buffers:replace! buffer (document:node-start main) (document:node-end main) d))
         (select! v)))))
 
@@ -853,11 +968,19 @@
 
 (define (%focus-keymaps client posn) (if posn '() (focus-keymaps)))
 
-(define (%keep-layout b) (not (eq? b buffer)))
+(define (%keep-layout b) (not (or (eq? b buffer) (eq? b popups-buffer))))
 
 (keys:bind! keys:global "C-x o" other-view)
 (keys:bind! keys:global "C-x 0" delete-view)
 (keys:bind! keys:global "C-x 1" zoom)
+(keys:bind! keys:global "s-i" select-up)
+(keys:bind! keys:global "s-j" select-left)
+(keys:bind! keys:global "s-k" select-down)
+(keys:bind! keys:global "s-l" select-right)
+(keys:bind! keys:global "s-<up>" select-up)
+(keys:bind! keys:global "s-<left>" select-left)
+(keys:bind! keys:global "s-<down>" select-down)
+(keys:bind! keys:global "s-<right>" select-right)
 (keys:bind! keymap "<mouse-1>" mouse-select-view)
 (keys:bind! keymap "<down-mouse-1>" keys:ignore)
 (add-hook! keys:find-keymaps %focus-keymaps)

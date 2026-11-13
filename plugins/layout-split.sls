@@ -69,7 +69,7 @@
 
 (import %internals)
 
-(define (%draw-split node children focused draw-child)
+(define (%draw-split node children focused draw-child client)
   (haml (:div.split ([class (if (column? node) "column" "row")])
           (map (lambda (c) (haml (:div.split-child ([style "flex:" (weight-text c) " 1 0"]) (draw-child c))))
                children))))
@@ -124,7 +124,7 @@
   (unless (and (integer? n) (exact? n))
     (assertion-violation who "not an exact integer" n))
   (let ([atom (layout:view-node (layout:selected-view))] [kind (car (container '()))])
-    (let-values ([(split part) (holding-split atom kind)])
+    (let-values ([(split part) (if atom (holding-split atom kind) (values #f #f))])
       (unless split
         (assertion-violation who "the selected view is in no split"))
       (when (layout:locked? split)
@@ -147,8 +147,8 @@
 
 (define (%display-in b direction)
   (or (layout:reuse-view b)
-      (let ([selected (layout:selected-view)])
-        (and (not (layout:locked? (layout:view-node selected)))
+      (let* ([selected (layout:selected-view)] [atom (layout:view-node selected)])
+        (and atom (not (layout:locked? atom))
              (let ([v (split-view! selected direction)])
                (views:set-buffer! v b)
                v)))))

@@ -1,0 +1,89 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  /* No transform, filter or containment may sit on a strip, or a fixed
+     popup anchored inside would take it for its containing block. */
+  .layout-strip {
+    display: flex;
+    flex: 1 1 0;
+    min-inline-size: 0;
+    min-block-size: 0;
+    scrollbar-width: thin;
+  }
+
+  .layout-strip.row {
+    flex-direction: row;
+    overflow: auto hidden;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: x mandatory;
+  }
+
+  .layout-strip.column {
+    flex-direction: column;
+    overflow: hidden auto;
+    overscroll-behavior-block: contain;
+    scroll-snap-type: y mandatory;
+    --view-overscroll-block: auto;
+  }
+
+  /* A percentage is of the strip's scrollport, so every client lays the
+     same fractions out exactly at its own size. */
+  .strip-item {
+    display: flex;
+    flex: none;
+    position: relative;
+    scroll-snap-align: start;
+  }
+
+  .layout-strip.row > .strip-item {
+    inline-size: calc(var(--strip-size) * 100%);
+  }
+
+  .layout-strip.column > .strip-item {
+    block-size: calc(var(--strip-size) * 100%);
+  }
+
+  .layout-strip.row > .strip-item + .strip-item {
+    border-inline-start: var(--tuna-border-width) solid var(--tuna-border);
+  }
+
+  .layout-strip.column > .strip-item + .strip-item {
+    border-block-start: var(--tuna-border-width) solid var(--tuna-border);
+  }
+
+  .strip-item > :not(.strip-end) {
+    flex: 1 1 0;
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
+
+  /* An element can snap at one edge per axis, so a box at each item's
+     far edge gives the second snap position, as Niri snaps a column's
+     right edge to the view's. */
+  .strip-end {
+    position: absolute;
+    inset-inline-end: 0;
+    inset-block-end: 0;
+    inline-size: 0;
+    block-size: 0;
+    scroll-snap-align: end;
+  }
+
+  .layout-strip.center > .strip-item {
+    scroll-snap-align: center;
+  }
+
+  .layout-strip.center .strip-end {
+    scroll-snap-align: none;
+  }
+
+  .strip-placeholder {
+    display: grid;
+    place-items: center;
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-ui);
+    color: var(--layout-scroll-placeholder-text, var(--tuna-text-muted));
+    background: var(--layout-scroll-placeholder-background, var(--tuna-surface-subtle));
+    cursor: pointer;
+  }
+}

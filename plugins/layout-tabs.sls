@@ -28,7 +28,7 @@
 
 (import %internals)
 
-(define (%draw-tabs node children focused draw-child)
+(define (%draw-tabs node children focused draw-child client)
   (let ([shown (or (and focused
                         (find (lambda (c) (fx= (document:node-start c) (document:node-start focused))) children))
                    (car children))])
@@ -50,7 +50,9 @@
 
 (define (%kind) (car (container '())))
 
-(define (%view-tabs view) (holding-tabs (document:node-start (layout:view-node view)) (%kind)))
+(define (%view-tabs view)
+  (let ([atom (layout:view-node view)])
+    (if atom (holding-tabs (document:node-start atom) (%kind)) (values #f #f))))
 
 (define (add-tab! view b)
   (unless (views:view? view)
@@ -101,8 +103,8 @@
 (define (display-in-new-tab b)
   (unless (buffers:buffer? b)
     (assertion-violation 'layout-tabs:display-in-new-tab "not a buffer" b))
-  (let ([selected (layout:selected-view)])
-    (and (not (layout:locked? (layout:view-node selected)))
+  (let* ([selected (layout:selected-view)] [atom (layout:view-node selected)])
+    (and atom (not (layout:locked? atom))
          (let ([new (add-tab! selected b)])
            (layout:select! new)
            new))))

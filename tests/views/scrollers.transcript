@@ -1,0 +1,111 @@
+> (define (raised thunk)
+    (guard (c [#t (list (if (who-condition? c) (condition-who c) 'none)
+                        (if (message-condition? c) (condition-message c) c))])
+      (thunk)))
+; An anchor follows edits and is drawn as an empty element named by its
+; number, before a cursor at the same position.
+> (define b (buffers:make "anchored" (lines 300)))
+> (define v (views:make b))
+> (define a (views:add-anchor! v 7))
+> (list (views:anchor? a) (eq? (views:anchor-view a) v) (views:anchor-position a) (eq? (views:find-anchor (views:anchor-id a)) a))
+(#t #t 7 #t)
+> (begin (buffers:replace! b 1 1 "ab") (void))
+> (views:anchor-position a)
+9
+> (views:set-point! v 9)
+> (let* ([html (html-of v desktop)] [i (search html "view-anchor" 0)] [j (search html "cursor primary" 0)])
+    (list (and i #t) (< i j) (and (search html (format "anchor-name:--view-anchor-~a" (views:anchor-id a)) 0) #t)))
+(#t #t #t)
+> (views:move-anchor! a 12)
+> (views:anchor-position a)
+12
+; An anchor is drawn for a client when the view was drawn for it in
+; this batch, and the lines that draw takes hold the anchor: before
+; measuring, 200 lines each side of the top.
+> (define (drawn-for? anchor client) (html-of (views:anchor-view anchor) client) (views:anchor-drawn? anchor client))
+> (list (views:anchor-drawn? a desktop) (drawn-for? a desktop))
+(#f #t)
+> (define far (views:add-anchor! v (line-start v 280)))
+> (drawn-for? far desktop)
+#f
+> (views:scroll-to! v (line-start v 250) (views:align top))
+> (list (views:anchor-drawn? far desktop) (drawn-for? far desktop))
+(#f #t)
+; Anchors go when removed, and with their view's buffer.
+> (define far-id (views:anchor-id far))
+> (views:remove-anchor! far)
+> (views:find-anchor far-id)
+#f
+> (raised (lambda () (views:anchor-position far)))
+(views:anchor-position "a removed anchor")
+> (define a-id (views:anchor-id a))
+> (views:set-buffer! v (buffers:make "other" "x\n"))
+> (views:find-anchor a-id)
+#f
+> (raised (lambda () (views:add-anchor! v 99)))
+(views:add-anchor! "not a position in the view's buffer")
+; A scroller keeps one placement for every client, each with its own
+; number, and draws its element with what the page script needs.
+> (define rested '())
+> (define s (views:make-scroller (lambda (s client item align focus) (set! rested (cons (list (web:client-number client) item align focus) rested)))))
+> (views:place-scroller! s 4 (views:scroller-align nearest) 4)
+> (define (scroller-html client) (html->string (views:draw-scroller s client (views:axis row) "strip" "items")))
+> (define (scroller-of client)
+    (let ([html (scroller-html client)])
+      (list (car (numbers-after html "data-placement=\"")) (car (numbers-after html "data-place-item=\""))
+            (word-after html "data-place-align=\"") (car (numbers-after html "data-place-focus=\"")))))
+> (define d0 (scroller-of desktop))
+> (define p0 (scroller-of phone))
+> (list (cdr d0) (cdr p0) (= (car d0) (car p0)))
+((4 nearest 4) (4 nearest 4) #f)
+> (let ([html (scroller-html desktop)]) (list (and (search html "class=\"strip\"" 0) #t) (and (search html "data-axis=\"row\"" 0) #t) (and (search html ">items<" 0) #t)))
+(#t #t #t)
+> (raised (lambda () (views:place-scroller! s 4 'left 4)))
+(views:place-scroller! "not a scroller alignment")
+> (raised (lambda () (views:draw-scroller s desktop 'diagonal "strip" "")))
+(views:draw-scroller "not an axis")
+; A report while scrolling tells only what is in view on that client.
+> (define reports 0)
+> (define (scrolled! client items . rest)
+    (set! reports (+ reports 1))
+    ((table-ref web:input-handlers "scroller") client
+     (append `(("type" . "scroller") ("scroller" . ,(car (numbers-after (scroller-html client) "data-scroller=\"")))
+               ("placement" . ,(car (scroller-of client))) ("report" . ,reports)
+               ("items" . ,(list->vector items)) ("settled" . ,(pair? rest)))
+             (if (pair? rest) `(("item" . ,(car rest)) ("align" . ,(cadr rest)) ("focus" . ,(caddr rest))) '()))))
+> (scrolled! desktop '(4 5))
+> (list (views:scroller-in-view s desktop) (views:scroller-in-view s phone) rested)
+((4 5) #f ())
+> (numbers-after (scroller-html desktop) "data-reported=\"")
+(1)
+; At rest the scroller takes the client's place: every other client is
+; placed there, the client that scrolled is not, and the scroller's
+; maker hears of it.
+> (scrolled! desktop '(5 6) 5 "start" 6)
+> (list (views:scroller-focus s) rested)
+(6 ((1 5 start 6)))
+> (define d1 (scroller-of desktop))
+> (define p1 (scroller-of phone))
+> (list (= (car d1) (car d0)) (= (car p1) (car p0)) (cdr p1))
+(#t #f (5 start 6))
+; The same place again is no news; a report under an older placement
+; moves nothing.
+> (scrolled! desktop '(5 6) 5 "start" 6)
+> (length rested)
+1
+> (define stale (car p0))
+> ((table-ref web:input-handlers "scroller") phone
+   `(("type" . "scroller") ("scroller" . ,(car (numbers-after (scroller-html phone) "data-scroller=\"")))
+     ("placement" . ,stale) ("report" . 99) ("items" . #(1)) ("settled" . #t)
+     ("item" . 1) ("align" . "start") ("focus" . 1)))
+> (list (views:scroller-focus s) (length rested) (views:scroller-in-view s phone))
+(6 1 (1))
+> (raised (lambda () ((table-ref web:input-handlers "scroller") phone '(("type" . "scroller") ("scroller" . 1)))))
+(views "not a scroller report")
+; A removed client is forgotten; a dropped scroller ignores reports.
+> (web:client-removed desktop)
+> (views:scroller-in-view s desktop)
+#f
+> (views:drop-scroller! s)
+> (raised (lambda () (views:scroller-focus s)))
+(views:scroller-focus "a dropped scroller")

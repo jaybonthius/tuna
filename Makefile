@@ -46,6 +46,7 @@ bench: exe
 	sh bench/repeat.sh build/bin/tuna || status=1; \
 	sh bench/layout.sh build/bin/tuna || status=1; \
 	sh bench/layout-tabs.sh build/bin/tuna || status=1; \
+	sh bench/layout-scroll-float.sh build/bin/tuna || status=1; \
 	sh bench/saved.sh build/bin/tuna || status=1; \
 	sh bench/files.sh build/bin/tuna || status=1; \
 	sh bench/display.sh build/bin/tuna || status=1; \

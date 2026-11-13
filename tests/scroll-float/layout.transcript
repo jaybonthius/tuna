@@ -1,0 +1,60 @@
+> (define desktop (web:add-client! 1))
+> (define a (buffers:make "a" "a\n"))
+> (define va (views:make a))
+> (define vb (views:make a))
+> (define vc (views:make a))
+; Super with i, j, k, l or the arrows selects the neighbour above, left,
+; below or right.
+> (set-parts! (layout-split:container '((direction . row)) (atom va) (layout-split:container '((direction . column)) (atom vb) (atom vc))))
+> (layout:select! va)
+> (press! desktop '("l" "super"))
+> (selected)
+4
+> (press! desktop '("k" "super"))
+> (selected)
+5
+> (press! desktop '("i" "super"))
+> (selected)
+4
+> (press! desktop '("j" "super"))
+> (selected)
+3
+> (press! desktop '("ArrowRight" "super") '("ArrowDown" "super") '("ArrowUp" "super") '("ArrowLeft" "super"))
+> (selected)
+3
+; layout:selection-order lists the views by their last selection.
+> (map views:id (layout:selection-order))
+(3 4 5)
+; A kind that names its siblings in a cycle cannot hang the neighbour
+; walk: it stops where it began when every other child is locked.
+> (define (draw-ring node children focused draw-child client) (haml (:div (map draw-child children))))
+> (define (ring-neighbour node child direction)
+    (let* ([cs (let ([acc '()])
+                 (document:for-each-child node (+ (document:node-start node) 1) (- (document:node-end node) 1)
+                   (lambda (c at) (when (document:node? c) (set! acc (cons c acc)))))
+                 (reverse acc))]
+           [n (length cs)]
+           [k (let loop ([cs cs] [k 0]) (if (= (document:node-start (car cs)) (document:node-start child)) k (loop (cdr cs) (+ k 1))))])
+      (list-ref cs (mod (+ k 1) n))))
+> (layout:define-container ring (draw draw-ring) (neighbour ring-neighbour))
+> (set-parts! (ring '() (atom va) (atom vb '(locked . #t)) (atom vc '(locked . #t))))
+> (layout:select! va)
+> (layout:neighbour va (layout:direction right))
+#f
+> (set-parts! (ring '() (atom va) (atom vb '(locked . #t)) (atom vc)))
+> (views:id (layout:neighbour va (layout:direction right)))
+5
+; Popups live in their own tree: the part procedures take its nodes, but
+; a popup is not a view of the layout.
+> (define p (layout-float:show-at! va 1 a 1/2 1/2))
+> (define popup-atom (document:token (buffers:document layout:popups-buffer) 2))
+> (list (eq? (layout:part-view popup-atom) p) (layout:locked? popup-atom) (layout:part-title popup-atom) (layout:view-node p))
+(#t #t "a" #f)
+> (raised (lambda () (layout:delete-part! popup-atom)))
+(layout:delete-part! "a locked part")
+; One edit may move a popup within *popups*, but no edit may give a view
+; number in one tree to the other.
+> (buffers:refused? (guard (c [#t c]) (buffers:replace! layout:popups-buffer 1 1 (layout-float:container '() (atom va)))))
+#t
+> (buffers:refused? (guard (c [#t c]) (let ([n (document:length (buffers:document layout:buffer))]) (buffers:replace! layout:buffer (- n 1) (- n 1) (atom p)))))
+#t

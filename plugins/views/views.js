@@ -180,6 +180,192 @@ function screenArrived() {
   }
 }
 
+const scrollers = new WeakMap();
+const scrollerResting = new WeakMap();
+
+// What a browser rounds an edge to.
+const itemTolerance = 1;
+
+function rowAxis(scroller) {
+  return scroller.getAttribute("data-axis") !== "column";
+}
+
+function scrollPosition(scroller) {
+  return rowAxis(scroller) ? scroller.scrollLeft : scroller.scrollTop;
+}
+
+function setScrollPosition(scroller, position) {
+  if (rowAxis(scroller)) scroller.scrollLeft = position; else scroller.scrollTop = position;
+}
+
+function scrollerLength(scroller) {
+  return rowAxis(scroller) ? scroller.clientWidth : scroller.clientHeight;
+}
+
+function items(scroller) {
+  return Array.from(scroller.children).filter((child) => child.hasAttribute("data-item"));
+}
+
+function itemNamed(scroller, name) {
+  return name === null ? undefined : items(scroller).find((item) => number(item, "data-item") === name);
+}
+
+function edges(scroller, item) {
+  const box = scroller.getBoundingClientRect();
+  const itemBox = item.getBoundingClientRect();
+  const at = scrollPosition(scroller);
+  return rowAxis(scroller)
+    ? [itemBox.left - box.left - scroller.clientLeft + at, itemBox.right - box.left - scroller.clientLeft + at]
+    : [itemBox.top - box.top - scroller.clientTop + at, itemBox.bottom - box.top - scroller.clientTop + at];
+}
+
+function wholly(scroller, item, at) {
+  const [start, end] = edges(scroller, item);
+  return start >= at - itemTolerance && end <= at + scrollerLength(scroller) + itemTolerance;
+}
+
+// An item longer than the scroller shows its start, as Niri shows a
+// column wider than the screen.
+function nearest(scroller, item, at) {
+  const [start, end] = edges(scroller, item);
+  const length = scrollerLength(scroller);
+  if (start >= at - itemTolerance && end <= at + length + itemTolerance) return at;
+  if (start < at || end - start > length) return start;
+  return end - length;
+}
+
+function inView(scroller) {
+  const at = scrollPosition(scroller);
+  const length = scrollerLength(scroller);
+  return items(scroller)
+    .filter((item) => {
+      const [start, end] = edges(scroller, item);
+      return end > at + itemTolerance && start < at + length - itemTolerance;
+    })
+    .map((item) => number(item, "data-item"));
+}
+
+function placeScroller(scroller, placement) {
+  const item = itemNamed(scroller, number(scroller, "data-place-item"));
+  const focus = itemNamed(scroller, number(scroller, "data-place-focus"));
+  let at = scrollPosition(scroller);
+  if (item !== undefined) {
+    const [start, end] = edges(scroller, item);
+    const length = scrollerLength(scroller);
+    switch (scroller.getAttribute("data-place-align")) {
+      case "start": at = start; break;
+      case "end": at = end - length; break;
+      case "center": at = (start + end) / 2 - length / 2; break;
+      default: at = nearest(scroller, item, at);
+    }
+  }
+  if (focus !== undefined) at = nearest(scroller, focus, at);
+  setScrollPosition(scroller, at);
+  scrollers.set(scroller, {
+    placed: placement, at: scrollPosition(scroller), gesture: false,
+    sent: null, owed: true, reported: null,
+  });
+  checkScroller(scroller, false);
+}
+
+function rest(scroller, state) {
+  const at = scrollPosition(scroller);
+  const length = scrollerLength(scroller);
+  const all = items(scroller);
+  let best = null;
+  for (const item of all) {
+    const [start, end] = edges(scroller, item);
+    const candidates = getComputedStyle(item).scrollSnapAlign.includes("center")
+      ? [["center", (start + end) / 2 - at - length / 2]]
+      : [["start", start - at], ["end", end - at - length]];
+    for (const [align, distance] of candidates) {
+      if (best === null || Math.abs(distance) < Math.abs(best.distance)) best = { item, align, distance };
+    }
+  }
+  if (best === null) return null;
+  let index = all.indexOf(best.item);
+  // The furthest item wholly in view in the direction the hand moved, as
+  // Niri's view_offset_gesture_end chooses.
+  const step = at >= state.at ? 1 : -1;
+  if (!wholly(scroller, all[index], at)) {
+    const next = all[index + step];
+    if (next !== undefined && wholly(scroller, next, at)) index += step;
+  }
+  while (all[index + step] !== undefined && wholly(scroller, all[index + step], at)) index += step;
+  return {
+    item: number(best.item, "data-item"),
+    align: best.align,
+    focus: number(all[index], "data-item"),
+  };
+}
+
+// As for a view, one report is on its way per scroller until a screen
+// brings its number back.
+function checkScroller(scroller, resting) {
+  const state = scrollers.get(scroller);
+  if (state === undefined) return;
+  if (state.sent !== null) {
+    if (resting) state.owed = "rest";
+    else if (state.owed !== "rest") state.owed = true;
+    return;
+  }
+  if (!scroller.isConnected || scrollerLength(scroller) === 0) return;
+  if (number(scroller, "data-placement") !== state.placed) return;
+  const id = number(scroller, "data-scroller");
+  if (id === null) return;
+  const shown = inView(scroller);
+  const key = shown.join(" ");
+  const moved = Math.abs(scrollPosition(scroller) - state.at) > itemTolerance;
+  if (resting && !moved) state.gesture = false;
+  const settled = (resting || state.owed === "rest") && state.gesture && moved;
+  if (!settled && !state.owed && key === state.reported) return;
+  const report = { type: "scroller", scroller: id, placement: state.placed, items: shown, settled };
+  if (settled) {
+    const place = rest(scroller, state);
+    if (place === null) return;
+    Object.assign(report, place);
+    state.at = scrollPosition(scroller);
+    state.gesture = false;
+  }
+  state.owed = false;
+  state.reported = key;
+  state.sent = ++reports;
+  send({ ...report, report: state.sent });
+}
+
+function scrollersArrived() {
+  for (const scroller of document.querySelectorAll("[data-scroller][data-placement]")) {
+    const placement = number(scroller, "data-placement");
+    const state = scrollers.get(scroller);
+    if (state === undefined || state.placed !== placement) {
+      placeScroller(scroller, placement);
+    } else if (state.sent !== null && number(scroller, "data-reported") === state.sent) {
+      state.sent = null;
+      checkScroller(scroller, false);
+    }
+  }
+}
+
+// Only a scroll the hand began moves the focus: a placement, or a
+// browser keeping a snap position as the page changes, scrolls too. A
+// hand's scroll starts within handMs of its wheel, touch or press.
+const handMs = 500;
+let handAt = -Infinity;
+
+for (const type of ["wheel", "touchstart", "pointerdown"]) {
+  document.addEventListener(type, () => { handAt = performance.now(); }, { capture: true, passive: true });
+}
+
+document.addEventListener("scroll", (event) => {
+  const scroller = event.target;
+  if (!(scroller instanceof Element) || !scroller.hasAttribute("data-scroller")) return;
+  const state = scrollers.get(scroller);
+  if (state !== undefined && performance.now() - handAt < handMs) state.gesture = true;
+  checkScroller(scroller, false);
+  clearTimeout(scrollerResting.get(scroller));
+  scrollerResting.set(scroller, setTimeout(() => checkScroller(scroller, true), restMs));
+}, { capture: true, passive: true });
+
 let scheduled = false;
 new MutationObserver(() => {
   if (scheduled) return;
@@ -187,6 +373,7 @@ new MutationObserver(() => {
   requestAnimationFrame(() => {
     scheduled = false;
     screenArrived();
+    scrollersArrived();
   });
 }).observe(document.documentElement, {
   subtree: true,
@@ -204,6 +391,7 @@ document.addEventListener("scroll", (event) => {
 }, { capture: true, passive: true });
 
 screenArrived();
+scrollersArrived();
 
 const dragThreshold = 3;
 let press = null;

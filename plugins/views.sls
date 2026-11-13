@@ -13,6 +13,10 @@
 
 (define-enumeration align (top center bottom) %alignments)
 
+(define-enumeration scroller-align (start end center nearest) %scroller-alignments)
+
+(define-enumeration axis (row column) %axes)
+
 (module %internals
   (check-main-thread check-view check-cursor check-node check-option check-position check-live-buffer shown-buffer
    current-view make-new-view! find-view views-showing bound-buffer show-buffer! drop-view! with-view-bound
@@ -25,7 +29,12 @@
    scroll-to-line! draw-view current-context context-view context-client in-line? make-context children-html drawing?
    atom-view-of keymaps-at note-edit note-kill after-batch scroll-report mouse-item posn-keymaps forget-client!
    view-client when-measured! scroll-up! scroll-down! recenter!
-   face-attributes title-attributes)
+   face-attributes title-attributes
+   anchor-record? anchor-record-id anchor-record-view anchor-record-spot anchor-record-gone?
+   new-anchor! forget-anchor! anchor-of-id anchor-drawn-for?
+   scroller-record? scroller-record-id scroller-record-dropped? make-new-scroller! set-scroller-place!
+   scroller-client scroller-record-clients scroller-state-number scroller-state-reported scroller-state-in-view
+   scroller-record-item scroller-record-align scroller-record-focus forget-scroller! scroller-report)
 
   (define main-thread (get-thread-id))
 
@@ -54,11 +63,11 @@
     (fields (mutable number) (mutable target) (mutable align) (mutable offset)
             (mutable top) (mutable scroll-offset) (mutable facts) (mutable average)
             (mutable before) (mutable after) (mutable in-step) (mutable room) (mutable counted?)
-            (mutable point-placed) (mutable owed) (mutable reported))
+            (mutable point-placed) (mutable owed) (mutable reported) (mutable drawn-batch))
     (protocol
       (lambda (new)
         (lambda ()
-          (new 0 #f 'top 0.0 #f 0.0 #f #f initial-drawn-lines initial-drawn-lines #f #f #f #f #f 0)))))
+          (new 0 #f 'top 0.0 #f 0.0 #f #f initial-drawn-lines initial-drawn-lines #f #f #f #f #f 0 -1)))))
 
   (define-record-type facts
     (sealed #t)
@@ -80,6 +89,23 @@
   (define-record-type view-option
     (sealed #t)
     (fields option value owner))
+
+  (define-record-type anchor-record
+    (sealed #t)
+    (fields id view spot (mutable gone?)))
+
+  (define anchors-by-id (make-eqv-hashtable))
+  (define anchors-by-view (make-eq-hashtable))
+
+  (define-record-type scroller-record
+    (sealed #t)
+    (fields id (mutable item) (mutable align) (mutable focus) clients on-rest (mutable dropped?)))
+
+  (define-record-type scroller-state
+    (sealed #t)
+    (fields (mutable number) (mutable reported) (mutable in-view)))
+
+  (define scrollers (make-eqv-hashtable))
 
   (define current-view (make-thread-parameter #f))
 
@@ -217,6 +243,97 @@
         (client-view-before-set! cs d)
         (client-view-after-set! cs d))))
 
+  (define (next-number!)
+    (with-interrupts-disabled
+      (set! last-placement (fx+ last-placement 1))
+      last-placement))
+
+  ;; Anchors are numbered from the placements' random base, so a number
+  ;; kept in another plugin's data from before this module reloaded never
+  ;; names an anchor in other text.
+  (define (new-anchor! v b p)
+    (let ([a (make-anchor-record (next-number!) v (buffers:anchor b p) #f)])
+      (hashtable-set! anchors-by-id (anchor-record-id a) a)
+      (hashtable-update! anchors-by-view v (lambda (as) (append as (list a))) '())
+      (mark-dirty!)
+      a))
+
+  (define (forget-anchor! a)
+    (unless (anchor-record-gone? a)
+      (anchor-record-gone?-set! a #t)
+      (hashtable-delete! anchors-by-id (anchor-record-id a))
+      (let* ([v (anchor-record-view a)] [as (remq a (hashtable-ref anchors-by-view v '()))])
+        (if (null? as) (hashtable-delete! anchors-by-view v) (hashtable-set! anchors-by-view v as)))
+      (mark-dirty!)))
+
+  (define (anchor-of-id id) (hashtable-ref anchors-by-id id #f))
+
+  ;; Batches are counted so that a view drawn for a client in this one is
+  ;; told from one drawn before: a container may leave a view undrawn.
+  (define batches 0)
+
+  (define (anchor-drawn-for? a c)
+    (let* ([v (anchor-record-view a)] [b (bound-buffer v)] [cs (hashtable-ref (view-record-clients v) c #f)])
+      (and b cs (fx= (client-view-drawn-batch cs) batches)
+           (let ([doc (buffers:document b)] [p (spot-position (anchor-record-spot a))])
+             (let-values ([(lo hi) (bounds-of v)])
+               (and (fx<= lo p hi)
+                    (let-values ([(ws we) (window-range v doc lo hi cs)])
+                      (fx<= ws p we))))))))
+
+  (define (make-new-scroller! on-rest)
+    (let ([s (make-scroller-record (next-number!) #f 'nearest #f (make-eq-hashtable) on-rest #f)])
+      (hashtable-set! scrollers (scroller-record-id s) s)
+      s))
+
+  (define (scroller-client s c)
+    (let ([t (scroller-record-clients s)])
+      (or (hashtable-ref t c #f)
+          (let ([cs (make-scroller-state (next-number!) 0 #f)])
+            (hashtable-set! t c cs)
+            cs))))
+
+  (define (set-scroller-place! s item align focus)
+    (scroller-record-item-set! s item)
+    (scroller-record-align-set! s align)
+    (scroller-record-focus-set! s focus)
+    (let-values ([(cs states) (hashtable-entries (scroller-record-clients s))])
+      (vector-for-each (lambda (st) (scroller-state-number-set! st (next-number!))) states)))
+
+  (define (forget-scroller! s)
+    (scroller-record-dropped?-set! s #t)
+    (hashtable-delete! scrollers (scroller-record-id s)))
+
+  (define scroller-aligns '("start" "end" "center"))
+
+  ;; Like a view's, a strip moves the other clients only once a hand
+  ;; scroll on one comes to rest, and only from the placement that client
+  ;; shows; that client is sent nothing, since its browser is already
+  ;; there.
+  (define (scroller-report c item)
+    (define (field key) (let ([e (assoc key item)]) (if e (cdr e) 'null)))
+    (define (token? x) (and (fixnum? x) (fx> x 0)))
+    (let ([id (field "scroller")] [placement (field "placement")] [number (field "report")]
+          [items (field "items")] [settled (field "settled")]
+          [at (field "item")] [align (field "align")] [focus (field "focus")])
+      (unless (and (fixnum? id) (fixnum? placement) (fixnum? number)
+                   (vector? items) (for-all token? (vector->list items)) (boolean? settled)
+                   (or (not settled) (and (token? at) (member align scroller-aligns) (token? focus))))
+        (assertion-violation 'views "not a scroller report" item))
+      (let ([s (hashtable-ref scrollers id #f)])
+        (when s
+          (let ([cs (scroller-client s c)])
+            (scroller-state-reported-set! cs number)
+            (scroller-state-in-view-set! cs (vector->list items))
+            (when (and settled (fx= placement (scroller-state-number cs)))
+              (let ([align (string->symbol align)])
+                (unless (and (eqv? at (scroller-record-item s)) (eq? align (scroller-record-align s))
+                             (eqv? focus (scroller-record-focus s)))
+                  (let ([number (scroller-state-number cs)])
+                    (set-scroller-place! s at align focus)
+                    (scroller-state-number-set! cs number))
+                  ((scroller-record-on-rest s) s c at align focus)))))))))
+
   ;; A client's state is made with a placement to the view's position, so
   ;; a new client's first screen shows the view where the others have it.
   (define (view-client v c)
@@ -277,6 +394,7 @@
 
   (define (forget-client! c)
     (eq-hashtable-delete! presses c)
+    (vector-for-each (lambda (s) (hashtable-delete! (scroller-record-clients s) c)) (hashtable-values scrollers))
     (for-each
       (lambda (v)
         (with-interrupts-disabled
@@ -313,7 +431,8 @@
               (if (null? vs) (hashtable-delete! by-buffer old) (hashtable-set! by-buffer old vs))))
           (when b (hashtable-update! by-buffer b (lambda (vs) (cons v vs)) '()))
           (view-record-buffer-set! v b)
-          (view-record-shown-count-set! v (fx+ (view-record-shown-count v) 1))))))
+          (view-record-shown-count-set! v (fx+ (view-record-shown-count v) 1)))
+        (for-each forget-anchor! (hashtable-ref anchors-by-view v '())))))
 
   (define (show-buffer! v b)
     (view-record-name-set! v (buffers:name b))
@@ -781,10 +900,12 @@
                (map (lambda (f) (cons (spot-position (car f)) (spot-position (cdr f)))) (live-folds v))))
 
   (define (cursor-points v)
-    (let loop ([cs (view-record-cursors v)] [primary? #t] [acc '()])
+    (let loop ([cs (view-record-cursors v)] [primary? #t]
+               [acc (map (lambda (a) (cons (spot-position (anchor-record-spot a)) (anchor-html a)))
+                         (hashtable-ref anchors-by-view v '()))])
       (if (null? cs)
-          (list-sort (lambda (a b) (fx< (car a) (car b))) acc)
-          (loop (cdr cs) #f (cons (cons (point-of (car cs)) primary?) acc)))))
+          (list-sort (lambda (a b) (fx< (car a) (car b))) (reverse acc))
+          (loop (cdr cs) #f (cons (cons (point-of (car cs)) (cursor-html primary?)) acc)))))
 
   (define (escape-attribute s p)
     (string-for-each
@@ -1166,6 +1287,9 @@
   (define (cursor-html primary?)
     (if primary? (haml (:span.cursor.primary)) (haml (:span.cursor))))
 
+  (define (anchor-html a)
+    (haml (:span.view-anchor ([style "anchor-name:--view-anchor-" (anchor-record-id a)]))))
+
   (define (fold-html ctx f)
     (if (context-marks? ctx)
         (haml (:span.fold ([data-at (fold-mark-at f)] [data-to (fold-mark-to f)]) "…"))
@@ -1175,7 +1299,7 @@
     (let loop ([items run] [cursors (cursors-in ctx rs re)] [acc '()])
       (define (before p acc cursors)
         (if (and (pair? cursors) (fx<= (caar cursors) p))
-            (before p (cons (cursor-html (cdar cursors)) acc) (cdr cursors))
+            (before p (cons (cdar cursors) acc) (cdr cursors))
             (values acc cursors)))
       (if (null? items)
           (let-values ([(acc cursors) (before re acc cursors)]) (reverse acc))
@@ -1264,7 +1388,7 @@
                                                    (cons (make-insertion end 2 (datum (span-entry-after s) end end) #f) acc)
                                                    acc)))
                                            '() spans)
-                                         (map (lambda (m) (make-insertion (car m) 3 (lambda () (cursor-html (cdr m))) #f)) cursors))))]
+                                         (map (lambda (m) (make-insertion (car m) 3 (lambda () (cdr m)) #f)) cursors))))]
                 [solid (filter (lambda (s) (fx< (span-entry-start s) (span-entry-end s))) spans)]
                 [pieces '()])
             (define shown (by-rank (filter span-entry-open solid)))
@@ -1437,7 +1561,9 @@
                 (when (view-record-moved? v) (follow-point! v doc))
                 (let ([ctx (make-context v b doc client)])
                   (parameterize ([current-context ctx] [in-line? #f] [drawing (cons v (drawing))])
-                    (view-html v doc ctx (view-client v client) (node-html ctx (context-root ctx) #f))))))))))
+                    (let ([cs (view-client v client)])
+                      (client-view-drawn-batch-set! cs batches)
+                      (view-html v doc ctx cs (node-html ctx (context-root ctx) #f)))))))))))
 
   (define (top-position v c)
     (let ([cs (and c (hashtable-ref (view-record-clients v) c #f))])
@@ -1630,6 +1756,7 @@
 
   (define (after-batch ended)
     (ended)
+    (set! batches (fx+ batches 1))
     (hashtable-clear! claims)
     (let ([bs edited])
       (set! edited '())
@@ -2154,12 +2281,127 @@
   (%check-posn 'views:posn-point posn)
   (vector-ref posn 1))
 
+(define (%check-anchor who a)
+  (unless (anchor-record? a)
+    (assertion-violation who "not an anchor" a))
+  (when (anchor-record-gone? a)
+    (assertion-violation who "a removed anchor" a))
+  (check-main-thread who))
+
+(define (add-anchor! view position)
+  (check-view 'views:add-anchor! view)
+  (let ([b (shown-buffer 'views:add-anchor! view)])
+    (check-position 'views:add-anchor! view position)
+    (new-anchor! view b position)))
+
+(define (anchor? v) (anchor-record? v))
+
+(define (anchor-id anchor)
+  (%check-anchor 'views:anchor-id anchor)
+  (anchor-record-id anchor))
+
+(define (anchor-view anchor)
+  (%check-anchor 'views:anchor-view anchor)
+  (anchor-record-view anchor))
+
+(define (anchor-position anchor)
+  (%check-anchor 'views:anchor-position anchor)
+  (spot-position (anchor-record-spot anchor)))
+
+(define (move-anchor! anchor position)
+  (%check-anchor 'views:move-anchor! anchor)
+  (check-position 'views:move-anchor! (anchor-record-view anchor) position)
+  (buffers:set-anchor! (anchor-record-spot anchor) position)
+  (mark-dirty!))
+
+(define (remove-anchor! anchor)
+  (unless (anchor-record? anchor)
+    (assertion-violation 'views:remove-anchor! "not an anchor" anchor))
+  (check-main-thread 'views:remove-anchor!)
+  (forget-anchor! anchor))
+
+(define (find-anchor id)
+  (unless (fixnum? id)
+    (assertion-violation 'views:find-anchor "not an anchor number" id))
+  (check-main-thread 'views:find-anchor)
+  (anchor-of-id id))
+
+(define (anchor-drawn? anchor client)
+  (%check-anchor 'views:anchor-drawn? anchor)
+  (unless (web:client? client)
+    (assertion-violation 'views:anchor-drawn? "not a client" client))
+  (anchor-drawn-for? anchor client))
+
+(define (%check-scroller who s)
+  (unless (scroller-record? s)
+    (assertion-violation who "not a scroller" s))
+  (when (scroller-record-dropped? s)
+    (assertion-violation who "a dropped scroller" s))
+  (check-main-thread who))
+
+(define (%check-item who x)
+  (unless (and (fixnum? x) (fx> x 0))
+    (assertion-violation who "not an item number" x)))
+
+(define (make-scroller on-rest)
+  (unless (procedure? on-rest)
+    (assertion-violation 'views:make-scroller "not a procedure" on-rest))
+  (check-main-thread 'views:make-scroller)
+  (make-new-scroller! on-rest))
+
+(define (scroller? v) (scroller-record? v))
+
+(define (place-scroller! scroller item alignment focus)
+  (%check-scroller 'views:place-scroller! scroller)
+  (%check-item 'views:place-scroller! item)
+  (%check-item 'views:place-scroller! focus)
+  (unless (memq alignment '(start end center nearest))
+    (assertion-violation 'views:place-scroller! "not a scroller alignment" alignment))
+  (set-scroller-place! scroller item alignment focus))
+
+(define (scroller-focus scroller)
+  (%check-scroller 'views:scroller-focus scroller)
+  (scroller-record-focus scroller))
+
+(define (scroller-in-view scroller client)
+  (%check-scroller 'views:scroller-in-view scroller)
+  (unless (web:client? client)
+    (assertion-violation 'views:scroller-in-view "not a client" client))
+  (let ([cs (hashtable-ref (scroller-record-clients scroller) client #f)])
+    (and cs (scroller-state-in-view cs))))
+
+(define (draw-scroller scroller client axis class content)
+  (%check-scroller 'views:draw-scroller scroller)
+  (unless (web:client? client)
+    (assertion-violation 'views:draw-scroller "not a client" client))
+  (unless (memq axis '(row column))
+    (assertion-violation 'views:draw-scroller "not an axis" axis))
+  (unless (string? class)
+    (assertion-violation 'views:draw-scroller "not a string" class))
+  (let ([cs (scroller-client scroller client)])
+    (haml (:div ([class class] [data-scroller (scroller-record-id scroller)] [data-axis (symbol->string axis)]
+                 [data-placement (scroller-state-number cs)]
+                 [data-place-item (scroller-record-item scroller)]
+                 [data-place-align (symbol->string (scroller-record-align scroller))]
+                 [data-place-focus (scroller-record-focus scroller)]
+                 [data-reported (scroller-state-reported cs)])
+            content))))
+
+(define (drop-scroller! scroller)
+  (unless (scroller-record? scroller)
+    (assertion-violation 'views:drop-scroller! "not a scroller" scroller))
+  (check-main-thread 'views:drop-scroller!)
+  (forget-scroller! scroller))
+
+(define (%scroller-report client item) (scroller-report client item))
+
 (table-set! span-properties 'face face-attributes)
 (table-set! span-properties 'title title-attributes)
 (table-set! web:scripts 'views "views/views.js")
 (table-set! web:stylesheets 'views "views/views.css")
 (table-set! web:input-handlers "scroll" %scroll-report)
 (table-set! web:input-handlers "mouse" %mouse-item)
+(table-set! web:input-handlers "scroller" %scroller-report)
 (add-hook! keys:find-keymaps %posn-keymaps)
 (add-hook! web:client-removed forget-client!)
 (keys:bind! keys:global "C-v" scroll-up)

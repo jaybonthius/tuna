@@ -3,7 +3,7 @@
 > (tree)
 (layout:root () #(views:view ((view . 1) (buffer . "*Help*"))))
 > (map buffers:name (buffers:all))
-("*Help*" "*layout*")
+("*Help*" "*layout*" "*popups*")
 > (define scratch (layout:selected-view))
 > (define notes (buffers:make "notes" "one\ntwo\nthree\n"))
 > (define mail (buffers:make "mail" "Dear Harpo,\n"))

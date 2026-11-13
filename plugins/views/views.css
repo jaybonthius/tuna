@@ -20,7 +20,11 @@
     grid-template-columns: minmax(0, 1fr) 0;
     grid-template-rows: auto auto 1fr;
     overflow: auto;
-    overscroll-behavior: contain;
+    /* A swipe across a view goes on to a row strip around it, and a
+       column strip sets the variable so that a swipe past a view's end
+       scrolls the strip. */
+    overscroll-behavior-block: var(--view-overscroll-block, contain);
+    overscroll-behavior-inline: auto;
   }
 
   .view:has(> .scroll-sizer):not(:has(> [data-spacer="below"])) {
@@ -86,6 +90,16 @@
     margin-inline-end: calc(-1 * var(--tuna-border-width-2, 2px));
     vertical-align: top;
     background: var(--views-cursor-other-background, var(--tuna-text-muted));
+  }
+
+  /* WebKit never paints a box anchored to an empty element, so an anchor
+     has a line's height, and the text does not shift around it. */
+  .view-anchor {
+    display: inline-block;
+    inline-size: 1px;
+    block-size: 1lh;
+    margin-inline-end: -1px;
+    vertical-align: top;
   }
 
   .cursor.primary {

@@ -20,7 +20,7 @@
 > (raised (lambda () (layout:define-container plain (draw car) (keymap keymap-of-nothing)) #t))
 (layout:define-container "not a keymap or #f")
 ; A kind the configuration defines takes the configuration's name.
-> (define (draw-column node children focused draw-child) (haml (:div.column (map draw-child children))))
+> (define (draw-column node children focused draw-child client) (haml (:div.column (map draw-child children))))
 > (layout:define-container column (draw draw-column) (child-attributes share) (collapse))
 > (column '((title . "c")) (views:view '((view . 9) (buffer . "x"))))
 (column ((title . "c")) #(views:view ((view . 9) (buffer . "x"))))
