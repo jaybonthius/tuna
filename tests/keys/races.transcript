@@ -65,9 +65,25 @@
     (set! reading #f)
     (list (> reads 100) bad))
 (#t ())
+; A session is whole when its pending keys are a prefix or end in an ESC
+; waiting to make the next key Meta, which keys:lookup gives #f for. C-g
+; after pending keys is undefined, which ends them.
+> (define (whole-pending? p)
+    (let ([n (string-length p)])
+      (or (and (keys:lookup one p) #t)
+          (and (>= n 3) (string=? (substring p (- n 3) n) "ESC")
+               (or (= n 3) (char=? (string-ref p (- n 4)) #\space))))))
+> (press-all! one "C-x" "ESC")
+> (list (keys:pending one) (whole-pending? (keys:pending one)) (keys:lookup one "C-x ESC"))
+("C-x ESC" #t #f)
+> (press-all! one "C-g")
+! C-x ESC C-g is undefined
+> (keys:pending one)
+#f
 ; Quits requested every millisecond land in presses, lookups, prefix
 ; arguments, commands and temporary keymaps. Afterwards each frame's
-; session is whole: two C-g clear it, and keys work as before.
+; session is whole: two C-g clear it, the first undefined when keys are
+; pending, and keys work as before.
 > (import (sticky))
 > (keys:bind! keys:global "C-c o" sticky:other-view-repeat)
 > (keys:bind! keys:global "C-x C-f" files:find-file)
@@ -112,9 +128,19 @@
     (list (> (+ quits-reported quits-caught) 100) (> presses 1000)))
 (#t #t)
 > (advice-remove! report count-quits)
-> (let ([p (keys:pending one)]) (or (not p) (and (keys:lookup one p) #t)))
+> (define left-pending (keys:pending one))
+> (or (not left-pending) (whole-pending? left-pending))
 #t
-> (press-all! one "C-g" "C-g")
+> (define undefined-messages '())
+> (with-exception-handler
+    (lambda (c)
+      (if (warning? c)
+          (set! undefined-messages (cons (condition-message c) undefined-messages))
+          (raise-continuable c)))
+    (lambda () (press-all! one "C-g" "C-g")))
+> (equal? undefined-messages
+          (if left-pending (list (string-append left-pending " C-g is undefined")) '()))
+#t
 > (list (keys:pending one) (map name-of (keys:active-keymaps one)))
 (#f (keys:global))
 > (define dropped (list (files:take!) (editing:take!)))

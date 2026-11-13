@@ -38,3 +38,24 @@
 > (keys:bind! keys:global "ESC" keys:keyboard-quit)
 > (name-of (keys:lookup (layout:current-frame) "ESC"))
 keys:keyboard-quit
+; A quit key is never an ESC waiting to make the next key Meta, so it
+; ends pending keys as C-g does: they are undefined.
+> (define frame (layout:current-frame))
+> (press-all! frame "C-x" "ESC")
+! C-x ESC is undefined
+> (keys:pending frame)
+#f
+> (keys:unbind! keys:global "ESC")
+> (keys:bind! keys:global "M-x" editing:next-line)
+> (press-all! frame "ESC")
+! ESC is undefined
+> (list (keys:pending frame) (keys:lookup frame "ESC x"))
+(#f #f)
+> (remove-option! keys:quit-keys)
+> (name-of (keys:lookup frame "ESC x"))
+editing:next-line
+> (press-all! frame "C-x" "ESC")
+> (keys:pending frame)
+"C-x ESC"
+> (press-all! frame "C-g")
+! C-x ESC C-g is undefined

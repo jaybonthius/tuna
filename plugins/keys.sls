@@ -301,8 +301,13 @@
 
   (define (prefix-binding? v) (or (eq? v #t) (table? v)))
 
+  ;; The page has already quit on a quit key, so an ESC among them ends
+  ;; the pending keys rather than waiting to make the next key Meta.
+  (define (escape-meta?)
+    (not (member "ESC" (quit-keys))))
+
   (define (escape-pending? base)
-    (and base (string=? (last-key base) "ESC")))
+    (and base (string=? (last-key base) "ESC") (escape-meta?)))
 
   (define (with-meta key)
     (let ([base (base-start key 0 (string-length key))])
@@ -368,7 +373,7 @@
 
   ;; ESC ESC is M-ESC, not a second wait for a key to make Meta.
   (define (lone-escape? v base key)
-    (and (not v) (string=? key "ESC") (not (escape-pending? base))))
+    (and (not v) (string=? key "ESC") (not (escape-pending? base)) (escape-meta?)))
 
   (define (resolve-sequence keymaps keys)
     (let loop ([base #f] [from 0])
