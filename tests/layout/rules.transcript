@@ -125,7 +125,7 @@
 > (eq? echo (layout:add-bar! bar))
 #t
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail"))) #(views:view ((view . 5) (buffer . "notes"))))) #(views:view ((view . 6) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail"))) #(views:view ((view . 5) (buffer . "notes"))))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 0) (pinned . #t) (locked . #t))))
 > (layout:locked? (layout:view-node echo))
 #t
 > (layout:locked? (layout:view-node a))
@@ -166,12 +166,12 @@
 ; Deleting the selected view selects where the focused children lead.
 > (layout:delete-part! (layout:view-node c))
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail"))))) #(views:view ((view . 6) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail"))))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 0) (pinned . #t) (locked . #t))))
 > (selected)
 3
 > (layout:delete-part! (layout:view-node b))
 > (tree)
-(layout:root () #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 6) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 0) (pinned . #t) (locked . #t))))
 > (selected)
 3
 > (raised (lambda () (layout:delete-part! (layout:view-node a))))

@@ -1,0 +1,174 @@
+> (map car (status (view)))
+; A killed line is made again when the next line is drawn, which acts
+; for no module, and keeps no undo. Its status views go with it; a line
+; drawn in the batch of the kill is empty until the batch's end writes
+; the segments.
+> (begin (buffers:kill! (buffers:find " *status-line*")) (map car (status (view))))
+> (map car (status (view)))
+> (buffers:kill! (buffers:find " *status-line*"))
+> (map car (status (view)))
+> (map car (status (view)))
+> (buffers:with-buffer (buffers:find " *status-line*") (undo:limit))
+> (set! line-buffer (buffers:find " *status-line*"))
+; The plugin's five segments, in their places: the modified mark, the
+; buffer's name and the position on the left, the major and minor modes'
+; lighters on the right.
+> (line)
+> (define notes (files:visit (string-append (getenv "HOME") "/notes.txt")))
+> (views:set-buffer! (view) notes)
+> (status (view))
+; The column counts characters from the line's start, a tab as one.
+> (views:set-point! (view) 15)
+> (document:text (buffers:document notes) 11 15)
+> (status (view))
+> (views:set-point! (view) 22)
+> (status (view))
+; A modified file buffer shows *; the major mode's lighter and the
+; lighters of the minor modes on in the view follow.
+> (in-client (lambda () (press! "x")))
+> (modes:set-major-mode python:mode notes)
+> (views:with-view (view) (set-option-local! fill:mode #t))
+> (status (view))
+> (files:save-buffer notes)
+> (status (view))
+; A status line is drawn after the view inside each view atom's element
+; of the layout, except for bars and popups, and where status-line:visible
+; is #f.
+> (define bar (layout:add-bar! (buffers:make "*bar*" "") 50))
+> (layout-split:split-view! (view) (layout-split:direction row))
+> (map (lambda (s) (cdr (assoc "status-line:buffer-name" s))) (screen-status-lines client))
+> (equal? (screen-status-lines client) (screen-status-lines other-client))
+> (list (layout:bar? (layout:view-node bar)) (status bar) (status-line:draw (views:make notes) client))
+> (define popup (views:make (buffers:make "*popup*" "")))
+> (buffers:replace! layout:popups-buffer 1 1 (views:view `((view . ,(views:id popup)) (buffer . "*popup*"))))
+> (length (screen-status-lines client))
+> (buffers:with-buffer notes (set-option-local! status-line:visible #f))
+> (screen-status-lines client)
+> (buffers:with-buffer notes (remove-option-local! status-line:visible))
+> (length (screen-status-lines client))
+; ` *status-line*` holds one atom per placed segment, the left side's
+; then the right side's, each in order; equal numbers keep the order in
+; which they were first placed. It is rewritten only when the table
+; changes, never by a window command.
+> (define version (buffers:version line-buffer))
+> (in-client (lambda () (commands:run layout:other-view)))
+> (in-client (lambda () (commands:run layout-split:split-below)))
+> (= version (buffers:version line-buffer))
+> (define (show-a view) "a")
+> (define (show-b view) "b")
+> (status-line:define-segment seg-a (show show-a))
+> (status-line:define-segment seg-b (show show-b))
+> (table-set! status-line:segments seg-b (status-line:left 20))
+> (table-set! status-line:segments seg-a (status-line:left 20))
+> (map car (status (view)))
+> (table-set! status-line:segments seg-b (status-line:right 0))
+> (map car (status (view)))
+> (cddr (line))
+> (< version (buffers:version line-buffer))
+; A value that is not a place goes to report once, and its segment is
+; not shown; a key that is not a segment is left out.
+> (table-set! status-line:segments seg-a 'left)
+> (map car (status (view)))
+> (map car (status (view)))
+> (table-set! status-line:segments car (status-line:left 1))
+> (map car (status (view)))
+> (table-remove! status-line:segments car)
+> (table-remove! status-line:segments seg-a)
+> (table-remove! status-line:segments seg-b)
+; A show procedure that raises goes to report once, and its segment
+; shows nothing until it shows without raising; so does one returning
+; what is not HTML, a string or #f.
+> (define fail? #t)
+> (define (show-flaky view) (if fail? (car '()) "fine"))
+> (define (show-number view) 42)
+> (status-line:define-segment flaky (show show-flaky))
+> (status-line:define-segment number (show show-number))
+> (table-set! status-line:segments flaky (status-line:left 40))
+> (table-set! status-line:segments number (status-line:left 41))
+> (cdr (assoc "flaky" (status (view))))
+> (cdr (assoc "flaky" (status (view))))
+> (set! fail? #f)
+> (cdr (assoc "flaky" (status (view))))
+> (set! fail? #t)
+> (cdr (assoc "flaky" (status (view))))
+> (cdr (assoc "number" (status (view))))
+> (table-remove! status-line:segments flaky)
+> (table-remove! status-line:segments number)
+; A show procedure runs inside views:with-view of the window's view,
+; with the window's buffer current, and the plugin's own show procedures
+; can be advised.
+> (define (show-current view) (format "~a ~a" (eq? (views:current) view) (buffers:name (buffers:current))))
+> (status-line:define-segment current (show show-current))
+> (table-set! status-line:segments current (status-line:left 50))
+> (cdr (assoc "current" (status (view))))
+> (table-remove! status-line:segments current)
+> (define (shout show view) (string-upcase (show view)))
+> (advice-add! status-line:show-buffer-name shout)
+> (cdr (assoc "status-line:buffer-name" (status (view))))
+> (advice-remove! status-line:show-buffer-name shout)
+; The form checks its clauses; the places check their numbers.
+> (status-line:define-segment bad)
+> (status-line:define-segment bad (show show-a) (show show-b))
+> (status-line:define-segment bad (show show-a) (draw show-b))
+> (status-line:define-segment bad (show 3))
+> (raised (lambda () (status-line:left 'far)))
+> (raised (lambda () (status-line:right "1")))
+> (map status-line:place? (list (status-line:left 1) (status-line:right 2.5) 'left))
+> (raised (lambda () (status-line:draw 'v client)))
+> (raised (lambda () (status-line:posn-view 'posn)))
+> (define result #f)
+> (let ([v (view)]) (fork-thread (lambda () (set! result (raised (lambda () (status-line:draw v client)))))))
+> (sleep-for 0.1)
+> result
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode" "status-line:minor-modes")
+()
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode" "status-line:minor-modes")
+#t
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode" "status-line:minor-modes")
+0
+(status-line:line () #(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(status-line:position ((key . status-line:position))) #(status-line:major-mode ((key . status-line:major-mode) (right . #t))) #(status-line:minor-modes ((key . status-line:minor-modes))))
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "1:0") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
+"\tTab"
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:4") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:11") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
+(("status-line:modified" . "*") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:12") ("status-line:major-mode" . "Python") ("status-line:minor-modes" . "Fill"))
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:12") ("status-line:major-mode" . "Python") ("status-line:minor-modes" . "Fill"))
+#<view 7>
+("notes.txt" "notes.txt")
+#t
+(#t (("status-line:modified" . "") ("status-line:buffer-name" . "*bar*") ("status-line:position" . "1:0") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . "")) #f)
+#<edit 1>
+2
+()
+2
+#t
+("status-line:modified" "status-line:buffer-name" "seg-b" "seg-a" "status-line:position" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "seg-a" "status-line:position" "seg-b" "status-line:major-mode" "status-line:minor-modes")
+(#(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(seg-a ((key . seg-a))) #(status-line:position ((key . status-line:position))) #(seg-b ((key . seg-b) (right . #t))) #(status-line:major-mode ((key . status-line:major-mode))) #(status-line:minor-modes ((key . status-line:minor-modes))))
+#t
+! (status-line) status-line:segments: not a place with irritant left
+("status-line:modified" "status-line:buffer-name" "status-line:position" "seg-b" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "seg-b" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "seg-b" "status-line:major-mode" "status-line:minor-modes")
+! car: () is not a pair
+! number: a show procedure returned what is not HTML, a string or #f with irritant 42
+""
+""
+"fine"
+! car: () is not a pair
+""
+""
+"#t notes.txt"
+"NOTES.TXT"
+! status-line:define-segment: a show clause is required (status-line:define-segment bad)
+! status-line:define-segment: clause given twice (show show-b) in (status-line:define-segment bad (show show-a) (show show-b))
+! status-line:define-segment: invalid clause (draw show-b) in (status-line:define-segment bad (show show-a) (draw show-b))
+! status-line:define-segment: not a procedure with irritant 3
+(status-line:left "not a real number")
+(status-line:right "not a real number")
+(#t #t #f)
+(status-line:draw "not a view")
+(views:posn-view "not a position of a mouse key")
+#<thread 7>
+(status-line:draw "not on the main thread")

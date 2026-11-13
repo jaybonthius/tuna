@@ -1,0 +1,72 @@
+; Quits requested every millisecond land in drawing status lines, in
+; changes of the segments, in window commands and in clicks on segments.
+; Afterwards each window has one status view, no other view of
+; ` *status-line*` is left, the line holds the placed segments, and
+; every status line draws as before.
+> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+> (define notes (buffers:make "notes" "one\ntwo\n"))
+> (views:set-buffer! (view) notes)
+> (define (show-a view) "a")
+> (status-line:define-segment seg-a (show show-a))
+> (define reported 0)
+> (define (count-reports report c) (set! reported (+ reported 1)))
+> (advice-add! report count-reports)
+> (define quitting #t)
+> (define stopped #f)
+> (define (quitter)
+    (let loop ()
+      (if quitting
+          (begin
+            (request-quit!)
+            (chez:sleep (make-time 'time-duration 1000000 0))
+            (loop))
+          (set! stopped #t))))
+> (define rounds 0)
+> (define quits-caught 0)
+> (define (window-count) (length (layout:views)))
+> (define (stress until)
+    (let again ()
+      (guard (c [(quit-condition? c) (set! quits-caught (+ quits-caught 1)) (again)])
+        (let loop ([k 0])
+          (when (< (real-time) until)
+            (case (mod k 6)
+              [(0) (layout:screen client) (layout:screen other-client)]
+              [(1) (if (even? (quotient k 6))
+                       (table-set! status-line:segments seg-a (status-line:left (mod k 50)))
+                       (table-remove! status-line:segments seg-a))]
+              [(2) (if (< (window-count) 4)
+                       (in-client (lambda () (commands:run layout-split:split-right)))
+                       (in-client (lambda () (commands:run layout:delete-view))))]
+              [(3) (let ([sv (status-view-of (view))]) (when sv (click-token! sv 2)))]
+              [(4) (batch-ended)]
+              [else (status (view))])
+            (set! rounds (+ rounds 1))
+            (loop (+ k 1)))))))
+> (begin
+    (fork-thread quitter)
+    (stress (+ (real-time) 2000))
+    (set! quitting #f)
+    (let wait ()
+      (guard (c [(quit-condition? c) (set! quits-caught (+ quits-caught 1)) (wait)])
+        (let spin () (unless stopped (spin)))
+        (let settle ([n 0]) (when (< n 100000) (settle (+ n 1))))))
+    (list (> (+ quits-caught reported) 100) (> rounds 1000)))
+> (advice-remove! report count-reports)
+> (table-set! status-line:segments seg-a (status-line:left 25))
+> (in-client (lambda () (for-each (lambda (v) (views:set-buffer! v notes)) (layout:views))))
+> (define lines (screen-status-lines client))
+> (= (length lines) (window-count))
+> (for-all (lambda (l) (equal? l (car lines))) lines)
+> (car lines)
+> (equal? lines (screen-status-lines other-client))
+> (= (length (views:showing line-buffer)) (window-count))
+> (for-all (lambda (w) (and (status-view-of w) #t)) (layout:views))
+> (map (lambda (d) (vector-ref d 0)) (cddr (line)))
+(#t #t)
+#t
+#t
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("seg-a" . "a") ("status-line:position" . "1:0") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
+#t
+#t
+#t
+(status-line:modified status-line:buffer-name seg-a status-line:position status-line:major-mode status-line:minor-modes)

@@ -51,16 +51,20 @@
   }
 
   /* Fluid sizes in container units then follow the view, which in a
-     split is a share of the window. */
+     split is a share of the window. What a plugin draws around the view,
+     such as a status line, stacks with it, and the view gives up the
+     room, so its measurements and scrolling count only its own box. */
   .layout-view {
     container-type: inline-size;
+    flex-direction: column;
   }
 
   /* The selected view's outline is drawn inside it, where it would cover
      a cursor in the first column. */
   .layout-view > .view {
-    flex: 1 1 0;
+    flex: 1 1 auto;
     min-inline-size: 0;
+    min-block-size: 0;
     padding-inline: var(--tuna-space-2, 0.25rem);
   }
 

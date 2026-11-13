@@ -57,6 +57,7 @@ bench: exe
 	sh bench/mouse.sh build/bin/tuna || status=1; \
 	sh bench/ui.sh build/bin/tuna || status=1; \
 	sh bench/modes.sh build/bin/tuna || status=1; \
+	sh bench/echo-status.sh build/bin/tuna || status=1; \
 	exit $$status
 
 repl: build

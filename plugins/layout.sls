@@ -10,7 +10,7 @@
   (check-main-thread check-view check-direction register-container! check-parts check-popup-parts
    the-frame frame-record? open-layout! opened-popups current-index index-atom index-of-id atom-of part-of
    view-of selected-id shown-views select-id! set-zoom! frame-zoom frame-order children root-node
-   locked-node? locked-in? title-of draw-layout draw-popups neighbour-of remove-part! bar-view node-datum
+   locked-node? locked-in? title-of draw-layout draw-popups neighbour-of remove-part! bar-view bar-atom bar-in? node-datum
    note-batch save-now! selected-keymaps enclosing-keymaps last-selected-unlocked-atom lead-down order-views
    in-part-mode? enter-part-mode! leave-part-mode! selection-in choose-part! drawn-part-class
    choose-datum! parent-part child-part sibling-part end-part shift-part! lift-part! lower-part! raise-part!
@@ -431,12 +431,12 @@
 
   ;; A popup is drawn outside the layout's screen view, so its element
   ;; carries no positions, which would name the layout's.
-  (define (draw-view-atom atom selected client marks?)
+  (define (draw-atom atom selected client marks?)
     (let ([v (view-of atom)] [part (and marks? (drawn-part-class atom))])
       (haml (:div.layout-view ([class (if (eqv? (atom-id atom) selected) (if part "selected part-selected" "selected") part)]
                                [data-at (and marks? (document:node-start atom))]
                                [data-to (and marks? (document:node-end atom))])
-              (views:draw v client)))))
+              (draw-view-atom atom v client)))))
 
   (define (draw-plain shown draw-child)
     (haml (:div.layout-part (map draw-child shown))))
@@ -445,7 +445,7 @@
     (let ([selected (selected-id)] [marks? (eq? ix last-index)])
       (let draw ([n root])
         (cond
-          [(view-atom? n) (draw-view-atom n selected client marks?)]
+          [(view-atom? n) (draw-atom n selected client marks?)]
           [(document:atom? n) '()]
           [else
            (let* ([shown (shown-children ix n zoom-at)]
@@ -549,13 +549,29 @@
            [moved (filter (lambda (a) (memq (car a) place)) (datum-attributes (node-datum ix container)))])
       (with-attributes d (append kept moved))))
 
-  (define (bar-view b)
-    (let* ([root (root-node)] [bars (cdr (children root))])
-      (or (exists (lambda (c) (and (view-atom? c) (let ([v (view-of c)]) (and (eq? (views:buffer v) b) v)))) bars)
-          (let ([v (views:make b)] [at (fx- (document:node-end root) 1)])
+  (define (bar-in? ix n)
+    (let ([p (parent-in ix n)])
+      (and p (not (parent-in ix p)) (not (fx= (document:node-start (car (kids-of ix p))) (document:node-start n))))))
+
+  (define (bar-atom b)
+    (find (lambda (c) (and (view-atom? c) (eq? (views:buffer (view-of c)) b))) (cdr (children (root-node)))))
+
+  (define (bar-depth n)
+    (let ([d (document:node-attribute n 'depth 0)]) (if (real? d) d 0)))
+
+  ;; Only a deeper bar goes after the new one, so bars of one depth keep
+  ;; the order they were added in, as hook entries do.
+  (define (bar-view b depth)
+    (let ([atom (bar-atom b)])
+      (if atom
+          (view-of atom)
+          (let* ([root (root-node)]
+                 [after (find (lambda (c) (> (bar-depth c) depth)) (cdr (children root)))]
+                 [at (if after (document:node-start after) (fx- (document:node-end root) 1))]
+                 [v (views:make b)])
             (buffers:replace! layout-buffer at at
               (vector 'views:view (list (cons 'view (views:id v)) (cons 'buffer (buffers:name b))
-                                        '(pinned . #t) '(locked . #t))))
+                                        (cons 'depth depth) '(pinned . #t) '(locked . #t))))
             v))))
 
   (define (selected-keymaps)
@@ -1182,11 +1198,32 @@
   (let-values ([(ix n) (part-of 'layout:delete-part! node)])
     (%delete! ix n)))
 
-(define (add-bar! b)
+(define (draw-view-atom node view client)
+  (list (views:draw view client)))
+
+(define (bar? node)
+  (check-main-thread 'layout:bar?)
+  (let-values ([(ix n) (part-of 'layout:bar? node)])
+    (and (eq? ix (current-index)) (bar-in? ix n))))
+
+(define add-bar!
+  (case-lambda
+    [(b) (add-bar! b 0)]
+    [(b depth)
+     (unless (buffers:buffer? b)
+       (assertion-violation 'layout:add-bar! "not a buffer" b))
+     (unless (real? depth)
+       (assertion-violation 'layout:add-bar! "not a real number" depth))
+     (check-main-thread 'layout:add-bar!)
+     (bar-view b depth)]))
+
+(define (remove-bar! b)
   (unless (buffers:buffer? b)
-    (assertion-violation 'layout:add-bar! "not a buffer" b))
-  (check-main-thread 'layout:add-bar!)
-  (bar-view b))
+    (assertion-violation 'layout:remove-bar! "not a buffer" b))
+  (check-main-thread 'layout:remove-bar!)
+  (let ([atom (bar-atom b)])
+    (when atom (remove-part! (current-index) atom))
+    (void)))
 
 (define (%check-action-result who result)
   (unless (or (not result) (views:view? result))

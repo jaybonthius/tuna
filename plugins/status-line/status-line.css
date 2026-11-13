@@ -1,0 +1,65 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  .status-line {
+    flex: none;
+    background: var(--status-line-inactive-background, var(--tuna-bar-inactive));
+    color: var(--status-line-inactive-color, var(--tuna-on-bar-inactive));
+  }
+
+  .layout-view.selected > .status-line {
+    background: var(--status-line-background, var(--tuna-bar));
+    color: var(--status-line-color, var(--tuna-on-bar));
+  }
+
+  .status-line > .view {
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-ui);
+    line-height: var(--tuna-line-height-1);
+    overflow: hidden;
+    padding-inline: var(--tuna-space-2);
+  }
+
+  .status-line .view-lines {
+    display: flex;
+    align-items: baseline;
+    gap: var(--tuna-space-3);
+    white-space: nowrap;
+  }
+
+  .status-line .cursor {
+    display: none;
+  }
+
+  .status-line-segment {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .status-line-segment:empty {
+    display: none;
+  }
+
+  /* Each segment sits in views' element for its atom, so the right side's
+     are found from the element holding the first of them. */
+  .status-line-right,
+  .node:has(> .status-line-right) ~ .node > .status-line-segment {
+    flex-shrink: 0;
+  }
+
+  .status-line-right {
+    margin-inline-start: auto;
+  }
+
+  .status-line-segment[data-clickable] {
+    cursor: pointer;
+  }
+
+  @media (hover: hover) {
+    .status-line-segment[data-clickable]:hover {
+      background: var(--tuna-hover);
+    }
+  }
+}

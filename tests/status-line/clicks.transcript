@@ -1,0 +1,71 @@
+; Each window's status line is a view of ` *status-line*` of its own,
+; made the first time the line is drawn and dropped after the window's
+; view is dropped.
+> (define notes (buffers:make "notes" "one\ntwo\n"))
+> (views:set-buffer! (view) notes)
+> (layout-split:split-view! (view) (layout-split:direction row))
+> (define windows (layout:views))
+> (length (screen-status-lines client))
+> (define status-views (map status-view-of windows))
+> (map (lambda (sv) (eq? (views:buffer sv) line-buffer)) status-views)
+> (map (lambda (sv w) (eq? (status-line:posn-view (vector (views:id sv) 1)) w)) status-views windows)
+> (status-line:posn-view (vector (views:id (car windows)) 1))
+; A click on a segment with no keymap of its own is looked up in
+; status-line:keymap, which selects the clicked window; a click on a
+; locked window's line selects nothing.
+> (map (lambda (b) (cons (car b) (commands:command-name (cdr b)))) (keys:bindings status-line:keymap))
+> (layout:select! (car windows))
+> (click-token! (cadr status-views) 2)
+> (eq? (view) (cadr windows))
+> (buffers:replace! layout:buffer (document:node-start (layout:view-node (car windows))) (document:node-end (layout:view-node (car windows)))
+    (views:view `((view . ,(views:id (car windows))) (buffer . "notes") (locked . #t))))
+> (click-token! (status-view-of (car windows)) 2)
+> (eq? (view) (cadr windows))
+; A segment's keymap comes first. A command it runs runs inside the
+; status view, with ` *status-line*` current, and finds its window with
+; status-line:posn-view.
+> (define clicked '())
+> (commands:define-command (note-click [event (keys:command-event)])
+    "Notes where a click on the segment ran."
+    (set! clicked (list (eq? (views:current) (status-view-of (cadr windows)))
+                        (buffers:name (buffers:current))
+                        (eq? (status-line:posn-view (keys:event-end event)) (cadr windows)))))
+> (define-table name-keys "Clicks on the name.")
+> (define (show-name view) (buffers:name (views:buffer view)))
+> (status-line:define-segment name (show show-name) (keymap name-keys))
+> (keys:bind! name-keys "<mouse-1>" note-click)
+> (table-set! status-line:segments name (status-line:left 25))
+> (cddr (line))
+> (click-token! (status-view-of (cadr windows)) 3)
+> clicked
+; A click on a segment removed since its line was drawn is stale; one
+; on a segment still placed finds it where it is now.
+> (define drawn (buffers:version line-buffer))
+> (table-remove! status-line:segments status-line:modified)
+> (click-token! (status-view-of (cadr windows)) 1 drawn)
+> (set! clicked '())
+> (click-token! (status-view-of (cadr windows)) 3 drawn)
+> clicked
+; When a window's view goes, its status view goes at the end of the
+; batch.
+> (define gone (status-view-of (car windows)))
+> (define gone-id (views:id gone))
+> (buffers:replace! layout:buffer (document:node-start (layout:view-node (car windows))) (document:node-end (layout:view-node (car windows))) "")
+> (views:find gone-id)
+> (length (views:showing line-buffer))
+#<view 3>
+2
+(#t #t)
+(#t #t)
+#f
+(("<mouse-1>" . status-line:mouse-select-view) ("<down-mouse-1>" . keys:ignore) ("<drag-mouse-1>" . keys:ignore))
+#t
+#<edit 2>
+#t
+(#(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(name ((key . name))) #(status-line:position ((key . status-line:position))) #(status-line:major-mode ((key . status-line:major-mode) (right . #t))) #(status-line:minor-modes ((key . status-line:minor-modes))))
+(#t " *status-line*" #t)
+! Stale click: what was clicked is gone
+(#t " *status-line*" #t)
+#<edit 3>
+#f
+1

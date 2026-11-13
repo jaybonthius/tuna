@@ -92,7 +92,7 @@
 > (commands:run layout:zoom)
 > (commands:run layout:reset-layout)
 > (tree)
-(layout:root () #(views:view ((view . 6) (buffer . "*compilation*"))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () #(views:view ((view . 6) (buffer . "*compilation*"))) #(views:view ((view . 5) (buffer . "*Echo*") (depth . 0) (pinned . #t) (locked . #t))))
 > (selected)
 6
 > (map views:id (layout:views))

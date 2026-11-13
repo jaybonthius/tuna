@@ -1,0 +1,15 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  /* An empty echo area keeps a line's height, so the layout does not move
+     when a message comes. */
+  .echo-area-message {
+    min-block-size: 1lh;
+    max-block-size: 25dvh;
+    overflow-y: auto;
+  }
+
+  .echo-area-message .cursor {
+    display: none;
+  }
+}

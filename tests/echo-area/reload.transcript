@@ -1,0 +1,36 @@
+; Unloading the plugin removes its bar; loading it again adds the bar
+; and keeps both buffers, so the log and the message stay.
+> (echo-area:message! "Kept")
+> (unload-module! '(echo-area))
+> (tree)
+> (map buffers:name (filter (lambda (b) (member (buffers:name b) '(" *Echo Area*" "*Messages*"))) (buffers:all)))
+> (load-module! '(echo-area))
+> (tree)
+> (list (echo-area:current-message) (messages))
+> (eq? echo-buffer (buffers:find " *Echo Area*"))
+; Reloading it does the same.
+> (import (tuna eval))
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/echo-area.sls"))
+> (list (length (cddr (tree))) (echo-area:current-message) (messages))
+; The count of an equal message is read from the log, so it goes on
+; after the reload.
+> (echo-area:message! "Kept")
+> (messages)
+; Its advice and bindings came back with it.
+> (car '())
+> (echo-area:current-message)
+> (press! "C-f")
+> (echo-area:current-message)
+> (commands:command-name (keys:lookup client "C-h e"))
+(layout:root () #(views:view ((view . 1) (buffer . "*scratch*"))))
+(" *Echo Area*" "*Messages*")
+(layout:root () #(views:view ((view . 1) (buffer . "*scratch*"))) #(views:view ((view . 4) (buffer . " *Echo Area*") (depth . 90) (pinned . #t) (locked . #t))))
+("Kept" "Kept\n")
+#t
+(2 "Kept" "Kept\n")
+"Kept [2 times]\n"
+! car: () is not a pair
+"car: () is not a pair"
+! editing:forward-char: end of buffer
+"editing:forward-char: end of buffer"
+echo-area:show-messages

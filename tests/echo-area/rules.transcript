@@ -1,0 +1,153 @@
+; Undo in the layout's own view, as in the part mode, undoes the edit
+; that added the echo area's bar, as any window change; redo puts it back.
+> (views:call-with-view layout:screen-view (lambda () (commands:run undo:undo)))
+> (length (cddr (tree)))
+> (views:call-with-view layout:screen-view (lambda () (commands:run undo:redo)))
+> (length (cddr (tree)))
+; The echo area is a bar at depth 90, after the root's first part; bars
+; are ordered by depth, then in the order added.
+> (tree)
+> (define prompt (buffers:make " *Minibuf*" ""))
+> (define notice (buffers:make "*notice*" ""))
+> (define late (buffers:make "*late*" ""))
+> (layout:add-bar! prompt 100)
+> (layout:add-bar! notice 95)
+> (layout:add-bar! late 90)
+> (map (lambda (d) (cdr (assq 'buffer (vector-ref d 1)))) (cdddr (tree)))
+> (eq? (echo-view) (layout:add-bar! echo-buffer 10))
+> (list (layout:bar? (layout:view-node (echo-view))) (layout:bar? (layout:view-node (view))))
+> (for-each layout:remove-bar! (list prompt notice late))
+> (layout:remove-bar! late)
+> (map (lambda (d) (cdr (assq 'buffer (vector-ref d 1)))) (cdddr (tree)))
+> (raised (lambda () (layout:add-bar! prompt 'high)))
+> (raised (lambda () (layout:remove-bar! "prompt")))
+; Its view is locked, so other-view passes over it, and its buffer's
+; name starts with a space.
+> (layout:locked? (layout:view-node (echo-view)))
+> (buffers:name echo-buffer)
+> (press! "C-x" "o")
+> (eq? (view) (echo-view))
+; A message shows until the next typed key from any client, which clears
+; it before its command runs, so the command's own message shows.
+> (define seen 'none)
+> (commands:define-command (peek) "Notes the message as the command starts." (set! seen (echo-area:current-message)))
+> (commands:define-command (say) "Says hello." (echo-area:message! "Hello"))
+> (keys:bind! keys:global "C-c p" peek)
+> (keys:bind! keys:global "C-c s" say)
+> (echo-area:message! "First")
+> (press-in! other-client "C-c" "p")
+> (list seen (echo-area:current-message))
+> (press! "C-c" "s")
+> (echo-area:current-message)
+; A click does not clear it.
+> (define notes (buffers:make "notes" "one\ntwo\nthree\n"))
+> (views:set-buffer! (view) notes)
+> (click-at! (view) 5)
+> (list (views:point (view)) (echo-area:current-message))
+; A message of "" clears it at once and logs nothing.
+> (echo-area:message! "")
+> (list (echo-area:current-message) (echo-area-element))
+; Each message is logged; an equal one counts on the last line, and a
+; message of several lines takes several lines.
+> (echo-area:message! "Saved")
+> (echo-area:message! "Saved")
+> (echo-area:message! "Saved")
+> (echo-area:message! "two~%lines")
+> (echo-area:message! "two~%lines")
+> (echo-area:current-message)
+> (messages)
+; The log keeps echo-area:log-max lines, the oldest going first.
+> (set-option! echo-area:log-max 3)
+> (echo-area:message! "Next")
+> (messages)
+> (echo-area:message! "Next")
+> (messages)
+> (set-option! echo-area:log-max 16384)
+; *Messages* refuses the user's edits; a killed *Messages* is made again
+; by the next message; the echo area cannot be killed.
+> (define log (buffers:find "*Messages*"))
+> (raised (lambda () (buffers:replace! log 1 1 "x")))
+> (buffers:kill! echo-buffer)
+> (buffers:kill! log)
+> (buffers:find "*Messages*")
+> (echo-area:message! "After")
+> (messages)
+; Neither buffer keeps undo history.
+> (map (lambda (b) (buffers:with-buffer b (undo:limit))) (list echo-buffer (buffers:find "*Messages*")))
+; A click on the echo area shows *Messages* in another view without
+; selecting it, its point at the end.
+> (layout-split:split-view! (view) (layout-split:direction column))
+> (define selected (view))
+> (click-at! (echo-view) 1)
+> (eq? (view) selected)
+> (define shown (find (lambda (v) (eq? (views:buffer v) (buffers:find "*Messages*"))) (layout:views)))
+> (list (views:point shown) (document:length (buffers:document (buffers:find "*Messages*"))))
+> (echo-area:current-message)
+; C-h e does the same.
+> (commands:command-name (keys:lookup client "C-h e"))
+; The keymap of the echo area's kind.
+> (map (lambda (b) (cons (car b) (commands:command-name (cdr b)))) (keys:bindings echo-area:keymap))
+> (eq? (buffers:kind-keymap (buffers:kind 'echo-area:area)) echo-area:keymap)
+; echo-area:message! and current-message work on the main thread only.
+> (on-thread (lambda () (echo-area:message! "From a thread")))
+> (on-thread (lambda () (echo-area:current-message)))
+> (raised (lambda () (echo-area:message! 'hello)))
+> (raised (lambda () (parameterize ([echo-area:face "red"]) #t)))
+> (raised (lambda () (set-option! echo-area:log-max -1)))
+; A killed log made again by another module's code keeps no undo after
+; that module unloads, and one made again by code acting for no module,
+; such as advice on batch-ended, is made all the same.
+> (buffers:kill! (buffers:find "*Messages*"))
+> (import (poker))
+> (poker:poke)
+> (unload-module! '(poker))
+> (list (messages) (buffers:with-buffer (buffers:find "*Messages*") (undo:limit)))
+> (buffers:kill! (buffers:find "*Messages*"))
+> (define late? #t)
+> (advice-add! batch-ended (lambda (ended) (ended) (when late? (set! late? #f) (echo-area:message! "Late"))))
+> (list (messages) (buffers:with-buffer (buffers:find "*Messages*") (undo:limit)))
+1
+2
+(layout:root () #(views:view ((view . 1) (buffer . "*scratch*"))) #(views:view ((view . 3) (buffer . " *Echo Area*") (depth . 90) (pinned . #t) (locked . #t))))
+#<view 4>
+#<view 5>
+#<view 6>
+(" *Echo Area*" "*late*" "*notice*" " *Minibuf*")
+#t
+(#t #f)
+(" *Echo Area*")
+(layout:add-bar! "not a real number")
+(layout:remove-bar! "not a buffer")
+#t
+" *Echo Area*"
+#f
+(#f #f)
+"Hello"
+(5 "Hello")
+(#f "<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-1\" data-line=\"1\" data-at=\"1\"><span class=\"cursor primary\"></span><br></div></div>")
+"two\nlines"
+"First\nHello\nSaved [3 times]\ntwo\nlines [2 times]\n"
+"two\nlines [2 times]\nNext\n"
+"two\nlines [2 times]\nNext [2 times]\n"
+(buffers:replace! "the node refuses the edit")
+#f
+#t
+#f
+"After\n"
+(0 0)
+#<view 7>
+#t
+(7 8)
+"After"
+echo-area:show-messages
+(("<mouse-1>" . echo-area:show-messages) ("<down-mouse-1>" . keys:ignore))
+#t
+(echo-area:message! "not on the main thread")
+(echo-area:current-message "not on the main thread")
+(echo-area:message! "not a string")
+(echo-area:face "not a face or #f")
+(set-option! "-1 is not a valid value for echo-area:log-max")
+#t
+("Poked\n" 0)
+#t
+("Late\n" 0)

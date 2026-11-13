@@ -1,0 +1,42 @@
+; A user's removal of a segment stays in effect when status-line reloads
+; and places it again.
+> (import (tuna eval))
+> (define notes (buffers:make "notes" "one\n"))
+> (views:set-buffer! (view) notes)
+> (table-remove! status-line:segments status-line:minor-modes)
+> (map car (status (view)))
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/status-line.sls"))
+> (map car (status (view)))
+> (screen-status-lines client)
+; Its status views are dropped and its buffer killed when it unloads, as
+; when it reloads; the buffer is made when it loads and the views when
+; the next line is drawn. Unloading takes back every change to its table,
+; so the segments are placed as by default.
+> (set! line-buffer (buffers:find " *status-line*"))
+> (length (views:showing line-buffer))
+> (unload-module! '(status-line))
+> (list (buffers:live? line-buffer) (buffers:find " *status-line*"))
+> (load-module! '(status-line))
+> (set! line-buffer (buffers:find " *status-line*"))
+> (map car (status (view)))
+> (length (views:showing line-buffer))
+; Unloading the module that defines and places a segment hides it;
+; loading it again shows it.
+> (import (cursors))
+> (views:add-cursor! (view) 2)
+> (assoc "cursors:cursor-count" (status (view)))
+> (unload-module! '(cursors))
+> (map car (status (view)))
+> (load-module! '(cursors))
+> (assoc "cursors:cursor-count" (status (view)))
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode")
+((("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:position" . "1:0") ("status-line:major-mode" . "Fundamental")))
+1
+(#f #f)
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode" "status-line:minor-modes")
+1
+#<cursor>
+("cursors:cursor-count" . "2 cursors")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode" "status-line:minor-modes")
+("cursors:cursor-count" . "2 cursors")

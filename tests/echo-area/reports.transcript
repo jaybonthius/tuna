@@ -1,0 +1,122 @@
+; A condition that reaches report shows in the echo area at the end of
+; the batch, with the text of report's line after the module, in the
+; error face, or the warning face for a warning.
+> (car '())
+> (list (echo-area:current-message) (echo-area-element))
+> (define (report-line c)
+    (let-values ([(port text) (open-string-output-port)])
+      (parameterize ([console-error-port port]) (as-module '(layout) (report c)))
+      (text)))
+> (define (last-logged)
+    (let* ([log (messages)] [end (- (string-length log) 1)])
+      (let loop ([i end])
+        (if (or (= i 0) (char=? (string-ref log (- i 1)) #\newline))
+            (substring log i end)
+            (loop (- i 1))))))
+> (define conditions
+    (list
+      (condition (make-who-condition 'spell:check) (make-message-condition "no dictionary"))
+      (condition (make-error) (make-who-condition 'spell:check) (make-message-condition "no word")
+                 (make-irritants-condition '(42)))
+      (condition (make-error) (make-message-condition "two irritants") (make-irritants-condition '(1 "b")))
+      (condition (make-error) (make-who-condition 'f) (make-format-condition) (make-message-condition "bad ~a and ~s")
+                 (make-irritants-condition '(3 "x")))
+      (condition (make-warning) (make-who-condition 'spell:check) (make-message-condition "slow"))
+      (condition (make-error) (make-who-condition 'g) (make-irritants-condition '(1 2)))
+      42))
+> (define (compare c)
+    (let* ([line (report-line c)] [shown (begin (echo-area:message! "") (last-logged))])
+      (list (string=? line (string-append "! (layout) " shown "\n")) shown)))
+> (let loop ([cs conditions])
+    (unless (null? cs)
+      (write (compare (car cs)))
+      (newline)
+      (loop (cdr cs))))
+; The face: error for anything but a warning.
+> (begin (warningf 'spell:check "~a is slow" "aspell") (void))
+> (echo-area-element)
+; A report raised inside a kind's consent, while an edit is refused,
+; changes no buffer there and shows at the batch's end.
+> (define (refuse-loudly node edit) (error 'notes:consent "not today"))
+> (buffers:define-kind loud (consent refuse-loudly))
+> (define b (buffers:make "*loud*" (loud '() "text\n")))
+> (buffers:replace! b 1 1 "x")
+> (list (document:text (buffers:document b)) (echo-area:current-message))
+; A report raised while a screen is drawn shows in the next batch, the
+; same on every client.
+> (define (broken-draw node view) (error 'notes:draw "cannot draw"))
+> (buffers:define-kind broken (draw broken-draw))
+> (define c (buffers:make "*broken*" (broken '() "text\n")))
+> (views:set-buffer! (view) c)
+> (echo-area:message! "Before")
+> (begin (layout:screen client) (layout:screen other-client) (echo-area:current-message))
+> (echo-area:current-message)
+> (string=? (echo-area-element) (echo-area-element-for other-client))
+> (messages)
+; Reports queued before a message show before it.
+> (views:set-buffer! (view) b)
+> (begin (report (condition (make-error) (make-message-condition "first"))) (echo-area:message! "second") (void))
+> (messages)
+; A quit shows Quit once: keyboard-quit's advice says it, and the advice
+; on report skips quits, as when C-g quits a paused command.
+> (commands:define-command (wait) "Waits until quit." (suspend (lambda (resume) #f)))
+> (keys:bind! keys:global "C-c w" wait)
+> (define waiting (spawn-task (lambda () (press! "C-c" "w"))))
+> (sleep-for 0.1)
+> (press! "C-g")
+> (wait-until (lambda () (task-done? waiting)))
+> (task-done? waiting)
+> (echo-area:current-message)
+> (messages)
+> (press! "C-g")
+> (messages)
+; A condition that is a warning and also serious shows in the error face.
+> (report (condition (make-warning) (make-error) (make-message-condition "both")))
+> (list (echo-area:current-message) (echo-area:face))
+> (echo-area-element)
+; A message that raises while the queue shows drops only its own report;
+; the reports after it show at the next batch.
+> (define (refuse-second message! format-string . vs)
+    (if (equal? vs '("second"))
+        (error 'notes:show "cannot show")
+        (apply message! format-string vs)))
+> (begin
+    (for-each (lambda (m) (report (condition (make-error) (make-message-condition m)))) '("first" "second" "third"))
+    (advice-add! echo-area:message! refuse-second)
+    (void))
+> (advice-remove! echo-area:message! refuse-second)
+> (let ([log (messages)]) (substring log (- (string-length log) 41) (string-length log)))
+! car: () is not a pair
+("car: () is not a pair" "<div class=\"echo-area-message\" role=\"status\" data-face=\"error\"><div class=\"line\" id=\"v3-1\" data-line=\"1\" data-at=\"1\"><span class=\"cursor primary\"></span>car: () is not a pair</div></div>")
+(#t "spell:check: no dictionary")
+(#t "spell:check: no word with irritant 42")
+(#t "two irritants with irritants (1 \"b\")")
+(#t "f: bad 3 and \"x\"")
+(#t "spell:check: slow")
+(#t "g: &error with irritants (1 2)")
+(#t "non-condition value 42")
+! spell:check: aspell is slow
+"<div class=\"echo-area-message\" role=\"status\" data-face=\"warning\"><div class=\"line\" id=\"v3-1\" data-line=\"1\" data-at=\"1\"><span class=\"cursor primary\"></span>spell:check: aspell is slow</div></div>"
+! notes:consent: not today
+("text\n" "notes:consent: not today")
+! notes:draw: cannot draw
+! notes:draw: cannot draw
+"Before"
+"notes:draw: cannot draw"
+#t
+"car: () is not a pair\nspell:check: no dictionary\nspell:check: no word with irritant 42\ntwo irritants with irritants (1 \"b\")\nf: bad 3 and \"x\"\nspell:check: slow\ng: &error with irritants (1 2)\nnon-condition value 42\nspell:check: aspell is slow\nnotes:consent: not today\nBefore\nnotes:draw: cannot draw [2 times]\n"
+! first
+"car: () is not a pair\nspell:check: no dictionary\nspell:check: no word with irritant 42\ntwo irritants with irritants (1 \"b\")\nf: bad 3 and \"x\"\nspell:check: slow\ng: &error with irritants (1 2)\nnon-condition value 42\nspell:check: aspell is slow\nnotes:consent: not today\nBefore\nnotes:draw: cannot draw [2 times]\nfirst\nsecond\n"
+! &quit
+#t
+"Quit"
+"car: () is not a pair\nspell:check: no dictionary\nspell:check: no word with irritant 42\ntwo irritants with irritants (1 \"b\")\nf: bad 3 and \"x\"\nspell:check: slow\ng: &error with irritants (1 2)\nnon-condition value 42\nspell:check: aspell is slow\nnotes:consent: not today\nBefore\nnotes:draw: cannot draw [2 times]\nfirst\nsecond\nQuit\n"
+"car: () is not a pair\nspell:check: no dictionary\nspell:check: no word with irritant 42\ntwo irritants with irritants (1 \"b\")\nf: bad 3 and \"x\"\nspell:check: slow\ng: &error with irritants (1 2)\nnon-condition value 42\nspell:check: aspell is slow\nnotes:consent: not today\nBefore\nnotes:draw: cannot draw [2 times]\nfirst\nsecond\nQuit [2 times]\n"
+! both
+("both" #f)
+"<div class=\"echo-area-message\" role=\"status\" data-face=\"error\"><div class=\"line\" id=\"v3-1\" data-line=\"1\" data-at=\"1\"><span class=\"cursor primary\"></span>both</div></div>"
+! first
+! second
+! third
+! notes:show: cannot show
+"both\nfirst\nthird\nnotes:show: cannot show\n"
