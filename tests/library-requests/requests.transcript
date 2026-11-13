@@ -1,0 +1,12 @@
+; Tuna's own library asks for chez-counter at commit 1, and the plugin
+; newer at commit 2, which descends from it. Commit 2 is installed, and
+; counted, a plugin of Tuna's own, uses it.
+> (import (counted))
+> (counted:version)
+"2 with base"
+> (call-with-input-file "~/.local/share/tuna/libraries/chez-counter/.git/HEAD" get-line)
+"ed4b7eff95aa3f80e02421fd81b7fc2b6872ae4e"
+; chez-counter's own tuna.deps at commit 2 names chez-base, so it is
+; installed too. The clone that compared the commits became the install.
+> (sort string<? (directory-list "~/.local/share/tuna/libraries"))
+("chez-base" "chez-base.installed" "chez-counter" "chez-counter.installed")

@@ -2,6 +2,7 @@
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
 (use-plugin compat (git "https://github.com/bob/compat"))
 (use-plugin consult)
+(use-plugin embark)
 (use-plugin embark-consult (commit "1c2d3e4"))
 (use-plugin files)
 (use-plugin notes (local "~/src/notes"))

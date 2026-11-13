@@ -1,6 +1,16 @@
 [submodule "lib/chez-lang"]
 	path = lib/chez-lang
 	url = https://github.com/jaybonthius/chez-lang.git
-[submodule "plugins/chez-toolbelt"]
-	path = plugins/chez-toolbelt
-	url = https://github.com/jaybonthius/chez-toolbelt.git
+[submodule "libraries/chez-h2o"]
+	path = libraries/chez-h2o
+	url = https://github.com/jaybonthius/chez-h2o.git
+	ignore = untracked
+[submodule "libraries/chez-json"]
+	path = libraries/chez-json
+	url = https://github.com/jaybonthius/chez-json.git
+[submodule "libraries/chez-haml"]
+	path = libraries/chez-haml
+	url = https://github.com/jaybonthius/chez-haml.git
+[submodule "libraries/chez-datastar"]
+	path = libraries/chez-datastar
+	url = https://github.com/jaybonthius/chez-datastar.git

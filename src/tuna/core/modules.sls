@@ -4,6 +4,10 @@
     check-import
     import-spec-library
     install-module-lookup!
+    set-library-roots!
+    found-library-source
+    found-libraries-under
+    loaded-libraries-under
     module-exists?
     module-loaded?
     loaded-modules
@@ -38,7 +42,8 @@
 
   (define lib-prefix #f)
   (define source-roots (lambda () '()))
-  (define find-module (lambda (who name extensions install?) (values #f #f #f)))
+  (define find-module (lambda (who name extensions) (values #f #f #f)))
+  (define set-roots! (lambda (roots) (void)))
 
   ;; A module is stale once its library instance has run and the module has
   ;; been unloaded: Chez runs a library's body once per instance, so running
@@ -107,61 +112,70 @@
   (define (refused-module-name? name)
     (or (member name '((init) (repl))) (memq (car name) '(csv7 r6rs))))
 
-  ;; (x …) is looked for only in lib/, the plugin x and Tuna's own library,
-  ;; in that order, so a plugin cannot supply another plugin's modules.
+  ;; lib/ is searched first, so the user's own module wins, and Tuna's own
+  ;; library last, so an installed plugin replaces Tuna's of its name.
   ;; Tuna's own names resolve only to Tuna's libraries, so no file in a root
   ;; or the working folder replaces the core.
-  (define (install-module-lookup! own-directories lib-root library-root cache-root
-            plugin-root install-missing-plugin! plugin-roots)
+  (define (install-module-lookup! own-directories lib-root library-root cache-root)
     (define (directory-pair source cache) (cons source (string-append cache-root "/" cache)))
     (let ([lib (directory-pair lib-root "lib")]
           [library (directory-pair library-root "library")]
-          [plugin-directories '()]
+          [roots '()]
+          [root-parts '()]
           [search-own (library-search-handler)])
-      (define (set-directories!)
-        (library-directories (append own-directories (list lib) (map cdr plugin-directories) (list library))))
-      ;; chez-lang names a library from its path under library-directories,
-      ;; so each plugin's folder joins them before its modules compile.
-      (define (plugin-directory root name)
-        (let ([id (car name)])
-          (and root
-               (let ([directory (directory-pair root (string-append "plugins/" (symbol->string id)))])
-                 (unless (member (cons id directory) plugin-directories)
-                   (set! plugin-directories
-                     (cons (cons id directory) (remp (lambda (entry) (eq? (car entry) id)) plugin-directories)))
-                   (set-directories!))
-                 directory))))
-      (define (search-roots who name extensions install?)
-        (let-values ([(source object found?) (default-library-search-handler who name (list lib) extensions)])
-          (if (or source found?)
-              (values source object found?)
-              (let ([plugin (plugin-directory (plugin-root name install?) name)])
-                (let-values ([(source object found?)
-                              (default-library-search-handler who name
-                                (if plugin (list plugin library) (list library)) extensions)])
-                  (if (or source found? (not install?))
-                      (values source object found?)
-                      (let ([plugin (plugin-directory (install-missing-plugin! name) name)])
-                        (if plugin
-                            (default-library-search-handler who name (list plugin) extensions)
-                            (values #f #f #f)))))))))
-      ;; Another thread looks only in the folders the main thread has
-      ;; added, since a full lookup changes the library directories and the
-      ;; known sources, and only to choose why it refuses.
+      (define (searched) (cons lib (append roots (list library))))
+      ;; A name's first part may hold a dot, as (foo.bar) does, so only a
+      ;; whole extension is cut from an entry.
+      (define (entry-parts entry extensions)
+        (let ([n (string-length entry)])
+          (fold-left
+            (lambda (parts extension)
+              (let ([m (string-length extension)])
+                (if (and (fx> n m) (string=? (substring entry (fx- n m) n) extension))
+                    (cons (substring entry 0 (fx- n m)) parts)
+                    parts)))
+            (list entry)
+            extensions)))
+      (define (first-parts root)
+        (let ([parts (make-hashtable string-hash string=?)]
+              [extensions (map car (library-extensions))])
+          (for-each (lambda (entry)
+                      (for-each (lambda (part) (hashtable-set! parts part #t)) (entry-parts entry extensions)))
+                    (guard (c [(i/o-error? c) '()]) (directory-list (car root))))
+          parts))
+      ;; With many roots, trying each for every lookup costs more than the
+      ;; rest of start-up, so each root's top entries are listed when the
+      ;; roots are set, and a lookup tries only the roots that hold the
+      ;; name's first part. A name has one provider, so their order does not
+      ;; matter. A name missed there, as one written into a root since, is
+      ;; looked for in every root.
+      (define (search who name extensions)
+        (let* ([part (symbol->string (car name))]
+               [likely (fold-right (lambda (entry kept)
+                                     (if (hashtable-contains? (cdr entry) part) (cons (car entry) kept) kept))
+                                   '() root-parts)])
+          (let-values ([(source object found?)
+                        (default-library-search-handler who name (cons lib (append likely (list library))) extensions)])
+            (if (or source found?)
+                (values source object found?)
+                (default-library-search-handler who name (searched) extensions)))))
+      ;; A lookup on another thread never loads, so it only picks the message.
       (define (refuse-lookup who name extensions)
-        (let-values ([(source object found?)
-                      (default-library-search-handler who name
-                        (cons lib (append (map cdr plugin-directories) (list library))) extensions)])
+        (let-values ([(source object found?) (default-library-search-handler who name (searched) extensions)])
           (if (and source (not (tuna-file? source)))
               (assertion-violation who "a library is first loaded on the main thread" name)
               (check-main-thread who))))
       (set! lib-prefix (string-append lib-root "/"))
-      (set! source-roots
-        (lambda () (cons lib-root (append (map cdr (plugin-roots)) (list library-root)))))
+      (set! source-roots (lambda () (map car (searched))))
+      (set! set-roots!
+        (lambda (new)
+          (set! roots new)
+          (set! root-parts (map (lambda (root) (cons root (first-parts root))) new))
+          (library-directories (append own-directories (searched)))))
       ;; Chez's search handler reports any raise inside it, a quit included,
       ;; as an invalid library name.
       (set! find-module
-        (lambda (who name extensions install?)
+        (lambda (who name extensions)
           (with-quits-allowed #f
             (cond
               [(memq (car name) '(tuna chez-lang))
@@ -169,31 +183,45 @@
               [(refused-module-name? name)
                (errorf who "a module cannot be named ~s" name)]
               [(on-main-thread?)
-               (let-values ([(source object found?) (search-roots who name extensions install?)])
+               (let-values ([(source object found?) (search who name extensions)])
                  (when source
                    (hashtable-set! found-libraries name source))
                  (values source object found?))]
               [else (refuse-lookup who name extensions)]))))
-      (set-directories!)
-      ;; Only Chez's own lookup for an import loads what it finds. Other
-      ;; lookups only find sources, such as a reload's of every loaded
-      ;; library and of a name's parent; installing there would bring back
-      ;; a plugin removed since, or raise for a name no plugin holds. A
-      ;; loaded library is looked up only to find its source.
+      (set-roots! '())
       (library-search-handler
         (lambda (who name directories extensions)
-          (find-module who name extensions (and (eq? who 'import) (not (library-loaded? name))))))))
+          (find-module who name extensions)))))
 
-  ;; library-list would build a list of every library for each of the many
-  ;; lookups at start-up; Chez's only other test of a loaded library is
-  ;; this raise.
+  ;; chez-lang names a library from its path under library-directories, so
+  ;; a root joins them before its modules compile.
+  (define (set-library-roots! roots)
+    (unless (and (list? roots)
+                 (for-all (lambda (root) (and (pair? root) (string? (car root)) (string? (cdr root)))) roots))
+      (assertion-violation 'set-library-roots! "not a list of library directory pairs" roots))
+    (check-main-thread 'set-library-roots!)
+    (set-roots! roots))
+
+  (define (found-library-source name)
+    (hashtable-ref found-libraries name #f))
+
+  ;; library-list would build a list of every library; Chez's only other
+  ;; test of a loaded library is this raise.
   (define (library-loaded? name)
     (guard (c [(assertion-violation? c) #f])
       (library-version name)
       #t))
 
+  (define (found-libraries-under folder)
+    (let ([prefix (string-append folder "/")])
+      (filter (lambda (name) (string-prefix? prefix (hashtable-ref found-libraries name #f)))
+              (vector->list (hashtable-keys found-libraries)))))
+
+  (define (loaded-libraries-under folder)
+    (filter library-loaded? (found-libraries-under folder)))
+
   (define (search-library who name)
-    (find-module who name (library-extensions) #f))
+    (find-module who name (library-extensions)))
 
   (define (module-exists? name)
     (let-values ([(source object found?) (search-library 'module-exists? name)])
@@ -712,11 +740,6 @@
     (check-main-thread 'load-module!)
     (unless (module-loaded? name)
       (let ([stale (with-stale-imports name)])
-        ;; Chez never drops a library, so an import never looks these up
-        ;; again and cannot install their plugins.
-        (call-with-quit-safe-library-lock
-          (lambda ()
-            (for-each (lambda (module) (find-module 'load-module! module (library-extensions) #t)) stale)))
         (let-values ([(source object found?) (search-library 'load-module! name)])
           (unless (and source (hashtable-contains? found-libraries name))
             (assertion-violation 'load-module! "not a module" name)))

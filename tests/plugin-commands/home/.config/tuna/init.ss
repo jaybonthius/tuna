@@ -25,6 +25,8 @@
 (when-installed (vertico)
   (set-option! vertico:count 15))
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
+(use-plugin compat)
 (use-plugin consult)
+(use-plugin embark)
 (use-plugin embark-consult)
 (import (console))

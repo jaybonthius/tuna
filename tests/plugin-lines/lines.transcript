@@ -1,8 +1,7 @@
 ; Lines are read before the configuration runs; a second line for one id
 ; is reported, and the first is the one known.
 ! use-plugin: a second line for consult
-; A module (compat) is looked for only in the plugin compat, which the
-; index gives, not in another plugin that holds compat.sls.
+; The index gives compat's source to its line.
 > (compat:who)
 "upstream compat"
 ; A line imports its plugin's main module: the next form sees its names.
@@ -13,6 +12,12 @@
 > (use-plugin vertico (git "https://github.com/minad/vertico"))
 > (vertico:count)
 10
+; One library name has one provider: a plugin holding another's module is
+; refused at install, and nothing of it is installed.
+> (use-plugin rival (local "~/src/rival"))
+! use-plugin: plugin rival and plugin compat both hold the library (compat)
+> (memq 'rival (installed-plugins))
+#f
 ; Lines go only in the configuration and at the REPL; plugin lines only in
 ; an index's main module.
 > (import (uses))
@@ -25,11 +30,11 @@
 ! missing import for integration (only (tuna plugins) integration)
 ; The configuration's lines' plugins in order, then the others by id.
 > (installed-plugins)
-(other sources consult compat greet plain vertico)
+(other sources compat consult greet plain vertico)
 ; Only greet has no line and was found by no import.
 > (remove-unused-plugins!)
 > (installed-plugins)
-(other sources consult compat plain vertico)
+(other sources compat consult plain vertico)
 > (file-exists? "~/.local/share/tuna/plugins/greet")
 #f
 ; Tuna writes init.ss only through its commands.
@@ -37,6 +42,7 @@
 (import (tuna) (tuna plugins))
 (use-plugin other (local "~/src/other"))
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
+(use-plugin compat)
 (use-plugin consult)
 (use-plugin consult (git "https://example.org/second/consult"))
 (import (console))
@@ -51,6 +57,7 @@
 (import (tuna) (tuna plugins))
 #;(use-plugin other (local "~/src/other"))
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
+(use-plugin compat)
 (use-plugin consult)
 (use-plugin consult (git "https://example.org/second/consult"))
 (import (console))

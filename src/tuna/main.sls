@@ -4,8 +4,7 @@
   (export main)
   (import (chezscheme) (chez-lang loader) (tuna version) (tuna core changes)
           (tuna core modules) (except (tuna core main-thread) exit) (tuna top-level)
-          (only (tuna plugin-manager) start-plugins! plugin-root install-missing-plugin! plugin-roots
-                module-plugin-source)
+          (only (tuna plugin-manager) start-plugins! module-plugin-source)
           (only (tuna storage) start-storage! wait-for-saved-files!))
 
   ;; Tuna's own options are read only at the start of the command line, so
@@ -15,9 +14,9 @@
       [(equal? arguments '("--version"))
        (printf "tuna ~a\n" tuna-version)
        (exit 0)]
-      ;; A plugin's build runs where no scheme program may be installed.
-      [(and (pair? arguments) (string=? (car arguments) "--script") (pair? (cdr arguments)))
-       (apply (scheme-script) (cdr arguments))]
+      ;; A plugin's build runs where no scheme program may be installed,
+      ;; and a library's makefile runs $(SCHEME) -q --script.
+      [(script-arguments arguments) => (lambda (script) (apply (scheme-script) script))]
       [else
        (command-line (cons program arguments))
        (command-line-arguments arguments)
@@ -27,19 +26,25 @@
            (exit 1))
          (start program (normal-path home)
            (normal-path (or (getenv "TUNA_LIBRARY") (path-build (path-parent program) "plugins")))
+           (normal-path (path-build (path-parent program) "libraries"))
            own-directories))
        (run-main-loop)]))
 
-  (define (start program home library own-directories)
+  (define (script-arguments arguments)
+    (let ([arguments (if (and (pair? arguments) (string=? (car arguments) "-q")) (cdr arguments) arguments)])
+      (and (pair? arguments) (string=? (car arguments) "--script") (pair? (cdr arguments))
+           (cdr arguments))))
+
+  (define (start program home library libraries own-directories)
     (let* ([configuration (string-append home "/.config/tuna")]
            [lib (string-append configuration "/lib")])
       (compile-file-message #f)
       (optimize-level 2)
       (start-plugins! program home (string-append configuration "/init.ss") lib library
-        (string-append home "/.local/share/tuna/plugins"))
+        (string-append home "/.local/share/tuna/plugins") libraries
+        (string-append home "/.local/share/tuna/libraries"))
       (start-storage! (string-append home "/.local/share/tuna/saved") module-plugin-source)
-      (install-module-lookup! own-directories lib library (string-append home "/.cache/tuna")
-        plugin-root install-missing-plugin! plugin-roots)
+      (install-module-lookup! own-directories lib library (string-append home "/.cache/tuna"))
       (install-loader!)
       ;; Modules are compiled within top-level forms, which are evaluated
       ;; without inspector information. Modules keep each procedure's

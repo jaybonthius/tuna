@@ -1,10 +1,10 @@
 ; A copy of a plugin that Tuna's own library holds goes when the
 ; configuration's line for it has no source and no index names it.
-! import: removed ~/.local/share/tuna/plugins/files: its line finds the plugin in Tuna's own library
+! use-plugin: removed ~/.local/share/tuna/plugins/files: its line finds the plugin in Tuna's own library
 > (files:who)
 "bundled"
 > (installed-plugins)
-(other sources consult compat)
+(other sources compat consult)
 ; File times are coarse: a file written in the tick its object was
 ; compiled in would not look newer, so each write waits a little first.
 > (define (write-mine! text)
@@ -14,8 +14,7 @@
       'replace))
 > (import (tuna eval))
 ; Chez keeps the library of a removed plugin, and reloading another module
-; looks up the source of every library Chez has; that neither raises nor
-; installs the plugin again.
+; looks up the source of every library Chez has; that does not raise.
 > (remove-plugin! 'other)
 > (write-mine! "#!tuna\n(define (text) \"two\")\n")
 > (eval-file "~/.config/tuna/lib/mine.sls")
@@ -32,7 +31,9 @@
 > (use-plugin other (local "~/src/other"))
 > (other:name)
 "other"
-; A module that comes to import a plugin an index names installs it.
+; A module that comes to import another plugin needs that plugin's line,
+; whose source an index may give.
+> (use-plugin embark)
 > (write-mine! "#!tuna\n(import (embark))\n(define (text) (embark:act))\n")
 > (eval-file "~/.config/tuna/lib/mine.sls")
 > (list (mine:text) (installed-plugins))
@@ -42,7 +43,7 @@
 > (vertico:count)
 10
 > (installed-plugins)
-(sources vertico compat embark other)
+(sources compat vertico embark other)
 ; An id names a folder, so a path is not an id.
 > (remove-plugin! '|.|)
 ! remove-plugin!: not a plugin id with irritant \x2E;

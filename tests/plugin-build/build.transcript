@@ -55,7 +55,7 @@ build of 7e117645e8cca0cfc2a08aa88e8e1fe55a0a67f6, status 0
 built
 ; A failed build fails the install and leaves the plugin as it was.
 > (use-plugin broken (git "https://github.com/bob/broken"))
-! import: the build of broken failed with status 3: no compiler (output in ~/.cache/tuna/builds/broken.log)
+! use-plugin: the build of broken failed with status 3: no compiler (output in ~/.cache/tuna/builds/broken.log)
 > (exists? ".local/share/tuna/plugins/broken")
 #f
 > (install-plugin! '(use-plugin broken (git "https://github.com/bob/broken")))

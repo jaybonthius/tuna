@@ -13,19 +13,18 @@
           (put-string p (string-append (substring old 0 at) to
                           (substring old (+ at (string-length from)) (string-length old)))))
         'replace)
-      (eval-file file)
       (unload-module! '(notes))
-      (load-module! '(notes))))
+      (eval-file file)))
 > (use-source! "bob/notes" "alice/notes")
-! import: replaced ~/.local/share/tuna/plugins/notes, installed from another source or commit than its line's
+! use-plugin: replaced ~/.local/share/tuna/plugins/notes, installed from another source or commit than its line's
 > (list (notes:origin) (notes:hits))
 ("alice" 0)
 > (set-saved! notes:hits 1)
 > (use-source! "alice/notes" "bob/notes")
-! import: replaced ~/.local/share/tuna/plugins/notes, installed from another source or commit than its line's
+! use-plugin: replaced ~/.local/share/tuna/plugins/notes, installed from another source or commit than its line's
 > (list (notes:origin) (notes:hits))
 ("bob" 7)
 > (use-source! "bob/notes" "alice/notes")
-! import: replaced ~/.local/share/tuna/plugins/notes, installed from another source or commit than its line's
+! use-plugin: replaced ~/.local/share/tuna/plugins/notes, installed from another source or commit than its line's
 > (list (notes:origin) (notes:hits))
 ("alice" 1)

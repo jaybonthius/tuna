@@ -1,16 +1,17 @@
 ; At start-up, spell is installed from another source than its line's, a
-; copy put in place by hand, so the line installs it first and says so.
+; copy put in place by hand, so the line installs it before the
+; configuration runs and says so.
 ; The configuration then overrides and sets spell's definitions, with no
 ; other report.
-! import: replaced ~/.local/share/tuna/plugins/spell, installed from another source or commit than its line's
+! use-plugin: replaced ~/.local/share/tuna/plugins/spell, installed from another source or commit than its line's
 > (list (spell:dictionary-path) (spell:language))
 ("/home/groucho/words" "en-GB")
 > (plugin-commit 'spell)
 "8f4a7345babf351f103b3a03a5d290d170e5e95e"
 > (define (spell:check path) "mine")
 ! define: spell:check is (spell)'s definition; override it with (set! spell:check value)
-; A changed commit does not touch the loaded plugin; the next lookup of its
-; modules installs it.
+; A changed commit does not touch the loaded plugin; evaluating its line
+; once the plugin is unloaded installs it.
 > (import (tuna eval))
 > (define (replace-commit! text)
     (let* ([file "~/.config/tuna/init.ss"]
@@ -24,8 +25,8 @@
 > (plugin-commit 'spell)
 "8f4a7345babf351f103b3a03a5d290d170e5e95e"
 > (unload-module! '(spell))
-> (load-module! '(spell))
-! import: replaced ~/.local/share/tuna/plugins/spell, installed from another source or commit than its line's
+> (eval-text "(use-plugin spell (git \"https://github.com/bob/spell\") (commit \"624c303\"))" "~/.config/tuna/init.ss")
+! use-plugin: replaced ~/.local/share/tuna/plugins/spell, installed from another source or commit than its line's
 > (plugin-commit 'spell)
 "624c3038631852c7011bc1be6dfb1aed74fd271a"
 > (list (spell:dictionary-path) (spell:language))

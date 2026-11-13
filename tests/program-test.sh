@@ -64,10 +64,12 @@ for case in exit:3 raise:255; do
 done
 
 # Without TUNA_LIBRARY, Tuna's own library is plugins/ beside the program,
-# however the program is started, and holds the bundled plugins.
+# however the program is started, and holds the bundled plugins; the
+# libraries they name are in libraries/ beside it.
 mkdir -p "$dir/bin/plugins" "$dir/home/.config/tuna"
 cp "$tuna" "$dir/bin/tuna"
 sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/bin/plugins"
+sh boot/copy-library.sh "$(dirname "$tuna")/libraries" "$dir/bin/libraries"
 printf '(import (console))\n' > "$dir/home/.config/tuna/init.ss"
 printf '#!tuna\n(define (where) "beside the program")\n' > "$dir/bin/plugins/own.sls"
 ln -s "$dir/bin/tuna" "$dir/linked-tuna"

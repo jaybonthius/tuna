@@ -1,14 +1,13 @@
-; The example configuration, with three lines that rely on an index.
+; The example configuration, with five lines that rely on an index.
 > (plugin-commit 'spell)
 "8f4a7345babf351f103b3a03a5d290d170e5e95e"
 > (consult:buffer)
 "compat buffer"
-; embark-consult is a folder of embark's repository, at its newest commit,
-; and embark comes from the index too.
+; embark-consult is a folder of embark's repository, at its newest commit.
 > (list (embark-consult:version) (embark:integrated))
 ("newest" #t)
 > (installed-plugins)
-(spell sources consult embark-consult compat embark greet)
+(spell sources compat consult embark embark-consult greet)
 > (define (show-lines)
     (call-with-input-file "~/.config/tuna/init.ss"
       (lambda (p)
@@ -50,7 +49,9 @@
 (when-installed (vertico)
   (set-option! vertico:count 15))
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
+(use-plugin compat)
 (use-plugin consult)
+(use-plugin embark)
 (use-plugin embark-consult)
 (use-plugin vertico (git "https://github.com/minad/vertico") (commit "5f76a5364d614d437df7fff40ce52ac7db52ae83"))
 (import (console))
@@ -81,8 +82,8 @@
 > (plugin-commit 'spell)
 "8f4a7345babf351f103b3a03a5d290d170e5e95e"
 > (advice-remove! module-loaded announce-load)
-; A plugin an index gave gets a line with only its commit, which takes its
-; source from the index.
+; A line with no source gets only its commit, and still takes its source
+; from the index.
 > (update-plugin! 'compat "5ecc38a")
 > (show-lines)
 (use-plugin spell (git "https://github.com/bob/spell") (commit "8f4a7345babf351f103b3a03a5d290d170e5e95e"))
@@ -90,10 +91,11 @@
 (use-plugin fill)
 (use-plugin prog)
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
+(use-plugin compat (commit "5ecc38a88d05e60def075308cf4d4d9eec4558ee"))
 (use-plugin consult)
+(use-plugin embark)
 (use-plugin embark-consult)
 (use-plugin vertico (git "https://github.com/minad/vertico") (commit "5f76a5364d614d437df7fff40ce52ac7db52ae83"))
-(use-plugin compat (commit "5ecc38a88d05e60def075308cf4d4d9eec4558ee"))
 > (consult:buffer)
 "compat buffer"
 ; When a module fails to load, the plugin goes back to its commit and its
@@ -121,10 +123,11 @@ posted ran
 (use-plugin fill)
 (use-plugin prog)
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
+(use-plugin compat (commit "5ecc38a88d05e60def075308cf4d4d9eec4558ee"))
 (use-plugin consult)
+(use-plugin embark)
 (use-plugin embark-consult)
 (use-plugin vertico (git "https://github.com/minad/vertico") (commit "5f76a5364d614d437df7fff40ce52ac7db52ae83"))
-(use-plugin compat (commit "5ecc38a88d05e60def075308cf4d4d9eec4558ee"))
 (use-plugin flaky (git "https://github.com/bob/flaky") (commit "5a8f6943897459be214b5eb6183f5e7ac331d74f"))
 (use-plugin notes (local "~/src/notes"))
 ; A line typed at the REPL has none in the configuration to put back, so
@@ -153,9 +156,9 @@ posted ran
 ; greet has no line, and no import found it since Tuna started.
 > (remove-unused-plugins!)
 > (installed-plugins)
-(spell sources consult embark-consult compat notes vertico embark flaky)
+(spell sources compat consult embark embark-consult notes vertico flaky)
 > (import (nowhere))
-! import: no plugin line for (nowhere): add (use-plugin nowhere (git "...")) to init.ss
+! library (nowhere) not found
 > (sort string<? (directory-list "~/.local/share/tuna/plugins"))
 ("compat" "compat.installed" "consult" "consult.installed" "embark" "embark-consult" "embark-consult.installed" "embark.installed" "flaky" "flaky.installed" "notes.installed" "sources" "sources.installed" "spell" "spell.installed" "vertico" "vertico.installed")
 ; Arguments are checked.

@@ -7,7 +7,7 @@
     eval-file)
   (import (chezscheme) (tuna core changes) (tuna core definitions) (tuna core modules)
           (only (tuna plugin-manager) read-configuration-lines! read-configuration-line! read-repl-line!
-                plugin-line?)
+                raise-line-failure plugin-line? library-line?)
           (only (tuna core conditions) call-with-only-handler)
           (only (chez-lang body) definition-form? form-defined-names)
           (only (tuna files) expand-home))
@@ -177,23 +177,29 @@
   ;; library has run its body already, so it is loaded again before the
   ;; form is compiled against it. Without inspector information a procedure
   ;; defined in the configuration prints as one typed at the REPL does, with
-  ;; no source position.
+  ;; no source position. A library line is data: reading it installed its
+  ;; library, so evaluating it only raises what that met.
   (define (eval-form form)
-    (when (equal? (current-owner) '(repl))
-      (read-repl-line! (unwrap form)))
-    (call-with-quit-safe-library-lock sync-modules!)
-    (call-loading-modules
-      (lambda ()
-        (let ([imports (top-level-imports form)])
-          (load-unloaded-modules! imports)
-          (call-with-values
-            (lambda ()
-              (parameterize ([generate-inspector-information #f])
-                (call-with-locked-expansion
-                  (lambda () (eval (list check-keyword form) repl-environment)))))
-            (lambda results
-              (run-modules! imports)
-              (apply values results)))))))
+    (let ([datum (unwrap form)])
+      (when (equal? (current-owner) '(repl))
+        (read-repl-line! datum))
+      (raise-line-failure datum)
+      (if (library-line? datum)
+          (void)
+          (begin
+            (call-with-quit-safe-library-lock sync-modules!)
+            (call-loading-modules
+              (lambda ()
+                (let ([imports (top-level-imports form)])
+                  (load-unloaded-modules! imports)
+                  (call-with-values
+                    (lambda ()
+                      (parameterize ([generate-inspector-information #f])
+                        (call-with-locked-expansion
+                          (lambda () (eval (list check-keyword form) repl-environment)))))
+                    (lambda results
+                      (run-modules! imports)
+                      (apply values results))))))))))
 
   ;; A line's config forms run after the line, each as a top-level form, so
   ;; that they see the names of every module the line loaded; a line that
@@ -203,9 +209,16 @@
       (if (and (plugin-line? line) (assq 'config (cddr line)))
           (begin
             (eval-form (list-head line (fx- (length line) 1)))
-            (for-each (lambda (f) (call-reporting-form f (lambda () (eval-top-level f))))
+            (for-each (lambda (f) (call-reporting-form f (lambda () (eval-config-form f))))
                       (cdr (parts (car (last-pair (parts form)))))))
           (eval-form form))))
+
+  ;; Library lines are read as data from the top level alone, before
+  ;; anything runs, so one in a config clause would install nothing.
+  (define (eval-config-form form)
+    (if (library-line? (unwrap form))
+        (errorf 'library "a library line goes at the top level of the configuration or the REPL")
+        (eval-top-level form)))
 
   (define (parts x)
     (if (annotation? x) (annotation-expression x) x))
@@ -236,13 +249,14 @@
                 (loop end))))))))
 
   ;; A read error ends the configuration: after it, where the next form
-  ;; starts is unknown.
+  ;; starts is unknown. Tuna's own library names libraries too, so lines
+  ;; are read with no configuration.
   (define (load-configuration!)
-    (when (file-exists? configuration-file)
-      (as-module '(init)
-        (call-reporting
-          (lambda ()
-            (read-configuration-lines!)
+    (as-module '(init)
+      (call-reporting
+        (lambda ()
+          (read-configuration-lines!)
+          (when (file-exists? configuration-file)
             (read-annotated-forms configuration-file
               (lambda (form) (call-reporting-form form (lambda () (eval-top-level form))))))))))
 

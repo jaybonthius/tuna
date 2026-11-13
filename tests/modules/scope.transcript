@@ -1,3 +1,6 @@
+; lib/'s shadowed replaces the installed plugin's, which is reported at
+; start.
+! import: (shadowed) in lib/ replaces ~/.local/share/tuna/plugins/shadowed/shadowed.sls
 ; Each module exports <prefix>:%scope, which eval-in-module uses.
 > (import (scoped))
 > (and (memq 'scoped:%scope (library-exports '(scoped))) #t)

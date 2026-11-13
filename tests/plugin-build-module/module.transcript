@@ -56,7 +56,7 @@ wrote made.sls
 > (install-plugin! '(use-plugin hollow (git "https://github.com/bob/hollow")))
 ! install-plugin!: plugin hollow holds no module (hollow)
 > (use-plugin hollow (git "https://github.com/bob/hollow"))
-! import: plugin hollow holds no module (hollow)
+! use-plugin: plugin hollow holds no module (hollow)
 > (list (exists? ".local/share/tuna/plugins/hollow") (installed-plugins))
 (#f (gen made))
 > (show ".cache/tuna/builds/hollow.log")

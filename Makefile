@@ -35,6 +35,7 @@ bench: exe
 	sh bench/hot-paths.sh build/bin/tuna || status=1; \
 	sh bench/tick.sh build/bin/tuna || status=1; \
 	sh bench/startup.sh build/bin/tuna $(SCHEME) || status=1; \
+	sh bench/libraries.sh build/bin/tuna || status=1; \
 	sh bench/reload.sh build/bin/tuna || status=1; \
 	sh bench/document.sh build/bin/tuna || status=1; \
 	sh bench/buffers.sh build/bin/tuna || status=1; \
@@ -70,9 +71,12 @@ exe: build
 	cd build/boot && ld -r -b binary -z noexecstack -o boot-files.o petite.boot scheme.boot tuna.boot
 	cc -O2 -I$(CHEZ_DIR) -o build/bin/tuna boot/main.c build/boot/boot-files.o \
 	  $(CHEZ_DIR)/libkernel.a $(CHEZ_DIR)/liblz4.a $(CHEZ_DIR)/libz.a -lm -ltinfo
-	rm -rf build/bin/plugins
+	rm -rf build/bin/plugins build/bin/libraries
 	sh boot/copy-library.sh plugins build/bin/plugins
+	sh boot/copy-library.sh libraries build/bin/libraries
 	sh boot/build-plugins.sh build/bin/tuna
 
+# Tuna's build writes into its libraries' checkouts, beside their sources.
 clean:
 	rm -rf build
+	for library in libraries/*/; do git -C "$$library" clean -fdxq; done

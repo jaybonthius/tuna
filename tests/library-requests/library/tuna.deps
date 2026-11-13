@@ -1,0 +1,5 @@
+(library chez-counter
+  (git "https://github.com/bob/chez-counter")
+  (commit "7f86047")
+  (library-directories "src")
+  (build))

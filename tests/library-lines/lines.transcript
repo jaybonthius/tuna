@@ -1,0 +1,60 @@
+; The configuration's line for chez-adder gives only a commit, and takes
+; the library's source and clauses from the plugins' requests, which agree
+; on them. It wins over sum's commit, which is reported.
+! library: the configuration's line for library chez-adder replaces that of plugin sum
+> (odd:version)
+"2"
+> (sum:total 2 2)
+4
+; A library from a local folder, with no library-directories: the folder
+; is its root, and Chez compiles it into Tuna's cache.
+> (library mine (local "~/src/mine"))
+! import: (mine thing) in lib/ replaces ~/src/mine/mine/thing.sls
+> (import (mine other))
+> (mine-other)
+"from ~/src/mine"
+> (file-exists? "~/.cache/tuna/libraries/mine/mine/other.so")
+#t
+; A module in lib/ wins over a library's of the same name.
+> (import (mine thing))
+> (mine-thing)
+"from lib/"
+; Tuna modules belong to plugins, which can reload them.
+> (library chez-modular (git "https://github.com/bob/chez-modular") (commit "3031504") (library-directories "src"))
+! library: library chez-modular holds the Tuna module (modular); install it with a use-plugin line
+; One library name has one provider.
+> (library chez-twin (git "https://github.com/bob/chez-twin") (commit "5304fb0") (library-directories "src"))
+! library: library chez-twin and library chez-adder both hold the library (adder)
+; Neither refused library is left installed, and Tuna's own libraries,
+; such as chez-json, are its own copies.
+> (sort string<? (directory-list "~/.local/share/tuna/libraries"))
+("chez-adder" "chez-adder.installed")
+; A plugin's tuna.deps holds only library lines with a git source and a
+; commit.
+> (use-plugin broken-deps (git "https://github.com/bob/broken-deps"))
+! use-plugin: ~/.local/share/tuna/plugins/broken-deps/tuna.deps holds (library chez-adder (local "/tmp")), which is not a library line with a git source and a commit
+; A git source needs a commit.
+> (library chez-adder (git "https://github.com/bob/chez-adder"))
+! library: expected an id and clauses (git url) with (commit hex), (local folder), (library-directories root ...) or (build program argument ...) (library chez-adder (git "https://github.com/bob/chez-adder"))
+; A library nothing asks for any more goes with the unused plugins.
+> (use-plugin uses-extra (git "https://github.com/bob/uses-extra"))
+> (sort string<? (directory-list "~/.local/share/tuna/libraries"))
+("chez-adder" "chez-adder.installed" "chez-extra" "chez-extra.installed")
+> (remove-plugin! 'uses-extra)
+> (remove-unused-plugins!)
+> (sort string<? (directory-list "~/.local/share/tuna/libraries"))
+("chez-adder" "chez-adder.installed")
+> (installed-plugins)
+(sum odd)
+; A line typed at the REPL replaces the configuration's for the session.
+> (library chez-adder (commit "98df19e"))
+! library: the REPL's line for library chez-adder replaces that of the configuration
+! library: the REPL's line for library chez-adder replaces that of plugin sum
+! library: the REPL's line for library chez-adder replaces that of plugin odd
+! library: library chez-adder is loaded, so its new line takes effect when Tuna starts again
+; Only top-level lines are read before anything runs.
+> (use-plugin sum (git "https://github.com/bob/sum") (config (library chez-other (commit "98df19e"))))
+! library: a library line goes at the top level of the configuration or the REPL
+; A local library is used as it is, at no commit.
+> (library mine (local "~/src/mine") (commit "98df19e"))
+! library: expected an id and clauses (git url) with (commit hex), (local folder), (library-directories root ...) or (build program argument ...) (library mine (local "~/src/mine") (commit "98df19e"))

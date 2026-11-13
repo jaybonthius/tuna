@@ -1,7 +1,8 @@
 #!/bin/sh
 # A submodule's checkout and the folder a plugin's build wrote are large,
 # and neither tests nor builds change them, so a copy of a library links
-# to them.
+# to them. Any other link is followed: one relative to the source tree
+# would lead nowhere from the copy.
 set -eu
 from=${1:?usage: copy-library.sh FROM TO}
 to=${2:?usage: copy-library.sh FROM TO}
@@ -22,7 +23,7 @@ for entry in "$from"/*; do
       if [ "$(basename "$part")" = build ] && [ -d "$part" ]; then
         ln -s "$part" "$to/$name/build"
       else
-        cp -R "$part" "$to/$name/"
+        cp -RL "$part" "$to/$name/"
       fi
     done
   else

@@ -1,0 +1,5 @@
+(library chez-adder
+  (git "https://github.com/bob/chez-adder")
+  (commit "3fb7025")
+  (library-directories ("src" . "build/obj/src"))
+  (build "make" "native"))

@@ -25,7 +25,7 @@
 
 (compile-file-message #f)
 (install-module-lookup! (library-directories) (string-append root "/lib") (string-append root "/library")
-  (string-append root "/cache") (lambda (name install?) #f) (lambda (name) #f) (lambda () '()))
+  (string-append root "/cache"))
 (install-loader!)
 
 (load-module! '(racer))

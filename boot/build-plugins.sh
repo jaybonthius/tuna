@@ -6,11 +6,17 @@ case $tuna in
   *) tuna=$PWD/$tuna ;;
 esac
 library=$(dirname "$tuna")/plugins
+libraries=$(dirname "$tuna")/libraries
 
 for script in "$library"/*/build.ss; do
   [ -f "$script" ] || continue
   (cd "$(dirname "$script")" && "$tuna" --script build.ss)
 done
+
+if [ -f "$library/tuna.deps" ]; then
+  "$tuna" --script "$(dirname "$0")/build-libraries.ss" "$tuna" "$libraries" "$library/tuna.deps" \
+    "$(dirname "$tuna")/../libraries"
+fi
 
 # Loading each main module once makes a plugin that fails to compile, or
 # compiles with a warning, fail the build.

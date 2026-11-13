@@ -1,1 +1,1 @@
-../../chez-toolbelt/chez-datastar/tests/datastar/bundles/datastar.js
+../../../libraries/chez-datastar/tests/datastar/bundles/datastar.js

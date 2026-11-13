@@ -6,4 +6,4 @@
     (install-plugin! '(use-plugin vertico (git "https://github.com/minad/vertico"))))
 ran while git ran
 > (installed-plugins)
-(other sources consult vertico compat greet)
+(other sources compat consult vertico greet)
