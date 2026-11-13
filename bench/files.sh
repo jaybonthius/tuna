@@ -1,5 +1,5 @@
 #!/bin/sh
-# Pinned to one CPU, so that each median compares like with like.
+# Pinned to one CPU, so that each sample compares like with like.
 set -eu
 tuna=${1:?usage: files.sh TUNA}
 case $tuna in

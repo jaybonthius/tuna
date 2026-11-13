@@ -65,21 +65,8 @@
     (lambda (p)
       (string-for-each (lambda (c) (if (char=? c #\/) (put-string p "%2F") (put-char p c))) folder))))
 
-;; The main thread keeps running posted work while the threads run, so a
-;; failed write the writer posts is reported meanwhile.
 (define (run-threads thunks)
-  (let ([m (make-mutex)] [finished 0])
-    (let ([threads (map (lambda (thunk)
-                          (fork-thread
-                            (lambda ()
-                              (thunk)
-                              (with-mutex m (set! finished (+ finished 1))))))
-                        thunks)])
-      (let loop ()
-        (unless (= (with-mutex m finished) (length thunks))
-          (yield)
-          (loop)))
-      (for-each thread-join threads))))
+  (for-each thread-join (map fork-thread thunks)))
 
 (define (tests)
   (test "a file's name comes from the source of its module's plugin, then the module and name"

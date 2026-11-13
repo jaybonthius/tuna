@@ -98,16 +98,10 @@ function check(view, reason) {
   const lastIndex = firstEndingBelow(lines, viewBottom + edgeTolerance) - 1;
   const lastShown = lines[lastIndex];
   const top = lines[topIndex];
-  state.sent = ++reports;
-  state.owed = spacer !== null;
-  state.reported = run;
-  const settled = reason === "rest" || state.rested;
-  state.rested = false;
-  send({
+  const measured = {
     type: "scroll",
     view: id,
     placement: state.placed,
-    report: state.sent,
     top: number(top, "data-line"),
     offset: top ? viewTop - top.getBoundingClientRect().top : 0,
     lastVisible: spacer === null
@@ -124,8 +118,32 @@ function check(view, reason) {
     below,
     width: view.clientWidth,
     height: view.clientHeight,
-    settled,
-  });
+    settled: reason === "rest" || state.rested,
+  };
+  state.owed = spacer !== null;
+  state.reported = run;
+  state.rested = false;
+  if (unchanged(state, measured)) return;
+  state.first ??= measured;
+  state.last = measured;
+  state.sent = ++reports;
+  send({ ...measured, report: state.sent });
+}
+
+// Each report makes Tuna draw every client again, if only to bring its
+// number back, so one that tells Tuna nothing new is not sent. At rest
+// only the position is news, as lines drawn since only matter to a view
+// still moving: the first report under a placement puts the view in step
+// there, and only a report at rest moves the other clients to where a
+// report made while scrolling left it.
+const position = ["view", "placement", "top", "offset", "spacer", "spacerDistance", "width", "height"];
+
+function unchanged(state, measured) {
+  const last = state.last;
+  if (last === undefined) return false;
+  const keys = measured.settled ? position : Object.keys(measured).filter((key) => key !== "settled");
+  if (keys.some((key) => last[key] !== measured[key])) return false;
+  return !measured.settled || last.settled || last === state.first;
 }
 
 // The offset of a top placement is never all of its line: another client

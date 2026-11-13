@@ -3,14 +3,9 @@
 
 ;; The main thread's own processor time, so a job's work on its thread is
 ;; left out.
-(define thread-cpu-ns
-  (let ([clock-gettime (begin (load-shared-object #f) (foreign-procedure "clock_gettime" (int uptr) int))])
-    (lambda ()
-      (let ([ts (foreign-alloc 16)])
-        (clock-gettime 3 ts)
-        (let ([ns (+ (* (foreign-ref 'long ts 0) 1000000000) (foreign-ref 'long ts 8))])
-          (foreign-free ts)
-          ns)))))
+(define (thread-ns)
+  (let ([t (current-time 'time-thread)])
+    (+ (* (time-second t) 1000000000) (time-nanosecond t))))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -41,8 +36,13 @@
 (define (job-ms thunk)
   (median (map (lambda (i) (let ([start (now-ns)]) (thunk) (/ (- (now-ns) start) 1e6))) (iota 9))))
 
+;; The least sample, since other processes' memory traffic only adds time.
 (define (main-us thunk)
-  (median (map (lambda (i) (let ([start (thread-cpu-ns)]) (thunk) (/ (- (thread-cpu-ns) start) 1e3))) (iota 9))))
+  (apply min
+    (map (lambda (i)
+           (collect-rendezvous)
+           (let ([start (thread-ns)]) (thunk) (/ (- (thread-ns) start) 1e3)))
+         (iota 31))))
 
 (define (ns-per-op thunk)
   (median
@@ -74,7 +74,7 @@
             (map (lambda (i)
                    (bytevector-u8-set! bytes middle (if (= (bytevector-u8-ref bytes middle) 120) 121 120))
                    (write-bytes! file bytes)
-                   (let ([start (thread-cpu-ns)])
+                   (let ([start (thread-ns)])
                      (files:revert-buffer b)
-                     (/ (- (thread-cpu-ns) start) 1e3)))
+                     (/ (- (thread-ns) start) 1e3)))
                  (iota 9))))))))

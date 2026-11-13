@@ -92,3 +92,17 @@
 > (let* ([f (files:buffer-visiting "f.txt")] [doc (buffers:document f)])
     (list (eq? f (views:buffer (layout:selected-view))) (document:line doc (views:point (layout:selected-view)))))
 (#t 5)
+; Without +N, the file shown starts at its start, point and view, even
+; where the view last showed another file at its end.
+> (call-with-output-file "g.txt" (lambda (p) (do ([i 1 (+ i 1)]) ((> i 300)) (fprintf p "line ~a\n" i))))
+> (call-with-output-file "h.txt" (lambda (p) (do ([i 1 (+ i 1)]) ((> i 300)) (fprintf p "row ~a\n" i))))
+> (let ([v (layout:selected-view)] [g (files:visit "g.txt")])
+    (layout:switch-to-buffer g)
+    (views:set-point! v (document:length (buffers:document g)))
+    (views:scroll-to! v (views:point v) (views:align bottom)))
+> (command-line-arguments '("g.txt" "h.txt"))
+> (reload! "files")
+> (wait-until (lambda () (let ([h (files:buffer-visiting "h.txt")]) (and h (eq? h (views:buffer (layout:selected-view)))))))
+> (let* ([v (layout:selected-view)] [doc (buffers:document (views:buffer v))])
+    (list (document:line doc (views:point v)) (document:line doc (views:top v))))
+(1 1)
