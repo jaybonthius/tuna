@@ -48,6 +48,7 @@ bench: exe
 	sh bench/files.sh build/bin/tuna || status=1; \
 	sh bench/display.sh build/bin/tuna || status=1; \
 	sh bench/undo.sh build/bin/tuna || status=1; \
+	sh bench/editing.sh build/bin/tuna || status=1; \
 	exit $$status
 
 repl: build

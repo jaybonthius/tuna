@@ -10,6 +10,10 @@
 ! views:make: not a live buffer with irritant notes
 > (views:find 0)
 ! views:find: not a view number with irritant 0
+> (list-sort < (map views:id (views:showing notes)))
+(1 2)
+> (views:showing 'notes)
+! views:showing: not a buffer with irritant notes
 ; Cursors: the primary first; moving one does not edit the buffer.
 > (views:cursors v)
 (#<cursor>)
@@ -242,8 +246,8 @@ gone
 > (define gone (views:make notes))
 > (define gone-id (views:id gone))
 > (views:drop! gone)
-> (list (views:find gone-id) (views:view? gone))
-(#f #t)
+> (list (views:find gone-id) (views:view? gone) (memq gone (views:showing notes)))
+(#f #t #f)
 > (views:point gone)
 ! views:point: a dropped view with irritant #<view 7>
 > (views:cursor-point (car (views:cursors v)))

@@ -1,0 +1,31 @@
+; The configuration turns delete-selection on.
+> (editing:delete-selection)
+#t
+> (start! "abc" 1)
+("abc" ((1 #f)))
+> (press! "S-<right>" "x")
+> (state)
+("xbc" ((2 #f)))
+; forward-word-position, in a buffer holding "one two three".
+> (start! "one two three" 1)
+("one two three" ((1 #f)))
+> (buffers:with-buffer (views:buffer (view)) (editing:forward-word-position (buffers:current) 1 2))
+8
+; A command run by code: its count is passed.
+> (run editing:forward-char 3)
+> (list (views:point (view)) (commands:command-name (commands:last-command)))
+(4 editing:forward-char)
+; A forward-word written on forward-word-position.
+> (commands:define-command (forward-word [n (commands:prefix-number)])
+    "Moves point forward N words."
+    (let ([view (views:current)])
+      (views:set-point! view
+        (editing:forward-word-position (views:buffer view) (views:point view) n))))
+> (run forward-word 1)
+> (views:point (view))
+8
+; A plugin that counts the characters typed by advising self-insert.
+> (import (typed))
+> (press! "a" "M-3" "b" "SPC")
+> (list typed:typed (text))
+(5 "one twoabbb  three")

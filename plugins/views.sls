@@ -14,8 +14,8 @@
 (define-enumeration align (top center bottom) %alignments)
 
 (module %internals
-  (check-main-thread check-view check-cursor check-node check-option check-position check-live-buffer showing
-   current-view make-new-view! find-view bound-buffer show-buffer! drop-view! with-view-bound
+  (check-main-thread check-view check-cursor check-node check-option check-position check-live-buffer shown-buffer
+   current-view make-new-view! find-view views-showing bound-buffer show-buffer! drop-view! with-view-bound
    view-record? view-record-dropped? view-record-id view-record-cursors view-record-cursors-set!
    view-record-folds-set! view-record-narrowing-set! top-position
    cursor-record? cursor-record-view cursor-record-goal cursor-record-goal-set!
@@ -118,6 +118,8 @@
       (assertion-violation who "not an option" o)))
 
   (define (find-view id) (hashtable-ref by-id id #f))
+
+  (define (views-showing b) (hashtable-ref by-buffer b '()))
 
   ;; This module defines find, so its own code searches lists with this.
   (define (find-first ok? ls)
@@ -1281,7 +1283,7 @@
                         (take (cdr rest) (cons (car rest) run))
                         (loop rest (cons (list (span-entry-open s) (nest (reverse run) (fx+ depth 1)) span-close) acc))))))))))
 
-  (define (showing who v)
+  (define (shown-buffer who v)
     (or (bound-buffer v)
         (assertion-violation who "the view shows no buffer" v)))
 
@@ -1675,6 +1677,12 @@
     (assertion-violation 'views:find "not a view number" id))
   (find-view id))
 
+(define (showing buffer)
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'views:showing "not a buffer" buffer))
+  (check-main-thread 'views:showing)
+  (views-showing buffer))
+
 (define (view? v) (view-record? v))
 
 (define-syntax with-view
@@ -1696,7 +1704,7 @@
 
 (define (set-point! view position)
   (check-view 'views:set-point! view)
-  (showing 'views:set-point! view)
+  (shown-buffer 'views:set-point! view)
   (check-position 'views:set-point! view position)
   (move-point! view (car (view-record-cursors view)) position)
   (primary-moved! view))
@@ -1708,7 +1716,7 @@
 
 (define (set-mark! view position)
   (check-view 'views:set-mark! view)
-  (showing 'views:set-mark! view)
+  (shown-buffer 'views:set-mark! view)
   (when position (check-position 'views:set-mark! view position))
   (let ([c (car (view-record-cursors view))])
     (set-cursor-spots! c (point-of c) position)))
@@ -1720,7 +1728,7 @@
 
 (define (add-cursor! view position)
   (check-view 'views:add-cursor! view)
-  (showing 'views:add-cursor! view)
+  (shown-buffer 'views:add-cursor! view)
   (check-position 'views:add-cursor! view position)
   (add-cursor-at! view position))
 
@@ -1751,7 +1759,7 @@
   (let ([view (cursor-record-view cursor)])
     (unless (memq cursor (view-record-cursors view))
       (assertion-violation 'views:set-cursor! "not a cursor of the view" cursor))
-    (showing 'views:set-cursor! view)
+    (shown-buffer 'views:set-cursor! view)
     (check-position 'views:set-cursor! view point)
     (when mark (check-position 'views:set-cursor! view mark))
     (move-point! view cursor point)
@@ -1772,13 +1780,13 @@
 
 (define (next-stop view position)
   (check-view 'views:next-stop view)
-  (let ([b (showing 'views:next-stop view)])
+  (let ([b (shown-buffer 'views:next-stop view)])
     (check-position 'views:next-stop view position)
     (stop-after view b position)))
 
 (define (previous-stop view position)
   (check-view 'views:previous-stop view)
-  (let ([b (showing 'views:previous-stop view)])
+  (let ([b (shown-buffer 'views:previous-stop view)])
     (check-position 'views:previous-stop view position)
     (stop-before view b position)))
 
@@ -1794,7 +1802,7 @@
 
 (define (scroll-to! view position alignment)
   (check-view 'views:scroll-to! view)
-  (let ([b (showing 'views:scroll-to! view)])
+  (let ([b (shown-buffer 'views:scroll-to! view)])
     (check-position 'views:scroll-to! view position)
     (unless (memq alignment '(top center bottom))
       (assertion-violation 'views:scroll-to! "not an alignment" alignment))
@@ -1805,7 +1813,7 @@
   (let ([v (current-view)])
     (unless v
       (assertion-violation who "no current view"))
-    (let ([b (showing who v)])
+    (let ([b (shown-buffer who v)])
       (scroll v b (view-client v (web:current-client))))))
 
 (commands:define-command (scroll-up)
@@ -1825,7 +1833,7 @@
 
 (define (fold! view start end)
   (check-view 'views:fold! view)
-  (showing 'views:fold! view)
+  (shown-buffer 'views:fold! view)
   (check-position 'views:fold! view start)
   (check-position 'views:fold! view end)
   (unless (fx<= start end)
@@ -1834,7 +1842,7 @@
 
 (define (unfold! view position)
   (check-view 'views:unfold! view)
-  (showing 'views:unfold! view)
+  (shown-buffer 'views:unfold! view)
   (check-position 'views:unfold! view position)
   (view-record-folds-set! view
     (remp (lambda (f) (fx<= (spot-position (car f)) position (spot-position (cdr f)))) (live-folds view)))
@@ -1842,13 +1850,13 @@
 
 (define (folded? view position)
   (check-view 'views:folded? view)
-  (showing 'views:folded? view)
+  (shown-buffer 'views:folded? view)
   (check-position 'views:folded? view position)
   (exists (lambda (f) (fx<= (spot-position (car f)) position (spot-position (cdr f)))) (live-folds view)))
 
 (define (narrow! view start end)
   (check-view 'views:narrow! view)
-  (showing 'views:narrow! view)
+  (shown-buffer 'views:narrow! view)
   (check-position 'views:narrow! view start)
   (check-position 'views:narrow! view end)
   (unless (fx<= start end)
