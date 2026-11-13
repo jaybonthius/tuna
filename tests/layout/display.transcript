@@ -7,23 +7,23 @@
 > (define help help:buffer)
 > (layout:switch-to-buffer (buffers:make "*scratch*" ""))
 > (views:id (layout:display-buffer notes))
-2
+3
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 2) (buffer . "*scratch*")))))
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 3) (buffer . "*scratch*")))))
 > (selected)
 1
 ; A buffer already shown is shown where it is.
 > (views:id (layout:display-buffer notes))
-2
+3
 > (layout:reuse-view mail)
 #f
 > (views:id (layout:reuse-view notes))
-2
+3
 ; A rule whose predicate accepts the buffer comes first.
 > (views:id (layout:display-buffer help))
-3
+4
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 3) (buffer . "*scratch*")))) #(views:view ((view . 2) (buffer . "*scratch*")))))
+(layout:root () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 4) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . "*scratch*")))))
 ; Rules are tried newest first, then the caller's action, then the
 ; option's, then the selected view.
 > (define tried '())
@@ -38,7 +38,7 @@
 > (reverse tried)
 (newer older caller option)
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 3) (buffer . "*scratch*")))) #(views:view ((view . 2) (buffer . "*scratch*")))))
+(layout:root () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 4) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . "*scratch*")))))
 > (raised (lambda () (layout:display-buffer mail (lambda (b) 'nonsense))))
 (layout:display-buffer "an action returned what is not a view or #f")
 > (raised (lambda () (layout:display-buffer 'mail)))
@@ -52,26 +52,26 @@
 #t
 > (set-option! layout:display-action layout:use-other-view)
 > (map (lambda (v) (cons (views:id v) (buffers:name (views:buffer v)))) (layout:views))
-((1 . "mail") (3 . "*Help*") (2 . "notes"))
+((1 . "mail") (4 . "*Help*") (3 . "notes"))
+> (layout:select! (views:find 4))
 > (layout:select! (views:find 3))
-> (layout:select! (views:find 2))
 > (define other (buffers:make "other" ""))
 > (views:id (layout:use-other-view other))
 1
 > (map (lambda (v) (cons (views:id v) (buffers:name (views:buffer v)))) (layout:views))
-((1 . "other") (3 . "*Help*") (2 . "notes"))
+((1 . "other") (4 . "*Help*") (3 . "notes"))
 > (views:id (layout:use-other-view other))
 1
 > (define echo (layout:add-bar! (buffers:make "*Echo*" "")))
 > (views:id (layout:display-buffer (buffers:make "fourth" "")))
 1
 > (map (lambda (v) (cons (views:id v) (buffers:name (views:buffer v)))) (layout:views))
-((1 . "fourth") (3 . "*Help*") (2 . "notes") (4 . "*Echo*"))
+((1 . "fourth") (4 . "*Help*") (3 . "notes") (5 . "*Echo*"))
 ; switch-to-buffer shows the buffer in the selected view; in a locked
 ; view, it displays it elsewhere and selects that view.
 > (layout:switch-to-buffer notes)
 > (cons (selected) (buffers:name (views:buffer (layout:selected-view))))
-(2 . "notes")
+(3 . "notes")
 > (layout:select! echo)
 > (layout:switch-to-buffer mail)
 > (cons (selected) (buffers:name (views:buffer (layout:selected-view))))
@@ -85,18 +85,18 @@
 > (define compilation (buffers:make "*compilation*" "make\n"))
 > (layout:select! (layout:display-buffer compilation))
 > (cons (selected) (buffers:name (views:buffer (layout:selected-view))))
-(5 . "*compilation*")
+(6 . "*compilation*")
 ; reset-layout keeps the selected view, or the last selected that is not
 ; locked, and the bars.
 > (layout:select! echo)
 > (commands:run layout:zoom)
 > (commands:run layout:reset-layout)
 > (tree)
-(layout:root () #(views:view ((view . 5) (buffer . "*compilation*"))) #(views:view ((view . 4) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () #(views:view ((view . 6) (buffer . "*compilation*"))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
 > (selected)
-5
+6
 > (map views:id (layout:views))
-(5 4)
+(6 5)
 > (raised (lambda () (layout:use-other-view "mail")))
 (layout:use-other-view "not a buffer")
 > (raised (lambda () (layout:reuse-view "mail")))
@@ -115,11 +115,11 @@
 > (layout:delete-part! (layout:view-node first))
 > (commands:run layout:reset-layout)
 > (tree)
-(layout:root () #(views:view ((view . 7) (buffer . "mail"))) #(views:view ((view . 4) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () #(views:view ((view . 8) (buffer . "mail"))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
 > (selected)
-7
+8
 > (map views:id (layout:views))
-(7 4)
+(8 5)
 > (define third (views:make notes))
 > (define fourth (views:make notes))
 > (set-parts! (layout-split:container '((direction . row) (locked . #t)) (atom second) (atom third)) (atom echo '(pinned . #t) '(locked . #t)) (atom fourth))

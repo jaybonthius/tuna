@@ -4,20 +4,21 @@
 (define-table global "The global keymap, searched after every other.")
 
 (define-hook find-keymaps
-  "Called with a client; each entry returns a list of the client's keymaps, innermost first.")
+  "Called with a client and a mouse key's position or #f; each entry returns a list of the client's keymaps, innermost first.")
 
 (define-option left-option-meta? #t boolean? "Whether the left Option key on a Mac is Meta.")
 
 (define-option right-option-meta? #t boolean? "Whether the right Option key on a Mac is Meta.")
 
 (module %internals
-  (check-main-thread check-key check-sequence check-keymap quit-keys? prefix-argument?
+  (check-main-thread check-sequence check-keymap quit-keys? prefix-argument?
    remember-name! bound-name
    sessions session-of session-pending session-pending-set! session-prefix session-prefix-set!
    session-temporaries session-running session-running-set!
    keymaps-of resolve-key resolve-sequence prefix-binding? lone-escape? remapped
-   last-key key-count browser-key
-   current-press make-press current-keys current-shifted current-session make-quit
+   last-key key-count browser-key mouse-item-key valid-event? key-or-event? check-event event-key-clicks
+   dropped-mouse-key? drag-as-click pending-typed pending-seq pending-posn make-pending
+   current-press make-press current-keys current-shifted current-session current-event make-quit
    push-temporary! end-temporary! end-temporaries! end-owned! test-temporaries! quit-paused!
    set-prefix! universal-arguments push-universal-arguments! give-page-settings!)
 
@@ -83,10 +84,6 @@
            (and (fx< start i) (valid-key? s start i) (loop (fx+ i 1) (fx+ i 1)))]
           [else (loop start (fx+ i 1))]))))
 
-  (define (check-key who key)
-    (unless (and (string? key) (valid-key? key 0 (string-length key)))
-      (assertion-violation who "not one valid key" key)))
-
   (define (check-sequence who keys)
     (unless (and (string? keys) (valid-sequence? keys))
       (assertion-violation who "not a valid key sequence" keys)))
@@ -121,6 +118,85 @@
         [(char=? (string-ref s i) #\space) (loop (fx+ i 1) (fx+ n 1))]
         [else (loop (fx+ i 1) n)])))
 
+  (define-record-type mouse-key
+    (sealed #t)
+    (fields modifiers clicks action button))
+
+  (define (after-prefix prefix s)
+    (let ([n (string-length prefix)])
+      (and (fx<= n (string-length s))
+           (string=? prefix (substring s 0 n))
+           (substring s n (string-length s)))))
+
+  (define (button-name? s)
+    (and (fx> (string-length s) 0)
+         (char<=? #\1 (string-ref s 0) #\9)
+         (for-all char-numeric? (string->list s))))
+
+  (define (mouse-parts key)
+    (let* ([end (string-length key)] [base (base-start key 0 end)])
+      (and base
+           (fx> (fx- end base) 2)
+           (char=? (string-ref key base) #\<)
+           (let ([name (substring key (fx+ base 1) (fx- end 1))] [modifiers (substring key 0 base)])
+             (if (string=? name "mouse-movement")
+                 (make-mouse-key modifiers 1 'movement #f)
+                 (let*-values ([(clicks name)
+                                (cond
+                                  [(after-prefix "double-" name) => (lambda (rest) (values 2 rest))]
+                                  [(after-prefix "triple-" name) => (lambda (rest) (values 3 rest))]
+                                  [else (values 1 name)])]
+                               [(action name)
+                                (cond
+                                  [(after-prefix "down-" name) => (lambda (rest) (values 'down rest))]
+                                  [(after-prefix "drag-" name) => (lambda (rest) (values 'drag rest))]
+                                  [else (values 'click name)])])
+                   (let ([button (after-prefix "mouse-" name)])
+                     (and button (button-name? button)
+                          (make-mouse-key modifiers clicks action button)))))))))
+
+  (define (mouse-key-name modifiers clicks action button)
+    (if (eq? action 'movement)
+        (string-append modifiers "<mouse-movement>")
+        (string-append modifiers "<"
+                       (case clicks [(2) "double-"] [(3) "triple-"] [else ""])
+                       (case action [(down) "down-"] [(drag) "drag-"] [else ""])
+                       "mouse-" button ">")))
+
+  (define (without-shift modifiers)
+    (let loop ([i 0])
+      (cond
+        [(fx>= i (string-length modifiers)) #f]
+        [(char=? (string-ref modifiers i) #\S)
+         (string-append (substring modifiers 0 i) (substring modifiers (fx+ i 2) (string-length modifiers)))]
+        [else (loop (fx+ i 2))])))
+
+  (define (drag-as-click key)
+    (let ([m (mouse-parts key)])
+      (mouse-key-name (mouse-key-modifiers m) (mouse-key-clicks m) 'click (mouse-key-button m))))
+
+  (define (dropped-mouse-key? key)
+    (let ([m (mouse-parts key)])
+      (and m (memq (mouse-key-action m) '(down movement)) #t)))
+
+  (define (event-key-clicks key) (mouse-key-clicks (mouse-parts key)))
+
+  (define (valid-event? v)
+    (and (list? v) (pair? v) (string? (car v))
+         (let ([key (car v)])
+           (and (valid-key? key 0 (string-length key))
+                (let ([m (mouse-parts key)])
+                  (and m
+                       (fx= (length (cdr v)) (if (eq? (mouse-key-action m) 'drag) 2 1))
+                       (for-all vector? (cdr v))))))))
+
+  (define (key-or-event? v)
+    (or (and (string? v) (valid-key? v 0 (string-length v))) (valid-event? v)))
+
+  (define (check-event who v)
+    (unless (valid-event? v)
+      (assertion-violation who "not an event" v)))
+
   ;; A command's name, kept from when it was bound, names it once its
   ;; module has unloaded and the commands plugin has forgotten it.
   (define names (make-weak-eq-hashtable))
@@ -136,10 +212,16 @@
     (sealed #t)
     (fields (mutable pending) (mutable prefix) (mutable temporaries) (mutable running)))
 
+  ;; A sequence is looked up in the keymaps of its first key, so the
+  ;; position of a mouse key that starts one is kept with it.
+  (define-record-type pending
+    (sealed #t)
+    (fields typed seq posn))
+
   ;; Ephemeron, so a frame that is gone takes its session with it even
   ;; when a temporary keymap's procedures hold the frame. A pending
-  ;; sequence is one pair of what was typed and what it resolved to, so a
-  ;; quit cannot leave the two apart.
+  ;; sequence is one record of what was typed and what it resolved to, so
+  ;; a quit cannot leave the two apart.
   (define sessions (make-ephemeron-eq-hashtable))
 
   (define (session-of frame)
@@ -154,7 +236,7 @@
   ;; Not guard, which allocates more than the rest of a key's lookup; and
   ;; one handler for all the entries, set up again only after one that
   ;; fails, since a handler allocates more than calling an entry.
-  (define (hook-keymaps frame)
+  (define (hook-keymaps frame posn)
     (let ([found '()] [next (hook-entries find-keymaps)])
       (let run ()
         (unless (null? next)
@@ -170,7 +252,7 @@
                     (unless (null? next)
                       (let ([entry (car next)])
                         (set! next (cdr next))
-                        (let ([keymaps (entry frame)])
+                        (let ([keymaps (entry frame posn)])
                           (unless (and (list? keymaps) (for-all table? keymaps))
                             (assertion-violation 'keys:find-keymaps "an entry returned what is not a list of keymaps" keymaps))
                           (set! found (cons keymaps found))))
@@ -182,11 +264,11 @@
     (sealed #t)
     (fields session keymap keep on-exit owner))
 
-  (define (keymaps-of frame)
+  (define (keymaps-of frame posn)
     (let ([s (eq-hashtable-ref sessions frame #f)])
       (let loop ([ts (if s (session-temporaries s) '())])
         (if (null? ts)
-            (hook-keymaps frame)
+            (hook-keymaps frame posn)
             (cons (temporary-keymap (car ts)) (loop (cdr ts)))))))
 
   (define (space-after s from)
@@ -251,20 +333,38 @@
     (let ([seq (if base (string-append base " " key) key)])
       (let-values ([(v found) (find-first keymaps seq)])
         (if v
-            (values v found seq #f)
+            (values v found seq #f #f)
             (let* ([meta (and (escape-pending? base) (with-meta key))]
                    [seq (if meta
                             (let ([i (last-space base)])
                               (if i (string-append (substring base 0 i) " " meta) meta))
                             seq)])
               (let-values ([(v found) (if meta (find-first keymaps seq) (values #f #f))])
-                (if v
-                    (values v found seq #f)
-                    (let ([plain (unshifted seq)])
-                      (if plain
-                          (let-values ([(v found) (find-first keymaps plain)])
-                            (if v (values v found plain #t) (values #f #f seq #f)))
-                          (values #f #f seq #f))))))))))
+                (cond
+                  [v (values v found seq #f #f)]
+                  [(mouse-parts key) => (lambda (m) (resolve-mouse keymaps base m seq))]
+                  [else
+                   (let ([plain (unshifted seq)])
+                     (if plain
+                         (let-values ([(v found) (find-first keymaps plain)])
+                           (if v (values v found plain #t #f) (values #f #f seq #f #f)))
+                         (values #f #f seq #f #f)))])))))))
+
+  (define (resolve-mouse keymaps base m seq)
+    (let ([action (mouse-key-action m)] [clicks (mouse-key-clicks m)] [button (mouse-key-button m)])
+      (let by-shift ([modifiers (mouse-key-modifiers m)] [shifted? #f] [from (fx- clicks 1)])
+        (let by-clicks ([a action] [n from])
+          (cond
+            [(fx> n 0)
+             (let* ([key (mouse-key-name modifiers n a button)]
+                    [try (if base (string-append base " " key) key)])
+               (let-values ([(v found) (find-first keymaps try)])
+                 (if v
+                     (values v found try shifted? (and (eq? action 'drag) (eq? a 'click)))
+                     (by-clicks a (fx- n 1)))))]
+            [(eq? a 'drag) (by-clicks 'click clicks)]
+            [(and (not shifted?) (without-shift modifiers)) => (lambda (plain) (by-shift plain #t clicks))]
+            [else (values #f #f seq #f #f)])))))
 
   ;; ESC ESC is M-ESC, not a second wait for a key to make Meta.
   (define (lone-escape? v base key)
@@ -274,7 +374,7 @@
     (let loop ([base #f] [from 0])
       (let* ([i (space-after keys from)]
              [key (substring keys from (or i (string-length keys)))])
-        (let-values ([(v found seq shifted?) (resolve-key keymaps base key)])
+        (let-values ([(v found seq shifted? as-click?) (resolve-key keymaps base key)])
           (cond
             [(not i) (values v found shifted?)]
             [(or (prefix-binding? v) (lone-escape? v base key)) (loop seq (fx+ i 1))]
@@ -372,11 +472,44 @@
                 (if super? "s-" "")
                 base))))))
 
-  ;; One parameter for the three, since each binding costs a
+  ;; A mouse item names Option "alt", whatever the Option keys' options
+  ;; say: the page follows which Option key is down only for typed keys.
+  (define (mouse-item-key item)
+    (let ([action (field item "action")] [button (field item "button")] [clicks (field item "clicks")]
+          [modifiers (field item "modifiers")])
+      (define (invalid what) (assertion-violation 'keys:item-key what item))
+      (let ([action (cond
+                      [(equal? action "down") 'down]
+                      [(equal? action "click") 'click]
+                      [(equal? action "drag") 'drag]
+                      [(equal? action "move") 'movement]
+                      [else (invalid "a mouse item without an action")])])
+        (unless (or (eq? action 'movement) (and (fixnum? button) (fx> button 0)))
+          (invalid "a mouse item without a button"))
+        (unless (or (eq? action 'movement) (and (fixnum? clicks) (fx> clicks 0)))
+          (invalid "a mouse item without a click count"))
+        (unless (vector? modifiers)
+          (invalid "an item without a list of modifiers"))
+        (let loop ([i 0] [control? #f] [alt? #f] [shift? #f] [super? #f])
+          (if (fx< i (vector-length modifiers))
+              (let ([m (vector-ref modifiers i)])
+                (cond
+                  [(equal? m "control") (loop (fx+ i 1) #t alt? shift? super?)]
+                  [(equal? m "alt") (loop (fx+ i 1) control? #t shift? super?)]
+                  [(equal? m "shift") (loop (fx+ i 1) control? alt? #t super?)]
+                  [(equal? m "super") (loop (fx+ i 1) control? alt? shift? #t)]
+                  [else (assertion-violation 'keys:item-key "not a modifier name" m)]))
+              (mouse-key-name
+                (string-append (if control? "C-" "") (if alt? "M-" "") (if shift? "S-" "") (if super? "s-" ""))
+                (if (eq? action 'movement) 1 (fxmin clicks 3))
+                action
+                (if (eq? action 'movement) #f (number->string button))))))))
+
+  ;; One parameter for the four, since each binding costs a
   ;; dynamic-wind.
   (define-record-type press
     (sealed #t)
-    (fields keys shifted? session))
+    (fields keys shifted? session event))
 
   (define current-press (make-thread-parameter #f))
 
@@ -393,6 +526,9 @@
 
   (define (current-session)
     (let ([p (running-press)]) (and p (press-session p))))
+
+  (define (current-event)
+    (let ([p (running-press)]) (and p (press-event p))))
 
   (define make-quit (record-constructor (record-constructor-descriptor &quit)))
 
@@ -543,25 +679,25 @@
   (filter (lambda (entry) (and (string? (car entry)) (not (eq? (cdr entry) #t))))
           (table-entries keymap)))
 
-(define (active-keymaps frame)
+(define (active-keymaps client)
   (check-main-thread 'keys:active-keymaps)
-  (keymaps-of frame))
+  (keymaps-of client #f))
 
-(define (lookup frame keys)
+(define (lookup client keys)
   (check-main-thread 'keys:lookup)
   (check-sequence 'keys:lookup keys)
-  (let ([keymaps (keymaps-of frame)])
+  (let ([keymaps (keymaps-of client #f)])
     (let-values ([(v found shifted?) (resolve-sequence keymaps keys)])
       (cond
         [(eq? v #t) found]
         [(table? v) v]
         [else (remapped keymaps v)]))))
 
-(define (where-is frame command)
+(define (where-is client command)
   (check-main-thread 'keys:where-is)
   (unless (commands:command? command)
     (assertion-violation 'keys:where-is "not a command" command))
-  (let ([keymaps (keymaps-of frame)] [seen (make-hashtable string-hash string=?)] [sequences '()])
+  (let ([keymaps (keymaps-of client #f)] [seen (make-hashtable string-hash string=?)] [sequences '()])
     (let walk ([walked keymaps] [prefix #f] [path '()])
       (for-each
         (lambda (keymap)
@@ -581,45 +717,75 @@
         walked))
     (list-sort (lambda (a b) (fx< (key-count a) (key-count b))) (reverse sequences))))
 
-(define (press! frame key)
+(define (press! client key)
   (check-main-thread 'keys:press!)
-  (check-key 'keys:press! key)
-  (let* ([s (session-of frame)]
+  (unless (key-or-event? key)
+    (assertion-violation 'keys:press! "neither one valid key nor an event" key))
+  (let* ([event-given? (pair? key)]
+         [name (if event-given? (car key) key)]
+         [s (session-of client)]
          [pending (session-pending s)]
-         [base (and pending (cdr pending))]
-         [typed (if pending (string-append (car pending) " " key) key)]
-         [keymaps (keymaps-of frame)])
-    (let-values ([(v found seq shifted?) (resolve-key keymaps base key)])
-      (if (or (prefix-binding? v) (lone-escape? v base key))
-          (session-pending-set! s (cons typed seq))
-          (let ([prefix (session-prefix s)] [command (and v (remapped keymaps v))])
-            (session-pending-set! s #f)
-            (session-prefix-set! s #f)
-            (test-temporaries! s found command)
-            (cond
-              [(and command (not (commands:command? command)))
-               (raise-continuable
-                 (condition (make-warning)
-                   (make-message-condition
-                     (format "~a runs ~a, which is not loaded" typed (bound-name command)))))]
-              [else
-               (let ([entry (list (current-task))])
-                 (when (car entry)
-                   (session-running-set! s (cons entry (session-running s))))
-                 (parameterize ([current-press (make-press typed shifted? s)])
-                   (if (eq? (commands:prefix-argument) prefix)
-                       (commands:run (or command undefined))
-                       (parameterize ([commands:prefix-argument prefix])
-                         (commands:run (or command undefined)))))
-                 (session-running-set! s
-                   (remp (lambda (e) (or (eq? e entry) (task-done? (car e)))) (session-running s))))]))))))
+         [base (and pending (pending-seq pending))]
+         [typed (if pending (string-append (pending-typed pending) " " name) name)]
+         [posn (if pending (pending-posn pending) (and event-given? (cadr key)))]
+         [keymaps (keymaps-of client posn)])
+    (let-values ([(v found seq shifted? as-click?) (resolve-key keymaps base name)])
+      (cond
+        [(or (prefix-binding? v) (lone-escape? v base name))
+         (session-pending-set! s (make-pending typed seq posn))]
+        ;; As in Emacs, a press or a move that nothing binds is no key:
+        ;; the click or drag that follows it decides.
+        [(and (not v) (dropped-mouse-key? name)) (void)]
+        [else
+         (let ([prefix (session-prefix s)] [command (and v (remapped keymaps v))]
+               [event (if (and as-click? event-given?) (list (drag-as-click name) (cadr key)) key)])
+           (session-pending-set! s #f)
+           (session-prefix-set! s #f)
+           (test-temporaries! s found command)
+           (cond
+             [(and command (not (commands:command? command)))
+              (raise-continuable
+                (condition (make-warning)
+                  (make-message-condition
+                    (format "~a runs ~a, which is not loaded" typed (bound-name command)))))]
+             [else
+              (let ([entry (list (current-task))])
+                (when (car entry)
+                  (session-running-set! s (cons entry (session-running s))))
+                (parameterize ([current-press (make-press typed shifted? s event)])
+                  (if (eq? (commands:prefix-argument) prefix)
+                      (commands:run (or command undefined))
+                      (parameterize ([commands:prefix-argument prefix])
+                        (commands:run (or command undefined)))))
+                (session-running-set! s
+                  (remp (lambda (e) (or (eq? e entry) (task-done? (car e)))) (session-running s))))]))]))))
 
-(define (pending frame)
+(define (pending client)
   (check-main-thread 'keys:pending)
-  (let ([s (eq-hashtable-ref sessions frame #f)])
-    (and s (session-pending s) (car (session-pending s)))))
+  (let ([s (eq-hashtable-ref sessions client #f)])
+    (and s (session-pending s) (pending-typed (session-pending s)))))
 
 (define (command-keys) (current-keys))
+
+(define (command-event) (current-event))
+
+(define (event? v) (valid-event? v))
+
+(define (event-key event)
+  (check-event 'keys:event-key event)
+  (car event))
+
+(define (event-start event)
+  (check-event 'keys:event-start event)
+  (cadr event))
+
+(define (event-end event)
+  (check-event 'keys:event-end event)
+  (if (pair? (cddr event)) (caddr event) (cadr event)))
+
+(define (event-clicks event)
+  (check-event 'keys:event-clicks event)
+  (event-key-clicks (car event)))
 
 (define (typed-char)
   (let ([keys (current-keys)])
@@ -649,7 +815,12 @@
          (check-main-thread 'keys:push-keymap!)
          (end-temporary! t)))]))
 
-(define (item-key item) (browser-key item))
+(define (item-key item)
+  (unless (and (list? item) (for-all pair? item))
+    (assertion-violation 'keys:item-key "not an item" item))
+  (if (equal? (cdr (or (assoc "type" item) '(#f . #f))) "mouse")
+      (mouse-item-key item)
+      (browser-key item)))
 
 (define (set-prefix-argument! prefix)
   (check-main-thread 'keys:set-prefix-argument!)
@@ -670,6 +841,10 @@
         (when none?
           (end-temporaries! s)
           (quit-paused! s))))))
+
+(commands:define-command (ignore)
+  "Does nothing; bound to a key, keeps the key from the keymaps searched after its keymap."
+  (void))
 
 (commands:define-command (undefined)
   "Raises a warning that the keys that ran it are undefined."

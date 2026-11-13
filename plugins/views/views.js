@@ -175,7 +175,7 @@ function screenArrived() {
       place(view, placement);
     } else if (state.sent !== null && number(view, "data-reported") === state.sent) {
       state.sent = null;
-      check(view, "moved");
+      if (!sendMove(view)) check(view, "moved");
     }
   }
 }
@@ -204,3 +204,181 @@ document.addEventListener("scroll", (event) => {
 }, { capture: true, passive: true });
 
 screenArrived();
+
+const dragThreshold = 3;
+let press = null;
+let cancelClick = false;
+
+function caretAt(x, y) {
+  if (typeof document.caretPositionFromPoint === "function") {
+    const caret = document.caretPositionFromPoint(x, y);
+    return caret && { node: caret.offsetNode, offset: caret.offset };
+  }
+  if (typeof document.caretRangeFromPoint === "function") {
+    const range = document.caretRangeFromPoint(x, y);
+    return range && { node: range.startContainer, offset: range.startOffset };
+  }
+  return null;
+}
+
+function elementOf(node) {
+  return node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+}
+
+function markedAncestor(element, view, token) {
+  for (let e = element; e !== null && e !== view; e = e.parentElement) {
+    if (e.hasAttribute("data-to")) return e;
+    if (!token && (e.hasAttribute("data-at") || e.hasAttribute("data-line"))) return e;
+  }
+  return null;
+}
+
+function codePoints(text) {
+  let n = 0;
+  for (const _ of text) n++;
+  return n;
+}
+
+// Tuna draws marks only where a line's characters stop being the
+// buffer's next tokens: past an element that stands for tokens, the
+// count starts again after them.
+function placeIn(marked, node, offset) {
+  if (marked.hasAttribute("data-to")) return { token: number(marked, "data-at") };
+  let at = number(marked, "data-at");
+  let count = 0;
+  let done = false;
+  const visit = (n) => {
+    if (n === node) {
+      if (n.nodeType === Node.TEXT_NODE) count += codePoints(n.data.slice(0, offset));
+      else for (let i = 0; i < offset && i < n.childNodes.length && !done; i++) visit(n.childNodes[i]);
+      done = true;
+    } else if (n.nodeType === Node.TEXT_NODE) {
+      count += codePoints(n.data);
+    } else if (n.nodeType === Node.ELEMENT_NODE) {
+      if (n !== marked && n.hasAttribute("data-to")) {
+        at = number(n, "data-to");
+        count = 0;
+      } else {
+        for (const child of n.childNodes) {
+          visit(child);
+          if (done) return;
+        }
+      }
+    }
+  };
+  visit(marked);
+  return at !== null ? { at, count } : { line: number(marked, "data-line"), count };
+}
+
+function lineAbove(view, y) {
+  const lines = ownLines(view);
+  const i = firstEndingBelow(lines, y);
+  if (i < lines.length && lines[i].getBoundingClientRect().top <= y) return lines[i];
+  return i > 0 ? lines[i - 1] : null;
+}
+
+function placeOf(view, target, x, y) {
+  const caret = caretAt(x, y);
+  const caretElement = caret && elementOf(caret.node);
+  const inView = caretElement !== null && caretElement !== undefined
+    && caretElement.closest("[data-view]") === view;
+  const token = target instanceof Element ? markedAncestor(target, view, true) : null;
+  if (token !== null && !(inView && token.contains(caretElement))) return placeIn(token);
+  if (inView) {
+    const marked = markedAncestor(caretElement, view, false);
+    const line = caretElement.closest(".line");
+    if (marked !== null && !(line !== null && view.contains(line) && y > line.getBoundingClientRect().bottom)) {
+      return placeIn(marked, caret.node, caret.offset);
+    }
+  }
+  const line = lineAbove(view, y);
+  return line === null ? null : placeIn(line, line, line.childNodes.length);
+}
+
+function modifierNames(event) {
+  const names = [];
+  if (event.ctrlKey) names.push("control");
+  if (event.altKey) names.push("alt");
+  if (event.shiftKey) names.push("shift");
+  if (event.metaKey) names.push("super");
+  return names;
+}
+
+function sendMouse(view, action, place, extra) {
+  const version = number(view, "data-version");
+  const showing = number(view, "data-showing");
+  const id = number(view, "data-view");
+  if (version === null || showing === null || id === null) return;
+  send({ type: "mouse", action, button: 1, view: id, version, showing, ...place, ...extra });
+}
+
+function sendMove(view) {
+  const p = press;
+  if (p === null || p.view !== view || p.pending === null) return false;
+  const state = views.get(view);
+  if (state === undefined || state.sent !== null) return false;
+  const { x, y, target } = p.pending;
+  p.pending = null;
+  if (!(target instanceof Element) || target.closest("[data-view]") !== view) return false;
+  const place = placeOf(view, target, x, y);
+  if (place === null) return false;
+  state.sent = ++reports;
+  sendMouse(view, "move", place, { modifiers: [], report: state.sent });
+  return true;
+}
+
+function release(event) {
+  const p = press;
+  press = null;
+  cancelClick = true;
+  const inView = event.target instanceof Element && event.target.closest("[data-view]") === p.view;
+  const place = inView ? placeOf(p.view, event.target, event.clientX, event.clientY) : null;
+  sendMouse(p.view, p.dragging ? "drag" : "click", place ?? {},
+    { clicks: p.clicks, modifiers: modifierNames(event) });
+}
+
+// The right button stays the browser's, and a press on a view's scroll
+// bar scrolls it. Taking the press keeps the browser from selecting text
+// and the keyboard focus where it is.
+document.addEventListener("mousedown", (event) => {
+  cancelClick = false;
+  if (event.button !== 0 || !(event.target instanceof Element)) return;
+  const view = event.target.closest("[data-view]");
+  if (view === null) return;
+  if (view.hasAttribute("data-placement")) {
+    const box = view.getBoundingClientRect();
+    if (event.clientX - box.left - view.clientLeft >= view.clientWidth
+        || event.clientY - box.top - view.clientTop >= view.clientHeight) return;
+  }
+  event.preventDefault();
+  const clicks = Math.min(Math.max(event.detail, 1), 3);
+  press = { view, x: event.clientX, y: event.clientY, clicks, dragging: false, pending: null };
+  sendMouse(view, "down", placeOf(view, event.target, event.clientX, event.clientY) ?? {},
+    { clicks, modifiers: modifierNames(event) });
+}, true);
+
+// A release outside the window sends no mouseup, so a move with the
+// button up ends the press.
+window.addEventListener("mousemove", (event) => {
+  const p = press;
+  if (p === null) return;
+  if ((event.buttons & 1) === 0) {
+    release(event);
+    return;
+  }
+  if (!p.dragging && Math.hypot(event.clientX - p.x, event.clientY - p.y) <= dragThreshold) return;
+  p.dragging = true;
+  p.pending = { x: event.clientX, y: event.clientY, target: event.target };
+  sendMove(p.view);
+}, { passive: true });
+
+window.addEventListener("mouseup", (event) => {
+  if (event.button === 0 && press !== null) release(event);
+}, true);
+
+window.addEventListener("click", (event) => {
+  if (!cancelClick || event.button !== 0) return;
+  cancelClick = false;
+  event.preventDefault();
+  event.stopPropagation();
+}, true);

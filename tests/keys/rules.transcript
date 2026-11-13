@@ -16,7 +16,7 @@
 > (raised (lambda () (keys:bind! 'km "C-x" files:find-file)))
 (keys:bind! "not a keymap")
 > (raised (lambda () (keys:press! (layout:current-frame) "C-x C-f")))
-(keys:press! "not one valid key")
+(keys:press! "neither one valid key nor an event")
 > (raised (lambda () (keys:lookup (layout:current-frame) "C-x  C-f")))
 (keys:lookup "not a valid key sequence")
 ; Binding marks each leading part as a prefix; bindings leaves the marks out.
@@ -98,8 +98,8 @@ layout:other-view
     (map (lambda (k) (cond [(eq? k a) 'a] [(eq? k b) 'b] [(eq? k c) 'c] [(eq? k t1) 't1] [(eq? k t2) 't2]
                            [(eq? k keys:global) 'global] [else k]))
          keymaps))
-> (define (inner frame) (list a b))
-> (define (outer frame) (list c))
+> (define (inner client posn) (list a b))
+> (define (outer client posn) (list c))
 > (add-hook! keys:find-keymaps inner)
 > (add-hook! keys:find-keymaps outer 10)
 > (define end1 (keys:push-keymap! frame t1 (lambda (found command) #t)))
@@ -125,8 +125,8 @@ layout:other-view
 files:find-file
 ; An entry that raises, or returns what is not a list of keymaps, is
 ; reported and the others are searched.
-> (define (broken frame) (car '()))
-> (define (wrong frame) 'a)
+> (define (broken client posn) (car '()))
+> (define (wrong client posn) 'a)
 > (add-hook! keys:find-keymaps broken 5)
 > (add-hook! keys:find-keymaps wrong 6)
 > (names (keys:active-keymaps frame))
@@ -136,7 +136,7 @@ files:find-file
 > (remove-hook! keys:find-keymaps broken)
 > (remove-hook! keys:find-keymaps wrong)
 ; A warning is reported and the entry goes on.
-> (define (warned frame) (warning 'warned "careful") (list t1))
+> (define (warned client posn) (warning 'warned "careful") (list t1))
 > (add-hook! keys:find-keymaps warned 5)
 > (names (keys:active-keymaps frame))
 ! warned: careful
@@ -146,7 +146,7 @@ files:find-file
 > (remove-hook! keys:find-keymaps inner)
 ; One printing character with no binding in a keymap uses that keymap's
 ; <printing-char>, before the keymaps after it.
-> (add-hook! keys:find-keymaps (lambda (frame) (list a)))
+> (add-hook! keys:find-keymaps (lambda (client posn) (list a)))
 > (keys:bind! a "<printing-char>" layout:other-view)
 > (keys:bind! a "q" files:find-file)
 > (map (lambda (k) (name-of (keys:lookup frame k))) '("x" "é" "q" "SPC" "C-x" "<f1>"))

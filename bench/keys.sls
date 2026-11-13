@@ -64,7 +64,7 @@
     focus-path (iota 9))
   (keys:bind! keys:global "<printing-char>" insert)
   (keys:bind! keys:global "C-x C-f" nothing)
-  (add-hook! keys:find-keymaps (lambda (frame) focus-path))
+  (add-hook! keys:find-keymaps (lambda (client posn) focus-path))
   (do ([i 0 (fx+ i 1)]) ((fx= i 3))
     (add-hook! commands:before-command (lambda (c) (set! seen (fx+ seen 1))))
     (add-hook! commands:after-command (lambda (c) (set! seen (fx+ seen 1))))))

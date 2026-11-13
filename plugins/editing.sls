@@ -1,5 +1,5 @@
 #!tuna
-(import (document) (buffers) (views) (commands) (keys) (kill-ring) (undo))
+(import (document) (buffers) (views) (commands) (keys) (kill-ring) (undo) (layout) (web))
 
 (define-option delete-selection #f boolean?
   "When true, typing, newline, paste and yank replace an active, non-empty region, and delete-char and delete-backward-char delete it.")
@@ -12,7 +12,9 @@
    place-kept! move-kept! edge-error stops-from move-cursors! end-of-line first-stop clear-marks!
    set-marks! forget-temporary! exchange-marks! check-regions word-characters-in words-from
    line-motion-target recase! capitalizer replace-region-or! insert-at-cursors! kill-ranges! after-kill?
-   remember-kill! yank-pieces! yanked-in? replace-yank! pure-text note-change! clear-changed-marks!)
+   remember-kill! yank-pieces! yanked-in? replace-yank! pure-text note-change! clear-changed-marks!
+   place! select-between! drag-keymap start-drag! drag-in drag-anchor-position drag-mode
+   drag-moved? drag-moved?-set!)
 
   (define main-thread (get-thread-id))
 
@@ -433,6 +435,68 @@
             (loop (cdr rs) (fx+ i 1)))))
       (set! last-yank ys)))
 
+  (define (same-run? first t extra)
+    (and (char? t)
+         (cond
+           [(word-char? first extra) (word-char? t extra)]
+           [(char-whitespace? first) (char-whitespace? t)]
+           [else (char=? t first)])))
+
+  (define (run-bounds doc p lo hi extra)
+    (let ([first (and (fx< p hi) (document:token doc p))])
+      (if (char? first)
+          (values (let loop ([q p])
+                    (if (and (fx> q lo) (same-run? first (document:token doc (fx- q 1)) extra)) (loop (fx- q 1)) q))
+                  (let loop ([q (fx+ p 1)])
+                    (if (and (fx< q hi) (same-run? first (document:token doc q) extra)) (loop (fx+ q 1)) q)))
+          (values p p))))
+
+  (define (mouse-range doc a b mode lo hi extra)
+    (let ([s (fxmin a b)] [e (fxmax a b)])
+      (case mode
+        [(2) (values (let-values ([(from to) (run-bounds doc s lo hi extra)]) from)
+                     (let-values ([(from to) (run-bounds doc e lo hi extra)]) to))]
+        [(3) (let ([last (document:line doc e)])
+               (values (fxmax lo (document:line-start doc (document:line doc s)))
+                       (if (fx< last (document:line doc hi)) (fxmin hi (document:line-start doc (fx+ last 1))) hi)))]
+        [else (values s e)])))
+
+  (define (select-between! view c a b mode dragging?)
+    (let ([doc (buffers:document (views:buffer view))])
+      (let-values ([(lo hi) (content-bounds view doc)])
+        (let-values ([(s e) (mouse-range doc (fxmax lo (fxmin hi a)) (fxmax lo (fxmin hi b)) mode lo hi
+                                         (word-characters-in (views:buffer view)))])
+          (let ([mark (if (fx< b a) e s)] [point (if (fx< b a) s e)])
+            (if (or (not (fx= mark point)) (and dragging? (views:cursor-mark c)))
+                (begin
+                  (views:set-cursor! c point mark)
+                  (eq-hashtable-set! temporary c mark))
+                (begin
+                  (forget-temporary! c)
+                  (views:set-cursor! c point #f))))))))
+
+  (define-record-type drag
+    (sealed #t)
+    (fields view buffer anchor mode (mutable moved?) end))
+
+  (define-table drag-keymap)
+
+  (define drags (make-weak-eq-hashtable))
+
+  (define (start-drag! client view position mode)
+    (let ([old (eq-hashtable-ref drags client #f)])
+      (when old ((drag-end old))))
+    (let ([b (views:buffer view)])
+      (eq-hashtable-set! drags client
+        (make-drag view b (buffers:anchor b position) mode #f
+                   (keys:push-keymap! client drag-keymap (lambda (found command) (eq? found drag-keymap)))))))
+
+  (define (drag-in client view)
+    (let ([d (eq-hashtable-ref drags client #f)])
+      (and d (eq? (drag-view d) view) (eq? (drag-buffer d) (views:buffer view)) d)))
+
+  (define (drag-anchor-position d) (buffers:anchor-position (drag-anchor d)))
+
   (define changed '())
 
   (define (note-change! buffer edit)
@@ -806,6 +870,79 @@
   "Converts each cursor's region to lower case."
   (%case-region 'editing:downcase-region string-downcase))
 
+(define (%mouse-view who event)
+  (unless (keys:event? event)
+    (assertion-violation who "not an event" event))
+  (let ([view (views:posn-view (keys:event-start event))])
+    (and view (views:buffer view)
+         (let ([node (layout:view-node view)]) (and node (not (layout:locked? node))))
+         view)))
+
+(define (%in-view view act)
+  (layout:select! view)
+  (views:call-with-view view
+    (lambda ()
+      (for-each (lambda (c) (views:remove-cursor! view c)) (cdr (views:cursors view)))
+      (act (car (views:cursors view))))))
+
+(commands:define-command (mouse-drag-region [event (keys:command-event)])
+  "Selects the view pressed in, clears the mark unless run shift-translated, and moves point to the press; a second or third press selects the word or line there. Dragging then selects from the press."
+  (let ([view (%mouse-view 'editing:mouse-drag-region event)])
+    (when view
+      (%in-view view
+        (lambda (c)
+          (let ([p (views:posn-point (keys:event-start event))])
+            (when p
+              (if (keys:shift-translated?)
+                  (begin
+                    (place! c p #t)
+                    (start-drag! (web:current-client) view (views:cursor-mark c) 1))
+                  (let ([mode (keys:event-clicks event)])
+                    (clear-marks! view)
+                    (select-between! view c p p mode #f)
+                    (start-drag! (web:current-client) view p mode))))))))))
+
+(commands:define-command (mouse-drag-movement [event (keys:command-event)])
+  "Moves point to where the held button moved and, once it differs from the press, sets the mark at the press, by the press's words or lines."
+  (unless (keys:event? event)
+    (assertion-violation 'editing:mouse-drag-movement "not an event" event))
+  (let* ([posn (keys:event-start event)] [view (views:posn-view posn)] [p (views:posn-point posn)]
+         [d (and view p (drag-in (web:current-client) view))])
+    (when d
+      (views:call-with-view view
+        (lambda ()
+          (let ([a (drag-anchor-position d)])
+            (when (or (drag-moved? d) (not (fx= p a)))
+              (drag-moved?-set! d #t)
+              (select-between! view (car (views:cursors view)) a p (drag-mode d) #t))))))))
+
+(commands:define-command (mouse-set-region [event (keys:command-event)])
+  "Sets the region from the drag's start to its end, by the press's words or lines; with no end position, to point. An empty region is taken as a click."
+  (let ([view (%mouse-view 'editing:mouse-set-region event)])
+    (when view
+      (%in-view view
+        (lambda (c)
+          (let* ([d (drag-in (web:current-client) view)]
+                 [start (if d (drag-anchor-position d) (views:posn-point (keys:event-start event)))])
+            (when start
+              (select-between! view c start (or (views:posn-point (keys:event-end event)) (views:cursor-point c))
+                               (if d (drag-mode d) (keys:event-clicks event)) #f))))))))
+
+(commands:define-command (mouse-set-point [event (keys:command-event)])
+  "Selects the view clicked in and moves point there, clearing the mark unless run shift-translated; after a second or third press, keeps the word or line selected."
+  (let ([view (%mouse-view 'editing:mouse-set-point event)])
+    (when view
+      (%in-view view
+        (lambda (c)
+          (let ([p (views:posn-point (keys:event-start event))] [mode (keys:event-clicks event)])
+            (when p
+              (cond
+                [(keys:shift-translated?) (place! c p #t)]
+                [(fx= mode 1) (clear-marks! view) (views:set-cursor! c p #f)]
+                [else
+                 (let ([d (drag-in (web:current-client) view)])
+                   (select-between! view c (if d (drag-anchor-position d) p) p mode #f))]))))))))
+
 (define (%quit-clears-marks quit)
   (let ([v (views:current)])
     (when (and v (views:buffer v)) (clear-marks! v)))
@@ -865,3 +1002,7 @@
 (keys:bind! keys:global "M-c" capitalize-word)
 (keys:bind! keys:global "C-x C-u" upcase-region)
 (keys:bind! keys:global "C-x C-l" downcase-region)
+(keys:bind! keys:global "<down-mouse-1>" mouse-drag-region)
+(keys:bind! keys:global "<mouse-1>" mouse-set-point)
+(keys:bind! keys:global "<drag-mouse-1>" mouse-set-region)
+(keys:bind! drag-keymap "<mouse-movement>" mouse-drag-movement)

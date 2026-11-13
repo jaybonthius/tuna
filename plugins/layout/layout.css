@@ -46,3 +46,9 @@
   outline: 1px solid currentcolor;
   outline-offset: -1px;
 }
+
+/* The screen's element only names the layout's view for a click; the
+   root's element lays it out. */
+:where(.layout-screen) {
+  display: contents;
+}

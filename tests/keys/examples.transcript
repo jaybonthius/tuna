@@ -15,7 +15,7 @@
 (keymap cape:file)
 ; Remapping in a keymap that is searched.
 > (keys:remap! vertico:keymap editing:next-line vertico:next)
-> (add-hook! keys:find-keymaps (lambda (frame) (list vertico:keymap)))
+> (add-hook! keys:find-keymaps (lambda (client posn) (list vertico:keymap)))
 > (keys:press! frame "C-n")
 > (list vertico:moves (editing:take!))
 (1 ())

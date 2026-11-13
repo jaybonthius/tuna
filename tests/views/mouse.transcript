@@ -1,0 +1,173 @@
+; A mouse item names a place at the version its screen drew; views turns
+; it into a position now and presses the mouse key in the view.
+> (import (md))
+> (define (raised thunk)
+    (guard (c [#t (list (if (who-condition? c) (condition-who c) 'none)
+                        (if (message-condition? c) (condition-message c) c))])
+      (thunk)))
+> (define c1 (web:make-client 1))
+> (define b (buffers:make "plain" "one two\nthree\n"))
+> (define v (views:make b))
+> (define seen '())
+> (commands:define-command (record [event (keys:command-event)])
+    "Records the event that ran it and the current view."
+    (set! seen (cons (list event (eq? (views:current) (views:posn-view (keys:event-start event)))) seen)))
+> (define (take!) (let ([s (reverse seen)]) (set! seen '()) s))
+> (for-each (lambda (k) (keys:bind! keys:global k record))
+    '("<down-mouse-1>" "<mouse-1>" "<drag-mouse-1>" "<mouse-movement>"))
+> (define (item view . fields)
+    (append fields
+            `(("type" . "mouse") ("button" . 1) ("clicks" . 1) ("modifiers" . #())
+              ("view" . ,(views:id view)) ("version" . ,(buffers:version (views:buffer view)))
+              ("showing" . ,(views:shown-count view)))))
+> (define (mouse! view . fields)
+    (as-client c1 (lambda () ((table-ref web:input-handlers "mouse") c1 (apply item view fields)))))
+; The view's element names its buffer's version and how many buffers it
+; has shown; a line that starts after its line's start names where.
+> (show v)
+<div class="view" data-view="1" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre"><div class="view-lines"><div class="line" id="v1-1" data-line="1" data-at="1"><span class="cursor primary"></span>one two</div><div class="line" id="v1-2" data-line="2">three</div><div class="line" id="v1-3" data-line="3"><br></div></div></div>
+; Places: characters after a line's start, or after a position.
+> (mouse! v '("action" . "click") '("line" . 2) '("count" . 2))
+> (mouse! v '("action" . "down") '("at" . 1) '("count" . 3))
+> (mouse! v '("action" . "click") '("token" . 9))
+> (take!)
+((("<mouse-1>" #(1 11)) #t) (("<down-mouse-1>" #(1 4)) #t) (("<mouse-1>" #(1 9)) #t))
+; A place on an older screen follows the token after it through the
+; edits since; one whose token was deleted is stale and runs nothing.
+> (buffers:replace! b 1 1 "XX")
+#<edit 1>
+> (mouse! v '("version" . 0) '("action" . "click") '("line" . 2) '("count" . 2))
+> (mouse! v '("version" . 0) '("action" . "click") '("at" . 1) '("count" . 0))
+> (take!)
+((("<mouse-1>" #(1 13)) #t) (("<mouse-1>" #(1 3)) #t))
+> (buffers:replace! b 7 10 "")
+#<edit 2>
+> (mouse! v '("version" . 0) '("action" . "click") '("at" . 1) '("count" . 5))
+! Stale click: what was clicked is gone
+> (mouse! v '("version" . 1) '("action" . "click") '("line" . 1) '("count" . 4))
+> (take!)
+((("<mouse-1>" #(1 4)) #t))
+; A line place on an older screen counts from that line's start then.
+> (buffers:replace! b 1 1 "\n\n")
+#<edit 3>
+> (mouse! v '("version" . 2) '("action" . "click") '("line" . 2) '("count" . 1))
+> (take!)
+((("<mouse-1>" #(1 11)) #t))
+> (document:text (buffers:document b))
+"\n\nXXone \nthree\n"
+; A press is kept for its drag's start, followed to now; a release
+; outside the view has no place, so its end names no position.
+> (mouse! v '("action" . "down") '("at" . 3) '("count" . 0))
+> (buffers:replace! b 1 1 "!")
+#<edit 4>
+> (mouse! v '("action" . "drag") '("at" . 4) '("count" . 4))
+> (mouse! v '("action" . "down") '("at" . 3) '("count" . 0))
+> (mouse! v '("action" . "drag"))
+> (take!)
+((("<down-mouse-1>" #(1 3)) #t) (("<drag-mouse-1>" #(1 4) #(1 8)) #t) (("<down-mouse-1>" #(1 3)) #t) (("<drag-mouse-1>" #(1 3) #(1 #f)) #t))
+; A press with no place names no position.
+> (mouse! v '("action" . "down"))
+> (take!)
+((("<down-mouse-1>" #(1 #f)) #t))
+; A stale press reports once; its release runs nothing and reports
+; nothing more.
+> (buffers:replace! b 1 2 "")
+#<edit 5>
+> (mouse! v '("version" . 4) '("action" . "down") '("at" . 1) '("count" . 0))
+! Stale click: what was clicked is gone
+> (mouse! v '("version" . 4) '("action" . "drag") '("at" . 2) '("count" . 0))
+> (mouse! v '("version" . 4) '("action" . "down") '("at" . 1) '("count" . 0))
+! Stale click: what was clicked is gone
+> (mouse! v '("version" . 4) '("action" . "click") '("at" . 1) '("count" . 0))
+> (take!)
+()
+; A release takes its press, so a drag with no press before it is stale.
+> (mouse! v '("action" . "down") '("at" . 1) '("count" . 0))
+> (mouse! v '("action" . "drag") '("at" . 1) '("count" . 2))
+> (mouse! v '("action" . "drag") '("at" . 1) '("count" . 3))
+! Stale click: what was clicked is gone
+> (take!)
+((("<down-mouse-1>" #(1 1)) #t) (("<drag-mouse-1>" #(1 1) #(1 3)) #t))
+; A view that has shown another buffer since, or a view that is gone,
+; makes the click stale.
+> (define other (buffers:make "other" "abc\n"))
+> (define before (views:shown-count v))
+> (views:set-buffer! v other)
+> (list before (views:shown-count v))
+(0 1)
+> (mouse! v '("action" . "down") '("at" . 1) '("count" . 1))
+> (mouse! v '("showing" . 0) '("action" . "click") '("at" . 1) '("count" . 0))
+! Stale click: what was clicked is gone
+> (mouse! v '("view" . 99) '("action" . "click") '("at" . 1) '("count" . 0))
+! Stale click: what was clicked is gone
+> (mouse! v '("action" . "click") '("at" . 1) '("count" . 2))
+> (take!)
+((("<down-mouse-1>" #(1 2)) #t) (("<mouse-1>" #(1 3)) #t))
+; A press's anchor is in the buffer shown then, so a drag released after
+; the view changed buffer is stale, even on a screen of the buffer now.
+> (mouse! v '("action" . "down") '("at" . 1) '("count" . 1))
+> (views:set-buffer! v b)
+> (mouse! v '("action" . "drag") '("at" . 1) '("count" . 2))
+! Stale click: what was clicked is gone
+> (take!)
+((("<down-mouse-1>" #(1 2)) #t))
+> (views:set-buffer! v other)
+; A version past the buffer's, or a place outside the content at the
+; version, is malformed.
+> (map (lambda (fields) (car (raised (lambda () (apply mouse! v '("action" . "click") fields)))))
+       '((("version" . 99) ("at" . 1) ("count" . 0))
+         (("at" . 1) ("count" . 99))
+         (("line" . 9) ("count" . 0))
+         (("token" . -1))
+         (("at" . 1) ("count" . "x"))
+         (("showing" . "x") ("at" . 1) ("count" . 0))))
+(views:mouse-item views:mouse-item views:mouse-item views:mouse-item views:mouse-item views:mouse-item)
+; A move reports a number that the client's next screen of the view
+; brings back, whatever becomes of the move: here it is stale and runs
+; nothing.
+> (mouse! v '("action" . "move") '("report" . 42) '("showing" . 0) '("token" . 2))
+> (take!)
+()
+> (car (numbers-after (html-of v c1) "data-reported=\""))
+42
+> (mouse! v '("action" . "move") '("report" . 43) '("at" . 1) '("count" . 1))
+> (list (take!) (car (numbers-after (html-of v c1) "data-reported=\"")))
+(((("<mouse-movement>" #(1 2)) #t)) 43)
+; Each drawn node's element names its range; a token place on a node's
+; opening names the position inside it, so the node encloses it, and on
+; an atom the position before it.
+> (define-table link-keys)
+> (define-table image-keys)
+> (commands:define-command (on-link [event (keys:command-event)])
+    "Records a click on a link."
+    (set! seen (cons (list 'link (views:posn-point (keys:event-start event))) seen)))
+> (commands:define-command (on-image [event (keys:command-event)])
+    "Records a click on an image."
+    (set! seen (cons (list 'image (views:posn-point (keys:event-start event))) seen)))
+> (keys:bind! link-keys "<mouse-1>" on-link)
+> (keys:bind! image-keys "<mouse-1>" on-image)
+> (buffers:define-kind clicky-link (inline) (keymap link-keys))
+> (buffers:define-kind clicky-image (content atom) (inline) (keymap image-keys))
+> (define d (buffers:make "doc" (md:doc '() (md:para '() "See " (clicky-link '() "here") " and " (clicky-image '()) ".\n"))))
+> (define w (views:make d))
+> (show w)
+<div class="view" data-view="2" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre"><div class="view-lines"><article><div class="node" data-at="1" data-to="21"><div class="line" id="v2-1" data-line="1" data-at="2"><span class="cursor primary"></span>See <span class="node" data-at="6" data-to="12"><span data-at="7">here</span></span> and <span class="node" data-at="17" data-to="18"></span>.</div></div></article></div></div>
+> (mouse! w '("action" . "click") '("token" . 6))
+> (mouse! w '("action" . "click") '("at" . 7) '("count" . 2))
+> (mouse! w '("action" . "click") '("token" . 17))
+> (mouse! w '("action" . "click") '("at" . 12) '("count" . 2))
+> (take!)
+((link 7) (link 9) (image 17) (("<mouse-1>" #(2 14)) #t))
+; views:keymaps finds the atom right after the cursor too.
+> (views:set-point! w 17)
+> (eq? (car (views:keymaps w)) image-keys)
+#t
+; Positions of mouse keys.
+> (list (views:posn-view '#(2 5)) (views:posn-point '#(2 5)) (views:posn-point '#(2 #f)) (views:posn-view '#(77 1)))
+(#<view 2> 5 #f #f)
+> (raised (lambda () (views:posn-point '#(0 1))))
+(views:posn-point "not a position of a mouse key")
+> (raised (lambda () (views:posn-view '(2 1))))
+(views:posn-view "not a position of a mouse key")
+> (raised (lambda () (views:shown-count 'v)))
+(views:shown-count "not a view")

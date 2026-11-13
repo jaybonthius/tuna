@@ -1,0 +1,28 @@
+; A kill goes to the clipboard of the client whose key made it, and to
+; no other.
+> (start! "one two three" 1)
+> (press! laptop "M-d")
+> (copies)
+((1 "copy" "one"))
+> (press! phone "C-SPC" "M-f" "M-w")
+> (copies)
+((2 "copy" " two"))
+; Work that no client started copies nothing.
+> (kill-ring:push! (list "from code"))
+> (copies)
+()
+; A paste in a client runs editing's paste there, and its text is not
+; copied back to the clipboard it came from; the next kill is.
+> (handle! laptop "paste" '("text" . "pasted "))
+> (list (text) (copies))
+(" twopasted  three" ())
+> (press! laptop "M-d")
+> (copies)
+((1 "copy" " three"))
+; A page with no clipboard, or one the browser refuses, says why.
+> (handle! phone "clipboard" '("outcome" . "unavailable"))
+! Copy failed: the page has no clipboard, which needs HTTPS or localhost
+> (handle! phone "clipboard" '("outcome" . "refused") '("reason" . "NotAllowedError"))
+! Copy failed: the browser refused the clipboard (NotAllowedError)
+> (handle! phone "paste")
+! clipboard: not a clipboard item with irritant (("type" . "paste"))

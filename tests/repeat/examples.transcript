@@ -8,12 +8,12 @@
 > (weights)
 (7/5 3/5)
 > (keymap-names c1)
-(layout-split:resize-keymap keys:global)
+(layout-split:resize-keymap layout:keymap keys:global)
 > (press! c1 "C-x" "o")
 > (keymap-names c1)
-(keys:global)
+(layout:keymap keys:global)
 > (layout:selected-view)
-#<view 2>
+#<view 3>
 ; A key bound in the keymap works only while it repeats.
 > (keys:bind! layout-split:resize-keymap "v" layout-split:shrink)
 > (press! c1 "C-x" "{" "v")
@@ -30,4 +30,4 @@
 > (weights)
 (8/5 2/5)
 > (keymap-names c1)
-(keys:global)
+(layout:keymap keys:global)

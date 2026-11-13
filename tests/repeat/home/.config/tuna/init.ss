@@ -26,6 +26,7 @@
   (map (lambda (k)
          (cond
            [(eq? k layout-split:resize-keymap) 'layout-split:resize-keymap]
+           [(eq? k layout:keymap) 'layout:keymap]
            [(eq? k keys:global) 'keys:global]
            [else 'keymap]))
        (keys:active-keymaps client)))

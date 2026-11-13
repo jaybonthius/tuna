@@ -11,7 +11,7 @@
    the-frame frame-record? open-layout! current-index index-atom view-of selected-id shown-views
    select-id! set-zoom! frame-zoom frame-order children root-node locked-node? title-of draw-layout
    neighbour-of remove-part! bar-view node-datum note-batch save-now! focus-keymaps
-   last-selected-unlocked-atom)
+   last-selected-unlocked-atom lead-down)
 
   (define main-thread (get-thread-id))
 
@@ -30,22 +30,23 @@
   ;; Entries made by the configuration outlive a reload of this module,
   ;; so the record type stays the same.
   (define-record-type container
-    (nongenerative layout:container/draw/neighbour/keymap/child-attributes/collapse)
+    (nongenerative layout:container/draw/neighbour/child-attributes/collapse)
     (sealed #t)
-    (fields draw neighbour keymap child-attributes collapse?))
+    (fields draw neighbour child-attributes collapse?))
 
   (define-table containers)
 
   (define (container-entry kind) (table-ref containers kind #f))
 
-  (define (register-container! kind draw neighbour keymap child-attributes collapse?)
+  (define (register-container! kind draw neighbour child-attributes collapse?)
     (unless (procedure? draw)
       (assertion-violation 'layout:define-container "not a procedure" draw))
     (unless (or (not neighbour) (procedure? neighbour))
       (assertion-violation 'layout:define-container "not a procedure or #f" neighbour))
-    (unless (or (not keymap) (table? keymap))
-      (assertion-violation 'layout:define-container "not a keymap or #f" keymap))
-    (table-set! containers kind (make-container draw neighbour keymap child-attributes collapse?)))
+    (let ([keymap (buffers:kind-keymap (buffers:kind kind))])
+      (unless (or (not keymap) (table? keymap))
+        (assertion-violation 'layout:define-container "not a keymap or #f" keymap)))
+    (table-set! containers kind (make-container draw neighbour child-attributes collapse?)))
 
   (define (attributes? a)
     (and (list? a) (for-all (lambda (p) (and (pair? p) (symbol? (car p)))) a)))
@@ -344,7 +345,8 @@
 
   (define (draw-view-atom atom selected client)
     (let ([v (view-of atom)])
-      (haml (:div.layout-view ([class (and (eqv? (atom-id atom) selected) "selected")])
+      (haml (:div.layout-view ([class (and (eqv? (atom-id atom) selected) "selected")]
+                               [data-at (document:node-start atom)] [data-to (document:node-end atom)])
               (views:draw v client)))))
 
   (define (draw-plain shown draw-child)
@@ -439,7 +441,7 @@
       (let loop ([n (parent atom)] [acc '()])
         (if n
             (loop (parent n)
-                  (let* ([entry (kind-entry n)] [k (and entry (container-keymap entry))])
+                  (let* ([kind (buffers:kind (document:node-kind n))] [k (and kind (buffers:kind-keymap kind))])
                     (if k (cons k acc) acc)))
             (append inner (reverse acc))))))
 
@@ -535,10 +537,10 @@
                (unless draw
                  (syntax-violation 'layout:define-container "a draw clause is required" x))
                #`(begin
-                   (buffers:define-kind id (content nodes) (consent check-parts))
+                   (buffers:define-kind id (content nodes) (consent check-parts) (keymap #,keymap))
                    (define-values ()
                      (begin
-                       (register-container! (car (id '())) #,draw #,neighbour #,keymap '#,(datum->syntax #'id attributes) #,collapse)
+                       (register-container! (car (id '())) #,draw #,neighbour '#,(datum->syntax #'id attributes) #,collapse)
                        (values)))))
              (let* ([c (car clauses)]
                     [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ (invalid c)])])
@@ -584,7 +586,9 @@
   (unless (web:client? client)
     (assertion-violation 'layout:screen "not a client" client))
   (check-main-thread 'layout:screen)
-  (draw-layout client))
+  (haml (:div.layout-screen ([data-view (views:id screen-view)] [data-version (buffers:version buffer)]
+                             [data-showing (views:shown-count screen-view)])
+          (draw-layout client))))
 
 (define selected-view
   (case-lambda
@@ -640,9 +644,15 @@
                 [else (loop (cdr cs) (car cs))]))]
       [else #f])))
 
-(define-container root (draw %draw-root) (neighbour %root-neighbour))
+(define-table keymap "The keymap of the layout's root, for mouse keys on the layout's own drawing.")
+
+(define-container root (draw %draw-root) (neighbour %root-neighbour) (keymap keymap))
 
 (define buffer (open-layout!))
+
+;; The layout's own drawing is a view of its buffer that no part shows,
+;; so a click on it is a mouse key at a position in the buffer.
+(define screen-view (views:make buffer))
 
 (define (view-node view)
   (check-view 'layout:view-node view)
@@ -747,12 +757,18 @@
   (set-zoom! (and (not (frame-zoom)) (views:id (selected-view))))
   (void))
 
-(commands:define-command (select-view view-id)
-  "Selects the view whose number is view-id."
-  (let ([v (views:find view-id)])
-    (unless v
-      (assertion-violation 'layout:select-view "no view has the number" view-id))
-    (select! v)))
+(commands:define-command (mouse-select-view [event (keys:command-event)])
+  "Selects the view that the part clicked in the layout's drawing leads to through focused children, unless it is locked."
+  (unless (keys:event? event)
+    (assertion-violation 'layout:mouse-select-view "not an event" event))
+  (let* ([posn (keys:event-start event)] [v (views:posn-view posn)] [p (views:posn-point posn)])
+    (when (and v p (eq? (views:buffer v) buffer))
+      (let* ([doc (buffers:document buffer)]
+             [t (and (fx< p (document:length doc)) (document:token doc p))]
+             [part (if (and (document:node? t) (document:atom? t)) t (document:enclosing doc p))]
+             [atom (and part (lead-down (current-index) part))])
+        (when (and atom (not (locked-node? atom)))
+          (select! (view-of atom)))))))
 
 (define (%select-toward direction)
   (let ([v (neighbour (selected-view) direction)])
@@ -794,13 +810,15 @@
   (call-with-frame (frame client)
     (lambda () (keys:press! client (keys:item-key item)))))
 
-(define (%focus-keymaps client) (focus-keymaps))
+(define (%focus-keymaps client posn) (if posn '() (focus-keymaps)))
 
 (define (%keep-layout b) (not (eq? b buffer)))
 
 (keys:bind! keys:global "C-x o" other-view)
 (keys:bind! keys:global "C-x 0" delete-view)
 (keys:bind! keys:global "C-x 1" zoom)
+(keys:bind! keymap "<mouse-1>" mouse-select-view)
+(keys:bind! keymap "<down-mouse-1>" keys:ignore)
 (add-hook! keys:find-keymaps %focus-keymaps)
 (add-hook! buffers:kill-queries %keep-layout)
 (table-set! web:input-handlers "key" %handle-key)
@@ -809,3 +827,4 @@
 ;; ends the batch for the plugins loaded before this one.
 (advice-add! batch-ended (lambda (ended) (guard (c [#t (report c)]) (note-batch)) (ended)))
 (on-unload save-now!)
+(on-unload (lambda () (views:drop! screen-view)))

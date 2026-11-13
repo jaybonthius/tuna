@@ -62,3 +62,10 @@
 .view .line {
   margin-block: 0;
 }
+
+/* A node's element and a datum's only name the positions they stand for,
+   so a click on them names one; the elements inside lay them out. */
+.view .node,
+.view .datum {
+  display: contents;
+}

@@ -21,15 +21,15 @@
 (layout:frame "not a client")
 > (set-parts! (layout-split:container '((direction . row)) (atom a) (boxes:box '() (atom b) (atom c))))
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 2) (buffer . "notes"))) (boxes:box () #(views:view ((view . 3) (buffer . "mail"))) #(views:view ((view . 4) (buffer . "notes"))))))
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail"))) #(views:view ((view . 5) (buffer . "notes"))))))
 > (selected)
-2
+3
 > (ids)
-(2 3 4)
+(3 4 5)
 ; Selecting puts each container's focused child on the view's path.
 > (layout:select! b)
 > (selected)
-3
+4
 > (layout:select! c)
 > (layout:part-title (document:token (buffers:document layout:buffer) 1))
 "notes"
@@ -47,13 +47,13 @@
 ; Moving toward a direction asks each container up the path; a box is
 ; passed through, and from a sibling the walk follows focused children.
 > (views:id (layout:neighbour a (layout:direction right)))
-4
+5
 > (layout:neighbour a (layout:direction left))
 #f
 > (layout:neighbour a (layout:direction up))
 #f
 > (views:id (layout:neighbour b (layout:direction left)))
-2
+3
 > (layout:neighbour c (layout:direction right))
 #f
 > (raised (lambda () (layout:neighbour a 'north)))
@@ -62,13 +62,13 @@
 (left up)
 ; The focus path: the selected view's keymaps, then each enclosing
 ; container's, then the root's.
-> (map (lambda (k) (cond [(eq? k boxes:box-keys) 'box] [(eq? k keys:global) 'global] [else k])) (keys:active-keymaps c1))
-(global)
+> (map (lambda (k) (cond [(eq? k boxes:box-keys) 'box] [(eq? k layout:keymap) 'root] [(eq? k keys:global) 'global] [else k])) (keys:active-keymaps c1))
+(root global)
 > (eq? (car (reverse (keys:active-keymaps c1))) keys:global)
 #t
 > (layout:select! c)
-> (map (lambda (k) (cond [(eq? k boxes:box-keys) 'box] [(eq? k keys:global) 'global] [else k])) (keys:active-keymaps c1))
-(box global)
+> (map (lambda (k) (cond [(eq? k boxes:box-keys) 'box] [(eq? k layout:keymap) 'root] [(eq? k keys:global) 'global] [else k])) (keys:active-keymaps c1))
+(box root global)
 > (eq? (keys:lookup c1 "C-c b") boxes:box-command)
 #t
 ; Keys from a client run in its frame's selected view, each client with
@@ -80,43 +80,44 @@
 #f
 > (press! c1 '("o"))
 > (selected)
-2
+3
 > (press! c2 '("x" "control") '("o"))
 > (selected)
-3
+4
 > (layout:select! a)
 > (define last-where #f)
 > (commands:define-command (where) "Keeps the current view and buffer." (set! last-where (list (views:id (views:current)) (buffers:name (buffers:current)))))
 > (keys:bind! keys:global "C-c w" where)
 > (press! c2 '("c" "control") '("w"))
 > last-where
-(2 "notes")
+(3 "notes")
 > (layout:call-with-frame (layout:frame c1) (lambda () (list (views:id (views:current)) (buffers:name (buffers:current)))))
-(2 "notes")
+(3 "notes")
 > (raised (lambda () (layout:call-with-frame c1 void)))
 (layout:call-with-frame "not a frame")
 ; C-x o goes through the views not locked, in the layout's order.
 > (commands:run layout:other-view)
 > (selected)
-3
-> (commands:run layout:other-view)
-> (commands:run layout:other-view)
-> (selected)
-2
-> (commands:run layout:select-view (views:id c))
-> (selected)
 4
-> (raised (lambda () (commands:run layout:select-view 999)))
-! layout:select-view: no view has the number with irritant 999
+> (commands:run layout:other-view)
+> (commands:run layout:other-view)
+> (selected)
+3
+; A click on the layout's drawing selects the view its part leads to.
+> (commands:run layout:mouse-select-view (list "<mouse-1>" (vector (views:id layout:screen-view) (document:node-start (layout:view-node c)))))
+> (selected)
+5
+> (raised (lambda () (commands:run layout:mouse-select-view 999)))
+! layout:mouse-select-view: not an event with irritant 999
 > (commands:run layout:select-left)
 > (selected)
-2
+3
 > (commands:run layout:select-right)
 > (selected)
-4
+5
 > (commands:run layout:select-up)
 > (selected)
-4
+5
 ; Zoom shows the selected view alone, with pinned parts beside the
 ; containers on its path; selecting a view outside ends it.
 > (define bar (buffers:make "*Echo*" ""))
@@ -124,36 +125,36 @@
 > (eq? echo (layout:add-bar! bar))
 #t
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 2) (buffer . "notes"))) (boxes:box () #(views:view ((view . 3) (buffer . "mail"))) #(views:view ((view . 4) (buffer . "notes"))))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail"))) #(views:view ((view . 5) (buffer . "notes"))))) #(views:view ((view . 6) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
 > (layout:locked? (layout:view-node echo))
 #t
 > (layout:locked? (layout:view-node a))
 #f
 > (commands:run layout:zoom)
 > (ids)
-(4 5)
+(5 6)
 > (show-screen c1)
-<div class="layout-root"><div class="layout-main"><div class="split row"><div class="split-child" style="flex:1.0 1 0"><section class="box"><div class="layout-view selected"><div class="view" data-view="4" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v4-1" data-line="1"><span class="cursor primary"></span>one</div><div class="line" id="v4-2" data-line="2">two</div><div class="line" id="v4-3" data-line="3">three</div><div class="line" id="v4-4" data-line="4"><br></div></div></div></div></section></div></div></div><div class="layout-bar"><div class="layout-view"><div class="view" data-view="5" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v5-1" data-line="1"><span class="cursor primary"></span><br></div></div></div></div></div></div>
+<div class="layout-screen" data-view="2" data-version="2" data-showing="0"><div class="layout-root"><div class="layout-main"><div class="split row"><div class="split-child" style="flex:1.0 1 0"><section class="box"><div class="layout-view selected" data-at="5" data-to="6"><div class="view" data-view="5" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v5-1" data-line="1" data-at="1"><span class="cursor primary"></span>one</div><div class="line" id="v5-2" data-line="2">two</div><div class="line" id="v5-3" data-line="3">three</div><div class="line" id="v5-4" data-line="4"><br></div></div></div></div></section></div></div></div><div class="layout-bar"><div class="layout-view" data-at="8" data-to="9"><div class="view" data-view="6" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v6-1" data-line="1" data-at="1"><span class="cursor primary"></span><br></div></div></div></div></div></div></div>
 > (layout:select! echo)
 > (ids)
-(4 5)
+(5 6)
 > (layout:select! b)
 > (ids)
-(2 3 4 5)
+(3 4 5 6)
 > (commands:run layout:zoom)
 > (ids)
-(3 5)
+(4 6)
 > (commands:run layout:zoom)
 > (commands:run layout:zoom)
 > (ids)
-(3 5)
+(4 6)
 ; Bars are skipped by C-x o and by moves.
 > (layout:select! c)
 > (layout:neighbour c (layout:direction down))
 #f
 > (commands:run layout:other-view)
 > (selected)
-2
+3
 ; Deleting parts.
 > (raised (lambda () (layout:delete-part! (layout:view-node echo))))
 (layout:delete-part! "a locked part")
@@ -165,21 +166,21 @@
 ; Deleting the selected view selects where the focused children lead.
 > (layout:delete-part! (layout:view-node c))
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 2) (buffer . "notes"))) (boxes:box () #(views:view ((view . 3) (buffer . "mail"))))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail"))))) #(views:view ((view . 6) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
 > (selected)
-2
+3
 > (layout:delete-part! (layout:view-node b))
 > (tree)
-(layout:root () #(views:view ((view . 2) (buffer . "notes"))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 6) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
 > (selected)
-2
+3
 > (raised (lambda () (layout:delete-part! (layout:view-node a))))
 (layout:delete-part! "the last view that is not locked")
 > (commands:run layout:delete-view)
 ! layout:delete-part!: the last view that is not locked with irritant #<node views:view 1>
 ; Views whose atoms left the layout are dropped when the batch ends.
-> (list (views:find (views:id a)) (views:find 4) (views:find 5))
-(#<view 2> #f #<view 5>)
+> (list (views:find (views:id a)) (views:find 5) (views:find 6))
+(#<view 3> #f #<view 6>)
 ; Titles.
 > (define titled (views:make mail))
 > (set-parts! (layout-split:container '((title . "work")) (atom a) (atom titled '(title . "letters"))) (atom echo '(pinned . #t) '(locked . #t)))
@@ -213,7 +214,7 @@ refused
 > (try (lambda () (void (buffers:replace! layout:buffer 2 2 (boxes:box '() (atom (views:make notes)))))))
 "incorrect argument count in call ~a"
 > (tree)
-(layout:root () (layout-split:container ((title . "work")) (boxes:box () #(views:view ((view . 7) (buffer . "notes")))) #(views:view ((view . 2) (buffer . "notes"))) #(views:view ((view . 6) (buffer . "mail") (title . "letters")))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () (layout-split:container ((title . "work")) (boxes:box () #(views:view ((view . 8) (buffer . "notes")))) #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 7) (buffer . "mail") (title . "letters")))) #(views:view ((view . 6) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
 ; The layout buffer is never killed.
 > (buffers:kill! layout:buffer)
 #f
@@ -225,31 +226,31 @@ refused
 > (set-parts! (boxes:broken '() (atom a)) (boxes:stray '() (atom d)) (atom echo '(pinned . #t) '(locked . #t)))
 > (show-screen c1)
 ! car: () is not a pair
-<div class="layout-root"><div class="layout-main"><div class="layout-part"><div class="layout-view selected"><div class="view" data-view="2" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v2-1" data-line="1"><span class="cursor primary"></span>one</div><div class="line" id="v2-2" data-line="2">two</div><div class="line" id="v2-3" data-line="3">three</div><div class="line" id="v2-4" data-line="4"><br></div></div></div></div></div></div><div class="layout-bar"><section class="box"><div class="layout-view"><div class="view" data-view="8" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v8-1" data-line="1"><span class="cursor primary"></span>one</div><div class="line" id="v8-2" data-line="2">two</div><div class="line" id="v8-3" data-line="3">three</div><div class="line" id="v8-4" data-line="4"><br></div></div></div></div></section></div><div class="layout-bar"><div class="layout-view"><div class="view" data-view="5" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v5-1" data-line="1"><span class="cursor primary"></span><br></div></div></div></div></div></div>
+<div class="layout-screen" data-view="2" data-version="7" data-showing="0"><div class="layout-root"><div class="layout-main"><div class="layout-part"><div class="layout-view selected" data-at="2" data-to="3"><div class="view" data-view="3" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v3-1" data-line="1" data-at="1"><span class="cursor primary"></span>one</div><div class="line" id="v3-2" data-line="2">two</div><div class="line" id="v3-3" data-line="3">three</div><div class="line" id="v3-4" data-line="4"><br></div></div></div></div></div></div><div class="layout-bar"><section class="box"><div class="layout-view" data-at="5" data-to="6"><div class="view" data-view="9" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v9-1" data-line="1" data-at="1"><span class="cursor primary"></span>one</div><div class="line" id="v9-2" data-line="2">two</div><div class="line" id="v9-3" data-line="3">three</div><div class="line" id="v9-4" data-line="4"><br></div></div></div></div></section></div><div class="layout-bar"><div class="layout-view" data-at="7" data-to="8"><div class="view" data-view="6" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v6-1" data-line="1" data-at="1"><span class="cursor primary"></span><br></div></div></div></div></div></div></div>
 > (raised (lambda () (layout:neighbour d (layout:direction left))))
 (layout:neighbour "a kind's neighbour is not a child of its container")
 ; A part removed by one edit and put back by another in the same batch
 ; keeps its view.
 > (let ([e (buffers:replace! layout:buffer 1 4 "")])
     (buffers:splice! layout:buffer 1 1 (buffers:edit-removed e))
-    (eq? (views:find 2) a))
+    (eq? (views:find 3) a))
 #t
 > (tree)
-(layout:root () (boxes:broken () #(views:view ((view . 2) (buffer . "notes")))) (boxes:stray () #(views:view ((view . 8) (buffer . "notes")))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:root () (boxes:broken () #(views:view ((view . 3) (buffer . "notes")))) (boxes:stray () #(views:view ((view . 9) (buffer . "notes")))) #(views:view ((view . 6) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
 ; A view dropped with its part comes back, as a new view numbered as its
 ; atom, when an undo puts the atom back.
 > (define e (buffers:replace! layout:buffer 1 4 ""))
-> (views:find 2)
+> (views:find 3)
 #f
 > (selected)
-5
+6
 > (void (buffers:splice! layout:buffer 1 1 (buffers:edit-removed e)))
 ! incorrect argument count in call (void (((...) (...)) ((...) (...)) 1 1 ((...) (...))))
 > (map views:id (layout:views))
-(2 8 5)
-> (list (views:find 2) (eq? (views:find 2) a))
-(#<view 2> #f)
-> (buffers:name (views:buffer (views:find 2)))
+(3 9 6)
+> (list (views:find 3) (eq? (views:find 3) a))
+(#<view 3> #f)
+> (buffers:name (views:buffer (views:find 3)))
 "notes"
 ; Layout's procedures run on the main thread only.
 > (define (on-thread thunk) (let ([result #f]) (fork-thread (lambda () (set! result (raised thunk)))) (let loop ([n 0]) (unless (or result (= n 500)) (sleep-for 0.01) (loop (+ n 1)))) result))

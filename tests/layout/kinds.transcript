@@ -31,7 +31,7 @@
 > (set-parts! (layout-split:container '((direction . row)) (column '((weight . 3) (title . "c")) (atom a '(share . 1) '(weight . 7)) (atom b)) (atom c)))
 > (layout:delete-part! (layout:view-node b))
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 2) (buffer . "notes") (weight . 3))) #(views:view ((view . 4) (buffer . "notes")))))
+(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes") (weight . 3))) #(views:view ((view . 5) (buffer . "notes")))))
 ; The frame's state and the layout survive a reload of layout, which
 ; reloads layout-split too.
 > (layout:select! c)
@@ -44,9 +44,9 @@
 > (equal? before (tree))
 #t
 > (list (selected) (ids))
-(4 (4))
+(5 (5))
 > (commands:run layout:zoom)
 > (ids)
-(2 4)
+(3 5)
 > (eq? (views:find (views:id a)) a)
 #t
