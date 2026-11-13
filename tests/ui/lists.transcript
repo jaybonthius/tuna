@@ -1,0 +1,180 @@
+; A list holds one atom per shown row, keyed by the generation of its
+; rows and the row's index; the selected row is the one at point.
+> (define b (buffers:make "*rows*" (ui:list '())))
+> (define (lst) (document:token (buffers:document b) 0))
+> (define chosen '())
+> (define (choose r) (set! chosen (cons r chosen)))
+> (define (number-row n) (ui:label (number->string n)))
+> (define (keys-shown) (map (lambda (a) (cdr (assq 'key (vector-ref a 1)))) (cddr (car (datums b)))))
+> (define (selected) (ui:selected-row (lst) (view)))
+> (show! b)
+> (ui:set-rows! b (lst) (list->vector (iota 100)) number-row choose 5)
+> (keys-shown)
+((0 . 0) (0 . 1) (0 . 2) (0 . 3) (0 . 4))
+> (element (view) "<ul" "ul")
+"<ul class=\"ui-list\"><span class=\"cursor primary\"></span><span class=\"node\" data-at=\"1\" data-to=\"2\"><li class=\"ui-list-row\" aria-current=\"true\"><span class=\"ui-label\">0</span></li></span><span class=\"node\" data-at=\"2\" data-to=\"3\"><li class=\"ui-list-row\"><span class=\"ui-label\">1</span></li></span><span class=\"node\" data-at=\"3\" data-to=\"4\"><li class=\"ui-list-row\"><span class=\"ui-label\">2</span></li></span><span class=\"node\" data-at=\"4\" data-to=\"5\"><li class=\"ui-list-row\"><span class=\"ui-label\">3</span></li></span><span class=\"node\" data-at=\"5\" data-to=\"6\"><li class=\"ui-list-row\"><span class=\"ui-label\">4</span></li></span></ul>"
+; Moving inside the shown rows only moves point; past them, the rows
+; shown slide: one row goes and one comes.
+> (define v0 (buffers:version b))
+> (press! "C-n" "<down>" "C-n")
+> (list (selected) (views:point (view)) (- (buffers:version b) v0))
+(3 4 0)
+> (press! "C-n" "C-n")
+> (list (selected) (views:point (view)) (- (buffers:version b) v0) (keys-shown))
+(5 5 2 ((0 . 1) (0 . 2) (0 . 3) (0 . 4) (0 . 5)))
+> (press! "C-u" "3" "C-p" "<up>")
+> (list (selected) (keys-shown))
+(1 ((0 . 1) (0 . 2) (0 . 3) (0 . 4) (0 . 5)))
+> (press! "C-p" "C-p" "C-p")
+> (list (selected) (keys-shown))
+(0 ((0 . 0) (0 . 1) (0 . 2) (0 . 3) (0 . 4)))
+> (in-client (lambda () (commands:run ui:next-row 500)))
+> (list (selected) (keys-shown))
+(99 ((0 . 95) (0 . 96) (0 . 97) (0 . 98) (0 . 99)))
+; RET, or a click on a row, calls choose with the row; the click first
+; moves point to the row clicked.
+> (press! "RET")
+> (click-token! (view) 2)
+> (list chosen (selected))
+((96 99) 96)
+; Two views of one buffer select independently; each draws its own row
+; as the selected one.
+> (define other (views:make b))
+> (ui:select-row! (lst) other 98)
+> (list (selected) (ui:selected-row (lst) other))
+(96 98)
+> (map (lambda (v) (element v "<li class=\"ui-list-row\" aria-current" "li")) (list (view) other))
+("<li class=\"ui-list-row\" aria-current=\"true\"><span class=\"ui-label\">96</span></li>" "<li class=\"ui-list-row\" aria-current=\"true\"><span class=\"ui-label\">98</span></li>")
+; New rows keep each view's selected index, clamped to their count;
+; the rows shown are rewritten under a new generation.
+> (ui:set-rows! b (lst) (vector 'a 'b 'c) (lambda (s) (ui:label (symbol->string s))) choose)
+> (list (selected) (ui:selected-row (lst) other) (keys-shown))
+(2 2 ((1 . 0) (1 . 1) (1 . 2)))
+> (ui:select-row! (lst) (view) 0)
+> (define rows (vector 'x 'y 'z 'w))
+> (ui:set-rows! b (lst) rows (lambda (s) (ui:label (symbol->string s))) choose)
+> (list (selected) (ui:selected-row (lst) other) (keys-shown))
+(0 2 ((2 . 0) (2 . 1) (2 . 2) (2 . 3)))
+; The same vector again, with the rows shown unchanged, makes no edit.
+> (define v1 (buffers:version b))
+> (ui:set-rows! b (lst) rows (lambda (s) (ui:label (symbol->string s))) choose)
+> (- (buffers:version b) v1)
+0
+; No rows: motion and choosing do nothing.
+> (ui:set-rows! b (lst) (vector) number-row choose)
+> (press! "C-n" "RET")
+> (list (selected) (keys-shown) (length chosen))
+(#f () 2)
+; A list's content is its rows: typing in it is refused.
+> (ui:set-rows! b (lst) (vector 1 2) number-row choose)
+> (press! "x")
+! buffers:replace!: the content does not fit here
+> (raised (lambda () (buffers:replace! b 1 2 "")))
+(buffers:replace! "the node refuses the edit")
+> (raised (lambda () (buffers:replace! b 1 1 (ui:list '()))))
+(buffers:replace! "the node refuses the edit")
+; A list inside a text buffer: outside it, no row is selected and the
+; list's keys are not active.
+> (define t (buffers:make "*mixed*" (buffers:text '() "Pick:\n" (ui:list '()) "done\n")))
+> (define (mixed-list) (document:enclosing (buffers:document t) 8))
+> (show! t)
+> (ui:set-rows! t (mixed-list) (vector "one" "two") ui:label choose)
+> (ui:selected-row (mixed-list) (view))
+#f
+> (in-client (lambda () (commands:run ui:next-row 1)))
+! ui:next-row: the cursor is in no list
+> (ui:select-row! (mixed-list) (view) 7)
+> (list (views:point (view)) (ui:selected-row (mixed-list) (view)))
+(9 1)
+> (press! "C-p" "RET")
+> (car chosen)
+"one"
+; The procedures check what they are given.
+> (raised (lambda () (ui:set-rows! t (lst) (vector) ui:label choose)))
+(ui:set-rows! "not a list of the buffer")
+> (raised (lambda () (ui:set-rows! t (mixed-list) '(1) ui:label choose)))
+(ui:set-rows! "not a vector")
+> (raised (lambda () (ui:set-rows! t (mixed-list) (vector) ui:label choose 0)))
+(ui:set-rows! "not a positive count")
+> (raised (lambda () (ui:select-row! (mixed-list) (view) -1)))
+(ui:select-row! "not a row index")
+> (raised (lambda () (ui:selected-row (mixed-list) 'view)))
+(ui:selected-row "not a view")
+; Reloading ui keeps the rows in the buffer; a list met afresh writes its
+; rows under a generation past theirs.
+> (import (tuna eval))
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/ui.sls"))
+> (define (mixed-keys) (map (lambda (a) (cdr (assq 'key (vector-ref a 1)))) (cddr (mixed-list-datum))))
+> (define (mixed-list-datum) (car (document:datums (document:slice (buffers:document t) 7 11))))
+> (mixed-keys)
+((0 . 0) (0 . 1))
+> (ui:set-rows! t (mixed-list) (vector "one" "two") ui:label choose)
+> (mixed-keys)
+((1 . 0) (1 . 1))
+; Once the maker of a list unloads, its rows draw as nothing: the first
+; draw reports the error, later draws and RET call nothing.
+> (with-output-to-file (string-append (getenv "HOME") "/.config/tuna/lib/maker.sls")
+    (lambda ()
+      (display "#!tuna\n")
+      (write '(import (ui) (buffers) (document)))
+      (write '(define made (buffers:make "*made*" (ui:list '()))))
+      (write '(define (shout s) (ui:label (string-append s "!"))))
+      (write '(ui:set-rows! made (document:token (buffers:document made) 0) (vector "p" "q") shout shout))))
+> (load-module! '(maker))
+> (show! (buffers:find "*made*"))
+> (element (view) "<ul" "ul")
+"<ul class=\"ui-list\"><span class=\"cursor primary\"></span><span class=\"node\" data-at=\"1\" data-to=\"2\"><li class=\"ui-list-row\" aria-current=\"true\"><span class=\"ui-label\">p!</span></li></span><span class=\"node\" data-at=\"2\" data-to=\"3\"><li class=\"ui-list-row\"><span class=\"ui-label\">q!</span></li></span></ul>"
+> (unload-module! '(maker))
+> (element (view) "<ul" "ul")
+! maker:shout: module (maker) is unloaded
+"<ul class=\"ui-list\"><span class=\"cursor primary\"></span><span class=\"node\" data-at=\"1\" data-to=\"2\"></span><span class=\"node\" data-at=\"2\" data-to=\"3\"></span></ul>"
+> (element (view) "<ul" "ul")
+"<ul class=\"ui-list\"><span class=\"cursor primary\"></span><span class=\"node\" data-at=\"1\" data-to=\"2\"></span><span class=\"node\" data-at=\"2\" data-to=\"3\"></span></ul>"
+> (press! "RET")
+; The same holds for rows a command of the maker set.
+> (with-output-to-file (string-append (getenv "HOME") "/.config/tuna/lib/maker2.sls")
+    (lambda ()
+      (display "#!tuna\n")
+      (write '(import (ui) (buffers) (document) (commands)))
+      (write '(define made (buffers:make "*made2*" (ui:list '()))))
+      (write '(define (shout s) (ui:label (string-append s "!"))))
+      (write '(commands:define-command (fill-made) "Fills the list."
+                (ui:set-rows! made (document:token (buffers:document made) 0) (vector "p" "q") shout shout)))))
+> (load-module! '(maker2))
+> (in-client (lambda () (commands:run maker2:fill-made)))
+> (show! (buffers:find "*made2*"))
+> (element (view) "<li" "li")
+"<li class=\"ui-list-row\" aria-current=\"true\"><span class=\"ui-label\">p!</span></li>"
+> (unload-module! '(maker2))
+> (element (view) "<li" "li")
+! maker2:shout: module (maker2) is unloaded
+#f
+> (element (view) "<li" "li")
+#f
+> (press! "RET")
+; A draw procedure that raises does the same, until rows are set again.
+> (define f (buffers:make "*failing*" (ui:list '())))
+> (define (failing) (document:token (buffers:document f) 0))
+> (show! f)
+> (define (picky n) (if (= n 1) (error 'picky "no row one") (number-row n)))
+> (ui:set-rows! f (failing) (vector 0 1 2) picky choose)
+> (element (view) "<li" "li")
+! picky: no row one
+#f
+> (element (view) "<li" "li")
+#f
+> (ui:set-rows! f (failing) (vector 0 2) picky choose)
+> (element (view) "<li" "li")
+"<li class=\"ui-list-row\" aria-current=\"true\"><span class=\"ui-label\">0</span></li>"
+; A choose procedure that raises is reported by the command that ran it;
+; the list then draws as nothing and chooses nothing.
+> (ui:set-rows! f (failing) (vector 0 2) number-row (lambda (n) (error 'refuse "not this one")))
+> (press! "RET")
+! refuse: not this one
+> (element (view) "<li" "li")
+#f
+> (press! "RET")
+> (ui:set-rows! f (failing) (vector 0 2) number-row choose)
+> (press! "RET")
+> (car chosen)
+0

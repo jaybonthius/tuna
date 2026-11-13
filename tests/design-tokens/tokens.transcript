@@ -56,6 +56,10 @@
        '(("views/views.css" ".cursor") ("views/views.css" ".cursor.primary") ("views/views.css" ".region")
          ("layout/layout.css" ".layout-view > .view") ("layout/layout.css" ".layout-view.selected")))
 (("--tuna-text-muted") () () () ())
+; So do the focus outline and a list's selected row, which ui draws.
+> (map (lambda (r) (apply bare-tokens r))
+       '(("ui/ui.css" ":where(:focus-visible)") ("ui/ui.css" ".ui-list-row[aria-current=\"true\"]")))
+(() ())
 ; The file stays within its 50 KB budget.
 > (<= (string-length tokens-css) 51200)
 #t

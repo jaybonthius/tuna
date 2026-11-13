@@ -1,0 +1,39 @@
+; A click names a position on the screen it was drawn on; views follows
+; it through the edits since. A row or button that has gone since is a
+; stale click, and runs nothing.
+> (define b (buffers:make "*rows*" (ui:list '())))
+> (define (lst) (document:token (buffers:document b) 0))
+> (define chosen '())
+> (define (choose r) (set! chosen (cons r chosen)))
+> (show! b)
+> (ui:set-rows! b (lst) (vector "a" "b" "c") ui:label choose)
+; The screen shows a, b and c; new rows arrive before the click on b.
+> (define drawn (buffers:version b))
+> (ui:set-rows! b (lst) (vector "x" "y" "z") ui:label choose)
+> (mouse-in! (view) "click" '(("token" . 2)) `("version" . ,drawn))
+! Stale click: what was clicked is gone
+> chosen
+()
+; The rows slide under the screen: a row still shown is clicked where it
+; is now, and one that left is stale.
+> (ui:set-rows! b (lst) (list->vector (iota 20)) (lambda (n) (ui:label (number->string n))) choose 3)
+> (define drawn (buffers:version b))
+> (ui:select-row! (lst) (view) 3)
+> (mouse-in! (view) "click" '(("token" . 3)) `("version" . ,drawn))
+> chosen
+(2)
+> (mouse-in! (view) "click" '(("token" . 1)) `("version" . ,drawn))
+! Stale click: what was clicked is gone
+> chosen
+(2)
+; A click on a Done button whose todo another client removed first.
+> (import (todo))
+> (show! todo:todo-buffer)
+> (define drawn (buffers:version todo:todo-buffer))
+> (click-at! (view) 13)
+> (todo:todos)
+("Write the plan")
+> (mouse-in! (view) "click" '(("at" . 12) ("count" . 1)) `("version" . ,drawn))
+! Stale click: what was clicked is gone
+> (todo:todos)
+("Write the plan")

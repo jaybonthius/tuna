@@ -51,6 +51,7 @@ bench: exe
 	sh bench/undo.sh build/bin/tuna || status=1; \
 	sh bench/editing.sh build/bin/tuna || status=1; \
 	sh bench/mouse.sh build/bin/tuna || status=1; \
+	sh bench/ui.sh build/bin/tuna || status=1; \
 	exit $$status
 
 repl: build

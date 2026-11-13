@@ -1,0 +1,149 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  :where(body) {
+    background: var(--tuna-surface);
+    color: var(--tuna-text);
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-ui);
+  }
+
+  :where(h1, h2, h3, h4, h5, h6) {
+    font-weight: var(--tuna-font-weight-semibold);
+    line-height: var(--tuna-line-height-1);
+  }
+
+  :where(a) {
+    color: var(--tuna-link);
+  }
+
+  :where(a:visited) {
+    color: var(--ui-link-visited-text, var(--tuna-link));
+  }
+
+  :where(code, kbd, samp, pre) {
+    font-family: var(--tuna-font-code);
+  }
+
+  :where(pre) {
+    background: var(--tuna-surface-subtle);
+    border-radius: var(--tuna-panel-radius);
+    padding: var(--tuna-space-4);
+  }
+
+  :where(kbd) {
+    border: var(--tuna-border-width) solid var(--tuna-border);
+    border-radius: var(--tuna-control-radius);
+    padding-inline: var(--tuna-space-1);
+  }
+
+  :where(table) {
+    border-collapse: collapse;
+  }
+
+  :where(th, td) {
+    border: var(--tuna-border-width) solid var(--tuna-border);
+    padding: var(--tuna-space-1) var(--tuna-space-3);
+    text-align: start;
+  }
+
+  ::selection {
+    background: var(--tuna-region, Highlight);
+  }
+
+  /* Without the design tokens a width with no fallback makes the whole
+     outline invalid, and its colour's fallback never shows. */
+  :where(:focus-visible) {
+    outline: var(--tuna-focus-width, 2px) solid var(--tuna-focus, Highlight);
+    outline-offset: var(--tuna-focus-width, 2px);
+  }
+
+  /* Buttons and links sit inside a buffer's lines, so they keep the
+     line's font and height; the margin takes back what the border adds,
+     or a line holding a button would be taller than the others. */
+  .ui-button {
+    font: inherit;
+    line-height: inherit;
+    margin-inline: 0;
+    margin-block: calc(-1 * var(--tuna-border-width));
+    padding-block: 0;
+    padding-inline: var(--ui-button-padding, var(--tuna-space-4));
+    border: var(--tuna-border-width) solid var(--ui-button-border, var(--tuna-border-strong));
+    border-radius: var(--ui-button-radius, var(--tuna-control-radius));
+    background: var(--ui-button-background, var(--tuna-control));
+    color: var(--ui-button-text, var(--tuna-text));
+    cursor: pointer;
+  }
+
+  .ui-link {
+    font: inherit;
+    line-height: inherit;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ui-link-text, var(--tuna-link));
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  @media (hover: hover) {
+    .ui-button:hover {
+      background: var(--ui-button-hover-background, var(--tuna-hover));
+    }
+
+    .ui-link:hover {
+      color: var(--ui-link-hover-text, var(--tuna-accent));
+    }
+  }
+
+  .ui-button:active {
+    background: var(--ui-button-pressed-background, var(--tuna-pressed));
+  }
+
+  .ui-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--ui-row-gap, var(--tuna-space-4));
+  }
+
+  .ui-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .ui-list-row {
+    padding-inline: var(--ui-list-row-padding, var(--tuna-space-2));
+    cursor: pointer;
+  }
+
+  .ui-list-row[aria-current="true"] {
+    background: var(--ui-list-selected-background, var(--tuna-selected, Highlight));
+    color: var(--ui-list-selected-text, var(--tuna-on-selected, HighlightText));
+  }
+
+  /* The selected row shows where point is in a list; the views plugin's
+     cursor between rows would take a line of its own. */
+  .ui-list .cursor {
+    display: none;
+  }
+}
+
+@layer preferences {
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-button {
+      transition: background-color var(--tuna-duration) var(--tuna-ease);
+    }
+  }
+
+  /* Forced colours replace backgrounds, so the selected row needs a mark
+     that survives them. */
+  @media (forced-colors: active) {
+    .ui-list-row[aria-current="true"] {
+      outline: 1px solid Highlight;
+      outline-offset: -1px;
+    }
+  }
+}

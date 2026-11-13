@@ -194,7 +194,7 @@
     '() pairs))
 
 (define stylesheets
-  '("design-tokens/design-tokens.css" "faces/faces.css" "views/views.css" "layout/layout.css" "layout-split/layout-split.css"))
+  '("design-tokens/design-tokens.css" "faces/faces.css" "views/views.css" "layout/layout.css" "layout-split/layout-split.css" "ui/ui.css"))
 
 (define (references css)
   (map (lambda (i)
