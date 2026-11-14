@@ -4,6 +4,15 @@
 (define-option require-final-newline #f boolean?
   "When true, saving a file buffer whose text does not end in a line break adds one, as an edit.")
 
+(define (%no-file-name-reader question)
+  (error 'files:file-name-reader "no reader of file names is loaded"))
+
+;; The prompt's stack imports files, through undo, so files cannot import
+;; a reader; it reads a name through an option the readers' plugin fills,
+;; as Emacs's read-file-name-function.
+(define-option file-name-reader %no-file-name-reader procedure?
+  "A procedure of a question that reads a file name and returns it, for find-file and write-file run as commands.")
+
 (define-hook after-visit
   "Called with a buffer after it has visited a file, before files:visit returns.")
 
@@ -500,7 +509,7 @@
                   (buffers:with-buffer b (after-visit b))
                   b)))))))
 
-(commands:define-command (find-file path)
+(commands:define-command (find-file [path ((file-name-reader) "Find file: ")])
   "Visits PATH and shows its buffer in the selected view."
   (layout:switch-to-buffer (visit path)))
 
@@ -526,7 +535,7 @@
         (when (and (entry-live? e) (entry-modified? e))
           (save! 'files:save-buffer e #t))))))
 
-(commands:define-command (write-file path [buffer (buffers:current)])
+(commands:define-command (write-file [path ((file-name-reader) "Write file: ")] [buffer (buffers:current)])
   "Makes BUFFER visit PATH, renaming it after the file, and saves it there."
   (check-path 'files:write-file path)
   (check-buffer 'files:write-file buffer)
@@ -589,6 +598,8 @@
   (%changed-on-disk? v))
 
 (add-hook! buffers:killed forget-killed!)
+(keys:bind! keys:global "C-x C-f" find-file)
+(keys:bind! keys:global "C-x C-w" write-file)
 (keys:bind! keys:global "C-x C-s" save-buffer)
 (keys:bind! keys:global "M-~" not-modified)
 (keys:bind! keys:global "C-x C-c" save-buffers-kill-tuna)

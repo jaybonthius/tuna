@@ -901,6 +901,8 @@
   '("0" "1" "2" "3" "4" "5" "6" "7" "8" "9"))
 (bind! universal-arguments "-" negative-argument)
 
+(table-set! commands:command-modes ignore '())
+(table-set! commands:command-modes undefined '())
 (table-set! web:scripts 'keys "keys/keys.js")
 
 (advice-add! batch-ended

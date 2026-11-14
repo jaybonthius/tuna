@@ -50,6 +50,29 @@
 > (define popup-atom (document:token (buffers:document layout:popups-buffer) 2))
 > (list (eq? (layout:part-view popup-atom) p) (layout:locked? popup-atom) (layout:part-title popup-atom) (layout:view-node p))
 (#t #t "a" #f)
+; popup-node finds a popup's atom, as view-node a view's in the layout.
+> (list (document:node-start (layout:popup-node p)) (layout:popup-node va))
+(2 #f)
+; set-part-attribute! sets and removes an attribute of a part of either
+; tree, keeping its others.
+> (layout:set-part-attribute! (layout:popup-node p) 'title "pop")
+> (list (layout:part-title (layout:popup-node p)) (layout:locked? (layout:popup-node p)))
+("pop" #t)
+> (layout:set-part-attribute! (layout:popup-node p) 'title #f)
+> (layout:part-title (layout:popup-node p))
+"a"
+> (layout:set-part-attribute! (layout:view-node va) 'other-view #t)
+> (document:node-attribute (layout:view-node va) 'other-view)
+#t
+> (layout:set-part-attribute! (layout:view-node va) 'other-view #f)
+> (document:node-attribute (layout:view-node va) 'other-view 'none)
+none
+> (raised (lambda () (layout:set-part-attribute! (layout:view-node va) "title" "x")))
+(layout:set-part-attribute! "not a symbol")
+> (raised (lambda () (layout:set-part-attribute! 'part 'title "x")))
+(layout:set-part-attribute! "not a node")
+> (raised (lambda () (layout:popup-node 'p)))
+(layout:popup-node "not a view")
 ; A popup is locked, so the user's commands refuse to delete it.
 > (layout:select! p)
 > (commands:run layout:delete-view)

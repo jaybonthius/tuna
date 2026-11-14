@@ -1,0 +1,37 @@
+; Reloading during a read quits it; the part and the buffer come back.
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (type! "abc")
+> (unload-module! '(minibuffer))
+! &quit
+> (result t)
+(raised #<condition &quit>)
+> (buffers:find " *Minibuf*")
+#f
+> (datums layout:buffer)
+((layout:level () (layout-split:container ((direction . column)) (layout:level () #(views:view ((view . 1) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . " *Echo Area*") (depth . 90) (size . content) (locked . #t))))))
+> (views:buffer (view))
+#<buffer *scratch*>
+> (use-plugin minibuffer)
+> (datums layout:buffer)
+((layout:level () (layout-split:container ((direction . column)) (layout:level () #(views:view ((view . 1) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . " *Echo Area*") (depth . 90) (size . content) (locked . #t))) #(views:view ((view . 5) (buffer . " *Minibuf*") (depth . 100) (size . content) (locked . #t))))))
+> (define minibuf (buffers:find " *Minibuf*"))
+> (datums minibuf)
+((minibuffer:%prompts ()))
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (type! "x")
+> (press! "RET")
+> (result t)
+"x"
+> (minibuffer:history)
+("x")
+; Unloading undo: the minibuffer goes with it, since it imports it, and
+; comes back with it.
+> (unload-module! '(undo))
+> (buffers:find " *Minibuf*")
+#f
+> (use-plugin undo)
+> (use-plugin minibuffer)
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (press! "RET")
+> (result t)
+""

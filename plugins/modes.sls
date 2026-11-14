@@ -256,6 +256,16 @@
   (check-main-thread 'modes:active-minor-modes)
   (minor-modes-on view))
 
+(define (on? mode view)
+  (unless (or (symbol? mode) (procedure? mode))
+    (assertion-violation 'modes:on? "not a mode" mode))
+  (unless (views:view? view)
+    (assertion-violation 'modes:on? "not a view" view))
+  (check-main-thread 'modes:on?)
+  (let ([b (views:buffer view)])
+    (or (and b (symbol? mode) (derived? (major-mode b) mode))
+        (and (memq mode (minor-modes-on view)) #t))))
+
 (define (active-keymaps client posn)
   (let ([view (if posn (views:posn-view posn) (views:current))])
     (if view

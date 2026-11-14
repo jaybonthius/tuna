@@ -233,3 +233,16 @@
 (layout-sides:display-at-side "not a buffer")
 > (raised (lambda () (layout:level-of 'notes)))
 (layout:level-of "not a view")
+; A part outside the level that sets other-view joins C-x o's cycle
+; after the level's views, locked or not, as Emacs's other-window
+; enters an active minibuffer. From it, C-x o goes back into the level.
+> (define (cycle n) (let loop ([k n] [acc '()]) (if (= k 0) (reverse acc) (begin (press! c1 '("x" "control") '("o")) (loop (- k 1) (cons (selected-name) acc))))))
+> (define prompt-part (layout:display-buffer (named "*prompt*") (layout-sides:display-at-side (layout:direction down) 100 'content '((locked . #t) (other-view . #t)))))
+> (layout:select! (car (layout:views)))
+> (selected-name)
+"one"
+> (cycle 4)
+("two" "*prompt*" "one" "two")
+> (layout:delete-part! (layout:view-node prompt-part))
+> (cycle 2)
+("one" "two")

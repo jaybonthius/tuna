@@ -22,7 +22,7 @@
    state-id state-parent state-time state-cursors state-of states-by-id history-current history-saved
    history-holds close-group! take-hold! release-hold! leave-hold! forget-escape! cancel-group! move!
    redo-child group-end restore-cursors! place-cursors! path-moves no-further amalgamate-history!
-   record-edit! forget-killed! note-command-start! note-command-end! attach-visited!
+   record-edit! forget-killed! forget-history! note-command-start! note-command-end! attach-visited!
    attach-open-buffers note-saved! read-with-history end-batch! start-writer! stop-writer!
    ensure-log-folder!)
 
@@ -797,6 +797,14 @@
         (set! writer-items (cons item writer-items))
         (send-items!))))
 
+  (define (forget-history! b)
+    (let ([h (eq-hashtable-ref histories b #f)])
+      (when h
+        (without-quits
+          (lambda ()
+            (history-holds-set! h '())
+            (forget! h #t))))))
+
   ;; The discarded edits stay a redo away and do not come back at the
   ;; next visit.
   (define (forget-killed! b)
@@ -1285,6 +1293,10 @@
               (move! h b (reverse moves) 'undo:redo)
               (unless (null? moves) (place-cursors! b (group-end (cdar moves))))
               (when (fx> k 0) (no-further 'undo:redo "redo"))))))))
+
+(define (forget! buffer)
+  (check-buffer 'undo:forget! buffer)
+  (forget-history! buffer))
 
 (define (history buffer)
   (check-buffer 'undo:history buffer)

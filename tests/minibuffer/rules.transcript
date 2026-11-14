@@ -1,0 +1,226 @@
+; The idle part draws nothing, so it takes no room.
+> (html (bar))
+"<div class=\"minibuffer-prompts\"></div>"
+; Arguments are checked.
+> (raised (lambda () (minibuffer:read 'name)))
+(minibuffer:read "not a string")
+> (raised (lambda () (minibuffer:read "Name: " '())))
+(minibuffer:read "neither saved data nor #f")
+> (raised (lambda () (minibuffer:read "Name: " minibuffer:history 3)))
+(minibuffer:read "neither a string nor #f")
+> (raised (lambda () (minibuffer:buffer? "notes")))
+(minibuffer:buffer? "not a buffer")
+> (raised (lambda () (minibuffer:input 'p)))
+(minibuffer:input "not a prompt")
+> (raised (lambda () (minibuffer:call-with-setup 1 void)))
+(minibuffer:call-with-setup "not a procedure")
+; The prompt selects its view, and an answer selects back the view
+; selected before.
+> (define notes (buffers:make "notes" "one\ntwo\n"))
+> (views:set-buffer! (view) notes)
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (eq? (view) (minibuffer:prompt-view (prompt)))
+#t
+> (eq? (view) (bar))
+#t
+; Edits cannot cross the input's edges: C-d at its end leaves the content.
+> (type! "ab")
+> (press! "C-d")
+! editing:delete-char: end of buffer
+> (press! "C-a" "DEL")
+! editing:delete-backward-char: beginning of buffer
+> (input)
+"ab"
+; Undo undoes the input's edits and raises at the prompt's start.
+> (press! "C-/")
+> (input)
+""
+> (press! "C-/")
+! undo:undo: no further undo information
+> (input)
+""
+; C-x o leaves the prompt and comes back to it, after the level's views.
+> (press! "C-x" "o")
+> (views:buffer (view))
+#<buffer notes>
+> (press! "C-x" "2")
+> (press! "C-x" "o")
+> (views:buffer (view))
+#<buffer notes>
+> (press! "C-x" "o")
+> (eq? (view) (bar))
+#t
+> (press! "C-x" "o")
+> (views:buffer (view))
+#<buffer notes>
+> (press! "C-x" "0")
+; select-prompt selects it too.
+> (in-client (lambda () (commands:run minibuffer:select-prompt)))
+> (eq? (view) (bar))
+#t
+; A click puts point within the input; one on the question puts it at
+; the input's start.
+> (type! "xyz")
+> (define start (minibuffer:input-start (prompt)))
+> (click-at! (bar) (+ start 1))
+> (views:point (bar))
+12
+> (click-at! (bar) 3)
+> (= (views:point (bar)) start)
+#t
+> (press! "C-x" "o")
+> (click-at! (bar) (+ start 2))
+> (eq? (view) (bar))
+#t
+> (= (views:point (bar)) (+ start 2))
+#t
+; A message shows until the input changes.
+> (minibuffer:message! (prompt) "No match")
+> (html (bar))
+"<div class=\"minibuffer-prompts\"><div class=\"node\" data-at=\"1\" data-to=\"19\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-1\" data-line=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"10\"><span class=\"minibuffer-question\"><span data-at=\"3\">Name: </span></span></span><span class=\"node\" data-at=\"10\" data-to=\"15\"><span class=\"minibuffer-input\"><span data-at=\"11\">xy<span class=\"cursor primary\"></span>z</span><span class=\"minibuffer-message\"> [No match]</span></span></span><br></div><div class=\"node\" data-at=\"16\" data-to=\"18\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
+> (type! "!")
+> (html (bar))
+"<div class=\"minibuffer-prompts\"><div class=\"node\" data-at=\"1\" data-to=\"20\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-1\" data-line=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"10\"><span class=\"minibuffer-question\"><span data-at=\"3\">Name: </span></span></span><span class=\"node\" data-at=\"10\" data-to=\"16\"><span class=\"minibuffer-input\"><span data-at=\"11\">xy!<span class=\"cursor primary\"></span>z</span></span></span><br></div><div class=\"node\" data-at=\"17\" data-to=\"19\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
+; RET answers; the history holds the answer once, newest first.
+> (press! "RET")
+> (result t)
+"xy!z"
+> (minibuffer:history)
+("xy!z")
+> (prompt)
+#f
+> (views:buffer (view))
+#<buffer notes>
+> (define (ask text) (let ([t (start! (lambda () (minibuffer:read "Name: ")))]) (type! text) (press! "RET") (result t)))
+> (ask "b")
+"b"
+> (ask "c")
+"c"
+> (ask "b")
+"b"
+> (ask "")
+""
+> (minibuffer:history)
+("b" "c" "xy!z")
+> (with-options ([minibuffer:history-length 2]) (ask "d"))
+"d"
+> (minibuffer:history)
+("d" "b")
+; M-p and M-n walk the history, keeping what was typed.
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (type! "typed")
+> (press! "M-p")
+> (input)
+"d"
+> (press! "M-p")
+> (input)
+"b"
+> (press! "M-p")
+! minibuffer:previous-history: beginning of history
+> (input)
+"b"
+> (press! "M-n" "M-n")
+> (input)
+"typed"
+> (press! "M-n")
+! minibuffer:next-history: end of history
+> (input)
+"typed"
+; An empty input answers with the default.
+> (press! "C-g")
+! &quit
+> (define t (start! (lambda () (minibuffer:read "Name: " minibuffer:history "fallback"))))
+> (press! "RET")
+> (result t)
+"fallback"
+; Nested prompts: only the innermost shows; it is answered first and the
+; outer one comes back with its input and point.
+> (define outer (start! (lambda () (minibuffer:read "Outer: "))))
+> (type! "abc")
+> (press! "C-b")
+> (define inner (start! (lambda () (minibuffer:read "Inner: "))))
+> (html (bar))
+"<div class=\"minibuffer-prompts\"><div class=\"node\" data-at=\"20\" data-to=\"36\"><div class=\"minibuffer-prompt\"><span class=\"minibuffer-depth\">[2] </span><div class=\"line\" id=\"v4-2\" data-line=\"2\" data-at=\"21\"><span class=\"node\" data-at=\"21\" data-to=\"30\"><span class=\"minibuffer-question\"><span data-at=\"22\">Inner: </span></span></span><span class=\"node\" data-at=\"30\" data-to=\"32\"><span class=\"minibuffer-input\"><span data-at=\"31\"><span class=\"cursor primary\"></span></span></span></span><br></div><div class=\"node\" data-at=\"33\" data-to=\"35\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
+> (type! "in")
+> (press! "RET")
+> (result inner)
+"in"
+> (input)
+"abc"
+> (= (views:point (bar)) (- (minibuffer:input-end (prompt)) 1))
+#t
+> (press! "RET")
+> (result outer)
+"abc"
+; C-g from another client quits the prompt too.
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (press-in! other-client "C-g")
+! &quit
+> (result t)
+(raised #<condition &quit>)
+; A quit key added to keys:quit-keys and bound to keyboard-quit aborts.
+> (set-option! keys:quit-keys '("C-g" "ESC"))
+> (keys:bind! keys:global "ESC" keys:keyboard-quit)
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (press! "ESC")
+! &quit
+> (result t)
+(raised #<condition &quit>)
+; Hooks follow every prompt; add-keymap! keys win while point is in the
+; input; set-content! adds after it.
+> (define seen '())
+> (define (note what) (lambda (p) (set! seen (cons (list what (minibuffer:input p)) seen))))
+> (define note-started (note 'started))
+> (define note-changed (note 'changed))
+> (define note-ended (note 'ended))
+> (add-hook! minibuffer:prompt-started note-started)
+> (add-hook! minibuffer:input-changed note-changed)
+> (add-hook! minibuffer:prompt-ended note-ended)
+> (define-table extra)
+> (commands:define-command (shout) "Answers in capitals." (let ([p (minibuffer:current-prompt)]) (minibuffer:exit! p (string-upcase (minibuffer:input p)))))
+> (keys:bind! extra "RET" shout)
+> (define t (start! (lambda () (minibuffer:call-with-setup (lambda (p) (minibuffer:add-keymap! p extra) (minibuffer:set-content! p '("[list]"))) (lambda () (minibuffer:read "Name: "))))))
+> (datums minibuf)
+((minibuffer:%prompts () (minibuffer:prompt ((depth . 1)) (minibuffer:question () "Name: ") (minibuffer:input-field ()) "\n" (minibuffer:content () "[list]"))))
+> (type! "hi")
+> (press! "RET")
+> (result t)
+"HI"
+> (reverse seen)
+((started "") (changed "h") (changed "hi") (ended "hi"))
+> (remove-hook! minibuffer:prompt-started note-started)
+> (remove-hook! minibuffer:input-changed note-changed)
+> (remove-hook! minibuffer:prompt-ended note-ended)
+; exit! on a prompt that ended raises.
+> (define p #f)
+> (define t (start! (lambda () (minibuffer:call-with-setup (lambda (q) (set! p q)) (lambda () (minibuffer:read "Name: "))))))
+> (press! "RET")
+> (result t)
+""
+> (raised (lambda () (minibuffer:exit! p 1)))
+(minibuffer:exit! "a prompt that has ended")
+; Selecting the prompt while C-u C-x 1 zooms the screen ends the zoom.
+> (press! "C-x" "2")
+> (press! "C-u" "C-x" "1")
+> (eq? (layout:zoomed-view) (view))
+#t
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (layout:zoomed-view)
+#f
+> (press! "C-g")
+! &quit
+> (press! "C-x" "1")
+; A prompt whose start raises leaves nothing behind.
+> (table-set! layout:display-rules minibuffer:buffer? (lambda (b) (error 'no-room "no room")))
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (result t)
+! no-room: no room
+(raised "no room")
+> (list (minibuffer:current-prompt) (html (bar)))
+(#f "<div class=\"minibuffer-prompts\"></div>")
+> (table-remove! layout:display-rules minibuffer:buffer?)
+; The buffer cannot be killed.
+> (buffers:kill! minibuf)
+#f
+> (buffers:live? minibuf)
+#t

@@ -19,7 +19,7 @@
    in-part-mode? enter-part-mode! leave-part-mode! selection-in choose-part! drawn-part-class drawn-level-class
    choose-datum! parent-part child-part sibling-part end-part shift-part! lift-part! lower-part! raise-part!
    splice-part! wrap-part! deletion-successor check-unlocked check-holds-no-locked mode-key?
-   note-before! note-after! history-step!)
+   note-before! note-after! history-step! parent-in holds-range? popups-index index-atom-list datum-attributes with-attributes)
 
   (define main-thread (get-thread-id))
 
@@ -1535,6 +1535,11 @@
   (check-main-thread 'layout:view-node)
   (index-atom (current-index) (views:id view)))
 
+(define (popup-node view)
+  (check-view 'layout:popup-node view)
+  (check-main-thread 'layout:popup-node)
+  (index-atom (popups-index) (views:id view)))
+
 (define (part-view node)
   (check-main-thread 'layout:part-view)
   (let-values ([(ix n) (part-of 'layout:part-view node)])
@@ -1563,6 +1568,19 @@
   (let-values ([(ix n) (part-of 'layout:delete-part! node)])
     (remove-part! ix n)
     (void)))
+
+(define (set-part-attribute! node key value)
+  (check-main-thread 'layout:set-part-attribute!)
+  (unless (symbol? key)
+    (assertion-violation 'layout:set-part-attribute! "not a symbol" key))
+  (let-values ([(ix n) (part-of 'layout:set-part-attribute! node)])
+    (let* ([d (node-datum ix n)] [old (datum-attributes d)]
+           [kept (remp (lambda (a) (eq? (car a) key)) old)]
+           [new (if value (append kept (list (cons key value))) kept)])
+      (unless (equal? new old)
+        (buffers:replace! (if (eq? ix (current-index)) buffer popups-buffer) (document:node-start n) (document:node-end n)
+          (with-attributes d new)))
+      (void))))
 
 (define (draw-view-atom node view client)
   (list (views:draw view client)))
@@ -1644,15 +1662,42 @@
         (select! (display-buffer b))
         (unless (eq? (views:buffer v) b) (views:set-buffer! v b)))))
 
+(define (%other-view-in? ix n)
+  (let loop ([n n])
+    (and n (or (and (document:node-attribute n 'other-view #f) #t) (loop (parent-in ix n))))))
+
+(define (%after-other-view ix)
+  (let ([b (exists (lambda (id) (let ([a (index-atom ix id)]) (and a (not (%other-view-in? ix a)) a))) (frame-order))])
+    (and b (find (lambda (u) (not (locked-in? ix u))) (level-units ix (enclosing-level ix b) (visible-atoms))))))
+
 (commands:define-command (other-view)
-  "Selects the next view in the selected view's level that is not locked, cyclically, or from a popup the view selected before it; a level inside it counts as its view selected last."
+  "Selects the next view in the selected view's level that is not locked, cyclically, then the parts outside it and the popups that set other-view, or from a popup the view selected before it; a level inside it counts as its view selected last."
   (let-values ([(ix a units) (%level-units)])
-    (let* ([selected (selected-id)]
-           [m (memp (lambda (u) (eqv? (atom-id u) (atom-id a))) units)]
-           [from-a (if m (append m (list-head units (fx- (length units) (length m)))) units)]
-           [after (if (and m (eqv? (atom-id a) selected)) (cdr from-a) from-a)]
-           [next (find (lambda (u) (not (or (eqv? (atom-id u) selected) (locked-in? ix u)))) after)])
-      (when next (select! (view-of next))))))
+    (let* ([id (selected-id)] [sx (index-of-id id)])
+      (if (%other-view-in? sx (index-atom sx id))
+          (let ([next (%after-other-view ix)])
+            (when next (select! (view-of next))))
+          (%cycle-other-view ix a units)))))
+
+(define (%cycle-other-view ix a units)
+  (let* ([selected (selected-id)]
+         [level (enclosing-level ix a)]
+         [px (popups-index)]
+         [outside (append
+                    (filter (lambda (u)
+                              (and (not (holds-range? u (document:node-start level) (document:node-end level)))
+                                   (%other-view-in? ix u)))
+                            (visible-atoms))
+                    (filter (lambda (u) (%other-view-in? px u)) (index-atom-list px)))]
+         [joined (append units outside)]
+         [m (memp (lambda (u) (eqv? (atom-id u) (atom-id a))) joined)]
+         [from-a (if m (append m (list-head joined (fx- (length joined) (length m)))) joined)]
+         [after (if (and m (eqv? (atom-id a) selected)) (cdr from-a) from-a)]
+         [next (find (lambda (u)
+                       (not (or (eqv? (atom-id u) selected)
+                                (and (not (memq u outside)) (locked-in? ix u)))))
+                     after)])
+    (when next (select! (view-of next)))))
 
 (commands:define-command (delete-view)
   "Deletes the selected view's part; in the part mode, the selected part, then selects the part before it, else the one after."

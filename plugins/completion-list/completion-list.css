@@ -1,0 +1,31 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  .completion-list-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--tuna-space-3, 1ch);
+  }
+
+  .completion-list-title {
+    flex-basis: 100%;
+    font-weight: var(--tuna-font-weight-semibold, bold);
+  }
+
+  .completion-list-text {
+    flex: 1 1 auto;
+    white-space: pre;
+  }
+
+  .completion-list-text mark {
+    background: none;
+    color: inherit;
+    font-weight: var(--tuna-font-weight-semibold, bold);
+    text-decoration: underline;
+  }
+
+  .completion-list-column {
+    display: inline-block;
+    white-space: pre;
+  }
+}

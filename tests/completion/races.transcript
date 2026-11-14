@@ -1,0 +1,107 @@
+; Keys typed faster than a job matches: only the newest input's matches
+; are kept, and they are exactly the matches of the final input.
+> (define-saved h '() list?)
+> (define items (list->vector (map (lambda (i) (format "item-~a" i)) (iota 20000))))
+> (define t (start! (lambda () (completion:read "Item: " (list (completion:source (candidates items))) h))))
+> (define s (session))
+> (type! "1234")
+> (wait-matches s)
+> (texts s)
+("item-1234" "item-11234" "item-12340" "item-12341" "item-12342" "item-12343" "item-12344" "item-12345" "item-12346" "item-12347" "item-12348" "item-12349")
+> (press! "DEL" "DEL")
+> (type! "99")
+> (wait-matches s)
+> (length (texts s))
+12
+> (for-all (lambda (x) (let loop ([i 0]) (and (< (+ i 3) (string-length x)) (or (string=? (substring x i (+ i 4)) "1299") (loop (+ i 1)))))) (texts s))
+#t
+> (press! "C-g")
+! &quit
+; A job that emits its candidates one at a time, thousands of times:
+; every one is matched, in order once the job ends, while typing
+; meanwhile keeps only the newest input's matches.
+> (define t (start! (lambda () (completion:read "Item: " (list (completion:source (job one-at-a-time 5000))) h))))
+> (define s (session))
+> (type! "49")
+> (wait-matches s)
+> (length (texts s))
+199
+> (list-head (texts s) 4)
+("item-49" "item-149" "item-249" "item-349")
+> (equal? (texts s) (list-sort (lambda (a b) (or (< (string-length a) (string-length b)) (and (= (string-length a) (string-length b)) (string<? a b)))) (texts s)))
+#t
+> (press! "DEL" "DEL")
+> (wait-matches s)
+> (length (texts s))
+5000
+> (press! "C-g")
+! &quit
+; Unloading completion during a read quits the read; the list goes too,
+; and loading it again works.
+> (define t (start! (lambda () (completion:read "Item: " (list (completion:source (candidates items))) h))))
+> (type! "5")
+> (unload-module! '(completion))
+! &quit
+> (result t)
+(raised #<condition &quit>)
+> (prompt)
+#f
+> (map buffers:name (filter (lambda (b) (char=? (string-ref (buffers:name b) 0) #\space)) (buffers:all)))
+(" *Echo Area*" " *Minibuf*")
+> (use-plugin completion)
+> (use-plugin completion-list)
+> (use-plugin pickers)
+> (use-plugin completion-annotations)
+> (define t (start! (lambda () (completion:read "Item: " (list (completion:source (candidates (vector "a" "b")))) h))))
+> (press! "RET")
+> (result t)
+"a"
+; Unloading completion-list during a read leaves the read going, without
+; its list.
+> (define t (start! (lambda () (completion:read "Item: " (list (completion:source (candidates (vector "a" "b")))) h))))
+> (unload-module! '(completion-list))
+> (datums minibuf)
+((minibuffer:%prompts () (minibuffer:prompt ((depth . 1)) (minibuffer:question () "Item: ") (minibuffer:input-field ()) "\n" (minibuffer:content ()))))
+> (press! "C-n" "RET")
+! editing:next-line: end of buffer
+> (result t)
+"a"
+> (use-plugin completion-list)
+; A storm of quits while reads over a job start, match and end: no
+; session, prompt or list is left behind.
+> (define stop #f)
+> (define askers
+    (map (lambda (i)
+           (spawn-task
+             (lambda ()
+               (let loop ([n 0])
+                 (unless (or stop (= n 100))
+                   (guard (c [#t #f])
+                     (in-client (lambda () (completion:read "Storm: " (list (completion:source (candidates items))) h))))
+                   (loop (+ n 1)))))))
+         (iota 3)))
+> (define typer
+    (spawn-task
+      (lambda ()
+        (let loop ([n 0])
+          (unless (= n 200)
+            (guard (c [#t #f]) (press! (string (string-ref "0123456789" (mod n 10)))))
+            (when (= (mod n 3) 0) (for-each (lambda (t) (signal-task t (make-message-condition "q"))) askers))
+            (sleep-for 0.002)
+            (loop (+ n 1)))))))
+> (wait-until (lambda () (task-done? typer)))
+> (set! stop #t)
+> (for-each (lambda (t) (signal-task t (make-message-condition "q"))) askers)
+> (wait-until (lambda () (for-all task-done? askers)))
+> (for-all task-done? askers)
+#t
+> (session)
+#f
+> (prompt)
+#f
+> (datums minibuf)
+((minibuffer:%prompts ()))
+> (map buffers:name (filter (lambda (b) (char=? (string-ref (buffers:name b) 0) #\space)) (buffers:all)))
+(" *Echo Area*" " *Minibuf*")
+> (popups)
+()

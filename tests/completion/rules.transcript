@@ -1,0 +1,264 @@
+; The matcher's library: patterns, order, spans, and the store a job keeps.
+> (import (completion matcher))
+> (map pattern? '(((contains "a")) ((contains)) ((ends "a" "b")) ((not (starts "x"))) ((regexp "a")) x))
+(#t #f #f #t #f #f)
+> (define s (make-store (vector "find-file" "files:find-file" "fundamental" "Find" "f") (vector 0 0 0 0 0)))
+> (store-matches s '((contains "f" "n" "d")))
+#(3 0 2 1)
+> (store-matches s '((contains "Fi")))
+#(3)
+> (store-matches s '((ends "file") (not (starts "files"))))
+#(0)
+> (store-matches s '())
+#(4 3 0 2 1)
+> (pattern-spans '((contains "f" "n" "d") (contains "file")) "files:find-file")
+((0 . 4) (8 . 10))
+> ((pattern-matcher '((contains "define") (not (contains "x")))) "define-record")
+#t
+; Ranks sort first, then gaps, then length, then text.
+> (store-matches (make-store (vector "bbb" "aaa" "cc" "b") (vector 1 1 0 1)) '())
+#(2 3 1 0)
+; A store sorted keeps new candidates in order; one in arrival order
+; sorts when told; retired candidates match no more.
+> (define j (make-store))
+> (store-add! j (vector "zeta" "alpha") #f)
+> (store-matches j '())
+#(0 1)
+> (store-sort! j)
+> (store-add! j (vector "beta") #f)
+> (store-matches j '())
+#(2 0 1)
+> (store-retire! j (vector 1))
+> (store-matches j '())
+#(2 0)
+> (store-add! j (vector "be") #f)
+> (store-add! j (vector "omega" "b") #f)
+> (store-matches j '())
+#(5 3 2 0 4)
+; Styles; dispatch characters; a backslash keeps a space.
+> (completion:substring "fi")
+((contains "fi"))
+> (completion:any-order "a\\ b ~xyz =!x y$ !")
+((contains "a b") (contains "x" "y" "z") (contains "!x") (ends "y"))
+> (completion:any-order "")
+()
+> (table-set! completion:any-order-dispatch #\, (lambda (rest) (list 'starts rest)))
+> (completion:any-order ",ab")
+((starts "ab"))
+> (table-remove! completion:any-order-dispatch #\,)
+; Smart case per term: a capital in a term makes it exact.
+> (define-saved h '() list?)
+> (define (choose-from cands keys)
+    (let ([t (start! (lambda () (completion:read "? " (list (completion:source (candidates cands))) h)))])
+      (apply press! keys)
+      (let ([r (texts (session))]) (press! "C-g") r)))
+> (choose-from (vector "Makefile" "make.sls" "MAKE") '("m" "a" "k" "e"))
+("MAKE" "Makefile" "make.sls")
+! &quit
+> (choose-from (vector "Makefile" "make.sls" "MAKE") '("M" "a" "k" "e"))
+("Makefile")
+! &quit
+> (choose-from (vector "Makefile" "make.sls" "MAKE") '("M" "SPC" "s" "l" "s"))
+()
+! &quit
+; In a read, the default sorts first, then the history, newest first.
+> (set-saved! h '("cherry" "apple"))
+> (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "apple" "banana" "cherry" "date")))) h "date"))))
+> (texts (session))
+("date" "cherry" "apple" "banana")
+> (press! "RET")
+> (result t)
+"date"
+> (h)
+("date" "cherry" "apple")
+; A rank clause replaces the order by history; in-order keeps the
+; candidates' order; each source keeps its title.
+> (define t (start! (lambda () (completion:read "? "
+    (list (completion:source (candidates (vector "b" "a" "c")) (rank (vector 2 0 1)) (title "Ranked"))
+          (completion:source (candidates (vector "zz" "yy" "xx")) (in-order) (title "In order")))
+    h))))
+> (define s (session))
+> (map (lambda (m) (list (completion:text s m) (completion:title s m))) (vector->list (completion:session-matches s)))
+(("a" "Ranked") ("c" "Ranked") ("b" "Ranked") ("zz" "In order") ("yy" "In order") ("xx" "In order"))
+> (press! "C-g")
+! &quit
+; Each source matches with its own category's styles: the first style
+; that matches any of its candidates gives its matches.
+> (completion:define-category letter-category "Letters.")
+> (table-set! completion:category-styles letter-category (list completion:prefix completion:flex))
+> (define t (start! (lambda () (completion:read "? "
+    (list (completion:source (candidates (vector "abc" "xbc")) (category letter-category))
+          (completion:source (candidates (vector "abc" "xbc"))))
+    h))))
+> (type! "bc")
+> (texts (session))
+("abc" "xbc" "abc" "xbc")
+> (type! "x")
+> (texts (session))
+()
+> (press! "C-g")
+! &quit
+; A source's procedure is called again when the prefix changes; split
+; gives the prefix, and choosing replaces only the query.
+> (define calls '())
+> (define (dir-split input) (let loop ([i (string-length input)]) (cond [(= i 0) 0] [(char=? (string-ref input (- i 1)) #\/) i] [else (loop (- i 1))])))
+> (define t (start! (lambda () (completion:read-or-input "Path: "
+    (list (completion:source
+            (candidates (lambda (prefix) (set! calls (cons prefix calls)) (vector (string-append "f-" prefix) "g")))
+            (split dir-split)))
+    h))))
+> (type! "a/b/f")
+> (reverse calls)
+("" "a/" "a/b/")
+> (texts (session))
+("f-a/b/")
+> (press! "TAB")
+> (input)
+"a/b/f-a/b/"
+> (press! "RET")
+> (result t)
+"g"
+> (h)
+("a/b/f-a/b/g" "date" "cherry" "apple")
+; TAB with none selected completes the longest common start.
+> (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "prefix-one" "prefix-two" "other")))) h))))
+> (in-client (lambda () (completion:select! (completion:current-session) #f)))
+> (type! "pre")
+> (press! "C-g")
+! &quit
+> (define t (start! (lambda () (minibuffer:call-with-setup (lambda (p) (minibuffer:set-input! p "pre")) (lambda () (completion:read "? " (list (completion:source (candidates (vector "prefix-one" "prefix-two" "other")))) h))))))
+> (in-client (lambda () (completion:select! (completion:current-session) #f)))
+> (press! "TAB")
+> (input)
+"prefix-"
+> (press! "C-g")
+! &quit
+; A read refuses an input that names no candidate, shows [No match],
+; and takes one that names a candidate; M-RET answers with the input.
+> (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "apple" (cons "pear" 'fruit))))) h))))
+> (type! "zzz")
+> (press! "RET")
+> (minibuffer:input (prompt))
+"zzz"
+> (press! "C-a" "C-k")
+> (type! "pear")
+> (press! "M-RET")
+> (result t)
+fruit
+> (define t (start! (lambda () (completion:read-or-input "? " (list (completion:source (candidates (vector "apple")))) h))))
+> (type! "kiwi")
+> (press! "RET")
+> (result t)
+"kiwi"
+; Selection: a read preselects the first match; a move locks it while
+; it matches, until the input changes.
+> (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "ab" "abc" "abcd")))) h))))
+> (define s (session))
+> (selected-text s)
+"ab"
+> (press! "C-n" "C-n")
+> (selected-text s)
+"abcd"
+> (completion:input-changed! s)
+> (selected-text s)
+"abcd"
+> (type! "c")
+> (selected-text s)
+"abc"
+> (raised (lambda () (completion:select! s 99)))
+(completion:select! "not one of the matches")
+> (with-options ([completion:read-preselect 'none]) (void))
+> (press! "C-g")
+! &quit
+> (define t (with-options ([completion:read-preselect 'none]) (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "ab")))) h)))))
+> (completion:selected (session))
+0
+> (press! "C-g")
+! &quit
+; Hooks follow every session; a selection change runs updated too.
+> (define log '())
+> (define (note what) (lambda (s) (set! log (cons (list what (completion:session-input s)) log))))
+> (define on-started (note 'started))
+> (define on-updated (note 'updated))
+> (define on-ended (note 'ended))
+> (add-hook! completion:started on-started)
+> (add-hook! completion:updated on-updated)
+> (add-hook! completion:ended on-ended)
+> (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "ab" "cd")))) h))))
+> (type! "a")
+> (press! "C-n")
+> (press! "RET")
+> (result t)
+"ab"
+> (reverse log)
+((started "") (updated "") (updated "a") (updated "a") (updated "ab") (ended "ab"))
+> (remove-hook! completion:started on-started)
+> (remove-hook! completion:updated on-updated)
+> (remove-hook! completion:ended on-ended)
+; Preview: called on each selection change, with #f when nothing is
+; selected and when the session ends, however it ends.
+> (define seen '())
+> (define (preview v) (set! seen (cons v seen)))
+> (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector (cons "a" 1) (cons "b" 2))) (preview preview))) h))))
+> (press! "C-n")
+> (type! "zz")
+> (press! "C-g")
+! &quit
+> (result t)
+(raised #<condition &quit>)
+> (reverse seen)
+(1 2 #f #f)
+; A job's candidates: clear retires them for good, and a job's stale
+; results are dropped.
+> (jobs:define-worker (two-rounds input emit receive)
+    (let ([p (receive)])
+      (emit (vector "one" "two"))
+      (emit 'clear)
+      (emit (vector "three"))))
+> (define t (start! (lambda () (completion:read "? " (list (completion:source (job two-rounds #f))) h))))
+> (define s (session))
+> (wait-matches s)
+> (texts s)
+("three")
+> (completion:session-busy? s)
+#f
+> (map (lambda (m) (completion:text s m)) '(0 1 2))
+("one" "two" "three")
+> (press! "C-g")
+! &quit
+; A replacement matcher: every candidate matches, in reverse.
+> (define (reverse-match pattern texts ranks)
+    (list->vector (reverse (iota (vector-length texts)))))
+> (define (no-spans pattern text) '())
+> (jobs:define-worker (plain-worker input emit receive) (import (completion matcher)) (serve emit receive))
+> (set-option! completion:matcher (completion:make-matcher reverse-match no-spans plain-worker))
+> (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "a" "b" "c")))) h))))
+> (type! "zzz")
+> (texts (session))
+("c" "b" "a")
+> (completion:spans (session) 0)
+()
+> (press! "C-g")
+! &quit
+> (set-option! completion:matcher completion:default-matcher)
+; The form's clauses and the procedures' arguments are checked.
+> (raised (lambda () (completion:source (candidates 5))))
+(completion:source "neither a vector of candidates nor a procedure")
+> (raised (lambda () (completion:source (candidates (vector "a")) (rank (vector 1 2)))))
+(completion:source "not a vector of fixnums, one for each candidate")
+> (completion:source (category letter-category))
+! completion:source: a candidates or job clause is required (completion:source (category letter-category))
+> (completion:source (candidates (vector)) (job two-rounds #f))
+! completion:source: both a candidates and a job clause (completion:source (candidates (vector)) (job two-rounds #f))
+> (completion:source (candidates (vector)) (title "a") (title "b"))
+! completion:source: clause given twice (title "b") in (completion:source (candidates (vector)) (title "a") (title "b"))
+> (completion:source (candidates (vector)) (colour "red"))
+! completion:source: invalid clause (colour "red") in (completion:source (candidates (vector)) (colour "red"))
+> (raised (lambda () (completion:start (view) '() values void 'all)))
+(completion:start "neither first nor none")
+> (raised (lambda () (completion:read "? " (list 1))))
+(completion:read "not a list of sources")
+> (raised (lambda () (completion:text 'session 0)))
+(completion:text "not a session")
+> (raised (lambda () (completion:make-matcher 1 2 3)))
+(completion:make-matcher "not a procedure")
