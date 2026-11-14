@@ -30,6 +30,8 @@ echo "$output" | awk '
     unit["store-100000-paths"] = "µs"
     unit["match-inline-limit-flex"] = "µs"
     unit["draw-prompt-with-15-rows"] = "µs"
+    unit["echo-area-hidden-during-prompt"] = "ns"
+    unit["draw-prompt-with-message"] = "µs"
     unit["draw-m-x-annotated"] = "µs"
     unit["m-x-key"] = "µs"
     unit["line-start-1mb-main-thread"] = "µs"

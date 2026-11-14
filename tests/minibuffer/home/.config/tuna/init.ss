@@ -88,4 +88,29 @@
         [(string=? (substring s i (+ i (string-length open))) open) (substring s i (- (string-length s) 12))]
         [else (loop (+ i 1))]))))
 
+(define (between s open close)
+  (define (search sub from)
+    (let loop ([i from])
+      (cond
+        [(> (+ i (string-length sub)) (string-length s)) #f]
+        [(string=? (substring s i (+ i (string-length sub))) sub) i]
+        [else (loop (+ i 1))])))
+  (let ([i (search open 0)])
+    (and i (substring s i (+ (search close i) (string-length close))))))
+
+(define echo-buffer (buffers:find " *Echo Area*"))
+
+(define (echo-drawn?)
+  (and (between (html->string (views:draw (layout:find-view echo-buffer) client)) "<div class=\"echo-area-message\"" ">") #t))
+
+(define (bracket)
+  (between (html->string (views:draw (minibuffer:prompt-view (prompt)) client)) "<span class=\"minibuffer-message\"" "</span>"))
+
+(define (last-logged)
+  (let* ([log (text (buffers:find "*Messages*"))] [n (string-length log)])
+    (let loop ([i (- n 1)])
+      (if (or (= i 0) (char=? (string-ref log (- i 1)) #\newline))
+          (substring log i (- n 1))
+          (loop (- i 1))))))
+
 (import (console))

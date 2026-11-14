@@ -1,6 +1,10 @@
 @layer defaults, themes, preferences;
 
 @layer defaults {
+  .completion-list .ui-list {
+    min-block-size: calc(var(--completion-list-rows) * 1lh);
+  }
+
   .completion-list-row {
     display: flex;
     flex-wrap: wrap;

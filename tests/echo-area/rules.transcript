@@ -145,3 +145,33 @@ echo-area:show-messages
 > (advice-add! batch-ended (lambda (ended) (ended) (when late? (set! late? #f) (echo-area:message! "Late"))))
 > (list (messages) (buffers:with-buffer (buffers:find "*Messages*") (undo:limit)))
 ("Late\n" 0)
+; Advised to return #t, echo-area:hidden? makes the echo area draw
+; nothing, so its part takes no room; messages show, are logged and are
+; cleared as before.
+> (echo-area:hidden?)
+#f
+> (define (hide hidden?) #t)
+> (advice-add! echo-area:hidden? hide)
+> (echo-area:message! "Hidden")
+> (list (echo-area:current-message) (echo-area-element) (messages))
+("Hidden" #f "Late\nHidden\n")
+> (let* ([s (html->string (views:draw (echo-view) client))] [n (string-length s)]) (substring s (- n 36) n))
+"<div class=\"view-lines\"></div></div>"
+> (press! "C-a")
+> (echo-area:current-message)
+#f
+> (advice-remove! echo-area:hidden? hide)
+> (echo-area-element)
+"<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-1\" data-line=\"1\" data-at=\"1\"><span class=\"cursor primary\"></span><br></div></div>"
+; echo-area:current-face is the current message's face, or #f.
+> (echo-area:message! "Plain")
+> (echo-area:current-face)
+#f
+> (parameterize ([echo-area:face faces:error]) (echo-area:message! "Failed"))
+> (echo-area:current-face)
+error
+> (echo-area:message! "")
+> (echo-area:current-face)
+#f
+> (on-thread (lambda () (echo-area:current-face)))
+(echo-area:current-face "not on the main thread")

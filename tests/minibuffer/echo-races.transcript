@@ -1,0 +1,91 @@
+; Reports raised on four threads while a prompt waits are all logged,
+; and the message shown last is drawn after the input in its face. The
+; core's writer of reports is silenced beneath the echo area's advice,
+; which a reload puts outside it, rather than four threads writing
+; standard error.
+> (load-module! '(quiet))
+> (unload-module! '(echo-area))
+> (use-plugin echo-area (config (set-option! echo-area:log-max 16384)))
+> (use-plugin minibuffer)
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (define done 0)
+> (define (raiser i)
+    (lambda ()
+      (do ([k 0 (+ k 1)]) ((= k 100))
+        (report (condition (make-error) (make-message-condition (format "t~a-~a" i k)))))
+      (with-interrupts-disabled (set! done (+ done 1)))))
+> (begin
+    (for-each (lambda (i) (fork-thread (raiser i))) '(0 1 2 3))
+    (let loop ()
+      (unless (= done 4)
+        (echo-area:message! "Working")
+        (loop)))
+    (void))
+> (define (shown-bracket)
+    (let ([face (echo-area:current-face)])
+      (format "<span class=\"minibuffer-message\" role=\"status\"~a> [~a]</span>"
+        (if face (format " data-face=\"~a\"" face) "") (echo-area:current-message))))
+> (list (echo-area:hidden?) (equal? (bracket) (shown-bracket)))
+(#t #t)
+> (define (logged-from-threads)
+    (let loop ([chars (string->list (text (buffers:find "*Messages*")))] [line '()] [n 0])
+      (cond
+        [(null? chars) n]
+        [(char=? (car chars) #\newline)
+         (loop (cdr chars) '() (if (and (pair? line) (char=? (car (last-pair line)) #\t)) (+ n 1) n))]
+        [else (loop (cdr chars) (cons (car chars) line) n)])))
+> (logged-from-threads)
+400
+; A report from another thread in the batch whose key ends the prompt
+; shows in the echo area, which draws again.
+> (define reported #f)
+> (begin
+    (fork-thread
+      (lambda ()
+        (report (condition (make-error) (make-message-condition "late")))
+        (with-interrupts-disabled (set! reported #t))))
+    (press! "RET")
+    (let spin () (unless reported (spin)))
+    (void))
+> (result t)
+""
+> (list (prompt) (echo-area:hidden?) (echo-drawn?) (echo-area:current-message) (echo-area:current-face))
+(#f #f #t "late" error)
+; Quits land while prompts start, show messages and end: no prompt is
+; left behind, and the echo area is shown and works as before.
+> (define stop #f)
+> (define askers
+    (map (lambda (i)
+           (spawn-task
+             (lambda ()
+               (let loop ([n 0])
+                 (unless (or stop (= n 200))
+                   (guard (c [#t #f])
+                     (in-client
+                       (lambda ()
+                         (minibuffer:call-with-setup
+                           (lambda (p) (echo-area:message! "Setup ~a" i) (minibuffer:message! p "Own"))
+                           (lambda () (minibuffer:read "Storm: "))))))
+                   (loop (+ n 1)))))))
+         (iota 3)))
+> (define quitter
+    (spawn-task
+      (lambda ()
+        (let loop ([n 0])
+          (unless (= n 300)
+            (for-each (lambda (t) (signal-task t (make-message-condition "q"))) askers)
+            (echo-area:message! "Quitting")
+            (sleep-for 0.001)
+            (loop (+ n 1)))))))
+> (wait-until (lambda () (task-done? quitter)))
+> (set! stop #t)
+> (for-each (lambda (t) (signal-task t (make-message-condition "q"))) askers)
+> (wait-until (lambda () (for-all task-done? askers)))
+> (for-all task-done? askers)
+#t
+> (list (prompt) (echo-area:hidden?) (echo-drawn?))
+(#f #f #t)
+> (echo-area:message! "Calm")
+> (list (echo-area:current-message) (last-logged))
+("Calm" "Calm")
+> (unload-module! '(quiet))

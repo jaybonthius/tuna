@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (layout-sides) (keys) (commands) (modes) (haml) (undo))
+(import (buffers) (document) (views) (layout) (layout-sides) (keys) (commands) (modes) (echo-area) (haml) (undo))
 
 (define-saved history '() (lambda (v) (and (list? v) (for-all string? v))))
 
@@ -50,11 +50,21 @@
 (define (%draw-question node view)
   (haml (:span.minibuffer-question (views:draw-children view node))))
 
+(define (%draw-message text face)
+  (haml (:span.minibuffer-message ([role "status"] [data-face (and face (symbol->string face))]) " [" text "]")))
+
+;; The prompt's own message is about its input, so it wins over the echo
+;; area's.
+(define (%message-html p)
+  (cond
+    [(not p) '()]
+    [(prompt-message p) => (lambda (text) (%draw-message text #f))]
+    [(and (eq? p (bottom-prompt)) (echo-area:hidden?) (echo-area:current-message))
+     => (lambda (text) (%draw-message text (echo-area:current-face)))]
+    [else '()]))
+
 (define (%draw-input node view)
-  (let ([text (message-of node view)])
-    (haml (:span.minibuffer-input
-            (views:draw-children view node)
-            (when text (:span.minibuffer-message " [" text "]"))))))
+  (haml (:span.minibuffer-input (views:draw-children view node) (%message-html (prompt-of node view)))))
 
 (define (%draw-content node view)
   (haml (:div.minibuffer-content (views:draw-children view node))))
@@ -73,9 +83,9 @@
   (check-main-thread check-prompt check-live buffer prompts make-prompt prompt-record? prompt-depth prompt-task
    history-of prompt-default shown-in prompt-keymaps prompt-keymaps-set! prompt-message prompt-message-set!
    prompt-recalled prompt-recalled-set! prompt-typed prompt-typed-set! prompt-ended? prompt-node prompt-parts
-   input-range input-text prompt-holding prompt-at start-prompt! end-prompt! answer! writing message-of
-   setups prompt-keymaps-at quit-condition without-quits bar-view narrow-views! at-bottom write-content!
-   prompt-answer prompt-resume-set!)
+   input-range input-text prompt-holding prompt-at start-prompt! end-prompt! answer! writing prompt-of
+   setups prompt-keymaps-at quit-condition without-quits bar-view narrow-views! at-bottom bottom-prompt
+   write-content! prompt-answer prompt-resume-set! clear-messages!)
 
   (define main-thread (get-thread-id))
 
@@ -170,12 +180,13 @@
   (define (prompt-holding position)
     (find (lambda (p) (let-values ([(s e) (input-range p)]) (fx<= s position e))) prompts))
 
-  (define (message-of node view)
+  (define (prompt-of node view)
     (and (eq? (views:buffer view) buffer)
          (let ([n (document:enclosing (buffers:document buffer) (document:node-start node))])
-           (and n
-                (let ([p (find (lambda (p) (eqv? (prompt-depth p) (document:node-attribute n 'depth #f))) prompts)])
-                  (and p (prompt-message p)))))))
+           (and n (find (lambda (p) (eqv? (prompt-depth p) (document:node-attribute n 'depth #f))) prompts)))))
+
+  (define (clear-messages!)
+    (for-each (lambda (p) (prompt-message-set! p #f)) prompts))
 
   (define (prompt-keymaps-at view position)
     (let ([p (and view position (eq? (views:buffer view) buffer) (prompt-holding position))])
@@ -201,14 +212,29 @@
               (views:narrow! view 1 1)))
         (views:showing buffer))))
 
+  ;; Only a prompt in the part at the bottom takes the echo area's place;
+  ;; a display rule may show one elsewhere, as in a palette.
+  (define bottom-id #f)
+
   (define (at-bottom b)
-    ((layout-sides:display-at-side (layout:direction down) 100 'content '((locked . #t))) b))
+    (let ([v ((layout-sides:display-at-side (layout:direction down) 100 'content '((locked . #t))) b)])
+      (set! bottom-id (views:id v))
+      v))
+
+  (define (bottom-prompt)
+    (and (pair? prompts)
+         (let ([p (car prompts)])
+           (and (eqv? (shown-id p) bottom-id) (live-view bottom-id) p))))
 
   ;; A view of a part that went is dropped, and a dropped view raises;
   ;; its number, unique while Tuna runs, finds it only while it lives.
   (define (live-view id) (and id (views:find id)))
 
+  ;; As Emacs does, a prompt starts with an empty echo area. Clearing it
+  ;; shows any queued reports first and so erases them unseen; clear only
+  ;; a message that shows, and let a queued report show after the input.
   (define (start-prompt! p text)
+    (when (echo-area:current-message) (echo-area:message! ""))
     (without-quits
       (lambda ()
         (let ([outer (and (pair? prompts) (car prompts))] [end (fx- (document:length (buffers:document buffer)) 1)])
@@ -335,6 +361,7 @@
   (check-live 'minibuffer:message! p)
   (unless (string? text)
     (assertion-violation 'minibuffer:message! "not a string" text))
+  (when (echo-area:current-message) (echo-area:message! ""))
   (prompt-message-set! p text))
 
 (define (%add-to-history! p)
@@ -435,9 +462,7 @@
 (define (%input-edited b e)
   (when (and (eq? b buffer) (not writing))
     (let ([p (prompt-holding (buffers:edit-start e))])
-      (when p
-        (prompt-message-set! p #f)
-        (input-changed p)))))
+      (when p (input-changed p)))))
 
 (define (%prompt-keymaps client posn)
   (if posn
@@ -493,6 +518,15 @@
 
 (define (%keep-buffer b) (not (eq? b buffer)))
 
+(define (%hide-echo-area hidden?)
+  (or (and (bottom-prompt) #t) (hidden?)))
+
+;; Cleared before the key's command runs, as the echo area's message is,
+;; so a message from that command shows.
+(define (%clear-on-key press client key)
+  (when (string? key) (clear-messages!))
+  (press client key))
+
 (define (%unload)
   (for-each
     (lambda (p)
@@ -518,4 +552,6 @@
 (add-hook! keys:find-keymaps %prompt-keymaps 40)
 (add-hook! buffers:after-edit %input-edited)
 (add-hook! buffers:kill-queries %keep-buffer)
+(advice-add! echo-area:hidden? %hide-echo-area)
+(advice-add! keys:press! %clear-on-key)
 (on-unload %unload)

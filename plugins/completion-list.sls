@@ -10,7 +10,13 @@
 
 (define (%draw-count node view) (%counts view))
 
-(buffers:define-kind %root (content nodes))
+;; The list keeps its rows' height while matches are fewer, so the input
+;; above it stays where the read opened as the matches change.
+(define (%draw-root node view)
+  (haml (:div.completion-list ([style (string-append "--completion-list-rows:" (number->string (rows)))])
+          (views:draw-children view node))))
+
+(buffers:define-kind %root (content nodes) (draw %draw-root))
 
 (buffers:define-kind %none (draw %draw-nothing))
 

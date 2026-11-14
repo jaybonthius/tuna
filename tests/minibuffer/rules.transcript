@@ -74,10 +74,10 @@
 #t
 > (= (views:point (bar)) (+ start 2))
 #t
-; A message shows until the input changes.
+; A message shows until the next typed key.
 > (minibuffer:message! (prompt) "No match")
 > (html (bar))
-"<div class=\"minibuffer-prompts\"><div class=\"node\" data-at=\"1\" data-to=\"19\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-1\" data-line=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"10\"><span class=\"minibuffer-question\"><span data-at=\"3\">Name: </span></span></span><span class=\"node\" data-at=\"10\" data-to=\"15\"><span class=\"minibuffer-input\"><span data-at=\"11\">xy<span class=\"cursor primary\"></span>z</span><span class=\"minibuffer-message\"> [No match]</span></span></span><br></div><div class=\"node\" data-at=\"16\" data-to=\"18\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
+"<div class=\"minibuffer-prompts\"><div class=\"node\" data-at=\"1\" data-to=\"19\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-1\" data-line=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"10\"><span class=\"minibuffer-question\"><span data-at=\"3\">Name: </span></span></span><span class=\"node\" data-at=\"10\" data-to=\"15\"><span class=\"minibuffer-input\"><span data-at=\"11\">xy<span class=\"cursor primary\"></span>z</span><span class=\"minibuffer-message\" role=\"status\"> [No match]</span></span></span><br></div><div class=\"node\" data-at=\"16\" data-to=\"18\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
 > (type! "!")
 > (html (bar))
 "<div class=\"minibuffer-prompts\"><div class=\"node\" data-at=\"1\" data-to=\"20\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-1\" data-line=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"10\"><span class=\"minibuffer-question\"><span data-at=\"3\">Name: </span></span></span><span class=\"node\" data-at=\"10\" data-to=\"16\"><span class=\"minibuffer-input\"><span data-at=\"11\">xy!<span class=\"cursor primary\"></span>z</span></span></span><br></div><div class=\"node\" data-at=\"17\" data-to=\"19\"><div class=\"minibuffer-content\"></div></div></div></div></div>"

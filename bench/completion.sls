@@ -1,6 +1,6 @@
 #!tuna
 (import (minibuffer) (completion) (completion-list) (completion-popup) (pickers) (completion matcher) (layout) (views) (buffers)
-        (document) (keys) (commands) (jobs) (web) (haml))
+        (document) (keys) (commands) (jobs) (echo-area) (web) (haml))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -121,7 +121,10 @@
     (let ([t (spawn-task (lambda () (in-frame (lambda () (completion:read "M-x " (list (completion:source (candidates (names 900)))) %history)))))])
       (sleep-for 0.05)
       (let ([v (layout:selected-view)])
-        (show "draw-prompt-with-15-rows" (/ (ns-per-op 200 (lambda () (html->bytevector (views:draw v client)))) 1000.0) "µs"))
+        (show "draw-prompt-with-15-rows" (/ (ns-per-op 200 (lambda () (html->bytevector (views:draw v client)))) 1000.0) "µs")
+        (show "echo-area-hidden-during-prompt" (ns-per-op 100000 echo-area:hidden?) "ns")
+        (echo-area:message! "Wrote notes.org")
+        (show "draw-prompt-with-message" (/ (ns-per-op 200 (lambda () (html->bytevector (views:draw v client)))) 1000.0) "µs"))
       (press "C-g")
       (sleep-for 0.05))
     (let ([t (spawn-task (lambda () (in-frame (lambda () (commands:run pickers:execute-extended-command)))))])

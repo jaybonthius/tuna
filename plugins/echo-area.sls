@@ -17,10 +17,15 @@
 ;; their kinds refuse every other edit.
 (define (%refuse-edits node edit) #f)
 
+(define (hidden?) #f)
+
+;; Drawing nothing, rather than an empty line, lets the part take no room.
 (define (%draw-area node view)
-  (let ([f (document:node-attribute node 'face #f)])
-    (haml (:div.echo-area-message ([role "status"] [data-face (and (symbol? f) (symbol->string f))])
-            (views:draw-children view node)))))
+  (if (hidden?)
+      '()
+      (let ([f (document:node-attribute node 'face #f)])
+        (haml (:div.echo-area-message ([role "status"] [data-face (and (symbol? f) (symbol->string f))])
+                (views:draw-children view node))))))
 
 (buffers:define-kind area (consent %refuse-edits) (keymap keymap) (draw %draw-area))
 
@@ -192,6 +197,12 @@
   (and shown?
        (let ([doc (buffers:document echo-buffer)])
          (document:text doc 1 (fx- (document:length doc) 1)))))
+
+(define (current-face)
+  (check-main-thread 'echo-area:current-face)
+  (and shown?
+       (let ([f (document:node-attribute (document:token (buffers:document echo-buffer) 0) 'face #f)])
+         (and (symbol? f) f))))
 
 (commands:define-command (show-messages)
   "Shows *Messages* without selecting it, with point in its view at the end."

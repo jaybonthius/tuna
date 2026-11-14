@@ -112,7 +112,7 @@
 "alpha"
 > (define lv (list-view))
 > (lines-html lv)
-"<div class=\"view-lines\"><span class=\"node\" data-at=\"1\" data-to=\"2\"><div class=\"completion-list-count\" data-face=\"shadow\">1/4</div></span><div class=\"node\" data-at=\"2\" data-to=\"4\"></div><div class=\"node\" data-at=\"4\" data-to=\"10\"><ul class=\"ui-list\"><span class=\"cursor primary\"></span><span class=\"node\" data-at=\"5\" data-to=\"6\"><li class=\"ui-list-row\" aria-current=\"true\"><div class=\"completion-list-row\"><div class=\"completion-list-title\">Words</div><span class=\"completion-list-text\">alpha</span></div></li></span><span class=\"node\" data-at=\"6\" data-to=\"7\"><li class=\"ui-list-row\"><div class=\"completion-list-row\"><span class=\"completion-list-text\">apple</span></div></li></span><span class=\"node\" data-at=\"7\" data-to=\"8\"><li class=\"ui-list-row\"><div class=\"completion-list-row\"><span class=\"completion-list-text\">almond</span></div></li></span><span class=\"node\" data-at=\"8\" data-to=\"9\"><li class=\"ui-list-row\"><div class=\"completion-list-row\"><span class=\"completion-list-text\">banana</span></div></li></span></ul></div></div></div>"
+"<div class=\"view-lines\"><div class=\"completion-list\" style=\"--completion-list-rows:15\"><span class=\"node\" data-at=\"1\" data-to=\"2\"><div class=\"completion-list-count\" data-face=\"shadow\">1/4</div></span><div class=\"node\" data-at=\"2\" data-to=\"4\"></div><div class=\"node\" data-at=\"4\" data-to=\"10\"><ul class=\"ui-list\"><span class=\"cursor primary\"></span><span class=\"node\" data-at=\"5\" data-to=\"6\"><li class=\"ui-list-row\" aria-current=\"true\"><div class=\"completion-list-row\"><div class=\"completion-list-title\">Words</div><span class=\"completion-list-text\">alpha</span></div></li></span><span class=\"node\" data-at=\"6\" data-to=\"7\"><li class=\"ui-list-row\"><div class=\"completion-list-row\"><span class=\"completion-list-text\">apple</span></div></li></span><span class=\"node\" data-at=\"7\" data-to=\"8\"><li class=\"ui-list-row\"><div class=\"completion-list-row\"><span class=\"completion-list-text\">almond</span></div></li></span><span class=\"node\" data-at=\"8\" data-to=\"9\"><li class=\"ui-list-row\"><div class=\"completion-list-row\"><span class=\"completion-list-text\">banana</span></div></li></span></ul></div></div></div></div>"
 > (click-token! lv (row-position lv 2))
 > (result t)
 "almond"
@@ -122,6 +122,15 @@
 > (define lv (list-view))
 > (let ([s (html->string (views:draw lv client))]) (let loop ([i 0] [n 0]) (cond [(> (+ i 11) (string-length s)) n] [(string=? (substring s i (+ i 11)) "ui-list-row") (loop (+ i 11) (+ n 1))] [else (loop (+ i 1) n)])))
 2
+; The list keeps the rows' height from its first draw, whatever the
+; matches, so the input above it does not move as they change.
+> (define (list-element) (let ([s (lines-html lv)]) (substring s 24 (+ 24 (string-length "<div class=\"completion-list\" style=\"--completion-list-rows:2\">")))))
+> (list-element)
+"<div class=\"completion-list\" style=\"--completion-list-rows:2\">"
+> (type! "z")
+> (list (vector-length (completion:session-matches (session))) (list-element))
+(0 "<div class=\"completion-list\" style=\"--completion-list-rows:2\">")
+> (press! "DEL")
 > (press! "C-n" "C-n" "C-n")
 > (selected-text (session))
 "a4"
