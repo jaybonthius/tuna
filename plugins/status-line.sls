@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (keys) (commands) (files) (modes) (web) (haml) (undo))
+(import (buffers) (document) (views) (layout) (keys) (commands) (modes) (web) (haml))
 
 (define-option visible #t boolean? "Whether a view has a status line.")
 
@@ -35,14 +35,9 @@
 
   (define line-buffer #f)
 
-  ;; A killed line is made again by whatever code draws next. Its
-  ;; setting is this plugin's: drawing acts for no module, which cannot
-  ;; set it, and another module's unload would take it back.
   (define (status-buffer)
     (unless (and line-buffer (buffers:live? line-buffer))
-      (as-module (this-module)
-        (set! line-buffer (or (buffers:find " *status-line*") (buffers:make " *status-line*" (line '()))))
-        (buffers:with-buffer line-buffer (set-option-local! undo:limit 0)))
+      (set! line-buffer (or (buffers:find " *status-line*") (buffers:make " *status-line*" (line '()))))
       (set! written #f))
     line-buffer)
 
@@ -243,7 +238,7 @@
 
 (define (show-modified view)
   (let ([b (views:buffer view)])
-    (and b (files:modified? b) "*")))
+    (and b (buffers:modified? b) "*")))
 
 (define (show-buffer-name view)
   (let ([b (views:buffer view)])

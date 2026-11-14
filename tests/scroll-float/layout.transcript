@@ -78,8 +78,8 @@ none
 > (commands:run layout:delete-view)
 ! layout:delete-view: a locked part with irritant #<node views:view 2>
 > (layout:select! va)
-; One edit may move a popup within *popups*, but no edit may give a view
-; number in one tree to the other.
+; One edit may move a popup within the popups buffer, but no edit may
+; give a view number in one tree to the other.
 > (buffers:refused? (guard (c [#t c]) (buffers:replace! layout:popups-buffer 1 1 (layout-float:container '() (atom va)))))
 #t
 > (buffers:refused? (guard (c [#t c]) (let ([n (document:length (buffers:document layout:buffer))]) (buffers:replace! layout:buffer (- n 1) (- n 1) (atom p)))))

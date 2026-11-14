@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (buffers) (document) (views) (keys) (commands) (web) (haml) (undo))
+(import (layout) (buffers) (document) (views) (keys) (commands) (web) (haml))
 
 (module %internals
   (parts float-node? holding-float place-of base-of base-child? length-css view-datum)
@@ -338,7 +338,6 @@
 (keys:bind! keys:global "s-v" toggle)
 (keys:bind! layout:part-mode-keymap "w f" wrap-in-float)
 (keys:bind! keymap "s-V" cycle)
-(buffers:with-buffer layout:popups-buffer (set-option-local! undo:limit 0))
 (table-set! web:stylesheets 'layout-float "layout-float/layout-float.css")
 (advice-add! batch-ended
   (lambda (ended)

@@ -1,6 +1,7 @@
 (library (buffers records)
   (export make-buffer-record buffer-record? buffer-name buffer-name-set! buffer-doc buffer-doc-set!
-          buffer-frozen? buffer-frozen?-set! buffer-version buffer-version-set! buffer-log buffer-log-set!
+          buffer-frozen? buffer-frozen?-set! buffer-version buffer-version-set! buffer-save-stamp
+          buffer-save-stamp-set! buffer-log buffer-log-set!
           buffer-logged buffer-logged-set! buffer-scope buffer-scope-set! buffer-layers buffer-layers-set!
           buffer-anchors buffer-bare buffer-bare-set!
           make-edit-record edit-record? edit-record-version edit-record-start edit-record-removed
@@ -25,12 +26,12 @@
   ;; library is created once per process and keeps the types.
   (define-record-type (buffer make-buffer-record buffer-record?)
     (sealed #t)
-    (fields (mutable name) (mutable doc) (mutable frozen?) (mutable version)
+    (fields (mutable name) (mutable doc) (mutable frozen?) (mutable version) (mutable save-stamp)
             (mutable log) (mutable logged) (mutable scope) (mutable layers) anchors (mutable bare))
     (protocol
       (lambda (new)
         (lambda (name doc scope)
-          (new name doc #f 0 (make-vector 16 #f) 0 scope '() (make-weak-eq-hashtable) '(#f . #f))))))
+          (new name doc #f 0 0 (make-vector 16 #f) 0 scope '() (make-weak-eq-hashtable) '(#f . #f))))))
 
   ;; Anchors and the log's trim map positions through thousands of edits,
   ;; so an edit keeps its lengths and whether it moves positions at all.

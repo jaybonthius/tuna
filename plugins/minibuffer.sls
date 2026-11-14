@@ -539,6 +539,10 @@
   (buffers:kill! buffer))
 
 (modes:set-major-mode mode buffer)
+;; Undo keeps no history in a buffer whose name starts with a space
+;; unless its plugin turns it on, as Emacs's minibuffer does; setting the
+;; major mode drops local values, so this comes after.
+(buffers:with-buffer buffer (set-option-local! undo:limit (option-default undo:limit)))
 (at-bottom buffer)
 (narrow-views! #f)
 (keys:bind! keymap "RET" exit)

@@ -47,7 +47,7 @@
 > (prompt)
 #f
 > (map buffers:name (filter (lambda (b) (char=? (string-ref (buffers:name b) 0) #\space)) (buffers:all)))
-(" *Echo Area*" " *Minibuf*")
+(" *layout*" " *popups*" " *Echo Area*" " *Minibuf*")
 > (use-plugin completion)
 > (use-plugin completion-list)
 > (use-plugin pickers)
@@ -102,6 +102,6 @@
 > (datums minibuf)
 ((minibuffer:%prompts ()))
 > (map buffers:name (filter (lambda (b) (char=? (string-ref (buffers:name b) 0) #\space)) (buffers:all)))
-(" *Echo Area*" " *Minibuf*")
+(" *layout*" " *popups*" " *Echo Area*" " *Minibuf*")
 > (popups)
 ()

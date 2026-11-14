@@ -1,6 +1,6 @@
 #!tuna
 (import (completion) (ui) (buffers) (document) (views) (keys) (commands) (editing) (layout) (layout-float)
-        (web) (haml) (undo))
+        (web) (haml))
 
 (define-option rows 10 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many rows a popup shows.")
@@ -152,7 +152,6 @@
     (when (and node (not (layout:locked? node)))
       (let* ([b (buffers:make (%next-name) (%root '() (%none '()) (ui:list '())))]
              [l (make-%shown s b (views:make b) #f #f '())])
-        (buffers:with-buffer b (set-option-local! undo:limit 0))
         (set! %popups (cons l %popups))))))
 
 (define (%updated s)

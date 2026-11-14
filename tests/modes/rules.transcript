@@ -102,13 +102,13 @@ modes:fundamental
         (sleep-for 0.01)
         (loop (+ n 1)))))
 > (chez:fork-thread (lambda () (set! result (raised (lambda () (modes:set-major-mode text:mode b))))))
-#<thread 5>
+#<thread 4>
 > (wait-for-result)
 > result
 (modes:set-major-mode "not on the main thread")
 > (set! result #f)
 > (chez:fork-thread (lambda () (set! result (raised (lambda () (modes:major-mode b))))))
-#<thread 6>
+#<thread 5>
 > (wait-for-result)
 > result
 (modes:major-mode "not on the main thread")

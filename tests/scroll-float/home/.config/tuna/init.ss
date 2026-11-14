@@ -3,6 +3,7 @@
 (use-plugin layout-scroll)
 (use-plugin layout-float)
 (use-plugin layout)
+(use-plugin undo)
 
 (define (raised thunk)
   (guard (c [#t (list (if (who-condition? c) (condition-who c) 'none)

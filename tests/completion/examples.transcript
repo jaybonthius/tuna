@@ -125,7 +125,7 @@ words:word-category
 > (define s (session))
 > (wait-matches s)
 > (rows s)
-(("*scratch*" (shadow . "0") (shadow . "")) ("*layout*" (shadow . "3") (shadow . "")) ("*popups*" (shadow . "0") (shadow . "")) ("*Messages*" (shadow . "5") (shadow . "")) ("*tags*" (shadow . "6") (shadow . "")) ("notes" (shadow . "55") (shadow . "")) ("code.py" (shadow . "19") (shadow . "")) ("sub") ("a.txt"))
+(("*scratch*" (shadow . "0") (shadow . "")) ("*Messages*" (shadow . "5") (shadow . "")) ("*tags*" (shadow . "6") (shadow . "")) ("notes" (shadow . "55") (shadow . "")) ("code.py" (shadow . "19") (shadow . "")) ("sub") ("a.txt"))
 > (type! "a.t")
 > (wait-matches s)
 > (map (lambda (m) (completion:title s m)) (vector->list (completion:session-matches s)))

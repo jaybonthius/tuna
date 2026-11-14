@@ -16,7 +16,7 @@
 ; The screen's element names the screen view, and each view atom's
 ; element names the atom's range.
 > (list (views:buffer layout:screen-view) (layout:view-node layout:screen-view))
-(#<buffer *layout*> #f)
+(#<buffer  *layout*> #f)
 > (define html (html->string (layout:screen c1)))
 > (substring html 0 (string-length "<div class=\"layout-screen\" data-view=\"2\" data-version=\"2\" data-showing=\"0\">"))
 "<div class=\"layout-screen\" data-view=\"2\" data-version=\"2\" data-showing=\"0\">"

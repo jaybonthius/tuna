@@ -236,7 +236,6 @@
 
 (define (%keep-echo-area b) (not (eq? b echo-buffer)))
 
-(buffers:with-buffer echo-buffer (set-option-local! undo:limit 0))
 (messages-buffer)
 (layout:display-buffer echo-buffer (layout-sides:display-at-side (layout:direction down) 90 'content '((locked . #t))))
 (keys:bind! keymap "<mouse-1>" show-messages)

@@ -169,7 +169,7 @@ escaped
 > (text r)
 "ab\n"
 > (tree r)
-(2 #f (0 #f) (1 0) (2 1) (3 1))
+(2 0 (0 #f) (1 0) (2 1) (3 1))
 > (undo:go-to! r 0)
 > (text r)
 "\n"
@@ -198,7 +198,7 @@ escaped
 > (in-k undo:undo 1)
 ! undo:undo: the buffer does not hold the text its history expects
 > (list (text k) (tree k))
-("!01a23456789\n" (3 #f (0 #f) (1 2) (2 0) (3 2)))
+("!01a23456789\n" (3 0 (0 #f) (1 2) (2 0) (3 2)))
 > (in-k undo:undo 2)
 > (text k)
 "0123456789\n"
@@ -210,7 +210,7 @@ escaped
 > (set! sneak #t)
 > (in-k undo:undo 1)
 > (list (text k) (tree k))
-("!01a23456789\n" (4 #f (0 #f) (1 2) (2 0) (3 2) (4 2)))
+("!01a23456789\n" (4 0 (0 #f) (1 2) (2 0) (3 2) (4 2)))
 > (remove-hook! buffers:after-edit sneak-in)
 ; Undo puts the view's cursors where they were before the group; redo
 ; puts them at the end of the group's last edit.
@@ -254,7 +254,7 @@ escaped
 > (for-each (lambda (x) (in-s2 checks:insert 1 x)) '("b" "c" "d"))
 #<edit 5>
 > (tree s2)
-(4 #f (0 #f) (2 0) (3 2) (4 3))
+(4 0 (0 #f) (2 0) (3 2) (4 3))
 ; One group larger than the limit empties the history, with a warning.
 > (in-s checks:insert 1 (make-string 80 #\x))
 #<edit 8>
@@ -276,5 +276,3 @@ escaped
 "a\n"
 > (raised (lambda () (set-option! undo:limit -1)))
 (set-option! "-1 is not a valid value for undo:limit")
-> (raised (lambda () (set-option! undo:keep-log? #t)))
-(set-option! "#t is not a valid value for undo:keep-log?")

@@ -7,11 +7,18 @@
 (define (%no-file-name-reader question)
   (error 'files:file-name-reader "no reader of file names is loaded"))
 
-;; The prompt's stack imports files, through undo, so files cannot import
-;; a reader; it reads a name through an option the readers' plugin fills,
-;; as Emacs's read-file-name-function.
+(define (%no-yes-or-no-reader question)
+  (error 'files:yes-or-no-reader "no reader of yes or no is loaded"))
+
+;; The readers need the prompt's whole stack, which a plugin that only
+;; visits and saves files should load without; so the commands that ask
+;; read through options the readers' plugin fills, as Emacs's
+;; read-file-name-function.
 (define-option file-name-reader %no-file-name-reader procedure?
   "A procedure of a question that reads a file name and returns it, for find-file and write-file run as commands.")
+
+(define-option yes-or-no-reader %no-yes-or-no-reader procedure?
+  "A procedure of a question that asks for yes or no and returns true for yes, for save-buffers-kill-tuna.")
 
 (define-hook after-visit
   "Called with a buffer after it has visited a file, before files:visit returns.")
@@ -25,13 +32,15 @@
 (define-hook after-revert
   "Called with a buffer after its file has been read into it again.")
 
+(define-hook unsaved-kept
+  "Called with a modified file buffer when Tuna is asked to exit; an entry that returns true keeps the buffer's unsaved edits, so the exit does not ask about it.")
+
 (define (%visit? v)
   (define (count? n) (and (fixnum? n) (fx>= n 0)))
-  (and (vector? v) (fx= (vector-length v) 8)
+  (and (vector? v) (fx= (vector-length v) 7)
        (string? (vector-ref v 0)) (string? (vector-ref v 1)) (string? (vector-ref v 2))
        (count? (vector-ref v 3)) (count? (vector-ref v 4))
-       (boolean? (vector-ref v 5)) (boolean? (vector-ref v 6))
-       (or (not (vector-ref v 7)) (count? (vector-ref v 7)))))
+       (boolean? (vector-ref v 5)) (boolean? (vector-ref v 6))))
 
 (define-saved %visits '() (lambda (v) (and (list? v) (for-all %visit? v))))
 
@@ -57,8 +66,8 @@
 
 (module %internals
   (check-main-thread check-buffer check-path check-task file-entry entry-of entry-path entry-length entry-hash
-   entry-modified? entry-live? visited-buffers buffer-at open-buffer! remember-read! take-read!
-   move-entry! with-entry-lock run-job record-read! mark-unmodified! save! forget-killed! take-back!
+   entry-live? visited-buffers buffer-at open-buffer! remember-read! take-read!
+   move-entry! with-entry-lock run-job record-read! save! forget-killed! take-back!
    open-pending! arguments-handled? handle-arguments! save-visits! stop-waiting!)
 
   (define main-thread (get-thread-id))
@@ -84,8 +93,7 @@
   (define-record-type entry
     (sealed #t)
     (fields buffer (mutable path) (mutable given-name) (mutable length) (mutable hash)
-            (mutable bom) (mutable crlf) (mutable saved-version) (mutable holder) (mutable job)
-            (mutable waiters)))
+            (mutable bom) (mutable crlf) (mutable holder) (mutable job) (mutable waiters)))
 
   (define by-buffer (make-eq-hashtable))
   (define by-path (make-hashtable string-hash string=?))
@@ -104,9 +112,6 @@
 
   (define (entry-live? e) (eq? (entry-of (entry-buffer e)) e))
 
-  (define (entry-modified? e)
-    (not (eqv? (entry-saved-version e) (buffers:version (entry-buffer e)))))
-
   (define (visited-buffers) (reverse (map entry-buffer visited)))
 
   (define (buffer-at path)
@@ -115,11 +120,11 @@
 
   (define (entry->visit e)
     (vector (entry-path e) (buffers:name (entry-buffer e)) (entry-given-name e) (entry-length e)
-            (entry-hash e) (entry-bom e) (entry-crlf e) (entry-saved-version e)))
+            (entry-hash e) (entry-bom e) (entry-crlf e)))
 
   (define (visit->entry b v)
     (make-entry b (vector-ref v 0) (vector-ref v 2) (vector-ref v 3) (vector-ref v 4)
-                (vector-ref v 5) (vector-ref v 6) (vector-ref v 7) #f #f '()))
+                (vector-ref v 5) (vector-ref v 6) #f #f '()))
 
   (define (visit-path v) (vector-ref v 0))
   (define (visit-name v) (vector-ref v 1))
@@ -140,8 +145,13 @@
         [(char=? (car chars) #\/) (loop (cdr chars) '() (close))]
         [else (loop (cdr chars) (cons (car chars) part) parts)])))
 
+  ;; Undo and the readers of buffer names take a name that starts with a
+  ;; space for an internal buffer's, so a file's buffer must not have one.
   (define (name-at path k)
-    (let ([base (path-last path)])
+    (let ([base (let ([last (path-last path)])
+                  (if (and (fx> (string-length last) 0) (char=? (string-ref last 0) #\space))
+                      (string-append "|" last)
+                      last))])
       (if (fx= k 0)
           base
           (let* ([folder (path-parent path)] [parts (folder-names folder)] [n (length parts)])
@@ -233,8 +243,9 @@
       (lambda ()
         (let* ([b (buffers:make (name-for! path) doc)]
                [e (make-entry b path (buffers:name b) length hash
-                    (and read (contents-bom? read)) (and read (contents-crlf? read))
-                    (and read (eq? doc (contents-document read)) (buffers:version b)) #f #f '())])
+                    (and read (contents-bom? read)) (and read (contents-crlf? read)) #f #f '())])
+          (unless (and read (eq? doc (contents-document read)))
+            (buffers:set-modified! b #t))
           (add-entry! e)
           (set! pending (filter (lambda (v) (not (string=? (visit-path v) path))) pending))
           (save-visits!)
@@ -268,7 +279,7 @@
                 e)
               (let ([name (name-for! path)])
                 (buffers:rename! b name)
-                (let ([e (make-entry b path name 0 fnv-basis #f #f #f #f #f '())])
+                (let ([e (make-entry b path name 0 fnv-basis #f #f #f #f '())])
                   (add-entry! e)
                   (save-visits!)
                   e)))))))
@@ -279,7 +290,9 @@
         (lambda ()
           (entry-length-set! e (car result))
           (entry-hash-set! e (cadr result))
-          (entry-saved-version-set! e version)
+          (let ([b (entry-buffer e)])
+            (when (= version (buffers:version b))
+              (buffers:set-modified! b #f)))
           (save-visits!)))))
 
   ;; Recorded before the edit, so a quit between them leaves the buffer
@@ -291,12 +304,6 @@
         (entry-hash-set! e (contents-hash read))
         (entry-bom-set! e (contents-bom? read))
         (entry-crlf-set! e (contents-crlf? read)))))
-
-  (define (mark-unmodified! e)
-    (without-quits
-      (lambda ()
-        (entry-saved-version-set! e (buffers:version (entry-buffer e)))
-        (save-visits!))))
 
   (define (changed-on-disk who path)
     (condition (%make-changed-on-disk) (make-who-condition who)
@@ -532,7 +539,7 @@
     (check-task 'files:save-buffer)
     (with-entry-lock 'files:save-buffer e
       (lambda ()
-        (when (and (entry-live? e) (entry-modified? e))
+        (when (and (entry-live? e) (buffers:modified? buffer))
           (save! 'files:save-buffer e #t))))))
 
 (commands:define-command (write-file [path ((file-name-reader) "Write file: ")] [buffer (buffers:current)])
@@ -572,23 +579,23 @@
                             (cdr read))
                      (buffers:replace! buffer 1 (fx- (document:length (buffers:document buffer)) 1)
                        (document:slice new 1 (fx- (document:length new) 1))))
-                 (mark-unmodified! e)
+                 (buffers:set-modified! buffer #f)
                  (buffers:with-buffer buffer (after-revert buffer)))])))))))
 
 (commands:define-command (not-modified [buffer (buffers:current)])
   "Marks BUFFER unmodified, as a save does, without writing."
   (check-buffer 'files:not-modified buffer)
-  (let ([e (entry-of buffer)])
-    (when e (mark-unmodified! e))))
+  (buffers:set-modified! buffer #f))
 
 (commands:define-command (save-buffers-kill-tuna)
-  "Exits Tuna without asking: undo restores unsaved edits at the next visit."
-  (exit))
-
-(define (modified? buffer)
-  (check-buffer 'files:modified? buffer)
-  (let ([e (entry-of buffer)])
-    (and e (entry-modified? e))))
+  "Exits Tuna, asking first when a modified file buffer's edits would be lost."
+  (check-main-thread 'files:save-buffers-kill-tuna)
+  (when (or (for-all (lambda (b)
+                       (or (not (buffers:modified? b))
+                           (exists (lambda (entry) (entry b)) (hook-entries unsaved-kept))))
+                     (visited-buffers))
+            ((yes-or-no-reader) "Modified buffers exist; exit anyway? "))
+    (exit)))
 
 (define (fingerprint buffer)
   (let ([e (file-entry 'files:fingerprint buffer)])

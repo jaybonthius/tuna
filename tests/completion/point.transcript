@@ -139,4 +139,4 @@
 "a4"
 > (set-option! completion-list:rows 15)
 > (map buffers:name (filter (lambda (b) (char=? (string-ref (buffers:name b) 0) #\space)) (buffers:all)))
-(" *Echo Area*" " *Minibuf*")
+(" *layout*" " *popups*" " *Echo Area*" " *Minibuf*")

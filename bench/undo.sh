@@ -21,9 +21,6 @@ echo "$output" | awk '
     unit["record-ns"] = "ns"
     unit["batch-end-ns"] = "ns"
     unit["undo-step-us"] = "us"
-    unit["read-log-ms-per-mb"] = "ms/MB"
-    unit["replay-ns-per-record"] = "ns"
-    unit["writer-round-ms"] = "ms"
     missing = 0
   }
   $1 in unit {

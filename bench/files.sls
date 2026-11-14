@@ -62,7 +62,7 @@
       (main-us (lambda () (buffers:kill! (files:visit file)))))
     (let ([b (files:visit file)])
       (show "visit-open-us" (main-us (lambda () (files:visit file))))
-      (show "modified?-ns" (ns-per-op (lambda () (files:modified? b))))
+      (show "modified?-ns" (ns-per-op (lambda () (buffers:modified? b))))
       (let ([doc (buffers:document b)])
         (show "save-1mb-job-ms"
           (job-ms (lambda () (save-file (path "copy.ss") doc #f #f 0 fnv-basis #f)))))

@@ -43,7 +43,7 @@
 ; An empty file is an empty, unmodified buffer, and gains no line break.
 > (disk-checks:write-bytes! "~/empty.txt" #vu8())
 > (define empty (files:visit "~/empty.txt"))
-> (list (text empty) (files:modified? empty) (call-with-values (lambda () (files:fingerprint empty)) list))
+> (list (text empty) (buffers:modified? empty) (call-with-values (lambda () (files:fingerprint empty)) list))
 ("" #f (0 2166136261))
 > (files:not-modified empty)
 > (files:save-buffer empty)
@@ -52,12 +52,12 @@
 ; A missing file gives an empty buffer that the first save creates; no
 ; folder is ever made.
 > (define fresh (files:visit "~/fresh.txt"))
-> (list (text fresh) (files:modified? fresh) (disk-checks:exists? "~/fresh.txt"))
+> (list (text fresh) (buffers:modified? fresh) (disk-checks:exists? "~/fresh.txt"))
 ("" #f #f)
 > (buffers:replace! fresh 1 1 "new")
 #<edit 1>
 > (files:save-buffer fresh)
-> (list (disk-checks:read-text "~/fresh.txt") (files:modified? fresh))
+> (list (disk-checks:read-text "~/fresh.txt") (buffers:modified? fresh))
 ("new\n" #f)
 > (define nowhere (files:visit "~/no/such/folder/x.txt"))
 > (files:path nowhere)
@@ -66,7 +66,7 @@
 #<edit 1>
 > (files:save-buffer nowhere)
 ! files:save-buffer: no such folder with irritant "~/no/such/folder"
-> (list (disk-checks:exists? "~/no") (files:modified? nowhere))
+> (list (disk-checks:exists? "~/no") (buffers:modified? nowhere))
 (#f #t)
 > (files:visit "~")
 ! files:read-document: is a folder with irritant "~"
@@ -137,11 +137,17 @@
 "m.txt<work>"
 > (files:path other-buffer)
 #f
+; A buffer whose name starts with a space is taken for an internal one,
+; so a file's gets a bar in front, as in Emacs.
+> (disk-checks:write-text! "~/ space.txt" "s\n")
+> (disk-checks:write-text! "~/work/ space.txt" "s\n")
+> (map buffers:name (list (files:visit "~/ space.txt") (files:visit "~/work/ space.txt")))
+("| space.txt<home>" "| space.txt<work>")
 ; write-file makes a buffer visit a file, renamed after it, and writes
 ; whatever the file holds.
 > (define draft (buffers:make "*draft*" "(+ 1 2)"))
 > (files:write-file "~/work/sum.ss" draft)
-> (list (buffers:name draft) (files:path draft) (disk-checks:read-text "~/work/sum.ss") (files:modified? draft))
+> (list (buffers:name draft) (files:path draft) (disk-checks:read-text "~/work/sum.ss") (buffers:modified? draft))
 ("sum.ss" "~/work/sum.ss" "(+ 1 2)\n" #f)
 > (disk-checks:write-text! "~/work/sum.ss" "elsewhere\n")
 > (buffers:replace! draft 1 1 ";")
@@ -165,16 +171,16 @@
 #<edit 1>
 > (buffers:replace! m 1 2 "")
 #<edit 2>
-> (files:modified? m)
+> (buffers:modified? m)
 #t
 > (files:not-modified m)
-> (files:modified? m)
+> (buffers:modified? m)
 #f
 > (files:save-buffer m)
 > (disk-checks:read-text "~/work/m.txt")
 "m\n"
 > (files:not-modified other-buffer)
-> (files:modified? other-buffer)
+> (buffers:modified? other-buffer)
 #f
 ; FNV-1a 32 of "m\n", as Python computes it.
 > (call-with-values (lambda () (files:fingerprint m)) list)
@@ -191,7 +197,7 @@
 > (buffers:replace! rev 1 1 "")
 #<edit 1>
 > (files:revert-buffer rev)
-> (list (text rev) (buffers:version rev) (files:modified? rev))
+> (list (text rev) (buffers:version rev) (buffers:modified? rev))
 ("one\nTWO!\nthree\n" 2 #f)
 > (map buffers:edit-start (buffers:edits-since rev 1))
 (5)
@@ -248,7 +254,7 @@
 > (buffers:replace! final 1 1 "a ")
 #<edit 1>
 > (files:save-buffer final)
-> (list (buffers:version final) (text final) (files:modified? final))
+> (list (buffers:version final) (text final) (buffers:modified? final))
 (2 "a no break\n" #f)
 ; Reading directly gives the document and the fingerprint.
 > (call-with-values (lambda () (files:read-document "~/final.txt"))
@@ -257,7 +263,7 @@
 ; Killing a buffer forgets it.
 > (buffers:kill! final)
 #t
-> (list (files:buffer-visiting "~/final.txt") (memq final (files:buffers)) (files:modified? final))
+> (list (files:buffer-visiting "~/final.txt") (memq final (files:buffers)) (buffers:modified? final))
 (#f #f #f)
 ; Reading, saving, writing and reverting pause, so outside a task they
 ; refuse at once and change nothing.
@@ -292,5 +298,5 @@
 ! files:fingerprint: the buffer visits no file with irritant #<buffer m.txt>
 > (files:path "notes")
 ! files:path: not a buffer with irritant "notes"
-> (files:modified? #f)
-! files:modified?: not a buffer with irritant #f
+> (buffers:modified? #f)
+! buffers:modified?: not a buffer with irritant #f

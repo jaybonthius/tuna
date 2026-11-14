@@ -13,7 +13,7 @@
 > (text notes)
 "abBuy milk.\n"
 > (tree notes)
-(1 #f (0 #f) (1 0))
+(1 0 (0 #f) (1 0))
 > (buffers:with-buffer notes (commands:run undo:undo 1))
 > (text notes)
 "Buy milk.\n"
@@ -24,18 +24,12 @@
 ; its parent and the time its group ended.
 > (define h (buffers:with-buffer notes (undo:history (buffers:current))))
 > (list (car h) (cadr h) (map (lambda (s) (list (car s) (cadr s) (and (integer? (caddr s)) (> (caddr s) 1700000000)))) (cddr h)))
-(1 #f ((0 #f #t) (1 0 #t)))
+(1 0 ((0 #f #t) (1 0 #t)))
 > (buffers:with-buffer notes (set-option-local! undo:limit 0))
 > (buffers:with-buffer notes (undo:limit))
 0
 > (undo:limit)
 4000000
-> (set-option! undo:keep-log? (lambda (path) (not (string=? (path-extension path) "gpg"))))
-> (list ((undo:keep-log?) "/home/me/notes.gpg") ((undo:keep-log?) "/home/me/notes.txt"))
-(#f #t)
-; The default keeps no log under /tmp/ or /dev/shm/.
-> (map (option-default undo:keep-log?) '("/tmp/a.txt" "/dev/shm/a" "/home/me/a.txt" "/tmpfile"))
-(#f #f #t #t)
 ; Typing a word undoes in one step.
 > (define w (buffers:make "word" "\n"))
 > (for-each (lambda (s) (buffers:with-buffer w (commands:run checks:type s))) '("w" "o" "r" "d"))
@@ -43,3 +37,14 @@
 > (buffers:with-buffer w (commands:run (table-ref keys:global "C-/") 1))
 > (text w)
 "\n"
+; A history's records, taken after each change, and the flag undo marks.
+> (define (in-w command . args) (buffers:with-buffer w (apply commands:run command args)))
+> (map car (undo:take-all-records! w))
+(undo-history group at)
+> (in-w checks:type "s")
+#<edit 9>
+> (map car (undo:take-records! w))
+(group)
+> (in-w undo:undo 1)
+> (buffers:modified? w)
+#f

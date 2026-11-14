@@ -76,9 +76,9 @@ class="float-child" style="--layout-float-inline-size:30ch;--layout-float-block-
 > (press! desktop '("v" "super"))
 > (tree)
 (layout:level () (layout-split:container () #(views:view ((view . 12) (buffer . "b"))) (layout:level () (layout-float:container () #(views:view ((view . 11) (buffer . "b"))) #(views:view ((view . 13) (buffer . "a") (place box 1/2 1/2) (width . 1/2) (height . 1/2)))))))
-; A popup is a float in *popups*, anchored at a position in a view's
-; text; it follows edits and is drawn after the layout. *popups* keeps
-; no undo history and is never saved.
+; A popup is a float in the popups buffer, anchored at a position in a
+; view's text; it follows edits and is drawn after the layout. The popups
+; buffer keeps no undo history and is never saved.
 > (set! vd (views:make a))
 > (set-parts! (atom vd))
 > (layout:select! vd)

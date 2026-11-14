@@ -173,7 +173,7 @@
 (views:posn-view "not a position of a mouse key")
 > (define result #f)
 > (let ([v (view)]) (fork-thread (lambda () (set! result (raised (lambda () (status-line:draw v client)))))))
-#<thread 7>
+#<thread 6>
 > (sleep-for 0.1)
 > result
 (status-line:draw "not on the main thread")

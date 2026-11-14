@@ -418,4 +418,5 @@
 (keys:bind! keys:global "M-s l" line)
 (keys:bind! keys:global "M-s g" grep)
 (set-option! files:file-name-reader read-file-name)
+(set-option! files:yes-or-no-reader minibuffer:ask-yes-or-no)
 (table-set! completion:category-styles completion:file-category (list completion:partial completion:any-order))

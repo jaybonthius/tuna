@@ -16,6 +16,13 @@
 #<edit 1>
 > (document:text (buffers:document notes))
 "Today: Buy milk.\n"
+> (buffers:modified? notes)
+#t
+> (buffers:set-modified! notes #f)
+> (buffers:modified? notes)
+#f
+> (list (buffers:version notes) (buffers:save-stamp notes))
+(1 1)
 > (import (forms))
 > (buffers:kind-draw (buffers:kind 'forms:field))
 #<procedure>

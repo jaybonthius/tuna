@@ -26,7 +26,7 @@ editing:forward-char
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (wait-matches (session))
 > (texts (session))
-("*scratch*" "*layout*" "*popups*" "*Messages*" "other" "notes" "sub" "a.txt")
+("*scratch*" "*Messages*" "other" "notes" "sub" "a.txt")
 > (views:buffer (car (layout:views)))
 #<buffer *scratch*>
 > (type! "oth")

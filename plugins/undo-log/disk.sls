@@ -1,11 +1,6 @@
-(library (undo log)
-  (export make-edit edit? edit-start edit-removed edit-inserted edit-removed-spans edit-inserted-spans
-          read-log records->bytes append-log! replace-log! set-log-aside! delete-log! log-size)
+(library (undo-log disk)
+  (export read-log records->bytes append-log! replace-log! set-log-aside! delete-log! log-size)
   (import (chezscheme) (document))
-
-  (define-record-type edit
-    (sealed #t)
-    (fields start removed inserted removed-spans inserted-spans))
 
   (define c-fsync
     (begin
@@ -18,7 +13,7 @@
   (define (count? v) (and (fixnum? v) (fx>= v 0)))
 
   (define (edit-datum e)
-    (vector (edit-start e) (document:datums (edit-removed e)) (document:datums (edit-inserted e))))
+    (vector (vector-ref e 0) (document:datums (vector-ref e 1)) (document:datums (vector-ref e 2))))
 
   (define (record-datum r)
     (case (car r)
@@ -47,8 +42,7 @@
   (define (datum-edit v)
     (and (vector? v) (fx= (vector-length v) 3) (count? (vector-ref v 0))
          (list? (vector-ref v 1)) (list? (vector-ref v 2))
-         (make-edit (vector-ref v 0) (datums-document (vector-ref v 1)) (datums-document (vector-ref v 2))
-                    #f #f)))
+         (vector (vector-ref v 0) (datums-document (vector-ref v 1)) (datums-document (vector-ref v 2)))))
 
   ;; The datum read is fresh, so its changes become edits in place.
   (define (edits! ds)
@@ -107,7 +101,7 @@
   (define (sync! port file)
     (flush-output-port port)
     (unless (fx= (c-fdatasync (port-file-descriptor port)) 0)
-      (raise (condition (make-i/o-write-error) (make-who-condition 'undo)
+      (raise (condition (make-i/o-write-error) (make-who-condition 'undo-log)
                         (make-message-condition "cannot write the log to disk")
                         (make-irritants-condition (list file))))))
 

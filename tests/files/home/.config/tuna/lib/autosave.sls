@@ -1,9 +1,9 @@
 #!tuna
-(import (files))
+(import (buffers) (files))
 
 (define (save-modified)
   (for-each (lambda (buffer)
-              (when (files:modified? buffer)
+              (when (buffers:modified? buffer)
                 (guard (c [(files:changed-on-disk-condition? c) #f])
                   (files:save-buffer buffer))))
             (files:buffers)))

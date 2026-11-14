@@ -1,30 +1,16 @@
 #!tuna
-(import (buffers) (document) (views) (commands) (keys) (files) (layout) (undo log))
+(import (buffers) (document) (views) (commands) (keys))
 
 (define-option limit 4000000 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
-  "How large a buffer's history may grow: the characters its edits removed and inserted, plus 32 per edit. 0 keeps no history and no log.")
-
-(define-option keep-log?
-  (lambda (path)
-    (not (exists (lambda (folder)
-                   (let ([n (string-length folder)])
-                     (and (fx>= (string-length path) n) (string=? (substring path 0 n) folder))))
-                 '("/tmp/" "/dev/shm/"))))
-  procedure?
-  "Called with a file's path; a file buffer keeps a log only when it returns true.")
-
-;; Saved data is kept by the plugin's source, so a fork names a folder of
-;; its own and never reads the original's logs.
-(define-saved %log-folder "" string?)
+  "How large a buffer's history may grow: the characters its edits removed and inserted, plus 32 per edit. 0 keeps no history.")
 
 (module %internals
   (check-main-thread check-buffer check-count current-buffer without-quits history-of buffer-history
-   state-id state-parent state-time state-cursors state-of states-by-id history-current history-saved
-   history-holds close-group! take-hold! release-hold! leave-hold! forget-escape! cancel-group! move!
-   redo-child group-end restore-cursors! place-cursors! path-moves no-further amalgamate-history!
-   record-edit! forget-killed! forget-history! note-command-start! note-command-end! attach-visited!
-   attach-open-buffers note-saved! read-with-history end-batch! start-writer! stop-writer!
-   ensure-log-folder!)
+   state-id state-parent state-time state-cursors state-of states-by-id history? history-buffer
+   history-current history-holds saved-state close-group! take-hold! release-hold! leave-hold!
+   forget-escape! cancel-group! move! redo-child group-end restore-cursors! place-cursors! path-moves
+   no-further amalgamate-history! record-edit! forget-history! note-command-start! note-command-end!
+   end-batch! take-buffer-records! replay current-text attach-buffer! install-history!)
 
   (define main-thread (get-thread-id))
 
@@ -62,11 +48,15 @@
                        (make-irritants-condition irritants))))
 
   ;; Tuna's dynamic-wind holds quits off while its in runs, so the tree,
-  ;; the buffer and the log's records never part company halfway.
+  ;; the buffer and the records queued never part company halfway.
   (define (without-quits thunk)
     (let ([result #f])
       (dynamic-wind (lambda () (set! result (thunk))) void void)
       result))
+
+  (define-record-type edit
+    (sealed #t)
+    (fields start removed inserted removed-spans inserted-spans))
 
   (define-record-type state
     (sealed #t)
@@ -74,31 +64,23 @@
             (mutable children) (mutable left) (mutable length) (mutable size)
             (mutable command) (mutable run) (mutable joins) (mutable written-count) (mutable queued?)))
 
-  (define-enumeration log-rewrite (none once-edited at-batch-end) log-rewrites)
-
   (define-record-type history
     (sealed #t)
-    (fields states (mutable buffer) (mutable root) (mutable current) (mutable saved) (mutable saves)
+    (fields states (mutable buffer) (mutable root) (mutable current) (mutable stamped) (mutable stamp)
             (mutable next-id) (mutable size) (mutable open) (mutable holds) (mutable join)
-            (mutable recorded-version) (mutable file) (mutable log) (mutable rewrite) (mutable pending)
+            (mutable recorded-version) (mutable taken?) (mutable whole?) (mutable pending)
             (mutable dirty?)))
-
-  (define-record-type save
-    (sealed #t)
-    (fields state length hash))
 
   (define (new-history id length time)
     (let ([root (make-state id #f '() 0 time '() '() #f length 0 #f #f 0 0 #f)]
-          [h (make-history (make-eqv-hashtable) #f #f #f #f '() (fx+ id 1) 0 #f '() #f 0 #f #f
-                           (log-rewrite none) '() #f)])
+          [h (make-history (make-eqv-hashtable) #f #f #f #f #f (fx+ id 1) 0 #f '() #f 0 #f #f '() #f)])
       (hashtable-set! (history-states h) id root)
       (history-root-set! h root)
       (history-current-set! h root)
       h))
 
-  (define (rewrite-log! h)
-    (when (history-log h)
-      (history-rewrite-set! h (log-rewrite at-batch-end))))
+  (define (take-whole! h)
+    (history-whole?-set! h #t))
 
   (define (state-of h id) (hashtable-ref (history-states h) id #f))
 
@@ -152,18 +134,17 @@
     (history-size-set! h (- (history-size h) (state-size s)))
     (hashtable-delete! (history-states h) (state-id s)))
 
-  (define (forget-dead-saves! h)
-    (history-saves-set! h (filter (lambda (save) (live? h (save-state save))) (history-saves h)))
-    (let ([saved (history-saved h)])
-      (when (and saved (not (live? h saved)))
-        (history-saved-set! h #f))))
+  (define (forget-dead-stamp! h)
+    (let ([s (history-stamped h)])
+      (when (and s (not (live? h s)))
+        (history-stamped-set! h #f))))
 
   (define (prune! h s)
     (let ([p (state-parent s)])
       (state-children-set! p (remq s (state-children p)))
       (when (eq? (state-left p) s) (state-left-set! p #f))
       (drop-subtree! h s)
-      (forget-dead-saves! h)))
+      (forget-dead-stamp! h)))
 
   (define (re-root! h s)
     (let loop ([c s])
@@ -179,10 +160,10 @@
     (state-count-set! s 0)
     (state-size-set! s 0)
     (history-root-set! h s)
-    (forget-dead-saves! h))
+    (forget-dead-stamp! h))
 
-  ;; Appended records cannot split a group the log holds, so the log is
-  ;; written again whole.
+  ;; Records taken cannot be split by records taken later, so the next
+  ;; take is whole.
   (define (split-state! h s kept)
     (let* ([edits (state-edits-newest-first s)] [p (state-parent s)]
            [m (add-state! h (history-next-id h) p (state-cursors s) (state-time s))])
@@ -197,64 +178,87 @@
       (for-each (lambda (e) (push-edit! h m e)) (reverse (list-tail edits kept)))
       (state-length-set! s (state-length m))
       (for-each (lambda (e) (push-edit! h s e)) (reverse (list-head edits kept)))
-      (rewrite-log! h)
+      (take-whole! h)
       m))
 
   (define (descends? s ancestor)
     (let loop ([s s])
       (and s (or (eq? s ancestor) (loop (state-parent s))))))
 
-  ;; Replaying a log stops at the first record that does not fit the
-  ;; history, as at a record cut short.
+  (define (vector-edit v)
+    (and (vector? v) (fx= (vector-length v) 3)
+         (let ([start (vector-ref v 0)] [removed (vector-ref v 1)] [inserted (vector-ref v 2)])
+           (and (fixnum? start) (fx>= start 0) (document? removed) (document? inserted)
+                (make-edit start removed inserted #f #f)))))
+
+  (define (vector-edits vs)
+    (and (list? vs)
+         (let loop ([vs vs] [acc '()])
+           (if (null? vs)
+               (reverse acc)
+               (let ([e (vector-edit (car vs))])
+                 (and e (loop (cdr vs) (cons e acc))))))))
+
+  (define (count? v) (and (fixnum? v) (fx>= v 0)))
+
+  ;; Replaying records stops at the first that does not fit the history,
+  ;; as at a record cut short.
   (define (apply-record! h r)
-    (case (car r)
-      [(group)
-       (let ([id (list-ref r 1)] [p (state-of h (list-ref r 2))] [edits (list-tail r 5)])
-         (and p (not (state-of h id)) (edits-fit? (state-length p) edits)
-              (let ([s (add-state! h id p (list-ref r 4) (list-ref r 3))])
-                (for-each (lambda (e) (push-edit! h s e)) edits)
-                (state-written-count-set! s (state-count s))
-                (history-current-set! h s)
-                #t)))]
-      [(more)
-       (let ([s (state-of h (cadr r))] [edits (cddr r)])
-         (and s (state-parent s) (null? (state-children s)) (edits-fit? (state-length s) edits)
-              (begin
-                (for-each (lambda (e) (push-edit! h s e)) edits)
-                (state-written-count-set! s (state-count s))
-                #t)))]
-      [(at)
-       (let ([s (state-of h (cadr r))])
-         (and s (begin (history-current-set! h s) #t)))]
-      [(saved)
-       (let ([s (state-of h (cadr r))])
-         (and s (begin (history-saves-set! h (cons (make-save s (caddr r) (cadddr r)) (history-saves h))) #t)))]
-      [(root)
-       (let ([s (state-of h (cadr r))])
-         (and s (descends? (history-current h) s) (begin (re-root! h s) #t)))]
-      [(prune)
-       (let ([s (state-of h (cadr r))])
-         (and s (state-parent s) (not (descends? (history-current h) s)) (begin (prune! h s) #t)))]
-      [else #f]))
+    (and (pair? r) (list? r)
+         (case (car r)
+           [(group)
+            (and (fx>= (length r) 5)
+                 (let ([id (list-ref r 1)] [p (state-of h (list-ref r 2))] [time (list-ref r 3)]
+                       [cursors (list-ref r 4)] [edits (vector-edits (list-tail r 5))])
+                   (and p edits (count? id) (not (state-of h id)) (fixnum? time)
+                        (list? cursors) (for-all count? cursors) (edits-fit? (state-length p) edits)
+                        (let ([s (add-state! h id p cursors time)])
+                          (for-each (lambda (e) (push-edit! h s e)) edits)
+                          (state-written-count-set! s (state-count s))
+                          (history-current-set! h s)
+                          #t))))]
+           [(more)
+            (and (fx>= (length r) 2)
+                 (let ([s (state-of h (cadr r))] [edits (vector-edits (cddr r))])
+                   (and s edits (state-parent s) (null? (state-children s)) (edits-fit? (state-length s) edits)
+                        (begin
+                          (for-each (lambda (e) (push-edit! h s e)) edits)
+                          (state-written-count-set! s (state-count s))
+                          #t))))]
+           [(at)
+            (let ([s (and (fx= (length r) 2) (state-of h (cadr r)))])
+              (and s (begin (history-current-set! h s) #t)))]
+           [(root)
+            (let ([s (and (fx= (length r) 2) (state-of h (cadr r)))])
+              (and s (descends? (history-current h) s) (begin (re-root! h s) #t)))]
+           [(prune)
+            (let ([s (and (fx= (length r) 2) (state-of h (cadr r)))])
+              (and s (state-parent s) (not (descends? (history-current h) s)) (begin (prune! h s) #t)))]
+           [else #f])))
+
+  (define (header? r)
+    (and (list? r) (fx= (length r) 5) (eq? (car r) 'undo-history) (eqv? (cadr r) 1)
+         (count? (caddr r)) (count? (cadddr r)) (fixnum? (list-ref r 4))))
 
   (define (replay records)
-    (if (or (null? records) (not (eq? (caar records) 'undo-history)))
+    (if (or (null? records) (not (header? (car records))))
         (values #f (null? records))
         (let* ([header (car records)]
                [h (new-history (list-ref header 2) (list-ref header 3) (list-ref header 4))])
           (state-written-count-set! (history-root h) 0)
+          (history-taken?-set! h #t)
           (let loop ([rs (cdr records)])
             (cond
               [(null? rs) (values h #t)]
               [(apply-record! h (car rs)) (loop (cdr rs))]
               [else (values h #f)])))))
 
+  (define (edit-vector e)
+    (vector (edit-start e) (edit-removed e) (edit-inserted e)))
+
   (define (group-record s)
     (cons* 'group (state-id s) (state-id (state-parent s)) (state-time s) (state-cursors s)
-           (reverse (state-edits-newest-first s))))
-
-  (define (saved-record save)
-    (list 'saved (state-id (save-state save)) (save-length save) (save-hash save)))
+           (map edit-vector (reverse (state-edits-newest-first s)))))
 
   ;; Records follow the tree, not ids: a state split from a group is its
   ;; parent with a newer id. Children go oldest first, so a replay, which
@@ -266,7 +270,6 @@
             (append
               (list (list 'undo-history 1 (state-id root) (state-length root) (state-time root)))
               (reverse groups)
-              (map saved-record (reverse (history-saves h)))
               (list (list 'at (state-id (history-current h)))))
             (let ([s (car stack)])
               (loop (append (reverse (state-children s)) (cdr stack)) (cons (group-record s) groups)))))))
@@ -276,8 +279,10 @@
       (lambda (s) (state-written-count-set! s (state-count s)) (state-queued?-set! s #f))
       (hashtable-values (history-states h))))
 
+  ;; Nothing is queued until the records are first taken, so a history
+  ;; whose records nobody takes keeps no list of changes.
   (define (queue! h item)
-    (when (history-log h)
+    (when (history-taken? h)
       (history-pending-set! h (cons item (history-pending h)))))
 
   (define (queue-group! h s)
@@ -285,8 +290,8 @@
       (state-queued?-set! s #t)
       (queue! h (list 'group s))))
 
-  ;; An item naming a state whose group record never reached the log
-  ;; leaves nothing, as a group undone before its batch ended.
+  ;; An item naming a state whose group record was never taken leaves
+  ;; nothing, as a group undone before its batch ended.
   (define (pending-records h)
     (let loop ([items (reverse (history-pending h))] [acc '()])
       (if (null? items)
@@ -305,30 +310,33 @@
                    [(fx> count written)
                     (state-written-count-set! s count)
                     (next (cons* 'more (state-id s)
-                                 (reverse (list-head (state-edits-newest-first s) (fx- count written)))))]
+                                 (map edit-vector
+                                      (reverse (list-head (state-edits-newest-first s) (fx- count written))))))]
                    [else (next #f)]))]
               [(prune) (next (and (state-written-count s) (list 'prune (state-id s))))]
-              [else
-               (next (and (live? h s) (state-written-count s)
-                          (if (eq? kind 'saved)
-                              (cons* 'saved (state-id s) (cddr item))
-                              (list kind (state-id s)))))])))))
+              [else (next (and (live? h s) (state-written-count s) (list kind (state-id s))))])))))
 
-  (define (flush! h)
-    (let ([log (history-log h)] [rewrite (history-rewrite h)])
-      (cond
-        [(not log) (history-pending-set! h '()) #f]
-        [(or (eq? rewrite (log-rewrite at-batch-end))
-             (and (eq? rewrite (log-rewrite once-edited)) (pair? (state-children (history-root h)))))
-         (history-rewrite-set! h (log-rewrite none))
-         (history-pending-set! h '())
-         (mark-written! h)
-         (vector 'replace log (history-records h))]
-        [(eq? rewrite (log-rewrite once-edited)) (history-pending-set! h '()) #f]
-        [else
-         (let ([records (pending-records h)])
-           (history-pending-set! h '())
-           (and (pair? records) (vector 'append log records)))])))
+  (define (take-buffer-records! b whole?)
+    (without-quits
+      (lambda ()
+        (let ([h (buffer-history b)])
+          (and h
+               (begin
+                 (catch-up! h)
+                 (let ([h (buffer-history b)])
+                   (and h (take! h whole?)))))))))
+
+  (define (take! h whole?)
+    (if (or whole? (not (history-taken? h)) (history-whole? h))
+        (begin
+          (history-taken?-set! h #t)
+          (history-whole?-set! h #f)
+          (history-pending-set! h '())
+          (mark-written! h)
+          (history-records h))
+        (let ([records (pending-records h)])
+          (history-pending-set! h '())
+          records)))
 
   (define histories (make-weak-eq-hashtable))
 
@@ -405,48 +413,47 @@
 
   (define (limit-of b) (buffers:with-buffer b (limit)))
 
-  (define (keeps-log? path)
-    (guard (c [(not (quit-condition? c)) (report c) #f])
-      (and ((keep-log?) path) #t)))
+  (define quieted (make-weak-eq-hashtable))
 
-  (define (log-file path)
-    (string-append (%log-folder) (if (and (fx> (string-length path) 0) (char=? (string-ref path 0) #\/)) "" "/")
-                   path ".ss"))
+  (define (space-name? b)
+    (let ([name (buffers:name b)])
+      (and (fx> (string-length name) 0) (char=? (string-ref name 0) #\space))))
 
-  (define (log-of b path)
-    (and path (fx> (limit-of b) 0) (keeps-log? path) (log-file path)))
+  ;; As in Emacs, a buffer whose name starts with a space keeps no history
+  ;; unless its plugin turns it back on. The value is set as this module's
+  ;; own local value: a plugin that sets the option locally imports this
+  ;; module, so it comes later in the order of changes and its value wins.
+  ;; The name is read once, but the value is set again in each new scope
+  ;; the buffer gets, since setting a major mode drops local values and
+  ;; Emacs keeps such a buffer's undo off across it.
+  (define (quiet-internal! b)
+    (let ([quiet-scope (eq-hashtable-ref quieted b 'unseen)])
+      (when (and quiet-scope (buffers:live? b))
+        (let ([scope (buffers:with-buffer b (current-scope))])
+          (cond
+            [(eq? quiet-scope scope) (void)]
+            [(or (not (eq? quiet-scope 'unseen)) (space-name? b))
+             (eq-hashtable-set! quieted b scope)
+             (as-module (this-module)
+               (buffers:with-buffer b (set-option-local! limit 0)))]
+            [else (eq-hashtable-set! quieted b #f)])))))
 
-  (define (begin-history! b length saved? version)
-    (let* ([h (new-history 0 length (now))] [path (files:path b)] [log (log-of b path)])
+  (define (begin-history! b length version)
+    (let ([h (new-history 0 length (now))])
       (history-buffer-set! h b)
       (history-recorded-version-set! h version)
-      (history-file-set! h path)
-      (when log
-        (history-log-set! h log)
-        (history-rewrite-set! h (log-rewrite once-edited)))
-      (when (and path saved?)
-        (let-values ([(length hash) (files:fingerprint b)])
-          (let ([root (history-root h)])
-            (history-saved-set! h root)
-            (history-saves-set! h (list (make-save root length hash))))))
       (eq-hashtable-set! histories b h)
       h))
 
-  (define-record-type snapshot
-    (sealed #t)
-    (fields path version document modified? length hash (mutable waiters)))
-
   (define (history-of who b)
     (or (eq-hashtable-ref histories b #f)
-        (let ([snapshot (eq-hashtable-ref attaching b #f)])
+        (let ([waiting (eq-hashtable-ref attaching b #f)])
           (cond
-            [(not snapshot)
-             (begin-history! b (document:length (buffers:document b)) (not (files:modified? b))
-                             (buffers:version b))]
+            [(not waiting)
+             (quiet-internal! b)
+             (begin-history! b (document:length (buffers:document b)) (buffers:version b))]
             [(current-task)
-             (suspend
-               (lambda (resume)
-                 (snapshot-waiters-set! snapshot (cons resume (snapshot-waiters snapshot)))))
+             (suspend (lambda (resume) (set-box! waiting (cons resume (unbox waiting)))))
              (history-of who b)]
             [else
              (raise (condition (make-error) (make-who-condition who)
@@ -488,12 +495,28 @@
               (map (lambda (p) (point-before p e)) (cursor-points v))
               '()))))
 
+  (define (saved-state h)
+    (let ([b (history-buffer h)])
+      (cond
+        [(not (buffers:modified? b)) (history-current h)]
+        [(eqv? (history-stamp h) (buffers:save-stamp b)) (history-stamped h)]
+        [else #f])))
+
+  (define (stamp! h b)
+    (history-stamped-set! h (history-current h))
+    (history-stamp-set! h (buffers:save-stamp b)))
+
   (define (joins? h s command)
     (and command (state-parent s) (eq? (state-command s) command)
          (eqv? (state-run s) (fx- run 1)) (fx< (state-joins s) 20)
-         (not (eq? s (history-saved h)))))
+         (not (eq? s (saved-state h)))))
 
-  (define (add-edit! h b e)
+  ;; A group still open when the buffer was marked unmodified goes on to
+  ;; hold text the mark never saw, so it is not stamped.
+  (define (add-edit! h b e version)
+    (when (and (eqv? (buffers:save-stamp b) (fx- version 1))
+               (not (eq? (history-open h) (history-current h))))
+      (stamp! h b))
     (let ([o (history-open h)] [c (history-current h)] [command (commands:this-command)])
       (cond
         [(and o (eq? o c))
@@ -528,21 +551,25 @@
 
   (define (note-edit! b e)
     (unless (eq? b applying)
+      (quiet-internal! b)
       (let ([h (eq-hashtable-ref histories b #f)])
         (cond
-          [(eqv? (limit) 0) (when h (forget! h #t))]
+          [(eqv? (limit) 0) (when h (drop! h))]
           [(eq-hashtable-contains? attaching b) (void)]
           [else
            (let ([version (buffers:edit-version e)]
                  [h (or h (begin-history! b (fx- (document:length (buffers:document b))
                                                  (fx- (document:length (buffers:edit-inserted e))
                                                       (document:length (buffers:edit-removed e))))
-                                          #f (fx- (buffers:edit-version e) 1)))])
+                                          (fx- (buffers:edit-version e) 1)))])
              (if (fx= version (fx+ (history-recorded-version h) 1))
                  (begin
-                   (add-edit! h b (edit-of e))
+                   (add-edit! h b (edit-of e) version)
                    (history-recorded-version-set! h version))
                  (catch-up! h)))]))))
+
+  (define (add-edits! h b edits)
+    (for-each (lambda (e) (add-edit! h b (edit-of e) (buffers:edit-version e))) edits))
 
   ;; A quit that lands as the buffer calls its after-edit entries, before
   ;; this module's starts, skips the record; the buffer keeps its recent
@@ -554,13 +581,13 @@
         (let ([edits (buffers:edits-since b (history-recorded-version h))])
           (if edits
               (begin
-                (for-each (lambda (e) (add-edit! h b (edit-of e))) edits)
+                (add-edits! h b edits)
                 (history-recorded-version-set! h (buffers:version b)))
               (begin
                 (warn 'undo "edits were made that undo could not record, so the buffer's history starts again"
                       (list (buffers:name b)))
-                (forget! h #f)
-                (mark-dirty! (begin-history! b (document:length (buffers:document b)) #f (buffers:version b)))))))))
+                (drop! h)
+                (mark-dirty! (begin-history! b (document:length (buffers:document b)) (buffers:version b)))))))))
 
   (define (amalgamate-history! h command)
     (let ([o (history-open h)])
@@ -667,21 +694,27 @@
                  (values (and (not raised) (fx= spliced n) (null? (cdr moves))) raised)]))))))
 
   ;; The whole path is played on the document first, so a step that does
-  ;; not fit changes nothing.
+  ;; not fit changes nothing. Undo's own moves are changes for the first
+  ;; change rule, so undoing back to the saved text, or redoing to it,
+  ;; marks the buffer unmodified again.
   (define (move! h b moves who)
     (unless (null? moves)
       (play (buffers:document b) (moves-steps moves) who)
       (let ([raised #f])
         (unless (without-quits
                   (lambda ()
+                    (unless (buffers:modified? b) (stamp! h b))
                     (let-values ([(whole? c) (apply-moves! h b moves)])
                       (set! raised c)
                       (queue! h (list 'at (history-current h)))
                       (mark-dirty! h)
                       whole?)))
           (if raised (raise raised) (stale who))))
-      (when (eq? (history-current h) (history-saved h))
-        (files:not-modified b))))
+      (mark-if-saved! h b)))
+
+  (define (mark-if-saved! h b)
+    (when (and (eq? (history-current h) (history-stamped h)) (eqv? (history-stamp h) (buffers:save-stamp b)))
+      (buffers:set-modified! b #f)))
 
   (define (redo-child c)
     (let ([left (state-left c)] [children (state-children c)])
@@ -742,7 +775,7 @@
                   (if (fx> (state-count o) 0)
                       (let ([written (state-written-count o)])
                         (when (and written (fx> written (state-count o)))
-                          (rewrite-log! h)))
+                          (take-whole! h)))
                       (let ([p (state-parent o)])
                         (history-open-set! h #f)
                         (history-current-set! h p)
@@ -750,20 +783,14 @@
                         (queue! h (list 'at p))
                         (queue! h (list 'prune o))))
                   (when spliced (catch-up! h))
-                  (mark-dirty! h)))))))))
-
-  (define writer-items '())
+                  (mark-dirty! h))))
+            (mark-if-saved! h b))))))
 
   (define (end-history-batch! h)
     (when (installed? h)
       (close-group! h)
-      (let ([item (flush! h)])
-        (when item (set! writer-items (cons item writer-items))))
       (keep-within-limit! h)
-      (when (installed? h)
-        (let ([item (flush! h)])
-          (when item (set! writer-items (cons item writer-items))))
-        (when (history-open h) (mark-dirty! h)))))
+      (when (and (installed? h) (history-open h)) (mark-dirty! h))))
 
   (define (end-batch!)
     (without-quits
@@ -772,13 +799,7 @@
         (set! command-buffer #f)
         (let ([hs dirty])
           (set! dirty '())
-          (for-each (lambda (h) (history-dirty?-set! h #f) (end-history-batch! h)) hs)
-          (send-items!)))))
-
-  (define (send-items!)
-    (let ([items (reverse writer-items)])
-      (set! writer-items '())
-      (unless (null? items) (send! items))))
+          (for-each (lambda (h) (history-dirty?-set! h #f) (end-history-batch! h)) hs)))))
 
   (define (note-command-end! command)
     (without-quits
@@ -786,16 +807,8 @@
         (set! command-buffer #f)
         (for-each close-group! dirty))))
 
-  ;; The item follows those a batch's end has queued, so a deleted log is
-  ;; not written again by an append queued before it.
-  (define (forget! h delete?)
-    (eq-hashtable-delete! histories (history-buffer h))
-    (let ([item (if delete?
-                    (let ([log (history-log h)]) (and log (vector 'delete log)))
-                    (flush! h))])
-      (when item
-        (set! writer-items (cons item writer-items))
-        (send-items!))))
+  (define (drop! h)
+    (eq-hashtable-delete! histories (history-buffer h)))
 
   (define (forget-history! b)
     (let ([h (eq-hashtable-ref histories b #f)])
@@ -803,27 +816,14 @@
         (without-quits
           (lambda ()
             (history-holds-set! h '())
-            (forget! h #t))))))
+            (drop! h))))))
 
-  ;; The discarded edits stay a redo away and do not come back at the
-  ;; next visit.
-  (define (forget-killed! b)
-    (let ([h (eq-hashtable-ref histories b #f)])
-      (when h
-        (without-quits
-          (lambda ()
-            (history-holds-set! h '())
-            (close-group! h)
-            (let ([saved (history-saved h)])
-              (when (and saved (not (eq? saved (history-current h))))
-                (history-current-set! h saved)
-                (queue! h (list 'at saved))))
-            (forget! h #f))))))
-
-  ;; The path from the saved state to the current one is kept, since a
-  ;; restart needs it.
+  ;; Whoever takes a history's records may rebuild its unsaved edits from
+  ;; the saved text, as after a restart, so the path between the two is
+  ;; kept; any other history drops its oldest groups first, as Emacs does.
   (define (kept-states h)
-    (let ([kept (make-eq-hashtable)] [current (history-current h)] [saved (history-saved h)])
+    (let ([kept (make-eq-hashtable)] [current (history-current h)]
+          [saved (and (history-taken? h) (saved-state h))])
       (if saved
           (let ([up (ancestors current)] [down (ancestors saved)])
             (let loop ([up up] [down down])
@@ -868,372 +868,84 @@
       (state-left-set! c #f)
       (history-root-set! h c)
       (history-size-set! h 0)
-      (forget-dead-saves! h)
+      (forget-dead-stamp! h)
       (history-pending-set! h '())
-      (rewrite-log! h)))
+      (take-whole! h)))
 
   (define (keep-within-limit! h)
     (let ([lim (limit-of (history-buffer h))])
       (cond
-        [(eqv? lim 0) (forget! h #t)]
+        [(eqv? lim 0) (drop! h)]
         [(<= (history-size h) lim) (void)]
         [(> (state-size (history-current h)) lim) (start-again! h)]
         [else (trim! h lim)])))
 
-  (define (note-saved! b)
-    (without-quits (lambda () (mark-saved! b))))
+  (define (current-text h id doc)
+    (let ([s (state-of h id)])
+      (and s (fx= (state-length s) (document:length doc))
+           (guard (c [(stale-condition? c) #f])
+             (play doc (moves-steps (path-moves s (history-current h))) 'undo:current-document)))))
 
-  ;; A buffer written to another file keeps its history, which the new
-  ;; file's log holds whole; the old log gets the records made before.
-  (define (mark-saved! b)
-    (let ([h (eq-hashtable-ref histories b #f)])
-      (if (not h)
-          (unless (eq-hashtable-contains? attaching b)
-            (mark-dirty! (begin-history! b (document:length (buffers:document b)) (not (files:modified? b))
-                                         (buffers:version b))))
-          (let ([path (files:path b)])
-            (close-group! h)
-            (unless (equal? path (history-file h))
-              (let ([item (flush! h)] [log (log-of b path)])
-                (when item (send! (list item)))
-                (history-file-set! h path)
-                (history-log-set! h log)
-                (rewrite-log! h)))
-            (if (or (history-open h) (files:modified? b))
-                (history-saved-set! h #f)
-                (let-values ([(length hash) (files:fingerprint b)])
-                  (let ([c (history-current h)])
-                    (history-saved-set! h c)
-                    (history-saves-set! h (cons (make-save c length hash)
-                                                (remp (lambda (save) (eq? (save-state save) c))
-                                                      (history-saves h))))
-                    (queue! h (list 'saved c length hash)))))
-            (mark-dirty! h)))))
-
-  (define (saved-match h length hash text-length)
-    (let ([save (find (lambda (save)
-                        (and (= (save-length save) length) (= (save-hash save) hash)
-                             (or (not text-length) (fx= (state-length (save-state save)) text-length))))
-                      (history-saves h))])
-      (and save (save-state save))))
-
-  (define (unsaved-edits? h)
-    (and (pair? (state-children (history-root h)))
-         (let ([saves (history-saves h)])
-           (or (null? saves) (not (eq? (save-state (car saves)) (history-current h)))))))
-
-  (define (start-over old text-length length hash path log saved?)
-    (when (and old (unsaved-edits? old))
-      (send! (list (vector 'aside log)))
-      (warn 'undo "the file changed outside Tuna, so the log of its unsaved edits is set aside as"
-            (list (string-append log ".stale"))))
-    (let ([h (new-history 0 text-length (now))])
-      (history-file-set! h path)
-      (history-log-set! h log)
-      (when log (history-rewrite-set! h (log-rewrite once-edited)))
-      (when saved?
-        (let ([root (history-root h)])
-          (history-saved-set! h root)
-          (history-saves-set! h (list (make-save root length hash)))))
-      h))
-
-  ;; A log that cannot be read is left alone, and its buffer keeps no log
-  ;; this session: writing a new one would replace the unsaved edits it
-  ;; may hold.
-  (define (read-history log)
-    (let-values ([(records torn?) (suspend (lambda (resume) (send! (list (vector 'read log resume)))))])
-      (if records
-          (let-values ([(h fits?) (replay records)])
-            (when h
-              (history-file-set! h #f)
-              (history-log-set! h log)
-              (when (or torn? (not fits?))
-                (rewrite-log! h)))
-            (values h log))
-          (values #f #f))))
-
-  (define (adopt! h path log)
-    (history-file-set! h path)
-    (history-log-set! h log)
-    h)
-
-  (define (choose-history old doc modified? length hash path log)
-    (let ([text-length (document:length doc)])
-      (define (over) (values (start-over old text-length length hash path log (not modified?)) '() doc))
-      (cond
-        [(not old) (over)]
-        [modified?
-         (if (fx= (state-length (history-current old)) text-length)
-             (begin
-               (history-saved-set! old (saved-match old length hash #f))
-               (values (adopt! old path log) '() doc))
-             (over))]
-        [(saved-match old length hash text-length)
-         => (lambda (s)
-              (let* ([moves (path-moves s (history-current old))]
-                     [shown (guard (c [(stale-condition? c) #f]) (play doc (moves-steps moves) 'undo))])
-                (if shown
-                    (begin
-                      (history-saved-set! old s)
-                      (values (adopt! old path log) moves shown))
-                    (over))))]
-        [else (over)])))
-
-  (define prepared (make-weak-eq-hashtable))
-
-  ;; files:read-document's advice: the visit makes its buffer with the
-  ;; unsaved edits already in, so views restore their cursors on the text
-  ;; they were on.
-  (define (read-with-history read path)
-    (let-values ([(doc length hash) (read path)])
-      (let ([log (and (string? path) (current-task) (fx> (limit) 0) (keeps-log? path) (log-file path))])
-        (if (not log)
-            (values doc length hash)
-            (let-values ([(old log) (read-history log)])
-              (let-values ([(h moves shown) (choose-history old doc #f length hash path log)])
-                (eq-hashtable-set! prepared (current-task) h)
-                (values shown length hash)))))))
-
-  (define (install! b h v0)
-    (without-quits
-      (lambda ()
-        (history-buffer-set! h b)
-        (eq-hashtable-set! histories b h)
-        (mark-dirty! h)
-        (unless (= (buffers:version b) v0)
-          (let ([edits (buffers:edits-since b v0)])
-            (if edits
-                (for-each (lambda (e) (add-edit! h b (edit-of e))) edits)
-                (begin
-                  (eq-hashtable-delete! histories b)
-                  (mark-dirty! (begin-history! b (document:length (buffers:document b)) #f (buffers:version b)))))))
-        (history-recorded-version-set! h (buffers:version b)))))
-
-  ;; Edits made while the log was read apply to the saved text, so the
-  ;; log's unsaved edits stay a redo away rather than being replayed.
-  (define (attach-live! b old doc0 v0 modified? length hash path log)
-    (let-values ([(h moves shown) (choose-history old doc0 modified? length hash path log)])
-      (if (null? moves)
-          (install! b h v0)
-          (let ([saved (history-saved h)])
-            (history-current-set! h saved)
-            (queue! h (list 'at saved))
-            (install! b h v0)
-            (when (and (installed? h) (eq? (history-current h) saved))
-              (move! h b moves 'undo))))))
-
-  ;; Attaching a live buffer begins at once, so an edit made, or a history
-  ;; asked for, before its log arrives neither goes unrecorded nor starts
-  ;; a history of its own.
-  (define (begin-attach! b)
-    (and (not (eq-hashtable-ref histories b #f))
+  (define (attach-buffer! b)
+    (and (buffers:live? b)
+         (not (eq-hashtable-ref histories b #f))
          (not (eq-hashtable-contains? attaching b))
-         (files:path b)
-         (let-values ([(length hash) (files:fingerprint b)])
-           (let ([snapshot (make-snapshot (files:path b) (buffers:version b) (buffers:document b)
-                                          (files:modified? b) length hash '())])
-             (eq-hashtable-set! attaching b snapshot)
-             snapshot))))
+         (begin
+           (eq-hashtable-set! attaching b (box '()))
+           #t)))
 
-  (define (end-attach! b snapshot)
-    (eq-hashtable-delete! attaching b)
-    (for-each (lambda (resume) (resume void)) (snapshot-waiters snapshot)))
+  (define (length-at b edits)
+    (fold-left (lambda (n e)
+                 (fx- n (fx- (document:length (buffers:edit-inserted e)) (document:length (buffers:edit-removed e)))))
+               (document:length (buffers:document b)) edits))
 
-  (define (finish-attach! b snapshot)
-    (let ([path (snapshot-path snapshot)])
-      (let-values ([(old log) (let ([log (log-of b path)])
-                                (if log
-                                    (guard (c [#t (end-attach! b snapshot) (raise c)])
-                                      (read-history log))
-                                    (values #f #f)))])
-        (end-attach! b snapshot)
-        (when (and (buffers:live? b) (not (eq-hashtable-ref histories b #f)) (equal? (files:path b) path))
-          (attach-live! b old (snapshot-document snapshot) (snapshot-version snapshot)
-                        (snapshot-modified? snapshot) (snapshot-length snapshot) (snapshot-hash snapshot)
-                        path log)))))
+  ;; The buffer last marked unmodified at the version holds the saved
+  ;; state's text, which the history then moves on from, unless edits
+  ;; since have moved it already; a buffer marked modified holds the
+  ;; current state's.
+  (define (install-on! b h version saved-id)
+    (let ([edits (buffers:edits-since b version)])
+      (if (not edits)
+          (begin
+            (warn 'undo "edits were made that undo could not record, so the buffer's history starts again"
+                  (list (buffers:name b)))
+            (mark-dirty! (begin-history! b (document:length (buffers:document b)) (buffers:version b)))
+            #f)
+          (let* ([h (or h (new-history 0 (length-at b edits) (now)))]
+                 [saved (and saved-id (state-of h saved-id))]
+                 [at-saved? (and saved (eqv? (buffers:save-stamp b) version))]
+                 [target (history-current h)]
+                 [at (if at-saved? saved target)])
+            (and (fx= (state-length at) (length-at b edits))
+                 (begin
+                   (without-quits
+                     (lambda ()
+                       (unless (eq? at target)
+                         (history-current-set! h at)
+                         (queue! h (list 'at at)))
+                       (when (and saved (not at-saved?) (buffers:modified? b))
+                         (history-stamped-set! h saved)
+                         (history-stamp-set! h (buffers:save-stamp b)))
+                       (history-buffer-set! h b)
+                       (history-recorded-version-set! h version)
+                       (eq-hashtable-set! histories b h)
+                       (mark-dirty! h)
+                       (add-edits! h b edits)
+                       (history-recorded-version-set! h (buffers:version b))))
+                   (when (and (null? edits) (not (eq? at target)) (installed? h))
+                     (move! h b (path-moves at target) 'undo:install!))
+                   #t))))))
 
-  (define (attach-visited! b)
-    (let ([h (eq-hashtable-ref prepared (current-task) #f)])
-      (when h (eq-hashtable-delete! prepared (current-task)))
-      (if (and h (equal? (history-file h) (files:path b)) (not (eq-hashtable-ref histories b #f)))
-          (install! b h 0)
-          (let ([snapshot (begin-attach! b)])
-            (when snapshot (finish-attach! b snapshot))))))
-
-  ;; Attaching begins in the module's body, before any edit can come, and
-  ;; finishes in a task, which may pause for the logs.
-  (define (attach-open-buffers)
-    (let ([started (filter cdr (map (lambda (b) (cons b (begin-attach! b))) (files:buffers)))])
-      (lambda ()
-        (for-each
-          (lambda (entry)
-            (guard (c [(not (quit-condition? c)) (report c)])
-              (finish-attach! (car entry) (cdr entry))))
-          started))))
-
-  (define (compact! log)
-    (let ([h (find (lambda (h) (equal? (history-log h) log)) (vector->list (hashtable-values histories)))])
-      (when (and h (eq? (history-rewrite h) (log-rewrite none)))
-        (rewrite-log! h)
-        (mark-dirty! h))))
-
-  (define (ensure-log-folder!)
-    (when (string=? (%log-folder) "")
-      (let ([t (current-time 'time-utc)])
-        (set-saved! %log-folder
-          (format "~a/.local/share/tuna/undo/~a" (getenv "HOME")
-                  (+ (* (time-second t) 1000000000) (time-nanosecond t)))))))
-
-  ;; The logs have a thread of their own, not jobs: a file's reads and
-  ;; appends must keep their order, and a job stops when its module
-  ;; unloads, before an unload action could wait for its last write.
-  (define writer-mutex (make-mutex))
-  (define writer-work (make-condition))
-  (define writer-idle (make-condition))
-  (define writer-queue '())
-  (define writer-busy? #f)
-  (define writer-stopping? #f)
-
-  (define (answer-reads! items)
-    (for-each
-      (lambda (item)
-        (when (eq? (vector-ref item 0) 'read)
-          ((vector-ref item 2) (lambda () (values #f #f)))))
-      items))
-
-  (define (send! items)
-    (unless (without-quits
-              (lambda ()
-                (with-mutex writer-mutex
-                  (and (not writer-stopping?)
-                       (begin
-                         (set! writer-queue (append (reverse items) writer-queue))
-                         (condition-signal writer-work)
-                         #t)))))
-      (answer-reads! items)))
-
-  (define (take-work!)
-    (with-mutex writer-mutex
-      (let loop ()
-        (cond
-          [(pair? writer-queue)
-           (let ([items (reverse writer-queue)])
-             (set! writer-queue '())
-             (set! writer-busy? #t)
-             items)]
-          [else
-           (set! writer-busy? #f)
-           (condition-broadcast writer-idle)
-           (and (not writer-stopping?)
-                (begin (condition-wait writer-work writer-mutex) (loop)))]))))
-
-  ;; A log is written again from its history, which drops the records that
-  ;; no longer count, once it has grown past twice its size when last
-  ;; read or written whole: each byte is then written about twice at most.
-  ;; The 64 KB more spares small logs the fixed cost of three flushes.
-  (define sizes (make-hashtable string-hash string=?))
-
-  (define (report-later c) (post! (lambda () (report c))))
-
-  (define (attempt thunk)
-    (guard (c [#t (report-later c)]) (thunk)))
-
-  (define (note-size! file n)
-    (hashtable-set! sizes file (cons n n)))
-
-  (define (append-records! file records)
-    (let ([bytes (records->bytes records)])
-      (unless (hashtable-contains? sizes file)
-        (note-size! file (log-size file)))
-      (append-log! file bytes)
-      (let* ([entry (hashtable-ref sizes file #f)] [size (+ (cdr entry) (bytevector-length bytes))])
-        (if (> size (+ (* 2 (car entry)) 65536))
-            (begin
-              (note-size! file size)
-              (post! (lambda () (compact! file))))
-            (set-cdr! entry size)))))
-
-  (define (replace-records! file records)
-    (let ([bytes (records->bytes records)])
-      (replace-log! file bytes)
-      (note-size! file (bytevector-length bytes))))
-
-  (define (answer-read! file resume)
-    (let-values ([(records torn?)
-                  (guard (c [#t (report-later c) (values #f #f)])
-                    (let-values ([(records torn?) (read-log file)])
-                      (note-size! file (log-size file))
-                      (values records torn?)))])
-      (attempt (lambda () (resume (lambda () (values records torn?)))))))
-
-  ;; Appends to one log are written together, with one flush to disk, but
-  ;; never past another item for the same log.
-  (define (write-round! items)
-    (let ([appends '()])
-      (define (flush-appends! file)
-        (let ([entry (assoc file appends)])
-          (when entry
-            (set! appends (remq entry appends))
-            (attempt (lambda () (append-records! file (reverse (cdr entry))))))))
-      (for-each
-        (lambda (item)
-          (let ([kind (vector-ref item 0)] [file (vector-ref item 1)])
-            (if (eq? kind 'append)
-                (let ([entry (assoc file appends)])
-                  (if entry
-                      (set-cdr! entry (append (reverse (vector-ref item 2)) (cdr entry)))
-                      (set! appends (cons (cons file (reverse (vector-ref item 2))) appends))))
-                (begin
-                  (flush-appends! file)
-                  (case kind
-                    [(replace) (attempt (lambda () (replace-records! file (vector-ref item 2))))]
-                    [(read) (answer-read! file (vector-ref item 2))]
-                    [(aside) (attempt (lambda () (set-log-aside! file) (hashtable-delete! sizes file)))]
-                    [(delete) (attempt (lambda () (delete-log! file) (hashtable-delete! sizes file)))])))))
-        items)
-      (for-each (lambda (entry) (flush-appends! (car entry))) (reverse appends))))
-
-  (define (run-writer)
-    (let loop ()
-      (let ([items (take-work!)])
-        (when items
-          (write-round! items)
-          (loop)))))
-
-  (define (start-writer!) (fork-thread run-writer))
-
-  ;; Exit unloads this module too, so the wait is bounded: a round that
-  ;; prints a huge edit could otherwise hold exit for seconds. A round
-  ;; still running when the wait ends goes on, and can append to a log as
-  ;; a reloaded instance's writer does.
-  (define writer-wait 2)
-
-  (define (stop-writer!)
-    (for-each (lambda (h) (history-dirty?-set! h #f) (end-history-batch! h)) dirty)
-    (set! dirty '())
-    (send-items!)
-    (with-mutex writer-mutex
-      (set! writer-stopping? #t)
-      (condition-signal writer-work))
-    (let ([deadline (add-duration (current-time 'time-utc) (make-time 'time-duration 0 writer-wait))])
-      (unless (with-mutex writer-mutex
-                (let loop ()
-                  (cond
-                    [(not (or writer-busy? (pair? writer-queue))) #t]
-                    [(or (condition-wait writer-idle writer-mutex deadline)
-                         (time<? (current-time 'time-utc) deadline))
-                     (loop)]
-                    [else
-                     (let ([dropped writer-queue])
-                       (set! writer-queue '())
-                       (answer-reads! dropped)
-                       #f)])))
-        (warn 'undo (format "the log writer did not finish within ~a seconds; the edits it had not written are not in the logs"
-                            writer-wait)
-              '())))))
+  (define (install-history! b h version saved-id)
+    (let ([waiting (eq-hashtable-ref attaching b #f)])
+      (eq-hashtable-delete! attaching b)
+      (let ([wake (lambda () (when waiting (for-each (lambda (resume) (resume void)) (unbox waiting))))])
+        (let ([installed (guard (c [#t (wake) (raise c)])
+                           (and (buffers:live? b) (install-on! b h version saved-id)))])
+          (wake)
+          installed)))))
 
 (import %internals)
-
 (define (amalgamate!)
   (check-main-thread 'undo:amalgamate!)
   (let ([command (commands:this-command)] [b (buffers:current)])
@@ -1300,7 +1012,7 @@
 
 (define (history buffer)
   (check-buffer 'undo:history buffer)
-  (let* ([h (history-of 'undo:history buffer)] [saved (history-saved h)])
+  (let* ([h (history-of 'undo:history buffer)] [saved (saved-state h)])
     (cons* (state-id (history-current h)) (and saved (state-id saved))
            (map (lambda (s)
                   (list (state-id s) (let ([p (state-parent s)]) (and p (state-id p))) (state-time s)))
@@ -1314,18 +1026,45 @@
     (close-group! h)
     (move! h buffer (path-moves (history-current h) target) 'undo:go-to!)))
 
-(ensure-log-folder!)
-(start-writer!)
+(define (take-records! buffer)
+  (check-buffer 'undo:take-records! buffer)
+  (take-buffer-records! buffer #f))
+
+(define (take-all-records! buffer)
+  (check-buffer 'undo:take-all-records! buffer)
+  (take-buffer-records! buffer #t))
+
+(define (records->history records)
+  (unless (list? records)
+    (assertion-violation 'undo:records->history "not a list" records))
+  (replay records))
+
+(define (current-document history id document)
+  (unless (history? history)
+    (assertion-violation 'undo:current-document "not a history" history))
+  (unless (document? document)
+    (assertion-violation 'undo:current-document "not a document" document))
+  (and (fixnum? id) (current-text history id document)))
+
+(define (attach! buffer)
+  (check-buffer 'undo:attach! buffer)
+  (attach-buffer! buffer))
+
+(define install!
+  (case-lambda
+    [(buffer history version) (install! buffer history version #f)]
+    [(buffer history version saved-id)
+     (check-buffer 'undo:install! buffer)
+     (unless (or (not history) (and (history? history) (not (history-buffer history))))
+       (assertion-violation 'undo:install! "not a history on no buffer" history))
+     (unless (and (fixnum? version) (fx<= 0 version (buffers:version buffer)))
+       (assertion-violation 'undo:install! "not a version of the buffer" version))
+     (install-history! buffer history version saved-id)]))
+
 (add-hook! buffers:after-edit record-edit!)
-(add-hook! buffers:killed forget-killed!)
+(add-hook! buffers:killed forget-history!)
 (add-hook! commands:before-command note-command-start!)
 (add-hook! commands:after-command note-command-end!)
-;; Ahead of other entries, whose edits would otherwise start a history of
-;; their own in place of the log's.
-(add-hook! files:after-visit attach-visited! -100)
-(add-hook! files:after-save note-saved!)
-(add-hook! files:after-revert note-saved!)
-(advice-add! files:read-document read-with-history)
 (advice-add! batch-ended
   (lambda (ended)
     (as-module (this-module)
@@ -1336,8 +1075,3 @@
 (keys:bind! keys:global "C-x u" undo)
 (keys:bind! keys:global "C-?" redo)
 (keys:bind! keys:global "C-M-_" redo)
-;; Window changes are not text, as Emacs keeps them out of buffer undo:
-;; an undo must never take back a part a plugin placed or removed.
-(buffers:with-buffer layout:buffer (set-option-local! limit 0))
-(on-unload stop-writer!)
-(spawn-task (attach-open-buffers))

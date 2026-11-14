@@ -1228,6 +1228,24 @@
   (check-buffer 'buffers:version buffer)
   (buffer-version buffer))
 
+(define (modified? buffer)
+  (check-buffer 'buffers:modified? buffer)
+  (not (eqv? (buffer-save-stamp buffer) (buffer-version buffer))))
+
+;; The version counts edits, so marking a buffer modified cannot move it
+;; past the stamp as Emacs moves its modification count; the stamp leaves
+;; the versions instead, unique to the version it was marked at.
+(define (set-modified! buffer flag)
+  (check-change 'buffers:set-modified! buffer)
+  (let ([version (buffer-version buffer)])
+    (cond
+      [(not flag) (buffer-save-stamp-set! buffer version)]
+      [(eqv? (buffer-save-stamp buffer) version) (buffer-save-stamp-set! buffer (fx- -1 version))])))
+
+(define (save-stamp buffer)
+  (check-buffer 'buffers:save-stamp buffer)
+  (buffer-save-stamp buffer))
+
 (define replace!
   (case-lambda
     [(buffer start end content)

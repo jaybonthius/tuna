@@ -1,0 +1,96 @@
+; Undo marks a buffer unmodified again when it reaches the state the
+; buffer was unmodified at: at the first change it records the buffer's
+; save stamp on that state, as Emacs records the file's time.
+> (define m (buffers:make "flag" "\n"))
+> (define (in-m command . args) (buffers:with-buffer m (apply commands:run command args)))
+> (list (buffers:modified? m) (buffers:save-stamp m))
+(#f 0)
+> (in-m checks:insert 1 "a")
+#<edit 1>
+> (in-m checks:insert 1 "b")
+#<edit 2>
+> (list (buffers:modified? m) (tree m))
+(#t (2 0 (0 #f) (1 0) (2 1)))
+> (in-m undo:undo 2)
+> (list (text m) (buffers:modified? m))
+("\n" #f)
+> (in-m undo:redo 1)
+> (list (text m) (buffers:modified? m))
+("a\n" #t)
+; A mark at another state, as a save makes, makes that state the saved
+; one.
+> (buffers:set-modified! m #f)
+> (list (buffers:modified? m) (buffers:save-stamp m) (cadr (undo:history m)))
+(#f 5 1)
+> (in-m undo:undo 1)
+> (list (text m) (buffers:modified? m) (cadr (undo:history m)))
+("\n" #t 1)
+> (in-m undo:redo 1)
+> (list (text m) (buffers:modified? m))
+("a\n" #f)
+; An edit after the mark, undone, comes back to it.
+> (in-m checks:insert 1 "c")
+#<edit 8>
+> (in-m undo:undo 1)
+> (list (text m) (buffers:modified? m))
+("a\n" #f)
+; Marking the buffer modified while it is unmodified moves the stamp off
+; every version, so no state is saved until the next mark.
+> (buffers:set-modified! m #t)
+> (list (buffers:modified? m) (buffers:save-stamp m) (cadr (undo:history m)))
+(#t -10 #f)
+> (in-m undo:redo 1)
+> (in-m undo:undo 1)
+> (buffers:modified? m)
+#t
+> (buffers:set-modified! m #f)
+; Edits joined to a group that a mark left open leave no saved state:
+; that state then holds text the mark never saw.
+> (undo:with-edit-group m
+    (buffers:replace! m 1 1 "x")
+    (buffers:set-modified! m #f)
+    (buffers:replace! m 1 1 "y"))
+#<edit 13>
+> (list (text m) (buffers:modified? m) (cadr (undo:history m)))
+("yxa\n" #t #f)
+> (raised (lambda () (buffers:set-modified! 'm #f)))
+(buffers:set-modified! "not a buffer")
+; A buffer whose name starts with a space keeps no history, as in Emacs.
+> (define q (buffers:make " quiet" "\n"))
+> (buffers:replace! q 1 1 "a")
+#<edit 1>
+> (list (buffers:with-buffer q (undo:limit)) (tree q))
+(0 (0 #f (0 #f)))
+> (buffers:with-buffer q (commands:run undo:undo 1))
+! undo:undo: no further undo information
+; Undo's local value comes first in the order of changes, since whatever
+; names the option loads after undo, so a local value set by a plugin
+; or the configuration turns history back on.
+> (buffers:with-buffer q (set-option-local! undo:limit 1000))
+> (buffers:replace! q 1 1 "b")
+#<edit 2>
+> (buffers:with-buffer q (commands:run undo:undo 1))
+> (text q)
+"a\n"
+; The space is read once, at undo's first record of the buffer.
+> (buffers:rename! q "loud")
+> (buffers:with-buffer q (undo:limit))
+1000
+; A body that raises takes its edits back, and when that comes back to
+; the state the buffer was unmodified at, the buffer is unmodified again.
+> (define c (buffers:make "cancelled" "\n"))
+> (raised (lambda () (undo:with-edit-group c (buffers:replace! c 1 1 "a") (error 'body "stops"))))
+(body "stops")
+> (list (text c) (buffers:modified? c) (tree c))
+("\n" #f (0 0 (0 #f)))
+; Setting a major mode drops local values; undo's own 0 is set again in
+; the buffer's new scope, so the quiet buffer stays quiet.
+> (use-plugin modes)
+> (define p (buffers:make " plain" "\n"))
+> (buffers:replace! p 1 1 "a")
+#<edit 1>
+> (modes:set-major-mode modes:fundamental p)
+> (buffers:replace! p 1 1 "b")
+#<edit 2>
+> (list (buffers:with-buffer p (undo:limit)) (tree p))
+(0 (0 #f (0 #f)))

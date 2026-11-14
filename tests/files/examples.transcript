@@ -29,12 +29,12 @@
 > (add-hook! files:before-save delete-trailing-whitespace)
 > (buffers:replace! notes 1 1 "Today: ")
 #<edit 1>
-> (files:modified? notes)
+> (buffers:modified? notes)
 #t
 > (files:save-buffer notes)
 > (disk-checks:read-text "~/notes.txt")
 "Today: Buy milk.\nCall Bob.\n"
-> (files:modified? notes)
+> (buffers:modified? notes)
 #f
 > (text notes)
 "Today: Buy milk.\nCall Bob.\n"
@@ -57,11 +57,19 @@
 > (disk-checks:write-text! "~/other.txt" "changed elsewhere\n")
 > (set-idle! #t)
 > (sleep-for 5.5)
-> (list (files:modified? notes) (files:modified? other))
+> (list (buffers:modified? notes) (buffers:modified? other))
 (#f #t)
 > (list (disk-checks:read-text "~/notes.txt") (disk-checks:read-text "~/other.txt"))
 ("+ * Today: Buy milk.\nCall Bob.\n" "changed elsewhere\n")
 > (guard (c [(files:changed-on-disk-condition? c) (condition-message c)])
     (files:save-buffer other))
 "another program changed the file"
+; C-x C-c asks before it exits with a modified file buffer whose edits
+; no entry of files:unsaved-kept keeps.
+> (define asked '())
+> (set-option! files:yes-or-no-reader (lambda (question) (set! asked (cons question asked)) #f))
+> (commands:run files:save-buffers-kill-tuna)
+> asked
+("Modified buffers exist; exit anyway? ")
+> (add-hook! files:unsaved-kept (lambda (buffer) (eq? buffer other)))
 > (commands:run files:save-buffers-kill-tuna)

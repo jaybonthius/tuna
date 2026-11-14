@@ -20,7 +20,7 @@
           (spawn-task (lambda () (buffers:replace! one 1 1 "b") (files:save-buffer one)))
           (spawn-task (lambda () (files:save-buffer one)))))
 > (for-each join-task savers)
-> (list (disk-checks:read-text "~/one.txt") (files:modified? one))
+> (list (disk-checks:read-text "~/one.txt") (buffers:modified? one))
 ("baone\n" #f)
 ; A key typed while the job writes leaves the buffer modified: files
 ; records the version the job wrote. The before-save entry queues the
@@ -30,7 +30,7 @@
 > (buffers:replace! one 1 1 "c")
 #<edit 3>
 > (files:save-buffer one)
-> (list (disk-checks:read-text "~/one.txt") (text one) (files:modified? one))
+> (list (disk-checks:read-text "~/one.txt") (text one) (buffers:modified? one))
 ("cbaone\n" "typed cbaone\n" #t)
 > (remove-hook! files:before-save type-meanwhile)
 ; A save whose waiting task is signalled is still recorded, so the next
@@ -40,8 +40,8 @@
 > (guard (c [(symbol? c) c]) (files:save-buffer one))
 stopped
 > (remove-hook! files:before-save signal-saver)
-> (wait-until (lambda () (not (files:modified? one))))
-> (list (files:modified? one) (disk-checks:read-text "~/one.txt"))
+> (wait-until (lambda () (not (buffers:modified? one))))
+> (list (buffers:modified? one) (disk-checks:read-text "~/one.txt"))
 (#f "typed cbaone\n")
 > (buffers:replace! one 1 1 "d")
 #<edit 5>
@@ -61,7 +61,7 @@ stopped
 #<edit 7>
 > (define next-saver (spawn-task (lambda () (files:save-buffer one))))
 > (wait-until (lambda () (task-done? next-saver)))
-> (list (task-done? next-saver) (files:modified? one) (disk-checks:read-text "~/one.txt"))
+> (list (task-done? next-saver) (buffers:modified? one) (disk-checks:read-text "~/one.txt"))
 (#t #f "tsdtyped cbaone\n")
 ; A buffer killed while its save waits is written, and gets no after-save.
 > (define saved-after '())
@@ -82,7 +82,7 @@ stopped
 > (begin
     (spawn-task (lambda () (buffers:replace! two 1 1 "typed ")))
     (files:revert-buffer two))
-> (list (text two) (files:modified? two))
+> (list (text two) (buffers:modified? two))
 ("from disk\n" #f)
 ; Unloading files ends the tasks waiting for its jobs, with an error.
 > (define big (make-string 8000000 #\x))
@@ -159,7 +159,7 @@ stopped
 (#t #t)
 > (advice-remove! report count-quits)
 > (for-each (lambda (b) (buffers:replace! b 1 1 "!") (files:save-buffer b)) (files:buffers))
-> (map (lambda (b) (list (files:modified? b) (string=? (text b) (disk-checks:read-text (files:path b))))) (files:buffers))
+> (map (lambda (b) (list (buffers:modified? b) (string=? (text b) (disk-checks:read-text (files:path b))))) (files:buffers))
 ((#f #t) (#f #t) (#f #t))
 > (equal? (map (lambda (v) (vector-ref v 0)) (files:%visits)) (map files:path (files:buffers)))
 #t

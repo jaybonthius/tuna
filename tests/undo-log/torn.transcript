@@ -1,6 +1,6 @@
 ; A crash can cut the log at any byte, or leave zeros after it. Reading
 ; keeps exactly the records written whole.
-> (import (undo log) (tuna eval))
+> (import (undo-log disk) (tuna eval))
 > (define (reload! name) (eval-file (string-append (getenv "TUNA_LIBRARY") "/" name ".sls")))
 > (define (logged path n)
     (wait-until (lambda () (= (length (checks:log-records path)) n)))
@@ -67,7 +67,7 @@
 > (reload! "buffers")
 > (wait-until (lambda () (= (length (files:buffers)) 1)))
 > (define t (files:visit "~/t.txt"))
-> (list (text t) (files:modified? t) (equal? (list (text t) (tree t)) before))
+> (list (text t) (buffers:modified? t) (equal? (list (text t) (tree t)) before))
 ("art\nq\"uote\\λ ü!" #f #t)
 > (wait-until (lambda () (let-values ([(records torn?) (read-log log-file)]) (not torn?))))
 > (let-values ([(records torn?) (read-log log-file)]) (list (map car records) torn?))

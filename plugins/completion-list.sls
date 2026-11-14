@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (minibuffer) (ui) (buffers) (document) (views) (keys) (editing) (faces) (web) (haml) (undo))
+(import (completion) (minibuffer) (ui) (buffers) (document) (views) (keys) (editing) (faces) (web) (haml))
 
 (define-option rows 10 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many rows a read's list shows.")
@@ -153,7 +153,6 @@
     (let* ([b (buffers:make (%next-name) (%root '() (%count-line '()) (%none '()) (ui:list '())))]
            [v (views:make b)]
            [l (make-%shown s b v #f '() (minibuffer:current-prompt))])
-      (buffers:with-buffer b (set-option-local! undo:limit 0))
       (set! %lists (cons l %lists))
       (let ([p (%shown-prompt l)])
         (when p

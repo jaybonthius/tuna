@@ -82,7 +82,7 @@ rm -rf "$home/.local"
 output=$(NO_BUFFERS=1 run "(tree)
 (map buffers:name (buffers:all))")
 expect "no buffer" "$output" '(layout:level () #(views:view ((view . 1) (buffer . "*scratch*"))))
-("*scratch*" "*layout*" "*popups*")'
+("*scratch*" " *layout*" " *popups*")'
 
 echo "$0: $failures failures"
 [ "$failures" -eq 0 ]

@@ -29,7 +29,7 @@
 > (raised (lambda () (layout-tabs:add-tab! (views:make other) other)))
 (layout-tabs:add-tab! "not a view in the layout")
 ; Only the focused tab is drawn, under a strip of every tab's title; each
-; label marks its child's range in *layout*.
+; label marks its child's range in the layout buffer.
 > (show-screen c1)
 <div class="layout-screen" data-view="2" data-version="2" data-showing="0"><div class="layout-level focus-path"><div class="tabs focus-path"><div class="tabs-strip" role="tablist"><button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" data-label="notes" data-at="2" data-to="3">notes</button><button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" data-label="other" data-at="3" data-to="4">other</button><button class="tab" type="button" role="tab" tabindex="-1" aria-selected="true" data-label="notes" data-at="4" data-to="5">notes</button></div><div class="tabs-panel" role="tabpanel" aria-label="notes"><div class="layout-view selected" data-at="4" data-to="5"><div class="view" data-view="3" data-version="0" data-showing="0" data-placement="*" data-place-line="2" data-place-align="center" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><div class="line" id="v3-1" data-line="1" data-at="1">one</div><div class="line" id="v3-2" data-line="2"><span class="cursor primary"></span>two</div><div class="line" id="v3-3" data-line="3"><br></div></div></div></div></div></div></div></div>
 ; The frame shows only the views of focused tabs, so C-x o, reuse-view

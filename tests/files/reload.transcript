@@ -11,12 +11,12 @@
 #<edit 1>
 > (buffers:rename! b "my b")
 > (reload! "files")
-> (list (equal? (files:buffers) (list a b)) (files:modified? a) (files:modified? b) (files:path b))
+> (list (equal? (files:buffers) (list a b)) (buffers:modified? a) (buffers:modified? b) (files:path b))
 (#t #t #f "~/b.txt")
 > (eq? b (files:visit "~/b.txt"))
 #t
 > (files:save-buffer a)
-> (list (disk-checks:read-text "~/a.txt") (files:modified? a))
+> (list (disk-checks:read-text "~/a.txt") (buffers:modified? a))
 ("unsaved alpha\n" #f)
 > (buffers:replace! a 1 1 "again ")
 #<edit 2>
@@ -25,7 +25,7 @@
 > (reload! "buffers")
 > (wait-until (lambda () (= (length (files:buffers)) 2)))
 > (define a2 (car (files:buffers)))
-> (list (buffers:live? a) (buffers:name a2) (text a2) (files:modified? a2) (map buffers:name (files:buffers)))
+> (list (buffers:live? a) (buffers:name a2) (text a2) (buffers:modified? a2) (map buffers:name (files:buffers)))
 (#f "a.txt" "unsaved alpha\n" #f ("a.txt" "b.txt"))
 ; Undo advises files:read-document, so a visit can carry edits made
 ; before the buffer exists; the buffer starts modified.
@@ -35,10 +35,10 @@
 > (advice-add! files:read-document with-unsaved)
 > (disk-checks:write-text! "~/c.txt" "gamma\n")
 > (define c (files:visit "~/c.txt"))
-> (list (text c) (files:modified? c) (call-with-values (lambda () (files:fingerprint c)) (lambda (n h) n)))
+> (list (text c) (buffers:modified? c) (call-with-values (lambda () (files:fingerprint c)) (lambda (n h) n)))
 ("restored gamma\n" #t 6)
 > (files:save-buffer c)
-> (list (disk-checks:read-text "~/c.txt") (files:modified? c))
+> (list (disk-checks:read-text "~/c.txt") (buffers:modified? c))
 ("restored gamma\n" #f)
 > (advice-remove! files:read-document with-unsaved)
 ; Visits of one file at once keep their reads apart while the advice
@@ -50,7 +50,7 @@
 > (advice-add! files:read-document slow-read)
 > (disk-checks:write-text! "~/eps.txt" "epsilon\n")
 > (define eps (map join-task (map (lambda (i) (spawn-task (lambda () (files:visit "~/eps.txt")))) (iota 2))))
-> (list (eq? (car eps) (cadr eps)) (files:modified? (car eps)))
+> (list (eq? (car eps) (cadr eps)) (buffers:modified? (car eps)))
 (#t #f)
 > (advice-remove! files:read-document slow-read)
 > (buffers:kill! (car eps))

@@ -747,7 +747,7 @@
           (and (pair? atoms) (car atoms)))))
 
   (define (first-buffer)
-    (find (lambda (b) (not (member (buffers:name b) '("*layout*" "*popups*")))) (buffers:all)))
+    (find (lambda (b) (not (member (buffers:name b) '(" *layout*" " *popups*")))) (buffers:all)))
 
   (define (default-datum)
     (let* ([b (or (first-buffer) (buffers:make "*scratch*" ""))] [v (views:make b)])
@@ -758,9 +758,9 @@
 
   (define (open-layout! popups-root)
     (set! layout-buffer
-      (or (buffers:find "*layout*")
-          (buffers:make "*layout*" (or (saved-layout) (default-datum)))))
-    (set! popups-buffer (or (buffers:find "*popups*") (buffers:make "*popups*" popups-root)))
+      (or (buffers:find " *layout*")
+          (buffers:make " *layout*" (or (saved-layout) (default-datum)))))
+    (set! popups-buffer (or (buffers:find " *popups*") (buffers:make " *popups*" popups-root)))
     (set! known-ids (map atom-id (append (index-atoms) (index-atom-list (popups-index)))))
     layout-buffer)
 
