@@ -1,0 +1,115 @@
+; The part mode reaches every part, through levels: here the explorer and
+; the echo area sit outside the level M of the user's windows.
+> (define desktop (web:add-client! 1))
+> (define (view name) (views:make (or (buffers:find name) (buffers:make name ""))))
+; Each case makes its views again, since a view whose atom leaves the
+; layout is dropped.
+> (define explorer #f)
+> (define notes #f)
+> (define pi #f)
+> (define echo #f)
+> (define (example! which)
+    (layout:part-mode-leave)
+    (set! explorer (view "*explorer*"))
+    (set! notes (view "notes.org"))
+    (set! pi (view "*pi*"))
+    (set! echo (view "*Echo*"))
+    (set-parts!
+      (layout-split:container '((direction . column))
+        (layout-split:container '((direction . row))
+          (atom explorer '(depth . 50) '(size columns 30))
+          (layout:level '()
+            (layout-split:container '((direction . row))
+              (atom notes)
+              (atom pi))))
+        (atom echo '(depth . 90) '(size . content) '(locked . #t))))
+    (layout:select! (case which [(explorer) explorer] [(notes) notes] [(pi) pi])))
+> (define (names d)
+    (if (vector? d)
+        (cdr (assq 'buffer (vector-ref d 1)))
+        (cons (car d) (map names (cddr d)))))
+> (define (outline) (names (tree)))
+; Moving the explorer to the right edge: from notes.org, s-' i i j L RET.
+; i selects the row inside M, i selects M, j the explorer, and L moves
+; it past M.
+> (example! 'notes)
+> (press! desktop '("'" "super") '("i") '("i"))
+> (list (part) (selected))
+(((4 5)) 4)
+> (type! desktop "j" "L" "Enter")
+> (outline)
+(layout:level (layout-split:container (layout-split:container (layout:level (layout-split:container "notes.org" "*pi*")) "*explorer*") "*Echo*"))
+> (selected)
+3
+; Moving it to the bottom: I lifts it before the row it was first in,
+; and the row, left holding M alone, collapses; L moves it below M.
+> (example! 'explorer)
+> (press! desktop '("'" "super") '("I"))
+> (outline)
+(layout:level (layout-split:container "*explorer*" (layout:level (layout-split:container "notes.org" "*pi*")) "*Echo*"))
+> (type! desktop "L")
+> (outline)
+(layout:level (layout-split:container (layout:level (layout-split:container "notes.org" "*pi*")) "*explorer*" "*Echo*"))
+; Making a window persistent: I on *pi* passes through M, a level holding
+; one part, and puts *pi* beside it; the row inside M collapses.
+> (example! 'pi)
+> (press! desktop '("'" "super") '("I"))
+> (outline)
+(layout:level (layout-split:container (layout-split:container "*explorer*" (layout:level "notes.org") "*pi*") "*Echo*"))
+; Making the explorer one of the user's windows: K moves it into M's
+; part, as its first child, and the row left holding M alone collapses.
+> (example! 'explorer)
+> (press! desktop '("'" "super") '("K"))
+> (outline)
+(layout:level (layout-split:container (layout:level (layout-split:container "*explorer*" "notes.org" "*pi*")) "*Echo*"))
+; When M's part is a view, it is first wrapped in a container of the kind
+; of M's parent.
+> (example! 'explorer)
+> (layout:delete-part! (layout:view-node pi))
+> (layout:select! explorer)
+> (press! desktop '("'" "super") '("K"))
+> (tree)
+(layout:level () (layout-split:container ((direction . column)) (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 19) (buffer . "*explorer*") (depth . 50) (size columns 30))) #(views:view ((view . 20) (buffer . "notes.org"))))) #(views:view ((view . 22) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t)))))
+; Lifting a level's only part leaves the level empty, so the part takes
+; its place.
+> (example! 'notes)
+> (press! desktop '("'" "super") '("i") '("I"))
+> (outline)
+(layout:level (layout-split:container (layout-split:container "*explorer*" (layout-split:container "notes.org" "*pi*")) "*Echo*"))
+; w l wraps the selected part in a level; around a level, or a level's
+; part, it changes nothing.
+> (example! 'pi)
+> (press! desktop '("'" "super") '("w") '("l"))
+> (outline)
+(layout:level (layout-split:container (layout-split:container "*explorer*" (layout:level (layout-split:container "notes.org" (layout:level "*pi*")))) "*Echo*"))
+> (list (part) (selected))
+((29) 29)
+> (type! desktop "w" "l" "k" "w" "l")
+> (outline)
+(layout:level (layout-split:container (layout-split:container "*explorer*" (layout:level (layout-split:container "notes.org" (layout:level "*pi*")))) "*Echo*"))
+; - splices a level, keeping its part, which takes the level's place.
+> (example! 'notes)
+> (press! desktop '("'" "super") '("i") '("i") '("-"))
+> (outline)
+(layout:level (layout-split:container (layout-split:container "*explorer*" (layout-split:container "notes.org" "*pi*")) "*Echo*"))
+; x deletes a level and what it holds.
+> (example! 'notes)
+> (press! desktop '("'" "super") '("i") '("i") '("x"))
+> (list (outline) (selected))
+((layout:level (layout-split:container "*explorer*" "*Echo*")) 35)
+; A locked part is selected and moved without taking focus: the echo
+; area goes to the top.
+> (example! 'notes)
+> (press! desktop '("'" "super") '("i") '("i") '("i") '("$"))
+> (list (part) (selected) (layout:locked? (layout:selected-part)))
+(42 40 #t)
+> (type! desktop "J")
+> (list (outline) (selected))
+((layout:level (layout-split:container "*Echo*" (layout-split:container "*explorer*" (layout:level (layout-split:container "notes.org" "*pi*"))))) 40)
+; It is never deleted or raised over by the user's commands.
+> (type! desktop "x")
+! layout:delete-view: a locked part with irritant #<node views:view 2>
+> (type! desktop "l" "r")
+! layout:raise: a locked part with irritant #<node views:view 2>
+> (outline)
+(layout:level (layout-split:container "*Echo*" (layout-split:container "*explorer*" (layout:level (layout-split:container "notes.org" "*pi*")))))

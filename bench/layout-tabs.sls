@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (layout-split) (layout-tabs) (views) (buffers) (document) (commands) (web) (haml))
+(import (layout) (layout-split) (layout-sides) (layout-tabs) (views) (buffers) (document) (commands) (web) (haml))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -33,15 +33,19 @@
                (map (lambda (i) (layout-split:container '((direction . row)) (atom notes) (atom notes) (atom notes)))
                     (iota 11))))))
   (layout:select! (car (layout:views)))
-  (layout:add-bar! (buffers:make "*Echo*" "")))
+  ((layout-sides:display-at-side (layout:direction down) 90 (quote content) (quote ((locked . #t)))) (buffers:make "*Echo*" "")))
 
 (define (parts)
   (let count ([d (car (document:datums (buffers:document layout:buffer)))])
     (if (vector? d) 1 (+ 1 (apply + (map count (cddr d)))))))
 
+(define (tabs-node doc)
+  (let ([row (document:enclosing doc (document:node-start (layout:view-node (car (layout:views)))))])
+    (document:enclosing doc (document:node-start row))))
+
 (define (label k)
   (let ([doc (buffers:document layout:buffer)])
-    (let loop ([at (fx+ (document:node-start (document:token doc 1)) 1)] [k k])
+    (let loop ([at (fx+ (document:node-start (tabs-node doc)) 1)] [k k])
       (let ([child (document:token doc at)])
         (if (fx= k 0) (document:node-start child) (loop (document:node-end child) (fx- k 1)))))))
 

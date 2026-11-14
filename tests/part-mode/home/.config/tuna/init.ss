@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (tuna) (tuna plugins) (document) (haml) (web) (layout-sides))
 (use-plugin layout-split)
 (use-plugin layout-tabs)
 (use-plugin layout-scroll)
@@ -24,7 +24,13 @@
   (let ([n (layout:selected-part)])
     (shape (car (document:datums (document:slice (buffers:document layout:buffer) (document:node-start n) (document:node-end n)))))))
 
-(define (main) (caddr (tree)))
+;; The user's windows: the part of the level beside the echo area when
+;; there is one, else the root's part.
+(define (main)
+  (let ([p (caddr (tree))])
+    (if (and (pair? p) (eq? (car p) 'layout-split:container) (pair? (caddr p)) (eq? (car (caddr p)) 'layout:level))
+        (caddr (caddr p))
+        p)))
 
 (define (atom view . attributes)
   (views:view (cons* (cons 'view (views:id view)) (cons 'buffer (buffers:name (views:buffer view))) attributes)))

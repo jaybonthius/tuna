@@ -6,15 +6,20 @@
 (define-table display-rules
   "Maps a predicate on buffers to the action that shows the buffers it accepts.")
 
+(define-option history-limit 10 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
+  "How many window changes each level's history keeps to go back through; 0 keeps none.")
+
 (module %internals
-  (check-main-thread check-view check-direction register-container! check-parts check-popup-parts
+  (check-main-thread check-view check-direction register-container! check-parts check-popup-parts check-level
    the-frame frame-record? open-layout! opened-popups current-index index-atom index-of-id atom-of part-of
-   view-of selected-id shown-views select-id! set-zoom! frame-zoom frame-order children root-node
-   locked-node? locked-in? title-of draw-layout draw-popups neighbour-of remove-part! bar-view bar-atom bar-in? node-datum
+   view-of atom-id selected-id shown-views select-id! set-zoom! frame-zoom frame-order zoom-level children root-node
+   locked-node? locked-in? title-of draw-layout draw-popups neighbour-of remove-part! node-datum
    note-batch save-now! selected-keymaps enclosing-keymaps last-selected-unlocked-atom lead-down order-views
-   in-part-mode? enter-part-mode! leave-part-mode! selection-in choose-part! drawn-part-class
+   enclosing-level reference-atom level-units placed-atom? same-node? same-level? visible-atoms index-atoms
+   in-part-mode? enter-part-mode! leave-part-mode! selection-in choose-part! drawn-part-class drawn-level-class
    choose-datum! parent-part child-part sibling-part end-part shift-part! lift-part! lower-part! raise-part!
-   splice-part! wrap-part! deletion-successor check-holds-no-locked mode-key?)
+   splice-part! wrap-part! deletion-successor check-unlocked check-holds-no-locked mode-key?
+   note-before! note-after! history-step!)
 
   (define main-thread (get-thread-id))
 
@@ -62,10 +67,15 @@
          (let ([id (assq 'view (vector-ref d 1))]) (and id (fixnum? (cdr id)) (fx> (cdr id) 0)))
          (let ([b (assq 'buffer (vector-ref d 1))]) (and b (string? (cdr b))))))
 
+  (define (level-datum? d) (and (pair? d) (eq? (car d) 'layout:level)))
+
+  ;; Two levels with nothing between them would mark one boundary twice,
+  ;; and a zoom counted in levels would count a step that hides nothing.
   (define (part-datum? d known?)
     (or (view-atom-datum? d)
         (and (pair? d) (symbol? (car d)) (pair? (cdr d)) (attributes? (cadr d)) (pair? (cddr d))
              (list? (cddr d)) (known? (car d))
+             (or (not (level-datum? d)) (and (null? (cdddr d)) (not (level-datum? (caddr d)))))
              (for-all (lambda (c) (part-datum? c known?)) (cddr d)))))
 
   (define (true-attribute? attributes key)
@@ -89,7 +99,7 @@
   ;; for its shape only; an edit is checked against the kinds loaded.
   (define (layout-datum? v)
     (and (part-datum? v (lambda (kind) #t))
-         (pair? v) (eq? (car v) 'layout:root)
+         (level-datum? v)
          (unlocked-view-datum? v)
          (distinct-ids? (datum-view-ids v '()))))
 
@@ -117,12 +127,25 @@
 
   (define (check-popup-parts node edit) (parts-fit? node edit #t))
 
+  (define (check-level node edit)
+    (let ([s (buffers:edit-start edit)] [datums (document:datums (buffers:edit-inserted edit))])
+      (and (fx= s (fx+ (document:node-start node) 1))
+           (fx= (fx+ s (document:length (buffers:edit-removed edit))) (fx- (document:node-end node) 1))
+           (fx= (length datums) 1)
+           (not (level-datum? (car datums)))
+           (parts-fit? node edit #f))))
+
   (define-saved saved-layout #f (lambda (v) (or (not v) (layout-datum? v))))
+
+  (define (positive-fixnum? v) (and (fixnum? v) (fx> v 0)))
+
+  (define (zoom? v)
+    (and (pair? v) (positive-fixnum? (car v)) (or (eq? (cdr v) 'root) (positive-fixnum? (cdr v)))))
 
   (define (frame-state? v)
     (and (list? v) (fx= (length v) 2)
-         (list? (car v)) (for-all (lambda (id) (and (fixnum? id) (fx> id 0))) (car v))
-         (or (not (cadr v)) (and (fixnum? (cadr v)) (fx> (cadr v) 0)))))
+         (list? (car v)) (for-all positive-fixnum? (car v))
+         (or (not (cadr v)) (zoom? (cadr v)))))
 
   (define-saved saved-frame '(() #f) frame-state?)
 
@@ -284,13 +307,22 @@
 
   (define (selected-id) (current-index) (car (frame-record-order the-frame)))
 
-  (define (holds? n p) (and (fx<= (document:node-start n) p) (fx< p (document:node-end n))))
+  (define (level? n) (and (not (document:atom? n)) (eq? (document:node-kind n) 'layout:level)))
 
-  (define (zoom-position)
-    (let ([z (frame-zoom)])
-      (and z (let ([a (index-atom (current-index) z)]) (and a (document:node-start a))))))
+  (define (enclosing-level ix n)
+    (let loop ([p (parent-in ix n)])
+      (if (or (not p) (level? p)) p (loop (parent-in ix p)))))
 
-  (define (pinned? n) (document:node-attribute n 'pinned #f))
+  (define (zoom-level ix atom target)
+    (let loop ([l (enclosing-level ix atom)] [k 1])
+      (let ([out (enclosing-level ix l)])
+        (if (or (not out) (and (fixnum? target) (fx= k target))) l (loop out (fx+ k 1))))))
+
+  ;; Zoom draws the zoomed view in place of its level's part, so it is
+  ;; known by that level's start and the view's atom.
+  (define (zoom-place ix z)
+    (and z (let ([a (index-atom ix (car z))])
+             (and a (cons (document:node-start (zoom-level ix a (cdr z))) a)))))
 
   (define (locked-in? ix n)
     (let loop ([n n])
@@ -298,11 +330,8 @@
 
   (define (locked-node? n) (locked-in? (current-index) n))
 
-  (define (shown-children ix node zoom-at)
-    (let ([cs (kids-of ix node)])
-      (if (and zoom-at (holds? node zoom-at) (not (fx= zoom-at (document:node-start node))))
-          (filter (lambda (c) (or (holds? c zoom-at) (pinned? c))) cs)
-          cs)))
+  (define (shown-children ix node zp)
+    (if (and zp (fx= (car zp) (document:node-start node))) (list (cdr zp)) (kids-of ix node)))
 
   (define (shows-focused? n)
     (let ([entry (kind-entry n)]) (and entry (container-show-focused? entry))))
@@ -312,41 +341,40 @@
       (or (and f (find (lambda (c) (fx= (document:node-start c) (document:node-start f))) shown))
           (car shown))))
 
-  (define (atoms-under zoom-at visible?)
-    (let ([ix (current-index)])
-      (reverse
-        (let walk ([n (root-node)] [acc '()])
-          (if (view-atom? n)
-              (cons n acc)
-              (let ([shown (shown-children ix n zoom-at)])
-                (fold-left (lambda (acc c) (walk c acc)) acc
-                  (if (and visible? (pair? shown) (shows-focused? n)) (list (focused-or-first ix n shown)) shown))))))))
+  (define (atoms-under ix zp visible?)
+    (reverse
+      (let walk ([n (root-node)] [acc '()])
+        (if (view-atom? n)
+            (cons n acc)
+            (let ([shown (shown-children ix n zp)])
+              (fold-left (lambda (acc c) (walk c acc)) acc
+                (if (and visible? (pair? shown) (shows-focused? n)) (list (focused-or-first ix n shown)) shown)))))))
 
   (define-record-type shown-entry
     (sealed #t)
-    (fields index zoom-at atoms))
+    (fields index zoom atoms))
 
   (define zoom-cache (make-shown-entry #f #f '()))
 
   ;; Selecting a view in a part its container hides shows that part, so
   ;; whether a selection ends the zoom asks only what the zoom leaves.
   (define (shown-atoms)
-    (let* ([ix (current-index)] [zoom-at (zoom-position)])
-      (unless (and (eq? (shown-entry-index zoom-cache) ix) (eqv? (shown-entry-zoom-at zoom-cache) zoom-at))
-        (set! zoom-cache (make-shown-entry ix zoom-at (atoms-under zoom-at #f))))
+    (let* ([ix (current-index)] [z (frame-record-zoom the-frame)])
+      (unless (and (eq? (shown-entry-index zoom-cache) ix) (equal? (shown-entry-zoom zoom-cache) z))
+        (set! zoom-cache (make-shown-entry ix z (atoms-under ix (zoom-place ix z) #f))))
       (shown-entry-atoms zoom-cache)))
 
   (define-record-type visible-entry
     (sealed #t)
-    (fields index zoom-at order atoms))
+    (fields index zoom order atoms))
 
   (define visible-cache (make-visible-entry #f #f #f '()))
 
   (define (visible-atoms)
-    (let* ([ix (current-index)] [zoom-at (zoom-position)] [order (frame-record-order the-frame)])
-      (unless (and (eq? (visible-entry-index visible-cache) ix) (eqv? (visible-entry-zoom-at visible-cache) zoom-at)
+    (let* ([ix (current-index)] [z (frame-record-zoom the-frame)] [order (frame-record-order the-frame)])
+      (unless (and (eq? (visible-entry-index visible-cache) ix) (equal? (visible-entry-zoom visible-cache) z)
                    (eq? (visible-entry-order visible-cache) order))
-        (set! visible-cache (make-visible-entry ix zoom-at order (atoms-under zoom-at #t))))
+        (set! visible-cache (make-visible-entry ix z order (atoms-under ix (zoom-place ix z) #t))))
       (visible-entry-atoms visible-cache)))
 
   (define (shown-views) (map view-of (visible-atoms)))
@@ -397,7 +425,7 @@
       (set! frame-dirty? #t)))
 
   (define (set-zoom! z)
-    (unless (eqv? z (frame-record-zoom the-frame))
+    (unless (equal? z (frame-record-zoom the-frame))
       (frame-record-zoom-set! the-frame z)
       (set! frame-dirty? #t)))
 
@@ -415,8 +443,9 @@
         (if (null? order)
             (let ([a (or (lead-down ix (root-node)) (car (index-atom-list ix)))]) (list (atom-id a)))
             order))
-      (unless (and (frame-record-zoom the-frame) (index-atom ix (frame-record-zoom the-frame)))
-        (set-zoom! #f))))
+      (let ([z (frame-record-zoom the-frame)])
+        (unless (and z (index-atom ix (car z)))
+          (set-zoom! #f)))))
 
   (define (title-of ix n)
     (let ([title (document:node-attribute n 'title #f)])
@@ -441,14 +470,14 @@
   (define (draw-plain shown draw-child)
     (haml (:div.layout-part (map draw-child shown))))
 
-  (define (draw-tree ix root zoom-at client)
+  (define (draw-tree ix root zp client)
     (let ([selected (selected-id)] [marks? (eq? ix last-index)])
       (let draw ([n root])
         (cond
           [(view-atom? n) (draw-atom n selected client marks?)]
           [(document:atom? n) '()]
           [else
-           (let* ([shown (shown-children ix n zoom-at)]
+           (let* ([shown (shown-children ix n zp)]
                   [entry (container-entry (document:node-kind n))]
                   [draw-child (lambda (c)
                                 (unless (and (document:node? c) (exists (lambda (s) (fx= (document:node-start s) (document:node-start c))) shown))
@@ -463,6 +492,7 @@
   ;; found once per screen, and the popups, whose positions may equal a
   ;; part's, are drawn without it.
   (define drawn-selection #f)
+  (define drawn-level #f)
 
   (define (drawn-part-class node)
     (and drawn-selection
@@ -470,12 +500,18 @@
          (fx= (document:node-end node) (cdr drawn-selection))
          "part-selected"))
 
+  ;; A level draws nothing of its own, so the mode outlines the selected
+  ;; view's level to show how far the commands that act in it reach.
+  (define (drawn-level-class node)
+    (and drawn-level (fx= (document:node-start node) drawn-level) "part-level"))
+
+  (define (node-range n) (cons (document:node-start n) (document:node-end n)))
+
   (define (draw-layout client)
     (let ([ix (current-index)])
-      (fluid-let ([drawn-selection (and mode-on?
-                                        (let ([n (selection-in ix)])
-                                          (and n (cons (document:node-start n) (document:node-end n)))))])
-        (draw-tree ix (root-node) (zoom-position) client))))
+      (fluid-let ([drawn-selection (and mode-on? (let ([n (selection-in ix)]) (and n (node-range n))))]
+                  [drawn-level (and mode-on? (document:node-start (enclosing-level ix (reference-atom ix))))])
+        (draw-tree ix (root-node) (zoom-place ix (frame-record-zoom the-frame)) client))))
 
   (define (draw-popups client)
     (let ([px (popups-index)])
@@ -516,63 +552,80 @@
 
   (define (holds-range? a s e) (and (fx<= s (document:node-start a)) (fx<= (document:node-end a) e)))
 
-  ;; Removing and collapsing are one edit, so one undo restores both. The
-  ;; popups may all go; the layout keeps a view that is not locked.
+  ;; Removing and collapsing are one edit, since the kinds' checks refuse
+  ;; a container left empty between two. The popups may all go; the
+  ;; layout keeps a view that is not locked.
   (define (remove-part! ix node)
     (let ([layout? (eq? ix (current-index))])
       (let loop ([n node])
         (let ([p (parent-in ix n)] [b (if layout? layout-buffer popups-buffer)])
-          (when (not p)
-            (assertion-violation 'layout:delete-part! "the root" node))
-          (if (and (parent-in ix p) (null? (cdr (kids-of ix p))))
-              (loop p)
-              (let ([s (document:node-start n)] [e (document:node-end n)])
-                (unless (or (not layout?) (unlocked-atoms-outside s e))
-                  (assertion-violation 'layout:delete-part! "the last view that is not locked" node))
-                (let ([others (remp (lambda (c) (fx= (document:node-start c) s)) (kids-of ix p))]
-                      [entry (kind-entry p)] [grand (parent-in ix p)])
-                  (if (and grand entry (container-collapse? entry) (fx= (length others) 1))
-                      (buffers:replace! b (document:node-start p) (document:node-end p)
-                        (take-place ix p (node-datum ix (car others))))
-                      (buffers:replace! b s e "")))))))))
+          (cond
+            [(not p) (assertion-violation 'layout:delete-part! "the root" node)]
+            [(and layout? (level? p)) (assertion-violation 'layout:delete-part! "the last view of its level" node)]
+            [(and (parent-in ix p) (null? (cdr (kids-of ix p)))) (loop p)]
+            [else
+             (let ([s (document:node-start n)] [e (document:node-end n)])
+               (unless (or (not layout?) (unlocked-atoms-outside s e))
+                 (assertion-violation 'layout:delete-part! "the last view that is not locked" node))
+               (let ([others (remp (lambda (c) (fx= (document:node-start c) s)) (kids-of ix p))]
+                     [entry (kind-entry p)] [grand (parent-in ix p)])
+                 (if (and grand entry (container-collapse? entry) (fx= (length others) 1))
+                     (buffers:replace! b (document:node-start p) (document:node-end p)
+                       (take-place ix p (node-datum ix (car others))))
+                     (buffers:replace! b s e ""))))])))))
 
   (define (child-attributes-of n)
     (let ([entry (kind-entry n)]) (if entry (container-child-attributes entry) '())))
 
-  ;; A part's pinned attribute, like its kind's child attributes, belongs
-  ;; to its place, which the child takes.
+  ;; A part's kind's child attributes belong to its place, which the
+  ;; child takes. A level may not hold a level, so one that would gives
+  ;; way to its part.
   (define (take-place ix container d)
     (let* ([own (child-attributes-of container)]
            [grand (parent-in ix container)]
-           [place (cons 'pinned (if grand (child-attributes-of grand) '()))]
+           [place (if grand (child-attributes-of grand) '())]
            [kept (remp (lambda (a) (or (memq (car a) own) (memq (car a) place))) (datum-attributes d))]
-           [moved (filter (lambda (a) (memq (car a) place)) (datum-attributes (node-datum ix container)))])
-      (with-attributes d (append kept moved))))
+           [moved (filter (lambda (a) (memq (car a) place)) (datum-attributes (node-datum ix container)))]
+           [d (with-attributes d (append kept moved))])
+      (if (and grand (level? grand) (level-datum? d)) (caddr d) d)))
 
-  (define (bar-in? ix n)
-    (let ([p (parent-in ix n)])
-      (and p (not (parent-in ix p)) (not (fx= (document:node-start (car (kids-of ix p))) (document:node-start n))))))
+  (define (same-node? a b) (fx= (document:node-start a) (document:node-start b)))
 
-  (define (bar-atom b)
-    (find (lambda (c) (and (view-atom? c) (eq? (views:buffer (view-of c)) b))) (cdr (children (root-node)))))
+  (define (same-level? ix a b) (same-node? (enclosing-level ix a) (enclosing-level ix b)))
 
-  (define (bar-depth n)
-    (let ([d (document:node-attribute n 'depth 0)]) (if (real? d) d 0)))
+  (define (reference-atom ix)
+    (or (exists (lambda (id) (index-atom ix id)) (frame-record-order the-frame))
+        (car (index-atom-list ix))))
 
-  ;; Only a deeper bar goes after the new one, so bars of one depth keep
-  ;; the order they were added in, as hook entries do.
-  (define (bar-view b depth)
-    (let ([atom (bar-atom b)])
-      (if atom
-          (view-of atom)
-          (let* ([root (root-node)]
-                 [after (find (lambda (c) (> (bar-depth c) depth)) (cdr (children root)))]
-                 [at (if after (document:node-start after) (fx- (document:node-end root) 1))]
-                 [v (views:make b)])
-            (buffers:replace! layout-buffer at at
-              (vector 'views:view (list (cons 'view (views:id v)) (cons 'buffer (buffers:name b))
-                                        (cons 'depth depth) '(pinned . #t) '(locked . #t))))
-            v))))
+  (define (unit-of ix atom level)
+    (let loop ([n atom] [unit atom])
+      (let ([p (parent-in ix n)])
+        (if (same-node? p level) unit (loop p (if (level? p) p unit))))))
+
+  ;; The atoms of one nested level are adjacent in the layout's order,
+  ;; and stand for it by the one of them selected last.
+  (define (level-units ix level atoms)
+    (let ([s (document:node-start level)] [e (document:node-end level)] [order (frame-record-order the-frame)])
+      (let loop ([as (filter (lambda (a) (and (fx< s (document:node-start a)) (fx<= (document:node-end a) e))) atoms)]
+                 [acc '()])
+        (if (null? as)
+            (reverse acc)
+            (let ([unit (unit-of ix (car as) level)])
+              (if (eq? unit (car as))
+                  (loop (cdr as) (cons unit acc))
+                  (let-values ([(inside rest) (partition (lambda (a) (holds-range? a (document:node-start unit) (document:node-end unit))) as)])
+                    (loop rest
+                          (cons (or (exists (lambda (id) (find (lambda (a) (eqv? (atom-id a) id)) inside)) order)
+                                    (car inside))
+                                acc)))))))))
+
+  ;; A plugin's placed part carries depth, on its atom or on a container
+  ;; such as tabs that took the atom's place attributes.
+  (define (placed-atom? ix atom)
+    (let loop ([n atom])
+      (and n (not (level? n))
+           (or (document:node-attribute n 'depth #f) (loop (parent-in ix n)))
+           #t)))
 
   (define (selected-keymaps)
     (let* ([id (selected-id)] [ix (index-of-id id)])
@@ -597,11 +650,18 @@
   ;; An atom names its buffer so that a view restarts on it; the view's
   ;; buffer may have changed since the atom was written.
   (define (current-datum)
-    (let refresh ([d (node-datum (current-index) (root-node))])
+    (refreshed (node-datum (current-index) (root-node)) buffer-name-now))
+
+  (define (buffer-name-now id)
+    (let* ([v (views:find id)] [b (and v (views:buffer v))])
+      (and b (buffers:name b))))
+
+  (define (refreshed d name-of)
+    (let refresh ([d d])
       (if (vector? d)
-          (let* ([id (cdr (assq 'view (vector-ref d 1)))] [v (views:find id)] [b (and v (views:buffer v))])
-            (if b
-                (vector 'views:view (map (lambda (a) (if (eq? (car a) 'buffer) (cons 'buffer (buffers:name b)) a))
+          (let ([name (name-of (cdr (assq 'view (vector-ref d 1))))])
+            (if name
+                (vector 'views:view (map (lambda (a) (if (eq? (car a) 'buffer) (cons 'buffer name) a))
                                          (vector-ref d 1)))
                 d))
           (cons* (car d) (cadr d) (map refresh (cddr d))))))
@@ -649,6 +709,7 @@
         (lambda (id) (unless (memv id ids) (hashtable-delete! registered id)))
         (hashtable-keys registered)))
     (follow-focus!)
+    (note-history-levels!)
     (save-now!))
 
   (define (last-selected-unlocked-atom node)
@@ -664,7 +725,7 @@
 
   (define (default-datum)
     (let* ([b (or (first-buffer) (buffers:make "*scratch*" ""))] [v (views:make b)])
-      (list 'layout:root '()
+      (list 'layout:level '()
             (vector 'views:view (list (cons 'view (views:id v)) (cons 'buffer (buffers:name b)))))))
 
   (define (opened-popups) popups-buffer)
@@ -682,7 +743,7 @@
   (define (in-part-mode?) mode-on?)
 
   ;; The selected part is known by its first view and its length, which
-  ;; follow it wherever an edit such as an undo moves it, and by its
+  ;; follow it wherever an edit the mode did not make moves it, and by its
   ;; positions, which keep its place when it goes. The start stays after
   ;; text inserted at it and the end before, so a part added or removed
   ;; beside it leaves the place on it.
@@ -697,11 +758,7 @@
     (let loop ([ns nodes] [k 0])
       (if (fx= (document:node-start (car ns)) (document:node-start n)) k (loop (cdr ns) (fx+ k 1)))))
 
-  (define (visited? ix n)
-    (let ([m (main-part ix)])
-      (and (fx<= (document:node-start m) (document:node-start n))
-           (fx<= (document:node-end n) (document:node-end m))
-           (not (locked-in? ix n)))))
+  (define (visited? ix n) (and (parent-in ix n) #t))
 
   (define (part-at ix s e)
     (let ([doc (index-doc ix)])
@@ -711,12 +768,11 @@
 
   (define (covering-part ix lo hi)
     (let ([m (main-part ix)])
-      (and (fx<= (document:node-start m) lo) (fx<= hi (document:node-end m)) (not (locked-in? ix m))
+      (and (fx<= (document:node-start m) lo) (fx<= hi (document:node-end m))
            (let down ([n m])
              (let ([c (find (lambda (c)
                               (and (fx<= (document:node-start c) lo)
-                                   (if (fx= lo hi) (fx< hi (document:node-end c)) (fx<= hi (document:node-end c)))
-                                   (not (document:node-attribute c 'locked #f))))
+                                   (if (fx= lo hi) (fx< hi (document:node-end c)) (fx<= hi (document:node-end c)))))
                             (kids-of ix n))])
                (if c (down c) n))))))
 
@@ -726,7 +782,7 @@
 
   ;; A popup may be the selected view, and is no part of the layout.
   (define (part-or-main ix)
-    (or (atom-part ix) (let ([m (main-part ix)]) (and (not (locked-in? ix m)) m))))
+    (or (index-atom ix (selected-id)) (main-part ix)))
 
   (define (set-selection! n)
     (set! selection-view (first-view-id n))
@@ -782,11 +838,8 @@
     (agree!))
 
   (define (enter-part-mode!)
-    (let* ([ix (current-index)] [n (part-or-main ix)])
-      (unless n
-        (assertion-violation 'layout:part-mode "no part that is not locked"))
-      (set-selection! n)
-      (set! mode-on? #t)))
+    (set-selection! (part-or-main (current-index)))
+    (set! mode-on? #t))
 
   (define (leave-part-mode!)
     (set! mode-on? #f))
@@ -802,9 +855,9 @@
     (let ([p (parent-in ix n)]) (and p (parent-in ix p) p)))
 
   (define (child-part ix n)
-    (let ([cs (filter (lambda (c) (not (locked-in? ix c))) (kids-of ix n))] [f (focused-child ix n)])
+    (let ([cs (kids-of ix n)] [f (focused-child ix n)])
       (and (pair? cs)
-           (or (and f (find (lambda (c) (fx= (document:node-start c) (document:node-start f))) cs))
+           (or (and f (find (lambda (c) (same-node? c f)) cs))
                (car cs)))))
 
   (define (siblings ix n)
@@ -813,12 +866,11 @@
   (define (sibling-part ix n step)
     (let loop ([ns (if (fx> step 0) (siblings ix n) (reverse (siblings ix n)))])
       (cond
-        [(fx= (document:node-start (car ns)) (document:node-start n))
-         (find (lambda (c) (not (locked-in? ix c))) (cdr ns))]
+        [(same-node? (car ns) n) (and (pair? (cdr ns)) (cadr ns))]
         [else (loop (cdr ns))])))
 
   (define (end-part ix n last?)
-    (find (lambda (c) (not (locked-in? ix c))) (if last? (reverse (siblings ix n)) (siblings ix n))))
+    (car (if last? (reverse (siblings ix n)) (siblings ix n))))
 
   (define (datum-length d)
     (if (vector? d) 1 (fold-left (lambda (n c) (fx+ n (datum-length c))) 2 (cddr d))))
@@ -898,51 +950,86 @@
     (when (holds-locked? ix n)
       (assertion-violation who "a locked part" n)))
 
+  ;; A lock keeps a part from being destroyed or replaced, and keeps the
+  ;; parts inside it as they are; the part may still move.
   (define (shift-part! who ix n step)
     (let ([p (parent-part ix n)])
       (and p
            (let* ([ks (kids-of ix p)] [k (position-in n ks)] [j (fx+ k step)])
              (and (fx>= j 0) (fx< j (length ks))
                   (let ([old (datums ix ks)])
-                    (check-unlocked who ix (list-ref ks j))
+                    (check-unlocked who ix p)
                     (set-children! ix p old
                       (replacing (replacing old k (list (list-ref old j))) j (list (list-ref old k))))
                     (list-ref old k)))))))
 
+  (define (rebuilt ix top node new)
+    (if (same-node? top node)
+        new
+        (let ([inner (rebuilt ix (car (kids-of ix top)) node new)])
+          (if (null? inner) '() (list (with-children (node-datum ix top) inner))))))
+
   ;; From its container's first place a part goes before the container,
   ;; and from any other after it, so the order on screen is kept.
-  (define (lift-part! ix n)
-    (let* ([c (parent-part ix n)] [g (and c (parent-part ix c))])
-      (and g
-           (let* ([ks (kids-of ix c)] [k (position-in n ks)] [d (node-datum ix n)]
-                  [rest (datums ix (remp (lambda (x) (fx= (document:node-start x) (document:node-start n))) ks))]
-                  [moved (if (null? rest) (take-place ix c d) (arrive c g d))]
-                  [left (cond
-                          [(null? rest) '()]
-                          [(and (null? (cdr rest)) (collapses? c)) (list (take-place ix c (car rest)))]
-                          [else (list (with-children (node-datum ix c) rest))])])
-             (replace-child! ix c (if (fx= k 0) (cons moved left) (append left (list moved))))
-             moved))))
+  (define (lift-part! who ix n)
+    (let ([c (parent-in ix n)])
+      (and c (parent-in ix c)
+           (begin
+             (check-unlocked who ix c)
+             (if (level? c)
+                 (let ([moved (take-place ix c (node-datum ix n))])
+                   (replace-child! ix c (list moved))
+                   moved)
+                 (let out ([t c] [up (parent-in ix c)])
+                   (cond
+                     [(level? up) (let ([g (parent-in ix up)]) (and g (out up g)))]
+                     [else
+                      (check-unlocked who ix up)
+                      (let* ([ks (kids-of ix c)] [k (position-in n ks)] [d (node-datum ix n)]
+                             [rest (datums ix (remp (lambda (x) (same-node? x n)) ks))]
+                             [left (cond
+                                     [(null? rest) '()]
+                                     [(and (null? (cdr rest)) (collapses? c)) (list (take-place ix c (car rest)))]
+                                     [else (list (with-children (node-datum ix c) rest))])]
+                             [kept (rebuilt ix t c left)]
+                             [moved (if (null? kept) (take-place ix t d) (arrive c up d))])
+                        (replace-child! ix t (if (fx= k 0) (cons moved kept) (append kept (list moved))))
+                        moved)])))))))
+
+  (define (level-part ix n)
+    (if (level? n) (level-part ix (car (kids-of ix n))) n))
 
   ;; The container after the part takes it at its start, and one before
-  ;; it at its end, the places on screen nearest the part's own.
-  (define (lower-part! ix n)
-    (let ([c (parent-part ix n)])
-      (and c
+  ;; it at its end, the places on screen nearest the part's own. A level
+  ;; holds one part, so a view that is a level's part is first wrapped in
+  ;; a container of the moving part's container's kind.
+  (define (lower-part! who ix n)
+    (let ([c (parent-in ix n)])
+      (and c (not (level? c))
            (let* ([ks (kids-of ix c)] [k (position-in n ks)]
                   [open? (lambda (x) (not (or (document:atom? x) (locked-in? ix x))))]
                   [after (find open? (list-tail ks (fx+ k 1)))]
                   [target (or after (find open? (reverse (list-head ks k))))])
              (and target
-                  (let* ([moved (arrive c target (node-datum ix n))]
-                         [td (node-datum ix target)]
-                         [filled (with-children td (if after (cons moved (cddr td)) (append (cddr td) (list moved))))]
-                         [old (datums ix ks)]
-                         [new (remove-at (replacing old (position-in target ks) (list filled)) k)])
-                    (if (and (null? (cdr new)) (collapses? c))
-                        (replace-child! ix c (list (take-place ix c filled)))
-                        (set-children! ix c old new))
-                    moved))))))
+                  (let ([inner (level-part ix target)])
+                    (check-unlocked who ix c)
+                    (check-unlocked who ix inner)
+                    (let* ([into (if (document:atom? inner)
+                                     (with-children (without (node-datum ix c) (append '(title locked depth) (place-names ix c)))
+                                                    (list (node-datum ix inner)))
+                                     (node-datum ix inner))]
+                           [moved (if (document:atom? inner) (node-datum ix n) (arrive c inner (node-datum ix n)))]
+                           [filled (with-children into (if after (cons moved (cddr into)) (append (cddr into) (list moved))))]
+                           [target-datum (car (rebuilt ix target inner (list filled)))]
+                           [old (datums ix ks)]
+                           [new (remove-at (replacing old (position-in target ks) (list target-datum)) k)])
+                      (if (and (null? (cdr new)) (collapses? c))
+                          (replace-child! ix c (list (take-place ix c target-datum)))
+                          (set-children! ix c old new))
+                      moved)))))))
+
+  (define (place-names ix n)
+    (let ([p (parent-in ix n)]) (if p (child-attributes-of p) '())))
 
   (define (remove-at ds k) (append (list-head ds k) (list-tail ds (fx+ k 1))))
 
@@ -954,8 +1041,9 @@
     (let ([c (parent-part ix n)])
       (and c
            (begin
+             (check-unlocked who ix c)
              (for-each (lambda (x)
-                         (unless (fx= (document:node-start x) (document:node-start n))
+                         (unless (same-node? x n)
                            (check-holds-no-locked who ix x)))
                        (kids-of ix c))
              (unless (or (unlocked-view-in? ix n) (unlocked-atoms-outside (document:node-start c) (document:node-end c)))
@@ -966,38 +1054,323 @@
 
   ;; Layout does not know which attribute weighs a child, so the children
   ;; share the container's numeric place attributes, such as a strip's
-  ;; size, equally.
+  ;; size, equally. A level holds one part, so only a container of one
+  ;; part is spliced into one.
   (define (splice-part! who ix n)
     (let ([g (parent-in ix n)] [ks (kids-of ix n)])
-      (and (pair? ks) (or (parent-in ix g) (null? (cdr ks)))
+      (and g (pair? ks) (or (not (level? g)) (null? (cdr ks)))
            (begin
-             (for-each (lambda (x) (check-unlocked who ix x)) ks)
+             (check-unlocked who ix n)
              (let* ([names (child-attributes-of g)] [count (length ks)]
                     [shares (filter (lambda (a) (and (memq (car a) names) (real? (cdr a))))
                                     (datum-attributes (node-datum ix n)))]
                     [moved (map (lambda (d)
-                                  (if (parent-in ix g)
+                                  (if (level? g)
+                                      (take-place ix n d)
                                       (arrive n g (with-attributes d
                                                     (append (remp (lambda (a) (assq (car a) shares)) (datum-attributes d))
-                                                            (map (lambda (a) (cons (car a) (/ (cdr a) count))) shares))))
-                                      (take-place ix n d)))
+                                                            (map (lambda (a) (cons (car a) (/ (cdr a) count))) shares))))))
                                 (datums ix ks))])
                (replace-child! ix n moved)
                (car moved))))))
 
+  ;; A level around a level, or around a level's part, would mark one
+  ;; boundary twice, so that wrap changes nothing.
   (define (wrap-part! who ix n make)
-    (let* ([place (cons 'pinned (child-attributes-of (parent-in ix n)))]
+    (let* ([p (parent-in ix n)]
+           [place (child-attributes-of p)]
            [d (node-datum ix n)]
            [w (make (list (without d place)))])
       (unless (and (list? w) (fx>= (length w) 3) (symbol? (car w)) (container-entry (car w)) (attributes? (cadr w)))
         (assertion-violation who "not the datum of a container" w))
-      (let ([moved (with-attributes w (append (cadr w) (filter (lambda (a) (memq (car a) place)) (datum-attributes d))))])
-        (buffers:replace! layout-buffer (document:node-start n) (document:node-end n) moved)
-        moved)))
+      (check-unlocked who ix p)
+      (and (not (and (level-datum? w) (or (level? n) (level? p))))
+           (let ([moved (with-attributes w (append (cadr w) (filter (lambda (a) (memq (car a) place)) (datum-attributes d))))])
+             (buffers:replace! layout-buffer (document:node-start n) (document:node-end n) moved)
+             moved))))
 
   (define (deletion-successor ix n)
     (let ([next (or (sibling-part ix n -1) (sibling-part ix n 1))])
       (and next (node-datum ix next))))
+
+  ;; A level is known to its history by an anchor right after its
+  ;; opening, which follows edits around the level. An edit that removes
+  ;; the level and puts it back, as a collapse or a move around it does,
+  ;; deletes the anchor, so the level is also known as the level so many
+  ;; out from its first view, which such an edit leaves as it was.
+  (define-record-type history
+    (sealed #t)
+    (fields (mutable anchor) (mutable view) (mutable rank) (mutable back) (mutable forward)))
+
+  (define histories '())
+
+  (define (rank-of ix level)
+    (let loop ([l (enclosing-level ix (lead-first ix level))] [k 1])
+      (if (same-node? l level) k (loop (enclosing-level ix l) (fx+ k 1)))))
+
+  (define (lead-first ix n) (if (document:atom? n) n (lead-first ix (car (kids-of ix n)))))
+
+  (define (history-level! ix h)
+    (if (buffers:anchor-deleted? (history-anchor h))
+        (let ([a (index-atom ix (history-view h))])
+          (and a
+               (let ([level (zoom-level ix a (history-rank h))])
+                 (and (fx= (rank-of ix level) (history-rank h))
+                      (fx= (atom-id (lead-first ix level)) (history-view h))
+                      (not (find (lambda (g) (anchored-at? g (fx+ (document:node-start level) 1))) histories))
+                      (begin
+                        (history-anchor-set! h (buffers:anchor layout-buffer (fx+ (document:node-start level) 1)))
+                        level)))))
+        (let ([n (document:token (index-doc ix) (fx- (buffers:anchor-position (history-anchor h)) 1))])
+          (and (document:node? n) (not (document:atom? n)) (level? n) n))))
+
+  (define (anchored-at? h at)
+    (and (not (buffers:anchor-deleted? (history-anchor h))) (fx= (buffers:anchor-position (history-anchor h)) at)))
+
+  ;; Histories are found again one at a time, in order, since one found
+  ;; by its view may not take a level another history already holds.
+  (define (locate-histories! ix)
+    (set! histories
+      (let loop ([hs histories])
+        (if (null? hs)
+            '()
+            (let* ([h (car hs)] [level (history-level! ix h)])
+              (if level
+                  (begin
+                    (history-view-set! h (atom-id (lead-first ix level)))
+                    (history-rank-set! h (rank-of ix level))
+                    (cons h (loop (cdr hs))))
+                  (loop (cdr hs))))))))
+
+  ;; Levels move only with the layout's document.
+  (define located-doc #f)
+
+  (define (note-history-levels!)
+    (unless (eq? (layout-doc) located-doc)
+      (let ([ix (current-index)])
+        (locate-histories! ix)
+        (move-root-history! ix))
+      (set! located-doc (layout-doc))))
+
+  (define (history-of ix level create?)
+    (let ([at (fx+ (document:node-start level) 1)])
+      (define (here? h) (anchored-at? h at))
+      (or (find here? histories)
+          (begin (locate-histories! ix) (find here? histories))
+          (and create?
+               (let ([h (make-history (buffers:anchor layout-buffer at) (atom-id (lead-first ix level)) (rank-of ix level) '() '())])
+                 (set! histories (cons h histories))
+                 h)))))
+
+  ;; Parts outside a level persist for its views, so no history may move
+  ;; them: a level holding a placed part, outside the levels inside it,
+  ;; keeps none.
+  (define (holds-placed? ix level)
+    (let walk ([n (car (kids-of ix level))])
+      (or (and (document:node-attribute n 'depth #f) #t)
+          (and (not (document:atom? n)) (not (level? n)) (exists walk (kids-of ix n))))))
+
+  (define (first-level-inside ix level)
+    (let walk ([n (car (kids-of ix level))])
+      (cond
+        [(level? n) n]
+        [(document:atom? n) #f]
+        [else (exists walk (kids-of ix n))])))
+
+  ;; An interior is kept as the layout's document, which no edit
+  ;; changes, with its range and the names of the buffers its views
+  ;; showed, so a command records it without making its datum; and with
+  ;; each view's point, which Emacs's window configurations keep too but
+  ;; whose moves are no change.
+  (define-record-type interior
+    (sealed #t)
+    (fields doc start end atoms names points))
+
+  (define (interior-of doc start end atoms buffers points)
+    (make-interior doc start end atoms (map (lambda (b) (and b (buffers:name b))) buffers) points))
+
+  (define (by-view i field) (map (lambda (a x) (cons (atom-id a) x)) (interior-atoms i) (field i)))
+
+  (define (interior-datum i)
+    (let ([names (by-view i interior-names)])
+      (refreshed (car (document:datums (document:slice (interior-doc i) (interior-start i) (interior-end i))))
+                 (lambda (id) (let ([p (assv id names)]) (and p (cdr p)))))))
+
+  (define (current-interior ix level)
+    (let* ([part (car (kids-of ix level))] [atoms (atoms-in ix part)])
+      (interior-of (index-doc ix) (document:node-start part) (document:node-end part)
+                   atoms (map atom-buffer atoms) (map atom-point atoms))))
+
+  ;; A command's level, and the views in it, change only with the
+  ;; layout's document, which most commands leave as it was, so a command
+  ;; in the level of the one before reuses them and reads afresh only the
+  ;; views' buffers and points.
+  (define-record-type scope
+    (sealed #t)
+    (fields doc version level-start history start end atoms))
+
+  (define-record-type before
+    (sealed #t)
+    (fields scope buffers points))
+
+  (define last-scope #f)
+  (define pending #f)
+  (define done-command #f)
+
+  (define (atoms-in ix part)
+    (let ([s (document:node-start part)] [e (document:node-end part)])
+      (filter (lambda (a) (holds-range? a s e)) (index-atom-list ix))))
+
+  (define (atom-buffer a) (views:buffer (view-of a)))
+
+  (define (atom-point a) (views:point (view-of a)))
+
+  (define (scope-of ix level)
+    (let ([last last-scope])
+      (if (and last (eq? (scope-doc last) (index-doc ix)) (fx= (scope-level-start last) (document:node-start level)))
+          last
+          (let ([part (car (kids-of ix level))])
+            (set! last-scope
+              (make-scope (index-doc ix) (buffers:version layout-buffer) (document:node-start level)
+                          (and (not (holds-placed? ix level)) (history-of ix level #t))
+                          (document:node-start part) (document:node-end part) (atoms-in ix part)))
+            last-scope))))
+
+  (define (note-before!)
+    (set! pending #f)
+    (let* ([ix (current-index)] [a (index-atom ix (selected-id))])
+      (when (and a (> (history-limit) 0))
+        (let ([sc (scope-of ix (enclosing-level ix a))])
+          (when (scope-history sc)
+            (let ([views (map view-of (scope-atoms sc))])
+              (set! pending (make-before sc (map views:buffer views) (map views:point views)))))))))
+
+  ;; An edit at the level's opening or closing may rebuild the level, so
+  ;; it counts; when the buffer no longer keeps the edits, any may have
+  ;; reached the interior.
+  (define (interior-edited? sc)
+    (and (not (eq? (layout-doc) (scope-doc sc)))
+         (let ([edits (buffers:edits-since layout-buffer (scope-version sc))])
+           (or (not edits)
+               (let loop ([es edits] [lo (scope-start sc)] [hi (scope-end sc)])
+                 (and (pair? es)
+                      (let* ([e (car es)] [s (buffers:edit-start e)] [r (document:length (buffers:edit-removed e))])
+                        (cond
+                          [(fx< (fx+ s r) lo)
+                           (let ([shift (fx- (document:length (buffers:edit-inserted e)) r)])
+                             (loop (cdr es) (fx+ lo shift) (fx+ hi shift)))]
+                          [(fx> s hi) (loop (cdr es) lo hi)]
+                          [else #t]))))))))
+
+  ;; Making the two datums is most of what recording costs, and an
+  ;; interior no edit reached, or whose length or views changed, is told
+  ;; without them. The scope found after a change is the next command's,
+  ;; if it starts in this level.
+  (define (changed-interior b)
+    (let* ([ix (current-index)] [sc (before-scope b)] [atoms (scope-atoms sc)] [edited? (interior-edited? sc)])
+      (and (or edited? (not (for-all (lambda (a buffer) (eq? (atom-buffer a) buffer)) atoms (before-buffers b))))
+           (let ([level (history-level! ix (scope-history sc))])
+             (and level
+                  (let ([was (interior-of (scope-doc sc) (scope-start sc) (scope-end sc) atoms (before-buffers b) (before-points b))]
+                        [now (scope-of ix level)])
+                    (and (or (and edited?
+                                  (or (not (fx= (fx- (scope-end now) (scope-start now)) (fx- (scope-end sc) (scope-start sc))))
+                                      (not (fx= (length (scope-atoms now)) (length atoms)))
+                                      (not (for-all (lambda (x y) (eqv? (atom-id x) (atom-id y))) (scope-atoms now) atoms))))
+                             (not (equal? (interior-datum was) (interior-datum (current-interior ix level)))))
+                         was)))))))
+
+  ;; As Emacs's tab-bar history, a change is recorded once per command,
+  ;; and not again for the same command repeated in sequence, such as a
+  ;; resize key held down.
+  (define (note-after! command)
+    (let* ([b pending] [was (and b (changed-interior b))])
+      (set! pending #f)
+      (when (and was (not (eq? command done-command)))
+        (let ([h (scope-history (before-scope b))])
+          (history-back-set! h (list-head* (cons was (history-back h)) (history-limit)))))
+      (set! done-command (and was command))))
+
+  (define (list-head* ls n) (if (fx< n (length ls)) (list-head ls n) ls))
+
+  ;; A view the restored interior names that is now elsewhere in the
+  ;; layout gets a new view of its buffer, so no view is named twice.
+  (define (restore-interior! ix level d made!)
+    (let ([outside (filter (lambda (a) (not (holds-range? a (document:node-start level) (document:node-end level))))
+                           (index-atom-list ix))])
+      (let fresh ([d d])
+        (cond
+          [(vector? d)
+           (let ([id (cdr (assq 'view (vector-ref d 1)))])
+             (if (exists (lambda (a) (eqv? (atom-id a) id)) outside)
+                 (let ([v (views:make (views:buffer (view-of (index-atom ix id))))])
+                   (made! id v)
+                   (vector 'views:view (map (lambda (a) (if (eq? (car a) 'view) (cons 'view (views:id v)) a)) (vector-ref d 1))))
+                 d))]
+          [else (cons* (car d) (cadr d) (map fresh (cddr d)))]))))
+
+  ;; An atom's buffer is the one its view showed when it was recorded, so
+  ;; its point is a position in that buffer and nowhere else.
+  (define (show-recorded! d points)
+    (let walk ([d d])
+      (if (vector? d)
+          (let* ([id (cdr (assq 'view (vector-ref d 1)))]
+                 [v (view-of (index-atom (current-index) id))]
+                 [b (let ([p (assq 'buffer (vector-ref d 1))]) (and p (buffers:find (cdr p))))]
+                 [p (let ([p (assv id points)]) (and p (cdr p)))])
+            (when b
+              (unless (eq? (views:buffer v) b)
+                (views:set-buffer! v b))
+              (when p
+                (views:set-point! v (fxmin p (fx- (document:length (buffers:document b)) 1))))))
+          (for-each walk (cddr d)))))
+
+  ;; A quit between the replace and the lists' update would lose an
+  ;; entry or keep one twice; Tuna's dynamic-wind holds quits off while
+  ;; its in runs. A refused restore leaves the lists as they were, and
+  ;; the views made for it, which no part names, go.
+  (define (history-step! who back?)
+    (let* ([ix (current-index)] [level (enclosing-level ix (reference-atom ix))]
+           [h (and (not (holds-placed? ix level)) (history-of ix level #f))]
+           [entries (if h (if back? (history-back h) (history-forward h)) '())])
+      (when (null? entries)
+        (error who (if back? "no more back history in this level" "no more forward history in this level")))
+      (let ([now (current-interior ix level)] [part (car (kids-of ix level))] [selected (selected-id)] [entry (car entries)])
+        (dynamic-wind
+          (lambda ()
+            (let ([made '()] [restored? #f])
+              (dynamic-wind
+                void
+                (lambda ()
+                  (let ([d (restore-interior! ix level (interior-datum entry) (lambda (id v) (set! made (cons (cons id v) made))))]
+                        [points (by-view entry interior-points)])
+                    (buffers:replace! layout-buffer (document:node-start part) (document:node-end part) d)
+                    (set! restored? #t)
+                    (if back?
+                        (begin (history-back-set! h (cdr entries)) (history-forward-set! h (cons now (history-forward h))))
+                        (begin (history-forward-set! h (cdr entries)) (history-back-set! h (cons now (history-back h)))))
+                    (show-recorded! d (append (map (lambda (m) (cons (views:id (cdr m)) (let ([p (assv (car m) points)]) (and p (cdr p)))))
+                                                   made)
+                                              points))))
+                (lambda () (unless restored? (for-each (lambda (m) (views:drop! (cdr m))) made))))))
+          void void)
+        (let ([ix (current-index)])
+          (unless (index-atom ix selected)
+            (let ([a (lead-down ix (history-level! ix h))]) (when a (select-id! (atom-id a)))))))))
+
+  ;; A level a plugin's part made around the user's windows holds exactly
+  ;; what the root held before, so the root's history becomes its own.
+  (define (move-root-history! ix)
+    (let* ([root (root-node)] [h (find (lambda (h) (anchored-at? h (fx+ (document:node-start root) 1))) histories)])
+      (when (and h (or (pair? (history-back h)) (pair? (history-forward h))) (holds-placed? ix root))
+        (let ([inner (first-level-inside ix root)])
+          (when inner
+            (let ([g (history-of ix inner #t)])
+              (when (and (null? (history-back g)) (null? (history-forward g)))
+                (history-back-set! g (history-back h))
+                (history-forward-set! g (history-forward h)))))
+          (history-back-set! h '())
+          (history-forward-set! h '())))))
 
   (record-writer (record-type-descriptor frame-record)
     (lambda (f p wr) (display "#<frame>" p))))
@@ -1099,7 +1472,7 @@
        (assertion-violation 'layout:zoomed-view "not a frame" frame))
      (check-main-thread 'layout:zoomed-view)
      (let ([z (frame-zoom)])
-       (and z (view-of (index-atom (current-index) z))))]))
+       (and z (view-of (index-atom (current-index) (car z)))))]))
 
 (define views
   (case-lambda
@@ -1128,27 +1501,17 @@
      (check-main-thread 'layout:selection-order)
      (order-views)]))
 
-(define (%draw-root node shown focused draw-child client)
-  (let ([parts (if (null? shown)
-                   '()
-                   (cons (haml (:div.layout-main (draw-child (car shown))))
-                         (map (lambda (c) (haml (:div.layout-bar (draw-child c)))) (cdr shown))))])
-    (haml (:div.layout-root parts))))
+(define-table keymap "The layout's keymap, last on the focus path and for mouse keys on the layout's own drawing.")
 
-(define (%root-neighbour node child direction)
-  (let ([cs (children node)] [at (document:node-start child)])
-    (case direction
-      [(down) (let ([m (memp (lambda (c) (fx= (document:node-start c) at)) cs)]) (and m (pair? (cdr m)) (cadr m)))]
-      [(up) (let loop ([cs cs] [before #f])
-              (cond
-                [(null? cs) #f]
-                [(fx= (document:node-start (car cs)) at) before]
-                [else (loop (cdr cs) (car cs))]))]
-      [else #f])))
+(define (%draw-level node shown focused draw-child client)
+  (let ([part (drawn-part-class node)] [level (drawn-level-class node)])
+    (haml (:div.layout-level ([class (if (and part level) (string-append part " " level) (or part level))])
+            (map draw-child shown)))))
 
-(define-table keymap "The keymap of the layout's root, for mouse keys on the layout's own drawing.")
+(buffers:define-kind level (content nodes) (consent check-level))
 
-(define-container root (draw %draw-root) (neighbour %root-neighbour) (keymap keymap))
+(define-values ()
+  (begin (register-container! (car (level '())) %draw-level #f '() #f #f #f) (values)))
 
 (define (%draw-popups node shown focused draw-child client)
   (haml (:div.layout-popups (map draw-child shown))))
@@ -1187,43 +1550,22 @@
   (let-values ([(ix n) (part-of 'layout:locked? node)])
     (locked-in? ix n)))
 
-(define (%delete! ix node)
-  (when (locked-in? ix node)
-    (assertion-violation 'layout:delete-part! "a locked part" node))
-  (remove-part! ix node)
-  (void))
+(define (level-of view)
+  (check-view 'layout:level-of view)
+  (check-main-thread 'layout:level-of)
+  (let* ([ix (current-index)] [a (index-atom ix (views:id view))])
+    (and a (enclosing-level ix a))))
 
+;; A plugin removes its own locked part with this procedure; the lock
+;; binds only the user's commands.
 (define (delete-part! node)
   (check-main-thread 'layout:delete-part!)
   (let-values ([(ix n) (part-of 'layout:delete-part! node)])
-    (%delete! ix n)))
+    (remove-part! ix n)
+    (void)))
 
 (define (draw-view-atom node view client)
   (list (views:draw view client)))
-
-(define (bar? node)
-  (check-main-thread 'layout:bar?)
-  (let-values ([(ix n) (part-of 'layout:bar? node)])
-    (and (eq? ix (current-index)) (bar-in? ix n))))
-
-(define add-bar!
-  (case-lambda
-    [(b) (add-bar! b 0)]
-    [(b depth)
-     (unless (buffers:buffer? b)
-       (assertion-violation 'layout:add-bar! "not a buffer" b))
-     (unless (real? depth)
-       (assertion-violation 'layout:add-bar! "not a real number" depth))
-     (check-main-thread 'layout:add-bar!)
-     (bar-view b depth)]))
-
-(define (remove-bar! b)
-  (unless (buffers:buffer? b)
-    (assertion-violation 'layout:remove-bar! "not a buffer" b))
-  (check-main-thread 'layout:remove-bar!)
-  (let ([atom (bar-atom b)])
-    (when atom (remove-part! (current-index) atom))
-    (void)))
 
 (define (%check-action-result who result)
   (unless (or (not result) (views:view? result))
@@ -1232,28 +1574,46 @@
     (assertion-violation who "an action returned a view not in the layout" result))
   result)
 
-(define (reuse-view b)
-  (unless (buffers:buffer? b)
-    (assertion-violation 'layout:reuse-view "not a buffer" b))
-  (check-main-thread 'layout:reuse-view)
-  (let ([shown (filter (lambda (v) (eq? (views:buffer v) b)) (views))])
+(define (%showing b vs)
+  (let ([shown (filter (lambda (v) (eq? (views:buffer v) b)) vs)])
     (cond
       [(null? shown) #f]
       [(memq (selected-view) shown) (selected-view)]
       [else (car shown)])))
 
+(define (find-view b)
+  (unless (buffers:buffer? b)
+    (assertion-violation 'layout:find-view "not a buffer" b))
+  (check-main-thread 'layout:find-view)
+  (%showing b (map view-of (index-atoms))))
+
+(define (reuse-view b)
+  (unless (buffers:buffer? b)
+    (assertion-violation 'layout:reuse-view "not a buffer" b))
+  (check-main-thread 'layout:reuse-view)
+  (%showing b (views)))
+
+;; The commands that mean the other views act in the level of the view
+;; selected last in the layout, so in a popup, such as a prompt, they act
+;; where the user was.
+(define (%level-units)
+  (let* ([ix (current-index)] [a (reference-atom ix)])
+    (values ix a (level-units ix (enclosing-level ix a) (visible-atoms)))))
+
 (define (use-other-view b)
   (unless (buffers:buffer? b)
     (assertion-violation 'layout:use-other-view "not a buffer" b))
   (or (reuse-view b)
-      (let* ([selected (selected-view)]
-             [candidates (filter (lambda (v) (not (or (eq? v selected) (locked-node? (view-node v))))) (views))]
-             [order (frame-order)]
-             [age (lambda (v) (let ([m (memv (views:id v) order)]) (if m (length m) 0)))])
-        (and (pair? candidates)
-             (let ([v (fold-left (lambda (best v) (if (< (age v) (age best)) v best)) (car candidates) (cdr candidates))])
-               (views:set-buffer! v b)
-               v)))))
+      (let-values ([(ix a units) (%level-units)])
+        (let* ([selected (selected-id)]
+               [candidates (filter (lambda (u) (not (or (eqv? (atom-id u) selected) (locked-in? ix u) (placed-atom? ix u))))
+                                   units)]
+               [order (frame-order)]
+               [age (lambda (u) (let ([m (memv (atom-id u) order)]) (if m (length m) 0)))])
+          (and (pair? candidates)
+               (let ([v (view-of (fold-left (lambda (best u) (if (< (age u) (age best)) u best)) (car candidates) (cdr candidates)))])
+                 (views:set-buffer! v b)
+                 v))))))
 
 (define-option display-action use-other-view procedure?
   "The action layout:display-buffer tries after the rules and the caller's.")
@@ -1285,27 +1645,41 @@
         (unless (eq? (views:buffer v) b) (views:set-buffer! v b)))))
 
 (commands:define-command (other-view)
-  "Selects the next view the frame shows that is not locked, after the selected one, cyclically."
-  (let* ([shown (views)] [selected (selected-view)]
-         [after (let ([m (memq selected shown)])
-                  (if m (append (cdr m) (list-head shown (fx- (length shown) (length m)))) shown))])
-    (let ([next (find (lambda (v) (not (or (eq? v selected) (locked-node? (view-node v))))) after)])
-      (when next (select! next)))))
+  "Selects the next view in the selected view's level that is not locked, cyclically, or from a popup the view selected before it; a level inside it counts as its view selected last."
+  (let-values ([(ix a units) (%level-units)])
+    (let* ([selected (selected-id)]
+           [m (memp (lambda (u) (eqv? (atom-id u) (atom-id a))) units)]
+           [from-a (if m (append m (list-head units (fx- (length units) (length m)))) units)]
+           [after (if (and m (eqv? (atom-id a) selected)) (cdr from-a) from-a)]
+           [next (find (lambda (u) (not (or (eqv? (atom-id u) selected) (locked-in? ix u)))) after)])
+      (when next (select! (view-of next))))))
 
 (commands:define-command (delete-view)
   "Deletes the selected view's part; in the part mode, the selected part, then selects the part before it, else the one after."
-  (if (in-part-mode?)
-      (let* ([ix (current-index)] [n (selection-in ix)] [next (and n (deletion-successor ix n))])
-        (when n
-          (check-holds-no-locked 'layout:delete-view ix n)
-          (%delete! ix n)
-          (choose-datum! next)))
-      (let* ([id (views:id (selected-view))] [ix (index-of-id id)])
-        (%delete! ix (index-atom ix id)))))
+  (let ([ix (current-index)])
+    (if (in-part-mode?)
+        (let* ([n (selection-in ix)] [next (and n (deletion-successor ix n))])
+          (when n
+            (check-holds-no-locked 'layout:delete-view ix n)
+            (remove-part! ix n)
+            (choose-datum! next)))
+        (let* ([id (selected-id)] [ix (index-of-id id)] [a (index-atom ix id)])
+          (check-unlocked 'layout:delete-view ix a)
+          (remove-part! ix a)))))
 
-(commands:define-command (zoom)
-  "Zooms the frame to the selected view; when zoomed, shows the whole layout again."
-  (set-zoom! (and (not (frame-zoom)) (view-node (selected-view)) (views:id (selected-view))))
+(commands:define-command (zoom [prefix (commands:prefix-argument)])
+  "Zooms the selected view to fill its level; with a number n, the level n out; with C-u, the screen. When zoomed, shows the whole layout again."
+  (if (frame-zoom)
+      (set-zoom! #f)
+      (let* ([ix (current-index)] [a (index-atom ix (selected-id))])
+        (when a
+          (let ([target (cond
+                          [(pair? prefix) 'root]
+                          [(and (fixnum? prefix) (fx> prefix 1)) prefix]
+                          [else 1])])
+            (when (same-node? (car (children (zoom-level ix a target))) a)
+              (error 'layout:zoom "no other views in this level"))
+            (set-zoom! (cons (atom-id a) target))))))
   (void))
 
 (commands:define-command (mouse-select-view [event (keys:command-event)])
@@ -1342,20 +1716,19 @@
   (%select-toward (direction down)))
 
 (commands:define-command (reset-layout)
-  "Makes the root's first part the view in it selected last that is not locked, keeping the bars."
-  (let ([main (car (children (root-node)))])
-    (when (locked-node? main)
-      (assertion-violation 'layout:reset-layout "a locked part" main))
-    (let ([atom (last-selected-unlocked-atom main)])
-      (unless atom
-        (assertion-violation 'layout:reset-layout "no view that is not locked in the root's first part" main))
-      (let* ([v (view-of atom)]
-             [name (let ([b (views:buffer v)]) (if b (buffers:name b) (document:node-attribute atom 'buffer "")))]
-             [d (vector 'views:view (list (cons 'view (views:id v)) (cons 'buffer name)))])
-        (set-zoom! #f)
-        (unless (equal? (node-datum (current-index) main) d)
-          (buffers:replace! buffer (document:node-start main) (document:node-end main) d))
-        (select! v)))))
+  "Deletes every view in the selected view's level but the selected view, locked views and the views of the levels inside it, and ends the zoom."
+  (let* ([ix (current-index)] [a (reference-atom ix)]
+         [doomed (map atom-id
+                      (filter (lambda (x)
+                                (not (or (same-node? x a) (locked-in? ix x) (not (same-level? ix x a)))))
+                              (index-atoms)))])
+    (set-zoom! #f)
+    ;; Each view goes in its own edit, and a quit between two would leave
+    ;; some; Tuna's dynamic-wind holds quits off while its in runs.
+    (dynamic-wind
+      (lambda () (for-each (lambda (id) (let ([ix (current-index)]) (remove-part! ix (index-atom ix id)))) doomed))
+      void void)
+    (select! (view-of (index-atom (current-index) (atom-id a))))))
 
 (define-table part-mode-keymap
   "The part mode's keymap. A key it does not bind leaves the mode and runs as it would outside it.")
@@ -1429,12 +1802,12 @@
   (%edit! (lambda (ix n) (shift-part! 'layout:shift-forward ix n 1))))
 
 (commands:define-command (lift)
-  "Moves the selected part out of its container, to beside it."
-  (%edit! lift-part!))
+  "Moves the selected part out of its container, to beside it, passing through levels."
+  (%edit! (lambda (ix n) (lift-part! 'layout:lift ix n))))
 
 (commands:define-command (lower)
-  "Moves the selected part into the nearest container among its siblings after it, as its first child, else before it, as its last."
-  (%edit! lower-part!))
+  "Moves the selected part into the nearest container among its siblings after it, as its first child, else before it, as its last, passing through levels."
+  (%edit! (lambda (ix n) (lower-part! 'layout:lower ix n))))
 
 (commands:define-command (raise)
   "Makes the selected part take its container's place, deleting its siblings."
@@ -1444,10 +1817,26 @@
   "Replaces the selected container with its children."
   (%edit! (lambda (ix n) (splice-part! 'layout:splice ix n))))
 
+(commands:define-command (history-back)
+  "Restores the selected view's level's interior as it was before the last command that changed it."
+  (history-step! 'layout:history-back #t))
+
+(commands:define-command (history-forward)
+  "Restores the selected view's level's interior as it was before the last history-back."
+  (history-step! 'layout:history-forward #f))
+
+(define (%history-before command)
+  (unless (or (eq? command history-back) (eq? command history-forward))
+    (note-before!)))
+
+(define (%history-after command) (note-after! command))
+
+(commands:define-command (wrap-in-level)
+  "Wraps the selected part in a level."
+  (wrap! (lambda (parts) (apply level '() parts))))
+
 (define %mode-press (make-thread-parameter #f))
 
-;; A key the part mode binds acts on the layout, so it runs in the
-;; layout's own view, where undo's keys undo window changes.
 (define (%handle-key client item)
   (let ([key (keys:item-key item)])
     (cond
@@ -1470,7 +1859,10 @@
     [else (selected-keymaps)]))
 
 (define (container-keymaps client posn)
-  (if posn '() (enclosing-keymaps)))
+  (cond
+    [(not posn) (if (view-node (selected-view)) (append (enclosing-keymaps) (list keymap)) (enclosing-keymaps))]
+    [(let ([v (views:posn-view posn)]) (and v (eq? (views:buffer v) buffer))) (list keymap)]
+    [else '()]))
 
 (define (%keep-layout b) (not (or (eq? b buffer) (eq? b popups-buffer))))
 
@@ -1509,11 +1901,16 @@
 (keys:bind! part-mode-keymap "r" raise)
 (keys:bind! part-mode-keymap "-" splice)
 (keys:bind! part-mode-keymap "x" delete-view)
+(keys:bind! part-mode-keymap "w l" wrap-in-level)
+(keys:bind! keymap "C-c <left>" history-back)
+(keys:bind! keymap "C-c <right>" history-forward)
 (keys:bind! keymap "<mouse-1>" mouse-select-view)
 (keys:bind! keymap "<down-mouse-1>" keys:ignore)
 (add-hook! keys:find-keymaps cursor-keymaps)
 (add-hook! keys:find-keymaps container-keymaps 90)
 (add-hook! commands:before-command %leave-on-other-input)
+(add-hook! commands:before-command %history-before)
+(add-hook! commands:after-command %history-after)
 (add-hook! buffers:kill-queries %keep-layout)
 (table-set! web:input-handlers "key" %handle-key)
 (table-set! web:stylesheets 'layout "layout/layout.css")

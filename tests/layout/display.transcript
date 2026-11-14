@@ -9,7 +9,7 @@
 > (views:id (layout:display-buffer notes))
 3
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 3) (buffer . "*scratch*")))))
+(layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 3) (buffer . "*scratch*")))))
 > (selected)
 1
 ; A buffer already shown is shown where it is.
@@ -23,7 +23,7 @@
 > (views:id (layout:display-buffer help))
 4
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 4) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . "*scratch*")))))
+(layout:level () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 4) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . "*scratch*")))))
 ; Rules are tried newest first, then the caller's action, then the
 ; option's, then the selected view.
 > (define tried '())
@@ -38,7 +38,7 @@
 > (reverse tried)
 (newer older caller option)
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 4) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . "*scratch*")))))
+(layout:level () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 4) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . "*scratch*")))))
 > (raised (lambda () (layout:display-buffer mail (lambda (b) 'nonsense))))
 (layout:display-buffer "an action returned what is not a view or #f")
 > (raised (lambda () (layout:display-buffer 'mail)))
@@ -62,7 +62,7 @@
 ((1 . "other") (4 . "*Help*") (3 . "notes"))
 > (views:id (layout:use-other-view other))
 1
-> (define echo (layout:add-bar! (buffers:make "*Echo*" "")))
+> (define echo (place-echo (buffers:make "*Echo*" "")))
 > (views:id (layout:display-buffer (buffers:make "fourth" "")))
 1
 > (map (lambda (v) (cons (views:id v) (buffers:name (views:buffer v)))) (layout:views))
@@ -75,7 +75,7 @@
 > (layout:select! echo)
 > (layout:switch-to-buffer mail)
 > (cons (selected) (buffers:name (views:buffer (layout:selected-view))))
-(1 . "mail")
+(3 . "mail")
 > (buffers:name (views:buffer echo))
 "*Echo*"
 ; The documented example of a rule.
@@ -86,45 +86,57 @@
 > (layout:select! (layout:display-buffer compilation))
 > (cons (selected) (buffers:name (views:buffer (layout:selected-view))))
 (6 . "*compilation*")
-; reset-layout keeps the selected view, or the last selected that is not
-; locked, and the bars.
-> (layout:select! echo)
+; reset-layout deletes the other views of the selected view's level and
+; ends the zoom; the parts outside the level stay.
 > (commands:run layout:zoom)
 > (commands:run layout:reset-layout)
 > (tree)
-(layout:root () #(views:view ((view . 6) (buffer . "*compilation*"))) #(views:view ((view . 5) (buffer . "*Echo*") (depth . 0) (pinned . #t) (locked . #t))))
+(layout:level () (layout-split:container ((direction . column)) (layout:level () #(views:view ((view . 6) (buffer . "mail")))) #(views:view ((view . 5) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t)))))
 > (selected)
 6
 > (map views:id (layout:views))
 (6 5)
+; In the echo area, whose level is the root, the user's windows are a
+; level inside it, kept whole, and the echo area is locked.
+> (layout:select! echo)
+> (define before (tree))
+> (commands:run layout:reset-layout)
+> (equal? (tree) before)
+#t
+> (selected)
+5
 > (raised (lambda () (layout:use-other-view "mail")))
 (layout:use-other-view "not a buffer")
 > (raised (lambda () (layout:reuse-view "mail")))
 (layout:reuse-view "not a buffer")
+> (raised (lambda () (layout:find-view "mail")))
+(layout:find-view "not a buffer")
 > (raised (lambda () (layout:switch-to-buffer "mail")))
 (layout:switch-to-buffer "not a buffer")
-> (raised (lambda () (layout:add-bar! "mail")))
-(layout:add-bar! "not a buffer")
-; reset-layout chooses a view in the root's first part, never a locked
-; one, and refuses to change a locked part.
+; A locked view and a level inside the selected view's level stay.
 > (define first (views:make notes))
 > (define second (views:make mail))
-> (set-parts! (layout-split:container '((direction . row)) (atom first) (atom second)) (atom echo '(pinned . #t) '(locked . #t)))
-> (layout:select! first)
-> (layout:select! echo)
-> (layout:delete-part! (layout:view-node first))
-> (commands:run layout:reset-layout)
-> (tree)
-(layout:root () #(views:view ((view . 8) (buffer . "mail"))) #(views:view ((view . 5) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
-> (selected)
-8
-> (map views:id (layout:views))
-(8 5)
 > (define third (views:make notes))
 > (define fourth (views:make notes))
-> (set-parts! (layout-split:container '((direction . row) (locked . #t)) (atom second) (atom third)) (atom echo '(pinned . #t) '(locked . #t)) (atom fourth))
-> (raised (lambda () (layout:reset-layout)))
-(layout:reset-layout "a locked part")
+> (set-parts! (layout-split:container '((direction . column))
+                (layout:level '()
+                  (layout-split:container '((direction . row))
+                    (atom first) (atom second) (layout:level '() (atom third)) (atom fourth '(locked . #t))))
+                (atom echo '(depth . 90) '(size . content) '(locked . #t))))
+> (layout:select! second)
+> (commands:run layout:reset-layout)
+> (tree)
+(layout:level () (layout-split:container ((direction . column)) (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 8) (buffer . "mail"))) (layout:level () #(views:view ((view . 9) (buffer . "notes")))) #(views:view ((view . 10) (buffer . "notes") (locked . #t))))) #(views:view ((view . 5) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t)))))
+> (selected)
+8
+; With nothing left to delete, reset-layout changes nothing and raises
+; nothing, as Emacs's delete-other-windows does.
+> (define before (tree))
+> (commands:run layout:reset-layout)
+> (equal? (tree) before)
+#t
+> (selected)
+8
 ; An action's view must be in the layout.
 > (raised (lambda () (layout:display-buffer mail (lambda (b) (views:make b)))))
 (layout:display-buffer "an action returned a view not in the layout")

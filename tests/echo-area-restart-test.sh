@@ -26,18 +26,18 @@ expect() {
   [ "$2" = "$3" ] || fail "$1: expected $(printf '%s' "$3" | tr '\n' '|'), got $(printf '%s' "$2" | tr '\n' '|')"
 }
 
-bars='(map (lambda (d) (cdr (assq (quote buffer) (vector-ref d 1)))) (cdddr (tree)))'
+shown='(let walk ([d (tree)]) (if (vector? d) (let ([b (cdr (assq (quote buffer) (vector-ref d 1)))]) (if (string=? b " *Echo Area*") (list b) (quote ()))) (apply append (map walk (cddr d)))))'
 
-# The plugin removes its bar when it unloads at exit, so the layout is
+# The plugin removes its part when it unloads at exit, so the layout is
 # saved without it, and a restart shows one echo area, not two.
-output=$(run "$bars
+output=$(run "$shown
 (echo-area:message! \"Bye\")")
 expect "first start" "$output" '(" *Echo Area*")'
 saved=$home/.local/share/tuna/saved/tuna/layout/saved-layout.ss
 [ -f "$saved" ] || fail "no saved layout at $saved"
-! grep -q 'Echo Area' "$saved" || fail "the saved layout holds the echo area's bar"
+! grep -q 'Echo Area' "$saved" || fail "the saved layout holds the echo area's part"
 
-output=$(run "$bars
+output=$(run "$shown
 (echo-area:current-message)")
 expect "restart" "$output" '(" *Echo Area*")
 #f'

@@ -43,36 +43,45 @@ output=$(run "(layout-split:split-view! (layout:selected-view) (layout-split:dir
 (commands:run layout:zoom)
 (tree)")
 expect "first run" "$output" '#<view 3>
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 3) (buffer . "notes")))))'
+(layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 3) (buffer . "notes")))))'
 
 output=$(run "(tree)
 (list (views:id (layout:selected-view)) (map views:id (layout:views)) (views:point (views:find 3)))")
-expect "after a restart" "$output" '(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 3) (buffer . "notes")))))
+expect "after a restart" "$output" '(layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 3) (buffer . "notes")))))
 (3 (3) 5)'
+
+# The zoom is saved as the view's number and how far out its level is.
+frame=$home/.local/share/tuna/saved/tuna/layout/saved-frame.ss
+expect "the saved frame" "$(cat "$frame")" '((3 1) (3 . 1))'
 
 saved=$home/.local/share/tuna/saved/tuna/layout/saved-layout.ss
 [ -f "$saved" ] || fail "no saved layout at $saved"
-echo '(layout:root () #(views:view ((view . 1) (buffer . "notes") (locked . #t))))' > "$saved"
+echo '(layout:level () #(views:view ((view . 1) (buffer . "notes") (locked . #t))))' > "$saved"
 output=$(run "(tree)")
 expect "a layout with no view that is not locked" "$(printf '%s\n' "$output" | sed 's/ at .*rejected//' | tail -n 1)" \
-  '(layout:root () #(views:view ((view . 5) (buffer . "notes"))))'
+  '(layout:level () #(views:view ((view . 5) (buffer . "notes"))))'
 printf '%s\n' "$output" | grep -q 'saved-layout.ss' || fail "no warning names the set-aside file: $output"
 [ -f "$saved.rejected" ] || fail "the refused layout was not set aside"
 
-echo '(layout:root () (layout-split:container ((direction . row)) "text"))' > "$saved"
+echo '(layout:level () (layout:level () #(views:view ((view . 1) (buffer . "notes")))))' > "$saved"
+output=$(run "(tree)")
+expect "a level holding a level" "$(printf '%s\n' "$output" | tail -n 1)" \
+  '(layout:level () #(views:view ((view . 7) (buffer . "notes"))))'
+
+echo '(layout:level () (layout-split:container ((direction . row)) "text"))' > "$saved"
 output=$(run "(tree)")
 expect "a layout holding text" "$(printf '%s\n' "$output" | tail -n 1)" \
-  '(layout:root () #(views:view ((view . 7) (buffer . "notes"))))'
+  '(layout:level () #(views:view ((view . 9) (buffer . "notes"))))'
 
-echo '(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 1) (buffer . "notes")))))' > "$saved"
+echo '(layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 1) (buffer . "notes")))))' > "$saved"
 output=$(run "(tree)")
 expect "a layout naming a view twice" "$(printf '%s\n' "$output" | tail -n 1)" \
-  '(layout:root () #(views:view ((view . 9) (buffer . "notes"))))'
+  '(layout:level () #(views:view ((view . 11) (buffer . "notes"))))'
 
 rm -rf "$home/.local"
 output=$(NO_BUFFERS=1 run "(tree)
 (map buffers:name (buffers:all))")
-expect "no buffer" "$output" '(layout:root () #(views:view ((view . 1) (buffer . "*scratch*"))))
+expect "no buffer" "$output" '(layout:level () #(views:view ((view . 1) (buffer . "*scratch*"))))
 ("*scratch*" "*layout*" "*popups*")'
 
 echo "$0: $failures failures"

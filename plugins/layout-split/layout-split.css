@@ -16,10 +16,15 @@
     flex-direction: column;
   }
 
+  /* In the views' font, so that a size in columns or lines matches
+     theirs. */
   .split-child {
     display: flex;
     min-inline-size: 0;
     min-block-size: 0;
+    font-family: var(--tuna-font-code);
+    font-size: var(--tuna-font-size-code);
+    line-height: var(--tuna-line-height-code);
   }
 
   .split.row > .split-child + .split-child {

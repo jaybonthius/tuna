@@ -21,6 +21,7 @@ cat > "$dir/input" <<'END'
 (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 (define notes (buffers:make "notes" "one\ntwo\nthree\n"))
 (define client (web:add-client! 1))
+(define side (buffers:make "side" ""))
 (define quitting #t)
 (define stopped #f)
 (define quits 0)
@@ -44,17 +45,26 @@ cat > "$dir/input" <<'END'
             (let* ([shown (layout:views)] [selected (layout:selected-view)] [many? (> (length (atom-ids (tree))) 10)])
               (attempt
                 (lambda ()
-                  (case (mod k 11)
+                  (case (mod k 14)
                     [(0) (if many? (layout:delete-part! (layout:view-node (pick shown k))) (layout-split:split-view! selected (layout-split:direction row)))]
                     [(1) (if many? (layout:delete-part! (layout:view-node (pick shown k))) (layout-split:split-view! selected (layout-split:direction column)))]
                     [(2) (layout:delete-part! (layout:view-node (pick shown (* k 31))))]
                     [(3) (layout:select! (pick shown (* k 7)))]
-                    [(4) (layout:zoom)]
+                    [(4) (layout:zoom (if (even? (div k 13)) #f '(4)))]
                     [(5) (layout:screen client)]
                     [(6) (layout-split:enlarge (- (mod k 5) 2))]
                     [(7) (layout:display-buffer notes)]
                     [(8) (layout:other-view)]
                     [(9) (layout-split:balance)]
+                    [(10) (let ([v (layout:find-view side)])
+                            (if v
+                                (layout:delete-part! (layout:view-node v))
+                                ((layout-sides:display-at-side (pick '(left right up down) k) 50 'content '((locked . #t))) side)))]
+                    [(11) (when many? (layout:reset-layout))]
+                    [(12) (case (mod (div k 14) 3)
+                            [(0) (unless (or many? (layout:locked? (layout:view-node selected))) (commands:run layout-split:split-right))]
+                            [(1) (layout:history-back)]
+                            [else (layout:history-forward)])]
                     [else (layout:neighbour selected (pick '(left right up down) k))]))))
             (loop (+ k 1)))))))
 (begin
@@ -68,7 +78,9 @@ cat > "$dir/input" <<'END'
     (> quits 100))
 (define (parts-only? d)
     (or (and (vector? d) (eq? (vector-ref d 0) 'views:view) (fixnum? (cdr (assq 'view (vector-ref d 1)))))
-        (and (pair? d) (pair? (cddr d)) (for-all parts-only? (cddr d)))))
+        (and (pair? d) (pair? (cddr d)) (for-all parts-only? (cddr d))
+             (or (not (eq? (car d) 'layout:level))
+                 (and (null? (cdddr d)) (not (and (pair? (caddr d)) (eq? (car (caddr d)) 'layout:level))))))))
 (define (ids-once? ids) (or (null? ids) (and (not (memv (car ids) (cdr ids))) (ids-once? (cdr ids)))))
 (and (parts-only? (tree)) (ids-once? (atom-ids (tree))))
 (and (layout:view-node (layout:selected-view)) (pair? (layout:views)) #t)

@@ -6,20 +6,20 @@
 ; point; the selected view stays selected.
 > (press! c1 '("x" "control") '("2"))
 > (tree)
-(layout:root () (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 3) (buffer . "notes")))))
+(layout:level () (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 3) (buffer . "notes")))))
 > (selected)
 1
 > (views:point (views:find 3))
 5
 > (press! c1 '("x" "control") '("3"))
 > (tree)
-(layout:root () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 4) (buffer . "notes")))) #(views:view ((view . 3) (buffer . "notes")))))
+(layout:level () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 4) (buffer . "notes")))) #(views:view ((view . 3) (buffer . "notes")))))
 ; A view whose parent is a split of the direction joins it, halving the
 ; view's weight between the two.
 > (layout-split:split-view! (views:find 1) (layout-split:direction row))
 #<view 5>
 > (tree)
-(layout:root () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 1/2))) #(views:view ((view . 5) (buffer . "notes") (weight . 1/2))) #(views:view ((view . 4) (buffer . "notes")))) #(views:view ((view . 3) (buffer . "notes")))))
+(layout:level () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 1/2))) #(views:view ((view . 5) (buffer . "notes") (weight . 1/2))) #(views:view ((view . 4) (buffer . "notes")))) #(views:view ((view . 3) (buffer . "notes")))))
 > (raised (lambda () (layout-split:split-view! (views:find 1) 'diagonal)))
 (layout-split:split-view! "not a split direction")
 > (raised (lambda () (layout-split:split-view! 'view (layout-split:direction row))))
@@ -37,13 +37,13 @@
 ; the siblings; shrinking takes them.
 > (press! c1 '("x" "control") '("}"))
 > (tree)
-(layout:root () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 7/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 2/5))) #(views:view ((view . 4) (buffer . "notes") (weight . 9/10)))) #(views:view ((view . 3) (buffer . "notes")))))
+(layout:level () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 7/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 2/5))) #(views:view ((view . 4) (buffer . "notes") (weight . 9/10)))) #(views:view ((view . 3) (buffer . "notes")))))
 > (commands:run layout-split:enlarge 3)
 > (tree)
-(layout:root () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 13/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 1/10))) #(views:view ((view . 4) (buffer . "notes") (weight . 3/5)))) #(views:view ((view . 3) (buffer . "notes")))))
+(layout:level () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 13/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 1/10))) #(views:view ((view . 4) (buffer . "notes") (weight . 3/5)))) #(views:view ((view . 3) (buffer . "notes")))))
 > (commands:run layout-split:shrink 2)
 > (tree)
-(layout:root () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 9/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 3/10))) #(views:view ((view . 4) (buffer . "notes") (weight . 4/5)))) #(views:view ((view . 3) (buffer . "notes")))))
+(layout:level () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 9/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 3/10))) #(views:view ((view . 4) (buffer . "notes") (weight . 4/5)))) #(views:view ((view . 3) (buffer . "notes")))))
 > (raised (lambda () (layout-split:enlarge 20)))
 (layout-split:enlarge "the split cannot change that much")
 > (raised (lambda () (layout-split:enlarge 'x)))
@@ -51,42 +51,40 @@
 > (raised (lambda () (layout-split:shrink 1.5)))
 (layout-split:shrink "not an exact integer")
 > (tree)
-(layout:root () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 9/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 3/10))) #(views:view ((view . 4) (buffer . "notes") (weight . 4/5)))) #(views:view ((view . 3) (buffer . "notes")))))
+(layout:level () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 9/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 3/10))) #(views:view ((view . 4) (buffer . "notes") (weight . 4/5)))) #(views:view ((view . 3) (buffer . "notes")))))
 > (layout:select! (views:find 3))
 > (commands:run layout-split:enlarge 1)
 > (tree)
-(layout:root () (layout-split:container ((direction . column)) (layout-split:container ((direction . row) (weight . 4/5)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 9/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 3/10))) #(views:view ((view . 4) (buffer . "notes") (weight . 4/5)))) #(views:view ((view . 3) (buffer . "notes") (weight . 6/5)))))
+(layout:level () (layout-split:container ((direction . column)) (layout-split:container ((direction . row) (weight . 4/5)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 9/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 3/10))) #(views:view ((view . 4) (buffer . "notes") (weight . 4/5)))) #(views:view ((view . 3) (buffer . "notes") (weight . 6/5)))))
 > (press! c1 '("u" "control") '("x" "control") '("{"))
 > (tree)
-(layout:root () (layout-split:container ((direction . column)) (layout-split:container ((direction . row) (weight . 8/5)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 9/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 3/10))) #(views:view ((view . 4) (buffer . "notes") (weight . 4/5)))) #(views:view ((view . 3) (buffer . "notes") (weight . 2/5)))))
-; Balancing sets every weight to 1, unless the frame is zoomed.
+(layout:level () (layout-split:container ((direction . column)) (layout-split:container ((direction . row) (weight . 8/5)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 9/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 3/10))) #(views:view ((view . 4) (buffer . "notes") (weight . 4/5)))) #(views:view ((view . 3) (buffer . "notes") (weight . 2/5)))))
+; Balancing sets every weight in the selected view's level to 1, zoomed
+; or not.
 > (commands:run layout:zoom)
 > (press! c1 '("x" "control") '("+"))
-> (tree)
-(layout:root () (layout-split:container ((direction . column)) (layout-split:container ((direction . row) (weight . 8/5)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 9/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 3/10))) #(views:view ((view . 4) (buffer . "notes") (weight . 4/5)))) #(views:view ((view . 3) (buffer . "notes") (weight . 2/5)))))
 > (commands:run layout:zoom)
-> (press! c1 '("x" "control") '("+"))
 > (tree)
-(layout:root () (layout-split:container ((direction . column)) (layout-split:container ((direction . row) (weight . 1)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 1))) #(views:view ((view . 5) (buffer . "notes") (weight . 1))) #(views:view ((view . 4) (buffer . "notes") (weight . 1)))) #(views:view ((view . 3) (buffer . "notes") (weight . 1)))))
+(layout:level () (layout-split:container ((direction . column)) (layout-split:container ((direction . row) (weight . 1)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 1))) #(views:view ((view . 5) (buffer . "notes") (weight . 1))) #(views:view ((view . 4) (buffer . "notes") (weight . 1)))) #(views:view ((view . 3) (buffer . "notes") (weight . 1)))))
 ; Deleting a view leaves its split with one child, which takes its place
 ; and the split's own place in its parent.
 > (commands:run layout-split:enlarge 2)
 > (layout:select! (views:find 1))
 > (tree)
-(layout:root () (layout-split:container ((direction . column)) (layout-split:container ((direction . row) (weight . 3/5)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 1))) #(views:view ((view . 5) (buffer . "notes") (weight . 1))) #(views:view ((view . 4) (buffer . "notes") (weight . 1)))) #(views:view ((view . 3) (buffer . "notes") (weight . 7/5)))))
+(layout:level () (layout-split:container ((direction . column)) (layout-split:container ((direction . row) (weight . 3/5)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 1))) #(views:view ((view . 5) (buffer . "notes") (weight . 1))) #(views:view ((view . 4) (buffer . "notes") (weight . 1)))) #(views:view ((view . 3) (buffer . "notes") (weight . 7/5)))))
 > (layout:delete-part! (layout:view-node (views:find 4)))
 > (layout:delete-part! (layout:view-node (views:find 5)))
 > (tree)
-(layout:root () (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 3/5))) #(views:view ((view . 3) (buffer . "notes") (weight . 7/5)))))
+(layout:level () (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 3/5))) #(views:view ((view . 3) (buffer . "notes") (weight . 7/5)))))
 > (selected)
 1
 ; Locked views are not split; a view in no split cannot be enlarged.
-> (define echo (layout:add-bar! (buffers:make "*Echo*" "")))
+> (define echo (place-echo (buffers:make "*Echo*" "")))
 > (raised (lambda () (layout-split:split-view! echo (layout-split:direction row))))
 (layout-split:split-view! "a locked view")
 > (layout:delete-part! (layout:view-node (views:find 3)))
 > (tree)
-(layout:root () #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 0) (pinned . #t) (locked . #t))))
+(layout:level () (layout-split:container ((direction . column)) (layout:level () #(views:view ((view . 1) (buffer . "*Help*")))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t)))))
 > (raised (lambda () (layout-split:enlarge 1)))
 (layout-split:enlarge "the selected view is in no split")
 > (layout:select! echo)
@@ -100,22 +98,48 @@
 > (views:id (layout-split:display-right (buffers:make "newer" "")))
 7
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 7) (buffer . "notes")))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 0) (pinned . #t) (locked . #t))))
+(layout:level () (layout-split:container ((direction . column)) (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 7) (buffer . "notes"))))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t)))))
 > (show-screen c1)
-<div class="layout-screen" data-view="2" data-version="15" data-showing="0"><div class="layout-root"><div class="layout-main"><div class="split row"><div class="split-child" style="flex:1.0 1 0"><div class="layout-view selected" data-at="2" data-to="3"><div class="view" data-view="1" data-version="0" data-showing="1" data-placement="*" data-place-line="2" data-place-align="center" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v1-1" data-line="1" data-at="1">one</div><div class="line" id="v1-2" data-line="2"><span class="cursor primary"></span>two</div><div class="line" id="v1-3" data-line="3"><br></div></div></div></div></div><div class="split-child" style="flex:1.0 1 0"><div class="layout-view" data-at="3" data-to="4"><div class="view" data-view="7" data-version="0" data-showing="1" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v7-1" data-line="1" data-at="1"><span class="cursor primary"></span><br></div></div></div></div></div></div></div><div class="layout-bar"><div class="layout-view" data-at="5" data-to="6"><div class="view" data-view="6" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v6-1" data-line="1" data-at="1"><span class="cursor primary"></span><br></div></div></div></div></div></div></div>
-; Balancing leaves a locked split and its children as they are.
+<div class="layout-screen" data-view="2" data-version="15" data-showing="0"><div class="layout-level"><div class="split column"><div class="split-child" style="flex:1.0 1 0"><div class="layout-level"><div class="split row"><div class="split-child" style="flex:1.0 1 0"><div class="layout-view selected" data-at="4" data-to="5"><div class="view" data-view="1" data-version="0" data-showing="1" data-placement="*" data-place-line="2" data-place-align="center" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v1-1" data-line="1" data-at="1">one</div><div class="line" id="v1-2" data-line="2"><span class="cursor primary"></span>two</div><div class="line" id="v1-3" data-line="3"><br></div></div></div></div></div><div class="split-child" style="flex:1.0 1 0"><div class="layout-view" data-at="5" data-to="6"><div class="view" data-view="7" data-version="0" data-showing="1" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v7-1" data-line="1" data-at="1"><span class="cursor primary"></span><br></div></div></div></div></div></div></div></div><div class="split-child" style="flex:none"><div class="layout-view" data-at="8" data-to="9"><div class="view" data-view="6" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v6-1" data-line="1" data-at="1"><span class="cursor primary"></span><br></div></div></div></div></div></div></div></div>
+; Balancing leaves a locked split and its children, sized children and
+; the levels inside the selected view's level as they are, and nothing
+; outside it.
 > (define seventh (views:make notes))
-> (set-parts! (layout-split:container '((direction . row)) (atom (views:find 1) '(weight . 2)) (layout-split:container '((direction . column) (weight . 3) (locked . #t)) (atom (views:find 7) '(weight . 2)) (atom seventh))) (atom echo '(pinned . #t) '(locked . #t)))
+> (define eighth (views:make notes))
+> (define ninth (views:make notes))
+> (define tenth (views:make notes))
+> (set-parts! (layout-split:container '((direction . column) (weight . 1/2))
+                (layout:level '()
+                  (layout-split:container '((direction . row))
+                    (atom (views:find 1) '(weight . 2))
+                    (layout-split:container '((direction . column) (weight . 3) (locked . #t)) (atom (views:find 7) '(weight . 2)) (atom seventh))
+                    (atom eighth '(weight . 2) '(size . 1/4))
+                    (layout:level '((weight . 5)) (layout-split:container '((direction . column)) (atom ninth '(weight . 3)) (atom tenth)))))
+                (atom echo '(depth . 90) '(size . content) '(locked . #t) '(weight . 3))))
 > (commands:run layout-split:balance)
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes") (weight . 1))) (layout-split:container ((direction . column) (weight . 3) (locked . #t)) #(views:view ((view . 7) (buffer . "newer") (weight . 2))) #(views:view ((view . 8) (buffer . "notes"))))) #(views:view ((view . 6) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
-; A split that collapses gives its pinned attribute to the child taking
-; its place, so the child stays beside a zoomed view.
-> (set-parts! (layout-split:container '((direction . row)) (atom (views:find 1)) (layout-split:container '((direction . column) (pinned . #t)) (atom (views:find 7)) (atom seventh))) (atom echo '(pinned . #t) '(locked . #t)))
-> (layout:delete-part! (layout:view-node (views:find 7)))
+(layout:level () (layout-split:container ((direction . column) (weight . 1/2)) (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes") (weight . 1))) (layout-split:container ((direction . column) (weight . 3) (locked . #t)) #(views:view ((view . 7) (buffer . "newer") (weight . 2))) #(views:view ((view . 8) (buffer . "notes")))) #(views:view ((view . 9) (buffer . "notes") (weight . 2) (size . 1/4))) (layout:level ((weight . 1)) (layout-split:container ((direction . column)) #(views:view ((view . 10) (buffer . "notes") (weight . 3))) #(views:view ((view . 11) (buffer . "notes"))))))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t) (weight . 3)))))
+; A child's size, along its split, takes the place of its weight: a
+; fraction of the split, columns or lines, or its content's size. Across
+; the split it means nothing.
+> (define (flexes)
+    (let ([s (html->string (layout:screen c1))])
+      (let loop ([i 0] [acc '()])
+        (cond
+          [(> (+ i 5) (string-length s)) (reverse acc)]
+          [(string=? (substring s i (+ i 5)) "flex:")
+           (let end ([j (+ i 5)])
+             (if (char=? (string-ref s j) #\") (loop j (cons (substring s (+ i 5) j) acc)) (end (+ j 1))))]
+          [else (loop (+ i 1) acc)]))))
+> (set-parts! (layout-split:container '((direction . row))
+                (atom (views:find 1) '(size columns 30))
+                (atom (views:find 7) '(size lines 5) '(weight . 2))
+                (atom seventh '(size . 1/4))
+                (layout-split:container '((direction . column)) (atom eighth '(size lines 5)) (atom ninth '(size . content)))))
+> (flexes)
+("0 0 30ch" "2.0 1 0" "0 0 25.0%" "1.0 1 0" "0 0 5lh" "none")
+; A split made around a view takes its place, size included.
+> (layout-split:split-view! (views:find 1) (layout-split:direction column))
+#<view 12>
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 8) (buffer . "notes") (pinned . #t)))) #(views:view ((view . 6) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
-> (layout:select! (views:find 1))
-> (commands:run layout:zoom)
-> (map views:id (layout:views))
-(1 8 6)
+(layout:level () (layout-split:container ((direction . row)) (layout-split:container ((direction . column) (size columns 30)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 12) (buffer . "notes")))) #(views:view ((view . 7) (buffer . "newer") (size lines 5) (weight . 2))) #(views:view ((view . 8) (buffer . "notes") (size . 1/4))) (layout-split:container ((direction . column)) #(views:view ((view . 9) (buffer . "notes") (size lines 5))) #(views:view ((view . 10) (buffer . "notes") (size . content))))))

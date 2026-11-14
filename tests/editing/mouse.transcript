@@ -157,14 +157,15 @@
 > (mouse! "move" 6)
 > (state)
 ("one two three" ((14 #f)))
-; A click in another view selects it; a view that is locked, such as a
-; bar, or that is in no layout, refuses clicks.
+; A click in another view selects it; a view that is locked, such as the
+; echo area, or that is in no layout, refuses clicks.
 > (define first (view))
 > (define second (views:make (views:buffer first)))
 > (buffers:replace! layout:buffer 1 (- (document:length (buffers:document layout:buffer)) 1)
     (document:from-datum
-      (views:view `((view . ,(views:id first)) (buffer . ,(buffers:name (views:buffer first)))))
-      (views:view `((view . ,(views:id second)) (buffer . ,(buffers:name (views:buffer first)))))))
+      (layout-split:container '()
+        (views:view `((view . ,(views:id first)) (buffer . ,(buffers:name (views:buffer first)))))
+        (views:view `((view . ,(views:id second)) (buffer . ,(buffers:name (views:buffer first))))))))
 #<edit 1>
 > (eq? (layout:selected-view) first)
 #t
@@ -172,7 +173,7 @@
 > (mouse-in! second "click" 6)
 > (list (eq? (layout:selected-view) second) (views:point second) (views:point first))
 (#t 6 14)
-> (define echo (layout:add-bar! (buffers:make "*Echo*" "")))
+> (define echo ((layout-sides:display-at-side (layout:direction down) 90 (quote content) (quote ((locked . #t)))) (buffers:make "*Echo*" "")))
 > (mouse-in! echo "down" 1)
 > (mouse-in! echo "click" 1)
 > (eq? (layout:selected-view) second)

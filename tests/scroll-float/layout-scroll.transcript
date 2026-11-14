@@ -14,7 +14,7 @@
 > (set-parts! (layout-scroll:container '() (atom va '(size . 1/2)) (layout-split:container '((direction . column) (size . 1/3)) (atom vb) (atom vc)) (atom vd) (atom ve '(size . 2/3))))
 > (layout:select! vb)
 > (tree)
-(layout:root () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a") (size . 1/2))) (layout-split:container ((direction . column) (size . 1/3)) #(views:view ((view . 4) (buffer . "b"))) #(views:view ((view . 5) (buffer . "c")))) #(views:view ((view . 6) (buffer . "d"))) #(views:view ((view . 7) (buffer . "d") (size . 2/3)))))
+(layout:level () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a") (size . 1/2))) (layout-split:container ((direction . column) (size . 1/3)) #(views:view ((view . 4) (buffer . "b"))) #(views:view ((view . 5) (buffer . "c")))) #(views:view ((view . 6) (buffer . "d"))) #(views:view ((view . 7) (buffer . "d") (size . 2/3)))))
 ; Each column is an item named by the view its focused children lead to.
 ; Before a client has measured the strip it draws the focused column and
 ; enough on each side to fill the strip, and is placed to show the
@@ -98,23 +98,23 @@
 ; column split of a lone view; s-. moves the last part out again.
 > (press! desktop '("," "super"))
 > (tree)
-(layout:root () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a") (size . 1/2))) (layout-split:container ((direction . column) (size . 1/3)) #(views:view ((view . 4) (buffer . "b"))) #(views:view ((view . 5) (buffer . "c")))) (layout-split:container ((direction . column) (size . 1/2)) #(views:view ((view . 6) (buffer . "d"))) #(views:view ((view . 7) (buffer . "d"))))))
+(layout:level () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a") (size . 1/2))) (layout-split:container ((direction . column) (size . 1/3)) #(views:view ((view . 4) (buffer . "b"))) #(views:view ((view . 5) (buffer . "c")))) (layout-split:container ((direction . column) (size . 1/2)) #(views:view ((view . 6) (buffer . "d"))) #(views:view ((view . 7) (buffer . "d"))))))
 > (press! desktop '("." "super"))
 > (tree)
-(layout:root () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a") (size . 1/2))) (layout-split:container ((direction . column) (size . 1/3)) #(views:view ((view . 4) (buffer . "b"))) #(views:view ((view . 5) (buffer . "c")))) #(views:view ((view . 6) (buffer . "d") (size . 1/2))) #(views:view ((view . 7) (buffer . "d") (size . 1/2)))))
+(layout:level () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a") (size . 1/2))) (layout-split:container ((direction . column) (size . 1/3)) #(views:view ((view . 4) (buffer . "b"))) #(views:view ((view . 5) (buffer . "c")))) #(views:view ((view . 6) (buffer . "d") (size . 1/2))) #(views:view ((view . 7) (buffer . "d") (size . 1/2)))))
 ; s-[ and s-] move a lone view into the neighbouring column, and a view
 ; sharing its column out into a new one on that side.
 > (layout:select! vb)
 > (press! desktop '("]" "super"))
 > (tree)
-(layout:root () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a") (size . 1/2))) #(views:view ((view . 5) (buffer . "c") (size . 1/3))) #(views:view ((view . 4) (buffer . "b") (size . 1/2))) #(views:view ((view . 6) (buffer . "d") (size . 1/2))) #(views:view ((view . 7) (buffer . "d") (size . 1/2)))))
+(layout:level () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a") (size . 1/2))) #(views:view ((view . 5) (buffer . "c") (size . 1/3))) #(views:view ((view . 4) (buffer . "b") (size . 1/2))) #(views:view ((view . 6) (buffer . "d") (size . 1/2))) #(views:view ((view . 7) (buffer . "d") (size . 1/2)))))
 > (press! desktop '("[" "super"))
 > (tree)
-(layout:root () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a") (size . 1/2))) (layout-split:container ((direction . column) (size . 1/3)) #(views:view ((view . 5) (buffer . "c"))) #(views:view ((view . 4) (buffer . "b")))) #(views:view ((view . 6) (buffer . "d") (size . 1/2))) #(views:view ((view . 7) (buffer . "d") (size . 1/2)))))
+(layout:level () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a") (size . 1/2))) (layout-split:container ((direction . column) (size . 1/3)) #(views:view ((view . 5) (buffer . "c"))) #(views:view ((view . 4) (buffer . "b")))) #(views:view ((view . 6) (buffer . "d") (size . 1/2))) #(views:view ((view . 7) (buffer . "d") (size . 1/2)))))
 > (layout:select! va)
 > (press! desktop '("]" "super"))
 > (tree)
-(layout:root () (layout-scroll:container () (layout-split:container ((direction . column) (size . 1/3)) #(views:view ((view . 5) (buffer . "c"))) #(views:view ((view . 4) (buffer . "b"))) #(views:view ((view . 3) (buffer . "a")))) #(views:view ((view . 6) (buffer . "d") (size . 1/2))) #(views:view ((view . 7) (buffer . "d") (size . 1/2)))))
+(layout:level () (layout-scroll:container () (layout-split:container ((direction . column) (size . 1/3)) #(views:view ((view . 5) (buffer . "c"))) #(views:view ((view . 4) (buffer . "b"))) #(views:view ((view . 3) (buffer . "a")))) #(views:view ((view . 6) (buffer . "d") (size . 1/2))) #(views:view ((view . 7) (buffer . "d") (size . 1/2)))))
 > (selected)
 3
 ; The display action adds a column after the selected view's and selects
@@ -171,7 +171,7 @@
 > (layout:select! vh)
 > (press! desktop '("]" "super"))
 > (list (tree) (selected))
-((layout:root () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a"))) #(views:view ((view . 12) (buffer . "c") (size . 1/3))) (layout-split:container ((size . 1/2)) #(views:view ((view . 13) (buffer . "d"))) #(views:view ((view . 14) (buffer . "a")))))) 13)
+((layout:level () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a"))) #(views:view ((view . 12) (buffer . "c") (size . 1/3))) (layout-split:container ((size . 1/2)) #(views:view ((view . 13) (buffer . "d"))) #(views:view ((view . 14) (buffer . "a")))))) 13)
 ; A locked column is neither changed, moved nor merged into.
 > (set-parts! (layout-scroll:container '() (atom va) (atom vg '(locked . #t)) (atom vh)))
 > (layout:select! va)
@@ -187,7 +187,7 @@
 > (commands:run layout-scroll:expel)
 ! layout-scroll:expel: a locked part with irritant #<node views:view 5>
 > (tree)
-(layout:root () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a"))) (layout-split:container ((direction . column)) #(views:view ((view . 12) (buffer . "c"))) #(views:view ((view . 13) (buffer . "d") (locked . #t))))))
+(layout:level () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a"))) (layout-split:container ((direction . column)) #(views:view ((view . 12) (buffer . "c"))) #(views:view ((view . 13) (buffer . "d") (locked . #t))))))
 ; s-. moves out the last part of a column of any kind; tabs left with one
 ; tab stay, since that kind does not collapse.
 > (use-plugin layout-tabs)
@@ -195,4 +195,23 @@
 > (layout:select! vg)
 > (press! desktop '("." "super"))
 > (list (tree) (selected))
-((layout:root () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a"))) (layout-tabs:container ((size . 1/3)) #(views:view ((view . 12) (buffer . "c")))) #(views:view ((view . 13) (buffer . "d") (size . 1/2))))) 12)
+((layout:level () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a"))) (layout-tabs:container ((size . 1/3)) #(views:view ((view . 12) (buffer . "c")))) #(views:view ((view . 13) (buffer . "d") (size . 1/2))))) 12)
+; A strip's size has layout-split's domain: a fraction, columns along a
+; row strip or lines along a column strip, or its content's length; a
+; length across the strip is the default size.
+> (define (strip-sizes html)
+    (let loop ([i 0] [acc '()])
+      (cond
+        [(> (+ i 13) (string-length html)) (reverse acc)]
+        [(string=? (substring html i (+ i 13)) "--strip-size:")
+         (let end ([j (+ i 13)])
+           (if (char=? (string-ref html j) #\") (loop j (cons (substring html (+ i 13) j) acc)) (end (+ j 1))))]
+        [else (loop (+ i 1) acc)])))
+> (define vk (views:make a))
+> (set-parts! (layout-scroll:container '() (atom va '(size columns 40)) (atom vg '(size lines 5)) (atom vh '(size . content)) (atom vk '(size . 1/4))))
+> (strip-sizes (screen-of desktop))
+("40ch" "50.0%" "max-content" "25.0%")
+> (layout:select! vg)
+> (press! desktop '("r" "super"))
+> (map (lambda (p) (assq 'size (vector-ref p 1))) (cddr (caddr (tree))))
+((size columns 40) (size . 2/3) (size . content) (size . 1/4))

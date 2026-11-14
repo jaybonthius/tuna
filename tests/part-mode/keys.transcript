@@ -21,22 +21,14 @@
 (#f "zone\n")
 > (shape (main))
 (3 (4 5))
-; A key sequence leaves at the first key the mode does not continue:
-; C-x is a prefix in the mode, since undo binds C-x u there, and C-x 3
-; then splits the selected view.
+; A key sequence leaves at the first key the mode does not continue, so
+; C-x 3 splits the selected view.
 > (press! desktop '("x" "control") '("w") '("x" "control") '("3"))
 > (list (layout:part-mode?) (shape (main)))
 (#f (3 ((4 6) 5)))
-; C-/ in the mode undoes the layout's last window change; outside it,
-; the selected view's buffer.
+; Window changes have no undo: C-/ leaves the mode and undoes the
+; selected view's buffer.
 > (press! desktop '("x" "control") '("w"))
-> (press! desktop '("/" "control"))
-> (list (layout:part-mode?) (shape (main)) (text notes))
-(#t (3 (4 5)) "zone\n")
-> (press! desktop '("?" "control"))
-> (shape (main))
-(3 ((4 6) 5))
-> (type! desktop "Enter")
 > (press! desktop '("/" "control"))
 > (list (layout:part-mode?) (shape (main)) (text notes))
 (#f (3 ((4 6) 5)) "one\n")
@@ -62,4 +54,20 @@
 "\"layout-view selected part-selected"
 > (type! desktop "Enter")
 > (outlined phone)
+#f
+; While the mode is on, the selected view's level is outlined too, so the
+; user sees how far the commands that act in it reach: here the root,
+; the whole screen.
+> (press! desktop '("x" "control") '("w"))
+> (define (level-outlined client)
+    (let* ([html (screen-of client)] [i (search html "part-level")])
+      (and i (substring html i (+ i 40)))))
+> (level-outlined desktop)
+"part-level\"><div class=\"split row\"><div "
+> (set-parts! (layout-split:container '((direction . row)) (atom v1) (layout:level '() (layout-split:container '((direction . column)) (atom v2) (atom v3)))))
+> (layout:select! v3)
+> (level-outlined desktop)
+"part-level\"><div class=\"split column\"><d"
+> (type! desktop "Enter")
+> (level-outlined desktop)
 #f

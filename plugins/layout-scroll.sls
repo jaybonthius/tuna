@@ -10,7 +10,7 @@
   "The sizes layout-scroll:cycle-size steps through, smallest first.")
 
 (module %internals
-  (parts strip-node? holding-strip child-holding position-of size-of row? item-id datum-of replace-node! with-size cross-direction
+  (parts strip-node? holding-strip child-holding position-of size-of fraction-of size-length row? item-id datum-of replace-node! with-size cross-direction
    scroller-of strip-of-scroller forget-strips!)
 
   (define (parts node)
@@ -41,9 +41,25 @@
     (let loop ([cs cs] [k 0])
       (if (fx= (document:node-start (car cs)) (document:node-start child)) k (loop (cdr cs) (fx+ k 1)))))
 
-  (define (size-of node)
+  ;; A size along the other axis, such as lines in a row strip, means
+  ;; nothing here, so the column takes the default.
+  (define (size-of strip node)
     (let ([s (document:node-attribute node 'size #f)])
-      (if (%size? s) s (default-size))))
+      (if (or (%size? s) (eq? s 'content)
+              (and (list? s) (fx= (length s) 2) (fixnum? (cadr s)) (fx> (cadr s) 0)
+                   (eq? (car s) (if (row? strip) 'columns 'lines))))
+          s
+          (default-size))))
+
+  (define (fraction-of strip node)
+    (let ([s (size-of strip node)]) (if (%size? s) s (default-size))))
+
+  (define (size-length strip node)
+    (let ([s (size-of strip node)])
+      (cond
+        [(%size? s) (string-append (number->string (inexact (* 100 s))) "%")]
+        [(eq? s 'content) "max-content"]
+        [else (string-append (number->string (cadr s)) (if (eq? (car s) 'columns) "ch" "lh"))])))
 
   (define (row? node) (not (eq? (document:node-attribute node 'direction 'row) 'column)))
 
@@ -117,9 +133,9 @@
 
 ;; Columns not drawn are placeholders of their own size, so the strip's
 ;; length is exact on every client.
-(define (%drawn-ids children focus client scroller)
+(define (%drawn-ids node children focus client scroller)
   (or (let ([in-view (views:scroller-in-view scroller client)]) (and in-view (cons focus in-view)))
-      (let ([ids (map item-id children)] [sizes (map size-of children)])
+      (let ([ids (map item-id children)] [sizes (map (lambda (c) (fraction-of node c)) children)])
         (define (filling ids sizes)
           (let loop ([ids ids] [sizes sizes] [total 0])
             (if (or (null? ids) (>= total 1)) '() (cons (car ids) (loop (cdr ids) (cdr sizes) (+ total (car sizes)))))))
@@ -146,13 +162,13 @@
                 (and placed (eqv? (car placed) focus) (not (eqv? (cdr placed) k))))
         (views:place-scroller! scroller focus (if center? (views:scroller-align center) (views:scroller-align nearest)) focus))
       (eq-hashtable-set! %placed scroller (cons focus k)))
-    (let ([drawn (%drawn-ids children focus client scroller)])
+    (let ([drawn (%drawn-ids node children focus client scroller)])
       (views:draw-scroller scroller client (if (row? node) (views:axis row) (views:axis column))
         (let ([part (layout:part-class node)])
           (string-append "layout-strip " (if (row? node) "row" "column") (if center? " center" "") (if part (string-append " " part) "")))
         (map (lambda (c)
                (let ([id (item-id c)])
-                 (haml (:div.strip-item ([data-item id] [style "--strip-size:" (number->string (inexact (size-of c)))])
+                 (haml (:div.strip-item ([data-item id] [style "--strip-size:" (size-length node c)])
                          (if (memv id drawn)
                              (draw-child c)
                              (haml (:div.strip-placeholder ([data-at (document:node-start c)] [data-to (document:node-end c)])
@@ -263,7 +279,7 @@
 ;; From a size between presets the next larger one, as Niri cycles.
 (define (%cycle-size! who forward?)
   (let-values ([(strip column) (%selected-strip who)])
-    (let* ([now (size-of column)] [presets (size-presets)]
+    (let* ([now (fraction-of strip column)] [presets (size-presets)]
            [next (if forward?
                      (or (find (lambda (p) (> p now)) presets) (car presets))
                      (or (find (lambda (p) (< p now)) (reverse presets)) (car (reverse presets))))])
@@ -280,7 +296,7 @@
 (commands:define-command (full-size)
   "Makes the column holding the selected view as long as its strip; again, gives it layout-scroll:default-size."
   (let-values ([(strip column) (%selected-strip 'layout-scroll:full-size)])
-    (%set-size! 'layout-scroll:full-size (if (= (size-of column) 1) (default-size) 1))))
+    (%set-size! 'layout-scroll:full-size (if (eqv? (size-of strip column) 1) (default-size) 1))))
 
 ;; A column of a row strip is a column split, and of a column strip a row
 ;; split, so its views lie across the strip.
@@ -304,7 +320,7 @@
         (let* ([d (datum-of column)] [moved (with-size (datum-of next) #f)]
                [merged (if (%split-of column strip)
                            (append d (list moved))
-                           (%column-of (list d moved) strip (size-of column)))])
+                           (%column-of (list d moved) strip (size-of strip column)))])
           (buffers:replace! layout:buffer (document:node-start column) (document:node-end next)
                             (document:from-datum merged)))))))
 
@@ -348,7 +364,7 @@
                 (let* ([od (datum-of other)] [moved (with-size (datum-of column) #f)]
                        [merged (if (%split-of other strip)
                                    (append od (list moved))
-                                   (%column-of (list od moved) strip (size-of other)))]
+                                   (%column-of (list od moved) strip (size-of strip other)))]
                        [lead (if toward-end? column other)] [trail (if toward-end? other column)])
                   (buffers:replace! layout:buffer (document:node-start lead) (document:node-end trail)
                                     (document:from-datum merged))))))

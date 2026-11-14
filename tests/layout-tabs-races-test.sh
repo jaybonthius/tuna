@@ -47,7 +47,7 @@ cat > "$dir/input" <<'END'
                     [(2) (layout-split:split-view! selected (layout-split:direction row))]
                     [(3) (layout-tabs:next-tab (- (mod k 7) 3))]
                     [(4) (layout-tabs:previous-tab (mod k 3))]
-                    [(5) (layout:zoom)]
+                    [(5) (layout:zoom #f)]
                     [(6) (layout:screen client)]
                     [(7) (layout-tabs:mouse-select-tab (click (mod (* k 13) size)))]
                     [(8) (layout-tabs:display-in-new-tab notes)]

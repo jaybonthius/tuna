@@ -288,7 +288,7 @@
       (values atom f child))))
 
 (commands:define-command (toggle)
-  "Floats the selected view in the middle of the float container around it, or around the layout; on a float, puts its buffer where layout:display-buffer shows it."
+  "Floats the selected view in the middle of the float container around it, or around its level's part; on a float, puts its buffer where layout:display-buffer shows it."
   (let ([v (layout:selected-view)])
     (let-values ([(atom f child) (%selected-float)])
       (unless atom
@@ -307,7 +307,7 @@
             (if f
                 (let ([at (fx- (document:node-end f) 1)]) (buffers:replace! layout:buffer at at d))
                 (let* ([doc (buffers:document layout:buffer)]
-                       [main (car (parts (document:token doc 0)))])
+                       [main (car (parts (layout:level-of v)))])
                   (buffers:replace! layout:buffer (document:node-start main) (document:node-end main)
                     (container '() (car (document:datums (document:slice doc (document:node-start main) (document:node-end main))))
                                d))))

@@ -1,7 +1,7 @@
 ; The layout starts as one view of the first buffer, never *layout*
 ; itself; the help stand-in made *Help* first.
 > (tree)
-(layout:root () #(views:view ((view . 1) (buffer . "*Help*"))))
+(layout:level () #(views:view ((view . 1) (buffer . "*Help*"))))
 > (map buffers:name (buffers:all))
 ("*Help*" "*layout*" "*popups*")
 > (define scratch (layout:selected-view))
@@ -21,7 +21,7 @@
 (layout:frame "not a client")
 > (set-parts! (layout-split:container '((direction . row)) (atom a) (boxes:box '() (atom b) (atom c))))
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail"))) #(views:view ((view . 5) (buffer . "notes"))))))
+(layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail"))) #(views:view ((view . 5) (buffer . "notes"))))))
 > (selected)
 3
 > (ids)
@@ -61,7 +61,7 @@
 > (enum-set->list (layout:directions up left))
 (left up)
 ; The focus path: the selected view's keymaps, then each enclosing
-; container's, then the root's.
+; container's, then the layout's.
 > (map (lambda (k) (cond [(eq? k boxes:box-keys) 'box] [(eq? k layout:keymap) 'root] [(eq? k keys:global) 'global] [else k])) (keys:active-keymaps c1))
 (root global)
 > (eq? (car (reverse (keys:active-keymaps c1))) keys:global)
@@ -118,14 +118,14 @@
 > (commands:run layout:select-up)
 > (selected)
 5
-; Zoom shows the selected view alone, with pinned parts beside the
-; containers on its path; selecting a view outside ends it.
+; Zoom draws the selected view in place of its level's part; the parts
+; outside the level stay, and selecting a view the zoom hides ends it.
 > (define bar (buffers:make "*Echo*" ""))
-> (define echo (layout:add-bar! bar))
-> (eq? echo (layout:add-bar! bar))
+> (define echo (place-echo bar))
+> (eq? echo (place-echo bar))
 #t
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail"))) #(views:view ((view . 5) (buffer . "notes"))))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 0) (pinned . #t) (locked . #t))))
+(layout:level () (layout-split:container ((direction . column)) (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail"))) #(views:view ((view . 5) (buffer . "notes")))))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t)))))
 > (layout:locked? (layout:view-node echo))
 #t
 > (layout:locked? (layout:view-node a))
@@ -134,7 +134,7 @@
 > (ids)
 (5 6)
 > (show-screen c1)
-<div class="layout-screen" data-view="2" data-version="2" data-showing="0"><div class="layout-root"><div class="layout-main"><div class="split row"><div class="split-child" style="flex:1.0 1 0"><section class="box"><div class="layout-view selected" data-at="5" data-to="6"><div class="view" data-view="5" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v5-1" data-line="1" data-at="1"><span class="cursor primary"></span>one</div><div class="line" id="v5-2" data-line="2">two</div><div class="line" id="v5-3" data-line="3">three</div><div class="line" id="v5-4" data-line="4"><br></div></div></div></div></section></div></div></div><div class="layout-bar"><div class="layout-view" data-at="8" data-to="9"><div class="view" data-view="6" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v6-1" data-line="1" data-at="1"><span class="cursor primary"></span><br></div></div></div></div></div></div></div>
+<div class="layout-screen" data-view="2" data-version="2" data-showing="0"><div class="layout-level"><div class="split column"><div class="split-child" style="flex:1.0 1 0"><div class="layout-level"><div class="layout-view selected" data-at="7" data-to="8"><div class="view" data-view="5" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v5-1" data-line="1" data-at="1"><span class="cursor primary"></span>one</div><div class="line" id="v5-2" data-line="2">two</div><div class="line" id="v5-3" data-line="3">three</div><div class="line" id="v5-4" data-line="4"><br></div></div></div></div></div></div><div class="split-child" style="flex:none"><div class="layout-view" data-at="11" data-to="12"><div class="view" data-view="6" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v6-1" data-line="1" data-at="1"><span class="cursor primary"></span><br></div></div></div></div></div></div></div></div>
 > (layout:select! echo)
 > (ids)
 (5 6)
@@ -148,42 +148,51 @@
 > (commands:run layout:zoom)
 > (ids)
 (4 6)
-; Bars are skipped by C-x o and by moves.
+; A locked view is skipped by C-x o and by moves.
 > (layout:select! c)
 > (layout:neighbour c (layout:direction down))
 #f
 > (commands:run layout:other-view)
 > (selected)
 3
-; Deleting parts.
-> (raised (lambda () (layout:delete-part! (layout:view-node echo))))
-(layout:delete-part! "a locked part")
+; Deleting parts. A locked part refuses the user's commands, not the
+; plugin that placed it.
+> (layout:select! echo)
+> (raised (lambda () (commands:run layout:delete-view)))
+! layout:delete-view: a locked part with irritant #<node views:view 11>
 > (raised (lambda () (layout:delete-part! (document:token (buffers:document layout:buffer) 0))))
 (layout:delete-part! "the root")
 > (raised (lambda () (layout:delete-part! 'node)))
 (layout:delete-part! "not a node")
+> (layout:select! a)
 > (layout:select! c)
 ; Deleting the selected view selects where the focused children lead.
 > (layout:delete-part! (layout:view-node c))
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail"))))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 0) (pinned . #t) (locked . #t))))
+(layout:level () (layout-split:container ((direction . column)) (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail")))))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t)))))
 > (selected)
 3
 > (layout:delete-part! (layout:view-node b))
 > (tree)
-(layout:root () #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 0) (pinned . #t) (locked . #t))))
+(layout:level () (layout-split:container ((direction . column)) (layout:level () #(views:view ((view . 3) (buffer . "notes")))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t)))))
 > (selected)
 3
+; A level keeps its part.
 > (raised (lambda () (layout:delete-part! (layout:view-node a))))
-(layout:delete-part! "the last view that is not locked")
+(layout:delete-part! "the last view of its level")
 > (commands:run layout:delete-view)
-! layout:delete-part!: the last view that is not locked with irritant #<node views:view 1>
+! layout:delete-part!: the last view of its level with irritant #<node views:view 3>
+; Removing the placed part collapses its split, and the root, left
+; holding a level, gives the level up.
+> (layout:delete-part! (layout:view-node echo))
+> (tree)
+(layout:level () #(views:view ((view . 3) (buffer . "notes"))))
 ; Views whose atoms left the layout are dropped when the batch ends.
 > (list (views:find (views:id a)) (views:find 5) (views:find 6))
-(#<view 3> #f #<view 6>)
+(#<view 3> #f #f)
 ; Titles.
 > (define titled (views:make mail))
-> (set-parts! (layout-split:container '((title . "work")) (atom a) (atom titled '(title . "letters"))) (atom echo '(pinned . #t) '(locked . #t)))
+> (set-parts! (layout-split:container '((title . "work")) (atom a) (atom titled '(title . "letters"))))
 > (layout:part-title (layout:view-node titled))
 "letters"
 > (layout:part-title (document:token (buffers:document layout:buffer) 1))
@@ -195,7 +204,8 @@
 "work"
 ; Each container's check refuses what would leave the layout malformed:
 ; text, a node that is not a part, an atom without a view's number, an
-; empty container, a view's atom twice.
+; empty container, a view's atom twice, a level of other than one part,
+; a level holding a level.
 > (define (try thunk) (guard (c [(buffers:refused? c) 'refused] [#t (condition-message c)]) (thunk)))
 > (try (lambda () (buffers:replace! layout:buffer 2 2 "text")))
 "the content does not fit here"
@@ -209,12 +219,20 @@ refused
 refused
 > (try (lambda () (buffers:replace! layout:buffer 2 2 (atom a))))
 refused
-> (try (lambda () (set-parts! (layout-split:container '() (atom a) (atom a)) (atom echo '(pinned . #t) '(locked . #t)))))
+> (try (lambda () (set-parts! (layout-split:container '() (atom a) (atom a)))))
+refused
+> (try (lambda () (set-parts! (atom a) (atom titled))))
+refused
+> (try (lambda () (set-parts! (layout:level '() (atom a)))))
+refused
+> (try (lambda () (set-parts! (layout-split:container '() (layout:level '() (atom a) (atom titled))))))
+refused
+> (try (lambda () (set-parts! (layout-split:container '() (layout:level '() (layout:level '() (atom a))) (atom titled)))))
 refused
 > (try (lambda () (void (buffers:replace! layout:buffer 2 2 (boxes:box '() (atom (views:make notes)))))))
 "incorrect argument count in call ~a"
 > (tree)
-(layout:root () (layout-split:container ((title . "work")) (boxes:box () #(views:view ((view . 8) (buffer . "notes")))) #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 7) (buffer . "mail") (title . "letters")))) #(views:view ((view . 6) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:level () (layout-split:container ((title . "work")) (boxes:box () #(views:view ((view . 8) (buffer . "notes")))) #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 7) (buffer . "mail") (title . "letters")))))
 ; The layout buffer is never killed.
 > (buffers:kill! layout:buffer)
 #f
@@ -223,31 +241,31 @@ refused
 ; A kind whose draw raises is reported, and its children drawn plainly;
 ; a kind whose neighbour names a part that is not its child raises.
 > (define d (views:make notes))
-> (set-parts! (boxes:broken '() (atom a)) (boxes:stray '() (atom d)) (atom echo '(pinned . #t) '(locked . #t)))
+> (set-parts! (layout-split:container '((direction . column)) (boxes:broken '() (atom a)) (boxes:stray '() (atom d)) (atom (views:make bar) '(locked . #t))))
 > (show-screen c1)
 ! car: () is not a pair
-<div class="layout-screen" data-view="2" data-version="7" data-showing="0"><div class="layout-root"><div class="layout-main"><div class="layout-part"><div class="layout-view selected" data-at="2" data-to="3"><div class="view" data-view="3" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v3-1" data-line="1" data-at="1"><span class="cursor primary"></span>one</div><div class="line" id="v3-2" data-line="2">two</div><div class="line" id="v3-3" data-line="3">three</div><div class="line" id="v3-4" data-line="4"><br></div></div></div></div></div></div><div class="layout-bar"><section class="box"><div class="layout-view" data-at="5" data-to="6"><div class="view" data-view="9" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v9-1" data-line="1" data-at="1"><span class="cursor primary"></span>one</div><div class="line" id="v9-2" data-line="2">two</div><div class="line" id="v9-3" data-line="3">three</div><div class="line" id="v9-4" data-line="4"><br></div></div></div></div></section></div><div class="layout-bar"><div class="layout-view" data-at="7" data-to="8"><div class="view" data-view="6" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v6-1" data-line="1" data-at="1"><span class="cursor primary"></span><br></div></div></div></div></div></div></div>
+<div class="layout-screen" data-view="2" data-version="8" data-showing="0"><div class="layout-level"><div class="split column"><div class="split-child" style="flex:1.0 1 0"><div class="layout-part"><div class="layout-view selected" data-at="3" data-to="4"><div class="view" data-view="3" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v3-1" data-line="1" data-at="1"><span class="cursor primary"></span>one</div><div class="line" id="v3-2" data-line="2">two</div><div class="line" id="v3-3" data-line="3">three</div><div class="line" id="v3-4" data-line="4"><br></div></div></div></div></div></div><div class="split-child" style="flex:1.0 1 0"><section class="box"><div class="layout-view" data-at="6" data-to="7"><div class="view" data-view="9" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v9-1" data-line="1" data-at="1"><span class="cursor primary"></span>one</div><div class="line" id="v9-2" data-line="2">two</div><div class="line" id="v9-3" data-line="3">three</div><div class="line" id="v9-4" data-line="4"><br></div></div></div></div></section></div><div class="split-child" style="flex:1.0 1 0"><div class="layout-view" data-at="8" data-to="9"><div class="view" data-view="10" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v10-1" data-line="1" data-at="1"><span class="cursor primary"></span><br></div></div></div></div></div></div></div></div>
 > (raised (lambda () (layout:neighbour d (layout:direction left))))
 (layout:neighbour "a kind's neighbour is not a child of its container")
 ; A part removed by one edit and put back by another in the same batch
 ; keeps its view.
-> (let ([e (buffers:replace! layout:buffer 1 4 "")])
-    (buffers:splice! layout:buffer 1 1 (buffers:edit-removed e))
+> (let ([e (buffers:replace! layout:buffer 2 5 "")])
+    (buffers:splice! layout:buffer 2 2 (buffers:edit-removed e))
     (eq? (views:find 3) a))
 #t
 > (tree)
-(layout:root () (boxes:broken () #(views:view ((view . 3) (buffer . "notes")))) (boxes:stray () #(views:view ((view . 9) (buffer . "notes")))) #(views:view ((view . 6) (buffer . "*Echo*") (pinned . #t) (locked . #t))))
+(layout:level () (layout-split:container ((direction . column)) (boxes:broken () #(views:view ((view . 3) (buffer . "notes")))) (boxes:stray () #(views:view ((view . 9) (buffer . "notes")))) #(views:view ((view . 10) (buffer . "*Echo*") (locked . #t)))))
 ; A view dropped with its part comes back, as a new view numbered as its
 ; atom, when an undo puts the atom back.
-> (define e (buffers:replace! layout:buffer 1 4 ""))
+> (define e (buffers:replace! layout:buffer 2 5 ""))
 > (views:find 3)
 #f
 > (selected)
-6
-> (void (buffers:splice! layout:buffer 1 1 (buffers:edit-removed e)))
-! incorrect argument count in call (void (((...) (...)) ((...) (...)) 1 1 ((...) (...))))
+9
+> (void (buffers:splice! layout:buffer 2 2 (buffers:edit-removed e)))
+! incorrect argument count in call (void (((...) (...)) ((...) (...)) 2 2 ((...) (...))))
 > (map views:id (layout:views))
-(3 9 6)
+(3 9 10)
 > (list (views:find 3) (eq? (views:find 3) a))
 (#<view 3> #f)
 > (buffers:name (views:buffer (views:find 3)))

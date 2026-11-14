@@ -55,7 +55,7 @@ expect "first run" "$output" '1
 output=$(run "(tree)
 (popups)
 (list (views:id (layout:selected-view)) (map views:id (layout:views)))")
-expect "after a restart" "$output" '(layout:root () (layout-scroll:container () #(views:view ((view . 3) (buffer . "notes"))) (layout-float:container ((size . 1/3)) #(views:view ((view . 4) (buffer . "other"))) #(views:view ((view . 5) (buffer . "notes") (place box 1/4 1/2))))))
+expect "after a restart" "$output" '(layout:level () (layout-scroll:container () #(views:view ((view . 3) (buffer . "notes"))) (layout-float:container ((size . 1/3)) #(views:view ((view . 4) (buffer . "other"))) #(views:view ((view . 5) (buffer . "notes") (place box 1/4 1/2))))))
 (layout:popups-root ())
 (5 (3 4 5))'
 

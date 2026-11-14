@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (haml) (web) (help) (magit) (boxes))
+(import (tuna) (tuna plugins) (document) (haml) (web) (help) (magit) (boxes) (layout-sides))
 (use-plugin layout-split)
 (use-plugin layout-tabs
   (config
@@ -49,3 +49,11 @@
        (list (cons "type" "key") (cons "key" (car key)) (cons "code" "") (cons "modifiers" (list->vector (cdr key))))))
     keys))
 (import (console))
+
+(define (place-echo b)
+  ((layout-sides:display-at-side (layout:direction down) 90 'content '((locked . #t))) b))
+
+(define (with-echo part echo)
+  (layout-split:container '((direction . column))
+    (layout:level '() part)
+    (atom echo '(depth . 90) '(size . content) '(locked . #t))))

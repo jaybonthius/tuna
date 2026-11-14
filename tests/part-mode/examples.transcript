@@ -12,17 +12,19 @@
 > (define (example! selected)
     (layout:part-mode-leave)
     (set-parts!
-      (layout-split:container '((direction . row))
-        (atom files '(weight . 1))
-        (layout-scroll:container '((direction . row) (weight . 3))
-          (layout-split:container '((direction . column) (size . 1/2))
-            (atom main.ss)
-            (atom shell))
-          (atom notes '(size . 1/2))
-          (layout-float:container '((size . 1/2))
-            (atom magit '(place box 1/4 1/4))
-            (atom help '(place box 3/4 3/4)))))
-      (atom echo '(pinned . #t) '(locked . #t)))
+      (layout-split:container '((direction . column))
+        (layout:level '()
+          (layout-split:container '((direction . row))
+            (atom files '(weight . 1))
+            (layout-scroll:container '((direction . row) (weight . 3))
+              (layout-split:container '((direction . column) (size . 1/2))
+                (atom main.ss)
+                (atom shell))
+              (atom notes '(size . 1/2))
+              (layout-float:container '((size . 1/2))
+                (atom magit '(place box 1/4 1/4))
+                (atom help '(place box 3/4 3/4))))))
+        (atom echo '(depth . 90) '(size . content) '(locked . #t))))
     (layout:select! selected))
 > (define (strip) (cadddr (main)))
 ; Moving a whole column: with main.ss selected, s-' i L L RET. i selects
@@ -38,16 +40,16 @@
 > (type! desktop "Enter")
 > (list (layout:part-mode?) (selected))
 (#f 4)
-; s-' C-/ C-/ instead of RET puts both moves back.
-> (press! desktop '("'" "super") '("/" "control") '("/" "control"))
+; s-' i J J RET moves it back.
+> (press! desktop '("'" "super") '("i") '("J") '("J") '("Enter"))
 > (shape (strip))
 ((4 5) 6 (7 8))
 ; Moving notes.org into the first column, below *shell*: s-' J K L L.
-; Its size goes, since a split does not name it.
+; It keeps its size, which a split names too: there, half the column.
 > (example! notes)
 > (press! desktop '("'" "super") '("J") '("K") '("L") '("L"))
 > (caddr (strip))
-(layout-split:container ((direction . column) (size . 1/2)) #(views:view ((view . 4) (buffer . "main.ss"))) #(views:view ((view . 5) (buffer . "*shell*"))) #(views:view ((view . 6) (buffer . "notes.org"))))
+(layout-split:container ((direction . column) (size . 1/2)) #(views:view ((view . 4) (buffer . "main.ss"))) #(views:view ((view . 5) (buffer . "*shell*"))) #(views:view ((view . 6) (buffer . "notes.org") (size . 1/2))))
 ; Wrapping main.ss in tabs: s-' w t. No part was removed, so the column
 ; split stays, holding the tabs.
 > (example! main.ss)

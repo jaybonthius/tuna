@@ -1,18 +1,16 @@
 > (define desktop (web:add-client! 1))
 > (define a (buffers:make "a" "a\n"))
-> (define echo (buffers:make "*Echo*" ""))
 ; Each case builds its layout from view numbers, since a view whose
 ; atom leaves the layout is dropped.
 > (define (v n . attributes) (views:view (cons* (cons 'view n) (cons 'buffer "a") attributes)))
 > (define (start! selected . parts)
     (layout:part-mode-leave)
-    (apply set-parts! (append parts (list (views:view '((view . 9) (buffer . "*Echo*") (pinned . #t) (locked . #t))))))
+    (apply set-parts! parts)
     (layout:views)
     (layout:select! (views:find selected))
     (press! desktop '("'" "super")))
 > (define (row . parts) (apply layout-split:container '((direction . row)) parts))
 > (define (column . parts) (apply layout-split:container '((direction . column)) parts))
-> (define (undo!) (press! desktop '("/" "control")))
 ; J and L swap the selected part with the part before or after it, with
 ; its place attributes; from an end, nothing changes.
 > (start! 4 (row (v 3 '(weight . 2)) (v 4 '(weight . 3)) (v 5)))
@@ -30,22 +28,20 @@
 > (type! desktop "J")
 > (shape (main))
 (4 3 5)
-; Each verb is one edit, so undo in the mode takes back one verb.
-> (undo!)
-> (list (shape (main)) (part))
-((3 4 5) 4)
-> (undo!)
-> (shape (main))
-(3 5 4)
-> (press! desktop '("?" "control"))
-> (shape (main))
-(3 4 5)
-; A locked part is not moved past.
+; A locked part moves, and others move past it, but a part inside a
+; locked part does not.
 > (start! 4 (row (v 3) (v 4) (v 5 '(locked . #t))))
 > (type! desktop "L")
-! layout:shift-forward: a locked part with irritant #<node views:view 4>
 > (shape (main))
-(3 4 5)
+(3 5 4)
+> (type! desktop "j" "J")
+> (list (shape (main)) (part) (selected))
+((5 3 4) 5 4)
+> (start! 4 (row (v 3) (layout-split:container '((direction . column) (locked . #t)) (v 4) (v 5))))
+> (type! desktop "k" "L")
+! layout:shift-forward: a locked part with irritant #<node layout-split:container 3>
+> (shape (main))
+(3 (4 5))
 ; Moving the focused column along a strip places the strip again, so it
 ; scrolls to the column's new place.
 > (start! 4 (layout-scroll:container '() (v 3) (v 4) (v 5)))
@@ -62,9 +58,6 @@
 (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "a"))) (layout-split:container ((direction . column)) #(views:view ((view . 4) (buffer . "a"))) #(views:view ((view . 6) (buffer . "a")))) #(views:view ((view . 5) (buffer . "a") (weight . 5))))
 > (list (part) (selected))
 (5 5)
-> (undo!)
-> (list (shape (main)) (part))
-((3 (4 5 6)) 5)
 > (start! 4 (row (v 3) (column (v 4) (v 5 '(weight . 2)))))
 > (type! desktop "I")
 > (main)
@@ -92,7 +85,6 @@
 (layout-split:container ((direction . row)) #(views:view ((view . 4) (buffer . "a"))) (layout-scroll:container () #(views:view ((view . 3) (buffer . "a") (size . 1/2))) #(views:view ((view . 5) (buffer . "a") (size . 1/3)))))
 > (list (part) (selected))
 (3 3)
-> (undo!)
 > (start! 6 (row (layout-float:container '() (v 3)) (v 4) (v 6)))
 > (type! desktop "K")
 > (main)
@@ -102,10 +94,8 @@
 > (type! desktop "K")
 > (main)
 (layout-split:container ((direction . column)) #(views:view ((view . 4) (buffer . "a"))) #(views:view ((view . 5) (buffer . "a"))) #(views:view ((view . 6) (buffer . "a"))))
-> (undo!)
-> (shape (main))
-(4 (5 6))
 ; With no container among its siblings, nothing moves.
+> (start! 4 (row (v 4) (column (v 5) (v 6))))
 > (type! desktop "l" "k" "K")
 > (shape (main))
 (4 (5 6))
@@ -115,9 +105,6 @@
 > (type! desktop "r")
 > (main)
 (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "a"))) #(views:view ((view . 5) (buffer . "a") (title . "three") (weight . 3))))
-> (undo!)
-> (list (shape (main)) (part))
-((3 (4 5)) 5)
 > (start! 4 (row (v 3 '(locked . #t)) (v 4)))
 > (type! desktop "r")
 ! layout:raise: a locked part with irritant #<node views:view 2>
@@ -142,9 +129,6 @@
 (layout-scroll:container () #(views:view ((view . 3) (buffer . "a") (size . 1/2))) #(views:view ((view . 4) (buffer . "a") (size . 1/4))) #(views:view ((view . 5) (buffer . "a") (size . 1/4))))
 > (part)
 4
-> (undo!)
-> (shape (main))
-(3 (4 5))
 ; The root's first part is spliced only when one part takes its place.
 > (start! 3 (row (v 3) (v 4)))
 > (type! desktop "i" "-")
@@ -160,12 +144,9 @@
 > (type! desktop "i" "x")
 > (list (shape (main)) (part) (selected))
 ((3 6) 3 3)
-> (undo!)
-> (shape (main))
-(3 (4 5) 6)
 > (start! 3 (row (v 3)))
 > (type! desktop "x")
-! layout:delete-part!: the last view that is not locked with irritant #<node views:view 2>
+! layout:delete-part!: the last view of its level with irritant #<node views:view 2>
 ; w and a kind's letter wrap the selected part in a container of that
 ; kind, which takes the part's place attributes.
 > (start! 4 (row (v 3) (v 4 '(weight . 2))))
@@ -181,14 +162,8 @@
 (3 (((((4))))))
 > (cadddr (main))
 (layout-split:container ((direction . row) (weight . 2)) (layout-float:container () (layout-scroll:container () (layout-tabs:container () (layout-split:container ((direction . column)) #(views:view ((view . 4) (buffer . "a"))))))))
-> (undo!)
-> (undo!)
-> (undo!)
-> (undo!)
-> (undo!)
-> (main)
-(layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "a"))) #(views:view ((view . 4) (buffer . "a") (weight . 2))))
 ; The verbs act on the selected view's atom outside the mode.
+> (start! 4 (row (v 3) (v 4 '(weight . 2))))
 > (type! desktop "Enter")
 > (layout-split:wrap-in-column)
 > (shape (main))

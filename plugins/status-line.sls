@@ -272,7 +272,7 @@
 
 (define (%add-status-line draw-view-atom node view client)
   (let ([content (draw-view-atom node view client)])
-    (if (and (layout:view-node view) (not (layout:bar? node)) (views:with-view view (visible)))
+    (if (and (layout:view-node view) (not (layout:locked? node)) (views:with-view view (visible)))
         (list content (draw view client))
         content)))
 

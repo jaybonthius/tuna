@@ -15,11 +15,16 @@
     margin: 0;
   }
 
+  .layout-level {
+    display: flex;
+    flex: 1 1 0;
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
+
   /* Isolated, so that nothing stacked inside the layout covers the
      popups drawn after it. */
-  .layout-root {
-    display: flex;
-    flex-direction: column;
+  .layout-screen > .layout-level {
     block-size: 100%;
     isolation: isolate;
   }
@@ -29,17 +34,6 @@
     inset: 0;
     display: flex;
     pointer-events: none;
-  }
-
-  .layout-main {
-    display: flex;
-    flex: 1 1 0;
-    min-block-size: 0;
-  }
-
-  .layout-bar {
-    display: flex;
-    flex: none;
   }
 
   .layout-part,
@@ -83,8 +77,13 @@
     outline-offset: calc(-2 * var(--tuna-focus-width, 2px));
   }
 
+  .part-level:not(.part-selected) {
+    outline: var(--tuna-focus-width, 2px) dotted var(--tuna-focus, Highlight);
+    outline-offset: calc(-1 * var(--tuna-focus-width, 2px));
+  }
+
   /* The screen's element only names the layout's view for a click; the
-     root's element lays it out. */
+     root level's element lays it out. */
   .layout-screen {
     display: contents;
   }

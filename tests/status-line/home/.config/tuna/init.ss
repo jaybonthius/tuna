@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (tuna) (tuna plugins) (document) (haml) (web) (layout-sides))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin modes)

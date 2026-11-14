@@ -10,9 +10,9 @@
     (views:view (cons* (cons 'view (views:id view)) (cons 'buffer (buffers:name (views:buffer view))) attributes)))
 > (buffers:replace! layout:buffer 1 2 (document:from-datum (layout-split:container '((direction . row)) (boxes:box '() (atom b) (atom c)) (atom a))))
 #<edit 1>
-> (define echo (layout:add-bar! (buffers:make "*Echo*" "")))
+> (define echo (place-echo (buffers:make "*Echo*" "")))
 > (tree)
-(layout:root () (layout-split:container ((direction . row)) (boxes:box () #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 4) (buffer . "notes")))) #(views:view ((view . 1) (buffer . "*Help*")))) #(views:view ((view . 5) (buffer . "*Echo*") (depth . 0) (pinned . #t) (locked . #t))))
+(layout:level () (layout-split:container ((direction . column)) (layout:level () (layout-split:container ((direction . row)) (boxes:box () #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 4) (buffer . "notes")))) #(views:view ((view . 1) (buffer . "*Help*"))))) #(views:view ((view . 5) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t)))))
 ; The screen's element names the screen view, and each view atom's
 ; element names the atom's range.
 > (list (views:buffer layout:screen-view) (layout:view-node layout:screen-view))
@@ -21,10 +21,12 @@
 > (substring html 0 (string-length "<div class=\"layout-screen\" data-view=\"2\" data-version=\"2\" data-showing=\"0\">"))
 "<div class=\"layout-screen\" data-view=\"2\" data-version=\"2\" data-showing=\"0\">"
 > (map (lambda (v) (let ([n (layout:view-node v)]) (list (document:node-start n) (document:node-end n)))) (list b c a echo))
-((3 4) (4 5) (6 7) (8 9))
-; The root's keymap takes the layout's clicks; a container's kind
-; carries its keymap.
-> (eq? (buffers:kind-keymap (buffers:kind 'layout:root)) layout:keymap)
+((5 6) (6 7) (8 9) (11 12))
+; The layout's keymap takes the layout's clicks, after the kinds'
+; keymaps; a container's kind carries its keymap, and a level none.
+> (buffers:kind-keymap (buffers:kind 'layout:level))
+#f
+> (eq? (car (layout:container-keymaps c1 (vector (views:id layout:screen-view) 4))) layout:keymap)
 #t
 > (eq? (buffers:kind-keymap (buffers:kind 'boxes:box)) boxes:box-keys)
 #t
@@ -45,29 +47,29 @@
 ; A click on a view atom's element selects its view; on a container's,
 ; the part right after its opening, through focused children. The press
 ; reaches nothing.
-> (click! '("token" . 4))
+> (click! '("token" . 6))
 > (list (selected) pressed)
 (4 0)
 > (layout:select! c)
 > (layout:select! a)
-> (click! '("token" . 1))
+> (click! '("token" . 3))
 > (selected)
 1
 > (layout:select! c)
-> (click! '("token" . 1))
+> (click! '("token" . 3))
 > (selected)
 4
-> (click! '("token" . 2))
+> (click! '("token" . 4))
 > (list (selected) pressed)
 (3 0)
-; A locked part refuses: the echo bar stays unselected.
-> (click! '("token" . 8))
+; A locked part refuses: the echo area stays unselected.
+> (click! '("token" . 11))
 > (selected)
 3
 ; A click on a part closed since its screen was drawn is stale.
 > (define version (buffers:version layout:buffer))
 > (layout:delete-part! (layout:view-node c))
-> (click! '("token" . 4) (cons "version" version))
+> (click! '("token" . 6) (cons "version" version))
 ! Stale click: what was clicked is gone
 > (selected)
 3

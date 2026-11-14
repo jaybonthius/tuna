@@ -56,21 +56,26 @@ class="float-child" style="inline-size:30ch;block-size:8lh;inset-inline-start:ca
 > (views:set-point! va 40)
 > (press! desktop '("v" "super"))
 > (list (tree) (selected) (views:point (layout:selected-view)))
-((layout:root () (layout-float:container () #(views:view ((view . 4) (buffer . "b") (place box 1/4 3/4))) #(views:view ((view . 5) (buffer . "b") (place box 1 0) (width columns 30) (height lines 8))) #(views:view ((view . 6) (buffer . "a") (place box 1/2 1/2) (width . 1/2) (height . 1/2))))) 6 40)
+((layout:level () (layout-float:container () #(views:view ((view . 4) (buffer . "b") (place box 1/4 3/4))) #(views:view ((view . 5) (buffer . "b") (place box 1 0) (width columns 30) (height lines 8))) #(views:view ((view . 6) (buffer . "a") (place box 1/2 1/2) (width . 1/2) (height . 1/2))))) 6 40)
 > (press! desktop '("v" "super"))
 > (list (tree) (selected) (views:point (layout:selected-view)))
-((layout:root () (layout-float:container () #(views:view ((view . 4) (buffer . "b") (place box 1/4 3/4))) #(views:view ((view . 5) (buffer . "b") (place box 1 0) (width columns 30) (height lines 8))))) 5 40)
+((layout:level () (layout-float:container () #(views:view ((view . 4) (buffer . "b") (place box 1/4 3/4))) #(views:view ((view . 5) (buffer . "b") (place box 1 0) (width columns 30) (height lines 8))))) 5 40)
 ; With no float container around the selected view, s-v makes one around
-; the root's first part, and plain undo undoes it.
+; its level's part. Window changes keep no undo history.
 > (define vd (views:make a))
 > (set-parts! (layout-split:container '() (atom vd) (atom (views:make b))))
 > (layout:select! vd)
 > (press! desktop '("v" "super"))
 > (tree)
-(layout:root () (layout-float:container () #(views:view ((view . 8) (buffer . "b"))) #(views:view ((view . 9) (buffer . "a") (place box 1/2 1/2) (width . 1/2) (height . 1/2)))))
-> (views:call-with-view layout:screen-view (lambda () (commands:run undo:undo)))
+(layout:level () (layout-float:container () #(views:view ((view . 8) (buffer . "b"))) #(views:view ((view . 9) (buffer . "a") (place box 1/2 1/2) (width . 1/2) (height . 1/2)))))
+> (buffers:with-buffer layout:buffer (undo:limit))
+0
+> (define ve (views:make a))
+> (set-parts! (layout-split:container '() (atom (views:make b)) (layout:level '() (layout-split:container '() (atom ve) (atom (views:make b))))))
+> (layout:select! ve)
+> (press! desktop '("v" "super"))
 > (tree)
-(layout:root () (layout-split:container () #(views:view ((view . 7) (buffer . "a"))) #(views:view ((view . 8) (buffer . "b")))))
+(layout:level () (layout-split:container () #(views:view ((view . 12) (buffer . "b"))) (layout:level () (layout-float:container () #(views:view ((view . 11) (buffer . "b"))) #(views:view ((view . 13) (buffer . "a") (place box 1/2 1/2) (width . 1/2) (height . 1/2)))))))
 ; A popup is a float in *popups*, anchored at a position in a view's
 ; text; it follows edits and is drawn after the layout. *popups* keeps
 ; no undo history and is never saved.
@@ -83,7 +88,7 @@ class="float-child" style="inline-size:30ch;block-size:8lh;inset-inline-start:ca
 > (define (anchor-number) (caddr (assq 'place (vector-ref (caddr (caddr (popups))) 1))))
 > (define anchor (views:find-anchor (anchor-number)))
 > (list (views:anchor-position anchor) (eq? (views:anchor-view anchor) vd) (views:id p))
-(7 #t 11)
+(7 #t 15)
 > (let ([html (screen-of desktop)])
     (list (< (search html "view-anchor" 0) (search html "layout-popups" 0))
           (and (search html (format "position-anchor:--view-anchor-~a;inline-size:50.0%;block-size:4lh" (anchor-number)) 0) #t)))
@@ -110,13 +115,13 @@ class="float-child" style="inline-size:30ch;block-size:8lh;inset-inline-start:ca
 ; zoomed or not.
 > (layout:select! p)
 > (list (selected) (ids) (layout:view-node p))
-(11 (10) #f)
+(15 (14) #f)
 > (commands:run layout:zoom)
 > (commands:run layout:delete-view)
-! layout:delete-part!: a locked part with irritant #<node views:view 2>
+! layout:delete-view: a locked part with irritant #<node views:view 2>
 > (press! desktop '("x" "control") '("o"))
 > (selected)
-10
+14
 > (raised (lambda () (layout-float:show-at! (views:make b) 0 b 1/2 1/2)))
 (layout-float:show-at! "not a view in the layout or a popup")
 > (raised (lambda () (layout-float:show-at! vd 100000 b 1/2 1/2)))
@@ -146,7 +151,7 @@ class="float-child" style="inline-size:30ch;block-size:8lh;inset-inline-start:ca
 > (define question (buffers:make "*question*" "Name: \n"))
 > (define pal (layout-float:display-palette question))
 > (popups)
-(layout:popups-root () (layout-float:container () #(views:view ((view . 16) (buffer . "*question*") (place box 1/2 1/5) (width . 3/5) (height lines 12) (locked . #t)))))
+(layout:popups-root () (layout-float:container () #(views:view ((view . 20) (buffer . "*question*") (place box 1/2 1/5) (width . 3/5) (height lines 12) (locked . #t)))))
 > (eq? pal (layout-float:display-palette question))
 #t
 ; The popups a module made go when it unloads.
@@ -156,7 +161,7 @@ class="float-child" style="inline-size:30ch;block-size:8lh;inset-inline-start:ca
 2
 > (unload-module! '(popper))
 > (popups)
-(layout:popups-root () (layout-float:container () #(views:view ((view . 16) (buffer . "*question*") (place box 1/2 1/5) (width . 3/5) (height lines 12) (locked . #t)))))
+(layout:popups-root () (layout-float:container () #(views:view ((view . 20) (buffer . "*question*") (place box 1/2 1/5) (width . 3/5) (height lines 12) (locked . #t)))))
 ; A popup can be anchored in a popup's text, as completion over a
 ; palette is; one that moves goes after the others, so its anchor is
 ; drawn before it.
@@ -166,14 +171,14 @@ class="float-child" style="inline-size:30ch;block-size:8lh;inset-inline-start:ca
 #t
 > (define deep (layout-float:show-at! cp 2 b 1/2 1/2))
 > (map (lambda (p) (cdr (assq 'view (vector-ref p 1)))) (cddr (caddr (popups))))
-(16 19 18 20)
+(20 23 22 24)
 > (length (filter (lambda (f) (search f "anchored" 0)) (floats-of (screen-of desktop))))
 2
 ; Closing a palette removes the popups anchored in it, and those anchored
 ; in them, in the same batch.
 > (layout-float:close! pal2)
 > (popups)
-(layout:popups-root () (layout-float:container () #(views:view ((view . 16) (buffer . "*question*") (place box 1/2 1/5) (width . 3/5) (height lines 12) (locked . #t)))))
+(layout:popups-root () (layout-float:container () #(views:view ((view . 20) (buffer . "*question*") (place box 1/2 1/5) (width . 3/5) (height lines 12) (locked . #t)))))
 ; A palette is never an anchored popup of the same buffer, nor the
 ; reverse.
 > (define cp (layout-float:show-at! ve 2 completions 1/2 '(lines 4)))
@@ -189,7 +194,7 @@ class="float-child" style="inline-size:30ch;block-size:8lh;inset-inline-start:ca
 > (layout:select! vf)
 > (press! desktop '("v" "super"))
 > (list (tree) (selected))
-((layout:root () (layout-float:container () #(views:view ((view . 15) (buffer . "b"))) #(views:view ((view . 25) (buffer . "a") (place box 1/2 1/2))))) 15)
+((layout:level () (layout-float:container () #(views:view ((view . 19) (buffer . "b"))) #(views:view ((view . 29) (buffer . "a") (place box 1/2 1/2))))) 19)
 ; A child after the base without a place floats at the centre, and the
 ; commands take it for a float.
 > (define vh (views:make a))
@@ -198,13 +203,13 @@ class="float-child" style="inline-size:30ch;block-size:8lh;inset-inline-start:ca
 > (layout:select! vi)
 > (press! desktop '("j" "super"))
 > (selected)
-26
+30
 > (press! desktop '("V" "super"))
 > (selected)
-15
+19
 > (press! desktop '("V" "super"))
 > (selected)
-26
+30
 ; An anchor's number does not outlive the process, so a float in the
 ; layout whose anchor is unknown is drawn at the centre.
 > (set-parts! (layout-float:container '() (atom ve) (atom vh '(place anchor 999))))

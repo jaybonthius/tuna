@@ -1324,12 +1324,8 @@
 (keys:bind! keys:global "C-x u" undo)
 (keys:bind! keys:global "C-?" redo)
 (keys:bind! keys:global "C-M-_" redo)
-;; The part mode runs the keys it binds in the layout's own view, so
-;; there they undo window changes.
-(keys:bind! layout:part-mode-keymap "C-/" undo)
-(keys:bind! layout:part-mode-keymap "C-_" undo)
-(keys:bind! layout:part-mode-keymap "C-x u" undo)
-(keys:bind! layout:part-mode-keymap "C-?" redo)
-(keys:bind! layout:part-mode-keymap "C-M-_" redo)
+;; Window changes are not text, as Emacs keeps them out of buffer undo:
+;; an undo must never take back a part a plugin placed or removed.
+(buffers:with-buffer layout:buffer (set-option-local! limit 0))
 (on-unload stop-writer!)
 (spawn-task (attach-open-buffers))

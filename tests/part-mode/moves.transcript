@@ -52,37 +52,43 @@
 > (type! desktop "$")
 > (part)
 6
-; The root's first part has no parent and no siblings: the bars are not
-; visited.
-> (define echo (layout:add-bar! (buffers:make "*Echo*" "")))
-> (type! desktop "i" "i" "i")
+; The root's part has no parent and no siblings. A level is a part the
+; mode visits, and so is a part placed outside it, such as the echo area.
+> (define echo ((layout-sides:display-at-side (layout:direction down) 90 'content '((locked . #t))) (buffers:make "*Echo*" "")))
+> (type! desktop "i" "i" "i" "i")
 > (part)
-(3 (4 5 6) 7)
+(((3 (4 5 6) 7)) 8)
 > (type! desktop "l" "j" "0" "$")
 > (part)
-(3 (4 5 6) 7)
+(((3 (4 5 6) 7)) 8)
 ; k on a view does nothing.
 > (type! desktop "k" "k" "k" "k")
 > (part)
 6
-; Locked parts are passed over.
+; A locked part is selected, but takes no focus.
 > (type! desktop "Enter")
-> (set-parts! (layout-split:container '((direction . row)) (atom v1) (atom v2 '(locked . #t)) (atom v3)) (atom echo '(pinned . #t) '(locked . #t)))
+> (set-parts! (layout-split:container '((direction . column)) (layout:level '() (layout-split:container '((direction . row)) (atom v1) (atom v2 '(locked . #t)) (atom v3))) (atom echo '(depth . 90) '(size . content) '(locked . #t))))
 > (layout:select! v1)
 > (press! desktop '("'" "super"))
 > (type! desktop "l")
-> (part)
-5
-> (type! desktop "j")
-> (part)
-3
+> (list (part) (selected))
+(4 3)
+> (type! desktop "l")
+> (list (part) (selected))
+(5 5)
+> (type! desktop "j" "j")
+> (list (part) (selected))
+(3 3)
+> (type! desktop "i" "i" "l")
+> (list (part) (selected))
+(8 3)
 ; Popups are not parts of the layout and are never selected.
 > (type! desktop "Enter")
 > (define p (layout-float:show-at! v1 0 a 1/2 1/2))
 > (layout:select! p)
 > (press! desktop '("'" "super"))
 > (part)
-(3 4 5)
+(((3 4 5)) 8)
 ; RET leaves the mode; the selected part is again the selected view's
 ; atom.
 > (layout:select! v3)
@@ -90,10 +96,10 @@
 > (list (layout:part-mode?) (part))
 (#f 5)
 ; The commands also work outside the mode, from the selected view's
-; atom, as focus moves.
+; atom, as focus moves; the locked part before it takes no focus.
 > (layout:select-previous)
 > (selected)
-3
+5
 > (layout:select-parent)
 > (list (layout:part-mode?) (part) (selected))
-(#f 3 3)
+(#f 5 5)

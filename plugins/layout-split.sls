@@ -4,7 +4,7 @@
 (define-enumeration direction (row column) directions)
 
 (module %internals
-  (parts weight weight-text column? split-node? with-weight without node-datum replace-node!
+  (parts weight flex-text column? split-node? with-weight without node-datum replace-node!
    holding-split balanced)
 
   (define (parts node)
@@ -17,9 +17,20 @@
 
   (define (weight node) (positive-weight (document:node-attribute node 'weight 1)))
 
-  (define (weight-text node) (number->string (inexact (weight node))))
-
   (define (column? node) (eq? (document:node-attribute node 'direction 'row) 'column))
+
+  ;; A size along the other axis, such as columns in a column split,
+  ;; means nothing here, so the child shares by weight.
+  (define (flex-text node child)
+    (let ([s (document:node-attribute child 'size #f)])
+      (cond
+        [(and (real? s) (exact? s) (< 0 s) (<= s 1))
+         (string-append "0 0 " (number->string (inexact (* 100 s))) "%")]
+        [(eq? s 'content) "none"]
+        [(and (list? s) (fx= (length s) 2) (fixnum? (cadr s)) (fx> (cadr s) 0)
+              (eq? (car s) (if (column? node) 'lines 'columns)))
+         (string-append "0 0 " (number->string (cadr s)) (if (column? node) "lh" "ch"))]
+        [else (string-append (number->string (inexact (weight child))) " 1 0")])))
 
   (define (split-node? node kind)
     (and node (not (document:atom? node)) (eq? (document:node-kind node) kind)))
@@ -46,24 +57,28 @@
   (define (replace-node! node content)
     (buffers:replace! layout:buffer (document:node-start node) (document:node-end node) content))
 
+  ;; Resizing takes from the other parts of a split, so it stays in the
+  ;; view's level, as the other commands that mean the other views do.
   (define (holding-split atom kind)
-    (let ([doc (buffers:document layout:buffer)])
+    (let ([doc (buffers:document layout:buffer)] [level (car (layout:level '()))])
       (let loop ([n atom])
         (let ([p (document:enclosing doc (document:node-start n))])
           (cond
-            [(not p) (values #f #f)]
+            [(or (not p) (eq? (document:node-kind p) level)) (values #f #f)]
             [(split-node? p kind) (values p n)]
             [else (loop p)])))))
 
-  (define (balanced d kind)
-    (if (or (vector? d) (locked-datum? d))
+  (define (balanced d kind level)
+    (if (or (vector? d) (locked-datum? d) (eq? (car d) level))
         d
-        (let ([children (map (lambda (c) (balanced c kind)) (cddr d))])
+        (let ([children (map (lambda (c) (balanced c kind level)) (cddr d))])
           (cons* (car d) (cadr d)
                  (if (eq? (car d) kind)
                      (map (lambda (c)
                             (let ([w (assq 'weight (datum-attributes c))])
-                              (if (and w (not (eqv? (cdr w) 1)) (not (locked-datum? c))) (with-weight c 1) c)))
+                              (if (and w (not (eqv? (cdr w) 1)) (not (locked-datum? c)) (not (assq 'size (datum-attributes c))))
+                                  (with-weight c 1)
+                                  c)))
                           children)
                      children))))))
 
@@ -72,7 +87,7 @@
 (define (%draw-split node children focused draw-child client)
   (let ([direction (if (column? node) "column" "row")] [part (layout:part-class node)])
     (haml (:div.split ([class (if part (string-append direction " " part) direction)])
-            (map (lambda (c) (haml (:div.split-child ([style "flex:" (weight-text c) " 1 0"]) (draw-child c))))
+            (map (lambda (c) (haml (:div.split-child ([style "flex:" (flex-text node c)]) (draw-child c))))
                  children)))))
 
 (define (%split-neighbour node child direction)
@@ -90,7 +105,7 @@
 (layout:define-container container
   (draw %draw-split)
   (neighbour %split-neighbour)
-  (child-attributes weight)
+  (child-attributes weight size)
   (collapse))
 
 (define (split-view! view direction)
@@ -114,8 +129,9 @@
           (let ([w (/ (weight atom) 2)])
             (replace-node! atom (document:from-datum (with-weight d w) (with-weight new-datum w))))
           ;; The new split takes the view's place, so what placed the view
-          ;; in its parent goes to the split.
-          (let ([place (filter (lambda (a) (memq (car a) (if (split-node? parent kind) '(weight pinned) '(pinned))))
+          ;; in its parent goes to the split. A strip's size has the same
+          ;; meaning as a split's, so it moves from any parent.
+          (let ([place (filter (lambda (a) (memq (car a) (if (split-node? parent kind) '(weight size) '(size))))
                                (vector-ref d 1))])
             (replace-node! atom
               (container (cons (cons 'direction direction) place) (without d (map car place)) new-datum))))
@@ -183,15 +199,15 @@
   (%resize! 'layout-split:shrink n -1))
 
 (commands:define-command (balance)
-  "Sets the weight of every child of every split in the frame's zoomed part to 1."
-  (let ([root (document:token (buffers:document layout:buffer) 0)])
-    (unless (or (layout:zoomed-view) (layout:locked? root))
-      (let ([kind (car (container '()))])
-        (for-each
-          (lambda (child)
-            (let* ([d (node-datum child)] [b (balanced d kind)])
-              (unless (equal? d b) (replace-node! child b))))
-          (parts root))))))
+  "Sets the weight of every child of every split in the selected view's level to 1, but sized and locked children and the levels inside it."
+  (let ([level (layout:level-of (layout:selected-view))])
+    (when (and level (not (layout:locked? level)))
+      (for-each
+        (lambda (child)
+          (let* ([d (node-datum child)] [b (balanced d (car (container '())) (car (layout:level '())))])
+            (unless (equal? d b) (replace-node! child b))))
+        (parts level)))
+    (void)))
 
 (commands:define-command (wrap-in-row)
   "Wraps the selected part in a row split."

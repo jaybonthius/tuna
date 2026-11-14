@@ -43,12 +43,12 @@ output=$(run "(layout-split:split-view! (layout:selected-view) (layout-split:dir
 (map views:id (layout:views))")
 expect "first run" "$output" '#<view 3>
 #<view 5>
-(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) (layout-tabs:container () #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 4) (buffer . "other"))) #(views:view ((view . 5) (buffer . "notes"))))))
+(layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) (layout-tabs:container () #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 4) (buffer . "other"))) #(views:view ((view . 5) (buffer . "notes"))))))
 (1 4)'
 
 output=$(run "(tree)
 (list (views:id (layout:selected-view)) (map views:id (layout:views)))")
-expect "after a restart" "$output" '(layout:root () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) (layout-tabs:container () #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 4) (buffer . "other"))) #(views:view ((view . 5) (buffer . "notes"))))))
+expect "after a restart" "$output" '(layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) (layout-tabs:container () #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 4) (buffer . "other"))) #(views:view ((view . 5) (buffer . "notes"))))))
 (1 (1 4))'
 
 echo "$0: $failures failures"

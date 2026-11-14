@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (keys) (commands) (faces) (web) (haml) (undo))
+(import (buffers) (document) (views) (layout) (layout-sides) (keys) (commands) (faces) (web) (haml) (undo))
 
 (define face
   (make-thread-parameter #f
@@ -227,7 +227,7 @@
 
 (buffers:with-buffer echo-buffer (set-option-local! undo:limit 0))
 (messages-buffer)
-(layout:add-bar! echo-buffer 90)
+(layout:display-buffer echo-buffer (layout-sides:display-at-side (layout:direction down) 90 'content '((locked . #t))))
 (keys:bind! keymap "<mouse-1>" show-messages)
 (keys:bind! keymap "<down-mouse-1>" keys:ignore)
 (keys:bind! keys:global "C-h e" show-messages)
@@ -237,4 +237,4 @@
 (advice-add! keys:keyboard-quit %say-quit)
 (advice-add! keys:press! %clear-on-key)
 (advice-add! batch-ended %show-reports)
-(on-unload (lambda () (layout:remove-bar! echo-buffer)))
+(on-unload (lambda () (let ([v (layout:find-view echo-buffer)]) (when v (layout:delete-part! (layout:view-node v))))))

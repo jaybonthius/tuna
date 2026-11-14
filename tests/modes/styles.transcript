@@ -83,6 +83,6 @@ pressed
 > (table-set! vim:initial-states python:mode vim:insert-keymap)
 > (modes:set-major-mode python:mode py)
 > (press! "C-c" "x")
-! C-c is undefined
+! C-c x is undefined
 > (press! "C-SPC" "C-c" "x")
 selected

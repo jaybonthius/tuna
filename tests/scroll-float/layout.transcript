@@ -50,8 +50,11 @@
 > (define popup-atom (document:token (buffers:document layout:popups-buffer) 2))
 > (list (eq? (layout:part-view popup-atom) p) (layout:locked? popup-atom) (layout:part-title popup-atom) (layout:view-node p))
 (#t #t "a" #f)
-> (raised (lambda () (layout:delete-part! popup-atom)))
-(layout:delete-part! "a locked part")
+; A popup is locked, so the user's commands refuse to delete it.
+> (layout:select! p)
+> (commands:run layout:delete-view)
+! layout:delete-view: a locked part with irritant #<node views:view 2>
+> (layout:select! va)
 ; One edit may move a popup within *popups*, but no edit may give a view
 ; number in one tree to the other.
 > (buffers:refused? (guard (c [#t c]) (buffers:replace! layout:popups-buffer 1 1 (layout-float:container '() (atom va)))))

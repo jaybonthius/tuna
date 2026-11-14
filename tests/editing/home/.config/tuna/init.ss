@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (web) (md))
+(import (tuna) (tuna plugins) (document) (web) (md) (layout-sides))
 (use-plugin editing
   (config
     (set-option! editing:delete-selection #t)))

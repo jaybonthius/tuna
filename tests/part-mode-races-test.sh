@@ -17,6 +17,7 @@ cat > "$dir/input" <<'END'
 (define notes (buffers:make "notes" "one\ntwo\n"))
 (define client (web:add-client! 1))
 (define (fresh) (views:make notes))
+(define side (buffers:make "side" ""))
 (set-parts! (layout-split:container '((direction . row)) (atom (fresh)) (layout-scroll:container '() (atom (fresh)) (layout-split:container '((direction . column)) (atom (fresh)) (atom (fresh)))) (layout-float:container '() (atom (fresh)))))
 (layout:part-mode)
 (define quitting #t)
@@ -57,8 +58,12 @@ cat > "$dir/input" <<'END'
                           [(1) (layout-tabs:wrap-in-tabs)]
                           [(2) (layout-scroll:wrap-in-strip)]
                           [else (layout-float:wrap-in-float)])]
-                  [(12) (views:with-view layout:screen-view (undo:undo 1))]
-                  [(13) (views:with-view layout:screen-view (undo:redo 1))]
+                  [(12) (layout:wrap-in-level)]
+                  [(13) (case (mod k 4)
+                          [(0) (layout:zoom (if (even? (div k 4)) #f '(4)))]
+                          [(1) (layout:other-view)]
+                          [(2) ((layout-sides:display-at-side (layout:direction left) 50 '(columns 20)) side)]
+                          [else (let ([v (layout:find-view side)]) (when v (layout:delete-part! (layout:view-node v))))])]
                   [(14) (layout:screen client)]
                   [(15) (layout:part-mode-leave) (layout:part-mode)]
                   [(16) (layout-split:split-below)]
@@ -78,7 +83,9 @@ cat > "$dir/input" <<'END'
     (> quits 100))
 (define (parts-only? d)
     (or (and (vector? d) (eq? (vector-ref d 0) 'views:view) (fixnum? (cdr (assq 'view (vector-ref d 1)))))
-        (and (pair? d) (pair? (cddr d)) (for-all parts-only? (cddr d)))))
+        (and (pair? d) (pair? (cddr d)) (for-all parts-only? (cddr d))
+             (or (not (eq? (car d) 'layout:level))
+                 (and (null? (cdddr d)) (not (and (pair? (caddr d)) (eq? (car (caddr d)) 'layout:level))))))))
 (define (ids-once? ids) (or (null? ids) (and (not (memv (car ids) (cdr ids))) (ids-once? (cdr ids)))))
 (and (parts-only? (tree)) (ids-once? (atom-ids (tree))))
 (for-all (lambda (id) (let ([v (views:find id)]) (and v (buffers:live? (views:buffer v))))) (atom-ids (tree)))

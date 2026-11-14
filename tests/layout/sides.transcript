@@ -1,0 +1,86 @@
+; Placing parts at the sides gives one tree whatever the order: the echo
+; area at the bottom (depth 90) spans the explorer on the left (50) and
+; the outline on the right (60). Each order of the three starts from the
+; same user layout, and removing them in any order gives it back.
+> (define (named name) (or (buffers:find name) (buffers:make name (string-append name "\n"))))
+> (define (shape d)
+    (if (vector? d)
+        (cdr (assq 'buffer (vector-ref d 1)))
+        (cons (car d) (map shape (cddr d)))))
+> (define placements
+    (list (cons "*echo*" (layout-sides:display-at-side (layout:direction down) 90 'content '((locked . #t))))
+          (cons "*explorer*" (layout-sides:display-at-side (layout:direction left) 50 '(columns 30)))
+          (cons "*outline*" (layout-sides:display-at-side (layout:direction right) 60 '(columns 24)))))
+> (define (permutations l)
+    (if (null? l)
+        '(())
+        (apply append (map (lambda (x) (map (lambda (p) (cons x p)) (permutations (remove x l)))) l))))
+> (define (start!)
+    (set-parts! (layout-split:container '((direction . row)) (atom (views:make (named "notes.org"))) (atom (views:make (named "*pi*")))))
+    (layout:select! (car (layout:views))))
+> (define (place-all! order)
+    (for-each (lambda (p) ((cdr p) (named (car p)))) order)
+    (shape (tree)))
+> (start!)
+> (define user (shape (tree)))
+> user
+(layout:level (layout-split:container "notes.org" "*pi*"))
+> (define results
+    (map (lambda (order) (start!) (cons (map car order) (place-all! order))) (permutations placements)))
+> (map car results)
+(("*echo*" "*explorer*" "*outline*") ("*echo*" "*outline*" "*explorer*") ("*explorer*" "*echo*" "*outline*") ("*explorer*" "*outline*" "*echo*") ("*outline*" "*echo*" "*explorer*") ("*outline*" "*explorer*" "*echo*"))
+> (cdar results)
+(layout:level (layout-split:container (layout-split:container "*explorer*" (layout:level (layout-split:container "notes.org" "*pi*")) "*outline*") "*echo*"))
+> (for-all (lambda (r) (equal? (cdr r) (cdar results))) results)
+#t
+> (for-all
+    (lambda (order)
+      (start!)
+      (place-all! placements)
+      (for-each (lambda (p) (layout:delete-part! (layout:view-node (layout:find-view (named (car p)))))) order)
+      (equal? (shape (tree)) user))
+    (permutations placements))
+#t
+; A minibuffer at depth 100 goes below the echo area; of two parts at
+; one depth on one side, the later sits nearer the edge.
+> (start!)
+> (place-all! placements)
+(layout:level (layout-split:container (layout-split:container "*explorer*" (layout:level (layout-split:container "notes.org" "*pi*")) "*outline*") "*echo*"))
+> ((layout-sides:display-at-side (layout:direction down) 100 'content) (named "*minibuffer*"))
+#<view 70>
+> ((layout-sides:display-at-side (layout:direction left) 50 '(columns 20)) (named "*bookmarks*"))
+#<view 71>
+> (shape (tree))
+(layout:level (layout-split:container (layout-split:container "*bookmarks*" "*explorer*" (layout:level (layout-split:container "notes.org" "*pi*")) "*outline*") "*echo*" "*minibuffer*"))
+; The user's windows are the level the walk reaches through splits; a
+; level made inside tabs is never taken for them.
+> (define t1 (views:make (named "notes.org")))
+> (define t2 (views:make (named "*pi*")))
+> (set-parts! (layout-tabs:container '() (atom t1) (layout:level '() (atom t2))))
+> (layout:select! t1)
+> ((layout-sides:display-at-side (layout:direction down) 90 'content) (named "*echo*"))
+#<view 74>
+> (shape (tree))
+(layout:level (layout-split:container (layout:level (layout-tabs:container "notes.org" (layout:level "*pi*"))) "*echo*"))
+; A placed part keeps the size it was given; the user may split it, and
+; the new view is not placed, so displaying a buffer may choose it.
+> (layout:select! (layout:find-view (named "*echo*")))
+> (layout-split:split-view! (layout:selected-view) (layout-split:direction row))
+#<view 75>
+> (shape (tree))
+(layout:level (layout-split:container (layout:level (layout-tabs:container "notes.org" (layout:level "*pi*"))) (layout-split:container "*echo*" "*echo*")))
+> (map (lambda (v) (buffers:name (views:buffer v))) (layout:views))
+("notes.org" "*echo*" "*echo*")
+> (define shown (layout:use-other-view (named "mail")))
+> (list (buffers:name (views:buffer shown)) (eq? shown (layout:find-view (named "*echo*"))))
+("mail" #f)
+> (map (lambda (v) (buffers:name (views:buffer v))) (layout:views))
+("notes.org" "*echo*" "mail")
+; The action runs on the main thread only, as layout's procedures do.
+> (define (on-thread thunk)
+    (let ([result #f])
+      (fork-thread (lambda () (set! result (guard (c [#t (list (condition-who c) (condition-message c))]) (thunk)))))
+      (let loop ([n 0]) (unless (or result (= n 500)) (sleep-for 0.01) (loop (+ n 1))))
+      result))
+> (on-thread (lambda () ((cdar placements) (named "*echo*"))))
+(layout:find-view "not on the main thread")

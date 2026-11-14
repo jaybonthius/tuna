@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (layout-split) (views) (buffers) (document) (keys) (web) (haml))
+(import (layout) (layout-split) (layout-sides) (views) (buffers) (document) (keys) (web) (haml))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -27,7 +27,7 @@
     (unless (= n 0)
       (let ([new (layout-split:split-view! v d)])
         (loop (- n 1) (if (even? n) new v) (if (eq? d 'row) 'column 'row)))))
-  (layout:add-bar! (buffers:make "*Echo*" "")))
+  ((layout-sides:display-at-side (layout:direction down) 90 (quote content) (quote ((locked . #t)))) (buffers:make "*Echo*" "")))
 
 (define (parts)
   (let count ([d (car (document:datums (buffers:document layout:buffer)))])
@@ -53,5 +53,16 @@
                (layout:delete-part! (layout:view-node v))
                (batch-ended))))
          2))
+    (let ([side (buffers:make "*side*" "")])
+      (show "place-side-part"
+        (/ (ns-per-op 200
+             (lambda ()
+               (let ([v ((layout-sides:display-at-side (layout:direction left) 50 '(columns 30)) side)])
+                 (batch-ended)
+                 (layout:delete-part! (layout:view-node v))
+                 (batch-ended))))
+           2)))
+    (show "zoom" (/ (ns-per-op 2000 (lambda () (layout:zoom #f) (layout:views) (layout:zoom #f) (layout:views))) 2))
+    (show "other-view" (ns-per-op 2000 (lambda () (layout:other-view))))
     (advice-add! views:draw (lambda (draw view client) (haml (:div))))
     (show "screen-parts" (ns-per-op 200 (lambda () (html->bytevector (layout:screen client)))))))

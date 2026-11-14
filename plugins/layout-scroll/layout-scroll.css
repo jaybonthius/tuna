@@ -27,20 +27,24 @@
   }
 
   /* A percentage is of the strip's scrollport, so every client lays the
-     same fractions out exactly at its own size. */
+     same fractions out exactly at its own size. In the views' font, so
+     that a size in columns or lines matches theirs. */
   .strip-item {
     display: flex;
     flex: none;
     position: relative;
     scroll-snap-align: start;
+    font-family: var(--tuna-font-code);
+    font-size: var(--tuna-font-size-code);
+    line-height: var(--tuna-line-height-code);
   }
 
   .layout-strip.row > .strip-item {
-    inline-size: calc(var(--strip-size) * 100%);
+    inline-size: var(--strip-size);
   }
 
   .layout-strip.column > .strip-item {
-    block-size: calc(var(--strip-size) * 100%);
+    block-size: var(--strip-size);
   }
 
   .layout-strip.row > .strip-item + .strip-item {
