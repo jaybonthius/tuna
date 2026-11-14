@@ -1,0 +1,107 @@
+; M-x ui:showcase shows *Showcase* in the current view, unmodified, with
+; point on the first row of its first list.
+> (in-client (lambda () (commands:run ui:showcase)))
+> (define b (views:buffer (view)))
+> (buffers:name b)
+"*Showcase*"
+> (define (node-where match?)
+    (let loop ([p 0])
+      (let ([t (document:token (buffers:document b) p)])
+        (if (and (document:node? t) (match? t)) t (loop (+ p 1))))))
+> (define (showcase-list rows)
+    (node-where (lambda (t) (and (eq? (document:node-kind t) 'ui:list) (eq? (document:node-attribute t 'rows) rows)))))
+> (define (short) (showcase-list 'short))
+> (define (long) (showcase-list 'long))
+> (define (live kind) (node-where (lambda (t) (eq? (document:node-kind t) kind))))
+> (list (ui:selected-row (short) (view)) (buffers:modified? b))
+(0 #f)
+; Every ui component and helper is drawn: a live button and
+; link, a button held hovered, pressed and disabled, a link held hovered,
+; labels with and without a class, and a row.
+> (element (view) "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\"><span" "button")
+"<button class=\"ui-button\" type=\"button\" tabindex=\"-1\"><span data-at=\"137\">Push me</span></button>"
+> (element (view) "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" data-ui-state=\"hover\"" "button")
+"<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" data-ui-state=\"hover\">Push me</button>"
+> (element (view) "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" data-ui-state=\"pressed\"" "button")
+"<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" data-ui-state=\"pressed\">Push me</button>"
+> (element (view) "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" disabled" "button")
+"<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" disabled>Push me</button>"
+> (element (view) "<button class=\"ui-link\" type=\"button\" tabindex=\"-1\"><span" "button")
+"<button class=\"ui-link\" type=\"button\" tabindex=\"-1\"><span data-at=\"243\">Follow me</span></button>"
+> (element (view) "<button class=\"ui-link\" type=\"button\" tabindex=\"-1\" data-ui-state=\"hover\"" "button")
+"<button class=\"ui-link\" type=\"button\" tabindex=\"-1\" data-ui-state=\"hover\">Follow me</button>"
+> (element (view) "<span class=\"ui-label\">A label" "span")
+"<span class=\"ui-label\">A label</span>"
+> (element (view) "<span class=\"ui-label ui-showcase-muted\">A label" "span")
+"<span class=\"ui-label ui-showcase-muted\">A label with a class</span>"
+> (element (view) "<div class=\"ui-row\"><span class=\"ui-label\">notes" "div")
+"<div class=\"ui-row\"><span class=\"ui-label\">notes.org</span><span class=\"ui-label ui-showcase-muted\">~/notes</span><span class=\"ui-label ui-showcase-faint\">2 KB</span></div>"
+> (element (view) "<div class=\"ui-showcase-heading\"><div class=\"line\"" "div")
+"<div class=\"ui-showcase-heading\"><div class=\"line\" id=\"v1-4\" data-line=\"4\" data-at=\"98\">Buttons: ui:define-button</div>"
+; The first list holds eight rows and shows five; the second shows all
+; three hundred. The selected row is marked aria-current.
+> (define (shown-keys node)
+    (map (lambda (a) (cdr (assq 'key (vector-ref a 1))))
+         (cddr (car (document:datums (document:slice (buffers:document b) (document:node-start node) (document:node-end node)))))))
+> (list (length (shown-keys (short))) (length (shown-keys (long))))
+(5 300)
+> (element (view) "<li class=\"ui-list-row\" aria-current=\"true\"" "li")
+"<li class=\"ui-list-row\" aria-current=\"true\"><div class=\"ui-row\"><span class=\"ui-label\">init.ss</span><span class=\"ui-label ui-showcase-muted\">configuration</span></div></li>"
+; The buffer is read-only: typing, and any edit through buffers:replace!,
+; is refused.
+> (press! "x")
+! buffers:replace!: a read-only span refuses the edit with irritant ui:%read-only
+> (raised (lambda () (buffers:replace! b 1 1 "x")))
+(buffers:replace! "a read-only span refuses the edit")
+; A click on the live button, or RET with point in it, counts in its
+; label; the link counts the same way.
+> (click-at! (view) (+ (document:node-start (live 'ui:%sample-button)) 2))
+> (views:set-point! (view) (+ (document:node-start (live 'ui:%sample-button)) 2))
+> (press! "RET")
+> (click-at! (view) (+ (document:node-start (live 'ui:%sample-link)) 2))
+> (list (document:node-attribute (live 'ui:%sample-button) 'n) (document:node-attribute (live 'ui:%sample-link) 'n))
+(2 1)
+> (element (view) "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\"><span" "button")
+"<button class=\"ui-button\" type=\"button\" tabindex=\"-1\"><span data-at=\"137\"><span class=\"cursor primary\"></span>Pushed 2 times</span></button>"
+; Moving past the shown rows slides them; RET chooses and shows the row
+; chosen.
+> (ui:select-row! (short) (view) 0)
+> (press! "C-n" "C-n" "C-n" "C-n" "C-n" "C-n")
+> (list (ui:selected-row (short) (view)) (map cdr (shown-keys (short))))
+(6 (2 3 4 5 6))
+> (press! "RET")
+> (document:node-attribute (live 'ui:%chosen) 'name)
+"Makefile"
+; A second view of the buffer selects its own row.
+> (define other (views:make b))
+> (ui:select-row! (long) other 250)
+> (list (ui:selected-row (short) (view)) (ui:selected-row (long) other) (ui:selected-row (long) (view)))
+(6 250 #f)
+; Run from another buffer, the command shows the same buffer and starts
+; again on the first row; run where it shows already, it leaves point.
+> (show! (buffers:find "*scratch*"))
+> (in-client (lambda () (commands:run ui:showcase)))
+> (list (eq? (views:buffer (view)) b) (ui:selected-row (short) (view)))
+(#t 0)
+> (press! "C-n")
+> (in-client (lambda () (commands:run ui:showcase)))
+> (ui:selected-row (short) (view))
+1
+; Reloading ui writes the lists' rows again from the same code; the
+; counts live in the buffer and stay.
+> (import (tuna eval))
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/ui.sls"))
+> (list (length (shown-keys (short))) (length (shown-keys (long))) (document:node-attribute (live 'ui:%sample-button) 'n))
+(5 300 2)
+> (element (view) "<li class=\"ui-list-row\" aria-current=\"true\"" "li")
+"<li class=\"ui-list-row\" aria-current=\"true\"><div class=\"ui-row\"><span class=\"ui-label\">notes.org</span><span class=\"ui-label ui-showcase-muted\">outline</span></div></li>"
+; Another buffer named *Showcase* is not the showcase: reloading ui
+; leaves it alone, and the command refuses to take its name.
+> (buffers:kill! b)
+#t
+> (define f (buffers:make "*Showcase*" (buffers:text '() "my notes\n")))
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/ui.sls"))
+> (and (ui:label "x") #t)
+#t
+> (in-client (lambda () (commands:run ui:showcase)))
+! buffers:make: a live buffer has the name with irritant "*Showcase*"

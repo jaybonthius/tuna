@@ -26,6 +26,7 @@ echo "$output" | awk '
     unit["ui-set-rows"] = "ns"
     unit["ui-click-row"] = "ns"
     unit["ui-click-button"] = "ns"
+    unit["ui-draw-showcase"] = "ns"
     missing = 0
   }
   $1 in unit {

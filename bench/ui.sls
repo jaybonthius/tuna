@@ -70,4 +70,6 @@
       (views:set-buffer! v t)
       (let ([c (click v 6)])
         (show "ui-click-button" (ns-per-op c))
-        (unless (fx>= pushed batch) (printf "the button was not pushed\n"))))))
+        (unless (fx>= pushed batch) (printf "the button was not pushed\n"))))
+    (in-client (lambda () (commands:run ui:showcase)))
+    (show "ui-draw-showcase" (ns-per-op (lambda () (html->bytevector (views:draw v client)))))))

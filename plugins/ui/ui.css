@@ -108,17 +108,25 @@
     cursor: pointer;
   }
 
-  /* Overlays, so a button keeps its own background under them. */
-  .ui-button:hover {
+  /* The classes' pointer beats the plain :disabled rule, which sits
+     inside :where(). */
+  :is(.ui-button, .ui-link):disabled {
+    cursor: default;
+  }
+
+  /* Overlays, so a button keeps its own background under them. The
+     showcase holds a sample in a state with data-ui-state, since hover
+     and pressed last only while the pointer is there. */
+  .ui-button:not(:disabled):is(:hover, [data-ui-state="hover"]) {
     background-image: linear-gradient(var(--ui-button-hover-background, var(--tuna-hover)),
                                       var(--ui-button-hover-background, var(--tuna-hover)));
   }
 
-  .ui-link:hover {
+  .ui-link:not(:disabled):is(:hover, [data-ui-state="hover"]) {
     color: var(--ui-link-hover-text, var(--tuna-accent));
   }
 
-  .ui-button:active {
+  .ui-button:not(:disabled):is(:active, [data-ui-state="pressed"]) {
     background-image: linear-gradient(var(--ui-button-pressed-background, var(--tuna-pressed)),
                                       var(--ui-button-pressed-background, var(--tuna-pressed)));
   }
@@ -151,6 +159,19 @@
     background: var(--ui-list-selected-background, var(--tuna-selected, Highlight));
     color: var(--ui-list-selected-text, var(--tuna-on-selected, HighlightText));
     font-weight: var(--tuna-font-weight-semibold);
+  }
+
+  .ui-showcase-heading {
+    font-family: var(--tuna-font-ui);
+    font-weight: var(--tuna-font-weight-semibold);
+  }
+
+  .ui-showcase-muted {
+    color: var(--tuna-text-muted);
+  }
+
+  .ui-showcase-faint {
+    color: var(--tuna-text-faint);
   }
 
   /* The selected row shows where point is in a list; the views plugin's

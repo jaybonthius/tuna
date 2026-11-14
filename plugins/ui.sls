@@ -366,6 +366,150 @@
               (raise-continuable c))
             (lambda () ((rows-choose state) (vector-ref (rows-vector state) i)))))))))
 
+(define (%draw-showcase node view)
+  (haml (:article (views:draw-children view node))))
+
+(define (%draw-showcase-heading node view)
+  (haml (:div.ui-showcase-heading (views:draw-children view node))))
+
+;; Hover and pressed last only while the pointer is on a real button or
+;; link, so a sample holds one.
+(define (%draw-state-sample node view)
+  (let ([state (document:node-attribute node 'state)])
+    (haml (:button ([class (if (eq? (document:node-attribute node 'of) 'link) "ui-link" "ui-button")]
+                    [type "button"] [tabindex "-1"]
+                    [data-ui-state (and (memq state '(hover pressed)) (symbol->string state))]
+                    [disabled (eq? state 'disabled)])
+            (document:node-attribute node 'label)))))
+
+(define (%draw-helper-sample node view)
+  (case (document:node-attribute node 'of)
+    [(label) (label "A label")]
+    [(label-class) (label "A label with a class" "ui-showcase-muted")]
+    [(row) (row (label "notes.org") (label "~/notes" "ui-showcase-muted") (label "2 KB" "ui-showcase-faint"))]))
+
+(define (%draw-chosen node view)
+  (label (document:node-attribute node 'name "nothing yet")))
+
+(buffers:define-kind %showcase (content nodes) (draw %draw-showcase))
+(buffers:define-kind %showcase-heading (draw %draw-showcase-heading))
+(buffers:define-kind %showcase-text)
+(buffers:define-kind %state-sample (content atom) (draw %draw-state-sample))
+(buffers:define-kind %helper-sample (content atom) (draw %draw-helper-sample))
+(buffers:define-kind %chosen (content atom) (draw %draw-chosen))
+(buffers:define-layer %read-only (read-only))
+
+(define %showcase-kind (car (%showcase '())))
+(define %chosen-kind (vector-ref (%chosen '()) 0))
+
+(define (%times verb n)
+  (string-append verb " " (number->string n) (if (= n 1) " time" " times")))
+
+;; The count lives in the button's attributes, so it outlives a reload of
+;; this module as the buffer does.
+(commands:define-command (%count-push [button (pushed-button)])
+  "Counts a push of a showcase button or link in its label."
+  (let ([n (+ (document:node-attribute button 'n 0) 1)] [verb (document:node-attribute button 'verb)])
+    (buffers:splice! (buffers:current) (document:node-start button) (document:node-end button)
+      (document:from-datum `(,(document:node-kind button) ((n . ,n) (verb . ,verb)) ,(%times verb n))))))
+
+(define-button %sample-button %count-push)
+
+(define-link %sample-link %count-push)
+
+(define %short-rows
+  '#(("init.ss" . "configuration") ("notes.org" . "outline") ("todo.txt" . "text") ("ui.sls" . "plugin")
+     ("ui.css" . "stylesheet") ("README.md" . "markdown") ("Makefile" . "build") ("build.ss" . "scheme")))
+
+(define %long-rows
+  (let ([v (make-vector 300)])
+    (do ([i 0 (fx+ i 1)]) ((fx= i 300) v)
+      (vector-set! v i (cons (string-append "Row " (number->string (fx+ i 1)))
+                             (string-append (number->string (fx+ i 1)) " of 300"))))))
+
+(define (%draw-showcase-row r)
+  (row (label (car r)) (label (cdr r) "ui-showcase-muted")))
+
+(define (%showcase-node b match?)
+  (call/1cc
+    (lambda (k)
+      (let walk ([n (document:token (buffers:document b) 0)])
+        (document:for-each-child n 0 (document:length (buffers:document b))
+          (lambda (child at)
+            (when (document:node? child)
+              (when (match? child) (k child))
+              (unless (document:atom? child) (walk child))))))
+      #f)))
+
+(define (%showcase-list b rows)
+  (%showcase-node b (lambda (n) (and (list-node? n) (eq? (document:node-attribute n 'rows) rows)))))
+
+(define (%show-chosen! b r)
+  (let ([chosen (%showcase-node b (lambda (n) (eq? (document:node-kind n) %chosen-kind)))])
+    (buffers:splice! b (document:node-start chosen) (document:node-end chosen)
+      (document:from-datum (%chosen `((name . ,(car r))))))))
+
+(define (%fill-showcase! b)
+  (let ([choose (lambda (r) (%show-chosen! b r))])
+    (set-rows! b (%showcase-list b 'short) %short-rows %draw-showcase-row choose 5)
+    (set-rows! b (%showcase-list b 'long) %long-rows %draw-showcase-row choose (vector-length %long-rows))))
+
+(define (%showcase-datum)
+  (%showcase '()
+    (%showcase-text '()
+      "Every component and helper of the ui plugin, in each of its states.\n"
+      "The buffer is read-only.\n\n")
+    (%showcase-heading '() "Buttons: ui:define-button\n")
+    (%showcase-text '()
+      "normal    " (%sample-button '((n . 0) (verb . "Pushed")) "Push me") "  a click or RET counts\n"
+      "hover     " (%state-sample '((of . button) (state . hover) (label . "Push me"))) "\n"
+      "pressed   " (%state-sample '((of . button) (state . pressed) (label . "Push me"))) "\n"
+      "disabled  " (%state-sample '((of . button) (state . disabled) (label . "Push me"))) "\n\n")
+    (%showcase-heading '() "Links: ui:define-link\n")
+    (%showcase-text '()
+      "normal    " (%sample-link '((n . 0) (verb . "Followed")) "Follow me") "  a click or RET counts\n"
+      "hover     " (%state-sample '((of . link) (state . hover) (label . "Follow me"))) "\n\n")
+    (%showcase-heading '() "Labels and rows: ui:label, ui:row\n")
+    (%showcase-text '()
+      "label     " (%helper-sample '((of . label))) "\n"
+      "class     " (%helper-sample '((of . label-class))) "\n"
+      "A row of three labels, the second muted and the third faint:\n"
+      (%helper-sample '((of . row))) "\n")
+    (%showcase-heading '() "Lists: ui:list\n")
+    (%showcase-text '()
+      "C-n and C-p move, RET or a click chooses. Eight rows, five shown:\n"
+      "moving past them slides the rows. Each window on this buffer selects\n"
+      "its own row; split the window to see a list in a window without focus.\n")
+    (list '((rows . short)))
+    (%showcase-text '() "chosen    " (%chosen '()) "\n\n")
+    (%showcase-text '() "Three hundred rows, all shown, so the window scrolls through them.\n")
+    (list '((rows . long)))))
+
+(define (%showcase-buffer)
+  (let ([b (buffers:find "*Showcase*")])
+    (and b (eq? (document:node-kind (document:token (buffers:document b) 0)) %showcase-kind) b)))
+
+(define (%make-showcase)
+  (let ([b (buffers:make "*Showcase*" (%showcase-datum))])
+    (buffers:add-span! (buffers:layer b %read-only) 0 (document:length (buffers:document b)) '())
+    (%fill-showcase! b)
+    (buffers:set-modified! b #f)
+    b))
+
+;; Point starts on the first list's first row, so the showcase opens with
+;; a selected row and the list's keys active; a view with no measurements
+;; would centre that point and hide the buttons above it.
+(commands:define-command (showcase)
+  "Shows every component and helper of the ui plugin, in each of its states, in the read-only buffer *Showcase*."
+  (let ([v (views:current)])
+    (unless v
+      (assertion-violation 'ui:showcase "no view is current"))
+    (let ([b (or (%showcase-buffer) (%make-showcase))])
+      (unless (eq? (views:buffer v) b)
+        (views:set-buffer! v b)
+        (select-row! (%showcase-list b 'short) v 0)
+        (views:scroll-to! v 0 (views:align top))))))
+
 (keys:bind! list-keys "C-n" next-row)
 (keys:bind! list-keys "<down>" next-row)
 (keys:bind! list-keys "C-p" previous-row)
@@ -374,3 +518,8 @@
 (keys:bind! list-keys "<mouse-1>" choose-row)
 (table-set! web:stylesheets 'ui "ui/ui.css")
 (add-hook! buffers:killed forget-buffer!)
+
+;; A list's rows are this module's, so a showcase made before a reload
+;; gets them again.
+(let ([b (%showcase-buffer)])
+  (when b (%fill-showcase! b)))
