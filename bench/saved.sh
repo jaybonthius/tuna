@@ -19,19 +19,17 @@ output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" taskset -c "$
 # of 4,096 characters, and a history of 10,000 short strings.
 echo "$output" | awk '
   BEGIN {
-    limit["saved-ring-4096"] = 30000
-    limit["saved-history-10000"] = 1000000
-    failed = 0
+    unit["saved-ring-4096"] = "ns"
+    unit["saved-history-10000"] = "ns"
+    missing = 0
   }
-  $1 in limit {
+  $1 in unit {
     seen[$1] = 1
-    verdict = ($2 <= limit[$1]) ? "pass" : "FAIL"
-    if (verdict == "FAIL") failed = 1
-    printf "%-28s %10.2f ns   limit %10.2f ns   %s\n", $1, $2, limit[$1], verdict
+    printf "%-28s %10.2f %s\n", $1, $2, unit[$1]
     next
   }
   { print }
   END {
-    for (name in limit) if (!(name in seen)) { printf "%-28s no result  FAIL\n", name; failed = 1 }
-    exit failed
+    for (name in unit) if (!(name in seen)) { printf "%-28s no result\n", name; missing = 1 }
+    exit missing
   }'

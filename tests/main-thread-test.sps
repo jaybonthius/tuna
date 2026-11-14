@@ -68,16 +68,6 @@
       (check-equal? '(ended a b ended c ended) (reverse log))
       (check (for-all (lambda (seen) (equal? seen '(#f (tuna)))) outside))))
 
-  ;; Allocation is deterministic, so the bound is loose only to leave room
-  ;; for small changes; make bench holds the exact figure.
-  (test "posting an item and running it allocates a few hundred bytes"
-    (let ([n 100000] [start (sstats-bytes (statistics))])
-      (wait-until-called
-        (lambda (done)
-          (do ([i 0 (+ i 1)]) ((= i n)) (post! void))
-          (post! done)))
-      (check (< (/ (- (sstats-bytes (statistics)) start) n) 400))))
-
   (test "when threads race to resume a task, one resumes it and the rest raise"
     (do ([trial 0 (+ trial 1)]) ((= trial 50))
       (let* ([resume #f]

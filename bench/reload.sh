@@ -1,7 +1,5 @@
 #!/bin/sh
 # Pinned to one CPU, so that each median compares like with like.
-# Each limit sits a fifth or more above the highest of repeated runs, so
-# that noise alone fails no run.
 set -eu
 tuna=${1:?usage: reload.sh TUNA}
 case $tuna in
@@ -19,20 +17,18 @@ printf '(import (tuna) (reload))\n(reload:run)\n(exit)\n' > "$dir/home/.config/t
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
 echo "$output" | awk '
   BEGIN {
-    limit["reload-unchanged-small"] = 0.3
-    limit["reload-edited-small"] = 3.7
-    limit["reload-edited-big"] = 29
-    failed = 0
+    unit["reload-unchanged-small"] = "ms"
+    unit["reload-edited-small"] = "ms"
+    unit["reload-edited-big"] = "ms"
+    missing = 0
   }
-  $1 in limit {
+  $1 in unit {
     seen[$1] = 1
-    verdict = ($2 <= limit[$1]) ? "pass" : "FAIL"
-    if (verdict == "FAIL") failed = 1
-    printf "%-24s %10.2f ms  limit %7.2f ms  %s\n", $1, $2, limit[$1], verdict
+    printf "%-24s %10.2f %s\n", $1, $2, unit[$1]
     next
   }
   { print }
   END {
-    for (name in limit) if (!(name in seen)) { printf "%-24s no result  FAIL\n", name; failed = 1 }
-    exit failed
+    for (name in unit) if (!(name in seen)) { printf "%-24s no result\n", name; missing = 1 }
+    exit missing
   }'

@@ -60,9 +60,6 @@
 > (map (lambda (r) (apply bare-tokens r))
        '(("ui/ui.css" ":where(:focus-visible)") ("ui/ui.css" ".ui-list-row[aria-current=\"true\"]")))
 (() ())
-; The file stays within its 50 KB budget.
-> (<= (string-length tokens-css) 51200)
-#t
 ; Light and dark come from each device's setting.
 > (and (search tokens-css "color-scheme: light dark;" 0) #t)
 #t

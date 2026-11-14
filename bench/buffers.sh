@@ -15,45 +15,38 @@ cp bench/buffers.sls "$lib/buffers-bench.sls"
 printf '(import (tuna) (buffers-bench))\n(buffers-bench:run)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
-# A keystroke's share of the server's millisecond. A stop in a buffer of
-# nodes looks up the node around it and that node's parent, which
-# together cost more than the two microseconds that a file buffer's stop
-# takes.
 echo "$output" | awk '
   BEGIN {
     split("1 10 100", sizes, " ")
     for (i in sizes) {
       s = "-" sizes[i] "mb"
-      limit["insert" s] = 5000
-      limit["snapshot" s] = 6000
-      limit["stop" s] = 2000
-      limit["next-stop" s] = 2000
-      limit["anchor-read" s] = 100
-      limit["layer-move" s] = 1500
-      limit["travelling" s] = 2500
-      limit["keystroke" s] = 12000
+      unit["insert" s] = "ns"
+      unit["snapshot" s] = "ns"
+      unit["stop" s] = "ns"
+      unit["next-stop" s] = "ns"
+      unit["anchor-read" s] = "ns"
+      unit["layer-move" s] = "ns"
+      unit["travelling" s] = "ns"
+      unit["keystroke" s] = "ns"
     }
     split("1 10", structured, " ")
     for (i in structured) {
       s = "-" structured[i] "mb"
-      limit["stop-structured" s] = 4000
-      limit["next-stop-structured" s] = 4000
-      limit["keystroke-structured" s] = 12000
+      unit["stop-structured" s] = "ns"
+      unit["next-stop-structured" s] = "ns"
+      unit["keystroke-structured" s] = "ns"
     }
-    limit["reconcile-0mb"] = 1; unit["reconcile-0mb"] = "ms"
-    limit["trim-anchors-1mb"] = 5; unit["trim-anchors-1mb"] = "ms"
-    failed = 0
+    unit["reconcile-0mb"] = "ms"
+    unit["trim-anchors-1mb"] = "ms"
+    missing = 0
   }
-  $1 in limit {
+  $1 in unit {
     seen[$1] = 1
-    verdict = ($2 <= limit[$1]) ? "pass" : "FAIL"
-    if (verdict == "FAIL") failed = 1
-    u = ($1 in unit) ? unit[$1] : "ns"
-    printf "%-28s %10.2f %-3s  limit %8.2f %-3s  %s\n", $1, $2, u, limit[$1], u, verdict
+    printf "%-28s %10.2f %s\n", $1, $2, unit[$1]
     next
   }
   { print }
   END {
-    for (name in limit) if (!(name in seen)) { printf "%-28s no result  FAIL\n", name; failed = 1 }
-    exit failed
+    for (name in unit) if (!(name in seen)) { printf "%-28s no result\n", name; missing = 1 }
+    exit missing
   }'

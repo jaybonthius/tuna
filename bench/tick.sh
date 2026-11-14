@@ -44,4 +44,8 @@ cat > "$lib/ticker.sls" <<'SCHEME'
 SCHEME
 printf '(import (tuna) (ticker))\n(ticker:report-ticks)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
-(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" "$tuna" < /dev/null 2>&1)
+output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" "$tuna" < /dev/null 2>&1)
+echo "$output" | awk '
+  { print }
+  $1 == "tick" { seen = 1 }
+  END { if (!seen) { print "tick no result"; exit 1 } }'

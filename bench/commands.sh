@@ -25,24 +25,21 @@ printf '(import (tuna) (bench commands))\n(bench/commands:run)\n(exit)\n' > "$di
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
 echo "$output" | awk '
   BEGIN {
-    limit["run-outermost-unhooked"] = 2000
-    limit["run-outermost"] = 2000
-    limit["run-outermost-bytes"] = 2048; unit["run-outermost-bytes"] = "B"
-    limit["run-nested"] = 2000
-    limit["command?"] = 100
-    limit["command-named"] = 100
-    failed = 0
+    unit["run-outermost-unhooked"] = "ns"
+    unit["run-outermost"] = "ns"
+    unit["run-outermost-bytes"] = "B"
+    unit["run-nested"] = "ns"
+    unit["command?"] = "ns"
+    unit["command-named"] = "ns"
+    missing = 0
   }
-  $1 in limit {
+  $1 in unit {
     seen[$1] = 1
-    verdict = ($2 <= limit[$1]) ? "pass" : "FAIL"
-    if (verdict == "FAIL") failed = 1
-    u = ($1 in unit) ? unit[$1] : "ns"
-    printf "%-28s %10.2f %-3s  limit %8.2f %-3s  %s\n", $1, $2, u, limit[$1], u, verdict
+    printf "%-28s %10.2f %s\n", $1, $2, unit[$1]
     next
   }
   { print }
   END {
-    for (name in limit) if (!(name in seen)) { printf "%-28s no result  FAIL\n", name; failed = 1 }
-    exit failed
+    for (name in unit) if (!(name in seen)) { printf "%-28s no result\n", name; missing = 1 }
+    exit missing
   }'

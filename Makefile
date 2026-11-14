@@ -29,7 +29,9 @@ $(SCRIPT_TESTS:%=run/%): run/%: exe
 $(TRANSCRIPTS:%=run/%): run/%: exe
 	@timeout $(TEST_TIMEOUT) sh tests/run-transcript.sh build/bin/tuna $*
 
-# Every benchmark runs, so that one failed gate hides none of the others.
+# Every benchmark runs, so that one failure hides none of the others. Tuna
+# reports an error in init.ss and goes on, so a benchmark shows a crash by
+# a result missing from its output.
 bench: exe
 	@status=0; \
 	sh bench/hot-paths.sh build/bin/tuna || status=1; \

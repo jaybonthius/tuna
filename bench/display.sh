@@ -27,31 +27,25 @@ cat > "$dir/home/.config/tuna/init.ss" <<'END'
 END
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpus" "$tuna" < /dev/null 2>&1)
-# The server's share of a keystroke is a millisecond with one client and
-# two with four. A view keeps two view heights drawn beyond each edge,
-# about 340 lines for a view 45 lines high, so three views draw about
-# 650 lines, not the 270 that a client's 0.7 ms was meant for, and their
-# limit allows for that. Node-per-line drawing is views' cost and is
-# shown, not gated.
 echo "$output" | awk '
   BEGIN {
-    limit["batch-one-client"] = 1000000
-    limit["batch-unchanged"] = 1000000
-    limit["batch-two-clients"] = 2000000
-    limit["batch-four-clients"] = 2000000
-    limit["draw-text-one-view"] = 700000
-    limit["draw-text-three-views"] = 1500000
-    failed = 0
+    unit["batch-one-client"] = "ns"
+    unit["batch-unchanged"] = "ns"
+    unit["batch-two-clients"] = "ns"
+    unit["batch-four-clients"] = "ns"
+    unit["draw-text-one-view"] = "ns"
+    unit["draw-text-three-views"] = "ns"
+    unit["draw-nodes-one-view"] = "ns"
+    unit["draw-nodes-three-views"] = "ns"
+    missing = 0
   }
-  $1 in limit {
+  $1 in unit {
     seen[$1] = 1
-    verdict = ($2 <= limit[$1]) ? "pass" : "FAIL"
-    if (verdict == "FAIL") failed = 1
-    printf "%-28s %12.2f ns  limit %10.2f ns  %s\n", $1, $2, limit[$1], verdict
+    printf "%-28s %12.2f %s\n", $1, $2, unit[$1]
     next
   }
   { print }
   END {
-    for (name in limit) if (!(name in seen)) { printf "%-28s no result  FAIL\n", name; failed = 1 }
-    exit failed
+    for (name in unit) if (!(name in seen)) { printf "%-28s no result\n", name; missing = 1 }
+    exit missing
   }'

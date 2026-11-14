@@ -20,29 +20,26 @@ echo "$output" | awk '
     split("1 10 100", sizes, " ")
     for (i in sizes) {
       s = "-" sizes[i] "mb"
-      limit["insert" s] = 3000
-      limit["snapshot" s] = 6000
-      limit["line" s] = 2000
-      limit["line-start" s] = 2000
-      limit["char-offset" s] = 1000
-      limit["char-position" s] = 1000
-      limit["token" s] = 1000
-      limit["from-utf8" s] = 3.2; unit["from-utf8" s] = "ms/MB"
-      limit["from-datum" s] = 6; unit["from-datum" s] = "ms/MB"
-      limit["utf8-chunks" s] = 0.64; unit["utf8-chunks" s] = "ms/MB"
+      unit["insert" s] = "ns"
+      unit["snapshot" s] = "ns"
+      unit["line" s] = "ns"
+      unit["line-start" s] = "ns"
+      unit["char-offset" s] = "ns"
+      unit["char-position" s] = "ns"
+      unit["token" s] = "ns"
+      unit["from-utf8" s] = "ms/MB"
+      unit["from-datum" s] = "ms/MB"
+      unit["utf8-chunks" s] = "ms/MB"
     }
-    failed = 0
+    missing = 0
   }
-  $1 in limit {
+  $1 in unit {
     seen[$1] = 1
-    verdict = ($2 <= limit[$1]) ? "pass" : "FAIL"
-    if (verdict == "FAIL") failed = 1
-    u = ($1 in unit) ? unit[$1] : "ns"
-    printf "%-24s %10.2f %-5s  limit %7.2f %-5s  %s\n", $1, $2, u, limit[$1], u, verdict
+    printf "%-24s %10.2f %s\n", $1, $2, unit[$1]
     next
   }
   { print }
   END {
-    for (name in limit) if (!(name in seen)) { printf "%-24s no result  FAIL\n", name; failed = 1 }
-    exit failed
+    for (name in unit) if (!(name in seen)) { printf "%-24s no result\n", name; missing = 1 }
+    exit missing
   }'

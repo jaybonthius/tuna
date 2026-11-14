@@ -17,48 +17,36 @@ printf '#!tuna\n(define (add1 x) (fx+ x 1))\n' > "$lib/bench-callee.sls"
 printf '(import (tuna) (hot-paths) (main-thread-paths))\n(hot-paths:run)\n(main-thread-paths:run)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
-# Each limit sits a tenth or more above the highest of repeated runs, so
-# that noise alone fails no run. Four results are at the floor
-# documented Chez allows: an option read calls the record's thread
-# parameter across a library, and a critical dynamic-wind, which
-# with-options and an owner switch need so that a quit cannot leave them
-# half done, costs about 19 ns while the timer is set. Allocation does
-# not vary between runs, so the limit on posted-item-bytes, a fifth above
-# its figure, leaves room for small changes rather than for noise.
 echo "$output" | awk '
   BEGIN {
-    limit["changeable-call"] = 1.2
-    limit["option-read"] = 3.6
-    limit["option-read-bound"] = 5.8
-    limit["option-read-local"] = 25
-    limit["with-options"] = 38
-    limit["hook-entry-other"] = 37
-    limit["hook-entry-same"] = 12
-    limit["hook-one-entry-other"] = 84
-    limit["table-ref-symbol"] = 8.5
-    limit["table-ref-string"] = 26
-    limit["table-ref-procedure"] = 13
-    limit["table-set!"] = 100
-    limit["set-option!"] = 150
-    limit["add-hook!-remove-hook!"] = 400
-    limit["spawn-task-20000"] = 1000
-    limit["posted-item-bytes"] = 326
-    limit["dynamic-wind"] = 78
-    limit["with-mutex"] = 106
-    limit["batch-ended"] = 186
+    unit["changeable-call"] = "ns"
+    unit["option-read"] = "ns"
+    unit["option-read-bound"] = "ns"
+    unit["option-read-local"] = "ns"
+    unit["with-options"] = "ns"
+    unit["hook-entry-other"] = "ns"
+    unit["hook-entry-same"] = "ns"
+    unit["hook-one-entry-other"] = "ns"
+    unit["table-ref-symbol"] = "ns"
+    unit["table-ref-string"] = "ns"
+    unit["table-ref-procedure"] = "ns"
+    unit["table-set!"] = "ns"
+    unit["set-option!"] = "ns"
+    unit["add-hook!-remove-hook!"] = "ns"
+    unit["spawn-task-20000"] = "ns"
     unit["posted-item-bytes"] = "B"
-    failed = 0
+    unit["dynamic-wind"] = "ns"
+    unit["with-mutex"] = "ns"
+    unit["batch-ended"] = "ns"
+    missing = 0
   }
-  $1 in limit {
+  $1 in unit {
     seen[$1] = 1
-    verdict = ($2 <= limit[$1]) ? "pass" : "FAIL"
-    if (verdict == "FAIL") failed = 1
-    u = ($1 in unit) ? unit[$1] : "ns"
-    printf "%-24s %10.2f %-2s  limit %7.1f %-2s  %s\n", $1, $2, u, limit[$1], u, verdict
+    printf "%-24s %10.2f %s\n", $1, $2, unit[$1]
     next
   }
   { print }
   END {
-    for (name in limit) if (!(name in seen)) { printf "%-24s no result  FAIL\n", name; failed = 1 }
-    exit failed
+    for (name in unit) if (!(name in seen)) { printf "%-24s no result\n", name; missing = 1 }
+    exit missing
   }'

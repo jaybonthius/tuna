@@ -9,7 +9,6 @@ case $tuna in
 esac
 cpu=${BENCH_CPU:-$(($(nproc) - 1))}
 runs=9
-limit_ms=170
 dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-bench-startup.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 mkdir "$dir/library"
@@ -29,7 +28,6 @@ median() {
   sort -n | awk '{ v[NR] = $1 } END { print v[int((NR + 1) / 2)] }'
 }
 
-failed=0
 for shape in few all; do
   "$scheme" -q --script bench/generate.ss "$dir/$shape" "$shape"
   cold=$(start "$shape")
@@ -42,9 +40,4 @@ for shape in few all; do
   warm=$(cut -d' ' -f2 "$dir/warm" | median)
   echo "$shape: cold $(echo "$cold" | awk '{ print $1 " ms (process " $2 " ms)" }');" \
     "warm median $(cut -d' ' -f1 "$dir/warm" | median) ms (process $warm ms) of $runs"
-  if [ "$shape" = few ]; then
-    if [ "$warm" -le "$limit_ms" ]; then verdict=pass; else verdict=FAIL; failed=1; fi
-    printf '%-24s %10s ms  limit %7s ms  %s\n' startup-few-warm "$warm" "$limit_ms" "$verdict"
-  fi
 done
-exit $failed

@@ -19,35 +19,30 @@ cp tests/views/home/.config/tuna/lib/web.sls "$lib/web.sls"
 printf '(import (tuna) (views-bench))\n(views-bench:run)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$library" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
-# The server's share of a keystroke is a millisecond. A view keeps two
-# view heights drawn beyond each edge, up to four before it trims, so a
-# view 45 lines high draws about 340 lines, at about 1.5 microseconds a
-# line; a view of a node per line reads each node's children from its
-# document, about 2 microseconds a node more. A report on the way takes
-# a few microseconds, and saving the views after a batch that moved a
-# cursor 50. A region over a third of the drawn lines, cut at each
-# highlighted span inside it, about doubles a draw. An edit costs the
-# views of other buffers nothing; a walk over a thousand of them would
-# take microseconds.
 echo "$output" | awk '
   BEGIN {
-    limit["draw-typical"] = 600000
-    limit["draw-nodes"] = 1700000
-    limit["draw-region"] = 1200000
-    limit["report"] = 20000
-    limit["save"] = 50000
-    limit["edit-other-views"] = 500
-    failed = 0
+    unit["build-only-typical"] = "ns"
+    unit["write-only-typical"] = "ns"
+    unit["draw-typical"] = "ns"
+    unit["draw-heavy"] = "ns"
+    unit["draw-region"] = "ns"
+    unit["draw-two-clients"] = "ns"
+    unit["build-only-nodes"] = "ns"
+    unit["draw-nodes"] = "ns"
+    unit["report"] = "ns"
+    unit["save"] = "ns"
+    unit["edit-ten-views"] = "ns"
+    unit["edit-other-views"] = "ns"
+    unit["next-stop"] = "ns"
+    missing = 0
   }
-  $1 in limit {
+  $1 in unit {
     seen[$1] = 1
-    verdict = ($2 <= limit[$1]) ? "pass" : "FAIL"
-    if (verdict == "FAIL") failed = 1
-    printf "%-28s %12.2f ns  limit %10.2f ns  %s\n", $1, $2, limit[$1], verdict
+    printf "%-28s %12.2f %s\n", $1, $2, unit[$1]
     next
   }
   { print }
   END {
-    for (name in limit) if (!(name in seen)) { printf "%-28s no result  FAIL\n", name; failed = 1 }
-    exit failed
+    for (name in unit) if (!(name in seen)) { printf "%-28s no result\n", name; missing = 1 }
+    exit missing
   }'

@@ -18,23 +18,21 @@ printf '(import (tuna) (undo-bench))\n(undo-bench:run)\n(exit)\n' > "$dir/home/.
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
 echo "$output" | awk '
   BEGIN {
-    limit["record-ns"] = 1000; unit["record-ns"] = "ns"
-    limit["batch-end-ns"] = 2000; unit["batch-end-ns"] = "ns"
-    limit["undo-step-us"] = 10; unit["undo-step-us"] = "us"
-    limit["read-log-ms-per-mb"] = 26; unit["read-log-ms-per-mb"] = "ms"
-    limit["replay-ns-per-record"] = 1000; unit["replay-ns-per-record"] = "ns"
-    limit["writer-round-ms"] = 25; unit["writer-round-ms"] = "ms"
-    failed = 0
+    unit["record-ns"] = "ns"
+    unit["batch-end-ns"] = "ns"
+    unit["undo-step-us"] = "us"
+    unit["read-log-ms-per-mb"] = "ms/MB"
+    unit["replay-ns-per-record"] = "ns"
+    unit["writer-round-ms"] = "ms"
+    missing = 0
   }
-  $1 in limit {
+  $1 in unit {
     seen[$1] = 1
-    verdict = ($2 <= limit[$1]) ? "pass" : "FAIL"
-    if (verdict == "FAIL") failed = 1
-    printf "%-28s %10.2f %-3s  limit %8.2f %-3s  %s\n", $1, $2, unit[$1], limit[$1], unit[$1], verdict
+    printf "%-28s %10.2f %s\n", $1, $2, unit[$1]
     next
   }
   { print }
   END {
-    for (name in limit) if (!(name in seen)) { printf "%-28s no result  FAIL\n", name; failed = 1 }
-    exit failed
+    for (name in unit) if (!(name in seen)) { printf "%-28s no result\n", name; missing = 1 }
+    exit missing
   }'

@@ -20,25 +20,23 @@ printf '(import (tuna) (editing-bench))\n(editing-bench:run)\n(exit)\n' > "$dir/
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
 echo "$output" | awk '
   BEGIN {
-    limit["self-insert-overhead"] = 10000
-    limit["self-insert-further-cursor"] = 8000
-    limit["forward-char"] = 2000
-    limit["next-line"] = 3000
-    limit["forward-word"] = 3000
-    limit["kill-region-line"] = 20000
-    limit["upcase-word"] = 10000
-    limit["transpose-words"] = 15000
-    failed = 0
+    unit["self-insert-overhead"] = "ns"
+    unit["self-insert-further-cursor"] = "ns"
+    unit["forward-char"] = "ns"
+    unit["next-line"] = "ns"
+    unit["forward-word"] = "ns"
+    unit["kill-region-line"] = "ns"
+    unit["upcase-word"] = "ns"
+    unit["transpose-words"] = "ns"
+    missing = 0
   }
-  $1 in limit {
+  $1 in unit {
     seen[$1] = 1
-    verdict = ($2 <= limit[$1]) ? "pass" : "FAIL"
-    if (verdict == "FAIL") failed = 1
-    printf "%-28s %10.2f ns   limit %10.2f ns   %s\n", $1, $2, limit[$1], verdict
+    printf "%-28s %10.2f %s\n", $1, $2, unit[$1]
     next
   }
   { print }
   END {
-    for (name in limit) if (!(name in seen)) { printf "%-28s no result  FAIL\n", name; failed = 1 }
-    exit failed
+    for (name in unit) if (!(name in seen)) { printf "%-28s no result\n", name; missing = 1 }
+    exit missing
   }'

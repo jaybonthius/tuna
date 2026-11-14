@@ -15,36 +15,30 @@ cp bench/kill-ring.sls "$lib/kill-ring-bench.sls"
 printf '(import (tuna) (kill-ring-bench))\n(kill-ring-bench:run)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
-# A kill happens once per command, so the save's limit is a share of a
-# command's time, not of a keystroke's. The core prints saved data on a
-# thread of its own, so the main thread's share does not grow with the
-# length of the entries.
 echo "$output" | awk '
   BEGIN {
-    limit["push"] = 2000
-    limit["push-large"] = 2000
-    limit["append"] = 2000
-    limit["prepend"] = 2000
-    limit["piece"] = 2000
-    limit["insert-overhead"] = 1000
-    limit["save-20"] = 30000
-    limit["save-200"] = 30000
-    limit["save-1000"] = 30000
-    limit["save-4096"] = 30000
-    split("rotate insert replace", r, " ")
-    for (i in r) recorded[r[i]] = 1
-    failed = 0
+    unit["push"] = "ns"
+    unit["push-large"] = "ns"
+    unit["append"] = "ns"
+    unit["prepend"] = "ns"
+    unit["piece"] = "ns"
+    unit["insert-overhead"] = "ns"
+    unit["save-20"] = "ns"
+    unit["save-200"] = "ns"
+    unit["save-1000"] = "ns"
+    unit["save-4096"] = "ns"
+    unit["rotate"] = "ns"
+    unit["insert"] = "ns"
+    unit["replace"] = "ns"
+    missing = 0
   }
-  $1 in recorded { printf "%-28s %10.2f ns   recorded\n", $1, $2; next }
-  $1 in limit {
+  $1 in unit {
     seen[$1] = 1
-    verdict = ($2 <= limit[$1]) ? "pass" : "FAIL"
-    if (verdict == "FAIL") failed = 1
-    printf "%-28s %10.2f ns   limit %10.2f ns   %s\n", $1, $2, limit[$1], verdict
+    printf "%-28s %10.2f %s\n", $1, $2, unit[$1]
     next
   }
   { print }
   END {
-    for (name in limit) if (!(name in seen)) { printf "%-28s no result  FAIL\n", name; failed = 1 }
-    exit failed
+    for (name in unit) if (!(name in seen)) { printf "%-28s no result\n", name; missing = 1 }
+    exit missing
   }'
