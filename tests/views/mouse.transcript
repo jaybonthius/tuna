@@ -25,7 +25,7 @@
 ; The view's element names its buffer's version and how many buffers it
 ; has shown; a line that starts after its line's start names where.
 > (show v)
-<div class="view" data-view="1" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre"><div class="view-lines"><div class="line" id="v1-1" data-line="1" data-at="1"><span class="cursor primary"></span>one two</div><div class="line" id="v1-2" data-line="2">three</div><div class="line" id="v1-3" data-line="3"><br></div></div></div>
+<div class="view nowrap" data-view="1" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><div class="line" id="v1-1" data-line="1" data-at="1"><span class="cursor primary"></span>one two</div><div class="line" id="v1-2" data-line="2">three</div><div class="line" id="v1-3" data-line="3"><br></div></div></div>
 ; Places: characters after a line's start, or after a position.
 > (mouse! v '("action" . "click") '("line" . 2) '("count" . 2))
 > (mouse! v '("action" . "down") '("at" . 1) '("count" . 3))
@@ -151,7 +151,7 @@
 > (define d (buffers:make "doc" (md:doc '() (md:para '() "See " (clicky-link '() "here") " and " (clicky-image '()) ".\n"))))
 > (define w (views:make d))
 > (show w)
-<div class="view" data-view="2" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre"><div class="view-lines"><article><div class="node" data-at="1" data-to="21"><div class="line" id="v2-1" data-line="1" data-at="2"><span class="cursor primary"></span>See <span class="node" data-at="6" data-to="12"><span data-at="7">here</span></span> and <span class="node" data-at="17" data-to="18"></span>.</div></div></article></div></div>
+<div class="view nowrap" data-view="2" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><article><div class="node" data-at="1" data-to="21"><div class="line" id="v2-1" data-line="1" data-at="2"><span class="cursor primary"></span>See <span class="node" data-at="6" data-to="12"><span data-at="7">here</span></span> and <span class="node" data-at="17" data-to="18"></span>.</div></div></article></div></div>
 > (mouse! w '("action" . "click") '("token" . 6))
 > (mouse! w '("action" . "click") '("at" . 7) '("count" . 2))
 > (mouse! w '("action" . "click") '("token" . 17))

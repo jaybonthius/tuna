@@ -245,6 +245,13 @@ function inView(scroller) {
     .map((item) => number(item, "data-item"));
 }
 
+function whollyInView(scroller) {
+  const at = scrollPosition(scroller);
+  return items(scroller)
+    .filter((item) => wholly(scroller, item, at))
+    .map((item) => number(item, "data-item"));
+}
+
 function placeScroller(scroller, placement) {
   const item = itemNamed(scroller, number(scroller, "data-place-item"));
   const focus = itemNamed(scroller, number(scroller, "data-place-focus"));
@@ -314,12 +321,13 @@ function checkScroller(scroller, resting) {
   const id = number(scroller, "data-scroller");
   if (id === null) return;
   const shown = inView(scroller);
-  const key = shown.join(" ");
+  const whole = whollyInView(scroller);
+  const key = `${shown.join(" ")} | ${whole.join(" ")}`;
   const moved = Math.abs(scrollPosition(scroller) - state.at) > itemTolerance;
   if (resting && !moved) state.gesture = false;
   const settled = (resting || state.owed === "rest") && state.gesture && moved;
   if (!settled && !state.owed && key === state.reported) return;
-  const report = { type: "scroller", scroller: id, placement: state.placed, items: shown, settled };
+  const report = { type: "scroller", scroller: id, placement: state.placed, items: shown, whole, settled };
   if (settled) {
     const place = rest(scroller, state);
     if (place === null) return;
@@ -366,6 +374,15 @@ document.addEventListener("scroll", (event) => {
   scrollerResting.set(scroller, setTimeout(() => checkScroller(scroller, true), restMs));
 }, { capture: true, passive: true });
 
+// The server draws each line's piece of the region as one box behind
+// its text, which cannot follow a piece that wraps onto several visual
+// lines, so such a piece falls back to an inline background.
+function markWrappedRegions() {
+  for (const region of document.querySelectorAll(".view .region")) {
+    region.classList.toggle("wrapped", region.getClientRects().length > 1);
+  }
+}
+
 let scheduled = false;
 new MutationObserver(() => {
   if (scheduled) return;
@@ -374,6 +391,7 @@ new MutationObserver(() => {
     scheduled = false;
     screenArrived();
     scrollersArrived();
+    markWrappedRegions();
   });
 }).observe(document.documentElement, {
   subtree: true,
@@ -392,6 +410,7 @@ document.addEventListener("scroll", (event) => {
 
 screenArrived();
 scrollersArrived();
+markWrappedRegions();
 
 const dragThreshold = 3;
 let press = null;

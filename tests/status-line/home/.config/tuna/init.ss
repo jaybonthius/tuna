@@ -61,7 +61,8 @@
     (let ([i (search html "data-segment=\"" from)])
       (if i
           (let* ([name-end (search html "\"" (+ i 14))] [open-end (search html ">" name-end)]
-                 [close (search html "</span></span>" open-end)])
+                 [close (let ([span (search html "</span></span>" open-end)] [button (search html "</button></span>" open-end)])
+                          (if (and button (or (not span) (< button span))) button span))])
             (loop close
                   (cons (cons (substring html (+ i 14) name-end)
                               (strip-tags (substring html (+ open-end 1) close)))

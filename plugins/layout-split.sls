@@ -87,7 +87,7 @@
 (define (%draw-split node children focused draw-child client)
   (let ([direction (if (column? node) "column" "row")] [part (layout:part-class node)])
     (haml (:div.split ([class (if part (string-append direction " " part) direction)])
-            (map (lambda (c) (haml (:div.split-child ([style "flex:" (flex-text node c)]) (draw-child c))))
+            (map (lambda (c) (haml (:div.split-child ([style "--layout-split-flex:" (flex-text node c)]) (draw-child c))))
                  children)))))
 
 (define (%split-neighbour node child direction)

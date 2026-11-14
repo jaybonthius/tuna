@@ -16,7 +16,7 @@
    locked-node? locked-in? title-of draw-layout draw-popups neighbour-of remove-part! node-datum
    note-batch save-now! selected-keymaps enclosing-keymaps last-selected-unlocked-atom lead-down order-views
    enclosing-level reference-atom level-units placed-atom? same-node? same-level? visible-atoms index-atoms
-   in-part-mode? enter-part-mode! leave-part-mode! selection-in choose-part! drawn-part-class drawn-level-class
+   in-part-mode? enter-part-mode! leave-part-mode! selection-in choose-part! drawn-part-class
    choose-datum! parent-part child-part sibling-part end-part shift-part! lift-part! lower-part! raise-part!
    splice-part! wrap-part! deletion-successor check-unlocked check-holds-no-locked mode-key?
    note-before! note-after! history-step! parent-in holds-range? popups-index index-atom-list datum-attributes with-attributes)
@@ -461,8 +461,8 @@
   ;; A popup is drawn outside the layout's screen view, so its element
   ;; carries no positions, which would name the layout's.
   (define (draw-atom atom selected client marks?)
-    (let ([v (view-of atom)] [part (and marks? (drawn-part-class atom))])
-      (haml (:div.layout-view ([class (if (eqv? (atom-id atom) selected) (if part "selected part-selected" "selected") part)]
+    (let ([v (view-of atom)] [part (drawn-part-class atom)])
+      (haml (:div.layout-view ([class (if (eqv? (atom-id atom) selected) (if part (string-append "selected " part) "selected") part)]
                                [data-at (and marks? (document:node-start atom))]
                                [data-to (and marks? (document:node-end atom))])
               (draw-view-atom atom v client)))))
@@ -471,6 +471,17 @@
     (haml (:div.layout-part (map draw-child shown))))
 
   (define (draw-tree ix root zp client)
+    (fluid-let ([drawn-index ix] [drawn-focus (focus-path ix)])
+      (draw-nodes ix root zp client)))
+
+  (define (focus-path ix)
+    (let ([a (index-atom ix (selected-id))])
+      (if a
+          (let climb ([n (parent-in ix a)] [acc '()])
+            (if n (climb (parent-in ix n) (cons (document:node-start n) acc)) acc))
+          '())))
+
+  (define (draw-nodes ix root zp client)
     (let ([selected (selected-id)] [marks? (eq? ix last-index)])
       (let draw ([n root])
         (cond
@@ -488,22 +499,37 @@
                    ((container-draw entry) n shown (focused-child ix n) draw-child client))
                  (draw-plain shown draw)))]))))
 
-  ;; Kinds ask for the selected part's class as they draw, so the part is
-  ;; found once per screen, and the popups, whose positions may equal a
-  ;; part's, are drawn without it.
+  ;; Kinds ask for a part's classes as they draw, so the selected part,
+  ;; the selected view's level and the focus path are found once per
+  ;; screen; the popups, whose positions may equal a part's, are drawn
+  ;; without the first two.
   (define drawn-selection #f)
   (define drawn-level #f)
+  (define drawn-index #f)
+  (define drawn-focus '())
 
   (define (drawn-part-class node)
-    (and drawn-selection
-         (fx= (document:node-start node) (car drawn-selection))
-         (fx= (document:node-end node) (cdr drawn-selection))
-         "part-selected"))
+    (and drawn-index
+         (let* ([ix drawn-index] [s (document:node-start node)]
+                [classes
+                 (filter values
+                   (list (and drawn-selection (fx= s (car drawn-selection))
+                              (fx= (document:node-end node) (cdr drawn-selection))
+                              "part-selected")
+                         ;; A level draws nothing of its own, so the mode
+                         ;; outlines the selected view's level to show how
+                         ;; far the commands that act in it reach.
+                         (and drawn-level (fx= s drawn-level) "part-level")
+                         (and (placed? node) "placed")
+                         (and (locked-in? ix node) "locked")
+                         (and (not (document:atom? node))
+                              (exists (lambda (c) (or (level? c) (placed? c))) (kids-of ix node))
+                              "frame")
+                         (and (memv s drawn-focus) "focus-path")))])
+           (and (pair? classes)
+                (fold-left (lambda (acc c) (string-append acc " " c)) (car classes) (cdr classes))))))
 
-  ;; A level draws nothing of its own, so the mode outlines the selected
-  ;; view's level to show how far the commands that act in it reach.
-  (define (drawn-level-class node)
-    (and drawn-level (fx= (document:node-start node) drawn-level) "part-level"))
+  (define (placed? node) (and (document:node-attribute node 'depth #f) #t))
 
   (define (node-range n) (cons (document:node-start n) (document:node-end n)))
 
@@ -1504,9 +1530,7 @@
 (define-table keymap "The layout's keymap, last on the focus path and for mouse keys on the layout's own drawing.")
 
 (define (%draw-level node shown focused draw-child client)
-  (let ([part (drawn-part-class node)] [level (drawn-level-class node)])
-    (haml (:div.layout-level ([class (if (and part level) (string-append part " " level) (or part level))])
-            (map draw-child shown)))))
+  (haml (:div.layout-level ([class (drawn-part-class node)]) (map draw-child shown))))
 
 (buffers:define-kind level (content nodes) (consent check-level))
 

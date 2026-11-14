@@ -16,6 +16,18 @@ cat > "$home/init.ss" <<'END'
 (use-plugin faces)
 (import (http) (console))
 (http:use-port! (lambda () (web:port)))
+(define (font-served? file)
+  (let ([r (http:get (string-append "/files/1/fonts/" file))])
+    (and (= (http:status r) 200)
+         (equal? (http:header r "content-type") "font/woff2")
+         (equal? (http:response-body r)
+                 (call-with-port (open-file-input-port (string-append (getenv "TUNA_LIBRARY") "/design-tokens/fonts/" file))
+                   get-bytevector-all)))))
+(define (page-has? text)
+  (let ([page (http:body (http:get "/"))])
+    (let loop ([i 0])
+      (and (<= (+ i (string-length text)) (string-length page))
+           (or (string=? (substring page i (+ i (string-length text))) text) (loop (+ i 1)))))))
 (define (served? path file)
   (let ([r (http:get path)])
     (and (= (http:status r) 200)
@@ -56,6 +68,13 @@ Tuna is at http://127.0.0.1:19322/
 ("/files/1/design-tokens.css?v=1" "/files/2/faces.css?v=1")
 > (list (served? "/files/1/design-tokens.css" "design-tokens/design-tokens.css") (served? "/files/2/faces.css" "faces/faces.css"))
 (#t #t)
+; The fonts the token file names are served from its folder, whole.
+> (map font-served? '("FiraSans-Regular.woff2" "FiraSans-SemiBold.woff2" "FiraSans-Bold.woff2" "FiraCode-VF.woff2"))
+(#t #t #t #t)
+; The page asks for light and dark before any stylesheet loads, so the
+; browser paints the right background first.
+> (page-has? "<meta name=\"color-scheme\" content=\"light dark\">")
+#t
 ; A theme is a plugin that registers its file as theme; the user's
 ; tweaks are a file of the configuration's, beating any theme.
 > (import (dusk))

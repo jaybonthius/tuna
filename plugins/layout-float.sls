@@ -87,14 +87,13 @@
         [h (length-css (document:node-attribute c 'height 1/2))])
     (if (eq? (car place) 'anchor)
         (haml (:div.float-child.anchored
-                ([style "position-anchor:--view-anchor-" (cadr place) ";inline-size:" w ";block-size:" h ";z-index:" z])
+                ([style "--layout-float-anchor:--view-anchor-" (cadr place) ";--layout-float-inline-size:" w
+                        ";--layout-float-block-size:" h ";--layout-float-z:" z])
                 (draw-child c)))
         (let ([x (number->string (inexact (cadr place)))] [y (number->string (inexact (caddr place)))])
           (haml (:div.float-child
-                  ([style "inline-size:" w ";block-size:" h
-                          ";inset-inline-start:calc((100% - " w ") * " x ")"
-                          ";inset-block-start:calc((100% - " h ") * " y ")"
-                          ";z-index:" z])
+                  ([style "--layout-float-inline-size:" w ";--layout-float-block-size:" h
+                          ";--layout-float-x:" x ";--layout-float-y:" y ";--layout-float-z:" z])
                   (draw-child c)))))))
 
 (define (%draw-float node children focused draw-child client)

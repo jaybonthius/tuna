@@ -181,13 +181,13 @@
 ! universe of align does not include specified symbol middle
 > (views:scroll-to! v 1 'middle)
 ! views:scroll-to!: not an alignment with irritant middle
-; wrap-lines decides how the view lays out long lines; a view's own value
-; wins.
+; wrap-lines decides how the view lays out long lines, by the class
+; nowrap when they do not wrap; a view's own value wins.
 > (define w (views:make b))
-> (and (search (html->string (views:draw w #f)) "white-space:pre\"" 0) #t)
+> (and (search (html->string (views:draw w #f)) "class=\"view nowrap\"" 0) #t)
 #t
 > (views:set-option! w views:wrap-lines #t)
-> (and (search (html->string (views:draw w #f)) "white-space:pre-wrap" 0) #t)
+> (and (search (html->string (views:draw w #f)) "class=\"view\"" 0) #t)
 #t
 ; A view draws for a client or for none.
 > (views:draw w 'nobody)

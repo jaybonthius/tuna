@@ -528,6 +528,7 @@
         (:head
           (:meta ([charset "utf-8"]))
           (:meta ([name "viewport"] [content "width=device-width, initial-scale=1"]))
+          (:meta ([name "color-scheme"] [content "light dark"]))
           (:title "Tuna")
           (:script ([type "importmap"]) "{\"imports\":{\"datastar\":\"/web/datastar.js\",\"tuna\":\"/web/tuna.js\"}}")
           (:script ([type "module"] [src "/web/datastar.js"]))

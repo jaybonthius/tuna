@@ -1,5 +1,33 @@
 @layer defaults, themes, preferences;
 
+@font-face {
+  font-family: "Fira Sans";
+  src: url("fonts/FiraSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Fira Sans";
+  src: url("fonts/FiraSans-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Fira Sans";
+  src: url("fonts/FiraSans-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Fira Code";
+  src: url("fonts/FiraCode-VF.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: swap;
+}
+
 @layer defaults {
   :root {
     color-scheme: light dark;
@@ -235,6 +263,8 @@
     --tuna-font-antique: Superclarendon, "Bookman Old Style", "URW Bookman", "Georgia Pro", Georgia, serif;
     --tuna-font-didone: Didot, "Bodoni MT", "Noto Serif Display", "Bodoni 72", P052, serif;
     --tuna-font-handwritten: "Segoe Print", "Bradley Hand", Chilanka, "Comic Neue", casual, cursive;
+    --tuna-font-fira-sans: "Fira Sans", var(--tuna-font-humanist);
+    --tuna-font-fira-code: "Fira Code", var(--tuna-font-monospace-code);
 
     --tuna-font-size-1: 0.75rem;
     --tuna-font-size-2: 0.875rem;
@@ -613,21 +643,23 @@
     --tuna-surface: var(--tuna-gray-1);
     --tuna-surface-subtle: var(--tuna-gray-2);
     --tuna-surface-raised: var(--tuna-gray-2);
+    --tuna-chrome: var(--tuna-gray-4);
     --tuna-text: var(--tuna-gray-12);
     --tuna-text-muted: var(--tuna-gray-11);
-    --tuna-text-faint: var(--tuna-gray-9);
+    --tuna-text-faint: var(--tuna-gray-10);
     --tuna-bar: var(--tuna-gray-4);
     --tuna-on-bar: var(--tuna-gray-12);
     --tuna-bar-inactive: var(--tuna-gray-2);
     --tuna-on-bar-inactive: var(--tuna-gray-11);
     --tuna-border: var(--tuna-gray-6);
     --tuna-border-strong: var(--tuna-gray-8);
-    --tuna-focus: var(--tuna-blue-8);
+    --tuna-focus: var(--tuna-blue-10);
     --tuna-accent: var(--tuna-blue-9);
     --tuna-on-accent: var(--tuna-white);
     --tuna-link: var(--tuna-blue-11);
-    --tuna-hover: var(--tuna-gray-4);
-    --tuna-pressed: var(--tuna-gray-5);
+    /* Overlays, so that one value works over any background. */
+    --tuna-hover: color-mix(in oklch, var(--tuna-gray-12) 8%, transparent);
+    --tuna-pressed: color-mix(in oklch, var(--tuna-gray-12) 14%, transparent);
     --tuna-selected: var(--tuna-blue-4);
     --tuna-on-selected: var(--tuna-gray-12);
     --tuna-control: var(--tuna-gray-3);
@@ -650,8 +682,8 @@
     --tuna-removed-surface: var(--tuna-red-3);
     --tuna-changed: var(--tuna-amber-11);
     --tuna-changed-surface: var(--tuna-amber-3);
-    --tuna-font-ui: var(--tuna-font-sans);
-    --tuna-font-code: var(--tuna-font-mono);
+    --tuna-font-ui: var(--tuna-font-fira-sans);
+    --tuna-font-code: var(--tuna-font-fira-code);
     --tuna-font-size-ui: var(--tuna-font-size-2);
     --tuna-font-size-code: var(--tuna-font-size-3);
     --tuna-line-height-code: var(--tuna-line-height-3);
@@ -659,7 +691,12 @@
     --tuna-panel-radius: var(--tuna-radius-4);
     --tuna-border-width: var(--tuna-border-width-1);
     --tuna-focus-width: var(--tuna-border-width-2);
-    --tuna-shadow-raised: var(--tuna-shadow-2);
+    --tuna-shadow-raised: var(--tuna-shadow-3);
+    /* These follow the window, not the view as the fluid scales do, so
+       every bar on a screen has one size, as every mode line in Emacs
+       has. */
+    --tuna-bar-size: clamp(1.75rem, 1.678571rem + 0.357143vw, 2rem);
+    --tuna-control-size: clamp(1.875rem, 1.839286rem + 0.178571vw, 2rem);
     --tuna-duration: var(--tuna-duration-3);
     --tuna-ease: var(--tuna-ease-out-5);
   }

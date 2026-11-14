@@ -37,6 +37,11 @@
     padding-inline: var(--tuna-space-1);
   }
 
+  :where(mark) {
+    background: var(--tuna-match);
+    color: inherit;
+  }
+
   :where(table) {
     border-collapse: collapse;
   }
@@ -47,8 +52,24 @@
     text-align: start;
   }
 
-  ::selection {
-    background: var(--tuna-region, Highlight);
+  /* Tuna draws its own selection, the region, and copies through its
+     own commands, so a browser selection would be a second one that
+     disagrees with it. iOS's long-press menu would offer to copy it. */
+  :where(html) {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Safari types nothing into a control whose text cannot be selected. */
+  :where(input, textarea, [contenteditable]) {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  :where(:disabled, [aria-disabled="true"]) {
+    cursor: default;
   }
 
   /* Without the design tokens a width with no fallback makes the whole
@@ -70,7 +91,7 @@
     padding-inline: var(--ui-button-padding, var(--tuna-space-4));
     border: var(--tuna-border-width) solid var(--ui-button-border, var(--tuna-border-strong));
     border-radius: var(--ui-button-radius, var(--tuna-control-radius));
-    background: var(--ui-button-background, var(--tuna-control));
+    background-color: var(--ui-button-background, var(--tuna-control));
     color: var(--ui-button-text, var(--tuna-text));
     cursor: pointer;
   }
@@ -87,18 +108,19 @@
     cursor: pointer;
   }
 
-  @media (hover: hover) {
-    .ui-button:hover {
-      background: var(--ui-button-hover-background, var(--tuna-hover));
-    }
+  /* Overlays, so a button keeps its own background under them. */
+  .ui-button:hover {
+    background-image: linear-gradient(var(--ui-button-hover-background, var(--tuna-hover)),
+                                      var(--ui-button-hover-background, var(--tuna-hover)));
+  }
 
-    .ui-link:hover {
-      color: var(--ui-link-hover-text, var(--tuna-accent));
-    }
+  .ui-link:hover {
+    color: var(--ui-link-hover-text, var(--tuna-accent));
   }
 
   .ui-button:active {
-    background: var(--ui-button-pressed-background, var(--tuna-pressed));
+    background-image: linear-gradient(var(--ui-button-pressed-background, var(--tuna-pressed)),
+                                      var(--ui-button-pressed-background, var(--tuna-pressed)));
   }
 
   .ui-row {
@@ -119,9 +141,16 @@
     cursor: pointer;
   }
 
+  /* The weight marks the row where its colour is not seen. Faint text,
+     such as a completion's annotation, falls under 4.5:1 on the
+     selection, and a theme may put muted text there too, so the row draws
+     both in the text colour. */
   .ui-list-row[aria-current="true"] {
+    --tuna-text-faint: var(--tuna-text);
+    --tuna-text-muted: var(--tuna-text);
     background: var(--ui-list-selected-background, var(--tuna-selected, Highlight));
     color: var(--ui-list-selected-text, var(--tuna-on-selected, HighlightText));
+    font-weight: var(--tuna-font-weight-semibold);
   }
 
   /* The selected row shows where point is in a list; the views plugin's

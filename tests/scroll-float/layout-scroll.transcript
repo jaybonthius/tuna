@@ -46,7 +46,7 @@
 > (strip-report! desktop (list (views:id vb) (views:id vd)))
 > (strip desktop)
 (4 nearest 4 ((3 placeholder) 4 6 (7 placeholder)))
-> (let ([html (screen-of desktop)]) (and (search html "<div class=\"strip-placeholder\" data-at=\"2\" data-to=\"3\">a</div>" 0) #t))
+> (let ([html (screen-of desktop)]) (and (search html "<button class=\"strip-placeholder\" type=\"button\" tabindex=\"-1\" data-at=\"2\" data-to=\"3\">a</button>" 0) #t))
 #t
 > (strip phone)
 (4 nearest 4 (3 4 6 7))
@@ -202,10 +202,10 @@
 > (define (strip-sizes html)
     (let loop ([i 0] [acc '()])
       (cond
-        [(> (+ i 13) (string-length html)) (reverse acc)]
-        [(string=? (substring html i (+ i 13)) "--strip-size:")
-         (let end ([j (+ i 13)])
-           (if (char=? (string-ref html j) #\") (loop j (cons (substring html (+ i 13) j) acc)) (end (+ j 1))))]
+        [(> (+ i 21) (string-length html)) (reverse acc)]
+        [(string=? (substring html i (+ i 21)) "--layout-scroll-size:")
+         (let end ([j (+ i 21)])
+           (if (char=? (string-ref html j) #\") (loop j (cons (substring html (+ i 21) j) acc)) (end (+ j 1))))]
         [else (loop (+ i 1) acc)])))
 > (define vk (views:make a))
 > (set-parts! (layout-scroll:container '() (atom va '(size columns 40)) (atom vg '(size lines 5)) (atom vh '(size . content)) (atom vk '(size . 1/4))))

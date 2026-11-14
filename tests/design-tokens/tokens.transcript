@@ -1,12 +1,27 @@
-; The token file declares 550 custom properties: 498 primitives, 194 of
-; them colours (16 scales of 12 steps, white and black), and 52 semantic
-; tokens, each naming a primitive.
-> (list (length tokens) (length primitives) (length colour-names))
-(550 498 194)
+; The token file declares 555 custom properties: 500 primitives, 194 of
+; them colours (16 scales of 12 steps, white and black), and 55 semantic
+; tokens, each reading primitives only.
+> (list (length tokens) (length primitives) (length colour-names) (length semantic-names))
+(555 500 194 55)
 > (unresolved-semantic)
 ()
-> (map (lambda (n) (token n)) '("surface" "region" "cursor" "focus" "shadow-raised" "ease" "duration"))
-("var(--tuna-gray-1)" "var(--tuna-blue-5)" "var(--tuna-gray-12)" "var(--tuna-blue-8)" "var(--tuna-shadow-2)" "var(--tuna-ease-out-5)" "var(--tuna-duration-3)")
+> (map (lambda (n) (token n)) '("surface" "chrome" "region" "cursor" "focus" "text-faint" "shadow-raised" "ease" "duration"))
+("var(--tuna-gray-1)" "var(--tuna-gray-4)" "var(--tuna-blue-5)" "var(--tuna-gray-12)" "var(--tuna-blue-10)" "var(--tuna-gray-10)" "var(--tuna-shadow-3)" "var(--tuna-ease-out-5)" "var(--tuna-duration-3)")
+; Hover and pressed are overlays, which work over any background.
+> (map token '("hover" "pressed"))
+("color-mix(in oklch, var(--tuna-gray-12) 8%, transparent)" "color-mix(in oklch, var(--tuna-gray-12) 14%, transparent)")
+; Bars and controls are fluid between a 320 px and a 1440 px window, with
+; no breakpoint: 28 and 30 px at 320 px, 32 px from 1440 px.
+> (map token '("bar-size" "control-size"))
+("clamp(1.75rem, 1.678571rem + 0.357143vw, 2rem)" "clamp(1.875rem, 1.839286rem + 0.178571vw, 2rem)")
+; Text around buffers is Fira Sans and buffer text Fira Code, each
+; served with the stylesheet and falling back to a stack.
+> (map token '("font-ui" "font-code" "font-fira-sans" "font-fira-code"))
+("var(--tuna-font-fira-sans)" "var(--tuna-font-fira-code)" "\"Fira Sans\", var(--tuna-font-humanist)" "\"Fira Code\", var(--tuna-font-monospace-code)")
+> (font-faces)
+(("Fira Sans" "400" "fonts/FiraSans-Regular.woff2") ("Fira Sans" "600" "fonts/FiraSans-SemiBold.woff2") ("Fira Sans" "700" "fonts/FiraSans-Bold.woff2") ("Fira Code" "300 700" "fonts/FiraCode-VF.woff2"))
+> (missing-font-files)
+()
 ; Each step is one light-dark() pair; translucency is mixed where used.
 > (map token '("blue-9" "gray-1" "white"))
 ("light-dark(oklch(55% 0.18 255), oklch(55% 0.18 255))" "light-dark(oklch(99% 0.002 260), oklch(17% 0.004 260))" "oklch(100% 0 0)")
@@ -20,12 +35,16 @@
 > (outside-srgb)
 ()
 ; Every text-and-background pair the tokens are meant for meets its
-; contrast in light and dark: text 7:1 on its backgrounds, muted text,
-; links and every face's colour 4.5:1 on the page, the current line and
-; the region, and focus and the cursor 3:1.
+; contrast in light and dark: text 7:1 on its backgrounds and the chrome,
+; muted text, links and every face's colour 4.5:1 on the page, the
+; current line and the region, faint text 4.5:1 on the page, and focus 3:1
+; on the page and on every bar, as the cursor is on the page.
 > (length pairs)
-126
+129
 > (low-contrast)
+()
+; The chrome stands off the islands on it.
+> (islands-unseen)
 ()
 ; 21 animations, each naming a keyframe rule of the same name shipped
 ; beside it; reduced motion makes every duration zero and every
@@ -50,16 +69,17 @@
 > (dangling-references)
 ()
 ; Without the token file the cursor, the region and the selected view's
-; outline still show in system colours, since nothing else in their rules
+; edge still show in system colours, since nothing else in their rules
 ; reads a token without a fallback. Only other cursors need the tokens.
 > (map (lambda (r) (apply bare-tokens r))
        '(("views/views.css" ".cursor") ("views/views.css" ".cursor.primary") ("views/views.css" ".region")
-         ("layout/layout.css" ".layout-view > .view") ("layout/layout.css" ".layout-view.selected")))
+         ("layout/layout.css" ".layout-view:not(.locked) > .view") ("layout/layout.css" ".layout-view.selected:not(.locked)")))
 (("--tuna-text-muted") () () () ())
-; So do the focus outline and a list's selected row, which ui draws.
+; So do the focus outline and a list's selected row, which ui draws; the
+; row loses only its weight.
 > (map (lambda (r) (apply bare-tokens r))
        '(("ui/ui.css" ":where(:focus-visible)") ("ui/ui.css" ".ui-list-row[aria-current=\"true\"]")))
-(() ())
+(() ("--tuna-font-weight-semibold"))
 ; Light and dark come from each device's setting.
 > (and (search tokens-css "color-scheme: light dark;" 0) #t)
 #t

@@ -20,6 +20,7 @@
      theirs. */
   .split-child {
     display: flex;
+    flex: var(--layout-split-flex, 1 1 0);
     min-inline-size: 0;
     min-block-size: 0;
     font-family: var(--tuna-font-code);
@@ -27,11 +28,32 @@
     line-height: var(--tuna-line-height-code);
   }
 
-  .split.row > .split-child + .split-child {
+  /* Only the frames outside every level but the screen's are drawn: a
+     frame inside the user's level would put an island inside an island.
+     A frame there is bounded by rules, as any split is. */
+  .split.row:not(.frame) > .split-child + .split-child,
+  .layout-level .layout-level .split.row.frame > .split-child + .split-child {
     border-inline-start: var(--tuna-border-width) solid var(--tuna-border);
   }
 
-  .split.column > .split-child + .split-child {
+  .split.column:not(.frame) > .split-child + .split-child,
+  .layout-level .layout-level .split.column.frame > .split-child + .split-child {
     border-block-start: var(--tuna-border-width) solid var(--tuna-border);
+  }
+
+  .split.frame:not(.layout-level .layout-level *) {
+    gap: var(--layout-split-frame-gap, var(--tuna-space-2));
+    background: var(--tuna-chrome);
+  }
+
+  .layout-screen > .layout-level > .split.frame {
+    padding: var(--layout-split-frame-gap, var(--tuna-space-2));
+  }
+
+  .split.frame:not(.layout-level .layout-level *) > .split-child > :is(.layout-level, .placed:not(.locked)) {
+    background: var(--layout-split-island-background, var(--tuna-surface));
+    border: var(--tuna-border-width) solid var(--tuna-border);
+    border-radius: var(--tuna-panel-radius);
+    overflow: clip;
   }
 }

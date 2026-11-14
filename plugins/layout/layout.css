@@ -27,6 +27,7 @@
   .layout-screen > .layout-level {
     block-size: 100%;
     isolation: isolate;
+    background: var(--tuna-surface);
   }
 
   .layout-popups {
@@ -53,32 +54,53 @@
     flex-direction: column;
   }
 
-  /* The selected view's outline is drawn inside it, where it would cover
-     a cursor in the first column. */
   .layout-view > .view {
     flex: 1 1 auto;
     min-inline-size: 0;
     min-block-size: 0;
-    padding-inline: var(--tuna-space-2, 0.25rem);
   }
 
-  /* Without the design tokens a width with no fallback makes the whole
-     outline invalid, and its colour's fallback never shows. */
-  .layout-view.selected {
-    outline: var(--tuna-focus-width, 2px) solid var(--tuna-focus, Highlight);
-    outline-offset: calc(-1 * var(--tuna-focus-width, 2px));
+  /* A locked part, such as the echo area, sits on the chrome and spaces
+     what it draws itself. The space above the text is padding on the
+     part, outside the view's scrolling box, so the view's measurements
+     count only its lines. */
+  .layout-view:not(.locked) {
+    padding-block-start: var(--tuna-space-2, 0.25rem);
+  }
+
+  .layout-view:not(.locked) > .view {
+    padding-inline: var(--tuna-space-4, 0.5rem);
+  }
+
+  /* An inset shadow paints under the part's children, so a status line
+     covers it with its own mark, and it shows at the foot of a view that
+     has none. A locked part's plugin marks it, since its edge is the
+     chrome's. Without the design tokens a width with no fallback would
+     make the whole shadow invalid. */
+  .layout-view.selected:not(.locked) {
+    box-shadow: inset 0 calc(-1 * var(--tuna-focus-width, 2px)) var(--tuna-focus, Highlight);
+  }
+
+  .layout-view:not(.selected) {
+    --tuna-cursor: var(--layout-cursor-unselected-color, var(--tuna-border-strong));
+  }
+
+  /* A list's selected row keeps the selection colour only where keys go.
+     Popups keep it: a completion popup is in use while the view it
+     completes in is the selected one. */
+  .layout-level .layout-view:not(.selected) {
+    --tuna-selected: var(--layout-selected-unfocused, var(--tuna-bar));
   }
 
   /* Drawn over the part's edge, not outside it, where a neighbour or the
      page's edge would hide it. */
-  .part-selected,
-  .layout-view.part-selected {
-    outline: calc(2 * var(--tuna-focus-width, 2px)) dashed var(--tuna-focus, Highlight);
-    outline-offset: calc(-2 * var(--tuna-focus-width, 2px));
+  .part-selected {
+    outline: var(--tuna-border-width-3, 3px) solid var(--layout-part-mode-color, var(--tuna-violet-10, Highlight));
+    outline-offset: calc(-1 * var(--tuna-border-width-3, 3px));
   }
 
   .part-level:not(.part-selected) {
-    outline: var(--tuna-focus-width, 2px) dotted var(--tuna-focus, Highlight);
+    outline: var(--tuna-focus-width, 2px) dashed var(--layout-part-mode-color, var(--tuna-violet-10, Highlight));
     outline-offset: calc(-1 * var(--tuna-focus-width, 2px));
   }
 
@@ -86,5 +108,16 @@
      root level's element lays it out. */
   .layout-screen {
     display: contents;
+  }
+}
+
+@layer preferences {
+  /* Forced colours drop shadows, which are all that mark the selected
+     view. */
+  @media (forced-colors: active) {
+    .layout-view.selected:not(.locked) {
+      outline: var(--tuna-focus-width, 2px) solid Highlight;
+      outline-offset: calc(-1 * var(--tuna-focus-width, 2px));
+    }
   }
 }

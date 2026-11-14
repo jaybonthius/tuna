@@ -35,11 +35,13 @@
     (haml (:div.tabs ([class (layout:part-class node)])
             (:div.tabs-strip ([role "tablist"])
               (map (lambda (c)
-                     (haml (:div.tab ([role "tab"] [aria-selected (if (eq? c shown) "true" "false")]
-                                      [data-at (document:node-start c)] [data-to (document:node-end c)])
-                             (layout:part-title c))))
+                     (let ([title (layout:part-title c)])
+                       (haml (:button.tab ([type "button"] [role "tab"] [tabindex "-1"]
+                                           [aria-selected (if (eq? c shown) "true" "false")] [data-label title]
+                                           [data-at (document:node-start c)] [data-to (document:node-end c)])
+                               title))))
                    children))
-            (:div.tabs-panel ([role "tabpanel"]) (draw-child shown))))))
+            (:div.tabs-panel ([role "tabpanel"] [aria-label (layout:part-title shown)]) (draw-child shown))))))
 
 (define-table keymap "The keymap of tabs containers, for clicks on their labels.")
 

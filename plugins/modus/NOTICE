@@ -1,0 +1,31 @@
+The colour values in modus.css are copied from the Modus themes:
+
+  modus-themes 5.3.0, https://github.com/protesilaos/modus-themes,
+  commit c6a08aa1a8a70cc94eeb7939b26029187d5289f3, file modus-themes.el:
+  modus-themes-operandi-tinted-palette (lines 1013-1338),
+  modus-themes-vivendi-tinted-palette (lines 2319-2644) and
+  modus-themes-common-palette-mappings (lines 534-677).
+
+Each --modus- variable is a light-dark() pair of the operandi-tinted value
+and the vivendi-tinted value. The named colours are copied as written; the
+variables from cursor onward are Modus's semantic mappings, each resolved
+by hand to the colour it names in each theme, a theme's own mapping taking
+precedence over the common one. When modus-themes changes a colour, this
+file is edited by hand from the new release.
+
+Copyright (C) 2019-2026 Free Software Foundation, Inc.
+Author: Protesilaos Stavrou <info@protesilaos.com>
+
+The Modus themes are free software: you can redistribute them and/or
+modify them under the terms of the GNU General Public License as published
+by the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
+
+They are distributed in the hope that they will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+A copy of the GNU General Public License is in COPYING, beside this file.
+It covers the copied values in modus.css; the rest of Tuna is not covered
+by it.

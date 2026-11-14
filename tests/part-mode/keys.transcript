@@ -63,11 +63,11 @@
     (let* ([html (screen-of client)] [i (search html "part-level")])
       (and i (substring html i (+ i 40)))))
 > (level-outlined desktop)
-"part-level\"><div class=\"split row\"><div "
+"part-level focus-path\"><div class=\"split"
 > (set-parts! (layout-split:container '((direction . row)) (atom v1) (layout:level '() (layout-split:container '((direction . column)) (atom v2) (atom v3)))))
 > (layout:select! v3)
 > (level-outlined desktop)
-"part-level\"><div class=\"split column\"><d"
+"part-level focus-path\"><div class=\"split"
 > (type! desktop "Enter")
 > (level-outlined desktop)
 #f

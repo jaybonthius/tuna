@@ -11,8 +11,8 @@
 > (views:add-cursor! (view) 3)
 > (status (view))
 > (define html (html->string (status-line:draw (view) client)))
-> (let ([start (search html "<span class=\"status-line-segment status-line-right\"" 0)])
-    (substring html start (+ (search html "</span></span>" start) 14)))
+> (let ([start (search html "<button class=\"status-line-segment status-line-right\"" 0)])
+    (substring html start (+ (search html "</span></button>" start) 16)))
 > (define sv (status-view-of (view)))
 > (define at (document:node-start (document:token (buffers:document line-buffer) 3)))
 > (document:node-kind (document:token (buffers:document line-buffer) at))
@@ -30,7 +30,7 @@
 (status-line:line () #(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(status-line:major-mode ((key . status-line:major-mode) (right . #t))) #(status-line:position ((key . status-line:position))))
 #<cursor>
 (("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("cursors:cursor-count" . "2 cursors") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "2:3"))
-"<span class=\"status-line-segment status-line-right\" data-segment=\"cursors:cursor-count\" data-clickable=\"true\"><span title=\"Click to keep only the primary cursor\">2 cursors</span></span>"
+"<button class=\"status-line-segment status-line-right\" type=\"button\" tabindex=\"-1\" data-segment=\"cursors:cursor-count\"><span title=\"Click to keep only the primary cursor\">2 cursors</span></button>"
 cursors:cursor-count
 1
 (("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("cursors:cursor-count" . "") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "2:3"))

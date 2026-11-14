@@ -1,14 +1,120 @@
 @layer defaults, themes, preferences;
 
 @layer defaults {
-  /* No transform, filter or containment may sit on a strip, or a fixed
-     popup anchored inside would take it for its containing block. */
+  /* No transform, filter or containment may sit on a strip or its box,
+     or a fixed popup anchored inside would take it for its containing
+     block. The bands stay put while the strip scrolls, so they belong to
+     the box, not the scroller, and the columns, fractions of the
+     scroller between them, keep their size whatever the bands hold. */
+  .layout-strip-box {
+    display: flex;
+    flex: 1 1 0;
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
+
+  .layout-strip-box.column {
+    flex-direction: column;
+  }
+
+  .strip-edge {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--tuna-border-width);
+    margin: 0;
+    border: 0;
+    padding: 0;
+    background: var(--layout-scroll-edge-background, var(--tuna-chrome));
+  }
+
+  .layout-strip-box.row > .strip-edge {
+    inline-size: var(--layout-scroll-edge-size, var(--tuna-space-7));
+  }
+
+  .layout-strip-box.column > .strip-edge {
+    flex-direction: column;
+    block-size: var(--layout-scroll-edge-size, var(--tuna-space-7));
+  }
+
+  /* The card nearest the strip comes first, so the start's are reversed. */
+  .layout-strip-box.row > .strip-edge.start {
+    flex-direction: row-reverse;
+  }
+
+  .layout-strip-box.column > .strip-edge.start {
+    flex-direction: column-reverse;
+  }
+
+  /* Each card further back is shorter, so the stack recedes. */
+  .strip-edge-card {
+    --strip-edge-length: 92%;
+    flex: none;
+    background: var(--layout-scroll-edge-card, var(--tuna-surface));
+    border: var(--tuna-border-width) solid var(--layout-scroll-edge-border, var(--tuna-border-strong));
+  }
+
+  .strip-edge-card + .strip-edge-card {
+    --strip-edge-length: 80%;
+  }
+
+  .strip-edge-card + .strip-edge-card + .strip-edge-card {
+    --strip-edge-length: 68%;
+  }
+
+  .layout-strip-box.row > .strip-edge > .strip-edge-card {
+    inline-size: calc(var(--layout-scroll-edge-size, var(--tuna-space-7)) / 3 - var(--tuna-border-width));
+    block-size: var(--strip-edge-length);
+  }
+
+  .layout-strip-box.row > .strip-edge.end > .strip-edge-card {
+    border-inline-start: 0;
+    border-start-end-radius: var(--tuna-radius-2);
+    border-end-end-radius: var(--tuna-radius-2);
+  }
+
+  .layout-strip-box.row > .strip-edge.start > .strip-edge-card {
+    border-inline-end: 0;
+    border-start-start-radius: var(--tuna-radius-2);
+    border-end-start-radius: var(--tuna-radius-2);
+  }
+
+  .layout-strip-box.column > .strip-edge > .strip-edge-card {
+    block-size: calc(var(--layout-scroll-edge-size, var(--tuna-space-7)) / 3 - var(--tuna-border-width));
+    inline-size: var(--strip-edge-length);
+  }
+
+  .layout-strip-box.column > .strip-edge.end > .strip-edge-card {
+    border-block-start: 0;
+    border-end-start-radius: var(--tuna-radius-2);
+    border-end-end-radius: var(--tuna-radius-2);
+  }
+
+  .layout-strip-box.column > .strip-edge.start > .strip-edge-card {
+    border-block-end: 0;
+    border-start-start-radius: var(--tuna-radius-2);
+    border-start-end-radius: var(--tuna-radius-2);
+  }
+
+  button.strip-edge {
+    cursor: pointer;
+  }
+
+  button.strip-edge:hover {
+    background-image: linear-gradient(var(--tuna-hover), var(--tuna-hover));
+  }
+
+  button.strip-edge:active {
+    background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
+  }
+
   .layout-strip {
     display: flex;
     flex: 1 1 0;
     min-inline-size: 0;
     min-block-size: 0;
     scrollbar-width: thin;
+    scrollbar-color: var(--tuna-border-strong) transparent;
   }
 
   .layout-strip.row {
@@ -16,6 +122,7 @@
     overflow: auto hidden;
     overscroll-behavior-inline: contain;
     scroll-snap-type: x mandatory;
+    border-inline: var(--tuna-border-width) solid var(--tuna-border);
   }
 
   .layout-strip.column {
@@ -24,6 +131,7 @@
     overscroll-behavior-block: contain;
     scroll-snap-type: y mandatory;
     --view-overscroll-block: auto;
+    border-block: var(--tuna-border-width) solid var(--tuna-border);
   }
 
   /* A percentage is of the strip's scrollport, so every client lays the
@@ -40,11 +148,11 @@
   }
 
   .layout-strip.row > .strip-item {
-    inline-size: var(--strip-size);
+    inline-size: var(--layout-scroll-size);
   }
 
   .layout-strip.column > .strip-item {
-    block-size: var(--strip-size);
+    block-size: var(--layout-scroll-size);
   }
 
   .layout-strip.row > .strip-item + .strip-item {
@@ -63,13 +171,14 @@
 
   /* An element can snap at one edge per axis, so a box at each item's
      far edge gives the second snap position, as Niri snaps a column's
-     right edge to the view's. */
+     right edge to the view's. Chromium takes no snap position from an
+     empty box, so it is a pixel square. */
   .strip-end {
     position: absolute;
     inset-inline-end: 0;
     inset-block-end: 0;
-    inline-size: 0;
-    block-size: 0;
+    inline-size: 1px;
+    block-size: 1px;
     scroll-snap-align: end;
   }
 
@@ -84,10 +193,20 @@
   .strip-placeholder {
     display: grid;
     place-items: center;
+    margin: 0;
+    border: 0;
     font-family: var(--tuna-font-ui);
     font-size: var(--tuna-font-size-ui);
     color: var(--layout-scroll-placeholder-text, var(--tuna-text-muted));
-    background: var(--layout-scroll-placeholder-background, var(--tuna-surface-subtle));
+    background-color: var(--layout-scroll-placeholder-background, var(--tuna-surface-subtle));
     cursor: pointer;
+  }
+
+  .strip-placeholder:hover {
+    background-image: linear-gradient(var(--tuna-hover), var(--tuna-hover));
+  }
+
+  .strip-placeholder:active {
+    background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
   }
 }

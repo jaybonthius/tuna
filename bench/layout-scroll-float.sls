@@ -69,6 +69,7 @@
             (set! k (fx+ k 1))
             (report client `(("type" . "scroller") ("scroller" . ,scroller) ("placement" . 0) ("report" . ,k)
                              ("items" . ,(vector (list-ref shown (fxmod k 5)) (list-ref shown (fxmod (fx+ k 1) 5))))
+                             ("whole" . ,(vector (list-ref shown (fxmod k 5)) (list-ref shown (fxmod (fx+ k 1) 5))))
                              ("settled" . #f)))))))
     (show "strip-select"
       (/ (ns-per-op 200

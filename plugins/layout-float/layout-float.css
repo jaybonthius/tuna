@@ -26,12 +26,19 @@
     display: flex;
     position: absolute;
     box-sizing: border-box;
+    inline-size: var(--layout-float-inline-size);
+    block-size: var(--layout-float-block-size);
+    inset-inline-start: calc((100% - var(--layout-float-inline-size)) * var(--layout-float-x));
+    inset-block-start: calc((100% - var(--layout-float-block-size)) * var(--layout-float-y));
+    z-index: var(--layout-float-z);
     font-family: var(--tuna-font-code);
     font-size: var(--tuna-font-size-code);
     line-height: var(--tuna-line-height-code);
-    background: var(--layout-float-background, var(--tuna-surface, Canvas));
+    background: var(--layout-float-background, var(--tuna-surface-raised, Canvas));
     border: var(--tuna-border-width, 1px) solid var(--layout-float-border, var(--tuna-border, CanvasText));
-    box-shadow: var(--layout-float-shadow, var(--tuna-shadow-3, 0 4px 12px rgb(0 0 0 / 0.25)));
+    border-radius: var(--layout-float-radius, var(--tuna-panel-radius));
+    box-shadow: var(--layout-float-shadow, var(--tuna-shadow-raised));
+    overflow: clip;
     pointer-events: auto;
   }
 
@@ -45,6 +52,9 @@
      or it would be placed in them instead of the screen. */
   .float-child.anchored {
     position: fixed;
+    inset: auto;
+    margin-block: var(--tuna-space-1);
+    position-anchor: var(--layout-float-anchor);
     position-area: bottom span-right;
     position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
     position-visibility: anchors-visible;

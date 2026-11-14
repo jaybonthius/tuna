@@ -175,11 +175,13 @@
 
 (define (%draw-segment node view)
   (let* ([kind (document:node-kind node)] [window (window-of view)] [show (table-ref %shows kind #f)]
-         [entry (buffers:kind kind)] [content (or (and window show (shown-html kind show window)) (list))])
-    (haml (:span.status-line-segment ([class (and (document:node-attribute node 'right #f) "status-line-right")]
-                                      [data-segment (symbol->string kind)]
-                                      [data-clickable (and entry (buffers:kind-keymap entry) "true")])
-            content))))
+         [entry (buffers:kind kind)] [content (or (and window show (shown-html kind show window)) (list))]
+         [right (and (document:node-attribute node 'right #f) "status-line-right")])
+    (if (and entry (buffers:kind-keymap entry))
+        (haml (:button.status-line-segment ([type "button"] [tabindex "-1"] [class right] [data-segment (symbol->string kind)])
+                content))
+        (haml (:span.status-line-segment ([class right] [data-segment (symbol->string kind)])
+                content)))))
 
 (define-syntax define-segment
   (lambda (x)

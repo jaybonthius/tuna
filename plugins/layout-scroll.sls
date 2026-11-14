@@ -162,19 +162,46 @@
                 (and placed (eqv? (car placed) focus) (not (eqv? (cdr placed) k))))
         (views:place-scroller! scroller focus (if center? (views:scroller-align center) (views:scroller-align nearest)) focus))
       (eq-hashtable-set! %placed scroller (cons focus k)))
-    (let ([drawn (%drawn-ids node children focus client scroller)])
-      (views:draw-scroller scroller client (if (row? node) (views:axis row) (views:axis column))
-        (let ([part (layout:part-class node)])
-          (string-append "layout-strip " (if (row? node) "row" "column") (if center? " center" "") (if part (string-append " " part) "")))
-        (map (lambda (c)
-               (let ([id (item-id c)])
-                 (haml (:div.strip-item ([data-item id] [style "--strip-size:" (size-length node c)])
-                         (if (memv id drawn)
-                             (draw-child c)
-                             (haml (:div.strip-placeholder ([data-at (document:node-start c)] [data-to (document:node-end c)])
-                                     (layout:part-title c))))
-                         (:span.strip-end)))))
-             children)))))
+    (let* ([drawn (%drawn-ids node children focus client scroller)]
+           [direction (if (row? node) "row" "column")]
+           [part (layout:part-class node)]
+           [ids (map item-id children)]
+           [whole (let ([w (or (views:scroller-wholly-in-view scroller client) drawn)])
+                    (if (exists (lambda (id) (memv id w)) ids) w (list focus)))]
+           [first-whole (let loop ([ids ids] [k 0]) (if (memv (car ids) whole) k (loop (cdr ids) (fx+ k 1))))]
+           [last-whole (let loop ([ids ids] [k 0] [found first-whole])
+                         (cond
+                           [(null? ids) found]
+                           [(memv (car ids) whole) (loop (cdr ids) (fx+ k 1) k)]
+                           [else (loop (cdr ids) (fx+ k 1) found)]))]
+           [after (fx- (length children) (fx+ last-whole 1))])
+      (haml
+        (:div.layout-strip-box ([class (if part (string-append direction " " part) direction)])
+          (%strip-edge "start" (and (fx> first-whole 0) (list-ref children (fx- first-whole 1))) first-whole)
+          (views:draw-scroller scroller client (if (row? node) (views:axis row) (views:axis column))
+            (string-append "layout-strip " direction (if center? " center" ""))
+            (map (lambda (c)
+                   (let ([id (item-id c)])
+                     (haml (:div.strip-item ([data-item id] [style "--layout-scroll-size:" (size-length node c)])
+                             (if (memv id drawn)
+                                 (draw-child c)
+                                 (haml (:button.strip-placeholder ([type "button"] [tabindex "-1"]
+                                                                   [data-at (document:node-start c)] [data-to (document:node-end c)])
+                                         (layout:part-title c))))
+                             (:span.strip-end)))))
+                 children))
+          (%strip-edge "end" (and (fx> after 0) (list-ref children (fx+ last-whole 1))) after))))))
+
+;; Cards at the edge show whether there is more that way, and about how
+;; much, without a label to read.
+(define (%strip-edge side column count)
+  (if column
+      (let ([title (layout:part-title column)])
+        (haml (:button.strip-edge ([class side] [type "button"] [tabindex "-1"]
+                                   [aria-label (if (fx> count 1) (format "~a, and ~a more" title (fx- count 1)) title)]
+                                   [data-at (document:node-start column)] [data-to (document:node-end column)])
+                (make-list (fxmin count 3) (haml (:span.strip-edge-card))))))
+      (haml (:div.strip-edge ([class side])))))
 
 (define (%strip-neighbour node child direction)
   (let-values ([(before after) (if (row? node) (values 'left 'right) (values 'up 'down))])

@@ -27,13 +27,29 @@
 (#t #t)
 > (document:node-start (layout:level-of explorer))
 0
+; Layout gives each part's element the classes kinds draw by: the
+; frames holding the user's level or a placed part, the placed parts,
+; the locked echo area, and the containers on the way to the selected
+; view. Outside a draw there are none.
+> (define (classes-in html)
+    (let loop ([from 0] [acc '()])
+      (let ([i (search html "class=\"" from)])
+        (if i
+            (let ([end (search html "\"" (+ i 7))])
+              (loop end (let ([c (substring html (+ i 7) end)]) (if (member c acc) acc (cons c acc)))))
+            (reverse acc)))))
+> (filter (lambda (c) (not (member c '("layout-screen" "split-child" "view" "view-lines" "line" "cursor primary"))))
+          (classes-in (html->string (layout:screen c1))))
+("layout-level focus-path" "split column frame focus-path" "split row frame focus-path" "layout-view placed" "split row focus-path" "layout-view selected" "layout-view" "layout-view placed locked")
+> (layout:part-class (layout:view-node notes))
+#f
 ; C-x 1 in notes.org fills M with it; the explorer and the echo area
 ; stay. C-x 1 again shows everything. Nothing is deleted.
 > (press! c1 '("x" "control") '("1"))
 > (list (names) (views:id (layout:zoomed-view)))
 (("*explorer*" "notes.org" " *Echo Area*") 3)
 > (show-screen c1)
-<div class="layout-screen" data-view="2" data-version="3" data-showing="0"><div class="layout-level"><div class="split column"><div class="split-child" style="flex:1.0 1 0"><div class="split row"><div class="split-child" style="flex:0 0 30ch"><div class="layout-view" data-at="3" data-to="4"><div class="view" data-view="6" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v6-1" data-line="1" data-at="1"><span class="cursor primary"></span>*explorer*</div><div class="line" id="v6-2" data-line="2"><br></div></div></div></div></div><div class="split-child" style="flex:1.0 1 0"><div class="layout-level"><div class="layout-view selected" data-at="6" data-to="7"><div class="view" data-view="3" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v3-1" data-line="1" data-at="1"><span class="cursor primary"></span>notes.org</div><div class="line" id="v3-2" data-line="2"><br></div></div></div></div></div></div></div></div><div class="split-child" style="flex:none"><div class="layout-view" data-at="11" data-to="12"><div class="view" data-view="5" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end style="white-space:pre-wrap"><div class="view-lines"><div class="line" id="v5-1" data-line="1" data-at="1"><span class="cursor primary"></span> *Echo Area*</div><div class="line" id="v5-2" data-line="2"><br></div></div></div></div></div></div></div></div>
+<div class="layout-screen" data-view="2" data-version="3" data-showing="0"><div class="layout-level focus-path"><div class="split column frame focus-path"><div class="split-child" style="--layout-split-flex:1.0 1 0"><div class="split row frame focus-path"><div class="split-child" style="--layout-split-flex:0 0 30ch"><div class="layout-view placed" data-at="3" data-to="4"><div class="view" data-view="6" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><div class="line" id="v6-1" data-line="1" data-at="1"><span class="cursor primary"></span>*explorer*</div><div class="line" id="v6-2" data-line="2"><br></div></div></div></div></div><div class="split-child" style="--layout-split-flex:1.0 1 0"><div class="layout-level focus-path"><div class="layout-view selected" data-at="6" data-to="7"><div class="view" data-view="3" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><div class="line" id="v3-1" data-line="1" data-at="1"><span class="cursor primary"></span>notes.org</div><div class="line" id="v3-2" data-line="2"><br></div></div></div></div></div></div></div></div><div class="split-child" style="--layout-split-flex:none"><div class="layout-view placed locked" data-at="11" data-to="12"><div class="view" data-view="5" data-version="0" data-showing="0" data-placement="*" data-place-line="1" data-place-align="top" data-place-offset="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><div class="line" id="v5-1" data-line="1" data-at="1"><span class="cursor primary"></span> *Echo Area*</div><div class="line" id="v5-2" data-line="2"><br></div></div></div></div></div></div></div></div>
 > (press! c1 '("x" "control") '("1"))
 > (names)
 ("*explorer*" "notes.org" "*pi*" " *Echo Area*")

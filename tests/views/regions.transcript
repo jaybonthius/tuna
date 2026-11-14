@@ -1,0 +1,79 @@
+; Each line's piece of the region is its own span, the outermost of its
+; line, whose classes say how its corners meet the lines above and below,
+; as VS Code's rounded selection does: st and sb are the start's top and
+; bottom corners, et and eb the end's; flat where the neighbour lines up,
+; in where it reaches past, no class for a corner rounded outward. A line
+; the region goes on past is eol.
+> (define (regions html)
+    (let loop ([from 0] [acc '()])
+      (let ([i (search html "<span class=\"region" from)])
+        (if i
+            (let* ([open (+ (search html "\">" i) 2)] [close (search html "</span>" open)])
+              (loop close (cons (list (substring html (+ i 19) (- open 2)) (substring html open close)) acc)))
+            (reverse acc)))))
+> (define (region-of b from-line from-col to-line to-col)
+    (let* ([v (views:make b)] [doc (buffers:document b)]
+           [at (lambda (line col)
+                 (let ([chars (document:unit characters)])
+                   (document:position doc (+ (document:offset doc (document:line-start doc line) chars) col) chars)))])
+      (views:set-point! v (at to-line to-col))
+      (views:set-mark! v (at from-line from-col))
+      (for-each (lambda (r) (write r) (newline)) (regions (html-of v #f)))))
+; Lines of 10, 4, 0, 8, 12 and 4 characters, the region from the first's
+; sixth column to the last's third. A start or end corner is flat where
+; the neighbour starts or ends at the same column, in where the
+; neighbour reaches past it, and rounded outward where it does not; the
+; first line, which starts right of where the second ends, does not meet
+; it. An empty line inside the region shows its newline.
+> (region-of (buffers:make "a" "0123456789\n0123\n\n01234567\n0123456789ab\n0123\n") 1 5 6 2)
+(" eol" "56789")
+(" sb-flat eol" "0123")
+(" st-flat sb-flat et-in eb-in eol" "")
+(" st-flat sb-flat eb-in eol" "01234567")
+(" st-flat sb-flat eol" "0123456789ab")
+(" st-flat et-in" "01")
+; Lines of one length: their ends line up, and the first line's start
+; falls inside the line below.
+> (region-of (buffers:make "b" "abcd\nabcd\nabcd\n") 1 2 3 4)
+(" sb-in eb-flat eol" "cd")
+(" sb-flat et-flat eol" "abcd")
+(" st-flat et-in" "abcd")
+; A region that ends where a line starts holds nothing of that line; one
+; that starts at a line's end shows only that line's newline there.
+> (region-of (buffers:make "c" "ab\ncd\n") 1 0 2 0)
+(" eol" "ab")
+> (region-of (buffers:make "d" "ab\ncd\n") 1 2 2 1)
+(" eol" "")
+("" "c")
+; Within one line the region has no neighbour, so every corner is round.
+> (region-of (buffers:make "e" "abcdef\n") 1 1 1 4)
+("" "bcd")
+; A link's own element cuts a line's piece of the region where the
+; region starts or ends inside it. Only the fragment holding the
+; region's first character has its start's corners, and only the one
+; holding its last has its end's; the cut sides meet square. A region
+; that covers the link is opened once, around it.
+> (import (md))
+> (define (second-line-of v)
+    (let* ([html (html-of v #f)] [i (search html "data-line=\"2\"" 0)])
+      (substring html (+ (search html ">" i) 1) (search html "</div>" i))))
+> (define m
+    (buffers:make "m"
+      (md:doc '()
+        (md:para '() "Alpha beta gamma.\n")
+        (md:para '() "Al " (md:link '((href . "https://x")) "beta") " gamma.\n")
+        (md:para '() "Last line.\n"))))
+> (define (region-in-link from to)
+    (let ([v (views:make m)])
+      (views:set-mark! v from)
+      (views:set-point! v to)
+      (display (second-line-of v))
+      (newline)))
+> (region-in-link 3 40)
+<span class="region sb-flat et-in eol">Al <span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26">beta</span></a></span> gamma.</span>
+> (region-in-link 3 27)
+<span class="region cut-end">Al </span><span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26"><span class="region cut-start et-in">b</span><span class="cursor primary"></span>eta</span></a></span> gamma.
+> (region-in-link 27 40)
+Al <span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26">b<span class="region cut-end">eta</span></span></a></span><span class="region cut-start eol"> gamma.</span>
+> (region-in-link 26 28)
+Al <span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26"><span class="region">be</span><span class="cursor primary"></span>ta</span></a></span> gamma.

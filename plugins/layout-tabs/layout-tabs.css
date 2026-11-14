@@ -9,38 +9,71 @@
     min-block-size: 0;
   }
 
+  /* The rule under the strip is a shadow, painted below the tabs, so the
+     selected tab's background covers it and the tab opens into its
+     panel. A mouse with no horizontal wheel reaches tabs past the edge
+     by the scroll bar. */
   .tabs-strip {
+    cursor: default;
     display: flex;
     flex: none;
     overflow-x: auto;
     scrollbar-width: thin;
+    scrollbar-color: var(--tuna-border-strong) transparent;
     font-family: var(--tuna-font-ui);
     font-size: var(--tuna-font-size-ui);
-    background: var(--layout-tabs-strip-background, var(--tuna-surface-subtle));
-    border-block-end: var(--tuna-border-width) solid var(--tuna-border);
+    background: var(--layout-tabs-strip-background, var(--tuna-chrome));
+    box-shadow: inset 0 calc(-1 * var(--tuna-border-width)) var(--tuna-border);
   }
 
   .tab {
     flex: none;
-    padding-inline: var(--layout-tabs-tab-padding, var(--tuna-space-4));
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-block-size: var(--tuna-control-size);
+    margin: 0;
+    padding-block: 0;
+    padding-inline: var(--layout-tabs-tab-padding, var(--tuna-space-5));
+    border: 0;
+    border-inline-end: var(--tuna-border-width) solid var(--tuna-border);
+    font: inherit;
     white-space: nowrap;
-    color: var(--layout-tabs-tab-text, var(--tuna-text-muted));
+    color: var(--layout-tabs-tab-text, var(--tuna-text));
+    background: none;
     cursor: pointer;
   }
 
-  .tab + .tab {
-    border-inline-start: var(--tuna-border-width) solid var(--tuna-border);
+  /* The selected tab is semibold, as Emacs's current tab is bold; an
+     invisible semibold copy of the label holds every tab at that width,
+     so the strip does not shift when the selection moves. */
+  .tab::after {
+    content: attr(data-label);
+    block-size: 0;
+    overflow: hidden;
+    visibility: hidden;
+    font-weight: var(--tuna-font-weight-semibold);
   }
 
-  @media (hover: hover) {
-    .tab:hover {
-      background: var(--layout-tabs-hover-background, var(--tuna-hover));
-    }
+  /* Overlays, so the selected tab keeps its background under them. */
+  .tab:hover {
+    background-image: linear-gradient(var(--layout-tabs-hover-background, var(--tuna-hover)),
+                                      var(--layout-tabs-hover-background, var(--tuna-hover)));
+  }
+
+  .tab:active {
+    background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
   }
 
   .tab[aria-selected="true"] {
-    background: var(--layout-tabs-selected-background, var(--tuna-surface));
+    font-weight: var(--tuna-font-weight-semibold);
+    background-color: var(--layout-tabs-selected-background, var(--tuna-surface));
     color: var(--layout-tabs-selected-text, var(--tuna-text));
+    box-shadow: inset 0 var(--tuna-focus-width) var(--tuna-border-strong);
+  }
+
+  .tabs.focus-path > .tabs-strip > .tab[aria-selected="true"] {
+    box-shadow: inset 0 var(--tuna-focus-width) var(--tuna-focus);
   }
 
   .tabs-panel {
@@ -48,5 +81,16 @@
     flex: 1 1 0;
     min-inline-size: 0;
     min-block-size: 0;
+  }
+}
+
+@layer preferences {
+  /* Forced colours drop shadows, which are all that mark the focused
+     tab. */
+  @media (forced-colors: active) {
+    .tabs.focus-path > .tabs-strip > .tab[aria-selected="true"] {
+      outline: var(--tuna-focus-width, 2px) solid Highlight;
+      outline-offset: calc(-1 * var(--tuna-focus-width, 2px));
+    }
   }
 }

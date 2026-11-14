@@ -3,27 +3,38 @@
 @layer defaults {
   .status-line {
     flex: none;
+    display: flex;
+    align-items: center;
+    min-block-size: var(--tuna-bar-size);
+    border-block-start: var(--tuna-border-width) solid var(--tuna-border);
     background: var(--status-line-inactive-background, var(--tuna-bar-inactive));
     color: var(--status-line-inactive-color, var(--tuna-on-bar-inactive));
+    font-variant-numeric: tabular-nums;
   }
 
+  /* The edge is a shadow, so the line keeps its height when the view is
+     selected and the view above does not move. */
   .layout-view.selected > .status-line {
     background: var(--status-line-background, var(--tuna-bar));
     color: var(--status-line-color, var(--tuna-on-bar));
+    box-shadow: inset 0 var(--tuna-focus-width) var(--tuna-focus);
   }
 
   .status-line > .view {
+    cursor: default;
+    flex: 1 1 auto;
+    min-inline-size: 0;
     font-family: var(--tuna-font-ui);
     font-size: var(--tuna-font-size-ui);
     line-height: var(--tuna-line-height-1);
     overflow: hidden;
-    padding-inline: var(--tuna-space-2);
+    padding-inline: var(--tuna-space-4);
   }
 
   .status-line .view-lines {
     display: flex;
     align-items: baseline;
-    gap: var(--tuna-space-3);
+    gap: var(--tuna-space-5);
     white-space: nowrap;
   }
 
@@ -42,6 +53,11 @@
     display: none;
   }
 
+  /* As Emacs's mode line draws the buffer's name bold. */
+  .status-line-segment[data-segment="status-line:buffer-name"] {
+    font-weight: var(--tuna-font-weight-semibold);
+  }
+
   /* Each segment sits in views' element for its atom, so the right side's
      are found from the element holding the first of them. */
   .status-line-right,
@@ -53,13 +69,22 @@
     margin-inline-start: auto;
   }
 
-  .status-line-segment[data-clickable] {
+  button.status-line-segment {
+    margin: 0;
+    padding: 0 var(--tuna-space-2);
+    border: 0;
+    border-radius: var(--tuna-control-radius);
+    font: inherit;
+    color: inherit;
+    background: none;
     cursor: pointer;
   }
 
-  @media (hover: hover) {
-    .status-line-segment[data-clickable]:hover {
-      background: var(--tuna-hover);
-    }
+  button.status-line-segment:hover {
+    background-image: linear-gradient(var(--tuna-hover), var(--tuna-hover));
+  }
+
+  button.status-line-segment:active {
+    background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
   }
 }

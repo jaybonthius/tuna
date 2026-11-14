@@ -75,12 +75,16 @@
 (define reports 0)
 
 (define (strip-report! client items . rest)
+  (apply strip-report-whole! client items items rest))
+
+;; A report that tells, besides the columns in view, those wholly in view.
+(define (strip-report-whole! client items whole . rest)
   (let ([html (screen-of client)])
     (set! reports (+ reports 1))
     ((table-ref web:input-handlers "scroller") client
      (append `(("type" . "scroller") ("scroller" . ,(car (numbers-after html "data-scroller=\"")))
                ("placement" . ,(car (numbers-after html "data-placement=\""))) ("report" . ,reports)
-               ("items" . ,(list->vector items)) ("settled" . ,(pair? rest)))
+               ("items" . ,(list->vector items)) ("whole" . ,(list->vector whole)) ("settled" . ,(pair? rest)))
              (if (pair? rest) `(("item" . ,(car rest)) ("align" . ,(cadr rest)) ("focus" . ,(caddr rest))) '())))))
 
 (define (placement-number client)

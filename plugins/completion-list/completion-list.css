@@ -2,34 +2,80 @@
 
 @layer defaults {
   .completion-list .ui-list {
-    min-block-size: calc(var(--completion-list-rows) * 1lh);
+    min-block-size: calc(var(--completion-list-rows, 0) * 1lh);
   }
 
+  /* A row never wraps, as Vertico's do, so the list keeps one line per
+     row and the input above it stays put as the matches change. */
   .completion-list-row {
     display: flex;
-    flex-wrap: wrap;
-    gap: var(--tuna-space-3, 1ch);
+    align-items: baseline;
+    column-gap: var(--tuna-space-3, 1ch);
+    overflow: hidden;
   }
 
+  /* Capitals by transform, so the title stays as written for screen
+     readers and copying. */
   .completion-list-title {
-    flex-basis: 100%;
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-1);
     font-weight: var(--tuna-font-weight-semibold, bold);
+    text-transform: uppercase;
+    font-feature-settings: "case";
+    letter-spacing: var(--tuna-letter-spacing-wider);
+    color: var(--tuna-text-muted);
   }
 
   .completion-list-text {
-    flex: 1 1 auto;
+    flex: none;
     white-space: pre;
   }
 
   .completion-list-text mark {
     background: none;
-    color: inherit;
-    font-weight: var(--tuna-font-weight-semibold, bold);
-    text-decoration: underline;
+    color: var(--completion-list-match-text, var(--tuna-link));
+    font-weight: var(--tuna-font-weight-bold);
   }
 
+  /* The link colour can fall under 4.5:1 on the selection, as Modus's
+     does in dark, so on the selected row a match takes the row's own
+     colour and an underline. */
+  .ui-list-row[aria-current="true"] .completion-list-text mark {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.15em;
+  }
+
+  /* Annotations are what the program says about a candidate, so they are
+     in the UI font; the candidate is buffer text and stays in the code
+     font, lined up with what was typed. */
   .completion-list-column {
-    display: inline-block;
+    flex: 0 0 var(--completion-list-column-size, auto);
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: pre;
+    text-align: end;
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-ui);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Marginalia truncates the last annotation, such as a command's
+     documentation, to the room left. */
+  .completion-list-column:last-child {
+    flex-shrink: 1;
+  }
+
+  /* As Marginalia aligns them, the annotations sit at the row's end. */
+  .completion-list-text + .completion-list-column {
+    margin-inline-start: auto;
+  }
+
+  .completion-list-count {
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-1);
+    font-variant-numeric: tabular-nums;
   }
 }

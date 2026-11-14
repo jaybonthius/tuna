@@ -1,0 +1,46 @@
+; The modus theme registers its file as the theme.
+> (use-plugin modus)
+> (table-ref web:stylesheets 'theme #f)
+"modus/modus.css"
+; Its palette is Modus's: 109 named colours and 37 of Modus's mappings,
+; each a pair of the operandi-tinted and the vivendi-tinted value.
+> (length modus-colours)
+146
+> (malformed-modus-colours)
+()
+> (cdr (assoc "--modus-bg-main" modus-colours))
+"light-dark(#fbf7f0, #0d0e1c)"
+> (cdr (assoc "--modus-cursor" modus-colours))
+"light-dark(#d00000, #ff66ff)"
+; It sets every colour among the semantic tokens, ten faces and two
+; components' colours, and reads only its own palette.
+> (list (length modus-mapping) (left-to-design-tokens) (unknown-in-theme) (unset-by-modus))
+(53 () () ())
+> (filter (lambda (d) (not (prefix? "--tuna-" (car d)))) modus-mapping)
+(("--faces-comment-color" . "var(--modus-comment)") ("--faces-string-color" . "var(--modus-string)") ("--faces-number-color" . "var(--modus-number)") ("--faces-keyword-color" . "var(--modus-keyword)") ("--faces-function-color" . "var(--modus-fnname)") ("--faces-builtin-color" . "var(--modus-builtin)") ("--faces-type-color" . "var(--modus-type)") ("--faces-constant-color" . "var(--modus-constant)") ("--faces-markup-heading-color" . "var(--modus-fg-heading-1)") ("--faces-markup-raw-color" . "var(--modus-fg-prose-code)") ("--minibuffer-prompt-color" . "var(--modus-fg-prompt)") ("--layout-part-mode-color" . "var(--modus-magenta-cooler)"))
+; Contrast under the theme, light then dark. Text is at least Modus's
+; 7:1 on the page, the popup surface, the chrome, the active bar and the
+; selection, and on the region in light; Modus's own values for the
+; region in dark, dim text and the inactive bar meet 4.5:1.
+> (map (lambda (bg) (theme-contrast "text" bg)) '("surface" "surface-raised" "chrome" "bar" "selected" "region"))
+((19.66 19.15) (18.08 17.78) (14.48 13.0) (11.09 8.29) (13.23 9.09) (11.15 6.91))
+> (map (lambda (fg) (theme-contrast fg "surface")) '("link" "error" "text-muted" "text-faint"))
+((7.01 8.08) (7.5 6.41) (6.56 6.64) (6.56 6.64))
+> (list (theme-contrast "text-muted" "chrome") (theme-contrast "on-bar-inactive" "bar-inactive"))
+((4.83 4.51) (5.07 4.54))
+; A link is under 4.5:1 on the selection in dark, so a match on the
+; selected row takes the row's text colour.
+> (theme-contrast "link" "selected")
+(4.72 3.83)
+; Focus meets 3:1 on the active bar and on the page; then come the
+; split's rule, and the chrome against the islands, above 1.20:1.
+> (list (theme-contrast "focus" "bar") (theme-contrast "focus" "surface") (theme-contrast "border" "surface") (theme-contrast "chrome" "surface"))
+((3.95 3.5) (7.01 8.08) (2.72 3.29) (1.36 1.47))
+; A strip's edge cards, bordered in the strong border on the chrome,
+; meet WCAG's 3:1 for graphics.
+> (theme-contrast "border-strong" "chrome")
+(5.22 4.45)
+; Turning the theme off takes its file back.
+> (unload-module! '(modus))
+> (table-ref web:stylesheets 'theme #f)
+#f

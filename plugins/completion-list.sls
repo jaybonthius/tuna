@@ -79,7 +79,7 @@
 
 (define (%draw-column c width)
   (haml (:span.completion-list-column ([data-face (and (pair? c) (symbol->string (car c)))]
-                                       [style (and width (string-append "min-inline-size:" (number->string width) "ch"))])
+                                       [style (and width (string-append "--completion-list-column-size:" (number->string width) "ch"))])
           (%column-text c))))
 
 (define (%title-first? s matches k title)
@@ -90,16 +90,18 @@
 (define (%draw-row l matches k)
   (let* ([s (%shown-session l)] [m (vector-ref matches k)] [text (completion:text s m)] [title (completion:title s m)]
          [columns (completion:annotation s m)] [widths (%shown-widths l)])
-    (haml
-      (:div.completion-list-row
-        (when (%title-first? s matches k title)
-          (:div.completion-list-title title))
-        (:span.completion-list-text (%mark text (completion:spans s m)))
-        (let loop ([cs columns] [ws widths] [acc '()])
-          (if (null? cs)
-              (reverse acc)
-              (loop (cdr cs) (if (pair? ws) (cdr ws) '())
-                    (cons (%draw-column (car cs) (and (pair? ws) (car ws))) acc))))))))
+    ;; The title sits outside the row, which clips everything after its
+    ;; first line.
+    (list
+      (if (%title-first? s matches k title) (haml (:div.completion-list-title title)) '())
+      (haml
+        (:div.completion-list-row
+          (:span.completion-list-text (%mark text (completion:spans s m)))
+          (let loop ([cs columns] [ws widths] [acc '()])
+            (if (null? cs)
+                (reverse acc)
+                (loop (cdr cs) (if (pair? ws) (cdr ws) '())
+                      (cons (%draw-column (car cs) (and (pair? ws) (car ws))) acc)))))))))
 
 (define (%choose l m)
   (let ([s (%shown-session l)])
