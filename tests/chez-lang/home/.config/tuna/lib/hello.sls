@@ -1,4 +1,4 @@
-#!chez-lang/chez
+#!lang/chez
 (library (hello)
   (export greeting)
   (import (rnrs))

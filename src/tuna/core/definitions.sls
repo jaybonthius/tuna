@@ -34,7 +34,7 @@
     changeable-procedure-documentation
     set-changeable-documentation!)
   (import (chezscheme) (tuna core changes) (tuna core conditions)
-          (only (chez-lang body) unbound-identifier?))
+          (only (lang body) unbound-identifier?))
 
   ;; Through this property of a module's own this-module keyword, a macro
   ;; learns which module the code it expands belongs to.

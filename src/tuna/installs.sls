@@ -274,4 +274,4 @@
   ;; be silently passed over.
   (define (reserved-library-name? name)
     (or (member name '((init) (repl)))
-        (memq (car name) '(tuna chez-lang csv7 r6rs rnrs chezscheme scheme)))))
+        (memq (car name) '(tuna lang csv7 r6rs rnrs chezscheme scheme)))))

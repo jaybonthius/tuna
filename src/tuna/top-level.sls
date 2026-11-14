@@ -9,7 +9,7 @@
           (only (tuna plugin-manager) read-configuration-lines! read-configuration-line! read-repl-line!
                 raise-line-failure plugin-line? library-line?)
           (only (tuna core conditions) call-with-only-handler)
-          (only (chez-lang body) definition-form? form-defined-names)
+          (only (lang body) definition-form? form-defined-names)
           (only (tuna files) expand-home))
 
   (define home #f)

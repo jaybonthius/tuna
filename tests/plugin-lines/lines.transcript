@@ -18,6 +18,11 @@
 ! use-plugin: plugin rival and plugin compat both hold the library (compat)
 > (memq 'rival (installed-plugins))
 #f
+; Names Tuna keeps for itself, chez-lang's among them, are refused too.
+> (use-plugin keeper (local "~/src/keeper"))
+! use-plugin: plugin keeper holds the library (lang reader), a name Tuna keeps for itself
+> (memq 'keeper (installed-plugins))
+#f
 ; Lines go only in the configuration and at the REPL; plugin lines only in
 ; an index's main module.
 > (import (uses))

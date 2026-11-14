@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna-test) (chez-lang loader) (chez-lang language)
+(import (chezscheme) (tuna-test) (lang loader) (lang language)
         (tuna core changes) (tuna core definitions) (tuna core modules)
         (except (tuna core main-thread) exit) (prefix (only (tuna core replaced) fork-thread dynamic-wind) tuna:))
 

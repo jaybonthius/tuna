@@ -35,9 +35,9 @@
                         timer-interrupt-handler make-engine)
                   chez:)
           (prefix (only (rnrs) exit dynamic-wind) rnrs:)
-          (only (chez-lang body) form-defined-names)
-          (only (chez-lang language) call-with-library-lock)
-          (only (chez-lang reload) reload-library)
+          (only (lang body) form-defined-names)
+          (only (lang language) call-with-library-lock)
+          (only (lang reload) reload-library)
           (only (tuna files) string-prefix?))
 
   (define lib-prefix #f)
@@ -178,7 +178,7 @@
         (lambda (who name extensions)
           (with-quits-allowed #f
             (cond
-              [(memq (car name) '(tuna chez-lang))
+              [(memq (car name) '(tuna lang))
                (search-own who name own-directories extensions)]
               [(refused-module-name? name)
                (errorf who "a module cannot be named ~s" name)]

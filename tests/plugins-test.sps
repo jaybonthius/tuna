@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna-test) (chez-lang loader)
+(import (chezscheme) (tuna-test) (lang loader)
         (tuna core changes) (only (tuna core definitions) tick report advice-add! advice-remove!)
         (tuna core modules) (except (tuna core main-thread) exit)
         (tuna plugin-manager) (only (tuna files) string-prefix?))

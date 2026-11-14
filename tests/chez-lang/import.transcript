@@ -1,6 +1,6 @@
 ; The only library root is the configuration's lib/ and the working folder
 ; is empty, so the language comes from the executable's boot file.
-> (library-object-filename '(chez-lang chez lang))
+> (library-object-filename '(lang chez lang))
 "tuna"
 > (import (hello))
 > (greeting "Harpo")

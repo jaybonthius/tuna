@@ -22,6 +22,8 @@ other
 ! library (tuna extra) not found
 > (import (only (tuna core) where))
 ! library (tuna core) not found
+> (import (only (lang extra) where))
+! library (lang extra) not found
 ; The owners' names, and names that would replace Chez's own prefixed
 ; REPL names, are not module names.
 > (import (init))

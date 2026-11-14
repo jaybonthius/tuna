@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna-test) (chez-lang loader) (tuna core modules)
+(import (chezscheme) (tuna-test) (lang loader) (tuna core modules)
         (only (tuna core changes) rank-module! move-before-importers!))
 
 (define root

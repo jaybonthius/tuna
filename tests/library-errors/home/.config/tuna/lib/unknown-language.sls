@@ -1,4 +1,4 @@
-#!chez-lang/nope
+#!lang/nope
 (library (unknown-language)
   (export)
   (import (chezscheme)))

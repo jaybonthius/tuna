@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna-test) (chez-lang loader) (tuna core modules))
+(import (chezscheme) (tuna-test) (lang loader) (tuna core modules))
 
 (define root
   (let ([dir (format "/tmp/tuna-live-change-test-~a" (get-process-id))])

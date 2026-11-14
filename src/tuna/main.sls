@@ -2,7 +2,7 @@
 ;;; run the program.
 (library (tuna main)
   (export main)
-  (import (chezscheme) (chez-lang loader) (tuna version) (tuna core changes)
+  (import (chezscheme) (lang loader) (tuna version) (tuna core changes)
           (tuna core modules) (except (tuna core main-thread) exit) (tuna top-level)
           (only (tuna plugin-manager) start-plugins! module-plugin-source)
           (only (tuna storage) start-storage! wait-for-saved-files!))
