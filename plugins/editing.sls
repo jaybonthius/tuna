@@ -13,7 +13,7 @@
    set-marks! forget-temporary! exchange-marks! check-regions word-characters-in words-from
    line-motion-target recase! capitalizer replace-region-or! insert-at-cursors! kill-ranges! after-kill?
    remember-kill! yank-pieces! yanked-in? replace-yank! pure-text note-change! clear-changed-marks!
-   place! select-between! drag-keymap start-drag! drag-in drag-anchor-position drag-mode
+   nonempty-region? shift-selected keep-changed-marks! place! select-between! drag-keymap start-drag! drag-in drag-anchor-position drag-mode
    drag-moved? drag-moved?-set!)
 
   (define main-thread (get-thread-id))
@@ -289,8 +289,10 @@
                   (begin (put-char out (string-ref s i)) (loop (fx+ i 1))))))
           (done)))))
 
+  (define (nonempty-region? p m) (and m (not (fx= m p))))
+
   (define (selected-region p m delete-selection?)
-    (and delete-selection? m (not (fx= m p)) (cons (fxmin p m) (fxmax p m))))
+    (and delete-selection? (nonempty-region? p m) (cons (fxmin p m) (fxmax p m))))
 
   (define (insert-at-cursors! view content delete-selection? after-insert)
     (let ([b (views:buffer view)])
@@ -498,19 +500,37 @@
   (define (drag-anchor-position d) (buffers:anchor-position (drag-anchor d)))
 
   (define changed '())
+  (define keeping-marks? #f)
 
   (define (note-change! buffer edit)
     (when (and (commands:this-command) (not (memq buffer changed)))
       (set! changed (cons buffer changed))))
 
+  (define (shift-selected view)
+    (filter (lambda (c) (temporary-mark? c (views:cursor-mark c))) (views:cursors view)))
+
+  ;; Edits move marks, so the moved marks of the cursors that shift
+  ;; selection marked are recorded again, or the next unshifted motion
+  ;; would not clear them.
+  (define (keep-changed-marks! view selected)
+    (when (commands:this-command) (set! keeping-marks? #t))
+    (for-each
+      (lambda (c)
+        (let ([m (views:cursor-mark c)])
+          (when (and m (memq c (views:cursors view)))
+            (eq-hashtable-set! temporary c m))))
+      selected))
+
   (define (clear-changed-marks! command)
-    (let ([bs changed])
+    (let ([bs changed] [keep? keeping-marks?])
       (set! changed '())
-      (for-each
-        (lambda (b)
-          (when (buffers:live? b)
-            (for-each clear-marks! (views:showing b))))
-        bs))))
+      (set! keeping-marks? #f)
+      (unless keep?
+        (for-each
+          (lambda (b)
+            (when (buffers:live? b)
+              (for-each clear-marks! (views:showing b))))
+          bs)))))
 
 (import %internals)
 
@@ -701,8 +721,11 @@
     (kill-ranges! view (lambda (c) (values (views:cursor-mark c) (views:cursor-point c))) #f)
     (clear-marks! view)))
 
+(define (%blank-token? t)
+  (and (char? t) (or (char=? t #\space) (char=? t #\tab))))
+
 (define (%blank? text)
-  (for-all (lambda (ch) (or (char=? ch #\space) (char=? ch #\tab))) (string->list text)))
+  (for-all %blank-token? (string->list text)))
 
 (commands:define-command (kill-line [n (and (commands:prefix-argument) (commands:prefix-number))])
   "Kills to the end of the line, or the line break when only spaces and tabs are left; with N, kills N lines."
@@ -870,6 +893,323 @@
   "Converts each cursor's region to lower case."
   (%case-region 'editing:downcase-region string-downcase))
 
+(commands:define-command (capitalize-region)
+  "Capitalizes each word in each cursor's region."
+  (%case-region 'editing:capitalize-region (capitalizer (word-characters))))
+
+(define (%indentation-end doc start end)
+  (let loop ([p start])
+    (if (and (fx< p end) (%blank-token? (document:token doc p))) (loop (fx+ p 1)) p)))
+
+(define (%blanks-start doc end lo)
+  (let loop ([p end])
+    (if (and (fx> p lo) (%blank-token? (document:token doc (fx- p 1)))) (loop (fx- p 1)) p)))
+
+(define (%region-lines b doc p m hi)
+  (if (nonempty-region? p m)
+      (let* ([low (fxmin p m)] [high (fxmax p m)]
+             [first (document:line doc low)] [last (document:line doc high)])
+        (let-values ([(s e) (%line-text-range b doc last hi)])
+          (values first (if (and (fx> last first) (fx<= high s)) (fx- last 1) last))))
+      (let ([line (document:line doc p)]) (values line line))))
+
+(commands:define-command (back-to-indentation)
+  "Moves each cursor to the first character of its line that is not a space or tab; a cursor already there goes to the start of the line."
+  (let* ([view (command-view 'editing:back-to-indentation)] [b (views:buffer view)])
+    (move-cursors! 'editing:back-to-indentation view 0
+      (lambda (c doc lo hi)
+        (let ([p (views:cursor-point c)])
+          (let-values ([(s e) (%line-text-range b doc (document:line doc p) hi)])
+            (let ([indented (%indentation-end doc s e)])
+              (values (if (fx= p indented) s indented) #f))))))))
+
+(commands:define-command (kill-whole-line [n (commands:prefix-number)])
+  "Kills each cursor's line with its line break; with N, N lines from it, or for a negative N, -N lines ending at it with the line break before them; with 0, the line without its break."
+  (check-count 'editing:kill-whole-line n)
+  (let* ([view (command-view 'editing:kill-whole-line)] [b (views:buffer view)] [doc (buffers:document b)])
+    (let-values ([(lo hi) (content-bounds view doc)])
+      (let ([first (document:line doc lo)] [last (document:line doc hi)])
+        (define (ends-at p)
+          (let ([line (document:line doc p)])
+            (let-values ([(s e) (%line-text-range b doc line hi)])
+              (cond
+                [(> n 0)
+                 (values (fxmax lo s)
+                         (if (> (+ line n) last) hi (fxmin hi (document:line-start doc (+ line n)))))]
+                [(= n 0) (values (fxmax lo s) e)]
+                [else (values e (if (< (+ line n) first) lo (end-of-line doc (+ line n) hi)))]))))
+        (let-values ([(s e) (%line-text-range b doc (document:line doc (views:point view)) hi)])
+          (cond
+            [(and (> n 0) (fx>= s hi)) (error 'editing:kill-whole-line "end of buffer")]
+            [(and (< n 0) (fx<= e lo)) (error 'editing:kill-whole-line "beginning of buffer")]))
+        (kill-ranges! view (lambda (c) (ends-at (views:cursor-point c))) #t)))))
+
+(define (%space-between? doc start end lo hi)
+  (let ([before (and (fx> start lo) (document:token doc (fx- start 1)))]
+        [after (and (fx< end hi) (document:token doc end))])
+    (and (char? before) (char? after)
+         (not (char=? before #\newline))
+         (not (char=? after #\newline))
+         (not (eq? (char-general-category before) 'Ps))
+         (not (eq? (char-general-category after) 'Pe)))))
+
+(commands:define-command (delete-indentation)
+  "Joins each cursor's line to the line before it, replacing the line break and the spaces and tabs around it with one space, or none after an opening bracket, before a closing one, or beside an empty line."
+  (let* ([view (command-view 'editing:delete-indentation)] [b (views:buffer view)])
+    (for-each-cursor view
+      (lambda (c p m)
+        (let ([doc (buffers:document b)])
+          (let-values ([(lo hi) (content-bounds view doc)])
+            (let ([line (document:line doc p)])
+              (when (fx> line (document:line doc lo))
+                (let-values ([(s e) (%line-text-range b doc line hi)])
+                  (let ([start (%blanks-start doc (fx- (document:line-start doc line) 1) lo)]
+                        [end (%indentation-end doc s e)])
+                    (buffers:replace! b start end (if (%space-between? doc start end lo hi) " " ""))
+                    (move-kept! view c start)))))))))))
+
+(commands:define-command (duplicate-dwim [n (commands:prefix-number)])
+  "Inserts N copies of each cursor's region after it, or, at a cursor with no region, N copies of its line after the line, leaving the cursor and its region where they were."
+  (check-count 'editing:duplicate-dwim n)
+  (let* ([view (command-view 'editing:duplicate-dwim)] [b (views:buffer view)] [selected (shift-selected view)])
+    (when (> n 0)
+      (for-each-cursor view
+        (lambda (c p m)
+          (if (nonempty-region? p m)
+              (let ([piece (kill-ring:piece b (fxmin p m) (fxmax p m))])
+                (let loop ([at (fxmax p m)] [k n])
+                  (unless (= k 0)
+                    (loop (kill-ring:insert! b at piece) (- k 1)))))
+              (let ([doc (buffers:document b)])
+                (let-values ([(lo hi) (content-bounds view doc)])
+                  (let-values ([(s e) (%line-text-range b doc (document:line doc p) hi)])
+                    (let ([piece (kill-ring:piece b s e)])
+                      (let loop ([at e] [k n])
+                        (unless (= k 0)
+                          (buffers:replace! b at at "\n")
+                          (loop (kill-ring:insert! b (fx+ at 1) piece) (- k 1)))))))))
+          (place-kept! view c p m)))
+      (keep-changed-marks! view selected))))
+
+(define (%line-text-start b doc line hi)
+  (let-values ([(s e) (%line-text-range b doc line hi)]) s))
+
+;; The neighbouring lines move around the block rather than the block
+;; around them, so no cursor in the block is deleted with its text, and
+;; cursors that would meet do not merge. They are inserted before they
+;; are deleted, so an edit the buffer refuses leaves a copy of a line
+;; rather than losing one.
+(define (%move-block-down! b doc first last steps hi)
+  (let* ([start (%line-text-start b doc first hi)]
+         [end (end-of-line doc last hi)]
+         [next (%line-text-start b doc (fx+ last 1) hi)]
+         [following-end (end-of-line doc (fx+ last steps) hi)]
+         [following (kill-ring:piece b next following-end)]
+         [between (kill-ring:piece b end next)]
+         [shift (fx- (kill-ring:insert! b (kill-ring:insert! b start following) between) start)])
+    (buffers:replace! b (fx+ end shift) (fx+ following-end shift) "")))
+
+(define (%move-block-up! b doc first last steps hi)
+  (let* ([start (%line-text-start b doc first hi)]
+         [end (end-of-line doc last hi)]
+         [previous (%line-text-start b doc (fx- first steps) hi)]
+         [previous-end (end-of-line doc (fx- first 1) hi)]
+         [preceding (kill-ring:piece b previous previous-end)]
+         [between (kill-ring:piece b previous-end start)])
+    (kill-ring:insert! b (kill-ring:insert! b end between) preceding)
+    (buffers:replace! b previous start "")))
+
+(define-record-type (%line-move %make-line-move %line-move?)
+  (sealed #t)
+  (fields first last steps))
+
+(define-record-type (%cursor-place %make-cursor-place %cursor-place?)
+  (sealed #t)
+  (fields cursor point mark))
+
+;; Blocks closer than the distance moved would pass through each other,
+;; so they move as one.
+(define (%line-blocks b doc cursors hi distance)
+  (let loop ([blocks (list-sort (lambda (x y) (fx< (car x) (car y)))
+                       (map (lambda (c)
+                              (let-values ([(first last) (%region-lines b doc (views:cursor-point c) (views:cursor-mark c) hi)])
+                                (cons first last)))
+                            cursors))]
+             [merged '()])
+    (cond
+      [(null? blocks) (reverse merged)]
+      [(and (pair? merged) (fx<= (fx- (caar blocks) (cdar merged)) distance))
+       (loop (cdr blocks) (cons (cons (caar merged) (fxmax (cdar merged) (cdar blocks))) (cdr merged)))]
+      [else (loop (cdr blocks) (cons (car blocks) merged))])))
+
+(define (%line-place b doc q hi)
+  (let ([line (document:line doc q)])
+    (cons line (fx- q (%line-text-start b doc line hi)))))
+
+;; A place is a line and a column, so a region that ends at the start of
+;; the line after a block still ends after the block once it has moved.
+(define (%move-line-blocks! who n)
+  (let* ([view (command-view who)] [b (views:buffer view)] [doc (buffers:document b)]
+         [down? (> n 0)] [distance (min (abs n) (document:length doc))]
+         [cursors (views:cursors view)] [selected (shift-selected view)])
+    (let-values ([(lo hi) (content-bounds view doc)])
+      (let* ([first (document:line doc lo)] [last (document:line doc hi)]
+             [moves (map (lambda (block)
+                           (let ([a (car block)] [z (cdr block)])
+                             (%make-line-move a z (fxmin distance (if down? (fx- last z) (fx- a first))))))
+                         (%line-blocks b doc cursors hi distance))]
+             [places (map (lambda (c)
+                            (let ([m (views:cursor-mark c)])
+                              (%make-cursor-place c (%line-place b doc (views:cursor-point c) hi)
+                                                  (and m (%line-place b doc m hi)))))
+                          cursors)])
+        (define (move-of line)
+          (find (lambda (move) (fx<= (%line-move-first move) line (fx+ (%line-move-last move) 1))) moves))
+        (unless (= n 0)
+          (for-each
+            (lambda (move)
+              (let ([steps (%line-move-steps move)])
+                (unless (fx= steps 0)
+                  (let ([doc (buffers:document b)])
+                    (let-values ([(lo hi) (content-bounds view doc)])
+                      ((if down? %move-block-down! %move-block-up!)
+                       b doc (%line-move-first move) (%line-move-last move) steps hi))))))
+            (if down? (reverse moves) moves))
+          (let ([doc (buffers:document b)])
+            (let-values ([(lo hi) (content-bounds view doc)])
+              (define (moved place)
+                (let* ([line (car place)]
+                       [move (move-of line)]
+                       [to (cond
+                             [(not move) line]
+                             [down? (fx+ line (%line-move-steps move))]
+                             [else (fx- line (%line-move-steps move))])])
+                  (if (fx> to (document:line doc hi))
+                      hi
+                      (fxmax lo (fxmin hi (fx+ (%line-text-start b doc to hi) (cdr place)))))))
+              (for-each
+                (lambda (place)
+                  (let ([m (%cursor-place-mark place)])
+                    (place-kept! view (%cursor-place-cursor place)
+                                 (moved (%cursor-place-point place)) (and m (moved m)))))
+                places)))
+          (keep-changed-marks! view selected)
+          (let ([primary (move-of (car (%cursor-place-point (car places))))])
+            (when (and primary (fx= (%line-move-steps primary) 0))
+              (edge-error who n))))))))
+
+(commands:define-command (move-line-down [n (commands:prefix-number)])
+  "Moves each cursor's line, or the lines its region touches, N lines down, with the cursor and region."
+  (check-count 'editing:move-line-down n)
+  (%move-line-blocks! 'editing:move-line-down n))
+
+(commands:define-command (move-line-up [n (commands:prefix-number)])
+  "Moves each cursor's line, or the lines its region touches, N lines up, with the cursor and region."
+  (check-count 'editing:move-line-up n)
+  (%move-line-blocks! 'editing:move-line-up (- n)))
+
+(define (%open-line who below?)
+  (let* ([view (command-view who)] [b (views:buffer view)])
+    (for-each-cursor view
+      (lambda (c p m)
+        (let ([doc (buffers:document b)])
+          (let-values ([(lo hi) (content-bounds view doc)])
+            (let-values ([(s e) (%line-text-range b doc (document:line doc p) hi)])
+              (let* ([indentation (document:text doc s (%indentation-end doc s e))]
+                     [width (string-length indentation)])
+                (let-values ([(at text point)
+                              (if below?
+                                  (values e (string-append "\n" indentation) (fx+ e 1 width))
+                                  (values s (string-append indentation "\n") (fx+ s width)))])
+                  (forget-temporary! c)
+                  (buffers:replace! b at at text)
+                  (place-kept! view c point #f))))))))))
+
+(commands:define-command (open-line-below)
+  "Starts a line after each cursor's line, indented as it, and moves the cursor there."
+  (%open-line 'editing:open-line-below #t))
+
+(commands:define-command (open-line-above)
+  "Starts a line before each cursor's line, indented as it, and moves the cursor there."
+  (%open-line 'editing:open-line-above #f))
+
+;; As in Emacs, text the buffer refuses to change is left as it is and
+;; the rest is trimmed.
+(define (%delete-unless-refused! b start end)
+  (guard (c [(buffers:refused? c) (void)])
+    (buffers:replace! b start end "")
+    (void)))
+
+(define (%trim-lines! b doc from to lo hi)
+  (let loop ([line (document:line doc to)])
+    (when (fx>= line (document:line doc from))
+      (let-values ([(s e) (%line-text-range b doc line hi)])
+        (let ([start (%blanks-start doc e (fxmax lo s))])
+          (when (and (fx< start e) (fx< from e) (fx<= e to))
+            (%delete-unless-refused! b start e))))
+      (loop (fx- line 1)))))
+
+(define (%trim-final-lines! b view)
+  (let ([doc (buffers:document b)])
+    (let-values ([(lo hi) (content-bounds view doc)])
+      (when (fx= hi (fx- (document:length doc) 1))
+        (let ([start (let loop ([p hi])
+                       (if (and (fx> p lo) (eqv? (document:token doc (fx- p 1)) #\newline)) (loop (fx- p 1)) p))])
+          (when (fx>= (fx- hi start) 2)
+            (%delete-unless-refused! b (fx+ start 1) hi)))))))
+
+(commands:define-command (delete-trailing-whitespace)
+  "Deletes the spaces and tabs at the ends of the lines in each cursor's region or, when no cursor has a region, in the whole buffer and the empty lines at its end."
+  (let* ([view (command-view 'editing:delete-trailing-whitespace)] [b (views:buffer view)])
+    (if (exists (lambda (c) (nonempty-region? (views:cursor-point c) (views:cursor-mark c)))
+                (views:cursors view))
+        (for-each-cursor view
+          (lambda (c p m)
+            (when (nonempty-region? p m)
+              (let ([doc (buffers:document b)])
+                (let-values ([(lo hi) (content-bounds view doc)])
+                  (%trim-lines! b doc (fxmin p m) (fxmax p m) lo hi))))))
+        (let ([doc (buffers:document b)])
+          (let-values ([(lo hi) (content-bounds view doc)])
+            (%trim-lines! b doc lo hi lo hi))
+          (%trim-final-lines! b view)))))
+
+;; The lines go in again after the old ones before those are deleted, so
+;; an edit the buffer refuses leaves a copy of a line rather than losing
+;; one.
+(define (%reorder-lines! b ranges order)
+  (let ([lines (map (lambda (r) (kill-ring:piece b (car r) (cdr r))) order)]
+        [separators (let loop ([rs ranges] [acc '()])
+                      (if (null? (cdr rs))
+                          (reverse acc)
+                          (loop (cdr rs) (cons (kill-ring:piece b (cdar rs) (caadr rs)) acc))))])
+    (let ([inserted (kill-ring:insert! b (cdar (last-pair ranges)) (car (last-pair separators)))])
+      (let loop ([at inserted] [lines lines] [separators separators])
+        (let ([at (kill-ring:insert! b at (car lines))])
+          (unless (null? separators)
+            (loop (kill-ring:insert! b at (car separators)) (cdr lines) (cdr separators)))))
+      (buffers:replace! b (caar ranges) inserted ""))))
+
+(commands:define-command (sort-lines)
+  "Sorts the lines each cursor's region touches by their text."
+  (let* ([view (command-view 'editing:sort-lines)] [b (views:buffer view)])
+    (check-regions 'editing:sort-lines view)
+    (for-each-cursor view
+      (lambda (c p m)
+        (let ([doc (buffers:document b)])
+          (let-values ([(lo hi) (content-bounds view doc)])
+            (let-values ([(first last) (%region-lines b doc p m hi)])
+              (let* ([ranges (let loop ([line last] [acc '()])
+                               (if (fx< line first)
+                                   acc
+                                   (let-values ([(s e) (%line-text-range b doc line hi)])
+                                     (loop (fx- line 1) (cons (cons s e) acc)))))]
+                     [keyed (map (lambda (r) (cons (document:text doc (car r) (cdr r)) r)) ranges)]
+                     [sorted (map cdr (list-sort (lambda (x y) (string<? (car x) (car y))) keyed))])
+                (unless (for-all eq? ranges sorted)
+                  (%reorder-lines! b ranges sorted))
+                (place-kept! view c p m)))))))))
+
 (define (%mouse-view who event)
   (unless (keys:event? event)
     (assertion-violation who "not an event" event))
@@ -1002,6 +1342,13 @@
 (keys:bind! keys:global "M-c" capitalize-word)
 (keys:bind! keys:global "C-x C-u" upcase-region)
 (keys:bind! keys:global "C-x C-l" downcase-region)
+(keys:bind! keys:global "M-m" back-to-indentation)
+(keys:bind! keys:global "C-S-DEL" kill-whole-line)
+(keys:bind! keys:global "M-^" delete-indentation)
+(keys:bind! keys:global "M-<up>" move-line-up)
+(keys:bind! keys:global "M-<down>" move-line-down)
+(keys:bind! keys:global "C-RET" open-line-below)
+(keys:bind! keys:global "C-S-RET" open-line-above)
 (keys:bind! keys:global "<down-mouse-1>" mouse-drag-region)
 (keys:bind! keys:global "<mouse-1>" mouse-set-point)
 (keys:bind! keys:global "<drag-mouse-1>" mouse-set-region)
