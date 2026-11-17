@@ -143,3 +143,57 @@
 #<view 12>
 > (tree)
 (layout:level () (layout-split:container ((direction . row)) (layout-split:container ((direction . column) (size columns 30)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 12) (buffer . "notes")))) #(views:view ((view . 7) (buffer . "newer") (size lines 5) (weight . 2))) #(views:view ((view . 8) (buffer . "notes") (size . 1/4))) (layout-split:container ((direction . column)) #(views:view ((view . 9) (buffer . "notes") (size lines 5))) #(views:view ((view . 10) (buffer . "notes") (size . content))))))
+; C-x w t turns every split in the selected view's level from side by
+; side to stacked, or back. Weights and sizes stay, so transposing again
+; gives the layout as it was; locked parts and the levels inside the
+; level stay as they are.
+> (define (transposable)
+    (set-parts! (layout-split:container '((direction . row))
+                  (layout-split:container '((size columns 30) (direction . column)) (atom (views:find 1) '(weight . 2)) (atom (views:find 7) '(size lines 5)))
+                  (layout-split:container '((direction . column) (locked . #t)) (atom (views:find 8)) (atom (views:find 9)))
+                  (layout:level '() (layout-split:container '((direction . row)) (atom (views:find 10)) (atom (views:find 12)))))))
+> (transposable)
+> (layout:select! (views:find 1))
+> (define before-transpose (tree))
+> (press! c1 '("x" "control") '("w") '("t"))
+> (tree)
+(layout:level () (layout-split:container ((direction . column)) (layout-split:container ((size columns 30) (direction . row)) #(views:view ((view . 1) (buffer . "notes") (weight . 2))) #(views:view ((view . 7) (buffer . "newer") (size lines 5)))) (layout-split:container ((direction . column) (locked . #t)) #(views:view ((view . 8) (buffer . "notes"))) #(views:view ((view . 9) (buffer . "notes")))) (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 10) (buffer . "notes"))) #(views:view ((view . 12) (buffer . "notes")))))))
+> (selected)
+1
+> (layout-split:transpose)
+> (equal? (tree) before-transpose)
+#t
+; Transposing is a window change, so C-c <left> goes back from it.
+> (transposable)
+> (press! c1 '("x" "control") '("w") '("t"))
+> (press! c1 '("c" "control") '("ArrowLeft"))
+> (equal? (tree) before-transpose)
+#t
+; A level with no split to transpose raises.
+> (set-parts! (atom (views:find 1)))
+> (raised layout-split:transpose)
+(layout-split:transpose "no split to transpose in the selected view's level")
+; A placed part persists for its level's views, so a split holding one
+; keeps its direction, and the splits beside it turn.
+> (set-parts! (layout-split:container '((direction . row))
+                (layout-split:container '() (atom (views:find 1)) (atom (views:make notes)))
+                (atom (views:make notes) '(depth . 50))))
+> (layout:select! (views:find 1))
+> (layout-split:transpose)
+> (tree)
+(layout:level () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 14) (buffer . "notes")))) #(views:view ((view . 13) (buffer . "notes") (depth . 50)))))
+; From a placed part, the root's splits all hold one, so nothing turns.
+> (set-parts! (atom (views:find 1)))
+> (define echo (place-echo (buffers:make " *Echo Area*" "")))
+> (define explorer ((layout-sides:display-at-side (layout:direction left) 50 '(columns 30)) (buffers:make "*explorer*" "")))
+> (define placed-tree (tree))
+> (layout:select! explorer)
+> (raised layout-split:transpose)
+(layout-split:transpose "no split to transpose in the selected view's level")
+> (equal? (tree) placed-tree)
+#t
+> (layout:select! echo)
+> (raised layout-split:transpose)
+(layout-split:transpose "no split to transpose in the selected view's level")
+> (equal? (tree) placed-tree)
+#t

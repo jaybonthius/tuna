@@ -1947,7 +1947,7 @@
 (keys:bind! keys:global "s-<down>" select-down)
 (keys:bind! keys:global "s-<right>" select-right)
 (keys:bind! keys:global "s-'" part-mode)
-(keys:bind! keys:global "C-x w" part-mode)
+(keys:bind! keys:global "C-x w w" part-mode)
 (keys:bind! part-mode-keymap "RET" part-mode-leave)
 (keys:bind! part-mode-keymap "i" select-parent)
 (keys:bind! part-mode-keymap "k" select-child)

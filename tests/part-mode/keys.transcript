@@ -7,9 +7,9 @@
 > (set-parts! (layout-split:container '((direction . row)) (atom v1) (layout-split:container '((direction . column)) (atom v2) (atom v3))))
 > (layout:select! v2)
 > (define (text b) (document:text (buffers:document b)))
-; C-x w enters the mode too, and the mode is shared: the phone's keys
+; C-x w w enters the mode too, and the mode is shared: the phone's keys
 ; move the part the desktop entered with.
-> (press! desktop '("x" "control") '("w"))
+> (press! desktop '("x" "control") '("w") '("w"))
 > (type! phone "i")
 > (list (layout:part-mode?) (part))
 (#t (4 5))
@@ -23,27 +23,27 @@
 (3 (4 5))
 ; A key sequence leaves at the first key the mode does not continue, so
 ; C-x 3 splits the selected view.
-> (press! desktop '("x" "control") '("w") '("x" "control") '("3"))
+> (press! desktop '("x" "control") '("w") '("w") '("x" "control") '("3"))
 > (list (layout:part-mode?) (shape (main)))
 (#f (3 ((4 6) 5)))
 ; Window changes have no undo: C-/ leaves the mode and undoes the
 ; selected view's buffer.
-> (press! desktop '("x" "control") '("w"))
+> (press! desktop '("x" "control") '("w") '("w"))
 > (press! desktop '("/" "control"))
 > (list (layout:part-mode?) (shape (main)) (text notes))
 (#f (3 ((4 6) 5)) "one\n")
 ; C-g leaves the mode.
-> (press! desktop '("x" "control") '("w") '("g" "control"))
+> (press! desktop '("x" "control") '("w") '("w") '("g" "control"))
 > (layout:part-mode?)
 #f
 ; So does a click, which reaches keys without the layout's key handler.
-> (press! desktop '("x" "control") '("w"))
+> (press! desktop '("x" "control") '("w") '("w"))
 > (layout:call-with-frame (layout:frame desktop)
     (lambda () (keys:press! desktop (list "<mouse-1>" (vector (views:id v1) 0)))))
 > (list (layout:part-mode?) (selected))
 (#f 3)
 ; The selected part is outlined on every client while the mode is on.
-> (press! desktop '("x" "control") '("w") '("i"))
+> (press! desktop '("x" "control") '("w") '("w") '("i"))
 > (define (outlined client)
     (let* ([html (screen-of client)] [i (search html "part-selected")])
       (and i (substring html (- i 22) (+ i 13)))))
@@ -58,7 +58,7 @@
 ; While the mode is on, the selected view's level is outlined too, so the
 ; user sees how far the commands that act in it reach: here the root,
 ; the whole screen.
-> (press! desktop '("x" "control") '("w"))
+> (press! desktop '("x" "control") '("w") '("w"))
 > (define (level-outlined client)
     (let* ([html (screen-of client)] [i (search html "part-level")])
       (and i (substring html i (+ i 40)))))

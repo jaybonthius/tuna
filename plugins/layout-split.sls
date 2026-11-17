@@ -5,7 +5,7 @@
 
 (module %internals
   (parts weight flex-text column? split-node? with-weight without node-datum replace-node!
-   holding-split balanced)
+   holding-split balanced transposed)
 
   (define (parts node)
     (let ([acc '()])
@@ -40,6 +40,17 @@
   (define (locked-datum? d)
     (let ([p (assq 'locked (datum-attributes d))]) (and p (cdr p) #t)))
 
+  (define (placed-datum? d)
+    (let ([p (assq 'depth (datum-attributes d))]) (and p (cdr p) #t)))
+
+  (define (kept-whole? d level)
+    (or (vector? d) (locked-datum? d) (eq? (car d) level)))
+
+  (define (holds-placed? d level)
+    (or (placed-datum? d)
+        (and (not (vector? d)) (not (eq? (car d) level))
+             (exists (lambda (c) (holds-placed? c level)) (cddr d)))))
+
   (define (with-attributes d attributes)
     (if (vector? d) (vector (vector-ref d 0) attributes) (cons* (car d) attributes (cddr d))))
 
@@ -69,7 +80,7 @@
             [else (loop p)])))))
 
   (define (balanced d kind level)
-    (if (or (vector? d) (locked-datum? d) (eq? (car d) level))
+    (if (kept-whole? d level)
         d
         (let ([children (map (lambda (c) (balanced c kind level)) (cddr d))])
           (cons* (car d) (cadr d)
@@ -80,7 +91,27 @@
                                   (with-weight c 1)
                                   c)))
                           children)
-                     children))))))
+                     children)))))
+
+  (define (turned attributes)
+    (let ([p (assq 'direction attributes)])
+      (if p
+          (map (lambda (a) (if (eq? a p) (cons 'direction (if (eq? (cdr p) 'column) 'row 'column)) a))
+               attributes)
+          (cons '(direction . column) attributes))))
+
+  ;; A child's size in columns or lines means nothing across its split,
+  ;; so it is kept rather than converted, and transposing back gives the
+  ;; layout as it was. Placed parts persist for the level's views, so a
+  ;; split holding one keeps its direction: turning it would move them.
+  (define (transposed d kind level)
+    (if (or (kept-whole? d level) (placed-datum? d))
+        d
+        (cons* (car d)
+               (if (and (eq? (car d) kind) (not (holds-placed? d level)))
+                   (turned (cadr d))
+                   (cadr d))
+               (map (lambda (c) (transposed c kind level)) (cddr d))))))
 
 (import %internals)
 
@@ -209,6 +240,17 @@
         (parts level)))
     (void)))
 
+(commands:define-command (transpose)
+  "Turns each split in the selected view's level between side by side and stacked, leaving as they are its locked parts, its placed parts and the splits holding them, and the levels inside it."
+  (let* ([level (layout:level-of (layout:selected-view))]
+         [part (and level (not (layout:locked? level)) (car (parts level)))]
+         [before (and part (node-datum part))]
+         [after (and before (transposed before (car (container '())) (car (layout:level '()))))])
+    (when (equal? before after)
+      (error 'layout-split:transpose "no split to transpose in the selected view's level"))
+    (replace-node! part after)
+    (void)))
+
 (commands:define-command (wrap-in-row)
   "Wraps the selected part in a row split."
   (layout:wrap! (lambda (parts) (apply container '((direction . row)) parts))))
@@ -224,6 +266,7 @@
 (keys:bind! keys:global "C-x }" enlarge)
 (keys:bind! keys:global "C-x {" shrink)
 (keys:bind! keys:global "C-x +" balance)
+(keys:bind! keys:global "C-x w t" transpose)
 
 (keys:bind! layout:part-mode-keymap "w r" wrap-in-row)
 (keys:bind! layout:part-mode-keymap "w c" wrap-in-column)
