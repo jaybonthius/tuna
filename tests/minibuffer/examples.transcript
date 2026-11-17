@@ -113,3 +113,13 @@ waiting
 > (type! "y")
 > (result t)
 #t
+; The minibuffer answers ask's questions of yes or no and of y or n.
+> (define t (start! (lambda () (ask:y-or-n? "Save it? "))))
+> (type! "n")
+> (result t)
+#f
+> (define t (start! (lambda () (ask:yes-or-no? "Delete it? "))))
+> (type! "yes")
+> (press! "RET")
+> (result t)
+#t

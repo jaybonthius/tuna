@@ -1,0 +1,59 @@
+; M-x runs the command chosen, passing the prefix argument on; it becomes
+; the last command.
+> (define notes (buffers:make "notes" "one\ntwo\nthree\n"))
+> (views:set-buffer! (view) notes)
+> (define t (start! (lambda () (press! "C-u" "3" "M-x"))))
+> (type! "editing:forward-char")
+> (press! "RET")
+> (result t)
+> (views:point (view))
+4
+> (commands:command-name (commands:last-command))
+editing:forward-char
+> (command-picker:command-history)
+("editing:forward-char")
+; Private commands are not offered.
+> (define t (start! (lambda () (press! "M-x"))))
+> (type! "%answer")
+> (texts (session))
+()
+> (press! "C-g")
+! &quit
+; M-x offers the commands for the modes on in the view and those marked
+; for no mode not at all; M-X offers the commands for those modes only.
+> (commands:define-command (py-run) "Runs Python." (void))
+> (commands:define-command (anywhere) "Runs anywhere." (void))
+> (table-set! commands:command-modes py-run (list python:mode))
+> (define-table python-keys)
+> (keys:bind! python-keys "C-c C-c" anywhere)
+> (table-set! modes:keymaps python:mode python-keys)
+> (define (offered keys text) (let ([t (start! (lambda () (apply press! keys)))]) (type! text) (let ([r (texts (session))]) (press! "C-g") r)))
+> (offered '("M-x") "py-run")
+()
+! &quit
+> (offered '("M-x") "keys:ignore")
+()
+! &quit
+> (offered '("M-x") "keys:undefined")
+()
+! &quit
+> (define code (buffers:make "code.py" ""))
+> (modes:set-major-mode python:mode code)
+> (views:set-buffer! (view) code)
+> (in-client (lambda () (modes:on? python:mode (view))))
+#t
+> (modes:on? modes:fundamental (view))
+#f
+> (offered '("M-x") "py-run")
+("py-run")
+! &quit
+> (offered '("M-X") "")
+("py-run" "anywhere")
+! &quit
+> (set-option! command-picker:command-predicate (lambda (command view) #t))
+> (offered '("M-x") "keys:ignore")
+("keys:ignore")
+! &quit
+> (set-option! command-picker:command-predicate command-picker:command-for-view?)
+> (raised (lambda () (modes:on? 3 (view))))
+(modes:on? "not a mode")

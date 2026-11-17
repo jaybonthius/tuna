@@ -1,0 +1,67 @@
+; C-x C-f reads a file name from the current buffer's directory, else
+; the home folder, with ~ for it; directories end in /.
+> (define notes (buffers:make "notes" "one\ntwo\nthree\n"))
+> (views:set-buffer! (view) notes)
+> (define t (start! (lambda () (press! "C-x" "C-f"))))
+> (input)
+"~/"
+> (type! "src/")
+> (sleep-for 0.3)
+> (texts (session))
+(".hidden" "blob.bin" "link.txt" "text.txt")
+> (type! "te")
+> (sleep-for 0.3)
+> (press! "RET")
+> (result t)
+> (files:path (views:buffer (view)))
+"~/src/text.txt"
+; A path that does not exist is taken too, with ~ expanded.
+> (define t (start! (lambda () (file-picker:read-file-name "File: "))))
+> (minibuffer:input (prompt))
+"~/src/"
+> (type! "new.txt")
+> (sleep-for 0.3)
+> (press! "RET")
+> (let ([p (result t)]) (string=? p (string-append (getenv "HOME") "/src/new.txt")))
+#t
+> (file-picker:file-name-history)
+("~/src/new.txt" "~/src/text.txt")
+; files asks for a name through ask:file-name, whose reader file-picker
+; fills when it loads and takes back when it unloads.
+> (eq? (ask:file-name-reader) file-picker:read-file-name)
+#t
+> (unload-module! '(file-picker))
+> (define t (start! (lambda () (press! "C-x" "C-f"))))
+! ask:file-name-reader: no reader is loaded
+> (result t)
+> (use-plugin file-picker)
+> (eq? (ask:file-name-reader) file-picker:read-file-name)
+#t
+> (keys:lookup client "C-x C-f")
+#<procedure>
+; The file reader expands a directory part that does not exist, component
+; by component, and its candidates follow the part that does: choosing
+; one replaces the rest.
+> (table-set! completion:category-styles completion:file-category (list completion:partial completion:any-order))
+> (define t (start! (lambda () (file-picker:read-file-name "File: " "~/"))))
+> (type! "c/t/m")
+> (sleep-for 0.3)
+> (texts (session))
+("code/tuna/main.sls")
+> (press! "RET")
+> (let ([p (result t)]) (substring p (string-length (getenv "HOME")) (string-length p)))
+"/code/tuna/main.sls"
+> (define t (start! (lambda () (file-picker:read-file-name "File: " "~/"))))
+> (type! "n/s")
+> (sleep-for 0.3)
+> (texts (session))
+("notes/sub/")
+> (press! "TAB")
+> (input)
+"~/notes/sub/"
+> (sleep-for 0.3)
+> (texts (session))
+("b.sls")
+> (press! "C-g")
+! &quit
+> (table-remove! completion:category-styles completion:file-category)

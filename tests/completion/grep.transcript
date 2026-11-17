@@ -1,0 +1,35 @@
+> (views:set-buffer! (view) (files:visit (string-append (getenv "HOME") "/src/text.txt")))
+; M-s g searches the files under the current buffer's directory, leaving
+; out hidden files, symbolic links and binary files; after #, the input
+; filters the lines found.
+> (define t (start! (lambda () (press! "M-s" "g"))))
+> (define s (session))
+> (type! "ne")
+> (sleep-for 0.5)
+> (texts s)
+()
+> (type! "edle")
+> (sleep-for 0.5)
+> (texts s)
+("text.txt:1:needle one" "text.txt:3:needle two")
+> (type! "#two")
+> (sleep-for 0.3)
+> (texts s)
+("text.txt:3:needle two")
+> (press! "RET")
+> (result t)
+> (views:buffer (view))
+#<buffer text.txt>
+> (document:line (buffers:document (views:buffer (view))) (views:point (view)))
+3
+; Files over the size limit are left out.
+> (set-option! grep:max-file-size 10)
+> (define t (start! (lambda () (press! "M-s" "g"))))
+> (define s (session))
+> (type! "needle")
+> (sleep-for 0.5)
+> (texts s)
+()
+> (press! "C-g")
+! &quit
+> (set-option! grep:max-file-size 1000000)

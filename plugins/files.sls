@@ -1,24 +1,8 @@
 #!tuna
-(import (buffers) (document) (jobs) (commands) (keys) (layout) (views) (files disk))
+(import (buffers) (document) (jobs) (commands) (keys) (layout) (views) (ask) (files disk))
 
 (define-option require-final-newline #f boolean?
   "When true, saving a file buffer whose text does not end in a line break adds one, as an edit.")
-
-(define (%no-file-name-reader question)
-  (error 'files:file-name-reader "no reader of file names is loaded"))
-
-(define (%no-yes-or-no-reader question)
-  (error 'files:yes-or-no-reader "no reader of yes or no is loaded"))
-
-;; The readers need the prompt's whole stack, which a plugin that only
-;; visits and saves files should load without; so the commands that ask
-;; read through options the readers' plugin fills, as Emacs's
-;; read-file-name-function.
-(define-option file-name-reader %no-file-name-reader procedure?
-  "A procedure of a question that reads a file name and returns it, for find-file and write-file run as commands.")
-
-(define-option yes-or-no-reader %no-yes-or-no-reader procedure?
-  "A procedure of a question that asks for yes or no and returns true for yes, for save-buffers-kill-tuna.")
 
 (define-hook after-visit
   "Called with a buffer after it has visited a file, before files:visit returns.")
@@ -516,7 +500,7 @@
                   (buffers:with-buffer b (after-visit b))
                   b)))))))
 
-(commands:define-command (find-file [path ((file-name-reader) "Find file: ")])
+(commands:define-command (find-file [path (ask:file-name "Find file: ")])
   "Visits PATH and shows its buffer in the selected view."
   (layout:switch-to-buffer (visit path)))
 
@@ -542,7 +526,7 @@
         (when (and (entry-live? e) (buffers:modified? buffer))
           (save! 'files:save-buffer e #t))))))
 
-(commands:define-command (write-file [path ((file-name-reader) "Write file: ")] [buffer (buffers:current)])
+(commands:define-command (write-file [path (ask:file-name "Write file: ")] [buffer (buffers:current)])
   "Makes BUFFER visit PATH, renaming it after the file, and saves it there."
   (check-path 'files:write-file path)
   (check-buffer 'files:write-file buffer)
@@ -594,7 +578,7 @@
                        (or (not (buffers:modified? b))
                            (exists (lambda (entry) (entry b)) (hook-entries unsaved-kept))))
                      (visited-buffers))
-            ((yes-or-no-reader) "Modified buffers exist; exit anyway? "))
+            (ask:yes-or-no? "Modified buffers exist; exit anyway? "))
     (exit)))
 
 (define (fingerprint buffer)

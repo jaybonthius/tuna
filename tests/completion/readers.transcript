@@ -1,17 +1,3 @@
-; files reads a name through files:file-name-reader, which pickers fills
-; when it loads and takes back when it unloads.
-> (eq? (files:file-name-reader) pickers:read-file-name)
-#t
-> (unload-module! '(pickers))
-> (define t (start! (lambda () (press! "C-x" "C-f"))))
-! files:file-name-reader: no reader of file names is loaded
-> (result t)
-> (use-plugin pickers)
-> (use-plugin completion-annotations)
-> (eq? (files:file-name-reader) pickers:read-file-name)
-#t
-> (keys:lookup client "C-x C-f")
-#<procedure>
 ; Partial completion: each word starts the candidate's matching word.
 > (completion:partial "u/l/b")
 ((starts "u" "/l" "/b"))
@@ -21,32 +7,6 @@
 ((starts "f" "-r" "-n"))
 > (completion:partial "")
 ()
-; The file reader expands a directory part that does not exist, component
-; by component, and its candidates follow the part that does: choosing
-; one replaces the rest.
-> (table-set! completion:category-styles completion:file-category (list completion:partial completion:any-order))
-> (define t (start! (lambda () (pickers:read-file-name "File: " "~/"))))
-> (type! "c/t/m")
-> (sleep-for 0.3)
-> (texts (session))
-("code/tuna/main.sls")
-> (press! "RET")
-> (let ([p (result t)]) (substring p (string-length (getenv "HOME")) (string-length p)))
-"/code/tuna/main.sls"
-> (define t (start! (lambda () (pickers:read-file-name "File: " "~/"))))
-> (type! "n/s")
-> (sleep-for 0.3)
-> (texts (session))
-("notes/sub/")
-> (press! "TAB")
-> (input)
-"~/notes/sub/"
-> (sleep-for 0.3)
-> (texts (session))
-("b.sls")
-> (press! "C-g")
-! &quit
-> (table-remove! completion:category-styles completion:file-category)
 ; M-r and M-s read an entry of the prompt's history with a nested read
 ; that keeps no history, starting from the input.
 > (define-saved h '("gamma" "beta" "alpha") list?)
@@ -80,41 +40,3 @@
 "completion:search-history: History is empty"
 > (press! "C-g")
 ! &quit
-; M-x offers the commands for the modes on in the view and those marked
-; for no mode not at all; M-X offers the commands for those modes only.
-> (commands:define-command (py-run) "Runs Python." (void))
-> (commands:define-command (anywhere) "Runs anywhere." (void))
-> (table-set! commands:command-modes py-run (list python:mode))
-> (define-table python-keys)
-> (keys:bind! python-keys "C-c C-c" anywhere)
-> (table-set! modes:keymaps python:mode python-keys)
-> (define (offered keys text) (let ([t (start! (lambda () (apply press! keys)))]) (type! text) (let ([r (texts (session))]) (press! "C-g") r)))
-> (offered '("M-x") "py-run")
-()
-! &quit
-> (offered '("M-x") "keys:ignore")
-()
-! &quit
-> (offered '("M-x") "keys:undefined")
-()
-! &quit
-> (define code (buffers:make "code.py" ""))
-> (modes:set-major-mode python:mode code)
-> (views:set-buffer! (view) code)
-> (in-client (lambda () (modes:on? python:mode (view))))
-#t
-> (modes:on? modes:fundamental (view))
-#f
-> (offered '("M-x") "py-run")
-("py-run")
-! &quit
-> (offered '("M-X") "")
-("py-run" "anywhere")
-! &quit
-> (set-option! pickers:command-predicate (lambda (command view) #t))
-> (offered '("M-x") "keys:ignore")
-("keys:ignore")
-! &quit
-> (set-option! pickers:command-predicate pickers:command-for-view?)
-> (raised (lambda () (modes:on? 3 (view))))
-(modes:on? "not a mode")

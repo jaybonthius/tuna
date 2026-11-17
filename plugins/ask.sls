@@ -1,0 +1,29 @@
+#!tuna
+
+(define (%no-reader who)
+  (lambda (question) (error who "no reader is loaded")))
+
+(define-option file-name-reader (%no-reader 'ask:file-name-reader) procedure?
+  "A procedure of a question that reads a file name and returns it, as Emacs's read-file-name-function.")
+
+(define-option yes-or-no-reader (%no-reader 'ask:yes-or-no-reader) procedure?
+  "A procedure of a question that asks for yes or no and returns true for yes.")
+
+(define-option y-or-n-reader (%no-reader 'ask:y-or-n-reader) procedure?
+  "A procedure of a question that asks for y or n and returns true for y.")
+
+(define (%check-question who question)
+  (unless (string? question)
+    (assertion-violation who "not a string" question)))
+
+(define (file-name question)
+  (%check-question 'ask:file-name question)
+  ((file-name-reader) question))
+
+(define (yes-or-no? question)
+  (%check-question 'ask:yes-or-no? question)
+  ((yes-or-no-reader) question))
+
+(define (y-or-n? question)
+  (%check-question 'ask:y-or-n? question)
+  ((y-or-n-reader) question))

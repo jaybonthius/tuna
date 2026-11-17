@@ -1,0 +1,26 @@
+; M-s l on a large buffer splits its lines in a job; point follows the
+; selection and comes back when the read is quit.
+> (define big (buffers:make "big" (apply string-append (map (lambda (i) (format "line ~a\n" i)) (iota 2000)))))
+> (views:set-buffer! (view) big)
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (define s (session))
+> (wait-matches s)
+> (vector-length (completion:session-matches s))
+2000
+> (type! "1999")
+> (wait-matches s)
+> (texts s)
+("line 1999")
+> (views:point (view))
+21
+> (press! "C-g")
+! &quit
+> (views:point (view))
+1
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (type! "line 1500")
+> (wait-matches (session))
+> (press! "RET")
+> (result t)
+> (document:line (buffers:document big) (views:point (view)))
+1501

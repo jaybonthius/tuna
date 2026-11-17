@@ -30,7 +30,7 @@
 ; A modified buffer that a log holds lets C-x C-c exit without asking;
 ; one that keeps no log makes it ask.
 > (define asked '())
-> (set-option! files:yes-or-no-reader (lambda (question) (set! asked (cons question asked)) #f))
+> (set-option! ask:yes-or-no-reader (lambda (question) (set! asked (cons question asked)) #f))
 > (list (buffers:modified? r) (exists (lambda (entry) (entry r)) (hook-entries files:unsaved-kept)))
 (#t #t)
 > (checks:write-text! "~/n.txt" "no log\n")

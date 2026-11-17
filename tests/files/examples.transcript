@@ -67,7 +67,7 @@
 ; C-x C-c asks before it exits with a modified file buffer whose edits
 ; no entry of files:unsaved-kept keeps.
 > (define asked '())
-> (set-option! files:yes-or-no-reader (lambda (question) (set! asked (cons question asked)) #f))
+> (set-option! ask:yes-or-no-reader (lambda (question) (set! asked (cons question asked)) #f))
 > (commands:run files:save-buffers-kill-tuna)
 > asked
 ("Modified buffers exist; exit anyway? ")

@@ -21,9 +21,13 @@
     (add-hook! python:mode-hook
       (lambda () (set-option-local! completion-popup:auto-delay 0.1)))))
 (use-plugin files)
-(use-plugin pickers
+(use-plugin file-picker)
+(use-plugin buffer-picker)
+(use-plugin command-picker)
+(use-plugin line-picker
   (config
-    (keys:bind! keys:global "C-s" pickers:line)))
+    (keys:bind! keys:global "C-s" line-picker:line)))
+(use-plugin grep)
 
 (jobs:define-worker (notes-files directory emit)
   (emit (list->vector
@@ -39,7 +43,7 @@
     (category completion:location-category)
     (title "Notes")))
 
-(set-option! pickers:buffer-sources (list pickers:buffers notes-source))
+(set-option! buffer-picker:sources (list buffer-picker:buffers notes-source))
 (use-plugin words)
 (use-plugin completion-annotations
   (config

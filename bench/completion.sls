@@ -1,6 +1,6 @@
 #!tuna
-(import (minibuffer) (completion) (completion-list) (completion-popup) (pickers) (completion matcher) (layout) (views) (buffers)
-        (document) (keys) (commands) (jobs) (echo-area) (web) (haml))
+(import (minibuffer) (completion) (completion-list) (completion-popup) (command-picker) (line-picker) (completion matcher)
+        (layout) (views) (buffers) (document) (keys) (commands) (jobs) (echo-area) (web) (haml))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -127,7 +127,7 @@
         (show "draw-prompt-with-message" (/ (ns-per-op 200 (lambda () (html->bytevector (views:draw v client)))) 1000.0) "µs"))
       (press "C-g")
       (sleep-for 0.05))
-    (let ([t (spawn-task (lambda () (in-frame (lambda () (commands:run pickers:execute-extended-command)))))])
+    (let ([t (spawn-task (lambda () (in-frame (lambda () (commands:run command-picker:execute-extended-command)))))])
       (sleep-for 0.05)
       (let ([v (layout:selected-view)])
         (show "draw-m-x-annotated" (/ (ns-per-op 200 (lambda () (html->bytevector (views:draw v client)))) 1000.0) "µs")
@@ -137,7 +137,7 @@
     (let ([b (buffers:make "big" (apply string-append (map (lambda (i) (format "line ~60,,,'.a\n" i)) (iota 16000))))])
       (layout:switch-to-buffer b)
       (let* ([start (now-ns)] [thread-start (thread-ns)]
-             [t (spawn-task (lambda () (in-frame (lambda () (commands:run pickers:line)))))])
+             [t (spawn-task (lambda () (in-frame (lambda () (commands:run line-picker:line)))))])
         (sleep-for 0)
         (show "line-start-1mb-main-thread" (/ (- (thread-ns) thread-start) 1000.0) "µs")
         (let ([s (in-frame completion:current-session)])

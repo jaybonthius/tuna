@@ -114,13 +114,14 @@ words:word-category
 > (popups)
 ()
 ; The annotators of commands and buffers.
-> (define t (start! (lambda () (commands:run pickers:execute-extended-command))))
+> (define t (start! (lambda () (commands:run command-picker:execute-extended-command))))
 > (type! "find-file")
 > (rows (session))
 (("files:find-file" (keyword . "C-x C-f") (shadow . "Visits PATH and shows its buffer in the selected view.")))
 > (press! "C-g")
 ! &quit
-; pickers' configuration: C-x b offers the notes too, valued by locations.
+; The configuration's buffer sources: C-x b offers the notes too, valued
+; by locations.
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (define s (session))
 > (wait-matches s)

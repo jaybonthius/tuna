@@ -1,0 +1,20 @@
+; Until a plugin fills its reader, each question raises.
+> (raised (lambda () (ask:file-name "Find file: ")))
+(ask:file-name-reader "no reader is loaded")
+> (raised (lambda () (ask:yes-or-no? "Exit anyway? ")))
+(ask:yes-or-no-reader "no reader is loaded")
+> (raised (lambda () (ask:y-or-n? "Save it? ")))
+(ask:y-or-n-reader "no reader is loaded")
+; Each question calls its reader with the question and returns its answer.
+> (define asked '())
+> (define (reader answer) (lambda (question) (set! asked (cons question asked)) answer))
+> (set-option! ask:file-name-reader (reader "/tmp/notes.txt"))
+> (set-option! ask:yes-or-no-reader (reader #t))
+> (set-option! ask:y-or-n-reader (reader #f))
+> (list (ask:file-name "Find file: ") (ask:yes-or-no? "Exit anyway? ") (ask:y-or-n? "Save it? "))
+("/tmp/notes.txt" #t #f)
+> asked
+("Save it? " "Exit anyway? " "Find file: ")
+; A question must be a string.
+> (raised (lambda () (ask:y-or-n? 'save)))
+(ask:y-or-n? "not a string")

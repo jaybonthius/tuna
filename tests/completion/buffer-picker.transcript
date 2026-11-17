@@ -1,0 +1,44 @@
+; C-x b previews the selected buffer in the selected view and puts back
+; the view's buffer and point when the read is quit.
+> (define notes (buffers:make "notes" "one\ntwo\nthree\n"))
+> (views:set-buffer! (view) notes)
+> (define other (buffers:make "other" "x\n"))
+> (views:set-point! (view) 5)
+> (define t (start! (lambda () (press! "C-x" "b"))))
+> (wait-matches (session))
+> (texts (session))
+("*scratch*" "*Messages*" "other" "notes" "sub" "a.txt")
+> (views:buffer (car (layout:views)))
+#<buffer *scratch*>
+> (type! "oth")
+> (wait-matches (session))
+> (views:buffer (car (layout:views)))
+#<buffer other>
+> (press! "C-g")
+! &quit
+> (result t)
+> (views:buffer (view))
+#<buffer notes>
+> (views:point (view))
+5
+; A name that no candidate names makes a buffer of that name.
+> (define t (start! (lambda () (press! "C-x" "b"))))
+> (type! "fresh")
+> (wait-matches (session))
+> (press! "RET")
+> (result t)
+> (views:buffer (view))
+#<buffer fresh>
+> (text (views:buffer (view)))
+""
+; C-x k offers the current buffer by default.
+> (define t (start! (lambda () (press! "C-x" "k"))))
+> (press! "RET")
+> (result t)
+> (buffers:find "fresh")
+#f
+; buffer-picker:read-buffer returns the buffer chosen.
+> (define t (start! (lambda () (buffer-picker:read-buffer "Buffer: " buffer-picker:buffer-history other))))
+> (press! "RET")
+> (result t)
+#<buffer other>

@@ -106,7 +106,7 @@ expect "after many batches" "$output" '(231 204)'
 output=$(run '(wait-until (lambda () (showing? "b.txt")))
 (undo:forget! (b))
 (buffers:replace! (b) 1 1 "y")
-(set-option! files:yes-or-no-reader (lambda (question) (display question) (newline) #t))
+(set-option! ask:yes-or-no-reader (lambda (question) (display question) (newline) #t))
 (commands:run files:save-buffers-kill-tuna)')
 expect "quit after forgetting" "$output" '#<edit 1>
 Modified buffers exist; exit anyway? '

@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (layout-sides) (keys) (commands) (modes) (echo-area) (web) (haml) (undo))
+(import (buffers) (document) (views) (layout) (layout-sides) (keys) (commands) (modes) (echo-area) (web) (haml) (undo) (ask))
 
 (define-saved history '() (lambda (v) (and (list? v) (for-all string? v))))
 
@@ -554,6 +554,8 @@
 (keys:bind! %y-or-n-keymap "<printing-char>" %answer-y-or-n)
 (keys:remap! %y-or-n-keymap exit %answer-y-or-n)
 (add-hook! keys:find-keymaps %prompt-keymaps 40)
+(set-option! ask:yes-or-no-reader ask-yes-or-no)
+(set-option! ask:y-or-n-reader ask-y-or-n)
 (table-set! web:stylesheets 'minibuffer "minibuffer/minibuffer.css")
 (add-hook! buffers:after-edit %input-edited)
 (add-hook! buffers:kill-queries %keep-buffer)
