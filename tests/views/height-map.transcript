@@ -1,0 +1,52 @@
+; The height map is a plain Chez library in views' folder. COUNT stands
+; for a document: here every token is a line of ten characters.
+> (import (views height-map))
+> (define (count a z) (values (- z a) (* 10 (- z a)) 0 0))
+; A new map is one estimate over the whole document: rows times the
+; line height, with no wrapping.
+> (define m (make-height-map 100 20.0 #f count))
+> (list (height-map-length m) (height-map-total m))
+(100 2000.0)
+; A measure replaces the stretch it covers; positions inside a stretch
+; are spread evenly over its px, and a lookup by px finds the position
+; back.
+> (height-map-measure! m 10 20 50.0 #f)
+> (list (height-map-total m) (height-map-px m 10) (height-map-px m 20) (height-map-px m 15))
+(1850.0 200.0 250.0 225.0)
+> (height-map-stretches m)
+((0 10 200.0 #f) (10 20 50.0 #t) (20 100 1600.0 #f))
+> (list (height-map-position m 200.0) (height-map-position m 225.0))
+(10 15)
+> (call-with-values (lambda () (height-map-stretch m 12)) list)
+(10 20 50.0 #t)
+> (call-with-values (lambda () (height-map-stretch m 25)) list)
+(20 100 1600.0 #f)
+; An edit makes every stretch it touches one estimate of its new length,
+; counted in the document after it; text inserted at a stretch's end
+; belongs to the stretch holding that position.
+> (height-map-replace! m 15 15 25 count)
+> (list (height-map-length m) (height-map-stretches m))
+(110 ((0 10 200.0 #f) (10 30 400.0 #f) (30 110 1600.0 #f)))
+> (height-map-replace! m 50 60 50 count)
+> (list (height-map-length m) (height-map-total m))
+(100 2000.0)
+; A whole node in a new estimate counts the mean advance of the whole
+; items measured; a node that opens counts a row. Estimates made before
+; keep their px, so measuring never moves another position.
+> (height-map-measure! m 0 5 100.0 #t)
+> (height-map-measure! m 30 31 300.0 #t)
+> (height-map-px m 50)
+1280.0
+> (height-map-replace! m 40 40 41 (lambda (a z) (values 0 0 1 1)))
+> (call-with-values (lambda () (height-map-stretch m 40)) list)
+(31 101 220.0 #f)
+; Wrapped text takes a row for each row's worth of characters beyond
+; half a row per line: two lines of 100 characters, 40 to a row.
+> (define w (make-height-map 10 20.0 40 (lambda (a z) (values 2 200 0 0))))
+> (height-map-total w)
+120.0
+; Measuring 60,000 items keeps every sum and lookup exact.
+> (define big (make-height-map 60000 20.0 #f (lambda (a z) (values (- z a) 0 0 0))))
+> (let loop ([i 0]) (when (< i 60000) (height-map-measure! big i (+ i 1) 21.0 #f) (loop (+ i 1))))
+> (list (height-map-total big) (height-map-px big 30000) (height-map-position big 630000.0))
+(1260000.0 630000.0 30000)

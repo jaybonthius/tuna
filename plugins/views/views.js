@@ -1,5 +1,7 @@
 import { send } from "tuna";
 
+const { number, box, items: viewItems, place, lineHeight } = window.tunaViews;
+
 // Scrolling has come to rest when a view has not moved for restMs. Only
 // a report at rest moves the view in the other clients, so a fling moves
 // them once. The browser's scrollend fires after each step of a scroll
@@ -7,29 +9,17 @@ import { send } from "tuna";
 // since 26.2.
 const restMs = 200;
 
-// What the browser rounds a line's edge to: a line this far past the
-// view's bottom still counts as wholly in view.
+// What the browser rounds an edge to.
 const edgeTolerance = 0.5;
 
 // Kept by element, so a view element the morph makes anew is placed
 // again.
 const views = new WeakMap();
-const resting = new WeakMap();
 let reports = 0;
-
-function number(element, name) {
-  const text = element?.getAttribute(name);
-  const value = Number(text);
-  return text != null && text !== "" && Number.isFinite(value) ? value : null;
-}
 
 function ownLines(view) {
   return Array.from(view.querySelectorAll(".line[data-line]"))
     .filter((line) => line.closest("[data-view]") === view);
-}
-
-function runKey(lines) {
-  return `${lines[0]?.getAttribute("data-line")} ${lines[lines.length - 1]?.getAttribute("data-line")} ${lines.length}`;
 }
 
 function firstEndingBelow(lines, y) {
@@ -42,17 +32,99 @@ function firstEndingBelow(lines, y) {
   return low;
 }
 
+function mark(item) {
+  const at = number(item, "data-at");
+  return at !== null ? { at } : { line: number(item, "data-line") };
+}
+
+// A browser's own measure of a character, for the server's estimate of
+// how many fit a row of wrapped text.
+const canvas = document.createElement("canvas").getContext("2d");
+
+function charWidth(view) {
+  canvas.font = getComputedStyle(view).font;
+  return canvas.measureText("0".repeat(10)).width / 10 || 8;
+}
+
+// An item taller than the view that crosses its bottom ends there with
+// its end.
+function placesInView(view, boxes, all, viewTop, viewBottom) {
+  const height = view.clientHeight;
+  const lh = lineHeight(view);
+  const margin = Math.min((number(view, "data-scroll-margin") ?? 0) * lh, height / 4);
+  const x = view.getBoundingClientRect().left + view.clientLeft + 2;
+  const rowY = (i, y, down) => {
+    if (i < 0 || !all[i].classList.contains("line")) return y;
+    const rows = (y - boxes[i].top) / lh;
+    return boxes[i].top + (down ? Math.ceil(rows - 0.01) : Math.floor(rows + 0.01)) * lh + (down ? lh / 2 : -lh / 2);
+  };
+  const at = (y) => {
+    const target = document.elementFromPoint(x, y);
+    return target && view.contains(target) ? placeOf(view, target, x, y) : null;
+  };
+  // A whole item cut at an edge has no place wholly in view unless it is
+  // taller than the room, so the place is in the item next to it.
+  const room = height - 2 * margin;
+  const cut = (i, top) => all[i].classList.contains("whole") && boxes[i].height <= room
+    && (top ? boxes[i].top < viewTop + margin - edgeTolerance : boxes[i].bottom > viewBottom - margin + edgeTolerance);
+  let first = boxes.findIndex((b) => b.bottom > viewTop + margin + edgeTolerance);
+  if (first >= 0 && cut(first, true) && first + 1 < boxes.length) first += 1;
+  let last = -1;
+  for (let i = 0; i < boxes.length; i++) if (boxes[i].top < viewBottom - margin - edgeTolerance) last = i;
+  if (last >= 0 && cut(last, false) && last > 0) last -= 1;
+  const start = first < 0 ? null
+    : at(Math.min(rowY(first, Math.max(viewTop + margin, boxes[first].top + 1), true), viewBottom - 1));
+  let end = last < 0 ? null
+    : at(Math.max(rowY(last, Math.min(viewBottom - margin, boxes[last].bottom - 1), false), viewTop + 1));
+  if (last >= 0 && all[last].classList.contains("whole")) {
+    const to = number(all[last], "data-to");
+    if (to !== null) end = { at: to, count: 0 };
+  }
+  return { start, end };
+}
+
+// An item drawn as nothing, as an empty segment hidden by its style,
+// has no box and is left out.
+function measure(view) {
+  const drawn = viewItems(view).map((item) => [item, box(item)]).filter(([item, b]) => b !== null);
+  const all = drawn.map(([item]) => item);
+  const viewTop = view.getBoundingClientRect().top + view.clientTop;
+  const viewBottom = viewTop + view.clientHeight;
+  const boxes = drawn.map(([item, b]) => ({ top: b.top, bottom: b.bottom, height: b.height }));
+  const advances = boxes.map((b, i) => (i + 1 < boxes.length ? boxes[i + 1].top - b.top : b.height));
+  const firstTop = boxes[0]?.top ?? viewTop;
+  const lastBottom = boxes.length ? boxes[boxes.length - 1].bottom : viewTop;
+  const spacer = boxes.length && firstTop - viewTop > edgeTolerance && view.querySelector(':scope > [data-spacer="above"]')
+    ? "above"
+    : boxes.length && viewTop >= lastBottom && view.querySelector(':scope > [data-spacer="below"]') ? "below" : null;
+  const topIndex = spacer === null ? boxes.findIndex((b) => b.bottom > viewTop) : -1;
+  const top = topIndex >= 0 ? all[topIndex] : null;
+  return {
+    all, boxes, viewTop, viewBottom, spacer,
+    top: top ? mark(top) : null,
+    offset: top ? viewTop - boxes[topIndex].top : 0,
+    itemHeight: top ? boxes[topIndex].height : 0,
+    spacerDistance: spacer === "above" ? firstTop - viewTop : spacer === "below" ? viewTop - lastBottom : 0,
+    above: Math.max(viewTop - firstTop, 0),
+    below: Math.max(lastBottom - viewBottom, 0),
+    items: all.map((item, i) => [mark(item), Math.max(advances[i], 0)]),
+    run: all.length ? `${all[0].id} ${all[all.length - 1].id} ${all.length}` : "",
+  };
+}
+
 // One report is on its way per view until a screen brings its number
 // back: over a slow link, reports sent faster than screens return would
-// queue up and describe the past. A report from a spacer owes another, so
-// Tuna learns what the screen it drew there shows. Nothing here moves
-// the view: the browser scrolls it, its scroll anchoring holds drawn
-// lines still, and only a placement puts it somewhere.
+// queue up and describe the past. A report from a spacer owes another,
+// so Tuna learns what the screen it drew there shows. Nothing here moves
+// the view: the browser scrolls it, its scroll anchoring holds what is
+// in view still, and only a placement puts it somewhere.
 function check(view, reason) {
   const state = views.get(view);
   if (state === undefined) return;
-  if (state.sent !== null) {
-    if (reason === "rest") { state.owed = true; state.rested = true; }
+  if (reason === "resized") state.resized = true;
+  const resting = reason === "rest" || reason === "flush";
+  if (state.sent !== null && reason !== "flush") {
+    if (resting) { state.owed = true; state.rested = true; }
     return;
   }
   // A view the morph is removing measures all zeros.
@@ -60,125 +132,212 @@ function check(view, reason) {
   if (number(view, "data-placement") !== state.placed) return;
   const id = number(view, "data-view");
   if (id === null) return;
+  const m = measure(view);
   const want = (number(view, "data-drawn-screens") ?? 0) * view.clientHeight;
-  const viewTop = view.getBoundingClientRect().top + view.clientTop;
-  const viewBottom = viewTop + view.clientHeight;
-  const lines = ownLines(view);
-  const first = lines[0];
-  const last = lines[lines.length - 1];
-  const firstTop = first?.getBoundingClientRect().top ?? viewTop;
-  const lastBottom = last?.getBoundingClientRect().bottom ?? viewTop;
-  const above = Math.max(viewTop - firstTop, 0);
-  const below = Math.max(lastBottom - viewBottom, 0);
-  const run = runKey(lines);
-  // Far more than asked for only counts when a line lies far enough past
-  // the edge that drawing fewer leaves enough, and never twice for one
-  // run: Tuna draws every line to an end when fewer than the drawn screens
-  // would be left there, so asking again would bring the same run back.
-  const due = reason !== "moved" || state.owed
-    || view.clientWidth !== number(view, "data-measured-width")
-    || view.clientHeight !== number(view, "data-measured-height")
-    || (above < want / 2 && !view.hasAttribute("data-run-at-start"))
-    || (below < want / 2 && !view.hasAttribute("data-run-at-end"))
-    || (run !== state.reported
-        && ((above > 2 * want && first !== undefined
-             && viewTop - first.getBoundingClientRect().bottom > want / 2)
-            || (below > 2 * want && last !== undefined
-                && last.getBoundingClientRect().top - viewBottom > want / 2)));
+  // Far more than asked for only counts when an item lies wholly past
+  // twice it, and never twice for one run: Tuna draws every item to an
+  // end when fewer than the drawn screens would be left there, so asking
+  // again would bring the same run back.
+  const first = m.boxes[0];
+  const last = m.boxes[m.boxes.length - 1];
+  const due = resting || state.owed || state.resized
+    || (m.above < want / 2 && !view.hasAttribute("data-run-at-start"))
+    || (m.below < want / 2 && !view.hasAttribute("data-run-at-end"))
+    || (m.run !== state.reported
+        && ((first !== undefined && first.bottom < m.viewTop - 2 * want)
+            || (last !== undefined && last.top > m.viewBottom + 2 * want)));
   if (!due) return;
-  const spacer = first !== undefined && firstTop - viewTop > edgeTolerance
-      && view.querySelector(':scope > [data-spacer="above"]')
-    ? "above"
-    : last !== undefined && viewTop >= lastBottom && view.querySelector(':scope > [data-spacer="below"]')
-      ? "below"
-      : null;
-  const topIndex = spacer === "above" ? 0
-    : spacer === "below" ? lines.length - 1
-    : Math.min(firstEndingBelow(lines, viewTop), lines.length - 1);
-  const lastIndex = firstEndingBelow(lines, viewBottom + edgeTolerance) - 1;
-  const lastShown = lines[lastIndex];
-  const top = lines[topIndex];
-  const measured = {
+  const { start, end } = placesInView(view, m.boxes, m.all, m.viewTop, m.viewBottom);
+  const report = {
     type: "scroll",
     view: id,
     placement: state.placed,
-    top: number(top, "data-line"),
-    offset: top ? viewTop - top.getBoundingClientRect().top : 0,
-    lastVisible: spacer === null
-      ? number(lines[Math.max(lastIndex, topIndex)], "data-line")
-      : lastShown !== undefined && lastShown.getBoundingClientRect().top >= viewTop - edgeTolerance
-        ? number(lastShown, "data-line")
-        : null,
-    spacer,
-    spacerDistance: spacer === "above" ? firstTop - viewTop : spacer === "below" ? viewTop - lastBottom : 0,
-    before: Math.max(topIndex, 0),
-    after: Math.max(lines.length - 1 - topIndex, 0),
-    drawnHeight: Math.max(lastBottom - firstTop, 0),
-    above,
-    below,
+    version: number(view, "data-version"),
+    top: m.top,
+    offset: m.offset,
+    itemHeight: m.itemHeight,
+    left: view.classList.contains("nowrap") ? view.scrollLeft : 0,
+    start,
+    end,
+    spacer: m.spacer,
+    spacerDistance: m.spacerDistance,
+    below: m.below,
+    items: m.items,
+    lineHeight: lineHeight(view),
+    charWidth: charWidth(view),
     width: view.clientWidth,
     height: view.clientHeight,
-    settled: reason === "rest" || state.rested,
+    settled: resting || state.rested,
+    hand: state.hand,
+    runAtEnd: view.hasAttribute("data-run-at-end"),
   };
-  state.owed = spacer !== null;
-  state.reported = run;
+  state.owed = m.spacer !== null;
+  state.resized = false;
+  state.reported = m.run;
   state.rested = false;
-  if (unchanged(state, measured)) return;
-  state.first ??= measured;
-  state.last = measured;
+  if (unchanged(state, report)) return;
+  if (report.settled) state.hand = false;
+  state.first ??= report;
+  state.last = report;
   state.sent = ++reports;
-  send({ ...measured, report: state.sent });
+  send({ ...report, report: state.sent });
 }
 
 // Each report makes Tuna draw every client again, if only to bring its
 // number back, so one that tells Tuna nothing new is not sent. At rest
-// only the position is news, as lines drawn since only matter to a view
-// still moving: the first report under a placement puts the view in step
-// there, and only a report at rest moves the other clients to where a
-// report made while scrolling left it.
-const position = ["view", "placement", "top", "offset", "spacer", "spacerDistance", "width", "height"];
+// only the position is news, as items measured since only matter to a
+// view still moving: the first report under a placement puts the view in
+// step there, and only a report at rest moves the other clients to where
+// a report made while scrolling left it.
+const position = ["view", "placement", "version", "top", "offset", "left", "spacer", "spacerDistance", "width", "height"];
 
-function unchanged(state, measured) {
+// The browser holding its anchor as items above change size moves the
+// view by fractions of a pixel, which is no news.
+function same(a, b) {
+  return typeof a === "number" && typeof b === "number" ? Math.abs(a - b) < 1 : JSON.stringify(a) === JSON.stringify(b);
+}
+
+function unchanged(state, report) {
   const last = state.last;
   if (last === undefined) return false;
-  const keys = measured.settled ? position : Object.keys(measured).filter((key) => key !== "settled");
-  if (keys.some((key) => last[key] !== measured[key])) return false;
-  return !measured.settled || last.settled || last === state.first;
+  const keys = report.settled ? position : Object.keys(report).filter((key) => key !== "settled" && key !== "hand");
+  if (keys.some((key) => !same(last[key], report[key]))) return false;
+  return !report.settled || last.settled || last === state.first;
 }
 
-// The offset of a top placement is never all of its line: another client
-// measured it, and the line may be shorter here.
-function place(view, placement) {
-  const target = number(view, "data-place-line");
-  const line = target === null ? undefined
-    : ownLines(view).find((element) => number(element, "data-line") === target);
-  if (line !== undefined) {
-    const box = line.getBoundingClientRect();
-    const top = box.top - (view.getBoundingClientRect().top + view.clientTop) + view.scrollTop;
-    switch (view.getAttribute("data-place-align")) {
-      case "center": view.scrollTop = top + box.height / 2 - view.clientHeight / 2; break;
-      case "bottom": view.scrollTop = top + box.height - view.clientHeight; break;
-      default:
-        view.scrollTop = top + Math.min(number(view, "data-place-offset") ?? 0, Math.max(box.height - 1, 0));
+// Items change size without an edit, as an image decodes, fonts load or
+// a theme changes, and the server learns their size only from a report.
+const itemOwners = new WeakMap();
+const itemSizes = new ResizeObserver((entries) => {
+  const seen = new Set();
+  for (const entry of entries) {
+    if (!entry.target.isConnected) {
+      itemSizes.unobserve(entry.target);
+      continue;
+    }
+    const view = itemOwners.get(entry.target);
+    if (view === undefined || seen.has(view)) continue;
+    seen.add(view);
+    check(view, "resized");
+    awaitRest(view);
+  }
+});
+
+const viewSizes = new ResizeObserver((entries) => {
+  for (const entry of entries) {
+    if (entry.target.isConnected) check(entry.target, "resized");
+    else viewSizes.unobserve(entry.target);
+  }
+});
+
+// An observer may hold its targets strongly, so items that leave the
+// view are let go; a removed target is let go when the observer reports
+// its size going to zero.
+function observeItems(view, state) {
+  const observed = new Set();
+  for (const item of viewItems(view)) {
+    const targets = item.classList.contains("whole") ? Array.from(item.children) : [item];
+    for (const target of targets) {
+      observed.add(target);
+      if (state.observed.delete(target)) continue;
+      itemOwners.set(target, view);
+      itemSizes.observe(target);
     }
   }
-  views.set(view, { placed: placement, owed: true, rested: false, reported: null, sent: null });
-  check(view, "moved");
+  for (const target of state.observed) itemSizes.unobserve(target);
+  state.observed = observed;
 }
 
+function newState(placement) {
+  return { placed: placement, owed: true, rested: false, resized: false, reported: null, sent: null, hand: false,
+           timer: null, at: 0, left: 0, placing: null, observed: new Set() };
+}
+
+function placed(view, state, fresh) {
+  const moved = place(view, fresh);
+  state.at = view.scrollTop;
+  state.left = view.scrollLeft;
+  state.placing = moved ? view.scrollTop : null;
+  return moved;
+}
+
+// A report is owed after a placement only if it moved the view or the
+// element is new, so following point when it is in view costs nothing.
 function screenArrived() {
-  for (const view of document.querySelectorAll("[data-view][data-placement]")) {
+  for (const view of document.querySelectorAll(".view[data-placement]")) {
     const placement = number(view, "data-placement");
-    const state = views.get(view);
     if (placement === null) continue;
-    if (state === undefined || state.placed !== placement) {
-      place(view, placement);
-    } else if (state.sent !== null && number(view, "data-reported") === state.sent) {
+    let state = views.get(view);
+    if (state === undefined) {
+      state = newState(placement);
+      views.set(view, state);
+      if (view.tunaPlaced !== placement) placed(view, state, true);
+      state.at = view.scrollTop;
+      state.left = view.scrollLeft;
+      viewSizes.observe(view);
+      observeItems(view, state);
+      check(view, "placed");
+    } else if (state.placed !== placement) {
+      state.placed = placement;
       state.sent = null;
-      if (!sendMove(view)) check(view, "moved");
+      state.hand = false;
+      state.owed = placed(view, state, false);
+      observeItems(view, state);
+      check(view, "placed");
+    } else {
+      observeItems(view, state);
+      if (state.sent !== null && number(view, "data-reported") === state.sent) {
+        state.sent = null;
+        if (!sendMove(view)) check(view, "moved");
+      }
     }
   }
 }
+
+function awaitRest(view) {
+  const state = views.get(view);
+  if (state === undefined) return;
+  clearTimeout(state.timer);
+  state.timer = setTimeout(() => {
+    state.timer = null;
+    if (pressed === view) return;
+    check(view, "rest");
+  }, restMs);
+}
+
+// Rest waits while a pointer is down in the view, so a scroll bar thumb
+// held still mid-drag does not change the total height under it.
+let pressed = null;
+
+document.addEventListener("pointerup", () => {
+  const view = pressed;
+  pressed = null;
+  if (view !== null) awaitRest(view);
+}, { capture: true, passive: true });
+
+document.addEventListener("pointercancel", () => { pressed = null; }, { capture: true, passive: true });
+
+// A key or click may make the view element anew, as a tab switch does,
+// and the new element is placed where the last report left it, so a
+// scroll waiting for rest is reported first, even past one in flight,
+// whose screen the element may not live to see.
+function flush(event) {
+  for (const view of document.querySelectorAll(".view[data-placement]")) {
+    const state = views.get(view);
+    if (state !== undefined && state.timer !== null) {
+      clearTimeout(state.timer);
+      state.timer = null;
+      check(view, "flush");
+    }
+  }
+  if (event.type === "pointerdown" && event.target instanceof Element) {
+    const view = event.target.closest(".view[data-placement]");
+    if (view !== null) pressed = view;
+  }
+}
+
+document.addEventListener("keydown", flush, { capture: true });
+document.addEventListener("pointerdown", flush, { capture: true, passive: true });
 
 const scrollers = new WeakMap();
 const scrollerResting = new WeakMap();
@@ -354,9 +513,10 @@ function scrollersArrived() {
   }
 }
 
-// Only a scroll the hand began moves the focus: a placement, or a
-// browser keeping a snap position as the page changes, scrolls too. A
-// hand's scroll starts within handMs of its wheel, touch or press.
+// Only a scroll the hand began moves the focus or, at rest, the view in
+// the other clients: a placement, or a browser holding its scroll anchor
+// or a snap position as the page changes, scrolls too. A hand's scroll
+// starts within handMs of its wheel, touch or press.
 const handMs = 500;
 let handAt = -Infinity;
 
@@ -383,8 +543,29 @@ function markWrappedRegions() {
   }
 }
 
+// Datastar moves a kept element with insertBefore where the browser has
+// no moveBefore, which resets its scroll offsets; the element's own are
+// restored before the frame paints.
+function restoreMoved(records) {
+  for (const record of records) {
+    for (const node of record.addedNodes) {
+      if (!(node instanceof Element)) continue;
+      const found = node.matches(".view[data-placement]") ? [node] : node.querySelectorAll(".view[data-placement]");
+      for (const view of found) {
+        const state = views.get(view);
+        if (state !== undefined && (Math.abs(view.scrollTop - state.at) > edgeTolerance
+                                    || Math.abs(view.scrollLeft - state.left) > edgeTolerance)) {
+          view.scrollTop = state.at;
+          view.scrollLeft = state.left;
+        }
+      }
+    }
+  }
+}
+
 let scheduled = false;
-new MutationObserver(() => {
+new MutationObserver((records) => {
+  restoreMoved(records);
   if (scheduled) return;
   scheduled = true;
   requestAnimationFrame(() => {
@@ -402,10 +583,18 @@ new MutationObserver(() => {
 
 document.addEventListener("scroll", (event) => {
   const view = event.target;
-  if (!(view instanceof Element) || !view.hasAttribute("data-view")) return;
+  if (!(view instanceof Element) || !view.hasAttribute("data-placement")) return;
+  const state = views.get(view);
+  if (state === undefined) return;
+  if (state.placing !== null && Math.abs(view.scrollTop - state.placing) <= edgeTolerance) {
+    state.placing = null;
+  } else if (performance.now() - handAt < handMs) {
+    state.hand = true;
+  }
+  state.at = view.scrollTop;
+  state.left = view.scrollLeft;
   check(view, "moved");
-  clearTimeout(resting.get(view));
-  resting.set(view, setTimeout(() => check(view, "rest"), restMs));
+  awaitRest(view);
 }, { capture: true, passive: true });
 
 screenArrived();

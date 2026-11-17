@@ -77,10 +77,10 @@
 ; A message shows until the next typed key.
 > (minibuffer:message! (prompt) "No match")
 > (html (bar))
-"<div class=\"minibuffer-prompts\"><div class=\"node\" data-at=\"1\" data-to=\"19\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-1\" data-line=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"10\"><span class=\"minibuffer-question\"><span data-at=\"3\">Name: </span></span></span><span class=\"node\" data-at=\"10\" data-to=\"15\"><span class=\"minibuffer-input\"><span data-at=\"11\">xy<span class=\"cursor primary\"></span>z</span><span class=\"minibuffer-message\" role=\"status\"> [No match]</span></span></span><br></div><div class=\"node\" data-at=\"16\" data-to=\"18\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
+"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-3\" data-at=\"1\" data-to=\"19\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-1\" data-line=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"10\"><span class=\"minibuffer-question\"><span data-at=\"3\">Name: </span></span></span><span class=\"node\" data-at=\"10\" data-to=\"15\"><span class=\"minibuffer-input\"><span data-at=\"11\">xy<span class=\"cursor primary\"></span>z</span><span class=\"minibuffer-message\" role=\"status\"> [No match]</span></span></span><br></div><div class=\"node\" id=\"v4-2\" data-at=\"16\" data-to=\"18\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
 > (type! "!")
 > (html (bar))
-"<div class=\"minibuffer-prompts\"><div class=\"node\" data-at=\"1\" data-to=\"20\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-1\" data-line=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"10\"><span class=\"minibuffer-question\"><span data-at=\"3\">Name: </span></span></span><span class=\"node\" data-at=\"10\" data-to=\"16\"><span class=\"minibuffer-input\"><span data-at=\"11\">xy!<span class=\"cursor primary\"></span>z</span></span></span><br></div><div class=\"node\" data-at=\"17\" data-to=\"19\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
+"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-3\" data-at=\"1\" data-to=\"20\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-1\" data-line=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"10\"><span class=\"minibuffer-question\"><span data-at=\"3\">Name: </span></span></span><span class=\"node\" data-at=\"10\" data-to=\"16\"><span class=\"minibuffer-input\"><span data-at=\"11\">xy!<span class=\"cursor primary\"></span>z</span></span></span><br></div><div class=\"node\" id=\"v4-2\" data-at=\"17\" data-to=\"19\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
 ; RET answers; the history holds the answer once, newest first.
 > (press! "RET")
 > (result t)
@@ -140,7 +140,7 @@
 > (press! "C-b")
 > (define inner (start! (lambda () (minibuffer:read "Inner: "))))
 > (html (bar))
-"<div class=\"minibuffer-prompts\"><div class=\"node\" data-at=\"20\" data-to=\"36\"><div class=\"minibuffer-prompt\"><span class=\"minibuffer-depth\">[2] </span><div class=\"line\" id=\"v4-2\" data-line=\"2\" data-at=\"21\"><span class=\"node\" data-at=\"21\" data-to=\"30\"><span class=\"minibuffer-question\"><span data-at=\"22\">Inner: </span></span></span><span class=\"node\" data-at=\"30\" data-to=\"32\"><span class=\"minibuffer-input\"><span data-at=\"31\"><span class=\"cursor primary\"></span></span></span></span><br></div><div class=\"node\" data-at=\"33\" data-to=\"35\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
+"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-6\" data-at=\"20\" data-to=\"36\"><div class=\"minibuffer-prompt\"><span class=\"minibuffer-depth\">[2] </span><div class=\"line\" id=\"v4-4\" data-line=\"2\" data-at=\"21\"><span class=\"node\" data-at=\"21\" data-to=\"30\"><span class=\"minibuffer-question\"><span data-at=\"22\">Inner: </span></span></span><span class=\"node\" data-at=\"30\" data-to=\"32\"><span class=\"minibuffer-input\"><span data-at=\"31\"><span class=\"cursor primary\"></span></span></span></span><br></div><div class=\"node\" id=\"v4-5\" data-at=\"33\" data-to=\"35\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
 > (type! "in")
 > (press! "RET")
 > (result inner)

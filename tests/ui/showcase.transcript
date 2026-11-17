@@ -37,7 +37,7 @@
 > (element (view) "<div class=\"ui-row\"><span class=\"ui-label\">notes" "div")
 "<div class=\"ui-row\"><span class=\"ui-label\">notes.org</span><span class=\"ui-label ui-showcase-muted\">~/notes</span><span class=\"ui-label ui-showcase-faint\">2 KB</span></div>"
 > (element (view) "<div class=\"ui-showcase-heading\"><div class=\"line\"" "div")
-"<div class=\"ui-showcase-heading\"><div class=\"line\" id=\"v1-4\" data-line=\"4\" data-at=\"98\">Buttons: ui:define-button</div>"
+"<div class=\"ui-showcase-heading\"><div class=\"line\" id=\"v1-5\" data-line=\"4\" data-at=\"98\">Buttons: ui:define-button</div>"
 ; The first list holds eight rows and shows five; the second shows all
 ; three hundred. The selected row is marked aria-current.
 > (define (shown-keys node)

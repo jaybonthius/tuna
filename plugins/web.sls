@@ -4,8 +4,8 @@
 ;; The server's threads run this code, so none of it may be a top-level
 ;; definition, which can change under a running thread.
 (module %internals
-  (client-record? connected-clients give-screen! call-page start-server! restart-server!
-   stop-server! allow-hosts! refresh-head-files! post-start! home-path?)
+  (client-record? client-record-device connected-clients give-screen! call-page start-server! restart-server!
+   stop-server! allow-hosts! refresh-head-files! post-start! release-first-screens! home-path?)
 
   (define main-thread (get-thread-id))
   (define lock (make-mutex))
@@ -36,16 +36,18 @@
 
   ;; Only the main thread uses through and removal-timer; the lock guards
   ;; the other mutable fields.
+  ;; FIRST is the screen the page carries: #f until a batch draws one,
+  ;; and the symbol served once the page has gone with it.
   (define-record-type (client make-client client-record?)
     (sealed #t)
-    (fields id number pending (mutable next) (mutable removed?) (mutable stream)
+    (fields id number (immutable device client-record-device) pending (mutable next) (mutable removed?) (mutable stream)
             (mutable through) (mutable removal-timer)
             (mutable last) (mutable count) (mutable in-flight) (mutable sent-at)
-            (mutable waiting) (mutable calls) (mutable links) (mutable scripts-version))
+            (mutable waiting) (mutable calls) (mutable links) (mutable scripts-version) (mutable first))
     (protocol
       (lambda (new)
-        (lambda (id number links scripts-version)
-          (new id number (make-eqv-hashtable) 1 #f #f 0 #f #f 0 #f 0 #f '() links scripts-version)))))
+        (lambda (id number device links scripts-version)
+          (new id number device (make-eqv-hashtable) 1 #f #f 0 #f #f 0 #f 0 #f '() links scripts-version #f)))))
 
   (define-record-type head-file
     (sealed #t)
@@ -55,6 +57,8 @@
 
   (define clients-by-id (make-hashtable string-hash string=?))
   (define connected '())
+  (define opening '())
+  (define first-screens (make-condition))
   (define added 0)
   (define queued 0)
   (define outbox '())
@@ -74,6 +78,9 @@
   (define slots (make-hashtable equal-hash equal?))
   (define links '())
   (define script-hrefs '())
+  (define early-entries '())
+  (define early-files '())
+  (define early-hrefs '())
   (define scripts-version 0)
   (define files-checked 0)
 
@@ -96,20 +103,22 @@
   (define (client-with-id id)
     (and (string? id) (hashtable-ref clients-by-id id #f)))
 
-  (define (add-connected c)
-    (let loop ([cs connected])
-      (cond
-        [(null? cs) (list c)]
-        [(fx< (client-number c) (client-number (car cs))) (cons c cs)]
-        [else (cons (car cs) (loop (cdr cs)))])))
+  ;; A client whose page waits for its first screen is drawn too.
+  (define (connected-clients)
+    (with-lock (fold-right (lambda (c cs) (if (memq c cs) cs (add-connected-to c cs))) connected opening)))
 
-  (define (connected-clients) (with-lock connected))
+  (define (add-connected-to c cs)
+    (cond
+      [(null? cs) (list c)]
+      [(fx< (client-number c) (client-number (car cs))) (cons c cs)]
+      [else (cons (car cs) (add-connected-to c (cdr cs)))]))
 
   ;; Caller holds the lock.
   (define (remove-client! c)
     (client-removed?-set! c #t)
     (hashtable-delete! clients-by-id (client-id c))
     (set! connected (remq c connected))
+    (set! opening (remq c opening))
     (let ([stream (client-stream c)])
       (when stream
         (client-stream-set! c #f)
@@ -227,6 +236,8 @@
         (check-files!))
       (with-lock
         (let ([last (client-last c)])
+          (when (memq c opening)
+            (client-first-set! c content))
           (when (and (client-stream c) (not (and last (bytevector=? content last))))
             (client-last-set! c content)
             (if (and (client-in-flight c) (fx< (fx- now (client-sent-at c)) confirmation-wait))
@@ -262,12 +273,13 @@
       (when old
         (enqueue! (lambda () (stream-close! old)))))
     (client-stream-set! c stream)
-    (client-last-set! c #f)
+    (client-last-set! c (let ([first (client-first c)]) (and (bytevector? first) first)))
+    (client-first-set! c 'served)
     (client-in-flight-set! c #f)
     (client-waiting-set! c #f)
     (client-calls-set! c '())
     (unless (memq c connected)
-      (set! connected (add-connected c)))
+      (set! connected (add-connected-to c connected)))
     (sync-head! c))
 
   (define (stream-closed! c stream)
@@ -379,13 +391,15 @@
       (head-file-version f)))
 
   (define (refresh-head-files!)
-    (let ([styles (table-files stylesheets)] [modules (table-files scripts)])
-      (unless (and (equal? styles stylesheet-entries) (equal? modules script-entries))
+    (let ([styles (table-files stylesheets)] [modules (table-files scripts)] [earlies (table-files early-scripts)])
+      (unless (and (equal? styles stylesheet-entries) (equal? modules script-entries) (equal? earlies early-entries))
         (let ([new-styles (read-head-files 'web:stylesheets 'stylesheet styles stylesheet-entries stylesheet-files)]
-              [new-modules (read-head-files 'web:scripts 'script modules script-entries script-files)])
+              [new-modules (read-head-files 'web:scripts 'script modules script-entries script-files)]
+              [new-earlies (read-head-files 'web:early-scripts 'early-script earlies early-entries early-files)])
           (set! stylesheet-entries styles)
           (set! script-entries modules)
-          (update-head! new-styles new-modules)))))
+          (set! early-entries earlies)
+          (update-head! new-styles new-modules new-earlies)))))
 
   (define (check-files!)
     (define (check who)
@@ -394,19 +408,25 @@
             f
             (read-head-file who (head-file-slot f) (head-file-path f) f))))
     (let ([styles (map (check 'web:stylesheets) stylesheet-files)]
-          [modules (map (check 'web:scripts) script-files)])
-      (unless (and (for-all eq? styles stylesheet-files) (for-all eq? modules script-files))
-        (update-head! styles modules))))
+          [modules (map (check 'web:scripts) script-files)]
+          [earlies (map (check 'web:early-scripts) early-files)])
+      (unless (and (for-all eq? styles stylesheet-files) (for-all eq? modules script-files) (for-all eq? earlies early-files))
+        (update-head! styles modules earlies))))
 
-  (define (update-head! styles modules)
+  ;; A page runs its scripts once, so one whose scripts or early scripts
+  ;; changed reloads.
+  (define (update-head! styles modules earlies)
     (let ([new-links (map (lambda (f) (cons (head-file-slot f) (href f))) (filter head-file-bytes styles))]
-          [new-hrefs (map href (filter head-file-bytes modules))])
+          [new-hrefs (map href (filter head-file-bytes modules))]
+          [new-early (map href (filter head-file-bytes earlies))])
       (with-lock
         (set! stylesheet-files styles)
         (set! script-files modules)
+        (set! early-files earlies)
         (set! links new-links)
-        (unless (equal? new-hrefs script-hrefs)
+        (unless (and (equal? new-hrefs script-hrefs) (equal? new-early early-hrefs))
           (set! script-hrefs new-hrefs)
+          (set! early-hrefs new-early)
           (set! scripts-version (fx+ scripts-version 1)))
         (for-each sync-head! connected))))
 
@@ -503,7 +523,7 @@
         (let ([f (and slot file
                       (with-lock
                         (find (lambda (f) (eqv? (head-file-slot f) slot))
-                              (append stylesheet-files script-files))))])
+                              (append stylesheet-files script-files early-files))))])
           (cond
             [(not f) not-found]
             [(string=? file (path-last (head-file-path f))) (file-response file (head-file-bytes f))]
@@ -522,7 +542,10 @@
   (define screen-action
     (get "/screen" (fetch-options [retry (fetch-retry always)] [retry-max-count 1000000000])))
 
-  (define (shell id styles modules)
+  ;; The first screen comes inside the page, so the browser paints no
+  ;; empty frame before it, and the early scripts can place it before the
+  ;; first paint: a module would run after it.
+  (define (shell id styles modules early first)
     (haml
       (:html ([lang "en"])
         (:head
@@ -534,24 +557,56 @@
           (:script ([type "module"] [src "/web/datastar.js"]))
           (:script ([type "module"] [src "/web/tuna.js"]))
           (map link-element styles)
-          (map (lambda (src) (haml (:script ([type "module"] [src src])))) modules))
+          (map (lambda (src) (haml (:script ([type "module"] [src src])))) modules)
+          (map (lambda (src) (haml (:script ([src src])))) early))
         (:body ([data-signals:client "'" id "'"] [data-init screen-action])
-          (:main ([id "screen"]))))))
+          (:main ([id "screen"]) (when first (raw-html first)))
+          (:script "document.dispatchEvent(new Event(\"tuna-first-screen\"))")))))
 
   (define page-headers
     '(("content-type" . "text/html; charset=utf-8") ("cache-control" . "no-store")))
 
+  (define (device-id? s)
+    (and (fx= (string-length s) 32)
+         (for-all (lambda (c) (or (char<=? #\0 c #\9) (char<=? #\a c #\f))) (string->list s))))
+
+  ;; Browsers keep a cookie at most 400 days.
+  (define device-cookie-seconds (* 400 24 60 60))
+
+  (define first-screen-wait 10)
+
+  ;; The page waits for the batch that adds its client, whose end draws
+  ;; it: what batch-ended posts runs in the next batch, so its release
+  ;; runs once every client is drawn.
   (define (page request)
     (if (string=? (request-path request) "/")
-        (let* ([id (random-id)]
+        (let* ([given (let ([e (assoc "tuna-device" (request-cookies request))])
+                        (and e (device-id? (cdr e)) (cdr e)))]
+               [device (or given (random-id))]
+               [id (random-id)]
                [c (with-lock
                     (set! added (fx+ added 1))
-                    (let ([c (make-client id added links scripts-version)])
+                    (let ([c (make-client id added device links scripts-version)])
                       (hashtable-set! clients-by-id id c)
-                      (cons c script-hrefs)))])
-          (post-as-web (lambda () (schedule-removal! (car c)) (client-added (car c))))
-          (response 200 page-headers
-            (html->bytevector (shell id (client-links (car c)) (cdr c)))))
+                      (set! opening (cons c opening))
+                      c))])
+          (post-as-web (lambda () (schedule-removal! c) (set! added-now (cons c added-now)) (client-added c)))
+          (let-values ([(first modules early)
+                        (with-mutex lock
+                          (let ([deadline (add-duration (current-time 'time-utc) (make-time 'time-duration 0 first-screen-wait))])
+                            (let wait ()
+                              (when (and (memq c opening) (time<? (current-time 'time-utc) deadline))
+                                (condition-wait first-screens lock deadline)
+                                (wait))))
+                          (set! opening (remq c opening))
+                          (values (let ([first (client-first c)]) (and (bytevector? first) first)) script-hrefs early-hrefs))])
+            (response 200
+              (if given
+                  page-headers
+                  (cons (set-cookie-header "tuna-device" device (cookie-path "/") (cookie-http-only)
+                          (cookie-same-site (same-site strict)) (cookie-max-age device-cookie-seconds))
+                        page-headers))
+              (html->bytevector (shell id (client-links c) modules early first)))))
         not-found))
 
   (define forbidden (response 403 '(("content-type" . "text/plain")) "Forbidden\n"))
@@ -735,6 +790,15 @@
       (set! start-posted? #t)
       (post-as-web start-server!)))
 
+  ;; Only the main thread uses this list.
+  (define added-now '())
+
+  (define (release-first-screens!)
+    (for-each
+      (lambda (c) (post-as-web (lambda () (with-lock (set! opening (remq c opening)) (condition-broadcast first-screens)))))
+      added-now)
+    (set! added-now '()))
+
   (record-writer (record-type-descriptor client)
     (lambda (c p wr) (fprintf p "#<client ~a>" (client-number c)))))
 
@@ -771,6 +835,9 @@
 
 (define-table scripts "Maps a name to a JavaScript module that every page loads.")
 
+(define-table early-scripts
+  "Maps a name to a classic script that every page runs in its head, before the first screen is painted.")
+
 (define current-client
   (make-thread-parameter #f
     (lambda (v)
@@ -781,6 +848,11 @@
 (define (clients) (connected-clients))
 
 (define (client? v) (client-record? v))
+
+(define (client-device client)
+  (unless (client-record? client)
+    (assertion-violation 'web:client-device "not a client" client))
+  (client-record-device client))
 
 (define (send-screen! client screen)
   (unless (client-record? client)
@@ -804,6 +876,7 @@
   (lambda (ended)
     (ended)
     (post-start!)
+    (release-first-screens!)
     (refresh-head-files!)))
 
 (on-unload stop-server!)

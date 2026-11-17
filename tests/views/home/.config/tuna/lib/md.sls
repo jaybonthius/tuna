@@ -14,3 +14,7 @@
 (buffers:define-kind link (inline) (sticky neither) (draw draw-link))
 (buffers:define-kind image (content atom) (draw draw-image))
 (buffers:define-kind broken (draw draw-broken))
+
+(define (draw-grid node view) (haml (:div.grid (views:draw-children view node))))
+
+(buffers:define-kind grid (content nodes) (whole) (draw draw-grid))

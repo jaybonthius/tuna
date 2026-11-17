@@ -20,14 +20,12 @@ END
 cat > "$dir/display-web/screens.transcript" <<'END'
 > (http:wait-for-server)
 Tuna is at http://127.0.0.1:19321/
-; A page's first screen comes after the batch that connected it.
+; A page carries its first screen, drawn by the batch that connected
+; it, and the stream sends only a screen that differs from it.
 > (define p (http:page))
-> (http:show (http:connect-and-next! p))
-(screen 1 0 "<p>Hello from Tuna</p>")
-> (http:confirm! p 1)
-204
-; A batch draws the client again, and web sends only a screen that
-; differs.
+> (http:first-screen p)
+"<p>Hello from Tuna</p>"
+> (http:connect! p)
 > (sleep-for 0)
 > (http:next p 0.2)
 timeout
@@ -35,8 +33,8 @@ timeout
 > (define (greet screen client) (haml (:p greeting)))
 > (advice-add! layout:screen greet)
 > (http:show (http:next p))
-(screen 2 0 "<p>Hello again</p>")
-> (http:confirm! p 2)
+(screen 1 0 "<p>Hello again</p>")
+> (http:confirm! p 1)
 204
 ; A failing draw shows the condition. Its text starts a line of the
 ; event, after the newline haml writes following <pre>.
@@ -46,11 +44,11 @@ timeout
 > (let* ([lines (map cdr (cdr (http:next p)))] [opening (car lines)] [n (string-length opening)])
     (list (substring opening (- n 27) n) (substring (cadr lines) 0 40)))
 ("<pre class=\"display-error\">" "Exception in car: () is not a pair</pre>")
-> (http:confirm! p 3)
+> (http:confirm! p 2)
 204
 > (advice-remove! layout:screen fail)
 > (http:show (http:next p))
-(screen 4 0 "<p>Hello again</p>")
+(screen 3 0 "<p>Hello again</p>")
 END
 
 sh tests/run-transcript.sh "$tuna" "$dir/display-web/screens.transcript"

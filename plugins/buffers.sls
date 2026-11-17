@@ -202,11 +202,12 @@
     (unless (or (not v) (procedure? v))
       (assertion-violation who "not a procedure or #f" v)))
 
-  (define (define-kind! id content inline? sticky stops draw keymap consent)
+  (define (define-kind! id content inline? sticky stops draw keymap consent whole?)
     (check-optional-procedure 'buffers:define-kind draw)
     (check-optional-procedure 'buffers:define-kind consent)
     (let ([name (exported-symbol id)])
-      (table-set! kinds name (make-kind-entry name content inline? sticky stops draw keymap consent))
+      (table-set! kinds name
+        (make-kind-entry name content inline? sticky stops draw keymap consent (or whole? (eq? content 'atom))))
       (if (eq? content 'atom)
           (lambda (attributes) (vector name attributes))
           (lambda (attributes . datums) (cons* name attributes datums)))))
@@ -1157,7 +1158,7 @@
       made))
 
   (table-set! kinds 'document:raw-byte
-    (make-kind-entry 'document:raw-byte 'atom #f 'both 'all #f #f #f))
+    (make-kind-entry 'document:raw-byte 'atom #f 'both 'all #f #f #f #t))
 
   (run-with-idle-timer 1 trim-logs!))
 
@@ -1317,9 +1318,9 @@
       [(_ id clause ...)
        (identifier? #'id)
        (let loop ([clauses #'(clause ...)] [seen '()] [content #''text] [inline #'#f] [sticky #''both]
-                  [stops #''all] [draw #'#f] [keymap #'#f] [consent #'#f])
+                  [stops #''all] [draw #'#f] [keymap #'#f] [consent #'#f] [whole #'#f])
          (if (null? clauses)
-             #`(define-public id (define-kind! 'id #,content #,inline #,sticky #,stops #,draw #,keymap #,consent))
+             #`(define-public id (define-kind! 'id #,content #,inline #,sticky #,stops #,draw #,keymap #,consent #,whole))
              (let* ([c (car clauses)] [rest (cdr clauses)]
                     [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ (invalid c)])])
                (define (choice options)
@@ -1332,16 +1333,20 @@
                  (syntax-violation 'buffers:define-kind "clause given twice" x c))
                (let ([seen (cons name seen)])
                  (case name
-                   [(content) (loop rest seen (choice '(text nodes atom)) inline sticky stops draw keymap consent)]
+                   [(content) (loop rest seen (choice '(text nodes atom)) inline sticky stops draw keymap consent whole)]
                    [(inline)
                     (syntax-case c ()
-                      [(_) (loop rest seen content #'#t sticky stops draw keymap consent)]
+                      [(_) (loop rest seen content #'#t sticky stops draw keymap consent whole)]
                       [_ (invalid c)])]
-                   [(sticky) (loop rest seen content inline (choice '(before after both neither)) stops draw keymap consent)]
-                   [(stops) (loop rest seen content inline sticky (choice '(all children none)) draw keymap consent)]
-                   [(draw) (loop rest seen content inline sticky stops (expression) keymap consent)]
-                   [(keymap) (loop rest seen content inline sticky stops draw (expression) consent)]
-                   [(consent) (loop rest seen content inline sticky stops draw keymap (expression))]
+                   [(sticky) (loop rest seen content inline (choice '(before after both neither)) stops draw keymap consent whole)]
+                   [(stops) (loop rest seen content inline sticky (choice '(all children none)) draw keymap consent whole)]
+                   [(draw) (loop rest seen content inline sticky stops (expression) keymap consent whole)]
+                   [(keymap) (loop rest seen content inline sticky stops draw (expression) consent whole)]
+                   [(consent) (loop rest seen content inline sticky stops draw keymap (expression) whole)]
+                   [(whole)
+                    (syntax-case c ()
+                      [(_) (loop rest seen content inline sticky stops draw keymap consent #'#t)]
+                      [_ (invalid c)])]
                    [else (invalid c)])))))]
       [_ (syntax-violation 'buffers:define-kind "expected (buffers:define-kind id clause ...)" x)])))
 
@@ -1357,6 +1362,10 @@
 (define (kind-keymap kind)
   (check-kind 'buffers:kind-keymap kind)
   (kind-entry-keymap kind))
+
+(define (kind-whole? kind)
+  (check-kind 'buffers:kind-whole? kind)
+  (kind-entry-whole? kind))
 
 (define (kind? v) (kind-entry? v))
 

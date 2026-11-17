@@ -5,6 +5,7 @@
 (define-table input-handlers)
 (define-table scripts)
 (define-table stylesheets)
+(define-table early-scripts)
 
 (define-hook client-removed)
 
@@ -27,3 +28,5 @@
   (let ([taken (reverse calls)])
     (set! calls '())
     taken))
+
+(define (client-device client) (number->string (client-number client)))

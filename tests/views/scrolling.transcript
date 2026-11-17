@@ -1,181 +1,206 @@
 ; Two clients show one view of a 300-line buffer: a desktop 20 lines
-; high and a phone 10 lines high, each line 20 pixels. Before a browser
-; has measured the view, a client draws 200 lines each side of the top
-; and no spacers, and is placed at the view's position.
+; high and a phone 10 lines high, each line 20 pixels, each client a
+; device of its own. Before a device has measured the view, its client
+; draws 200 items each side of where it is placed, and no spacers; a new
+; client follows point, as point moved last.
 > (define b (buffers:make "long" (lines 300)))
 > (define v (views:make b))
 > (drawn v desktop)
 (1 201 201 () ())
 > (list (placement v desktop) (placement v phone))
-((new 1 top) (new 1 top))
-; The first report under a placement only confirms it. The client then
-; draws two view heights beyond each edge, at the lines' measured
-; height, and a spacer stands in for the rest beside a scroll sizer as
-; high as all 301 lines.
+((new follow 1) (new follow 1))
+; The first report makes the device's height map. The client then draws
+; whole items two view heights beyond each edge, in pixels by the map,
+; trimming those wholly past twice that, and a spacer stands in for the
+; rest beside a scroll sizer as high as the map's total.
 > (report! desktop v 1 0 #f)
 > (drawn v desktop)
-(1 81 81 () (6020))
+(1 81 81 () (6088))
 > (report! phone v 1 0 #f)
 > (drawn v phone)
-(1 41 41 () (6020))
+(1 41 41 () (6088))
 ; A report on the way only draws for the client scrolling: the phone is
 ; not placed, and the view's position stays.
 > (report! desktop v 150 0 #f)
 > (drawn v desktop)
-(110 210 101 (2180) (6020))
+(110 209 100 (2180) (6088))
 > (list (placement v desktop) (placement v phone) (line-of v (views:top v)))
-((same 1 top) (same 1 top) 1)
-; Once scrolling comes to rest, the view's position moves, and every
+((same follow 1) (same follow 1) 1)
+; Once a hand scroll comes to rest, the view's position moves, and every
 ; other client is placed there once; the client that scrolled is not.
+; Point moves to the first line wholly in view, past the scroll margin.
 > (report! desktop v 151 5 #t)
-> (list (placement v desktop) (placement v phone) (line-of v (views:top v)))
-((same 1 top) (new 151 top) 151)
+> (list (placement v desktop) (placement v phone) (line-of v (views:top v)) (line-of v (views:point v)))
+((same follow 154) (new position 151) 151 154)
 > (report! desktop v 151 5 #t)
 > (list (placement v desktop) (placement v phone))
-((same 1 top) (same 151 top))
+((same follow 154) (same position 151))
 ; The phone's report on the placement confirms it, whatever the phone
 ; measured, so clients of different sizes never place each other.
 > (report! phone v 151 5 #f)
 > (report! phone v 151 5 #t)
 > (list (placement v desktop) (placement v phone) (line-of v (views:top v)))
-((same 1 top) (same 151 top) 151)
-; Each client's measurements are its own: the phone draws less.
+((same follow 154) (same position 151) 151)
+; Each client's run is its own, and the sizer changes only in a screen
+; answering a report at rest.
 > (list (drawn v desktop) (drawn v phone))
-((110 226 117 (2180) (6020)) (121 191 71 (2400) (6020)))
+((110 211 102 (2180) (6079)) (131 181 51 (2600) (6088)))
 ; A report on an older placement than the newest sent to its client is
 ; ignored, but its number comes back on the client's screen.
 > (views:scroll-to! v (line-start v 200) (views:align top))
-> (define old (placement v phone))
+> (list (placement v desktop) (placement v phone))
+((new top 200) (new top 200))
 > (define (report-on placement client top)
     ((table-ref web:input-handlers "scroll") client
-     `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,placement) ("report" . 99)
-       ("top" . ,top) ("offset" . 0) ("lastVisible" . ,(+ top 9)) ("spacer" . null) ("spacerDistance" . 0)
-       ("before" . 0) ("after" . 9) ("drawnHeight" . 200) ("above" . 0) ("below" . 0)
-       ("width" . 800) ("height" . 200) ("settled" . #t))))
+     `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,placement) ("report" . 99) ("version" . 0)
+       ("top" . (("line" . ,top))) ("offset" . 0) ("itemHeight" . 20) ("left" . 0) ("start" . null) ("end" . null)
+       ("spacer" . null) ("spacerDistance" . 0) ("below" . 0) ("items" . #()) ("lineHeight" . 20) ("charWidth" . 10)
+       ("width" . 800) ("height" . 200) ("settled" . #t) ("hand" . #t) ("runAtEnd" . #f))))
 > (report-on (- (car (numbers-after (html-of v phone) "data-placement=\"")) 1) phone 20)
 > (list (line-of v (views:top v)) (car (numbers-after (html-of v phone) "data-reported=\"")))
 (200 99)
 ; A fling that outruns what is drawn reports from the spacer above: the
-; line at the top is counted across the spacer from the first line drawn,
-; at the height the spacer was drawn with, and drawn around.
+; top is counted across the spacer from the first item drawn, at the
+; px the spacer was drawn with, and drawn around.
 > (report! desktop v 200 0 #f)
 > (drawn v desktop)
-(125 301 177 (2480) (6020))
+(160 259 100 (3180) (6079))
 > (report! desktop v 60 7 #f)
-> (list (drawn v desktop) (line-of v (views:top v)))
-((1 120 120 () (6020)) 200)
-; The report at rest from the screen drawn there moves the view.
+> (list (drawn v desktop) (line-of v (views:top v)) (line-of v (views:top v desktop)))
+((1 120 120 () (6079)) 200 60)
+; The report at rest from the screen drawn there moves the view, and
+; point, below what is in view, to the last line wholly in view inside
+; the margin.
 > (report! desktop v 60 7 #t)
-> (list (line-of v (views:top v)) (placement v phone))
-(60 (new 60 top))
-; Scrolling moves point into what the client that scrolled shows, past
-; the scroll margin of 2 lines, keeping its column.
-> (line-of v (views:point v))
-77
-> (- (views:point v) (line-start v (line-of v (views:point v))))
-0
+> (list (line-of v (views:top v)) (placement v phone) (line-of v (views:point v)))
+(60 (new position 60) 77)
 > (report! phone v 60 7 #f)
-; A command that moves point out of view places the view with what the
-; browser of the client that ran it measured: the phone shows lines 61
-; to 69, so point at line 75 goes to its bottom edge with the margin's
-; lines below it, and every client is placed there.
+; A command that moves point sends every client a placement that follows
+; point, which each browser applies in its own geometry. The report of
+; the client whose command it was makes what it shows the view's
+; position; the others keep their own.
 > (as-client phone (lambda () (views:set-point! v (line-start v 75))))
 > (list (placement v desktop) (placement v phone))
-((new 77 bottom) (new 77 bottom))
-> (report! desktop v 60 7 #f)
+((new follow 75) (new follow 75))
 > (report! phone v 68 0 #f)
-; More than a screen away, point goes to the centre.
-> (as-client phone (lambda () (views:set-point! v (line-start v 120))))
-> (list (placement v desktop) (placement v phone))
-((new 120 center) (new 120 center))
-> (report! desktop v 110 0 #f)
-> (report! phone v 115 0 #f)
-; The line at the top is each client's own under a centre placement, and
-; with no client the placed line.
-> (list (line-of v (views:top v desktop)) (line-of v (views:top v phone)) (line-of v (views:top v)))
-(110 115 120)
+> (report! desktop v 61 0 #f)
+> (list (line-of v (views:top v)) (line-of v (views:top v desktop)) (line-of v (views:top v phone)))
+(68 61 68)
 > (as-client phone (lambda () (line-of v (views:top v))))
-115
+68
 > (views:top v 'nobody)
 ! views:top: not a client or #f with irritant nobody
-; C-v puts the last lines in view at the top, keeping two of them, with
-; the measurements of the client that ran it, and moves point into view.
+; C-v moves every client by the commanding client's view height less two
+; lines, from what its browser shows, by its device's map, and moves
+; point into what that browser then shows.
 > (define (run client command) (views:with-view v (as-client client (lambda () (commands:run command)))))
 > (run desktop views:scroll-up)
-> (list (placement v desktop) (placement v phone) (line-of v (views:point v)))
-((new 128 top) (new 128 top) 130)
-; Until the browser has measured the placement, M-v waits for its
-; report.
+> (list (placement v desktop) (placement v phone))
+((new position 79) (new position 79))
+> (report! desktop v 79 0 #f)
+> (line-of v (views:point v))
+81
 > (run desktop views:scroll-down)
 > (placement v desktop)
-(same 128 top)
-> (report! desktop v 128 0 #f)
-> (list (placement v desktop) (line-of v (views:point v)))
-((new 129 bottom) 127)
-; C-l puts point's line at the centre, then the top, then the bottom.
-> (run phone views:recenter-top-bottom)
-> (placement v phone)
-(new 127 center)
-> (run phone views:recenter-top-bottom)
-> (placement v phone)
-(new 127 top)
-> (run phone views:recenter-top-bottom)
-> (placement v phone)
-(new 127 bottom)
-> (run phone views:recenter-top-bottom)
-> (placement v phone)
-(new 127 center)
-; A scroll that waits for a report reads the buffer as it is when the
-; report comes, not as it was when the command ran.
+(new position 61)
+; C-l puts point's place at the centre, then the top, then the bottom;
+; the place in text is a mark styled as the cursor, drawn while the
+; placement is the newest. Until the browser has measured the newest
+; placement, M-v waits for its report.
+> (report! desktop v 61 0 #f)
+> (as-client desktop (lambda () (views:set-point! v (line-start v 70))))
+> (run desktop views:recenter-top-bottom)
+> (list (placement v desktop) (and (search (html-of v desktop) "<span class=\"view-place\"></span><span class=\"cursor primary\"></span>line 70" 0) #t))
+((new center 70) #t)
+> (run desktop views:recenter-top-bottom)
+> (placement v desktop)
+(new top 70)
+> (run desktop views:recenter-top-bottom)
+> (placement v desktop)
+(new bottom 70)
 > (run desktop views:scroll-down)
-> (define long-line (buffers:replace! b 1 1 (make-string 100000 #\x)))
-> (report! desktop v 117 0 #f)
-> (list (placement v desktop) (line-of v (views:point v)))
-((new 118 bottom) 116)
-> (define short-line (buffers:replace! b 1 100001 ""))
+> (placement v desktop)
+(same bottom 70)
+> (report! desktop v 51 0 #f)
+> (list (placement v desktop) (search (html-of v desktop) "view-place" 0))
+((new position 33) #f)
+; C-v raises at the end only once the browser shows the run's end with
+; nothing below it; M-v raises at the start.
+> (report! desktop v 281 0 #f)
+> (report! desktop v 282 0 #f)
+> (run desktop views:scroll-up)
+! views:scroll-up: end of buffer
+> (report! desktop v 200 0 #f)
+> (report! desktop v 1 0 #f)
+> (run desktop views:scroll-down)
+! views:scroll-down: beginning of buffer
 ; Work no client did places every client.
 > (views:scroll-to! v (line-start v 10) (views:align top))
 > (list (placement v desktop) (placement v phone))
-((new 10 top) (new 10 top))
-; The lines' height is measured once, so the view's total height stays
-; the same however tall the lines drawn later are: a drag of the scroll
-; bar's thumb follows the pointer.
+((new top 10) (new top 10))
+; The total height stays until a report at rest, so a drag of the
+; scroll bar's thumb follows the pointer.
 > (report! desktop v 10 0 #f)
-> (report! desktop v 30 0 #f '("drawnHeight" . 9000))
 > (drawn v desktop)
-(1 100 100 () (6020))
-; What a client measured goes when the client does: a client the view
-; has not seen starts from the view's position.
-> (web:client-removed phone)
-> (list (placement v phone) (drawn v phone))
-((new 10 top) (1 210 210 () ()))
-; Showing another buffer forgets what every browser measured.
+(1 70 70 () (6036))
+> (report! desktop v 10 0 #f '("items" . #(#((("at" . 1)) 900))))
+> (drawn v desktop)
+(1 70 70 () (6036))
+> (report! desktop v 10 0 #t '("items" . #(#((("at" . 1)) 900))))
+> (drawn v desktop)
+(1 70 70 () (6880))
+; A device's maps serve each of its clients, as a reloaded page's, and
+; go with its last client.
+> (define laptop (web:make-client 3 "1"))
+> (report! desktop v 100 0 #f)
+> (drawn v laptop)
+(1 70 70 () (6000))
+> (web:client-removed desktop)
+> (drawn v laptop)
+(1 70 70 () (6000))
+> (web:client-removed laptop)
+> (drawn v (web:make-client 4 "1"))
+(1 210 210 () ())
+; Showing another buffer forgets what every device measured.
+> (report! phone v 100 0 #f)
 > (views:set-buffer! v (buffers:make "short" (lines 30)))
-> (drawn v desktop)
+> (drawn v phone)
 (1 31 31 () ())
 > (views:set-buffer! v b)
-; With a huge drawn-screens a client draws every line.
+; An item keeps its element's id while text is inserted above it, so the
+; browser keeps the element, and the view still.
+> (define (id-of-line view client line)
+    (let* ([html (html-of view client)] [i (search html (format "data-line=\"~a\"" line) 0)])
+      (let loop ([j i]) (if (string=? (substring html j (+ j 4)) "id=\"") (word-after (substring html j (+ j 40)) "id=\"") (loop (- j 1))))))
+> (report! phone v 1 0 #f)
+> (define before (id-of-line v phone 20))
+> (buffers:replace! b (line-start v 2) (line-start v 2) "new\nlines\n")
+#<edit 1>
+> (eq? before (id-of-line v phone 22))
+#t
+; With a huge drawn-screens a client draws every item.
 > (views:set-option! v views:drawn-screens 1e300)
-> (report! desktop v 1 0 #f)
-> (drawn v desktop)
-(1 301 301 () ())
+> (report! phone v 1 0 #f)
+> (drawn v phone)
+(1 303 303 () ())
 > (views:remove-option! v views:drawn-screens)
+; Past 2^24 px, a height Firefox takes as 0, spacers and the sizer are
+; scaled down; drawn items keep their size.
+> (define tall (views:make (buffers:make "tall" (lines 100000))))
+> (report! phone tall 1 0 #f '("lineHeight" . 200))
+> (report! phone tall 50000 0 #f '("lineHeight" . 200))
+> (let ([d (drawn tall phone)]) (list (caddr d) (< (car (cadddr d)) (car (car (cddddr d))) 16777217)))
+(6 #t)
 ; A report that is not one is refused, as is one with a negative
 ; distance or a measure no browser lays out, before it changes anything.
-> ((table-ref web:input-handlers "scroll") desktop '(("type" . "scroll") ("view" . 1)))
+> ((table-ref web:input-handlers "scroll") phone '(("type" . "scroll") ("view" . 1)))
 ! views: not a scroll report with irritant (("type" . "scroll") ("view" . 1))
 > (define (refused? . overrides)
     (guard (c [(assertion-violation? c) (condition-message c)])
-      (apply report! desktop v 150 0 #t overrides)))
-> (list (refused? '("spacerDistance" . -1)) (refused? '("offset" . 1e300)) (refused? '("above" . -1))
-        (refused? '("height" . 1000000000000)))
-("not a scroll report" "not a scroll report" "not a scroll report" "not a scroll report")
-> (line-of v (views:top v desktop))
-1
-; A report can count lines an edit deleted since they were drawn.
-> (report! desktop v 1 0 #f '("before" . 1000000000000000000) '("after" . 1000000000000000000))
-> (drawn v desktop)
-(1 301 301 () ())
+      (apply report! phone v 150 0 #t overrides)))
+> (list (refused? '("spacerDistance" . -1)) (refused? '("offset" . 1e300)) (refused? '("lineHeight" . 0))
+        (refused? '("height" . 1000000000000)) (refused? '("top" . (("line" . 0)))))
+("not a scroll report" "not a scroll report" "not a scroll report" "not a scroll report" "not a scroll report")
 ; Alignment is an enumeration.
 > (views:align middle)
 ! universe of align does not include specified symbol middle

@@ -34,6 +34,9 @@ echo "$output" | awk '
     unit["edit-ten-views"] = "ns"
     unit["edit-other-views"] = "ns"
     unit["next-stop"] = "ns"
+    unit["map-edit-60000"] = "ns"
+    unit["map-lookup-60000"] = "ns"
+    unit["map-bytes-60000"] = "bytes"
     missing = 0
   }
   $1 in unit {

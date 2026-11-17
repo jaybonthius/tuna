@@ -118,6 +118,16 @@
 ! buffers:define-kind: invalid clause (content green) in (buffers:define-kind bad (content green))
 > (buffers:define-kind bad (draw 'not-a-procedure))
 ! buffers:define-kind: not a procedure or #f with irritant not-a-procedure
+; A kind whose children do not stack one per row says (whole), so views
+; draws its node as one item and never cuts its content; an atom is
+; always whole.
+> (buffers:define-kind grid (content nodes) (whole))
+> (map (lambda (k) (buffers:kind-whole? (buffers:kind k))) '(grid md:para md:image document:raw-byte))
+(#t #f #t #t)
+> (buffers:kind-whole? 'grid)
+! buffers:kind-whole?: not a kind with irritant grid
+> (buffers:define-kind bad (whole #t))
+! buffers:define-kind: invalid clause (whole #t) in (buffers:define-kind bad (whole #t))
 ; Raw bytes have one stop each and are edited as text is, with no plugin
 ; loaded for them.
 > (buffers:kind 'document:raw-byte)

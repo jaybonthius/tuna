@@ -66,3 +66,21 @@ timeout
 ("/files/1/styler.css?v=2" "/files/4/clipboard.js?v=1")
 > (file "/files/4/clipboard.js")
 (200 "text/javascript; charset=utf-8" "export const loaded = true;\n")
+; An early script is a classic script that every page runs in its head,
+; and the page ends its first screen with an event that such a script
+; can act on before the browser paints it. A change reloads pages too.
+> (define q (http:page))
+> (http:connect! q)
+> (table-set! web:early-scripts 'placer "placer.js")
+> (http:take q 2)
+((script "location.reload()") closed)
+> (define html (http:page-html (http:page)))
+> (define (holds? part)
+    (let loop ([i 0])
+      (and (<= (+ i (string-length part)) (string-length html))
+           (or (string=? (substring html i (+ i (string-length part))) part) (loop (+ i 1))))))
+> (list (holds? "<script src=\"/files/5/placer.js?v=1\"></script></head>")
+        (holds? "</main><script>document.dispatchEvent(new Event(\"tuna-first-screen\"))</script></body>"))
+(#t #t)
+> (file "/files/5/placer.js")
+(200 "text/javascript; charset=utf-8" "window.placed = true;\n")

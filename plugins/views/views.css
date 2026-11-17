@@ -120,6 +120,22 @@
     background: var(--tuna-cursor, CanvasText);
   }
 
+  /* A placement's place in text: a row's box, as the cursor has, with no
+     width, so the text does not shift around it. */
+  .view-place {
+    display: inline-block;
+    block-size: 1lh;
+    vertical-align: top;
+  }
+
+  /* The browser holds an element in view still while the page changes;
+     marks that move with point would carry the view along with them. */
+  .cursor,
+  .view-place,
+  .view-anchor {
+    overflow-anchor: none;
+  }
+
   /* An inline box's background covers only the font's content area,
      shorter than the line, so a region drawn that way would leave a gap
      between its lines. Its shape is a box of the line's height behind

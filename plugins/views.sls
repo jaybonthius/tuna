@@ -1,10 +1,10 @@
 #!tuna
-(import (buffers) (document) (web) (haml) (keys) (commands))
+(import (buffers) (document) (web) (haml) (keys) (commands) (views height-map))
 
 (define-option drawn-screens 2 (lambda (v) (and (real? v) (finite? v) (> v 0)))
   "How many view heights a view keeps drawn beyond each edge of what is in view.")
 (define-option scroll-margin 0 (lambda (v) (and (fixnum? v) (fx>= v 0)))
-  "How many lines a view keeps between the primary cursor and its top and bottom edges.")
+  "How many of a client's line heights a view keeps between the primary cursor and its top and bottom edges, at most a quarter of the view's height.")
 (define-option wrap-lines #t boolean?
   "Whether a line longer than the view wraps onto several screen lines.")
 
@@ -24,11 +24,11 @@
    view-record-folds-set! view-record-narrowing-set! view-record-shown-count top-position
    cursor-record? cursor-record-view cursor-record-goal cursor-record-goal-set!
    spot-position point-of mark-of set-cursor-spots! move-point! add-cursor-at! primary-moved! mark-dirty!
-   bounds-of live-folds add-fold! narrow-view! stop-after stop-before
+   bounds-of live-folds add-fold! narrow-view! widen-view! stop-after stop-before
    set-view-option! remove-view-option! state-entry view-record-states view-record-states-set!
-   scroll-to-line! draw-view current-context context-view context-client in-line? make-context children-html drawing?
+   scroll-to-place! estimate-range! draw-view current-context context-view context-client in-line? make-context children-html drawing?
    atom-view-of keymaps-at note-edit note-kill after-batch scroll-report mouse-item posn-keymaps forget-client!
-   view-client when-measured! scroll-up! scroll-down! recenter!
+   view-client when-measured! scroll-by! recenter!
    face-attributes title-attributes
    anchor-record? anchor-record-id anchor-record-view anchor-record-spot anchor-record-gone?
    new-anchor! forget-anchor! anchor-of-id anchor-drawn-for?
@@ -48,40 +48,49 @@
   ;; data do until their buffer is made.
   (define-record-type view-record
     (sealed #t)
-    (fields id (mutable name) (mutable buffer) (mutable cursors)
-            (mutable place-at) (mutable place-align) (mutable place-offset)
-            (mutable moved?) (mutable moved-by) (mutable moved-last) (mutable reported-by) clients
+    (fields id (mutable name) (mutable buffer) (mutable cursors) (mutable place)
+            (mutable moved?) (mutable moved-by) (mutable moved-last) (mutable placed-by) clients
             (mutable folds) (mutable narrowing) (mutable options) (mutable states)
-            (mutable saved?) (mutable host) (mutable dropped?) (mutable shown-count))
+            (mutable saved?) (mutable host) (mutable dropped?) (mutable shown-count)
+            devices (mutable items) (mutable items-key) (mutable drawn) (mutable next-item))
     (protocol
       (lambda (new)
-        (lambda (id name buffer place-at place-align place-offset folds narrowing saved?)
-          (new id name buffer '() place-at place-align place-offset #f #f 'followed #f (make-eq-hashtable)
-               folds narrowing '() '() saved? #f #f 0)))))
+        (lambda (id name buffer place folds narrowing saved?)
+          (new id name buffer '() place #f #f 'followed #f (make-eq-hashtable)
+               folds narrowing '() '() saved? #f #f 0 (make-hashtable string-hash string=?) (make-eqv-hashtable) #f 0 1)))))
+
+  (define-record-type place
+    (sealed #t)
+    (fields kind spot offset height left))
+
+  (define (follow-place) (make-place 'follow #f 0.0 0.0 0.0))
 
   (define-record-type client-view
     (sealed #t)
-    (fields (mutable number) (mutable target) (mutable align) (mutable offset)
-            (mutable top) (mutable scroll-offset) (mutable facts) (mutable average)
-            (mutable before) (mutable after) (mutable in-step) (mutable room) (mutable counted?)
-            (mutable point-placed) (mutable owed) (mutable reported) (mutable drawn-batch))
+    (fields device (mutable number) (mutable placement) (mutable own) (mutable measured) (mutable facts)
+            (mutable from) (mutable to) (mutable sizer) (mutable scale) (mutable map)
+            (mutable owed) (mutable reported) (mutable drawn-batch))
     (protocol
       (lambda (new)
-        (lambda ()
-          (new 0 #f 'top 0.0 #f 0.0 #f #f initial-drawn-lines initial-drawn-lines #f #f #f #f #f 0 -1)))))
+        (lambda (device)
+          (new device 0 #f #f #f #f #f #f #f 1.0 #f #f 0 -1)))))
 
   (define-record-type facts
     (sealed #t)
-    (fields placement last visible width height))
+    (fields width height line-height char-width start end at-end? below))
 
-  (define-record-type shown
+  ;; The size a client of the device last measured is kept for a new
+  ;; client of it, as after a reload, to start from.
+  (define-record-type device-view
     (sealed #t)
-    (fields first last count))
+    (fields (mutable maps) (mutable wrap?) (mutable width) (mutable height)))
 
-  (define-record-type measurement
+  ;; An item's id is its anchor's number in its view, kept while the
+  ;; anchor stays at an item's start, so the browser's morph keeps the
+  ;; item's element through scrolls and edits elsewhere.
+  (define-record-type item-anchor
     (sealed #t)
-    (fields placement top offset last-visible spacer distance before after
-            drawn-height above below width height settled?))
+    (fields name spot (mutable batch) (mutable last)))
 
   (define-record-type cursor-record
     (sealed #t)
@@ -219,9 +228,9 @@
       (view-record-moved?-set! v #t)
       (view-record-moved-by-set! v (web:current-client))))
 
-  ;; Before a browser has measured a view, nothing says how many lines
-  ;; fill it, so its first screen draws this many on each side.
-  (define initial-drawn-lines 200)
+  ;; Before a device has measured a view at its width, nothing says how
+  ;; many items fill it, so its first screen draws this many on each side.
+  (define initial-drawn-items 200)
 
   ;; Placement numbers start at a random base, so a page that applied a
   ;; number before this module reloaded never takes a new placement for
@@ -230,19 +239,11 @@
     (call-with-port (open-file-input-port "/dev/urandom")
       (lambda (p) (bytevector-uint-ref (get-bytevector-n p 6) 0 (endianness little) 6))))
 
-  (define (send-placement! v cs)
-    (let ([d (fxmax (client-view-before cs) (client-view-after cs))] [at (view-record-place-at v)]
-          [offset (view-record-place-offset v)])
-      (with-interrupts-disabled
-        (set! last-placement (fx+ last-placement 1))
-        (client-view-number-set! cs last-placement)
-        (client-view-target-set! cs at)
-        (client-view-align-set! cs (view-record-place-align v))
-        (client-view-offset-set! cs offset)
-        (client-view-top-set! cs at)
-        (client-view-scroll-offset-set! cs offset)
-        (client-view-before-set! cs d)
-        (client-view-after-set! cs d))))
+  (define (send-placement! cs place)
+    (with-interrupts-disabled
+      (set! last-placement (fx+ last-placement 1))
+      (client-view-number-set! cs last-placement)
+      (client-view-placement-set! cs place)))
 
   (define (next-number!)
     (with-interrupts-disabled
@@ -269,18 +270,57 @@
 
   (define (anchor-of-id id) (hashtable-ref anchors-by-id id #f))
 
+  ;; Where an edit brought two item anchors together, the one that was
+  ;; further on keeps its number: its text is what stayed there.
+  (define (item-ids v b)
+    (let ([version (buffers:version b)])
+      (if (eqv? version (view-record-items-key v))
+          (view-record-items v)
+          (let ([t (make-eqv-hashtable)])
+            (vector-for-each
+              (lambda (e)
+                (let* ([p (spot-position (item-anchor-spot e))] [other (hashtable-ref t p #f)])
+                  (when (or (not other) (fx> (item-anchor-last e) (item-anchor-last other)))
+                    (hashtable-set! t p e))))
+              (hashtable-values (view-record-items v)))
+            (let-values ([(ps es) (hashtable-entries t)])
+              (vector-for-each (lambda (p e) (item-anchor-last-set! e p)) ps es))
+            (view-record-items-set! v t)
+            (view-record-items-key-set! v version)
+            t))))
+
+  (define (item-id ctx start)
+    (let* ([v (context-view ctx)]
+           [t (context-item-ids ctx)]
+           [e (or (hashtable-ref t start #f)
+                  (let ([e (make-item-anchor
+                             (string-append "v" (number->string (view-record-id v)) "-"
+                                            (number->string (view-record-next-item v)))
+                             (buffers:anchor (view-record-buffer v) start) batches start)])
+                    (view-record-next-item-set! v (fx+ (view-record-next-item v) 1))
+                    (hashtable-set! t start e)
+                    e))])
+      (item-anchor-batch-set! e batches)
+      (view-record-drawn-set! v batches)
+      (item-anchor-name e)))
+
+  ;; Anchors the view's last drawing did not draw are dropped. A batch
+  ;; may draw no client, as while a reloaded page opens its stream, and
+  ;; its items keep their numbers for the next drawing.
+  (define (drop-undrawn-items! v)
+    (let ([t (view-record-items v)] [drawn (view-record-drawn v)])
+      (let-values ([(ps es) (hashtable-entries t)])
+        (vector-for-each (lambda (p e) (when (fx< (item-anchor-batch e) drawn) (hashtable-delete! t p))) ps es))))
+
   ;; Batches are counted so that a view drawn for a client in this one is
   ;; told from one drawn before: a container may leave a view undrawn.
   (define batches 0)
 
   (define (anchor-drawn-for? a c)
     (let* ([v (anchor-record-view a)] [b (bound-buffer v)] [cs (hashtable-ref (view-record-clients v) c #f)])
-      (and b cs (fx= (client-view-drawn-batch cs) batches)
-           (let ([doc (buffers:document b)] [p (spot-position (anchor-record-spot a))])
-             (let-values ([(lo hi) (bounds-of v)])
-               (and (fx<= lo p hi)
-                    (let-values ([(ws we) (window-range v doc lo hi cs)])
-                      (fx<= ws p we))))))))
+      (and b cs (fx= (client-view-drawn-batch cs) batches) (client-view-from cs)
+           (fx<= (spot-position (client-view-from cs)) (spot-position (anchor-record-spot a))
+                 (spot-position (client-view-to cs))))))
 
   (define (make-new-scroller! on-rest)
     (let ([s (make-scroller-record (next-number!) #f 'nearest #f (make-eq-hashtable) on-rest #f)])
@@ -337,13 +377,11 @@
                     (scroller-state-number-set! cs number))
                   ((scroller-record-on-rest s) s c at align focus)))))))))
 
-  ;; A client's state is made with a placement to the view's position, so
-  ;; a new client's first screen shows the view where the others have it.
   (define (view-client v c)
     (let ([t (view-record-clients v)])
       (or (hashtable-ref t c #f)
-          (let ([cs (make-client-view)])
-            (send-placement! v cs)
+          (let ([cs (make-client-view (and c (web:client-device c)))])
+            (send-placement! cs (if (eq? (view-record-moved-last v) 'followed) (follow-place) (view-record-place v)))
             (hashtable-set! t c cs)
             cs))))
 
@@ -351,50 +389,51 @@
     (let-values ([(cs states) (hashtable-entries (view-record-clients v))])
       (vector-for-each proc cs states)))
 
-  (define (place-spot! v at align offset)
+  ;; BY is the client whose command placed the view: its report under the
+  ;; placement makes what its browser shows the shared position.
+  (define (place-all! v place by)
     (with-interrupts-disabled
-      (view-record-place-at-set! v at)
-      (view-record-place-align-set! v align)
-      (view-record-place-offset-set! v (if (eq? align 'top) (inexact offset) 0.0))
-      (for-each-client-view (lambda (c cs) (send-placement! v cs)) v)
+      (view-record-place-set! v place)
+      (view-record-placed-by-set! v by)
+      (for-each-client-view (lambda (c cs) (send-placement! cs place)) v)
       (set! dirty? #t)))
 
-  (define (place-view! v at align offset)
-    (place-spot! v (make-spot (view-record-buffer v) at #f) align offset))
+  (define (align-view! v p align)
+    (place-all! v (make-place align (make-spot (view-record-buffer v) p #f) 0.0 0.0 0.0) (web:current-client)))
 
-  ;; Client C's browser scrolled the view there, so every other client is
-  ;; placed there and C is sent nothing.
-  (define (set-view-scroll! v c at offset)
-    (let ([spot (make-spot (view-record-buffer v) at #f)])
-      (with-interrupts-disabled
-        (view-record-place-at-set! v spot)
-        (view-record-place-align-set! v 'top)
-        (view-record-place-offset-set! v offset)
-        (for-each-client-view
-          (lambda (other cs)
-            (if (eq? other c)
-                (begin (client-view-top-set! cs spot) (client-view-scroll-offset-set! cs offset))
-                (send-placement! v cs)))
-          v)
-        (set! dirty? #t))))
+  ;; Client C's browser was scrolled there by hand, so every other client
+  ;; is placed there and C is sent nothing.
+  (define (set-view-scroll! v c own)
+    (with-interrupts-disabled
+      (view-record-place-set! v own)
+      (view-record-placed-by-set! v #f)
+      (for-each-client-view (lambda (other cs) (unless (eq? other c) (send-placement! cs own))) v)
+      (set! dirty? #t)))
 
   ;; What a browser measured of one buffer says nothing of another, but
   ;; each client keeps counting its placements, since its page may hold
   ;; the last one.
   (define (forget-measured! v)
+    (hashtable-clear! (view-record-devices v))
+    (forget-items! v)
     (for-each-client-view
       (lambda (c cs)
+        (client-view-own-set! cs #f)
+        (client-view-measured-set! cs #f)
         (client-view-facts-set! cs #f)
-        (client-view-average-set! cs #f)
-        (client-view-before-set! cs initial-drawn-lines)
-        (client-view-after-set! cs initial-drawn-lines)
-        (client-view-in-step-set! cs #f)
-        (client-view-room-set! cs #f)
-        (client-view-counted?-set! cs #f)
-        (client-view-point-placed-set! cs #f)
+        (client-view-from-set! cs #f)
+        (client-view-to-set! cs #f)
+        (client-view-sizer-set! cs #f)
+        (client-view-map-set! cs #f)
         (client-view-owed-set! cs #f))
       v))
 
+  (define (forget-items! v)
+    (view-record-items-set! v (make-eqv-hashtable))
+    (view-record-items-key-set! v #f))
+
+  ;; A device's maps go with its last client: a reload's new client is
+  ;; drawn before the old one says goodbye, so a reload keeps them.
   (define (forget-client! c)
     (eq-hashtable-delete! presses c)
     (vector-for-each (lambda (s) (hashtable-delete! (scroller-record-clients s) c)) (hashtable-values scrollers))
@@ -402,14 +441,19 @@
       (lambda (v)
         (with-interrupts-disabled
           (hashtable-delete! (view-record-clients v) c)
-          (when (eq? (view-record-reported-by v) c) (view-record-reported-by-set! v #f))
+          (when (eq? (view-record-placed-by v) c) (view-record-placed-by-set! v #f))
           (when (eq? (view-record-moved-by v) c) (view-record-moved-by-set! v #f))))
-      views))
+      views)
+    (let ([device (web:client-device c)])
+      (unless (exists (lambda (v)
+                        (exists (lambda (cs) (equal? (client-view-device cs) device))
+                                (vector->list (hashtable-values (view-record-clients v)))))
+                      views)
+        (for-each (lambda (v) (hashtable-delete! (view-record-devices v) device)) views))))
 
   (define (reset-view! v b)
     (let* ([n (if b (buffer-length b) 0)]
-           [cursors (list (make-cursor-record v (make-spot b (if b (stop-within b 0 n 0) 0) #f) #f #f))]
-           [at (make-spot b 0 #f)])
+           [cursors (list (make-cursor-record v (make-spot b (if b (stop-within b 0 n 0) 0) #f) #f #f))])
       (with-interrupts-disabled
         (view-record-cursors-set! v cursors)
         (view-record-moved?-set! v #f)
@@ -418,10 +462,10 @@
         (view-record-narrowing-set! v #f)
         (view-record-states-set! v '())
         (forget-measured! v)
-        (place-spot! v at 'top 0.0))))
+        (place-all! v (make-place 'position (make-spot b 0 #f) 0.0 0.0 0.0) #f))))
 
   (define (make-new-view! id b name)
-    (let ([v (make-view-record (or id next-id) name b 0 'top 0.0 '() #f #f)])
+    (let ([v (make-view-record (or id next-id) name b (make-place 'position 0 0.0 0.0 0.0) '() #f #f)])
       (reset-view! v b)
       (add-view! v)))
 
@@ -435,6 +479,7 @@
           (when b (hashtable-update! by-buffer b (lambda (vs) (cons v vs)) '()))
           (view-record-buffer-set! v b)
           (view-record-shown-count-set! v (fx+ (view-record-shown-count v) 1)))
+        (forget-items! v)
         (for-each forget-anchor! (hashtable-ref anchors-by-view v '())))))
 
   (define (show-buffer! v b)
@@ -453,6 +498,9 @@
     (let-values ([(keys vs) (hashtable-entries copies)])
       (vector-for-each (lambda (k c) (when (eq? c v) (hashtable-delete! copies k))) keys vs)))
 
+  (define (place-at pl spot)
+    (make-place (place-kind pl) spot (place-offset pl) (place-height pl) (place-left pl)))
+
   ;; A view whose buffer is gone keeps its positions as numbers, so a
   ;; buffer made again under the name shows them.
   (define (unbind! v)
@@ -460,10 +508,10 @@
     (let* ([cs (view-record-cursors v)]
            [points (map (lambda (c) (number (cursor-record-point c))) cs)]
            [marks (map (lambda (c) (number (cursor-record-mark c))) cs)]
-           [at (number (view-record-place-at v))]
+           [pl (let ([pl (view-record-place v)]) (place-at pl (number (place-spot pl))))]
            [folds (map (lambda (f) (cons (number (car f)) (number (cdr f)))) (view-record-folds v))]
            [narrowing (let ([r (view-record-narrowing v)]) (and r (cons (number (car r)) (number (cdr r)))))])
-      (commit-positions! v #f cs points marks at folds narrowing)))
+      (commit-positions! v #f cs points marks pl folds narrowing)))
 
   (define (bind! v b)
     (let* ([n (buffer-length b)]
@@ -474,13 +522,13 @@
            [cs (view-record-cursors v)]
            [points (map (lambda (c) (make-spot b (stop-within b lo hi (spot-position (cursor-record-point c))) #f)) cs)]
            [marks (map (lambda (c) (let ([m (cursor-record-mark c)]) (and m (spot m #f)))) cs)]
-           [at (spot (view-record-place-at v) #f)]
+           [pl (let ([pl (view-record-place v)]) (place-at pl (and (place-spot pl) (spot (place-spot pl) #f))))]
            [folds (map (lambda (f) (cons (spot (car f) #t) (spot (cdr f) #f))) (view-record-folds v))])
-      (commit-positions! v b cs points marks at folds narrowing)))
+      (commit-positions! v b cs points marks pl folds narrowing)))
 
   ;; A quit leaves a view showing its old buffer or its new one, never
   ;; positions of both.
-  (define (commit-positions! v b cs points marks at folds narrowing)
+  (define (commit-positions! v b cs points marks pl folds narrowing)
     (with-interrupts-disabled
       (for-each (lambda (c p m) (cursor-record-point-set! c p) (cursor-record-mark-set! c m)) cs points marks)
       (view-record-folds-set! v folds)
@@ -488,7 +536,7 @@
       (view-record-states-set! v '())
       (set-shown-buffer! v b)
       (forget-measured! v)
-      (place-spot! v at (view-record-place-align v) (view-record-place-offset v))))
+      (place-all! v pl #f)))
 
   (define (bound-buffer v)
     (let ([b (view-record-buffer v)])
@@ -576,305 +624,493 @@
         (view-record-states-set! v live)
         (values b at (find-first (lambda (e) (fx= (buffers:anchor-position (car e)) at)) live)))))
 
-  (define (line-limits doc lo hi) (values (document:line doc lo) (document:line doc hi)))
+  (define (whole-node? n)
+    (or (document:atom? n)
+        (let ([k (buffers:kind (document:node-kind n))]) (and k (buffers:kind-whole? k)))))
 
-  (define (view-lines v doc)
+  (define (child-of doc n m)
+    (let ([ns (document:node-start n)])
+      (let loop ([m m])
+        (let ([parent (document:enclosing doc (document:node-start m))])
+          (if (fx= (document:node-start parent) ns) m (loop parent))))))
+
+  ;; Only a newline in N's own text ends one of its runs, so a newline
+  ;; inside a child sends the search past that child.
+  (define (run-start doc n p lo)
+    (let ([ns (document:node-start n)] [cs (fx+ (document:node-start n) 1)])
+      (let loop ([p p])
+        (let* ([line (document:line doc p)] [nl (if (fx= line 1) -1 (fx- (document:line-start doc line) 1))])
+          (cond
+            [(fx< nl cs) (fxmax lo cs)]
+            [(fx= (document:node-start (document:enclosing doc nl)) ns) (fxmax lo (fx+ nl 1))]
+            [else (loop (document:node-start (child-of doc n (document:enclosing doc nl))))])))))
+
+  (define (run-end doc n p hi)
+    (let ([ns (document:node-start n)] [ce (fx- (document:node-end n) 1)]
+          [lines (document:line doc (document:length doc))])
+      (let loop ([p p])
+        (let* ([line (document:line doc p)] [nl (if (fx= line lines) ce (fx- (document:line-start doc (fx+ line 1)) 1))])
+          (cond
+            [(fx>= nl ce) (fxmin hi ce)]
+            [(fx= (document:node-start (document:enclosing doc nl)) ns) (fxmin hi (fx+ nl 1))]
+            [else (loop (document:node-end (child-of doc n (document:enclosing doc nl))))])))))
+
+  (define (holders doc p)
+    (let ([inner (let loop ([n (document:enclosing doc p)] [acc '()])
+                   (if n (loop (document:enclosing doc (document:node-start n)) (cons n acc)) acc))]
+          [t (document:token doc p)])
+      (if (document:node? t) (append inner (list t)) inner)))
+
+  ;; A node beside text or a newline in its parent is drawn in that line.
+  ;; Only its neighbours are read, so a node among other nodes on a line
+  ;; that holds text further along counts as standing alone.
+  (define (in-line-run? doc n x)
+    (let ([after (document:token doc (document:node-end x))]
+          [before (let ([b (fx- (document:node-start x) 1)])
+                    (and (fx> b (document:node-start n)) (document:token doc b)))])
+      (or (char? after) (and (char? before) (not (char=? before #\newline))))))
+
+  (define (token-near doc lo hi p)
+    (let forward ([q (fxmax lo (fxmin p (fx- hi 1)))])
+      (cond
+        [(fx>= q hi)
+         (let back ([q (fx- hi 1)])
+           (if (and (fx> q lo) (eq? (document:token doc q) 'close)) (back (fx- q 1)) q))]
+        [(eq? (document:token doc q) 'close) (forward (fx+ q 1))]
+        [else q])))
+
+  ;; Items must be what block-html draws: a line of block content,
+  ;; inline nodes and all, or a node standing alone that is whole; any
+  ;; other node standing alone opens into its children's items.
+  (define (item-at doc lo hi p)
+    (if (fx>= lo hi)
+        (values lo hi)
+        (let* ([p (token-near doc lo hi p)] [at-node? (document:node? (document:token doc p))])
+          (let loop ([n #f] [chain (holders doc p)])
+            (let ([n (or n (car chain))] [rest (if n chain (cdr chain))])
+              (if (null? rest)
+                  (values (run-start doc n p lo) (run-end doc n p hi))
+                  (let ([x (car rest)])
+                    (cond
+                      [(in-line-run? doc n x)
+                       (let ([s (document:node-start x)]) (values (run-start doc n s lo) (run-end doc n s hi)))]
+                      [(whole-node? x) (values (fxmax lo (document:node-start x)) (fxmin hi (document:node-end x)))]
+                      [(or (pair? (cdr rest)) (not at-node?)) (loop x (cdr rest))]
+                      [(fx< (fx+ (document:node-start x) 1) (fx- (document:node-end x) 1))
+                       (item-at doc lo hi (fx+ (document:node-start x) 1))]
+                      [else (values (fxmax lo (document:node-start x)) (fxmin hi (document:node-end x)))]))))))))
+
+  (define (item-bounds v doc)
     (let-values ([(lo hi) (bounds-of v)])
-      (line-limits doc lo hi)))
+      (values (fxmax lo 1) (fxmin hi (fx- (document:length doc) 1)))))
 
-  (define (clamp-line first last line) (fxmax first (fxmin last line)))
+  ;; A fold hides the newlines it holds, so the drawing joins the text
+  ;; before it and after it into one line: an item boundary B goes when
+  ;; the token before it, B - 1, is folded.
+  (define (view-item v doc p)
+    (let-values ([(lo hi) (item-bounds v doc)])
+      (let ([folds (live-folds v)])
+        (if (null? folds)
+            (item-at doc lo hi p)
+            (let ([folds (map (lambda (f) (cons (spot-position (car f)) (spot-position (cdr f)))) folds)])
+              (define (folding b) (find-first (lambda (f) (fx< (car f) b (fx+ (cdr f) 1))) folds))
+              (let-values ([(s e) (item-at doc lo hi p)])
+                (values
+                  (let back ([s s])
+                    (let ([f (and (fx> s lo) (folding s))])
+                      (if f
+                          (let-values ([(a z) (item-at doc lo hi (car f))]) (if (fx< a s) (back a) s))
+                          s)))
+                  (let forward ([e e])
+                    (let ([f (and (fx< e hi) (folding e))])
+                      (if f
+                          (let-values ([(a z) (item-at doc lo hi (cdr f))]) (if (fx> z e) (forward z) e))
+                          e))))))))))
 
-  (define (spot-line doc first last s) (clamp-line first last (document:line doc (spot-position s))))
+  (define (item-start-at v doc p) (let-values ([(s e) (view-item v doc p)]) s))
 
-  (define (point-line v doc) (document:line doc (point-of (car (view-record-cursors v)))))
+  (define (items-around v doc p n)
+    (let-values ([(lo hi) (item-bounds v doc)] [(s e) (view-item v doc p)])
+      (values (let back ([s s] [k n])
+                (if (or (fx= k 0) (fx<= s lo))
+                    s
+                    (let-values ([(a z) (view-item v doc (fx- s 1))])
+                      (back (if (fx< a s) a (fx- s 1)) (fx- k 1)))))
+              (let forward ([e e] [k n])
+                (if (or (fx= k 0) (fx>= e hi))
+                    e
+                    (let-values ([(a z) (view-item v doc e)])
+                      (forward (if (fx> z e) z (fx+ e 1)) (fx- k 1))))))))
 
-  ;; Emacs's window_scroll_margin with maximum-scroll-margin 0.25: never
-  ;; more than a quarter of the lines in view, so a short view still moves
-  ;; its cursor.
-  (define (clamped-margin margin count)
-    (fxmax 0 (fxmin margin (fxquotient (fx- count 1) 2) (fxquotient count 4))))
+  ;; Atoms count as characters and are U+FFFC in UTF-8, three bytes, so in
+  ;; mostly ASCII text the atoms are about half the bytes beyond the
+  ;; characters. Each other node is an opening and a closing.
+  (define (counter doc)
+    (let ([chars (document:unit characters)] [bytes (document:unit bytes)])
+      (lambda (a z)
+        (let* ([n (fx- (document:offset doc z chars) (document:offset doc a chars))]
+               [atoms (fxmax 0 (fxmin n (fxquotient (fx- (fx- (document:offset doc z bytes) (document:offset doc a bytes)) n) 2)))])
+          (values (fx- (document:line doc z) (document:line doc a)) (fx- n atoms) atoms
+                  (fxquotient (fx- (fx- z a) n) 2))))))
 
-  ;; What a browser rounds an edge to: a line this far past the view's
-  ;; edge still counts as wholly in view.
+  (define (device-view! v device)
+    (let ([t (view-record-devices v)])
+      (or (hashtable-ref t device #f)
+          (let ([d (make-device-view '() (wrap-lines) #f #f)])
+            (hashtable-set! t device d)
+            d))))
+
+  (define (client-map v doc cs)
+    (let* ([device (client-view-device cs)] [d (and device (hashtable-ref (view-record-devices v) device #f))])
+      (and d (eq? (device-view-wrap? d) (wrap-lines))
+           (let* ([f (client-view-facts cs)] [e (assv (if f (facts-width f) (device-view-width d)) (device-view-maps d))])
+             (and e (fx= (height-map-length (cdr e)) (document:length doc)) (cdr e))))))
+
+  (define (client-height v cs)
+    (let ([f (client-view-facts cs)])
+      (if f
+          (facts-height f)
+          (let ([d (and (client-view-device cs) (hashtable-ref (view-record-devices v) (client-view-device cs) #f))])
+            (or (and d (device-view-height d)) 0)))))
+
+  ;; The browser of a client that reported under the newest placement, or
+  ;; under a newest one that only follows point, shows what it reported.
+  (define (current-own cs)
+    (let ([own (client-view-own cs)])
+      (and own
+           (or (eqv? (client-view-measured cs) (client-view-number cs))
+               (eq? (place-kind (client-view-placement cs)) 'follow))
+           own)))
+
+  ;; Until the client reports under a placement that follows point, its
+  ;; own position is from before point moved, and a run drawn around it
+  ;; must still hold point for the browser to show it. Deciding by the run
+  ;; last drawn instead would alternate the run between point and own.
+  (define (run-top v doc m cs height wanted)
+    (let ([pl (client-view-placement cs)] [own (current-own cs)])
+      (define (item-px p) (height-map-px m (item-start-at v doc p)))
+      (define (own-px own) (fl+ (item-px (spot-position (place-spot own))) (place-offset own)))
+      (define (point-near? top)
+        (let ([p (height-map-px m (point-of (car (view-record-cursors v))))])
+          (and (fl>= p (fl- top wanted)) (fl<= p (fl+ top height wanted)))))
+      (cond
+        [(and own (or (not (eq? (place-kind pl) 'follow)) (eqv? (client-view-measured cs) (client-view-number cs))
+                      (point-near? (own-px own))))
+         (own-px own)]
+        [else
+         (case (place-kind pl)
+           [(position) (own-px pl)]
+           [(top) (item-px (spot-position (place-spot pl)))]
+           [(center) (fl- (height-map-px m (spot-position (place-spot pl))) (fl/ height 2.0))]
+           [(bottom) (fl- (height-map-px m (spot-position (place-spot pl))) height)]
+           [else (fl- (height-map-px m (point-of (car (view-record-cursors v)))) (fl/ height 2.0))])])))
+
+  ;; Firefox takes a box taller than 17,895,697 px as 0 px tall and
+  ;; Chromium clamps one at 33,554,428 px, so spacers and the sizer are
+  ;; scaled to stay under 2^24 px; drawn items keep their size.
+  (define most-scroll-px 16777216.0)
+
+  (define (set-edges! v cs ws we)
+    (let ([b (view-record-buffer v)])
+      (define (edge s p) (if s (move-spot s b p #f) (make-spot b p #f)))
+      (client-view-from-set! cs (edge (client-view-from cs) ws))
+      (client-view-to-set! cs (edge (client-view-to cs) we))))
+
+  (define (cold-center v cs)
+    (let ([pl (client-view-placement cs)] [own (current-own cs)])
+      (cond
+        [own (spot-position (place-spot own))]
+        [(place-spot pl) (spot-position (place-spot pl))]
+        [else (point-of (car (view-record-cursors v)))])))
+
+  ;; An edge gains items when fewer than the wanted px lie beyond it, and
+  ;; loses only those wholly past twice that, so a scroll by a line does
+  ;; not redraw the run; where less than half the wanted px remain to an
+  ;; end, every item to it is drawn.
+  (define (client-run! v doc cs)
+    (let-values ([(lo hi) (item-bounds v doc)])
+      (let ([m (and (client-view-device cs) (client-map v doc cs))])
+        (client-view-map-set! cs m)
+        (if (not m)
+            (let-values ([(ws we) (items-around v doc (cold-center v cs) initial-drawn-items)])
+              (set-edges! v cs ws we)
+              (client-view-sizer-set! cs #f)
+              (values ws we #f #f))
+            (let* ([height (fixnum->flonum (client-height v cs))]
+                   [wanted (fl* height (inexact (drawn-screens)))]
+                   [top (run-top v doc m cs height wanted)]
+                   [lo-px (height-map-px m lo)] [hi-px (height-map-px m hi)]
+                   [from (client-view-from cs)] [to (client-view-to cs)]
+                   [ws0 (and from (spot-position from))] [we0 (and to (spot-position to))]
+                   [fresh? (or (not ws0) (fx< ws0 lo) (fx> we0 hi) (fx>= ws0 we0)
+                               (fl< top (height-map-px m ws0)) (fl> (fl+ top height) (height-map-px m we0)))])
+              (define (start-at px)
+                (if (fl<= (fl- px lo-px) (fl/ wanted 2.0)) lo (item-start-at v doc (height-map-position m px))))
+              (define (end-at px)
+                (if (fl<= (fl- hi-px px) (fl/ wanted 2.0))
+                    hi
+                    (let-values ([(s e) (view-item v doc (height-map-position m px))]) e)))
+              (let* ([above (if fresh? 0.0 (fl- top (height-map-px m ws0)))]
+                     [below (if fresh? 0.0 (fl- (height-map-px m we0) (fl+ top height)))]
+                     [ws (cond
+                           [(or fresh? (and (fl< above wanted) (fx> ws0 lo))) (start-at (fl- top wanted))]
+                           [(fl> above (fl* 2.0 wanted)) (start-at (fl- top (fl* 1.5 wanted)))]
+                           [else ws0])]
+                     [we (cond
+                           [(or fresh? (and (fl< below wanted) (fx< we0 hi))) (end-at (fl+ top height wanted))]
+                           [(fl> below (fl* 2.0 wanted)) (end-at (fl+ top height (fl* 1.5 wanted)))]
+                           [else we0])]
+                     [total (fl- hi-px lo-px)]
+                     [scale (if (fl> total most-scroll-px) (fl/ most-scroll-px total) 1.0)]
+                     [sizer (let ([old (client-view-sizer cs)] [drawn (fl- (height-map-px m we) lo-px)])
+                              (if (or (not old) (fl> drawn old)) total old))])
+                (set-edges! v cs ws we)
+                (client-view-sizer-set! cs sizer)
+                (client-view-scale-set! cs scale)
+                (values ws we (fl* scale (fl- (height-map-px m ws) lo-px)) (fl* scale sizer))))))))
+
+  ;; What a browser rounds an edge to.
   (define edge-tolerance 0.5)
 
   (define next-screen-context-lines 2)
 
-  (define (current-facts cs)
-    (let ([f (client-view-facts cs)])
-      (and f (fx= (facts-placement f) (client-view-number cs)) f)))
-
-  (define (room-below cs f)
-    (let ([r (client-view-room cs)]) (if (and r (eq? (car r) f)) (cdr r) 0)))
-
-  ;; Under the newest placement, what is in view is counted from the top
-  ;; line, so lines added or removed in view since it was measured move
-  ;; what is in view rather than with it. Placed since, only the placed
-  ;; line and the lines beyond the edge it was placed at are known.
-  (define (view-shown v doc cs)
-    (let ([f (client-view-facts cs)])
-      (and f
-           (let-values ([(first last) (view-lines v doc)])
-             (if (current-facts cs)
-                 (let* ([top (spot-line doc first last (client-view-top cs))]
-                        [from (if (fl>= (client-view-scroll-offset cs) edge-tolerance) (fx+ top 1) top)]
-                        [to (fxmax top (fx+ top (fx- (facts-visible f) 1) (room-below cs f)))])
-                   (make-shown from to (fxmax 1 (fx+ (fx- to from) 1))))
-                 (let ([target (spot-line doc first last (client-view-target cs))] [n (fxmax 1 (facts-visible f))])
-                   (case (client-view-align cs)
-                     [(top) (make-shown target #f n)]
-                     [(bottom) (make-shown #f target n)]
-                     [else (make-shown #f #f n)])))))))
-
-  (define (followed-room sh first last)
-    (let ([m (clamped-margin (scroll-margin) (shown-count sh))] [from (shown-first sh)] [to (shown-last sh)])
-      (values (and from (if (fx> from first) (fx+ from m) from))
-              (and to (if (fx< to last) (fx- to m) to)))))
-
-  (define (show-point! v doc cs)
-    (let ([sh (view-shown v doc cs)])
-      (when sh
-        (let-values ([(first last) (view-lines v doc)])
-          (let-values ([(low high) (followed-room sh first last)])
-            (let ([line (point-line v doc)] [margin (clamped-margin (scroll-margin) (shown-count sh))])
-              (define (place! at align)
-                (place-view! v (document:line-start doc at) align 0.0)
-                (client-view-point-placed-set! cs
-                  (cons (client-view-number cs) (make-spot (view-record-buffer v) (document:line-start doc line) #f))))
-              (cond
-                [(and low (fx< line low))
-                 (if (fx<= (fx- (shown-first sh) line) (shown-count sh))
-                     (place! (fxmax first (fx- line margin)) 'top)
-                     (place! line 'center))]
-                [(and high (fx> line high))
-                 (if (fx<= (fx- line (shown-last sh)) (shown-count sh))
-                     (place! (fxmin last (fx+ line margin)) 'bottom)
-                     (place! line 'center))])))))))
-
-  ;; A browser that measured the placement made to show point, with point
-  ;; on the same line still, could not show it there; placing it again
-  ;; would not show it either.
-  (define (point-placement-measured? v doc cs)
-    (let ([placed (client-view-point-placed cs)] [f (current-facts cs)])
-      (and placed f (fx= (car placed) (facts-placement f))
-           (fx= (point-line v doc) (document:line doc (spot-position (cdr placed)))))))
-
-  (define (move-point-into-view! v b doc cs)
-    (let ([sh (view-shown v doc cs)])
-      (when sh
-        (let-values ([(first last) (view-lines v doc)])
-          (let-values ([(low high) (followed-room sh first last)])
-            (let* ([line (point-line v doc)] [above? (and low (fx< line low))] [below? (and high (fx> line high))])
-              (when (or above? below?)
-                (let ([from (or low high)] [to (or high low)])
-                  (when (fx<= from to)
-                    (point-to-line! v b doc (if above? from to)))))))))))
-
-  (define (point-to-line! v b doc target)
+  (define (point-to! v b doc target after?)
     (let-values ([(lo hi) (bounds-of v)])
       (let* ([c (car (view-record-cursors v))]
-             [p (point-of c)]
              [chars (document:unit characters)]
-             [column (or (cursor-record-goal c)
-                         (fx- (document:offset doc p chars)
-                              (document:offset doc (document:line-start doc (document:line doc p)) chars)))]
-             [start (document:offset doc (document:line-start doc target) chars)]
-             [end (if (fx< target (document:line doc (document:length doc)))
-                      (fx- (document:offset doc (document:line-start doc (fx+ target 1)) chars) 1)
-                      (document:offset doc (document:length doc) chars))]
-             [q (document:position doc (fxmin (fx+ start column) end) chars)])
-        (set-cursor-spots! c (stop-within b lo hi q) (mark-of c)))))
+             [offset (lambda (p) (document:offset doc p chars))]
+             [p (point-of c)]
+             [column (or (cursor-record-goal c) (fx- (offset p) (offset (document:line-start doc (document:line doc p)))))]
+             [line (document:line doc target)]
+             [ls (offset (document:line-start doc line))]
+             [le (if (fx< line (document:line doc (document:length doc)))
+                     (fx- (offset (document:line-start doc (fx+ line 1))) 1)
+                     (offset (document:length doc)))]
+             [t (offset target)]
+             [want (fxmin le (fx+ ls column))])
+        (set-cursor-spots! c (stop-within b lo hi (document:position doc (if after? (fxmax t want) (fxmin t want)) chars))
+                           (mark-of c)))))
 
-  (define (follow-point! v doc)
-    (let ([cs (hashtable-ref (view-record-clients v) (or (view-record-moved-by v) (view-record-reported-by v)) #f)])
+  (define (move-point-into-view! v b cs)
+    (let ([f (client-view-facts cs)])
+      (when (and f (facts-start f) (facts-end f))
+        (let ([doc (buffers:document b)] [p (point-of (car (view-record-cursors v)))]
+              [start (spot-position (facts-start f))] [end (spot-position (facts-end f))])
+          (cond
+            [(fx< p start) (point-to! v b doc start #t)]
+            [(fx> p end) (point-to! v b doc end #f)])))))
+
+  ;; Each client keeps point in view in its own geometry, so following
+  ;; point is a placement every client applies; the report of the client
+  ;; whose command moved point makes what it shows the shared position.
+  (define (follow-point! v)
+    (let ([pl (follow-place)])
       (with-interrupts-disabled
         (view-record-moved?-set! v #f)
-        (view-record-moved-last-set! v 'followed))
-      (if (and cs (client-view-facts cs))
-          (show-point! v doc cs)
-          (place-view! v (document:line-start doc (point-line v doc)) 'center 0.0))))
+        (view-record-moved-last-set! v 'followed)
+        (view-record-placed-by-set! v (or (view-record-moved-by v) 'anyone))
+        (for-each-client-view (lambda (c cs) (send-placement! cs pl)) v)
+        (set! dirty? #t))))
 
-  (define (scroll-to-line! v doc line align)
-    (let-values ([(first last) (view-lines v doc)])
-      (place-view! v (document:line-start doc (clamp-line first last line)) align 0.0)
-      (with-interrupts-disabled
-        (view-record-moved?-set! v #f)
-        (view-record-moved-last-set! v 'scrolled))))
+  (define (scroll-to-place! v p align)
+    (align-view! v p align)
+    (with-interrupts-disabled
+      (view-record-moved?-set! v #f)
+      (view-record-moved-last-set! v 'scrolled)))
 
-  (define fetching-step 16)
+  (define (same-position? a b)
+    (and (eq? (place-kind a) 'position) (eq? (place-kind b) 'position)
+         (eqv? (spot-position (place-spot a)) (spot-position (place-spot b)))
+         (fl< (flabs (fl- (place-offset a) (place-offset b))) edge-tolerance)
+         (fl< (flabs (fl- (place-left a) (place-left b))) edge-tolerance)))
 
-  ;; A count past any buffer's lines draws them all, and a cap keeps the
-  ;; arithmetic in fixnums whatever drawn-screens says.
-  (define (ceiling-count x) (exact (flceiling (flmin x 1e15))))
+  (define-record-type measured
+    (sealed #t)
+    (fields placement version top offset item-height left start end spacer distance items
+            line-height char-width width height settled? hand? at-end? below))
 
-  (define (floor-count x) (exact (flfloor (flmin x 1e15))))
+  (define (mark-field mark key) (let ([e (assoc key mark)]) (and e (cdr e))))
 
-  ;; Trimming only past twice what is wanted keeps a scroll by a line
-  ;; from redrawing the run, so the browser's morph keeps every line.
-  (define (adjusted-count drawn in-view px wanted density)
-    (cond
-      [(fl< px wanted)
-       (fx+ drawn (fxmax fetching-step (ceiling-count (fl* (fl- wanted px) density))))]
-      [(fl> px (fl* 2.0 wanted))
-       (fxmax in-view (fxmin (fx- drawn 1) (fx+ in-view (ceiling-count (fl* 1.5 (fl* wanted density))))))]
-      [else drawn]))
+  (define (mark-resolver b version)
+    (let* ([edits (buffers:edits-since b version)]
+           [doc (buffers:document b)]
+           [size (and edits (fold-left (lambda (n e) (fx- n (edit-delta e))) (document:length doc) edits))]
+           [then #f])
+      (lambda (mark)
+        (and edits mark
+             (let ([token (mark-field mark "token")] [at (mark-field mark "at")] [line (mark-field mark "line")]
+                   [count (or (mark-field mark "count") 0)])
+               (let ([p (cond
+                          [token token]
+                          [at (fx+ at count)]
+                          [line
+                           (unless then (set! then (if (null? edits) doc (document-then doc edits))))
+                           (and (fx<= line (document:line then (document:length then)))
+                                (fx+ (document:line-start then line) count))]
+                          [else #f])])
+                 (and p (fx< p size) (follow p edits))))))))
 
-  ;; A short spacer near an end, where the browser's scroll range stops,
-  ;; has nothing to hold the view still when its lines are drawn shorter
-  ;; than it, so every line to that end is drawn instead, and as many more
-  ;; as fill WANTED px, for lines added there before the next report.
-  (define (to-the-end there count wanted density)
-    (let ([filling (ceiling-count (fl* wanted density))])
-      (if (fx< (fx- there count) filling) (fx+ there filling) count)))
+  (define (whole-at? doc p)
+    (let ([t (document:token doc p)]) (and (document:node? t) (whole-node? t))))
 
-  ;; Counting starts at the drawn line next to the spacer, never at the
-  ;; buffer's start, so no estimate of everything above adds up.
-  (define (line-across-spacer side edge first last distance average)
-    (if (eq? side 'above)
-        (let ([steps (fxmin (fx- edge first) (ceiling-count (fl/ distance average)))])
-          (cons (fx- edge steps) (fl- (fl* (fixnum->flonum steps) average) distance)))
-        (let ([steps (fxmin (fx- last edge 1) (floor-count (fl/ distance average)))])
-          (cons (fx+ edge steps 1) (fl- distance (fl* (fixnum->flonum steps) average))))))
+  ;; Each item's advance is the px from its top to the next item's, so the
+  ;; margins and container markup between them count; the last's is its
+  ;; height.
+  ;; Most of a report's items were measured as they are by the report
+  ;; before, and are left as they are.
+  (define (measure-items! v doc m starts advances)
+    (define (measure! s end px)
+      (let-values ([(from to old measured?) (height-map-stretch m s)])
+        (unless (and measured? (fx= from s) (fx= to end) (fl< (flabs (fl- old px)) 0.01))
+          (height-map-measure! m s end px (whole-at? doc s)))))
+    (let loop ([starts starts] [advances advances])
+      (when (pair? starts)
+        (let ([s (car starts)] [next (and (pair? (cdr starts)) (cadr starts))])
+          (cond
+            [(not s)]
+            [next (when (fx< s next) (measure! s next (car advances)))]
+            [(null? (cdr starts))
+             (let-values ([(a z) (view-item v doc s)])
+               (measure! s (fxmin (document:length doc) (fxmax z (fx+ s 1))) (car advances)))])
+          (loop (cdr starts) (cdr advances))))))
 
-  ;; Only a report sent at rest, from a client that has scrolled away from
-  ;; where it was last in step with the view's position, moves the
+  ;; A device keeps the maps of the widths its clients last reported, so
+  ;; dragging a window's edge leaves no map per width passed.
+  (define (report-map! v doc cs r)
+    (let* ([device (client-view-device cs)] [d (device-view! v device)] [wrap? (wrap-lines)] [width (measured-width r)]
+           [widths (fold-left (lambda (acc other)
+                                (let ([f (client-view-facts other)])
+                                  (if (and f (not (eq? other cs)) (equal? (client-view-device other) device))
+                                      (cons (facts-width f) acc)
+                                      acc)))
+                              (list width) (vector->list (hashtable-values (view-record-clients v))))])
+      (if (eq? (device-view-wrap? d) wrap?)
+          (device-view-maps-set! d (filter (lambda (e) (memv (car e) widths)) (device-view-maps d)))
+          (begin
+            (device-view-maps-set! d '())
+            (device-view-wrap?-set! d wrap?)))
+      (device-view-width-set! d width)
+      (device-view-height-set! d (measured-height r))
+      ;; A character is taken to be at least a px wide, so a report's tiny
+      ;; character width cannot make a row's count overflow a fixnum.
+      (let ([row-chars (and wrap? (fxmax 1 (flonum->fixnum (flfloor (fl/ (fixnum->flonum width) (flmax 1.0 (measured-char-width r)))))))]
+            [e (assv width (device-view-maps d))])
+        (if (and e (fx= (height-map-length (cdr e)) (document:length doc)))
+            (begin (height-map-set-metrics! (cdr e) (measured-line-height r) row-chars) (cdr e))
+            (let ([m (make-height-map (document:length doc) (measured-line-height r) row-chars (counter doc))])
+              (device-view-maps-set! d (cons (cons width m) (remp (lambda (e) (fx= (car e) width)) (device-view-maps d))))
+              m)))))
+
+  ;; A report from a spacer counts from the drawn item next to it, never
+  ;; from the buffer's start, so no estimate of everything above adds up.
+  (define (own-from-report v b doc m cs r top starts)
+    (define (position-at px)
+      (let-values ([(a z) (view-item v doc (height-map-position m px))])
+        (make-place 'position (make-spot b a #f) (flmax 0.0 (fl- px (height-map-px m a)))
+                    (fl- (height-map-px m z) (height-map-px m a)) (measured-left r))))
+    (let ([known (filter values starts)] [distance (fl/ (measured-distance r) (client-view-scale cs))])
+      (cond
+        [top
+         (let-values ([(a z) (view-item v doc top)])
+           (make-place 'position (make-spot b a #f) (measured-offset r) (measured-item-height r) (measured-left r)))]
+        [(null? known) #f]
+        [(eq? (measured-spacer r) 'above) (position-at (fl- (height-map-px m (car known)) distance))]
+        [(eq? (measured-spacer r) 'below)
+         (let ([last (list-ref known (fx- (length known) 1))])
+           (let-values ([(a z) (view-item v doc last)])
+             (position-at (fl+ (height-map-px m z) distance))))]
+        [else #f])))
+
+  ;; Only a report at rest from a client scrolled by hand moves the shared
   ;; position, so a fling moves the other clients once, where it ends. The
   ;; first report under a placement only confirms it, so clients of
   ;; different sizes, which apply one placement a little differently,
-  ;; never place each other back and forth. The average line height is
-  ;; taken once: a total height that changed while the scroll bar's thumb
-  ;; is dragged drops the drag's move in Chrome.
-  (define (adopt-report! v b c cs m)
-    (let ([doc (buffers:document b)] [spacer (measurement-spacer m)] [drawn-height (measurement-drawn-height m)]
-          [px-above (measurement-above m)] [width (measurement-width m)] [height (measurement-height m)]
-          [placement (measurement-placement m)])
-      (let-values ([(first last) (view-lines v doc)])
-        (let* ([resolve (lambda (line) (and line (clamp-line first last line)))]
-               [measured (and (fl> drawn-height 0.0)
-                              (fl/ drawn-height (fl+ (fixnum->flonum (measurement-before m))
-                                                     (fixnum->flonum (measurement-after m)) 1.0)))]
-               ;; A report still counts lines an edit deleted after they
-               ;; were drawn, so the counts are capped at the view's lines,
-               ;; which also keeps the arithmetic on them in fixnums.
-               [before (fxmin (measurement-before m) (fx- last first))]
-               [after (fxmin (measurement-after m) (fx- last first))]
-               [drawn-average (client-view-average cs)]
-               [average (or drawn-average measured)]
-               [named (resolve (measurement-top m))]
-               [across (and named spacer drawn-average
-                            (line-across-spacer spacer named first last (measurement-distance m) drawn-average))]
-               [top (if across (car across) named)]
-               [offset (if across (cdr across) (measurement-offset m))]
-               [last-line (resolve (measurement-last-visible m))]
-               [visible (if (and top last-line) (fxmax 1 (fx+ (fx- last-line top) 1)) 0)]
-               [room (if (and measured named last-line (not spacer) (fx= last-line (fx+ named after)))
-                         (fxmax 0 (floor-count (fl/ (fl+ (fl- (fixnum->flonum height) drawn-height)
-                                                         (if (fx= before 0) offset px-above))
-                                                    measured)))
-                         0)]
-               [was-facts (client-view-facts cs)]
-               [was (spot-line doc first last (client-view-top cs))]
-               [was-offset (client-view-scroll-offset cs)]
-               [counted? (client-view-counted? cs)]
-               [kept (let ([k (client-view-in-step cs)]) (and k (cons (spot-line doc first last (car k)) (cdr k))))]
-               [away? (lambda (line line-offset)
-                        (or (not (fx= line top)) (fl>= (flabs (fl- line-offset offset)) edge-tolerance)))]
-               [in-step-counted? (and counted? top kept (fx= (car kept) was)
-                                      (fl< (flabs (fl- (cdr kept) was-offset)) edge-tolerance))]
-               [in-step (if in-step-counted? (cons top offset) kept)]
-               [placed? (or (not was-facts) (not (fx= (facts-placement was-facts) placement)))]
-               [same-size? (and was-facts (fx= (facts-width was-facts) width) (fx= (facts-height was-facts) height))]
-               [settled-move? (and top (not placed?) same-size? (measurement-settled? m)
-                                   (or (not in-step) (away? (car in-step) (cdr in-step))))]
-               [how (cond
-                      [placed? 'placed]
-                      [(and top same-size? (or settled-move? (and (not counted?) (away? was was-offset)))) 'moved]
-                      [else 'still])]
-               [f (make-facts placement last-line visible width height)])
-          (with-interrupts-disabled
-            (client-view-facts-set! cs f)
-            (view-record-reported-by-set! v c)
-            (client-view-room-set! cs (cons f room))
-            (client-view-counted?-set! cs (and across #t))
-            (when average (client-view-average-set! cs average)))
-          (when top
-            (let ([at (document:line-start doc top)])
-              (if settled-move?
-                  (set-view-scroll! v c at offset)
-                  (with-interrupts-disabled
-                    (client-view-top-set! cs (make-spot b at #f))
-                    (client-view-scroll-offset-set! cs offset)))
-              (when (or placed? settled-move? in-step-counted?)
-                (client-view-in-step-set! cs (cons (client-view-top cs) offset))))
-            (let ([density (if measured (fl/ 1.0 measured) 0.0)]
-                  [wanted (fl* (fixnum->flonum height) (inexact (drawn-screens)))])
-              (with-interrupts-disabled
-                (client-view-before-set! cs
-                  (to-the-end (fx- top first)
-                              (if across
-                                  (adjusted-count 0 0 0.0 wanted density)
-                                  (adjusted-count before 0 px-above wanted density))
-                              wanted density))
-                (client-view-after-set! cs
-                  (to-the-end (fx- last top)
-                              (if across
-                                  (adjusted-count 0 0 0.0 (fl+ wanted (fixnum->flonum height)) density)
-                                  (adjusted-count after visible (measurement-below m) wanted density))
-                              wanted density)))))
-          how))))
+  ;; never place each other back and forth; but the browser of the client
+  ;; whose command placed the view shows where it went, and that becomes
+  ;; the shared position.
+  (define (adopt-report! v b c cs r)
+    (let* ([doc (buffers:document b)]
+           [resolve (mark-resolver b (measured-version r))]
+           [m (report-map! v doc cs r)]
+           [starts (map (lambda (mark) (resolve mark)) (map car (measured-items r)))])
+      (measure-items! v doc m starts (map cdr (measured-items r)))
+      (let* ([old-facts (client-view-facts cs)]
+             [old-own (client-view-own cs)]
+             [own (own-from-report v b doc m cs r (let ([top (measured-top r)]) (and top (resolve top))) starts)]
+             [placed? (not (eqv? (client-view-measured cs) (measured-placement r)))]
+             [resized? (and old-facts (not (and (fx= (facts-width old-facts) (measured-width r))
+                                                (fx= (facts-height old-facts) (measured-height r)))))]
+             [by-hand? (and own (measured-hand? r) (not placed?) (not resized?))]
+             [spot (lambda (mark) (let ([p (resolve mark)]) (and p (make-spot b p #f))))])
+        (with-interrupts-disabled
+          (client-view-facts-set! cs (make-facts (measured-width r) (measured-height r) (measured-line-height r) (measured-char-width r)
+                                                 (spot (measured-start r)) (spot (measured-end r)) (measured-at-end? r) (measured-below r)))
+          (client-view-measured-set! cs (measured-placement r))
+          (client-view-map-set! cs m)
+          (when own (client-view-own-set! cs own))
+          (when (measured-settled? r) (client-view-sizer-set! cs #f)))
+        (cond
+          [(and placed? own (memq (view-record-placed-by v) (list c 'anyone)))
+           (with-interrupts-disabled
+             (unless (eq? (place-kind (client-view-placement cs)) 'position)
+               (view-record-place-set! v own)
+               (set! dirty? #t))
+             (view-record-placed-by-set! v #f))
+           'commanded]
+          [placed? 'placed]
+          [(and by-hand? (measured-settled? r) (not (same-position? own (view-record-place v))))
+           (set-view-scroll! v c own)
+           'moved]
+          [(and by-hand? (not (and old-own (same-position? own old-own)))) 'moved]
+          [else 'still]))))
 
-  (define (after-report! v b doc cs how)
+  (define (after-report! v b cs how)
     (when (eq? how 'moved)
       (view-record-moved-last-set! v 'scrolled))
     (let ([owed (client-view-owed cs)])
       (cond
-        [owed (client-view-owed-set! cs #f) (owed)]
-        [(and (eq? how 'placed) (point-placement-measured? v doc cs))]
-        [(eq? (view-record-moved-last v) 'followed) (show-point! v doc cs)]
-        [else (move-point-into-view! v b doc cs)])))
+        [owed (client-view-owed-set! cs #f) (when-measured! cs owed)]
+        [(eq? how 'moved) (move-point-into-view! v b cs)]
+        [(and (eq? how 'commanded) (eq? (view-record-moved-last v) 'scrolled)) (move-point-into-view! v b cs)])))
 
-  ;; A scroll command that needs to know what is in view waits for the
-  ;; client's browser to measure the newest placement; a client owes at
+  ;; A scroll command reads what the client's browser shows, so it waits
+  ;; for the browser to measure the newest placement; a client owes at
   ;; most one, the latest.
   (define (when-measured! cs scroll)
-    (if (current-facts cs)
+    (if (and (client-view-facts cs) (client-view-map cs) (current-own cs))
         (scroll)
         (client-view-owed-set! cs scroll)))
 
-  (define (scrolled-by-command! v b doc cs)
-    (view-record-moved-last-set! v 'scrolled)
-    (move-point-into-view! v b doc cs))
-
-  (define (scroll-up! v b cs)
-    (let* ([doc (buffers:document b)] [sh (view-shown v doc cs)])
-      (when (and sh (shown-last sh))
-        (let-values ([(first last) (view-lines v doc)])
-          (when (fx>= (shown-last sh) last)
-            (error 'views:scroll-up "end of buffer"))
-          (let ([top (spot-line doc first last (client-view-top cs))])
-            (place-view! v (document:line-start doc (fxmax (fx+ top 1) (fx- (shown-last sh) (fx- next-screen-context-lines 1))))
-                         'top 0.0)
-            (scrolled-by-command! v b doc cs))))))
-
-  (define (scroll-down! v b cs)
-    (let* ([doc (buffers:document b)] [sh (view-shown v doc cs)])
-      (when (and sh (shown-last sh))
-        (let-values ([(first last) (view-lines v doc)])
-          (let ([top (spot-line doc first last (client-view-top cs))])
-            (when (and (fx= top first) (fl< (client-view-scroll-offset cs) edge-tolerance))
-              (error 'views:scroll-down "beginning of buffer"))
-            (place-view! v (document:line-start doc
-                             (fxmax first (fxmin (fx+ top (fx- next-screen-context-lines 1)) (fx- (shown-last sh) 1))))
-                         'bottom 0.0)
-            (scrolled-by-command! v b doc cs))))))
+  (define (scroll-by! v b c cs forward?)
+    (let* ([doc (buffers:document b)] [f (client-view-facts cs)] [own (current-own cs)] [m (client-view-map cs)]
+           [line-height (facts-line-height f)] [s (spot-position (place-spot own))])
+      (let-values ([(lo hi) (item-bounds v doc)])
+        (if forward?
+            (when (and (facts-at-end? f) (fl<= (facts-below f) edge-tolerance))
+              (error 'views:scroll-up "end of buffer"))
+            (when (and (fx<= s lo) (fl< (place-offset own) edge-tolerance))
+              (error 'views:scroll-down "beginning of buffer")))
+        (let* ([step (flmax line-height (fl- (fixnum->flonum (facts-height f))
+                                              (fl* line-height (fixnum->flonum next-screen-context-lines))))]
+               [top (fl+ (height-map-px m (item-start-at v doc s)) (place-offset own))]
+               [px (flmax (height-map-px m lo) (if forward? (fl+ top step) (fl- top step)))])
+          (let-values ([(a z) (view-item v doc (height-map-position m px))])
+            (place-all! v (make-place 'position (make-spot b a #f) (flmax 0.0 (fl- px (height-map-px m a)))
+                                      (fl- (height-map-px m z) (height-map-px m a)) (place-left own))
+                        c)
+            (with-interrupts-disabled
+              (view-record-moved?-set! v #f)
+              (view-record-moved-last-set! v 'scrolled)))))))
 
   (define recentered 'bottom)
 
   (define (recenter! v b again?)
-    (let ([doc (buffers:document b)] [align (if again? (case recentered [(center) 'top] [(top) 'bottom] [else 'center]) 'center)])
-      (place-view! v (document:line-start doc (point-line v doc)) align 0.0)
+    (let ([align (if again? (case recentered [(center) 'top] [(top) 'bottom] [else 'center]) 'center)])
+      (align-view! v (point-of (car (view-record-cursors v))) align)
       (set! recentered align)
-      (view-record-moved-last-set! v 'followed)))
+      (with-interrupts-disabled
+        (view-record-moved?-set! v #f)
+        (view-record-moved-last-set! v 'followed))))
 
   (define current-context (make-thread-parameter #f))
   (define in-line? (make-thread-parameter #f))
@@ -884,7 +1120,8 @@
 
   (define-record-type (context new-context context?)
     (sealed #t)
-    (fields view client doc lo hi ws we root cursors spans longest folds (mutable shown) line-ids marks? ends))
+    (fields view client doc lo hi ws we root cursors spans longest folds (mutable shown) item-ids marks? ends
+            marker above sizer))
 
   (define-record-type span-entry
     (sealed #t)
@@ -1177,61 +1414,81 @@
 
   (define (make-context v b doc client)
     (let-values ([(lo hi) (bounds-of v)])
-      (let-values ([(ws we) (window-range v doc lo hi (view-client v client))])
-        (let ([spans (window-spans b v doc ws we)])
-          (new-context v client doc lo hi ws we (document:token doc 0)
-                       (filter (lambda (m) (fx<= ws (car m) we)) (cursor-points v))
-                       spans (longest-span spans) (fold-ranges v) '() (make-eqv-hashtable) #t (make-eqv-hashtable))))))
+      (let ([cs (view-client v client)])
+        (let-values ([(ws we above sizer) (client-run! v doc cs)])
+          (let ([spans (window-spans b v doc ws we)] [end (fxmin hi (fx- (document:length doc) 1))])
+            (new-context v client doc lo hi ws we (document:token doc 0)
+                         (filter (lambda (m) (or (fx< (fx- ws 1) (car m) we) (fx= (car m) we end))) (cursor-points v))
+                         spans (longest-span spans) (fold-ranges v) '() (item-ids v b) #t (make-eqv-hashtable)
+                         (place-marker cs) above sizer))))))
 
-  (define (drawn-run doc first last cs)
-    (let ([top (spot-line doc first last (client-view-top cs))])
-      (values (fxmax first (fx- top (client-view-before cs))) (fxmin last (fx+ top (client-view-after cs))))))
+  ;; A client's own position stands in for a placement its browser has
+  ;; measured, so a view element made anew, as a tab switch makes one,
+  ;; shows what that browser showed last. Following point is relative to
+  ;; what a browser shows, so a new element first takes the client's own
+  ;; position, or the shared one.
+  (define (drawn-place cs)
+    (let ([pl (client-view-placement cs)] [own (client-view-own cs)])
+      (if (and own (eqv? (client-view-measured cs) (client-view-number cs)) (not (eq? (place-kind pl) 'follow)))
+          own
+          pl)))
 
-  (define (window-range v doc lo hi cs)
-    (let-values ([(first last) (line-limits doc lo hi)])
-      (let-values ([(from to) (drawn-run doc first last cs)])
-        (values (fxmax lo (document:line-start doc from))
-                (if (fx< to last)
-                    (fxmin hi (document:line-start doc (fx+ to 1)))
-                    hi)))))
+  (define (place-marker cs)
+    (let ([pl (drawn-place cs)])
+      (and (memq (place-kind pl) '(top center bottom)) (spot-position (place-spot pl)))))
 
-  (define (px lines average) (exact (flround (fl* (fixnum->flonum lines) average))))
+  (define (px-text x) (number->string (fl/ (flround (fl* x 100.0)) 100.0)))
 
   ;; The spacer below has no height of its own: it fills what the drawn
-  ;; lines leave of the sizer's, as the spacer above does when it is the
-  ;; last, so the view's total height stays the same while it scrolls, and
-  ;; a drag of the scroll bar's thumb follows the pointer.
+  ;; items leave of the sizer's, as the spacer above does when it is the
+  ;; last, so the view's total height stays the same while it scrolls,
+  ;; and a drag of the scroll bar's thumb follows the pointer.
   (define (view-html v doc ctx cs root-html)
-    (let-values ([(first last) (line-limits doc (context-lo ctx) (context-hi ctx))])
-      (let-values ([(from to) (drawn-run doc first last cs)])
-        (let* ([average (client-view-average cs)]
-               [above? (and average (fx> from first))]
-               [below? (and average (fx< to last))]
-               [f (client-view-facts cs)])
-          (haml
-            (:div.view ([data-view (view-record-id v)]
-                        [data-version (buffers:version (view-record-buffer v))]
-                        [data-showing (view-record-shown-count v)]
-                        [data-placement (client-view-number cs)]
-                        [data-place-line (spot-line doc first last (client-view-target cs))]
-                        [data-place-align (symbol->string (client-view-align cs))]
-                        [data-place-offset (exact (flround (client-view-offset cs)))]
-                        [data-reported (client-view-reported cs)]
-                        [data-drawn-screens (number->string (inexact (drawn-screens)))]
-                        [data-run-at-start (fx= from first)]
-                        [data-run-at-end (fx= to last)]
-                        [data-measured-width (and f (facts-width f))]
-                        [data-measured-height (and f (facts-height f))]
-                        [class (and (not (wrap-lines)) "nowrap")])
-              (when above?
-                (:div.view-spacer ([data-spacer "above"] [aria-hidden "true"]
-                                   [style "--views-spacer-block-size:" (px (fx- from first) average) "px"])))
-              (:div.view-lines root-html)
-              (when below?
-                (:div.view-spacer ([data-spacer "below"] [aria-hidden "true"])))
-              (when (or above? below?)
-                (:div.scroll-sizer ([aria-hidden "true"]
-                                    [style "--views-scroll-sizer-block-size:" (px (fx+ (fx- last first) 1) average) "px"])))))))))
+    (let-values ([(lo hi) (item-bounds v doc)])
+      (let* ([ws (context-ws ctx)] [we (context-we ctx)] [sizer (context-sizer ctx)]
+             [above? (and sizer (fx> ws lo))] [below? (and sizer (fx< we hi))]
+             [pl (drawn-place cs)] [kind (place-kind pl)]
+             [base (and (eq? kind 'follow)
+                        (or (client-view-own cs)
+                            (let ([shared (view-record-place v)]) (and (eq? (place-kind shared) 'position) shared))))]
+             [at (if (eq? kind 'follow) (point-of (car (view-record-cursors v))) (spot-position (place-spot pl)))]
+             [item (item-start-at v doc at)]
+             [base-item (and base (item-start-at v doc (spot-position (place-spot base))))])
+        (define (line-at p) (let ([line (document:line doc p)]) (and (fx= p (document:line-start doc line)) line)))
+        (define (position-field f) (and (eq? kind 'position) (px-text (f pl))))
+        (haml
+          (:div.view ([id "view-" (view-record-id v)]
+                      [data-view (view-record-id v)]
+                      [data-version (buffers:version (view-record-buffer v))]
+                      [data-showing (view-record-shown-count v)]
+                      [data-placement (client-view-number cs)]
+                      [data-place-kind (symbol->string kind)]
+                      [data-place-item item]
+                      [data-place-line (line-at item)]
+                      [data-place-at (and (not (eq? kind 'position)) at)]
+                      [data-place-offset (position-field place-offset)]
+                      [data-place-height (position-field place-height)]
+                      [data-place-left (position-field place-left)]
+                      [data-base-item base-item]
+                      [data-base-line (and base-item (line-at base-item))]
+                      [data-base-offset (and base (px-text (place-offset base)))]
+                      [data-base-height (and base (px-text (place-height base)))]
+                      [data-base-left (and base (px-text (place-left base)))]
+                      [data-scroll-margin (scroll-margin)]
+                      [data-reported (client-view-reported cs)]
+                      [data-drawn-screens (number->string (inexact (drawn-screens)))]
+                      [data-run-at-start (fx<= ws lo)]
+                      [data-run-at-end (fx>= we hi)]
+                      [class (and (not (wrap-lines)) "nowrap")])
+            (when above?
+              (:div.view-spacer ([data-spacer "above"] [aria-hidden "true"]
+                                 [style "--views-spacer-block-size:" (px-text (context-above ctx)) "px"])))
+            (:div.view-lines root-html)
+            (when below?
+              (:div.view-spacer ([data-spacer "below"] [aria-hidden "true"])))
+            (when (or above? below?)
+              (:div.scroll-sizer ([aria-hidden "true"]
+                                  [style "--views-scroll-sizer-block-size:" (px-text sizer) "px"]))))))))
 
   (define (empty-view-html v)
     (haml (:div.view ([data-view (view-record-id v)]))))
@@ -1257,15 +1514,19 @@
 
   ;; Each drawn node's element carries its range, so a click on it, or
   ;; past it in a line, names a position; a datum's nodes are not the
-  ;; buffer's, so they carry none.
+  ;; buffer's, so they carry none. A node standing alone carries an id
+  ;; from an anchor at its start, as an item does: the morph matches
+  ;; elements without one by their place among their siblings, and would
+  ;; give a container's markup another node's content as the run changes,
+  ;; carrying the browser's scroll anchor with it.
   (define (draw-node ctx node inline?)
-    (let ([html (node-html ctx node inline?)])
+    (let ([html (node-html ctx node inline?)] [start (document:node-start node)])
       (cond
         [(not (context-marks? ctx)) html]
-        [(or inline? (document:atom? node))
-         (haml (:span.node ([data-at (document:node-start node)] [data-to (node-end ctx node)]) html))]
-        [else
-         (haml (:div.node ([data-at (document:node-start node)] [data-to (node-end ctx node)]) html))])))
+        [inline? (haml (:span.node ([data-at start] [data-to (node-end ctx node)]) html))]
+        [(whole-node? node)
+         (haml (:div.node.whole ([id (item-id ctx start)] [data-at start] [data-to (node-end ctx node)]) html))]
+        [else (haml (:div.node ([id (item-id ctx start)] [data-at start] [data-to (node-end ctx node)]) html))])))
 
   (define (node-html ctx node inline?)
     (let* ([kind (buffers:kind (document:node-kind node))] [draw (and kind (buffers:kind-draw kind))])
@@ -1379,20 +1640,19 @@
       [(fold-mark? item) (fold-mark-at item)]
       [else (document:node-start item)]))
 
-  ;; Lines carry the view's number and their own in their ids, so a
-  ;; scroll's morph keeps the elements of the lines it moves. A line found
-  ;; after a newline in the same text starts at its line's start, so only
-  ;; the others are looked up.
   (define (line-html ctx line rs at-start? content text?)
-    (let* ([ids (context-line-ids ctx)] [k (hashtable-ref ids line 0)])
-      (hashtable-set! ids line (fx+ k 1))
-      (haml (:div.line ([id "v" (view-record-id (context-view ctx)) "-" line (if (fx= k 0) "" (string-append "-" (number->string k)))]
-                        [data-line line]
-                        [data-at (and (not at-start?) (context-marks? ctx)
-                                      (not (fx= rs (document:line-start (context-doc ctx) line)))
-                                      rs)])
-              content
-              (unless text? (:br))))))
+    (haml (:div.line ([id (and (context-marks? ctx) (item-id ctx rs))]
+                      [data-line line]
+                      [data-at (and (not at-start?) (context-marks? ctx)
+                                    (not (fx= rs (document:line-start (context-doc ctx) line)))
+                                    rs)])
+            content
+            (unless text? (:br)))))
+
+  ;; A placement's place in text is the row box of a mark styled as the
+  ;; cursor: an empty element has no box of its own, and a different one
+  ;; in each browser.
+  (define view-place-html (haml (:span.view-place)))
 
   (define (cursor-html primary?)
     (if primary? (haml (:span.cursor.primary)) (haml (:span.cursor))))
@@ -1416,7 +1676,11 @@
           (let ([item (car items)])
             (if (fold-mark? item)
                 (let-values ([(acc cursors) (before (fold-mark-at item) acc cursors)])
-                  (loop (cdr items) cursors (cons (wrapped (fold-mark-at item) (fold-html ctx item)) acc)))
+                  (loop (cdr items) cursors
+                        (cons (wrapped (fold-mark-at item)
+                                       (line-html ctx (document:line (context-doc ctx) (fold-mark-at item)) (fold-mark-at item) #f
+                                                  (fold-html ctx item) #t))
+                              acc)))
                 (let-values ([(acc cursors) (before (document:node-start item) acc cursors)])
                   (loop (cdr items)
                         (let skip ([cursors cursors])
@@ -1449,7 +1713,7 @@
         datum
         (guard (c [(not (quit-condition? c)) (report c) '()])
           (let* ([doc (document:from-datum datum)] [n (document:length doc)]
-                 [sub (new-context (context-view ctx) (context-client ctx) doc 0 n 0 n #f '() '#() 0 '() '() (context-line-ids ctx) #f (make-eqv-hashtable))])
+                 [sub (new-context (context-view ctx) (context-client ctx) doc 0 n 0 n #f '() '#() 0 '() '() #f #f (make-eqv-hashtable) #f #f #f)])
             (parameterize ([current-context sub])
               (let loop ([p 0] [acc '()])
                 (if (fx>= p n)
@@ -1470,7 +1734,8 @@
   (define (line-content ctx items rs re)
     (let ([spans (let ([near (spans-near ctx rs re)] [open (enclosing-regions)])
                    (if (null? open) near (remp (lambda (s) (memq s open)) near)))]
-          [cursors (cursors-in ctx rs re)])
+          [cursors (let ([at (context-marker ctx)] [cs (cursors-in ctx rs re)])
+                     (if (and at (fx<= rs at re)) (cons (cons at view-place-html) cs) cs))])
       (cond
         [(and (null? spans) (null? cursors))
          (map (lambda (item)
@@ -1626,7 +1891,26 @@
   (define (add-fold! v start end)
     (let ([b (view-record-buffer v)])
       (view-record-folds-set! v (append (view-record-folds v) (list (cons (make-spot b start #t) (make-spot b end #f)))))
+      (estimate-range! v b start end)
       (mark-dirty!)))
+
+  ;; A sizer is kept only so a thumb drag does not change the length under
+  ;; it; a fold or narrowing changes the view's length, and a view at rest
+  ;; sends no report to drop the sizer.
+  (define (estimate-range! v b start end)
+    (let* ([doc (buffers:document b)] [count (counter doc)])
+      (vector-for-each
+        (lambda (d) (update-maps! d (document:length doc) (lambda (m) (height-map-replace! m start end end count))))
+        (hashtable-values (view-record-devices v)))
+      (for-each-client-view (lambda (c cs) (client-view-sizer-set! cs #f)) v)))
+
+  ;; A quit can land between two maps' updates, so a map that missed one
+  ;; no longer fits the document; it goes, and the next report makes it
+  ;; again.
+  (define (update-maps! d length update!)
+    (device-view-maps-set! d
+      (filter (lambda (e) (and (fx= (height-map-length (cdr e)) length) (begin (update! (cdr e)) #t)))
+              (device-view-maps d))))
 
   ;; Narrowing keeps text inserted at either edge inside, as Emacs's
   ;; restriction does.
@@ -1638,10 +1922,20 @@
           (let ([p (point-of c)])
             (unless (fx<= start p end) (move-point! v c p))))
         (view-record-cursors v))
-      (let ([doc (buffers:document b)] [t (spot-position (view-record-place-at v))])
-        (unless (fx<= (document:line doc start) (document:line doc t) (document:line doc end))
-          (scroll-to-line! v doc (document:line doc start) 'top)))
+      (estimate-range! v b start start)
+      (estimate-range! v b end end)
+      (let ([t (spot-position (place-spot (view-record-place v)))])
+        (unless (fx<= start t end)
+          (scroll-to-place! v start 'top)))
       (primary-moved! v)
+      (mark-dirty!)))
+
+  (define (widen-view! v)
+    (let* ([b (bound-buffer v)] [r (view-record-narrowing v)])
+      (view-record-narrowing-set! v #f)
+      (when (and b r)
+        (estimate-range! v b (spot-position (car r)) (spot-position (car r)))
+        (estimate-range! v b (spot-position (cdr r)) (spot-position (cdr r))))
       (mark-dirty!)))
 
   (define (stop-after v b p)
@@ -1682,16 +1976,18 @@
             (lambda ()
               (open-folds-at-cursors! v)
               (let ([doc (buffers:document b)])
-                (when (view-record-moved? v) (follow-point! v doc))
+                (when (view-record-moved? v) (follow-point! v))
                 (let ([ctx (make-context v b doc client)])
                   (parameterize ([current-context ctx] [in-line? #f] [drawing (cons v (drawing))])
                     (let ([cs (view-client v client)])
                       (client-view-drawn-batch-set! cs batches)
                       (view-html v doc ctx cs (node-html ctx (context-root ctx) #f)))))))))))
 
-  (define (top-position v c)
-    (let ([cs (and c (hashtable-ref (view-record-clients v) c #f))])
-      (spot-position (if (and cs (current-facts cs)) (client-view-top cs) (view-record-place-at v)))))
+  (define (top-position v doc c)
+    (let* ([cs (and c (hashtable-ref (view-record-clients v) c #f))] [own (and cs (current-own cs))])
+      (if own
+          (spot-position (place-spot own))
+          (item-start-at v doc (spot-position (place-spot (view-record-place v)))))))
 
   ;; View atoms: the first atom drawn in a batch that names a view draws
   ;; it; a later one names a copy, kept by its order among them, so each
@@ -1734,6 +2030,9 @@
         (when host (view-record-host-set! v host))
         v)))
 
+  ;; The copy's height maps are its own, made by its first report: a view
+  ;; with other folds has other items, and an edit updates each view's
+  ;; maps, so a shared one twice.
   (define (copy-place! from to)
     (let ([b (bound-buffer from)])
       (when (and b (eq? b (bound-buffer to)))
@@ -1742,15 +2041,15 @@
                                                (let ([m (mark-of c)]) (and m (make-spot b m #f)))
                                                (cursor-record-goal c)))
                (view-record-cursors from)))
+        (place-all! to (let ([pl (view-record-place from)]) (place-at pl (make-spot b (spot-position (place-spot pl)) #f))) #f)
         (for-each-client-view
           (lambda (c old)
-            (let ([copy (view-client to c)])
-              (client-view-before-set! copy (client-view-before old))
-              (client-view-after-set! copy (client-view-after old))
-              (client-view-average-set! copy (client-view-average old))))
-          from)
-        (place-view! to (spot-position (view-record-place-at from)) (view-record-place-align from)
-                     (view-record-place-offset from)))))
+            (let ([own (client-view-own old)])
+              (when own
+                (let ([copy (view-client to c)])
+                  (client-view-own-set! copy (place-at own (make-spot b (spot-position (place-spot own)) #f)))
+                  (send-placement! copy (client-view-own copy))))))
+          from))))
 
   (define (keymaps-at v b p)
     (let ([doc (buffers:document b)])
@@ -1782,13 +2081,14 @@
 
   (define (range? r) (and (pair? r) (position? (car r)) (position? (cdr r))))
 
-  (define (place? p)
-    (and (list? p) (fx= (length p) 3) (position? (car p)) (memq (cadr p) '(top center bottom)) (fixnum? (caddr p))))
+  (define (saved-place? p)
+    (or (eq? p 'follow)
+        (and (list? p) (fx= (length p) 4) (position? (car p)) (for-all flonum? (cdr p)))))
 
   (define (entry? e)
     (and (list? e) (fx= (length e) 7)
          (let-values ([(id name place cursors folds narrowing options) (apply values e)])
-           (and (fixnum? id) (fx> id 0) (string? name) (place? place)
+           (and (fixnum? id) (fx> id 0) (string? name) (saved-place? place)
                 (pair? cursors) (list? cursors)
                 (for-all (lambda (c) (and (pair? c) (position? (car c)) (or (not (cdr c)) (position? (cdr c))))) cursors)
                 (list? folds) (for-all range? folds)
@@ -1802,8 +2102,11 @@
 
   (define (entry-of v)
     (list (view-record-id v) (view-record-name v)
-          (list (spot-position (view-record-place-at v)) (view-record-place-align v)
-                (exact (flround (view-record-place-offset v))))
+          (if (eq? (view-record-moved-last v) 'followed)
+              'follow
+              (let ([pl (view-record-place v)] [round (lambda (x) (fl/ (flround (fl* x 100.0)) 100.0))])
+                (list (spot-position (place-spot pl)) (round (place-offset pl)) (round (place-height pl))
+                      (round (place-left pl)))))
           (map (lambda (c) (cons (point-of c) (mark-of c))) (view-record-cursors v))
           (map (lambda (f) (cons (spot-position (car f)) (spot-position (cdr f)))) (live-folds v))
           (let ([n (view-record-narrowing v)]) (and n (cons (spot-position (car n)) (spot-position (cdr n)))))
@@ -1829,7 +2132,11 @@
           (lambda (e)
             (let-values ([(id name place cursors folds narrowing options) (apply values e)])
               (unless (find-view id)
-                (let ([v (make-view-record id name #f (car place) (cadr place) (inexact (caddr place)) folds narrowing #t)])
+                (let ([v (make-view-record id name #f (if (eq? place 'follow)
+                                                          (make-place 'position 0 0.0 0.0 0.0)
+                                                          (apply make-place 'position place))
+                                           folds narrowing #t)])
+                  (unless (eq? place 'follow) (view-record-moved-last-set! v 'scrolled))
                   (view-record-cursors-set! v (map (lambda (c) (make-cursor-record v (car c) (cdr c) #f)) cursors))
                   (add-view! v)
                   (for-each
@@ -1863,7 +2170,23 @@
           (lambda (v)
             (unless (null? (cdr (view-record-cursors v)))
               (merge-cursors! v)))
-          vs))))
+          vs)
+        (when (exists (lambda (v) (fx> (hashtable-size (view-record-devices v)) 0)) vs)
+          (update-edited-maps! vs buffer edit)))))
+
+  (define (update-edited-maps! vs buffer edit)
+    (let* ([start (buffers:edit-start edit)]
+           [old-end (fx+ start (document:length (buffers:edit-removed edit)))]
+           [new-end (fx+ start (document:length (buffers:edit-inserted edit)))]
+           [doc (buffers:document buffer)]
+           [before (fx- (document:length doc) (fx- new-end old-end))]
+           [count (counter doc)])
+      (for-each
+        (lambda (v)
+          (vector-for-each
+            (lambda (d) (update-maps! d before (lambda (m) (height-map-replace! m start old-end new-end count))))
+            (hashtable-values (view-record-devices v))))
+        vs)))
 
   (define (note-kill buffer)
     (for-each (lambda (v) (when (eq? (view-record-host v) buffer) (drop-view! v))) views)
@@ -1880,6 +2203,7 @@
 
   (define (after-batch ended)
     (ended)
+    (for-each drop-undrawn-items! views)
     (set! batches (fx+ batches 1))
     (hashtable-clear! claims)
     (let ([bs edited])
@@ -1906,50 +2230,57 @@
     (when dirty? (save!)))
 
   ;; No browser lays out a box past about 3.4e7 px (Chrome's limit), so a
-  ;; larger measure is no browser's; refusing it keeps a saved offset a
-  ;; fixnum.
+  ;; larger measure is no browser's.
   (define most-px 100000000)
 
   ;; A report's number goes back on its client's next screen whatever
   ;; becomes of the report, since its page sends no other until then.
   (define (scroll-report c item)
     (define (field key) (let ([e (assoc key item)]) (if e (cdr e) 'null)))
-    (define (line? x) (and (fixnum? x) (fx>= x 1)))
     (define (px? x) (and (real? x) (<= (abs x) most-px)))
     (define (extent? x) (and (real? x) (<= 0 x most-px)))
-    (define (count? x) (and (fixnum? x) (fx>= x 0)))
     (define (size? x) (and (fixnum? x) (fx<= 0 x most-px)))
-    (let ([id (field "view")] [placement (field "placement")] [number (field "report")]
-          [top (field "top")] [offset (field "offset")] [last-visible (field "lastVisible")]
-          [spacer (field "spacer")] [distance (field "spacerDistance")]
-          [before (field "before")] [after (field "after")] [drawn-height (field "drawnHeight")]
-          [px-above (field "above")] [px-below (field "below")]
-          [width (field "width")] [height (field "height")] [settled (field "settled")])
-      (unless (and (fixnum? id) (fixnum? placement) (fixnum? number)
-                   (or (line? top) (eq? top 'null)) (px? offset)
-                   (or (line? last-visible) (eq? last-visible 'null))
-                   (member spacer '("above" "below" null)) (extent? distance)
-                   (count? before) (count? after) (extent? drawn-height) (extent? px-above) (extent? px-below)
-                   (size? width) (size? height) (boolean? settled))
+    (define (mark? m)
+      (and (list? m) (pair? m)
+           (for-all (lambda (e)
+                      (and (pair? e) (member (car e) '("line" "at" "token" "count")) (fixnum? (cdr e))
+                           (fx>= (cdr e) (if (equal? (car e) "line") 1 0))))
+                    m)))
+    (define (item? x) (and (vector? x) (fx= (vector-length x) 2) (mark? (vector-ref x 0)) (extent? (vector-ref x 1))))
+    (define (mark-or-null? x) (or (eq? x 'null) (mark? x)))
+    (let ([id (field "view")] [placement (field "placement")] [number (field "report")] [version (field "version")]
+          [top (field "top")] [offset (field "offset")] [item-height (field "itemHeight")] [left (field "left")]
+          [start (field "start")] [end (field "end")] [spacer (field "spacer")] [distance (field "spacerDistance")]
+          [below (field "below")] [items (field "items")] [line-height (field "lineHeight")] [char-width (field "charWidth")]
+          [width (field "width")] [height (field "height")] [settled (field "settled")] [hand (field "hand")]
+          [at-end (field "runAtEnd")])
+      (unless (and (fixnum? id) (fixnum? placement) (fixnum? number) (fixnum? version) (fx>= version 0)
+                   (mark-or-null? top) (px? offset) (extent? item-height) (extent? left)
+                   (mark-or-null? start) (mark-or-null? end)
+                   (member spacer '("above" "below" null)) (extent? distance) (extent? below)
+                   (vector? items) (for-all item? (vector->list items))
+                   (extent? line-height) (> line-height 0) (extent? char-width) (> char-width 0)
+                   (size? width) (size? height) (boolean? settled) (boolean? hand) (boolean? at-end))
         (assertion-violation 'views "not a scroll report" item))
       (let ([v (find-view id)])
         (when v
           (let ([cs (view-client v c)])
             (client-view-reported-set! cs number)
             (let ([b (bound-buffer v)])
-              (when (and b (fx= placement (client-view-number cs)) (fx> height 0))
-                (let ([m (make-measurement placement (and (fixnum? top) top) (inexact offset)
-                                           (and (fixnum? last-visible) last-visible)
-                                           (and (string? spacer) (string->symbol spacer)) (inexact distance)
-                                           before after (inexact drawn-height) (inexact px-above) (inexact px-below)
-                                           width height settled)])
+              (when (and b (fx= placement (client-view-number cs)) (fx> height 0) (fx> width 0)
+                         (fx<= version (buffers:version b)))
+                (let ([r (make-measured placement version (and (pair? top) top) (inexact offset) (inexact item-height)
+                                      (inexact left) (and (pair? start) start) (and (pair? end) end)
+                                      (and (string? spacer) (string->symbol spacer)) (inexact distance)
+                                      (map (lambda (x) (cons (vector-ref x 0) (inexact (vector-ref x 1)))) (vector->list items))
+                                      (inexact line-height) (inexact char-width) width height settled hand at-end
+                                      (inexact below))])
                   (with-view-bound v b
                     (lambda ()
-                      (let ([doc (buffers:document b)])
-                        (when (view-record-moved? v)
-                          (follow-point! v doc))
-                        (when (fx= placement (client-view-number cs))
-                          (after-report! v b doc cs (adopt-report! v b c cs m))))))))))))))
+                      (when (view-record-moved? v)
+                        (follow-point! v))
+                      (when (fx= placement (client-view-number cs))
+                        (after-report! v b cs (adopt-report! v b c cs r)))))))))))))
 
   ;; A stale press is kept too, so the release after it reports nothing
   ;; more.
@@ -2240,39 +2571,38 @@
      (check-view 'views:top view)
      (unless (or (not client) (web:client? client))
        (assertion-violation 'views:top "not a client or #f" client))
-     (bound-buffer view)
-     (top-position view client)]))
+     (let ([b (bound-buffer view)])
+       (if b (top-position view (buffers:document b) client) 0))]))
 
 (define (scroll-to! view position alignment)
   (check-view 'views:scroll-to! view)
-  (let ([b (shown-buffer 'views:scroll-to! view)])
-    (check-position 'views:scroll-to! view position)
-    (unless (memq alignment '(top center bottom))
-      (assertion-violation 'views:scroll-to! "not an alignment" alignment))
-    (let ([doc (buffers:document b)])
-      (scroll-to-line! view doc (document:line doc position) alignment))))
+  (shown-buffer 'views:scroll-to! view)
+  (check-position 'views:scroll-to! view position)
+  (unless (memq alignment '(top center bottom))
+    (assertion-violation 'views:scroll-to! "not an alignment" alignment))
+  (scroll-to-place! view position alignment))
 
 (define (%commanded who scroll)
   (let ([v (current-view)])
     (unless v
       (assertion-violation who "no current view"))
-    (let ([b (shown-buffer who v)])
-      (scroll v b (view-client v (web:current-client))))))
+    (let ([b (shown-buffer who v)] [c (web:current-client)])
+      (scroll v b c (view-client v c)))))
 
 (commands:define-command (scroll-up)
-  "Scrolls the current view forward by nearly its height: the last lines in view go to the top."
+  "Scrolls the current view forward by its height less two lines, as the browser of the client whose key ran it shows it."
   (%commanded 'views:scroll-up
-    (lambda (v b cs) (when-measured! cs (lambda () (scroll-up! v b cs))))))
+    (lambda (v b c cs) (when-measured! cs (lambda () (scroll-by! v b c cs #t))))))
 
 (commands:define-command (scroll-down)
-  "Scrolls the current view back by nearly its height: the first lines in view go to the bottom."
+  "Scrolls the current view back by its height less two lines, as the browser of the client whose key ran it shows it."
   (%commanded 'views:scroll-down
-    (lambda (v b cs) (when-measured! cs (lambda () (scroll-down! v b cs))))))
+    (lambda (v b c cs) (when-measured! cs (lambda () (scroll-by! v b c cs #f))))))
 
 (commands:define-command (recenter-top-bottom)
-  "Puts point's line at the centre of the current view; repeated, at the top, then the bottom."
+  "Puts point at the centre of the current view; repeated, at the top, then the bottom."
   (%commanded 'views:recenter-top-bottom
-    (lambda (v b cs) (recenter! v b (eq? (commands:last-command) recenter-top-bottom)))))
+    (lambda (v b c cs) (recenter! v b (eq? (commands:last-command) recenter-top-bottom)))))
 
 (define (fold! view start end)
   (check-view 'views:fold! view)
@@ -2285,10 +2615,12 @@
 
 (define (unfold! view position)
   (check-view 'views:unfold! view)
-  (shown-buffer 'views:unfold! view)
-  (check-position 'views:unfold! view position)
-  (view-record-folds-set! view
-    (remp (lambda (f) (fx<= (spot-position (car f)) position (spot-position (cdr f)))) (live-folds view)))
+  (let ([b (shown-buffer 'views:unfold! view)])
+    (check-position 'views:unfold! view position)
+    (let-values ([(opened kept) (partition (lambda (f) (fx<= (spot-position (car f)) position (spot-position (cdr f))))
+                                           (live-folds view))])
+      (view-record-folds-set! view kept)
+      (for-each (lambda (f) (estimate-range! view b (spot-position (car f)) (spot-position (cdr f)))) opened)))
   (mark-dirty!))
 
 (define (folded? view position)
@@ -2308,8 +2640,7 @@
 
 (define (widen! view)
   (check-view 'views:widen! view)
-  (view-record-narrowing-set! view #f)
-  (mark-dirty!))
+  (widen-view! view))
 
 (define (bounds view)
   (check-view 'views:bounds view)
@@ -2529,6 +2860,7 @@
 (table-set! span-properties 'face face-attributes)
 (table-set! span-properties 'title title-attributes)
 (table-set! web:scripts 'views "views/views.js")
+(table-set! web:early-scripts 'views "views/place.js")
 (table-set! web:stylesheets 'views "views/views.css")
 (table-set! web:input-handlers "scroll" %scroll-report)
 (table-set! web:input-handlers "mouse" %mouse-item)

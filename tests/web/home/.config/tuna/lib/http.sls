@@ -3,7 +3,7 @@
 
 ;; The client works on threads of its own, since code on the main thread
 ;; must not wait on the network.
-(module (request response-status response-header response-body open-page page-id
+(module (request response-status response-header response-body open-page page-id page-first-screen page-text
          page-connect! page-close! page-send! page-send-numbered! send-items page-send-all! page-send-range!
          page-confirm! page-goodbye! page-next page-events-closed? page-connect-and-next! heartbeats-seen
          wait-for-server occupy-port! target-port target-address source-address set-port-source! percent-encode-all
@@ -230,14 +230,25 @@
 
   (define-record-type page
     (fields id (mutable seq) mutex arrived (mutable events) (mutable stream) (mutable closed?)
-            (mutable heartbeats)))
+            (mutable heartbeats) text))
 
   (define (open-page)
     (let* ([r (request "GET" "/" '() #f)]
            [text (utf8->string (response-body r))]
            [at (let find ([i 0])
                  (if (string=? (substring text i (fx+ i 21)) "data-signals:client=\"") i (find (fx+ i 1))))])
-      (make-page (substring text (fx+ at 22) (fx+ at 54)) 0 (make-mutex) (make-condition) '() #f #f 0)))
+      (make-page (substring text (fx+ at 22) (fx+ at 54)) 0 (make-mutex) (make-condition) '() #f #f 0 text)))
+
+  (define (page-first-screen page)
+    (let* ([text (page-text page)] [open "<main id=\"screen\">"]
+           [find (lambda (s from)
+                   (let loop ([i from])
+                     (cond
+                       [(fx> (fx+ i (string-length s)) (string-length text)) #f]
+                       [(string=? (substring text i (fx+ i (string-length s))) s) i]
+                       [else (loop (fx+ i 1))])))]
+           [start (find open 0)])
+      (and start (substring text (fx+ start (string-length open)) (find "</main>" start)))))
 
   (define (signals page)
     (json->string (list (cons "client" (page-id page)))))
@@ -520,6 +531,10 @@
 (define (body r) (utf8->string (response-body r)))
 
 (define (page) (open-page))
+
+(define (first-screen p) (page-first-screen p))
+
+(define (page-html p) (page-text p))
 
 (define (id p) (page-id p))
 

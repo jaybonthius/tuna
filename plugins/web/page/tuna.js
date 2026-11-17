@@ -5,8 +5,14 @@ import { getPath } from "datastar";
 // connection is retried, with the same body and number.
 let seq = 0;
 
+// The first screen comes inside the page, so its scripts may send before
+// Datastar has read the page's signals; the client is in them as written.
+function client() {
+  return getPath("client") ?? document.body?.getAttribute("data-signals:client")?.slice(1, -1);
+}
+
 export function send(item) {
-  const body = JSON.stringify({ ...item, client: getPath("client"), seq: ++seq });
+  const body = JSON.stringify({ ...item, client: client(), seq: ++seq });
   const post = (delay) => {
     fetch("/input", { method: "POST", headers: { "Content-Type": "application/json" }, body })
       .catch(() => setTimeout(() => post(Math.min(delay * 2, 5000)), delay));
@@ -32,5 +38,5 @@ window.tuna = {
 // A page kept for the back button may be shown again, and then its
 // stream reopens, so only a page that is going away says goodbye.
 window.addEventListener("pagehide", (event) => {
-  if (!event.persisted) navigator.sendBeacon("/goodbye", JSON.stringify({ client: getPath("client") }));
+  if (!event.persisted) navigator.sendBeacon("/goodbye", JSON.stringify({ client: client() }));
 });

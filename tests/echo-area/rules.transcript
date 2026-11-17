@@ -162,7 +162,7 @@ echo-area:show-messages
 #f
 > (advice-remove! echo-area:hidden? hide)
 > (echo-area-element)
-"<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-1\" data-line=\"1\" data-at=\"1\"><span class=\"cursor primary\"></span><br></div></div>"
+"<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-2\" data-line=\"1\" data-at=\"1\"><span class=\"cursor primary\"></span><br></div></div>"
 ; echo-area:current-face is the current message's face, or #f.
 > (echo-area:message! "Plain")
 > (echo-area:current-face)

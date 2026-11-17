@@ -1,5 +1,5 @@
 #!tuna
-(import (document) (buffers) (views) (web) (haml))
+(import (document) (buffers) (views) (web) (haml) (views height-map))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -88,14 +88,19 @@
                 v))
           (search (+ k 1))))))
 
+(define desk (web:make-client 1))
+
 (define (report-of v client top)
   (let* ([html (html->string (views:draw v client))] [ls (lines-drawn html)]
-         [first (car ls)] [last (car (reverse ls))])
+         [first (car ls)] [last (car (reverse ls))]
+         [mark (lambda (line) (list (cons "line" line)))])
     `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,(number-after html "data-placement=\""))
-      ("report" . 1) ("top" . ,top) ("offset" . 0) ("lastVisible" . ,(+ top 44)) ("spacer" . null)
-      ("spacerDistance" . 0) ("before" . ,(- top first)) ("after" . ,(- last top))
-      ("drawnHeight" . ,(* 22 (+ 1 (- last first)))) ("above" . ,(* 22 (- top first)))
-      ("below" . ,(max 0 (- (* 22 (+ 1 (- last top))) 990))) ("width" . 800) ("height" . 990) ("settled" . #f))))
+      ("report" . 1) ("version" . ,(number-after html "data-version=\"")) ("top" . ,(mark top)) ("offset" . 0)
+      ("itemHeight" . 22) ("left" . 0) ("start" . ,(mark top)) ("end" . ,(mark (+ top 44)))
+      ("spacer" . null) ("spacerDistance" . 0) ("below" . ,(max 0 (- (* 22 (+ 1 (- last top))) 990)))
+      ("items" . ,(list->vector (map (lambda (line) (vector (mark line) 22)) ls)))
+      ("lineHeight" . 22) ("charWidth" . 9) ("width" . 800) ("height" . 990) ("settled" . #f) ("hand" . #f)
+      ("runAtEnd" . #f))))
 
 (define (report! v client top) ((table-ref web:input-handlers "scroll") client (report-of v client top)))
 
@@ -105,36 +110,50 @@
          [top (quotient lines 2)]
          [p (document:line-start doc (+ top 20))])
     (views:scroll-to! v (document:line-start doc top) (views:align top))
-    (report! v #f top)
-    (report! v #f top)
+    (report! v desk top)
+    (report! v desk top)
     (views:set-point! v (+ p 4))
     (views:set-mark! v (document:line-start doc (+ top 18)))
     (buffers:add-span! (buffers:layer b diagnostics) (+ p 2) (+ p 9) '((face . warning) (title . "unused")))
-    (views:draw v #f)
+    (views:draw v desk)
+    (report! v desk top)
     v))
 
 (define (region-view b)
   (let* ([v (scrolled-view b)] [doc (buffers:document b)])
     (views:set-mark! v (document:line-start doc (- (document:line doc (views:point v)) 120)))
-    (views:draw v #f)
+    (views:draw v desk)
     v))
 
 (define (report-cost v)
-  (let* ([doc (buffers:document (views:buffer v))] [top (document:line doc (views:top v))]
-         [items (vector (report-of v #f top) (report-of v #f (+ top 1)))]
+  (let* ([doc (buffers:document (views:buffer v))] [top (document:line doc (views:top v desk))]
+         [items (vector (report-of v desk top) (report-of v desk (+ top 1)))]
          [handle (table-ref web:input-handlers "scroll")])
-    (ns-per-op 200 (lambda (i) (handle #f (vector-ref items (mod i 2)))))))
+    (ns-per-op 200 (lambda (i) (handle desk (vector-ref items (mod i 2)))))))
 
 (define (draw-cost v)
-  (ns-per-op 200 (lambda (i) (html->string (views:draw v #f)))))
+  (ns-per-op 200 (lambda (i) (html->string (views:draw v desk)))))
 
 (define (two-clients-cost v)
-  (let ([desktop (web:make-client 1)] [phone (web:make-client 2)]
-        [top (document:line (buffers:document (views:buffer v)) (views:top v))])
+  (let ([desktop (web:make-client 3)] [phone (web:make-client 4)]
+        [top (document:line (buffers:document (views:buffer v)) (views:top v desk))])
     (for-each (lambda (c) (report! v c top) (report! v c top)) (list desktop phone))
     (ns-per-op 200 (lambda (i) (html->string (views:draw v desktop)) (html->string (views:draw v phone))))))
 
-(define (drawn-lines v) (length (lines-drawn (html->string (views:draw v #f)))))
+(define (drawn-lines v) (length (lines-drawn (html->string (views:draw v desk)))))
+
+(define (big-map)
+  (let ([m (make-height-map 600000 22.0 #f (lambda (a z) (values (quotient (- z a) 10) (- z a) 0 0)))])
+    (do ([i 0 (fx+ i 1)]) ((fx= i 60000) m)
+      (height-map-measure! m (* i 10) (* (+ i 1) 10) 22.0 #f))))
+
+(define (map-edit-cost)
+  (let ([m (big-map)] [count (lambda (a z) (values (quotient (- z a) 10) (- z a) 0 0))])
+    (ns-per-op 2000 (lambda (i) (let ([p (* 10 (mod (* i 7919) 59000))]) (height-map-replace! m (+ p 3) (+ p 3) (+ p 4) count))))))
+
+(define (map-lookup-cost)
+  (let ([m (big-map)])
+    (ns-per-op 20000 (lambda (i) (height-map-position m (height-map-px m (* 10 (mod (* i 7919) 60000))))))))
 
 ;; Views drawn from atoms are saved after each batch that changed one;
 ;; the batch here moves one cursor among ten such views.
@@ -176,17 +195,20 @@
         [nodes (scrolled-view (node-buffer 22000))]
         [region (region-view (file-buffer 22000 #f))])
     (printf "drawn lines: ~a typical, ~a heavy, ~a nodes\n" (drawn-lines typical) (drawn-lines heavy) (drawn-lines nodes))
-    (show "build-only-typical" (ns-per-op 200 (lambda (i) (views:draw typical #f))))
-    (let ([h (views:draw typical #f)]) (show "write-only-typical" (ns-per-op 200 (lambda (i) (html->string h)))))
+    (show "build-only-typical" (ns-per-op 200 (lambda (i) (views:draw typical desk))))
+    (let ([h (views:draw typical desk)]) (show "write-only-typical" (ns-per-op 200 (lambda (i) (html->string h)))))
     (show "draw-typical" (draw-cost typical))
     (show "draw-heavy" (draw-cost heavy))
     (show "draw-region" (draw-cost region))
     (show "draw-two-clients" (two-clients-cost typical))
-    (show "build-only-nodes" (ns-per-op 200 (lambda (i) (views:draw nodes #f))))
+    (show "build-only-nodes" (ns-per-op 200 (lambda (i) (views:draw nodes desk))))
     (show "draw-nodes" (draw-cost nodes))
     (show "report" (report-cost typical))
     (show "save" (save-cost (views:buffer typical)))
     (show "edit-ten-views" (edit-cost (file-buffer 1000 #f) (file-buffer 1000 #f)))
     (show "edit-other-views" (other-views-cost (file-buffer 1000 #f) (file-buffer 1000 #f)
                                                (map (lambda (k) (file-buffer 10 #f)) (iota 10))))
-    (show "next-stop" (stop-cost typical))))
+    (show "next-stop" (stop-cost typical))
+    (show "map-edit-60000" (map-edit-cost))
+    (show "map-lookup-60000" (map-lookup-cost))
+    (show "map-bytes-60000" (compute-size (big-map)))))
