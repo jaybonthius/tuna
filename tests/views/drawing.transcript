@@ -154,3 +154,10 @@
 > (views:set-mark! cview 12)
 > (let ([html (html->string (views:draw cview #f))]) (substring html (search html "<div class=\"line\"" 0) (search html "</div>" 0)))
 "<div class=\"line\" id=\"v78-1\" data-line=\"1\" data-at=\"1\">(<span data-face=\"keyword\">def<span class=\"cursor primary\"></span></span><span class=\"region\"><span data-face=\"keyword\">ine</span> <span data-face=\"variable\"><span data-face=\"spell.misspelled\">x</span></span> 1</span>)"
+; A byte that is not UTF-8 draws as a backslash and three octal digits,
+; in the face escape-glyph, and holds one position.
+> (define raw (buffers:make "raw" (list 'buffers:text '() "caf" (vector 'document:raw-byte '((byte . 233))) " " (vector 'document:raw-byte '((byte . 7))) "\n")))
+> (define rv (views:make raw))
+> (views:set-point! rv 6)
+> (let ([html (html->string (views:draw rv #f))]) (substring html (search html "<div class=\"line\"" 0) (search html "</div>" 0)))
+"<div class=\"line\" id=\"v79-1\" data-line=\"1\" data-at=\"1\">caf<span class=\"node\" data-at=\"4\" data-to=\"5\"><span data-face=\"escape-glyph\">\\351</span></span> <span class=\"cursor primary\"></span><span class=\"node\" data-at=\"6\" data-to=\"7\"><span data-face=\"escape-glyph\">\\007</span></span>"

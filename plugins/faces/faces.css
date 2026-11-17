@@ -176,4 +176,8 @@
   [data-face="success"], :where([data-face^="success."]) {
     color: var(--tuna-success);
   }
+
+  [data-face="escape-glyph"], :where([data-face^="escape-glyph."]) {
+    color: var(--tuna-error);
+  }
 }

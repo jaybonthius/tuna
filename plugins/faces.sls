@@ -59,5 +59,6 @@
 (define error 'error)
 (define warning 'warning)
 (define success 'success)
+(define escape-glyph 'escape-glyph)
 
 (table-set! web:stylesheets 'faces "faces/faces.css")

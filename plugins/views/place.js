@@ -107,6 +107,13 @@
   function follow(view) {
     const b = placeBox(view, ".cursor.primary", "place");
     if (b === null) return;
+    if (view.classList.contains("nowrap")) {
+      const style = getComputedStyle(view);
+      const left = view.scrollLeft + parseFloat(style.paddingLeft);
+      const right = view.scrollLeft + view.clientWidth - parseFloat(style.paddingRight);
+      if (b.left < left) view.scrollLeft -= left - b.left;
+      else if (b.left + b.width > right) view.scrollLeft += b.left + b.width - right;
+    }
     const height = view.clientHeight;
     const margin = Math.min((number(view, "data-scroll-margin") ?? 0) * lineHeight(view), height / 4);
     const top = view.scrollTop;
@@ -120,12 +127,6 @@
       view.scrollTop = top + margin - b.top <= height ? b.top - margin : b.top + b.height / 2 - height / 2;
     } else {
       view.scrollTop = bottom - (top + height - margin) <= height ? bottom - height + margin : b.top + b.height / 2 - height / 2;
-    }
-    if (view.classList.contains("nowrap")) {
-      const left = view.scrollLeft;
-      const width = view.clientWidth;
-      if (b.left < left) view.scrollLeft = b.left;
-      else if (b.left + b.width > left + width) view.scrollLeft = b.left + b.width - width;
     }
   }
 

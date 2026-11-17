@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (web) (haml) (keys) (commands) (views height-map))
+(import (buffers) (document) (web) (haml) (keys) (commands) (faces) (views height-map))
 
 (define-option drawn-screens 2 (lambda (v) (and (real? v) (finite? v) (> v 0)))
   "How many view heights a view keeps drawn beyond each edge of what is in view.")
@@ -1540,8 +1540,16 @@
                            (parameterize ([in-line? inline?])
                              (draw node (context-view ctx)))))])
            (if (eq? html failed) (undefined-html ctx node inline?) html))]
+        [(eq? (document:node-kind node) 'document:raw-byte) (raw-byte-html node)]
         [kind (if (document:atom? node) '() (children-html ctx node inline? #f))]
         [else (undefined-html ctx node inline?)])))
+
+  ;; Buffers defines this kind, but a draw procedure there would make
+  ;; buffers, a model, import faces and so the web plugin.
+  (define (raw-byte-html node)
+    (let ([digits (number->string (document:node-attribute node 'byte) 8)])
+      (haml (:span ([data-face (symbol->string faces:escape-glyph)])
+              "\\" (make-string (fx- 3 (string-length digits)) #\0) digits))))
 
   (define-record-type text-piece (sealed #t) (fields at string))
   (define-record-type fold-mark (sealed #t) (fields at to))

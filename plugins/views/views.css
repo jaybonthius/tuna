@@ -22,6 +22,10 @@
     grid-template-rows: auto auto 1fr;
     overflow: auto;
     white-space: pre-wrap;
+    /* Unlike break-word, anywhere lowers a box's min-content width, so a
+       long word also breaks inside a box sized by its content, such as an
+       item of a row. */
+    overflow-wrap: anywhere;
     /* scrollbar-color inherits as a computed colour, so a part forced to
        dark would keep the page's light scroll bars unless each scroller
        sets its own. */
