@@ -1,5 +1,5 @@
 > (http:wait-for-server)
-Tuna is at http://127.0.0.1:19307/
+Tuna is at http://127.0.0.1:PORT/
 ; Four pages each send 300 items from three threads at once, out of
 ; order; each client's items run in the order it numbered them.
 > (define pages (list (http:page) (http:page) (http:page) (http:page)))

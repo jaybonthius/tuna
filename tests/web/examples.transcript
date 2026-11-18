@@ -1,10 +1,10 @@
 ; Examples of using web, against a browser stand-in that fetches the page,
 ; reads its screen stream and posts items.
 > (http:wait-for-server)
-Tuna is at http://127.0.0.1:19301/
-> (set-option! web:port 19311
+Tuna is at http://127.0.0.1:PORT/
+> (set-option! web:port (http:free-port)
                web:hosts '("tuna.example.ts.net"))
-Tuna is at http://127.0.0.1:19311/
+Tuna is at http://127.0.0.1:PORT/
 > (http:status (http:get "/" '(("host" . "tuna.example.ts.net"))))
 200
 > (define p (http:page))

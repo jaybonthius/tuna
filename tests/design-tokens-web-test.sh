@@ -10,11 +10,11 @@ home=$dir/design-tokens-web/home/.config/tuna
 mkdir -p "$home/lib/dusk"
 cp tests/web/home/.config/tuna/lib/http.sls "$home/lib/"
 cat > "$home/init.ss" <<'END'
-(import (tuna) (tuna plugins))
-(use-plugin web (config (set-option! web:port 19322)))
+(import (tuna) (tuna plugins) (http))
+(use-plugin web (config (set-option! web:port (http:free-port))))
 (use-plugin design-tokens)
 (use-plugin faces)
-(import (http) (console))
+(import (console))
 (http:use-port! (lambda () (web:port)))
 (define (font-served? file)
   (let ([r (http:get (string-append "/files/1/fonts/" file))])
@@ -62,7 +62,7 @@ printf ':root { --tuna-region: #264f78; }\n' > "$home/user.css"
 
 cat > "$dir/design-tokens-web/pages.transcript" <<'END'
 > (http:wait-for-server)
-Tuna is at http://127.0.0.1:19322/
+Tuna is at http://127.0.0.1:PORT/
 ; Every page links the token file and the faces' rules, served as CSS.
 > (http:head-files)
 ("/files/1/design-tokens.css?v=1" "/files/2/faces.css?v=1")

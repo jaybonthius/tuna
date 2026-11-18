@@ -1,5 +1,5 @@
 > (http:wait-for-server)
-Tuna is at http://127.0.0.1:19310/
+Tuna is at http://127.0.0.1:PORT/
 ; The stream is compressed with the first of zstd, brotli and gzip that
 ; the browser accepts.
 > (define (encoding accept)

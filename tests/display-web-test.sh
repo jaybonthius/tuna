@@ -10,16 +10,16 @@ lib=$dir/display-web/home/.config/tuna/lib
 mkdir -p "$lib"
 cp tests/display/home/.config/tuna/lib/layout.sls tests/web/home/.config/tuna/lib/http.sls "$lib/"
 cat > "$dir/display-web/home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins))
-(use-plugin web (config (set-option! web:port 19321)))
+(import (tuna) (tuna plugins) (http))
+(use-plugin web (config (set-option! web:port (http:free-port))))
 (use-plugin display)
-(import (haml) (http) (console))
+(import (haml) (console))
 (http:use-port! (lambda () (web:port)))
 END
 
 cat > "$dir/display-web/screens.transcript" <<'END'
 > (http:wait-for-server)
-Tuna is at http://127.0.0.1:19321/
+Tuna is at http://127.0.0.1:PORT/
 ; A page carries its first screen, drawn by the batch that connected
 ; it, and the stream sends only a screen that differs from it.
 > (define p (http:page))

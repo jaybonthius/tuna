@@ -22,7 +22,7 @@ if [ -d "$folder/library" ]; then
 fi
 
 # A configuration that a folder's transcripts share tells them apart by
-# name, as when each needs a port of its own.
+# name, as when only one of them changes a setting.
 export TRANSCRIPT="$(basename "$transcript" .transcript)"
 
 # A user's git settings, such as signing or address rewrites, would change
@@ -89,8 +89,10 @@ status=0
 (cd "$dir/work" && TUNA_LIBRARY="$dir/library" "$tuna" < "$dir/input" > "$dir/actual" 2>&1) || status=$?
 
 # Each run has a fresh home folder, so a transcript writes its path as ~,
-# and the remotes' as remotes.
-sed -e "s|$dir/home|~|g" -e "s|$dir/remotes|remotes|g" "$dir/actual" > "$dir/shown"
+# and the remotes' as remotes. A test's server listens on a port the
+# system chose, so a transcript writes it as PORT.
+sed -E -e "s|$dir/home|~|g" -e "s|$dir/remotes|remotes|g" \
+  -e 's/(127\.0\.0\.1:| port )[0-9]+/\1PORT/g' "$dir/actual" > "$dir/shown"
 
 if [ "$status" -ne 0 ]; then
   echo "$transcript: FAIL: exit status $status"

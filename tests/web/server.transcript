@@ -1,16 +1,17 @@
 ; The server starts once the configuration has run, on the port it set.
 > (http:wait-for-server)
-Tuna is at http://127.0.0.1:19305/
+Tuna is at http://127.0.0.1:PORT/
 > (define (status . headers) (http:status (http:get "/web/tuna.js" headers)))
+> (define (at text) (format "~a:~a" text (web:port)))
 ; A request whose Host is not one Tuna answers to, or whose Origin is
 ; another site's, gets 403.
-> (list (status) (status '("host" . "localhost:19305")) (status '("host" . "LOCALHOST:19305"))
-        (status '("host" . "evil.example")) (status '("host" . "127.0.0.1:19306"))
+> (list (status) (status (cons "host" (at "localhost"))) (status (cons "host" (at "LOCALHOST")))
+        (status '("host" . "evil.example")) (status (cons "host" (format "127.0.0.1:~a" (+ (web:port) 1))))
         (status '("host" . "127.0.0.1")))
 (200 200 200 403 403 403)
-> (list (status '("origin" . "http://127.0.0.1:19305")) (status '("origin" . "https://localhost:19305"))
+> (list (status (cons "origin" (at "http://127.0.0.1"))) (status (cons "origin" (at "https://localhost")))
         (status '("origin" . "http://evil.example")) (status '("origin" . "null"))
-        (status '("origin" . "http://127.0.0.1:19305.evil.example")))
+        (status (cons "origin" (string-append (at "http://127.0.0.1") ".evil.example"))))
 (200 200 403 403 403)
 > (http:status (http:post "/input" '(("origin" . "http://evil.example")) "{}"))
 403
@@ -31,20 +32,23 @@ Tuna is at http://127.0.0.1:19305/
 > (http:header (http:get "/") "cache-control")
 "no-store"
 ; Setting the port moves the server.
-> (set-option! web:port 19315)
-Tuna is at http://127.0.0.1:19315/
+> (define first-port (web:port))
+> (set-option! web:port (http:free-port))
+Tuna is at http://127.0.0.1:PORT/
 > (status)
 200
-> (guard (e [(error? e) (condition-message e)]) (http:on-port 19305 (lambda () (status))))
+> (guard (e [(error? e) (condition-message e)]) (http:on-port first-port (lambda () (status))))
 "cannot connect"
 ; A port in use is reported, and the server starts when the port is set
 ; again.
-> (define taken-port (http:occupy! 19325))
-> (set-option! web:port 19325)
-! (web) start-server: cannot listen on 127.0.0.1 port 19325: Address already in use
-> (guard (e [(error? e) (condition-message e)]) (http:on-port 19315 (lambda () (status))))
+> (define second-port (web:port))
+> (define taken-port (http:free-port))
+> (define taken (http:occupy! taken-port))
+> (set-option! web:port taken-port)
+! (web) start-server: cannot listen on 127.0.0.1 port PORT: Address already in use
+> (guard (e [(error? e) (condition-message e)]) (http:on-port second-port (lambda () (status))))
 "cannot connect"
-> (set-option! web:port 19335)
-Tuna is at http://127.0.0.1:19335/
+> (set-option! web:port (http:free-port))
+Tuna is at http://127.0.0.1:PORT/
 > (status)
 200

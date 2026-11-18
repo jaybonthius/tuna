@@ -2,7 +2,7 @@
 ; secret; one from 127.0.0.1 does not. The test client binds 127.0.0.2
 ; to be such a peer.
 > (http:wait-for-server)
-Tuna is at http://127.0.0.1:19309/
+Tuna is at http://127.0.0.1:PORT/
 > (define (status . headers) (http:status (http:get "/web/tuna.js" headers)))
 > (define (from-proxy thunk) (http:from-address "127.0.0.2" thunk))
 > (list (status) (status '("tuna-proxy-secret" . "wrong")) (from-proxy status))
@@ -10,7 +10,7 @@ Tuna is at http://127.0.0.1:19309/
 ; Without a secret file nothing else is listened on.
 > (set-option! web:listen-also "127.0.0.2")
 ! (web) web:listen-also: web:proxy-secret-file is not set, so only 127.0.0.1 is listened on
-Tuna is at http://127.0.0.1:19309/
+Tuna is at http://127.0.0.1:PORT/
 > (guard (e [(error? e) (condition-message e)]) (http:to-address "127.0.0.2" status))
 "cannot connect"
 ; With one, the proxy's secret lets its requests through, on either
@@ -21,7 +21,7 @@ Tuna is at http://127.0.0.1:19309/
       (chmod path mode)))
 > (write-secret! "proxy-secret" "0123456789abcdef-secret\n" #o600)
 > (set-option! web:proxy-secret-file "~/proxy-secret")
-Tuna is at http://127.0.0.1:19309/
+Tuna is at http://127.0.0.1:PORT/
 > (define right '("tuna-proxy-secret" . "0123456789abcdef-secret"))
 > (from-proxy
     (lambda ()
@@ -45,16 +45,16 @@ Tuna is at http://127.0.0.1:19309/
 > (write-secret! "open-secret" "0123456789abcdef-secret\n" #o644)
 > (set-option! web:proxy-secret-file "~/open-secret")
 ! (web) web:proxy-secret-file: other users can open the file; make its mode 600 with irritant "~/open-secret"
-Tuna is at http://127.0.0.1:19309/
+Tuna is at http://127.0.0.1:PORT/
 > (list (from-proxy (lambda () (status right))) (guard (e [(error? e) (condition-message e)]) (http:to-address "127.0.0.2" status)))
 (403 "cannot connect")
 > (write-secret! "short-secret" "short\n" #o600)
 > (set-option! web:proxy-secret-file "~/short-secret")
 ! (web) web:proxy-secret-file: the secret is shorter than 16 characters with irritant "~/short-secret"
-Tuna is at http://127.0.0.1:19309/
+Tuna is at http://127.0.0.1:PORT/
 > (set-option! web:proxy-secret-file "~/no-secret")
 ! (web) web:proxy-secret-file: cannot read the file with irritant "~/no-secret"
-Tuna is at http://127.0.0.1:19309/
+Tuna is at http://127.0.0.1:PORT/
 ; The file's path is absolute or starts with ~/, and the address is a
 ; string.
 > (set-option! web:proxy-secret-file "proxy-secret")
@@ -66,7 +66,7 @@ Tuna is at http://127.0.0.1:19309/
 ; An address that cannot be listened on is reported, and Tuna stays on
 ; 127.0.0.1.
 > (set-option! web:proxy-secret-file "~/proxy-secret" web:listen-also "192.0.2.1")
-! (web) start-server: cannot listen on 192.0.2.1 port 19309: Cannot assign requested address
-Tuna is at http://127.0.0.1:19309/
+! (web) start-server: cannot listen on 192.0.2.1 port PORT: Cannot assign requested address
+Tuna is at http://127.0.0.1:PORT/
 > (list (status) (from-proxy (lambda () (status right '("host" . "tuna.example.org")))))
 (200 200)

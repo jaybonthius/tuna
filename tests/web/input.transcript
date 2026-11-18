@@ -1,5 +1,5 @@
 > (http:wait-for-server)
-Tuna is at http://127.0.0.1:19302/
+Tuna is at http://127.0.0.1:PORT/
 > (define p (http:page))
 > (table-set! web:input-handlers "note" (lambda (client item) (note! (cdr (assoc "n" item)))))
 ; Items run in the order their client numbered them, whatever order they

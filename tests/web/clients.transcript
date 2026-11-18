@@ -1,5 +1,5 @@
 > (http:wait-for-server)
-Tuna is at http://127.0.0.1:19304/
+Tuna is at http://127.0.0.1:PORT/
 > (add-hook! web:client-added (lambda (client) (note! (list 'added client (web:client? client)))))
 > (add-hook! web:client-removed (lambda (client) (note! (list 'removed client))))
 ; Serving the page adds a client, whose id is 128 random bits.

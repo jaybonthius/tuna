@@ -10,10 +10,10 @@ home=$dir/layout-tabs-web/home/.config/tuna
 mkdir -p "$home/lib"
 cp tests/web/home/.config/tuna/lib/http.sls "$home/lib/"
 cat > "$home/init.ss" <<'END'
-(import (tuna) (tuna plugins))
-(use-plugin web (config (set-option! web:port 19323)))
+(import (tuna) (tuna plugins) (http))
+(use-plugin web (config (set-option! web:port (http:free-port))))
 (use-plugin layout-tabs)
-(import (http) (console))
+(import (console))
 (http:use-port! (lambda () (web:port)))
 (define (served? path file)
   (let ([r (http:get path)])
@@ -25,7 +25,7 @@ END
 
 cat > "$dir/layout-tabs-web/pages.transcript" <<'END'
 > (http:wait-for-server)
-Tuna is at http://127.0.0.1:19323/
+Tuna is at http://127.0.0.1:PORT/
 ; Every page links the tabs' rules, served as CSS.
 > (define path (find (lambda (f) (string=? (path-last f) "layout-tabs.css?v=1")) (http:head-files)))
 > (served? (substring path 0 (- (string-length path) 4)) "layout-tabs/layout-tabs.css")

@@ -23,16 +23,17 @@ trap cleanup EXIT
 
 server=$dir/server
 client=$dir/client
-mkdir -p "$server/.config/tuna" "$client/.config/tuna/lib" "$dir/library" "$dir/work"
+mkdir -p "$server/.config/tuna/lib" "$client/.config/tuna/lib" "$dir/library" "$dir/work"
 sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/library"
+cp tests/web/home/.config/tuna/lib/http.sls "$server/.config/tuna/lib/"
 cp tests/web/home/.config/tuna/lib/http.sls "$client/.config/tuna/lib/"
 cat > "$server/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins))
+(import (tuna) (tuna plugins) (http))
 (use-plugin jobs)
 (use-plugin document)
 (use-plugin buffers)
 (use-plugin commands)
-(use-plugin web (config (set-option! web:port 19351)))
+(use-plugin web (config (set-option! web:port (http:free-port))))
 (use-plugin design-tokens)
 (use-plugin modus)
 (use-plugin faces)
@@ -68,10 +69,6 @@ cat > "$server/.config/tuna/init.ss" <<'END'
 (use-plugin display)
 (use-plugin command-line)
 END
-cat > "$client/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins) (http) (console))
-(http:use-port! (lambda () 19351))
-END
 printf 'one\n' > "$dir/work/notes.txt"
 
 (cd "$dir/work" && HOME="$server" TUNA_LIBRARY="$dir/library" exec "$tuna" notes.txt \
@@ -90,6 +87,11 @@ until grep -q '^Tuna is at ' "$dir/server.out" 2>/dev/null; do
   sleep 0.1
   tries=$((tries + 1))
 done
+port=$(sed -n 's|^Tuna is at http://127\.0\.0\.1:\([0-9]*\)/$|\1|p' "$dir/server.out")
+cat > "$client/.config/tuna/init.ss" <<END
+(import (tuna) (tuna plugins) (http) (console))
+(http:use-port! (lambda () $port))
+END
 
 output=$(cd "$dir/work" && printf '%s\n' \
   '(http:wait-for-server)' \
@@ -118,7 +120,7 @@ fi
 status=0
 wait "$pid" || status=$?
 pid=
-if [ "$status" -ne 0 ] || [ "$(cat "$dir/server.out")" != 'Tuna is at http://127.0.0.1:19351/' ]; then
+if [ "$status" -ne 0 ] || [ "$(cat "$dir/server.out")" != "Tuna is at http://127.0.0.1:$port/" ]; then
   echo "$0: FAIL: expected status 0 and only the address printed, got status $status and:"
   cat "$dir/server.out"
   exit 1

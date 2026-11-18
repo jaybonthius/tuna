@@ -6,7 +6,7 @@
 (module (request response-status response-header response-body open-page page-id page-first-screen page-text
          page-connect! page-close! page-send! page-send-numbered! send-items page-send-all! page-send-range!
          page-confirm! page-goodbye! page-next page-events-closed? page-connect-and-next! heartbeats-seen
-         wait-for-server occupy-port! target-port target-address source-address set-port-source! percent-encode-all
+         wait-for-server occupy-port! unused-port target-port target-address source-address set-port-source! percent-encode-all
          flood auto-confirm open-raw-stream raw-stream-encoding raw-stream-next raw-stream-close!)
 
   (define libc (load-shared-object "libc.so.6"))
@@ -50,11 +50,37 @@
   (define c-bind (foreign-procedure "bind" (int u8* int) int))
   (define c-listen (foreign-procedure "listen" (int int) int))
 
+  (define c-setsockopt (foreign-procedure "setsockopt" (int int int u8* int) int))
+
+  (define (reuse-address! fd)
+    (let ([one (make-bytevector 4 0)])
+      (bytevector-s32-native-set! one 0 1)
+      (c-setsockopt fd 1 2 one 4)))
+
+  ;; Without SO_REUSEADDR the bind fails on a port that unused-port holds.
   (define (occupy-port! port)
     (let ([fd (c-socket 2 1 0)])
+      (reuse-address! fd)
       (unless (and (fx= 0 (c-bind fd (address-of port) 16)) (fx= 0 (c-listen fd 1)))
         (error 'http "cannot listen" port))
       fd))
+
+  (define c-getsockname (foreign-procedure "getsockname" (int u8* u8*) int))
+
+  ;; Asked of every address, so the port is free on 127.0.0.2 too, where
+  ;; the proxy's tests listen. The socket stays bound, so that no other
+  ;; process takes the port before Tuna listens on it; SO_REUSEADDR, which
+  ;; Tuna's listener also sets, lets the two share it while this one does
+  ;; not listen.
+  (define (unused-port)
+    (let ([fd (c-socket 2 1 0)] [address (address-of "0.0.0.0" 0)] [size (make-bytevector 4)])
+      (bytevector-u32-native-set! size 0 16)
+      (reuse-address! fd)
+      (let ([found? (and (fx= 0 (c-bind fd address 16)) (fx= 0 (c-getsockname fd address size)))])
+        (unless found?
+          (c-close fd)
+          (error 'http "cannot find an unused port"))
+        (bytevector-u16-ref address 2 (endianness big)))))
 
   ;; Read on the calling thread, since a thread starts without its
   ;; creator's parameter bindings.
@@ -563,6 +589,8 @@
 (define (send-range! p from to item) (page-send-range! p from to item))
 
 (define (occupy! port) (occupy-port! port))
+
+(define (free-port) (unused-port))
 
 (define (encode s) (percent-encode-all s))
 

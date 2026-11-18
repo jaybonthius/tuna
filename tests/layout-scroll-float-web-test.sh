@@ -10,11 +10,11 @@ home=$dir/layout-scroll-float-web/home/.config/tuna
 mkdir -p "$home/lib"
 cp tests/web/home/.config/tuna/lib/http.sls "$home/lib/"
 cat > "$home/init.ss" <<'END'
-(import (tuna) (tuna plugins))
-(use-plugin web (config (set-option! web:port 19326)))
+(import (tuna) (tuna plugins) (http))
+(use-plugin web (config (set-option! web:port (http:free-port))))
 (use-plugin layout-scroll)
 (use-plugin layout-float)
-(import (http) (console))
+(import (console))
 (http:use-port! (lambda () (web:port)))
 (define (served? path file)
   (let ([r (http:get path)])
@@ -29,7 +29,7 @@ END
 
 cat > "$dir/layout-scroll-float-web/pages.transcript" <<'END'
 > (http:wait-for-server)
-Tuna is at http://127.0.0.1:19326/
+Tuna is at http://127.0.0.1:PORT/
 ; Every page links the strips' and the floats' rules, served as CSS.
 > (served? (linked "layout-scroll.css") "layout-scroll/layout-scroll.css")
 #t
