@@ -1,0 +1,35 @@
+> (http:wait-for-server)
+Tuna is at http://127.0.0.1:PORT/
+> (define (title-of html)
+    (let* ([start (http:search html "<title" 0)] [end (http:search html "</title>" start)])
+      (substring html start (+ end 8))))
+> (define p (http:page))
+> (title-of (http:page-html p))
+"<title id=\"tuna-title\">Tuna</title>"
+; Every connected page gets a new title, without reloading.
+> (define q (http:page))
+> (http:connect! p)
+> (http:connect! q)
+> (set-option! web:title "notes.org – Tuna")
+> (let* ([a (http:show (http:next p))] [b (http:show (http:next q))]) (list a b))
+((datastar-patch-elements ("elements" "<title id=\"tuna-title\">notes.org – Tuna</title>")) (datastar-patch-elements ("elements" "<title id=\"tuna-title\">notes.org – Tuna</title>")))
+; A page served afterwards carries it, and the text is escaped.
+> (set-option! web:title "<a> & b")
+> (title-of (http:page-html (http:page)))
+"<title id=\"tuna-title\">&lt;a&gt; &amp; b</title>"
+; A page served before a change gets the change when its stream opens.
+> (define r (http:page))
+> (set-option! web:title "c")
+> (http:connect! r)
+> (http:show (http:next r))
+(datastar-patch-elements ("elements" "<title id=\"tuna-title\">c</title>"))
+; Taking the setting back brings the default back.
+> (remove-option! web:title)
+> (http:show (http:next r))
+(datastar-patch-elements ("elements" "<title id=\"tuna-title\">Tuna</title>"))
+> (http:next r 0.2)
+timeout
+; A page has one title, so a scope's local value is not sent.
+> (parameterize ([current-scope (make-scope)]) (set-option-local! web:title "local"))
+> (http:next r 0.2)
+timeout

@@ -14,6 +14,8 @@
 (define-table stylesheets)
 (define-table early-scripts)
 
+(define-option title "Tuna" string?)
+
 (define-hook client-removed)
 
 (define current-client (make-thread-parameter #f))

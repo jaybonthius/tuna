@@ -5,7 +5,7 @@
 ;; definition, which can change under a running thread.
 (module %internals
   (client-record? client-record-device connected-clients give-screen! call-page start-server! restart-server!
-   stop-server! allow-hosts! refresh-head-files! post-start! release-first-screens! home-path?)
+   stop-server! allow-hosts! retitle! refresh-head-files! post-start! release-first-screens! home-path?)
 
   (define main-thread (get-thread-id))
   (define lock (make-mutex))
@@ -43,11 +43,11 @@
     (fields id number (immutable device client-record-device) pending (mutable next) (mutable removed?) (mutable stream)
             (mutable through) (mutable removal-timer)
             (mutable last) (mutable count) (mutable in-flight) (mutable sent-at)
-            (mutable waiting) (mutable calls) (mutable links) (mutable scripts-version) (mutable first))
+            (mutable waiting) (mutable calls) (mutable links) (mutable scripts-version) (mutable title) (mutable first))
     (protocol
       (lambda (new)
-        (lambda (id number device links scripts-version)
-          (new id number device (make-eqv-hashtable) 1 #f #f 0 #f #f 0 #f 0 #f '() links scripts-version #f)))))
+        (lambda (id number device links scripts-version title)
+          (new id number device (make-eqv-hashtable) 1 #f #f 0 #f #f 0 #f 0 #f '() links scripts-version title #f)))))
 
   (define-record-type head-file
     (sealed #t)
@@ -82,6 +82,7 @@
   (define early-files '())
   (define early-hrefs '())
   (define scripts-version 0)
+  (define page-title #f)
   (define files-checked 0)
 
   (define max-held-items 10000)
@@ -438,11 +439,26 @@
         [(not (fx= (client-scripts-version c) scripts-version))
          (client-scripts-version-set! c scripts-version)
          (client-links-set! c links)
+         (client-title-set! c page-title)
          (enqueue! (lambda () (reload-page stream)))]
-        [(not (eq? (client-links c) links))
-         (let ([old (client-links c)] [new links])
-           (client-links-set! c new)
-           (enqueue! (lambda () (patch-links stream old new))))])))
+        [else
+         (unless (eq? (client-links c) links)
+           (let ([old (client-links c)] [new links])
+             (client-links-set! c new)
+             (enqueue! (lambda () (patch-links stream old new)))))
+         (unless (string=? (client-title c) page-title)
+           (let ([new page-title])
+             (client-title-set! c new)
+             (enqueue! (lambda () (patch-elements stream (title-element new))))))])))
+
+  (define (title-element text)
+    (haml (:title ([id "tuna-title"]) text)))
+
+  (define (retitle!)
+    (let ([new (parameterize ([current-scope #f]) (title))])
+      (with-lock
+        (set! page-title new)
+        (for-each sync-head! connected))))
 
   (define (link-element link)
     (haml (:link ([id "tuna-stylesheet-" (car link)] [rel "stylesheet"] [href (cdr link)]))))
@@ -545,14 +561,14 @@
   ;; The first screen comes inside the page, so the browser paints no
   ;; empty frame before it, and the early scripts can place it before the
   ;; first paint: a module would run after it.
-  (define (shell id styles modules early first)
+  (define (shell id title-text styles modules early first)
     (haml
       (:html ([lang "en"])
         (:head
           (:meta ([charset "utf-8"]))
           (:meta ([name "viewport"] [content "width=device-width, initial-scale=1"]))
           (:meta ([name "color-scheme"] [content "light dark"]))
-          (:title "Tuna")
+          (title-element title-text)
           (:script ([type "importmap"]) "{\"imports\":{\"datastar\":\"/web/datastar.js\",\"tuna\":\"/web/tuna.js\"}}")
           (:script ([type "module"] [src "/web/datastar.js"]))
           (:script ([type "module"] [src "/web/tuna.js"]))
@@ -586,7 +602,7 @@
                [id (random-id)]
                [c (with-lock
                     (set! added (fx+ added 1))
-                    (let ([c (make-client id added device links scripts-version)])
+                    (let ([c (make-client id added device links scripts-version page-title)])
                       (hashtable-set! clients-by-id id c)
                       (set! opening (cons c opening))
                       c))])
@@ -606,7 +622,7 @@
                   (cons (set-cookie-header "tuna-device" device (cookie-path "/") (cookie-http-only)
                           (cookie-same-site (same-site strict)) (cookie-max-age device-cookie-seconds))
                         page-headers))
-              (html->bytevector (shell id (client-links c) modules early first)))))
+              (html->bytevector (shell id (client-title c) (client-links c) modules early first)))))
         not-found))
 
   (define forbidden (response 403 '(("content-type" . "text/plain")) "Forbidden\n"))
@@ -752,6 +768,7 @@
     (set! started? #t)
     (let ([p (port)] [also (proxy-address)] [me (list 'sender)])
       (allow-hosts!)
+      (retitle!)
       (set! server
         (if also
             (guard (e [(not (quit-condition? e)) (report e) (listen p '("127.0.0.1"))])
@@ -824,6 +841,10 @@
              (or (home-path? v) (not (char=? (string-ref v 0) #\~))))))
   "The file, of mode 600, whose text a request from a peer other than 127.0.0.1 or ::1 must give as Tuna-Proxy-Secret."
   (lambda (v) (restart-server!)))
+
+(define-option title "Tuna" string?
+  "The title of every client's page, which its browser tab shows."
+  (lambda (v) (retitle!)))
 
 (define-hook client-added "Called with a client when its page is served.")
 

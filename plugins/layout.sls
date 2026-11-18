@@ -451,12 +451,14 @@
     (let ([title (document:node-attribute n 'title #f)])
       (cond
         [(string? title) title]
-        [(view-atom? n)
-         (let* ([v (view-of n)] [b (views:buffer v)])
-           (if b (buffers:name b) (let ([name (document:node-attribute n 'buffer "")]) (if (string? name) name ""))))]
+        [(view-atom? n) (shown-buffer-name n)]
         [else
          (let ([c (or (focused-child ix n) (let ([cs (kids-of ix n)]) (and (pair? cs) (car cs))))])
            (if c (title-of ix c) ""))])))
+
+  (define (shown-buffer-name atom)
+    (let ([b (views:buffer (view-of atom))])
+      (if b (buffers:name b) (let ([name (document:node-attribute atom 'buffer "")]) (if (string? name) name "")))))
 
   ;; A popup is drawn outside the layout's screen view, so its element
   ;; carries no positions, which would name the layout's.
@@ -736,7 +738,16 @@
         (hashtable-keys registered)))
     (follow-focus!)
     (note-history-levels!)
-    (save-now!))
+    (save-now!)
+    (note-title!))
+
+  (define last-title #f)
+
+  (define (note-title!)
+    (let ([title (string-append (shown-buffer-name (atom-of (selected-id))) " – Tuna")])
+      (unless (equal? title last-title)
+        (as-module (this-module) (set-option! web:title title))
+        (set! last-title title))))
 
   (define (last-selected-unlocked-atom node)
     (let ([atoms (filter (lambda (a)

@@ -8,6 +8,8 @@
 (define-table stylesheets)
 (define-table early-scripts)
 
+(define-option title "Tuna" string?)
+
 (define-hook client-added)
 (define-hook client-removed)
 
