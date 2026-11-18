@@ -1,0 +1,107 @@
+> (define (run! command) (in-client (lambda () (commands:run command))))
+> (define (session) (in-client completion:current-session))
+> (define (wait-matches s) (wait-until (lambda () (and s (not (completion:session-busy? s))))))
+> (define (texts s) (map (lambda (m) (completion:text s m)) (vector->list (completion:session-matches s))))
+> (define (asking question)
+    (lambda ()
+      (let ([s (text (buffers:find " *Minibuf*"))] [n (string-length question)])
+        (and (>= (string-length s) n) (string=? (substring s 0 n) question)))))
+> (define (menu-buffer) (buffers:find " *transient*"))
+> (define (menu)
+    (define (attribute d key) (let ([p (assq key (vector-ref d 1))]) (and p (cdr p))))
+    (map (lambda (part)
+           (if (vector? part)
+               (attribute part 'text)
+               (map (lambda (d) (if (eq? (vector-ref d 0) 'transient:%heading)
+                                    (attribute d 'text)
+                                    (list (attribute d 'key) (attribute d 'description))))
+                    (cddr part))))
+         (cddr (car (document:datums (buffers:document (menu-buffer)))))))
+> (define (group name) (find (lambda (g) (and (pair? g) (equal? (car g) name))) (menu)))
+> (define project (string-append (getenv "HOME") "/src/tuna"))
+> (system (string-append "mkdir -p " project "/.git"))
+0
+> (define notes (buffers:make "notes" "one\n"))
+> (in-client (lambda () (layout:switch-to-buffer notes)))
+; The menu is the chat's: outside a chat it is refused.
+> (raised (lambda () (run! pi-menu:show)))
+! pi-menu:show: not in a Pi chat
+> (define chat (pi:start project))
+> (define f (fake-of chat))
+> (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
+> (in-client (lambda () (pi-chat:show! chat)))
+; C-c C-p shows it: Session, Context, Model and Display, the current
+; model, thinking level and settings in the descriptions, and Pi's
+; commands, computed from the chat's each time it shows: a kind of
+; command Pi has none of has no entry.
+> (press! "C-c" "C-p")
+> (menu)
+("Pi in ~/src/tuna" ("Session" ("n" "New") ("r" "Resume") ("f" "Fork") ("C" "Clone") ("N" "Name") ("e" "Export as HTML") ("R" "Restart Pi") ("Q" "Stop Pi and end the chat")) ("Context" ("c" "Compact") ("a" "Pi's own compaction (on)")) ("Model" ("m" "Model (Fake Model)") ("t" "Thinking level (medium)")) ("Display" ("T" "Finished thinking (folded)") ("o" "Fold or unfold every block")))
+> (press! "C-g")
+> (menu)
+()
+> (answer! f "get_commands"
+    (lambda (f r) '(("commands" . #((("name" . "review") ("description" . "Review") ("source" . "extension"))
+                                    (("name" . "skill:tdd") ("description" . "Test first") ("source" . "skill"))
+                                    (("name" . "audit") ("description" . "Audit") ("source" . "extension")))))))
+> (say! f (event "agent_settled" '("aborted" . #f)))
+> (wait-until (lambda () (= 3 (length (pi:chat-commands chat)))))
+> (result (start! (lambda () (pi:set-session-name! chat "Parser"))))
+> (press! "C-c" "C-p")
+> (menu)
+("Pi: Parser" ("Session" ("n" "New") ("r" "Resume") ("f" "Fork") ("C" "Clone") ("N" "Name") ("e" "Export as HTML") ("R" "Restart Pi") ("Q" "Stop Pi and end the chat")) ("Context" ("c" "Compact") ("a" "Pi's own compaction (on)")) ("Model" ("m" "Model (Fake Model)") ("t" "Thinking level (medium)")) ("Display" ("T" "Finished thinking (folded)") ("o" "Fold or unfold every block")) ("Pi's commands" ("s" "Skills (1)") ("x" "Extension commands (2)")))
+; Toggles stay in the menu, which shows the new state.
+> (press! "a")
+! Pi no longer compacts on its own
+> (list (ref (last-request f "set_auto_compaction") "enabled") (group "Context"))
+(#f ("Context" ("c" "Compact") ("a" "Pi's own compaction (off)")))
+> (press! "T")
+! Pi's finished thinking is shown
+> (list (pi-chat:thinking-shown?) (group "Display"))
+(#t ("Display" ("T" "Finished thinking (shown)") ("o" "Fold or unfold every block")))
+> (press! "T")
+! Pi's finished thinking is folded
+> (press! "C-g")
+; An entry that is not a toggle closes the menu and runs its command,
+; in the chat: Model chooses with pi-picker.
+> (answer! f "get_available_models"
+    (lambda (f r) '(("models" . #((("id" . "m1") ("name" . "One") ("provider" . "p") ("contextWindow" . 1000) ("reasoning" . #f)))))))
+> (define t (start! (lambda () (press! "C-c" "C-p" "m"))))
+> (wait-until session)
+> (menu)
+()
+> (define s (session))
+> (wait-matches s)
+> (texts s)
+("p/m1")
+> (press! "C-g")
+! &quit
+> (result t)
+; Pi's commands are three menus, by source, each shown above the chat's
+; menu, so C-g comes back to it; each computes its entries from the
+; chat's commands, by name, when it shows. An entry reads the command's
+; arguments and sends it.
+> (define t (start! (lambda () (press! "C-c" "C-p" "x"))))
+> (menu)
+("Pi's extension commands" (("a" "/audit") ("b" "/review")))
+> (press! "C-g")
+> (car (menu))
+"Pi: Parser"
+> (press! "s")
+> (menu)
+("Pi's skills" (("a" "/skill:tdd")))
+> (press! "C-g" "C-g")
+> (define t (start! (lambda () (press! "C-c" "C-p" "x" "a"))))
+> (wait-until (asking "Arguments for /audit"))
+> (menu)
+()
+> (type! "now")
+> (press! "RET")
+> (result t)
+> (ref (last-request f "prompt") "message")
+"/audit now"
+; Session entries run pi-chat's and pi-picker's commands.
+> (define t (start! (lambda () (press! "C-c" "C-p" "n"))))
+> (result t)
+> (ref (last-request f "new_session") "type")
+"new_session"

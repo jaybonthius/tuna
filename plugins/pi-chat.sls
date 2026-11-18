@@ -254,9 +254,12 @@
     (assertion-violation 'pi-chat:chat-of "not a buffer" b))
   (find (lambda (chat) (eq? (hashtable-ref %buffers chat #f) b)) (pi:chats)))
 
+(define (current-chat)
+  (let* ([v (views:current)] [b (and v (views:buffer v))])
+    (and b (chat-of b))))
+
 (define (%current-chat who)
-  (let* ([v (views:current)] [chat (and v (chat-of (views:buffer v)))])
-    (or chat (error who "not in a Pi chat"))))
+  (or (current-chat) (error who "not in a Pi chat")))
 
 (define (%children node)
   (let ([acc '()])
@@ -274,9 +277,12 @@
 
 (define (%prompt-node b) (%part b 'pi-chat:prompt))
 
+(define (%prompt-start b) (fx+ (document:node-start (%prompt-node b)) 1))
+
+(define (%prompt-end b) (fx- (document:node-end (%prompt-node b)) 2))
+
 (define (%prompt-text b)
-  (let ([n (%prompt-node b)])
-    (document:text (buffers:document b) (fx+ (document:node-start n) 1) (fx- (document:node-end n) 2))))
+  (document:text (buffers:document b) (%prompt-start b) (%prompt-end b)))
 
 (define (%set-prompt-text! b text)
   (let ([n (%prompt-node b)])
@@ -284,7 +290,13 @@
                      (document:from-datum (string-append text "\n")))
     (set! %drafts-changed? #t)))
 
-(define (%prompt-end b) (fx- (document:node-end (%prompt-node b)) 2))
+(define (prompt-start chat)
+  (%check-chat 'pi-chat:prompt-start chat)
+  (%prompt-start (%buffer-of chat)))
+
+(define (prompt-end chat)
+  (%check-chat 'pi-chat:prompt-end chat)
+  (%prompt-end (%buffer-of chat)))
 
 (define (%enclosing-of b position kinds)
   (let ([doc (buffers:document b)])
@@ -796,6 +808,11 @@
                           (cond [(fx< i 0) #f] [(char=? (string-ref d i) #\/) i] [else (find (fx- i 1))]))])
                  (if i (loop (if (fx= i 0) "/" (substring d 0 i))) start))]))))))
 
+(define (project-of b)
+  (unless (buffers:buffer? b)
+    (assertion-violation 'pi-chat:project-of "not a buffer" b))
+  (%project-of b))
+
 (define (chats-for b)
   (unless (buffers:buffer? b)
     (assertion-violation 'pi-chat:chats-for "not a buffer" b))
@@ -816,6 +833,12 @@
     (%use! chat)
     (layout:switch-to-buffer b)
     (views:set-point! (layout:selected-view) (%prompt-end b))))
+
+(define (set-prompt! chat text)
+  (%check-chat 'pi-chat:set-prompt! chat)
+  (unless (string? text)
+    (assertion-violation 'pi-chat:set-prompt! "not a string" text))
+  (%set-prompt-text! (%buffer-of chat) text))
 
 (define (add-to-prompt! chat text)
   (%check-chat 'pi-chat:add-to-prompt! chat)
@@ -853,7 +876,7 @@
          (when other (views:set-buffer! v other)))]
       [else (layout:delete-part! (layout:view-node v))])))
 
-(define (%region-text b start end chat)
+(define (%region-text chat b start end)
   (let* ([doc (buffers:document b)] [path (files:path b)]
          [first (document:line doc start)]
          [last (document:line doc (if (and (fx> end start) (eqv? (document:token doc (fx- end 1)) #\newline))
@@ -864,6 +887,14 @@
                        (if (fx= first last) "" (string-append "-" (number->string last))))
         (string-append "```" (buffers:name b) " lines " (number->string first) "-" (number->string last) "\n"
                        (%line (document:text doc start end)) "```"))))
+
+(define (region-text chat b start end)
+  (%check-chat 'pi-chat:region-text chat)
+  (unless (buffers:buffer? b)
+    (assertion-violation 'pi-chat:region-text "not a buffer" b))
+  (unless (and (fixnum? start) (fixnum? end) (fx<= 0 start end (document:length (buffers:document b))))
+    (assertion-violation 'pi-chat:region-text "not a start and an end in the buffer" start end))
+  (%region-text chat b start end))
 
 (define (%relative dir path)
   (let ([d (string-append (%without-slash dir) "/")])
@@ -880,7 +911,7 @@
                     (and (ask:y-or-n? (string-append "Start a Pi chat in " (%project-of b) "? "))
                          (pi:start (%project-of b))))])
       (when chat
-        (add-to-prompt! chat (%region-text b (fxmin mark (views:point v)) (fxmax mark (views:point v)) chat))
+        (add-to-prompt! chat (%region-text chat b (fxmin mark (views:point v)) (fxmax mark (views:point v))))
         (show! chat)))))
 
 (commands:define-command (next-dialog)
@@ -1217,6 +1248,11 @@
 (define (%tell text)
   (raise-continuable (condition (make-warning) (make-message-condition text))))
 
+(commands:define-command (toggle-thinking)
+  "Shows Pi's finished thinking in every chat, or folds it."
+  (set-option! thinking-shown? (not (thinking-shown?)))
+  (%tell (if (thinking-shown?) "Pi's finished thinking is shown" "Pi's finished thinking is folded")))
+
 (define (%export chat path)
   (%tell (string-append "Exported the session to " (pi:export-html! chat path))))
 
@@ -1307,6 +1343,10 @@
       (hashtable-delete! %buffers chat)
       (pi:stop! chat))))
 
+(define (%option-changed option value)
+  (when (eq? option thinking-shown?)
+    (for-each %mark-dirty! (pi:chats))))
+
 (define (%editor-text chat text)
   (let ([b (%buffer-of chat)])
     (%set-prompt-text! b text)
@@ -1361,6 +1401,7 @@
 (table-set! commands:command-modes next-prompt (list mode))
 (table-set! commands:command-modes toggle-block (list mode))
 (table-set! commands:command-modes toggle-all-blocks (list mode))
+(table-set! commands:command-modes toggle-thinking (list mode))
 (table-set! commands:command-modes visit (list mode))
 (table-set! commands:command-modes next-message (list mode))
 (table-set! commands:command-modes previous-message (list mode))
@@ -1384,6 +1425,7 @@
 (add-hook! pi:editor-text-requested %editor-text)
 (add-hook! buffers:after-edit %chat-edited)
 (add-hook! buffers:killed %chat-buffer-killed)
+(add-hook! option-changed %option-changed)
 
 (advice-add! batch-ended
   (lambda (ended)

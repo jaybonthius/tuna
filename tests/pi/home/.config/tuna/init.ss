@@ -23,6 +23,9 @@
 (use-plugin files)
 (use-plugin kill-ring)
 (use-plugin pi-chat)
+(use-plugin completion)
+(use-plugin pi-picker)
+(use-plugin pi-menu)
 
 (define (wait-until done?)
   (let loop ([n 0])
