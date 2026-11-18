@@ -120,3 +120,33 @@
 ! third
 ! notes:show: cannot show
 "both\nfirst\nthird\nnotes:show: cannot show\n"
+; A command's reports show as it ends, before the other after-command
+; entries, and a report is logged even when the message that shows it
+; logs nothing.
+> (commands:define-command (fail) "Raises." (error 'notes:fail "no"))
+> (keys:bind! keys:global "C-c f" fail)
+> (define seen #f)
+> (define (note-message command) (set! seen (echo-area:current-message)))
+> (add-hook! commands:after-command note-message)
+> (press! "C-c" "f")
+> (remove-hook! commands:after-command note-message)
+> seen
+> (begin
+    (report (condition (make-error) (make-message-condition "quiet")))
+    (with-options ([echo-area:log-max 0]) (echo-area:message! "unlogged"))
+    (echo-area:current-message))
+> (let ([log (messages)]) (substring log (- (string-length log) 21) (string-length log)))
+! notes:fail: no
+"notes:fail: no"
+! quiet
+"unlogged"
+"notes:fail: no\nquiet\n"
+; An error raised where the log is off is logged all the same, as Emacs
+; logs a command's error once its bindings unwind.
+> (commands:define-command (quiet-fail) "Raises where nothing is logged."
+    (with-options ([echo-area:log-max 0]) (error 'notes:quiet "lost")))
+> (keys:bind! keys:global "C-c q" quiet-fail)
+> (press! "C-c" "q")
+> (let ([log (messages)]) (substring log (- (string-length log) 18) (string-length log)))
+! notes:quiet: lost
+"notes:quiet: lost\n"

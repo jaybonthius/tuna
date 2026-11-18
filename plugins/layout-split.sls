@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (buffers) (document) (views) (keys) (repeat) (commands) (web) (haml))
+(import (layout) (buffers) (document) (views) (keys) (commands) (web) (haml))
 
 (define-enumeration direction (row column) directions)
 
@@ -272,5 +272,5 @@
 (keys:bind! layout:part-mode-keymap "w c" wrap-in-column)
 (keys:bind! resize-keymap "}" enlarge)
 (keys:bind! resize-keymap "{" shrink)
-(table-set! repeat:keymaps resize-keymap)
+(table-set! keys:repeat-keymaps resize-keymap)
 (table-set! web:stylesheets 'layout-split "layout-split/layout-split.css")

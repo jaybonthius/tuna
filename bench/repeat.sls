@@ -74,13 +74,13 @@
   (parameterize ([web:current-client client])
     (let ([before (ns-per-op two-keys)] [one-key-bytes (bytes-per-op (lambda () (press! "a")))])
       (keys:bind! stepping "n" step)
-      (table-set! repeat:keymaps stepping)
+      (table-set! keys:repeat-keymaps stepping)
       (show "repeat-search-one-keymap" (- (ns-per-op two-keys) before))
       (for-each
         (lambda (keymap i)
           (keys:bind! keymap (string (integer->char (+ 97 i))) nothing)
           (keys:bind! keymap "z" nothing)
-          (table-set! repeat:keymaps keymap))
+          (table-set! keys:repeat-keymaps keymap))
         others (iota (length others)))
       (show "press-one-key" (ns-per-op (lambda () (press! "a"))))
       (show "press-two-keys" (ns-per-op two-keys))
@@ -88,9 +88,9 @@
       ;; Emacs's own Lisp declares 24 repeating keymaps. A table lists its
       ;; keys in the order they were first set, so the one that repeats is
       ;; set after the others, and entering it searches through all of them.
-      (table-remove! repeat:keymaps stepping)
+      (table-remove! keys:repeat-keymaps stepping)
       (keys:bind! stepping-last "n" step)
-      (table-set! repeat:keymaps stepping-last)
+      (table-set! keys:repeat-keymaps stepping-last)
       (show "enter-repeat" (ns-per-op (lambda () (press! "C-c") (press! "n"))))
       (press! "C-c")
       (press! "n")

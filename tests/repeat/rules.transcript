@@ -49,15 +49,15 @@
 > (define-table next-keymap)
 > (keys:bind! next-keymap "n" layout:other-view)
 > (keys:bind! layout-split:resize-keymap "C-c n" layout:other-view)
-> (table-set! repeat:keymaps next-keymap)
+> (table-set! keys:repeat-keymaps next-keymap)
 > (press! c1 "C-c" "n")
 > (list (layout:selected-view) (keymap-names c1))
-(#<view 3> (keymap layout:keymap keys:global))
+(#<view 4> (keymap layout:keymap keys:global))
 > (press! c1 "n" "n")
 > (list (layout:selected-view) (keymap-names c1))
-(#<view 3> (keymap layout:keymap keys:global))
-; Reloading the plugin ends every repetition, and the keymaps it holds
-; stay.
+(#<view 4> (keymap layout:keymap keys:global))
+; Reloading the plugin ends every repetition, and the repeating keymaps,
+; which keys holds, stay.
 > (press! c1 "C-g" "C-x" "}")
 > (keymap-names c1)
 (layout-split:resize-keymap layout:keymap keys:global)
@@ -65,7 +65,7 @@
 > (eval-file (string-append (getenv "TUNA_LIBRARY") "/repeat.sls"))
 > (keymap-names c1)
 (layout:keymap keys:global)
-> (map (lambda (entry) (eq? (car entry) layout-split:resize-keymap)) (table-entries repeat:keymaps))
+> (map (lambda (entry) (eq? (car entry) layout-split:resize-keymap)) (table-entries keys:repeat-keymaps))
 (#t #f)
 > (press! c1 "C-x" "{" "{")
 > (list (weights) (keymap-names c1))
@@ -77,7 +77,32 @@
 ! layout-split:enlarge: the selected view is in no split
 > (keymap-names c1)
 (layout-split:resize-keymap layout:keymap keys:global)
+; The hint follows the command's error, which keeps its face and alone
+; is logged.
+> (import (echo-area))
+> (list (echo-area:current-message) (echo-area:current-face))
+("layout-split:enlarge: the selected view is in no split [Repeat with }, {, C-c n]" error)
+> (let ([log (document:text (buffers:document (buffers:find "*Messages*")))])
+    (substring log (- (string-length log) 55) (string-length log)))
+"layout-split:enlarge: the selected view is in no split\n"
 > (press! c1 "}")
 ! layout-split:enlarge: the selected view is in no split
 > (keymap-names c1)
 (layout-split:resize-keymap layout:keymap keys:global)
+> (echo-area:current-message)
+"layout-split:enlarge: the selected view is in no split [Repeat with }, {, C-c n]"
+; A click, which clears no message, ends the repetition, and leaves the
+; message the hint followed, in its face.
+> (commands:define-command (stay) "Does nothing." (void))
+> (keys:bind! keys:global "<mouse-1>" stay)
+> (press! c1 (list "<mouse-1>" (vector (views:id (layout:selected-view)) 0)))
+> (list (echo-area:current-message) (echo-area:current-face) (keymap-names c1))
+("layout-split:enlarge: the selected view is in no split" error (layout:keymap keys:global))
+; Once the repetition has ended, a key bound to the same command
+; elsewhere shows no hint.
+> (press! c1 "C-g")
+> (keys:bind! keys:global "}" layout-split:enlarge)
+> (press! c1 "}")
+! layout-split:enlarge: the selected view is in no split
+> (list (echo-area:current-message) (keymap-names c1))
+("layout-split:enlarge: the selected view is in no split" (layout:keymap keys:global))

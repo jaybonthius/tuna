@@ -3,6 +3,9 @@
 
 (define-table global "The global keymap, searched after every other.")
 
+(define-table repeat-keymaps
+  "Repeating keymaps, as keys: with the repeat plugin loaded, after a command run by two or more keys, the first that binds the last of them to that command stays while each next key is found in it.")
+
 (define-hook find-keymaps
   "Called with a client and a mouse key's position or #f; each entry returns a list of the client's keymaps, innermost first.")
 

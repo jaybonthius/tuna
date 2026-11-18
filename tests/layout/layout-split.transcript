@@ -38,6 +38,14 @@
 > (press! c1 '("x" "control") '("}"))
 > (tree)
 (layout:level () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 7/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 2/5))) #(views:view ((view . 4) (buffer . "notes") (weight . 9/10)))) #(views:view ((view . 3) (buffer . "notes")))))
+; The resize keys are a repeating keymap, but without the repeat plugin
+; } after C-x } is only another key.
+> (list (member '(repeat) (loaded-modules)) (table-ref keys:repeat-keymaps layout-split:resize-keymap #f))
+(#f #t)
+> (press! c1 '("}"))
+! } is undefined
+> (tree)
+(layout:level () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 7/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 2/5))) #(views:view ((view . 4) (buffer . "notes") (weight . 9/10)))) #(views:view ((view . 3) (buffer . "notes")))))
 > (commands:run layout-split:enlarge 3)
 > (tree)
 (layout:level () (layout-split:container ((direction . column)) (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*") (weight . 13/10))) #(views:view ((view . 5) (buffer . "notes") (weight . 1/10))) #(views:view ((view . 4) (buffer . "notes") (weight . 3/5)))) #(views:view ((view . 3) (buffer . "notes")))))

@@ -126,7 +126,9 @@
 
   ;; A raise or a quit while the queue shows puts back the reports not
   ;; yet shown. The one showing is dropped, so a report whose showing
-  ;; raises is not shown again without end.
+  ;; raises is not shown again without end. Reports are logged by the
+  ;; setting, not by a binding where they were raised or where they show,
+  ;; as Emacs logs a command's error once the command's bindings unwind.
   (define (flush-reports!)
     (unless (null? (unbox reports))
       (let ([left '()])
@@ -139,8 +141,9 @@
                 (unless (null? left)
                   (let ([entry (car left)])
                     (set! left (cdr left))
-                    (parameterize ([face (cdr entry)])
-                      (message! "~a" (car entry)))
+                    (with-options ([log-max (option-setting log-max)])
+                      (parameterize ([face (cdr entry)])
+                        (message! "~a" (car entry))))
                     (loop)))))
             (lambda ()
               (with-interrupts-disabled
@@ -236,6 +239,11 @@
 
 (define (%keep-echo-area b) (not (eq? b echo-buffer)))
 
+;; Commands report before after-command, so a command's reports show as
+;; it ends, ahead of every other entry, and an entry that reads the
+;; message, as repeat's does, finds them shown.
+(define (%show-command-reports command) (flush-reports!))
+
 (messages-buffer)
 (layout:display-buffer echo-buffer (layout-sides:display-at-side (layout:direction down) 90 'content '((locked . #t))))
 (keys:bind! keymap "<mouse-1>" show-messages)
@@ -243,6 +251,7 @@
 (keys:bind! keys:global "C-h e" show-messages)
 (table-set! web:stylesheets 'echo-area "echo-area/echo-area.css")
 (add-hook! buffers:kill-queries %keep-echo-area)
+(add-hook! commands:after-command %show-command-reports -100)
 (advice-add! report %queue-report)
 (advice-add! keys:keyboard-quit %say-quit)
 (advice-add! keys:press! %clear-on-key)

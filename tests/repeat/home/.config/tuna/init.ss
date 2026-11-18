@@ -1,4 +1,5 @@
 (import (tuna) (tuna plugins) (document) (web) (keys) (buffers) (views) (commands))
+(use-plugin repeat)
 (use-plugin layout-split)
 (use-plugin layout)
 
@@ -16,8 +17,9 @@
           (lambda () (keys:press! client key)))))
     keys))
 
+;; Repeat's hint brings the echo area, a split below the user's level.
 (define (weights)
-  (let ([split (cadr (cdr (car (document:datums (buffers:document layout:buffer)))))])
+  (let ([split (caddr (caddr (caddr (car (document:datums (buffers:document layout:buffer))))))])
     (map (lambda (part)
            (let ([w (assq 'weight (vector-ref part 1))]) (if w (cdr w) 1)))
          (cddr split))))
