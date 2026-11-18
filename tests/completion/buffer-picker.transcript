@@ -42,3 +42,21 @@
 > (press! "RET")
 > (result t)
 #<buffer other>
+; A view left showing no buffer, once every buffer that is not internal
+; is killed, still previews in C-x b and quits cleanly.
+> (remp buffers:kill! (remp (lambda (b) (buffers:internal-name? (buffers:name b))) (buffers:all)))
+()
+> (views:buffer (view))
+#f
+> (define back (buffers:make "back" "b\n"))
+> (define t (start! (lambda () (press! "C-x" "b"))))
+> (wait-matches (session))
+> (press! "C-g")
+! &quit
+> (result t)
+> (define t (start! (lambda () (press! "C-x" "b"))))
+> (wait-matches (session))
+> (press! "RET")
+> (result t)
+> (views:buffer (view))
+#<buffer back>

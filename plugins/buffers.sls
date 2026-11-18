@@ -1206,6 +1206,11 @@
   (check-buffer 'buffers:name buffer)
   (buffer-name buffer))
 
+(define (internal-name? name)
+  (unless (string? name)
+    (assertion-violation 'buffers:internal-name? "not a string" name))
+  (and (fx> (string-length name) 0) (char=? (string-ref name 0) #\space)))
+
 (define (rename! buffer name)
   (check-change 'buffers:rename! buffer)
   (rename-buffer! 'buffers:rename! buffer name))

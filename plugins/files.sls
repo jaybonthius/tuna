@@ -138,13 +138,9 @@
         [(char=? (car chars) #\/) (loop (cdr chars) '() (close))]
         [else (loop (cdr chars) (cons (car chars) part) parts)])))
 
-  ;; Undo and the readers of buffer names take a name that starts with a
-  ;; space for an internal buffer's, so a file's buffer must not have one.
   (define (name-at path k)
     (let ([base (let ([last (path-last path)])
-                  (if (and (fx> (string-length last) 0) (char=? (string-ref last 0) #\space))
-                      (string-append "|" last)
-                      last))])
+                  (if (buffers:internal-name? last) (string-append "|" last) last))])
       (if (fx= k 0)
           base
           (let* ([folder (path-parent path)] [parts (folder-names folder)] [n (length parts)])

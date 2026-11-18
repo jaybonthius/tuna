@@ -747,7 +747,7 @@
           (and (pair? atoms) (car atoms)))))
 
   (define (first-buffer)
-    (find (lambda (b) (not (member (buffers:name b) '(" *layout*" " *popups*")))) (buffers:all)))
+    (find (lambda (b) (not (buffers:internal-name? (buffers:name b)))) (buffers:all)))
 
   (define (default-datum)
     (let* ([b (or (first-buffer) (buffers:make "*scratch*" ""))] [v (views:make b)])

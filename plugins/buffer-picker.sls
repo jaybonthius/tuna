@@ -3,10 +3,6 @@
 
 (define-saved buffer-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(define (%hidden? b)
-  (let ([name (buffers:name b)])
-    (and (fx> (string-length name) 0) (char=? (string-ref name 0) #\space))))
-
 (define (%current-buffer)
   (let ([v (views:current)]) (and v (views:buffer v))))
 
@@ -20,7 +16,7 @@
         [before
          (let ([shown (car before)] [point (cdr before)])
            (set! before #f)
-           (when (and (buffers:live? shown) (not (eq? (views:buffer view) shown)))
+           (when (and shown (buffers:live? shown) (not (eq? (views:buffer view) shown)))
              (views:set-buffer! view shown)
              (views:set-point! view point)))]))))
 
@@ -28,7 +24,7 @@
   (unless (or (not view) (views:view? view))
     (assertion-violation 'buffer-picker:buffers "neither a view nor #f" view))
   (let* ([current (%current-buffer)]
-         [shown (remp %hidden? (buffers:all))]
+         [shown (remp (lambda (b) (buffers:internal-name? (buffers:name b))) (buffers:all))]
          [ordered (if (memq current shown) (append (remq current shown) (list current)) shown)])
     (completion:source
       (candidates (list->vector (map (lambda (b) (cons (buffers:name b) b)) ordered)))

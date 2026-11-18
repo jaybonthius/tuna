@@ -415,10 +415,6 @@
 
   (define quieted (make-weak-eq-hashtable))
 
-  (define (space-name? b)
-    (let ([name (buffers:name b)])
-      (and (fx> (string-length name) 0) (char=? (string-ref name 0) #\space))))
-
   ;; As in Emacs, a buffer whose name starts with a space keeps no history
   ;; unless its plugin turns it back on. The value is set as this module's
   ;; own local value: a plugin that sets the option locally imports this
@@ -432,7 +428,7 @@
         (let ([scope (buffers:with-buffer b (current-scope))])
           (cond
             [(eq? quiet-scope scope) (void)]
-            [(or (not (eq? quiet-scope 'unseen)) (space-name? b))
+            [(or (not (eq? quiet-scope 'unseen)) (buffers:internal-name? (buffers:name b)))
              (eq-hashtable-set! quieted b scope)
              (as-module (this-module)
                (buffers:with-buffer b (set-option-local! limit 0)))]

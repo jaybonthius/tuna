@@ -2196,14 +2196,18 @@
             (hashtable-values (view-record-devices v))))
         vs)))
 
+  (define (replacement-for killed)
+    (let ([candidates (filter (lambda (b)
+                                (not (or (eq? b killed) (buffers:internal-name? (buffers:name b)))))
+                              (reverse (buffers:all)))])
+      (or (find-first (lambda (b) (null? (views-showing b))) candidates)
+          (and (pair? candidates) (car candidates)))))
+
   (define (note-kill buffer)
     (for-each (lambda (v) (when (eq? (view-record-host v) buffer) (drop-view! v))) views)
     (for-each
       (lambda (v)
-        (let ([next (let loop ([bs (buffers:all)] [newest #f])
-                      (cond [(null? bs) newest]
-                            [(eq? (car bs) buffer) (loop (cdr bs) newest)]
-                            [else (loop (cdr bs) (car bs))]))])
+        (let ([next (replacement-for buffer)])
           (if next
               (show-buffer! v next)
               (begin (set-shown-buffer! v #f) (reset-view! v #f)))))

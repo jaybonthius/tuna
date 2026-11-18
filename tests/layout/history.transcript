@@ -192,13 +192,13 @@
 > (buffers:kill! gone)
 #t
 > (list (buffers:name (views:buffer g)) (views:point g))
-("*bottom*" 1)
+("one" 1)
 > (layout:select! g)
 > (back!)
 > (outline)
 (layout:level (layout-split:container "gone" "two"))
 > (list (buffers:name (views:buffer g)) (views:point g))
-("*bottom*" 1)
+("one" 1)
 ; A step the layout refuses changes nothing, and keeps its state to go
 ; back to: here a state with tabs, after layout-tabs is unloaded.
 > (define d1 (views:make (named "one")))

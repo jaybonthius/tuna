@@ -24,6 +24,7 @@ cp tests/layout/home/.config/tuna/lib/web.sls "$home/.config/tuna/lib/"
 cat > "$home/.config/tuna/init.ss" <<'END'
 (import (tuna) (tuna plugins) (document) (buffers))
 (define notes (if (getenv "NO_BUFFERS") #f (buffers:make "notes" "one\ntwo\nthree\n")))
+(when (getenv "INTERNAL_BUFFER") (buffers:make " *internal*" "x\n"))
 (use-plugin layout-split)
 (define (tree) (car (document:datums (buffers:document layout:buffer))))
 (import (console))
@@ -83,6 +84,12 @@ output=$(NO_BUFFERS=1 run "(tree)
 (map buffers:name (buffers:all))")
 expect "no buffer" "$output" '(layout:level () #(views:view ((view . 1) (buffer . "*scratch*"))))
 ("*scratch*" " *layout*" " *popups*")'
+
+rm -rf "$home/.local"
+output=$(NO_BUFFERS=1 INTERNAL_BUFFER=1 run "(tree)
+(map buffers:name (buffers:all))")
+expect "only an internal buffer" "$output" '(layout:level () #(views:view ((view . 1) (buffer . "*scratch*"))))
+(" *internal*" "*scratch*" " *layout*" " *popups*")'
 
 echo "$0: $failures failures"
 [ "$failures" -eq 0 ]
