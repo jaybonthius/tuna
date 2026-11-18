@@ -158,9 +158,7 @@
 ! &quit
 > (result t)
 (raised #<condition &quit>)
-; A quit key added to keys:quit-keys and bound to keyboard-quit aborts.
-> (set-option! keys:quit-keys '("C-g" "ESC"))
-> (keys:bind! keys:global "ESC" keys:keyboard-quit)
+; ESC, a quit key that runs keyboard-quit by default, aborts too.
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
 > (press! "ESC")
 ! &quit

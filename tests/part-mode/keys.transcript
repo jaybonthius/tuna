@@ -32,8 +32,11 @@
 > (press! desktop '("/" "control"))
 > (list (layout:part-mode?) (shape (main)) (text notes))
 (#f (3 ((4 6) 5)) "one\n")
-; C-g leaves the mode.
+; C-g and ESC leave the mode.
 > (press! desktop '("x" "control") '("w") '("w") '("g" "control"))
+> (layout:part-mode?)
+#f
+> (press! desktop '("x" "control") '("w") '("w") '("Escape"))
 > (layout:part-mode?)
 #f
 ; So does a click, which reaches keys without the layout's key handler.

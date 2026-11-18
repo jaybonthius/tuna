@@ -16,9 +16,10 @@
     (transient:staying-command "i" "Inner, above" show-inner)
     (transient:command "o" "Inner, alone" show-inner))
 > (transient:add! inner #f (transient:command "w" "Where" where))
-; A keymap at depth 50, as a mode's, binding C-g and w.
+; A keymap at depth 50, as a mode's, binding C-g, ESC and w.
 > (define-table mode-keys "A mode's keys.")
 > (keys:bind! mode-keys "C-g" note)
+> (keys:bind! mode-keys "ESC" note)
 > (keys:bind! mode-keys "w" note)
 > (add-hook! keys:find-keymaps (lambda (client posn) (if posn '() (list mode-keys))) 50)
 ; While a menu is open, its keymap and transient:keymap come first, for
@@ -43,13 +44,19 @@
 4
 > (and (search (html->string (layout:screen other-client)) "transient-menu" 0) #t)
 #t
-; C-g closes the top menu, over a keymap that binds C-g.
+; C-g and ESC close the top menu, over a keymap that binds them.
 > (press! "C-g")
 > (menu)
 ()
 > (press! "C-g")
 > (car log)
 none
+> (press! "C-c" "t" "ESC")
+> (list (menu) (length log))
+(() 5)
+> (press! "ESC")
+> (list (length log) (car log))
+(6 none)
 ; A staying command that shows a menu shows it above, so C-g comes back;
 ; a command entry that shows one shows it alone.
 > (press! "C-c" "t" "i")

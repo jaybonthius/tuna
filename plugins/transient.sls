@@ -617,6 +617,7 @@
   (buffers:kill! %buffer))
 
 (keys:bind! keymap "C-g" quit)
+(keys:bind! keymap "ESC" quit)
 (keys:bind! keymap "<printing-char>" press)
 (keys:remap! keymap keys:keyboard-quit quit)
 (keys:bind! %root-keys "<down-mouse-1>" keys:ignore)

@@ -154,7 +154,10 @@ files:find-file
 > (keys:unbind! a "<printing-char>")
 > (name-of (keys:lookup frame "x"))
 editing:self-insert
-; ESC then a key is that key with M-, when nothing binds ESC and the key.
+; ESC then a key is that key with M-, when ESC is not a quit key, is
+; bound to no command, and nothing binds ESC and the key.
+> (set-option! keys:quit-keys '("C-g"))
+> (keys:unbind! keys:global "ESC")
 > (keys:bind! keys:global "M-x" layout:other-view)
 > (keys:bind! keys:global "C-M-f" files:find-file)
 > (keys:bind! keys:global "M-g g" editing:next-line)

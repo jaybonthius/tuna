@@ -1,3 +1,7 @@
+; ESC is the Meta prefix here, as for a user who takes it out of the quit
+; keys and unbinds it.
+> (set-option! keys:quit-keys '("C-g"))
+> (keys:unbind! keys:global "ESC")
 ; Each frame has its own pending keys.
 > (define one (layout:current-frame))
 > (define two (layout:other-frame))

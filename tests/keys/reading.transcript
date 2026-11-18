@@ -34,12 +34,16 @@
 > (settle)
 > (list (take-got!) (editing:take!) (files:take!))
 ((("<f5>" #f "C-c k")) () ())
-; A read returns every key, quit keys included, and C-g quits nothing.
+; A read returns every key, quit keys included, and C-g and ESC quit
+; nothing.
 > (start-in one "C-c" "k")
 > (press-all! one "C-g")
 > (settle)
+> (start-in one "C-c" "k")
+> (press-all! one "ESC")
+> (settle)
 > (take-got!)
-(("C-g" #f "C-c k"))
+(("C-g" #f "C-c k") ("ESC" #f "C-c k"))
 ; A mouse key is read as its event. A press or a move never ends a read,
 ; even when bound: the read goes on to the click or drag.
 > (keys:bind! keys:global "<down-mouse-1>" keys:ignore)
@@ -95,9 +99,17 @@
 > (list (take-got!) (files:take!) (keys:pending one))
 (("C-x C-f") () #f)
 > (map (lambda (keys) (apply read-sequence-of keys))
-    '(("ESC" "x") ("C-F") ("C-g") ("C-x" "C-g") ("C-c" "z") (("<mouse-1>" #(3 7)))
+    '(("ESC") ("C-F") ("C-g") ("C-x" "C-g") ("C-c" "z") (("<mouse-1>" #(3 7)))
       (("<down-mouse-1>" #(3 7)) ("<drag-mouse-1>" #(3 7) #(3 9))) ("C-x" ("<mouse-1>" #(3 7)))))
-("ESC x" "C-F" "C-g" "C-x C-g" "C-c z" ("<mouse-1>" #(3 7)) ("<drag-mouse-1>" #(3 7) #(3 9)) "C-x <mouse-1>")
+("ESC" "C-F" "C-g" "C-x C-g" "C-c z" ("<mouse-1>" #(3 7)) ("<drag-mouse-1>" #(3 7) #(3 9)) "C-x <mouse-1>")
+; ESC as the Meta prefix, for a user who takes it out of the quit keys
+; and unbinds it, waits for the next key and is returned as typed.
+> (set-option! keys:quit-keys '("C-g"))
+> (keys:unbind! keys:global "ESC")
+> (read-sequence-of "ESC" "x")
+"ESC x"
+> (set-option! keys:quit-keys '("C-g" "ESC"))
+> (keys:bind! keys:global "ESC" keys:keyboard-quit)
 ; Keys typed while a command waited before reading are an unfinished
 ; sequence: a sequence read continues them, and a key read drops them.
 > (define go #f)
@@ -167,14 +179,14 @@
 > (web:connect! c1)
 > (web:connect! c2)
 > (calls)
-((1 "keys-settings" (("quitKeys" . #("C-g")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #f))) (2 "keys-settings" (("quitKeys" . #("C-g")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #f))))
+((1 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #f))) (2 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #f))))
 > (start-in c1 "C-c" "k")
 > (calls)
 ((1 "keys-settings" (("quitKeys" . #()) ("leftOptionMeta" . #t) ("rightOptionMeta" . #f))))
 > (press-all! c1 "C-g")
 > (settle)
 > (list (take-got!) (calls))
-((("C-g" #f "C-c k")) ((1 "keys-settings" (("quitKeys" . #("C-g")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #f)))))
+((("C-g" #f "C-c k")) ((1 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #f)))))
 ; When its client is removed, a read raises &quit in its command, also
 ; when the key it took has not yet reached the command.
 > (start-in c1 "C-c" "k")

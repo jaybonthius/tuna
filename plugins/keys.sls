@@ -709,7 +709,7 @@
 
 (import %internals)
 
-(define-option quit-keys '("C-g") quit-keys?
+(define-option quit-keys '("C-g" "ESC") quit-keys?
   "The keys that quit as they arrive, stopping the running command before the keys queued ahead of them run.")
 
 (define (bind! keymap keys binding)
@@ -977,6 +977,7 @@
         (push-universal-arguments! s)))))
 
 (bind! global "C-g" keyboard-quit)
+(bind! global "ESC" keyboard-quit)
 (bind! global "C-u" universal-argument)
 (bind! global "M--" negative-argument)
 (for-each

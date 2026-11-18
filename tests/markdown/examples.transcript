@@ -20,7 +20,7 @@
 > (show! b)
 > (views:set-point! (view) 9)
 > (web:take-page-calls!)
-((1 "keys-settings" (("quitKeys" . #("C-g")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #t))))
+((1 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #t))))
 > (press! "C-c" "C-o")
 > (web:take-page-calls!)
 ((1 "browse-url" "https://tuna.example/guide"))

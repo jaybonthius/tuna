@@ -65,6 +65,10 @@
     (set! reading #f)
     (list (> reads 100) bad))
 (#t ())
+; ESC is the Meta prefix from here, as for a user who takes it out of the
+; quit keys and unbinds it.
+> (set-option! keys:quit-keys '("C-g"))
+> (keys:unbind! keys:global "ESC")
 ; A session is whole when its pending keys are a prefix or end in an ESC
 ; waiting to make the next key Meta, which keys:lookup gives #f for. C-g
 ; after pending keys is undefined, which ends them.

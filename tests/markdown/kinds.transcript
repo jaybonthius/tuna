@@ -67,7 +67,7 @@
 ; RET and a click on a link open its address in the browser that asked;
 ; a press on it leaves point where it is.
 > (web:take-page-calls!)
-((1 "keys-settings" (("quitKeys" . #("C-g")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #t))))
+((1 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #t))))
 > (views:set-point! (view) 14)
 > (press! "RET")
 > (web:take-page-calls!)
