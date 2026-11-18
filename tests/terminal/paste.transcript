@@ -1,0 +1,40 @@
+; The browser's paste runs the command editing:paste is remapped to,
+; which in a terminal sends the text as libghostty encodes a paste:
+; with line breaks as carriage returns, or bracketed when the program
+; asked (mode 2004).
+> (bytes-read (list (lambda () (paste! "ab\ncd"))) 5)
+"61 62 0d 63 64"
+> (bytes-read (list (lambda () (paste! "ab\ncd"))) 17 "printf '\\033[?2004h'; ")
+"1b 5b 32 30 30 7e 61 62 0a 63 64 1b 5b 32 30 31 7e"
+; C-y and C-c C-y send the kill ring's current entry the same way.
+> (kill-ring:push! (list "k1"))
+> (bytes-read '("C-y" "C-c" "C-y") 4)
+"6b 31 6b 31"
+> (define t (shell!))
+> (in-client (lambda () (layout:switch-to-buffer t)))
+> (eq? (in-client (lambda () (keys:command-remapping client editing:paste))) terminal:paste)
+#t
+> (eq? (in-client (lambda () (keys:command-remapping client editing:yank))) terminal:yank)
+#t
+> (in-client (lambda () (keys:command-remapping client editing:kill-line)))
+#f
+; A program's copy (OSC 52) goes on the kill ring and to the clipboard of
+; the device whose input reached the terminal last.
+> (press! "SPC" "DEL")
+> (web:take-page-calls!)
+((1 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #t))))
+> (terminal:send! t "printf '\\e]52;c;aGVsbG8=\\a'\r")
+> (wait-until (lambda () (equal? (kill-ring:text (kill-ring:current)) "hello")))
+> (kill-ring:text (kill-ring:current))
+"hello"
+> (web:take-page-calls!)
+((1 "copy" "hello"))
+> (set-option! terminal:program-copy? #f)
+> (terminal:send! t "printf '\\e]52;c;Ynll\\a'; echo sent\r")
+> (wait-for t "\nsent")
+> (list (kill-ring:text (kill-ring:current)) (web:take-page-calls!))
+("hello" ())
+; A program can never read the clipboard: its query gets an empty
+; answer.
+> (bytes-read (quote ()) 8 "printf '\\033]52;c;?\\007'; ")
+"1b 5d 35 32 3b 63 3b 07"

@@ -1,0 +1,64 @@
+; The page script reports each device's colours of the terminal. The
+; plugin answers the program's colour queries with the colours of the
+; device whose input reached the terminal last.
+> (colors! "#fafafa")
+> (define r (reader 16 "printf '\\033]11;?\\007'; "))
+> (read-by r)
+"1b 5d 31 31 3b 72 67 62 3a 66 61 66 61 2f 66 61"
+> (define r (reader 9 "printf '\\033[?996n'; "))
+> (read-by r)
+"1b 5b 3f 39 39 37 3b 32 6e"
+; A program that asked (mode 2031) is told when they change.
+> (define r (reader 9 "printf '\\033[?2031h'; "))
+> (colors! "#101010")
+> (read-by r)
+"1b 5b 3f 39 39 37 3b 31 6e"
+; A program that asked (mode 1004) is told when a view showing the
+; terminal becomes the selected view, or stops being it.
+> (define r (reader 6 "printf '\\033[?1004h'; "))
+> (in-client (lambda () (layout:switch-to-buffer r)))
+> (sleep-for 0.1)
+> (in-client (lambda () (layout:switch-to-buffer (buffers:make "notes" ""))))
+> (read-by r)
+"1b 5b 49 1b 5b 4f"
+; While a program takes the mouse, mouse keys on its screen are mouse
+; reports at the cell clicked; with Shift they are Tuna's.
+> (define r (reader 18 "printf '\\033[?1000h\\033[?1006h'; "))
+> (in-client (lambda () (layout:switch-to-buffer r)))
+; A row's line ends at its last cell with text, so a click names a cell
+; with text.
+> (define (mouse! key position) (in-client (lambda () (keys:press! client (list key (vector (views:id (view)) position))))))
+> (mouse! "<down-mouse-1>" 6)
+> (mouse! "<mouse-1>" 6)
+> (read-by r)
+"1b 5b 3c 30 3b 33 3b 31 4d 1b 5b 3c 30 3b 33 3b 31 6d"
+> (mouse! "S-<down-mouse-1>" 7)
+> (mouse! "S-<mouse-1>" 7)
+> (views:point (view))
+7
+; What programs report runs the hooks, with plain data, after the
+; output that carried it is applied.
+> (define reports '())
+> (define (note! . x) (set! reports (cons x reports)))
+> (add-hook! terminal:bell (lambda (t) (note! 'bell)))
+> (add-hook! terminal:notification (lambda (t title body) (note! 'notification title body)))
+> (add-hook! terminal:progress (lambda (t state percent) (note! 'progress state percent)))
+> (add-hook! terminal:program-status (lambda (t report) (note! 'status report)))
+> (add-hook! terminal:screen-changed (lambda (t) (note! 'screen-changed (buffers:name t))))
+> (define t (shell!))
+> (set! reports '())
+> (terminal:send! t "printf '\\a\\e]9;Done\\a\\e]777;notify;Build;It passed\\a\\e]9;4;1;40\\a\\e]7501;state=blocked:kind=permission:app=claude\\a'\r")
+> (wait-until (lambda () (assq 'status reports)))
+> (sleep-for 0.2)
+> (reverse reports)
+((screen-changed "*terminal*") (bell) (notification "" "Done") (notification "Build" "It passed") (progress set 40) (status ((state . blocked) (kind . permission) (app . "claude"))) (screen-changed "*terminal*"))
+; Killing a terminal whose shell runs a job asks first, through ask.
+> (terminal:send! t "sleep 30\r")
+> (sleep-for 0.3)
+> (set-option! ask:y-or-n-reader (lambda (question) (display question) (newline) #f))
+> (buffers:kill! t)
+*terminal* runs a job; kill it and the job? 
+#f
+> (set-option! ask:y-or-n-reader (lambda (question) #t))
+> (buffers:kill! t)
+#t

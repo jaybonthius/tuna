@@ -1,0 +1,37 @@
+; The plugin writes the buffer and refuses the user's edits, in copy
+; mode as in any other.
+> (define t (shell!))
+> (in-client (lambda () (layout:switch-to-buffer t)))
+> (terminal:send! t "echo hello\r")
+> (wait-for t "\nhello\n$ ")
+> (define before (text t))
+> (press! "C-c" "C-t")
+> (in-client terminal:copy-mode?)
+#t
+> (views:set-point! (view) 2)
+> (press! "C-k")
+! buffers:replace!: the node refuses the edit with irritant terminal:%screen
+> (press! "C-d")
+! buffers:replace!: the node refuses the edit with irritant terminal:%screen
+> (in-client (lambda () (commands:run editing:kill-line)))
+! buffers:replace!: the node refuses the edit with irritant terminal:%screen
+> (equal? before (text t))
+#t
+; In copy mode the plugin writes nothing to the buffer; leaving it writes
+; the newest screen.
+> (terminal:send! t "echo during-copy\r")
+> (sleep-for 0.5)
+> (equal? before (text t))
+#t
+> (press! "q")
+> (wait-for t "during-copy\n$ ")
+> (screen-lines t)
+("$ echo hello" "hello" "$ echo during-copy" "during-copy" "$ ")
+; A printing key in copy mode leaves it and reaches the program.
+> (press! "C-c" "C-t")
+> (press! "a")
+> (list (in-client terminal:copy-mode?) (in-client terminal:semi-char-mode?))
+(#f #t)
+> (wait-for t "$ a")
+> (screen-lines t)
+("$ echo hello" "hello" "$ echo during-copy" "during-copy" "$ a")

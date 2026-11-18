@@ -30,3 +30,11 @@
   (commit "e9d08ede95e180b415a397abf1bcaf76f0c010b2")
   (library-directories ("src" . "build/obj/src"))
   (build "make" "build/obj/src/md4c/libchez-md4c.so"))
+;; Chez looks for the build/config.ss that (ghostty ffi) includes in the
+;; library's own folder, src/ghostty, and the library's make writes it at
+;; the root, so the build copies it there.
+(library chez-libghostty
+  (git "https://github.com/jaybonthius/chez-libghostty.git")
+  (commit "30770026216b9c5e1d896db83c6b2322b3880a32")
+  (library-directories ("src" . "build/obj/src"))
+  (build "sh" "-c" "make ghostty build/config.ss && mkdir -p src/ghostty/build && cp build/config.ss src/ghostty/build/config.ss"))

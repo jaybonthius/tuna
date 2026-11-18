@@ -179,6 +179,16 @@
 
 (define (options? v) (running:options? v))
 
+(define (options-directory options)
+  (unless (running:options? options)
+    (assertion-violation 'processes:options-directory "not processes:options" options))
+  (running:options-directory options))
+
+(define (options-environment options)
+  (unless (running:options? options)
+    (assertion-violation 'processes:options-environment "not processes:options" options))
+  (running:options-environment options))
+
 (define start
   (case-lambda
     [(program arguments on-output) (start-own program arguments on-output ignore-exit no-options)]

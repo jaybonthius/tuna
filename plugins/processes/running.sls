@@ -1,6 +1,6 @@
 (library (processes running)
   (export
-    make-options options? options-terminal
+    make-options options? options-directory options-environment options-terminal
     process? process-id process-pid process-command-line process-kind process-owner
     process-status process-terminal process-buffer process-buffer-set! process-input-ended?
     output-end error-output foreground-group on-main-thread?

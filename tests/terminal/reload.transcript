@@ -1,0 +1,81 @@
+; A reload of terminal keeps the shell running: the plugin keeps each
+; emulator's snapshot across it, and follows the output from the offset
+; it had applied.
+> (define t (shell!))
+> (define p (terminal:process t))
+> (terminal:send! t "x=kept; seq 1 30\r")
+> (wait-for t "\n30\n$ ")
+> (define before (text t))
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/terminal.sls"))
+> (list (eq? (buffers:find "*terminal*") t) (terminal:terminal? t) (eq? (terminal:process t) p) (equal? (text t) before))
+(#t #t #t #t)
+> (terminal:send! t "echo $x\r")
+> (wait-for t "\nkept\n$ ")
+> (list-tail (screen-lines t) 20)
+("30" "$ echo $x" "kept" "$ ")
+; While the plugin is off the program goes on; what it writes waits in
+; the process's log, and reaches the screen when the plugin is back.
+> (unload-module! '(terminal))
+> (processes:send! p "echo while-off\r")
+> (sleep-for 0.3)
+> (load-module! '(terminal))
+> (wait-for t "\nwhile-off\n$ ")
+> (list-tail (screen-lines t) 20)
+("kept" "$ echo while-off" "while-off" "$ ")
+; Each snapshot is also a file only the user can read, in a folder the
+; plugin names in its saved data.
+> (define folder (eval-in-module '(%folder) '(terminal)))
+> (string=? (substring folder 0 (string-length (string-append (getenv "HOME") "/.local/share/tuna/terminal/"))) (string-append (getenv "HOME") "/.local/share/tuna/terminal/"))
+#t
+> (define file (string-append folder "/" (processes:id p) ".screen"))
+> (list (file-exists? file) (number->string (bitwise-and (get-mode file) #o777) 8) (number->string (bitwise-and (get-mode folder) #o777) 8))
+(#t "600" "700")
+; A reload of buffers closes every buffer; the plugin makes the terminal
+; again from the snapshot, scrollback and all.
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/buffers.sls"))
+> (define t2 (buffers:find "*terminal*"))
+> (list (eq? t t2) (terminal:terminal? t2) (eq? (terminal:process t2) p) (equal? (lines (text t2)) (lines (text t))))
+(#f #t #t #t)
+> (terminal:send! t2 "echo again\r")
+> (wait-for t2 "\nagain\n$ ")
+; When the output since the snapshot is no longer in the log, the
+; emulator is reset, a line says output was lost, and the program is
+; resized so that it redraws. A log of 100 bytes no longer holds the
+; start of the output, from which this snapshot says to go on.
+> (set-option! processes:log-size 100)
+> (terminal:send! t2 "seq 1 100\r")
+> (wait-for t2 "\n100\n$ ")
+> (unload-module! '(terminal))
+> (import (prefix (terminal screens) screens:))
+> (let ([kept (screens:take-screen (processes:id p))]) (screens:keep-screen! (processes:id p) (car kept) 0))
+> (load-module! '(terminal))
+> (define t3 (buffers:find "*terminal*"))
+> (terminal:send! t3 "echo redrawn\r")
+> (wait-for t3 "\nredrawn\n$ ")
+> (filter (lambda (l) (member l '("[Output was lost here.]" "redrawn"))) (lines (text t3)))
+("[Output was lost here.]" "redrawn")
+> (remove-option! processes:log-size)
+; A query the program made while the plugin was off is answered when the
+; plugin is back.
+> (define q (start-for-client (list "sh" "-c" "stty raw -echo; echo ready; dd bs=1 count=1 >/dev/null 2>&1; printf '\\033[5n'; dd bs=1 count=4 2>/dev/null | od -An -tx1 | tr -s ' \\n' ' '; echo; echo end; read x")))
+> (define qp (terminal:process q))
+> (wait-for q "ready")
+> (unload-module! '(terminal))
+> (processes:send! qp "x")
+> (sleep-for 0.3)
+> (load-module! '(terminal))
+> (read-by q)
+"1b 5b 30 6e"
+; A reload while the program shows its alternate screen keeps one copy
+; of the scrollback: the plugin copies it again whole when the program
+; leaves that screen.
+> (define a (shell!))
+> (in-client (lambda () (layout:switch-to-buffer a)))
+> (terminal:send! a "seq 1 40; printf '\\e[?1049h\\e[HALT%sSCREEN' ''; read x; printf '\\e[?1049l'\r")
+> (wait-for a "ALTSCREEN")
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/terminal.sls"))
+> (terminal:send! a "\r")
+> (wait-until (lambda () (not (screen-has? a "ALTSCREEN"))))
+> (sleep-for 0.3)
+> (let ([ls (lines (text a))]) (list (length ls) (length (filter (lambda (l) (string=? l "40")) ls)) (car ls)))
+(42 1 "$ seq 1 40; printf '\\e[?1049h\\e[HALT%sSCREEN' ''; read x; printf '\\e[?1049l'")

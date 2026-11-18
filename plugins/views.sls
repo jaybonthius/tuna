@@ -21,7 +21,7 @@
   (check-main-thread check-view check-cursor check-node check-option check-position check-live-buffer shown-buffer
    current-view make-new-view! find-view views-showing bound-buffer show-buffer! drop-view! with-view-bound
    view-record? view-record-dropped? view-record-id view-record-cursors view-record-cursors-set!
-   view-record-folds-set! view-record-narrowing-set! view-record-shown-count top-position
+   view-record-folds-set! view-record-narrowing-set! view-record-shown-count top-position body-size-in
    cursor-record? cursor-record-view cursor-record-goal cursor-record-goal-set!
    spot-position point-of mark-of set-cursor-spots! move-point! add-cursor-at! primary-moved! mark-dirty!
    bounds-of live-folds add-fold! narrow-view! widen-view! stop-after stop-before
@@ -2023,6 +2023,14 @@
           (spot-position (place-spot own))
           (item-start-at v doc (spot-position (place-spot (view-record-place v)))))))
 
+  ;; A part of a cell that does not fit is no column or row.
+  (define (body-size-in v c)
+    (let* ([cs (hashtable-ref (view-record-clients v) c #f)] [f (and cs (client-view-facts cs))])
+      (if f
+          (values (fxmax 1 (flonum->fixnum (flfloor (fl/ (fixnum->flonum (facts-width f)) (facts-char-width f)))))
+                  (fxmax 1 (flonum->fixnum (flfloor (fl/ (fixnum->flonum (facts-height f)) (facts-line-height f))))))
+          (values #f #f))))
+
   ;; View atoms: the first atom drawn in a batch that names a view draws
   ;; it; a later one names a copy, kept by its order among them, so each
   ;; draw of the same layout finds the same views. An atom is known by its
@@ -2611,6 +2619,12 @@
        (assertion-violation 'views:top "not a client or #f" client))
      (let ([b (bound-buffer view)])
        (if b (top-position view (buffers:document b) client) 0))]))
+
+(define (body-size view client)
+  (check-view 'views:body-size view)
+  (unless (web:client? client)
+    (assertion-violation 'views:body-size "not a client" client))
+  (body-size-in view client))
 
 (define (scroll-to! view position alignment)
   (check-view 'views:scroll-to! view)

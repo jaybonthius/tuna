@@ -1,0 +1,23 @@
+; A change of scrollback-lines trims the scrollback of running terminals
+; at once, and libghostty's history at its next write.
+> (define t (shell!))
+> (define (history-rows) (eval-in-module '(ghostty:terminal-scrollback-rows (%terminal-emulator (car (%all)))) '(terminal)))
+> (terminal:send! t "seq 1 500\r")
+> (wait-for t "\n500\n$ ")
+> (list (length (lines (text t))) (history-rows))
+(502 478)
+> (set-option! terminal:scrollback-lines 100)
+> (list (length (lines (text t))) (car (lines (text t))))
+(124 "378")
+> (terminal:send! t "seq 501 700\r")
+> (wait-for t "\n700\n$ ")
+> (list (length (lines (text t))) (history-rows) (car (lines (text t))))
+(124 101 "578")
+; Rows that libghostty pruned before the plugin copied them leave a line
+; in the scrollback: here thousands of rows leave the screen in one
+; write, more than libghostty keeps.
+> (eval-in-module '(advice-add! %note! (lambda (note! t text) (putenv "TERMINAL_NOTE" text) (note! t text))) '(terminal))
+> (terminal:send! t "yes '' | head -n 6000; echo after\r")
+> (wait-for t "\nafter\n$ ")
+> (getenv "TERMINAL_NOTE")
+"[Output was lost here.]"

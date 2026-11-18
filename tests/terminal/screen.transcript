@@ -1,0 +1,104 @@
+; Colours 0 to 15 are faces; other colours are the program's, as the
+; plugin's own custom properties; attributes are words of data-terminal.
+; Each grapheme outside ASCII is drawn as wide as its cells.
+> (define t (shell!))
+> (in-client (lambda () (layout:switch-to-buffer t)))
+> (terminal:send! t "clear; printf '\\e[1;31mred\\e[0m \\e[38;2;1;2;3mrgb\\e[0m \\e[44;4mbg\\e[0m \\e[7minv\\e[0m 中文\\n'\r")
+> (wait-for t "中文\n")
+> (drawn-line t "red")
+"<span data-face=\"terminal.color-1\" data-terminal=\"bold\">red</span> <span data-terminal=\"fg\" style=\"--terminal-fg:#010203;\">rgb</span> <span data-terminal=\"bg-4 underline-single\">bg</span> <span data-terminal=\"fg-background bg-foreground\">inv</span> <span data-cells=\"2\">中</span><span data-cells=\"2\">文</span>"
+; With grapheme clustering (mode 2027) a flag's two regional indicators
+; are one grapheme of two cells, and the rows keep that width after the
+; program turns the mode off. Point rests at the cursor, after "ab".
+> (define (before-point n) (let ([p (views:point (view))]) (document:text (buffers:document t) (- p n) p)))
+> (terminal:send! t "clear; printf '\\e[?2027h🇺🇸ab'; read x; printf '\\e[?2027l'\r")
+> (wait-for t "🇺🇸ab")
+> (sleep-for 0.3)
+> (list (drawn-line t "🇺") (before-point 2))
+("<span data-cells=\"2\">🇺🇸</span>ab<span class=\"cursor primary\"></span>" "ab")
+> (terminal:send! t "\r")
+> (wait-for t "\n$ ")
+> (drawn-line t "🇺")
+"<span data-cells=\"2\">🇺🇸</span>ab"
+; The program's cursor is drawn at point, in the shape it asks for.
+> (terminal:send! t "printf '\\e[6 q'\r")
+> (sleep-for 0.3)
+> (let ([html (html->string (views:draw (view) client))]) (and (contains? html "data-cursor=\"bar\"") #t))
+#t
+; Links: OSC 8 hyperlinks, web addresses, and references to files that
+; exist, with a line and column.
+> (with-output-to-file (string-append (getenv "HOME") "/notes.txt") (lambda () (display "one\ntwo\nthree\n")))
+> (terminal:send! t (string-append "clear; cd " (getenv "HOME") "; printf '\\e]8;;https://example.org\\e\\\\link\\e]8;;\\e\\\\ https://tuna.example/x. notes.txt:2:3 missing.txt:1\\n'\r"))
+> (wait-for t "missing.txt:1\n")
+> (drawn-line t "link")
+"<span data-terminal-link=\"\">link</span> <span data-terminal-link=\"\">https://tuna.example/x</span>. <span data-terminal-link=\"\">notes.txt:2:3</span> missing.txt:1"
+> (web:take-page-calls!)
+((1 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #t))))
+> (press! "C-c" "C-p")
+> (in-client terminal:copy-mode?)
+#t
+> (press! "C-c" "C-p" "C-c" "C-p" "RET")
+> (web:take-page-calls!)
+((1 "browse-url" "https://example.org"))
+> (press! "C-c" "C-n" "RET")
+> (web:take-page-calls!)
+((1 "browse-url" "https://tuna.example/x"))
+> (press! "C-c" "C-n" "RET")
+> (list (buffers:name (views:buffer (view))) (views:point (view)))
+("notes.txt" 7)
+; A click on a link opens it, and so does one with Control.
+> (in-client (lambda () (layout:switch-to-buffer t)))
+> (press! "q")
+; The scrollback is empty, so the buffer's position of the screen's text
+; is 4 after its index in the document's text, past the nodes' tokens.
+> (define (position-of part) (let ([s (text t)] [n (string-length part)]) (let loop ([i 0]) (if (string=? (substring s i (+ i n)) part) (+ i 4) (loop (+ i 1))))))
+> (define (click! key position) (in-client (lambda () (keys:press! client (list key (vector (views:id (view)) position))))))
+> (click! "<down-mouse-1>" (+ (position-of "link ") 1))
+> (click! "<mouse-1>" (+ (position-of "link ") 1))
+> (web:take-page-calls!)
+((1 "browse-url" "https://example.org"))
+> (click! "C-<down-mouse-1>" (+ (position-of "https://tuna") 1))
+> (click! "C-<mouse-1>" (+ (position-of "https://tuna") 1))
+> (web:take-page-calls!)
+((1 "browse-url" "https://tuna.example/x"))
+; While the program takes the mouse, a click with Control still opens a
+; link.
+> (terminal:send! t "clear; printf '\\e[?1000h\\e]8;;https://example.org/m\\e\\\\mouse\\e]8;;\\e\\\\\\n'; read x; printf '\\e[?1000l'\r")
+> (wait-for t "mouse\n")
+> (sleep-for 0.2)
+> (click! "C-<down-mouse-1>" (+ (position-of "mouse\n") 1))
+> (click! "C-<mouse-1>" (+ (position-of "mouse\n") 1))
+> (web:take-page-calls!)
+((1 "browse-url" "https://example.org/m"))
+> (terminal:send! t "\r")
+> (wait-for t "\n$ ")
+; While the program holds synchronized output (mode 2026), the rows are
+; written when it lets go.
+> (terminal:send! t "clear; printf '\\e[?2026hheld'; read x; printf '\\e[?2026l'; echo\r")
+> (wait-until (lambda () (eval-in-module '(%terminal-held? (car (%all))) '(terminal))))
+> (screen-has? t "held")
+#f
+> (terminal:send! t "\r")
+> (wait-for t "held")
+; The alternate screen, as vim and htop show it, replaces the screen,
+; and the scrollback is hidden from every view until the program leaves
+; it.
+> (terminal:send! t "seq 1 30; printf '\\e[?1049h\\e[Halt'; read x; printf '\\e[?1049l'\r")
+> (wait-for t "alt\n")
+> (screen-lines t)
+("alt")
+> (let-values ([(start end) (views:bounds (view))]) (string-length (document:text (document:slice (buffers:document t) start end))))
+27
+> (terminal:send! t "\r")
+> (wait-until (lambda () (not (screen-has? t "alt"))))
+> (sleep-for 0.1)
+> (let-values ([(start end) (views:bounds (view))]) (list start (= end (document:length (buffers:document t)))))
+(0 #t)
+> (and (member "30" (lines (text t))) #t)
+#t
+; The program's clear (CSI 3J) empties the scrollback too.
+> (terminal:send! t "clear\r")
+> (wait-until (lambda () (not (member "30" (lines (text t))))))
+> (sleep-for 0.2)
+> (list-head (lines (text t)) 2)
+("$ " "")

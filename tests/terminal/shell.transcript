@@ -1,0 +1,70 @@
+; A shell runs a command. Bash starts with the plugin's integration,
+; which reports the folder (OSC 7) and marks prompts and commands (OSC
+; 133), without changes to its startup files.
+> (define marks '())
+> (add-hook! terminal:semantic-prompt
+    (lambda (t mark code command) (set! marks (cons (list mark code command) marks))))
+> (define t (shell!))
+> (terminal:send! t "cd /tmp && ls -d /tmp && false\r")
+> (wait-until (lambda () (equal? (terminal:directory t) "/tmp")))
+> (wait-for t "\n$ ")
+> (screen-lines t)
+("$ cd /tmp && ls -d /tmp && false" "/tmp" "$ ")
+> (terminal:directory t)
+"/tmp"
+> (reverse marks)
+((prompt #f #f) (prompt #f #f) (input #f #f) (command-start #f "cd /tmp && ls -d /tmp && false") (command-end 1 #f) (prompt #f #f) (prompt #f #f) (input #f #f))
+; A program sets its title (OSC 2).
+> (define titles '())
+> (add-hook! terminal:title-changed (lambda (t) (set! titles (cons (terminal:title t) titles))))
+> (terminal:send! t "printf '\\e]2;building\\a'\r")
+> (wait-until (lambda () (pair? titles)))
+> (list titles (terminal:title t))
+(("building") "building")
+; The shell's marks lead to each prompt's input.
+> (in-client (lambda () (layout:switch-to-buffer t)))
+> (define (point-line) (let ([doc (buffers:document t)]) (document:line doc (views:point (view)))))
+> (point-line)
+4
+> (press! "C-c" "M-p")
+> (list (point-line) (terminal:copy-mode?) (in-client terminal:copy-mode?))
+(3 #f #t)
+> (press! "C-c" "M-p")
+> (point-line)
+1
+> (press! "C-c" "M-n")
+> (point-line)
+3
+; Leaving copy mode brings point back to the program's cursor.
+> (press! "q")
+> (list (in-client terminal:copy-mode?) (in-client terminal:semi-char-mode?) (point-line))
+(#f #t 4)
+; A view whose point is at the program's cursor follows it as output
+; arrives; a view moved away stays, until a key sent brings it back.
+> (define (before-point n) (let ([p (views:point (view))]) (document:text (buffers:document t) (- p n) p)))
+> (define (at-cursor?) (string=? (before-point 2) "$ "))
+> (terminal:send! t "echo one\r")
+> (wait-for t "\none\n$ ")
+> (at-cursor?)
+#t
+> (views:set-point! (view) 5)
+> (terminal:send! t "echo two\r")
+> (wait-for t "\ntwo\n$ ")
+> (views:point (view))
+5
+> (press! "SPC")
+> (wait-for t "\n$  ")
+> (before-point 3)
+"$  "
+; A terminal keeps no undo history.
+> (buffers:with-buffer t (undo:limit))
+0
+; terminal:open shows the terminal selected last, or with a prefix
+; argument starts a new one.
+> (in-client (lambda () (layout:switch-to-buffer (buffers:make "notes" ""))))
+> (in-client (lambda () (commands:run terminal:open)))
+> (eq? (views:buffer (view)) t)
+#t
+> (in-client (lambda () (parameterize ([commands:prefix-argument '(4)]) (commands:run terminal:open))))
+> (buffers:name (views:buffer (view)))
+"*terminal*<2>"

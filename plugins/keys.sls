@@ -798,6 +798,13 @@
         [(table? v) v]
         [else (remapped keymaps v)]))))
 
+(define (command-remapping client command)
+  (check-main-thread 'keys:command-remapping)
+  (unless (commands:command? command)
+    (assertion-violation 'keys:command-remapping "not a command" command))
+  (let ([found (remapped (keymaps-of client #f) command)])
+    (and (not (eq? found command)) found)))
+
 (define active-bindings
   (case-lambda
     [(client) (active-bindings client #f)]

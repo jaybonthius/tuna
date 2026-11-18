@@ -46,6 +46,18 @@ function charWidth(view) {
   return canvas.measureText("0".repeat(10)).width / 10 || 8;
 }
 
+// The view's padding holds no text, so the size reported is its content
+// box, where rows wrap.
+function contentSize(view) {
+  const style = getComputedStyle(view);
+  const inline = parseFloat(style.paddingInlineStart) + parseFloat(style.paddingInlineEnd);
+  const block = parseFloat(style.paddingBlockStart) + parseFloat(style.paddingBlockEnd);
+  return {
+    width: Math.max(0, Math.floor(view.clientWidth - inline)),
+    height: Math.max(0, Math.floor(view.clientHeight - block)),
+  };
+}
+
 // An item taller than the view that crosses its bottom ends there with
 // its end.
 function placesInView(view, boxes, all, viewTop, viewBottom) {
@@ -148,6 +160,7 @@ function check(view, reason) {
             || (last !== undefined && last.top > m.viewBottom + 2 * want)));
   if (!due) return;
   const { start, end } = placesInView(view, m.boxes, m.all, m.viewTop, m.viewBottom);
+  const { width, height } = contentSize(view);
   const report = {
     type: "scroll",
     view: id,
@@ -165,8 +178,8 @@ function check(view, reason) {
     items: m.items,
     lineHeight: lineHeight(view),
     charWidth: charWidth(view),
-    width: view.clientWidth,
-    height: view.clientHeight,
+    width,
+    height,
     settled: resting || state.rested,
     hand: state.hand,
     runAtEnd: view.hasAttribute("data-run-at-end"),
