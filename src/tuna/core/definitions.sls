@@ -21,6 +21,7 @@
     batch-ended-changed?
     module-loaded
     module-failed
+    exit-anyway?
     module-definitions-started!
     unload-removed-definitions!
     unload-definitions!
@@ -447,4 +448,6 @@
 
   (define-changeable module-loaded module-loaded-cell (tuna) module-loaded (lambda (name) (void)) #f)
 
-  (define-changeable module-failed module-failed-cell (tuna) module-failed (lambda (name) (void)) #f))
+  (define-changeable module-failed module-failed-cell (tuna) module-failed (lambda (name) (void)) #f)
+
+  (define-changeable exit-anyway? exit-anyway?-cell (tuna) exit-anyway? (lambda (c) #t) #f))

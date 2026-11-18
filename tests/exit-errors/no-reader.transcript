@@ -1,0 +1,7 @@
+; A question that cannot be asked gets no answer, so Tuna exits.
+> (set-option! ask:y-or-n-reader (lambda (question) (error 'reader "cannot ask")))
+> (dynamic-wind void (lambda () (exit)) (lambda () (car '())))
+! car: () is not a pair
+! (exit-errors) reader: cannot ask
+configuration unloading
+> (display "never runs")

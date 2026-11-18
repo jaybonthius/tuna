@@ -1,0 +1,10 @@
+; A command whose after-thunk raises while exit leaves the command's task:
+; the raise is reported once, not by the command's handler, and Tuna
+; exits.
+> (import (commands))
+> (commands:define-command (leave) "Exits." (dynamic-wind void (lambda () (exit)) (lambda () (car '()))))
+> (commands:run leave)
+! car: () is not a pair
+configuration unloading
+keeper unloading
+> (display "never runs")

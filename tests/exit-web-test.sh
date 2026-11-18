@@ -71,60 +71,72 @@ cat > "$server/.config/tuna/init.ss" <<'END'
 END
 printf 'one\n' > "$dir/work/notes.txt"
 
-(cd "$dir/work" && HOME="$server" TUNA_LIBRARY="$dir/library" exec "$tuna" notes.txt \
-  < /dev/null > "$dir/server.out" 2>&1) &
-pid=$!
+key() {
+  printf "(http:send! p (quote ((\"type\" . \"key\") (\"key\" . \"%s\") (\"code\" . \"%s\") (\"modifiers\" . #(%s)))))\n" "$1" "$2" "$3"
+}
 
-# The page gives up on the server after about five seconds, and a fresh
-# Tuna compiles every plugin before it listens.
-tries=0
-until grep -q '^Tuna is at ' "$dir/server.out" 2>/dev/null; do
-  if ! kill -0 "$pid" 2>/dev/null || [ "$tries" -ge 3000 ]; then
-    echo "$0: FAIL: Tuna did not start; it printed:"
-    cat "$dir/server.out"
-    exit 1
-  fi
-  sleep 0.1
-  tries=$((tries + 1))
-done
-port=$(sed -n 's|^Tuna is at http://127\.0\.0\.1:\([0-9]*\)/$|\1|p' "$dir/server.out")
-cat > "$client/.config/tuna/init.ss" <<END
+# Each run sends its keys, then C-x C-c and y to the exit question, from a
+# page, and Tuna must exit with status 0, printing only its address. The
+# second run's cache is the first's, so it starts at once.
+run() {
+  name=$1
+  shift
+  (cd "$dir/work" && HOME="$server" TUNA_LIBRARY="$dir/library" exec "$tuna" notes.txt \
+    < /dev/null > "$dir/server.out" 2>&1) &
+  pid=$!
+
+  # The page gives up on the server after about five seconds, and a fresh
+  # Tuna compiles every plugin before it listens.
+  tries=0
+  until grep -q '^Tuna is at ' "$dir/server.out" 2>/dev/null; do
+    if ! kill -0 "$pid" 2>/dev/null || [ "$tries" -ge 3000 ]; then
+      echo "$0: FAIL: $name: Tuna did not start; it printed:"
+      cat "$dir/server.out"
+      exit 1
+    fi
+    sleep 0.1
+    tries=$((tries + 1))
+  done
+  port=$(sed -n 's|^Tuna is at http://127\.0\.0\.1:\([0-9]*\)/$|\1|p' "$dir/server.out")
+  cat > "$client/.config/tuna/init.ss" <<END
 (import (tuna) (tuna plugins) (http) (console))
 (http:use-port! (lambda () $port))
 END
 
-output=$(cd "$dir/work" && printf '%s\n' \
-  '(http:wait-for-server)' \
-  '(define p (http:page))' \
-  '(http:connect! p)' \
-  '(http:send! p (quote (("type" . "key") ("key" . "x") ("code" . "KeyX") ("modifiers" . #("control")))))' \
-  '(http:send! p (quote (("type" . "key") ("key" . "c") ("code" . "KeyC") ("modifiers" . #("control")))))' \
-  '(http:send! p (quote (("type" . "key") ("key" . "y") ("code" . "KeyY") ("modifiers" . #()))))' \
-  | HOME="$client" TUNA_LIBRARY="$dir/library" "$tuna" 2>&1)
-expected='204
-204
-204'
-if [ "$output" != "$expected" ]; then
-  echo "$0: FAIL: the page: expected $(printf '%s' "$expected" | tr '\n' '|'), got $(printf '%s' "$output" | tr '\n' '|')"
-  exit 1
-fi
+  output=$( (printf '%s\n' '(http:wait-for-server)' '(define p (http:page))' '(http:connect! p)'
+             for k in "$@"; do key $k; done
+             key x KeyX '"control"'
+             key c KeyC '"control"'
+             key y KeyY '') \
+    | (cd "$dir/work" && HOME="$client" TUNA_LIBRARY="$dir/library" "$tuna" 2>&1))
+  expected=$(for k in "$@" x c y; do echo 204; done)
+  if [ "$output" != "$expected" ]; then
+    echo "$0: FAIL: $name: the page: expected $(printf '%s' "$expected" | tr '\n' '|'), got $(printf '%s' "$output" | tr '\n' '|')"
+    exit 1
+  fi
 
-tries=0
-while kill -0 "$pid" 2>/dev/null && [ "$tries" -lt 100 ]; do
-  sleep 0.1
-  tries=$((tries + 1))
-done
-if kill -0 "$pid" 2>/dev/null; then
-  echo "$0: FAIL: Tuna was still running 10 seconds after C-x C-c; it printed:"
-  cat "$dir/server.out"
-  exit 1
-fi
-status=0
-wait "$pid" || status=$?
-pid=
-if [ "$status" -ne 0 ] || [ "$(cat "$dir/server.out")" != "Tuna is at http://127.0.0.1:$port/" ]; then
-  echo "$0: FAIL: expected status 0 and only the address printed, got status $status and:"
-  cat "$dir/server.out"
-  exit 1
-fi
+  tries=0
+  while kill -0 "$pid" 2>/dev/null && [ "$tries" -lt 100 ]; do
+    sleep 0.1
+    tries=$((tries + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    echo "$0: FAIL: $name: Tuna was still running 10 seconds after C-x C-c; it printed:"
+    cat "$dir/server.out"
+    exit 1
+  fi
+  status=0
+  wait "$pid" || status=$?
+  pid=
+  if [ "$status" -ne 0 ] || [ "$(cat "$dir/server.out")" != "Tuna is at http://127.0.0.1:$port/" ]; then
+    echo "$0: FAIL: $name: expected status 0 and only the address printed, got status $status and:"
+    cat "$dir/server.out"
+    exit 1
+  fi
+}
+
+run 'C-x C-c'
+# The M-x prompt's task is paused inside web's handling of the key, so it
+# must end while web is still loaded.
+run 'C-x C-c with M-x open' 'x KeyX "alt"'
 echo "$0: ok"

@@ -1,0 +1,14 @@
+; n, or C-g, keeps Tuna running, and the exit that asked is dropped: the
+; exit at the end of input has status 0.
+> (dynamic-wind void (lambda () (exit 3)) (lambda () (car '())))
+! car: () is not a pair
+> (press! "n")
+> (prompts)
+((minibuffer:%prompts ()))
+> (dynamic-wind void (lambda () (exit 4)) (lambda () (car '())))
+! car: () is not a pair
+> (press! "C-g")
+! (exit-errors) &quit
+> (display "still running")
+still running
+configuration unloading

@@ -1,0 +1,16 @@
+; A raise from an after-thunk run as exit leaves its task is taken where
+; it happens, so a handler in the task, such as a command's, neither sees
+; it nor stops the leave: the rest of the after-thunks run, and Tuna
+; exits.
+> (import (user))
+> (guard (c [#t (display "handler ran") (newline)])
+    (dynamic-wind
+      void
+      (lambda () (dynamic-wind void (lambda () (exit)) (lambda () (car '()))))
+      (lambda () (user:say-leaving))))
+! car: () is not a pair
+leaving the task
+configuration unloading
+user unloading
+keeper unloading
+> (display "never runs")

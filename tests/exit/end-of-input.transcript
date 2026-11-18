@@ -1,15 +1,8 @@
 ; At the end of its input Tuna exits: the REPL's and the configuration's
-; changes are taken back, every module is unloaded, the newest first, and
-; what that queued runs, here a paused task resumed with &quit raised.
+; changes are taken back and every module is unloaded, the newest first.
 > (import (user))
 > (on-unload (lambda () (display "repl unloading") (newline)))
-> (define paused
-    (spawn-task
-      (lambda ()
-        (guard (c [(quit-condition? c) (display "paused task quit") (newline)])
-          (suspend (lambda (resume) (void)))))))
 repl unloading
 configuration unloading
 user unloading
 keeper unloading
-paused task quit

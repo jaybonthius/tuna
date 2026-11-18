@@ -21,5 +21,6 @@
     tick
     batch-ended
     module-loaded
-    module-failed)
+    module-failed
+    exit-anyway?)
   (import (tuna core changes) (tuna core definitions) (tuna core modules) (tuna core main-thread)))

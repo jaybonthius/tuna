@@ -95,6 +95,7 @@
             (set! exit-arguments arguments)
             (close-queue!)
             (with-quits-allowed #f
+              (leave-paused-tasks!)
               (for-each (lambda (owner) (take-back-changes! owner '())) '((repl) (init)))
               (unload-all-modules!)
               (run-queued!)

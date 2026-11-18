@@ -1,0 +1,7 @@
+; An after-thunk that raises while exit leaves its task is reported, and
+; Tuna still exits; what the console reads after it never runs.
+> (dynamic-wind void (lambda () (exit)) (lambda () (car '())))
+! car: () is not a pair
+configuration unloading
+keeper unloading
+> (display "never runs")

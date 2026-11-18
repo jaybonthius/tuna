@@ -5,7 +5,7 @@
           (prefix (only (chezscheme) fork-thread dynamic-wind mutex-acquire mutex-release) chez:)
           (only (tuna core changes) current-owner-record current-instance current-thread-state make-thread-state
                 this-thread-state on-main-thread? thread-state-quits-allowed thread-state-quits-allowed-set!)
-          (only (tuna core main-thread) exit))
+          (only (tuna core main-thread) exit call-after-thunk))
 
   (define-syntax define-withheld
     (syntax-rules ()
@@ -40,7 +40,10 @@
           (thread-state-quits-allowed-set! s other)
           (set! other v)))
       (chez:dynamic-wind #t swap!
-        (lambda () (chez:dynamic-wind in (lambda () (chez:dynamic-wind #t swap! body swap!)) out))
+        (lambda ()
+          (chez:dynamic-wind in
+            (lambda () (chez:dynamic-wind #t swap! body swap!))
+            (lambda () (call-after-thunk out))))
         swap!)))
 
   (define dynamic-wind

@@ -17,7 +17,9 @@
     exit
     run-main-loop
     close-queue!
-    run-queued!)
+    run-queued!
+    leave-paused-tasks!
+    call-after-thunk)
   (import (except (chezscheme) exit) (prefix (only (chezscheme) exit) chez:)
           (tuna core changes) (tuna core definitions) (tuna core conditions)
           (only (tuna core modules) running-module-body add-module-unloaded-handler!))
@@ -87,7 +89,9 @@
 
   ;; What a batch's items post, and what batch-ended's advice posts, waits
   ;; for the next batch, so a flood of posts is cut into batches and never
-  ;; delays a batch's end.
+  ;; delays a batch's end. Once the queue is closed for exit no batch
+  ;; ends, since what batch-ended's advice posts, such as starting a
+  ;; server, would run in a process that is ending.
   (define batch-ran? #f)
 
   ;; Code leaving for the loop passes a thunk, since what follows, such as
@@ -99,6 +103,16 @@
   ;; would skip the task's handlers, or be caught by one of a task already
   ;; marked paused. Requests made meanwhile wait.
   (define switching? #f)
+
+  ;; The exit waits here until the task it was called in has ended, since
+  ;; an after-thunk run as exit leaves the task may pause, call exit again,
+  ;; or raise past every handler, which ends the task through the loop in
+  ;; place of the thunk exit passed. Tuna then exits with the first exit's
+  ;; arguments, once exit-anyway? has seen what the task raised meanwhile.
+  ;; At exit, a paused task being left is the exiting task too.
+  (define leaving-to-exit #f)
+  (define exiting-task #f)
+  (define raised-leaving '())
 
   (define (switch-to-loop! thunk)
     (set! switching? #t)
@@ -127,9 +141,11 @@
             (set! switching? #f)
             (after))
           (let loop ()
+            (when (and exiting-task (memq (task-state exiting-task) '(done failed)))
+              (exit-left!))
             (when (and batch-ran? (null? taken))
               (set! batch-ran? #f)
-              (when (batch-ended-changed?)
+              (when (and (batch-ended-changed?) (not queue-closed?))
                 (clear-quit-requests!)
                 (call-as-owner tuna-owner (lambda () (call-module-code batch-ended)))))
             (let ([item (dequeue! wait?)])
@@ -178,14 +194,19 @@
 
   ;; A raise is reported before the stack unwinds, so advice on report and
   ;; Chez's debugger see where it was raised.
+  (define (report-raise t c)
+    (report-safely c)
+    (when (eq? t exiting-task)
+      (set! raised-leaving (cons c raised-leaving)))
+    (when (debug-on-exception)
+      (debug-condition c)
+      (debug)))
+
   (define (task-raised t c)
     (cond
       [(warning-only? c) (set! warned (report-warning-once c warned))]
       [else
-       (report-safely c)
-       (when (debug-on-exception)
-         (debug-condition c)
-         (debug))
+       (report-raise t c)
        (switch-to-loop! (lambda () (finish! t 'failed c)))]))
 
   ;; Work posted by an instance of a module that has since unloaded must not
@@ -380,8 +401,7 @@
   ;; that it runs even after the thread's module is unloaded. Chez's exit
   ;; unwinds the stack it is called on after the exit handler has unloaded
   ;; every module, so in a task it would run the winders that modules put
-  ;; around the call once their code is gone; the task is left first. A
-  ;; quit requested while leaving would otherwise land in an unload action.
+  ;; around the call once their code is gone; the task is left first.
   (define (exit . arguments)
     (cond
       [(not (on-main-thread?))
@@ -389,12 +409,56 @@
        (apply chez:exit arguments)]
       [running-task
        => (lambda (t)
-            (switch-to-loop!
-              (lambda ()
-                (finish! t 'done '())
-                (clear-quit-requests!)
-                (apply chez:exit arguments))))]
+            (unless leaving-to-exit
+              (set! leaving-to-exit arguments)
+              (set! exiting-task t))
+            (switch-to-loop! (lambda () (finish! t 'done '()))))]
       [else (apply chez:exit arguments)]))
+
+  ;; A quit requested while leaving would otherwise land in an unload
+  ;; action. The exit handler runs the queue, which would come back here
+  ;; and exit at once, so the exit is cleared first. Once the queue is
+  ;; closed, the exit under way unloads every module and then exits, so a
+  ;; paused task that exits as that exit leaves it only ends.
+  ;; exit-anyway? is asked in a task, so that its advice can wait for the
+  ;; user's answer.
+  (define (exit-left!)
+    (let ([arguments leaving-to-exit] [raised (reverse raised-leaving)])
+      (set! leaving-to-exit #f)
+      (set! exiting-task #f)
+      (set! raised-leaving '())
+      (clear-quit-requests!)
+      (cond
+        [queue-closed? (void)]
+        [(null? raised) (apply chez:exit arguments)]
+        [else
+         (start! (make-task (lambda () (when (for-all exit-anyway? raised) (apply exit arguments)))
+                            tuna-owner '()))])))
+
+  ;; Every command runs under a handler that reports a raise and escapes,
+  ;; so a raise from an after-thunk run as exit leaves a task would stop
+  ;; the leave part way, never reach exit-anyway?, and could start new
+  ;; work while Tuna exits. Each after-thunk's raise is taken where it
+  ;; happens instead, as Emacs catches the error of each kill-emacs-hook
+  ;; function, and the leave goes on. An after-thunk that pauses may go
+  ;; on under another loop, as at exit, when the loop the leave was going
+  ;; back to has returned; a raise then ends the task through the running
+  ;; loop instead.
+  (define (call-after-thunk out)
+    (let ([t exiting-task] [loop return-to-loop])
+      (if (and t (eq? t running-task))
+          (call/cc
+            (lambda (k)
+              (call-with-only-handler
+                (lambda (c)
+                  (cond
+                    [(warning-only? c) (set! warned (report-warning-once c warned))]
+                    [(eq? return-to-loop loop)
+                     (report-raise t c)
+                     (k (void))]
+                    [else (task-raised t c)]))
+                out)))
+          (out))))
 
   (define (run-main-loop)
     (timer-interrupt-handler main-timer-interrupt)
@@ -408,6 +472,25 @@
 
   (define (run-queued!)
     (run-items! #f))
+
+  ;; A paused task's winders may call any module's code, so at exit each
+  ;; is left before any module unloads, as exit leaves the task it is
+  ;; called in. Leaving raises nothing, so no handler of the task can
+  ;; catch it and start new work while Tuna exits. A signalled task's
+  ;; raise was queued, and closing the queue dropped it.
+  (define (leave-paused-tasks!)
+    (vector-for-each
+      (lambda (t)
+        (let ([state (task-state t)] [k (task-continuation t)])
+          (when (memq state '(paused signalled))
+            (enqueue!
+              (lambda ()
+                (continue! t state k
+                  (lambda ()
+                    (set! exiting-task t)
+                    (switch-to-loop! (lambda () (finish! t 'failed (make-quit-condition)))))))))))
+      (hashtable-keys paused-tasks))
+    (run-queued!))
 
   ;; Only a spawned task is a change, but every paused task of a module
   ;; would otherwise run its code after the module is gone.

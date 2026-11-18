@@ -1,0 +1,9 @@
+; An after-thunk raises while exit leaves its task: the error is
+; reported, the plugin asks whether to exit anyway, and y exits.
+> (dynamic-wind void (lambda () (exit)) (lambda () (car '())))
+! car: () is not a pair
+> (prompts)
+((minibuffer:%prompts () (minibuffer:prompt ((depth . 1)) (minibuffer:question () "Exception in car: () is not a pair; exit anyway? (y or n) ") (minibuffer:input-field ()) "\n" (minibuffer:content ()))))
+> (press! "y")
+configuration unloading
+> (display "never runs")
