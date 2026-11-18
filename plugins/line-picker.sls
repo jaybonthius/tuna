@@ -1,5 +1,7 @@
 #!tuna
-(import (completion) (buffers) (commands) (document) (jobs) (keys) (views))
+(import (minibuffer) (completion) (buffers) (commands) (document) (jobs) (keys) (views))
+
+(define-saved goto-line-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
 (define (%line-candidates doc first last)
   (let ([n (fx+ (fx- last first) 1)])
@@ -50,4 +52,29 @@
   "Moves point to POSITION, the start of a line read from the current buffer."
   (views:set-point! (views:current) position))
 
+(define (%read-line-number)
+  (let* ([view (views:current)]
+         [current (number->string (document:line (buffers:document (views:buffer view)) (views:point view)))]
+         [question (string-append "Go to line (default " current "): ")])
+    (let loop ([complaint #f])
+      (let* ([answer (minibuffer:call-with-setup
+                       (lambda (p) (when complaint (minibuffer:message! p complaint)))
+                       (lambda () (minibuffer:read question goto-line-history current)))]
+             [n (string->number answer 10)])
+        (if (and n (exact? n) (integer? n)) n (loop "Please enter a number"))))))
+
+;; As in Emacs, C-u alone is not a line number, so the line is read.
+(define (%goto-line-argument)
+  (let ([p (commands:prefix-argument)])
+    (if (and p (not (pair? p))) (commands:prefix-number) (%read-line-number))))
+
+(commands:define-command (goto-line [line (%goto-line-argument)])
+  "Moves point to the start of line LINE of the current view's buffer, counting from 1; a line past the last goes to the end."
+  (unless (and (integer? line) (exact? line))
+    (assertion-violation 'line-picker:goto-line "not an exact integer" line))
+  (let* ([view (views:current)] [doc (buffers:document (views:buffer view))] [end (document:length doc)])
+    (views:set-point! view (if (> line (document:line doc end)) end (document:line-start doc (max line 1))))))
+
 (keys:bind! keys:global "M-s l" line)
+(keys:bind! keys:global "M-g g" goto-line)
+(keys:bind! keys:global "M-g M-g" goto-line)
