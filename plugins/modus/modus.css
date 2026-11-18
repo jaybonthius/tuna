@@ -213,6 +213,15 @@
     --faces-markup-raw-color: var(--modus-fg-prose-code);
     --minibuffer-prompt-color: var(--modus-fg-prompt);
     --layout-part-mode-color: var(--modus-magenta-cooler);
+    --rainbow-delimiters-depth-1-color: var(--modus-fg-main);
+    --rainbow-delimiters-depth-2-color: var(--modus-magenta-intense);
+    --rainbow-delimiters-depth-3-color: var(--modus-cyan-intense);
+    --rainbow-delimiters-depth-4-color: var(--modus-red-warmer);
+    --rainbow-delimiters-depth-5-color: var(--modus-yellow-intense);
+    --rainbow-delimiters-depth-6-color: var(--modus-magenta-cooler);
+    --rainbow-delimiters-depth-7-color: var(--modus-green-intense);
+    --rainbow-delimiters-depth-8-color: var(--modus-blue-warmer);
+    --rainbow-delimiters-depth-9-color: var(--modus-magenta-warmer);
     --which-key-key-color: var(--modus-keybind);
     --which-key-label-color: var(--modus-type);
   }

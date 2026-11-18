@@ -1,0 +1,63 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  [data-face="rainbow-delimiters.depth-1"] {
+    color: var(--rainbow-delimiters-depth-1-color, var(--tuna-text));
+  }
+
+  [data-face="rainbow-delimiters.depth-2"] {
+    color: var(--rainbow-delimiters-depth-2-color, var(--tuna-pink-11));
+  }
+
+  [data-face="rainbow-delimiters.depth-3"] {
+    color: var(--rainbow-delimiters-depth-3-color, var(--tuna-cyan-11));
+  }
+
+  [data-face="rainbow-delimiters.depth-4"] {
+    color: var(--rainbow-delimiters-depth-4-color, var(--tuna-orange-11));
+  }
+
+  [data-face="rainbow-delimiters.depth-5"] {
+    color: var(--rainbow-delimiters-depth-5-color, var(--tuna-yellow-11));
+  }
+
+  [data-face="rainbow-delimiters.depth-6"] {
+    color: var(--rainbow-delimiters-depth-6-color, var(--tuna-violet-11));
+  }
+
+  [data-face="rainbow-delimiters.depth-7"] {
+    color: var(--rainbow-delimiters-depth-7-color, var(--tuna-green-11));
+  }
+
+  [data-face="rainbow-delimiters.depth-8"] {
+    color: var(--rainbow-delimiters-depth-8-color, var(--tuna-indigo-11));
+  }
+
+  [data-face="rainbow-delimiters.depth-9"] {
+    color: var(--rainbow-delimiters-depth-9-color, var(--tuna-purple-11));
+  }
+
+  /* Weight marks a bracket in error where its colour is not seen. */
+  [data-face="rainbow-delimiters.unmatched"] {
+    background: var(--rainbow-delimiters-unmatched-background, var(--tuna-error-surface));
+    color: var(--rainbow-delimiters-unmatched-color, var(--tuna-error));
+    font-weight: var(--tuna-font-weight-bold);
+  }
+
+  [data-face="rainbow-delimiters.mismatched"] {
+    background: var(--rainbow-delimiters-mismatched-background, var(--tuna-warning-surface));
+    color: var(--rainbow-delimiters-mismatched-color, var(--tuna-warning));
+    font-weight: var(--tuna-font-weight-bold);
+  }
+}
+
+@layer preferences {
+  /* Forced colours drop the colours and backgrounds, and a bold bracket
+     is hard to tell from a plain one. */
+  @media (forced-colors: active) {
+    [data-face="rainbow-delimiters.unmatched"],
+    [data-face="rainbow-delimiters.mismatched"] {
+      text-decoration-line: underline;
+    }
+  }
+}

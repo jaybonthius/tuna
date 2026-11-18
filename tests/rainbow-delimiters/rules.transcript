@@ -1,0 +1,132 @@
+; Loading and unloading the plugin tell the language plugins to look at
+; syntax:bracket-users again; so does each change to the mode.
+> (define told 0)
+> (add-hook! syntax:bracket-users-changed (lambda () (set! told (+ told 1))))
+> (unload-module! '(rainbow-delimiters))
+> told
+1
+> (import (rainbow-delimiters))
+> told
+2
+> (set-option! rainbow-delimiters:mode #t)
+> (set-option! rainbow-delimiters:mode #f)
+> told
+4
+; The mode is off by default, so nothing is coloured until a
+; configuration turns it on: this one does in chez-scheme:mode's hook.
+> (rainbow-delimiters:mode)
+#f
+> (define plain (buffers:make "notes.txt" "(a)"))
+> (buffers:with-buffer plain (rainbow-delimiters:mode))
+#f
+> (syntax:brackets-used? plain)
+#f
+> (define b (scheme-buffer "a.ss" "(define (f x) [list #(x)])\n"))
+> (buffers:with-buffer b (rainbow-delimiters:mode))
+#t
+> (syntax:brackets-used? b)
+#t
+; A minor mode with no keymap and no lighter.
+> (table-ref modes:minor-modes rainbow-delimiters:mode #f)
+0
+> (table-ref modes:keymaps rainbow-delimiters:mode #f)
+#f
+> (modes:lighter rainbow-delimiters:mode)
+#f
+> (define v (views:make b))
+> (equal? (modes:active-minor-modes v) (list rainbow-delimiters:mode))
+#t
+; The job sends a span per bracket, and each is drawn with the face of
+; its depth.
+> (brackets b)
+((1 2 ((bracket . 1))) (9 10 ((bracket . 2))) (13 14 ((bracket . 2))) (15 16 ((bracket . 2))) (21 23 ((bracket . 3))) (24 25 ((bracket . 3))) (25 26 ((bracket . 2))) (26 27 ((bracket . 1))))
+> (lines v)
+"<div class=\"line\" id=\"v3-1\" data-line=\"1\" data-at=\"1\"><span class=\"cursor primary\"></span><span data-face=\"rainbow-delimiters.depth-1\">(</span><span data-face=\"keyword\">define</span> <span data-face=\"rainbow-delimiters.depth-2\">(</span><span data-face=\"function\">f</span> x<span data-face=\"rainbow-delimiters.depth-2\">)</span> <span data-face=\"rainbow-delimiters.depth-2\">[</span><span data-face=\"function.builtin\">list</span> <span data-face=\"rainbow-delimiters.depth-3\">#(</span>x<span data-face=\"rainbow-delimiters.depth-3\">)</span><span data-face=\"rainbow-delimiters.depth-2\">]</span><span data-face=\"rainbow-delimiters.depth-1\">)</span></div><div class=\"line\" id=\"v3-2\" data-line=\"2\"><br></div>"
+; Depths 1 to 9 have a face each; deeper brackets take depth-2 to
+; depth-9 again, in turn. A closing bracket with no opening is
+; unmatched, and one of the wrong shape is mismatched.
+> (define deep (scheme-buffer "deep.ss" "((((((((((((x))))))))))))\n) (]\n"))
+> (bracket-faces (views:make deep))
+(depth-1 depth-2 depth-3 depth-4 depth-5 depth-6 depth-7 depth-8 depth-9 depth-2 depth-3 depth-4 depth-4 depth-3 depth-2 depth-9 depth-8 depth-7 depth-6 depth-5 depth-4 depth-3 depth-2 depth-1 unmatched depth-1 mismatched)
+> (map caddr (brackets deep))
+(((bracket . 1)) ((bracket . 2)) ((bracket . 3)) ((bracket . 4)) ((bracket . 5)) ((bracket . 6)) ((bracket . 7)) ((bracket . 8)) ((bracket . 9)) ((bracket . 10)) ((bracket . 11)) ((bracket . 12)) ((bracket . 12)) ((bracket . 11)) ((bracket . 10)) ((bracket . 9)) ((bracket . 8)) ((bracket . 7)) ((bracket . 6)) ((bracket . 5)) ((bracket . 4)) ((bracket . 3)) ((bracket . 2)) ((bracket . 1)) ((bracket . unmatched)) ((bracket . 1)) ((bracket . mismatched)))
+; A view's own value turns the colours off in that view only.
+> (define w (views:make b))
+> (views:set-option! v rainbow-delimiters:mode #f)
+> (bracket-faces v)
+()
+> (bracket-faces w)
+(depth-1 depth-2 depth-2 depth-2 depth-3 depth-3 depth-2 depth-1)
+> (views:set-option! v rainbow-delimiters:mode #t)
+> (bracket-faces v)
+(depth-1 depth-2 depth-2 depth-2 depth-3 depth-3 depth-2 depth-1)
+; Turning the mode off in a buffer stops its bracket spans, so a view's
+; own value cannot turn the colours on there.
+> (buffers:with-buffer b (set-option-local! rainbow-delimiters:mode #f))
+> (syntax:brackets-used? b)
+#f
+> (brackets b)
+()
+> (bracket-faces v)
+()
+> (buffers:with-buffer b (set-option-local! rainbow-delimiters:mode #t))
+> (bracket-faces v)
+(depth-1 depth-2 depth-2 depth-2 depth-3 depth-3 depth-2 depth-1)
+; A mode with a lexer and no highlighting job gets no bracket spans, so
+; no colours.
+> (define-table data-keymap "Keys.")
+> (define-hook data-hook "Setup.")
+> (modes:define-major-mode data-mode (keymap data-keymap) (hook data-hook))
+> (table-set! syntax:lexers data-mode chez-scheme:lexer)
+> (define data (buffers:make "data" "(a (b))"))
+> (modes:set-major-mode data-mode data)
+> (buffers:with-buffer data (set-option-local! rainbow-delimiters:mode #t))
+> (syntax:brackets-used? data)
+#t
+> (brackets data)
+()
+> (table-ref web:stylesheets 'rainbow-delimiters #f)
+"rainbow-delimiters/rainbow-delimiters.css"
+; A known defect: a command runs with its view's own values, and they
+; apply to every buffer, not only the view's. Here v's own #f hides b's
+; #t, and a Scheme buffer opened by a command in v gets no bracket spans
+; and clears b's, until the bracket users change outside such a command.
+> (define c (buffers:make "c.ss" "(x (y))\n"))
+> (views:set-option! v rainbow-delimiters:mode #f)
+> (views:call-with-view v (lambda () (syntax:brackets-used? b)))
+#f
+> (views:call-with-view v (lambda () (modes:set-major-mode chez-scheme:mode c)))
+> (buffers:with-buffer c (rainbow-delimiters:mode))
+#t
+> (brackets c)
+()
+> (brackets b)
+()
+> (views:set-option! v rainbow-delimiters:mode #t)
+> (syntax:bracket-users-changed)
+> (map caddr (brackets c))
+(((bracket . 1)) ((bracket . 2)) ((bracket . 2)) ((bracket . 1)))
+> (length (brackets b))
+8
+; Unloading the plugin takes away its entry and stylesheet and stops the
+; bracket spans; loading it again brings them back.
+> (unload-module! '(rainbow-delimiters))
+> (table-ref syntax:bracket-users 'rainbow-delimiters #f)
+#f
+> (table-ref web:stylesheets 'rainbow-delimiters #f)
+#f
+> (brackets b)
+()
+> (buffers:replace! b 1 1 "(x) ")
+#<edit 1>
+> (brackets b)
+()
+; While the plugin is off, the configuration's hook entry names its
+; mode, so each Scheme buffer reports it.
+> (define z (scheme-buffer "z.ss" "(q)\n"))
+! rainbow-delimiters:mode: module (rainbow-delimiters) is unloaded
+> (brackets z)
+()
+> (import (rainbow-delimiters))
+> (map caddr (brackets b))
+(((bracket . 1)) ((bracket . 1)) ((bracket . 1)) ((bracket . 2)) ((bracket . 2)) ((bracket . 2)) ((bracket . 3)) ((bracket . 3)) ((bracket . 2)) ((bracket . 1)))
