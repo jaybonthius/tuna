@@ -1,0 +1,56 @@
+; The popup lists each key that can follow the pending keys: named keys
+; such as RET and SPC first, then single characters, then function keys,
+; then keys with modifiers. A key that runs a command shows the command's
+; name; one that starts a longer sequence shows + and a label: the
+; prefix's entry in which-key:labels, else its keymap's documentation,
+; else "prefix" for one made by marks.
+> (set-option! which-key:delay 0)
+> (press! "C-c")
+> (popup)
+("C-c" ("RET" "harpo:honk") ("SPC" "harpo:honk") ("A" "harpo:honk") ("f" "+files" label) ("h" "+Harpo's horn." label) ("l" "+language" label) ("q" "+prefix" label) ("z" "harpo:honk") ("<f2>" "harpo:honk") ("<f10>" "harpo:honk") ("<home>" "harpo:honk") ("<left>" "layout:history-back") ("<right>" "layout:history-forward") ("C-z" "harpo:honk") ("C-M-a" "harpo:honk") ("M-a" "harpo:honk"))
+> (press! "z")
+; What each key runs now, after remapping.
+> (keys:remap! keys:global harpo:honk harpo:squeak)
+> (press! "C-c")
+> (assoc "z" (cdr (popup)))
+("z" "harpo:squeak")
+> (press! "z")
+> (table-remove! keys:global harpo:honk)
+; A binding an earlier keymap hides is left out, and so are the keys
+; after a prefix that an earlier keymap binds to a command.
+> (define-table front)
+> (keys:bind! front "C-c z" harpo:squeak)
+> (keys:bind! front "C-c q" harpo:honk)
+> (define (in-front client posn) (list front))
+> (add-hook! keys:find-keymaps in-front)
+> (press! "C-c")
+> (map (lambda (k) (assoc k (cdr (popup)))) '("z" "q" "h"))
+(("z" "harpo:squeak") ("q" "harpo:honk") ("h" "+Harpo's horn." label))
+> (press! "z")
+> (remove-hook! keys:find-keymaps in-front)
+; An entry in which-key:labels wins over the keymap's documentation; a
+; keymap with no documentation shows "prefix".
+> (table-set! which-key:labels "C-c h" "horn")
+> (define-table bare)
+> (keys:bind! bare "x" harpo:honk)
+> (keys:bind! keys:global "C-c y" bare)
+> (press! "C-c")
+> (map (lambda (k) (assoc k (cdr (popup)))) '("h" "y"))
+(("h" "+horn" label) ("y" "+prefix" label))
+> (press! "z")
+> (table-remove! which-key:labels "C-c h")
+; A label must be a string.
+> (table-set! which-key:labels "C-c h" 'horn)
+> (press! "C-c")
+> (raised (lambda () (screen-of client)))
+(which-key:labels "not a string")
+> (press! "z")
+> (table-remove! which-key:labels "C-c h")
+; The popup's markup: the pending keys in a header, then a description
+; list, and the longest key and the longest name or label in characters,
+; for the stylesheet's columns.
+> (press! "C-c" "h")
+> (let* ([html (screen-of client)] [at (search html "<div class=\"which-key\"" 0)])
+    (substring html at (+ (search html "</dl>" at) 5)))
+"<div class=\"which-key\" style=\"--which-key-key-size:1;--which-key-text-size:12\"><header class=\"which-key-prefix\"><kbd>C-c h</kbd></header><dl class=\"which-key-keys\"><div class=\"which-key-entry\"><dt><kbd>h</kbd></dt><dd>harpo:honk</dd></div><div class=\"which-key-entry\"><dt><kbd>s</kbd></dt><dd>harpo:squeak</dd></div></dl>"
+> (press! "s")

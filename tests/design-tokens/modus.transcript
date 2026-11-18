@@ -12,12 +12,12 @@
 "light-dark(#fbf7f0, #0d0e1c)"
 > (cdr (assoc "--modus-cursor" modus-colours))
 "light-dark(#d00000, #ff66ff)"
-; It sets every colour among the semantic tokens, ten faces and two
+; It sets every colour among the semantic tokens, ten faces and three
 ; components' colours, and reads only its own palette.
 > (list (length modus-mapping) (left-to-design-tokens) (unknown-in-theme) (unset-by-modus))
-(53 () () ())
+(55 () () ())
 > (filter (lambda (d) (not (prefix? "--tuna-" (car d)))) modus-mapping)
-(("--faces-comment-color" . "var(--modus-comment)") ("--faces-string-color" . "var(--modus-string)") ("--faces-number-color" . "var(--modus-number)") ("--faces-keyword-color" . "var(--modus-keyword)") ("--faces-function-color" . "var(--modus-fnname)") ("--faces-builtin-color" . "var(--modus-builtin)") ("--faces-type-color" . "var(--modus-type)") ("--faces-constant-color" . "var(--modus-constant)") ("--faces-markup-heading-color" . "var(--modus-fg-heading-1)") ("--faces-markup-raw-color" . "var(--modus-fg-prose-code)") ("--minibuffer-prompt-color" . "var(--modus-fg-prompt)") ("--layout-part-mode-color" . "var(--modus-magenta-cooler)"))
+(("--faces-comment-color" . "var(--modus-comment)") ("--faces-string-color" . "var(--modus-string)") ("--faces-number-color" . "var(--modus-number)") ("--faces-keyword-color" . "var(--modus-keyword)") ("--faces-function-color" . "var(--modus-fnname)") ("--faces-builtin-color" . "var(--modus-builtin)") ("--faces-type-color" . "var(--modus-type)") ("--faces-constant-color" . "var(--modus-constant)") ("--faces-markup-heading-color" . "var(--modus-fg-heading-1)") ("--faces-markup-raw-color" . "var(--modus-fg-prose-code)") ("--minibuffer-prompt-color" . "var(--modus-fg-prompt)") ("--layout-part-mode-color" . "var(--modus-magenta-cooler)") ("--which-key-key-color" . "var(--modus-keybind)") ("--which-key-label-color" . "var(--modus-type)"))
 ; Contrast under the theme, light then dark. Text is at least Modus's
 ; 7:1 on the page, the popup surface, the chrome, the active bar and the
 ; selection, and on the region in light; Modus's own values for the

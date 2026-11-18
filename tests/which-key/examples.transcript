@@ -1,0 +1,14 @@
+; The configuration's settings.
+> (which-key:delay)
+0.5
+> (table-ref which-key:labels "C-c l" #f)
+"language"
+; After C-c and the delay, the popup labels C-c l.
+> (press! "C-c")
+> (wait-out)
+> (assoc "l" (cdr (popup)))
+("l" "+language" label)
+> (press! "l")
+> (popup)
+("C-c l" ("r" "harpo:honk"))
+> (press! "r")

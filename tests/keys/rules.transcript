@@ -201,3 +201,36 @@ editing:next-line
 > (keys:bind! b "C-z" b)
 > (keys:where-is frame cape:dabbrev)
 ("C-c P d")
+; active-bindings gives each active keymap, in lookup order, with the
+; bindings it decides: a sequence goes under the keymap lookup finds it
+; in, through keymaps bound as prefixes, remapped; a binding an earlier
+; keymap hides is left out. A posn gives the keymaps at it.
+> (define-table d)
+> (define-table e)
+> (define (in-d client posn) (if posn (list e) (list d)))
+> (add-hook! keys:find-keymaps in-d)
+> (keys:bind! d "C-c z a" editing:next-line)
+> (keys:bind! d "C-c z p" cape:prefix-map)
+> (keys:bind! keys:global "C-c z a" layout:other-view)
+> (keys:bind! keys:global "C-c z b" layout:other-view)
+> (keys:bind! e "C-c z a" cape:dabbrev)
+> (keys:remap! d layout:other-view editing:forward-char)
+> (define (decided keymap posn)
+    (let ([found (assq keymap (keys:active-bindings frame posn))])
+      (and found
+           (map (lambda (b) (cons (car b) (name-of (cdr b))))
+                (filter (lambda (b) (and (>= (string-length (car b)) 5) (string=? (substring (car b) 0 5) "C-c z")))
+                        (cdr found))))))
+> (list (decided d #f) (decided keys:global #f))
+((("C-c z a" . editing:next-line) ("C-c z p f" . cape:file) ("C-c z p d" . cape:dabbrev)) (("C-c z b" . editing:forward-char)))
+> (list (decided e (vector 1 0)) (decided d (vector 1 0)) (decided keys:global (vector 1 0)))
+((("C-c z a" . cape:dabbrev)) #f (("C-c z b" . layout:other-view)))
+> (eq? (car (car (keys:active-bindings frame))) (car (keys:active-keymaps frame)))
+#t
+> (equal? (keys:active-bindings frame) (keys:active-bindings frame #f))
+#t
+> (raised (lambda () (keys:active-bindings frame 'here)))
+(keys:active-bindings "neither a posn nor #f")
+> (on-thread (lambda () (keys:active-bindings frame)))
+(keys:active-bindings "not on the main thread")
+> (remove-hook! keys:find-keymaps in-d)

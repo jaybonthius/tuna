@@ -1,0 +1,71 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  /* The wrapper only joins the popup to the layout's screen in one value,
+     so the layout lays out as it would without it. */
+  .which-key-screen {
+    display: contents;
+  }
+
+  .which-key {
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: 0;
+    box-sizing: border-box;
+    max-block-size: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-block: var(--tuna-space-3);
+    padding-inline: var(--tuna-space-5);
+    cursor: default;
+    background: var(--which-key-background, var(--tuna-surface-raised, Canvas));
+    color: var(--which-key-text, var(--tuna-text, CanvasText));
+    border-block-start: var(--tuna-border-width, 1px) solid var(--which-key-border, var(--tuna-border, CanvasText));
+    box-shadow: var(--tuna-shadow-raised);
+    font-family: var(--tuna-font-code);
+    font-size: var(--tuna-font-size-code);
+    line-height: var(--tuna-line-height-code);
+  }
+
+  .which-key-prefix {
+    margin-block-end: var(--tuna-space-2);
+  }
+
+  /* The sizes are character counts from the server, which hold only in the code font. */
+  .which-key-keys {
+    margin: 0;
+    column-width: calc((var(--which-key-key-size) + var(--which-key-text-size) + 1) * 1ch);
+    column-gap: var(--tuna-space-7);
+  }
+
+  .which-key-entry {
+    display: flex;
+    gap: 1ch;
+    break-inside: avoid;
+  }
+
+  .which-key-entry > dt {
+    flex: none;
+    min-inline-size: calc(var(--which-key-key-size) * 1ch);
+  }
+
+  .which-key-entry kbd {
+    border: 0;
+    padding: 0;
+    color: var(--which-key-key-color, var(--tuna-info));
+    font-weight: var(--tuna-font-weight-semibold);
+  }
+
+  .which-key-entry > dd {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .which-key-label {
+    color: var(--which-key-label-color, var(--tuna-text-muted));
+  }
+}

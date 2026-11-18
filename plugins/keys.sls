@@ -20,6 +20,7 @@
    session-temporaries session-running session-running-set! session-reading
    read-next end-read! waiting-read-sequence? reading-keys quit-reads! quit-client-reads!
    keymaps-of resolve-key resolve-sequence prefix-binding? lone-escape? remapped
+   keymap-bindings bindings-found found-binding-keymap found-binding-sequence found-binding-command
    last-key key-count browser-key mouse-item-key valid-event? key-or-event? check-event event-key-clicks
    dropped-mouse-key? drag-as-click pending-typed pending-seq pending-posn make-pending
    current-press make-press current-keys current-shifted current-session current-event make-quit
@@ -397,6 +398,39 @@
               (or (table-ref (car ks) command #f) (loop (cdr ks)))))
         command))
 
+  (define (keymap-bindings keymap)
+    (filter (lambda (entry) (and (string? (car entry)) (not (eq? (cdr entry) #t))))
+            (table-entries keymap)))
+
+  (define-record-type found-binding
+    (sealed #t)
+    (fields keymap sequence command))
+
+  ;; Each bound sequence is looked up as a typed one is, rather than read
+  ;; from its keymap, so shadowing, prefixes and remapping follow lookup's
+  ;; one rule.
+  (define (bindings-found keymaps)
+    (let ([seen (make-hashtable string-hash string=?)] [found '()])
+      (let walk ([walked keymaps] [prefix #f] [path '()])
+        (for-each
+          (lambda (keymap)
+            (unless (memq keymap path)
+              (for-each
+                (lambda (entry)
+                  (let* ([k (car entry)] [v (cdr entry)] [seq (if prefix (string-append prefix " " k) k)])
+                    (cond
+                      [(table? v) (walk (list v) seq (cons keymap path))]
+                      [(hashtable-contains? seen seq) (void)]
+                      [else
+                       (hashtable-set! seen seq #t)
+                       (let-values ([(binding decider shifted?) (resolve-sequence keymaps seq)])
+                         (let ([command (remapped keymaps binding)])
+                           (when (commands:command? command)
+                             (set! found (cons (make-found-binding decider seq command) found)))))])))
+                (keymap-bindings keymap))))
+          walked))
+      (reverse found)))
+
   (define named-keys
     (let ([t (make-hashtable string-hash string=?)])
       (for-each
@@ -747,8 +781,7 @@
 
 (define (bindings keymap)
   (check-keymap 'keys:bindings keymap)
-  (filter (lambda (entry) (and (string? (car entry)) (not (eq? (cdr entry) #t))))
-          (table-entries keymap)))
+  (keymap-bindings keymap))
 
 (define (active-keymaps client)
   (check-main-thread 'keys:active-keymaps)
@@ -765,29 +798,35 @@
         [(table? v) v]
         [else (remapped keymaps v)]))))
 
+(define active-bindings
+  (case-lambda
+    [(client) (active-bindings client #f)]
+    [(client posn)
+     (check-main-thread 'keys:active-bindings)
+     (unless (or (not posn) (vector? posn))
+       (assertion-violation 'keys:active-bindings "neither a posn nor #f" posn))
+     (let* ([keymaps (keymaps-of client posn)] [found (bindings-found keymaps)])
+       (map (lambda (keymap)
+              (cons keymap
+                    (fold-right
+                      (lambda (b decided)
+                        (if (eq? (found-binding-keymap b) keymap)
+                            (cons (cons (found-binding-sequence b) (found-binding-command b)) decided)
+                            decided))
+                      '() found)))
+            keymaps))]))
+
 (define (where-is client command)
   (check-main-thread 'keys:where-is)
   (unless (commands:command? command)
     (assertion-violation 'keys:where-is "not a command" command))
-  (let ([keymaps (keymaps-of client #f)] [seen (make-hashtable string-hash string=?)] [sequences '()])
-    (let walk ([walked keymaps] [prefix #f] [path '()])
-      (for-each
-        (lambda (keymap)
-          (unless (memq keymap path)
-            (for-each
-              (lambda (entry)
-                (let* ([k (car entry)] [v (cdr entry)] [seq (if prefix (string-append prefix " " k) k)])
-                  (cond
-                    [(table? v) (walk (list v) seq (cons keymap path))]
-                    [(hashtable-contains? seen seq) (void)]
-                    [else
-                     (hashtable-set! seen seq #t)
-                     (let-values ([(v found shifted?) (resolve-sequence keymaps seq)])
-                       (when (eq? (remapped keymaps v) command)
-                         (set! sequences (cons seq sequences))))])))
-              (bindings keymap))))
-        walked))
-    (list-sort (lambda (a b) (fx< (key-count a) (key-count b))) (reverse sequences))))
+  (list-sort (lambda (a b) (fx< (key-count a) (key-count b)))
+             (fold-right
+               (lambda (b sequences)
+                 (if (eq? (found-binding-command b) command)
+                     (cons (found-binding-sequence b) sequences)
+                     sequences))
+               '() (bindings-found (keymaps-of client #f)))))
 
 (define (press! client key)
   (check-main-thread 'keys:press!)

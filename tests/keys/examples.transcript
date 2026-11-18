@@ -25,6 +25,8 @@
 #t
 > (keys:where-is (layout:current-frame) layout:other-view)
 ("C-x o")
+> (assoc "C-x o" (cdr (assq keys:global (keys:active-bindings (layout:current-frame)))))
+("C-x o" . #<procedure>)
 ; Pressing keys.
 > (keys:press! frame "C-x")
 > (keys:pending frame)

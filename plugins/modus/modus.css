@@ -213,5 +213,7 @@
     --faces-markup-raw-color: var(--modus-fg-prose-code);
     --minibuffer-prompt-color: var(--modus-fg-prompt);
     --layout-part-mode-color: var(--modus-magenta-cooler);
+    --which-key-key-color: var(--modus-keybind);
+    --which-key-label-color: var(--modus-type);
   }
 }
