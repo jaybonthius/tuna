@@ -1,0 +1,98 @@
+; A mouse key is recorded by its key, without its position; mouse
+; movements are not recorded, with or without modifiers, though the
+; command one runs is.
+> (mark!)
+> (press! (list "<down-mouse-1>" (vector 1 0)) (list "<mouse-1>" (vector 1 0)))
+> (press! (list "<mouse-movement>" (vector 1 2)) (list "S-<mouse-movement>" (vector 1 3)))
+> (since-mark)
+("<down-mouse-1>" editing:mouse-drag-region "<mouse-1>" harpo:honk harpo:honk harpo:honk)
+; Every client's keys go in one record, in the order they came, each
+; prefix as it is typed.
+> (mark!)
+> (press-in! client "C-c")
+> (press-in! other-client "<f5>")
+> (press-in! client "h")
+> (since-mark)
+("C-c" "<f5>" harpo:honk "h" harpo:honk-twice)
+; A key no keymap binds is recorded, with the command that says so.
+> (mark!)
+> (press! "C-c" "z")
+! C-c z is undefined
+> (since-mark)
+("C-c" "z" keys:undefined)
+; Only the outermost command is recorded: not the commands it runs, nor
+; the command M-x runs.
+> (mark!)
+> (press! "C-c" "h")
+> (since-mark)
+("C-c" "h" harpo:honk-twice)
+> (mark!)
+> (define t (start! (lambda () (press! "M-x"))))
+> (apply press! (map string (string->list "harpo:honk")))
+> (press! "RET")
+> (result t)
+> (since-mark)
+("M-x" command-picker:execute-extended-command "h" editing:self-insert "a" editing:self-insert "r" editing:self-insert "p" editing:self-insert "o" editing:self-insert ":" editing:self-insert "h" editing:self-insert "o" editing:self-insert "n" editing:self-insert "k" editing:self-insert "RET" completion:exit)
+; A command run other than by a key is recorded too.
+> (mark!)
+> (commands:run harpo:honk)
+> (since-mark)
+(harpo:honk)
+; A command is named once its module has unloaded.
+> (unload-module! '(harpo))
+> (commands:command-named 'harpo:honk)
+#f
+> (list-tail (lossage:recent-keys) (- (length (lossage:recent-keys)) 3))
+("RET" completion:exit harpo:honk)
+> (load-module! '(harpo))
+; The record keeps the newest lossage:size keys and commands. Lowering
+; the size drops the rest at once, so raising it brings none back.
+> (set-option! lossage:size 3)
+> (lossage:recent-keys)
+("RET" completion:exit harpo:honk)
+> (set-option! lossage:size 6)
+> (lossage:recent-keys)
+("RET" completion:exit harpo:honk)
+> (press! "<f5>" "<f5>")
+> (lossage:recent-keys)
+(completion:exit harpo:honk "<f5>" harpo:honk "<f5>" harpo:honk)
+; Only the setting bounds the record, not a binding or a buffer's local
+; value.
+> (with-options ([lossage:size 1]) (press! "<f5>"))
+> (lossage:recent-keys)
+("<f5>" harpo:honk "<f5>" harpo:honk "<f5>" harpo:honk)
+> (in-client (lambda () (set-option-local! lossage:size 2)))
+> (press! "C-c" "h")
+> (lossage:recent-keys)
+(harpo:honk "<f5>" harpo:honk "C-c" "h" harpo:honk-twice)
+> (in-client (lambda () (remove-option-local! lossage:size)))
+> (raised (lambda () (set-option! lossage:size 0)))
+(set-option! "0 is not a valid value for lossage:size")
+> (lossage:size)
+6
+; The record can be read on another thread.
+> (equal? (on-thread lossage:recent-keys) (lossage:recent-keys))
+#t
+; Reloading keys or commands reloads lossage, whose record starts empty.
+> (import (tuna eval))
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/keys.sls"))
+> (lossage:recent-keys)
+()
+> (press! "<f5>")
+> (lossage:recent-keys)
+("<f5>" harpo:honk)
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/commands.sls"))
+> (lossage:recent-keys)
+()
+> (press! "<f5>")
+> (lossage:recent-keys)
+("<f5>" harpo:honk)
+; Unloading it takes back its advice and its hook entry.
+> (map car (definition-changes keys:press!))
+((lossage) (minibuffer) (echo-area) (keys))
+> (define entries (length (hook-entries commands:before-command)))
+> (unload-module! '(lossage))
+> (map car (definition-changes keys:press!))
+((minibuffer) (echo-area) (keys))
+> (- entries (length (hook-entries commands:before-command)))
+1

@@ -1,0 +1,10 @@
+; The record holds each key, and each command by its name after the keys
+; that ran it, oldest first; keys typed into a prompt are there too.
+> (define t (start! (lambda () (press! "C-x" "C-f"))))
+> (press! "n" "RET")
+> (result t)
+> (lossage:recent-keys)
+("C-x" "C-f" files:find-file "n" editing:self-insert "RET" completion:exit)
+; The configuration's setting.
+> (lossage:size)
+1000
