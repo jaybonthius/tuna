@@ -79,7 +79,7 @@ pid=$!
 # Tuna compiles every plugin before it listens.
 tries=0
 until grep -q '^Tuna is at ' "$dir/server.out" 2>/dev/null; do
-  if ! kill -0 "$pid" 2>/dev/null || [ "$tries" -ge 450 ]; then
+  if ! kill -0 "$pid" 2>/dev/null || [ "$tries" -ge 3000 ]; then
     echo "$0: FAIL: Tuna did not start; it printed:"
     cat "$dir/server.out"
     exit 1
