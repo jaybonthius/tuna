@@ -1,0 +1,151 @@
+@layer defaults, themes, preferences;
+
+/* In a buffer, views wraps each child node in a .node element, which the
+   selectors below allow for; a drawing from markdown:html has none. */
+@layer defaults {
+  .markdown {
+    white-space: pre-wrap;
+  }
+
+  .markdown-paragraph,
+  .markdown-heading,
+  .markdown-quote,
+  .markdown-list,
+  .markdown-table {
+    font-family: var(--tuna-font-ui);
+  }
+
+  .markdown-paragraph,
+  .markdown-heading,
+  .markdown-code-block,
+  .markdown-quote,
+  .markdown-list,
+  .markdown-table {
+    margin-block: 0 var(--tuna-space-5);
+  }
+
+  .markdown-heading {
+    font-weight: var(--tuna-font-weight-semibold);
+    line-height: var(--tuna-line-height-2);
+    margin-block-start: var(--tuna-space-6);
+  }
+
+  .markdown-heading[aria-level="1"] {
+    font-size: var(--tuna-font-size-6);
+  }
+
+  .markdown-heading[aria-level="2"] {
+    font-size: var(--tuna-font-size-5);
+  }
+
+  .markdown-heading[aria-level="3"] {
+    font-size: var(--tuna-font-size-4);
+  }
+
+  .markdown-code-block,
+  .markdown-code {
+    font-family: var(--tuna-font-code);
+    font-size: var(--tuna-font-size-code);
+    background: var(--markdown-code-block-background, var(--tuna-surface-subtle));
+  }
+
+  .markdown-code-block {
+    position: relative;
+    border-radius: var(--markdown-code-block-radius, var(--tuna-panel-radius));
+    padding: var(--tuna-space-4) var(--tuna-space-5);
+  }
+
+  .markdown-code-block[data-language]::before {
+    content: attr(data-language);
+    position: absolute;
+    inset-block-start: var(--tuna-space-2);
+    inset-inline-end: var(--tuna-space-4);
+    color: var(--tuna-text-muted);
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-1);
+  }
+
+  .markdown-code {
+    border-radius: var(--tuna-control-radius);
+    padding-inline: var(--tuna-space-1);
+  }
+
+  .markdown-quote {
+    margin-inline: 0;
+    padding-inline-start: var(--tuna-space-5);
+    border-inline-start: var(--tuna-border-width-2) solid var(--markdown-quote-border, var(--tuna-border));
+  }
+
+  .markdown-list {
+    padding-inline-start: var(--tuna-space-7);
+  }
+
+  .markdown-item {
+    position: relative;
+  }
+
+  .markdown-list:not([data-tight]) > :is(.markdown-item, .node) + :is(.markdown-item, .node) {
+    margin-block-start: var(--tuna-space-5);
+  }
+
+  .markdown-list[data-tight] .markdown-paragraph,
+  .markdown-item .markdown-list {
+    margin-block-end: 0;
+  }
+
+  .markdown-item-marker,
+  .markdown-item-box {
+    position: absolute;
+    inset-inline-end: 100%;
+    margin: 0;
+    margin-inline-end: var(--tuna-space-3);
+    color: var(--tuna-text-muted);
+    font-family: var(--tuna-font-ui);
+  }
+
+  .markdown-table {
+    display: grid;
+    grid-template-columns: repeat(var(--markdown-table-columns), auto);
+    inline-size: max-content;
+    max-inline-size: 100%;
+    overflow-x: auto;
+    border: var(--tuna-border-width) solid var(--markdown-table-border, var(--tuna-border));
+  }
+
+  .markdown-table > .node,
+  .markdown-table-row,
+  .markdown-table-row > .node {
+    display: contents;
+  }
+
+  .markdown-table-cell {
+    padding: var(--tuna-space-1) var(--tuna-space-3);
+    border: var(--tuna-border-width) solid var(--markdown-table-border, var(--tuna-border));
+  }
+
+  .markdown-table-cell[role="columnheader"] {
+    background: var(--tuna-surface-subtle);
+    font-weight: var(--tuna-font-weight-semibold);
+  }
+
+  .markdown-table-cell[data-align="center"] {
+    text-align: center;
+  }
+
+  .markdown-table-cell[data-align="right"] {
+    text-align: end;
+  }
+
+  /* A link in a drawing from markdown:html has no node, so a click on it
+     is the holder's; it takes the link's look without ui-link's pointer. */
+  .markdown-link {
+    color: var(--tuna-link);
+    text-decoration: underline;
+  }
+
+  .markdown-rule {
+    border: none;
+    border-block-start: var(--tuna-border-width) solid var(--tuna-border);
+    margin-block: 0 var(--tuna-space-5);
+  }
+}

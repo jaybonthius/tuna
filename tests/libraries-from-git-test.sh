@@ -57,13 +57,14 @@ END
 output=$(cd "$dir/work" && GIT_CONFIG_NOSYSTEM=1 HOME="$dir/home" env -u TUNA_LIBRARY "$tuna" < /dev/null 2>&1) ||
   fail "tuna exited with status $?"
 [ "$output" = '(2 "hello\n")' ] || fail "the plugin gave: $output"
-for library in chez-md4c:e9d08ede95e180b415a397abf1bcaf76f0c010b2 chez-process:1d3356c0f82248125ae4771d116f94597046f2df; do
-  folder=$dir/home/.local/share/tuna/libraries/${library%%:*}
-  head=$(cat "$folder/.git/HEAD" 2>/dev/null || true)
-  [ "$head" = "${library#*:}" ] || fail "${library%%:*} is checked out at: $head"
-done
-[ -f "$dir/home/.local/share/tuna/libraries/chez-md4c/build/obj/src/md4c.so" ] ||
-  fail "(md4c) was not compiled into its own object folder"
+libraries=$dir/home/.local/share/tuna/libraries
+head=$(cat "$libraries/chez-process/.git/HEAD" 2>/dev/null || true)
+[ "$head" = 1d3356c0f82248125ae4771d116f94597046f2df ] || fail "chez-process is checked out at: $head"
+[ -f "$libraries/chez-process/build/obj/src/process.so" ] ||
+  fail "(process) was not compiled into its own object folder"
+# The plugin's line for chez-md4c is Tuna's own, so Tuna's built copy
+# serves it.
+[ ! -e "$libraries/chez-md4c" ] || fail "chez-md4c was installed though Tuna's own line agrees"
 
 echo "$0: $failures failures"
 [ "$failures" -eq 0 ]

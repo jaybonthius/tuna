@@ -14,3 +14,6 @@
 [submodule "libraries/chez-datastar"]
 	path = libraries/chez-datastar
 	url = https://github.com/jaybonthius/chez-datastar.git
+[submodule "libraries/chez-md4c"]
+	path = libraries/chez-md4c
+	url = https://github.com/jaybonthius/chez-md4c.git

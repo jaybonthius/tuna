@@ -1,0 +1,25 @@
+; An address opens in a new tab of the browser whose key or click asked,
+; or of the client named.
+> (parameterize ([web:current-client phone]) (browse-url:open "https://tuna.example/guide"))
+> (browse-url:open "mailto:jay@example.org" laptop)
+> (browse-url:open "HTTP://TUNA.EXAMPLE" laptop)
+> (web:take-page-calls!)
+((2 "browse-url" "https://tuna.example/guide") (1 "browse-url" "mailto:jay@example.org") (1 "browse-url" "HTTP://TUNA.EXAMPLE"))
+; Only http, https and mailto addresses open, and only in a browser.
+> (browse-url:open "javascript:alert(1)" laptop)
+! browse-url:open: not an http, https or mailto address with irritant "javascript:alert(1)"
+> (browse-url:open "file:///etc/passwd" laptop)
+! browse-url:open: not an http, https or mailto address with irritant "file:///etc/passwd"
+> (browse-url:open 'tuna laptop)
+! browse-url:open: not an http, https or mailto address with irritant tuna
+> (browse-url:open "https://tuna.example" "laptop")
+! browse-url:open: not a client with irritant "laptop"
+> (browse-url:open "https://tuna.example")
+! browse-url:open: no browser to open it in with irritant "https://tuna.example"
+> (web:take-page-calls!)
+()
+; A browser that blocks the tab is told of with the address.
+> (handle! phone "browse-url" '("url" . "https://tuna.example/guide"))
+! The browser blocked the new tab for https://tuna.example/guide
+> (handle! phone "browse-url")
+! browse-url: not a browse-url item with irritant (("type" . "browse-url"))

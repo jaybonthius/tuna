@@ -899,15 +899,44 @@
          (splice-content! who b at (fx+ at 1) (boundaries 0 '() (list (cons (car new) (cadr new)))) #f))
        (reconcile-children! who b (fx+ at 1) (cddr old) (normalize (cddr new)))]))
 
+  ;; Only nodes of one kind and attributes are entered, so the count is of
+  ;; tokens the two lists have in common.
+  (define (shared-length old new from-end?)
+    (define (string-shared a b)
+      (let ([la (string-length a)] [lb (string-length b)])
+        (let loop ([k 0])
+          (if (and (fx< k la) (fx< k lb)
+                   (char=? (string-ref a (if from-end? (fx- la k 1) k))
+                           (string-ref b (if from-end? (fx- lb k 1) k))))
+              (loop (fx+ k 1))
+              k))))
+    (let loop ([old (if from-end? (reverse old) old)] [new (if from-end? (reverse new) new)] [n 0])
+      (cond
+        [(or (null? old) (null? new)) n]
+        [(equal? (car old) (car new)) (loop (cdr old) (cdr new) (fx+ n (datum-length (car old))))]
+        [(and (string? (car old)) (string? (car new))) (fx+ n (string-shared (car old) (car new)))]
+        [(and (pair? (car old)) (pair? (car new)) (eq? (caar old) (caar new)) (equal? (cadar old) (cadar new)))
+         (fx+ n 1 (shared-length (cddar old) (cddar new) from-end?))]
+        [else n])))
+
+  ;; Only what lies between the content the old and new gaps share at
+  ;; their start and end is replaced, so a node that grows at its end gets
+  ;; an insertion, and the cursors, anchors and line items before it stay.
+  (define (splice-gap! who b at old-gap new-gap)
+    (let* ([old-length (datums-length old-gap)] [new-length (datums-length new-gap)]
+           [start (shared-length old-gap new-gap #f)]
+           [end (fxmin (shared-length old-gap new-gap #t) (fx- old-length start) (fx- new-length start))])
+      (splice-content! who b (fx+ at start) (fx- (fx+ at old-length) end)
+        (document:slice (apply document:from-datum new-gap) start (fx- new-length end)) #f)))
+
   (define (reconcile-children! who b at old new)
     (let* ([old (list->vector old)] [new (list->vector new)])
       (let loop ([pairs (matches old new)] [i 0] [j 0] [at at])
         (let* ([oi (if (null? pairs) (vector-length old) (caar pairs))]
                [nj (if (null? pairs) (vector-length new) (cdar pairs))]
-               [old-gap (sublist old i oi)] [new-gap (sublist new j nj)]
-               [old-end (fx+ at (datums-length old-gap))])
+               [old-gap (sublist old i oi)] [new-gap (sublist new j nj)])
           (unless (equal? old-gap new-gap)
-            (splice-content! who b at old-end (apply document:from-datum new-gap) #f))
+            (splice-gap! who b at old-gap new-gap))
           (let ([at (fx+ at (datums-length new-gap))])
             (unless (null? pairs)
               (let ([od (vector-ref old oi)] [nd (vector-ref new nj)])

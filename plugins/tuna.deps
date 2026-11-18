@@ -20,3 +20,8 @@
   (commit "bf69167c6afbe43f1dd5bb6fa3779081dbca9369")
   (library-directories ("src" . "build/obj/src"))
   (build))
+(library chez-md4c
+  (git "https://github.com/jaybonthius/chez-md4c")
+  (commit "e9d08ede95e180b415a397abf1bcaf76f0c010b2")
+  (library-directories ("src" . "build/obj/src"))
+  (build "make" "build/obj/src/md4c/libchez-md4c.so"))

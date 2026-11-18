@@ -1,0 +1,153 @@
+; Streamed text: each prefix of a reply, read as text still arriving,
+; shows no marker of a construct still open. Only a table's header row
+; shows its pipes, until its delimiter row arrives, and no block of a
+; prefix holds more headings or emphasis than the same block of the
+; whole reply, as one would if a delimiter inside an address were
+; closed.
+> (define reply "## Plan\n\nFirst, **read** the *guide* at [the site](https://tuna.example \"Tuna\") and run `make check`.\nThen ~~skip~~ go on, as https://tuna.example/_docs/read_me says.\n\n- one\n- two, with **bold**\n  - nested *item*\n\n1. Build\n2. Test\n\n> Quoted **text**\n> - and a list\n\n| a | b |\n|---|---|\n| 1 | **2** |\n\n```scheme\n(define (f x) (* x 2))\n```\n\nDone.\n")
+> (define (prefixes) (map (lambda (n) (substring reply 0 n)) (iota (+ 1 (string-length reply)))))
+> (define (visible ds)
+    (apply string-append
+      (map (lambda (d)
+             (cond
+               [(string? d) d]
+               [(vector? d) ""]
+               [(memq (car d) '(markdown:code markdown:code-block)) ""]
+               [else (visible (cddr d))]))
+           ds)))
+> (define (marked? s) (exists (lambda (c) (memv c (string->list s))) '(#\* #\` #\~ #\[ #\] #\|)))
+> (define (kinds ds) (apply append (map (lambda (d) (if (pair? d) (cons (car d) (kinds (cddr d))) '())) ds)))
+> (define marked (filter (lambda (p) (marked? (visible (markdown:unfinished-blocks p)))) (prefixes)))
+> (list (string-length (car marked)) (string-length (car (last-pair marked))) (substring reply (- (string-length (car marked)) 1) (string-length (car (last-pair marked)))))
+(267 277 "| a | b |\n|")
+> (define (counts ds) (map (lambda (kind) (length (filter (lambda (k) (eq? k kind)) (kinds ds)))) '(markdown:heading markdown:strong markdown:emphasis markdown:strikethrough)))
+> (counts (markdown:blocks reply))
+(1 4 2 1)
+> (define (more? blocks finished)
+    (and (pair? blocks) (pair? finished)
+         (or (exists > (counts (list (car blocks))) (counts (list (car finished))))
+             (more? (cdr blocks) (cdr finished)))))
+> (filter (lambda (p) (more? (markdown:unfinished-blocks p) (markdown:blocks reply))) (prefixes))
+()
+; Once all of it has arrived, it reads as the finished text does.
+> (equal? (markdown:unfinished-blocks reply) (markdown:blocks reply))
+#t
+; What is closed: a code span, emphasis, strong emphasis and
+; strikethrough, nested or not. Text after an opener's last word waits.
+> (markdown:unfinished-blocks "Run `make che")
+((markdown:paragraph ((key . 0)) "Run " (markdown:code () "make che") "\n"))
+> (markdown:unfinished-blocks "a *b _c ~~d")
+((markdown:paragraph ((key . 0)) "a " (markdown:emphasis () "b " (markdown:emphasis () "c " (markdown:strikethrough () "d"))) "\n"))
+> (markdown:unfinished-blocks "**bold *ital")
+((markdown:paragraph ((key . 0)) (markdown:strong () "bold " (markdown:emphasis () "ital")) "\n"))
+> (markdown:unfinished-blocks "**bold ")
+((markdown:paragraph ((key . 0)) (markdown:strong () "bold") "\n"))
+> (markdown:unfinished-blocks "# Head **in")
+((markdown:heading ((key . 0) (level . 1)) "Head " (markdown:strong () "in") "\n"))
+> (markdown:unfinished-blocks "| a | b |\n|---|---|\n| x | **y")
+((markdown:table ((key . 0) (columns . 2)) (markdown:table-row ((key . 0) (header . #t)) (markdown:table-cell ((key . 0)) "a\n") (markdown:table-cell ((key . 1)) "b\n")) (markdown:table-row ((key . 1)) (markdown:table-cell ((key . 0)) "x\n") (markdown:table-cell ((key . 1)) (markdown:strong () "y") "\n"))))
+; An opener with nothing after it yet is left out, as is a lone marker
+; that may start a list item.
+> (markdown:unfinished-blocks "Some **")
+((markdown:paragraph ((key . 0)) "Some\n"))
+> (markdown:unfinished-blocks "Para\n*")
+((markdown:paragraph ((key . 0)) "Para\n"))
+; A link or image whose label, address or title is unfinished is its
+; label, emphasis and all.
+> (markdown:unfinished-blocks "See [the spec")
+((markdown:paragraph ((key . 0)) "See the spec\n"))
+> (markdown:unfinished-blocks "See ![a diagram")
+((markdown:paragraph ((key . 0)) "See a diagram\n"))
+> (markdown:unfinished-blocks "See [the spec]")
+((markdown:paragraph ((key . 0)) "See the spec\n"))
+> (markdown:unfinished-blocks "See [the spec](")
+((markdown:paragraph ((key . 0)) "See the spec\n"))
+> (markdown:unfinished-blocks "x [label](http://exa")
+((markdown:paragraph ((key . 0)) "x label\n"))
+> (markdown:unfinished-blocks "[label](https://x.y \"ti")
+((markdown:paragraph ((key . 0)) "label\n"))
+> (markdown:unfinished-blocks "[**bo**ld](https://x")
+((markdown:paragraph ((key . 0)) (markdown:strong () "bo") "ld\n"))
+; A last line of one or two - or =, after quote and list markers and
+; indentation, is left out; three make a heading, as when finished.
+> (map markdown:unfinished-blocks '("Para\n-" "Para\n- " "Para\n -" "Para\n=" "Para\n--"))
+(((markdown:paragraph ((key . 0)) "Para\n")) ((markdown:paragraph ((key . 0)) "Para\n")) ((markdown:paragraph ((key . 0)) "Para\n")) ((markdown:paragraph ((key . 0)) "Para\n")) ((markdown:paragraph ((key . 0)) "Para\n")))
+> (markdown:unfinished-blocks "- item\n  -")
+((markdown:list ((key . 0) (ordered . #f) (tight . #t)) (markdown:item ((key . 0)) (markdown:paragraph ((key . 0)) "item\n"))))
+> (markdown:unfinished-blocks "> Para\n> -")
+((markdown:quote ((key . 0)) (markdown:paragraph ((key . 0)) "Para\n")))
+> (markdown:unfinished-blocks "Para\n---")
+((markdown:heading ((key . 0) (level . 2)) "Para\n"))
+> (markdown:unfinished-blocks "-")
+((markdown:list ((key . 0) (ordered . #f) (tight . #t)) (markdown:item ((key . 0)))))
+; Text that ended its paragraph with a blank line, and code, stay as
+; written; markers that open nothing stay too.
+> (markdown:unfinished-blocks "**bold\n\n")
+((markdown:paragraph ((key . 0)) "**bold\n"))
+> (markdown:unfinished-blocks "```scheme\n(define **x")
+((markdown:code-block ((key . 0) (language . "scheme")) "(define **x\n"))
+> (markdown:unfinished-blocks "- a\n  ```\n  *x")
+((markdown:list ((key . 0) (ordered . #f) (tight . #t)) (markdown:item ((key . 0)) (markdown:paragraph ((key . 0)) "a\n") (markdown:code-block ((key . 1) (language . "")) "*x\n"))))
+> (markdown:unfinished-blocks "5 * 3 = snake_case_name")
+((markdown:paragraph ((key . 0)) "5 * 3 = snake_case_name\n"))
+> (markdown:unfinished-blocks "a\\*b *c")
+((markdown:paragraph ((key . 0)) "a*b " (markdown:emphasis () "c") "\n"))
+> (markdown:unfinished-blocks "")
+()
+; An address, bare or in angle brackets, is read whole, as md4c reads
+; it, less the punctuation that ends a sentence.
+> (markdown:unfinished-blocks "See https://x.example/_private and *more")
+((markdown:paragraph ((key . 0)) "See " (markdown:link ((href . "https://x.example/_private")) "https://x.example/_private") " and " (markdown:emphasis () "more") "\n"))
+> (markdown:unfinished-blocks "See <https://x.example/a_b> and www.example.com/~user")
+((markdown:paragraph ((key . 0)) "See " (markdown:link ((href . "https://x.example/a_b")) "https://x.example/a_b") " and " (markdown:link ((href . "http://www.example.com/~user")) "www.example.com/~user") "\n"))
+> (markdown:unfinished-blocks "**https://x.example/a_b** and _see https://x.example/c_d_")
+((markdown:paragraph ((key . 0)) (markdown:strong () (markdown:link ((href . "https://x.example/a_b")) "https://x.example/a_b")) " and " (markdown:emphasis () "see " (markdown:link ((href . "https://x.example/c_d")) "https://x.example/c_d")) "\n"))
+> (markdown:unfinished-blocks "**https://x.example/a_b")
+((markdown:paragraph ((key . 0)) (markdown:strong () (markdown:link ((href . "https://x.example/a_b")) "https://x.example/a_b")) "\n"))
+; A setext heading's underline and a quote's line of markers alone end
+; the text before them, so what it left open stays.
+> (markdown:unfinished-blocks "**bold\n---")
+((markdown:heading ((key . 0) (level . 2)) "**bold\n"))
+> (map markdown:unfinished-blocks '("> **bold\n>" "> **bold\n> \n"))
+(((markdown:quote ((key . 0)) (markdown:paragraph ((key . 0)) "**bold\n"))) ((markdown:quote ((key . 0)) (markdown:paragraph ((key . 0)) "**bold\n"))))
+; A link's tail is read as md4c reads it: an address in angle brackets
+; holds no <, and a title in parentheses holds no (.
+> (map markdown:unfinished-blocks '("[a](<b <c> *d" "[a](b (c (d) *e"))
+(((markdown:paragraph ((key . 0)) "[a](<b <c> " (markdown:emphasis () "d") "\n")) ((markdown:paragraph ((key . 0)) "[a](b (c (d) " (markdown:emphasis () "e") "\n")))
+; A link cut to its label is not cut again, since the text after the
+; label has arrived.
+> (markdown:unfinished-blocks "[[a]](")
+((markdown:paragraph ((key . 0)) "[a]\n"))
+; Hostile text takes time in proportion to its length.
+> (define (rep s n) (let ([p (open-output-string)]) (do ([i 0 (+ i 1)]) ((= i n)) (put-string p s)) (get-output-string p)))
+> (define (milliseconds thunk) (let ([t0 (current-time 'time-monotonic)]) (thunk) (let ([d (time-difference (current-time 'time-monotonic) t0)]) (+ (* 1000 (time-second d)) (quotient (time-nanosecond d) 1000000)))))
+> (filter (lambda (text) (> (milliseconds (lambda () (markdown:unfinished-blocks text))) 1000))
+    (list (rep "[" 100000) (string-append (rep "_a " 20000) (rep "a* " 20000)) (string-append (rep "[" 20000) "a" (rep "]" 20000) "(")
+          (string-append (rep "[a " 10000) (rep "](c " 10000) "](d") (string-append (rep "[a](<" 20000) ">")))
+()
+; Only the last block is read again, so earlier blocks keep their keys.
+> (markdown:unfinished-blocks "First.\n\n---\n\nSecond **b")
+((markdown:paragraph ((key . 0)) "First.\n") #(markdown:rule ((key . 1))) (markdown:paragraph ((key . 2)) "Second " (markdown:strong () "b") "\n"))
+; In a buffer, a block that grows at its end grows by an insertion: a
+; cursor and an anchor in a code block streaming line by line stay
+; where they were.
+> (import (chat))
+> (show! chat:chat)
+> (chat:receive! "Code:\n\n```scheme\n(define (f x)\n")
+> (datums chat:chat)
+((chat:reply () (markdown:paragraph ((key . 0)) "Code:\n") (markdown:code-block ((key . 1) (language . "scheme")) "(define (f x)\n")))
+> (views:set-point! (view) 18)
+> (define in-code (buffers:anchor chat:chat 21))
+> (define version (buffers:version chat:chat))
+> (element (view) "<div class=\"markdown-code-block\"" "div")
+"<div class=\"markdown-code-block\" data-language=\"scheme\" data-face=\"markup.raw\"><div class=\"line\" id=\"v1-3\" data-line=\"2\" data-at=\"10\">(define <span class=\"cursor primary\"></span>(f x)</div></div>"
+> (chat:receive! "  (* x 2))\n")
+> (datums chat:chat)
+((chat:reply () (markdown:paragraph ((key . 0)) "Code:\n") (markdown:code-block ((key . 1) (language . "scheme")) "(define (f x)\n  (* x 2))\n")))
+> (list (views:point (view)) (buffers:anchor-position in-code))
+(18 21)
+> (map (lambda (e) (list (buffers:edit-start e) (document:datums (buffers:edit-removed e)) (document:datums (buffers:edit-inserted e))))
+       (buffers:edits-since chat:chat version))
+((24 () ("  (* x 2))\n")))
+> (element (view) "<div class=\"markdown-code-block\"" "div")
+"<div class=\"markdown-code-block\" data-language=\"scheme\" data-face=\"markup.raw\"><div class=\"line\" id=\"v1-3\" data-line=\"2\" data-at=\"10\">(define <span class=\"cursor primary\"></span>(f x)</div><div class=\"line\" id=\"v1-5\" data-line=\"3\">  (* x 2))</div></div>"

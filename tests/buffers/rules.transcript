@@ -412,9 +412,24 @@ mark-keys
 (md:doc () (md:heading ((key . top)) "Top\n") (md:para ((key . a)) "alpha!\n") (md:para ((key . b)) "beta\n"))
 > (map (lambda (e) (list (buffers:edit-start e) (document:datums (buffers:edit-removed e)) (document:datums (buffers:edit-inserted e))))
        (buffers:edits-since s 0))
-((1 () ((md:heading ((key . top)) "Top\n"))) (8 ("alpha\n") ("alpha!\n")))
+((1 () ((md:heading ((key . top)) "Top\n"))) (13 () ("!")))
 > (document:text (buffers:document s) (buffers:anchor-position in-b) (+ (buffers:anchor-position in-b) 2))
 "be"
+; Of what differs, only the part between the content old and new share at
+; their start and end is replaced, so a node that grows inside gets an
+; insertion, and an anchor before it stays.
+> (define g (fresh '(md:doc () (md:para ((key . a)) "Some " (md:link () "bo") "\n"))))
+> (define in-link (buffers:anchor g 9))
+> (define version-g (buffers:version g))
+> (buffers:reconcile! g (document:token (buffers:document g) 0) '((md:para ((key . a)) "Some " (md:link () "bold") " text\n")))
+> (map (lambda (e) (list (buffers:edit-start e) (document:datums (buffers:edit-removed e)) (document:datums (buffers:edit-inserted e))))
+       (buffers:edits-since g version-g))
+((10 ((md:link ())) ((md:link () "ld") " text")))
+> (list (root g) (buffers:anchor-position in-link))
+((md:doc () (md:para ((key . a)) "Some " (md:link () "bold") " text\n")) 9)
+> (buffers:reconcile! g (document:token (buffers:document g) 0) '((md:para ((key . a)) "Some text\n")))
+> (root g)
+(md:doc () (md:para ((key . a)) "Some text\n"))
 > (reconcile! '((md:para ((key . b)) "beta\n") (md:para ((key . a) (x . 1)) "alpha!\n")))
 > (list (root s) (buffers:version s))
 ((md:doc () (md:para ((key . b)) "beta\n") (md:para ((key . a) (x . 1)) "alpha!\n")) 4)
