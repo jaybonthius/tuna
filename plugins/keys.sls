@@ -17,7 +17,8 @@
   (check-main-thread check-sequence check-keymap quit-keys? prefix-argument?
    remember-name! bound-name
    sessions session-of session-pending session-pending-set! session-prefix session-prefix-set!
-   session-temporaries session-running session-running-set!
+   session-temporaries session-running session-running-set! session-reading
+   read-next end-read! waiting-read-sequence? reading-keys quit-reads! quit-client-reads!
    keymaps-of resolve-key resolve-sequence prefix-binding? lone-escape? remapped
    last-key key-count browser-key mouse-item-key valid-event? key-or-event? check-event event-key-clicks
    dropped-mouse-key? drag-as-click pending-typed pending-seq pending-posn make-pending
@@ -213,7 +214,7 @@
 
   (define-record-type session
     (sealed #t)
-    (fields (mutable pending) (mutable prefix) (mutable temporaries) (mutable running)))
+    (fields (mutable pending) (mutable prefix) (mutable temporaries) (mutable running) (mutable reading)))
 
   ;; A sequence is looked up in the keymaps of its first key, so the
   ;; position of a mouse key that starts one is kept with it.
@@ -229,7 +230,7 @@
 
   (define (session-of frame)
     (or (eq-hashtable-ref sessions frame #f)
-        (let ([s (make-session #f #f '() '())])
+        (let ([s (make-session #f #f '() '() #f)])
           (eq-hashtable-set! sessions frame s)
           s)))
 
@@ -598,6 +599,62 @@
                 (session-running-set! s (remq (car es) (session-running s)))
                 (signal-task task (make-quit))))))))
 
+  (define-record-type waiting-read
+    (sealed #t)
+    (fields session sequence? task keys (mutable resume)))
+
+  ;; A read stays listed until its command has its key, not only until the
+  ;; key is handed over, so a quit still reaches a command whose key waits
+  ;; in the queue.
+  (define reads '())
+
+  (define (forget-read! r)
+    (set! reads (remq r reads))
+    (let ([s (waiting-read-session r)])
+      (when (eq? (session-reading s) r)
+        (session-reading-set! s #f))))
+
+  ;; A handler, not dynamic-wind, clears the read: a wind's after thunk
+  ;; would run at every pause.
+  (define (read-next who sequence?)
+    (check-main-thread who)
+    (let ([s (current-session)])
+      (unless s
+        (assertion-violation who "no command a key ran is running"))
+      (when (session-reading s)
+        (assertion-violation who "a key is already being read for this client"))
+      (let ([r (make-waiting-read s sequence? (current-task) (current-keys) #f)])
+        (guard (c [#t (forget-read! r) (raise c)])
+          (let ([key (suspend
+                       (lambda (resume)
+                         (waiting-read-resume-set! r resume)
+                         (unless sequence? (session-pending-set! s #f))
+                         (session-reading-set! s r)
+                         (set! reads (cons r reads))))])
+            (forget-read! r)
+            key)))))
+
+  (define (end-read! s r v)
+    (session-reading-set! s #f)
+    ((waiting-read-resume r) (lambda () v)))
+
+  (define (reading-keys s)
+    (let ([r (and s (session-reading s))])
+      (and r (waiting-read-keys r))))
+
+  (define (quit-reads! chosen?)
+    (for-each
+      (lambda (r)
+        (when (chosen? r)
+          (forget-read! r)
+          (signal-task (waiting-read-task r) (make-quit))))
+      reads))
+
+  (define (quit-client-reads! client)
+    (let ([s (eq-hashtable-ref sessions client #f)])
+      (when s
+        (quit-reads! (lambda (r) (eq? (waiting-read-session r) s))))))
+
   (define (set-prefix! s prefix)
     (session-prefix-set! s prefix)
     (commands:keep-last-command!))
@@ -617,11 +674,17 @@
   ;; it is connected.
   (define given '())
 
-  (define (page-settings)
-    (vector (quit-keys) (left-option-meta?) (right-option-meta?)))
+  ;; A key typed to a read is data, so a reading client's page marks none
+  ;; as a quit.
+  (define (page-quit-keys c)
+    (let ([s (eq-hashtable-ref sessions c #f)])
+      (if (and s (session-reading s)) '() (quit-keys))))
 
-  (define (current-settings? v)
-    (and (eq? (vector-ref v 0) (quit-keys))
+  (define (page-settings c)
+    (vector (page-quit-keys c) (left-option-meta?) (right-option-meta?)))
+
+  (define (current-settings? c v)
+    (and (eq? (vector-ref v 0) (page-quit-keys c))
          (eq? (vector-ref v 1) (left-option-meta?))
          (eq? (vector-ref v 2) (right-option-meta?))))
 
@@ -633,13 +696,13 @@
   (define (give-page-settings!)
     (let ([clients (web:clients)])
       (unless (and (fx= (length clients) (length given))
-                   (for-all (lambda (c g) (and (eq? c (car g)) (current-settings? (cdr g)))) clients given))
+                   (for-all (lambda (c g) (and (eq? c (car g)) (current-settings? c (cdr g)))) clients given))
         (set! given
           (map (lambda (c)
                  (let ([g (assq c given)])
-                   (if (and g (current-settings? (cdr g)))
+                   (if (and g (current-settings? c (cdr g)))
                        g
-                       (let ([v (page-settings)])
+                       (let ([v (page-settings c)])
                          (web:call-page! c "keys-settings" (settings-value v))
                          (cons c v)))))
                clients))))))
@@ -693,9 +756,10 @@
 
 (define (lookup client keys)
   (check-main-thread 'keys:lookup)
-  (check-sequence 'keys:lookup keys)
-  (let ([keymaps (keymaps-of client #f)])
-    (let-values ([(v found shifted?) (resolve-sequence keymaps keys)])
+  (unless (valid-event? keys)
+    (check-sequence 'keys:lookup keys))
+  (let ([keymaps (keymaps-of client (and (pair? keys) (cadr keys)))])
+    (let-values ([(v found shifted?) (resolve-sequence keymaps (if (pair? keys) (car keys) keys))])
       (cond
         [(eq? v #t) found]
         [(table? v) v]
@@ -732,41 +796,51 @@
   (let* ([event-given? (pair? key)]
          [name (if event-given? (car key) key)]
          [s (session-of client)]
-         [pending (session-pending s)]
-         [base (and pending (pending-seq pending))]
-         [typed (if pending (string-append (pending-typed pending) " " name) name)]
-         [posn (if pending (pending-posn pending) (and event-given? (cadr key)))]
-         [keymaps (keymaps-of client posn)])
-    (let-values ([(v found seq shifted? as-click?) (resolve-key keymaps base name)])
-      (cond
-        [(or (prefix-binding? v) (lone-escape? v base name))
-         (session-pending-set! s (make-pending typed seq posn))]
-        ;; As in Emacs, a press or a move that nothing binds is no key:
-        ;; the click or drag that follows it decides.
-        [(and (not v) (dropped-mouse-key? name)) (void)]
-        [else
-         (let ([prefix (session-prefix s)] [command (and v (remapped keymaps v))]
-               [event (if (and as-click? event-given?) (list (drag-as-click name) (cadr key)) key)])
-           (session-pending-set! s #f)
-           (session-prefix-set! s #f)
-           (test-temporaries! s found command)
+         [r (session-reading s)])
+    (cond
+      ;; A read wants the click or drag that ends a press, as a ui button
+      ;; binds the press only to keep it from the keymaps below.
+      [(and r (dropped-mouse-key? name)) (void)]
+      [(and r (not (waiting-read-sequence? r))) (end-read! s r key)]
+      [else
+       (let* ([pending (session-pending s)]
+              [base (and pending (pending-seq pending))]
+              [typed (if pending (string-append (pending-typed pending) " " name) name)]
+              [posn (if pending (pending-posn pending) (and event-given? (cadr key)))]
+              [keymaps (keymaps-of client posn)])
+         (let-values ([(v found seq shifted? as-click?) (resolve-key keymaps base name)])
            (cond
-             [(and command (not (commands:command? command)))
-              (raise-continuable
-                (condition (make-warning)
-                  (make-message-condition
-                    (format "~a runs ~a, which is not loaded" typed (bound-name command)))))]
+             [(or (prefix-binding? v) (lone-escape? v base name))
+              (session-pending-set! s (make-pending typed seq posn))]
+             ;; As in Emacs, a press or a move that nothing binds is no key:
+             ;; the click or drag that follows it decides.
+             [(and (not v) (dropped-mouse-key? name)) (void)]
+             [r
+              (session-pending-set! s #f)
+              (end-read! s r (if (and event-given? (not pending)) key typed))]
              [else
-              (let ([entry (list (current-task))])
-                (when (car entry)
-                  (session-running-set! s (cons entry (session-running s))))
-                (parameterize ([current-press (make-press typed shifted? s event)])
-                  (if (eq? (commands:prefix-argument) prefix)
-                      (commands:run (or command undefined))
-                      (parameterize ([commands:prefix-argument prefix])
-                        (commands:run (or command undefined)))))
-                (session-running-set! s
-                  (remp (lambda (e) (or (eq? e entry) (task-done? (car e)))) (session-running s))))]))]))))
+              (let ([prefix (session-prefix s)] [command (and v (remapped keymaps v))]
+                    [event (if (and as-click? event-given?) (list (drag-as-click name) (cadr key)) key)])
+                (session-pending-set! s #f)
+                (session-prefix-set! s #f)
+                (test-temporaries! s found command)
+                (cond
+                  [(and command (not (commands:command? command)))
+                   (raise-continuable
+                     (condition (make-warning)
+                       (make-message-condition
+                         (format "~a runs ~a, which is not loaded" typed (bound-name command)))))]
+                  [else
+                   (let ([entry (list (current-task))])
+                     (when (car entry)
+                       (session-running-set! s (cons entry (session-running s))))
+                     (parameterize ([current-press (make-press typed shifted? s event)])
+                       (if (eq? (commands:prefix-argument) prefix)
+                           (commands:run (or command undefined))
+                           (parameterize ([commands:prefix-argument prefix])
+                             (commands:run (or command undefined)))))
+                     (session-running-set! s
+                       (remp (lambda (e) (or (eq? e entry) (task-done? (car e)))) (session-running s))))]))])))])))
 
 (define (pending client)
   (check-main-thread 'keys:pending)
@@ -807,6 +881,14 @@
              [else #f])))))
 
 (define (shift-translated?) (current-shifted))
+
+(define (read-key) (read-next 'keys:read-key #f))
+
+(define (read-key-sequence) (read-next 'keys:read-key-sequence #t))
+
+(define (reading client)
+  (check-main-thread 'keys:reading)
+  (reading-keys (eq-hashtable-ref sessions client #f)))
 
 (define push-keymap!
   (case-lambda
@@ -913,4 +995,9 @@
     (ended)
     (give-page-settings!)))
 
-(on-unload (lambda () (end-owned! #f)))
+(add-hook! web:client-removed quit-client-reads!)
+
+(on-unload
+  (lambda ()
+    (end-owned! #f)
+    (quit-reads! (lambda (r) #t))))

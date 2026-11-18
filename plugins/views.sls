@@ -1551,6 +1551,32 @@
       (haml (:span ([data-face (symbol->string faces:escape-glyph)])
               "\\" (make-string (fx- 3 (string-length digits)) #\0) digits))))
 
+  (define (control-char? c)
+    (let ([n (char->integer c)])
+      (or (and (fx< n 32) (not (fx= n 9)) (not (fx= n 10))) (fx= n 127))))
+
+  ;; The page would show a control character as nothing, drop a NUL, and
+  ;; break the line at a CR, which the event stream ends a line at. Marked
+  ;; as one token, the two glyphs are one position to a click.
+  (define (control-html ctx at c)
+    (let ([glyph (string #\^ (integer->char (fxlogxor (char->integer c) 64)))]
+          [face (symbol->string faces:escape-glyph)])
+      (if (context-marks? ctx)
+          (haml (:span ([data-at at] [data-to (fx+ at 1)] [data-face face]) glyph))
+          (haml (:span ([data-face face]) glyph)))))
+
+  (define (text-html ctx at str)
+    (let ([n (string-length str)])
+      (let loop ([i 0] [from 0] [acc '()])
+        (cond
+          [(fx= i n)
+           (if (fx= from 0) str (reverse (if (fx< from n) (cons (substring str from n) acc) acc)))]
+          [(control-char? (string-ref str i))
+           (loop (fx+ i 1) (fx+ i 1)
+                 (cons (control-html ctx (fx+ at i) (string-ref str i))
+                       (if (fx< from i) (cons (substring str from i) acc) acc)))]
+          [else (loop (fx+ i 1) from acc)]))))
+
   (define-record-type text-piece (sealed #t) (fields at string))
   (define-record-type fold-mark (sealed #t) (fields at to))
 
@@ -1749,10 +1775,10 @@
          (map (lambda (item)
                 (cond
                   [(document:node? item) (draw-node ctx item #t)]
-                  [(text-piece? item) (text-piece-string item)]
+                  [(text-piece? item) (text-html ctx (text-piece-at item) (text-piece-string item))]
                   [else (fold-html ctx item)]))
               items)]
-        [(and (null? cursors) (for-all text-piece? items) (flat? spans)) (flat-content items spans)]
+        [(and (null? cursors) (for-all text-piece? items) (flat? spans)) (flat-content ctx items spans)]
         [else
           (let ([insertions (list-sort
                                (lambda (a b) (or (fx< (insertion-at a) (insertion-at b))
@@ -1818,7 +1844,7 @@
                          (let ([b (if (null? cuts) z (car cuts))])
                            (emit-insertions! a)
                            (unless (replaced? a b)
-                             (add! (covering a b) a b (substring str (fx- a at) (fx- b at))))
+                             (add! (covering a b) a b (text-html ctx a (substring str (fx- a at) (fx- b at)))))
                            (unless (null? cuts)
                              (loop b (let drop ([cs (cdr cuts)]) (if (and (pair? cs) (fx= (car cs) b)) (drop (cdr cs)) cs)))))))]
                     [else
@@ -1840,7 +1866,7 @@
               [(fx< (span-entry-start s) end) #f]
               [else (loop (cdr spans) (span-entry-end s))])))))
 
-  (define (flat-content items spans)
+  (define (flat-content ctx items spans)
     (let ([spans (filter (lambda (s) (and (span-entry-open s) (fx< (span-entry-start s) (span-entry-end s)))) spans)])
       (let next ([items items] [spans spans] [acc '()])
         (if (null? items)
@@ -1849,12 +1875,12 @@
               (let loop ([a at] [spans spans] [acc acc])
                 (cond
                   [(or (null? spans) (fx>= (span-entry-start (car spans)) z))
-                   (next (cdr items) spans (if (fx< a z) (cons (substring str (fx- a at) (fx- z at)) acc) acc))]
+                   (next (cdr items) spans (if (fx< a z) (cons (text-html ctx a (substring str (fx- a at) (fx- z at))) acc) acc))]
                   [(fx<= (span-entry-end (car spans)) a) (loop a (cdr spans) acc)]
                   [else
                    (let* ([s (car spans)] [from (fxmax a (span-entry-start s))] [to (fxmin z (span-entry-end s))]
-                          [acc (if (fx< a from) (cons (substring str (fx- a at) (fx- from at)) acc) acc)]
-                          [acc (cons (list (fragment-open s from to) (substring str (fx- from at) (fx- to at)) (span-entry-close s)) acc)])
+                          [acc (if (fx< a from) (cons (text-html ctx a (substring str (fx- a at) (fx- from at))) acc) acc)]
+                          [acc (cons (list (fragment-open s from to) (text-html ctx from (substring str (fx- from at) (fx- to at))) (span-entry-close s)) acc)])
                      (if (fx<= (span-entry-end s) z)
                          (loop to (cdr spans) acc)
                          (next (cdr items) spans acc)))])))))))

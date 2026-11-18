@@ -100,3 +100,18 @@ editing:forward-char
 > (selected-text tag-session)
 "lisp"
 > (completion:end! tag-session)
+; A command run from M-x reads the next key from the client that typed
+; M-x, keeping the prefix argument M-x passed on.
+> (define quoted (buffers:make "quoted" ""))
+> (views:set-buffer! (view) quoted)
+> (define t (start! (lambda () (press! "C-u" "2" "M-x"))))
+> (type! "editing:quoted-insert")
+> (press! "RET")
+> (sleep-for 0.05)
+> (list (keys:reading client) (keys:reading other-client))
+("M-x" #f)
+> (press-in! other-client "a")
+> (press! "TAB")
+> (result t)
+> (text quoted)
+"a\t\t"

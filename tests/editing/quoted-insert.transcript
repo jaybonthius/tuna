@@ -1,0 +1,108 @@
+; C-q inserts the next key's character, whatever the key is bound to.
+; The read pauses C-q's task, so C-q is pressed in a task of its own and
+; the next key from the REPL's.
+> (define (quote! . keys)
+    (spawn-task (lambda () (apply press! keys)))
+    (sleep-for 0.02))
+> (define (settle) (sleep-for 0.02))
+> (start! "ab" 2)
+("ab" ((2 #f)))
+> (quote! "C-q")
+> (keys:reading client)
+"C-q"
+> (press! "TAB")
+> (settle)
+> (list (state) (keys:reading client))
+(("a\tb" ((3 #f))) #f)
+; A quit key is read as data: C-q C-g inserts U+0007 and quits nothing.
+> (quote! "C-q")
+> (press! "C-g")
+> (settle)
+> (state)
+("a\t\ab" ((4 #f)))
+; Each key's character: itself, the five named keys, and C- with a
+; letter or one of @ [ \ ] ^ _ SPC ?.
+> (define (inserted key)
+    (start! "" 1)
+    (quote! "C-q")
+    (press! key)
+    (settle)
+    (text))
+> (map inserted '("x" "é" "SPC" "TAB" "RET" "ESC" "DEL" "C-a" "C-A" "C-z" "C-@" "C-SPC" "C-[" "C-\\" "C-]" "C-^" "C-_" "C-?"))
+("x" "é" " " "\t" "\r" "\x1B;" "\x7F;" "\x1;" "\x1;" "\x1A;" "\x0;" "\x0;" "\x1B;" "\x1C;" "\x1D;" "\x1E;" "\x1F;" "\x7F;")
+; Any other key raises and inserts nothing.
+> (start! "ab" 2)
+("ab" ((2 #f)))
+> (quote! "C-q")
+> (press! "<f5>")
+> (settle)
+! editing:quoted-insert: <f5> is not a character
+> (quote! "C-q")
+> (press! "M-a")
+> (settle)
+! editing:quoted-insert: M-a is not a character
+> (quote! "C-q")
+> (press! "C-ı")
+> (settle)
+! editing:quoted-insert: C-ı is not a character
+> (quote! "C-q")
+> (press! '("<mouse-1>" #(1 1)))
+> (settle)
+! editing:quoted-insert: <mouse-1> is not a character
+> (state)
+("ab" ((2 #f)))
+; The prefix argument is a count, at each cursor; an active region is
+; replaced, as delete-selection is on.
+> (start! "ab" 1 2)
+("ab" ((1 #f) (2 #f)))
+> (quote! "C-u" "3" "C-q")
+> (press! "x")
+> (settle)
+> (state)
+("xxxaxxxb" ((4 #f) (8 #f)))
+> (start! "abc" 1)
+("abc" ((1 #f)))
+> (press! "C-SPC" "C-f" "C-f")
+> (quote! "C-q")
+> (press! "TAB")
+> (settle)
+> (state)
+("\tc" ((2 #f)))
+> (commands:run editing:quoted-insert -1)
+! editing:quoted-insert: not a non-negative count with irritant -1
+; With no view current, C-q raises before it reads.
+> (commands:run editing:quoted-insert 1)
+! editing:quoted-insert: no view is current
+; The character goes to the view selected when the key arrives.
+> (define first (view))
+> (define second (views:make (buffers:make "second" "")))
+> (buffers:replace! layout:buffer 1 (- (document:length (buffers:document layout:buffer)) 1)
+    (document:from-datum
+      (layout-split:container '()
+        (views:view `((view . ,(views:id first)) (buffer . ,(buffers:name (views:buffer first)))))
+        (views:view `((view . ,(views:id second)) (buffer . "second"))))))
+#<edit 1>
+> (start! "ab" 1)
+("ab" ((1 #f)))
+> (quote! "C-q")
+> (layout:select! second)
+> (press! "y")
+> (settle)
+> (map (lambda (v) (document:text (buffers:document (views:buffer v)))) (list first second))
+("ab" "y")
+; The keys page's example inserts the name of the next key typed.
+> (commands:define-command (insert-key-name)
+    "Inserts the name of the next key typed, such as C-x."
+    (let* ([key (keys:read-key)]
+           [name (if (keys:event? key) (keys:event-key key) key)]
+           [view (views:current)])
+      (buffers:replace! (views:buffer view) (views:point view) (views:point view) name)))
+> (keys:bind! keys:global "C-c n" insert-key-name)
+> (layout:select! first)
+> (start! "" 1)
+("" ((1 #f)))
+> (quote! "C-c" "n")
+> (press! "C-x")
+> (settle)
+> (text)
+"C-x"

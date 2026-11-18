@@ -62,3 +62,17 @@
 "C-x"
 > (keys:item-key '(("type" . "key") ("key" . "≈") ("code" . "KeyX") ("modifiers" . #("left-option"))))
 "M-x"
+; Reading keys: a command binds the next key sequence typed, and while it
+; reads, keys:reading gives the keys that ran it.
+> (commands:define-command (bind-other-view [keys (keys:read-key-sequence)])
+    "Binds the next key sequence typed to layout:other-view."
+    (keys:bind! keys:global (if (keys:event? keys) (keys:event-key keys) keys) layout:other-view))
+> (keys:bind! keys:global "C-c b" bind-other-view)
+> (define binding (spawn-task (lambda () (press-all! frame "C-c" "b"))))
+> (sleep-for 0.02)
+> (keys:reading frame)
+"C-c b"
+> (press-all! frame "C-c" "v")
+> (join-task binding)
+> (name-of (keys:lookup frame "C-c v"))
+layout:other-view

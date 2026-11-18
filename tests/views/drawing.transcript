@@ -161,3 +161,18 @@
 > (views:set-point! rv 6)
 > (let ([html (html->string (views:draw rv #f))]) (substring html (search html "<div class=\"line\"" 0) (search html "</div>" 0)))
 "<div class=\"line\" id=\"v79-1\" data-line=\"1\" data-at=\"1\">caf<span class=\"node\" data-at=\"4\" data-to=\"5\"><span data-face=\"escape-glyph\">\\351</span></span> <span class=\"cursor primary\"></span><span class=\"node\" data-at=\"6\" data-to=\"7\"><span data-face=\"escape-glyph\">\\007</span></span>"
+; A control character other than a tab or a line break draws as ^ and a
+; character in the face escape-glyph, marked as one position, so a CR
+; does not break the line and a NUL is not dropped. Lines with and
+; without a cursor or a span draw them alike.
+> (define ctl (buffers:make "ctl" "a\rb\x0;\x7f;\x1b;\tc\nx\x7;y\nz\x1f;w\n"))
+> (define ctlv (views:make ctl))
+> (buffers:add-span! (buffers:layer ctl hints) 14 17 '((face . keyword)))
+> (views:set-point! ctlv 3)
+> (let ([html (html->string (views:draw ctlv #f))])
+    (let loop ([from (search html "<div class=\"line\"" 0)] [acc '()])
+      (if (not from)
+          (reverse acc)
+          (let ([end (search html "</div>" from)])
+            (loop (search html "<div class=\"line\"" end) (cons (substring html from end) acc))))))
+("<div class=\"line\" id=\"v80-1\" data-line=\"1\" data-at=\"1\">a<span data-at=\"2\" data-to=\"3\" data-face=\"escape-glyph\">^M</span><span class=\"cursor primary\"></span>b<span data-at=\"4\" data-to=\"5\" data-face=\"escape-glyph\">^@</span><span data-at=\"5\" data-to=\"6\" data-face=\"escape-glyph\">^?</span><span data-at=\"6\" data-to=\"7\" data-face=\"escape-glyph\">^[</span>\tc" "<div class=\"line\" id=\"v80-2\" data-line=\"2\">x<span data-at=\"11\" data-to=\"12\" data-face=\"escape-glyph\">^G</span>y" "<div class=\"line\" id=\"v80-3\" data-line=\"3\"><span data-face=\"keyword\">z<span data-at=\"15\" data-to=\"16\" data-face=\"escape-glyph\">^_</span>w</span>" "<div class=\"line\" id=\"v80-4\" data-line=\"4\"><br>")

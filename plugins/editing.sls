@@ -8,7 +8,7 @@
   "The characters besides letters and digits that are part of words.")
 
 (module %internals
-  (check-main-thread check-count check-nonnegative-count command-view content-bounds for-each-cursor
+  (check-main-thread check-count check-nonnegative-count command-view check-view key-char content-bounds for-each-cursor
    place-kept! move-kept! edge-error stops-from move-cursors! end-of-line first-stop clear-marks!
    set-marks! forget-temporary! exchange-marks! check-regions word-characters-in words-from
    line-motion-target recase! capitalizer replace-region-or! insert-at-cursors! kill-ranges! after-kill?
@@ -31,12 +31,30 @@
       (assertion-violation who "not a non-negative count" n)))
 
   (define (command-view who)
-    (let ([v (views:current)])
-      (unless v
-        (assertion-violation who "no view is current"))
-      (unless (views:buffer v)
-        (assertion-violation who "the view shows no buffer" v))
-      v))
+    (check-view who (views:current)))
+
+  (define (check-view who v)
+    (unless v
+      (assertion-violation who "no view is current"))
+    (unless (views:buffer v)
+      (assertion-violation who "the view shows no buffer" v))
+    v)
+
+  (define named-key-chars
+    '(("SPC" . #\space) ("TAB" . #\tab) ("RET" . #\return) ("ESC" . #\esc) ("DEL" . #\delete)
+      ("C-SPC" . #\nul) ("C-?" . #\delete)))
+
+  ;; char-upcase takes ı to I, so the key's own character must be ASCII.
+  (define (key-char key)
+    (let ([n (string-length key)])
+      (cond
+        [(fx= n 1) (string-ref key 0)]
+        [(assoc key named-key-chars) => cdr]
+        [(and (fx= n 3) (char=? (string-ref key 0) #\C) (char=? (string-ref key 1) #\-)
+              (char<? (string-ref key 2) #\x80))
+         (let ([c (char-upcase (string-ref key 2))])
+           (and (char<=? #\@ c #\_) (integer->char (fx- (char->integer c) 64))))]
+        [else #f])))
 
   ;; A buffer's root is one node, so its content runs from after the
   ;; root's opening to before its closing.
@@ -555,6 +573,18 @@
       (assertion-violation 'editing:self-insert "no character was typed"))
     (undo:amalgamate!)
     (insert-at-cursors! view (make-string n char) (delete-selection) (lambda (start end) end))))
+
+(commands:define-command (quoted-insert [n (commands:prefix-number)])
+  "Reads the next key and inserts its character N times at each cursor, whatever the key is bound to."
+  (check-nonnegative-count 'editing:quoted-insert n)
+  (command-view 'editing:quoted-insert)
+  (let* ([key (keys:read-key)] [char (and (string? key) (key-char key))])
+    (unless char
+      (errorf 'editing:quoted-insert "~a is not a character" (if (keys:event? key) (keys:event-key key) key)))
+    ;; A paused command keeps the view current when it started, but the
+    ;; character goes where the key was typed.
+    (insert-at-cursors! (check-view 'editing:quoted-insert (layout:selected-view)) (make-string n char)
+      (delete-selection) (lambda (start end) end))))
 
 (commands:define-command (newline [n (commands:prefix-number)])
   "Inserts N line breaks at each cursor."
@@ -1297,6 +1327,7 @@
 (keys:bind! keys:global "SPC" self-insert)
 (keys:bind! keys:global "RET" newline)
 (keys:bind! keys:global "C-o" open-line)
+(keys:bind! keys:global "C-q" quoted-insert)
 (keys:bind! keys:global "DEL" delete-backward-char)
 (keys:bind! keys:global "C-d" delete-char)
 (keys:bind! keys:global "<delete>" delete-char)
