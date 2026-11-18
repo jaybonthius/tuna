@@ -16,13 +16,13 @@
 ("Allow rm?\n￼￼Cancel\ndraft\n" #t)
 > (html->string (pi-chat:show-waiting (view)))
 "<span class=\"pi-chat-waiting\" title=\"Pi waits for an answer; click to go to the question\">Pi asks</span>"
-; C-c a d goes to the question that waited longest; RET on an option
-; answers with it.
+; C-c a d goes to the question that waited longest, point on its first
+; option; RET on an option answers with it.
 > (in-client (lambda () (layout:switch-to-buffer (buffers:make "other" ""))))
 > (in-client (lambda () (commands:run pi-chat:next-dialog)))
 > (eq? (views:buffer (view)) (pi-chat:buffer chat))
 #t
-> (press! "C-n" "C-n" "RET")
+> (press! "C-n" "RET")
 > (wait-until (lambda () (pair? (responses))))
 > (responses)
 ((("id" . "d1") ("value" . "Block")))
@@ -76,11 +76,35 @@
 (("id" . "d5") ("cancelled" . #t))
 > (shown chat)
 "Steer x\ndraft\n"
-; What is typed in a question's field stays when pi reloads.
+; On a confirm, C-c a d puts point on its first button, so RET answers
+; Yes.
+> (say! f (ui-request "d7" "confirm" '("title" . "Again?")))
+> (wait-until (lambda () (= 1 (length (drawn-dialogs chat)))))
+> (sleep-for 0.1)
+> (in-client (lambda () (commands:run pi-chat:next-dialog)))
+> (press! "RET")
+> (wait-until (lambda () (= 6 (length (responses)))))
+> (list-ref (responses) 5)
+(("id" . "d7") ("confirmed" . #t))
+; In a field that holds text, C-c a d puts point after the text, so
+; typing adds to it.
+> (say! f (ui-request "d8" "editor" '("title" . "More") '("prefill" . "One")))
+> (wait-until (lambda () (= 1 (length (drawn-dialogs chat)))))
+> (sleep-for 0.1)
+> (in-client (lambda () (commands:run pi-chat:next-dialog)))
+> (type! "!")
+> (drawn-dialogs chat)
+((dialog (method . editor) (header "More\n") (field "One!\n") (actions (answer-button "Answer") " " (cancel-button "Cancel") "\n")))
+> (press! "RET")
+> (wait-until (lambda () (= 7 (length (responses)))))
+> (list-ref (responses) 6)
+(("id" . "d8") ("value" . "One!"))
+; C-c a d puts point in a question's field, so typing goes there; what
+; is typed in it stays when pi reloads.
 > (define (library-file name) (string-append (getenv "TUNA_LIBRARY") "/" name))
 > (say! f (ui-request "d6" "input" '("title" . "Why")))
 > (wait-until (lambda () (= 1 (length (drawn-dialogs chat)))))
-> (point-in! chat 'pi-chat:%field)
+> (in-client (lambda () (commands:run pi-chat:next-dialog)))
 > (type! "Because")
 > (eval-file (library-file "pi.sls"))
 > (define chat (car (pi:chats)))

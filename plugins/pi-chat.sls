@@ -267,6 +267,9 @@
       (lambda (c at) (when (document:node? c) (set! acc (cons c acc)))))
     (reverse acc)))
 
+(define (%child-of node kinds)
+  (find (lambda (c) (memq (document:node-kind c) kinds)) (%children node)))
+
 (define (%root b) (document:token (buffers:document b) 0))
 
 (define (%part b kind . attributes)
@@ -608,7 +611,7 @@
     (find (lambda (d) (equal? (pi:dialog-id d) id)) (pi:chat-dialogs chat))))
 
 (define (%show-options! chat b d)
-  (let ([list-node (find (lambda (n) (eq? (document:node-kind n) 'ui:list)) (%children (%dialog-node-of b d)))])
+  (let ([list-node (%child-of (%dialog-node-of b d) '(ui:list))])
     (when list-node
       (ui:set-rows! b list-node (list->vector (pi:dialog-options d)) ui:label
         (lambda (option) (pi:answer! chat d option))
@@ -915,7 +918,7 @@
         (show! chat)))))
 
 (commands:define-command (next-dialog)
-  "Shows the chat whose question has waited longest, point in the question."
+  "Shows the chat whose question has waited longest, point where it is answered: at the end of its field's text, on its first option or on its first button."
   (let ([waiting (apply append (map (lambda (chat) (map (lambda (d) (cons chat d)) (pi:chat-dialogs chat))) (pi:chats)))])
     (when (null? waiting)
       (error 'pi-chat:next-dialog "no question waits"))
@@ -928,9 +931,13 @@
            [chat (car oldest)] [b (%buffer-of chat)])
       (%rewrite! chat b)
       (show! chat)
-      (let ([n (%dialog-node-of b (cdr oldest))])
-        (when n
-          (views:set-point! (layout:selected-view) (fx+ (document:node-start n) 1)))))))
+      (let* ([n (%dialog-node-of b (cdr oldest))]
+             [answer (and n (%child-of n '(pi-chat:%field ui:list pi-chat:%actions)))])
+        (when answer
+          (views:set-point! (layout:selected-view)
+            (if (eq? (document:node-kind answer) 'pi-chat:%field)
+                (fx- (document:node-end answer) 2)
+                (fx+ (document:node-start answer) 1))))))))
 
 (define (%remember! text)
   (set-saved! prompt-history (cons text (remove text (prompt-history)))))
@@ -1194,7 +1201,7 @@
       (values chat b v position node d))))
 
 (define (%field-text b dialog-node)
-  (let ([field (find (lambda (n) (eq? (document:node-kind n) 'pi-chat:%field)) (%children dialog-node))])
+  (let ([field (%child-of dialog-node '(pi-chat:%field))])
     (if field
         (document:text (buffers:document b) (fx+ (document:node-start field) 1) (fx- (document:node-end field) 2))
         "")))
@@ -1203,7 +1210,7 @@
   "Answers the question at point: the option at point, the button pushed, or the text typed."
   (let-values ([(chat b v position node d) (%dialog-of-point 'pi-chat:answer)])
     (let ([button (%enclosing-of b position '(pi-chat:%answer-button))]
-          [list-node (find (lambda (n) (eq? (document:node-kind n) 'ui:list)) (%children node))])
+          [list-node (%child-of node '(ui:list))])
       (cond
         [(eq? (pi:dialog-method d) (pi:method confirm))
          (unless button (error 'pi-chat:answer "push Yes or No"))

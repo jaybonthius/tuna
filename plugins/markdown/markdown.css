@@ -93,8 +93,11 @@
     margin-block-end: 0;
   }
 
+  /* Placed outside its item, a marker has no room of its own, so a
+     number such as 10. would wrap between its characters. */
   .markdown-item-marker,
   .markdown-item-box {
+    white-space: nowrap;
     position: absolute;
     inset-inline-end: 100%;
     margin: 0;

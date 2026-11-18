@@ -4,7 +4,11 @@
    its contents, so spacing goes on the element inside it. An item of the
    transcript is inside a node that draws no element of its own. */
 @layer defaults {
+  /* Lines across a wide window are too long to read; the column keeps 80
+     columns of code inside a code block's padding. */
   .pi-chat {
+    max-inline-size: calc(var(--tuna-size-content-4) + 2 * var(--tuna-space-5));
+    margin-inline: auto;
     padding-block: var(--tuna-space-4);
     padding-inline: var(--tuna-space-5);
   }
@@ -20,6 +24,7 @@
     padding-block: var(--tuna-space-3);
     padding-inline: var(--tuna-space-4);
     background: var(--pi-chat-user-message-background, var(--tuna-surface-subtle));
+    border: var(--tuna-border-width) solid var(--pi-chat-user-message-border, var(--tuna-border));
     border-radius: var(--pi-chat-user-message-radius, var(--tuna-panel-radius));
   }
 
@@ -128,7 +133,16 @@
   .pi-chat-notice {
     font-family: var(--tuna-font-ui);
     font-size: var(--tuna-font-size-ui);
+  }
+
+  /* A notice with a face takes its colour from it; a class here would tie
+     with the face's attribute selector and win by link order. */
+  .pi-chat-notice:not([data-face]) {
     color: var(--tuna-text-muted);
+  }
+
+  .pi-chat-transcript > .node:has(> .node > .pi-chat-notice) + .node > .node > .pi-chat-notice {
+    margin-block-start: var(--tuna-space-2);
   }
 
   .pi-chat-notice:is([data-level="error"], [data-level="warning"]) {
@@ -144,6 +158,7 @@
   }
 
   .pi-chat-dialog > .node:first-child > .pi-chat-header {
+    font-size: inherit;
     font-weight: var(--tuna-font-weight-bold);
     color: var(--pi-chat-dialog-title-color, var(--tuna-info));
   }
@@ -166,6 +181,10 @@
 
   .pi-chat-field[data-lines] {
     min-block-size: calc(3lh + 2 * var(--tuna-space-1));
+  }
+
+  .pi-chat-actions {
+    font-family: var(--tuna-font-ui);
   }
 
   .pi-chat-actions .line {
