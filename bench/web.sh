@@ -14,9 +14,10 @@ trap 'rm -rf "$dir"' EXIT
 lib=$dir/home/.config/tuna/lib
 mkdir -p "$lib"
 cp bench/web.sls "$lib/web-bench.sls"
+cp tests/web/home/.config/tuna/lib/http.sls "$lib/http.sls"
 cat > "$dir/home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins))
-(use-plugin web (config (set-option! web:port 19399)))
+(import (tuna) (tuna plugins) (http))
+(use-plugin web (config (set-option! web:port (http:free-port))))
 (import (web-bench))
 (web-bench:run)
 (exit)

@@ -1,5 +1,5 @@
 #!tuna
-(import (document) (buffers) (views) (layout) (layout-split) (web) (haml) (http))
+(import (document) (buffers) (views) (layout) (layout-split) (web) (haml) (http) (scroll-report))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -79,14 +79,7 @@
 
 (define (screen-bytes client) (bytevector-length (html->bytevector (layout:screen client))))
 
-(define (lines-drawn client)
-  (let ([html (html->string (layout:screen client))])
-    (let loop ([i 0] [n 0])
-      (let ([j (let search ([k i])
-                 (cond [(> (+ k 11) (string-length html)) #f]
-                       [(string=? (substring html k (+ k 11)) "data-line=\"") k]
-                       [else (search (+ k 1))]))])
-        (if j (loop (+ j 11) (+ n 1)) n)))))
+(define (lines-drawn client) (length (scroll-report:lines-drawn (html->string (layout:screen client)))))
 
 (define (wait-for done?)
   (let loop ([n 0])
@@ -101,40 +94,9 @@
     (for-each (lambda (i) (http:connect! (http:page))) (iota n))
     (wait-for (lambda () (= (length (web:clients)) (+ before n))))))
 
-(define (number-after html name)
-  (let ([n (string-length name)])
-    (let search ([k 0])
-      (if (string=? (substring html k (+ k n)) name)
-          (let digits ([k (+ k n)] [v 0])
-            (if (char-numeric? (string-ref html k))
-                (digits (+ k 1) (+ (* v 10) (- (char->integer (string-ref html k)) 48)))
-                v))
-          (search (+ k 1))))))
-
-(define (drawn-range html)
-  (let loop ([i 0] [first #f] [last #f])
-    (let ([j (let search ([k i])
-               (cond [(> (+ k 11) (string-length html)) #f]
-                     [(string=? (substring html k (+ k 11)) "data-line=\"") k]
-                     [else (search (+ k 1))]))])
-      (if j
-          (let ([n (number-after (substring html j (min (string-length html) (+ j 30))) "data-line=\"")])
-            (loop (+ j 11) (or first n) n))
-          (values first last)))))
-
 (define (report! v client height)
-  (let ([html (html->string (views:draw v client))])
-    (let-values ([(first last) (drawn-range html)])
-      (let* ([doc (buffers:document (views:buffer v))]
-             [top (document:line doc (views:top v client))]
-             [shown (quotient height 22)])
-        ((table-ref web:input-handlers "scroll") client
-         `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,(number-after html "data-placement=\""))
-           ("report" . 1) ("top" . ,top) ("offset" . 0) ("lastVisible" . ,(+ top shown -1)) ("spacer" . null)
-           ("spacerDistance" . 0) ("before" . ,(- top first)) ("after" . ,(- last top))
-           ("drawnHeight" . ,(* 22 (+ 1 (- last first)))) ("above" . ,(* 22 (- top first)))
-           ("below" . ,(max 0 (- (* 22 (+ 1 (- last top))) height))) ("width" . 800) ("height" . ,height)
-           ("settled" . #t)))))))
+  (let ([top (document:line (buffers:document (views:buffer v)) (views:top v client))])
+    ((table-ref web:input-handlers "scroll") client (scroll-report:make v client top height #t))))
 
 (define (measure-all!)
   (for-each

@@ -13,6 +13,7 @@ trap 'rm -rf "$dir"' EXIT
 lib=$dir/home/.config/tuna/lib
 mkdir -p "$lib"
 cp bench/views.sls "$lib/views-bench.sls"
+cp bench/scroll-report.sls "$lib/scroll-report.sls"
 # The web plugin's stand-in spares the benchmark a server and makes its
 # clients.
 cp tests/views/home/.config/tuna/lib/web.sls "$lib/web.sls"

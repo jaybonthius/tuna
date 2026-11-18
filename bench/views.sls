@@ -1,5 +1,5 @@
 #!tuna
-(import (document) (buffers) (views) (web) (haml) (views height-map))
+(import (document) (buffers) (views) (web) (haml) (views height-map) (scroll-report))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -65,42 +65,9 @@
     (collect (collect-maximum-generation))
     b))
 
-(define (lines-drawn html)
-  (let loop ([i 0] [acc '()])
-    (let ([j (let search ([k i])
-               (cond [(> (+ k 11) (string-length html)) #f]
-                     [(string=? (substring html k (+ k 11)) "data-line=\"") k]
-                     [else (search (+ k 1))]))])
-      (if j
-          (let digits ([k (+ j 11)] [n 0])
-            (if (char-numeric? (string-ref html k))
-                (digits (+ k 1) (+ (* n 10) (- (char->integer (string-ref html k)) 48)))
-                (loop k (cons n acc))))
-          (reverse acc)))))
-
-(define (number-after html name)
-  (let ([n (string-length name)])
-    (let search ([k 0])
-      (if (string=? (substring html k (+ k n)) name)
-          (let digits ([k (+ k n)] [v 0])
-            (if (char-numeric? (string-ref html k))
-                (digits (+ k 1) (+ (* v 10) (- (char->integer (string-ref html k)) 48)))
-                v))
-          (search (+ k 1))))))
-
 (define desk (web:make-client 1))
 
-(define (report-of v client top)
-  (let* ([html (html->string (views:draw v client))] [ls (lines-drawn html)]
-         [first (car ls)] [last (car (reverse ls))]
-         [mark (lambda (line) (list (cons "line" line)))])
-    `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,(number-after html "data-placement=\""))
-      ("report" . 1) ("version" . ,(number-after html "data-version=\"")) ("top" . ,(mark top)) ("offset" . 0)
-      ("itemHeight" . 22) ("left" . 0) ("start" . ,(mark top)) ("end" . ,(mark (+ top 44)))
-      ("spacer" . null) ("spacerDistance" . 0) ("below" . ,(max 0 (- (* 22 (+ 1 (- last top))) 990)))
-      ("items" . ,(list->vector (map (lambda (line) (vector (mark line) 22)) ls)))
-      ("lineHeight" . 22) ("charWidth" . 9) ("width" . 800) ("height" . 990) ("settled" . #f) ("hand" . #f)
-      ("runAtEnd" . #f))))
+(define (report-of v client top) (scroll-report:make v client top 990 #f))
 
 (define (report! v client top) ((table-ref web:input-handlers "scroll") client (report-of v client top)))
 
@@ -140,7 +107,7 @@
     (for-each (lambda (c) (report! v c top) (report! v c top)) (list desktop phone))
     (ns-per-op 200 (lambda (i) (html->string (views:draw v desktop)) (html->string (views:draw v phone))))))
 
-(define (drawn-lines v) (length (lines-drawn (html->string (views:draw v desk)))))
+(define (drawn-lines v) (length (scroll-report:lines-drawn (html->string (views:draw v desk)))))
 
 (define (big-map)
   (let ([m (make-height-map 600000 22.0 #f (lambda (a z) (values (quotient (- z a) 10) (- z a) 0 0)))])

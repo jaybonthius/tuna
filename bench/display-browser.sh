@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 tuna=${1:?usage: display-browser.sh TUNA [PORT]}
-port=${2:-19390}
+port=${2:-'(http:free-port)'}
 case $tuna in
   /*) ;;
   *) tuna=$PWD/$tuna ;;
@@ -11,11 +11,12 @@ trap 'rm -rf "$dir"' EXIT
 lib=$dir/home/.config/tuna/lib
 mkdir -p "$lib"
 cp bench/display.sls "$lib/display-bench.sls"
+cp bench/scroll-report.sls "$lib/scroll-report.sls"
 cp bench/display-browser.sls "$lib/display-browser.sls"
 cp bench/display-browser.js "$lib/display-browser.js"
 cp tests/web/home/.config/tuna/lib/http.sls "$lib/http.sls"
 cat > "$dir/home/.config/tuna/init.ss" <<END
-(import (tuna) (tuna plugins))
+(import (tuna) (tuna plugins) (http))
 (use-plugin web (config (set-option! web:port $port)))
 (use-plugin layout)
 (use-plugin layout-split)

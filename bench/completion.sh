@@ -17,6 +17,9 @@ cp tests/echo-area/home/.config/tuna/lib/web.sls "$lib/web.sls"
 printf '(import (tuna) (completion-bench))\n(completion-bench:run)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
+# Each prompt the benchmark ends with C-g reports a quit, and is meant
+# to; a quit that cut a measurement short still shows, as a missing
+# result.
 echo "$output" | awk '
   BEGIN {
     unit["read-key-900-names"] = "ns"
@@ -39,6 +42,7 @@ echo "$output" | awk '
     unit["point-key-popup-open"] = "µs"
     missing = 0
   }
+  $0 == "! &quit" { next }
   $1 in unit {
     seen[$1] = 1
     printf "%-40s %10.2f %s\n", $1, $2, unit[$1]

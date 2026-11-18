@@ -100,7 +100,7 @@
       (read-line c)
       bytes)))
 
-(define port 19399)
+(define port (web:port))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -114,6 +114,12 @@
 (define (show name value) (printf "~a ~,2f\n" name value))
 
 (define typed "")
+
+;; Tuna drops a quit requested while no item runs, so the key that quits
+;; is posted only once the spin has started.
+(define spin-mutex (make-mutex))
+(define spin-started (make-condition))
+(define spinning? #f)
 
 ;; A screen as a display draws one view: sixty lines of spans, the typed
 ;; text on the thirtieth, about 9 KB.
@@ -184,8 +190,9 @@
     (define (next-seq!) (set! seq (+ seq 1)) seq)
     (let ([posts (map (lambda (i) (time-ns (lambda () (post-item! inputs id (next-seq!) '(("type" . "nothing"))))))
                       (iota 2000))])
-      (let* ([stream (open-stream id)] [first (read-chunk stream)] [count 1])
-        (confirm! inputs id count)
+      ;; The page carried the first screen, so the stream sends none until
+      ;; a key changes it.
+      (let ([stream (open-stream id)] [count 0])
         (let ([keys '()] [sizes '()])
           (do ([i 0 (+ i 1)]) ((= i 500))
             (let* ([start (now-ns)]
@@ -197,7 +204,10 @@
               (confirm! inputs id count)))
           (let ([quits
                  (map (lambda (i)
+                        (with-mutex spin-mutex (set! spinning? #f))
                         (post-item! inputs id (next-seq!) '(("type" . "spin")))
+                        (with-mutex spin-mutex
+                          (let wait () (unless spinning? (condition-wait spin-started spin-mutex) (wait))))
                         (let* ([start (now-ns)]
                                [_ (post-item! inputs id (next-seq!) '(("type" . "key") ("key" . "q") ("quit" . #t)))]
                                [chunk (read-chunk stream)])
@@ -219,10 +229,15 @@
               (close-connection inputs)
               (list posts keys sizes quits reopens))))))))
 
-(define (send-screen-ns id same?)
-  (let* ([stream (off-main-thread (lambda () (open-stream id)))]
-         [_ (wait-for (lambda () (= 1 (length (web:clients)))))]
-         [client (car (web:clients))]
+;; Web lists a client whose stream the bench closed until a send to it
+;; fails, so the measurement takes the client it opened.
+(define (send-screen-ns same?)
+  (let* ([before (web:clients)]
+         [id (off-main-thread new-page)]
+         [stream (off-main-thread (lambda () (open-stream id)))]
+         [opened (lambda () (find (lambda (c) (not (memq c before))) (web:clients)))]
+         [_ (wait-for opened)]
+         [client (opened)]
          [screens (if same?
                       (vector (make-bytevector 28000 65) (make-bytevector 28000 65))
                       (vector (make-bytevector 28000 65) (half-changed 28000)))]
@@ -293,9 +308,8 @@
       (show "screen-bytes-max" (apply max sizes))
       (show "quit" (/ (median quits) 1000.0))
       (show "reopen" (/ (median reopens) 1000.0))))
-  (let ([id (off-main-thread new-page)])
-    (show "send-screen" (send-screen-ns id #f))
-    (show "send-screen-equal" (send-screen-ns id #t)))
+  (show "send-screen" (send-screen-ns #f))
+  (show "send-screen-equal" (send-screen-ns #t))
   (show "client-memory" (/ (client-memory-bytes) 1024.0)))
 
 (table-set! web:input-handlers "key"
@@ -304,7 +318,12 @@
 (table-set! web:input-handlers "nothing" (lambda (client item) (void)))
 
 (table-set! web:input-handlers "spin"
-  (lambda (client item) (guard (e [(quit-condition? e) #f]) (let loop () (loop)))))
+  (lambda (client item)
+    (guard (e [(quit-condition? e) #f])
+      (with-mutex spin-mutex
+        (set! spinning? #t)
+        (condition-signal spin-started))
+      (let loop () (loop)))))
 
 (advice-add! batch-ended
   (lambda (ended)
