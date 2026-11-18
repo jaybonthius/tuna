@@ -1,6 +1,10 @@
 ; On another thread, exit posts the shutdown to the main thread; what the
-; console reads after it never runs.
+; console reads after it never runs. Unload actions run outside any task,
+; as for every exit, since a task paused in one would wait on a queue the
+; exit has closed.
+> (import (place))
 > (thread-join (fork-thread (lambda () (exit) (display "never"))))
 configuration unloading
+unloading outside any task
 keeper unloading
 > (display "never runs")

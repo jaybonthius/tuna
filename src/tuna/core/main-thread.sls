@@ -377,11 +377,24 @@
 
   ;; fork-thread makes exit end only its own thread, so on another thread
   ;; the exit is posted to the main thread first, on behalf of (tuna), so
-  ;; that it runs even after the thread's module is unloaded.
+  ;; that it runs even after the thread's module is unloaded. Chez's exit
+  ;; unwinds the stack it is called on after the exit handler has unloaded
+  ;; every module, so in a task it would run the winders that modules put
+  ;; around the call once their code is gone; the task is left first. A
+  ;; quit requested while leaving would otherwise land in an unload action.
   (define (exit . arguments)
-    (unless (on-main-thread?)
-      (post-task! (lambda () (apply chez:exit arguments)) (find-owner '(tuna))))
-    (apply chez:exit arguments))
+    (cond
+      [(not (on-main-thread?))
+       (post-task! (lambda () (apply exit arguments)) (find-owner '(tuna)))
+       (apply chez:exit arguments)]
+      [running-task
+       => (lambda (t)
+            (switch-to-loop!
+              (lambda ()
+                (finish! t 'done '())
+                (clear-quit-requests!)
+                (apply chez:exit arguments))))]
+      [else (apply chez:exit arguments)]))
 
   (define (run-main-loop)
     (timer-interrupt-handler main-timer-interrupt)

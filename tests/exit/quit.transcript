@@ -1,0 +1,11 @@
+; A quit requested while exit leaves its task has no task left to quit,
+; so it does not cut short an unload action, which runs with quits allowed.
+> (on-unload
+    (lambda ()
+      (let loop ([i 0]) (when (< i 1000000) (loop (+ i 1))))
+      (display "repl unloading")
+      (newline)))
+> (dynamic-wind void (lambda () (exit)) (lambda () (thread-join (fork-thread request-quit!))))
+repl unloading
+configuration unloading
+keeper unloading
