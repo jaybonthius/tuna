@@ -1,0 +1,167 @@
+; A line taller than the view: a run of 200 atoms, 30 px each, with no
+; newline between them, after a heading 100 lines down.
+> (import (md) (editing))
+> (buffers:define-kind rows (content nodes))
+> (buffers:define-kind row (content atom))
+> (define (paras from n) (map (lambda (i) (md:para '() (format "line ~a\n" (+ from i)))) (iota n)))
+> (define b
+    (buffers:make "tall"
+      (apply md:doc '()
+        (append (paras 1 100)
+                (list (md:heading '() "Rows\n") (apply rows '() (map (lambda (i) (row '())) (iota 200))) (md:para '() "after\n"))
+                (paras 103 100)))))
+> (define v (views:make b))
+; Stands for the page and the browser: every redraw keeps the first item
+; in view still, as scroll anchoring does, before the page applies a new
+; placement, and spacers never anchor.
+> (define (items-in html)
+    (let loop ([line (search html "<div class=\"line\"" 0)] [whole (search html "<div class=\"node whole\"" 0)] [acc '()])
+      (if (not (or line whole))
+          (reverse acc)
+          (let* ([i (if (and line whole) (min line whole) (or line whole))]
+                 [tag (substring html i (search html ">" i))]
+                 [at (numbers-after tag "data-at=\"")]
+                 [mark (if (pair? at) (list (cons "at" (car at))) (list (cons "line" (car (numbers-after tag "data-line=\"")))))]
+                 [to (and (eqv? i whole) (car (numbers-after tag "data-to=\"")))])
+            (loop (if (eqv? i line) (search html "<div class=\"line\"" (+ i 1)) line)
+                  (if (eqv? i whole) (search html "<div class=\"node whole\"" (+ i 1)) whole)
+                  (cons (cons mark to) acc))))))
+> (define-record-type item-box (fields mark to top height))
+> (define (item-box-bottom b) (+ (item-box-top b) (item-box-height b)))
+> (define (lay-out html)
+    (let* ([items (items-in html)]
+           [px (map (lambda (item) (if (cdr item) 30 20)) items)]
+           [drawn (apply + px)]
+           [sizer (decimal-after html "--views-scroll-sizer-block-size:")]
+           [above (cond
+                    [(not (search html "data-spacer=\"above\"" 0)) 0]
+                    [(search html "data-spacer=\"below\"" 0) (decimal-after html "--views-spacer-block-size:")]
+                    [else (max 0 (- sizer drawn))])])
+      (let loop ([items items] [px px] [y above] [acc '()])
+        (if (null? items)
+            (values (reverse acc) (if sizer (max sizer y) y))
+            (loop (cdr items) (cdr px) (+ y (car px)) (cons (make-item-box (caar items) (cdar items) y (car px)) acc))))))
+> (define (number-in html name) (let ([n (numbers-after html (string-append name "=\""))]) (and (pair? n) (car n))))
+> (define (decimal-in html name)
+    (let ([i (search html (string-append name "=\"") 0)])
+      (if i (let ([from (+ i (string-length name) 2)]) (string->number (substring html from (search html "\"" from)))) 0)))
+> (define (item-box-at boxes at) (find (lambda (b) (equal? (item-box-mark b) (list (cons "at" at)))) boxes))
+> (define scroll-top 0)
+> (define shown-placement #f)
+> (define shown-boxes '())
+> (define (margin-of h) (min 40 (/ h 4)))
+> (define (scaled offset height reported)
+    (if (or (< (abs (- height reported)) 1/2) (< height 1) (< reported 1)) offset (/ (* offset height) reported)))
+> (define (position! html boxes prefix)
+    (let ([b (item-box-at boxes (number-in html (string-append "data-" prefix "-item")))]
+          [field (lambda (name) (decimal-in html (string-append "data-" prefix "-" name)))])
+      (when b (set! scroll-top (+ (item-box-top b) (scaled (field "offset") (item-box-height b) (field "height")))))))
+> (define (centered b h) (- (+ (item-box-top b) (/ (item-box-height b) 2)) (/ h 2)))
+> (define (follow! html boxes h)
+    (let ([b (item-box-at boxes (number-in html "data-place-item"))] [margin (margin-of h)] [top scroll-top])
+      (when b
+        (let ([bottom (item-box-bottom b)])
+          (unless (if (> (item-box-height b) (- h (* 2 margin)))
+                      (and (> bottom top) (< (item-box-top b) (+ top h)))
+                      (and (>= (item-box-top b) (+ top margin -1/2)) (<= bottom (+ top h (- margin) 1/2))))
+            (set! scroll-top
+              (if (< (item-box-top b) (+ top margin))
+                  (if (<= (- (+ top margin) (item-box-top b)) h) (- (item-box-top b) margin) (centered b h))
+                  (if (<= (- bottom (+ top h (- margin))) h) (+ (- bottom h) margin) (centered b h)))))))))
+> (define (place! html boxes h)
+    (let ([kind (word-after html "data-place-kind=\"")] [b (item-box-at boxes (number-in html "data-place-item"))])
+      (case kind
+        [(position) (position! html boxes "place")]
+        [(follow)
+         (when (and (not shown-placement) (number-in html "data-base-item")) (position! html boxes "base"))
+         (follow! html boxes h)]
+        [(top) (when b (set! scroll-top (item-box-top b)))]
+        [(center) (when b (set! scroll-top (centered b h)))]
+        [(bottom) (when b (set! scroll-top (- (item-box-bottom b) h)))])))
+> (define (anchor! boxes h)
+    (let* ([old (find (lambda (b) (and (> (item-box-bottom b) scroll-top) (< (item-box-top b) (+ scroll-top h)))) shown-boxes)]
+           [new (and old (find (lambda (b) (equal? (item-box-mark b) (item-box-mark old))) boxes))])
+      (when new (set! scroll-top (+ scroll-top (- (item-box-top new) (item-box-top old)))))))
+> (define (show! v c)
+    (let ([html (html-of v c)] [h (height-of c)])
+      (let-values ([(boxes total) (lay-out html)])
+        (define (clamp!) (set! scroll-top (max 0 (min scroll-top (- total h)))))
+        (anchor! boxes h)
+        (clamp!)
+        (let ([placement (number-in html "data-placement")])
+          (unless (eqv? placement shown-placement)
+            (place! html boxes h)
+            (clamp!))
+          (set! shown-placement placement))
+        (set! shown-boxes boxes)
+        html)))
+> (define (measure v c html hand?)
+    (let* ([h (height-of c)] [boxes shown-boxes] [bottom (+ scroll-top h)] [margin (margin-of h)] [room (- h (* 2 margin))]
+           [first (car boxes)] [last (car (reverse boxes))]
+           [spacer (cond [(and (> (- (item-box-top first) scroll-top) 1/2) (search html "data-spacer=\"above\"" 0)) "above"]
+                         [(and (>= scroll-top (item-box-bottom last)) (search html "data-spacer=\"below\"" 0)) "below"]
+                         [else 'null])]
+           [top (and (eq? spacer 'null) (find (lambda (b) (> (item-box-bottom b) scroll-top)) boxes))]
+           [cut? (lambda (b at-top?)
+                   (and (item-box-to b) (<= (item-box-height b) room)
+                        (if at-top? (< (item-box-top b) (+ scroll-top margin -1/2)) (> (item-box-bottom b) (+ bottom (- margin) 1/2)))))]
+           [start (let ([t (memp (lambda (b) (> (item-box-bottom b) (+ scroll-top margin 1/2))) boxes)])
+                    (and t (if (and (cut? (car t) #t) (pair? (cdr t))) (cadr t) (car t))))]
+           [end (let ([t (memp (lambda (b) (< (item-box-top b) (- bottom margin 1/2))) (reverse boxes))])
+                  (and t (if (and (cut? (car t) #f) (pair? (cdr t))) (cadr t) (car t))))])
+      `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,(number-in html "data-placement"))
+        ("version" . ,(number-in html "data-version"))
+        ("top" . ,(if top (item-box-mark top) 'null)) ("offset" . ,(if top (- scroll-top (item-box-top top)) 0))
+        ("itemHeight" . ,(if top (item-box-height top) 0)) ("left" . 0)
+        ("start" . ,(if (and start (< (item-box-top start) (- bottom 1))) (append (item-box-mark start) '(("count" . 0))) 'null))
+        ("end" . ,(if end
+                      (if (item-box-to end) `(("at" . ,(item-box-to end)) ("count" . 0)) (append (item-box-mark end) '(("count" . 0))))
+                      'null))
+        ("spacer" . ,spacer)
+        ("spacerDistance" . ,(cond [(equal? spacer "above") (- (item-box-top first) scroll-top)]
+                                   [(equal? spacer "below") (- scroll-top (item-box-bottom last))]
+                                   [else 0]))
+        ("below" . ,(max 0 (- (item-box-bottom last) bottom)))
+        ("items" . ,(list->vector (map (lambda (b next) (vector (item-box-mark b) (if next (- (item-box-top next) (item-box-top b)) (item-box-height b))))
+                                       boxes (append (cdr boxes) '(#f)))))
+        ("lineHeight" . 20) ("charWidth" . 10) ("width" . 800) ("height" . ,h) ("hand" . ,hand?)
+        ("runAtEnd" . ,(and (search html "data-run-at-end" 0) #t)))))
+> (define (send! c r settled?)
+    (set! reports (+ reports 1))
+    ((table-ref web:input-handlers "scroll") c (append r `(("report" . ,reports) ("settled" . ,settled?)))))
+> (define (settle-reports! v c hand?)
+    (let loop ([k 0] [last #f])
+      (let ([r (measure v c (show! v c) hand?)])
+        (cond
+          [(equal? r last) (send! c r #t) (show! v c) (void)]
+          [(= k 50) (error 'settle-reports! "the reports never settle")]
+          [else (send! c r #f) (loop (+ k 1) r)]))))
+> (define (settle! v c) (settle-reports! v c #f))
+> (define (scroll-by-hand! v c px) (set! scroll-top px) (settle-reports! v c #t))
+> (define (point-shown? v)
+    (let ([b (item-box-at shown-boxes (views:point v))])
+      (and b (<= scroll-top (item-box-top b)) (<= (item-box-bottom b) (+ scroll-top (height-of desktop))))))
+> (settle! v desktop)
+> (views:set-point! v (line-start v 101))
+> (views:scroll-to! v (line-start v 101) (views:align top))
+> (settle! v desktop)
+> (list (line-of v (views:point v)) (line-of v (views:top v desktop)))
+(101 101)
+; C-n from the heading puts point on the run's line, and the view
+; follows it there: point stays on that line, and in view, once the
+; browser's reports settle, and after another round of reports.
+> (views:with-view v (as-client desktop (lambda () (commands:run editing:next-line))))
+> (line-of v (views:point v))
+102
+> (settle! v desktop)
+> (list (line-of v (views:point v)) (line-of v (views:top v desktop)) (point-shown? v))
+(102 100 #t)
+> (settle! v desktop)
+> (list (line-of v (views:point v)) (line-of v (views:top v desktop)) (point-shown? v))
+(102 100 #t)
+; Scrolled by hand to 500 px, the view shows the spacer above the drawn
+; run: it stays at line 26, where the hand left it, and point comes into
+; view.
+> (scroll-by-hand! v desktop 500)
+> (list (line-of v (views:point v)) (line-of v (views:top v desktop)) (point-shown? v))
+(43 26 #t)
