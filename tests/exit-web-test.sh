@@ -99,8 +99,10 @@ output=$(cd "$dir/work" && printf '%s\n' \
   '(http:connect! p)' \
   '(http:send! p (quote (("type" . "key") ("key" . "x") ("code" . "KeyX") ("modifiers" . #("control")))))' \
   '(http:send! p (quote (("type" . "key") ("key" . "c") ("code" . "KeyC") ("modifiers" . #("control")))))' \
+  '(http:send! p (quote (("type" . "key") ("key" . "y") ("code" . "KeyY") ("modifiers" . #()))))' \
   | HOME="$client" TUNA_LIBRARY="$dir/library" "$tuna" 2>&1)
 expected='204
+204
 204'
 if [ "$output" != "$expected" ]; then
   echo "$0: FAIL: the page: expected $(printf '%s' "$expected" | tr '\n' '|'), got $(printf '%s' "$output" | tr '\n' '|')"
