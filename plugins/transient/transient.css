@@ -1,0 +1,74 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  /* The view keeps white space for text; a menu is laid out as boxes. */
+  .transient-menu {
+    cursor: default;
+    white-space: normal;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--tuna-space-4) var(--tuna-space-7);
+    padding-block: var(--tuna-space-4);
+    padding-inline: var(--tuna-space-5);
+  }
+
+  /* The menu's view is never selected, so its cursor marks nothing. */
+  .transient-menu .cursor {
+    display: none;
+  }
+
+  .transient-title {
+    flex: 1 0 100%;
+    margin: 0;
+    font-family: var(--tuna-font-ui);
+    font-size: inherit;
+  }
+
+  .transient-group {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .transient-heading {
+    margin: 0;
+    margin-block-end: var(--tuna-space-2);
+    font-family: var(--tuna-font-ui);
+    font-size: inherit;
+    color: var(--tuna-text-muted);
+  }
+
+  .transient-entry {
+    --ui-button-background: transparent;
+    --ui-button-border: transparent;
+    --ui-button-padding: var(--tuna-space-2);
+    text-align: start;
+  }
+
+  /* One class would tie with .ui-button's margin and be decided by link
+     order. */
+  .transient-entry.ui-button {
+    margin: 0;
+  }
+
+  .transient-entry .ui-label {
+    font-family: var(--tuna-font-ui);
+  }
+
+  .transient-key {
+    border: 0;
+    padding: 0;
+    white-space: nowrap;
+  }
+
+  .transient-argument {
+    white-space: nowrap;
+  }
+
+  /* Forced colours replace the faces' colours, so a weight marks the
+     argument that is in. */
+  .transient-entry[aria-pressed="true"] .transient-argument {
+    font-weight: var(--tuna-font-weight-semibold);
+  }
+}

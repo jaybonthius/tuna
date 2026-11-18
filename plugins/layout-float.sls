@@ -70,6 +70,11 @@
   (or (and (real? v) (exact? v) (< 0 v) (<= v 1))
       (and (list? v) (fx= (length v) 2) (memq (car v) '(columns lines)) (fixnum? (cadr v)) (fx> (cadr v) 0))))
 
+;; A float's child is a view, whose text wraps to any width, so only its
+;; height can follow what it draws.
+(define (%height? v)
+  (or (eq? v 'content) (%size? v)))
+
 ;; Raising a float changes its z-index and not its place in the page, so
 ;; its element is never moved.
 (define (%stacking floats)
@@ -83,17 +88,19 @@
         (if (null? ranked) acc (loop (cdr ranked) (fx- z 1) (cons (cons (caar ranked) z) acc)))))))
 
 (define (%float-html c place z draw-child)
-  (let ([w (length-css (document:node-attribute c 'width 1/2))]
-        [h (length-css (document:node-attribute c 'height 1/2))])
+  (let* ([w (length-css (document:node-attribute c 'width 1/2))]
+         [height (document:node-attribute c 'height 1/2)]
+         [h (if (eq? height 'content) "auto" (length-css height))]
+         [classes (if (eq? height 'content) " float-content-block-size" "")])
     (if (eq? (car place) 'anchor)
-        (haml (:div.float-child.anchored
-                ([style "--layout-float-anchor:--view-anchor-" (cadr place) ";--layout-float-inline-size:" w
-                        ";--layout-float-block-size:" h ";--layout-float-z:" z])
+        (haml (:div ([class "float-child anchored" classes]
+                     [style "--layout-float-anchor:--view-anchor-" (cadr place) ";--layout-float-inline-size:" w
+                            ";--layout-float-block-size:" h ";--layout-float-z:" z])
                 (draw-child c)))
         (let ([x (number->string (inexact (cadr place)))] [y (number->string (inexact (caddr place)))])
-          (haml (:div.float-child
-                  ([style "--layout-float-inline-size:" w ";--layout-float-block-size:" h
-                          ";--layout-float-x:" x ";--layout-float-y:" y ";--layout-float-z:" z])
+          (haml (:div ([class "float-child" classes]
+                       [style "--layout-float-inline-size:" w ";--layout-float-block-size:" h
+                              ";--layout-float-x:" x ";--layout-float-y:" y ";--layout-float-z:" z])
                   (draw-child c)))))))
 
 (define (%draw-float node children focused draw-child client)
@@ -218,13 +225,17 @@
   (unless (%size? v)
     (assertion-violation who "not a fraction, (columns n) or (lines n)" v)))
 
+(define (%check-height who v)
+  (unless (%height? v)
+    (assertion-violation who "not a fraction, (columns n), (lines n) or content" v)))
+
 (define (show-at! view position b width height)
   (unless (views:view? view)
     (assertion-violation 'layout-float:show-at! "not a view" view))
   (unless (buffers:buffer? b)
     (assertion-violation 'layout-float:show-at! "not a buffer" b))
   (%check-size 'layout-float:show-at! width)
-  (%check-size 'layout-float:show-at! height)
+  (%check-height 'layout-float:show-at! height)
   (unless (%shown? view)
     (assertion-violation 'layout-float:show-at! "not a view in the layout or a popup" view))
   (unless (and (fixnum? position) (fx<= 0 position (document:length (buffers:document (views:buffer view)))))
@@ -254,14 +265,18 @@
     (%remove-popup! atom)
     (void)))
 
-(define (display-palette b)
-  (unless (buffers:buffer? b)
-    (assertion-violation 'layout-float:display-palette "not a buffer" b))
-  (or (%popup-of b #f)
-      (let ([v (views:make b)])
-        (%note-made! v)
-        (%add-popup! (view-datum v '(place box 1/2 1/5) '(width . 3/5) '(height lines 12) '(locked . #t)))
-        v)))
+(define display-palette
+  (case-lambda
+    [(b) (display-palette b '(lines 12))]
+    [(b height)
+     (unless (buffers:buffer? b)
+       (assertion-violation 'layout-float:display-palette "not a buffer" b))
+     (%check-height 'layout-float:display-palette height)
+     (or (%popup-of b #f)
+         (let ([v (views:make b)])
+           (%note-made! v)
+           (%add-popup! (view-datum v '(place box 1/2 1/5) '(width . 3/5) (cons 'height height) '(locked . #t)))
+           v))]))
 
 (define (%orphan? atom)
   (let ([p (place-of atom)])

@@ -1,0 +1,147 @@
+> (define notes (buffers:make "notes" "one\ntwo\n"))
+> (views:set-buffer! (view) notes)
+> (define user-view (view))
+> (define log '())
+> (commands:define-command (where) "Notes the view, buffer and prefix argument it runs with."
+    (set! log (cons (list (views:id (views:current)) (buffers:name (buffers:current)) (commands:prefix-argument)) log)))
+> (commands:define-command (note [what 'none]) "Notes WHAT." (set! log (cons what log)))
+> (transient:define-menu m "A menu.")
+> (transient:define-menu inner "An inner menu." (title "Inner"))
+> (commands:define-command (show-m) "Shows m." (transient:show! m))
+> (commands:define-command (show-inner) "Shows the inner menu." (transient:show! inner))
+> (keys:bind! keys:global "C-c t" show-m)
+> (transient:add! m "Actions"
+    (transient:command "w" "Where" where)
+    (transient:staying-command "s" "Where, staying" where)
+    (transient:staying-command "i" "Inner, above" show-inner)
+    (transient:command "o" "Inner, alone" show-inner))
+> (transient:add! inner #f (transient:command "w" "Where" where))
+; A keymap at depth 50, as a mode's, binding C-g and w.
+> (define-table mode-keys "A mode's keys.")
+> (keys:bind! mode-keys "C-g" note)
+> (keys:bind! mode-keys "w" note)
+> (add-hook! keys:find-keymaps (lambda (client posn) (if posn '() (list mode-keys))) 50)
+; While a menu is open, its keymap and transient:keymap come first, for
+; every client.
+> (press! "C-c" "t")
+> (map documentation (list-head (keys:active-keymaps client) 3))
+("A menu." "The keys of every open menu, searched after the top menu's keymap." "A mode's keys.")
+> (map documentation (list-head (keys:active-keymaps other-client) 3))
+("A menu." "The keys of every open menu, searched after the top menu's keymap." "A mode's keys.")
+; An entry runs in the menu's view, whether its key is typed or clicked.
+> (press! "s")
+> (click-entry! "s")
+> (list (length log) (map (lambda (e) (= (car e) (views:id user-view))) log))
+(2 (#t #t))
+> (menu)
+(("Actions" ("w" "Where") ("s" "Where, staying") ("i" "Inner, above") ("o" "Inner, alone")))
+; Another client's keys and clicks reach the open menu, which every
+; client draws.
+> (press-in! other-client "s")
+> (click-entry-in! other-client "s")
+> (length log)
+4
+> (and (search (html->string (layout:screen other-client)) "transient-menu" 0) #t)
+#t
+; C-g closes the top menu, over a keymap that binds C-g.
+> (press! "C-g")
+> (menu)
+()
+> (press! "C-g")
+> (car log)
+none
+; A staying command that shows a menu shows it above, so C-g comes back;
+; a command entry that shows one shows it alone.
+> (press! "C-c" "t" "i")
+> (menu)
+("Inner" (("w" "Where")))
+> (press! "C-g")
+> (menu)
+(("Actions" ("w" "Where") ("s" "Where, staying") ("i" "Inner, above") ("o" "Inner, alone")))
+> (press! "o")
+> (menu)
+("Inner" (("w" "Where")))
+> (press! "C-g")
+> (menu)
+()
+; A key the menu does not bind closes it and runs as usual; a printing
+; character it does not bind warns, and the menu stays.
+> (press! "C-c" "t" "z")
+! z is not in this menu
+> (menu)
+(("Actions" ("w" "Where") ("s" "Where, staying") ("i" "Inner, above") ("o" "Inner, alone")))
+> (press! "C-f")
+> (list (menu) (views:point user-view))
+(() 2)
+> (press! "C-c" "t" "SPC")
+> (list (menu) (car (datums notes)))
+(() (buffers:text () "o ne\ntwo\n"))
+; A click outside the menu's entries does nothing; a click in the user's
+; view closes the menu.
+> (press! "C-c" "t")
+> (click-token-in! client (popup) 1)
+> (menu)
+(("Actions" ("w" "Where") ("s" "Where, staying") ("i" "Inner, above") ("o" "Inner, alone")))
+> (mouse-in! client user-view "down" '(("at" . 1) ("count" . 0)))
+> (menu)
+()
+; A command run by other code than a key leaves the menu open.
+> (press! "C-c" "t")
+> (in-client (lambda () (commands:run note 'aside)))
+> (list (car log) (menu))
+(aside (("Actions" ("w" "Where") ("s" "Where, staying") ("i" "Inner, above") ("o" "Inner, alone"))))
+; C-u, M- with a digit and M-- keep the menu, so the entry gets the
+; prefix argument; so do the commands in transient:staying-commands.
+> (press! "C-u" "s")
+> (press! "M-5" "s")
+> (press! "M--" "s")
+> (map caddr (list-head log 3))
+(- 5 (4))
+> (press! "C-u")
+> (click-entry! "s")
+> (caddr (car log))
+(4)
+> (table-set! transient:staying-commands views:scroll-up)
+> (press! "C-v")
+> (menu)
+(("Actions" ("w" "Where") ("s" "Where, staying") ("i" "Inner, above") ("o" "Inner, alone")))
+> (press! "C-u" "w")
+> (list (car log) (menu))
+((1 "notes" (4)) ())
+; A user may bind more keys in transient:keymap, such as q to quit.
+> (keys:bind! transient:keymap "q" transient:quit)
+> (press! "C-c" "t" "q")
+> (menu)
+()
+; Another key bound to keys:keyboard-quit closes the top menu too.
+> (keys:bind! keys:global "<f5>" keys:keyboard-quit)
+> (press! "C-c" "t" "<f5>")
+> (menu)
+()
+; A click on a keymap's binding runs it in the menu's view and closes the
+; menus, as its key does; a click on a binding to a keymap shows that
+; keymap above.
+> (define-table plain-keys "Plain keys.")
+> (define-table sub-keys "Sub keys.")
+> (keys:bind! plain-keys "C-c w" where)
+> (keys:bind! plain-keys "C-c s" sub-keys)
+> (keys:bind! sub-keys "w" where)
+> (in-client (lambda () (transient:show! plain-keys)))
+> (menu)
+((("C-c w" "where") ("C-c s" "Sub keys.")))
+> (click-entry! "C-c s")
+> (menu)
+((("w" "where")))
+> (press! "C-g")
+> (menu)
+((("C-c w" "where") ("C-c s" "Sub keys.")))
+> (click-entry! "C-c w")
+> (list (menu) (car log))
+(() (1 "notes" #f))
+; press and quit are marked for no mode, so M-x does not offer them; press
+; with no menu open warns.
+> (list (table-ref commands:command-modes transient:press) (table-ref commands:command-modes transient:quit))
+(() ())
+> (press! "C-c" "t" "C-g")
+> (in-client (lambda () (commands:run transient:press)))
+! no menu is open

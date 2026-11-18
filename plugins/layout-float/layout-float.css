@@ -48,6 +48,15 @@
     min-block-size: 0;
   }
 
+  /* A height that follows the content has no length to take from the
+     box's, so the float is placed by a fraction of the box and moved back
+     by the same fraction of its own height. */
+  .float-child.float-content-block-size:not(.anchored) {
+    inset-block-start: calc(100% * var(--layout-float-y));
+    translate: 0 calc(-100% * var(--layout-float-y));
+    max-block-size: 100%;
+  }
+
   /* No transform, filter or containment may sit on a popup's ancestors,
      or it would be placed in them instead of the screen. */
   .float-child.anchored {

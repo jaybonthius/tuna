@@ -1,0 +1,54 @@
+> (define notes (buffers:make "notes" "one\ntwo\n"))
+> (views:set-buffer! (view) notes)
+; The page's configuration: menus at the bottom of the screen, as in
+; Emacs, and q to close one.
+> (keys:bind! transient:keymap "q" transient:quit)
+> (table-set! layout:display-rules transient:buffer?
+    (layout-sides:display-at-side (layout:direction down) 95 'content '((locked . #t))))
+; magit.sls: the merge menu, and an entry removed by the user.
+> (import (magit))
+> (press! "C-c" "m")
+> (menu)
+("Merge" ("Arguments" ("- f" "Fast-forward only" "--ff-only") ("- n" "No fast-forward" "--no-ff") ("- s" "Strategy" "--strategy=")) ("Actions" ("m" "Merge")))
+> (map views:id (views:showing (menu-buffer)))
+(5)
+> (layout:locked? (layout:view-node (car (views:showing (menu-buffer)))))
+#t
+> (press! "q")
+> (transient:remove! magit:merge-menu "- s")
+> (press! "C-c" "m" "-" "f" "m")
+> magit:merges
+(("--ff-only"))
+> (table-remove! layout:display-rules transient:buffer?)
+; pi.sls: the chat menu. a toggles auto-compaction and the menu stays to
+; show the new state.
+> (import (pi))
+> (in-client (lambda () (commands:run pi:show-menu)))
+> (menu)
+("Pi, notes" ("Session" ("n" "New") ("r" "Resume") ("N" "Rename")) ("Model" ("m" "Model (sonnet)") ("a" "Auto-compact (off)")))
+> (press! "a")
+> (menu)
+("Pi, notes" ("Session" ("n" "New") ("r" "Resume") ("N" "Rename")) ("Model" ("m" "Model (sonnet)") ("a" "Auto-compact (on)")))
+> (press! "m")
+> (list (menu) pi:ran)
+(() (model))
+> (in-client (lambda () (commands:run pi:show-menu)))
+> (menu)
+("Pi, notes" ("Session" ("n" "New") ("r" "Resume") ("N" "Rename")) ("Model" ("m" "Model (opus)") ("a" "Auto-compact (on)")))
+> (press! "C-g")
+; Its templates, computed at each draw, in a menu of their own.
+> (in-client (lambda () (transient:show! pi:templates-menu)))
+> (menu)
+(("Templates" ("a" "Review") ("b" "Explain")))
+> (press! "b")
+> pi:ran
+("Explain" model)
+; python.sls: a mode's keys shown as a menu.
+> (import (python))
+> (in-client (lambda () (commands:run python:python-keys)))
+> (menu)
+((("C-c C-c" "python:send-buffer") ("C-c C-z" "python:switch-to-shell") ("C-c C-s" "Python's shell keys.")))
+> (press! "C-g")
+; The value of a valued argument.
+> (transient:argument-value '("--ff-only" "--strategy=ours") "--strategy=")
+"ours"
