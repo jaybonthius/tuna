@@ -1,0 +1,69 @@
+; The percent position is where point is in the buffer: Top at its
+; start, Bot at its end, All when it is empty, else the characters
+; before point as a percentage of the buffer's, rounded up and at most
+; 99.
+> (define notes (buffers:make "notes" "abc\ndef\nghij\n"))
+> (views:set-buffer! (view) notes)
+> (define (percent-at p) (views:set-point! (view) p) (status-line:show-percent-position (view)))
+> (map percent-at '(1 2 13 14))
+("Top" "8%" "93%" "Bot")
+> (cdr (assoc "status-line:percent-position" (status (view))))
+"Bot"
+> (define long (buffers:make "long" (make-string 200 #\x)))
+> (views:set-buffer! (view) long)
+> (map percent-at '(2 200 201))
+("1%" "99%" "Bot")
+> (views:set-buffer! (view) (buffers:make "empty" ""))
+> (status-line:show-percent-position (view))
+"All"
+; A narrowed view counts only what it shows.
+> (views:set-buffer! (view) notes)
+> (views:narrow! (view) 5 9)
+> (map percent-at '(5 7 9))
+("Top" "50%" "Bot")
+> (views:widen! (view))
+; The region size shows only while a cursor has a region: its
+; characters, its lines when more than one, as Emacs's count-lines
+; counts them, and the number of cursors when there are several.
+> (define (region-at mark p) (views:set-point! (view) p) (views:set-mark! (view) mark) (status-line:show-region-size (view)))
+> (status-line:show-region-size (view))
+#f
+> (list (region-at 1 3) (region-at 3 1) (region-at 1 9) (region-at 1 10) (region-at 3 3))
+("2 characters" "2 characters" "8 characters, 2 lines" "9 characters, 3 lines" #f)
+> (region-at 1 2)
+"1 character"
+> (cdr (assoc "status-line:region-size" (status (view))))
+"1 character"
+> (region-at 1 3)
+"2 characters"
+> (views:set-cursor! (views:add-cursor! (view) 6) 6 5)
+> (views:add-cursor! (view) 14)
+#<cursor>
+> (status-line:show-region-size (view))
+"3 characters, 2 lines, 3 cursors"
+> (views:set-mark! (view) #f)
+> (status-line:show-region-size (view))
+"1 character, 3 cursors"
+> (for-each (lambda (c) (views:set-cursor! c (views:cursor-point c) #f)) (views:cursors (view)))
+> (cdr (assoc "status-line:region-size" (status (view))))
+""
+; Regions that overlap or share a line count each character and each
+; line once.
+> (views:set-buffer! (view) (buffers:make "words" "abc def\nxyz\nend\n"))
+> (define (regions . marks-and-points)
+    (for-each (lambda (c) (views:remove-cursor! (view) c)) (cdr (views:cursors (view))))
+    (views:set-point! (view) (cadr marks-and-points))
+    (views:set-mark! (view) (car marks-and-points))
+    (let loop ([rest (cddr marks-and-points)])
+      (unless (null? rest)
+        (views:set-cursor! (views:add-cursor! (view) (cadr rest)) (cadr rest) (car rest))
+        (loop (cddr rest))))
+    (status-line:show-region-size (view)))
+> (list (regions 4 1 4 2) (regions 1 4 5 8) (regions 1 10 9 11) (regions 5 10 10 14) (regions 1 9 9 13))
+("3 characters, 2 cursors" "6 characters, 2 cursors" "10 characters, 2 lines, 2 cursors" "9 characters, 3 lines, 2 cursors" "12 characters, 2 lines, 2 cursors")
+> (regions 1 1)
+#f
+> (raised (lambda () (status-line:show-region-size 5)))
+(status-line:show-region-size "not a view")
+> (raised (lambda () (status-line:show-percent-position 5)))
+(status-line:show-percent-position "not a view")

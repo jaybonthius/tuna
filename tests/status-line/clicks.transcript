@@ -62,7 +62,7 @@
 #t
 #<edit 2>
 #t
-(#(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(name ((key . name))) #(status-line:position ((key . status-line:position))) #(status-line:major-mode ((key . status-line:major-mode) (right . #t))) #(status-line:minor-modes ((key . status-line:minor-modes))))
+(#(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(name ((key . name))) #(status-line:position ((key . status-line:position))) #(status-line:percent-position ((key . status-line:percent-position))) #(status-line:region-size ((key . status-line:region-size))) #(status-line:major-mode ((key . status-line:major-mode) (right . #t))) #(status-line:minor-modes ((key . status-line:minor-modes))))
 (#t " *status-line*" #t)
 ! Stale click: what was clicked is gone
 (#t " *status-line*" #t)

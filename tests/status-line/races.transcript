@@ -65,8 +65,8 @@
 (#t #t)
 #t
 #t
-(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("seg-a" . "a") ("status-line:position" . "1:0") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("seg-a" . "a") ("status-line:position" . "1:0") ("status-line:percent-position" . "Top") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
 #t
 #t
 #t
-(status-line:modified status-line:buffer-name seg-a status-line:position status-line:major-mode status-line:minor-modes)
+(status-line:modified status-line:buffer-name seg-a status-line:position status-line:percent-position status-line:region-size status-line:major-mode status-line:minor-modes)

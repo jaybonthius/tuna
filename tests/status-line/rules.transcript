@@ -1,5 +1,5 @@
 > (map car (status (view)))
-("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode" "status-line:minor-modes")
 ; A killed line is made again when the next line is drawn, which acts
 ; for no module, and keeps no undo. Its status views go with it; a line
 ; drawn in the batch of the kill is empty until the batch's end writes
@@ -7,44 +7,44 @@
 > (begin (buffers:kill! (buffers:find " *status-line*")) (map car (status (view))))
 ()
 > (map car (status (view)))
-("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode" "status-line:minor-modes")
 > (buffers:kill! (buffers:find " *status-line*"))
 #t
 > (map car (status (view)))
-("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode" "status-line:minor-modes")
 > (map car (status (view)))
-("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode" "status-line:minor-modes")
 > (buffers:with-buffer (buffers:find " *status-line*") (undo:limit))
 0
 > (set! line-buffer (buffers:find " *status-line*"))
-; The plugin's five segments, in their places: the modified mark, the
-; buffer's name and the position on the left, the major and minor modes'
-; lighters on the right.
+; The plugin's seven segments, in their places: the modified mark, the
+; buffer's name, the position, the percent position and the region size
+; on the left, the major and minor modes' lighters on the right.
 > (line)
-(status-line:line () #(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(status-line:position ((key . status-line:position))) #(status-line:major-mode ((key . status-line:major-mode) (right . #t))) #(status-line:minor-modes ((key . status-line:minor-modes))))
+(status-line:line () #(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(status-line:position ((key . status-line:position))) #(status-line:percent-position ((key . status-line:percent-position))) #(status-line:region-size ((key . status-line:region-size))) #(status-line:major-mode ((key . status-line:major-mode) (right . #t))) #(status-line:minor-modes ((key . status-line:minor-modes))))
 > (define notes (files:visit (string-append (getenv "HOME") "/notes.txt")))
 > (views:set-buffer! (view) notes)
 > (status (view))
-(("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "1:0") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "1:0") ("status-line:percent-position" . "Top") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
 ; The column counts characters from the line's start, a tab as one.
 > (views:set-point! (view) 15)
 > (document:text (buffers:document notes) 11 15)
 "\tTab"
 > (status (view))
-(("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:4") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:4") ("status-line:percent-position" . "52%") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
 > (views:set-point! (view) 22)
 > (status (view))
-(("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:11") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:11") ("status-line:percent-position" . "78%") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
 ; A modified file buffer shows *; the major mode's lighter and the
 ; lighters of the minor modes on in the view follow.
 > (in-client (lambda () (press! "x")))
 > (modes:set-major-mode python:mode notes)
 > (views:with-view (view) (set-option-local! fill:mode #t))
 > (status (view))
-(("status-line:modified" . "*") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:12") ("status-line:major-mode" . "Python") ("status-line:minor-modes" . "Fill"))
+(("status-line:modified" . "*") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:12") ("status-line:percent-position" . "79%") ("status-line:region-size" . "") ("status-line:major-mode" . "Python") ("status-line:minor-modes" . "Fill"))
 > (files:save-buffer notes)
 > (status (view))
-(("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:12") ("status-line:major-mode" . "Python") ("status-line:minor-modes" . "Fill"))
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:12") ("status-line:percent-position" . "79%") ("status-line:region-size" . "") ("status-line:major-mode" . "Python") ("status-line:minor-modes" . "Fill"))
 ; A status line is drawn after the view inside each view atom's element
 ; of the layout, except for locked parts, such as the echo area, and
 ; popups, and where status-line:visible is #f. A part placed at a side
@@ -61,7 +61,7 @@
 > (equal? (screen-status-lines client) (screen-status-lines other-client))
 #t
 > (list (layout:locked? (layout:view-node bar)) (status bar) (status-line:draw (views:make notes) client))
-(#t (("status-line:modified" . "") ("status-line:buffer-name" . "*bar*") ("status-line:position" . "1:0") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . "")) #f)
+(#t (("status-line:modified" . "") ("status-line:buffer-name" . "*bar*") ("status-line:position" . "1:0") ("status-line:percent-position" . "All") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . "")) #f)
 > (define popup (views:make (buffers:make "*popup*" "")))
 > (buffers:replace! layout:popups-buffer 1 1 (views:view `((view . ,(views:id popup)) (buffer . "*popup*"))))
 #<edit 1>
@@ -89,12 +89,12 @@
 > (table-set! status-line:segments seg-b (status-line:left 20))
 > (table-set! status-line:segments seg-a (status-line:left 20))
 > (map car (status (view)))
-("status-line:modified" "status-line:buffer-name" "seg-b" "seg-a" "status-line:position" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "seg-b" "seg-a" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode" "status-line:minor-modes")
 > (table-set! status-line:segments seg-b (status-line:right 0))
 > (map car (status (view)))
-("status-line:modified" "status-line:buffer-name" "seg-a" "status-line:position" "seg-b" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "seg-a" "status-line:position" "status-line:percent-position" "status-line:region-size" "seg-b" "status-line:major-mode" "status-line:minor-modes")
 > (cddr (line))
-(#(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(seg-a ((key . seg-a))) #(status-line:position ((key . status-line:position))) #(seg-b ((key . seg-b) (right . #t))) #(status-line:major-mode ((key . status-line:major-mode))) #(status-line:minor-modes ((key . status-line:minor-modes))))
+(#(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(seg-a ((key . seg-a))) #(status-line:position ((key . status-line:position))) #(status-line:percent-position ((key . status-line:percent-position))) #(status-line:region-size ((key . status-line:region-size))) #(seg-b ((key . seg-b) (right . #t))) #(status-line:major-mode ((key . status-line:major-mode))) #(status-line:minor-modes ((key . status-line:minor-modes))))
 > (< version (buffers:version line-buffer))
 #t
 ; A value that is not a place goes to report once, and its segment is
@@ -102,12 +102,12 @@
 > (table-set! status-line:segments seg-a 'left)
 ! (status-line) status-line:segments: not a place with irritant left
 > (map car (status (view)))
-("status-line:modified" "status-line:buffer-name" "status-line:position" "seg-b" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "seg-b" "status-line:major-mode" "status-line:minor-modes")
 > (map car (status (view)))
-("status-line:modified" "status-line:buffer-name" "status-line:position" "seg-b" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "seg-b" "status-line:major-mode" "status-line:minor-modes")
 > (table-set! status-line:segments car (status-line:left 1))
 > (map car (status (view)))
-("status-line:modified" "status-line:buffer-name" "status-line:position" "seg-b" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "seg-b" "status-line:major-mode" "status-line:minor-modes")
 > (table-remove! status-line:segments car)
 > (table-remove! status-line:segments seg-a)
 > (table-remove! status-line:segments seg-b)

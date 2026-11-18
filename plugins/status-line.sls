@@ -17,7 +17,7 @@
 (buffers:define-kind line (keymap keymap))
 
 (module %internals
-  (check-main-thread make-place place-record? place-side place-n status-view window-of posn-window shown-html
+  (check-main-thread check-view make-place place-record? place-side place-n status-view window-of posn-window shown-html
    write-line! forget-windows! drop-status-views! kill-status-buffer! note-kill!)
 
   (define main-thread (get-thread-id))
@@ -25,6 +25,10 @@
   (define (check-main-thread who)
     (unless (fx= (get-thread-id) main-thread)
       (assertion-violation who "not on the main thread")))
+
+  (define (check-view who v)
+    (unless (views:view? v)
+      (assertion-violation who "not a view" v)))
 
   ;; Places made by the configuration outlive a reload of this module, so
   ;; the record type stays the same.
@@ -220,8 +224,7 @@
   (posn-window posn))
 
 (define (draw view client)
-  (unless (views:view? view)
-    (assertion-violation 'status-line:draw "not a view" view))
+  (check-view 'status-line:draw view)
   (unless (or (not client) (web:client? client))
     (assertion-violation 'status-line:draw "not a client or #f" client))
   (check-main-thread 'status-line:draw)
@@ -237,14 +240,17 @@
       (layout:select! window))))
 
 (define (show-modified view)
+  (check-view 'status-line:show-modified view)
   (let ([b (views:buffer view)])
     (and b (buffers:modified? b) "*")))
 
 (define (show-buffer-name view)
+  (check-view 'status-line:show-buffer-name view)
   (let ([b (views:buffer view)])
     (if b (buffers:name b) "")))
 
 (define (show-position view)
+  (check-view 'status-line:show-position view)
   (let ([b (views:buffer view)])
     (and b
          (let* ([doc (buffers:document b)] [p (views:point view)] [line (document:line doc p)]
@@ -252,11 +258,61 @@
            (format "~a:~a" line
              (- (document:offset doc p chars) (document:offset doc (document:line-start doc line) chars)))))))
 
+(define (show-percent-position view)
+  (check-view 'status-line:show-percent-position view)
+  (let ([b (views:buffer view)])
+    (and b
+         (let-values ([(lo hi) (views:bounds view)])
+           (let* ([doc (buffers:document b)] [chars (document:unit characters)]
+                  [start (document:offset doc lo chars)] [end (document:offset doc hi chars)]
+                  [at (document:offset doc (views:point view) chars)])
+             (cond
+               [(>= at end) (if (<= at start) "All" "Bot")]
+               [(<= at start) "Top"]
+               ;; Rounded up and capped at 99, as Emacs's %p, so that 0%
+               ;; and 100% never show: those places are Top and Bot.
+               [else (format "~a%" (min 99 (ceiling (/ (* 100 (- at start)) (- end start)))))]))))))
+
+(define (show-region-size view)
+  (check-view 'status-line:show-region-size view)
+  (let ([b (views:buffer view)])
+    (and b
+         (let* ([doc (buffers:document b)] [chars (document:unit characters)] [cursors (views:cursors view)]
+                [regions (list-sort (lambda (x y) (< (car x) (car y)))
+                           (fold-right
+                             (lambda (c acc)
+                               (let ([p (views:cursor-point c)] [m (views:cursor-mark c)])
+                                 (if (and m (not (= p m))) (cons (cons (min p m) (max p m)) acc) acc)))
+                             '() cursors))])
+           (define (offset p) (document:offset doc p chars))
+           ;; Counted as Emacs's count-lines: a region ending at a line's
+           ;; start does not take in that line.
+           (define (last-line e)
+             (let ([line (document:line doc e)])
+               (if (= (offset e) (offset (document:line-start doc line))) (- line 1) line)))
+           (define (counted n one many) (format "~a ~a" n (if (= n 1) one many)))
+           ;; Cursors' regions can overlap or share a line; each character
+           ;; and each line counts once.
+           (let loop ([rs regions] [char-reach 0] [line-reach 0] [char-count 0] [line-count 0])
+             (if (null? rs)
+                 (and (pair? regions)
+                      (let ([parts (append (list (counted char-count "character" "characters"))
+                                           (if (> line-count 1) (list (counted line-count "line" "lines")) '())
+                                           (if (pair? (cdr cursors)) (list (counted (length cursors) "cursor" "cursors")) '()))])
+                        (fold-left (lambda (acc s) (string-append acc ", " s)) (car parts) (cdr parts))))
+                 (let ([s (offset (caar rs))] [e (offset (cdar rs))]
+                       [from (document:line doc (caar rs))] [to (last-line (cdar rs))])
+                   (loop (cdr rs) (max char-reach e) (max line-reach to)
+                         (+ char-count (max 0 (- e (max s char-reach))))
+                         (+ line-count (max 0 (+ (- to (max from (+ line-reach 1))) 1)))))))))))
+
 (define (show-major-mode view)
+  (check-view 'status-line:show-major-mode view)
   (let ([b (views:buffer view)])
     (and b (modes:lighter (modes:major-mode b)))))
 
 (define (show-minor-modes view)
+  (check-view 'status-line:show-minor-modes view)
   (let ([lighters (filter string? (map modes:lighter (modes:active-minor-modes view)))])
     (and (pair? lighters)
          (fold-left (lambda (acc s) (string-append acc " " s)) (car lighters) (cdr lighters)))))
@@ -264,6 +320,8 @@
 (define-segment modified (show show-modified))
 (define-segment buffer-name (show show-buffer-name))
 (define-segment position (show show-position))
+(define-segment percent-position (show show-percent-position))
+(define-segment region-size (show show-region-size))
 (define-segment major-mode (show show-major-mode))
 (define-segment minor-modes (show show-minor-modes))
 
@@ -286,6 +344,8 @@
 (table-set! segments modified (left 10))
 (table-set! segments buffer-name (left 20))
 (table-set! segments position (left 30))
+(table-set! segments percent-position (left 40))
+(table-set! segments region-size (left 50))
 (table-set! segments major-mode (right 40))
 (table-set! segments minor-modes (right 50))
 (keys:bind! keymap "<mouse-1>" mouse-select-view)

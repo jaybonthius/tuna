@@ -58,6 +58,12 @@
     font-weight: var(--tuna-font-weight-semibold);
   }
 
+  /* The region's size is the longest segment on the left and the least
+     needed, so it gives way before the name and the position. */
+  .status-line-segment[data-segment="status-line:region-size"] {
+    flex-shrink: 100;
+  }
+
   /* Each segment sits in views' element for its atom, so the right side's
      are found from the element holding the first of them. */
   .status-line-right,

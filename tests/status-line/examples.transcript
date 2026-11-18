@@ -14,7 +14,7 @@
 > (let ([start (search html "<button class=\"status-line-segment status-line-right\"" 0)])
     (substring html start (+ (search html "</span></button>" start) 16)))
 > (define sv (status-view-of (view)))
-> (define at (document:node-start (document:token (buffers:document line-buffer) 3)))
+> (define at (document:node-start (document:token (buffers:document line-buffer) 5)))
 > (document:node-kind (document:token (buffers:document line-buffer) at))
 > (click-token! sv at)
 > (length (views:cursors (view)))
@@ -26,13 +26,13 @@
 ; status-line:visible
 > (in-client (lambda () (views:set-option! (views:current) status-line:visible #f)))
 > (screen-status-lines client)
-(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "2:3"))
-(status-line:line () #(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(status-line:major-mode ((key . status-line:major-mode) (right . #t))) #(status-line:position ((key . status-line:position))))
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:percent-position" . "65%") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "2:3"))
+(status-line:line () #(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(status-line:percent-position ((key . status-line:percent-position))) #(status-line:region-size ((key . status-line:region-size))) #(status-line:major-mode ((key . status-line:major-mode) (right . #t))) #(status-line:position ((key . status-line:position))))
 #<cursor>
-(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("cursors:cursor-count" . "2 cursors") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "2:3"))
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:percent-position" . "65%") ("status-line:region-size" . "") ("cursors:cursor-count" . "2 cursors") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "2:3"))
 "<button class=\"status-line-segment status-line-right\" type=\"button\" tabindex=\"-1\" data-segment=\"cursors:cursor-count\"><span title=\"Click to keep only the primary cursor\">2 cursors</span></button>"
 cursors:cursor-count
 1
-(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("cursors:cursor-count" . "") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "2:3"))
-(("status-line:buffer-name" . "notes") ("cursors:cursor-count" . "") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "2:3"))
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:percent-position" . "65%") ("status-line:region-size" . "") ("cursors:cursor-count" . "") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "2:3"))
+(("status-line:buffer-name" . "notes") ("status-line:percent-position" . "65%") ("status-line:region-size" . "") ("cursors:cursor-count" . "") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "2:3"))
 ()

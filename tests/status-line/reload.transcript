@@ -29,14 +29,14 @@
 > (map car (status (view)))
 > (load-module! '(cursors))
 > (assoc "cursors:cursor-count" (status (view)))
-("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode")
-("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode")
-((("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:position" . "1:0") ("status-line:major-mode" . "Fundamental")))
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode")
+((("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:position" . "1:0") ("status-line:percent-position" . "Top") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental")))
 1
 (#f #f)
-("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode" "status-line:minor-modes")
 1
 #<cursor>
 ("cursors:cursor-count" . "2 cursors")
-("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:major-mode" "status-line:minor-modes")
+("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode" "status-line:minor-modes")
 ("cursors:cursor-count" . "2 cursors")
