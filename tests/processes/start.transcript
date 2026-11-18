@@ -1,0 +1,165 @@
+; An own process: each piece of output reaches on-output as a task on
+; the main thread, on behalf of the caller, with the offset after it;
+; then the end of output, then the exit status.
+> (define p (processes:start "printf" '("one\ntwo\n") noting-output noting-exit))
+> p
+#<process 1 printf>
+> (wait-until exited?)
+> (taken!)
+(("one\ntwo\n" 8) (eof 8) (exit 0))
+> (list (processes:process? p) (processes:process? 'p) (processes:status p) (processes:owner p))
+(#t #f 0 (repl))
+> (processes:command-line p)
+("printf" "one\ntwo\n")
+> (processes:all)
+()
+> (define (owner-and-task bytes end)
+    (unless (eof-object? bytes) (note! (list (current-owner) (task? (current-task))))))
+> (processes:start "printf" '("x") owner-and-task noting-exit)
+#<process 2 printf>
+> (wait-until exited?)
+> (taken!)
+(((repl) #t) (exit 0))
+; The exit status is the exit code, or -n when signal n ended the
+; program.
+> (processes:start "sh" '("-c" "exit 3") noting-output noting-exit)
+#<process 3 sh>
+> (wait-until exited?)
+> (taken!)
+((eof 0) (exit 3))
+> (processes:start "sh" '("-c" "kill -TERM $$") noting-output noting-exit)
+#<process 4 sh>
+> (wait-until exited?)
+> (taken!)
+((eof 0) (exit -15))
+; A program that cannot start: the condition goes to report, then to
+; on-exit, after the end of output.
+> (define missing (processes:start "no-such-program" '() noting-output noting-exit))
+> (wait-until exited?)
+! spawn-process: cannot run no-such-program: No such file or directory with irritants ("no-such-program" ())
+> (let ([l (taken!)]) (list (car l) (condition? (cadr (cadr l)))))
+((eof 0) #t)
+> (list (processes:pid missing) (condition? (processes:status missing)) (memq missing (processes:all)))
+(#f #t #f)
+; A program without a / is looked up in the PATH of its environment, and
+; no shell is involved. The environment adds to Tuna's, and #f removes a
+; variable.
+> (processes:start "sh" '("-c" "echo \"$GREETING-$HOME-$0\"") noting-output noting-exit
+    (processes:options [environment '(("GREETING" . "hi") ("HOME" . #f))]))
+#<process 6 sh>
+> (wait-until exited?)
+> (joined!)
+(("hi--sh\n" 7) (eof 7) (exit 0))
+> (processes:start "printf" '("x") noting-output noting-exit
+    (processes:options [environment '(("PATH" . "/nowhere"))]))
+#<process 7 printf>
+> (wait-until exited?)
+! spawn-process: cannot run printf: No such file or directory with irritants ("printf" ("x"))
+> (map (lambda (x) (if (condition? (cadr x)) 'condition x)) (taken!))
+((eof 0) condition)
+> (processes:start "pwd" '() noting-output noting-exit (processes:options [directory "/"]))
+#<process 8 pwd>
+> (wait-until exited?)
+> (taken!)
+(("/\n" 2) (eof 2) (exit 0))
+; Standard error joins the output, unless separate-stderr keeps it apart
+; for processes:error-output.
+> (define both "echo out; echo err >&2")
+> (define joined (processes:start "sh" (list "-c" both) noting-output noting-exit))
+> (wait-until exited?)
+> (list (joined!) (processes:error-output joined))
+((("out\nerr\n" 8) (eof 8) (exit 0)) #f)
+> (define apart (processes:start "sh" (list "-c" both) noting-output noting-exit
+                  (processes:options [separate-stderr #t])))
+> (wait-until exited?)
+> (list (joined!) (utf8->string (processes:error-output apart)))
+((("out\n" 4) (eof 4) (exit 0)) "err\n")
+; Output not yet taken stops reading at processes:log-size bytes, so a
+; flood comes in pieces no larger, whole and in order.
+> (set-option! processes:log-size 1000)
+> (define pieces '())
+> (processes:start "head" '("-c" "100000" "/dev/zero")
+    (lambda (bytes end)
+      (unless (eof-object? bytes) (set! pieces (cons (cons (bytevector-length bytes) end) pieces))))
+    noting-exit)
+#<process 11 head>
+> (wait-until exited?)
+> (taken!)
+((exit 0))
+> (let ([pieces (reverse pieces)])
+    (list (apply + (map car pieces))
+          (for-all (lambda (piece) (<= (car piece) 1000)) pieces)
+          (let loop ([pieces pieces] [at 0])
+            (or (null? pieces)
+                (and (= (cdar pieces) (+ at (caar pieces))) (loop (cdr pieces) (cdar pieces)))))))
+(100000 #t #t)
+> (remove-option! processes:log-size)
+; A raise in on-output or on-exit goes to report, and delivery goes on.
+> (processes:start "printf" '("x")
+    (lambda (bytes end) (if (eof-object? bytes) (note! 'eof) (car bytes)))
+    (lambda (status) (note! (list 'exit status))))
+#<process 12 printf>
+> (wait-until exited?)
+! car: #vu8(120) is not a pair
+> (taken!)
+(eof (exit 0))
+; Arguments are checked, and only the main thread starts a process.
+> (processes:start "a\x0;b" '() noting-output)
+! processes:start: not a string free of NUL characters with irritant "a\x0;b"
+> (processes:start "printf" '(x) noting-output)
+! processes:start: not a list of strings free of NUL characters with irritant (x)
+> (processes:start "printf" "x" noting-output)
+! processes:start: not a list of strings free of NUL characters with irritant "x"
+> (processes:start "printf" '() 'noting-output)
+! processes:start: not a procedure with irritant noting-output
+> (processes:start "printf" '() noting-output noting-exit 'options)
+! processes:start: not processes:options with irritant options
+> (let ([message #f])
+    (thread-join
+      (fork-thread
+        (lambda ()
+          (set! message
+            (guard (c [#t (condition-message c)]) (processes:start "printf" '() noting-output))))))
+    message)
+"not on the main thread"
+; processes:options: each clause is optional and given at most once, and
+; #f means its default.
+> (processes:options? (processes:options))
+#t
+> (processes:options? (processes:options [directory #f] [environment #f] [terminal #f]
+                        [separate-stderr #f] [full-log #f]))
+#t
+> (processes:options? 'options)
+#f
+> (processes:options [directory "/"] [shell "bash"])
+! processes:options: unknown clause shell in (processes:options (directory "/") (shell "bash"))
+> (processes:options [directory "/"] [directory "/tmp"])
+! processes:options: clause given twice directory in (processes:options (directory "/") (directory "/tmp"))
+> (processes:options directory)
+! processes:options: expected (processes:options [name value] ...) (processes:options directory)
+> (processes:options [directory 'root])
+! processes:options: not a directory string or #f with irritant root
+> (processes:options [environment '(("A=B" . "c"))])
+! processes:options: not an association list of variable names and values with irritant (("A=B" . "c"))
+> (processes:options [environment '(("A" . c))])
+! processes:options: not an association list of variable names and values with irritant (("A" . c))
+> (processes:options [terminal '(24 . -1)])
+! processes:options: not a pair of rows and columns from 0 to 65535, or #f with irritant (24 . -1)
+> (processes:options [separate-stderr 'yes])
+! processes:options: not a boolean with irritant yes
+> (processes:options [full-log 'keep])
+! processes:options: not a processes:full-log action or #f with irritant keep
+> (processes:log-size)
+1048576
+; Each name the plugin offers is a changeable definition, so a plugin
+; that runs programs elsewhere advises them.
+> (define (logged start program arguments . rest)
+    (note! (list 'starting program))
+    (apply start program arguments rest))
+> (advice-add! processes:start logged)
+> (processes:start "true" '() noting-output noting-exit)
+#<process 13 true>
+> (wait-until exited?)
+> (taken!)
+((starting "true") (eof 0) (exit 0))
+> (advice-remove! processes:start logged)

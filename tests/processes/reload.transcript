@@ -1,0 +1,62 @@
+; The page's example: a chat with Pi that survives its plugin's reloads.
+; A stand-in for pi writes numbered lines.
+> (import (chat))
+> (chat:chat)
+> (wait-until (lambda () (lines-past? 20)))
+> (define agent (processes:find (car (chat:agent))))
+> (list (processes:owner agent) (eq? (processes:buffer agent) (buffers:find "*pi*")))
+(#f #t)
+; Reloading the plugin that started the process: its body follows the
+; process again from the offset it saved, so no line is lost or repeated.
+> (eval-file (user-file "chat.sls"))
+> (let ([past (car (reverse (pi-lines)))]) (wait-until (lambda () (lines-past? (+ past 20)))))
+> (consecutive? (pi-lines))
+#t
+; Reloading processes reloads the chat too; the process keeps running.
+> (eval-file (library-file "processes.sls"))
+> (eq? (processes:find (car (chat:agent))) agent)
+#t
+> (let ([past (car (reverse (pi-lines)))]) (wait-until (lambda () (lines-past? (+ past 20)))))
+> (consecutive? (pi-lines))
+#t
+; Turning processes off turns the chat off; the process goes on, and
+; what it wrote meanwhile reaches the chat when both load again.
+> (unload-module! '(processes))
+> (memq '(chat) (loaded-modules))
+#f
+> (sleep-for 0.3)
+> (load-module! '(chat))
+> (let ([past (car (reverse (pi-lines)))]) (wait-until (lambda () (lines-past? (+ past 20)))))
+> (consecutive? (pi-lines))
+#t
+; When the log no longer holds the offset the chat saved, it asks Pi for
+; the messages so far.
+> (set-option! processes:log-size 50)
+> (unload-module! '(chat))
+> (sleep-for 0.5)
+> (load-module! '(chat))
+> (wait-until (lambda () (transcript-has? "answer {\"type\":\"get_messages\"}")))
+> (transcript-has? "answer {\"type\":\"get_messages\"}")
+#t
+> (consecutive? (pi-lines))
+#f
+> (remove-option! processes:log-size)
+; Killing the chat's buffer stops the process, and the chat's on-exit
+; forgets it.
+> (buffers:kill! (buffers:find "*pi*"))
+#t
+> (wait-until (lambda () (not (chat:agent))))
+> (list (chat:agent) (processes:status agent) (memq agent (processes:all)))
+(#f -1 #f)
+; A process a module starts for itself stops when the module unloads:
+; its output not yet delivered is dropped and on-exit is skipped.
+> (import (searcher))
+> (define search (searcher:search noting-output noting-exit))
+> (processes:owner search)
+(searcher)
+> (wait-until (lambda () (pair? log)))
+> (unload-module! '(searcher))
+> (wait-until (lambda () (processes:status search)))
+> (sleep-for 0.1)
+> (list (taken!) (processes:status search) (memq search (processes:all)))
+((("first\n" 6)) -1 #f)

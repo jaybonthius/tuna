@@ -1,0 +1,119 @@
+; A user process belongs to no module. Its id holds the time the plugin's
+; library loaded, Tuna's process id and a count, so an id kept in saved
+; data never names another process.
+> (define shell (processes:start-for-user "sh" '("-c" "printf 'a\\nb\\n'; sleep 0.2; printf 'c\\n'")))
+> (processes:owner shell)
+#f
+> (let ([parts (let split ([s (processes:id shell)] [acc '()])
+                 (let loop ([i 0])
+                   (cond
+                     [(= i (string-length s)) (reverse (cons s acc))]
+                     [(char=? (string-ref s i) #\-)
+                      (split (substring s (+ i 1) (string-length s)) (cons (substring s 0 i) acc))]
+                     [else (loop (+ i 1))])))])
+    (list (length parts) (and (for-all string->number parts) #t)))
+(3 #t)
+> (eq? (processes:find (processes:id shell)) shell)
+#t
+> (processes:find "1763367298-41822-4")
+#f
+; A module follows it from an offset: first the output from there still
+; in the log, then new output, the end, and the exit status.
+> (wait-until (lambda () (= (processes:output-end shell) 4)))
+> (processes:attach! shell 2 noting-output noting-exit)
+2
+> (wait-until exited?)
+> (joined!)
+(("b\nc\n" 6) (eof 6) (exit 0))
+; Once ended, it stays in the list until an attachment's on-exit has run.
+> (memq shell (processes:all))
+#f
+> (define later (processes:start-for-user "printf" '("done\n")))
+> (wait-until (lambda () (and (processes:status later) (= (processes:output-end later) 5))))
+> (list (processes:status later) (and (memq later (processes:all)) #t))
+(0 #t)
+> (processes:attach! later (processes:output-end later) noting-output noting-exit)
+5
+> (wait-until exited?)
+> (list (taken!) (memq later (processes:all)))
+(((eof 5) (exit 0)) #f)
+; Attaching again from the same module replaces its attachment.
+> (define talker (processes:start-for-user "sh" '("-c" "read line; echo \"$line\"")))
+> (processes:attach! talker 0 (lambda (bytes end) (note! 'first)) (lambda (status) (note! 'first-exit)))
+0
+> (processes:attach! talker 0 noting-output noting-exit)
+0
+> (processes:send! talker "hello\n")
+> (wait-until exited?)
+> (joined!)
+(("hello\n" 6) (eof 6) (exit 0))
+; Stopping a user process that has ended and that nobody follows removes
+; it from the list.
+> (define unfollowed (processes:start-for-user "true" '()))
+> (wait-until (lambda () (processes:status unfollowed)))
+> (processes:stop! unfollowed)
+> (memq unfollowed (processes:all))
+#f
+; A user process nobody follows drops its oldest output by default, so
+; it never waits; attaching from an offset the log no longer holds
+; starts at the oldest offset kept.
+> (set-option! processes:log-size 1000)
+> (define flood (processes:start-for-user "head" '("-c" "200000" "/dev/zero")))
+> (wait-until (lambda () (= (processes:output-end flood) 200000)))
+> (define pieces '())
+> (define (count-pieces bytes end)
+    (if (eof-object? bytes)
+        (note! (list 'eof end))
+        (set! pieces (cons (bytevector-length bytes) pieces))))
+> (processes:attach! flood 0 count-pieces noting-exit)
+199000
+> (wait-until exited?)
+> (list (apply + pieces) (taken!))
+(1000 ((eof 200000) (exit 0)))
+; With full-log pause it stops reading once the log is full, so the
+; program waits and nothing it writes is lost.
+> (set! pieces '())
+> (define held (processes:start-for-user "head" '("-c" "200000" "/dev/zero")
+                 (processes:options [full-log (processes:full-log pause)])))
+> (wait-until (lambda () (= (processes:output-end held) 1000)))
+> (sleep-for 0.2)
+> (list (processes:output-end held) (processes:status held))
+(1000 #f)
+> (processes:attach! held 0 count-pieces noting-exit)
+0
+> (wait-until exited?)
+> (list (apply + pieces) (taken!))
+(200000 ((eof 200000) (exit 0)))
+> (remove-option! processes:log-size)
+; Arguments are checked.
+> (processes:attach! (processes:start "true" '() (lambda (bytes end) #f)) 0 noting-output)
+! processes:attach!: not a user process with irritant #<process 7 true>
+> (processes:attach! held 300000 noting-output)
+! processes:attach!: past the output read so far with irritant 300000
+> (processes:attach! held -1 noting-output)
+! processes:attach!: not an output offset with irritant -1
+> (processes:attach! 'held 0 noting-output)
+! processes:attach!: not a process with irritant held
+> (processes:find 'id)
+! processes:find: not a string with irritant id
+> (processes:full-log keep)
+! universe of full-log does not include specified symbol keep
+; processes:line-receiver passes each whole line, decoded as UTF-8, with
+; the offset after its line feed, and drops a carriage return before it.
+> (define receive (processes:line-receiver 0 (lambda (line end) (note! (list line end)))))
+> (receive (string->utf8 "one\r\ntw") 7)
+> (receive (bytevector #xC3) 8)
+> (receive (bytevector #xA9 10 #xFF 10 108 97 115 116) 16)
+> (receive (eof-object) 16)
+> (taken!)
+(("one" 5) ("twé" 10) ("�" 12) ("last" 16) (#!eof 16))
+; Output that starts after the offset given skips to the first line
+; feed, since the log cut that line.
+> (define resumed (processes:line-receiver 2 (lambda (line end) (note! (list line end)))))
+> (resumed (string->utf8 "ut line\nwhole\n") 18)
+> (taken!)
+(("whole" 18))
+> (processes:line-receiver -1 note!)
+! processes:line-receiver: not an output offset with irritant -1
+> (processes:line-receiver 0 'note!)
+! processes:line-receiver: not a procedure with irritant note!

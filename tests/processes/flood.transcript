@@ -1,0 +1,30 @@
+; A user process that floods output: Tuna's memory stays near the size
+; of the log, whether a module follows the process or none does.
+> (define (resident-mib)
+    (call-with-input-file "/proc/self/status"
+      (lambda (port)
+        (let loop ()
+          (let ([line (get-line port)])
+            (if (and (> (string-length line) 6) (string=? (substring line 0 6) "VmRSS:"))
+                (quotient (read (open-string-input-port (substring line 6 (string-length line)))) 1024)
+                (loop)))))))
+> (define (peak-for seconds)
+    (let loop ([n (* seconds 4)] [peak 0])
+      (cond
+        [(= n 0) peak]
+        [else (sleep-for 0.25) (loop (- n 1) (max peak (resident-mib)))])))
+> (define followed
+    (processes:start-for-user "cat" '("/dev/zero") (processes:options [full-log (processes:full-log pause)])))
+> (processes:attach! followed 0 (lambda (bytes end) #f))
+0
+> (< (peak-for 3) 400)
+#t
+> (> (processes:output-end followed) 100000000)
+#t
+> (processes:stop! followed)
+> (define unfollowed (processes:start-for-user "cat" '("/dev/zero")))
+> (< (peak-for 3) 400)
+#t
+> (> (processes:output-end unfollowed) 100000000)
+#t
+> (processes:stop! unfollowed)

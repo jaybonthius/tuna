@@ -8,7 +8,7 @@ esac
 
 # The libraries come from GitHub, and an offline run should not fail the
 # suite.
-if ! GIT_TERMINAL_PROMPT=0 timeout 20 git ls-remote https://github.com/jaybonthius/chez-md4c HEAD > /dev/null 2>&1; then
+if ! GIT_TERMINAL_PROMPT=0 timeout 20 git ls-remote https://github.com/jaybonthius/chez-djot HEAD > /dev/null 2>&1; then
   echo "$0: skipped: GitHub is unreachable"
   exit 0
 fi
@@ -24,7 +24,7 @@ fail() {
 mkdir -p "$dir/home/.config/tuna" "$dir/plugin" "$dir/work"
 cat > "$dir/plugin/markdown-shell.sls" <<'END'
 #!tuna
-(import (md4c) (process))
+(import (md4c) (process) (djot))
 
 (define (heading-level text)
   (let ([first (car (markdown-parse text))])
@@ -32,6 +32,9 @@ cat > "$dir/plugin/markdown-shell.sls" <<'END'
 
 (define (echo text)
   (utf8->string (process-result-stdout (run-process "echo" (list text)))))
+
+(define (djot-html text)
+  (djot->html-string (string->djot text)))
 END
 cat > "$dir/plugin/tuna.deps" <<'END'
 (library chez-md4c
@@ -40,15 +43,21 @@ cat > "$dir/plugin/tuna.deps" <<'END'
   (library-directories ("src" . "build/obj/src"))
   (build "make" "build/obj/src/md4c/libchez-md4c.so"))
 (library chez-process
-  (git "https://github.com/jaybonthius/chez-process")
+  (git "https://github.com/jaybonthius/chez-process.git")
   (commit "1d3356c0f82248125ae4771d116f94597046f2df")
   (library-directories ("src" . "build/obj/src"))
   (build "make" "build/obj/src/process/libchez-process.so"))
+(library chez-djot
+  (git "https://github.com/jaybonthius/chez-djot.git")
+  (commit "c20eb672b8752c35f28aad641445e2c51bb46ba3")
+  (library-directories ("src" . "build/obj/src"))
+  (build "make" "build"))
 END
 cat > "$dir/home/.config/tuna/init.ss" <<END
 (import (tuna) (tuna plugins))
 (use-plugin markdown-shell (local "$dir/plugin"))
-(write (list (markdown-shell:heading-level "## Hi\n") (markdown-shell:echo "hello")))
+(write (list (markdown-shell:heading-level "## Hi\n") (markdown-shell:echo "hello")
+             (markdown-shell:djot-html "_hi_\n")))
 (exit)
 END
 
@@ -56,15 +65,17 @@ END
 # libraries come from.
 output=$(cd "$dir/work" && GIT_CONFIG_NOSYSTEM=1 HOME="$dir/home" env -u TUNA_LIBRARY "$tuna" < /dev/null 2>&1) ||
   fail "tuna exited with status $?"
-[ "$output" = '(2 "hello\n")' ] || fail "the plugin gave: $output"
+[ "$output" = '(2 "hello\n" "<p><em>hi</em></p>\n")' ] || fail "the plugin gave: $output"
 libraries=$dir/home/.local/share/tuna/libraries
-head=$(cat "$libraries/chez-process/.git/HEAD" 2>/dev/null || true)
-[ "$head" = 1d3356c0f82248125ae4771d116f94597046f2df ] || fail "chez-process is checked out at: $head"
-[ -f "$libraries/chez-process/build/obj/src/process.so" ] ||
-  fail "(process) was not compiled into its own object folder"
-# The plugin's line for chez-md4c is Tuna's own, so Tuna's built copy
-# serves it.
-[ ! -e "$libraries/chez-md4c" ] || fail "chez-md4c was installed though Tuna's own line agrees"
+head=$(cat "$libraries/chez-djot/.git/HEAD" 2>/dev/null || true)
+[ "$head" = c20eb672b8752c35f28aad641445e2c51bb46ba3 ] || fail "chez-djot is checked out at: $head"
+[ -f "$libraries/chez-djot/build/obj/src/djot.so" ] ||
+  fail "(djot) was not compiled into its own object folder"
+# The plugin's lines for chez-md4c and chez-process are Tuna's own, so
+# Tuna's built copies serve them.
+for library in chez-md4c chez-process; do
+  [ ! -e "$libraries/$library" ] || fail "$library was installed though Tuna's own line agrees"
+done
 
 echo "$0: $failures failures"
 [ "$failures" -eq 0 ]

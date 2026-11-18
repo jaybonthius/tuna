@@ -1,0 +1,77 @@
+; Input is queued and written by a thread of the plugin; closing it ends
+; the program's standard input once the queue is written.
+> (define cat (processes:start "cat" '() noting-output noting-exit))
+> (processes:send! cat "one ")
+> (processes:send! cat (string->utf8 "two"))
+> (processes:close-input! cat)
+> (wait-until exited?)
+> (joined!)
+(("one two" 7) (eof 7) (exit 0))
+> (define ended (processes:start "true" '() (lambda (bytes end) #f) noting-exit))
+> (wait-until exited?)
+> (taken!)
+((exit 0))
+> (processes:send! ended "after the end does nothing")
+> (define closed (processes:start "cat" '() (lambda (bytes end) #f)))
+> (processes:close-input! closed)
+> (processes:send! closed "x")
+! processes:send!: the input was closed with irritant #<process 3 cat>
+> (processes:send! closed 'x)
+! processes:send!: not a string or bytevector with irritant x
+; On a terminal, standard input, output and error are the terminal, of
+; the size given, and closing the input sends C-d.
+> (define size-lines '())
+> (define tty (processes:start-for-user "sh" '("-c" "stty size; read line; stty size; tty")
+                (processes:options [terminal '(24 . 80)])))
+> (processes:attach! tty 0
+    (processes:line-receiver 0 (lambda (line end) (set! size-lines (cons line size-lines))))
+    noting-exit)
+0
+> (wait-until (lambda () (pair? size-lines)))
+> (processes:resize! tty 30 100)
+> (processes:send! tty "go\n")
+> (wait-until exited?)
+> (taken!)
+((exit 0))
+> (let ([lines (reverse size-lines)])
+    (list (list-head lines 3) (string=? (substring (list-ref lines 3) 0 5) "/dev/")))
+(("24 80" "go" "30 100") #t)
+> (define eof-on-terminal (processes:start "cat" '() noting-output noting-exit
+                            (processes:options [terminal '(24 . 80)])))
+> (processes:close-input! eof-on-terminal)
+> (wait-until exited?)
+> (car (reverse (taken!)))
+(exit 0)
+; The foreground group of a terminal is the program's own until a job
+; holds the terminal.
+> (define job-shell (processes:start "sh" '("-c" "read line; set -m; sleep 5") noting-output noting-exit
+                      (processes:options [terminal '(24 . 80)])))
+> (wait-until (lambda () (processes:pid job-shell)))
+> (wait-until (lambda () (processes:foreground-group job-shell)))
+> (= (processes:foreground-group job-shell) (processes:pid job-shell))
+#t
+> (processes:send! job-shell "\n")
+> (wait-until (lambda () (not (eqv? (processes:foreground-group job-shell) (processes:pid job-shell)))))
+> (integer? (processes:foreground-group job-shell))
+#t
+> (processes:stop! job-shell)
+> (wait-until exited?)
+> (car (reverse (taken!)))
+(exit -1)
+> (processes:foreground-group job-shell)
+#f
+> (processes:foreground-group cat)
+#f
+; Arguments are checked.
+> (processes:resize! cat 10 10)
+! processes:resize!: not a process with a terminal with irritant #<process 1 cat>
+> (processes:resize! tty -1 10)
+! processes:resize!: not a number of rows from 0 to 65535 with irritant -1
+> (processes:resize! tty 10 'wide)
+! processes:resize!: not a number of columns from 0 to 65535 with irritant wide
+> (processes:send! 'cat "x")
+! processes:send!: not a process with irritant cat
+> (processes:close-input! 'cat)
+! processes:close-input!: not a process with irritant cat
+> (processes:options [terminal '(24 . 80)] [separate-stderr #t])
+! processes:options: a terminal joins standard error to the output with irritant (24 . 80)
