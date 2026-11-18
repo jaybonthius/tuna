@@ -1,0 +1,36 @@
+> (define (write-file! path lines)
+    (call-with-output-file path (lambda (p) (for-each (lambda (l) (put-string p l) (newline p)) lines)) '(replace)))
+> (define folder (string-append (getenv "HOME") "/agent/sessions/--home-groucho-src-tuna--"))
+> (system (string-append "mkdir -p " folder))
+0
+; A folder's sessions, read from Pi's files: the session's id, its name,
+; your first message on one line, how many messages it holds, and when
+; it last changed, newest first.
+> (write-file! (string-append folder "/2026-11-01_aaa.jsonl")
+    (list (json->string '(("type" . "session") ("version" . 3) ("id" . "aaa") ("cwd" . "/home/groucho/src/tuna")))
+          (json->string (entry "s" #f '(("role" . "system") ("content" . "") ("timestamp" . 0))))
+          (json->string (entry "u" "s" (user-message "Fix the\nbuild")))
+          (json->string (entry "a" "u" (assistant-message "stop" (text-block "Done"))))
+          (json->string '(("type" . "session_info") ("id" . "i") ("parentId" . "a") ("name" . "Build fix")))))
+> (system (string-append "touch -d '2026-11-01 10:00' " folder "/2026-11-01_aaa.jsonl"))
+0
+> (write-file! (string-append folder "/2026-11-02_bbb.jsonl")
+    (list (json->string '(("type" . "session") ("version" . 3) ("id" . "bbb") ("cwd" . "/home/groucho/src/tuna")))
+          (json->string (entry "u" #f `(("role" . "user") ("content" . #((("type" . "text") ("text" . "Review")))))))))
+> (system (string-append "touch -d '2026-11-02 10:00' " folder "/2026-11-02_bbb.jsonl"))
+0
+> (write-file! (string-append folder "/notes.txt") '("not a session"))
+> (define ss (result (start! (lambda () (pi:sessions "/home/groucho/src/tuna/")))))
+> (map (lambda (s) (list (pi:session? s) (pi:session-id s) (pi:session-name s) (pi:session-first-message s)
+                         (pi:session-message-count s) (time? (pi:session-modified s))))
+       ss)
+((#t "bbb" #f "Review" 1 #t) (#t "aaa" "Build fix" "Fix the build" 2 #t))
+> (equal? (pi:session-file (car ss)) (string-append folder "/2026-11-02_bbb.jsonl"))
+#t
+> (time>? (pi:session-modified (car ss)) (pi:session-modified (cadr ss)))
+#t
+; A folder with no sessions has none.
+> (result (start! (lambda () (pi:sessions "/nowhere"))))
+()
+> (pi:sessions 'x)
+! pi:sessions: not a string with irritant x

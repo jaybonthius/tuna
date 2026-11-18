@@ -1,0 +1,211 @@
+@layer defaults, themes, preferences;
+
+/* In a buffer, views wraps each child node in a .node element, drawn as
+   its contents, so spacing goes on the element inside it. An item of the
+   transcript is inside a node that draws no element of its own. */
+@layer defaults {
+  .pi-chat {
+    padding-block: var(--tuna-space-4);
+    padding-inline: var(--tuna-space-5);
+  }
+
+  .pi-chat-transcript > .node + .node > .node > * {
+    margin-block-start: var(--tuna-space-6);
+  }
+
+  /* The user's own text is in the code font, as typed, even where it
+     reads as Markdown. */
+  .pi-chat-user-message {
+    --tuna-font-ui: var(--tuna-font-code);
+    padding-block: var(--tuna-space-3);
+    padding-inline: var(--tuna-space-4);
+    background: var(--pi-chat-user-message-background, var(--tuna-surface-subtle));
+    border-radius: var(--pi-chat-user-message-radius, var(--tuna-panel-radius));
+  }
+
+  .pi-chat-user-message > .node:last-child > .markdown-paragraph,
+  .pi-chat-reply > .node:last-child > .markdown-paragraph,
+  .pi-chat-reply > .node:last-child > .markdown-list,
+  .pi-chat-reply > .node:last-child > .markdown-code-block {
+    margin-block-end: 0;
+  }
+
+  .pi-chat-reply > .node + .node > *,
+  .pi-chat-thinking > .node + .node > *,
+  .pi-chat-summary > .node + .node > *,
+  .pi-chat-extension-message > .node + .node > * {
+    margin-block-start: var(--tuna-space-4);
+  }
+
+  /* A block that folds shows a marker before its header: the header is
+     the line point rests on to fold and unfold it. */
+  .pi-chat-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--tuna-space-2);
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-ui);
+    color: var(--tuna-text-muted);
+  }
+
+  /* A tool and its command are code; the words around them are Tuna's. */
+  .pi-chat-tool-call > .node:first-child > .pi-chat-header,
+  .pi-chat-name {
+    font-family: var(--tuna-font-code);
+    font-size: var(--tuna-font-size-code);
+  }
+
+  .pi-chat-detail {
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-ui);
+  }
+
+  :is(.pi-chat-thinking, .pi-chat-tool-call, .pi-chat-summary, .pi-chat-extension-message)
+    > .node:first-child > .pi-chat-header::before {
+    content: "▸";
+    color: var(--tuna-text-faint);
+  }
+
+  :is(.pi-chat-thinking, .pi-chat-tool-call, .pi-chat-summary, .pi-chat-extension-message)[data-open]
+    > .node:first-child > .pi-chat-header::before {
+    content: "▾";
+  }
+
+  .pi-chat-name {
+    font-weight: var(--tuna-font-weight-semibold);
+    color: var(--tuna-text);
+  }
+
+  .pi-chat-detail {
+    color: var(--tuna-text-faint);
+  }
+
+  .pi-chat-thinking {
+    color: var(--tuna-text-muted);
+  }
+
+  .pi-chat-tool-call {
+    padding-inline-start: var(--tuna-space-3);
+    border-inline-start: var(--tuna-border-width) solid var(--pi-chat-tool-call-border, var(--tuna-border));
+  }
+
+  .pi-chat-tool-call[data-state="running"] {
+    border-inline-start-color: var(--pi-chat-tool-call-running-border, var(--tuna-accent));
+  }
+
+  /* A failed call is marked by its border and by the word in its header,
+     so the state shows where colour is not seen. */
+  .pi-chat-tool-call[data-state="failed"] {
+    border-inline-start-color: var(--pi-chat-tool-call-failed-border, var(--tuna-error));
+  }
+
+  .pi-chat-output,
+  .pi-chat-diff {
+    font-family: var(--tuna-font-code);
+    font-size: var(--tuna-font-size-code);
+    padding-block: var(--tuna-space-2);
+    padding-inline: var(--tuna-space-3);
+    background: var(--pi-chat-output-background, var(--tuna-surface-subtle));
+    border-radius: var(--tuna-control-radius);
+  }
+
+  .pi-chat-removed {
+    background: var(--tuna-removed-surface);
+  }
+
+  .pi-chat-added {
+    background: var(--tuna-added-surface);
+  }
+
+  .pi-chat-removed .line::before {
+    content: "- ";
+  }
+
+  .pi-chat-added .line::before {
+    content: "+ ";
+  }
+
+  .pi-chat-notice {
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-ui);
+    color: var(--tuna-text-muted);
+  }
+
+  .pi-chat-notice:is([data-level="error"], [data-level="warning"]) {
+    font-weight: var(--tuna-font-weight-semibold);
+  }
+
+  .pi-chat-dialog {
+    margin-block-start: var(--tuna-space-5);
+    padding-block: var(--tuna-space-3);
+    padding-inline: var(--tuna-space-4);
+    border: var(--tuna-border-width) solid var(--pi-chat-dialog-border, var(--tuna-accent));
+    border-radius: var(--tuna-panel-radius);
+  }
+
+  .pi-chat-dialog > .node:first-child > .pi-chat-header {
+    font-weight: var(--tuna-font-weight-bold);
+    color: var(--pi-chat-dialog-title-color, var(--tuna-info));
+  }
+
+  .pi-chat-dialog-text {
+    font-family: var(--tuna-font-ui);
+  }
+
+  .pi-chat-dialog > .node + .node > * {
+    margin-block-start: var(--tuna-space-3);
+  }
+
+  .pi-chat-field {
+    padding-block: var(--tuna-space-1);
+    padding-inline: var(--tuna-space-3);
+    background: var(--pi-chat-field-background, var(--tuna-surface));
+    border: var(--tuna-border-width) solid var(--tuna-border-strong);
+    border-radius: var(--tuna-control-radius);
+  }
+
+  .pi-chat-field[data-lines] {
+    min-block-size: calc(3lh + 2 * var(--tuna-space-1));
+  }
+
+  .pi-chat-actions .line {
+    display: flex;
+    gap: var(--tuna-space-3);
+  }
+
+  .pi-chat-queue {
+    margin-block-start: var(--tuna-space-4);
+  }
+
+  .pi-chat-queued {
+    color: var(--tuna-text-muted);
+  }
+
+  .pi-chat-tag {
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-1);
+    font-weight: var(--tuna-font-weight-semibold);
+    color: var(--tuna-text-faint);
+  }
+
+  .pi-chat-widgets {
+    color: var(--tuna-text-muted);
+  }
+
+  .pi-chat-widgets[data-placement="above"] {
+    margin-block-start: var(--tuna-space-4);
+  }
+
+  .pi-chat-waiting {
+    cursor: pointer;
+  }
+
+  .pi-chat-prompt {
+    margin-block-start: var(--tuna-space-5);
+    padding-block: var(--tuna-space-3);
+    padding-inline: var(--tuna-space-4);
+    background: var(--pi-chat-prompt-background, var(--tuna-surface));
+    border: var(--tuna-border-width) solid var(--pi-chat-prompt-border, var(--tuna-border-strong));
+    border-radius: var(--tuna-panel-radius);
+  }
+}

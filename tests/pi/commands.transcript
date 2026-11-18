@@ -1,0 +1,260 @@
+> (define (write-file! path text) (call-with-output-file path (lambda (p) (display text p)) '(replace)))
+> (define (run! command) (in-client (lambda () (commands:run command))))
+> (define project (string-append (getenv "HOME") "/src/tuna"))
+> (system (string-append "mkdir -p " project "/.git " project "/lib"))
+0
+> (write-file! (string-append project "/lib/a.txt") "one\ntwo\nthree\nfour\n")
+; C-c a p shows the chat used last in the buffer's project, the nearest
+; folder holding .git, starting one when there is none.
+> (in-client (lambda () (files:find-file (string-append project "/lib/a.txt"))))
+> (define file-buffer (views:buffer (view)))
+> (run! pi-chat:open)
+> (define chat (car (pi:chats)))
+> (list (pi:chat-directory chat) (buffers:name (views:buffer (view))))
+("~/src/tuna" "*pi: tuna*")
+> (define f (fake-of chat))
+> (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
+> (in-client (lambda () (layout:switch-to-buffer file-buffer)))
+> (run! pi-chat:open)
+> (list (length (pi:chats)) (eq? (pi-chat:chat-of (views:buffer (view))) chat))
+(1 #t)
+; With C-u, always a new one.
+> (in-client (lambda () (parameterize ([commands:prefix-argument '(4)]) (commands:run pi-chat:open))))
+> (define second (cadr (pi:chats)))
+> (list (length (pi:chats)) (buffers:name (pi-chat:buffer second)) (eq? (car (pi-chat:chats-for file-buffer)) second))
+(2 "*pi: tuna*<2>" #t)
+> (pi:stop! second)
+> (sleep-for 0.1)
+> (buffers:find "*pi: tuna*<2>")
+#f
+; C-c a t removes the view showing the chat, or shows it.
+> (in-client (lambda () (layout:switch-to-buffer file-buffer)))
+> (run! pi-chat:toggle)
+> (buffers:name (views:buffer (view)))
+"*pi: tuna*"
+> (run! pi-chat:toggle)
+> (buffers:name (views:buffer (view)))
+"a.txt"
+; C-c a r adds the region to the prompt: a reference the agent reads for
+; an unmodified file buffer, the text in a fence for any other.
+> (in-client (lambda () (views:set-point! (view) 5) (views:set-mark! (view) 15)))
+> (run! pi-chat:add-region)
+> (shown chat)
+"lib/a.txt:2-3\n"
+> (in-client (lambda () (layout:switch-to-buffer file-buffer)))
+> (press! "x")
+> (in-client (lambda () (views:set-point! (view) 1) (views:set-mark! (view) 6)))
+> (run! pi-chat:add-region)
+> (shown chat)
+"lib/a.txt:2-3\n```a.txt lines 1-1\nxone\n```\n"
+; Pi's terminal commands typed at the prompt's start run the chat's own
+; procedures, with what follows the name; Pi's others are refused, since
+; sent to Pi they would reach the model as text; Pi's own commands go to
+; Pi.
+> (define b (pi-chat:buffer chat))
+> (in-client (lambda () (pi-chat:show! chat)))
+> (define t (start! (lambda () (press! "RET"))))
+> (result t)
+> (ref (last-request f "prompt") "message")
+"lib/a.txt:2-3\n```a.txt lines 1-1\nxone\n```"
+> (type! "/name Refactor")
+> (define t (start! (lambda () (press! "RET"))))
+> (result t)
+> (list (ref (last-request f "set_session_name") "name") (pi:chat-session-name chat) (shown chat))
+("Refactor" "Refactor" "\n")
+> (type! "/compact keep the API")
+> (define t (start! (lambda () (press! "RET"))))
+> (result t)
+> (ref (last-request f "compact") "customInstructions")
+"keep the API"
+> (type! "/login")
+> (define t (start! (lambda () (press! "RET"))))
+> (result t)
+> (shown chat)
+"/login is a command of Pi's terminal, which a chat cannot run\n/login\n"
+> (press! "C-a" "C-k")
+> (answer! f "get_commands" (lambda (f r) '(("commands" . #((("name" . "review") ("description" . "Review") ("source" . "extension")))))))
+> (say! f (event "agent_settled" '("aborted" . #f)))
+> (wait-until (lambda () (pair? (pi:chat-commands chat))))
+> (type! "/review now")
+> (define t (start! (lambda () (press! "RET"))))
+> (result t)
+> (ref (last-request f "prompt") "message")
+"/review now"
+; A lone slash names no command, so it goes to Pi as text.
+> (type! "/")
+> (define t (start! (lambda () (press! "RET"))))
+> (result t)
+> (ref (last-request f "prompt") "message")
+"/"
+; In the conversation: n and p move between your messages, RET opens the
+; file of the tool call at point, or the path:line at point, w copies the
+; message at point as Markdown, f forks from your message at point.
+> (run-turn! f "u1" "a1" "First" '("See lib/a.txt:3 for it."))
+> (append-entry! f (entry "a2" "a1" (assistant-message "toolUse" (tool-block "t1" "read" '(("path" . "lib/a.txt") ("offset" . 2))))))
+> (append-entry! f (entry "r1" "a2" (tool-result "t1" "read" "two\nthree" #f)))
+> (run-turn! f "u2" "a3" "Second" '("Done."))
+> (wait-until (lambda () (= 5 (length (filter pi:item-entry-id (pi:chat-transcript chat))))))
+> (sleep-for 0.1)
+> (point-at! chat "Done.")
+> (press! "p")
+> (point-at! chat "Second")
+> (define here (views:point (view)))
+> (point-at! chat "Done.")
+> (press! "p")
+> (= (views:point (view)) here)
+#t
+> (press! "p" "n")
+> (= (views:point (view)) here)
+#t
+> (press! "w")
+> (kill-ring:text (kill-ring:current))
+"Second"
+> (point-at! chat "See lib")
+> (press! "w")
+> (kill-ring:text (kill-ring:current))
+"See lib/a.txt:3 for it."
+> (point-at! chat "lib/a.txt:3")
+> (define t (start! (lambda () (press! "RET"))))
+> (result t)
+> (let ([v (view)]) (list (buffers:name (views:buffer v)) (document:line (buffers:document (views:buffer v)) (views:point v))))
+("a.txt" 3)
+> (in-client (lambda () (pi-chat:show! chat)))
+> (point-at! chat "read")
+> (define t (start! (lambda () (press! "RET"))))
+> (result t)
+> (let ([v (view)]) (list (buffers:name (views:buffer v)) (document:line (buffers:document (views:buffer v)) (views:point v))))
+("a.txt" 2)
+> (in-client (lambda () (pi-chat:show! chat)))
+> (answer! f "fork" (lambda (f r) '(("text" . "Second") ("cancelled" . #f))))
+> (point-at! chat "Second")
+> (define t (start! (lambda () (press! "f"))))
+> (result t)
+> (list (ref (last-request f "fork") "entryId") (substring (shown chat) (- (string-length (shown chat)) 7) (string-length (shown chat))))
+("u2" "Second\n")
+> (in-client (lambda () (pi-chat:show! chat)))
+> (press! "C-a" "C-k")
+; Session commands that stop a working Pi ask first.
+> (say! f (event "agent_start"))
+> (wait-until (lambda () (eq? (pi:chat-activity chat) 'thinking)))
+> (define t (start! (lambda () (press! "C-c" "C-n"))))
+> (press! "n")
+> (result t)
+> (last-request f "new_session")
+#f
+> (define t (start! (lambda () (press! "C-c" "C-n"))))
+> (press! "y")
+> (result t)
+> (pi:chat? chat)
+#t
+> (ref (last-request f "new_session") "type")
+"new_session"
+; Copying Pi's last reply, exporting, naming and Pi's own compaction.
+> (answer! f "get_last_assistant_text" (lambda (f r) '(("text" . "Done."))))
+> (define t (start! (lambda () (run! pi-chat:copy-last-reply))))
+> (result t)
+> (kill-ring:text (kill-ring:current))
+"Done."
+> (answer! f "export_html" (lambda (f r) '(("path" . "/tmp/s.html"))))
+> (define t (start! (lambda () (run! pi-chat:export-html))))
+> (result t)
+! Exported the session to /tmp/s.html
+> (echo)
+"Exported the session to /tmp/s.html"
+> (define t (start! (lambda () (run! pi-chat:rename-session))))
+> (type! "Tests")
+> (press! "RET")
+> (result t)
+> (ref (last-request f "set_session_name") "name")
+"Tests"
+> (define t (start! (lambda () (run! pi-chat:toggle-auto-compaction))))
+> (result t)
+! Pi no longer compacts on its own
+> (list (ref (last-request f "set_auto_compaction") "enabled") (echo))
+(#f "Pi no longer compacts on its own")
+; The status line of a chat's window: model, thinking level, activity,
+; share of context, cost, how many queued, extensions' status texts.
+> (say! f (event "agent_start")
+        (event "queue_update" '("steering" . #("x")) '("followUp" . #()))
+        '(("type" . "extension_ui_request") ("id" . "s1") ("method" . "setStatus") ("statusKey" . "pool") ("statusText" . "1 pool(s)")))
+> (wait-until (lambda () (pair? (pi:chat-statuses chat))))
+> (pi-chat:show-status (view))
+"Fake Model · medium · thinking · 23% · $0.41 · 1 queued · 1 pool(s)"
+> (in-client (lambda () (layout:switch-to-buffer file-buffer)))
+> (pi-chat:show-status (view))
+#f
+; After Pi's edit or write tool ends, an unmodified buffer visiting the
+; file is reverted; a modified one is left as it is, with a notice.
+> (define (writing? chat)
+    (let ([last (car (last-pair (drawn chat)))])
+      (and (eq? (car last) 'reply)
+           (exists (lambda (p) (and (pair? p) (eq? (car p) 'tool-call) (member '(state . called) (cdr p)))) (cdr last)))))
+> (define (pi-writes! id path)
+    (let ([call (tool-block id "write" `(("path" . ,path) ("content" . "x")))])
+      (say! f (event "message_start" (cons "message" (assistant-message "pending")))
+              (update `(("type" . "toolcall_start") ("contentIndex" . 0) ("id" . ,id) ("toolName" . "write"))))
+      (wait-until (lambda () (writing? chat)))
+      (say! f (update `(("type" . "toolcall_end") ("contentIndex" . 0) ("toolCall" . ,call)))
+              (event "message_end" (cons "message" (assistant-message "toolUse" call)))
+              (event "tool_execution_start" (cons "toolCallId" id) '("toolName" . "write") (cons "args" `(("path" . ,path))))
+              (event "tool_execution_end" (cons "toolCallId" id) '("toolName" . "write") '("isError" . #f)
+                     '("result" . (("content" . #((("type" . "text") ("text" . "Wrote"))))))))))
+> (files:not-modified file-buffer)
+> (write-file! (string-append project "/lib/a.txt") "edited by Pi\n")
+> (pi-writes! "e1" "lib/a.txt")
+> (wait-until (lambda () (string=? (text file-buffer) "edited by Pi\n")))
+> (text file-buffer)
+"edited by Pi\n"
+> (in-client (lambda () (views:set-point! (view) 1)))
+> (press! "x")
+> (write-file! (string-append project "/lib/a.txt") "edited again\n")
+> (pi-writes! "e2" (string-append project "/lib/a.txt"))
+> (wait-until (lambda () (eq? 'notice (car (car (last-pair (drawn chat)))))))
+> (list (text file-buffer) (car (last-pair (drawn chat))))
+("xedited by Pi\n" (notice (level . warning) "a.txt has unsaved changes, so Pi's edit of its file is not shown in it\n"))
+; A chat opened on a session Pi wrote earlier takes its edits as done
+; long ago: it reverts no buffer and warns of none.
+> (hashtable-set! sessions "old-session"
+    (cons (reverse (list (entry "o1" #f (user-message "Write a"))
+                         (entry "o2" "o1" (assistant-message "toolUse" (tool-block "t9" "write" '(("path" . "lib/a.txt") ("content" . "y")))))
+                         (entry "o3" "o2" (tool-result "t9" "write" "Wrote" #f))))
+          "o3"))
+> (define old (pi:start project "old-session"))
+> (define g (fake-of old))
+> (wait-until (lambda () (= 2 (length (filter pi:item-entry-id (pi:chat-transcript old))))))
+> (in-client (lambda () (pi-chat:show! old)))
+> (sleep-for 0.2)
+> (list (text file-buffer) (filter (lambda (d) (eq? (car d) 'notice)) (drawn old)))
+("xedited by Pi\n" ())
+> (pi:stop! old)
+; An extension may set the prompt's text.
+> (say! f '(("type" . "extension_ui_request") ("id" . "e1") ("method" . "set_editor_text") ("text" . "/review")))
+> (define (ends-with? s end) (and (>= (string-length s) (string-length end)) (string=? (substring s (- (string-length s) (string-length end)) (string-length s)) end)))
+> (wait-until (lambda () (ends-with? (shown chat) "/review\n")))
+> (ends-with? (shown chat) "/review\n")
+#t
+; Ending the chat asks first while Pi works; killing its buffer ends Pi at
+; once.
+> (in-client (lambda () (pi-chat:show! chat)))
+> (pi:chat-activity chat)
+thinking
+> (define t (start! (lambda () (run! pi-chat:stop))))
+> (press! "n")
+> (result t)
+> (length (pi:chats))
+1
+> (define process (pi:chat-process chat))
+> (define t (start! (lambda () (run! pi-chat:stop))))
+> (press! "y")
+> (result t)
+> (wait-until (lambda () (processes:status process)))
+> (list (pi:chats) (buffers:find "*pi: tuna*") (processes:status process))
+(() #f -1)
+> (run! pi-chat:open)
+> (define chat (car (pi:chats)))
+> (define process (pi:chat-process chat))
+> (buffers:kill! (pi-chat:buffer chat))
+#t
+> (wait-until (lambda () (processes:status process)))
+> (list (pi:chats) (processes:status process))
+(() -1)
