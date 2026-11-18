@@ -1671,6 +1671,31 @@
 (define-option display-action use-other-view procedure?
   "The action layout:display-buffer tries after the rules and the caller's.")
 
+(define-record-type %display
+  (sealed #t)
+  (fields buffer made? previous point))
+
+;; Weak, so a dropped view takes its record with it.
+(define %displays (make-weak-eq-hashtable))
+
+(define-record-type %shown
+  (sealed #t)
+  (fields view buffer point))
+
+(define (%views-and-buffers)
+  (map (lambda (a) (let ([v (view-of a)]) (make-%shown v (views:buffer v) (views:point v))))
+       (append (index-atoms) (index-atom-list (popups-index)))))
+
+;; A view that already showed the buffer keeps its record, so a second
+;; display of it is undone as the first.
+(define (%note-display! v b before)
+  (let ([was (find (lambda (shown) (eq? (%shown-view shown) v)) before)])
+    (cond
+      [(not was) (eq-hashtable-set! %displays v (make-%display b #t #f #f))]
+      [(eq? (%shown-buffer was) b) (void)]
+      [else (eq-hashtable-set! %displays v (make-%display b #f (%shown-buffer was) (%shown-point was)))])
+    v))
+
 (define display-buffer
   (case-lambda
     [(b) (display-buffer b #f)]
@@ -1680,14 +1705,17 @@
      (unless (or (not action) (procedure? action))
        (assertion-violation 'layout:display-buffer "not a procedure" action))
      (check-main-thread 'layout:display-buffer)
-     (or (exists (lambda (rule)
-                   (and ((car rule) b) (%check-action-result 'layout:display-buffer ((cdr rule) b))))
-                 (reverse (table-entries display-rules)))
-         (and action (%check-action-result 'layout:display-buffer (action b)))
-         (%check-action-result 'layout:display-buffer ((display-action) b))
-         (let ([v (selected-view)])
-           (unless (eq? (views:buffer v) b) (views:set-buffer! v b))
-           v))]))
+     (let ([before (%views-and-buffers)])
+       (%note-display!
+         (or (exists (lambda (rule)
+                       (and ((car rule) b) (%check-action-result 'layout:display-buffer ((cdr rule) b))))
+                     (reverse (table-entries display-rules)))
+             (and action (%check-action-result 'layout:display-buffer (action b)))
+             (%check-action-result 'layout:display-buffer ((display-action) b))
+             (let ([v (selected-view)])
+               (unless (eq? (views:buffer v) b) (views:set-buffer! v b))
+               v))
+         b before))]))
 
 (define (switch-to-buffer b)
   (unless (buffers:buffer? b)
@@ -1746,6 +1774,35 @@
         (let* ([id (selected-id)] [ix (index-of-id id)] [a (index-atom ix id)])
           (check-unlocked 'layout:delete-view ix a)
           (remove-part! ix a)))))
+
+(define (%other-unlocked-view? ix a)
+  (exists (lambda (x) (and (not (same-node? x a)) (same-level? ix x a) (not (locked-in? ix x))))
+          (index-atom-list ix)))
+
+;; The rule views applies when a view's buffer is killed, so the two
+;; agree.
+(define (%newest-buffer-but b)
+  (let ([candidates (filter (lambda (x) (not (or (eq? x b) (buffers:internal-name? (buffers:name x)))))
+                            (reverse (buffers:all)))])
+    (or (find (lambda (x) (null? (views:showing x))) candidates)
+        (and (pair? candidates) (car candidates)))))
+
+(commands:define-command (quit-view)
+  "Undoes what layout:display-buffer did to the selected view while it shows that buffer: deletes its part if the display made it, else shows again the buffer it showed before, at the same point. Otherwise deletes its part when its level holds another view that is not locked, or else shows the newest buffer that is not internal, preferring one no view shows."
+  (let* ([v (selected-view)] [id (views:id v)] [ix (index-of-id id)] [a (index-atom ix id)]
+         [d (eq-hashtable-ref %displays v #f)]
+         [d (and d (eq? (%display-buffer d) (views:buffer v)) d)]
+         [deletable? (or (not (eq? ix (current-index))) (%other-unlocked-view? ix a))])
+    (check-unlocked 'layout:quit-view ix a)
+    (eq-hashtable-delete! %displays v)
+    (cond
+      [(and d (%display-made? d) deletable?) (remove-part! ix a) (void)]
+      [(and d (%display-previous d) (buffers:live? (%display-previous d)))
+       (views:set-buffer! v (%display-previous d))
+       (views:set-point! v (fxmin (%display-point d) (fx- (document:length (buffers:document (%display-previous d))) 1)))]
+      [deletable? (remove-part! ix a) (void)]
+      [(%newest-buffer-but (views:buffer v)) => (lambda (b) (views:set-buffer! v b))]
+      [else (error 'layout:quit-view "no other buffer to show")])))
 
 (commands:define-command (zoom [prefix (commands:prefix-argument)])
   "Zooms the selected view to fill its level; with a number n, the level n out; with C-u, the screen. When zoomed, shows the whole layout again."

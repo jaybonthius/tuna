@@ -1,9 +1,9 @@
 ; The layout starts as one view of the first buffer, never the layout
-; buffer itself; the help stand-in made *Help* first.
+; buffer itself; the pager stand-in made *Pager* first.
 > (tree)
-(layout:level () #(views:view ((view . 1) (buffer . "*Help*"))))
+(layout:level () #(views:view ((view . 1) (buffer . "*Pager*"))))
 > (map buffers:name (buffers:all))
-("*Help*" " *layout*" " *popups*")
+("*Pager*" " *layout*" " *popups*")
 > (define scratch (layout:selected-view))
 > (define notes (buffers:make "notes" "one\ntwo\nthree\n"))
 > (define mail (buffers:make "mail" "Dear Harpo,\n"))

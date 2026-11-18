@@ -1,15 +1,15 @@
 ; The configuration makes layout-split:display-right the display action and
-; shows help buffers below.
+; shows pager buffers below.
 > (eq? (layout:display-action) layout-split:display-right)
 #t
 > (define notes (buffers:make "notes" "one\n"))
 > (define mail (buffers:make "mail" "Dear Harpo,\n"))
-> (define help help:buffer)
+> (define pager pager:buffer)
 > (layout:switch-to-buffer (buffers:make "*scratch*" ""))
 > (views:id (layout:display-buffer notes))
 3
 > (tree)
-(layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 3) (buffer . "*scratch*")))))
+(layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Pager*"))) #(views:view ((view . 3) (buffer . "*scratch*")))))
 > (selected)
 1
 ; A buffer already shown is shown where it is.
@@ -20,10 +20,10 @@
 > (views:id (layout:reuse-view notes))
 3
 ; A rule whose predicate accepts the buffer comes first.
-> (views:id (layout:display-buffer help))
+> (views:id (layout:display-buffer pager))
 4
 > (tree)
-(layout:level () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 4) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . "*scratch*")))))
+(layout:level () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Pager*"))) #(views:view ((view . 4) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . "*scratch*")))))
 ; Rules are tried newest first, then the caller's action, then the
 ; option's, then the selected view.
 > (define tried '())
@@ -38,7 +38,7 @@
 > (reverse tried)
 (newer older caller option)
 > (tree)
-(layout:level () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 4) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . "*scratch*")))))
+(layout:level () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Pager*"))) #(views:view ((view . 4) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . "*scratch*")))))
 > (raised (lambda () (layout:display-buffer mail (lambda (b) 'nonsense))))
 (layout:display-buffer "an action returned what is not a view or #f")
 > (raised (lambda () (layout:display-buffer 'mail)))
@@ -52,21 +52,21 @@
 #t
 > (set-option! layout:display-action layout:use-other-view)
 > (map (lambda (v) (cons (views:id v) (buffers:name (views:buffer v)))) (layout:views))
-((1 . "mail") (4 . "*Help*") (3 . "notes"))
+((1 . "mail") (4 . "*Pager*") (3 . "notes"))
 > (layout:select! (views:find 4))
 > (layout:select! (views:find 3))
 > (define other (buffers:make "other" ""))
 > (views:id (layout:use-other-view other))
 1
 > (map (lambda (v) (cons (views:id v) (buffers:name (views:buffer v)))) (layout:views))
-((1 . "other") (4 . "*Help*") (3 . "notes"))
+((1 . "other") (4 . "*Pager*") (3 . "notes"))
 > (views:id (layout:use-other-view other))
 1
 > (define echo (place-echo (buffers:make "*Echo*" "")))
 > (views:id (layout:display-buffer (buffers:make "fourth" "")))
 1
 > (map (lambda (v) (cons (views:id v) (buffers:name (views:buffer v)))) (layout:views))
-((1 . "fourth") (4 . "*Help*") (3 . "notes") (5 . "*Echo*"))
+((1 . "fourth") (4 . "*Pager*") (3 . "notes") (5 . "*Echo*"))
 ; switch-to-buffer shows the buffer in the selected view; in a locked
 ; view, it displays it elsewhere and selects that view.
 > (layout:switch-to-buffer notes)

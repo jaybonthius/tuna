@@ -1,7 +1,7 @@
 ; The browser tab names the selected view's buffer, as Emacs's
 ; frame-title-format does; layout sets the title at the end of each batch.
 > (web:title)
-"*Help* – Tuna"
+"*Pager* – Tuna"
 > (define notes (buffers:make "notes" "one\n"))
 > (layout:switch-to-buffer notes)
 > (web:title)

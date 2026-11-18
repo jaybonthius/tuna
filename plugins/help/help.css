@@ -1,0 +1,39 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  /* A description is words about the editor; its bindings are code,
+     lined up in columns by spaces. */
+  .help {
+    font-family: var(--tuna-font-ui);
+    padding-block: var(--tuna-space-3);
+  }
+
+  .help-title,
+  .help-heading {
+    font-weight: var(--tuna-font-weight-semibold);
+  }
+
+  .help-title {
+    font-size: var(--tuna-font-size-5);
+    margin-block: 0 var(--tuna-space-4);
+  }
+
+  .help-heading {
+    font-size: var(--tuna-font-size-3);
+    margin-block: var(--tuna-space-5) var(--tuna-space-2);
+  }
+
+  .help-text {
+    margin-block-end: var(--tuna-space-3);
+  }
+
+  .help-bindings {
+    font-family: var(--tuna-font-code);
+    margin-block-end: var(--tuna-space-3);
+  }
+
+  .help-key {
+    background: var(--help-key-background, var(--tuna-surface-subtle));
+    border-color: var(--help-key-border, var(--tuna-border));
+  }
+}

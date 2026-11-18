@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (haml) (web) (help) (magit) (boxes) (layout-sides))
+(import (tuna) (tuna plugins) (document) (haml) (web) (pager) (magit) (boxes) (layout-sides))
 (use-plugin layout-split)
 (use-plugin layout-tabs
   (config
@@ -6,7 +6,7 @@
 (use-plugin layout
   (config
     (set-option! layout:display-action layout-split:display-right)
-    (table-set! layout:display-rules help:buffer? layout-split:display-below)))
+    (table-set! layout:display-rules pager:buffer? layout-split:display-below)))
 
 (define (raised thunk)
   (guard (c [#t (list (if (who-condition? c) (condition-who c) 'none)

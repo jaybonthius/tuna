@@ -1,0 +1,167 @@
+> (define notes (buffers:make "notes" "(harpo:squeeze 3) harpo:honk files:find-file\n"))
+> (layout:switch-to-buffer notes)
+> (modes:set-major-mode harpo:mode notes)
+> (define (describe name) (in-client (lambda () (help:describe-name name (view)))) (help))
+; A command: its module, the keys that run it in the view, the modes it
+; is marked for, its documentation, and each name a link.
+> (in-client (lambda () (help:describe-command files:find-file (view))))
+> (help)
+# files:find-file
+<files:find-file> is a command in (files).
+It is on [C-x C-f].
+Visits PATH and shows its buffer in the selected view.
+> (describe 'harpo:honk)
+# harpo:honk
+<harpo:honk> is a command in (harpo).
+It is on [C-c h].
+It is for <harpo:mode>.
+Honks once.
+> (describe 'harpo:quiet)
+# harpo:quiet
+<harpo:quiet> is a command in (harpo).
+It is on no key; run it with [M-x] harpo:quiet.
+It is for no mode.
+Does nothing, on no key.
+; A command the REPL defines has no module.
+> (commands:define-command (bonk) "Bonks." (void))
+> (in-client (lambda () (help:describe-command bonk (view))))
+> (help)
+# bonk
+<bonk> is a command of the configuration or the REPL.
+It is on no key; run it with [M-x] bonk.
+No documentation.
+; An option: its value in the view, its setting, its default, and each
+; module's setting.
+> (describe 'harpo:volume)
+# harpo:volume
+An option in (harpo).
+Its value here is 3; its setting is 3 and its default 3.
+How loud a honk is.
+> (set-option! harpo:volume 7)
+> (buffers:with-buffer notes (set-option-local! harpo:volume 9))
+> (describe 'harpo:volume)
+# harpo:volume
+An option in (harpo).
+Its value here is 9; its setting is 7 and its default 3.
+## Settings
+(repl) sets it to 7.
+How loud a honk is.
+; A hook or a table: its documentation and how many entries it has.
+> (add-hook! harpo:after-honk (lambda () 1))
+> (table-set! harpo:horns "bulb" "honk")
+> (table-set! harpo:horns "bell" "ding")
+> (describe 'harpo:after-honk)
+# harpo:after-honk
+A hook in (harpo) with 1 entry.
+Called after each honk.
+> (describe 'harpo:horns)
+# harpo:horns
+A table in (harpo) with 2 entries.
+Maps a horn's name to its sound.
+; Saved data: its value.
+> (set-saved! harpo:honks 4)
+> (describe 'harpo:honks)
+# harpo:honks
+Saved data in (harpo).
+Its value is 4.
+; Any other procedure: its documentation; any other value, as write
+; prints it; syntax keeps no documentation.
+> (describe 'harpo:squeeze)
+# harpo:squeeze
+A procedure in (harpo).
+Squeezes the horn N times.
+> (describe 'harpo:mode)
+# harpo:mode
+A value in (harpo).
+Its value is harpo:mode.
+> (describe 'harpo:with-horn)
+# harpo:with-horn
+Syntax in (harpo), which keeps no documentation.
+; Tuna's own libraries' names.
+> (describe 'set-option!)
+# set-option!
+A procedure in (tuna).
+No documentation.
+> (describe 'use-plugin)
+# use-plugin
+Syntax in (tuna plugins), which keeps no documentation.
+> (describe 'eval-text)
+# eval-text
+A procedure in (tuna eval).
+No documentation.
+; The overrides and advice on a changeable definition follow, newest
+; first, with the module that made each.
+> (describe 'report)
+# report
+A procedure in (tuna).
+No documentation.
+## Changes
+Advice by (echo-area)
+> (set! harpo:squeeze (lambda (n) 0))
+> (advice-add! harpo:squeeze (lambda (s n) (s n)))
+> (describe 'harpo:squeeze)
+# harpo:squeeze
+A procedure in (harpo).
+Squeezes the horn N times.
+## Changes
+Advice by (repl)
+Override by (repl)
+; Arguments are checked; a name no loaded module exports is refused,
+; such as one the REPL defines.
+> (raised (lambda () (help:describe-name 'nothere:x (view))))
+(help:describe-name "not an exported name")
+> (raised (lambda () (help:describe-name 'bonk (view))))
+(help:describe-name "not an exported name")
+> (raised (lambda () (help:describe-name "harpo:honk" (view))))
+(help:describe-name "not a symbol")
+> (raised (lambda () (help:describe-name 'harpo:honk 'x)))
+(help:describe-name "not a view")
+> (raised (lambda () (help:describe-command 'x (view))))
+(help:describe-command "not a command")
+; Run by a key, C-h f, C-h v and C-h o read a name, the name at point
+; first; C-h x and C-h a read a command, the command at point first.
+> (views:set-point! (view) 3)
+> (start! "C-h" "f")
+> (press! "RET")
+> (settle)
+> (title)
+"harpo:squeeze"
+> (start! "C-h" "v")
+> (type! "harpo:pitch")
+> (press! "RET")
+> (settle)
+> (title)
+"harpo:pitch"
+> (views:set-point! (view) 22)
+> (start! "C-h" "x")
+> (press! "RET")
+> (settle)
+> (title)
+"harpo:honk"
+> (start! "C-h" "a")
+> (type! "harpo:quiet")
+> (press! "RET")
+> (settle)
+> (title)
+"harpo:quiet"
+; Names and commands each keep a history of their own.
+> (list (help:name-history) (help:command-history))
+(("harpo:pitch" "harpo:squeeze") ("harpo:quiet" "harpo:honk"))
+; Names and commands whose part after the colon starts with % are not
+; offered.
+> (start! "C-h" "o")
+> (type! "harpo:%sc")
+> (press! "RET")
+> (settle)
+> (press! "C-g")
+> (settle)
+! &quit
+> (start! "C-h" "x")
+> (type! "help:%fol")
+> (press! "RET")
+> (settle)
+> (press! "C-g")
+> (settle)
+! &quit
+> (title)
+"harpo:quiet"

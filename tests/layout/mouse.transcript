@@ -12,7 +12,7 @@
 #<edit 1>
 > (define echo (place-echo (buffers:make "*Echo*" "")))
 > (tree)
-(layout:level () (layout-split:container ((direction . column)) (layout:level () (layout-split:container ((direction . row)) (boxes:box () #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 4) (buffer . "notes")))) #(views:view ((view . 1) (buffer . "*Help*"))))) #(views:view ((view . 5) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t)))))
+(layout:level () (layout-split:container ((direction . column)) (layout:level () (layout-split:container ((direction . row)) (boxes:box () #(views:view ((view . 3) (buffer . "notes"))) #(views:view ((view . 4) (buffer . "notes")))) #(views:view ((view . 1) (buffer . "*Pager*"))))) #(views:view ((view . 5) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t)))))
 ; The screen's element names the screen view, and each view atom's
 ; element names the atom's range.
 > (list (views:buffer layout:screen-view) (layout:view-node layout:screen-view))

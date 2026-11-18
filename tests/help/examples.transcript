@@ -1,0 +1,26 @@
+; The configuration binds C-c ? to help:describe-bindings and shows *Help*
+; below the selected view, by help:buffer?.
+> (eq? (keys:lookup client "C-c ?") help:describe-bindings)
+#t
+> (define notes (buffers:make "notes" "Buy milk.\n"))
+> (layout:switch-to-buffer notes)
+> (in-client (lambda () (help:describe-key "C-x C-f" (layout:selected-view))))
+> (shown)
+(("notes" #t) ("*Help*" #f))
+> (help)
+# C-x C-f runs the command files:find-file, bound by (files)
+<files:find-file> is a command in (files).
+It is on [C-x C-f].
+Visits PATH and shows its buffer in the selected view.
+> (in-client (lambda () (help:describe-name 'undo:limit (layout:selected-view))))
+> (help)
+# undo:limit
+An option in (undo).
+Its value here is 4000000; its setting is 4000000 and its default 4000000.
+How large a buffer's history may grow: the characters its edits removed and inserted, plus 32 per edit. 0 keeps no history.
+> (help:buffer? (help-buffer))
+#t
+> (help:buffer? notes)
+#f
+> (eq? help:name-category 'help:name-category)
+#t

@@ -12,14 +12,14 @@
 ; and selects a new view of its buffer at its point in a tab after it.
 > (press! c1 '("x" "control") '("t") '("2"))
 > (tree)
-(layout:level () (layout-tabs:container () #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 3) (buffer . "notes")))))
+(layout:level () (layout-tabs:container () #(views:view ((view . 1) (buffer . "*Pager*"))) #(views:view ((view . 3) (buffer . "notes")))))
 > (list (selected) (views:point (layout:selected-view)))
 (3 5)
 ; A tab is added after the tab holding the view.
 > (layout-tabs:add-tab! (views:find 1) other)
 #<view 4>
 > (tree)
-(layout:level () (layout-tabs:container () #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 4) (buffer . "other"))) #(views:view ((view . 3) (buffer . "notes")))))
+(layout:level () (layout-tabs:container () #(views:view ((view . 1) (buffer . "*Pager*"))) #(views:view ((view . 4) (buffer . "other"))) #(views:view ((view . 3) (buffer . "notes")))))
 > (selected)
 3
 > (raised (lambda () (layout-tabs:add-tab! 'view other)))
@@ -47,7 +47,7 @@
 > (layout:display-buffer (buffers:make "elsewhere" ""))
 #<view 3>
 > (tree)
-(layout:level () (layout-tabs:container () #(views:view ((view . 1) (buffer . "*Help*"))) #(views:view ((view . 4) (buffer . "other"))) #(views:view ((view . 3) (buffer . "notes")))))
+(layout:level () (layout-tabs:container () #(views:view ((view . 1) (buffer . "*Pager*"))) #(views:view ((view . 4) (buffer . "other"))) #(views:view ((view . 3) (buffer . "notes")))))
 ; C-x t o and C-x t O move through the tabs cyclically, with a count from
 ; the prefix argument.
 > (press! c1 '("x" "control") '("t") '("o"))
