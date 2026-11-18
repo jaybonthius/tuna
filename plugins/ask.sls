@@ -6,6 +6,9 @@
 (define-option file-name-reader (%no-reader 'ask:file-name-reader) procedure?
   "A procedure of a question that reads a file name and returns it, as Emacs's read-file-name-function.")
 
+(define-option line-reader (%no-reader 'ask:line-reader) procedure?
+  "A procedure of a question that reads a line of text and returns it, as Emacs's read-string.")
+
 (define-option yes-or-no-reader (%no-reader 'ask:yes-or-no-reader) procedure?
   "A procedure of a question that asks for yes or no and returns true for yes.")
 
@@ -19,6 +22,10 @@
 (define (file-name question)
   (%check-question 'ask:file-name question)
   ((file-name-reader) question))
+
+(define (line question)
+  (%check-question 'ask:line question)
+  ((line-reader) question))
 
 (define (yes-or-no? question)
   (%check-question 'ask:yes-or-no? question)

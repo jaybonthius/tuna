@@ -113,7 +113,15 @@ waiting
 > (type! "y")
 > (result t)
 #t
-; The minibuffer answers ask's questions of yes or no and of y or n.
+; The minibuffer answers ask's questions of a line of text, of yes or no
+; and of y or n; a line goes into the minibuffer's history.
+> (define t (start! (lambda () (ask:line "Rename session to: "))))
+> (type! "notes")
+> (press! "RET")
+> (result t)
+"notes"
+> (car (minibuffer:history))
+"notes"
 > (define t (start! (lambda () (ask:y-or-n? "Save it? "))))
 > (type! "n")
 > (result t)

@@ -554,6 +554,7 @@
 (keys:bind! %y-or-n-keymap "<printing-char>" %answer-y-or-n)
 (keys:remap! %y-or-n-keymap exit %answer-y-or-n)
 (add-hook! keys:find-keymaps %prompt-keymaps 40)
+(set-option! ask:line-reader read)
 (set-option! ask:yes-or-no-reader ask-yes-or-no)
 (set-option! ask:y-or-n-reader ask-y-or-n)
 (table-set! web:stylesheets 'minibuffer "minibuffer/minibuffer.css")
