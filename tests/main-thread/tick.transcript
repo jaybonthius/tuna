@@ -18,11 +18,13 @@
 > (= samples before)
 #t
 ; Advice on tick that raises is reported, and the code it interrupted
-; goes on.
+; goes on. It raises only once the form has armed it, since a tick
+; landing in the console's own code would be reported as the console's.
 > (define raised 0)
-> (define (failing tick) (when (= raised 0) (set! raised 1) (error 'profiler "broken")) (tick))
+> (define armed #f)
+> (define (failing tick) (when (and armed (= raised 0)) (set! raised 1) (error 'profiler "broken")) (tick))
 > (advice-add! tick failing)
-> (busy 100000)
+> (begin (set! armed #t) (busy 100000))
 ! profiler: broken
 100000
 > (advice-remove! tick failing)

@@ -118,7 +118,11 @@ stopped
 ; main thread arms it inside the guard, so no quit lands outside it but in
 ; whatever runs while the guarded task waits for a job, reported there.
 ; One made while a task pauses or resumes waits, and one made while no
-; task runs quits nothing, so how many land varies.
+; task runs quits nothing, so how many land varies. A save waits for the
+; disk, which other programs can hold up for hundreds of milliseconds, so
+; the storm goes on until enough saves and requests have come, giving up
+; twenty seconds on, so that a plugin that stops saving shows as a false
+; result rather than a timeout.
 > (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 > (define quits 0)
 > (define (count-quits report c)
@@ -140,7 +144,8 @@ stopped
     (let again ()
       (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again)])
         (let loop ()
-          (when (< (real-time) until)
+          (when (and (< (real-time) (+ until 20000))
+                     (or (< (real-time) until) (<= saves 30) (<= requests 30)))
             (for-each (lambda (b)
                         (set-box! armed #t)
                         (buffers:replace! b 1 1 "q")

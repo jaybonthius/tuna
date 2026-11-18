@@ -157,22 +157,33 @@
            (hashtable-set! seen name #t)
            (exists walk (library-requirements name))]))))
 
+  ;; Tuna's dynamic-wind holds quits off while its in runs, and a quit
+  ;; requested meanwhile lands once it ends.
+  (define (without-quits thunk)
+    (let ([result #f])
+      (dynamic-wind (lambda () (set! result (thunk))) void void)
+      result))
+
   ;; A local import in Chez's own environment, because Chez never frees an
   ;; environment made by environment. Evaluating the import loads and
   ;; invokes the libraries here, on the main thread, the only thread that
   ;; loads libraries. A body must be stoppable, whatever settings code on
-  ;; the main thread has left.
+  ;; the main thread has left. Chez's compiler drops any condition raised
+  ;; while it folds constants, a quit included, so the compile holds quits
+  ;; off.
   (define (worker-procedure! w)
     (or (worker-procedure w)
         (let* ([specs (worker-imports w)]
-               [p (parameterize ([optimize-level 2]
-                                 [generate-interrupt-trap #t]
-                                 [enable-unsafe-application #f]
-                                 [enable-unsafe-variable-reference #f])
-                    (eval (if (null? specs)
-                              (worker-source w)
-                              `(let () (import ,@specs) ,(worker-source w)))
-                          (scheme-environment)))])
+               [p (without-quits
+                    (lambda ()
+                      (parameterize ([optimize-level 2]
+                                     [generate-interrupt-trap #t]
+                                     [enable-unsafe-application #f]
+                                     [enable-unsafe-variable-reference #f])
+                        (eval (if (null? specs)
+                                  (worker-source w)
+                                  `(let () (import ,@specs) ,(worker-source w)))
+                              (scheme-environment)))))])
           (for-each
             (lambda (spec)
               (let ([name (import-spec-library spec)])
@@ -212,34 +223,29 @@
   ;; delivery until the job lets go; if those are the job's last values, it
   ;; waits for room forever. A quit landing in on-result or on-end would
   ;; lose a value or the end, and leave a task waiting for them paused
-  ;; forever, so they run with the count, as the in of Tuna's
-  ;; dynamic-wind, which holds quits off, as Emacs runs process filters
-  ;; and sentinels with quits inhibited.
+  ;; forever, so they run with the count and with quits held off, as Emacs
+  ;; runs process filters and sentinels with quits inhibited.
   (define (deliver! j n v)
     (unless (job-dropped? j)
-      (dynamic-wind
+      (without-quits
         (lambda ()
           (with-job-mutex j
             (let ([half (fxsrl result-limit 1)] [before (fx- (job-sent j) (job-delivered j))])
               (job-delivered-set! j (fxmax n (job-delivered j)))
               (when (and (fx> before half) (fx<= (fx- (job-sent j) (job-delivered j)) half))
                 (condition-signal (job-wake j)))))
-          ((job-on-result j) v))
-        void
-        void)))
+          ((job-on-result j) v)))))
 
   ;; What the body raised comes tagged, since it may be #f or stopped.
   (define (finish! j ended)
     (unless (job-dropped? j)
-      (dynamic-wind
+      (without-quits
         (lambda ()
           (forget! j)
           ((job-on-end j)
            (if (pair? ended)
                (let ([raised (cdr ended)]) (report raised) raised)
-               ended)))
-        void
-        void)))
+               ended))))))
 
   ;; Runs on the job's thread with stops held off, since it takes the
   ;; job's mutex.

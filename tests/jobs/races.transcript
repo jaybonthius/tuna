@@ -120,6 +120,27 @@
         (list (> delivered before) (unbox reported)))))
 (#t #t)
 > (jobs:stop! counting)
+; A worker's first start compiles it with quits held off, so quits asked
+; for at every tick while it starts cannot keep it from compiling: a later
+; try starts it. One asked for where quits wait lands up to a thousand
+; calls later, so the guard holds a while after the asking stops.
+> (jobs:define-worker (doubled x emit) (emit (* x 2)))
+> (define asking #f)
+> (define (ask-at-each-tick tick) (when asking (request-quit!)) (tick))
+> (advice-add! tick ask-at-each-tick)
+> (let try ([tries 0])
+    (if (= tries 20)
+        'never-started
+        (guard (c [(quit-condition? c) (set! asking #f) (try (+ tries 1))])
+          (set! asking #t)
+          (jobs:start doubled 21 (lambda (v) (void)))
+          (set! asking #f)
+          (let settle ([n 0]) (when (< n 100000) (settle (+ n 1))))
+          'started)))
+started
+> (advice-remove! tick ask-at-each-tick)
+> (finished doubled 21)
+((42) #f)
 ; A quit landing in jobs:start or jobs:stop! leaves no job half started:
 ; every job started ends.
 > (jobs:define-worker (nothing x emit) (void))
@@ -133,8 +154,8 @@
         (jobs:stop! (jobs:start nothing 0 void (lambda (e) (set! finished-jobs (+ finished-jobs 1)))))
         (set! started (+ started 1))
         (loop))))
-> landed
-100
+> (list landed (> started 0))
+(100 #t)
 > (wait-until (lambda () (>= finished-jobs started)))
 > (>= finished-jobs started)
 #t

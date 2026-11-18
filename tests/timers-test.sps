@@ -10,26 +10,42 @@
 (define (wait-until-called receive-done)
   (suspend (lambda (resume) (receive-done (lambda () (resume void))))))
 
-(define (non-decreasing? xs)
-  (or (null? xs) (null? (cdr xs)) (and (<= (car xs) (cadr xs)) (non-decreasing? (cdr xs)))))
+;; A due time is known only to lie between two clock readings, since the
+;; thread can be descheduled between a reading and the call that sets the
+;; time, so it is kept as the earliest and latest it can be. Runs are in
+;; order when each could have been due no later than the next.
+(define-record-type due
+  (fields delay earliest (mutable latest))
+  (protocol
+    (lambda (new)
+      (lambda (delay before)
+        (new delay (+ before delay) +inf.0)))))
+
+(define (due-set-after! d after)
+  (due-latest-set! d (+ after (due-delay d))))
+
+(define (in-due-order? dues)
+  (or (null? dues) (null? (cdr dues))
+      (and (<= (due-earliest (car dues)) (due-latest (cadr dues))) (in-due-order? (cdr dues)))))
 
 (define (timer-changes)
   (filter (lambda (change) (eq? (car change) 'timer)) (module-changes '(repl))))
 
 (define (tests)
   (test "timers run in the order of their times, and none early"
-    (let ([ran '()] [n 80] [start (seconds-now)])
+    (let ([ran '()] [n 80])
       (wait-until-called
         (lambda (done)
           (do ([i 0 (+ i 1)]) ((= i n))
-            (let ([delay (/ (random 150) 1000.)])
-              (run-with-timer delay
+            (let ([due (make-due (/ (random 150) 1000.) (seconds-now))])
+              (run-with-timer (due-delay due)
                 (lambda ()
-                  (set! ran (cons (cons delay (- (seconds-now) start)) ran))
-                  (when (= (length ran) n) (done))))))))
+                  (set! ran (cons (cons due (seconds-now)) ran))
+                  (when (= (length ran) n) (done))))
+              (due-set-after! due (seconds-now))))))
       (let ([ran (reverse ran)])
-        (check (non-decreasing? (map car ran)))
-        (check (for-all (lambda (r) (>= (cdr r) (car r))) ran)))
+        (check (in-due-order? (map car ran)))
+        (check (for-all (lambda (r) (>= (cdr r) (due-earliest (car r)))) ran)))
       (check-equal? '() (timers))
       (check-equal? '() (timer-changes))))
 
@@ -55,21 +71,26 @@
       (check-equal? 2 runs)
       (cancel-timer! t)))
 
+  ;; The tasks start one at a time and every one starts before any wakes,
+  ;; so a sleep's time is set between its task's start and the next's.
   (test "sleeping tasks wake in the order of their times, and none early"
     (let* ([woke '()]
-           [start (seconds-now)]
+           [previous #f]
            [tasks (map (lambda (i)
                          (let ([seconds (/ (random 100) 1000.)])
                            (spawn-task
                              (lambda ()
-                               (sleep-for seconds)
-                               (set! woke (cons (cons seconds (- (seconds-now) start)) woke))))))
+                               (let* ([now (seconds-now)] [due (make-due seconds now)])
+                                 (when previous (due-set-after! previous now))
+                                 (set! previous due)
+                                 (sleep-for seconds)
+                                 (set! woke (cons (cons due (seconds-now)) woke)))))))
                        (iota 100))])
       (for-each join-task tasks)
       (let ([woke (reverse woke)])
         (check-equal? 100 (length woke))
-        (check (non-decreasing? (map car woke)))
-        (check (for-all (lambda (w) (>= (cdr w) (car w))) woke)))))
+        (check (in-due-order? (map car woke)))
+        (check (for-all (lambda (w) (>= (cdr w) (due-earliest (car w)))) woke)))))
 
   (test "set-idle! from many threads while an idle timer runs"
     (let* ([runs 0] [t (run-with-idle-timer 0 (lambda () (set! runs (+ runs 1))))])
