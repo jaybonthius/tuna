@@ -57,3 +57,46 @@ editing:forward-char
 > (set-option! command-picker:command-predicate command-picker:command-for-view?)
 > (raised (lambda () (modes:on? 3 (view))))
 (modes:on? "not a mode")
+; M-x offers a prompt's own commands only in a prompt, and exit, complete
+; and the moves everywhere.
+> (offered '("M-x") "minibuffer:exit")
+()
+! &quit
+> (offered '("M-x") "completion:exit-input")
+()
+! &quit
+> (offered '("M-x") "completion:next")
+("completion:next")
+! &quit
+> (offered '("M-x") "minibuffer:select-prompt")
+("minibuffer:select-prompt")
+! &quit
+> (define t (start! (lambda () (minibuffer:read "Word: " #f))))
+> (offered '("M-x") "minibuffer:exit")
+("minibuffer:exit")
+! &quit
+> (offered '("M-x") "completion:search-history")
+("completion:search-history")
+! &quit
+> (press! "C-g")
+! &quit
+; Exit, complete and the moves act on a session that completion:start
+; runs over a field in any view, so M-x reaches it.
+> (define tags (buffers:make "*tags*" "lis"))
+> (views:set-buffer! (view) tags)
+> (define tag-session
+    (in-client
+      (lambda ()
+        (completion:start (view) (list (completion:source (candidates (vector "lisp" "list" "listen"))))
+          (lambda () (values 1 (- (document:length (buffers:document tags)) 1)))
+          (lambda (session match) #f)
+          'none))))
+> (completion:selected tag-session)
+#f
+> (define t (start! (lambda () (press! "M-x"))))
+> (type! "completion:next")
+> (press! "RET")
+> (result t)
+> (selected-text tag-session)
+"lisp"
+> (completion:end! tag-session)

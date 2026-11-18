@@ -1033,6 +1033,11 @@
 (keys:bind! region-selected-keymap "RET" exit)
 (keys:bind! keys:global "C-M-i" complete-at-point)
 (keys:bind! keys:global "M-TAB" complete-at-point)
+;; Exit, complete and the moves stay offered everywhere: they also act on
+;; a session that start runs over a field in any view. M-x cannot reach a
+;; session at point, since its own prompt ends that session.
+(table-set! commands:command-modes exit-input (list minibuffer:mode))
+(table-set! commands:command-modes search-history (list minibuffer:mode))
 (add-hook! minibuffer:input-changed %prompt-input-changed)
 (add-hook! minibuffer:prompt-ended %prompt-ended)
 (add-hook! updated %sync-keymaps!)

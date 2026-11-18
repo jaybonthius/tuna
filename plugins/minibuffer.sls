@@ -553,6 +553,11 @@
 (keys:remap! keymap keys:keyboard-quit abort)
 (keys:bind! %y-or-n-keymap "<printing-char>" %answer-y-or-n)
 (keys:remap! %y-or-n-keymap exit %answer-y-or-n)
+;; select-prompt is of use only outside the prompt, so M-x offers it
+;; everywhere.
+(for-each
+  (lambda (command) (table-set! commands:command-modes command (list mode)))
+  (list exit abort previous-history next-history mouse-set-point))
 (add-hook! keys:find-keymaps %prompt-keymaps 40)
 (set-option! ask:line-reader read)
 (set-option! ask:yes-or-no-reader ask-yes-or-no)
