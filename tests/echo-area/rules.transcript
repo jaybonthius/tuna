@@ -94,6 +94,14 @@
 > (echo-area:message! "After")
 > (messages)
 "After\n"
+; *Messages* never reads as modified, so a command that kills it asks
+; nothing.
+> (buffers:modified? (buffers:find "*Messages*"))
+#f
+> (commands:define-command (kill [buffer (buffers:current)]) "Kills BUFFER." (buffers:kill! buffer))
+> (commands:run kill (buffers:find "*Messages*"))
+#t
+> (echo-area:message! "After")
 ; Neither buffer keeps undo history.
 > (map (lambda (b) (buffers:with-buffer b (undo:limit))) (list echo-buffer (buffers:find "*Messages*")))
 (0 0)

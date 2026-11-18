@@ -83,7 +83,9 @@
         [else 0])))
 
   ;; As Emacs does, a repeated message is found by reading the log's last
-  ;; entry, so a count survives a reload of the plugin.
+  ;; entry, so a count survives a reload of the plugin. The log holds
+  ;; nothing to save, so it never reads as modified, which would make
+  ;; killing it ask.
   (define (log! text)
     (let ([max (log-max)])
       (when (> max 0)
@@ -98,7 +100,8 @@
           (let* ([doc (buffers:document b)] [end (fx- (document:length doc) 1)]
                  [lines (fx- (document:line doc end) 1)])
             (when (> lines max)
-              (buffers:splice! b 1 (document:line-start doc (+ (- lines max) 1)) (document:from-datum ""))))))))
+              (buffers:splice! b 1 (document:line-start doc (+ (- lines max) 1)) (document:from-datum ""))))
+          (buffers:set-modified! b #f)))))
 
   ;; Report runs on whichever thread raised, so the queue is a box changed
   ;; only by compare-and-swap.

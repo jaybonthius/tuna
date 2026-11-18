@@ -26,6 +26,10 @@
       [(char=? (string-ref input (fx- i 1)) #\/) i]
       [else (loop (fx- i 1))])))
 
+(define (%names-folder? input)
+  (let ([n (string-length input)])
+    (and (fx> n 0) (char=? (string-ref input (fx- n 1)) #\/) (file-directory? (%expand input)))))
+
 (jobs:define-worker (%list-directory places emit receive)
   (import (completion matcher))
   (let ([home (car places)] [start (cdr places)])
@@ -102,3 +106,4 @@
 
 (set-option! ask:file-name-reader read-file-name)
 (table-set! completion:category-styles completion:file-category (list completion:partial completion:any-order))
+(table-set! completion:category-prefers-input completion:file-category %names-folder?)

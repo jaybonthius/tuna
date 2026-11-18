@@ -65,3 +65,24 @@
 > (press! "C-g")
 ! &quit
 > (table-remove! completion:category-styles completion:file-category)
+; At the name of a folder, ending in /, no match is selected, so RET
+; answers with the folder; C-n selects its first entry, and a name that
+; is not a folder's selects the first match again.
+> (define t (start! (lambda () (file-picker:read-file-name "File: " "~/src/"))))
+> (sleep-for 0.3)
+> (list (input) (selected-text (session)))
+("~/src/" #f)
+> (press! "C-n")
+> (selected-text (session))
+".hidden"
+> (type! "te")
+> (sleep-for 0.3)
+> (selected-text (session))
+"text.txt"
+> (press! "C-g")
+! &quit
+> (define t (start! (lambda () (file-picker:read-file-name "File: " "~/src/"))))
+> (sleep-for 0.3)
+> (press! "RET")
+> (let ([p (result t)]) (substring p (string-length (getenv "HOME")) (string-length p)))
+"/src/"

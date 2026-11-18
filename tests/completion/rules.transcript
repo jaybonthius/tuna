@@ -175,6 +175,31 @@ fruit
 0
 > (press! "C-g")
 ! &quit
+; While a source's category prefers the input, new matches select none,
+; so RET takes the input; a predicate that raises is reported and
+; prefers nothing.
+> (table-set! completion:category-prefers-input letter-category (lambda (input) (string=? input "a")))
+> (define t (start! (lambda () (completion:read-or-input "? " (list (completion:source (candidates (vector "ab" "abc")) (category letter-category))) h))))
+> (type! "a")
+> (selected-text (session))
+#f
+> (type! "b")
+> (selected-text (session))
+"ab"
+> (press! "DEL")
+> (selected-text (session))
+#f
+> (press! "RET")
+> (result t)
+"a"
+> (table-set! completion:category-prefers-input letter-category (lambda (input) (error 'prefers "broken")))
+> (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "ab")) (category letter-category))) h))))
+! prefers: broken
+> (selected-text (session))
+"ab"
+> (press! "C-g")
+! &quit
+> (table-remove! completion:category-prefers-input letter-category)
 ; Hooks follow every session; a selection change runs updated too.
 > (define log '())
 > (define (note what) (lambda (s) (set! log (cons (list what (completion:session-input s)) log))))

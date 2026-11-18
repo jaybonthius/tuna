@@ -14,6 +14,9 @@
 
 (define-table category-styles "Maps a category to the styles used in place of completion:styles.")
 
+(define-table category-prefers-input
+  "Maps a category to a predicate of a session's input; while it holds for a category of the session's sources, new matches select none, so RET acts as with nothing selected: completion:read-or-input answers with the input.")
+
 (define-table annotators "Maps a category to a procedure of a session that returns its annotator.")
 
 (define-table any-order-dispatch
@@ -554,6 +557,15 @@
           (when (and was (not (eq? was now))) (preview! was #f))
           (when now (preview! now (vector-ref (session-record-vals s) m)))))))
 
+  (define (prefers-input? s)
+    (let ([input (session-record-input s)])
+      (exists (lambda (st)
+                (let* ([c (%source-category (state-source st))]
+                       [prefers? (and c (table-ref category-prefers-input c #f))])
+                  (and prefers?
+                       (guard (e [(not (quit-condition? e)) (report e) #f]) (prefers? input)))))
+              (session-record-states s))))
+
   (define (vector-index m v)
     (let loop ([i 0])
       (and (fx< i (vector-length v)) (if (eqv? (vector-ref v i) m) i (loop (fx+ i 1))))))
@@ -572,6 +584,7 @@
           (unless (and sel (session-record-locked? s) (vector-index sel matches))
             (session-record-locked?-set! s #f)
             (set-selected! s (and (eq? (session-record-preselect s) 'first) (fx> (vector-length matches) 0)
+                                  (not (prefers-input? s))
                                   (vector-ref matches 0)))))))
     (updated s))
 

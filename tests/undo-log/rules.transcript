@@ -43,6 +43,19 @@
 > (commands:run files:save-buffers-kill-tuna)
 > asked
 ("Modified buffers exist; exit anyway? ")
+; Killing them in a command asks the same way: only about the buffer no
+; log holds.
+> (set! asked '())
+> (set-option! ask:y-or-n-reader (lambda (question) (set! asked (cons question asked)) #f))
+> (commands:define-command (kill [buffer (buffers:current)]) "Kills BUFFER." (buffers:kill! buffer))
+> (checks:write-text! "~/k.txt" "kill\n")
+> (define k (files:visit "~/k.txt"))
+> (buffers:with-buffer k (commands:run checks:insert 1 "k "))
+#<edit 1>
+> (logged "~/k.txt" 4)
+(undo-history group saved at)
+> (list (commands:run kill k) (commands:run kill n) asked)
+(#t #f ("Buffer n.txt has unsaved text; kill anyway? "))
 ; undo:forget! drops a buffer's history and so its log.
 > (undo:forget! r)
 > (wait-until (lambda () (not (checks:exists? (checks:log-of "~/r.txt")))))

@@ -44,6 +44,12 @@
 > (buffers:with-buffer draft (commands:run files:write-file))
 > (list (questions) (disk-checks:read-text "~/taken.txt"))
 (("Write file: " "File exists; overwrite? " "File is write-protected; try to save anyway? ") "c b a draft\n")
+; A buffer written to a file named as the buffer keeps its name.
+> (define named (buffers:make "named.txt" "named"))
+> (disk-checks:folder! "~/named")
+> (files:write-file "~/named/named.txt" named)
+> (list (buffers:name named) (files:path named))
+("named.txt" "~/named/named.txt")
 ; C-x s asks y or n for each modified file buffer, in the order they
 ; were visited, and saves those answered y.
 > (commands:command-name (table-ref keys:global "C-x s"))
@@ -99,8 +105,8 @@ files:save-some-buffers
 > (files:save-buffer jot)
 > (list (questions) (files:path jot) (buffers:name jot) (disk-checks:read-text "~/jot.txt") (buffers:modified? jot))
 (("File to save in: ") "~/jot.txt" "jot.txt" "jot\n" #f)
-; A folder, or a file another buffer visits, is refused as the answer,
-; before the buffer is renamed or a folder is made.
+; A folder, or a file another buffer visits, is refused as the file to
+; save in, before the buffer is renamed or a folder is made.
 > (define loose (buffers:make "*loose*" ""))
 > (buffers:replace! loose 1 1 "loose")
 #<edit 1>
@@ -109,10 +115,6 @@ files:save-some-buffers
 ! files:save-buffer: is a folder with irritant "~"
 > (list (questions) (buffers:name loose) (files:path loose))
 (("File to save in: ") "*loose*" #f)
-> (buffers:with-buffer loose (commands:run files:write-file))
-! files:write-file: is a folder with irritant "~"
-> (list (questions) (buffers:name loose) (files:path loose))
-(("Write file: ") "*loose*" #f)
 > (files:visit "~/far/away.txt")
 #<buffer away.txt>
 > (set-option! ask:file-name-reader (answer "~/far/away.txt"))
@@ -128,9 +130,44 @@ files:save-some-buffers
 (#t files:save-buffer "canceled")
 > (questions)
 ("File to save in: " "File exists; overwrite? ")
-; A command that kills a modified buffer with no file asks first. Code
-; outside a command, a file buffer, an unmodified buffer and an internal
-; one are not asked about.
+; Given a folder, write-file writes the file in it named as the buffer's
+; file, or as the buffer when it visits none. A name ending in / is a
+; folder even before it exists, and the questions are about that file.
+> (define moved (files:visit "~/moved.txt"))
+> (buffers:replace! moved 1 1 "moved")
+#<edit 1>
+> (files:write-file "~/new/" moved)
+> (list (files:path moved) (buffers:name moved) (disk-checks:read-text "~/new/moved.txt"))
+("~/new/moved.txt" "moved.txt" "moved\n")
+> (files:write-file "~/new/folder" moved)
+> (list (files:path moved) (disk-checks:read-text "~/new/folder/moved.txt"))
+("~/new/folder/moved.txt" "moved\n")
+> (define scrap (buffers:make "*scrap*" "scrap"))
+> (set-option! ask:file-name-reader (answer "~/fresh/"))
+> (set-option! ask:y-or-n-reader (answer #t))
+> (buffers:with-buffer scrap (commands:run files:write-file))
+> (list (questions) (files:path scrap) (buffers:name scrap) (disk-checks:read-text "~/fresh/*scrap*"))
+(("Write file: " "Folder ~/fresh does not exist; create? ") "~/fresh/*scrap*" "*scrap*" "scrap\n")
+> (set-option! ask:y-or-n-reader (answer #f))
+> (buffers:with-buffer scrap (commands:run files:write-file))
+! files:write-file: canceled with irritant "~/fresh/*scrap*"
+> (questions)
+("Write file: " "File exists; overwrite? ")
+> (disk-checks:folder! "~/box")
+> (disk-checks:folder! "~/box/*scrap*")
+> (set-option! ask:file-name-reader (answer "~/box/"))
+> (buffers:with-buffer scrap (commands:run files:write-file))
+! files:write-file: is a folder with irritant "~/box/*scrap*"
+> (list (questions) (files:path scrap))
+(("Write file: ") "~/fresh/*scrap*")
+> (files:write-file "~/box/" scrap)
+! files:write-file: is a folder with irritant "~/box/*scrap*"
+> (list (files:path scrap) (buffers:name scrap))
+("~/fresh/*scrap*" "*scrap*")
+; A command that kills a modified buffer asks first, unless the buffer
+; visits a file whose edits an entry of files:unsaved-kept keeps. Code
+; outside a command, an unmodified buffer and an internal one are not
+; asked about.
 > (commands:define-command (kill [buffer (buffers:current)]) "Kills BUFFER." (buffers:kill! buffer))
 > (define unsaved (buffers:make "*unsaved*" ""))
 > (buffers:replace! unsaved 1 1 "text")
@@ -150,8 +187,23 @@ files:save-some-buffers
 #<edit 1>
 > (buffers:modified? one)
 #t
+> (set-option! ask:y-or-n-reader (answer #f))
+> (commands:run kill one)
+#f
+> (list (questions) (buffers:live? one))
+(("Buffer one.txt has unsaved text; kill anyway? ") #t)
+> (define (keep-all buffer) #t)
+> (add-hook! files:unsaved-kept keep-all)
+> (define note (buffers:make "*note*" ""))
+> (buffers:replace! note 1 1 "text")
+#<edit 1>
+> (commands:run kill note)
+#f
+> (list (questions) (buffers:live? note))
+(("Buffer *note* has unsaved text; kill anyway? ") #t)
 > (map (lambda (b) (commands:run kill b)) (list one (buffers:make "*clean*" "") internal))
 (#t #t #t)
+> (remove-hook! files:unsaved-kept keep-all)
 > (define later (buffers:make "*later*" ""))
 > (buffers:replace! later 1 1 "text")
 #<edit 1>

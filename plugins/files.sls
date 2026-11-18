@@ -20,7 +20,7 @@
   "Called with a buffer after its file has been read into it again.")
 
 (define-hook unsaved-kept
-  "Called with a modified file buffer when Tuna is asked to exit; an entry that returns true keeps the buffer's unsaved edits, so the exit does not ask about it.")
+  "Called with a modified file buffer when Tuna is asked to exit or to kill the buffer; an entry that returns true keeps the buffer's unsaved edits, so neither asks about it.")
 
 (define (%visit? v)
   (define (count? n) (and (fixnum? n) (fx>= n 0)))
@@ -249,9 +249,12 @@
         (rename-group! (path-last (entry-path e)))
         (save-visits!))))
 
+  ;; The buffer leaves its name first, so a file named as the buffer is
+  ;; not given a name made distinct from the buffer's own.
   (define (move-entry! b path)
     (without-quits
       (lambda ()
+        (buffers:rename! b (string-append (buffers:name b) "\x0;"))
         (let ([e (entry-of b)])
           (if e
               (let ([old (entry-path e)])
@@ -557,22 +560,35 @@
             (not (ask:yes-or-no? "File is write-protected; try to save anyway? ")))
        (%cancel who path)])))
 
+(define (%check-file-to-save who path buffer)
+  (let ([other (buffer-at path)])
+    (when (file-directory? path)
+      (error who "is a folder" path))
+    (when (and other (not (eq? other buffer)))
+      (error who "another buffer visits the file" path))
+    path))
+
 (define (%ask-file-name who question buffer)
   (let ([path (ask:file-name question)])
     (check-path who path)
-    (let* ([path (true-path path)] [other (buffer-at path)])
-      (when (file-directory? path)
-        (error who "is a folder" path))
-      (when (and other (not (eq? other buffer)))
-        (error who "another buffer visits the file" path))
-      path)))
+    (%check-file-to-save who (true-path path) buffer)))
+
+(define (%file-in-folder path buffer)
+  (let ([n (string-length path)])
+    (if (or (and (fx> n 0) (char=? (string-ref path (fx- n 1)) #\/))
+            (file-directory? (true-path path)))
+        (string-append (%with-final-slash path)
+                       (path-last (let ([e (entry-of buffer)]) (if e (entry-path e) (buffers:name buffer)))))
+        path)))
 
 (define (%read-file-to-write)
-  (let ([path (%ask-file-name 'files:write-file "Write file: " (buffers:current))])
-    (unless (commands:prefix-argument)
-      (%confirm-overwrite 'files:write-file path))
-    (%confirm-save 'files:write-file path)
-    path))
+  (let ([buffer (buffers:current)] [path (ask:file-name "Write file: ")])
+    (check-path 'files:write-file path)
+    (let ([path (%check-file-to-save 'files:write-file (true-path (%file-in-folder path buffer)) buffer)])
+      (unless (commands:prefix-argument)
+        (%confirm-overwrite 'files:write-file path))
+      (%confirm-save 'files:write-file path)
+      path)))
 
 (commands:define-command (save-buffer [buffer (buffers:current)])
   "Saves BUFFER to its file when it is modified, asking for a file when it visits none."
@@ -596,11 +612,13 @@
          (write-file path buffer))])))
 
 (commands:define-command (write-file [path (%read-file-to-write)] [buffer (buffers:current)])
-  "Makes BUFFER visit PATH, renaming it after the file, and saves it there."
+  "Makes BUFFER visit PATH, renaming it after the file, and saves it there. A PATH that names a folder means the file in it named as BUFFER's file, or as the last part of BUFFER's name when it visits none."
   (check-path 'files:write-file path)
   (check-buffer 'files:write-file buffer)
   (check-task 'files:write-file)
-  (let* ([path (true-path path)] [other (buffer-at path)])
+  (let* ([path (true-path (%file-in-folder path buffer))] [other (buffer-at path)])
+    (when (file-directory? path)
+      (error 'files:write-file "is a folder" path))
     (when (and other (not (eq? other buffer)))
       (assertion-violation 'files:write-file "another buffer visits the file" path))
     (let ([e (move-entry! buffer path)])
@@ -651,12 +669,13 @@
   (check-buffer 'files:not-modified buffer)
   (buffers:set-modified! buffer #f))
 
+(define (%unsaved-kept? buffer)
+  (exists (lambda (entry) (entry buffer)) (hook-entries unsaved-kept)))
+
 (commands:define-command (save-buffers-kill-tuna)
   "Exits Tuna, asking first when a modified file buffer's edits would be lost, else when files:confirm-exit? is true."
   (check-main-thread 'files:save-buffers-kill-tuna)
-  (when (if (for-all (lambda (b)
-                       (or (not (buffers:modified? b))
-                           (exists (lambda (entry) (entry b)) (hook-entries unsaved-kept))))
+  (when (if (for-all (lambda (b) (or (not (buffers:modified? b)) (%unsaved-kept? b)))
                      (visited-buffers))
             (or (not (confirm-exit?)) (ask:y-or-n? "Really exit Tuna? "))
             (ask:yes-or-no? "Modified buffers exist; exit anyway? "))
@@ -672,15 +691,13 @@
 (define (canceled-condition? v)
   (%canceled? v))
 
-;; A file buffer's unsaved edits outlive a kill in undo-log's log, so
-;; only a buffer with no file is asked about. A name that starts with a
-;; space marks an internal buffer, such as a prompt's, which its plugin
-;; kills inside a command.
+;; A name that starts with a space marks an internal buffer, such as a
+;; prompt's, which its plugin kills inside a command.
 (define (%confirm-kill buffer)
   (let ([name (buffers:name buffer)])
     (or (not (commands:this-command))
-        (entry-of buffer)
         (not (buffers:modified? buffer))
+        (and (entry-of buffer) (%unsaved-kept? buffer))
         (and (fx> (string-length name) 0) (char=? (string-ref name 0) #\space))
         (ask:y-or-n? (format "Buffer ~a has unsaved text; kill anyway? " name)))))
 
