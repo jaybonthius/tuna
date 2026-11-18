@@ -54,25 +54,40 @@
 > (define base (document:from-datum (make-string 20000 #\a) '(p () "b")))
 > (define base-text (document:text base))
 > (define quitting #t)
+> (define stopped #f)
 > (define quits 0)
 > (define (quitter)
     (let loop ()
-      (when quitting
-        (request-quit!)
-        (chez:sleep (make-time 'time-duration 1000000 0))
-        (loop))))
+      (if quitting
+          (begin
+            (request-quit!)
+            (chez:sleep (make-time 'time-duration 1000000 0))
+            (loop))
+          (set! stopped #t))))
+> (define forked #f)
+; A quit lands up to a thousand calls after its request, and the
+; quitter's last request may come after the stress ends. One guard
+; holds from before the quitter starts until long after it stops,
+; since a quit landing between two guards would end the form. Quits
+; land at least a thousand calls apart, so none lands in the handler
+; before it enters the guard again.
 > (define (stress until)
-    (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (stress until)])
-      (let loop ([doc base] [k 0])
-        (when (< (real-time) until)
-          (let* ([p (mod (* k 7919) (document:length doc))]
-                 [doc (document:freeze (document:replace doc p p (document:from-datum "xy" '(q () "z"))) jobs:freeze)])
-            (document:text doc)
-            (loop (if (> (document:length doc) 40000) base doc) (+ k 1)))))))
+    (let again ()
+      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again)])
+        (unless forked
+          (set! forked #t)
+          (fork-thread quitter))
+        (let loop ([doc base] [k 0])
+          (when (< (real-time) until)
+            (let* ([p (mod (* k 7919) (document:length doc))]
+                   [doc (document:freeze (document:replace doc p p (document:from-datum "xy" '(q () "z"))) jobs:freeze)])
+              (document:text doc)
+              (loop (if (> (document:length doc) 40000) base doc) (+ k 1)))))
+        (set! quitting #f)
+        (let spin () (unless stopped (spin)))
+        (let settle ([n 0]) (when (< n 100000) (settle (+ n 1)))))))
 > (begin
-    (fork-thread quitter)
     (stress (+ (real-time) 2000))
-    (set! quitting #f)
     (> quits 100))
 #t
 > (list (string=? (document:text base) base-text) (document:length base))

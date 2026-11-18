@@ -35,9 +35,19 @@ cat > "$dir/input" <<'END'
             (chez:sleep (make-time 'time-duration 1000000 0))
             (loop))
           (set! stopped #t))))
+(define forked #f)
+; A quit lands up to a thousand calls after its request, and the
+; quitter's last request may come after the stress ends. One guard
+; holds from before the quitter starts until long after it stops,
+; since a quit landing between two guards would end the form. Quits
+; land at least a thousand calls apart, so none lands in the handler
+; before it enters the guard again.
 (define (stress until)
     (let again ()
       (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again)])
+        (unless forked
+          (set! forked #t)
+          (fork-thread quitter))
         (let loop ([k 0])
           (when (< (real-time) until)
             (let* ([v (list-ref all (mod k 2))]
@@ -53,15 +63,12 @@ cat > "$dir/input" <<'END'
                 [(6) (buffers:replace! text p (min (- size 1) (+ p 5)) "")]
                 [(7) (views:scroll-to! v p (views:align center)) (when (zero? (mod k 63)) (web:client-removed phone))]
                 [else (views:draw v (if (even? k) desktop phone))])
-              (loop (+ k 1))))))))
-(begin
-    (fork-thread quitter)
-    (stress (+ (real-time) 2000))
-    (set! quitting #f)
-    (let wait ()
-      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (wait)])
+              (loop (+ k 1)))))
+        (set! quitting #f)
         (let spin () (unless stopped (spin)))
-        (let settle ([n 0]) (when (< n 100000) (settle (+ n 1))))))
+        (let settle ([n 0]) (when (< n 100000) (settle (+ n 1)))))))
+(begin
+    (stress (+ (real-time) 2000))
     (> quits 100))
 (for-all (lambda (v) (and (eq? (views:find (views:id v)) v) (eq? (views:buffer v) text))) all)
 (for-all

@@ -25,9 +25,19 @@
             (loop))
           (set! stopped #t))))
 > (define modes (list python:mode text:mode modes:fundamental prog:mode))
+> (define forked #f)
+; A quit lands up to a thousand calls after its request, and the
+; quitter's last request may come after the stress ends. One guard
+; holds from before the quitter starts until long after it stops,
+; since a quit landing between two guards would end the form. Quits
+; land at least a thousand calls apart, so none lands in the handler
+; before it enters the guard again.
 > (define (stress until)
     (let again ()
       (guard (c [(quit-condition? c) (set! quits-caught (+ quits-caught 1)) (again)])
+        (unless forked
+          (set! forked #t)
+          (fork-thread quitter))
         (with-exception-handler
           (lambda (c) (if (warning? c) (set! reported (+ reported 1)) (raise-continuable c)))
           (lambda ()
@@ -42,15 +52,12 @@
                     [(6) (modes:active-minor-modes (view))]
                     [else (press! "C-f")]))
                 (set! rounds (+ rounds 1))
-                (loop (+ k 1)))))))))
-> (begin
-    (fork-thread quitter)
-    (stress (+ (real-time) 2000))
-    (set! quitting #f)
-    (let wait ()
-      (guard (c [(quit-condition? c) (set! quits-caught (+ quits-caught 1)) (wait)])
+                (loop (+ k 1))))))
+        (set! quitting #f)
         (let spin () (unless stopped (spin)))
-        (let settle ([n 0]) (when (< n 100000) (settle (+ n 1))))))
+        (let settle ([n 0]) (when (< n 100000) (settle (+ n 1)))))))
+> (begin
+    (stress (+ (real-time) 2000))
     (list (> (+ reported quits-caught) 100) (> rounds 1000)))
 (#t #t)
 > (advice-remove! report count-reports)

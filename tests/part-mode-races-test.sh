@@ -34,9 +34,19 @@ cat > "$dir/input" <<'END'
 (define (atom-ids d)
     (if (vector? d) (list (cdr (assq 'view (vector-ref d 1)))) (apply append (map atom-ids (cddr d)))))
 (define (attempt thunk) (guard (c [(not (quit-condition? c)) #f]) (thunk)))
+(define forked #f)
+; A quit lands up to a thousand calls after its request, and the
+; quitter's last request may come after the stress ends. One guard
+; holds from before the quitter starts until long after it stops,
+; since a quit landing between two guards would end the form. Quits
+; land at least a thousand calls apart, so none lands in the handler
+; before it enters the guard again.
 (define (stress until)
     (let again ()
       (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again)])
+        (unless forked
+          (set! forked #t)
+          (fork-thread quitter))
         (let loop ([k 0])
           (when (< (real-time) until)
             (attempt
@@ -70,15 +80,12 @@ cat > "$dir/input" <<'END'
                   [(17) (layout:select-first)]
                   [(18) (layout:select-last)]
                   [else (batch-ended)])))
-            (loop (+ k 1)))))))
-(begin
-    (fork-thread quitter)
-    (stress (+ (real-time) 2000))
-    (set! quitting #f)
-    (let wait ()
-      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (wait)])
+            (loop (+ k 1))))
+        (set! quitting #f)
         (let spin () (unless stopped (spin)))
-        (let settle ([n 0]) (when (< n 100000) (settle (+ n 1))))))
+        (let settle ([n 0]) (when (< n 100000) (settle (+ n 1)))))))
+(begin
+    (stress (+ (real-time) 2000))
     (batch-ended)
     (> quits 100))
 (define (parts-only? d)

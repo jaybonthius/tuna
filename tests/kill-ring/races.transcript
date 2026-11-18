@@ -75,21 +75,28 @@
             (chez:sleep (make-time 'time-duration 1000000 0))
             (loop))
           (set! stopped #t))))
+> (define forked #f)
+; A quit lands up to a thousand calls after its request, and the
+; quitter's last request may come after the stress ends. One guard
+; holds from before the quitter starts until long after it stops,
+; since a quit landing between two guards would end the form. Quits
+; land at least a thousand calls apart, so none lands in the handler
+; before it enters the guard again.
 > (define (stress until)
     (let again ([i 0])
       (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again (+ i 1))])
+        (unless forked
+          (set! forked #t)
+          (fork-thread quitter))
         (let loop ([i i])
           (when (< (real-time) until)
             (change! i)
-            (loop (+ i 1)))))))
-> (begin
-    (fork-thread quitter)
-    (stress (+ (real-time) 1500))
-    (set! quitting #f)
-    (let wait ()
-      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (wait)])
+            (loop (+ i 1))))
+        (set! quitting #f)
         (let spin () (unless stopped (spin)))
-        (let settle ([n 0]) (when (< n 100000) (settle (+ n 1))))))
+        (let settle ([n 0]) (when (< n 100000) (settle (+ n 1)))))))
+> (begin
+    (stress (+ (real-time) 1500))
     (> quits 100))
 #t
 > (advice-remove! report count-quits)

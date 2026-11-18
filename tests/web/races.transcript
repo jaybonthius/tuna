@@ -34,26 +34,40 @@ Tuna is at http://127.0.0.1:PORT/
 ; changed.
 > (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 > (define quitting #t)
+> (define stopped #f)
 > (define quits 0)
 > (define (quitter)
     (let loop ()
-      (when quitting
-        (request-quit!)
-        (chez:sleep (make-time 'time-duration 1000000 0))
-        (loop))))
+      (if quitting
+          (begin
+            (request-quit!)
+            (chez:sleep (make-time 'time-duration 1000000 0))
+            (loop))
+          (set! stopped #t))))
+> (define forked #f)
+; A quit lands up to a thousand calls after its request, and the
+; quitter's last request may come after the stress ends. One guard
+; holds from before the quitter starts until long after it stops,
+; since a quit landing between two guards would end the form. Quits
+; land at least a thousand calls apart, so none lands in the handler
+; before it enters the guard again.
 > (define (stress until)
-    (guard (e [(quit-condition? e) (set! quits (+ quits 1)) (stress until)])
-      (let loop ([i 0])
-        (when (< (real-time) until)
-          (web:send-screen! c (string->utf8 (string-append "q" (number->string i))))
-          (when (zero? (mod i 1000)) (web:call-page! c "noop" i))
-          (web:clients)
-          (loop (+ i 1))))))
+    (let again ()
+      (guard (e [(quit-condition? e) (set! quits (+ quits 1)) (again)])
+        (unless forked
+          (set! forked #t)
+          (fork-thread quitter))
+        (let loop ([i 0])
+          (when (< (real-time) until)
+            (web:send-screen! c (string->utf8 (string-append "q" (number->string i))))
+            (when (zero? (mod i 1000)) (web:call-page! c "noop" i))
+            (web:clients)
+            (loop (+ i 1))))
+        (set! quitting #f)
+        (let spin () (unless stopped (spin)))
+        (let settle ([n 0]) (when (< n 100000) (settle (+ n 1)))))))
 > (begin
-    (fork-thread quitter)
     (stress (+ (real-time) 1000))
-    (set! quitting #f)
-    (stress (+ (real-time) 20))
     (> quits 10))
 #t
 > (web:send-screen! c (haml (:p "after the quits")))
