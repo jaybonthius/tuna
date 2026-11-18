@@ -108,25 +108,34 @@
     cursor: pointer;
   }
 
-  /* The classes' pointer beats the plain :disabled rule, which sits
-     inside :where(). */
-  :is(.ui-button, .ui-link):disabled {
+  /* The classes' pointer beats the plain disabled rule, which sits
+     inside :where(), so a disabled control sets the arrow again. */
+  .ui-button[aria-disabled="true"] {
+    border-color: var(--ui-button-disabled-border, var(--tuna-border));
+    background-color: var(--ui-button-disabled-background, var(--tuna-surface-subtle));
+    color: var(--ui-button-disabled-text, var(--tuna-text-faint));
+    cursor: default;
+  }
+
+  .ui-link[aria-disabled="true"] {
+    color: var(--ui-link-disabled-text, var(--tuna-text-faint));
+    text-decoration: none;
     cursor: default;
   }
 
   /* Overlays, so a button keeps its own background under them. The
      showcase holds a sample in a state with data-ui-state, since hover
      and pressed last only while the pointer is there. */
-  .ui-button:not(:disabled):is(:hover, [data-ui-state="hover"]) {
+  .ui-button:not([aria-disabled="true"]):is(:hover, [data-ui-state="hover"]) {
     background-image: linear-gradient(var(--ui-button-hover-background, var(--tuna-hover)),
                                       var(--ui-button-hover-background, var(--tuna-hover)));
   }
 
-  .ui-link:not(:disabled):is(:hover, [data-ui-state="hover"]) {
+  .ui-link:not([aria-disabled="true"]):is(:hover, [data-ui-state="hover"]) {
     color: var(--ui-link-hover-text, var(--tuna-accent));
   }
 
-  .ui-button:not(:disabled):is(:active, [data-ui-state="pressed"]) {
+  .ui-button:not([aria-disabled="true"]):is(:active, [data-ui-state="pressed"]) {
     background-image: linear-gradient(var(--ui-button-pressed-background, var(--tuna-pressed)),
                                       var(--ui-button-pressed-background, var(--tuna-pressed)));
   }
@@ -194,6 +203,13 @@
     .ui-list-row[aria-current="true"] {
       outline: 1px solid Highlight;
       outline-offset: -1px;
+    }
+
+    /* Forced colours grey a native disabled control, not one marked
+       aria-disabled. */
+    :is(.ui-button, .ui-link)[aria-disabled="true"] {
+      border-color: GrayText;
+      color: GrayText;
     }
   }
 }

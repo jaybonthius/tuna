@@ -66,6 +66,52 @@ hi
 > (views:set-point! (view) 3)
 > (raised (lambda () (in-client (lambda () (ui:pushed-button)))))
 (ui:pushed-button "no button is at the click or at point")
+; A button or link whose disabled attribute is not #f is drawn
+; aria-disabled. A click on it, or RET with point in it, runs nothing
+; and leaves the selected view and point, since ui:disabled-keys is
+; searched before the kind's keymap.
+> (define d (buffers:make "*disabled*" (buffers:text '() "Off " (go '((n . 4) (disabled . #t)) "Go") " " (more '((n . 5) (disabled . yes)) "more") "\n")))
+> (show! d)
+> (element (view) "<button class=\"ui-button\"" "button")
+"<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" aria-disabled=\"true\"><span data-at=\"6\">Go</span></button>"
+> (element (view) "<button class=\"ui-link\"" "button")
+"<button class=\"ui-link\" type=\"button\" tabindex=\"-1\" aria-disabled=\"true\"><span data-at=\"11\">more</span></button>"
+> (define before pushed)
+> (views:set-point! (view) 2)
+> (click-at! (view) 7)
+> (click-token! (view) 10)
+> (views:set-buffer! other d)
+> (click-at! other 12)
+> (list (eq? pushed before) (views:point (view)) (views:id (view)))
+(#t 2 1)
+> (views:set-point! (view) 7)
+> (press! "RET")
+> (views:set-point! (view) 12)
+> (press! "RET")
+> (list (eq? pushed before) (commands:command-name (in-client (lambda () (keys:lookup client "RET")))))
+(#t keys:ignore)
+; The layout's part mode reads keys in the layout's own view, so RET
+; there still leaves it.
+> (define (type! key . modifiers)
+    (parameterize ([web:current-client client])
+      ((table-ref web:input-handlers "key") client
+       (list (cons "type" "key") (cons "key" key) (cons "code" "") (cons "modifiers" (list->vector modifiers))))))
+> (views:set-point! (view) 7)
+> (type! "x" "control")
+> (type! "w")
+> (type! "w")
+> (layout:part-mode?)
+#t
+> (type! "Enter")
+> (list (layout:part-mode?) (eq? pushed before))
+(#f #t)
+; Without the attribute, the same button pushes again.
+> (buffers:splice! d 5 9 (document:from-datum (go '((n . 4)) "Go")))
+#<edit 1>
+> (views:set-point! (view) 7)
+> (press! "RET")
+> (car pushed)
+4
 ; The forms check what they are given.
 > (ui:define-button 3 note)
 ! ui:define-button: expected (ui:define-button id command) (ui:define-button 3 note)

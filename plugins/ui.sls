@@ -8,13 +8,32 @@
 
 (define-table list-keys "Keys that move through a list and choose its row.")
 
-(module %internals
-  (draw-labelled list-node? row-atom? list-state set-list-state! rows-vector rows-draw rows-choose rows-shown
-   rows-failed? rows-failed?-set! selected-index index-position window-start window-for write-window! list-at
-   current-drawing drawing-rows drawing-selected with-drawing posn-or-point forget-buffer!)
+(define-table disabled-keys "Keys that do nothing on a disabled button or link.")
 
+(module %internals
+  (draw-labelled button-at disabled? list-node? row-atom? list-state set-list-state! rows-vector rows-draw rows-choose rows-shown
+   rows-failed? rows-failed?-set! selected-index index-position window-start window-for write-window! list-at
+   current-drawing drawing-rows drawing-selected with-drawing place posn-or-point forget-buffer!)
+
+  (define (disabled? node) (and (document:node-attribute node 'disabled #f) #t))
+
+  ;; Not the disabled attribute, with which the browser drops the press
+  ;; and release of the mouse on the button, so a drag that ends there
+  ;; would end only at the next move.
   (define (draw-labelled class node view)
-    (haml (:button ([class class] [type "button"] [tabindex "-1"]) (views:draw-children view node))))
+    (haml (:button ([class class] [type "button"] [tabindex "-1"] [aria-disabled (and (disabled? node) "true")])
+            (views:draw-children view node))))
+
+  (define (button-at v p)
+    (let ([b (views:buffer v)])
+      (and b
+           (let ([doc (buffers:document b)])
+             (and (fx<= p (document:length doc))
+                  (let loop ([n (document:enclosing doc p)])
+                    (cond
+                      [(not n) #f]
+                      [(table-ref %buttons (document:node-kind n) #f) n]
+                      [else (loop (document:enclosing doc (document:node-start n)))])))))))
 
   (define (list-node? n)
     (and n (not (document:atom? n)) (eq? (document:node-kind n) %list-kind)))
@@ -158,11 +177,14 @@
       (parameterize ([current-drawing (make-drawing (list-state b node) (selected-index doc node (views:point view)))])
         (thunk))))
 
+  (define (place posn)
+    (if posn
+        (values (views:posn-view posn) (views:posn-point posn))
+        (let ([v (views:current)]) (values v (and v (views:buffer v) (views:point v))))))
+
   (define (posn-or-point)
     (let ([e (keys:command-event)])
-      (if (keys:event? e)
-          (let ([posn (keys:event-start e)]) (values (views:posn-view posn) (views:posn-point posn)))
-          (let ([v (views:current)]) (values v (and v (views:buffer v) (views:point v))))))))
+      (place (and (keys:event? e) (keys:event-start e))))))
 
 (import %internals)
 
@@ -207,15 +229,13 @@
 
 (define (pushed-button)
   (let-values ([(v p) (posn-or-point)])
-    (let ([b (and v p (views:buffer v))])
-      (or (and b
-               (let ([doc (buffers:document b)])
-                 (let loop ([n (document:enclosing doc p)])
-                   (cond
-                     [(not n) #f]
-                     [(table-ref %buttons (document:node-kind n) #f) n]
-                     [else (loop (document:enclosing doc (document:node-start n)))]))))
-          (assertion-violation 'ui:pushed-button "no button is at the click or at point")))))
+    (or (and v p (button-at v p))
+        (assertion-violation 'ui:pushed-button "no button is at the click or at point"))))
+
+(define (%disabled-keymaps client posn)
+  (let-values ([(v p) (place posn)])
+    (let ([button (and v p (button-at v p))])
+      (if (and button (disabled? button)) (cons disabled-keys '()) '()))))
 
 (define label
   (case-lambda
@@ -378,8 +398,7 @@
   (let ([state (document:node-attribute node 'state)])
     (haml (:button ([class (if (eq? (document:node-attribute node 'of) 'link) "ui-link" "ui-button")]
                     [type "button"] [tabindex "-1"]
-                    [data-ui-state (and (memq state '(hover pressed)) (symbol->string state))]
-                    [disabled (eq? state 'disabled)])
+                    [data-ui-state (symbol->string state)])
             (document:node-attribute node 'label)))))
 
 (define (%draw-helper-sample node view)
@@ -464,11 +483,14 @@
       "normal    " (%sample-button '((n . 0) (verb . "Pushed")) "Push me") "  a click or RET counts\n"
       "hover     " (%state-sample '((of . button) (state . hover) (label . "Push me"))) "\n"
       "pressed   " (%state-sample '((of . button) (state . pressed) (label . "Push me"))) "\n"
-      "disabled  " (%state-sample '((of . button) (state . disabled) (label . "Push me"))) "\n\n")
+      "disabled  " (%sample-button '((n . 0) (verb . "Pushed") (disabled . #t)) "Push me")
+      "  a click or RET does nothing\n\n")
     (%showcase-heading '() "Links: ui:define-link\n")
     (%showcase-text '()
       "normal    " (%sample-link '((n . 0) (verb . "Followed")) "Follow me") "  a click or RET counts\n"
-      "hover     " (%state-sample '((of . link) (state . hover) (label . "Follow me"))) "\n\n")
+      "hover     " (%state-sample '((of . link) (state . hover) (label . "Follow me"))) "\n"
+      "disabled  " (%sample-link '((n . 0) (verb . "Followed") (disabled . #t)) "Follow me")
+      "  a click or RET does nothing\n\n")
     (%showcase-heading '() "Labels and rows: ui:label, ui:row\n")
     (%showcase-text '()
       "label     " (%helper-sample '((of . label))) "\n"
@@ -516,6 +538,12 @@
 (keys:bind! list-keys "<up>" previous-row)
 (keys:bind! list-keys "RET" choose-row)
 (keys:bind! list-keys "<mouse-1>" choose-row)
+(keys:bind! disabled-keys "<mouse-1>" keys:ignore)
+(keys:bind! disabled-keys "RET" keys:ignore)
+(keys:bind! disabled-keys "<down-mouse-1>" keys:ignore)
+(keys:bind! disabled-keys "<drag-mouse-1>" keys:ignore)
+;; Ahead of the entries that find the button kind's own keymap.
+(add-hook! keys:find-keymaps %disabled-keymaps -10)
 (table-set! web:stylesheets 'ui "ui/ui.css")
 (add-hook! buffers:killed forget-buffer!)
 

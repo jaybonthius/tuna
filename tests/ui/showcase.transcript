@@ -16,18 +16,20 @@
 > (list (ui:selected-row (short) (view)) (buffers:modified? b))
 (0 #f)
 ; Every ui component and helper is drawn: a live button and
-; link, a button held hovered, pressed and disabled, a link held hovered,
-; labels with and without a class, and a row.
+; link, each also disabled, a button held hovered and pressed, a link
+; held hovered, labels with and without a class, and a row.
 > (element (view) "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\"><span" "button")
 "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\"><span data-at=\"137\">Push me</span></button>"
 > (element (view) "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" data-ui-state=\"hover\"" "button")
 "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" data-ui-state=\"hover\">Push me</button>"
 > (element (view) "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" data-ui-state=\"pressed\"" "button")
 "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" data-ui-state=\"pressed\">Push me</button>"
-> (element (view) "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" disabled" "button")
-"<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" disabled>Push me</button>"
+> (element (view) "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" aria-disabled" "button")
+"<button class=\"ui-button\" type=\"button\" tabindex=\"-1\" aria-disabled=\"true\"><span data-at=\"204\">Push me</span></button>"
 > (element (view) "<button class=\"ui-link\" type=\"button\" tabindex=\"-1\"><span" "button")
-"<button class=\"ui-link\" type=\"button\" tabindex=\"-1\"><span data-at=\"243\">Follow me</span></button>"
+"<button class=\"ui-link\" type=\"button\" tabindex=\"-1\"><span data-at=\"280\">Follow me</span></button>"
+> (element (view) "<button class=\"ui-link\" type=\"button\" tabindex=\"-1\" aria-disabled" "button")
+"<button class=\"ui-link\" type=\"button\" tabindex=\"-1\" aria-disabled=\"true\"><span data-at=\"337\">Follow me</span></button>"
 > (element (view) "<button class=\"ui-link\" type=\"button\" tabindex=\"-1\" data-ui-state=\"hover\"" "button")
 "<button class=\"ui-link\" type=\"button\" tabindex=\"-1\" data-ui-state=\"hover\">Follow me</button>"
 > (element (view) "<span class=\"ui-label\">A label" "span")
@@ -63,6 +65,18 @@
 (2 1)
 > (element (view) "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\"><span" "button")
 "<button class=\"ui-button\" type=\"button\" tabindex=\"-1\"><span data-at=\"137\"><span class=\"cursor primary\"></span>Pushed 2 times</span></button>"
+; The disabled button and link count nothing, by a click or by RET.
+> (define (disabled kind)
+    (node-where (lambda (t) (and (eq? (document:node-kind t) kind) (document:node-attribute t 'disabled)))))
+> (for-each
+    (lambda (kind)
+      (let ([at (+ (document:node-start (disabled kind)) 2)])
+        (click-at! (view) at)
+        (views:set-point! (view) at)
+        (press! "RET")))
+    '(ui:%sample-button ui:%sample-link))
+> (list (document:node-attribute (disabled 'ui:%sample-button) 'n) (document:node-attribute (disabled 'ui:%sample-link) 'n))
+(0 0)
 ; Moving past the shown rows slides them; RET chooses and shows the row
 ; chosen.
 > (ui:select-row! (short) (view) 0)
