@@ -1,34 +1,41 @@
 ; The browser tab names the selected view's buffer, as Emacs's
 ; frame-title-format does; layout sets the title at the end of each batch.
 > (web:title)
-"*Pager* – Tuna"
+"*Pager* - Tuna"
 > (define notes (buffers:make "notes" "one\n"))
 > (layout:switch-to-buffer notes)
 > (web:title)
-"notes – Tuna"
+"notes - Tuna"
 > (option-settings web:title)
-(((layout) "notes – Tuna"))
+(((layout) "notes - Tuna"))
 ; Selecting another view, or renaming the buffer, changes it.
 > (define mail (buffers:make "mail" "Dear Harpo,\n"))
 > (define v (layout:display-buffer mail))
 > (web:title)
-"notes – Tuna"
+"notes - Tuna"
 > (layout:select! v)
 > (web:title)
-"mail – Tuna"
+"mail - Tuna"
 > (buffers:rename! mail "sent")
 > (web:title)
-"sent – Tuna"
+"sent - Tuna"
 ; A setting made after layout's, as here at the REPL, outranks it and stays.
 > (set-option! web:title "Mine")
 > (layout:switch-to-buffer notes)
 > (web:title)
 "Mine"
 > (option-settings web:title)
-(((repl) "Mine") ((layout) "notes – Tuna"))
+(((repl) "Mine") ((layout) "notes - Tuna"))
 > (remove-option! web:title)
 > (web:title)
-"notes – Tuna"
+"notes - Tuna"
+; layout:page-title makes the title from the buffer's name.
+> (set-option! layout:page-title (lambda (name) (string-append name " – Emacs")))
+> (web:title)
+"notes – Emacs"
+> (remove-option! layout:page-title)
+> (web:title)
+"notes - Tuna"
 ; Unloading layout takes its setting back.
 > (unload-module! '(layout))
 > (web:title)

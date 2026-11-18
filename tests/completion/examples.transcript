@@ -1,8 +1,13 @@
-; The configuration's settings.
-> (completion:styles)
-(#<procedure>)
-> (map car (table-entries completion:category-styles))
-(completion:file-category)
+; The configuration's settings. By default sources try prefix, then
+; partial, as Emacs's basic and partial-completion, but buffers and
+; commands try prefix, then substring, and locations and lines substring;
+; the configuration gives files partial.
+> (equal? (option-default completion:styles) (list completion:prefix completion:partial))
+#t
+> (equal? (completion:styles) (list completion:any-order))
+#t
+> (map (lambda (e) (cons (car e) (map (lambda (style) (style "a b")) (cdr e)))) (table-entries completion:category-styles))
+((completion:buffer-category ((starts "a b")) ((contains "a b"))) (completion:location-category ((contains "a b"))) (completion:command-category ((starts "a b")) ((contains "a b"))) (completion:file-category ((starts "a" " b"))) (line-picker:line-category ((contains "a b"))))
 > (completion-list:rows)
 15
 ; completion:read, with a history.

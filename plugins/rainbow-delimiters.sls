@@ -5,15 +5,20 @@
   "Whether brackets are coloured by depth."
   (lambda (on?) (syntax:bracket-users-changed)))
 
-;; Past the ninth depth the faces start again at depth-2, so depth-1 marks
-;; only the outermost list.
+(define-option outermost-only-face-count 0 (lambda (v) (and (fixnum? v) (fx<= 0 v 8)))
+  "How many of the outermost depths keep their face for themselves: past depth 9 the faces start again after them.")
+
 (define (%bracket-face bracket)
   (cond
     [(eq? bracket 'unmatched) "rainbow-delimiters.unmatched"]
     [(eq? bracket 'mismatched) "rainbow-delimiters.mismatched"]
     [(and (fixnum? bracket) (fx> bracket 0))
      (string-append "rainbow-delimiters.depth-"
-       (number->string (if (fx<= bracket 9) bracket (fx+ 2 (fxmod (fx- bracket 2) 8)))))]
+       (number->string
+         (if (fx<= bracket 9)
+             bracket
+             (let ([kept (outermost-only-face-count)])
+               (fx+ 1 kept (fxmod (fx- bracket 10) (fx- 9 kept)))))))]
     [else #f]))
 
 (define (%bracket-attributes bracket)

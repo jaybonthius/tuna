@@ -1,7 +1,7 @@
 #!tuna
 (import (processes) (jobs) (json))
 
-(define-option command '("pi" "--approve")
+(define-option command '("pi")
   (lambda (v) (and (list? v) (pair? v) (for-all string? v)))
   "The program and its first arguments that start Pi; pi adds --mode rpc and --session-id.")
 

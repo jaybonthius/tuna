@@ -118,6 +118,10 @@ Override by (repl)
 (help:describe-name "not a view")
 > (raised (lambda () (help:describe-command 'x (view))))
 (help:describe-command "not a command")
+> (raised (lambda () (help:apropos-command 'x (view))))
+(help:apropos-command "not a command")
+> (raised (lambda () (help:apropos-command harpo:honk 'x)))
+(help:apropos-command "not a view")
 ; Run by a key, C-h f, C-h v and C-h o read a name, the name at point
 ; first; C-h x and C-h a read a command, the command at point first.
 > (views:set-point! (view) 3)
@@ -144,9 +148,31 @@ Override by (repl)
 > (settle)
 > (title)
 "harpo:quiet"
+; With the default styles, C-h f and C-h x also match inside a name,
+; and C-h a matches words of a command's name in any order.
+> (start! "C-h" "f")
+> (type! "squeeze")
+> (press! "RET")
+> (settle)
+> (title)
+"harpo:squeeze"
+> (start! "C-h" "x")
+> (type! "honk")
+> (press! "RET")
+> (settle)
+> (title)
+"harpo:honk"
+> (start! "C-h" "a")
+> (type! "quiet")
+> (press! "SPC")
+> (type! "harpo")
+> (press! "RET")
+> (settle)
+> (title)
+"harpo:quiet"
 ; Names and commands each keep a history of their own.
 > (list (help:name-history) (help:command-history))
-(("harpo:pitch" "harpo:squeeze") ("harpo:quiet" "harpo:honk"))
+(("harpo:squeeze" "harpo:pitch") ("harpo:quiet" "harpo:honk"))
 ; Names and commands whose part after the colon starts with % are not
 ; offered.
 > (start! "C-h" "o")

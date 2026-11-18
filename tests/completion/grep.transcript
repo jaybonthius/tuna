@@ -33,3 +33,24 @@
 > (press! "C-g")
 ! &quit
 > (set-option! grep:max-file-size 1000000)
+; With the default styles, the filter after # matches inside a line found,
+; and M-s l matches inside a line.
+> (set-option! completion:styles (list completion:prefix completion:partial))
+> (views:set-buffer! (view) (files:visit (string-append (getenv "HOME") "/src/text.txt")))
+> (define t (start! (lambda () (press! "M-s" "g"))))
+> (define s (session))
+> (type! "needle#two")
+> (sleep-for 0.5)
+> (texts s)
+("text.txt:3:needle two")
+> (press! "C-g")
+! &quit
+> (views:set-buffer! (view) (buffers:make "code" "(define (f x)\n  (display x))\n"))
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (define s (session))
+> (type! "display")
+> (wait-matches s)
+> (texts s)
+("  (display x))")
+> (press! "C-g")
+! &quit

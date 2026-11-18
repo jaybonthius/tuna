@@ -42,12 +42,19 @@
 ((1 2 ((bracket . 1))) (9 10 ((bracket . 2))) (13 14 ((bracket . 2))) (15 16 ((bracket . 2))) (21 23 ((bracket . 3))) (24 25 ((bracket . 3))) (25 26 ((bracket . 2))) (26 27 ((bracket . 1))))
 > (lines v)
 "<div class=\"line\" id=\"v3-1\" data-line=\"1\" data-at=\"1\"><span class=\"cursor primary\"></span><span data-face=\"rainbow-delimiters.depth-1\">(</span><span data-face=\"keyword\">define</span> <span data-face=\"rainbow-delimiters.depth-2\">(</span><span data-face=\"function\">f</span> x<span data-face=\"rainbow-delimiters.depth-2\">)</span> <span data-face=\"rainbow-delimiters.depth-2\">[</span><span data-face=\"function.builtin\">list</span> <span data-face=\"rainbow-delimiters.depth-3\">#(</span>x<span data-face=\"rainbow-delimiters.depth-3\">)</span><span data-face=\"rainbow-delimiters.depth-2\">]</span><span data-face=\"rainbow-delimiters.depth-1\">)</span></div><div class=\"line\" id=\"v3-2\" data-line=\"2\"><br></div>"
-; Depths 1 to 9 have a face each; deeper brackets take depth-2 to
+; Depths 1 to 9 have a face each; deeper brackets take depth-1 to
 ; depth-9 again, in turn. A closing bracket with no opening is
 ; unmatched, and one of the wrong shape is mismatched.
 > (define deep (scheme-buffer "deep.ss" "((((((((((((x))))))))))))\n) (]\n"))
-> (bracket-faces (views:make deep))
+> (define deep-view (views:make deep))
+> (bracket-faces deep-view)
+(depth-1 depth-2 depth-3 depth-4 depth-5 depth-6 depth-7 depth-8 depth-9 depth-1 depth-2 depth-3 depth-3 depth-2 depth-1 depth-9 depth-8 depth-7 depth-6 depth-5 depth-4 depth-3 depth-2 depth-1 unmatched depth-1 mismatched)
+; With one outermost-only face, the faces start again at depth-2, so
+; depth-1 marks only the outermost list.
+> (set-option! rainbow-delimiters:outermost-only-face-count 1)
+> (bracket-faces deep-view)
 (depth-1 depth-2 depth-3 depth-4 depth-5 depth-6 depth-7 depth-8 depth-9 depth-2 depth-3 depth-4 depth-4 depth-3 depth-2 depth-9 depth-8 depth-7 depth-6 depth-5 depth-4 depth-3 depth-2 depth-1 unmatched depth-1 mismatched)
+> (remove-option! rainbow-delimiters:outermost-only-face-count)
 > (map caddr (brackets deep))
 (((bracket . 1)) ((bracket . 2)) ((bracket . 3)) ((bracket . 4)) ((bracket . 5)) ((bracket . 6)) ((bracket . 7)) ((bracket . 8)) ((bracket . 9)) ((bracket . 10)) ((bracket . 11)) ((bracket . 12)) ((bracket . 12)) ((bracket . 11)) ((bracket . 10)) ((bracket . 9)) ((bracket . 8)) ((bracket . 7)) ((bracket . 6)) ((bracket . 5)) ((bracket . 4)) ((bracket . 3)) ((bracket . 2)) ((bracket . 1)) ((bracket . unmatched)) ((bracket . 1)) ((bracket . mismatched)))
 ; A view's own value turns the colours off in that view only.

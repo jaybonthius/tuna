@@ -10,9 +10,9 @@ Tuna is at http://127.0.0.1:PORT/
 > (define q (http:page))
 > (http:connect! p)
 > (http:connect! q)
-> (set-option! web:title "notes.org – Tuna")
+> (set-option! web:title "notes.org - Tuna")
 > (let* ([a (http:show (http:next p))] [b (http:show (http:next q))]) (list a b))
-((datastar-patch-elements ("elements" "<title id=\"tuna-title\">notes.org – Tuna</title>")) (datastar-patch-elements ("elements" "<title id=\"tuna-title\">notes.org – Tuna</title>")))
+((datastar-patch-elements ("elements" "<title id=\"tuna-title\">notes.org - Tuna</title>")) (datastar-patch-elements ("elements" "<title id=\"tuna-title\">notes.org - Tuna</title>")))
 ; A page served afterwards carries it, and the text is escaped.
 > (set-option! web:title "<a> & b")
 > (title-of (http:page-html (http:page)))

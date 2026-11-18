@@ -1,9 +1,23 @@
-; C-x b previews the selected buffer in the selected view and puts back
-; the view's buffer and point when the read is quit.
+; By default C-x b previews nothing, as Emacs's switch-to-buffer.
 > (define notes (buffers:make "notes" "one\ntwo\nthree\n"))
 > (views:set-buffer! (view) notes)
 > (define other (buffers:make "other" "x\n"))
 > (views:set-point! (view) 5)
+> (set-option! buffer-picker:sources (option-default buffer-picker:sources))
+> (define t (start! (lambda () (press! "C-x" "b"))))
+> (type! "oth")
+> (wait-matches (session))
+> (texts (session))
+("other")
+> (views:buffer (car (layout:views)))
+#<buffer notes>
+> (press! "C-g")
+! &quit
+> (result t)
+> (remove-option! buffer-picker:sources)
+; With buffer-picker:buffers given the view, as this configuration sets,
+; C-x b previews the selected buffer in the selected view and puts back
+; the view's buffer and point when the read is quit.
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (wait-matches (session))
 > (texts (session))

@@ -4,7 +4,7 @@
 (define-option require-final-newline #f boolean?
   "When true, saving a file buffer whose text does not end in a line break adds one, as an edit.")
 
-(define-option confirm-exit? #t boolean?
+(define-option confirm-exit? #f boolean?
   "When true, files:save-buffers-kill-tuna asks before it exits, unless it has asked about modified buffers.")
 
 (define-hook after-visit

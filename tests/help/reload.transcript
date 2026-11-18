@@ -1,6 +1,6 @@
 ; help:keymap is on C-h; C-h e stays the echo area's.
 > (map (lambda (keys) (commands:command-name (keys:lookup client keys))) '("C-h k" "C-h f" "C-h v" "C-h o" "C-h a" "C-h e"))
-(help:describe-key help:describe-name help:describe-name help:describe-name help:describe-command echo-area:show-messages)
+(help:describe-key help:describe-name help:describe-name help:describe-name help:apropos-command echo-area:show-messages)
 > (eq? (keys:lookup client "C-h") help:keymap)
 #t
 ; *Help* draws as a div.help with its title, keys and links.

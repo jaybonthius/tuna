@@ -5,8 +5,8 @@
 > (pi:chat? chat)
 #t
 > (define f (fake-of chat))
-> (let ([args (fake-args f)]) (list (list-head args 4) (string-length (list-ref args 4))))
-(("--approve" "--mode" "rpc" "--session-id") 36)
+> (let ([args (fake-args f)]) (list (list-head args 3) (string-length (list-ref args 3))))
+(("--mode" "rpc" "--session-id") 36)
 > (string=? (utf8->string (file-text (string-append (fake-dir f) "/cwd"))) (string-append (getenv "HOME") "\n"))
 #t
 > (let ([p (pi:chat-process chat)]) (list (processes:owner p) (bytevector? (processes:error-output p))))
@@ -20,7 +20,7 @@
 > (wait-until (lambda () (= 4 (length (fake-requests f)))))
 > (asked f)
 ("get_state" "get_entries" "get_session_stats" "get_commands")
-> (equal? (pi:chat-session-id chat) (list-ref (fake-args f) 4))
+> (equal? (pi:chat-session-id chat) (list-ref (fake-args f) 3))
 #t
 > (let ([m (pi:chat-model chat)])
     (list (pi:model? m) (pi:model-provider m) (pi:model-id m) (pi:model-name m) (pi:model-context-window m) (pi:model-reasoning? m)))
@@ -43,7 +43,7 @@
 #t
 > (eq? (pi:start (getenv "HOME") (pi:chat-session-id chat)) chat)
 #t
-> (list-tail (fake-args (fake-of other)) 3)
+> (list-tail (fake-args (fake-of other)) 2)
 ("--session-id" "fixed-session")
 ; Pi's commands, read when Pi starts, after each change of session and
 ; after each settle.
@@ -66,13 +66,13 @@
 ; pi refuses a Pi older than 1.5.0: it asks Pi's version when it loads
 ; and whenever pi:command changes.
 > (putenv "PI_FAKE_VERSION" "1.4.2")
-> (set-option! pi:command '("pi"))
+> (set-option! pi:command '("pi" "--approve"))
 > (sleep-for 0.5)
 ! (pi) Pi 1.4.2 is older than 1.5.0, the version pi supports
 > (pi:start "/tmp")
 ! pi:start: Pi 1.4.2 is older than 1.5.0, the version pi supports
 > (putenv "PI_FAKE_VERSION" "1.5.3")
-> (set-option! pi:command '("pi" "--approve"))
+> (set-option! pi:command '("pi"))
 > (sleep-for 0.5)
 > (pi:chat? (pi:start "/tmp"))
 #t

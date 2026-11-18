@@ -5,8 +5,8 @@
     min-block-size: calc(var(--completion-list-rows, 0) * 1lh);
   }
 
-  /* A row never wraps, as Vertico's do, so the list keeps one line per
-     row and the input above it stays put as the matches change. */
+  /* A row never wraps, as Vertico's do, so each row is one line and the
+     list's height in rows holds. */
   .completion-list-row {
     display: flex;
     align-items: baseline;

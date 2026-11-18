@@ -115,3 +115,12 @@ editing:forward-char
 > (result t)
 > (text quoted)
 "a\t\t"
+; With the default styles, M-x matches inside a command's name, which
+; starts with its plugin's name.
+> (set-option! completion:styles (list completion:prefix completion:partial))
+> (define t (start! (lambda () (press! "M-x"))))
+> (type! "forward-char")
+> (texts (session))
+("editing:forward-char")
+> (press! "C-g")
+! &quit

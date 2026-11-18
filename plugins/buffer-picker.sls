@@ -33,8 +33,8 @@
       (category completion:buffer-category)
       (preview (and view (%buffer-preview view))))))
 
-(define-option sources (list buffers) (lambda (v) (and (list? v) (for-all procedure? v)))
-  "Procedures of a view, called by buffer-picker:switch-to-buffer with the view it switches, each returning a source.")
+(define-option sources (list (lambda (view) (buffers #f))) (lambda (v) (and (list? v) (for-all procedure? v)))
+  "Procedures of a view, called by buffer-picker:switch-to-buffer with the view it switches, each returning a source; buffer-picker:buffers given that view previews in it.")
 
 (define read-buffer
   (case-lambda

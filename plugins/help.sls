@@ -12,6 +12,9 @@
 (completion:define-category name-category
   "Exported names of loaded modules and of Tuna's own libraries, valued by the name.")
 
+(completion:define-category apropos-category
+  "Loaded commands read by help:apropos-command, valued by the command.")
+
 (define-table keymap "The help commands, bound to C-h.")
 
 (define-table mode-keymap "Keys in *Help*.")
@@ -368,14 +371,14 @@
                  [end (let loop ([i p]) (if (and (fx< i n) (%name-char? (document:token doc i))) (loop (fx+ i 1)) i))])
              (and (fx< start end) (string->symbol (document:text doc start end))))))))
 
-(define (%read-command question)
+(define (%read-command question category)
   (let* ([at (%name-at-point)] [default (and at (commands:command-named at) (symbol->string at))])
     (completion:read question
       (list (completion:source
               (candidates (list->vector
                             (map (lambda (name) (cons (symbol->string name) (commands:command-named name)))
                                  (remp %private-name? (commands:command-names)))))
-              (category completion:command-category)))
+              (category category)))
       command-history default)))
 
 (define (%read-name)
@@ -405,7 +408,7 @@
         [(table? found) (string-append (%where keys) " is a prefix")]
         [else (string-append (%where keys) " runs " (%command-label found))]))))
 
-(commands:define-command (where-is [command (%read-command "Where is command: ")] [view (views:current)])
+(commands:define-command (where-is [command (%read-command "Where is command: " completion:command-category)] [view (views:current)])
   "Shows in the echo area the key sequences that run COMMAND in VIEW."
   (unless (commands:command? command)
     (assertion-violation 'help:where-is "not a command" command))
@@ -424,12 +427,19 @@
       (cons (%title-datum "Key bindings") (%sections-datums (keys:active-bindings (web:current-client)))))
     view))
 
-(commands:define-command (describe-command [command (%read-command "Describe command: ")] [view (views:current)])
+(commands:define-command (describe-command [command (%read-command "Describe command: " completion:command-category)] [view (views:current)])
   "Shows in *Help* COMMAND's module, the keys that run it in VIEW, its modes, its documentation, and its overrides and advice."
   (unless (commands:command? command)
     (assertion-violation 'help:describe-command "not a command" command))
   (%check-view 'help:describe-command view)
   (%describe! (%command-content (commands:command-name command)) view))
+
+(commands:define-command (apropos-command [command (%read-command "Apropos command: " apropos-category)] [view (views:current)])
+  "Describes COMMAND in VIEW as help:describe-command does, reading it by words of its name in any order."
+  (unless (commands:command? command)
+    (assertion-violation 'help:apropos-command "not a command" command))
+  (%check-view 'help:apropos-command view)
+  (describe-command command view))
 
 (commands:define-command (describe-name [name (%read-name)] [view (views:current)])
   "Shows in *Help* what the exported name NAME is, as seen from VIEW, with its module and documentation."
@@ -540,7 +550,7 @@
         (undefined))))
 
 (keys:bind! keys:global "C-h" keymap)
-(keys:bind! keymap "a" describe-command)
+(keys:bind! keymap "a" apropos-command)
 (keys:bind! keymap "b" describe-bindings)
 (keys:bind! keymap "c" describe-key-briefly)
 (keys:bind! keymap "f" describe-name)
@@ -559,4 +569,12 @@
 (keys:bind! mode-keymap "S-SPC" views:scroll-down)
 (keys:bind! mode-keymap "DEL" views:scroll-down)
 (table-set! web:stylesheets 'help "help/help.css")
+(table-set! completion:category-styles name-category (list completion:prefix completion:substring))
+(table-set! completion:category-styles apropos-category (list completion:any-order))
+;; Looked up at each read, not at load, since the plugin that annotates
+;; commands may load after help.
+(table-set! completion:annotators apropos-category
+  (lambda (session)
+    (let ([make (table-ref completion:annotators completion:command-category #f)])
+      (and make (make session)))))
 (advice-add! keys:undefined %describe-prefix)

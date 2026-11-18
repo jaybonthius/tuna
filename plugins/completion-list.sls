@@ -4,17 +4,20 @@
 (define-option rows 10 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many rows a read's list shows.")
 
+(define-option fixed-height? #f boolean?
+  "When true, a read's list is completion-list:rows tall from its first draw; otherwise it grows as rows arrive and keeps its height until the read ends.")
+
 ;; Point rests in the empty node while nothing is selected, since a
 ;; list's selected row is the row at point.
 (define (%draw-nothing node view) '())
 
 (define (%draw-count node view) (%counts view))
 
-;; The list keeps its rows' height while matches are fewer, so the input
-;; above it stays where the read opened as the matches change.
 (define (%draw-root node view)
-  (haml (:div.completion-list ([style (string-append "--completion-list-rows:" (number->string (rows)))])
-          (views:draw-children view node))))
+  (let ([l (%list-of-view view)])
+    (haml (:div.completion-list ([style (string-append "--completion-list-rows:"
+                                          (number->string (if (or (fixed-height?) (not l)) (rows) (%shown-height l))))])
+            (views:draw-children view node)))))
 
 (buffers:define-kind %root (content nodes) (draw %draw-root))
 
@@ -24,7 +27,7 @@
 
 (define-record-type %shown
   (sealed #t)
-  (fields session buffer view (mutable matches) (mutable widths) prompt))
+  (fields session buffer view (mutable matches) (mutable widths) prompt (mutable height)))
 
 (define %lists '())
 
@@ -35,6 +38,8 @@
   (string-append " *Completions-" (number->string %count) "*"))
 
 (define (%list-of s) (find (lambda (l) (eq? (%shown-session l) s)) %lists))
+
+(define (%list-of-view view) (find (lambda (l) (eq? (%shown-view l) view)) %lists))
 
 (define (%list-node b)
   (let ([doc (buffers:document b)] [found #f])
@@ -54,7 +59,7 @@
     (and (fx< i (vector-length matches)) (if (eqv? (vector-ref matches i) m) i (loop (fx+ i 1))))))
 
 (define (%counts view)
-  (let ([l (find (lambda (l) (eq? (%shown-view l) view)) %lists)])
+  (let ([l (%list-of-view view)])
     (if l
         (let* ([s (%shown-session l)] [matches (completion:session-matches s)] [m (completion:selected s)]
                [k (and m (%index-of m matches))])
@@ -152,7 +157,7 @@
   (when (minibuffer:buffer? (views:buffer (completion:session-view s)))
     (let* ([b (buffers:make (%next-name) (%root '() (%count-line '()) (%none '()) (ui:list '())))]
            [v (views:make b)]
-           [l (make-%shown s b v #f '() (minibuffer:current-prompt))])
+           [l (make-%shown s b v #f '() (minibuffer:current-prompt) 0)])
       (set! %lists (cons l %lists))
       (let ([p (%shown-prompt l)])
         (when p
@@ -168,6 +173,19 @@
       (set! %lists (remq l %lists))
       (views:drop! (%shown-view l))
       (buffers:kill! (%shown-buffer l)))))
+
+;; The list never shrinks during a read, so the input above it does not
+;; jump back and forth as the matches change. Its height is taken when a
+;; batch ends, not at each match round: a read's first round, before a
+;; setup gives the input, may match every candidate.
+(define (%note-heights ended)
+  (guard (c [#t (report c)])
+    (for-each
+      (lambda (l)
+        (%shown-height-set! l (fxmax (%shown-height l)
+                                     (fxmin (vector-length (completion:session-matches (%shown-session l))) (rows)))))
+      %lists))
+  (ended))
 
 ;; A running session's prompt is waiting, so its content can be cleared.
 (define (%unload)
@@ -186,4 +204,5 @@
 (add-hook! completion:started %started)
 (add-hook! completion:updated %updated)
 (add-hook! completion:ended %ended)
+(advice-add! batch-ended %note-heights)
 (on-unload %unload)

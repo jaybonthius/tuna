@@ -165,7 +165,7 @@
 (define (%dispatch-flex rest) (cons 'contains (map string (string->list rest))))
 (define (%dispatch-ends rest) (list 'ends rest))
 
-(define-option styles (list any-order) (lambda (v) (and (list? v) (for-all procedure? v)))
+(define-option styles (list prefix partial) (lambda (v) (and (list? v) (for-all procedure? v)))
   "The styles a source tries, in order.")
 
 (define-record-type (%matcher make-matcher matcher?)
@@ -1037,6 +1037,11 @@
 (table-set! any-order-dispatch #\^ %dispatch-starts)
 (table-set! any-order-dispatch #\~ %dispatch-flex)
 (table-set! any-order-dispatch #\$ %dispatch-ends)
+(table-set! category-styles buffer-category (list prefix substring))
+(table-set! category-styles location-category (list substring))
+;; Every command's name starts with its plugin's name, so matching only at
+;; the start would not find a command by the word it is known by.
+(table-set! category-styles command-category (list prefix substring))
 (keys:bind! minibuffer:keymap "M-r" search-history)
 (keys:bind! minibuffer:keymap "M-s" search-history)
 (keys:bind! keymap "RET" exit)

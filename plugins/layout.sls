@@ -6,6 +6,9 @@
 (define-table display-rules
   "Maps a predicate on buffers to the action that shows the buffers it accepts.")
 
+(define-option page-title (lambda (name) (string-append name " - Tuna")) procedure?
+  "A procedure of the selected view's buffer name that returns the title layout gives every client's page, through web:title.")
+
 (define-option history-limit 10 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
   "How many window changes each level's history keeps to go back through; 0 keeps none.")
 
@@ -744,7 +747,7 @@
   (define last-title #f)
 
   (define (note-title!)
-    (let ([title (string-append (shown-buffer-name (atom-of (selected-id))) " – Tuna")])
+    (let ([title ((page-title) (shown-buffer-name (atom-of (selected-id))))])
       (unless (equal? title last-title)
         (as-module (this-module) (set-option! web:title title))
         (set! last-title title))))

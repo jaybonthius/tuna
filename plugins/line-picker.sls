@@ -3,6 +3,8 @@
 
 (define-saved goto-line-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
+(completion:define-category line-category "Lines of the current buffer, valued by the line's start.")
+
 (define (%line-candidates doc first last)
   (let ([n (fx+ (fx- last first) 1)])
     (let ([v (make-vector n)] [end (document:length doc)])
@@ -42,10 +44,12 @@
                 (completion:source
                   (candidates (%line-candidates doc 1 (%last-line doc)))
                   (in-order)
+                  (category line-category)
                   (preview (lambda (p) (views:set-point! view (or p point)))))
                 (completion:source
                   (job %split-lines doc)
                   (in-order)
+                  (category line-category)
                   (preview (lambda (p) (views:set-point! view (or p point))))))))))
 
 (commands:define-command (line [position (%read-line)])
@@ -75,6 +79,7 @@
   (let* ([view (views:current)] [doc (buffers:document (views:buffer view))] [end (document:length doc)])
     (views:set-point! view (if (> line (document:line doc end)) end (document:line-start doc (max line 1))))))
 
+(table-set! completion:category-styles line-category (list completion:substring))
 (keys:bind! keys:global "M-s l" line)
 (keys:bind! keys:global "M-g g" goto-line)
 (keys:bind! keys:global "M-g M-g" goto-line)

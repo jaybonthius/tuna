@@ -83,8 +83,11 @@
 > asked
 ("Modified buffers exist; exit anyway? ")
 > (add-hook! files:unsaved-kept (lambda (buffer) (eq? buffer other)))
-; With no edits to lose, it asks whether to exit, since
-; files:confirm-exit? is on by default.
+; With no edits to lose, it asks whether to exit only when
+; files:confirm-exit? is on.
+> (files:confirm-exit?)
+#f
+> (set-option! files:confirm-exit? #t)
 > (set-option! ask:y-or-n-reader (lambda (question) (set! asked (cons question asked)) #f))
 > (commands:run files:save-buffers-kill-tuna)
 > asked

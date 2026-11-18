@@ -27,7 +27,7 @@
 > (define g (fake-of chat))
 > (wait-until (lambda () (= 5 (length (fake-requests g)))))
 > (sleep-for 0.1)
-> (list (eq? (pi:chat-process chat) first-process) (pi:chat-activity chat) (equal? (list-ref (fake-args g) 4) session))
+> (list (eq? (pi:chat-process chat) first-process) (pi:chat-activity chat) (equal? (list-ref (fake-args g) 3) session))
 (#f idle #t)
 > (transcript chat)
 ()
@@ -66,7 +66,7 @@
 > (eval-file (library-file "pi.sls"))
 > (define chat (car (pi:chats)))
 > (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
-> (list (pi:chat-session-id chat) (list-tail (fake-args (fake-of chat)) 3))
+> (list (pi:chat-session-id chat) (list-tail (fake-args (fake-of chat)) 2))
 ("s-42" ("--session-id" "s-42"))
 ; Stopping ends Pi and the chat.
 > (define process (pi:chat-process chat))
