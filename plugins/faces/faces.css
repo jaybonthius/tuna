@@ -28,7 +28,10 @@
     color: var(--faces-number-color, var(--tuna-orange-11));
   }
 
-  [data-face="constant"], :where([data-face^="constant."]) {
+  /* A boolean, a character and a quoted symbol are literal data, so
+     they take the constant colour. */
+  [data-face="constant"], :where([data-face^="constant."]),
+  [data-face="boolean"], [data-face="character"], [data-face="string.special.symbol"] {
     color: var(--faces-constant-color, var(--tuna-orange-11));
   }
 

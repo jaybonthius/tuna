@@ -1,0 +1,178 @@
+; The mode: parent prog:mode, its keymap and hook, lighter "Scheme";
+; its hook runs after prog's.
+> (list (table-ref modes:parents chez-scheme:mode) (modes:lighter chez-scheme:mode)
+        (eq? (table-ref modes:keymaps chez-scheme:mode) chez-scheme:keymap)
+        (eq? (table-ref modes:hooks chez-scheme:mode) chez-scheme:mode-hook))
+(prog:mode "Scheme" #t #t)
+> (define order '())
+> (add-hook! prog:mode-hook (lambda () (set! order (cons 'prog order))))
+> (add-hook! chez-scheme:mode-hook (lambda () (set! order (cons 'scheme order))))
+> (define first (scheme-buffer "first.ss" ""))
+> (reverse order)
+(prog scheme)
+; Files by name, and by the program a first line names.
+> (disk:folder! "~/src")
+> (define (mode-of name content)
+    (disk:write-text! (string-append "~/src/" name) content)
+    (modes:major-mode (files:visit (string-append "~/src/" name))))
+> (map (lambda (name) (mode-of name "")) '("a.sls" "a.ss" "a.sps" "a.scm" "a.sch" "a.sld" "a.txt"))
+(chez-scheme:mode chez-scheme:mode chez-scheme:mode chez-scheme:mode chez-scheme:mode chez-scheme:mode modes:fundamental)
+> (map (lambda (name content) (mode-of name content))
+       '("tool" "lib" "script" "plain" "petite" "r6" "chez")
+       '("#!tuna\n" "#!tuna --script\n" "#!/usr/bin/env scheme-script\n" "#!/usr/bin/scheme --script\n"
+         "#!/usr/bin/petite --script\n" "#!r6rs\n" "#!chezscheme\n"))
+(chez-scheme:mode chez-scheme:mode chez-scheme:mode chez-scheme:mode chez-scheme:mode chez-scheme:mode chez-scheme:mode)
+; Words are as in other modes.
+> (equal? (local editing:word-characters first) (editing:word-characters))
+#t
+; The lexer: each kind's class; a node's opening or closing is no
+; character, and an atom lexes as part of a symbol.
+> (define (classes text)
+    (map (lambda (l) (list (syntax:lexeme-class l) (syntax:lexeme-start l) (syntax:lexeme-end l)))
+         (vector->list (chez-scheme:lexer (document:from-datum text)))))
+> (classes "(a 'b \"c\" ; d\n #;e #!eof #\\x #t . 1)")
+((open 0 1) (atom 1 2) (prefix 3 4) (atom 4 5) (string 6 9) (comment 10 13) (comment 15 18) (atom 19 24) (atom 25 28) (atom 29 31) (atom 32 33) (atom 34 35) (close 35 36))
+> (map (lambda (l) (list (syntax:lexeme-class l) (syntax:lexeme-start l) (syntax:lexeme-end l)))
+       (vector->list (chez-scheme:lexer (document:from-datum '(p () "(a" #(img ()) " b)") '(p () "c")))))
+((open 1 2) (atom 2 4) (atom 5 6) (close 6 7) (atom 9 10))
+> (map syntax:lexeme-open-ended? (vector->list (chez-scheme:lexer (document:from-datum "\"a ; b\n; c"))))
+(#t)
+; Highlighting: a buffer whose mode derives from chez-scheme:mode is
+; highlighted by a job; the faces of each kind of text.
+> (define-table derived-keymap)
+> (define-hook derived-hook)
+> (modes:define-major-mode derived (parent chez-scheme:mode) (keymap derived-keymap) (hook derived-hook))
+> (define h (buffers:make "h.ss" "; c\n#| b |# #;(x y) (f \"s\\n\\x3bb;t\" #\\a 1.5 #t #!r6rs #!eof '#0=(a) #0# `(b ,c ,@d) #'e)\n"))
+> (modes:set-major-mode derived h)
+> (faces h)
+(("; c" comment) ("#| b |#" comment) ("#;(x y)" comment) ("\"s" string) ("\\n" string.escape) ("\\x3bb;" string.escape) ("t\"" string) ("#\\a" character) ("1.5" number) ("#t" boolean) ("#!r6rs" keyword.directive) ("#!eof" constant.builtin) ("'" punctuation.special) ("#0=" punctuation.special) ("a" string.special.symbol) ("#0#" punctuation.special) ("`" punctuation.special) ("b" string.special.symbol) ("," punctuation.special) (",@" punctuation.special) ("#'" punctuation.special))
+> (define n (scheme-buffer "n.ss" "(define (area r) \"The area.\" (* r r))\n(define pi 3.14)\n(define-record-type point (fields x))\n(define-enumeration color (red) colors)\n(modes:define-major-mode python (keymap k))\n(define ((curried a) b) a)\n(let loop ([i 0]) (loop i))\n(library (my lib) (export) (import (rnrs)))\n(define (two) \"only a string\")\n(#%car #2%cdr #3%map)\n"))
+; Its library form gives the scope: (rnrs), which binds no library,
+; import or export.
+> (faces n)
+(("define" keyword) ("area" function) ("\"The area.\"" comment.documentation) ("*" function.builtin) ("define" keyword) ("pi" function) ("3.14" number) ("define-record-type" keyword) ("point" type) ("fields" keyword) ("define-enumeration" keyword) ("color" type) ("python" function) ("define" keyword) ("let" keyword) ("loop" function) ("0" number) ("my" module) ("lib" module) ("define" keyword) ("two" function) ("\"only a string\"" string) ("#%car" function.builtin) ("#2%cdr" function.builtin) ("#3%map" function.builtin))
+; A mode change to another stops the job and takes the spans away; so
+; does killing the buffer.
+> (modes:set-major-mode modes:fundamental n)
+> (faces n)
+()
+> (modes:set-major-mode chez-scheme:mode n)
+> (length (faces n))
+25
+> (buffers:kill! n)
+#t
+; Bracket spans go with the job too.
+> (define k (scheme-buffer "k.ss" "(a [b])"))
+> (table-set! syntax:bracket-users 'test (lambda (buffer) (eq? buffer k)))
+> (syntax:bracket-users-changed)
+> (length (brackets k))
+4
+> (modes:set-major-mode modes:fundamental k)
+> (brackets k)
+()
+> (table-remove! syntax:bracket-users 'test)
+> (syntax:bracket-users-changed)
+; After an edit the job lexes the newest text, and the faces follow;
+; text typed right after a lexeme takes its face until then.
+> (define w (scheme-buffer "w.ss" "(car x)\n"))
+> (faces w)
+(("car" function.builtin))
+> (begin (buffers:replace! w 5 5 "-or-cdr") (buffers:spans (buffers:layer w chez-scheme:highlights) 0 15))
+((2 12 ((face . function.builtin))))
+> (faces w)
+()
+> (buffers:replace! w 1 1 "'")
+#<edit 2>
+> (faces w)
+(("'" punctuation.special) ("car-or-cdr" string.special.symbol) ("x" string.special.symbol))
+; The spans do not travel, so a kill carries no highlights.
+> (buffers:travelling-spans w 0 13)
+()
+; The job is told where each edit was, so a space typed after a lexeme,
+; among other spaces, loses the lexeme's face at the next lex.
+> (define sp (scheme-buffer "sp.ss" "(car   x)\n"))
+> (faces sp)
+(("car" function.builtin))
+> (buffers:replace! sp 5 5 " ")
+#<edit 1>
+> (faces sp)
+(("car" function.builtin))
+; Names: the scope comes from the text. #!tuna gives (chezscheme) and
+; (tuna), #!tuna/base (chezscheme) and (tuna base); import forms give
+; their specs, with only, except, prefix, rename, library and for;
+; use-plugin lines give the plugin's main module.
+> (define (word-faces content . words)
+    (let ([b (scheme-buffer "names.ss" content)])
+      (settle b)
+      (let ([result (map (lambda (word) (face-of b word)) words)])
+        (buffers:kill! b)
+        result)))
+> (word-faces "#!tuna\n(define-option x 1 number?) (car 1) (buffers:make)" "define-option" "car" "buffers:make")
+(keyword function.builtin #f)
+> (word-faces "#!tuna/base\n(define-option x 1 number?) (define-public (y) (module-changes 1))" "define-option" "define-public" "module-changes")
+(#f keyword function.builtin)
+> (word-faces "(import (only (rnrs) car) (prefix (buffers) b/) (rename (chezscheme) (cdr tail)))\n(car cdr tail b/buffers:make b/buffers:with-buffer)" "car" "cdr" "tail" "b/buffers:make" "b/buffers:with-buffer")
+(function.builtin #f function.builtin function.builtin keyword)
+> (word-faces "(import (except (chezscheme) car) (for (only (modes) modes:ancestry) run))\n(car cdr modes:ancestry modes:lighter)" "car" "cdr" "modes:ancestry" "modes:lighter")
+(#f function.builtin function.builtin #f)
+> (word-faces "(import (library (chezscheme)))\n(car buffers:make)" "car" "buffers:make")
+(function.builtin #f)
+> (word-faces "(use-plugin modes)\n(modes:ancestry buffers:make)" "modes:ancestry" "buffers:make")
+(function.builtin #f)
+; A text with use-plugin lines is a configuration, which loads into the
+; REPL's environment, so it also has (chezscheme) and (tuna).
+> (word-faces "(import (tuna) (tuna plugins))\n(use-plugin modes)\n(define (f x) (car (list x)))\n(define-option o 1 number?)" "define" "car" "define-option")
+(keyword function.builtin keyword)
+; Data the reader makes that is not a spec, such as a box, a special
+; vector, #!eof or a cycle, is left out of the scope, and the job goes
+; on.
+> (define bad (scheme-buffer "bad.ss" "(import #&x (chezscheme) #vfx(1) #0=(a . #0#))\n(car 1)"))
+> (face-of bad "car")
+function.builtin
+> (begin (buffers:replace! bad (after bad "(car 1)") (after bad "(car 1)") " (cdr 2)") #t)
+#t
+> (face-of bad "cdr")
+function.builtin
+> (buffers:kill! bad)
+#t
+> (word-faces "(library (a #!eof) (export) (import (chezscheme)))\n(car 1)" "car")
+(function.builtin)
+; With none of these, the REPL's scope: (chezscheme), (tuna) and every
+; loaded module. Changeable definitions and hooks are procedures,
+; tables and other values are not, macros are syntax, and % names have
+; no entry.
+> (word-faces "(car define-option modes:ancestry modes:major-mode-changed syntax:lexers faces:comment buffers:with-buffer chez-scheme:%highlighter syntax:class)" "car" "define-option" "modes:ancestry" "modes:major-mode-changed" "syntax:lexers" "faces:comment" "buffers:with-buffer" "chez-scheme:%highlighter" "syntax:class")
+(function.builtin keyword function.builtin function.builtin #f #f keyword #f keyword)
+; The file's own module adds its exports without the prefix, found by
+; its path, or the library a library form defines.
+> (disk:write-text! "~/.config/tuna/lib/shapes.sls" "#!tuna\n(define (area r) (* r r))\n(define-syntax twice (syntax-rules () [(_ e) (begin e e)]))\n(define (both r) (twice (area r)))\n")
+> (import (shapes))
+> (define shapes (files:visit "~/.config/tuna/lib/shapes.sls"))
+> (map (lambda (word) (face-of shapes word)) '("area" "twice" "*" "define-syntax"))
+(function function function.builtin keyword)
+> (cdr (member '("both" function) (faces shapes)))
+(("twice" keyword) ("area" function.builtin))
+> (word-faces "(library (shapes) (export area) (import (chezscheme)))\n(shapes:area twice)" "shapes:area" "twice")
+(#f keyword)
+; A module's names are classified again when it loads again, and the
+; buffers whose scope holds it are highlighted again.
+> (disk:write-text! "~/.config/tuna/lib/shapes.sls" "#!tuna\n(define (area r) (* r r))\n(define-syntax twice (syntax-rules () [(_ e) (begin e e)]))\n(define (both r) (twice (area r)))\n(define (perimeter r) (* 2 r))\n")
+> (define user (scheme-buffer "user.ss" "(import (shapes))\n(shapes:perimeter 1)"))
+> (face-of user "shapes:perimeter")
+#f
+> (eval-file "~/.config/tuna/lib/shapes.sls")
+> (face-of user "shapes:perimeter")
+function.builtin
+; A library the running Tuna has not loaded adds no names.
+> (word-faces "(import (nowhere))\n(nowhere:thing car)" "nowhere:thing" "car")
+(#f #f)
+; Unloading the plugin stops every job and takes away its spans.
+> (map (lambda (layer) (length (buffers:spans layer 0 30))) (buffers:layers user))
+(1 0)
+> (unload-module! '(chez-scheme))
+> (map (lambda (layer) (buffers:spans layer 0 30)) (buffers:layers user))
+(() ())
+; Loading it again highlights the buffers already open in its mode.
+> (load-module! '(chez-scheme))
+> (face-of user "shapes:perimeter")
+function.builtin

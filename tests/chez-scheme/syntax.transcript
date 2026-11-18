@@ -1,0 +1,205 @@
+; Lexers and lexemes. A mode derived from one with a lexer uses it,
+; unless it has an entry of its own; a mode with none has no lexer.
+> (define-table derived-keymap)
+> (define-hook derived-hook)
+> (modes:define-major-mode derived (parent chez-scheme:mode) (keymap derived-keymap) (hook derived-hook))
+> (list (eq? (syntax:lexer derived) chez-scheme:lexer) (syntax:lexer modes:fundamental) (syntax:lexer prog:mode))
+(#t #f #f)
+> (define calls 0)
+> (define (counting-lexer doc) (set! calls (+ calls 1)) (chez-scheme:lexer doc))
+> (table-set! syntax:lexers derived counting-lexer)
+> (eq? (syntax:lexer derived) counting-lexer)
+#t
+; Classes and marks are checked when their forms expand.
+> (syntax:class opne)
+! universe of class does not include specified symbol opne
+> (syntax:lexeme-marks open-ended mismatch)
+! universe of %lexeme-mark does not include specified symbol mismatch
+> (define l (syntax:make-lexeme (syntax:class string) 3 9 2 (syntax:lexeme-marks open-ended)))
+> (list (syntax:lexeme-class l) (syntax:lexeme-start l) (syntax:lexeme-end l) (syntax:lexeme-depth l)
+        (syntax:lexeme-open-ended? l) (syntax:lexeme-mismatched? l) (syntax:lexeme? l) (syntax:lexeme? 'string))
+(string 3 9 2 #t #f #t #f)
+> (raised (lambda () (syntax:make-lexeme 'word 1 2 0 (syntax:lexeme-marks))))
+(syntax:make-lexeme "not a lexeme class")
+> (raised (lambda () (syntax:make-lexeme "open" 1 2 0 (syntax:lexeme-marks))))
+(syntax:make-lexeme "not a lexeme class")
+> (raised (lambda () (syntax:make-lexeme (syntax:class atom) 2 2 0 (syntax:lexeme-marks))))
+(syntax:make-lexeme "not a range")
+> (raised (lambda () (syntax:make-lexeme (syntax:class atom) 1 2 0 '(open-ended))))
+(syntax:make-lexeme "not a set of lexeme marks")
+> (raised (lambda () (syntax:lexeme-start 'x)))
+(syntax:lexeme-start "not a lexeme")
+; The lexer runs once per document, on the main thread, whichever
+; questions are asked; an edit makes a new document.
+> (define d (buffers:make "d.ss" "(a (b c) d)\n"))
+> (modes:set-major-mode derived d)
+> (list (syntax:sexp-before d 9) (syntax:sexp-after d 3) (length (syntax:openings d 5)) (syntax:lexeme-at d 5) (syntax:lexemes d 5 6))
+(4 9 2 #f (#<lexeme atom 5 6 2>))
+> calls
+1
+> (buffers:replace! d 1 1 " ")
+#<edit 1>
+> (syntax:sexp-before d 10)
+5
+> calls
+2
+; A document's lexemes are kept only while something else holds the
+; document.
+> (define-table unhighlighted-keymap)
+> (define-hook unhighlighted-hook)
+> (modes:define-major-mode unhighlighted (parent prog:mode) (keymap unhighlighted-keymap) (hook unhighlighted-hook))
+> (table-set! syntax:lexers unhighlighted chez-scheme:lexer)
+> (define kept (buffers:make "kept.ss" "(a b)\n"))
+> (modes:set-major-mode unhighlighted kept)
+> (syntax:sexp-before kept 6)
+1
+> (define old (weak-cons (buffers:document kept) '()))
+> (begin (buffers:replace! kept 1 1 " ") (syntax:sexp-before kept 7))
+2
+> (begin (buffers:replace! kept 1 1 " ") (syntax:sexp-before kept 8))
+3
+> (collect (collect-maximum-generation))
+> (bwp-object? (car old))
+#t
+; Questions raise on another thread, past the end of the buffer, and
+; for a mode without a lexer.
+> (define (on-thread thunk)
+    (let ([m (make-mutex)] [c (make-condition)] [result #f])
+      (fork-thread (lambda () (let ([r (raised thunk)]) (with-mutex m (set! result r) (condition-signal c)))))
+      (with-mutex m (let wait () (unless result (condition-wait c m) (wait))))
+      result))
+> (on-thread (lambda () (syntax:sexp-before d 3)))
+(syntax:sexp-before "not on the main thread")
+> (raised (lambda () (syntax:openings d 99)))
+(syntax:openings "not a position in the buffer")
+> (raised (lambda () (syntax:lexemes d 0 99)))
+(syntax:lexemes "not a position in the buffer")
+> (raised (lambda () (syntax:lexeme-at d 1 modes:fundamental)))
+(syntax:lexeme-at "the mode has no lexer")
+; A lexer that raises, or returns anything but lexemes in order within
+; the document, makes the question raise, naming the lexer.
+> (define (broken doc) (car '()))
+> (table-set! syntax:lexers derived broken)
+> (define broken-result (raised (lambda () (syntax:sexp-after d 1))))
+> (car broken-result)
+syntax:sexp-after
+> (substring (cadr broken-result) 0 34)
+"the lexer of derived raised: Excep"
+> (define (overlapping doc)
+    (vector (syntax:make-lexeme (syntax:class atom) 1 4 0 (syntax:lexeme-marks))
+            (syntax:make-lexeme (syntax:class atom) 3 5 0 (syntax:lexeme-marks))))
+> (table-set! syntax:lexers derived overlapping)
+> (raised (lambda () (syntax:sexp-after d 1)))
+(syntax:sexp-after "the lexer did not return lexemes in order within the document")
+> (table-set! syntax:lexers derived (lambda (doc) (list)))
+> (raised (lambda () (syntax:sexp-after d 1)))
+(syntax:sexp-after "the lexer did not return lexemes in order within the document")
+> (table-remove! syntax:lexers derived)
+; Sexps: an atom, a string or a list, with the prefixes before it, and
+; comments may come between a prefix and what follows it.
+> (define s (scheme-buffer "sexps.ss" "(f 'x #;(g) ' ; note\n (h) \"s\" #(1) . y)"))
+> (define (sexps b from)
+    (let loop ([at from] [acc '()])
+      (let ([end (syntax:sexp-after b at)])
+        (if end
+            (loop end (cons (document:text (buffers:document b) (syntax:sexp-before b end) end) acc))
+            (reverse acc)))))
+> (sexps s 2)
+("f" "'x" "' ; note\n (h)" "\"s\"" "#(1)" "." "y")
+; Inside a symbol, sexp-before gives that symbol's start; a position
+; between sexps gives the one before; at a list's start, nothing.
+> (define t (scheme-buffer "t.ss" "(define (greet name) (string-append \"Hi \" name))\n(greet \"you\")\n"))
+> (map (lambda (p) (syntax:sexp-before t p)) (list (after t "(gre") (after t "name)") (after t "(def") (after t "(string-append ")))
+(10 9 2 23)
+> (syntax:sexp-before t (after t "(define"))
+2
+> (syntax:sexp-before t (before t "define"))
+#f
+> (syntax:sexp-after t (before t "(greet \"you"))
+63
+; The lists holding a position, outermost first, from the end of each
+; opening to the start of its match; an unmatched list ends with its
+; last lexeme.
+> (map (lambda (o) (syntax:lexeme-start o)) (syntax:openings t (after t "Hi ")))
+(1 22)
+> (syntax:openings t (before t "(string"))
+(#<lexeme open 1 2 1>)
+> (syntax:openings t (after t "name))"))
+()
+> (define u (scheme-buffer "u.ss" "(a (b c\n"))
+> (map syntax:lexeme-start (syntax:openings u 8))
+(1 4)
+> (map syntax:lexeme-start (syntax:openings u 9))
+()
+; Comments are not sexps: inside one, the sexps are those around it.
+> (define m (scheme-buffer "m.ss" "(a ; (b c)\n d)\n#| (e) |#\n(f)\n"))
+> (list (syntax:sexp-after m (after m "(b")) (length (syntax:openings m (after m "(b"))) (syntax:lexeme-class (syntax:lexeme-at m (after m "(b"))))
+(14 1 comment)
+> (call-with-values (lambda () (syntax:top-level-form m (after m "(e"))) list)
+(26 29)
+; Except for sexp-before: inside a ; or #| comment, the comment's text
+; from its first whitespace or opening bracket reads as code, so the
+; example in a comment is the sexp before point, as in Emacs.
+> (define e (scheme-buffer "e.ss" "(define x 1)\n;; (greet:text \"x\")\n#|(f (g y)|#\n#;(h (i z) w)\n;; done\n"))
+> (define (before-text b position) (document:text (buffers:document b) (syntax:sexp-before b position) position))
+> (before-text e (after e "\"x\")"))
+"(greet:text \"x\")"
+> (before-text e (after e "\"x\""))
+"\"x\""
+> (before-text e (after e "(g y)"))
+"(g y)"
+> (before-text e (after e "(i z)"))
+"(i z)"
+> (before-text e (after e ";; done"))
+"done"
+> (before-text e (after e ";; "))
+"(define x 1)\n;; "
+> (syntax:sexp-before e (after e ";; "))
+1
+; A lexer that is not the buffer's own reads only from the last line at
+; or above the position's that starts with an opening bracket, so a lone
+; " in prose above does not make the code below a string.
+> (define p (buffers:make "notes" "He said \"hi.\n(define (f) 1)\n(f)\n"))
+> (modes:major-mode p)
+modes:fundamental
+> (syntax:sexp-before p (after p "1)\n(f)") chez-scheme:mode)
+29
+> (call-with-values (lambda () (syntax:top-level-form p (after p "(defi") chez-scheme:mode)) list)
+(14 28)
+> (define q (scheme-buffer "q.ss" "He said \"hi.\n(define (f) 1)\n(f)\n"))
+> (syntax:sexp-before q (after q "1)\n(f)"))
+9
+; Top-level forms: a sexp no list holds, or a list whose opening bracket
+; is in column 0, which ends a list left open above; the form holding a
+; position, else the first after it, else the last before it.
+> (define f (scheme-buffer "f.ss" "; head\n(define (a)\n  (b\n(define (c) 1)\n  (d))\n'(e)\n; tail\n"))
+> (define (form b position) (call-with-values (lambda () (syntax:top-level-form b position)) (lambda (s e) (and s (document:text (buffers:document b) s e)))))
+> (map (lambda (at) (form f (after f at))) '("; he" "(defi" "(b" "(c) 1" "(d))" "'(e" "; ta"))
+("(define (a)\n  (b" "(define (a)\n  (b" "(define (a)\n  (b" "(define (c) 1)" "(define (c) 1)" "(define (c) 1)" "(define (c) 1)")
+; Closed, the first form still ends before the column-0 one inside it,
+; and the text after that inner form belongs to no form.
+> (define g (scheme-buffer "g.ss" "; head\n(define (a)\n  (b\n(define (c) 1)\n  (d)))\n'(e)\n; tail\n"))
+> (map (lambda (at) (form g (after g at))) '("(defi" "(c) 1" "(d))" "'(e" "; ta"))
+("(define (a)\n  (b" "(define (c) 1)" "'(e)" "'(e)" "'(e)")
+> (form (scheme-buffer "empty.ss" "; nothing\n") 3)
+#f
+; The bracket layer: spans only while a plugin in syntax:bracket-users
+; draws them, one per bracket lexeme, with its depth, or unmatched or
+; mismatched; below the highlights' layer it is drawn inside them.
+> (define k (scheme-buffer "k.ss" "(a [b) #vu8(1) \"(\" ; )\n))"))
+> (brackets k)
+()
+> (syntax:brackets-used? k)
+#f
+> (table-set! syntax:bracket-users 'test (lambda (buffer) (eq? buffer k)))
+> (syntax:brackets-used? k)
+#t
+> (syntax:bracket-users-changed)
+> (brackets k)
+((1 2 ((bracket . 1))) (4 5 ((bracket . 2))) (6 7 ((bracket . mismatched))) (8 13 ((bracket . 2))) (14 15 ((bracket . 2))) (24 25 ((bracket . 1))) (25 26 ((bracket . unmatched))))
+> (map (lambda (layer) (eq? layer (buffers:layer k syntax:brackets))) (buffers:layers k))
+(#f #t)
+> (table-remove! syntax:bracket-users 'test)
+> (syntax:bracket-users-changed)
+> (brackets k)
+()
