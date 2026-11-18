@@ -31,7 +31,7 @@
 > (mouse! v '("action" . "down") '("at" . 1) '("count" . 3))
 > (mouse! v '("action" . "click") '("token" . 9))
 > (take!)
-((("<mouse-1>" #(1 11)) #t) (("<down-mouse-1>" #(1 4)) #t) (("<mouse-1>" #(1 9)) #t))
+((("<mouse-1>" #<posn 1 11>) #t) (("<down-mouse-1>" #<posn 1 4>) #t) (("<mouse-1>" #<posn 1 9>) #t))
 ; A place on an older screen follows the token after it through the
 ; edits since; one whose token was deleted is stale and runs nothing.
 > (buffers:replace! b 1 1 "XX")
@@ -39,20 +39,20 @@
 > (mouse! v '("version" . 0) '("action" . "click") '("line" . 2) '("count" . 2))
 > (mouse! v '("version" . 0) '("action" . "click") '("at" . 1) '("count" . 0))
 > (take!)
-((("<mouse-1>" #(1 13)) #t) (("<mouse-1>" #(1 3)) #t))
+((("<mouse-1>" #<posn 1 13>) #t) (("<mouse-1>" #<posn 1 3>) #t))
 > (buffers:replace! b 7 10 "")
 #<edit 2>
 > (mouse! v '("version" . 0) '("action" . "click") '("at" . 1) '("count" . 5))
 ! Stale click: what was clicked is gone
 > (mouse! v '("version" . 1) '("action" . "click") '("line" . 1) '("count" . 4))
 > (take!)
-((("<mouse-1>" #(1 4)) #t))
+((("<mouse-1>" #<posn 1 4>) #t))
 ; A line place on an older screen counts from that line's start then.
 > (buffers:replace! b 1 1 "\n\n")
 #<edit 3>
 > (mouse! v '("version" . 2) '("action" . "click") '("line" . 2) '("count" . 1))
 > (take!)
-((("<mouse-1>" #(1 11)) #t))
+((("<mouse-1>" #<posn 1 11>) #t))
 > (document:text (buffers:document b))
 "\n\nXXone \nthree\n"
 ; A press is kept for its drag's start, followed to now; a release
@@ -64,11 +64,11 @@
 > (mouse! v '("action" . "down") '("at" . 3) '("count" . 0))
 > (mouse! v '("action" . "drag"))
 > (take!)
-((("<down-mouse-1>" #(1 3)) #t) (("<drag-mouse-1>" #(1 4) #(1 8)) #t) (("<down-mouse-1>" #(1 3)) #t) (("<drag-mouse-1>" #(1 3) #(1 #f)) #t))
+((("<down-mouse-1>" #<posn 1 3>) #t) (("<drag-mouse-1>" #<posn 1 4> #<posn 1 8>) #t) (("<down-mouse-1>" #<posn 1 3>) #t) (("<drag-mouse-1>" #<posn 1 3> #<posn 1 #f>) #t))
 ; A press with no place names no position.
 > (mouse! v '("action" . "down"))
 > (take!)
-((("<down-mouse-1>" #(1 #f)) #t))
+((("<down-mouse-1>" #<posn 1 #f>) #t))
 ; A stale press reports once; its release runs nothing and reports
 ; nothing more.
 > (buffers:replace! b 1 2 "")
@@ -87,7 +87,7 @@
 > (mouse! v '("action" . "drag") '("at" . 1) '("count" . 3))
 ! Stale click: what was clicked is gone
 > (take!)
-((("<down-mouse-1>" #(1 1)) #t) (("<drag-mouse-1>" #(1 1) #(1 3)) #t))
+((("<down-mouse-1>" #<posn 1 1>) #t) (("<drag-mouse-1>" #<posn 1 1> #<posn 1 3>) #t))
 ; A view that has shown another buffer since, or a view that is gone,
 ; makes the click stale.
 > (define other (buffers:make "other" "abc\n"))
@@ -102,7 +102,7 @@
 ! Stale click: what was clicked is gone
 > (mouse! v '("action" . "click") '("at" . 1) '("count" . 2))
 > (take!)
-((("<down-mouse-1>" #(1 2)) #t) (("<mouse-1>" #(1 3)) #t))
+((("<down-mouse-1>" #<posn 1 2>) #t) (("<mouse-1>" #<posn 1 3>) #t))
 ; A press's anchor is in the buffer shown then, so a drag released after
 ; the view changed buffer is stale, even on a screen of the buffer now.
 > (mouse! v '("action" . "down") '("at" . 1) '("count" . 1))
@@ -110,7 +110,7 @@
 > (mouse! v '("action" . "drag") '("at" . 1) '("count" . 2))
 ! Stale click: what was clicked is gone
 > (take!)
-((("<down-mouse-1>" #(1 2)) #t))
+((("<down-mouse-1>" #<posn 1 2>) #t))
 > (views:set-buffer! v other)
 ; A version past the buffer's, or a place outside the content at the
 ; version, is malformed.
@@ -132,7 +132,7 @@
 42
 > (mouse! v '("action" . "move") '("report" . 43) '("at" . 1) '("count" . 1))
 > (list (take!) (car (numbers-after (html-of v c1) "data-reported=\"")))
-(((("<mouse-movement>" #(1 2)) #t)) 43)
+(((("<mouse-movement>" #<posn 1 2>) #t)) 43)
 ; Each drawn node's element names its range; a token place on a node's
 ; opening names the position inside it, so the node encloses it, and on
 ; an atom the position before it.
@@ -157,17 +157,80 @@
 > (mouse! w '("action" . "click") '("token" . 17))
 > (mouse! w '("action" . "click") '("at" . 12) '("count" . 2))
 > (take!)
-((link 7) (link 9) (image 17) (("<mouse-1>" #(2 14)) #t))
+((link 7) (link 9) (image 17) (("<mouse-1>" #<posn 2 14>) #t))
 ; views:keymaps finds the atom right after the cursor too.
 > (views:set-point! w 17)
 > (eq? (car (views:keymaps w)) image-keys)
 #t
-; Positions of mouse keys.
-> (list (views:posn-view '#(2 5)) (views:posn-point '#(2 5)) (views:posn-point '#(2 #f)) (views:posn-view '#(77 1)))
-(#<view 2> 5 #f #f)
-> (raised (lambda () (views:posn-point '#(0 1))))
+; Positions of mouse keys: a posn is a record, read through views'
+; accessors. Without a place sent with it, it has no place or cell.
+> (keys:bind! link-keys "<mouse-1>" record)
+> (keys:bind! image-keys "<mouse-1>" record)
+> (mouse! w '("action" . "click") '("at" . 7) '("count" . 2))
+> (define posn (cadr (car (car (take!)))))
+> (list (views:posn-view posn) (views:posn-point posn) (views:posn-node posn)
+        (call-with-values (lambda () (views:posn-x-y posn)) list) (call-with-values (lambda () (views:posn-cell posn)) list))
+(#<view 2> 9 #f (#f #f) (#f #f))
+> (raised (lambda () (views:posn-point '#(2 1))))
 (views:posn-point "not a position of a mouse key")
 > (raised (lambda () (views:posn-view '(2 1))))
 (views:posn-view "not a position of a mouse key")
+> (raised (lambda () (views:posn-cell 'here)))
+(views:posn-cell "not a position of a mouse key")
 > (raised (lambda () (views:shown-count 'v)))
 (views:shown-count "not a view")
+; A place that names a token names the node the element stands for:
+; the link, whose position is inside it, and the image atom.
+> (mouse! w '("action" . "click") '("token" . 6))
+> (mouse! w '("action" . "click") '("token" . 17))
+> (mouse! w '("action" . "click") '("at" . 7) '("count" . 0))
+> (map (lambda (e) (let ([n (views:posn-node (cadr (car e)))]) (and n (document:node-kind n)))) (take!))
+(clicky-link clicky-image #f)
+; The pointer's place is in px from the clicked part or the view; its cell
+; is counted in the character width and line height the client last
+; reported for the view, from 0.
+> (mouse! v '("action" . "click") '("at" . 1) '("count" . 0) '("x" . 35.5) '("y" . 12))
+> (report! c1 v 1 0 #t)
+> (mouse! v '("action" . "click") '("at" . 1) '("count" . 0) '("x" . 35.5) '("y" . 42) '("keymap" . 99))
+> (map (lambda (e) (let ([posn (cadr (car e))])
+                     (list (call-with-values (lambda () (views:posn-x-y posn)) list)
+                           (call-with-values (lambda () (views:posn-cell posn)) list))))
+       (take!))
+(((35.5 12) (#f #f)) ((35.5 42) (3 2)))
+; An element may carry a keymap that views:keymap-mark names; a click in
+; it looks the mouse key up there before every keymap at its position.
+> (define-table close-keys)
+> (commands:define-command (on-close [event (keys:command-event)])
+    "Records a click on a close button."
+    (set! seen (cons (list 'close (views:posn-point (keys:event-start event))) seen)))
+> (keys:bind! close-keys "<mouse-1>" on-close)
+> (define close-mark (views:keymap-mark close-keys))
+> (list (fixnum? close-mark) (eqv? close-mark (views:keymap-mark close-keys)) (eqv? close-mark (views:keymap-mark link-keys)))
+(#t #t #f)
+> (mouse! w '("action" . "down") '("token" . 6) `("keymap" . ,close-mark))
+> (mouse! w '("action" . "click") '("token" . 6) `("keymap" . ,close-mark))
+> (mouse! w '("action" . "click") '("token" . 6))
+> (map car (take!))
+(("<down-mouse-1>" #<posn 2 7>) close ("<mouse-1>" #<posn 2 7>))
+; Keys the marked keymap does not bind are looked up at the position, as
+; the press above was.
+> (map (lambda (k) (eq? (keys:lookup c1 (list k (views:%make-posn w 7))) record)) '("<down-mouse-1>" "<mouse-1>"))
+(#t #t)
+> (raised (lambda () (views:keymap-mark 'close-keys)))
+(views:keymap-mark "not a keymap")
+; A number that names no keymap marks none.
+> (mouse! w '("action" . "click") '("token" . 6) '("keymap" . 12345))
+> (map car (take!))
+(("<mouse-1>" #<posn 2 7>))
+; A wheel item is a wheel key at its place, as a click is.
+> (keys:bind! keys:global "<wheel-down>" record)
+> (mouse! v '("action" . "wheel") '("direction" . "down") '("at" . 1) '("count" . 2))
+> (take!)
+((("<wheel-down>" #<posn 1 3>) #t))
+; Every button is sent, and a release takes its press's button and
+; keymap.
+> (keys:bind! keys:global "<mouse-3>" record)
+> (mouse! v '("action" . "down") '("button" . 3) '("at" . 1) '("count" . 1))
+> (mouse! v '("action" . "click") '("button" . 3) '("at" . 1) '("count" . 1))
+> (take!)
+((("<mouse-3>" #<posn 1 2>) #t))

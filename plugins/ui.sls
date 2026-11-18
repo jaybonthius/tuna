@@ -196,9 +196,11 @@
   (unless (commands:command? command)
     (assertion-violation who "not a command" command))
   (keys:bind! keymap "<mouse-1>" command)
+  (keys:bind! keymap "<mouse-2>" command)
   (keys:bind! keymap "RET" command)
   (keys:bind! keymap "<down-mouse-1>" keys:ignore)
   (keys:bind! keymap "<drag-mouse-1>" keys:ignore)
+  (keys:bind! keymap "<drag-mouse-2>" keys:ignore)
   (table-set! %buttons kind))
 
 (define-syntax %define-labelled-kind
@@ -538,10 +540,13 @@
 (keys:bind! list-keys "<up>" previous-row)
 (keys:bind! list-keys "RET" choose-row)
 (keys:bind! list-keys "<mouse-1>" choose-row)
+(keys:bind! list-keys "<mouse-2>" choose-row)
 (keys:bind! disabled-keys "<mouse-1>" keys:ignore)
+(keys:bind! disabled-keys "<mouse-2>" keys:ignore)
 (keys:bind! disabled-keys "RET" keys:ignore)
 (keys:bind! disabled-keys "<down-mouse-1>" keys:ignore)
 (keys:bind! disabled-keys "<drag-mouse-1>" keys:ignore)
+(keys:bind! disabled-keys "<drag-mouse-2>" keys:ignore)
 ;; Ahead of the entries that find the button kind's own keymap.
 (add-hook! keys:find-keymaps %disabled-keymaps -10)
 (table-set! web:stylesheets 'ui "ui/ui.css")

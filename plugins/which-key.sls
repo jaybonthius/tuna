@@ -57,6 +57,7 @@
          (let loop ([i 0])
            (and (fx<= (fx+ i 6) n)
                 (or (string=? (substring key i (fx+ i 6)) "mouse-")
+                    (string=? (substring key i (fx+ i 6)) "wheel-")
                     (loop (fx+ i 1))))))))
 
 (define (%extends? keys ready)
@@ -167,12 +168,15 @@
         (%make-entry key (string-append "+" (%label client (string-append keys " " key))) #t))))
 
 (define (%draw-entry e)
-  (haml
-    (:div.which-key-entry
-      (:dt (:kbd (%entry-key e)))
-      (if (%entry-label? e)
-          (:dd.which-key-label (%entry-text e))
-          (:dd (%entry-text e))))))
+  (let ([key (%entry-key e)])
+    (if (%mouse-key? key)
+        (haml (:li (:span.which-key-entry (:kbd key) (%draw-text e))))
+        (haml (:li (:button.which-key-entry ([type "button"] [tabindex "-1"] [data-key key]) (:kbd key) (%draw-text e)))))))
+
+(define (%draw-text e)
+  (if (%entry-label? e)
+      (haml (:span.which-key-text.which-key-label (%entry-text e)))
+      (haml (:span.which-key-text (%entry-text e)))))
 
 (define (%longest strings)
   (fold-left (lambda (n s) (fxmax n (string-length s))) 0 strings))
@@ -189,7 +193,7 @@
                   ([style "--which-key-key-size:" (%longest (map %entry-key entries))
                           ";--which-key-text-size:" (%longest (map %entry-text entries))])
                   (:header.which-key-prefix (:kbd keys))
-                  (:dl.which-key-keys (map %draw-entry entries))))))
+                  (:ul.which-key-keys (map %draw-entry entries))))))
         '())))
 
 ;; The wrapper is drawn even with no popup, so showing or hiding one

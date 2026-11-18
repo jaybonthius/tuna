@@ -229,8 +229,6 @@ editing:next-line
 #t
 > (equal? (keys:active-bindings frame) (keys:active-bindings frame #f))
 #t
-> (raised (lambda () (keys:active-bindings frame 'here)))
-(keys:active-bindings "neither a posn nor #f")
 > (on-thread (lambda () (keys:active-bindings frame)))
 (keys:active-bindings "not on the main thread")
 > (remove-hook! keys:find-keymaps in-d)

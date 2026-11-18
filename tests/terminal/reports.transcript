@@ -25,15 +25,60 @@
 ; reports at the cell clicked; with Shift they are Tuna's.
 > (define r (reader 18 "printf '\\033[?1000h\\033[?1006h'; "))
 > (in-client (lambda () (layout:switch-to-buffer r)))
-; A row's line ends at its last cell with text, so a click names a cell
-; with text.
-> (define (mouse! key position) (in-client (lambda () (keys:press! client (list key (vector (views:id (view)) position))))))
-> (mouse! "<down-mouse-1>" 6)
-> (mouse! "<mouse-1>" 6)
+; The screen names cells, so a click names the screen's node and the
+; cell under the pointer, past a row's text too. Every button and the
+; wheel are reported, with their modifiers; a press's moves report the
+; button held until its release.
+> (define (screen) (let ([doc (buffers:document r)])
+                     (let loop ([p 1]) (let ([t (document:token doc p)])
+                                         (if (and (document:node? t) (eq? (document:node-kind t) 'terminal:%screen)) t (loop (+ p 1)))))))
+> (define (mouse! key column row)
+    (in-client (lambda () (keys:press! client (list key (views:%make-posn (view) (+ (document:node-start (screen)) 1) (screen) terminal:mouse-keymap column row))))))
+> (mouse! "<down-mouse-1>" 2 0)
+> (mouse! "<mouse-1>" 2 0)
 > (read-by r)
 "1b 5b 3c 30 3b 33 3b 31 4d 1b 5b 3c 30 3b 33 3b 31 6d"
-> (mouse! "S-<down-mouse-1>" 7)
-> (mouse! "S-<mouse-1>" 7)
+> (define r (reader 21 "printf '\\033[?1002h\\033[?1006h'; "))
+> (in-client (lambda () (layout:switch-to-buffer r)))
+> (mouse! "<down-mouse-3>" 30 4)
+> (mouse! "<mouse-movement>" 31 4)
+> (read-by r)
+"1b 5b 3c 32 3b 33 31 3b 35 4d 1b 5b 3c 33 34 3b 33 32 3b 35 4d"
+> (define r (reader 18 "printf '\\033[?1000h\\033[?1006h'; "))
+> (in-client (lambda () (layout:switch-to-buffer r)))
+> (mouse! "<down-mouse-2>" 4 2)
+> (mouse! "<mouse-2>" 5 2)
+> (read-by r)
+"1b 5b 3c 31 3b 35 3b 33 4d 1b 5b 3c 31 3b 36 3b 33 6d"
+> (define r (reader 20 "printf '\\033[?1000h\\033[?1006h'; "))
+> (in-client (lambda () (layout:switch-to-buffer r)))
+> (mouse! "C-<wheel-up>" 0 0)
+> (mouse! "<wheel-down>" 1 1)
+> (read-by r)
+"1b 5b 3c 38 30 3b 31 3b 31 4d 1b 5b 3c 36 35 3b 32 3b 32 4d"
+; On the alternate screen, xterm's alternate scroll mode (1007) is on
+; unless the program turns it off, and the wheel sends the arrow keys,
+; as the program's modes encode them.
+> (define r (reader 6 "printf '\\033[?1049h'; "))
+> (in-client (lambda () (layout:switch-to-buffer r)))
+> (define (wheel! key) (in-client (lambda () (keys:press! client (list key (views:%make-posn (view) (+ (document:node-start (screen)) 1) (screen) #f 0 0))))))
+> (wheel! "<wheel-up>")
+> (wheel! "<wheel-down>")
+> (read-by r)
+"1b 5b 41 1b 5b 42"
+; The wheel sends the arrow keys only while the alternate screen shows
+; when the turn arrives, whatever the page drew before.
+> (define r (reader 1 "printf '\\033[?1049h\\033[?1049l'; "))
+> (in-client (lambda () (layout:switch-to-buffer r)))
+> (wheel! "<wheel-up>")
+> (terminal:send! r "x")
+> (read-by r)
+"78"
+; With Shift the event names the character, and the editing commands
+; bound under the screen's keymap run.
+> (define (shift-mouse! key position) (in-client (lambda () (keys:press! client (list key (views:%make-posn (view) position #f terminal:mouse-keymap #f #f))))))
+> (shift-mouse! "S-<down-mouse-1>" 7)
+> (shift-mouse! "S-<mouse-1>" 7)
 > (views:point (view))
 7
 ; What programs report runs the hooks, with plain data, after the

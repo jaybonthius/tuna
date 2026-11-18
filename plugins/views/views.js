@@ -579,6 +579,7 @@ function restoreMoved(records) {
 let scheduled = false;
 new MutationObserver((records) => {
   restoreMoved(records);
+  wheelMarksArrived(records);
   if (scheduled) return;
   scheduled = true;
   requestAnimationFrame(() => {
@@ -591,7 +592,7 @@ new MutationObserver((records) => {
   subtree: true,
   childList: true,
   attributes: true,
-  attributeFilter: ["data-placement", "data-reported"],
+  attributeFilter: ["data-placement", "data-reported", "data-wheel"],
 });
 
 document.addEventListener("scroll", (event) => {
@@ -616,7 +617,6 @@ markWrappedRegions();
 
 const dragThreshold = 3;
 let press = null;
-let cancelClick = false;
 
 function caretAt(x, y) {
   if (typeof document.caretPositionFromPoint === "function") {
@@ -713,12 +713,74 @@ function modifierNames(event) {
   return names;
 }
 
+// The innermost element marked with the attribute from the target up to
+// and including the view, so a mark drawn around a view never takes the
+// clicks on its text.
+function markedWithin(target, view, attribute) {
+  for (let e = target; e !== null; e = e.parentElement) {
+    if (e.hasAttribute(attribute)) return e;
+    if (e === view) return null;
+  }
+  return null;
+}
+
+// A mark names its modifier as keys:event-modifiers does, since plugins
+// write it in Scheme.
+const markModifierHeld = new Map([
+  ["control", (event) => event.ctrlKey],
+  ["meta", (event) => event.altKey],
+  ["shift", (event) => event.shiftKey],
+  ["super", (event) => event.metaKey],
+]);
+
+function takenWithin(target, view, attribute, event) {
+  const element = markedWithin(target, view, attribute);
+  if (element === null) return null;
+  const held = markModifierHeld.get(element.getAttribute(attribute));
+  return held !== undefined && held(event) ? null : element;
+}
+
+// An event in a grid names the node it stands for, never a character,
+// so it is never stale while the node lives.
+function placeFor(view, grid, target, x, y) {
+  if (grid !== null) {
+    const marked = markedAncestor(grid, view, true);
+    return marked === null ? null : placeIn(marked);
+  }
+  return placeOf(view, target, x, y);
+}
+
+function referenceOf(target, view, grid) {
+  for (let e = target; e !== null; e = e.parentElement) {
+    if (e === grid || e === view || e.hasAttribute("data-keymap")) return e;
+  }
+  return view;
+}
+
+function keymapOf(target, view) {
+  return markedWithin(target, view, "data-keymap")?.getAttribute("data-keymap") ?? null;
+}
+
+function contentBox(element) {
+  const box = element.getBoundingClientRect();
+  const style = getComputedStyle(element);
+  return {
+    left: box.left + element.clientLeft + parseFloat(style.paddingLeft),
+    top: box.top + element.clientTop + parseFloat(style.paddingTop),
+  };
+}
+
+function pointer(reference, event) {
+  const box = contentBox(reference);
+  return { x: event.clientX - box.left, y: event.clientY - box.top };
+}
+
 function sendMouse(view, action, place, extra) {
   const version = number(view, "data-version");
   const showing = number(view, "data-showing");
   const id = number(view, "data-view");
   if (version === null || showing === null || id === null) return;
-  send({ type: "mouse", action, button: 1, view: id, version, showing, ...place, ...extra });
+  send({ type: "mouse", action, view: id, version, showing, ...place, ...extra });
 }
 
 function sendMove(view) {
@@ -729,29 +791,53 @@ function sendMove(view) {
   const { x, y, target } = p.pending;
   p.pending = null;
   if (!(target instanceof Element) || target.closest("[data-view]") !== view) return false;
-  const place = placeOf(view, target, x, y);
+  const place = placeFor(view, p.grid, target, x, y);
   if (place === null) return false;
   state.sent = ++reports;
-  sendMouse(view, "move", place, { modifiers: [], report: state.sent });
+  sendMouse(view, "move", place, { modifiers: [], report: state.sent, ...pointer(p.reference, { clientX: x, clientY: y }) });
   return true;
+}
+
+function keymapField(keymap) {
+  return keymap === null ? {} : { keymap: Number(keymap) };
 }
 
 function release(event) {
   const p = press;
   press = null;
-  cancelClick = true;
   const inView = event.target instanceof Element && event.target.closest("[data-view]") === p.view;
-  const place = inView ? placeOf(p.view, event.target, event.clientX, event.clientY) : null;
+  const place = inView ? placeFor(p.view, p.grid, event.target, event.clientX, event.clientY) : null;
   sendMouse(p.view, p.dragging ? "drag" : "click", place ?? {},
-    { clicks: p.clicks, modifiers: modifierNames(event) });
+    { button: p.button, clicks: p.clicks, modifiers: modifierNames(event), ...keymapField(p.keymap),
+      ...(inView ? pointer(p.reference, event) : {}) });
 }
 
-// The right button stays the browser's, and a press on a view's scroll
-// bar scrolls it. Taking the press keeps the browser from selecting text
-// and the keyboard focus where it is.
+// Tuna numbers the buttons as Emacs does on X: the left, middle and
+// right buttons, then back and forward.
+const buttonNumbers = [1, 2, 3, 8, 9];
+const buttonMasks = [1, 4, 2, 8, 16];
+
+// A press Tuna took is Tuna's alone, so what the browser would do after
+// it, a click, a right press's menu, going back or forward, is cancelled
+// until the next press.
+let taken = false;
+
+function cancel(event) {
+  if (!taken) return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+// A press on a view's scroll bar scrolls it. Taking a press keeps the
+// browser from selecting text and the keyboard focus where it is.
 document.addEventListener("mousedown", (event) => {
-  cancelClick = false;
-  if (event.button !== 0 || !(event.target instanceof Element)) return;
+  if (press !== null) {
+    event.preventDefault();
+    return;
+  }
+  taken = false;
+  const button = buttonNumbers[event.button];
+  if (button === undefined || !(event.target instanceof Element)) return;
   const view = event.target.closest("[data-view]");
   if (view === null) return;
   if (view.hasAttribute("data-placement")) {
@@ -760,10 +846,15 @@ document.addEventListener("mousedown", (event) => {
         || event.clientY - box.top - view.clientTop >= view.clientHeight) return;
   }
   event.preventDefault();
-  const clicks = Math.min(Math.max(event.detail, 1), 3);
-  press = { view, x: event.clientX, y: event.clientY, clicks, dragging: false, pending: null };
-  sendMouse(view, "down", placeOf(view, event.target, event.clientX, event.clientY) ?? {},
-    { clicks, modifiers: modifierNames(event) });
+  taken = true;
+  const grid = takenWithin(event.target, view, "data-grid", event);
+  const keymap = keymapOf(event.target, view);
+  const reference = referenceOf(event.target, view, grid);
+  press = { view, x: event.clientX, y: event.clientY, clicks: event.detail, button, mask: buttonMasks[event.button],
+            keymap, grid, reference, dragging: false, pending: null };
+  sendMouse(view, "down", placeFor(view, grid, event.target, event.clientX, event.clientY) ?? {},
+    { button, clicks: event.detail, modifiers: modifierNames(event), ...keymapField(keymap),
+      ...pointer(reference, event) });
 }, true);
 
 // A release outside the window sends no mouseup, so a move with the
@@ -771,7 +862,7 @@ document.addEventListener("mousedown", (event) => {
 window.addEventListener("mousemove", (event) => {
   const p = press;
   if (p === null) return;
-  if ((event.buttons & 1) === 0) {
+  if ((event.buttons & p.mask) === 0) {
     release(event);
     return;
   }
@@ -782,12 +873,74 @@ window.addEventListener("mousemove", (event) => {
 }, { passive: true });
 
 window.addEventListener("mouseup", (event) => {
-  if (event.button === 0 && press !== null) release(event);
+  if (press !== null && buttonNumbers[event.button] === press.button) {
+    event.preventDefault();
+    release(event);
+  } else if (taken) {
+    event.preventDefault();
+  }
 }, true);
 
-window.addEventListener("click", (event) => {
-  if (!cancelClick || event.button !== 0) return;
-  cancelClick = false;
+window.addEventListener("click", cancel, true);
+window.addEventListener("auxclick", cancel, true);
+window.addEventListener("contextmenu", cancel, true);
+
+// Elsewhere the browser scrolls, which keeps its momentum and the scroll
+// reports; an element that takes the wheel gets a wheel key for each line
+// the browser would have scrolled.
+const wheelRest = new WeakMap();
+
+function wheelLines(element, event, delta) {
+  const lh = lineHeight(element) || 16;
+  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) return delta;
+  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) return delta * Math.max(1, Math.floor(element.clientHeight / lh));
+  return delta / lh;
+}
+
+function wheelTurned(event) {
+  const element = event.currentTarget;
+  if (!(event.target instanceof Element)) return;
+  const view = event.target.closest("[data-view]");
+  if (view === null || takenWithin(event.target, view, "data-wheel", event) !== element) return;
   event.preventDefault();
-  event.stopPropagation();
-}, true);
+  const rest = wheelRest.get(element) ?? { x: 0, y: 0 };
+  rest.x += wheelLines(element, event, event.deltaX);
+  rest.y += wheelLines(element, event, event.deltaY);
+  wheelRest.set(element, rest);
+  // A turn names the node the element stands for, as a grid's events
+  // do, so a redraw between turns never makes its place stale.
+  const grid = takenWithin(event.target, view, "data-grid", event) ?? element;
+  const reference = referenceOf(event.target, view, grid);
+  const place = placeFor(view, grid, event.target, event.clientX, event.clientY) ?? {};
+  const extra = { modifiers: modifierNames(event), ...keymapField(keymapOf(event.target, view)), ...pointer(reference, event) };
+  for (const [axis, less, more] of [["y", "up", "down"], ["x", "left", "right"]]) {
+    while (Math.abs(rest[axis]) >= 1) {
+      const step = Math.sign(rest[axis]);
+      rest[axis] -= step;
+      sendMouse(view, "wheel", place, { direction: step < 0 ? less : more, ...extra });
+    }
+  }
+}
+
+// The browser waits for the page before it scrolls wherever a wheel
+// listener may cancel, so only the elements that take the wheel carry one.
+function takeWheel(element) {
+  if (element.hasAttribute("data-wheel")) element.addEventListener("wheel", wheelTurned, { passive: false });
+  else element.removeEventListener("wheel", wheelTurned);
+}
+
+function wheelMarksArrived(records) {
+  for (const record of records) {
+    if (record.type === "attributes") {
+      if (record.attributeName === "data-wheel") takeWheel(record.target);
+      continue;
+    }
+    for (const node of record.addedNodes) {
+      if (!(node instanceof Element)) continue;
+      if (node.hasAttribute("data-wheel")) takeWheel(node);
+      for (const element of node.querySelectorAll("[data-wheel]")) takeWheel(element);
+    }
+  }
+}
+
+for (const element of document.querySelectorAll("[data-wheel]")) takeWheel(element);

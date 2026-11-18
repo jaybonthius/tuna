@@ -11,7 +11,7 @@
 (0 #t)
 > (set-option! which-key:delay 0)
 > (press! "C-c")
-> (let ([html (screen-of client)]) (list (search html wrapped 0) (ends-with html "</dd></div></dl></div></div>")))
+> (let ([html (screen-of client)]) (list (search html wrapped 0) (ends-with html "</span></button></li></ul></div></div>")))
 (0 #t)
 > (press! "z")
 ; A client that web removes takes its timer with it.

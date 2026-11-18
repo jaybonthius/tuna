@@ -101,7 +101,7 @@
   }
 
   /* A program that takes the mouse receives its clicks, not point. */
-  .terminal-screen[data-mouse] {
+  .terminal-screen[data-keymap] {
     cursor: default;
   }
 }

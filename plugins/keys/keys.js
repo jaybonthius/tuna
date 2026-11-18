@@ -111,3 +111,35 @@ window.addEventListener("keydown", (event) => {
   if (settings.quitKeys.includes(keyName(item))) item.quit = true;
   send(item);
 });
+
+// A press on an on-screen key never reaches the views plugin, which
+// cancels what the browser does after the presses it takes, so what
+// follows this one, a right press's menu or a middle click's action, is
+// cancelled here until the next press.
+let onScreenKeyPressed = false;
+
+// On the window, so the press reaches no handler on the document, where
+// the views plugin would take it as a click in a view.
+window.addEventListener("mousedown", (event) => {
+  onScreenKeyPressed = event.target instanceof Element && event.target.closest("[data-key]") !== null;
+  if (onScreenKeyPressed) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}, true);
+
+function cancelAfterOnScreenKey(event) {
+  if (onScreenKeyPressed) event.preventDefault();
+}
+
+window.addEventListener("auxclick", cancelAfterOnScreenKey, true);
+window.addEventListener("contextmenu", cancelAfterOnScreenKey, true);
+
+window.addEventListener("click", (event) => {
+  const element = event.target instanceof Element ? event.target.closest("[data-key]") : null;
+  if (element === null || event.button !== 0) return;
+  event.preventDefault();
+  const item = { type: "key", name: element.getAttribute("data-key") };
+  if (settings.quitKeys.includes(item.name)) item.quit = true;
+  send(item);
+}, true);

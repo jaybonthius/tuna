@@ -31,7 +31,7 @@
 ; Only the focused tab is drawn, under a strip of every tab's title; each
 ; label marks its child's range in the layout buffer.
 > (show-screen c1)
-<div class="layout-screen" data-view="2" data-version="2" data-showing="0"><div class="layout-level focus-path"><div class="tabs focus-path"><div class="tabs-strip" role="tablist"><button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" data-label="notes" data-at="2" data-to="3">notes</button><button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" data-label="other" data-at="3" data-to="4">other</button><button class="tab" type="button" role="tab" tabindex="-1" aria-selected="true" data-label="notes" data-at="4" data-to="5">notes</button></div><div class="tabs-panel" role="tabpanel" aria-label="notes"><div class="layout-view selected" data-at="4" data-to="5"><div class="view" id="view-3" data-view="3" data-version="0" data-showing="0" data-placement="*" data-place-kind="follow" data-place-item="5" data-place-line="2" data-place-at="5" data-base-item="1" data-base-offset="0.0" data-base-height="0.0" data-base-left="0.0" data-scroll-margin="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><div class="line" id="v3-1" data-line="1" data-at="1">one</div><div class="line" id="v3-2" data-line="2"><span class="cursor primary"></span>two</div><div class="line" id="v3-3" data-line="3"><br></div></div></div></div></div></div></div></div>
+<div class="layout-screen" data-view="2" data-version="2" data-showing="0"><div class="layout-level focus-path"><div class="tabs focus-path"><div class="tabs-strip" role="tablist"><div class="tab" data-at="2" data-to="3" data-keymap="1"><button class="layout-tabs-label" type="button" role="tab" tabindex="-1" aria-selected="false" data-label="notes">notes</button><button class="layout-tabs-close" type="button" tabindex="-1" aria-hidden="true" data-keymap="2">×</button></div><div class="tab" data-at="3" data-to="4" data-keymap="1"><button class="layout-tabs-label" type="button" role="tab" tabindex="-1" aria-selected="false" data-label="other">other</button><button class="layout-tabs-close" type="button" tabindex="-1" aria-hidden="true" data-keymap="2">×</button></div><div class="tab" data-at="4" data-to="5" data-keymap="1"><button class="layout-tabs-label" type="button" role="tab" tabindex="-1" aria-selected="true" data-label="notes">notes</button><button class="layout-tabs-close" type="button" tabindex="-1" aria-hidden="true" data-keymap="2">×</button></div></div><div class="tabs-panel" role="tabpanel" aria-label="notes"><div class="layout-view selected" data-at="4" data-to="5"><div class="view" id="view-3" data-view="3" data-version="0" data-showing="0" data-placement="*" data-place-kind="follow" data-place-item="5" data-place-line="2" data-place-at="5" data-base-item="1" data-base-offset="0.0" data-base-height="0.0" data-base-left="0.0" data-scroll-margin="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><div class="line" id="v3-1" data-line="1" data-at="1">one</div><div class="line" id="v3-2" data-line="2"><span class="cursor primary"></span>two</div><div class="line" id="v3-3" data-line="3"><br></div></div></div></div></div></div></div></div>
 ; The frame shows only the views of focused tabs, so C-x o, reuse-view
 ; and the default display action pass over the others.
 > (ids)
@@ -101,35 +101,42 @@
 > (layout:select! b)
 > (views:id (layout:neighbour b (layout:direction right)))
 8
-; A click on a label selects the view its tab leads to, even when the
-; tab's first view starts where views places the click.
-> (define (click! . place)
+; A press on a tab selects the view the tab leads to, as Emacs's tab
+; line selects on the press. The tab's element carries its child's marks
+; and layout-tabs:keymap, so the press names the child and is looked up
+; there first, even when the tab's first view starts where views places
+; the click.
+> (define (mouse! keymap buttons place . fields)
     (let ([s layout:screen-view])
       (parameterize ([web:current-client c1])
         (for-each
           (lambda (action)
             ((table-ref web:input-handlers "mouse") c1
-             (append place
-                     `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
+             (append fields (list place)
+                     (if keymap (list (cons "keymap" (views:keymap-mark keymap))) '())
+                     `(("type" . "mouse") ("action" . ,action) ("button" . ,buttons) ("clicks" . 1) ("modifiers" . #())
                        ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))
                        ("showing" . ,(views:shown-count s))))))
           '("down" "click")))))
+> (define (click! . place) (apply mouse! layout-tabs:keymap 1 place))
 > (define (label-at v) (document:node-start (layout:view-node v)))
+> (define (tab-at child) (cons "token" (document:node-start child)))
 > (layout:select! c)
 > (click! (cons "token" (label-at a)))
 > (selected)
 6
-> (click! (cons "token" (document:node-start (cadr (tabs-children)))))
+> (click! (tab-at (cadr (tabs-children))))
 > (selected)
 8
 > (layout:select! d)
 > (layout:select! b)
 > (layout:select! d)
-> (click! (cons "token" (document:node-start (cadr (tabs-children)))))
+> (click! (tab-at (cadr (tabs-children))))
 > (selected)
 7
-; A click deeper in a tab, on a view's own element, selects that view.
-> (click! (cons "token" (label-at c)))
+; A click deeper in a tab, on a view's own element, which carries no
+; keymap, selects that view.
+> (mouse! #f 1 (cons "token" (label-at c)))
 > (selected)
 8
 ; A click on a tab closed since its screen was drawn is stale.
@@ -233,7 +240,7 @@
 > (set-parts! (layout-tabs:container '() (atom g) (layout-tabs:container '() (atom p) (atom q))))
 > (layout:select! q)
 > (show-screen c1)
-<div class="layout-screen" data-view="2" data-version="18" data-showing="0"><div class="layout-level focus-path"><div class="tabs focus-path"><div class="tabs-strip" role="tablist"><button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" data-label="notes" data-at="2" data-to="3">notes</button><button class="tab" type="button" role="tab" tabindex="-1" aria-selected="true" data-label="notes" data-at="3" data-to="7">notes</button></div><div class="tabs-panel" role="tabpanel" aria-label="notes"><div class="tabs focus-path"><div class="tabs-strip" role="tablist"><button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" data-label="notes" data-at="4" data-to="5">notes</button><button class="tab" type="button" role="tab" tabindex="-1" aria-selected="true" data-label="notes" data-at="5" data-to="6">notes</button></div><div class="tabs-panel" role="tabpanel" aria-label="notes"><div class="layout-view selected" data-at="5" data-to="6"><div class="view" id="view-22" data-view="22" data-version="0" data-showing="0" data-placement="*" data-place-kind="follow" data-place-item="1" data-place-at="1" data-base-item="1" data-base-offset="0.0" data-base-height="0.0" data-base-left="0.0" data-scroll-margin="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><div class="line" id="v22-1" data-line="1" data-at="1"><span class="cursor primary"></span>one</div><div class="line" id="v22-2" data-line="2">two</div><div class="line" id="v22-3" data-line="3"><br></div></div></div></div></div></div></div></div></div></div>
+<div class="layout-screen" data-view="2" data-version="18" data-showing="0"><div class="layout-level focus-path"><div class="tabs focus-path"><div class="tabs-strip" role="tablist"><div class="tab" data-at="2" data-to="3" data-keymap="1"><button class="layout-tabs-label" type="button" role="tab" tabindex="-1" aria-selected="false" data-label="notes">notes</button><button class="layout-tabs-close" type="button" tabindex="-1" aria-hidden="true" data-keymap="2">×</button></div><div class="tab" data-at="3" data-to="7" data-keymap="1"><button class="layout-tabs-label" type="button" role="tab" tabindex="-1" aria-selected="true" data-label="notes">notes</button><button class="layout-tabs-close" type="button" tabindex="-1" aria-hidden="true" data-keymap="2">×</button></div></div><div class="tabs-panel" role="tabpanel" aria-label="notes"><div class="tabs focus-path"><div class="tabs-strip" role="tablist"><div class="tab" data-at="4" data-to="5" data-keymap="1"><button class="layout-tabs-label" type="button" role="tab" tabindex="-1" aria-selected="false" data-label="notes">notes</button><button class="layout-tabs-close" type="button" tabindex="-1" aria-hidden="true" data-keymap="2">×</button></div><div class="tab" data-at="5" data-to="6" data-keymap="1"><button class="layout-tabs-label" type="button" role="tab" tabindex="-1" aria-selected="true" data-label="notes">notes</button><button class="layout-tabs-close" type="button" tabindex="-1" aria-hidden="true" data-keymap="2">×</button></div></div><div class="tabs-panel" role="tabpanel" aria-label="notes"><div class="layout-view selected" data-at="5" data-to="6"><div class="view" id="view-22" data-view="22" data-version="0" data-showing="0" data-placement="*" data-place-kind="follow" data-place-item="1" data-place-at="1" data-base-item="1" data-base-offset="0.0" data-base-height="0.0" data-base-left="0.0" data-scroll-margin="0" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><div class="line" id="v22-1" data-line="1" data-at="1"><span class="cursor primary"></span>one</div><div class="line" id="v22-2" data-line="2">two</div><div class="line" id="v22-3" data-line="3"><br></div></div></div></div></div></div></div></div></div></div>
 > (click! (cons "token" (label-at p)))
 > (selected)
 21
@@ -354,3 +361,61 @@
 (layout:level () (layout-tabs:container () #(views:view ((view . 40) (buffer . "notes"))) #(views:view ((view . 41) (buffer . "notes")))))
 > (raised (lambda () (layout-tabs:recent-tab 1)))
 (layout-tabs:recent-tab "no more recent tabs")
+; The press on a tab selects; its release does nothing.
+> (define r1 (views:make notes))
+> (define r2 (views:make other))
+> (set-parts! (layout-tabs:container '() (atom r1) (atom r2)))
+> (layout:select! r2)
+> (parameterize ([web:current-client c1])
+    ((table-ref web:input-handlers "mouse") c1
+     `(("type" . "mouse") ("action" . "click") ("button" . 1) ("clicks" . 1) ("modifiers" . #())
+       ("token" . ,(label-at r1)) ("keymap" . ,(views:keymap-mark layout-tabs:keymap))
+       ("view" . ,(views:id layout:screen-view)) ("version" . ,(buffers:version layout:buffer))
+       ("showing" . ,(views:shown-count layout:screen-view)))))
+> (eq? (layout:selected-view) r2)
+#t
+; The close button carries layout-tabs:close-keymap, so its click closes
+; the tab clicked, with every part in it, without selecting it first; the
+; middle button on a tab closes it too. Each names the tab by its child,
+; not by the selected view.
+> (define r3 (views:make notes))
+> (set-parts! (layout-tabs:container '() (atom r1) (layout-split:container '((direction . row)) (atom r2) (atom r3))))
+> (layout:select! r1)
+> (mouse! layout-tabs:close-keymap 1 (tab-at (cadr (tabs-children))))
+> (list (eq? (layout:selected-view) r1) (length (tabs-children)))
+(#t 1)
+> (define r4 (layout-tabs:add-tab! r1 other))
+> (mouse! layout-tabs:keymap 2 (tab-at (car (tabs-children))))
+> (list (eq? (layout:selected-view) r4) (length (tabs-children)))
+(#t 1)
+> (layout:select! (layout-tabs:add-tab! r4 other))
+> (mouse! layout-tabs:close-keymap 2 (tab-at (car (tabs-children))))
+> (length (tabs-children))
+1
+; A tab holding a locked part stays, as close-other-tabs keeps one.
+> (define r5 (views:make notes))
+> (define r6 (views:make notes))
+> (set-parts! (layout-tabs:container '() (atom r5) (atom r6 '(locked . #t))))
+> (layout:select! r5)
+> (mouse! layout-tabs:close-keymap 1 (tab-at (cadr (tabs-children))))
+> (length (tabs-children))
+2
+; The close button's press does nothing, so pressing it selects no tab.
+> (map (lambda (b) (cons (car b) (commands:command-name (cdr b)))) (keys:bindings layout-tabs:close-keymap))
+(("<down-mouse-1>" . keys:ignore) ("<mouse-1>" . layout-tabs:mouse-close-tab) ("<mouse-2>" . layout-tabs:mouse-close-tab))
+; A tab's child names the tab even when it is a tabs container, whose
+; first tab's child starts where the outer tab's child is entered.
+> (define r7 (views:make notes))
+> (define r8 (views:make notes))
+> (define r9 (views:make other))
+> (set-parts! (layout-tabs:container '() (atom r7) (layout-tabs:container '() (atom r8) (atom r9))))
+> (layout:select! r7)
+> (define (inner-first) (document:token (buffers:document layout:buffer) (+ (document:node-start (cadr (tabs-children))) 1)))
+> (= (document:node-start (inner-first)) (+ (document:node-start (cadr (tabs-children))) 1))
+#t
+> (mouse! layout-tabs:close-keymap 1 (tab-at (inner-first)))
+> (tree)
+(layout:level () (layout-tabs:container () #(views:view ((view . 50) (buffer . "notes"))) (layout-tabs:container () #(views:view ((view . 52) (buffer . "other"))))))
+> (mouse! layout-tabs:close-keymap 1 (tab-at (cadr (tabs-children))))
+> (tree)
+(layout:level () (layout-tabs:container () #(views:view ((view . 50) (buffer . "notes")))))

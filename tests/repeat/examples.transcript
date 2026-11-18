@@ -63,7 +63,7 @@
 ; A click ends the repetition without clearing the echo area, so the
 ; hint goes when the repetition ends.
 > (keys:bind! keys:global "<mouse-1>" stay)
-> (define (click) (press! c1 (list "<mouse-1>" (vector (views:id (layout:selected-view)) 0))))
+> (define (click) (press! c1 (list "<mouse-1>" (views:%make-posn (layout:selected-view) 0))))
 > (click)
 > (list (keymap-names c1) (echo-area:current-message))
 ((layout:keymap keys:global) #f)

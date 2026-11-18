@@ -89,6 +89,17 @@ none
 > (click-token-in! client (popup) 1)
 > (menu)
 (("Actions" ("w" "Where") ("s" "Where, staying") ("i" "Inner, above") ("o" "Inner, alone")))
+; Nor does the middle or the right button outside them, while the middle
+; button on an entry presses it, as Emacs's transient-button-map binds it.
+> (define (button-click! v at button)
+    (for-each (lambda (action) (mouse-in! client v action `(("button" . ,button) ("token" . ,at)))) '("down" "click")))
+> (button-click! (popup) 1 2)
+> (button-click! (popup) 1 3)
+> (list (menu) (length log))
+((("Actions" ("w" "Where") ("s" "Where, staying") ("i" "Inner, above") ("o" "Inner, alone"))) 6)
+> (button-click! (popup) (entry-at "s") 2)
+> (length log)
+7
 > (mouse-in! client user-view "down" '(("at" . 1) ("count" . 0)))
 > (menu)
 ()

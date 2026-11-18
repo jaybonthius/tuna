@@ -2,8 +2,8 @@
 ; movements are not recorded, with or without modifiers, though the
 ; command one runs is.
 > (mark!)
-> (press! (list "<down-mouse-1>" (vector 1 0)) (list "<mouse-1>" (vector 1 0)))
-> (press! (list "<mouse-movement>" (vector 1 2)) (list "S-<mouse-movement>" (vector 1 3)))
+> (press! (list "<down-mouse-1>" (views:%make-posn (layout:selected-view) 0)) (list "<mouse-1>" (views:%make-posn (layout:selected-view) 0)))
+> (press! (list "<mouse-movement>" (views:%make-posn (layout:selected-view) 2)) (list "S-<mouse-movement>" (views:%make-posn (layout:selected-view) 3)))
 > (since-mark)
 ("<down-mouse-1>" editing:mouse-drag-region "<mouse-1>" harpo:honk harpo:honk harpo:honk)
 ; Every client's keys go in one record, in the order they came, each

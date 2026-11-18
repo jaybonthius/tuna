@@ -8,8 +8,8 @@
 > (length (screen-status-lines client))
 > (define status-views (map status-view-of windows))
 > (map (lambda (sv) (eq? (views:buffer sv) line-buffer)) status-views)
-> (map (lambda (sv w) (eq? (status-line:posn-view (vector (views:id sv) 1)) w)) status-views windows)
-> (status-line:posn-view (vector (views:id (car windows)) 1))
+> (map (lambda (sv w) (eq? (status-line:posn-view (views:%make-posn sv 1)) w)) status-views windows)
+> (status-line:posn-view (views:%make-posn (car windows) 1))
 ; A click on a segment with no keymap of its own is looked up in
 ; status-line:keymap, which selects the clicked window; a click on a
 ; locked window's line selects nothing.
@@ -58,7 +58,7 @@
 (#t #t)
 (#t #t)
 #f
-(("<mouse-1>" . status-line:mouse-select-view) ("<down-mouse-1>" . keys:ignore) ("<drag-mouse-1>" . keys:ignore))
+(("<mouse-1>" . status-line:mouse-select-view) ("<mouse-2>" . status-line:mouse-reset-layout) ("<mouse-3>" . status-line:mouse-delete-view) ("<down-mouse-1>" . keys:ignore) ("<drag-mouse-1>" . keys:ignore))
 #t
 #<edit 2>
 #t
@@ -69,3 +69,61 @@
 #<edit 3>
 #f
 1
+; As on Emacs's mode line, the middle button keeps only the clicked
+; window in its level and the right button deletes the clicked window,
+; whichever is selected.
+> (define (button-click! v button at)
+    (for-each
+      (lambda (action)
+        (parameterize ([web:current-client client])
+          ((table-ref web:input-handlers "mouse") client
+           `(("type" . "mouse") ("action" . ,action) ("button" . ,button) ("clicks" . 1) ("modifiers" . #())
+             ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))
+             ("showing" . ,(views:shown-count v)) ("token" . ,at)))))
+      '("down" "click")))
+> (define (split!) (layout-split:split-view! (view) (layout-split:direction row)) (void))
+> (split!)
+> (split!)
+> (define three (layout:views))
+> (length (screen-status-lines client))
+3
+> (layout:select! (car three))
+> (button-click! (status-view-of (caddr three)) 3 2)
+> (list (length (layout:views)) (eq? (view) (car three)) (memq (caddr three) (layout:views)))
+(2 #t #f)
+> (button-click! (status-view-of (cadr three)) 2 2)
+> (list (length (layout:views)) (eq? (view) (cadr three)))
+(1 #t)
+; The right button deletes neither a locked window nor the only window
+; of its level, even inside a container holding only it, and selects
+; neither.
+> (button-click! (status-view-of (view)) 3 2)
+> (list (length (layout:views)) (eq? (view) (cadr three)))
+(1 #t)
+> (commands:run layout:part-mode)
+> (commands:run layout-split:wrap-in-row)
+> (commands:run layout:part-mode-leave)
+> (document:node-kind (document:enclosing (buffers:document layout:buffer) (document:node-start (layout:view-node (view)))))
+> (length (screen-status-lines client))
+layout-split:container
+1
+> (button-click! (status-view-of (view)) 3 2)
+> (list (length (layout:views)) (eq? (view) (cadr three)))
+(1 #t)
+> (split!)
+> (define two (layout:views))
+> (layout:select! (car two))
+> (length (screen-status-lines client))
+> (buffers:replace! layout:buffer (document:node-start (layout:view-node (cadr two))) (document:node-end (layout:view-node (cadr two)))
+    (views:view `((view . ,(views:id (cadr two))) (buffer . "notes") (locked . #t))))
+> (button-click! (status-view-of (cadr two)) 3 2)
+> (list (length (layout:views)) (eq? (view) (car two)))
+2
+#<edit 10>
+(2 #t)
+; Nor the last view that is not locked, which layout keeps.
+> (layout:deletable? (layout:view-node (car two)))
+> (button-click! (status-view-of (car two)) 3 2)
+> (list (length (layout:views)) (eq? (view) (car two)))
+#f
+(2 #t)

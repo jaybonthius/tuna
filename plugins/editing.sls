@@ -13,7 +13,8 @@
    set-marks! forget-temporary! exchange-marks! check-regions word-characters-in words-from
    line-motion-target recase! capitalizer replace-region-or! insert-at-cursors! kill-ranges! after-kill?
    remember-kill! yank-pieces! yanked-in? replace-yank! pure-text note-change! clear-changed-marks!
-   nonempty-region? shift-selected keep-changed-marks! place! select-between! drag-keymap start-drag! drag-in drag-anchor-position drag-mode
+   nonempty-region? shift-selected keep-changed-marks! place! place-temporary! select-between! drag-keymap start-drag! drag-in
+   drag-anchor-position drag-mode mouse-range
    drag-moved? drag-moved?-set!)
 
   (define main-thread (get-thread-id))
@@ -480,6 +481,10 @@
                (values (fxmax lo (document:line-start doc (document:line doc s)))
                        (if (fx< last (document:line doc hi)) (fxmin hi (document:line-start doc (fx+ last 1))) hi)))]
         [else (values s e)])))
+
+  (define (place-temporary! c point mark)
+    (views:set-cursor! c point mark)
+    (eq-hashtable-set! temporary c mark))
 
   (define (select-between! view c a b mode dragging?)
     (let ([doc (buffers:document (views:buffer view))])
@@ -1313,6 +1318,62 @@
                  (let ([d (drag-in (web:current-client) view)])
                    (select-between! view c (if d (drag-anchor-position d) p) p mode #f))]))))))))
 
+;; No browser lets a page read the system's primary selection, so it is
+;; kept here, shared by every client, as Emacs keeps one inside its
+;; session on MS-Windows.
+(define %primary #f)
+
+(define (primary-selection)
+  (check-main-thread 'editing:primary-selection)
+  %primary)
+
+(define (%select-active-region! command)
+  (let ([view (layout:selected-view)])
+    (when (and view (views:buffer view))
+      (let* ([c (car (views:cursors view))] [p (views:cursor-point c)] [m (views:cursor-mark c)])
+        (when (nonempty-region? p m)
+          (set! %primary (kill-ring:piece (views:buffer view) (fxmin p m) (fxmax p m))))))))
+
+(define %saved-at #f)
+
+(commands:define-command (mouse-save-then-kill [event (keys:command-event)])
+  "With no region, sets the mark at point and point at the click, a temporary region; with one, moves its nearer end to the click, by words or lines after a second or third press. Run again at the same click, kills the region."
+  (let ([view (%mouse-view 'editing:mouse-save-then-kill event)] [saved %saved-at])
+    (set! %saved-at #f)
+    (when view
+      (let ([p (views:posn-point (keys:event-start event))])
+        (when p
+          (%in-view view
+            (lambda (c)
+              (let ([point (views:cursor-point c)] [mark (views:cursor-mark c)])
+                (cond
+                  [(and saved mark (eq? (commands:last-command) mouse-save-then-kill)
+                        (eq? (car saved) view) (fx= (cdr saved) p))
+                   (kill-region)]
+                  [mark
+                   (let ([doc (buffers:document (views:buffer view))] [d (drag-in (web:current-client) view)])
+                     (let-values ([(lo hi) (content-bounds view doc)])
+                       (let-values ([(s e) (mouse-range doc p p (if d (drag-mode d) 1) lo hi
+                                                        (word-characters-in (views:buffer view)))])
+                         (if (fx< (fxabs (fx- p mark)) (fxabs (fx- p point)))
+                             (place-temporary! c point s)
+                             (place-temporary! c e mark)))))
+                   (set! %saved-at (cons view p))]
+                  [else
+                   (place-temporary! c p point)
+                   (set! %saved-at (cons view p))])))))))))
+
+(commands:define-command (mouse-yank-primary [event (keys:command-event)])
+  "Selects the view clicked and inserts the primary selection at the click, leaving point after it; does nothing without one."
+  (let ([view (%mouse-view 'editing:mouse-yank-primary event)] [primary %primary])
+    (when (and view primary)
+      (let ([p (views:posn-point (keys:event-start event))])
+        (when p
+          (%in-view view
+            (lambda (c)
+              (clear-marks! view)
+              (views:set-cursor! c (kill-ring:insert! (views:buffer view) p primary) #f))))))))
+
 (define (%quit-clears-marks quit)
   (let ([v (views:current)])
     (when (and v (views:buffer v)) (clear-marks! v)))
@@ -1321,6 +1382,7 @@
 (add-hook! buffers:after-edit note-change!)
 (add-hook! commands:after-command clear-changed-marks!)
 (add-hook! commands:after-command remember-kill!)
+(add-hook! commands:after-command %select-active-region!)
 (advice-add! keys:keyboard-quit %quit-clears-marks)
 
 (keys:bind! keys:global "<printing-char>" self-insert)
@@ -1383,4 +1445,6 @@
 (keys:bind! keys:global "<down-mouse-1>" mouse-drag-region)
 (keys:bind! keys:global "<mouse-1>" mouse-set-point)
 (keys:bind! keys:global "<drag-mouse-1>" mouse-set-region)
+(keys:bind! keys:global "<mouse-2>" mouse-yank-primary)
+(keys:bind! keys:global "<mouse-3>" mouse-save-then-kill)
 (keys:bind! drag-keymap "<mouse-movement>" mouse-drag-movement)

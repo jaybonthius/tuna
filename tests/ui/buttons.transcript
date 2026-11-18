@@ -8,7 +8,7 @@
 > (ui:define-button go note)
 > (ui:define-link more note)
 > (map (lambda (b) (cons (car b) (commands:command-name (cdr b)))) (keys:bindings go-keys))
-(("<mouse-1>" . note) ("RET" . note) ("<down-mouse-1>" . keys:ignore) ("<drag-mouse-1>" . keys:ignore))
+(("<mouse-1>" . note) ("<mouse-2>" . note) ("RET" . note) ("<down-mouse-1>" . keys:ignore) ("<drag-mouse-1>" . keys:ignore) ("<drag-mouse-2>" . keys:ignore))
 > (define b (buffers:make "*buttons*" (buffers:text '() "Run " (go '((n . 1)) "Go") " or " (more '((n . 2)) "more") "\n")))
 > (show! b)
 > (element (view) "<button class=\"ui-button\"" "button")
@@ -28,6 +28,16 @@
 > (click-at! other 15)
 > (list pushed (views:id (view)))
 ((2 2 1) 1)
+; The middle button pushes a button too, as Emacs's button-map binds
+; mouse-2, and a middle drag off one pushes nothing.
+> (define (middle! v action place) (mouse-in! v action place '("button" . 2)))
+> (middle! (view) "down" '(("at" . 7) ("count" . 0)))
+> (middle! (view) "click" '(("at" . 7) ("count" . 0)))
+> (middle! (view) "down" '(("at" . 7) ("count" . 0)))
+> (middle! (view) "drag" '(("at" . 2) ("count" . 0)))
+> (list pushed (views:id (view)))
+((1 2 2 1) 1)
+> (set! pushed (cdr pushed))
 ; RET with point in a button pushes it; outside every button, RET is
 ; whatever else binds it, and the command's parameter raises.
 > (views:set-point! (view) 7)
@@ -82,6 +92,8 @@ hi
 > (click-token! (view) 10)
 > (views:set-buffer! other d)
 > (click-at! other 12)
+> (middle! (view) "down" '(("at" . 7) ("count" . 0)))
+> (middle! (view) "click" '(("at" . 7) ("count" . 0)))
 > (list (eq? pushed before) (views:point (view)) (views:id (view)))
 (#t 2 1)
 > (views:set-point! (view) 7)

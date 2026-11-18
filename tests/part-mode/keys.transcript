@@ -42,7 +42,7 @@
 ; So does a click, which reaches keys without the layout's key handler.
 > (press! desktop '("x" "control") '("w") '("w"))
 > (layout:call-with-frame (layout:frame desktop)
-    (lambda () (keys:press! desktop (list "<mouse-1>" (vector (views:id v1) 0)))))
+    (lambda () (keys:press! desktop (list "<mouse-1>" (views:%make-posn v1 0)))))
 > (list (layout:part-mode?) (selected))
 (#f 3)
 ; The selected part is outlined on every client while the mode is on.

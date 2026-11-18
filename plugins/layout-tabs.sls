@@ -36,6 +36,15 @@
 
 (import %internals)
 
+(define-table keymap "The keymap of the tabs in a tabs container's strip.")
+
+(define-table close-keymap "The keymap of a tab's close button.")
+
+;; A tab is drawn as two buttons side by side, since a button may not
+;; hold another; the tab's element carries its child's marks, so a click
+;; on either names the child. A tablist may own only tabs, so the close
+;; button is hidden from assistive technology, which closes a tab by its
+;; key instead.
 (define (%draw-tabs node children focused draw-child client)
   (let ([shown (or (and focused
                         (find (lambda (c) (same-part? c focused)) children))
@@ -44,18 +53,19 @@
             (:div.tabs-strip ([role "tablist"])
               (map (lambda (c)
                      (let ([title (layout:part-title c)])
-                       (haml (:button.tab ([type "button"] [role "tab"] [tabindex "-1"]
-                                           [aria-selected (if (eq? c shown) "true" "false")] [data-label title]
-                                           [data-at (document:node-start c)] [data-to (document:node-end c)])
-                               title))))
+                       (haml (:div.tab ([data-at (document:node-start c)] [data-to (document:node-end c)]
+                                        [data-keymap (views:keymap-mark keymap)])
+                               (:button.layout-tabs-label ([type "button"] [role "tab"] [tabindex "-1"]
+                                                           [aria-selected (if (eq? c shown) "true" "false")] [data-label title])
+                                 title)
+                               (:button.layout-tabs-close ([type "button"] [tabindex "-1"] [aria-hidden "true"]
+                                                           [data-keymap (views:keymap-mark close-keymap)])
+                                 "×")))))
                    children))
             (:div.tabs-panel ([role "tabpanel"] [aria-label (layout:part-title shown)]) (draw-child shown))))))
 
-(define-table keymap "The keymap of tabs containers, for clicks on their labels.")
-
 (layout:define-container container
   (draw %draw-tabs)
-  (keymap keymap)
   (show-focused))
 
 (define (%kind) (car (container '())))
@@ -171,24 +181,28 @@
         (error 'layout-tabs:recent-tab "no more recent tabs"))
       (layout:select! (layout:part-view (list-ref stops (- n 1)))))))
 
-;; views places a click on a label of a container one past the
-;; container's start, where its first child may start too, so a click
-;; there is taken for the label and the tab's own focused children decide
-;; the view; a click deeper in the tab is layout's.
-(commands:define-command (mouse-select-tab [event (keys:command-event)])
-  "Selects the view the focused children lead to in the tab whose label was clicked, unless it is locked."
+(define (%clicked-tab who event)
   (unless (keys:event? event)
-    (assertion-violation 'layout-tabs:mouse-select-tab "not an event" event))
-  (let* ([posn (keys:event-start event)] [v (views:posn-view posn)] [p (views:posn-point posn)])
-    (when (and v p (eq? (views:buffer v) layout:buffer))
-      (let-values ([(tabs tab) (holding-tabs p (%kind))])
-        (cond
-          [(not tab) (void)]
-          [(fx<= p (fx+ (document:node-start tab) 1))
-           (let ([target (layout:part-view tab)])
-             (unless (layout:locked? (layout:view-node target))
-               (layout:select! target)))]
-          [else (layout:mouse-select-view event)])))))
+    (assertion-violation who "not an event" event))
+  (let* ([posn (keys:event-start event)] [v (views:posn-view posn)] [child (views:posn-node posn)])
+    (and v child (eq? (views:buffer v) layout:buffer)
+         (let-values ([(tabs tab) (holding-tabs (document:node-start child) (%kind))])
+           (and tab (same-part? tab child) tab)))))
+
+(commands:define-command (mouse-select-tab [event (keys:command-event)])
+  "Selects the view the focused children lead to in the tab clicked, unless it is locked."
+  (let ([tab (%clicked-tab 'layout-tabs:mouse-select-tab event)])
+    (when tab
+      (let ([target (layout:part-view tab)])
+        (unless (layout:locked? (layout:view-node target))
+          (layout:select! target))))))
+
+;; A lock binds the user's commands, so a tab holding a locked part stays.
+(commands:define-command (mouse-close-tab [event (keys:command-event)])
+  "Deletes the tab clicked, with every part in it, unless it holds a locked part."
+  (let ([tab (%clicked-tab 'layout-tabs:mouse-close-tab event)])
+    (when (and tab (not (holds-locked? tab)))
+      (layout:delete-part! tab))))
 
 (commands:define-command (wrap-in-tabs)
   "Wraps the selected part in tabs."
@@ -199,6 +213,11 @@
 (keys:bind! keys:global "C-x t 1" close-other-tabs)
 (keys:bind! keys:global "C-x t o" next-tab)
 (keys:bind! keys:global "C-x t O" previous-tab)
-(keys:bind! keymap "<mouse-1>" mouse-select-tab)
+(keys:bind! keymap "<down-mouse-1>" mouse-select-tab)
+(keys:bind! keymap "<mouse-1>" keys:ignore)
+(keys:bind! keymap "<mouse-2>" mouse-close-tab)
+(keys:bind! close-keymap "<down-mouse-1>" keys:ignore)
+(keys:bind! close-keymap "<mouse-1>" mouse-close-tab)
+(keys:bind! close-keymap "<mouse-2>" mouse-close-tab)
 (keys:bind! layout:part-mode-keymap "w t" wrap-in-tabs)
 (table-set! web:stylesheets 'layout-tabs "layout-tabs/layout-tabs.css")

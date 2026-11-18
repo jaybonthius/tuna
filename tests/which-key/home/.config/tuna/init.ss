@@ -37,6 +37,7 @@
 (keys:bind! keys:global "C-c M-a" harpo:honk)
 (keys:bind! keys:global "C-c C-M-a" harpo:honk)
 (keys:bind! keys:global "<mouse-3> a" harpo:honk)
+(keys:bind! keys:global "<wheel-down> a" harpo:honk)
 
 (define client (web:add-client! 1))
 
@@ -107,11 +108,11 @@
          (let ([header (text-between html "<header class=\"which-key-prefix\"><kbd>" "</kbd>" at)])
            (cons (car header)
                  (let loop ([from (cdr header)])
-                   (let ([key (text-between html "<dt><kbd>" "</kbd>" from)])
+                   (let ([key (text-between html "<kbd>" "</kbd>" from)])
                      (if key
-                         (let* ([dd (search html "<dd" (cdr key))]
-                                [label? (string=? (substring html dd (+ dd 4)) "<dd ")]
-                                [text (text-between html ">" "</dd>" dd)])
+                         (let* ([span (search html "<span class=\"which-key-text" (cdr key))]
+                                [label? (string=? (substring html (+ span 27) (+ span 43)) " which-key-label")]
+                                [text (text-between html ">" "</span>" span)])
                            (cons (append (list (unescaped (car key)) (unescaped (car text))) (if label? '(label) '()))
                                  (loop (cdr text))))
                          '()))))))))

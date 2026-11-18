@@ -104,7 +104,7 @@
 > (selected)
 3
 ; A click on the layout's drawing selects the view its part leads to.
-> (commands:run layout:mouse-select-view (list "<mouse-1>" (vector (views:id layout:screen-view) (document:node-start (layout:view-node c)))))
+> (commands:run layout:mouse-select-view (list "<mouse-1>" (views:%make-posn layout:screen-view (document:node-start (layout:view-node c)))))
 > (selected)
 5
 > (raised (lambda () (commands:run layout:mouse-select-view 999)))
@@ -166,6 +166,12 @@
 (layout:delete-part! "not a node")
 > (layout:select! a)
 > (layout:select! c)
+; layout:deletable? says whether layout:delete-part! deletes a part
+; rather than raising.
+> (map (lambda (v) (layout:deletable? (layout:view-node v))) (list a b c echo))
+(#t #t #t #t)
+> (layout:deletable? (document:token (buffers:document layout:buffer) 0))
+#f
 ; Deleting the selected view selects where the focused children lead.
 > (layout:delete-part! (layout:view-node c))
 > (tree)
@@ -178,6 +184,8 @@
 > (selected)
 3
 ; A level keeps its part.
+> (layout:deletable? (layout:view-node a))
+#f
 > (raised (lambda () (layout:delete-part! (layout:view-node a))))
 (layout:delete-part! "the last view of its level")
 > (commands:run layout:delete-view)

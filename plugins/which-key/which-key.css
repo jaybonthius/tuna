@@ -34,32 +34,57 @@
   /* The sizes are character counts from the server, which hold only in the code font. */
   .which-key-keys {
     margin: 0;
+    padding: 0;
+    list-style: none;
     column-width: calc((var(--which-key-key-size) + var(--which-key-text-size) + 1) * 1ch);
     column-gap: var(--tuna-space-7);
+  }
+
+  .which-key-keys > li {
+    break-inside: avoid;
   }
 
   .which-key-entry {
     display: flex;
     gap: 1ch;
-    break-inside: avoid;
+    box-sizing: border-box;
+    inline-size: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    line-height: inherit;
+    text-align: start;
+    color: inherit;
+    background: none;
   }
 
-  .which-key-entry > dt {
+  button.which-key-entry {
+    cursor: pointer;
+  }
+
+  /* Overlays, so the popup's background stays under them. */
+  button.which-key-entry:hover {
+    background-image: linear-gradient(var(--which-key-hover-background, var(--tuna-hover)),
+                                      var(--which-key-hover-background, var(--tuna-hover)));
+  }
+
+  button.which-key-entry:active {
+    background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
+  }
+
+  .which-key-entry > kbd {
     flex: none;
     min-inline-size: calc(var(--which-key-key-size) * 1ch);
-  }
-
-  .which-key-entry kbd {
     border: 0;
     padding: 0;
     color: var(--which-key-key-color, var(--tuna-info));
     font-weight: var(--tuna-font-weight-semibold);
   }
 
-  .which-key-entry > dd {
+  .which-key-text {
     flex: 0 1 auto;
     min-inline-size: 0;
-    margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

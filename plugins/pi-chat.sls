@@ -862,18 +862,12 @@
   (let ([b (%current-buffer)])
     (show! (or (and (not new?) (%last-chat-in b)) (pi:start (%project-of b))))))
 
-(define (%sole-in-level? v)
-  (let ([node (layout:view-node v)] [level (layout:level-of v)])
-    (and node level
-         (let ([parent (document:enclosing (buffers:document layout:buffer) (document:node-start node))])
-           (and parent (fx= (document:node-start parent) (document:node-start level)))))))
-
 (commands:define-command (toggle)
   "Shows the chat used last in the current buffer's project, or removes the view showing it."
   (let* ([b (%current-buffer)] [chat (%last-chat-in b)] [v (and chat (layout:find-view (%buffer-of chat)))])
     (cond
       [(not v) (show! (or chat (pi:start (%project-of b))))]
-      [(%sole-in-level? v)
+      [(not (layout:deletable? (layout:view-node v)))
        (let ([other (find (lambda (o) (and (not (chat-of o)) (not (buffers:internal-name? (buffers:name o)))))
                           (reverse (buffers:all)))])
          (when other (views:set-buffer! v other)))]

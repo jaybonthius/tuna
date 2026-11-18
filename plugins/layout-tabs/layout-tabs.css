@@ -29,25 +29,36 @@
   .tab {
     flex: none;
     display: flex;
-    flex-direction: column;
-    justify-content: center;
+    align-items: stretch;
     min-block-size: var(--tuna-control-size);
+    border-inline-end: var(--tuna-border-width) solid var(--tuna-border);
+    color: var(--layout-tabs-tab-text, var(--tuna-text));
+  }
+
+  .layout-tabs-label,
+  .layout-tabs-close {
     margin: 0;
     padding-block: 0;
-    padding-inline: var(--layout-tabs-tab-padding, var(--tuna-space-5));
     border: 0;
-    border-inline-end: var(--tuna-border-width) solid var(--tuna-border);
     font: inherit;
-    white-space: nowrap;
-    color: var(--layout-tabs-tab-text, var(--tuna-text));
+    color: inherit;
     background: none;
     cursor: pointer;
+  }
+
+  .layout-tabs-label {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-inline-start: var(--layout-tabs-tab-padding, var(--tuna-space-5));
+    padding-inline-end: var(--tuna-space-2);
+    white-space: nowrap;
   }
 
   /* The selected tab is semibold, as Emacs's current tab is bold; an
      invisible semibold copy of the label holds every tab at that width,
      so the strip does not shift when the selection moves. */
-  .tab::after {
+  .layout-tabs-label::after {
     content: attr(data-label);
     block-size: 0;
     overflow: hidden;
@@ -55,24 +66,40 @@
     font-weight: var(--tuna-font-weight-semibold);
   }
 
-  /* Overlays, so the selected tab keeps its background under them. */
-  .tab:hover {
+  .layout-tabs-close {
+    padding-inline: var(--tuna-space-2) var(--tuna-space-3);
+    color: var(--layout-tabs-close-text, var(--tuna-text-muted));
+  }
+
+  /* Overlays, so the selected tab keeps its background under them; the
+     close button's own overlay over the tab's shows which of the two a
+     click reaches. */
+  .tab:hover,
+  .layout-tabs-close:hover {
     background-image: linear-gradient(var(--layout-tabs-hover-background, var(--tuna-hover)),
                                       var(--layout-tabs-hover-background, var(--tuna-hover)));
   }
 
-  .tab:active {
+  .layout-tabs-close:hover {
+    color: var(--layout-tabs-tab-text, var(--tuna-text));
+  }
+
+  .tab:active,
+  .layout-tabs-close:active {
     background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
   }
 
-  .tab[aria-selected="true"] {
+  .layout-tabs-label[aria-selected="true"] {
     font-weight: var(--tuna-font-weight-semibold);
+  }
+
+  .tab:has(> .layout-tabs-label[aria-selected="true"]) {
     background-color: var(--layout-tabs-selected-background, var(--tuna-surface));
     color: var(--layout-tabs-selected-text, var(--tuna-text));
     box-shadow: inset 0 var(--tuna-focus-width) var(--tuna-border-strong);
   }
 
-  .tabs.focus-path > .tabs-strip > .tab[aria-selected="true"] {
+  .tabs.focus-path > .tabs-strip > .tab:has(> .layout-tabs-label[aria-selected="true"]) {
     box-shadow: inset 0 var(--tuna-focus-width) var(--tuna-focus);
   }
 
@@ -88,7 +115,7 @@
   /* Forced colours drop shadows, which are all that mark the focused
      tab. */
   @media (forced-colors: active) {
-    .tabs.focus-path > .tabs-strip > .tab[aria-selected="true"] {
+    .tabs.focus-path > .tabs-strip > .tab:has(> .layout-tabs-label[aria-selected="true"]) {
       outline: var(--tuna-focus-width, 2px) solid Highlight;
       outline-offset: calc(-1 * var(--tuna-focus-width, 2px));
     }

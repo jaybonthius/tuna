@@ -37,6 +37,13 @@
 > (click-token! (view) 2)
 > (list chosen (selected))
 ((96 99) 96)
+; The middle button chooses a row too, as in Emacs's completion lists.
+> (mouse-in! (view) "down" '(("token" . 3)) '("button" . 2))
+> (mouse-in! (view) "click" '(("token" . 3)) '("button" . 2))
+> (list chosen (selected))
+((97 96 99) 97)
+> (set! chosen (cdr chosen))
+> (ui:select-row! (lst) (view) 96)
 ; Two views of one buffer select independently; each draws its own row
 ; as the selected one.
 > (define other (views:make b))

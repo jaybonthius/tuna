@@ -21,8 +21,8 @@
    read-next end-read! waiting-read-sequence? reading-keys quit-reads! quit-client-reads!
    keymaps-of resolve-key resolve-sequence prefix-binding? lone-escape? remapped
    keymap-bindings bindings-found found-binding-keymap found-binding-sequence found-binding-command
-   last-key key-count browser-key mouse-item-key valid-event? key-or-event? check-event event-key-clicks
-   dropped-mouse-key? drag-as-click pending-typed pending-seq pending-posn make-pending
+   last-key key-count browser-key mouse-item-key screen-key valid-event? key-or-event? check-event event-key-clicks
+   event-basic-type-of event-modifiers-of dropped-mouse-key? drag-as-click pending-typed pending-seq pending-posn make-pending
    current-press make-press current-keys current-shifted current-session current-event make-quit
    push-temporary! end-temporary! end-temporaries! end-owned! test-temporaries! quit-paused!
    set-prefix! universal-arguments push-universal-arguments! give-page-settings!)
@@ -144,29 +144,36 @@
            (fx> (fx- end base) 2)
            (char=? (string-ref key base) #\<)
            (let ([name (substring key (fx+ base 1) (fx- end 1))] [modifiers (substring key 0 base)])
-             (if (string=? name "mouse-movement")
-                 (make-mouse-key modifiers 1 'movement #f)
-                 (let*-values ([(clicks name)
-                                (cond
-                                  [(after-prefix "double-" name) => (lambda (rest) (values 2 rest))]
-                                  [(after-prefix "triple-" name) => (lambda (rest) (values 3 rest))]
-                                  [else (values 1 name)])]
-                               [(action name)
-                                (cond
-                                  [(after-prefix "down-" name) => (lambda (rest) (values 'down rest))]
-                                  [(after-prefix "drag-" name) => (lambda (rest) (values 'drag rest))]
-                                  [else (values 'click name)])])
-                   (let ([button (after-prefix "mouse-" name)])
-                     (and button (button-name? button)
-                          (make-mouse-key modifiers clicks action button)))))))))
+             (cond
+               [(string=? name "mouse-movement") (make-mouse-key modifiers 1 'movement #f)]
+               [(after-prefix "wheel-" name)
+                => (lambda (direction)
+                     (and (member direction '("up" "down" "left" "right"))
+                          (make-mouse-key modifiers 1 'wheel direction)))]
+               [else
+                (let*-values ([(clicks name)
+                               (cond
+                                 [(after-prefix "double-" name) => (lambda (rest) (values 2 rest))]
+                                 [(after-prefix "triple-" name) => (lambda (rest) (values 3 rest))]
+                                 [else (values 1 name)])]
+                              [(action name)
+                               (cond
+                                 [(after-prefix "down-" name) => (lambda (rest) (values 'down rest))]
+                                 [(after-prefix "drag-" name) => (lambda (rest) (values 'drag rest))]
+                                 [else (values 'click name)])])
+                  (let ([button (after-prefix "mouse-" name)])
+                    (and button (button-name? button)
+                         (make-mouse-key modifiers clicks action button))))])))))
 
   (define (mouse-key-name modifiers clicks action button)
-    (if (eq? action 'movement)
-        (string-append modifiers "<mouse-movement>")
-        (string-append modifiers "<"
-                       (case clicks [(2) "double-"] [(3) "triple-"] [else ""])
-                       (case action [(down) "down-"] [(drag) "drag-"] [else ""])
-                       "mouse-" button ">")))
+    (case action
+      [(movement) (string-append modifiers "<mouse-movement>")]
+      [(wheel) (string-append modifiers "<wheel-" button ">")]
+      [else
+       (string-append modifiers "<"
+                      (case clicks [(2) "double-"] [(3) "triple-"] [else ""])
+                      (case action [(down) "down-"] [(drag) "drag-"] [else ""])
+                      "mouse-" button ">")]))
 
   (define (without-shift modifiers)
     (let loop ([i 0])
@@ -186,6 +193,29 @@
 
   (define (event-key-clicks key) (mouse-key-clicks (mouse-parts key)))
 
+  (define (event-basic-type-of key)
+    (let ([m (mouse-parts key)])
+      (case (mouse-key-action m)
+        [(movement) 'mouse-movement]
+        [(wheel) (string->symbol (string-append "wheel-" (mouse-key-button m)))]
+        [else (string->symbol (string-append "mouse-" (mouse-key-button m)))])))
+
+  (define (event-modifiers-of key)
+    (let* ([m (mouse-parts key)] [modifiers (mouse-key-modifiers m)])
+      (define (held? c)
+        (let loop ([i 0])
+          (and (fx< i (string-length modifiers))
+               (or (char=? (string-ref modifiers i) c) (loop (fx+ i 2))))))
+      (append
+        (filter symbol? (list (and (held? #\C) 'control) (and (held? #\M) 'meta)
+                              (and (held? #\S) 'shift) (and (held? #\s) 'super)))
+        (case (mouse-key-action m)
+          [(down) '(down)]
+          [(click) '(click)]
+          [(drag) '(drag)]
+          [else '()]))))
+
+  ;; A posn is the views plugin's, so any value but #f is one.
   (define (valid-event? v)
     (and (list? v) (pair? v) (string? (car v))
          (let ([key (car v)])
@@ -193,7 +223,7 @@
                 (let ([m (mouse-parts key)])
                   (and m
                        (fx= (length (cdr v)) (if (eq? (mouse-key-action m) 'drag) 2 1))
-                       (for-all vector? (cdr v))))))))
+                       (not (memq #f (cdr v)))))))))
 
   (define (key-or-event? v)
     (or (and (string? v) (valid-key? v 0 (string-length v))) (valid-event? v)))
@@ -515,22 +545,30 @@
                 (if super? "s-" "")
                 base))))))
 
+  ;; As in Emacs, each third press of a run starts the selection's cycle
+  ;; again, so the fourth press is a first. A synthesized press counts 0.
+  (define (count-in-threes clicks)
+    (fx+ (fxmod (fx- (fxmax clicks 1) 1) 3) 1))
+
   ;; A mouse item names Option "alt", whatever the Option keys' options
   ;; say: the page follows which Option key is down only for typed keys.
   (define (mouse-item-key item)
     (let ([action (field item "action")] [button (field item "button")] [clicks (field item "clicks")]
-          [modifiers (field item "modifiers")])
+          [modifiers (field item "modifiers")] [direction (field item "direction")])
       (define (invalid what) (assertion-violation 'keys:item-key what item))
       (let ([action (cond
                       [(equal? action "down") 'down]
                       [(equal? action "click") 'click]
                       [(equal? action "drag") 'drag]
                       [(equal? action "move") 'movement]
+                      [(equal? action "wheel") 'wheel]
                       [else (invalid "a mouse item without an action")])])
-        (unless (or (eq? action 'movement) (and (fixnum? button) (fx> button 0)))
+        (unless (or (memq action '(movement wheel)) (and (fixnum? button) (fx> button 0)))
           (invalid "a mouse item without a button"))
-        (unless (or (eq? action 'movement) (and (fixnum? clicks) (fx> clicks 0)))
+        (unless (or (memq action '(movement wheel)) (and (fixnum? clicks) (fx>= clicks 0)))
           (invalid "a mouse item without a click count"))
+        (unless (or (not (eq? action 'wheel)) (member direction '("up" "down" "left" "right")))
+          (invalid "a wheel item without a direction"))
         (unless (vector? modifiers)
           (invalid "an item without a list of modifiers"))
         (let loop ([i 0] [control? #f] [alt? #f] [shift? #f] [super? #f])
@@ -544,9 +582,18 @@
                   [else (assertion-violation 'keys:item-key "not a modifier name" m)]))
               (mouse-key-name
                 (string-append (if control? "C-" "") (if alt? "M-" "") (if shift? "S-" "") (if super? "s-" ""))
-                (if (eq? action 'movement) 1 (fxmin clicks 3))
+                (if (memq action '(movement wheel)) 1 (count-in-threes clicks))
                 action
-                (if (eq? action 'movement) #f (number->string button))))))))
+                (case action
+                  [(movement) #f]
+                  [(wheel) direction]
+                  [else (number->string button)])))))))
+
+  (define (screen-key item)
+    (let ([name (field item "name")])
+      (unless (and (string? name) (valid-key? name 0 (string-length name)) (not (mouse-parts name)))
+        (assertion-violation 'keys:item-key "not a key's name" name))
+      name))
 
   ;; One parameter for the four, since each binding costs a
   ;; dynamic-wind.
@@ -810,8 +857,6 @@
     [(client) (active-bindings client #f)]
     [(client posn)
      (check-main-thread 'keys:active-bindings)
-     (unless (or (not posn) (vector? posn))
-       (assertion-violation 'keys:active-bindings "neither a posn nor #f" posn))
      (let* ([keymaps (keymaps-of client posn)] [found (bindings-found keymaps)])
        (map (lambda (keymap)
               (cons keymap
@@ -915,6 +960,14 @@
   (check-event 'keys:event-clicks event)
   (event-key-clicks (car event)))
 
+(define (event-basic-type event)
+  (check-event 'keys:event-basic-type event)
+  (event-basic-type-of (car event)))
+
+(define (event-modifiers event)
+  (check-event 'keys:event-modifiers event)
+  (event-modifiers-of (car event)))
+
 (define (typed-char)
   (let ([keys (current-keys)])
     (and keys
@@ -954,9 +1007,10 @@
 (define (item-key item)
   (unless (and (list? item) (for-all pair? item))
     (assertion-violation 'keys:item-key "not an item" item))
-  (if (equal? (cdr (or (assoc "type" item) '(#f . #f))) "mouse")
-      (mouse-item-key item)
-      (browser-key item)))
+  (cond
+    [(equal? (cdr (or (assoc "type" item) '(#f . #f))) "mouse") (mouse-item-key item)]
+    [(assoc "name" item) (screen-key item)]
+    [else (browser-key item)]))
 
 (define (set-prefix-argument! prefix)
   (check-main-thread 'keys:set-prefix-argument!)

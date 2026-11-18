@@ -239,6 +239,24 @@
     (when (and node (not (layout:locked? node)))
       (layout:select! window))))
 
+(commands:define-command (mouse-delete-view [event (keys:command-event)])
+  "Deletes the view whose status line was clicked, as layout:delete-view deletes the selected one, unless it is locked or layout:deletable? refuses its part."
+  (unless (keys:event? event)
+    (assertion-violation 'status-line:mouse-delete-view "not an event" event))
+  (let* ([window (posn-view (keys:event-start event))] [node (and window (layout:view-node window))])
+    (when (and node (not (layout:locked? node)) (layout:deletable? node))
+      (layout:select! window)
+      (layout:delete-view))))
+
+(commands:define-command (mouse-reset-layout [event (keys:command-event)])
+  "Selects the view whose status line was clicked and deletes the other views of its level, as layout:reset-layout does, unless it is locked."
+  (unless (keys:event? event)
+    (assertion-violation 'status-line:mouse-reset-layout "not an event" event))
+  (let* ([window (posn-view (keys:event-start event))] [node (and window (layout:view-node window))])
+    (when (and node (not (layout:locked? node)))
+      (layout:select! window)
+      (layout:reset-layout))))
+
 (define (show-modified view)
   (check-view 'status-line:show-modified view)
   (let ([b (views:buffer view)])
@@ -349,6 +367,8 @@
 (table-set! segments major-mode (right 40))
 (table-set! segments minor-modes (right 50))
 (keys:bind! keymap "<mouse-1>" mouse-select-view)
+(keys:bind! keymap "<mouse-2>" mouse-reset-layout)
+(keys:bind! keymap "<mouse-3>" mouse-delete-view)
 (keys:bind! keymap "<down-mouse-1>" keys:ignore)
 (keys:bind! keymap "<drag-mouse-1>" keys:ignore)
 (table-set! web:stylesheets 'status-line "status-line/status-line.css")

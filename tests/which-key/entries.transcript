@@ -46,11 +46,23 @@
 (which-key:labels "not a string")
 > (press! "z")
 > (table-remove! which-key:labels "C-c h")
-; The popup's markup: the pending keys in a header, then a description
-; list, and the longest key and the longest name or label in characters,
-; for the stylesheet's columns.
+; The popup's markup: the pending keys in a header, then a list of
+; entries, and the longest key and the longest name or label in
+; characters, for the stylesheet's columns. Each entry is a button that
+; types its key when clicked.
 > (press! "C-c" "h")
 > (let* ([html (screen-of client)] [at (search html "<div class=\"which-key\"" 0)])
-    (substring html at (+ (search html "</dl>" at) 5)))
-"<div class=\"which-key\" style=\"--which-key-key-size:1;--which-key-text-size:12\"><header class=\"which-key-prefix\"><kbd>C-c h</kbd></header><dl class=\"which-key-keys\"><div class=\"which-key-entry\"><dt><kbd>h</kbd></dt><dd>harpo:honk</dd></div><div class=\"which-key-entry\"><dt><kbd>s</kbd></dt><dd>harpo:squeak</dd></div></dl>"
+    (substring html at (+ (search html "</ul>" at) 5)))
+"<div class=\"which-key\" style=\"--which-key-key-size:1;--which-key-text-size:12\"><header class=\"which-key-prefix\"><kbd>C-c h</kbd></header><ul class=\"which-key-keys\"><li><button class=\"which-key-entry\" type=\"button\" tabindex=\"-1\" data-key=\"h\"><kbd>h</kbd><span class=\"which-key-text\">harpo:honk</span></button></li><li><button class=\"which-key-entry\" type=\"button\" tabindex=\"-1\" data-key=\"s\"><kbd>s</kbd><span class=\"which-key-text\">harpo:squeak</span></button></li></ul>"
+; Clicking an entry types its key, as the page sends a drawn key by its
+; name; a mouse key's entry is no button.
+> (in-client (lambda () ((table-ref web:input-handlers "key") client '(("type" . "key") ("name" . "s")))))
+> (keys:pending client)
+#f
+> (keys:bind! keys:global "C-c h <mouse-1>" harpo:honk)
+> (press! "C-c" "h")
+> (let* ([html (screen-of client)] [at (search html "<kbd>&lt;mouse-1&gt;</kbd>" 0)])
+    (substring html (- at 34) at))
+"<li><span class=\"which-key-entry\">"
 > (press! "s")
+> (keys:unbind! keys:global "C-c h <mouse-1>")

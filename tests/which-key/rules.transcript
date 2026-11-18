@@ -127,10 +127,17 @@
 ! C-c ESC is undefined
 > (shows?)
 #f
-; Nor after a mouse key that starts a sequence.
-> (press! (list "<mouse-3>" (vector 1 0)))
+; Nor after a mouse key or a wheel key that starts a sequence.
+> (press! (list "<mouse-3>" (views:%make-posn (layout:selected-view) 0)))
 > (keys:pending client)
 "<mouse-3>"
+> (wait-out)
+> (shows?)
+#f
+> (press! "a")
+> (press! (list "<wheel-down>" (views:%make-posn (layout:selected-view) 0)))
+> (keys:pending client)
+"<wheel-down>"
 > (wait-out)
 > (shows?)
 #f

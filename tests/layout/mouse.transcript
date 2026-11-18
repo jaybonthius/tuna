@@ -26,7 +26,7 @@
 ; keymaps; a container's kind carries its keymap, and a level none.
 > (buffers:kind-keymap (buffers:kind 'layout:level))
 #f
-> (eq? (car (layout:container-keymaps c1 (vector (views:id layout:screen-view) 4))) layout:keymap)
+> (eq? (car (layout:container-keymaps c1 (views:%make-posn layout:screen-view 4))) layout:keymap)
 #t
 > (eq? (buffers:kind-keymap (buffers:kind 'boxes:box)) boxes:box-keys)
 #t

@@ -16,7 +16,7 @@
   (check-main-thread check-view check-direction register-container! check-parts check-popup-parts check-level
    the-frame frame-record? open-layout! opened-popups current-index index-atom index-of-id atom-of part-of
    view-of atom-id selected-id shown-views select-id! set-zoom! frame-zoom frame-order zoom-level children root-node
-   locked-node? locked-in? title-of draw-layout draw-popups neighbour-of remove-part! node-datum
+   locked-node? locked-in? title-of draw-layout draw-popups neighbour-of remove-part! removed-part removal-refusal node-datum
    note-batch save-now! selected-keymaps enclosing-keymaps last-selected-unlocked-atom lead-down order-views
    enclosing-level reference-atom level-units placed-atom? same-node? same-level? visible-atoms index-atoms
    in-part-mode? enter-part-mode! leave-part-mode! selection-in choose-part! drawn-part-class
@@ -583,27 +583,39 @@
 
   (define (holds-range? a s e) (and (fx<= s (document:node-start a)) (fx<= (document:node-end a) e)))
 
-  ;; Removing and collapsing are one edit, since the kinds' checks refuse
-  ;; a container left empty between two. The popups may all go; the
-  ;; layout keeps a view that is not locked.
-  (define (remove-part! ix node)
+  ;; Removing a part also removes each container it leaves empty, since
+  ;; the kinds' checks refuse a container left empty between two.
+  (define (removed-part ix node)
     (let ([layout? (eq? ix (current-index))])
       (let loop ([n node])
-        (let ([p (parent-in ix n)] [b (if layout? layout-buffer popups-buffer)])
-          (cond
-            [(not p) (assertion-violation 'layout:delete-part! "the root" node)]
-            [(and layout? (level? p)) (assertion-violation 'layout:delete-part! "the last view of its level" node)]
-            [(and (parent-in ix p) (null? (cdr (kids-of ix p)))) (loop p)]
-            [else
-             (let ([s (document:node-start n)] [e (document:node-end n)])
-               (unless (or (not layout?) (unlocked-atoms-outside s e))
-                 (assertion-violation 'layout:delete-part! "the last view that is not locked" node))
-               (let ([others (remp (lambda (c) (fx= (document:node-start c) s)) (kids-of ix p))]
-                     [entry (kind-entry p)] [grand (parent-in ix p)])
-                 (if (and grand entry (container-collapse? entry) (fx= (length others) 1))
-                     (buffers:replace! b (document:node-start p) (document:node-end p)
-                       (take-place ix p (node-datum ix (car others))))
-                     (buffers:replace! b s e ""))))])))))
+        (let ([p (parent-in ix n)])
+          (if (and p (not (and layout? (level? p))) (parent-in ix p) (null? (cdr (kids-of ix p))))
+              (loop p)
+              n)))))
+
+  ;; The popups may all go; the layout keeps a view that is not locked.
+  (define (removal-refusal ix removed)
+    (let ([p (parent-in ix removed)] [layout? (eq? ix (current-index))])
+      (cond
+        [(not p) "the root"]
+        [(and layout? (level? p)) "the last view of its level"]
+        [(and layout? (not (unlocked-atoms-outside (document:node-start removed) (document:node-end removed))))
+         "the last view that is not locked"]
+        [else #f])))
+
+  ;; Removing and collapsing are one edit, for the same reason.
+  (define (remove-part! ix node)
+    (let* ([n (removed-part ix node)] [refusal (removal-refusal ix n)])
+      (when refusal
+        (assertion-violation 'layout:delete-part! refusal node))
+      (let* ([p (parent-in ix n)] [s (document:node-start n)] [e (document:node-end n)]
+             [b (if (eq? ix (current-index)) layout-buffer popups-buffer)]
+             [others (remp (lambda (c) (fx= (document:node-start c) s)) (kids-of ix p))]
+             [entry (kind-entry p)] [grand (parent-in ix p)])
+        (if (and grand entry (container-collapse? entry) (fx= (length others) 1))
+            (buffers:replace! b (document:node-start p) (document:node-end p)
+              (take-place ix p (node-datum ix (car others))))
+            (buffers:replace! b s e "")))))
 
   (define (child-attributes-of n)
     (let ([entry (kind-entry n)]) (if entry (container-child-attributes entry) '())))
@@ -1606,6 +1618,11 @@
   (let-values ([(ix n) (part-of 'layout:delete-part! node)])
     (remove-part! ix n)
     (void)))
+
+(define (deletable? node)
+  (check-main-thread 'layout:deletable?)
+  (let-values ([(ix n) (part-of 'layout:deletable? node)])
+    (not (removal-refusal ix (removed-part ix n)))))
 
 (define (set-part-attribute! node key value)
   (check-main-thread 'layout:set-part-attribute!)

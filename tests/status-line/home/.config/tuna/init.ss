@@ -92,7 +92,7 @@
             (reverse acc))))))
 
 (define (status-view-of window)
-  (find (lambda (sv) (eq? (status-line:posn-view (vector (views:id sv) 1)) window))
+  (find (lambda (sv) (eq? (status-line:posn-view (views:%make-posn sv 1)) window))
         (views:showing line-buffer)))
 
 (define (mouse-in! v action place)

@@ -37,7 +37,7 @@
 (define-table char-keymap "Keys in a terminal in char mode.")
 (define-table copy-keymap "Keys in a terminal in copy mode.")
 (define-table %next-keymap "Every key the keymaps bind, for the one key sent whatever its bindings.")
-(define-table %mouse-keymap "Mouse keys on the screen of a program that takes the mouse.")
+(define-table mouse-keymap "Mouse keys on the screen of a program that takes the mouse.")
 (define-table %link-keymap "Mouse keys on a link.")
 
 (define-saved %folder #f (lambda (v) (or (not v) (string? v))))
@@ -113,10 +113,17 @@
 (define (%draw-scrollback node view)
   (haml (:div.terminal-scrollback (views:draw-children view node))))
 
+;; While a program takes the mouse, an event names a cell, never a
+;; character that a redraw makes stale. Alternate scroll is on by default
+;; on every alternate screen, so it takes only the wheel: a click there
+;; still names the character, for links and selecting. Shift gives the
+;; mouse back from the program, as in xterm.
 (define (%draw-screen node view)
-  (let ([t (%of (views:buffer view))])
+  (let* ([t (%of (views:buffer view))] [mouse? (and t (%takes-mouse? t))])
     (haml (:div.terminal-screen ([data-cursor (if t (symbol->string (%terminal-cursor-style t)) "block")]
-                                 [data-mouse (and t (%takes-mouse? t) "all")])
+                                 [data-keymap (and mouse? (views:keymap-mark mouse-keymap))]
+                                 [data-wheel (and (or mouse? (and t (%alternate-scroll? t))) "shift")]
+                                 [data-grid (and mouse? "shift")])
             (views:draw-children view node)))))
 
 (buffers:define-kind %root (content nodes) (draw %draw-root))
@@ -127,7 +134,6 @@
 (buffers:define-layer %cells (priority 1))
 (buffers:define-layer %inputs (priority -1))
 (buffers:define-layer %links (priority 2) (keymap %link-keymap))
-(buffers:define-layer %mouse (priority 3) (keymap %mouse-keymap))
 
 (define (%root-node doc) (document:token doc 0))
 
@@ -623,10 +629,10 @@
 (define (%takes-mouse? t)
   (and (not (%terminal-status t)) (ghostty:terminal-mouse-tracking? (%terminal-emulator t))))
 
-(define (%update-mouse! t)
-  (let* ([b (%terminal-buffer t)] [layer (buffers:layer b %mouse)] [node (%screen-node b)]
-         [start (fx+ (document:node-start node) 1)] [end (fx- (document:node-end node) 1)])
-    (buffers:set-spans! layer start end (if (%takes-mouse? t) (list (list start end '((terminal-mouse . #t)))) '()))))
+(define (%alternate-scroll? t)
+  (and (not (%terminal-status t))
+       (eq? (ghostty:terminal-active-screen (%terminal-emulator t)) 'alternate)
+       (ghostty:terminal-mode-enabled? (%terminal-emulator t) 'alt-scroll)))
 
 (define (%update-alternate! t)
   (let ([alternate? (eq? (ghostty:terminal-active-screen (%terminal-emulator t)) 'alternate)])
@@ -654,7 +660,6 @@
     (let-values ([(rows cursor) (%screen-rows t)])
       (%write-rows! t rows)
       (%terminal-cursor-set! t cursor))
-    (%update-mouse! t)
     (%follow! t following)))
 
 ;; Effects arrive inside libghostty's callbacks, where the terminal
@@ -693,7 +698,6 @@
     (%terminal-status-set! t status)
     (%forget-entry! t)
     (when (buffers:live? (%terminal-buffer t))
-      (%update-mouse! t)
       (exited (%terminal-buffer t) status)
       (when (and (kill-buffer-on-exit?) (buffers:live? (%terminal-buffer t)))
         (buffers:kill! (%terminal-buffer t))))))
@@ -1222,39 +1226,59 @@
   (let ([t (%current 'terminal:yank)] [entry (kill-ring:current)])
     (when entry (%paste-text! t (kill-ring:text entry)))))
 
+(commands:define-command (mouse-yank-primary)
+  "Selects the view clicked and sends the primary selection to the program as a paste; does nothing without one."
+  (let ([t (%current 'terminal:mouse-yank-primary)] [primary (editing:primary-selection)])
+    (layout:select! (views:current))
+    (when primary (%paste-text! t (kill-ring:text (list primary))))))
+
 (define (%posn-cell t posn)
-  (let ([p (views:posn-point posn)])
-    (and p
-         (let* ([rows (%terminal-rows t)] [start (%screen-start t)])
-           (let loop ([i 0] [at start])
-             (and (fx< i (vector-length rows))
-                  (let* ([row (vector-ref rows i)] [end (fx+ at (string-length (%row-text row)))])
-                    (if (fx<= p end)
-                        (and (fx>= p at) (cons (%index->column row (fx- p at)) i))
-                        (loop (fx+ i 1) (fx+ end 1))))))))))
+  (let-values ([(column row) (views:posn-cell posn)])
+    (and column
+         (let ([emu (%terminal-emulator t)])
+           (cons (fxmin column (fx- (ghostty:terminal-columns emu) 1))
+                 (fxmin row (fx- (ghostty:terminal-rows emu) 1)))))))
 
 (define %cell-width 10)
 (define %cell-height 20)
 
-(define (%mouse-modifiers key)
-  (let loop ([i 0] [mods '()])
-    (if (and (fx< (fx+ i 1) (string-length key)) (char=? (string-ref key (fx+ i 1)) #\-)
-             (memv (string-ref key i) '(#\C #\M #\S #\s)))
-        (loop (fx+ i 2) (cons (case (string-ref key i) [(#\C) 'ctrl] [(#\M) 'alt] [(#\S) 'shift] [else 'super]) mods))
-        mods)))
+(define (%mouse-modifiers event)
+  (filter symbol?
+    (map (lambda (m) (case m [(control) 'ctrl] [(meta) 'alt] [(shift) 'shift] [(super) 'super] [else #f]))
+         (keys:event-modifiers event))))
+
+(define (%mouse-button event)
+  (case (keys:event-basic-type event)
+    [(mouse-1) 'left]
+    [(mouse-2) 'middle]
+    [(mouse-3) 'right]
+    [(wheel-up) 'four]
+    [(wheel-down) 'five]
+    [(wheel-left) 'six]
+    [(wheel-right) 'seven]
+    [else #f]))
+
+(define-table %drag-keymap)
+
+(define (%follow-drag!)
+  (keys:push-keymap! (web:current-client) %drag-keymap
+    (lambda (found command) (eq? found %drag-keymap))))
 
 (commands:define-command (send-mouse [event (keys:command-event)])
   "Sends a mouse key to the program as a mouse report, at the cell the event names, while it takes the mouse."
   (let ([t (%current 'terminal:send-mouse)])
     (unless (keys:event? event)
       (assertion-violation 'terminal:send-mouse "not a mouse event" event))
-    (let* ([key (keys:event-key event)]
+    (let* ([basic (keys:event-basic-type event)] [modifiers (keys:event-modifiers event)]
            [action (cond
-                     [(%string-search key "<down-mouse-") 'press]
-                     [(%string-search key "<mouse-movement>") 'motion]
+                     [(eq? basic 'mouse-movement) 'motion]
+                     [(or (memq 'down modifiers) (not (memq basic '(mouse-1 mouse-2 mouse-3)))) 'press]
                      [else 'release])]
            [cell (%posn-cell t (keys:event-end event))]
            [emu (%terminal-emulator t)] [encoder (%terminal-mouse-encoder t)])
+      (when (and (eq? action 'press) (memq 'down modifiers))
+        (%terminal-pressed-set! t (%mouse-button event))
+        (%follow-drag!))
       (when cell
         (ghostty:mouse-encoder-sync! encoder emu)
         (ghostty:mouse-encoder-set-geometry! encoder
@@ -1262,27 +1286,48 @@
             (fx* %cell-height (ghostty:terminal-rows emu)) %cell-width %cell-height 0 0 0 0))
         (ghostty:mouse-encoder-set-any-button-pressed! encoder (eq? action 'motion))
         (let ([bytes (ghostty:mouse-encoder-encode encoder
-                       (ghostty:make-mouse-event action (and (not (eq? action 'motion)) 'left)
+                       (ghostty:make-mouse-event action (if (eq? action 'motion) (%terminal-pressed t) (%mouse-button event))
                          (fx+ (fx* (car cell) %cell-width) (fxquotient %cell-width 2))
                          (fx+ (fx* (cdr cell) %cell-height) (fxquotient %cell-height 2))
-                         (%modifiers (%mouse-modifiers key))))])
+                         (%modifiers (%mouse-modifiers event))))])
           (when (fx> (bytevector-length bytes) 0)
-            (%send-bytes! t bytes)))))))
+            (%send-bytes! t bytes))))
+      (when (eq? action 'release)
+        (%terminal-pressed-set! t #f)))))
 
-(define (%string-search s part)
-  (let ([n (string-length part)])
-    (let loop ([i 0])
-      (and (fx<= (fx+ i n) (string-length s))
-           (or (string=? (substring s i (fx+ i n)) part) (loop (fx+ i 1)))))))
+(commands:define-command (send-alternate-scroll [event (keys:command-event)])
+  "Sends a wheel turn to the program as an up or down arrow key, encoded as its modes ask, as xterm's alternate scroll mode does, while the alternate screen shows and alternate scroll is on."
+  (let ([t (%current 'terminal:send-alternate-scroll)])
+    (unless (keys:event? event)
+      (assertion-violation 'terminal:send-alternate-scroll "not a mouse event" event))
+    (let ([key (case (keys:event-basic-type event) [(wheel-up) "<up>"] [(wheel-down) "<down>"] [else #f])])
+      (when (and key (%alternate-scroll? t))
+        (let ([bytes (%encoded-key t key)])
+          (when bytes (%send-bytes! t bytes)))))))
 
 (define (%link-at t position)
   (let ([inside (filter (lambda (s) (and (fx<= (car s) position) (fx< position (cadr s))))
                         (buffers:spans (buffers:layer (%terminal-buffer t) %links) position (fx+ position 1)))])
     (and (pair? inside) (cdr (assq 'terminal-link (caddr (car inside)))))))
 
+(define (%cell-position t cell)
+  (let ([rows (%terminal-rows t)])
+    (and (fx< (cdr cell) (vector-length rows))
+         (let loop ([i 0] [at (%screen-start t)])
+           (let ([row (vector-ref rows i)])
+             (if (fx= i (cdr cell))
+                 (fx+ at (fxmin (%column->index row (car cell)) (string-length (%row-text row))))
+                 (loop (fx+ i 1) (fx+ at (string-length (%row-text row)) 1))))))))
+
+;; A click on a screen that names cells names the node, not the
+;; character, so the cell gives the position.
 (define (%clicked-or-point)
-  (let ([event (keys:command-event)])
-    (or (and (keys:event? event) (views:posn-point (keys:event-end event)))
+  (let ([event (keys:command-event)] [t (%current-terminal)])
+    (or (and (keys:event? event)
+             (let ([posn (keys:event-end event)])
+               (or (and t (views:posn-node posn) (eq? (document:node-kind (views:posn-node posn)) 'terminal:%screen)
+                        (let ([cell (%posn-cell t posn)]) (and cell (%cell-position t cell))))
+                   (views:posn-point posn))))
         (views:point (views:current)))))
 
 (commands:define-command (open-link [position (%clicked-or-point)])
@@ -1597,14 +1642,26 @@
   (keys:bind! keymap "C-c M-n" next-prompt)
   (keys:bind! keymap "C-c M-p" previous-prompt)
   (keys:remap! keymap editing:paste paste)
-  (for-each (lambda (k) (keys:bind! %mouse-keymap k send-mouse))
-            '("<down-mouse-1>" "<mouse-1>" "<drag-mouse-1>" "<mouse-movement>"))
-  (keys:bind! %mouse-keymap "S-<down-mouse-1>" editing:mouse-drag-region)
-  (keys:bind! %mouse-keymap "S-<mouse-1>" editing:mouse-set-point)
-  (keys:bind! %mouse-keymap "S-<drag-mouse-1>" editing:mouse-set-region)
+  (keys:remap! keymap editing:mouse-yank-primary mouse-yank-primary)
+  (for-each
+    (lambda (modifiers)
+      (for-each (lambda (key) (keys:bind! mouse-keymap (string-append modifiers key) send-mouse))
+                '("<down-mouse-1>" "<mouse-1>" "<drag-mouse-1>" "<down-mouse-2>" "<mouse-2>" "<drag-mouse-2>"
+                  "<down-mouse-3>" "<mouse-3>" "<drag-mouse-3>" "<wheel-up>" "<wheel-down>" "<wheel-left>" "<wheel-right>")))
+    '("" "C-" "M-" "C-M-"))
+  (keys:bind! mouse-keymap "C-<mouse-1>" open-link)
+  (keys:bind! mouse-keymap "C-<down-mouse-1>" keys:ignore)
+  (keys:bind! mouse-keymap "C-<drag-mouse-1>" keys:ignore)
+  (keys:bind! mouse-keymap "S-<down-mouse-1>" editing:mouse-drag-region)
+  (keys:bind! mouse-keymap "S-<mouse-1>" editing:mouse-set-point)
+  (keys:bind! mouse-keymap "S-<drag-mouse-1>" editing:mouse-set-region)
+  (keys:bind! %drag-keymap "<mouse-movement>" send-mouse)
+  (keys:bind! keymap "<wheel-up>" send-alternate-scroll)
+  (keys:bind! keymap "<wheel-down>" send-alternate-scroll)
+  (keys:bind! keymap "<wheel-left>" keys:ignore)
+  (keys:bind! keymap "<wheel-right>" keys:ignore)
   (keys:bind! %link-keymap "<mouse-1>" open-link)
-  (keys:bind! %link-keymap "C-<mouse-1>" open-link)
-  (keys:bind! %mouse-keymap "C-<mouse-1>" open-link))
+  (keys:bind! %link-keymap "C-<mouse-1>" open-link))
 
 (define (%no-undo) (set-option-local! undo:limit 0))
 

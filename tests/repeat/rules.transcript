@@ -95,7 +95,7 @@
 ; message the hint followed, in its face.
 > (commands:define-command (stay) "Does nothing." (void))
 > (keys:bind! keys:global "<mouse-1>" stay)
-> (press! c1 (list "<mouse-1>" (vector (views:id (layout:selected-view)) 0)))
+> (press! c1 (list "<mouse-1>" (views:%make-posn (layout:selected-view) 0)))
 > (list (echo-area:current-message) (echo-area:current-face) (keymap-names c1))
 ("layout-split:enlarge: the selected view is in no split" error (layout:keymap keys:global))
 ; Once the repetition has ended, a key bound to the same command

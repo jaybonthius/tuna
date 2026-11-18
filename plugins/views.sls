@@ -28,6 +28,8 @@
    set-view-option! remove-view-option! state-entry view-record-states view-record-states-set!
    scroll-to-place! estimate-range! draw-view current-context context-view context-client in-line? make-context children-html drawing?
    atom-view-of keymaps-at note-edit note-kill after-batch scroll-report mouse-item posn-keymaps forget-client!
+   posn-record? make-posn-record posn-record-view posn-record-point posn-record-node posn-record-keymap
+   posn-record-x posn-record-y posn-record-column posn-record-row keymap-id marked-keymap
    view-client when-measured! scroll-by! recenter!
    face-attributes title-attributes
    anchor-record? anchor-record-id anchor-record-view anchor-record-spot anchor-record-gone?
@@ -2334,10 +2336,48 @@
 
   ;; A press holds the view's showing count because its anchor is in the
   ;; buffer shown then; a release on a screen showing another buffer must
-  ;; not pair with it.
+  ;; not pair with it. Its posn gives a drag's start all but the position,
+  ;; which the anchor keeps.
   (define-record-type mouse-press
     (sealed #t)
-    (fields view showing anchor))
+    (fields view showing anchor posn))
+
+  ;; Nongenerative, so an event made before this module reloads still
+  ;; holds a posn its accessors take.
+  (define-record-type posn-record
+    (nongenerative views:posn/view/point/node/keymap/x/y/column/row)
+    (sealed #t)
+    (fields view point node keymap x y column row))
+
+  ;; The page holds no Scheme value, so it names a marked keymap by a
+  ;; number. Both tables hold the keymap weakly, so a keymap made for a
+  ;; while, as a temporary one, goes when nothing else holds it. A weak
+  ;; pair frees the keymap but not its entry, so a guardian gives back
+  ;; the number of each keymap the collector drops.
+  (define keymap-ids (make-weak-eq-hashtable))
+  (define id-keymaps (make-eqv-hashtable))
+  (define dropped-keymap-ids (make-guardian))
+  (define last-keymap-id 0)
+
+  (define (forget-dropped-keymaps!)
+    (let ([id (dropped-keymap-ids)])
+      (when id
+        (hashtable-delete! id-keymaps id)
+        (forget-dropped-keymaps!))))
+
+  (define (keymap-id keymap)
+    (forget-dropped-keymaps!)
+    (or (eq-hashtable-ref keymap-ids keymap #f)
+        (let ([id (fx+ last-keymap-id 1)])
+          (set! last-keymap-id id)
+          (eq-hashtable-set! keymap-ids keymap id)
+          (hashtable-set! id-keymaps id (weak-cons keymap #f))
+          (dropped-keymap-ids keymap id)
+          id)))
+
+  (define (marked-keymap id)
+    (let ([entry (and (fixnum? id) (hashtable-ref id-keymaps id #f))])
+      (and entry (table? (car entry)) (car entry))))
 
   (define (stale-click)
     (raise-continuable
@@ -2368,16 +2408,16 @@
           (document:replace doc s (fx+ s (document:length (buffers:edit-inserted e))) (buffers:edit-removed e))))
       doc edits))
 
-  (define (item-position b item field)
+  (define (item-place b item field)
     (let ([version (field "version")] [token (field "token")] [at (field "at")] [line (field "line")]
           [count (field "count")])
       (unless (and (fixnum? version) (fx<= 0 version (buffers:version b)))
         (malformed item))
       (if (not (or token at line))
-          #f
+          (values #f #f)
           (let ([edits (buffers:edits-since b version)])
             (if (not edits)
-                'stale
+                (values 'stale #f)
                 (let* ([doc (buffers:document b)]
                        [size (fold-left (lambda (n e) (fx- n (edit-delta e))) (document:length doc) edits)]
                        [count? (and (fixnum? count) (fx>= count 0))]
@@ -2392,11 +2432,24 @@
                   (unless (and p (fx<= 0 p) (fx< p size))
                     (malformed item))
                   (let ([now (follow p edits)])
-                    (cond
-                      [(not now) 'stale]
-                      [(and token (let ([t (document:token doc now)]) (and (document:node? t) (not (document:atom? t)))))
-                       (fx+ now 1)]
-                      [else now]))))))))
+                    (if (not now)
+                        (values 'stale #f)
+                        (let ([t (and token (document:token doc now))])
+                          (cond
+                            [(not (document:node? t)) (values now #f)]
+                            [(document:atom? t) (values now t)]
+                            [else (values (fx+ now 1) t)]))))))))))
+
+  ;; The cell is counted in what the sending client last measured of the
+  ;; view, when the item arrives, so the page sends only facts.
+  (define (item-posn v c id p node item field)
+    (let ([x (field "x")] [y (field "y")] [keymap (marked-keymap (field "keymap"))])
+      (if (and (real? x) (real? y))
+          (let* ([cs (and v (hashtable-ref (view-record-clients v) c #f))] [f (and cs (client-view-facts cs))])
+            (define (cell at size) (exact (max 0 (floor (/ at size)))))
+            (make-posn-record id p node keymap x y
+                              (and f (cell x (facts-char-width f))) (and f (cell y (facts-line-height f)))))
+          (make-posn-record id p node keymap #f #f #f #f))))
 
   (define (mouse-item c item)
     (define (field key) (let ([e (assoc key item)]) (and e (cdr e))))
@@ -2410,40 +2463,45 @@
       (let ([key (keys:item-key item)] [showing (field "showing")])
         (unless (and (fixnum? id) (fx> id 0) (fixnum? showing))
           (malformed item))
-        (let* ([b (and v (fx= showing (view-record-shown-count v)) (bound-buffer v))]
-               [p (if b (item-position b item field) 'stale)]
-               [press (let ([pr (eq-hashtable-ref presses c #f)])
-                        (and pr (eq? (mouse-press-view pr) v) (fx= (mouse-press-showing pr) showing) pr))])
+        (let*-values ([(b) (and v (fx= showing (view-record-shown-count v)) (bound-buffer v))]
+                      [(p node) (if b (item-place b item field) (values 'stale #f))]
+                      [(press) (let ([pr (eq-hashtable-ref presses c #f)])
+                                 (and pr (eq? (mouse-press-view pr) v) (fx= (mouse-press-showing pr) showing) pr))])
+          (define (posn) (item-posn v c id p node item field))
           (define (run! event)
             (with-view-bound v b (lambda () (keys:press! c event))))
           (cond
             [(equal? action "move")
              (unless (or (not p) (eq? p 'stale))
-               (run! (list key (vector id p))))]
+               (run! (list key (posn))))]
+            [(equal? action "wheel")
+             (if (eq? p 'stale) (stale-click) (run! (list key (posn))))]
             [(equal? action "down")
              (if (eq? p 'stale)
-                 (begin (when v (eq-hashtable-set! presses c (make-mouse-press v showing 'stale))) (stale-click))
-                 (begin
-                   (eq-hashtable-set! presses c (make-mouse-press v showing (and p (buffers:anchor b p))))
-                   (run! (list key (vector id p)))))]
+                 (begin (when v (eq-hashtable-set! presses c (make-mouse-press v showing 'stale #f))) (stale-click))
+                 (let ([at (posn)])
+                   (eq-hashtable-set! presses c (make-mouse-press v showing (and p (buffers:anchor b p)) at))
+                   (run! (list key at))))]
             [else
              (eq-hashtable-delete! presses c)
              (cond
                [(and press (eq? (mouse-press-anchor press) 'stale)) (void)]
                [(equal? action "click")
-                (if (eq? p 'stale) (stale-click) (run! (list key (vector id p))))]
+                (if (eq? p 'stale) (stale-click) (run! (list key (posn))))]
                [(and press b)
-                (let ([start (mouse-press-anchor press)])
-                  (run! (list key (vector id (and start (buffers:anchor-position start)))
-                              (vector id (and (not (eq? p 'stale)) p)))))]
+                (let* ([start (mouse-press-anchor press)] [from (mouse-press-posn press)])
+                  (run! (list key
+                              (make-posn-record id (and start (buffers:anchor-position start)) (posn-record-node from)
+                                                (posn-record-keymap from) (posn-record-x from) (posn-record-y from)
+                                                (posn-record-column from) (posn-record-row from))
+                              (if (eq? p 'stale) (item-posn v c id #f #f item field) (posn)))))]
                [else (stale-click)])])))))
 
   (define (posn-keymaps posn)
-    (let* ([ok? (and (vector? posn) (fx= (vector-length posn) 2))]
-           [id (and ok? (vector-ref posn 0))]
-           [v (and (fixnum? id) (fx> id 0) (find-view id))]
+    (let* ([ok? (posn-record? posn)]
+           [v (and ok? (find-view (posn-record-view posn)))]
            [b (and v (bound-buffer v))]
-           [p (and ok? (vector-ref posn 1))])
+           [p (and ok? (posn-record-point posn))])
       (if (and b (fixnum? p) (fx<= 0 p (buffer-length b)))
           (keymaps-at v b p)
           '())))
@@ -2456,6 +2514,9 @@
 
   (define (title-attributes title)
     (if (string? title) (list (cons "title" title)) '()))
+
+  (record-writer (record-type-descriptor posn-record)
+    (lambda (r p wr) (fprintf p "#<posn ~a ~a>" (posn-record-view r) (posn-record-point r))))
 
   (record-writer (record-type-descriptor view-record)
     (lambda (v p wr) (fprintf p "#<view ~a>" (view-record-id v))))
@@ -2770,23 +2831,50 @@
 
 (define (%posn-keymaps client posn) (if posn (posn-keymaps posn) '()))
 
+(define (%marked-keymaps client posn)
+  (let ([keymap (and (posn-record? posn) (posn-record-keymap posn))])
+    (if keymap (list keymap) '())))
+
+(define (keymap-mark keymap)
+  (unless (table? keymap)
+    (assertion-violation 'views:keymap-mark "not a keymap" keymap))
+  (check-main-thread 'views:keymap-mark)
+  (keymap-id keymap))
+
 (define (shown-count view)
   (check-view 'views:shown-count view)
   (view-record-shown-count view))
 
 (define (%check-posn who posn)
-  (unless (and (vector? posn) (fx= (vector-length posn) 2)
-               (let ([id (vector-ref posn 0)]) (and (fixnum? id) (fx> id 0)))
-               (let ([p (vector-ref posn 1)]) (or (not p) (and (fixnum? p) (fx>= p 0)))))
+  (unless (posn-record? posn)
     (assertion-violation who "not a position of a mouse key" posn)))
+
+(define %make-posn
+  (case-lambda
+    [(view position) (%make-posn view position #f #f #f #f)]
+    [(view position node keymap column row)
+     (check-view 'views:%make-posn view)
+     (make-posn-record (view-record-id view) position node keymap #f #f column row)]))
 
 (define (posn-view posn)
   (%check-posn 'views:posn-view posn)
-  (find-view (vector-ref posn 0)))
+  (find-view (posn-record-view posn)))
 
 (define (posn-point posn)
   (%check-posn 'views:posn-point posn)
-  (vector-ref posn 1))
+  (posn-record-point posn))
+
+(define (posn-node posn)
+  (%check-posn 'views:posn-node posn)
+  (posn-record-node posn))
+
+(define (posn-x-y posn)
+  (%check-posn 'views:posn-x-y posn)
+  (values (posn-record-x posn) (posn-record-y posn)))
+
+(define (posn-cell posn)
+  (%check-posn 'views:posn-cell posn)
+  (values (posn-record-column posn) (posn-record-row posn)))
 
 (define (%check-anchor who a)
   (unless (anchor-record? a)
@@ -2918,6 +3006,9 @@
 (table-set! web:input-handlers "mouse" %mouse-item)
 (table-set! web:input-handlers "scroller" %scroller-report)
 (add-hook! keys:find-keymaps %posn-keymaps)
+;; A keymap marked on the element clicked comes before every other
+;; keymap at the position, as Emacs's keymap text property does.
+(add-hook! keys:find-keymaps %marked-keymaps -100)
 (add-hook! web:client-removed forget-client!)
 (keys:bind! keys:global "C-v" scroll-up)
 (keys:bind! keys:global "<next>" scroll-up)

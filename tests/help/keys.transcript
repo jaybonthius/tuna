@@ -64,14 +64,21 @@ Honks once.
 ; A click is looked up at its position, here in notes, whose mode binds
 ; it.
 > (keys:bind! harpo:keymap "<mouse-1>" harpo:honk)
-> (in-client (lambda () (help:describe-key (list "<mouse-1>" (vector (views:id (view)) 2)) (view))))
+> (in-client (lambda () (help:describe-key (list "<mouse-1>" (views:%make-posn (view) 2)) (view))))
 > (title)
 "<mouse-1> at that spot runs the command harpo:honk, bound by (repl)"
+; A keymap marked on the element clicked, as a tab's close button carries
+; one, answers first, and C-h k says who bound the key there.
+> (define-table close-keys "A close button's keys.")
+> (keys:bind! close-keys "<mouse-1>" keys:ignore)
+> (in-client (lambda () (help:describe-key (list "<mouse-1>" (views:%make-posn (view) 2 #f close-keys #f #f)) (view))))
+> (title)
+"<mouse-1> at that spot runs the command keys:ignore, bound by (repl)"
 ; Reading reads past a press to the click that ends it, and describes
 ; the click.
 > (in-client (lambda () (help:describe-key "C-x" (view))))
 > (start! "C-h" "k")
-> (press! (list "<down-mouse-1>" (vector (views:id (view)) 2)) (list "<mouse-1>" (vector (views:id (view)) 2)))
+> (press! (list "<down-mouse-1>" (views:%make-posn (view) 2)) (list "<mouse-1>" (views:%make-posn (view) 2)))
 > (settle)
 > (title)
 "<mouse-1> at that spot runs the command harpo:honk, bound by (repl)"

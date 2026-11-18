@@ -52,7 +52,7 @@
 ; The scrollback is empty, so the buffer's position of the screen's text
 ; is 4 after its index in the document's text, past the nodes' tokens.
 > (define (position-of part) (let ([s (text t)] [n (string-length part)]) (let loop ([i 0]) (if (string=? (substring s i (+ i n)) part) (+ i 4) (loop (+ i 1))))))
-> (define (click! key position) (in-client (lambda () (keys:press! client (list key (vector (views:id (view)) position))))))
+> (define (click! key position) (in-client (lambda () (keys:press! client (list key (views:%make-posn (view) position))))))
 > (click! "<down-mouse-1>" (+ (position-of "link ") 1))
 > (click! "<mouse-1>" (+ (position-of "link ") 1))
 > (web:take-page-calls!)
@@ -66,12 +66,39 @@
 > (terminal:send! t "clear; printf '\\e[?1000h\\e]8;;https://example.org/m\\e\\\\mouse\\e]8;;\\e\\\\\\n'; read x; printf '\\e[?1000l'\r")
 > (wait-for t "mouse\n")
 > (sleep-for 0.2)
-> (click! "C-<down-mouse-1>" (+ (position-of "mouse\n") 1))
-> (click! "C-<mouse-1>" (+ (position-of "mouse\n") 1))
+; Its screen then carries terminal:mouse-keymap and takes the wheel, and
+; an event there names the screen and the cell under the pointer, whose
+; position the link is found at.
+> (define (screen-node) (let ([doc (buffers:document t)])
+                          (let loop ([p 1]) (let ([n (document:token doc p)])
+                                              (if (and (document:node? n) (eq? (document:node-kind n) 'terminal:%screen)) n (loop (+ p 1)))))))
+> (define (from html part i) (if (string=? (substring html i (+ i (string-length part))) part) i (from html part (+ i 1))))
+> (define (screen-tag) (let* ([html (html->string (views:draw (view) client))] [at (from html "<div class=\"terminal-screen\"" 0)])
+                         (substring html at (+ (from html ">" at) 1))))
+> (screen-tag)
+> (define (cell-click! key column row)
+    (in-client (lambda () (keys:press! client (list key (views:%make-posn (view) (+ (document:node-start (screen-node)) 1) (screen-node) terminal:mouse-keymap column row))))))
+> (cell-click! "C-<down-mouse-1>" 2 0)
+> (cell-click! "C-<mouse-1>" 2 0)
 > (web:take-page-calls!)
+"<div class=\"terminal-screen\" data-cursor=\"bar\" data-keymap=\"1\" data-wheel=\"shift\" data-grid=\"shift\">"
 ((1 "browse-url" "https://example.org/m"))
 > (terminal:send! t "\r")
 > (wait-for t "\n$ ")
+; On the alternate screen, as less shows it, alternate scroll is on, so
+; the screen takes the wheel; it names characters still, so a click on a
+; link opens it.
+> (terminal:send! t "clear; printf '\\e[?1049h\\e]8;;https://example.org/a\\e\\\\pager\\e]8;;\\e\\\\\\n'; read x; printf '\\e[?1049l'\r")
+> (wait-for t "pager\n")
+> (sleep-for 0.2)
+> (screen-tag)
+> (click! "<down-mouse-1>" (+ (position-of "pager") 1))
+> (click! "<mouse-1>" (+ (position-of "pager") 1))
+> (web:take-page-calls!)
+"<div class=\"terminal-screen\" data-cursor=\"bar\" data-wheel=\"shift\">"
+((1 "browse-url" "https://example.org/a"))
+> (terminal:send! t "\r")
+> (wait-for t "$ ")
 ; While the program holds synchronized output (mode 2026), the rows are
 ; written when it lets go.
 > (terminal:send! t "clear; printf '\\e[?2026hheld'; read x; printf '\\e[?2026l'; echo\r")

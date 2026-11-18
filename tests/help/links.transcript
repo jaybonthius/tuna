@@ -10,7 +10,7 @@
 > (title)
 "harpo:mode"
 > (in-client (lambda () (help:describe-key "C-c h" (car (views:showing notes)))))
-> (define (on-link name) (list "<mouse-1>" (vector (views:id (help-view)) (+ (link-to name) 2))))
+> (define (on-link name) (list "<mouse-1>" (views:%make-posn (help-view) (+ (link-to name) 2))))
 > (press! (cons "<down-mouse-1>" (cdr (on-link 'harpo:honk))) (on-link 'harpo:honk))
 > (help)
 # harpo:honk

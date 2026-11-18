@@ -110,6 +110,31 @@
 > (press! "C-b")
 > (state)
 ("foo-bar  x---y\nsecond line\nthird" ((32 #f)))
+; Dragging after a third press extends by whole lines, backwards too.
+> (mouse! "down" 20 '("clicks" . 3))
+> (mouse! "move" 3)
+> (state)
+("foo-bar  x---y\nsecond line\nthird" ((1 28)))
+> (mouse! "move" 30)
+> (mouse! "drag" 30 '("clicks" . 3))
+> (state)
+("foo-bar  x---y\nsecond line\nthird" ((33 16)))
+; A single press after a line selection places point.
+> (mouse! "down" 20)
+> (mouse! "click" 20)
+> (state)
+("foo-bar  x---y\nsecond line\nthird" ((20 #f)))
+; The fourth press of a run is a first press, as Emacs cycles a run's
+; selection every three presses, and the fifth selects a word again.
+> (mouse! "down" 20 '("clicks" . 3))
+> (mouse! "click" 20 '("clicks" . 3))
+> (mouse! "down" 20 '("clicks" . 4))
+> (mouse! "click" 20 '("clicks" . 4))
+> (state)
+("foo-bar  x---y\nsecond line\nthird" ((20 #f)))
+> (mouse! "down" 20 '("clicks" . 5))
+> (state)
+("foo-bar  x---y\nsecond line\nthird" ((22 16)))
 ; Whitespace runs across newlines.
 > (start! "abc  \n  def\n\nxyz" 1)
 ("abc  \n  def\n\nxyz" ((1 #f)))
@@ -190,3 +215,45 @@
 > (mouse-in! first "down" #f)
 > (list (eq? (layout:selected-view) first) (views:point first))
 (#t 14)
+; The right button with no region sets the mark at point and point at
+; the click, a temporary region; with one, it moves the nearer end to the
+; click; a second click at the same place kills the region, as Emacs's
+; mouse-save-then-kill does.
+> (define (right! at . fields)
+    (apply mouse! "down" at '("button" . 3) fields)
+    (apply mouse! "click" at '("button" . 3) fields))
+> (start! "one two three four" 1)
+("one two three four" ((1 #f)))
+> (right! 9)
+> (state)
+("one two three four" ((9 1)))
+> (right! 3)
+> (state)
+("one two three four" ((9 3)))
+> (right! 3)
+> (list (state) (kill-ring:text (kill-ring:current)))
+(("onthree four" ((3 #f))) "e two ")
+> (right! 7)
+> (press! "C-f")
+> (state)
+("onthree four" ((8 #f)))
+; After a second press the region's ends move by words.
+> (apply mouse! "down" 5 (double))
+> (apply mouse! "click" 5 (double))
+> (state)
+("onthree four" ((8 1)))
+> (right! 11)
+> (state)
+("onthree four" ((13 1)))
+; The middle button inserts the primary selection, the last region active
+; when a command ended, at the click.
+> (apply mouse! "down" 9 (double))
+> (apply mouse! "click" 9 (double))
+> (state)
+("onthree four" ((13 9)))
+> (kill-ring:text (list (editing:primary-selection)))
+"four"
+> (mouse! "down" 1 '("button" . 2))
+> (mouse! "click" 1 '("button" . 2))
+> (state)
+("fouronthree four" ((5 #f)))
