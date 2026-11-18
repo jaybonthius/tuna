@@ -49,8 +49,7 @@
 > (files:save-buffer empty)
 > (bytes-of empty)
 #vu8()
-; A missing file gives an empty buffer that the first save creates; no
-; folder is ever made.
+; A missing file gives an empty buffer that the first save creates.
 > (define fresh (files:visit "~/fresh.txt"))
 > (list (text fresh) (buffers:modified? fresh) (disk-checks:exists? "~/fresh.txt"))
 ("" #f #f)
@@ -59,15 +58,8 @@
 > (files:save-buffer fresh)
 > (list (disk-checks:read-text "~/fresh.txt") (buffers:modified? fresh))
 ("new\n" #f)
-> (define nowhere (files:visit "~/no/such/folder/x.txt"))
-> (files:path nowhere)
+> (files:path (files:visit "~/no/such/folder/x.txt"))
 "~/no/such/folder/x.txt"
-> (buffers:replace! nowhere 1 1 "x")
-#<edit 1>
-> (files:save-buffer nowhere)
-! files:save-buffer: no such folder with irritant "~/no/such/folder"
-> (list (disk-checks:exists? "~/no") (buffers:modified? nowhere))
-(#f #t)
 > (files:visit "~")
 ! files:read-document: is a folder with irritant "~"
 ; A save renames a new file over the old one, keeping its mode, and
@@ -292,8 +284,8 @@
 ; Arguments are checked.
 > (files:visit 'notes)
 ! files:visit: not a string with irritant notes
-> (files:save-buffer other-buffer)
-! files:save-buffer: the buffer visits no file with irritant #<buffer m.txt>
+> (files:save-buffer 'notes)
+! files:save-buffer: not a buffer with irritant notes
 > (files:fingerprint other-buffer)
 ! files:fingerprint: the buffer visits no file with irritant #<buffer m.txt>
 > (files:path "notes")

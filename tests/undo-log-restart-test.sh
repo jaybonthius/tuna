@@ -22,6 +22,9 @@ cat > "$home/.config/tuna/init.ss" <<'END'
 (use-plugin undo-log
   (config
     (set-option! undo-log:keep-log? (lambda (path) #t))))
+;; No reader of y or n is loaded, so the quit command must not ask
+;; whether to exit.
+(set-option! files:confirm-exit? #f)
 (define (wait-until done?)
   (let loop ([n 0])
     (unless (or (done?) (= n 1000))

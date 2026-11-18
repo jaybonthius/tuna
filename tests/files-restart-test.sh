@@ -67,13 +67,15 @@ expect "restart" "$output" '("a.txt" "b.txt")
 ("b.txt" 4)
 "alpha\nbeta\ngamma\ndelta\n"'
 
-# C-x C-c exits at once, with the open files kept for the next start. A
-# missing file is an empty buffer of one line, so +2 goes to line 1.
+# C-x C-c asks, then exits, with the open files kept for the next start.
+# A missing file is an empty buffer of one line, so +2 goes to line 1.
 output=$(run '(wait-until (lambda () (showing? "c.txt")))
 (shown)
+(set-option! ask:y-or-n-reader (lambda (question) (display question) (newline) #t))
 (commands:run (table-ref keys:global "C-x C-c"))
 (display "not reached")' +2 c.txt)
-expect "quit command" "$output" '("c.txt" 1)'
+expect "quit command" "$output" '("c.txt" 1)
+Really exit Tuna? '
 output=$(run '(wait-until (lambda () (= (length (files:buffers)) 3)))
 (map buffers:name (files:buffers))')
 expect "after the quit command" "$output" '("a.txt" "b.txt" "c.txt")'

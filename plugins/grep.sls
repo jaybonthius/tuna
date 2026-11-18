@@ -97,23 +97,8 @@
       [(char=? (string-ref input i) #\#) (fx+ i 1)]
       [else (loop (fx+ i 1))])))
 
-(define (%home) (or (getenv "HOME") "/"))
-
-(define (%after-last-slash input)
-  (let loop ([i (string-length input)])
-    (cond
-      [(fx= i 0) 0]
-      [(char=? (string-ref input (fx- i 1)) #\/) i]
-      [else (loop (fx- i 1))])))
-
-(define (%default-directory)
-  (let* ([v (views:current)] [b (and v (views:buffer v))] [path (and b (files:path b))])
-    (if path
-        (substring path 0 (%after-last-slash path))
-        (string-append (%home) "/"))))
-
 (define (%grep-root)
-  (let ([dir (%default-directory)])
+  (let ([dir (files:directory)])
     (if (and (fx> (string-length dir) 1) (char=? (string-ref dir (fx- (string-length dir) 1)) #\/))
         (substring dir 0 (fx- (string-length dir) 1))
         dir)))

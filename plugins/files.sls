@@ -4,6 +4,9 @@
 (define-option require-final-newline #f boolean?
   "When true, saving a file buffer whose text does not end in a line break adds one, as an edit.")
 
+(define-option confirm-exit? #t boolean?
+  "When true, files:save-buffers-kill-tuna asks before it exits, unless it has asked about modified buffers.")
+
 (define-hook after-visit
   "Called with a buffer after it has visited a file, before files:visit returns.")
 
@@ -34,6 +37,8 @@
 
 (define-condition-type &changed-on-disk &error %make-changed-on-disk %changed-on-disk?)
 
+(define-condition-type &canceled &error %make-canceled %canceled?)
+
 ;; A job's raise would go to report as well as to the task waiting for
 ;; it, so a worker hands back its failure as data.
 (jobs:define-worker (%reader path emit)
@@ -43,6 +48,10 @@
 (jobs:define-worker (%reverter input emit)
   (import (files disk))
   (emit (guard (c [#t (failure c)]) (revert-file (car input) (cdr input)))))
+
+(jobs:define-worker (%folder-maker folder emit)
+  (import (files disk))
+  (emit (guard (c [#t (failure c)]) (make-folders folder))))
 
 (jobs:define-worker (%writer input emit)
   (import (files disk))
@@ -517,16 +526,80 @@
   (check-main-thread 'files:buffers)
   (visited-buffers))
 
-(commands:define-command (save-buffer [buffer (buffers:current)])
-  "Saves BUFFER to its file when it is modified."
-  (let ([e (file-entry 'files:save-buffer buffer)])
-    (check-task 'files:save-buffer)
-    (with-entry-lock 'files:save-buffer e
-      (lambda ()
-        (when (and (entry-live? e) (buffers:modified? buffer))
-          (save! 'files:save-buffer e #t))))))
+(define (%with-final-slash folder)
+  (let ([n (string-length folder)])
+    (if (and (fx> n 0) (char=? (string-ref folder (fx- n 1)) #\/))
+        folder
+        (string-append folder "/"))))
 
-(commands:define-command (write-file [path (ask:file-name "Write file: ")] [buffer (buffers:current)])
+(define (%home-folder) (%with-final-slash (or (getenv "HOME") "/")))
+
+(define directory
+  (case-lambda
+    [() (let ([b (buffers:current)]) (if b (directory b) (%home-folder)))]
+    [(buffer)
+     (check-buffer 'files:directory buffer)
+     (let ([e (entry-of buffer)])
+       (if e (%with-final-slash (path-parent (entry-path e))) (%home-folder)))]))
+
+(define (%cancel who path)
+  (raise (condition (%make-canceled) (make-who-condition who)
+                    (make-message-condition "canceled") (make-irritants-condition (list path)))))
+
+(define (%confirm-overwrite who path)
+  (when (and (file-exists? path) (not (ask:y-or-n? "File exists; overwrite? ")))
+    (%cancel who path)))
+
+(define (%confirm-save who path)
+  (let ([folder (path-parent path)])
+    (cond
+      [(not (file-exists? folder))
+       (unless (ask:y-or-n? (format "Folder ~a does not exist; create? " folder))
+         (%cancel who folder))
+       (run-job who %folder-maker folder (lambda (made) (void)) #f)]
+      [(and (file-exists? path) (not (writable? path))
+            (not (ask:yes-or-no? "File is write-protected; try to save anyway? ")))
+       (%cancel who path)])))
+
+(define (%ask-file-name who question buffer)
+  (let ([path (ask:file-name question)])
+    (check-path who path)
+    (let* ([path (true-path path)] [other (buffer-at path)])
+      (when (file-directory? path)
+        (error who "is a folder" path))
+      (when (and other (not (eq? other buffer)))
+        (error who "another buffer visits the file" path))
+      path)))
+
+(define (%read-file-to-write)
+  (let ([path (%ask-file-name 'files:write-file "Write file: " (buffers:current))])
+    (unless (commands:prefix-argument)
+      (%confirm-overwrite 'files:write-file path))
+    (%confirm-save 'files:write-file path)
+    path))
+
+(commands:define-command (save-buffer [buffer (buffers:current)])
+  "Saves BUFFER to its file when it is modified, asking for a file when it visits none."
+  (check-buffer 'files:save-buffer buffer)
+  (check-task 'files:save-buffer)
+  (let ([e (entry-of buffer)])
+    (cond
+      [(not (buffers:modified? buffer)) (void)]
+      [e
+       ;; Asked before the entry lock is taken, so other saves of the
+       ;; buffer do not wait on the user.
+       (%confirm-save 'files:save-buffer (entry-path e))
+       (with-entry-lock 'files:save-buffer e
+         (lambda ()
+           (when (and (entry-live? e) (buffers:modified? buffer))
+             (save! 'files:save-buffer e #t))))]
+      [else
+       (let ([path (%ask-file-name 'files:save-buffer "File to save in: " buffer)])
+         (%confirm-overwrite 'files:save-buffer path)
+         (%confirm-save 'files:save-buffer path)
+         (write-file path buffer))])))
+
+(commands:define-command (write-file [path (%read-file-to-write)] [buffer (buffers:current)])
   "Makes BUFFER visit PATH, renaming it after the file, and saves it there."
   (check-path 'files:write-file path)
   (check-buffer 'files:write-file buffer)
@@ -539,6 +612,17 @@
         (lambda ()
           (when (entry-live? e)
             (save! 'files:write-file e #f)))))))
+
+(commands:define-command (save-some-buffers)
+  "Asks, for each modified file buffer, whether to save it, and saves each answered y."
+  (check-main-thread 'files:save-some-buffers)
+  (for-each
+    (lambda (b)
+      (when (and (entry-of b) (buffers:modified? b)
+                 (ask:y-or-n? (format "Save file ~a? " (path b)))
+                 (entry-of b))
+        (save-buffer b)))
+    (visited-buffers)))
 
 (commands:define-command (revert-buffer [buffer (buffers:current)])
   "Reads BUFFER's file again and replaces the part of the text that differs, as one edit."
@@ -572,12 +656,13 @@
   (buffers:set-modified! buffer #f))
 
 (commands:define-command (save-buffers-kill-tuna)
-  "Exits Tuna, asking first when a modified file buffer's edits would be lost."
+  "Exits Tuna, asking first when a modified file buffer's edits would be lost, else when files:confirm-exit? is true."
   (check-main-thread 'files:save-buffers-kill-tuna)
-  (when (or (for-all (lambda (b)
+  (when (if (for-all (lambda (b)
                        (or (not (buffers:modified? b))
                            (exists (lambda (entry) (entry b)) (hook-entries unsaved-kept))))
                      (visited-buffers))
+            (or (not (confirm-exit?)) (ask:y-or-n? "Really exit Tuna? "))
             (ask:yes-or-no? "Modified buffers exist; exit anyway? "))
     (exit)))
 
@@ -588,10 +673,27 @@
 (define (changed-on-disk-condition? v)
   (%changed-on-disk? v))
 
+(define (canceled-condition? v)
+  (%canceled? v))
+
+;; A file buffer's unsaved edits outlive a kill in undo-log's log, so
+;; only a buffer with no file is asked about. A name that starts with a
+;; space marks an internal buffer, such as a prompt's, which its plugin
+;; kills inside a command.
+(define (%confirm-kill buffer)
+  (let ([name (buffers:name buffer)])
+    (or (not (commands:this-command))
+        (entry-of buffer)
+        (not (buffers:modified? buffer))
+        (and (fx> (string-length name) 0) (char=? (string-ref name 0) #\space))
+        (ask:y-or-n? (format "Buffer ~a has unsaved text; kill anyway? " name)))))
+
 (add-hook! buffers:killed forget-killed!)
+(add-hook! buffers:kill-queries %confirm-kill)
 (keys:bind! keys:global "C-x C-f" find-file)
 (keys:bind! keys:global "C-x C-w" write-file)
 (keys:bind! keys:global "C-x C-s" save-buffer)
+(keys:bind! keys:global "C-x s" save-some-buffers)
 (keys:bind! keys:global "M-~" not-modified)
 (keys:bind! keys:global "C-x C-c" save-buffers-kill-tuna)
 (on-unload save-visits!)

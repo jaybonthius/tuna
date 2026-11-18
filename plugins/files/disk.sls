@@ -1,5 +1,5 @@
 (library (files disk)
-  (export true-path read-file revert-file save-file fnv-basis
+  (export true-path writable? make-folders read-file revert-file save-file fnv-basis
           failure failure? failure-violation? failure-message failure-irritants
           contents-document contents-length contents-hash contents-bom? contents-crlf?)
   (import (chezscheme) (document))
@@ -12,6 +12,7 @@
       (load-shared-object #f)
       (foreign-procedure __collect_safe "realpath" (uptr uptr) uptr)))
   (define c-stat (foreign-procedure __collect_safe "stat" (uptr uptr) int))
+  (define c-access (foreign-procedure __collect_safe "access" (uptr int) int))
   (define c-open (foreign-procedure __collect_safe "open" (uptr int) int))
   (define c-fsync (foreign-procedure __collect_safe "fsync" (int) int))
   (define c-close (foreign-procedure "close" (int) int))
@@ -89,6 +90,11 @@
                     [(or (string=? name "") (string=? name ".")) folder]
                     [(string=? name "..") (path-parent folder)]
                     [else (join folder name)])))))))
+
+  (define write-access 2)
+
+  (define (writable? path)
+    (fx= (call-with-c-string path (lambda (p) (c-access p write-access))) 0))
 
   (define fnv-basis 2166136261)
 
@@ -305,6 +311,12 @@
   (define (in-place? path)
     (let ([stat (link-count-and-owner path)])
       (and stat (or (> (car stat) 1) (not (= (cdr stat) (c-geteuid)))))))
+
+  (define (make-folders folder)
+    (unless (file-exists? folder)
+      (make-folders (path-parent folder))
+      (mkdir folder))
+    #t)
 
   (define (save-file path doc bom crlf length hash check?)
     (let ([folder (path-parent path)])

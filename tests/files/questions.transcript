@@ -1,0 +1,169 @@
+; The questions the plugin asks through ask, answered here by readers
+; that note each question.
+> (define asked '())
+> (define (answer reply) (lambda (question) (set! asked (cons question asked)) reply))
+> (define (questions) (let ([q (reverse asked)]) (set! asked '()) q))
+; Run as a command, write-file asks before it replaces a file, and C-u
+; skips the question; called from code, it never asks.
+> (disk-checks:write-text! "~/taken.txt" "taken\n")
+> (define draft (buffers:make "*draft*" "draft"))
+> (set-option! ask:file-name-reader (answer "~/taken.txt"))
+> (set-option! ask:y-or-n-reader (answer #f))
+> (buffers:with-buffer draft (commands:run files:write-file))
+! files:write-file: canceled with irritant "~/taken.txt"
+> (list (questions) (files:path draft) (disk-checks:read-text "~/taken.txt"))
+(("Write file: " "File exists; overwrite? ") #f "taken\n")
+> (parameterize ([commands:prefix-argument '(4)]) (buffers:with-buffer draft (commands:run files:write-file)))
+> (list (questions) (files:path draft) (disk-checks:read-text "~/taken.txt"))
+(("Write file: ") "~/taken.txt" "draft\n")
+> (files:write-file "~/taken.txt" draft)
+> (questions)
+()
+; Saving a write-protected file asks yes or no first, and a save keeps
+; the file's mode.
+> (disk-checks:set-mode! "~/taken.txt" #o444)
+> (buffers:replace! draft 1 1 "a ")
+#<edit 2>
+> (set-option! ask:yes-or-no-reader (answer #f))
+> (files:save-buffer draft)
+! files:save-buffer: canceled with irritant "~/taken.txt"
+> (list (questions) (disk-checks:read-text "~/taken.txt") (buffers:modified? draft))
+(("File is write-protected; try to save anyway? ") "draft\n" #t)
+> (set-option! ask:yes-or-no-reader (answer #t))
+> (files:save-buffer draft)
+> (list (questions) (disk-checks:read-text "~/taken.txt") (number->string (disk-checks:mode "~/taken.txt") 8))
+(("File is write-protected; try to save anyway? ") "a draft\n" "444")
+> (buffers:replace! draft 1 1 "b ")
+#<edit 3>
+> (files:write-file "~/taken.txt" draft)
+> (list (questions) (disk-checks:read-text "~/taken.txt"))
+(() "b a draft\n")
+> (buffers:replace! draft 1 1 "c ")
+#<edit 4>
+> (set-option! ask:y-or-n-reader (answer #t))
+> (buffers:with-buffer draft (commands:run files:write-file))
+> (list (questions) (disk-checks:read-text "~/taken.txt"))
+(("Write file: " "File exists; overwrite? " "File is write-protected; try to save anyway? ") "c b a draft\n")
+; C-x s asks y or n for each modified file buffer, in the order they
+; were visited, and saves those answered y.
+> (commands:command-name (table-ref keys:global "C-x s"))
+files:save-some-buffers
+> (define one (files:visit "~/one.txt"))
+> (define two (files:visit "~/two.txt"))
+> (buffers:replace! one 1 1 "1")
+#<edit 1>
+> (buffers:replace! two 1 1 "2")
+#<edit 1>
+> (define (replies . answers)
+    (lambda (question)
+      (set! asked (cons question asked))
+      (let ([a (car answers)]) (set! answers (cdr answers)) a)))
+> (set-option! ask:y-or-n-reader (replies #f #t))
+> (commands:run files:save-some-buffers)
+> (list (questions) (disk-checks:exists? "~/one.txt") (disk-checks:read-text "~/two.txt") (buffers:modified? one))
+(("Save file ~/one.txt? " "Save file ~/two.txt? ") #f "2\n" #t)
+; Saving into a folder that does not exist asks whether to make it.
+> (define deep (files:visit "~/new/folder/deep.txt"))
+> (buffers:replace! deep 1 1 "deep")
+#<edit 1>
+> (set-option! ask:y-or-n-reader (answer #f))
+> (files:save-buffer deep)
+! files:save-buffer: canceled with irritant "~/new/folder"
+> (list (questions) (disk-checks:exists? "~/new") (buffers:modified? deep))
+(("Folder ~/new/folder does not exist; create? ") #f #t)
+> (set-option! ask:y-or-n-reader (answer #t))
+> (files:save-buffer deep)
+> (list (questions) (disk-checks:read-text "~/new/folder/deep.txt"))
+(("Folder ~/new/folder does not exist; create? ") "deep\n")
+; Called from code, write-file makes no folder.
+> (files:write-file "~/elsewhere/w.txt" (buffers:make "*w*" "w"))
+! files:write-file: no such folder with irritant "~/elsewhere"
+> (questions)
+()
+; Saving a modified buffer that visits no file asks for a file, then
+; asks as write-file does as a command; an unmodified one asks nothing.
+> (disk-checks:write-text! "~/kept.txt" "kept\n")
+> (define jot (buffers:make "*jot*" ""))
+> (set-option! ask:file-name-reader (answer "~/kept.txt"))
+> (files:save-buffer jot)
+> (questions)
+()
+> (buffers:replace! jot 1 1 "jot")
+#<edit 1>
+> (set-option! ask:y-or-n-reader (answer #f))
+> (files:save-buffer jot)
+! files:save-buffer: canceled with irritant "~/kept.txt"
+> (list (questions) (files:path jot))
+(("File to save in: " "File exists; overwrite? ") #f)
+> (set-option! ask:file-name-reader (answer "~/jot.txt"))
+> (files:save-buffer jot)
+> (list (questions) (files:path jot) (buffers:name jot) (disk-checks:read-text "~/jot.txt") (buffers:modified? jot))
+(("File to save in: ") "~/jot.txt" "jot.txt" "jot\n" #f)
+; A folder, or a file another buffer visits, is refused as the answer,
+; before the buffer is renamed or a folder is made.
+> (define loose (buffers:make "*loose*" ""))
+> (buffers:replace! loose 1 1 "loose")
+#<edit 1>
+> (set-option! ask:file-name-reader (answer "~/"))
+> (files:save-buffer loose)
+! files:save-buffer: is a folder with irritant "~"
+> (list (questions) (buffers:name loose) (files:path loose))
+(("File to save in: ") "*loose*" #f)
+> (buffers:with-buffer loose (commands:run files:write-file))
+! files:write-file: is a folder with irritant "~"
+> (list (questions) (buffers:name loose) (files:path loose))
+(("Write file: ") "*loose*" #f)
+> (files:visit "~/far/away.txt")
+#<buffer away.txt>
+> (set-option! ask:file-name-reader (answer "~/far/away.txt"))
+> (buffers:with-buffer loose (commands:run files:write-file))
+! files:write-file: another buffer visits the file with irritant "~/far/away.txt"
+> (list (questions) (buffers:name loose) (disk-checks:exists? "~/far"))
+(("Write file: ") "*loose*" #f)
+; A no raises a files:&canceled condition.
+> (set-option! ask:file-name-reader (answer "~/kept.txt"))
+> (set-option! ask:y-or-n-reader (answer #f))
+> (guard (c [(files:canceled-condition? c) (list (error? c) (condition-who c) (condition-message c))])
+    (files:save-buffer loose))
+(#t files:save-buffer "canceled")
+> (questions)
+("File to save in: " "File exists; overwrite? ")
+; A command that kills a modified buffer with no file asks first. Code
+; outside a command, a file buffer, an unmodified buffer and an internal
+; one are not asked about.
+> (commands:define-command (kill [buffer (buffers:current)]) "Kills BUFFER." (buffers:kill! buffer))
+> (define unsaved (buffers:make "*unsaved*" ""))
+> (buffers:replace! unsaved 1 1 "text")
+#<edit 1>
+> (set-option! ask:y-or-n-reader (answer #f))
+> (commands:run kill unsaved)
+#f
+> (list (questions) (buffers:live? unsaved))
+(("Buffer *unsaved* has unsaved text; kill anyway? ") #t)
+> (set-option! ask:y-or-n-reader (answer #t))
+> (commands:run kill unsaved)
+#t
+> (list (questions) (buffers:live? unsaved))
+(("Buffer *unsaved* has unsaved text; kill anyway? ") #f)
+> (define internal (buffers:make " *internal*" ""))
+> (buffers:replace! internal 1 1 "text")
+#<edit 1>
+> (buffers:modified? one)
+#t
+> (map (lambda (b) (commands:run kill b)) (list one (buffers:make "*clean*" "") internal))
+(#t #t #t)
+> (define later (buffers:make "*later*" ""))
+> (buffers:replace! later 1 1 "text")
+#<edit 1>
+> (buffers:kill! later)
+#t
+> (questions)
+()
+; files:directory is the folder of a buffer's file, else the home folder;
+; without a buffer it is the current buffer's.
+> (map files:directory (list deep jot (buffers:make "*none*" "")))
+("~/new/folder/" "~/" "~/")
+> (buffers:with-buffer deep (files:directory))
+"~/new/folder/"
+> (files:directory "notes")
+! files:directory: not a buffer with irritant "notes"

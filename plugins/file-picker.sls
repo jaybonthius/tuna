@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (minibuffer) (files) (jobs) (views) (ask))
+(import (completion) (minibuffer) (files) (jobs) (ask))
 
 (define-saved file-name-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
@@ -78,15 +78,9 @@
             (emit (list->vector (apply append (map (lambda (dir) (entries (car dir) (cdr dir))) (expansions n prefix)))))))
       (loop (receive)))))
 
-(define (%default-directory)
-  (let* ([v (views:current)] [b (and v (views:buffer v))] [path (and b (files:path b))])
-    (if path
-        (substring path 0 (%after-last-slash path))
-        (string-append (%home) "/"))))
-
 (define read-file-name
   (case-lambda
-    [(question) (read-file-name question (%default-directory) file-name-history)]
+    [(question) (read-file-name question (files:directory) file-name-history)]
     [(question directory) (read-file-name question directory file-name-history)]
     [(question directory h)
      (unless (string? directory)

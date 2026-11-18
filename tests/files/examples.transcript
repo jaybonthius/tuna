@@ -47,18 +47,29 @@
 > (map (lambda (k) (commands:command-name (table-ref keys:global k))) '("C-x C-s" "M-~" "C-x C-c"))
 (files:save-buffer files:not-modified files:save-buffers-kill-tuna)
 ; The autosave example saves modified buffers after five seconds of
-; idle, and leaves alone a file another program changed.
+; idle, and leaves alone a file another program changed, and one the
+; user would not save over its write protection.
 > (import (autosave))
 > (define other (files:visit "~/other.txt"))
+> (disk-checks:write-text! "~/locked.txt" "locked\n")
+> (disk-checks:set-mode! "~/locked.txt" #o444)
+> (define locked (files:visit "~/locked.txt"))
+> (define later (files:visit "~/later.txt"))
 > (buffers:replace! notes 1 1 "+ ")
 #<edit 5>
 > (buffers:replace! other 1 1 "draft")
 #<edit 1>
+> (buffers:replace! locked 1 1 "un")
+#<edit 1>
+> (buffers:replace! later 1 1 "later")
+#<edit 1>
 > (disk-checks:write-text! "~/other.txt" "changed elsewhere\n")
+> (set-option! ask:yes-or-no-reader (lambda (question) #f))
 > (set-idle! #t)
 > (sleep-for 5.5)
-> (list (buffers:modified? notes) (buffers:modified? other))
-(#f #t)
+> (map buffers:modified? (list notes other locked later))
+(#f #t #t #f)
+> (files:not-modified locked)
 > (list (disk-checks:read-text "~/notes.txt") (disk-checks:read-text "~/other.txt"))
 ("+ * Today: Buy milk.\nCall Bob.\n" "changed elsewhere\n")
 > (guard (c [(files:changed-on-disk-condition? c) (condition-message c)])
@@ -72,4 +83,15 @@
 > asked
 ("Modified buffers exist; exit anyway? ")
 > (add-hook! files:unsaved-kept (lambda (buffer) (eq? buffer other)))
+; With no edits to lose, it asks whether to exit, since
+; files:confirm-exit? is on by default.
+> (set-option! ask:y-or-n-reader (lambda (question) (set! asked (cons question asked)) #f))
+> (commands:run files:save-buffers-kill-tuna)
+> asked
+("Really exit Tuna? " "Modified buffers exist; exit anyway? ")
+; Once it has asked about modified buffers, it asks nothing more.
+> (buffers:replace! notes 1 1 "! ")
+#<edit 6>
+> (set-option! ask:yes-or-no-reader (lambda (question) #t))
+> (set-option! ask:y-or-n-reader (lambda (question) (display question) #f))
 > (commands:run files:save-buffers-kill-tuna)
