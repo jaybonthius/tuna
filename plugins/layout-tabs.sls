@@ -2,7 +2,7 @@
 (import (layout) (buffers) (document) (views) (keys) (commands) (web) (haml))
 
 (module %internals
-  (parts tabs-node? holding-tabs place-attribute?)
+  (parts tabs-node? holding-tabs holds-locked? same-part? leads-to-locked? place-attribute?)
 
   (define (parts node)
     (let ([acc '()])
@@ -22,6 +22,14 @@
           [(tabs-node? n kind) (values (and child n) child)]
           [else (climb n (document:enclosing doc (document:node-start n)))]))))
 
+  (define (holds-locked? node)
+    (or (layout:locked? node)
+        (and (not (document:atom? node)) (exists holds-locked? (parts node)))))
+
+  (define (same-part? a b) (fx= (document:node-start a) (document:node-start b)))
+
+  (define (leads-to-locked? node) (layout:locked? (layout:view-node (layout:part-view node))))
+
   ;; What a view atom says of itself stays with it; the rest describes its
   ;; place, which the tabs container wrapping it takes.
   (define (place-attribute? a) (not (memq (car a) '(view buffer title)))))
@@ -30,7 +38,7 @@
 
 (define (%draw-tabs node children focused draw-child client)
   (let ([shown (or (and focused
-                        (find (lambda (c) (fx= (document:node-start c) (document:node-start focused))) children))
+                        (find (lambda (c) (same-part? c focused)) children))
                    (car children))])
     (haml (:div.tabs ([class (layout:part-class node)])
             (:div.tabs-strip ([role "tablist"])
@@ -91,12 +99,8 @@
   (unless (and (integer? n) (exact? n))
     (assertion-violation who "not an exact integer" n))
   (let-values ([(tabs tab) (%selected-tabs who)])
-    (let* ([at (document:node-start tab)]
-           [stops (filter (lambda (c)
-                            (or (fx= (document:node-start c) at)
-                                (not (layout:locked? (layout:view-node (layout:part-view c))))))
-                          (parts tabs))]
-           [k (let loop ([cs stops] [k 0]) (if (fx= (document:node-start (car cs)) at) k (loop (cdr cs) (fx+ k 1))))])
+    (let* ([stops (filter (lambda (c) (or (same-part? c tab) (not (leads-to-locked? c)))) (parts tabs))]
+           [k (let loop ([cs stops] [k 0]) (if (same-part? (car cs) tab) k (loop (cdr cs) (fx+ k 1))))])
       (layout:select! (layout:part-view (list-ref stops (mod (+ k (* sign n)) (length stops))))))))
 
 ;; Unlike other display actions this one selects: a tabs container shows
@@ -122,6 +126,20 @@
   (let-values ([(tabs tab) (%selected-tabs 'layout-tabs:close-tab)])
     (layout:delete-part! tab)))
 
+;; A lock binds the user's commands, so a tab holding a locked part stays.
+;; Tabs outside the selected view's level are persistent for it, and its
+;; level's window history could not bring them back.
+(commands:define-command (close-other-tabs)
+  "Deletes every tab but the selected view's, in the innermost tabs that hold it, inside its level, except tabs holding a locked part."
+  (let loop ()
+    (let-values ([(tabs tab) (%selected-tabs 'layout-tabs:close-other-tabs)])
+      (unless (fx< (document:node-start (layout:level-of (layout:selected-view))) (document:node-start tabs))
+        (assertion-violation 'layout-tabs:close-other-tabs "the selected view is in no tabs inside its level"))
+      (let ([other (find (lambda (c) (not (or (same-part? c tab) (holds-locked? c)))) (parts tabs))])
+        (when other
+          (layout:delete-part! other)
+          (loop))))))
+
 (commands:define-command (next-tab [n (commands:prefix-number)])
   "Selects the view the focused children lead to in the tab n after the selected view's tab, cyclically."
   (%switch-tab! 'layout-tabs:next-tab n 1))
@@ -129,6 +147,29 @@
 (commands:define-command (previous-tab [n (commands:prefix-number)])
   "Selects the view the focused children lead to in the tab n before the selected view's tab, cyclically."
   (%switch-tab! 'layout-tabs:previous-tab n -1))
+
+;; The view selected last in a tab is the one its focused children lead
+;; to, so selecting the tab's part-view returns the user to where they were.
+(commands:define-command (recent-tab [n (commands:prefix-number)])
+  "Selects the view the focused children lead to in the tab used n-th most recently before the selected view's tab."
+  (unless (and (integer? n) (exact? n) (> n 0))
+    (assertion-violation 'layout-tabs:recent-tab "not a positive exact integer" n))
+  (let-values ([(tabs tab) (%selected-tabs 'layout-tabs:recent-tab)])
+    (let* ([others (remp (lambda (c) (same-part? c tab)) (parts tabs))]
+           [used (fold-left
+                   (lambda (acc v)
+                     (let* ([atom (layout:view-node v)]
+                            [holding (and atom
+                                          (find (lambda (c)
+                                                  (and (fx<= (document:node-start c) (document:node-start atom))
+                                                       (fx<= (document:node-end atom) (document:node-end c))))
+                                                others))])
+                       (if (and holding (not (memq holding acc))) (cons holding acc) acc)))
+                   '() (layout:selection-order))]
+           [stops (remp leads-to-locked? (reverse used))])
+      (when (> n (length stops))
+        (error 'layout-tabs:recent-tab "no more recent tabs"))
+      (layout:select! (layout:part-view (list-ref stops (- n 1)))))))
 
 ;; views places a click on a label of a container one past the
 ;; container's start, where its first child may start too, so a click
@@ -155,6 +196,7 @@
 
 (keys:bind! keys:global "C-x t 2" new-tab)
 (keys:bind! keys:global "C-x t 0" close-tab)
+(keys:bind! keys:global "C-x t 1" close-other-tabs)
 (keys:bind! keys:global "C-x t o" next-tab)
 (keys:bind! keys:global "C-x t O" previous-tab)
 (keys:bind! keymap "<mouse-1>" mouse-select-tab)

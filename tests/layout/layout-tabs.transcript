@@ -240,3 +240,117 @@
 > (click! (cons "token" (label-at g)))
 > (selected)
 13
+; layout-tabs:recent-tab selects the tab used last before the selected
+; view's tab, so repeating it goes back and forth; a count n goes to the
+; n-th most recent.
+> (define t1 (views:make notes))
+> (define t2 (views:make other))
+> (define t3 (views:make notes))
+> (define t4 (views:make other))
+> (set-parts! (layout-tabs:container '() (atom t1) (atom t2) (atom t3) (atom t4)))
+> (layout:select! t1)
+> (layout:select! t3)
+> (layout:select! t2)
+> (commands:run layout-tabs:recent-tab 1)
+> (selected)
+25
+> (commands:run layout-tabs:recent-tab 1)
+> (selected)
+24
+> (commands:run layout-tabs:recent-tab 2)
+> (selected)
+23
+; A tab none of whose views was ever selected has not been used.
+> (raised (lambda () (layout-tabs:recent-tab 3)))
+(layout-tabs:recent-tab "no more recent tabs")
+> (raised (lambda () (layout-tabs:recent-tab 0)))
+(layout-tabs:recent-tab "not a positive exact integer")
+; A tab is as recent as the view selected last in it, which it leads to;
+; a tab leading to a locked view is passed over.
+> (define t5 (views:make notes))
+> (define t6 (views:make notes))
+> (define t7 (views:make other))
+> (set-parts! (layout-tabs:container '() (atom t1) (layout-split:container '((direction . row)) (atom t5) (atom t6)) (atom t7 '(locked . #t)) (atom t2)))
+> (layout:select! t1)
+> (layout:select! t6)
+> (layout:select! t5)
+> (layout:select! t7)
+> (layout:select! t2)
+> (commands:run layout-tabs:recent-tab 1)
+> (selected)
+27
+> (raised (lambda () (layout-tabs:recent-tab 'x)))
+(layout-tabs:recent-tab "not a positive exact integer")
+; C-x t 1 deletes every other tab of the innermost tabs holding the
+; selected view, but a tab holding a locked part; window history takes
+; it back in one step.
+> (define (fresh) (views:make notes))
+> (define u (make-vector 6))
+> (for-each (lambda (i) (vector-set! u i (fresh))) (iota 6))
+> (define (u. i) (vector-ref u i))
+> (set-parts! (layout-tabs:container '() (atom (u. 0)) (layout-split:container '((direction . row)) (atom (u. 1)) (atom (u. 2) '(locked . #t))) (atom (u. 3)) (layout-tabs:container '() (atom (u. 4)) (atom (u. 5)))))
+> (layout:select! (u. 3))
+> (press! c1 '("x" "control") '("t") '("1"))
+> (tree)
+(layout:level () (layout-tabs:container () (layout-split:container ((direction . row)) #(views:view ((view . 31) (buffer . "notes"))) #(views:view ((view . 32) (buffer . "notes") (locked . #t)))) #(views:view ((view . 33) (buffer . "notes")))))
+> (selected)
+33
+> (press! c1 '("c" "control") '("ArrowLeft"))
+> (tree)
+(layout:level () (layout-tabs:container () #(views:view ((view . 30) (buffer . "notes"))) (layout-split:container ((direction . row)) #(views:view ((view . 31) (buffer . "notes"))) #(views:view ((view . 32) (buffer . "notes") (locked . #t)))) #(views:view ((view . 33) (buffer . "notes"))) (layout-tabs:container () #(views:view ((view . 34) (buffer . "notes"))) #(views:view ((view . 35) (buffer . "notes"))))))
+> (press! c1 '("c" "control") '("ArrowRight"))
+> (tree)
+(layout:level () (layout-tabs:container () (layout-split:container ((direction . row)) #(views:view ((view . 31) (buffer . "notes"))) #(views:view ((view . 32) (buffer . "notes") (locked . #t)))) #(views:view ((view . 33) (buffer . "notes")))))
+; The views of a step's tabs are made again from their parts.
+> (press! c1 '("c" "control") '("ArrowLeft"))
+> (layout:select! (views:find 35))
+> (press! c1 '("x" "control") '("t") '("1"))
+> (tree)
+(layout:level () (layout-tabs:container () #(views:view ((view . 30) (buffer . "notes"))) (layout-split:container ((direction . row)) #(views:view ((view . 31) (buffer . "notes"))) #(views:view ((view . 32) (buffer . "notes") (locked . #t)))) #(views:view ((view . 33) (buffer . "notes"))) (layout-tabs:container () #(views:view ((view . 35) (buffer . "notes"))))))
+> (press! c1 '("x" "control") '("t") '("1"))
+> (tree)
+(layout:level () (layout-tabs:container () #(views:view ((view . 30) (buffer . "notes"))) (layout-split:container ((direction . row)) #(views:view ((view . 31) (buffer . "notes"))) #(views:view ((view . 32) (buffer . "notes") (locked . #t)))) #(views:view ((view . 33) (buffer . "notes"))) (layout-tabs:container () #(views:view ((view . 35) (buffer . "notes"))))))
+; Selecting a tab changes no part, so window history records no step.
+> (define v1 (fresh))
+> (define v2 (fresh))
+> (set-parts! (layout-split:container '((direction . row)) (layout:level '() (layout-tabs:container '() (atom v1) (atom v2))) (atom (fresh))))
+> (layout:select! v1)
+> (press! c1 '("x" "control") '("t") '("o"))
+> (press! c1 '("x" "control") '("t") '("1"))
+> (press! c1 '("c" "control") '("ArrowLeft"))
+> (tree)
+(layout:level () (layout-split:container ((direction . row)) (layout:level () (layout-tabs:container () #(views:view ((view . 36) (buffer . "notes"))) #(views:view ((view . 37) (buffer . "notes"))))) #(views:view ((view . 38) (buffer . "notes")))))
+> (selected)
+37
+> (press! c1 '("c" "control") '("ArrowLeft"))
+! layout:history-back: no more back history in this level
+> (set-parts! (atom (fresh)))
+> (raised (lambda () (layout-tabs:close-other-tabs)))
+(layout-tabs:close-other-tabs "the selected view is in no tabs")
+> (raised (lambda () (layout-tabs:recent-tab 1)))
+(layout-tabs:recent-tab "the selected view is in no tabs")
+; C-x t 1 stays inside the selected view's level: tabs outside it are
+; persistent for the view, and its level's history could not restore them.
+> (define w1 (fresh))
+> (define w2 (fresh))
+> (define w3 (fresh))
+> (set-parts! (layout-tabs:container '() (atom w1) (layout:level '() (layout-split:container '((direction . row)) (atom w2) (atom w3)))))
+> (layout:select! w1)
+> (layout:select! w3)
+> (press! c1 '("x" "control") '("t") '("1"))
+! layout-tabs:close-other-tabs: the selected view is in no tabs inside its level
+> (raised (lambda () (layout-tabs:close-other-tabs)))
+(layout-tabs:close-other-tabs "the selected view is in no tabs inside its level")
+> (tree)
+(layout:level () (layout-tabs:container () #(views:view ((view . 40) (buffer . "notes"))) (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 41) (buffer . "notes"))) #(views:view ((view . 42) (buffer . "notes")))))))
+; Tabs a history step brings back are new parts, none of whose views has
+; been selected since.
+> (set-parts! (layout-tabs:container '() (atom w1) (atom w2)))
+> (layout:select! w1)
+> (layout:select! w2)
+> (press! c1 '("x" "control") '("t") '("1"))
+> (press! c1 '("c" "control") '("ArrowLeft"))
+> (tree)
+(layout:level () (layout-tabs:container () #(views:view ((view . 40) (buffer . "notes"))) #(views:view ((view . 41) (buffer . "notes")))))
+> (raised (lambda () (layout-tabs:recent-tab 1)))
+(layout-tabs:recent-tab "no more recent tabs")

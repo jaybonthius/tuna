@@ -51,7 +51,7 @@ cat > "$dir/input" <<'END'
                    [size (document:length (buffers:document layout:buffer))])
               (attempt
                 (lambda ()
-                  (case (mod k 12)
+                  (case (mod k 14)
                     [(0) (if many? (layout-tabs:close-tab) (layout-tabs:new-tab))]
                     [(1) (if many? (layout:delete-part! (layout:view-node (pick shown k))) (layout-tabs:add-tab! selected notes))]
                     [(2) (layout-split:split-view! selected (layout-split:direction row))]
@@ -63,6 +63,8 @@ cat > "$dir/input" <<'END'
                     [(8) (layout-tabs:display-in-new-tab notes)]
                     [(9) (layout:other-view)]
                     [(10) (layout-tabs:close-tab)]
+                    [(11) (layout-tabs:close-other-tabs)]
+                    [(12) (layout-tabs:recent-tab (+ 1 (mod k 2)))]
                     [else (layout:select! (pick shown (* k 7)))]))))
             (loop (+ k 1))))
         (set! quitting #f)
