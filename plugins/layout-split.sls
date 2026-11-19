@@ -71,7 +71,7 @@
   ;; Resizing takes from the other parts of a split, so it stays in the
   ;; view's level, as the other commands that mean the other views do.
   (define (holding-split atom kind)
-    (let ([doc (buffers:document layout:buffer)] [level (car (layout:level '()))])
+    (let ([doc (buffers:document layout:buffer)] [level (buffers:kind-name (buffers:constructor-kind layout:level))])
       (let loop ([n atom])
         (let ([p (document:enclosing doc (document:node-start n))])
           (cond
@@ -115,6 +115,10 @@
 
 (import %internals)
 
+(define (%kind) (buffers:kind-name (buffers:constructor-kind container)))
+
+(define (%level-kind) (buffers:kind-name (buffers:constructor-kind layout:level)))
+
 (define (%draw-split node children focused draw-child client)
   (let ([direction (if (column? node) "column" "row")] [part (layout:part-class node)])
     (haml (:div.split ([class (if part (string-append direction " " part) direction)])
@@ -144,7 +148,7 @@
     (assertion-violation 'layout-split:split-view! "not a view" view))
   (unless (enum-set-member? direction (enum-set-universe (directions)))
     (assertion-violation 'layout-split:split-view! "not a split direction" direction))
-  (let ([atom (layout:view-node view)] [b (views:buffer view)] [kind (car (container '()))])
+  (let ([atom (layout:view-node view)] [b (views:buffer view)] [kind (%kind)])
     (unless atom
       (assertion-violation 'layout-split:split-view! "not a view in the layout" view))
     (when (layout:locked? atom)
@@ -171,7 +175,7 @@
 (define (%resize! who n sign)
   (unless (and (integer? n) (exact? n))
     (assertion-violation who "not an exact integer" n))
-  (let ([atom (layout:view-node (layout:selected-view))] [kind (car (container '()))])
+  (let ([atom (layout:view-node (layout:selected-view))] [kind (%kind)])
     (let-values ([(split part) (if atom (holding-split atom kind) (values #f #f))])
       (unless split
         (assertion-violation who "the selected view is in no split"))
@@ -235,7 +239,7 @@
     (when (and level (not (layout:locked? level)))
       (for-each
         (lambda (child)
-          (let* ([d (node-datum child)] [b (balanced d (car (container '())) (car (layout:level '())))])
+          (let* ([d (node-datum child)] [b (balanced d (%kind) (%level-kind))])
             (unless (equal? d b) (replace-node! child b))))
         (parts level)))
     (void)))
@@ -245,7 +249,7 @@
   (let* ([level (layout:level-of (layout:selected-view))]
          [part (and level (not (layout:locked? level)) (car (parts level)))]
          [before (and part (node-datum part))]
-         [after (and before (transposed before (car (container '())) (car (layout:level '()))))])
+         [after (and before (transposed before (%kind) (%level-kind)))])
     (when (equal? before after)
       (error 'layout-split:transpose "no split to transpose in the selected view's level"))
     (replace-node! part after)

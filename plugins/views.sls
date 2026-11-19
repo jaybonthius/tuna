@@ -7,9 +7,16 @@
   "How many of a client's line heights a view keeps between the primary cursor and its top and bottom edges, at most a quarter of the view's height.")
 (define-option wrap-lines #t boolean?
   "Whether a line longer than the view wraps onto several screen lines.")
+(define-option cursor-visible #t boolean?
+  "Whether a view draws its cursors.")
+(define-option column-number #f boolean?
+  "Whether views:describe-line shows the column after the line.")
 
 (define-table span-properties
   "Maps a key of a span's value to a procedure that returns attributes for the span's element.")
+
+(define-table position-describers
+  "Maps a kind's constructor to a procedure of a node of the kind and a view that describes where the view's point is in the node.")
 
 (define-enumeration align (top center bottom) %alignments)
 
@@ -1114,7 +1121,7 @@
 
   (define-record-type (context new-context context?)
     (sealed #t)
-    (fields view client doc lo hi ws we root cursors spans longest folds (mutable shown) item-ids marks? ends
+    (fields view client doc lo hi ws we root cursors anchors spans longest folds (mutable shown) item-ids marks? ends
             marker above sizer))
 
   (define-record-type span-entry
@@ -1137,13 +1144,19 @@
     (list-sort (lambda (a b) (fx< (car a) (car b)))
                (map (lambda (f) (cons (spot-position (car f)) (spot-position (cdr f)))) (live-folds v))))
 
+  (define (by-position marks) (list-sort (lambda (a b) (fx< (car a) (car b))) marks))
+
   (define (cursor-points v)
-    (let loop ([cs (view-record-cursors v)] [primary? #t]
-               [acc (map (lambda (a) (cons (spot-position (anchor-record-spot a)) (anchor-html a)))
-                         (hashtable-ref anchors-by-view v '()))])
-      (if (null? cs)
-          (list-sort (lambda (a b) (fx< (car a) (car b))) (reverse acc))
-          (loop (cdr cs) #f (cons (cons (point-of (car cs)) (cursor-html primary?)) acc)))))
+    (if (cursor-visible)
+        (by-position
+          (let loop ([cs (view-record-cursors v)] [primary? #t])
+            (if (null? cs) '() (cons (cons (point-of (car cs)) primary?) (loop (cdr cs) #f)))))
+        '()))
+
+  (define (anchor-points v)
+    (by-position
+      (map (lambda (a) (cons (spot-position (anchor-record-spot a)) (anchor-html a)))
+           (hashtable-ref anchors-by-view v '()))))
 
   (define (escape-attribute s p)
     (string-for-each
@@ -1172,21 +1185,6 @@
     (if (and module (member module (loaded-modules)))
         (as-module module (report c))
         (report c)))
-
-  ;; Buffers offers no kind's owner, so the module is read from the name
-  ;; define-kind gives a kind, a/b:kind for (a b); a kind named another
-  ;; way may be reported as the wrong module's.
-  (define (module-of-name name)
-    (let* ([s (symbol->string name)]
-           [colon (let loop ([i (fx- (string-length s) 1)])
-                    (cond [(fx< i 0) #f] [(char=? (string-ref s i) #\:) i] [else (loop (fx- i 1))]))])
-      (and colon
-           (let loop ([part '()] [parts '()] [cs (string->list (substring s 0 colon))])
-             (define (word) (string->symbol (list->string (reverse part))))
-             (cond
-               [(null? cs) (reverse (cons (word) parts))]
-               [(char=? (car cs) #\/) (loop '() (cons (word) parts) (cdr cs))]
-               [else (loop (cons (car cs) part) parts (cdr cs))])))))
 
   ;; Attribute names come from users' tables, so the element is written
   ;; here rather than by haml, which takes names only as written in code.
@@ -1411,8 +1409,8 @@
       (let ([cs (view-client v client)])
         (let-values ([(ws we above sizer) (client-run! v doc cs)])
           (let ([spans (window-spans b v doc ws we)] [end (fxmin hi (fx- (document:length doc) 1))])
-            (new-context v client doc lo hi ws we (document:token doc 0)
-                         (filter (lambda (m) (or (fx< (fx- ws 1) (car m) we) (fx= (car m) we end))) (cursor-points v))
+            (define (shown marks) (filter (lambda (m) (or (fx< (fx- ws 1) (car m) we) (fx= (car m) we end))) marks))
+            (new-context v client doc lo hi ws we (document:token doc 0) (shown (cursor-points v)) (shown (anchor-points v))
                          spans (longest-span spans) (fold-ranges v) '() (item-ids v b) #t (make-eqv-hashtable)
                          (place-marker cs) above sizer))))))
 
@@ -1514,20 +1512,32 @@
   ;; give a container's markup another node's content as the run changes,
   ;; carrying the browser's scroll anchor with it.
   (define (draw-node ctx node inline?)
-    (let ([html (node-html ctx node inline?)] [start (document:node-start node)])
+    (mark-node ctx node inline? (node-html ctx node inline?) #f))
+
+  ;; A cursor right before a node standing alone is drawn on the node's
+  ;; elements: as a mark before it, it would take a line of its own.
+  (define (mark-node ctx node inline? html cursor)
+    (let ([start (document:node-start node)]
+          [at-cursor (case cursor [(primary) "at-cursor primary"] [(other) "at-cursor"] [else #f])])
       (cond
         [(not (context-marks? ctx)) html]
         [inline? (haml (:span.node ([data-at start] [data-to (node-end ctx node)]) html))]
         [(whole-node? node)
-         (haml (:div.node.whole ([id (item-id ctx start)] [data-at start] [data-to (node-end ctx node)]) html))]
-        [else (haml (:div.node ([id (item-id ctx start)] [data-at start] [data-to (node-end ctx node)]) html))])))
+         (haml (:div.node.whole ([id (item-id ctx start)] [class at-cursor] [data-at start] [data-to (node-end ctx node)]) html))]
+        [else (haml (:div.node ([id (item-id ctx start)] [class at-cursor] [data-at start] [data-to (node-end ctx node)]) html))])))
+
+  (define (no-element? html)
+    (cond
+      [(html? html) #f]
+      [(pair? html) (for-all no-element? html)]
+      [else #t]))
 
   (define (node-html ctx node inline?)
     (let* ([kind (buffers:kind (document:node-kind node))] [draw (and kind (buffers:kind-draw kind))])
       (cond
         [draw
          (let ([html (guard (c [(not (quit-condition? c))
-                                (report-as (module-of-name (document:node-kind node)) c)
+                                (report-as (buffers:kind-owner kind) c)
                                 failed])
                        (if (eq? (in-line?) inline?)
                            (draw node (context-view ctx))
@@ -1643,7 +1653,7 @@
                  [(or (exists text-piece? run) (and (pair? run) (for-all fold-mark? run)))
                   (as-line run rs e (or known (document:line doc rs)) known acc)]
                  [(pair? run) (append (reverse (block-items ctx run rs e wrapped)) acc)]
-                 [(or (and root? (fx= e ce)) (pair? (cursors-in ctx rs e))) (as-line run rs e (or known (document:line doc rs)) known acc)]
+                 [(or (and root? (fx= e ce)) (pair? (cursors-in ctx rs e)) (pair? (anchors-in ctx rs e))) (as-line run rs e (or known (document:line doc rs)) known acc)]
                  [else acc])))]
           [(text-piece? (car items))
            (let ([at (text-piece-at (car items))] [str (text-piece-string (car items))])
@@ -1694,29 +1704,43 @@
         (haml (:span.fold "…"))))
 
   (define (block-items ctx run rs re wrapped)
-    (let loop ([items run] [cursors (cursors-in ctx rs re)] [acc '()])
-      (define (before p acc cursors)
-        (if (and (pair? cursors) (fx<= (caar cursors) p))
-            (before p (cons (cdar cursors) acc) (cdr cursors))
-            (values acc cursors)))
+    (let loop ([items run] [cursors (cursors-in ctx rs re)] [anchors (anchors-in ctx rs re)] [acc '()])
+      (define (before p q acc cursors anchors)
+        (cond
+          [(and (pair? anchors) (fx<= (caar anchors) q) (not (and (pair? cursors) (fx< (caar cursors) (caar anchors)))))
+           (before p q (cons (cdar anchors) acc) cursors (cdr anchors))]
+          [(and (pair? cursors) (fx<= (caar cursors) p))
+           (before p q (cons (cursor-html (cdar cursors)) acc) (cdr cursors) anchors)]
+          [else (values acc cursors anchors)]))
+      (define (cursor-at p cursors cursor)
+        (if (and (pair? cursors) (fx= (caar cursors) p))
+            (cursor-at p (cdr cursors) (if (or (eq? cursor 'primary) (cdar cursors)) 'primary 'other))
+            (values cursors cursor)))
+      (define (past p marks)
+        (if (and (pair? marks) (fx< (caar marks) p)) (past p (cdr marks)) marks))
       (if (null? items)
-          (let-values ([(acc cursors) (before re acc cursors)]) (reverse acc))
+          (let-values ([(acc cursors anchors) (before re re acc cursors anchors)]) (reverse acc))
           (let ([item (car items)])
             (if (fold-mark? item)
-                (let-values ([(acc cursors) (before (fold-mark-at item) acc cursors)])
-                  (loop (cdr items) cursors
+                (let-values ([(acc cursors anchors) (before (fold-mark-at item) (fold-mark-at item) acc cursors anchors)])
+                  (loop (cdr items) cursors anchors
                         (cons (wrapped (fold-mark-at item)
                                        (line-html ctx (document:line (context-doc ctx) (fold-mark-at item)) (fold-mark-at item) #f
                                                   (fold-html ctx item) #t))
                               acc)))
-                (let-values ([(acc cursors) (before (document:node-start item) acc cursors)])
-                  (loop (cdr items)
-                        (let skip ([cursors cursors])
-                          (if (and (pair? cursors) (fx< (caar cursors) (node-end ctx item))) (skip (cdr cursors)) cursors))
-                        (cons (wrapped item (draw-node ctx item #f)) acc))))))))
+                (let*-values ([(start) (document:node-start item)]
+                              [(acc cursors anchors) (before (fx- start 1) start acc cursors anchors)]
+                              [(cursors cursor) (cursor-at start cursors #f)])
+                  (let* ([html (node-html ctx item #f)] [on-item? (and cursor (not (no-element? html)))] [end (node-end ctx item)])
+                    (loop (cdr items) (past end cursors) (past end anchors)
+                          (cons (wrapped item (mark-node ctx item #f html (and on-item? cursor)))
+                                (if (and cursor (not on-item?)) (cons (cursor-html (eq? cursor 'primary)) acc) acc))))))))))
 
   (define (cursors-in ctx lo hi)
     (filter (lambda (m) (fx<= lo (car m) hi)) (context-cursors ctx)))
+
+  (define (anchors-in ctx lo hi)
+    (filter (lambda (m) (fx<= lo (car m) hi)) (context-anchors ctx)))
 
   (define (spans-near ctx lo hi)
     (let* ([spans (context-spans ctx)] [n (vector-length spans)] [from (fx- lo (context-longest ctx))])
@@ -1741,7 +1765,7 @@
         datum
         (guard (c [(not (quit-condition? c)) (report c) '()])
           (let* ([doc (document:from-datum datum)] [n (document:length doc)]
-                 [sub (new-context (context-view ctx) (context-client ctx) doc 0 n 0 n #f '() '#() 0 '() '() #f #f (make-eqv-hashtable) #f #f #f)])
+                 [sub (new-context (context-view ctx) (context-client ctx) doc 0 n 0 n #f '() '() '#() 0 '() '() #f #f (make-eqv-hashtable) #f #f #f)])
             (parameterize ([current-context sub])
               (let loop ([p 0] [acc '()])
                 (if (fx>= p n)
@@ -1762,17 +1786,18 @@
   (define (line-content ctx items rs re)
     (let ([spans (let ([near (spans-near ctx rs re)] [open (enclosing-regions)])
                    (if (null? open) near (remp (lambda (s) (memq s open)) near)))]
-          [cursors (let ([at (context-marker ctx)] [cs (cursors-in ctx rs re)])
-                     (if (and at (fx<= rs at re)) (cons (cons at view-place-html) cs) cs))])
+          [cursors (cursors-in ctx rs re)]
+          [anchors (let ([at (context-marker ctx)] [as (anchors-in ctx rs re)])
+                     (if (and at (fx<= rs at re)) (cons (cons at view-place-html) as) as))])
       (cond
-        [(and (null? spans) (null? cursors))
+        [(and (null? spans) (null? cursors) (null? anchors))
          (map (lambda (item)
                 (cond
                   [(document:node? item) (draw-node ctx item #t)]
                   [(text-piece? item) (text-html ctx (text-piece-at item) (text-piece-string item))]
                   [else (fold-html ctx item)]))
               items)]
-        [(and (null? cursors) (for-all text-piece? items) (flat? spans)) (flat-content ctx items spans)]
+        [(and (null? cursors) (null? anchors) (for-all text-piece? items) (flat? spans)) (flat-content ctx items spans)]
         [else
           (let ([insertions (list-sort
                                (lambda (a b) (or (fx< (insertion-at a) (insertion-at b))
@@ -1796,7 +1821,8 @@
                                                    (cons (make-insertion end 2 (datum (span-entry-after s) end end) #f) acc)
                                                    acc)))
                                            '() spans)
-                                         (map (lambda (m) (make-insertion (car m) 3 (lambda () (cdr m)) #f)) cursors))))]
+                                         (map (lambda (m) (make-insertion (car m) 3 (lambda () (cdr m)) #f)) anchors)
+                                         (map (lambda (m) (make-insertion (car m) 3 (lambda () (cursor-html (cdr m))) #f)) cursors))))]
                 [solid (filter (lambda (s) (fx< (span-entry-start s) (span-entry-end s))) spans)]
                 [pieces '()])
             (define shown (by-rank (filter span-entry-open solid)))
@@ -2111,7 +2137,8 @@
               (reverse acc))))))
 
   (define own-options
-    (list (cons 'drawn-screens drawn-screens) (cons 'scroll-margin scroll-margin) (cons 'wrap-lines wrap-lines)))
+    (list (cons 'drawn-screens drawn-screens) (cons 'scroll-margin scroll-margin) (cons 'wrap-lines wrap-lines)
+          (cons 'cursor-visible cursor-visible)))
 
   (define (position? p) (and (fixnum? p) (fx>= p 0)))
 
@@ -2816,6 +2843,43 @@
   (check-view 'views:keymaps view)
   (let ([b (bound-buffer view)])
     (if b (keymaps-at view b (point-of (car (view-record-cursors view)))) '())))
+
+(define (describe-line node view)
+  (check-view 'views:describe-line view)
+  (check-node 'views:describe-line node)
+  (let* ([doc (buffers:document (shown-buffer 'views:describe-line view))] [p (point-of (car (view-record-cursors view)))]
+         [start (document:node-start node)] [line (document:line doc p)]
+         [lines (fx+ (fx- line (document:line doc start)) 1)])
+    (if (column-number)
+        (let ([chars (document:unit characters)])
+          (format "~a:~a" lines
+            (fx- (document:offset doc p chars)
+                 (document:offset doc (if (fx= lines 1) start (document:line-start doc line)) chars))))
+        (format "L~a" lines))))
+
+(define (%describer kind)
+  (let loop ([es (table-entries position-describers)])
+    (cond
+      [(null? es) #f]
+      [(eq? (buffers:constructor-kind (caar es)) kind) (cdar es)]
+      [else (loop (cdr es))])))
+
+(define (describe-at-point view)
+  (check-view 'views:describe-at-point view)
+  (let ([b (bound-buffer view)])
+    (and b
+         (let* ([doc (buffers:document b)] [p (point-of (car (view-record-cursors view)))]
+                [t (document:token doc p)]
+                [atom (and (document:node? t) (document:atom? t) t)])
+           (let loop ([n (or atom (document:enclosing doc p))])
+             (cond
+               [(not n) (call-with-view view (lambda () (describe-line (document:token doc 0) view)))]
+               [(let ([kind (buffers:kind (document:node-kind n))]) (and kind (%describer kind)))
+                => (lambda (describe) (call-with-view view (lambda () (describe n view))))]
+               [else (loop (document:enclosing doc (document:node-start n)))]))))))
+
+(define-option position-description describe-at-point (lambda (v) (or (not v) (procedure? v)))
+  "A procedure of a view that returns what describes where its primary point is, or #f to show none.")
 
 (define (%scroll-report client item) (scroll-report client item))
 

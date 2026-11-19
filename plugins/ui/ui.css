@@ -182,12 +182,6 @@
   .ui-showcase-faint {
     color: var(--tuna-text-faint);
   }
-
-  /* The selected row shows where point is in a list; the views plugin's
-     cursor between rows would take a line of its own. */
-  .ui-list .cursor {
-    display: none;
-  }
 }
 
 @layer preferences {

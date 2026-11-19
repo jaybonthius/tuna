@@ -1,0 +1,116 @@
+; In a table, C-n and C-p move to the cell below and above in the same
+; column, at the same character of the cell as far as its text goes.
+> (import (page))
+> (define t (page:make "*table*" "Before\n\n| name | size |\n|---|---|\n| alpha | 1 |\n| b | 22 |\n\nAfter\n"))
+> (show! t)
+> (define (at text) (let* ([b (views:buffer (view))] [s (document:text (buffers:document b))]) (let loop ([i 0]) (if (string=? (substring s i (+ i (string-length text))) text) (buffers:stop b (document:position (buffers:document b) i (document:unit characters))) (loop (+ i 1))))))
+> (define (cell-text) (let* ([doc (buffers:document (views:buffer (view)))] [p (views:point (view))] [n (document:enclosing doc p)]) (list (document:node-kind n) (document:text doc (document:node-start n) p) (document:text doc p (document:node-end n)))))
+> (views:set-point! (view) (+ (at "name") 3))
+> (press! "C-n")
+> (cell-text)
+(markdown:table-cell "alp" "ha\n")
+> (press! "C-n")
+> (cell-text)
+(markdown:table-cell "b" "\n")
+> (press! "C-p" "C-p")
+> (cell-text)
+(markdown:table-cell "nam" "e\n")
+> (views:set-point! (view) (+ (at "size") 4))
+> (press! "<down>" "<down>")
+> (cell-text)
+(markdown:table-cell "22" "\n")
+; A count moves that many rows; past the table's edge, to the lines
+; before or after the table, at the same column.
+> (views:set-point! (view) (at "name"))
+> (press! "C-u" "2" "C-n")
+> (cell-text)
+(markdown:table-cell "" "b\n")
+> (press! "C-n")
+> (cell-text)
+(markdown:paragraph "" "After\n")
+> (views:set-point! (view) (at "size"))
+> (press! "C-p")
+> (cell-text)
+(markdown:paragraph "" "Before\n")
+; The column is kept through a run of line motions, into the table and
+; out of it.
+> (views:set-point! (view) (+ (at "alpha") 4))
+> (press! "C-n" "C-n")
+> (cell-text)
+(markdown:paragraph "Afte" "r\n")
+> (views:set-point! (view) (+ (at "Before") 4))
+> (press! "C-n" "C-n")
+> (cell-text)
+(markdown:table-cell "alph" "a\n")
+; Shift extends the region from where point was, and the next motion
+; without it clears that region.
+> (views:set-point! (view) (at "name"))
+> (press! "S-<down>")
+> (list (views:mark (view)) (views:point (view)) (at "name") (at "alpha"))
+(13 29 13 29)
+> (press! "C-n")
+> (list (views:mark (view)) (cell-text))
+(#f (markdown:table-cell "" "b\n"))
+; Other cursors in cells move by row too, and cursors outside the table
+; by line.
+> (views:set-point! (view) (at "name"))
+> (views:add-cursor! (view) (at "size"))
+#<cursor>
+> (views:add-cursor! (view) (at "Before"))
+#<cursor>
+> (press! "C-n")
+> (list (map views:cursor-point (views:cursors (view))) (at "alpha") (at "1\n") (at "name"))
+((29 37 13) 29 37 13)
+; Cursors that reach one cell merge, so typing there inserts once.
+> (for-each (lambda (c) (views:remove-cursor! (view) c)) (cdr (views:cursors (view))))
+> (views:set-point! (view) (at "name"))
+> (views:add-cursor! (view) (at "alpha"))
+#<cursor>
+> (press! "C-u" "5" "C-n")
+> (list (map views:cursor-point (views:cursors (view))) (cell-text))
+((59) (markdown:paragraph "After" "\n"))
+> (press! "x")
+> (document:text (buffers:document t))
+"Before\nname\nsize\nalpha\n1\nb\n22\nAfterx\n"
+; At the buffer's edges, as next-line and previous-line: to the edge,
+; then an error.
+> (define e (page:make "*edges*" "| name | size |\n|---|---|\n| alpha | 1 |\n| b | 22 |\n"))
+> (views:set-buffer! (view) e)
+> (views:set-point! (view) (at "b\n"))
+> (press! "C-n")
+> (cell-text)
+(markdown:table-cell "22" "\n")
+> (press! "C-n")
+! markdown:next-row: end of buffer
+> (views:set-point! (view) (+ (at "size") 1))
+> (press! "C-p")
+> (cell-text)
+(markdown:table-cell "" "name\n")
+> (press! "C-p")
+! markdown:previous-row: beginning of buffer
+; The table remaps next-line and previous-line, so other keys bound to
+; them move by row too.
+> (keys:bind! keys:global "C-c n" editing:next-line)
+> (views:set-buffer! (view) t)
+> (views:set-point! (view) (at "name"))
+> (press! "C-c" "n")
+> (cell-text)
+(markdown:table-cell "" "alpha\n")
+; Where point is in a table: the header or a row counted after it, and
+; the column; in a code block its own line and column.
+> (define c (page:make "*code*" "Text\n\n```\none\ntwo\n```\n"))
+> (views:set-buffer! (view) t)
+> (views:set-point! (view) (at "22"))
+> (views:with-view (view) (views:describe-at-point (view)))
+"row 2, column 2"
+> (views:set-point! (view) (at "size"))
+> (views:with-view (view) (views:describe-at-point (view)))
+"header, column 2"
+> (views:set-buffer! (view) c)
+> (views:set-point! (view) 14)
+> (list (views:with-view (view) (views:describe-at-point (view))) (views:describe-line (document:token (buffers:document c) 0) (view)))
+("L2" "L3")
+> (raised (lambda () (markdown:describe-cell (document:token (buffers:document c) 0) (view))))
+(markdown:describe-cell "not a Markdown table cell")
+> (raised (lambda () (markdown:previous-row 'x)))
+(markdown:previous-row "not an exact integer")

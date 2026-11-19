@@ -94,3 +94,38 @@ waiting
 > (in-client (lambda () (line-picker:goto-line 4)))
 > (views:point (view))
 14
+; The lines are those of the buffer's text: an atom gives the lines of
+; its kind's text, and a line starting in an atom's text is at the
+; position before the atom.
+> (import (cards))
+> (define rows (buffers:make "rows" (cards:rows '() (cards:para '() "intro " (cards:tag '((label . "TAG"))) "\n") (cards:row '((label . "alpha"))) (cards:row '((label . "beta"))) (cards:para '() "end\n"))))
+> (views:set-buffer! (view) rows)
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (define s (session))
+> (wait-matches s)
+> (map (lambda (m) (cons (completion:text s m) (completion:value s m))) (vector->list (completion:session-matches s)))
+(("intro TAG" . 0) ("alpha" . 11) ("beta" . 12) ("end" . 13))
+> (type! "beta")
+> (wait-matches s)
+> (press! "RET")
+> (result t)
+> (views:point (view))
+12
+; A large buffer's lines are split in a job, with the atoms' texts the
+; main thread gathered.
+> (define many (buffers:make "many" (apply cards:rows '() (cards:para '() (apply string-append (map (lambda (i) (format "line ~a\n" i)) (iota 1100))))
+                                     (map (lambda (i) (cards:row `((label . ,(format "row ~a" i))))) (iota 3)))))
+> (views:set-buffer! (view) many)
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (define s (session))
+> (wait-matches s)
+> (vector-length (completion:session-matches s))
+1103
+> (type! "row 2")
+> (wait-matches s)
+> (texts s)
+("row 2")
+> (press! "RET")
+> (result t)
+> (views:point (view))
+9895

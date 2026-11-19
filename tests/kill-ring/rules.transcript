@@ -216,7 +216,7 @@
 > (define (yank-range! start end) (kill-ring:insert! u 2 (kill-ring:piece v start end)))
 > (let* ([a (yank-range! 6 7)] [b (yank-range! 1 10)] [c (yank-range! 1 5)] [d (yank-range! 10 18)])
     (list a b c d (reverse calls) (root u)))
-(42 42 42 42 (("u" 2 "￼") ("u" 2 "Pic ￼.\n") ("u" 2 "Pic") ("u" 2 "Last.\n")) (md:doc () (md:para () "x<two.\n") (md:para () "Thre+Answer here.y\n")))
+(42 42 42 42 (("u" 2 "") ("u" 2 "Pic .\n") ("u" 2 "Pic") ("u" 2 "Last.\n")) (md:doc () (md:para () "x<two.\n") (md:para () "Thre+Answer here.y\n")))
 > (let* ([a (yank-range! 2 13)] [b (root u)] [c (yank-range! 11 17)]) (list a b c (root u)))
 (13 (md:doc () (md:para () "Pic " #(md:image ((src . "a.png"))) ".\n") (md:para () "Lax<two.\n") (md:para () "Thre+Answer here.y\n")) 8 (md:doc () (md:para () "Last.\nPic " #(md:image ((src . "a.png"))) ".\n") (md:para () "Lax<two.\n") (md:para () "Thre+Answer here.y\n")))
 > (table-remove! kill-ring:yankers 'md:para)

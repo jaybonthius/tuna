@@ -8,7 +8,8 @@
           edit-record-inserted edit-record-removed-spans edit-record-inserted-spans
           edit-record-removed-length edit-record-inserted-length edit-record-moves?
           make-kind-entry kind-entry? kind-entry-name kind-entry-content kind-entry-inline? kind-entry-sticky
-          kind-entry-stops kind-entry-draw kind-entry-keymap kind-entry-consent kind-entry-whole?
+          kind-entry-stops kind-entry-draw kind-entry-keymap kind-entry-consent kind-entry-whole? kind-entry-text
+          kind-entry-owner
           make-layer-type layer-type? layer-type-name layer-type-priority layer-type-sticky
           layer-type-evaporate? layer-type-travels? layer-type-read-only? layer-type-keymap
           make-layer buffer-layer? buffer-layer-buffer buffer-layer-type buffer-layer-key buffer-layer-store
@@ -41,7 +42,7 @@
 
   (define-record-type kind-entry
     (sealed #t)
-    (fields name content inline? sticky stops draw keymap consent whole?))
+    (fields name content inline? sticky stops draw keymap consent whole? text owner))
 
   (define-record-type layer-type
     (sealed #t)

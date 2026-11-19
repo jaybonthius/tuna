@@ -38,10 +38,6 @@
     white-space: nowrap;
   }
 
-  .status-line .cursor {
-    display: none;
-  }
-
   .status-line-segment {
     flex: 0 1 auto;
     min-inline-size: 0;

@@ -58,22 +58,22 @@
 > (begin
     (stress (+ (real-time) 2000))
     (list (> (+ quits-caught reported) 100) (> rounds 1000)))
+(#t #t)
 > (advice-remove! report count-reports)
 > (table-set! status-line:segments seg-a (status-line:left 25))
 > (in-client (lambda () (for-each (lambda (v) (views:set-buffer! v notes)) (layout:views))))
 > (define lines (screen-status-lines client))
 > (= (length lines) (window-count))
+#t
 > (for-all (lambda (l) (equal? l (car lines))) lines)
+#t
 > (car lines)
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("seg-a" . "a") ("status-line:position" . "L1") ("status-line:percent-position" . "Top") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
 > (equal? lines (screen-status-lines other-client))
+#t
 > (= (length (views:showing line-buffer)) (window-count))
+#t
 > (for-all (lambda (w) (and (status-view-of w) #t)) (layout:views))
+#t
 > (map (lambda (d) (vector-ref d 0)) (cddr (line)))
-(#t #t)
-#t
-#t
-(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("seg-a" . "a") ("status-line:position" . "1:0") ("status-line:percent-position" . "Top") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
-#t
-#t
-#t
 (status-line:modified status-line:buffer-name seg-a status-line:position status-line:percent-position status-line:region-size status-line:major-mode status-line:minor-modes)

@@ -67,3 +67,30 @@
 (status-line:show-region-size "not a view")
 > (raised (lambda () (status-line:show-percent-position 5)))
 (status-line:show-percent-position "not a view")
+; A region counts the text atoms stand for: each atom the characters and
+; line breaks of its text in place of one character. A region whose text
+; ends with an atom's line break takes in no line after it. The percent
+; position counts each atom as one character.
+> (import (cards))
+> (define rows (buffers:make "rows" (cards:rows '() (cards:row '((label . "one"))) (cards:row '((label . "two"))) (cards:blank '()))))
+> (views:set-buffer! (view) rows)
+> (list (regions 1 3) (regions 1 2) (regions 2 4) (regions 1 4))
+("8 characters, 2 lines" "4 characters" "4 characters" "8 characters, 2 lines")
+> (map percent-at '(1 2 3))
+("Top" "34%" "67%")
+; The position is what views:position-description gives in the view:
+; by default the kind at point describes it, else the line.
+> (cdr (assoc "status-line:position" (status (view))))
+"L1"
+> (table-set! views:position-describers cards:row (lambda (node view) (format "row at ~a" (document:node-start node))))
+> (views:set-point! (view) 2)
+> (cdr (assoc "status-line:position" (status (view))))
+"row at 2"
+> (buffers:with-buffer rows (set-option-local! views:position-description #f))
+> (list (views:with-view (view) (status-line:show-position (view))) (cdr (assoc "status-line:position" (status (view)))))
+(#f "")
+; The status line's own views draw no cursor.
+> (buffers:with-buffer line-buffer (views:cursor-visible))
+#f
+> (search (hide-placements (html->string (status-line:draw (view) client))) "cursor" 0)
+#f

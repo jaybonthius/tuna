@@ -537,6 +537,29 @@
 ! editing:next-line: end of buffer
 > (points-after "C-p")
 (16)
+; Another plugin's motion moves the cursors through editing's step. One
+; through the line target is a line motion, so C-n after it keeps the
+; goal column, and it raises at the buffer's edge.
+> (commands:define-command (down-two) "Moves two lines down." (editing:move-cursors! 'down-two (view) 2 (editing:line-motion-target 2)))
+> (keys:bind! keys:global "C-c d" down-two)
+> (start! "abcdef\nab\n\nabcdefgh\nxyz" 5)
+("abcdef\nab\n\nabcdefgh\nxyz" ((5 #f)))
+> (press! "C-c" "d")
+> (views:point (view))
+11
+> (points-after "C-n")
+(16)
+> (press! "C-c" "d")
+> (views:point (view))
+24
+> (press! "C-c" "d")
+! down-two: end of buffer
+> (raised (lambda () (editing:move-cursors! "down" (view) 1 (editing:line-motion-target 1))))
+(editing:move-cursors! "not a symbol")
+> (raised (lambda () (editing:move-cursors! 'down (view) 1 'up)))
+(editing:move-cursors! "not a procedure")
+> (raised (lambda () (editing:line-motion-target 1.5)))
+(editing:line-motion-target "not an exact integer")
 ; Only the mark shift selection set is temporary: one that code set
 ; stays, and a swapped temporary region stays temporary.
 > (start! "abcdef" 1)
@@ -569,15 +592,16 @@
 > (raised (lambda () (editing:forward-word-position "t1" 1 1)))
 (editing:forward-word-position "not a buffer")
 ; Nodes: an edge or an atom ends a word; lines start at a node's first
-; stop.
+; stop. The buffer ends before its last block's line break.
 > (define n (buffers:make "n" (md:doc '() (md:para '() "one two\n") (md:para '() "three\n")
                                          (md:para '() "four " (md:image '((src . "x"))) "five\n"))))
 > (views:set-buffer! (view) n)
 > (views:set-point! (view) 2)
 > (points-after "M-f" "M-f" "M-f" "M-f" "M-f" "M-f")
-(5 9 17 24 30 31)
+! editing:forward-word: end of buffer
+(5 9 17 24 30 30)
 > (points-after "C-a" "C-p" "C-e" "C-p" "C-a" "C-n" "C-n")
-(31 20 30 17 12 20 31)
+(20 12 17 7 2 12 20)
 > (editing:forward-word-position n 2 3)
 17
 > (views:set-point! (view) 2)
@@ -614,7 +638,7 @@
 > (start! "x" 1)
 ("x" ((1 #f)))
 > (kills 3)
-("a\nb\nc\nd\n" "FOUR ￼five" "oxne two three\n")
+("a\nb\nc\nd\n" "FOUR five" "oxne two three\n")
 > (press! "C-y" "M-2" "M-y")
 > (text)
 "oxne two three\nx"

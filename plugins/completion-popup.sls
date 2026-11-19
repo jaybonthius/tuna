@@ -152,6 +152,7 @@
     (when (and node (not (layout:locked? node)))
       (let* ([b (buffers:make (%next-name) (%root '() (%none '()) (ui:list '())))]
              [l (make-%shown s b (views:make b) #f #f '())])
+        (buffers:with-buffer b (set-option-local! views:cursor-visible #f))
         (set! %popups (cons l %popups))))))
 
 (define (%updated s)

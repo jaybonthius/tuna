@@ -879,11 +879,15 @@
       [(doc start)
        (check-document 'document:text doc)
        (document:text doc start (tree-tokens (document-tree doc)))]
-      [(doc start end)
+      [(doc start end) (document:text doc start end '())]
+      [(doc start end atom-texts)
        (check-document 'document:text doc)
        (check-range 'document:text doc start end)
+       (check-atom-texts 'document:text doc start end atom-texts)
        (let* ([t (document-tree doc)]
-              [s (make-string (fx- (measure-before t end 'characters) (measure-before t start 'characters)))]
+              [s (make-string (fold-left (lambda (n a) (fx+ n (fx- (string-length (cdr a)) 1)))
+                                         (fx- (measure-before t end 'characters) (measure-before t start 'characters))
+                                         atom-texts))]
               [k 0])
          (walk-items t start
            (lambda (item at sums i)
@@ -897,10 +901,33 @@
                                    (if (fx> (fx+ at c) end) (run-index item (fx- end at) c) (bytevector-length item))
                                    s k)))]
                       [(atom-item? item)
-                       (string-set! s k #\xFFFC)
-                       (set! k (fx+ k 1))])
+                       (if (and (pair? atom-texts) (fx= (caar atom-texts) at))
+                           (let ([text (cdar atom-texts)])
+                             (string-copy! text 0 s k (string-length text))
+                             (set! k (fx+ k (string-length text)))
+                             (set! atom-texts (cdr atom-texts)))
+                           (begin
+                             (string-set! s k #\xFFFC)
+                             (set! k (fx+ k 1))))])
                     #t))))
          s)]))
+
+  ;; A position that holds no atom would leave the string's length wrong,
+  ;; so each is checked before the string is made.
+  (define (check-atom-texts who doc start end atom-texts)
+    (unless (list? atom-texts)
+      (assertion-violation who "not a list of positions and texts" atom-texts))
+    (let ([t (document-tree doc)])
+      (fold-left
+        (lambda (after a)
+          (unless (and (pair? a) (fixnum? (car a)) (string? (cdr a)))
+            (assertion-violation who "not a position and a text" a))
+          (unless (and (fx<= after (car a)) (fx< (car a) end)
+                       (let-values ([(item at s i) (item-at t (car a))]) (atom-item? item)))
+            (assertion-violation who "not the position of an atom in the range, after the one before" (car a)))
+          (fx+ (car a) 1))
+        start
+        atom-texts)))
 
   (define (document:for-each-utf8-chunk doc start end proc)
     (define who 'document:for-each-utf8-chunk)

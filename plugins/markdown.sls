@@ -1,9 +1,11 @@
 #!tuna
-(import (buffers) (document) (views) (ui) (commands) (faces) (web) (haml) (browse-url)
+(import (buffers) (document) (views) (ui) (commands) (keys) (editing) (faces) (web) (haml) (browse-url)
         (md4c) (markdown unfinished))
 
 ;; This module defines quote and list as kind constructors, so its own
 ;; code writes symbols and lists with quasiquote and cons.
+
+(define-table table-keymap "Keys in a Markdown table.")
 
 (module %convert (blocks->datums)
 
@@ -193,24 +195,15 @@
     (assertion-violation `markdown:follow-link "not a Markdown link" link))
   (browse-url:open (document:node-attribute link `href)))
 
-;; Where a deeper block meets a shallower one after it, the place's stop
-;; is its deepest position that consents to typing. Refusing the position
-;; after a text block's last newline moves that stop to the next block's
-;; first character, so line motion from a line's start reaches the block.
-(define (%not-after-last-newline node edit)
-  (let ([start (document:node-start node)] [end (document:node-end node)])
-    (not (and (fx= (buffers:edit-start edit) (fx- end 1))
-              (fx> (fx- end start) 2)))))
-
-(buffers:define-kind paragraph (consent %not-after-last-newline) (draw %draw))
-(buffers:define-kind heading (consent %not-after-last-newline) (draw %draw))
-(buffers:define-kind code-block (consent %not-after-last-newline) (draw %draw))
+(buffers:define-kind paragraph (draw %draw))
+(buffers:define-kind heading (draw %draw))
+(buffers:define-kind code-block (draw %draw))
 (buffers:define-kind quote (content nodes) (draw %draw))
 (buffers:define-kind list (content nodes) (draw %draw))
 (buffers:define-kind item (content nodes) (draw %draw))
-(buffers:define-kind table (content nodes) (whole) (draw %draw))
+(buffers:define-kind table (content nodes) (whole) (keymap table-keymap) (draw %draw))
 (buffers:define-kind table-row (content nodes) (draw %draw))
-(buffers:define-kind table-cell (consent %not-after-last-newline) (draw %draw))
+(buffers:define-kind table-cell (draw %draw))
 (buffers:define-kind rule (content atom) (draw %draw))
 (buffers:define-kind strong (inline) (draw %draw))
 (buffers:define-kind emphasis (inline) (draw %draw))
@@ -218,4 +211,75 @@
 (buffers:define-kind code (inline) (draw %draw))
 (ui:define-link link follow-link)
 
+(define (%children doc node)
+  (let ([acc `()])
+    (document:for-each-child node (document:node-start node) (document:node-end node)
+      (lambda (child at) (when (document:node? child) (set! acc (cons child acc)))))
+    (reverse acc)))
+
+(define (%number-of node nodes)
+  (let loop ([nodes nodes] [k 1])
+    (if (fx= (document:node-start (car nodes)) (document:node-start node)) k (loop (cdr nodes) (fx+ k 1)))))
+
+(define (%holder doc node) (document:enclosing doc (document:node-start node)))
+
+(define (describe-cell cell view)
+  (unless (and (document:node? cell) (eq? (document:node-kind cell) `markdown:table-cell))
+    (assertion-violation `markdown:describe-cell "not a Markdown table cell" cell))
+  (unless (and (views:view? view) (views:buffer view))
+    (assertion-violation `markdown:describe-cell "not a view showing a buffer" view))
+  (let* ([doc (buffers:document (views:buffer view))] [row (%holder doc cell)] [table (%holder doc row)]
+         [column (%number-of cell (%children doc row))])
+    (if (document:node-attribute row `header #f)
+        (format "header, column ~a" column)
+        (format "row ~a, column ~a" (fx- (%number-of row (%children doc table)) 1) column))))
+
+(define (%cell-at doc p)
+  (let loop ([n (document:enclosing doc p)])
+    (cond
+      [(not n) #f]
+      [(eq? (document:node-kind n) `markdown:table-cell) n]
+      [else (loop (%holder doc n))])))
+
+(define (%row-line doc cell n)
+  (let* ([row (%holder doc cell)] [table (%holder doc row)] [rows (%children doc table)]
+         [r (+ (fx- (%number-of row rows) 1) n)])
+    (cond
+      [(< r 0) (+ (document:line doc (document:node-start table)) r)]
+      [(>= r (length rows)) (+ (document:line doc (fx- (document:node-end table) 1)) (- r (length rows)))]
+      [else
+       (let* ([target (list-ref rows r)] [cells (%children doc target)])
+         (document:line doc
+           (document:node-start
+             (if (null? cells)
+                 target
+                 (list-ref cells (fxmin (fx- (%number-of cell (%children doc row)) 1) (fx- (length cells) 1)))))))])))
+
+(define (%check-count who n)
+  (unless (and (integer? n) (exact? n))
+    (assertion-violation who "not an exact integer" n)))
+
+(define (%move-rows who n)
+  (let ([view (views:current)])
+    (unless (and view (views:buffer view))
+      (assertion-violation who "no view showing a buffer is current"))
+    (editing:move-cursors! who view n
+      (lambda (c doc lo hi)
+        (let* ([p (views:cursor-point c)] [cell (%cell-at doc p)])
+          ((editing:line-motion-target (if cell (- (%row-line doc cell n) (document:line doc p)) n)) c doc lo hi))))))
+
+(commands:define-command (next-row [n (commands:prefix-number)])
+  "Moves each cursor in a Markdown table cell to the cell in its column N rows down, or past the last row to the lines after the table, and each other cursor N lines down, as next-line does."
+  (%check-count `markdown:next-row n)
+  (%move-rows `markdown:next-row n))
+
+(commands:define-command (previous-row [n (commands:prefix-number)])
+  "Moves each cursor in a Markdown table cell to the cell in its column N rows up, or past the header to the lines before the table, and each other cursor N lines up, as previous-line does."
+  (%check-count `markdown:previous-row n)
+  (%move-rows `markdown:previous-row (- n)))
+
+(keys:remap! table-keymap editing:next-line next-row)
+(keys:remap! table-keymap editing:previous-line previous-row)
+(table-set! views:position-describers code-block views:describe-line)
+(table-set! views:position-describers table-cell describe-cell)
 (table-set! web:stylesheets `markdown "markdown/markdown.css")

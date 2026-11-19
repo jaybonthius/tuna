@@ -17,10 +17,6 @@
     padding-inline: calc(var(--tuna-space-4) + var(--tuna-border-width));
   }
 
-  .echo-area-message .cursor {
-    display: none;
-  }
-
   /* The weight marks a problem where colour is not seen. */
   .echo-area-message:is([data-face="error"], [data-face="warning"]) {
     font-weight: var(--tuna-font-weight-semibold);

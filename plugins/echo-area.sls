@@ -41,7 +41,9 @@
       (assertion-violation who "not on the main thread")))
 
   (define echo-buffer
-    (or (buffers:find " *Echo Area*") (buffers:make " *Echo Area*" (area '()))))
+    (let ([b (or (buffers:find " *Echo Area*") (buffers:make " *Echo Area*" (area '())))])
+      (buffers:with-buffer b (set-option-local! views:cursor-visible #f))
+      b))
 
   (define shown? (fx> (document:length (buffers:document echo-buffer)) 2))
 

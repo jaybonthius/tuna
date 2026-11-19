@@ -25,8 +25,11 @@
 > (define notes (files:visit (string-append (getenv "HOME") "/notes.txt")))
 > (views:set-buffer! (view) notes)
 > (status (view))
-(("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "1:0") ("status-line:percent-position" . "Top") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
-; The column counts characters from the line's start, a tab as one.
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "L1") ("status-line:percent-position" . "Top") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
+; The line alone shows, as Emacs's default mode line; with
+; views:column-number on, the column follows it, counting characters
+; from the line's start, a tab as one.
+> (set-option! views:column-number #t)
 > (views:set-point! (view) 15)
 > (document:text (buffers:document notes) 11 15)
 "\tTab"

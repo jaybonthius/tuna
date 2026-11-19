@@ -14,7 +14,7 @@
 > (echo-area:current-message)
 "server.log is larger than 10 MB"
 > (echo-area-element)
-"<div class=\"echo-area-message\" role=\"status\" data-face=\"warning\"><div class=\"line\" id=\"v3-1\" data-line=\"1\" data-at=\"1\"><span class=\"cursor primary\"></span>server.log is larger than 10 MB</div></div>"
+"<div class=\"echo-area-message\" role=\"status\" data-face=\"warning\"><div class=\"line\" id=\"v3-1\" data-line=\"1\" data-at=\"1\">server.log is larger than 10 MB</div></div>"
 ; echo-area:current-face
 > (parameterize ([echo-area:face faces:error]) (echo-area:message! "Disk full"))
 > (echo-area:current-face)
@@ -42,6 +42,6 @@ error
 Saved notes
 > (car '())
 ! car: () is not a pair
-> (echo-area:current-message)
 error: car: () is not a pair
+> (echo-area:current-message)
 "car: () is not a pair"

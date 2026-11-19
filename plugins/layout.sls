@@ -1445,7 +1445,7 @@
                    (buffers:define-kind id (content nodes) (consent check-parts) (keymap #,keymap))
                    (define-values ()
                      (begin
-                       (register-container! (car (id '())) #,draw #,neighbour '#,(datum->syntax #'id attributes)
+                       (register-container! (buffers:kind-name (buffers:constructor-kind id)) #,draw #,neighbour '#,(datum->syntax #'id attributes)
                                             #,collapse #,show-focused #,adopt)
                        (values)))))
              (let* ([c (car clauses)]
@@ -1561,7 +1561,7 @@
 (buffers:define-kind level (content nodes) (consent check-level))
 
 (define-values ()
-  (begin (register-container! (car (level '())) %draw-level #f '() #f #f #f) (values)))
+  (begin (register-container! (buffers:kind-name (buffers:constructor-kind level)) %draw-level #f '() #f #f #f) (values)))
 
 (define (%draw-popups node shown focused draw-child client)
   (haml (:div.layout-popups (map draw-child shown))))
@@ -1570,7 +1570,7 @@
 (buffers:define-kind popups-root (content nodes) (consent check-popup-parts))
 
 (define-values ()
-  (begin (register-container! (car (popups-root '())) %draw-popups #f '() #f #f #f) (values)))
+  (begin (register-container! (buffers:kind-name (buffers:constructor-kind popups-root)) %draw-popups #f '() #f #f #f) (values)))
 
 (define buffer (open-layout! (popups-root '())))
 

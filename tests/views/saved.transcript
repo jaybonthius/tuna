@@ -17,6 +17,7 @@
 > (views:narrow! v 1 20)
 > (views:set-option! v views:wrap-lines #t)
 > (views:set-option! v views:drawn-screens 1)
+> (views:set-option! v views:cursor-visible #f)
 > (import (fill))
 > (views:set-option! v fill:column 50)
 > (views:scroll-to! v 9 (views:align top))
@@ -36,8 +37,8 @@
 (10 3 (10 19) 9)
 > (list (views:folded? v2 15) (call-with-values (lambda () (views:bounds v2)) list))
 (#t (1 20))
-> (views:with-view v2 (list (views:wrap-lines) (views:drawn-screens) (fill:column)))
-(#t 1 70)
+> (views:with-view v2 (list (views:wrap-lines) (views:drawn-screens) (fill:column) (views:cursor-visible)))
+(#t 1 70 #f)
 ; New views take numbers after the saved ones.
 > (> (views:id (views:make notes)) 4)
 #t

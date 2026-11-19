@@ -158,6 +158,7 @@
     (let* ([b (buffers:make (%next-name) (%root '() (%count-line '()) (%none '()) (ui:list '())))]
            [v (views:make b)]
            [l (make-%shown s b v #f '() (minibuffer:current-prompt) 0)])
+      (buffers:with-buffer b (set-option-local! views:cursor-visible #f))
       (set! %lists (cons l %lists))
       (let ([p (%shown-prompt l)])
         (when p

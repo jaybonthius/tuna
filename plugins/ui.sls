@@ -211,7 +211,7 @@
          #'(begin
              (define-table id-keys "The keys of a button kind.")
              (buffers:define-kind id (inline) (draw drawer) (keymap id-keys))
-             (define-values () (begin (%bind-button! 'who id-keys (car (id '())) command-expr) (values)))))])))
+             (define-values () (begin (%bind-button! 'who id-keys (buffers:kind-name (buffers:constructor-kind id)) command-expr) (values)))))])))
 
 (define-syntax define-button
   (lambda (x)
@@ -294,9 +294,9 @@
 
 (buffers:define-kind %list-row (content atom) (draw %draw-list-row))
 
-(define %list-kind (car (list '())))
+(define %list-kind (buffers:kind-name (buffers:constructor-kind list)))
 
-(define %row-kind (vector-ref (%list-row '()) 0))
+(define %row-kind (buffers:kind-name (buffers:constructor-kind %list-row)))
 
 (define (%check-list who b node)
   (let ([current (and (document:node? node)
@@ -350,6 +350,12 @@
           (write-window! b node state first n)
           (let ([node (document:token (buffers:document b) (document:node-start node))])
             (views:set-point! view (index-position node first n i))))))))
+
+(define (describe-list node view)
+  (let* ([b (%check-view 'ui:describe-list view)] [node (%check-list 'ui:describe-list b node)]
+         [state (list-state b node)] [count (if state (vector-length (rows-vector state)) 0)]
+         [i (selected-index (buffers:document b) node (views:point view))])
+    (and (fx> count 0) i (format "row ~a of ~a" (fx+ (fxmin i (fx- count 1)) 1) count))))
 
 (define (%list-here who)
   (let ([v (views:current)])
@@ -420,8 +426,8 @@
 (buffers:define-kind %chosen (content atom) (draw %draw-chosen))
 (buffers:define-layer %read-only (read-only))
 
-(define %showcase-kind (car (%showcase '())))
-(define %chosen-kind (vector-ref (%chosen '()) 0))
+(define %showcase-kind (buffers:kind-name (buffers:constructor-kind %showcase)))
+(define %chosen-kind (buffers:kind-name (buffers:constructor-kind %chosen)))
 
 (define (%times verb n)
   (string-append verb " " (number->string n) (if (= n 1) " time" " times")))
@@ -549,6 +555,7 @@
 (keys:bind! disabled-keys "<drag-mouse-2>" keys:ignore)
 ;; Ahead of the entries that find the button kind's own keymap.
 (add-hook! keys:find-keymaps %disabled-keymaps -10)
+(table-set! views:position-describers list describe-list)
 (table-set! web:stylesheets 'ui "ui/ui.css")
 (add-hook! buffers:killed forget-buffer!)
 

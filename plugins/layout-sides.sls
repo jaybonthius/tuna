@@ -29,9 +29,9 @@
 
   (define (kind? node kind) (and (not (document:atom? node)) (eq? (document:node-kind node) kind)))
 
-  (define (level? node) (kind? node (car (layout:level '()))))
+  (define (level? node) (kind? node (buffers:kind-name (buffers:constructor-kind layout:level))))
 
-  (define (split? node) (kind? node (car (layout-split:container '()))))
+  (define (split? node) (kind? node (buffers:kind-name (buffers:constructor-kind layout-split:container))))
 
   (define (axis-of side) (if (memq side '(left right)) 'row 'column))
 

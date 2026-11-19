@@ -74,6 +74,18 @@
 (#<node md:image 15> close #!eof)
 > (list (document:text doc 3 9) (document:text doc 7))
 ("ee TS" "TSPL.\n￼")
+; Atoms' texts given by position stand in their places; an atom not
+; given stays U+FFFC.
+> (list (document:text doc 7 17 '((15 . "[plot]"))) (document:text raw 0 4 '((1 . "") (2 . "?!"))) (document:text raw 0 4 '((2 . "?"))))
+("TSPL.\n[plot]" "h?!i" "h￼?i")
+> (document:text doc 0 17 '((14 . "x")))
+! document:text: not the position of an atom in the range, after the one before with irritant 14
+> (document:text raw 0 4 '((2 . "a") (1 . "b")))
+! document:text: not the position of an atom in the range, after the one before with irritant 1
+> (document:text raw 0 2 '((2 . "a")))
+! document:text: not the position of an atom in the range, after the one before with irritant 2
+> (document:text raw 0 4 '((1 . #\a)))
+! document:text: not a position and a text with irritant (1 . #\a)
 ; Units: characters, UTF-8 bytes, UTF-16 code units.
 > (define units (document:from-datum "a🙂é"))
 > (map (lambda (unit) (document:offset units 3 unit))

@@ -211,8 +211,8 @@
 ; A prompt whose start raises leaves nothing behind.
 > (table-set! layout:display-rules minibuffer:buffer? (lambda (b) (error 'no-room "no room")))
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
-> (result t)
 ! no-room: no room
+> (result t)
 (raised "no room")
 > (list (minibuffer:current-prompt) (html (bar)))
 (#f "<div class=\"minibuffer-prompts\"></div>")
@@ -222,3 +222,16 @@
 #f
 > (buffers:live? minibuf)
 #t
+; The input is inline text, so a line break pasted into it is text, with
+; a stop after it where DEL deletes it.
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (in-client (lambda () (commands:run editing:paste "a\n")))
+> (input)
+"a\n"
+> (press! "DEL")
+> (input)
+"a"
+> (press! "C-g")
+! &quit
+> (result t)
+(raised #<condition &quit>)

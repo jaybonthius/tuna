@@ -124,6 +124,17 @@
     background: var(--tuna-cursor, CanvasText);
   }
 
+  /* A node's own element draws nothing, so the outline goes on what its
+     kind drew; drawn inside the edge, it is never clipped by the view. */
+  .view .node.at-cursor > * {
+    outline: var(--tuna-border-width-2, 2px) solid var(--views-cursor-other-background, var(--tuna-text-muted));
+    outline-offset: calc(-1 * var(--tuna-border-width-2, 2px));
+  }
+
+  .view .node.at-cursor.primary > * {
+    outline-color: var(--tuna-cursor, CanvasText);
+  }
+
   /* A placement's place in text: a row's box, as the cursor has, with no
      width, so the text does not shift around it. */
   .view-place {
@@ -223,6 +234,13 @@
       forced-color-adjust: none;
       background: CanvasText;
       mix-blend-mode: normal;
+    }
+
+    /* The whole outline, so a mark a plugin's own forced-colours rule
+       puts on the item, such as a selected list row's, does not thin it. */
+    .view .node.at-cursor > * {
+      outline: var(--tuna-border-width-2, 2px) solid CanvasText;
+      outline-offset: calc(-1 * var(--tuna-border-width-2, 2px));
     }
 
     .region {

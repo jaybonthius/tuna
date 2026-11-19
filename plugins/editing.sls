@@ -9,9 +9,9 @@
 
 (module %internals
   (check-main-thread check-count check-nonnegative-count command-view check-view key-char content-bounds for-each-cursor
-   place-kept! move-kept! edge-error stops-from move-cursors! end-of-line first-stop clear-marks!
+   place-kept! move-kept! merge-met! edge-error stops-from chars end-of-line first-stop column clear-marks!
    set-marks! forget-temporary! exchange-marks! check-regions word-characters-in words-from
-   line-motion-target recase! capitalizer replace-region-or! insert-at-cursors! kill-ranges! after-kill?
+   line-motion-continues? note-line-motion! recase! capitalizer replace-region-or! insert-at-cursors! kill-ranges! after-kill?
    remember-kill! yank-pieces! yanked-in? replace-yank! pure-text note-change! clear-changed-marks!
    nonempty-region? shift-selected keep-changed-marks! place! place-temporary! select-between! drag-keymap start-drag! drag-in
    drag-anchor-position drag-mode mouse-range
@@ -159,21 +159,14 @@
       (let ([next (and (> k 0) (if (> n 0) (views:next-stop view p) (views:previous-stop view p)))])
         (if next (loop next (- k 1)) p))))
 
-  (define (move-cursors! who view n target)
-    (let* ([doc (buffers:document (views:buffer view))]
-           [shift? (keys:shift-translated?)]
-           [primary (car (views:cursors view))]
-           [before (views:cursor-point primary)])
-      (let-values ([(lo hi) (content-bounds view doc)])
-        (for-each
-          (lambda (c)
-            (let-values ([(p goal) (target c doc lo hi)])
-              (place! c (fxmax lo (fxmin hi p)) shift?)
-              (when goal (views:set-cursor-goal! c goal))))
-          (views:cursors view)))
-      (merge-met! view)
-      (when (and (not (= n 0)) (memq primary (views:cursors view)) (fx= (views:cursor-point primary) before))
-        (edge-error who n))))
+  ;; Typing and other edits leave goal columns on the cursors, so a goal
+  ;; holds only for the command right after the one that set it.
+  (define line-motion-command #f)
+
+  (define (note-line-motion!) (set! line-motion-command (commands:this-command)))
+
+  (define (line-motion-continues?)
+    (let ([last (commands:last-command)]) (and last (eq? last line-motion-command))))
 
   (define chars (document:unit characters))
 
@@ -189,21 +182,6 @@
   (define (column doc p)
     (fx- (document:offset doc p chars)
          (document:offset doc (document:line-start doc (document:line doc p)) chars)))
-
-  (define (line-motion-target n line-motion?)
-    (lambda (c doc lo hi)
-      (let* ([p (views:cursor-point c)]
-             [goal (or (and line-motion? (views:cursor-goal c)) (column doc p))]
-             [target (+ (document:line doc p) n)])
-        (cond
-          [(< target (document:line doc lo)) (values lo goal)]
-          [(> target (document:line doc hi)) (values hi goal)]
-          [else
-           (let* ([start (document:line-start doc target)]
-                  [end (end-of-line doc target hi)]
-                  [offset (fxmin (fx+ (document:offset doc start chars) goal)
-                                 (document:offset doc end chars))])
-             (values (fxmax lo (document:position doc offset chars)) goal))]))))
 
   (define (check-regions who view)
     (for-each
@@ -638,6 +616,47 @@
     (kill-ring:push! (list text))
     (yank-pieces! view (kill-ring:current) (delete-selection))))
 
+(define (move-cursors! who view n target)
+  (check-main-thread 'editing:move-cursors!)
+  (unless (symbol? who)
+    (assertion-violation 'editing:move-cursors! "not a symbol" who))
+  (check-view 'editing:move-cursors! view)
+  (check-count 'editing:move-cursors! n)
+  (unless (procedure? target)
+    (assertion-violation 'editing:move-cursors! "not a procedure" target))
+  (let* ([doc (buffers:document (views:buffer view))]
+         [shift? (keys:shift-translated?)]
+         [primary (car (views:cursors view))]
+         [before (views:cursor-point primary)])
+    (let-values ([(lo hi) (content-bounds view doc)])
+      (let loop ([cs (views:cursors view)] [goals? #f])
+        (if (null? cs)
+            (when goals? (note-line-motion!))
+            (let-values ([(p goal) (target (car cs) doc lo hi)])
+              (place! (car cs) (fxmax lo (fxmin hi p)) shift?)
+              (when goal (views:set-cursor-goal! (car cs) goal))
+              (loop (cdr cs) (or goals? (and goal #t)))))))
+    (merge-met! view)
+    (when (and (not (= n 0)) (memq primary (views:cursors view)) (fx= (views:cursor-point primary) before))
+      (edge-error who n))))
+
+(define (line-motion-target n)
+  (check-count 'editing:line-motion-target n)
+  (let ([continues? (line-motion-continues?)])
+    (lambda (c doc lo hi)
+      (let* ([p (views:cursor-point c)]
+             [goal (or (and continues? (views:cursor-goal c)) (column doc p))]
+             [target (+ (document:line doc p) n)])
+        (cond
+          [(< target (document:line doc lo)) (values lo goal)]
+          [(> target (document:line doc hi)) (values hi goal)]
+          [else
+           (let* ([start (document:line-start doc target)]
+                  [end (end-of-line doc target hi)]
+                  [offset (fxmin (fx+ (document:offset doc start chars) goal)
+                                 (document:offset doc end chars))])
+             (values (fxmax lo (document:position doc offset chars)) goal))])))))
+
 (define (%move-chars who n)
   (let ([view (command-view who)])
     (move-cursors! who view n (lambda (c doc lo hi) (values (stops-from view (views:cursor-point c) n) #f)))))
@@ -654,8 +673,7 @@
 
 (define (%move-lines who n)
   (let ([view (command-view who)])
-    (move-cursors! who view n
-      (line-motion-target n (and (memq (commands:last-command) (list next-line previous-line)) #t)))))
+    (move-cursors! who view n (line-motion-target n))))
 
 (commands:define-command (next-line [n (commands:prefix-number)])
   "Moves each cursor N lines down, keeping the column the run of line motions began at."

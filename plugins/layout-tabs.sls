@@ -68,7 +68,7 @@
   (draw %draw-tabs)
   (show-focused))
 
-(define (%kind) (car (container '())))
+(define (%kind) (buffers:kind-name (buffers:constructor-kind container)))
 
 (define (%view-tabs view)
   (let ([atom (layout:view-node view)])

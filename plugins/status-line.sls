@@ -42,6 +42,7 @@
   (define (status-buffer)
     (unless (and line-buffer (buffers:live? line-buffer))
       (set! line-buffer (or (buffers:find " *status-line*") (buffers:make " *status-line*" (line '()))))
+      (buffers:with-buffer line-buffer (set-option-local! views:cursor-visible #f))
       (set! written #f))
     line-buffer)
 
@@ -168,7 +169,7 @@
 (define (%register-segment! constructor show)
   (unless (procedure? show)
     (assertion-violation 'status-line:define-segment "not a procedure" show))
-  (let ([name (vector-ref (constructor '()) 0)])
+  (let ([name (buffers:kind-name (buffers:constructor-kind constructor))])
     (table-set! %segment-kinds constructor name)
     (table-set! %shows name show)))
 
@@ -269,12 +270,8 @@
 
 (define (show-position view)
   (check-view 'status-line:show-position view)
-  (let ([b (views:buffer view)])
-    (and b
-         (let* ([doc (buffers:document b)] [p (views:point view)] [line (document:line doc p)]
-                [chars (document:unit characters)])
-           (format "~a:~a" line
-             (- (document:offset doc p chars) (document:offset doc (document:line-start doc line) chars)))))))
+  (let ([describe (views:position-description)])
+    (and describe (views:buffer view) (describe view))))
 
 (define (show-percent-position view)
   (check-view 'status-line:show-percent-position view)
@@ -296,12 +293,13 @@
   (let ([b (views:buffer view)])
     (and b
          (let* ([doc (buffers:document b)] [chars (document:unit characters)] [cursors (views:cursors view)]
-                [regions (list-sort (lambda (x y) (< (car x) (car y)))
-                           (fold-right
-                             (lambda (c acc)
-                               (let ([p (views:cursor-point c)] [m (views:cursor-mark c)])
-                                 (if (and m (not (= p m))) (cons (cons (min p m) (max p m)) acc) acc)))
-                             '() cursors))])
+                [regions (%merged-regions
+                           (list-sort (lambda (x y) (< (car x) (car y)))
+                             (fold-right
+                               (lambda (c acc)
+                                 (let ([p (views:cursor-point c)] [m (views:cursor-mark c)])
+                                   (if (and m (not (= p m))) (cons (cons (min p m) (max p m)) acc) acc)))
+                               '() cursors)))])
            (define (offset p) (document:offset doc p chars))
            ;; Counted as Emacs's count-lines: a region ending at a line's
            ;; start does not take in that line.
@@ -309,20 +307,53 @@
              (let ([line (document:line doc e)])
                (if (= (offset e) (offset (document:line-start doc line))) (- line 1) line)))
            (define (counted n one many) (format "~a ~a" n (if (= n 1) one many)))
-           ;; Cursors' regions can overlap or share a line; each character
-           ;; and each line counts once.
-           (let loop ([rs regions] [char-reach 0] [line-reach 0] [char-count 0] [line-count 0])
+           ;; As count-lines takes in no line after a final line break, a
+           ;; region whose text ends with an atom's line break takes in none.
+           (define (atom-counts s e)
+             (let ([texts (buffers:atom-texts doc s e)])
+               (let loop ([ts texts] [char-count 0] [line-count 0])
+                 (if (null? ts)
+                     (values char-count (- line-count (if (%ends-with-newline? (reverse texts) (offset e) offset) 1 0)))
+                     (let ([t (cdar ts)])
+                       (loop (cdr ts) (+ char-count (- (string-length t) 1))
+                             (+ line-count (%newlines t))))))))
+           ;; Cursors' regions can share a line; each line counts once.
+           (let loop ([rs regions] [line-reach 0] [char-count 0] [line-count 0])
              (if (null? rs)
                  (and (pair? regions)
                       (let ([parts (append (list (counted char-count "character" "characters"))
                                            (if (> line-count 1) (list (counted line-count "line" "lines")) '())
                                            (if (pair? (cdr cursors)) (list (counted (length cursors) "cursor" "cursors")) '()))])
                         (fold-left (lambda (acc s) (string-append acc ", " s)) (car parts) (cdr parts))))
-                 (let ([s (offset (caar rs))] [e (offset (cdar rs))]
-                       [from (document:line doc (caar rs))] [to (last-line (cdar rs))])
-                   (loop (cdr rs) (max char-reach e) (max line-reach to)
-                         (+ char-count (max 0 (- e (max s char-reach))))
-                         (+ line-count (max 0 (+ (- to (max from (+ line-reach 1))) 1)))))))))))
+                 (let ([s (caar rs)] [e (cdar rs)])
+                   (let ([from (document:line doc s)] [to (last-line e)])
+                     (let-values ([(atom-chars atom-lines) (atom-counts s e)])
+                       (loop (cdr rs) (max line-reach to)
+                             (+ char-count (- (offset e) (offset s)) atom-chars)
+                             (+ line-count (max 0 (+ (- to (max from (+ line-reach 1))) 1)) atom-lines)))))))))))
+
+(define (%merged-regions sorted)
+  (if (null? sorted)
+      '()
+      (let loop ([rs (cdr sorted)] [current (car sorted)] [acc '()])
+        (cond
+          [(null? rs) (reverse (cons current acc))]
+          [(<= (caar rs) (cdr current)) (loop (cdr rs) (cons (car current) (max (cdr current) (cdar rs))) acc)]
+          [else (loop (cdr rs) (car rs) (cons current acc))]))))
+
+(define (%newlines s)
+  (let loop ([i 0] [n 0])
+    (if (= i (string-length s)) n (loop (+ i 1) (if (char=? (string-ref s i) #\newline) (+ n 1) n)))))
+
+;; An atom with no text adds nothing, so the text ends with the atom
+;; before it.
+(define (%ends-with-newline? texts end offset)
+  (and (pair? texts)
+       (= (+ (offset (caar texts)) 1) end)
+       (let ([t (cdar texts)])
+         (if (string=? t "")
+             (%ends-with-newline? (cdr texts) (- end 1) offset)
+             (char=? (string-ref t (- (string-length t) 1)) #\newline)))))
 
 (define (show-major-mode view)
   (check-view 'status-line:show-major-mode view)

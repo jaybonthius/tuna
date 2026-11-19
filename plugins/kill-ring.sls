@@ -32,10 +32,12 @@
     (sealed #t)
     (fields parts))
 
+  ;; A part keeps the text of each atom in its slice, since a kind's text
+  ;; is read only on the main thread and the part's text is read on any.
   (define-record-type slice-part
-    (nongenerative kill-ring:slice-part/slice/spans)
+    (nongenerative kill-ring:slice-part/slice/spans/atom-texts)
     (sealed #t)
-    (fields slice spans))
+    (fields slice spans atom-texts))
 
   (define (piece-or-string? v) (or (string? v) (piece-record? v)))
 
@@ -47,22 +49,31 @@
     (unless (piece-or-string? piece)
       (assertion-violation who "not a string or a piece" piece)))
 
+  (define chars (document:unit characters))
+
   (define (make-buffer-piece buffer start end)
-    (make-piece-record
-      (list (make-slice-part (document:slice (buffers:document buffer) start end)
-                             (buffers:travelling-spans buffer start end)))))
+    (let ([slice (document:slice (buffers:document buffer) start end)])
+      (make-piece-record
+        (list (make-slice-part slice
+                               (buffers:travelling-spans buffer start end)
+                               (buffers:atom-texts slice 0 (document:length slice)))))))
 
   (define (parts piece)
     (if (string? piece) (list piece) (piece-record-parts piece)))
 
   (define (part-text part)
-    (if (string? part) part (document:text (slice-part-slice part))))
+    (if (string? part)
+        part
+        (let ([slice (slice-part-slice part)])
+          (document:text slice 0 (document:length slice) (slice-part-atom-texts part)))))
 
   (define (part-length part)
     (if (string? part)
         (string-length part)
         (let ([doc (slice-part-slice part)])
-          (document:offset doc (document:length doc) (document:unit characters)))))
+          (fold-left (lambda (n a) (+ n (string-length (cdr a)) -1))
+                     (document:offset doc (document:length doc) chars)
+                     (slice-part-atom-texts part)))))
 
   (define (piece-text piece)
     (if (string? piece) piece (apply string-append (map part-text (piece-record-parts piece)))))

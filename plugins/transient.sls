@@ -275,7 +275,7 @@
 
 (buffers:define-kind %entry-atom (content atom) (keymap %entry-keys) (draw %draw-entry))
 
-(define %entry-atom-kind (vector-ref (%entry-atom '()) 0))
+(define %entry-atom-kind (buffers:kind-name (buffers:constructor-kind %entry-atom)))
 
 (define (%report-once! s procedure c)
   (unless (memq procedure (%showing-reported s))
@@ -433,6 +433,7 @@
 
 (define %buffer
   (let ([b (or (buffers:find " *transient*") (buffers:make " *transient*" (%root '())))])
+    (buffers:with-buffer b (set-option-local! views:cursor-visible #f))
     (let ([doc (buffers:document b)])
       (unless (equal? (document:datums doc) (list (%root '())))
         (buffers:splice! b 0 (document:length doc) (document:from-datum (%root '())))))

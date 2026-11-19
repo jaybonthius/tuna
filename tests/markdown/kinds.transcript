@@ -38,8 +38,9 @@
 > (car (cddr (car (datums b))))
 (markdown:heading ((key . 0) (level . 1)) "New Title\n")
 ; Line motion from a line's start reaches each block, the paragraph
-; after a list and after a quote included, since no text block takes
-; typing after its last newline.
+; after a list and after a quote included, since the place after a
+; block's last line break is no stop. At the end of the buffer the
+; cursor rests before the last block's line break, where typing goes.
 > (define stops (page:make "*stops*" "- item one\n- item two\n\nAfter the list.\n\n> quoted\n\nEnd.\n"))
 > (show! stops)
 > (define (walk key n) (let loop ([k n] [at (list (views:point (view)))]) (if (= k 0) (reverse at) (begin (press! key) (loop (- k 1) (cons (views:point (view)) at))))))
@@ -53,10 +54,9 @@
 30
 > (press! "M->")
 > (press! "x")
-! buffers:replace!: the node refuses the edit with irritant markdown:paragraph
 > (press! "C-p" "C-e" "!")
 > (text stops)
-"item one\nitem two\nAfter the list.\nquoted\nEnd.!\n"
+"item one\nitem two\nAfter the list.\nquoted!\nEnd.x\n"
 ; A copy of rendered text is its visible text.
 > (define l (page:make "*copy*" "Some **bold** [link](https://l.example) and `code`."))
 > (show! l)

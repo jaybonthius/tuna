@@ -116,7 +116,7 @@
 
 (import %internals)
 
-(define (%kind) (car (container '())))
+(define (%kind) (buffers:kind-name (buffers:constructor-kind container)))
 
 (define (%focused focused children)
   (or (and focused (find (lambda (c) (fx= (document:node-start c) (document:node-start focused))) children))
@@ -334,7 +334,7 @@
 
 (define (%split-of column strip)
   (and (not (document:atom? column))
-       (eq? (document:node-kind column) (car (layout-split:container '())))
+       (eq? (document:node-kind column) (buffers:kind-name (buffers:constructor-kind layout-split:container)))
        (eq? (document:node-attribute column 'direction 'row) (cross-direction strip))))
 
 (commands:define-command (consume)

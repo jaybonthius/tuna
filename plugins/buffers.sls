@@ -11,7 +11,7 @@
    make-buffer! find-buffer live-buffers buffer-live? rename-buffer! forget-buffer! with-current
    current-buffer frozen-document
    replace-content! splice-content! reconcile-node! edits-after map-position-through
-   define-kind! find-kind stop-at next-stop-after previous-stop-before
+   define-kind! note-constructor! find-kind find-constructor-kind stop-at next-stop-after previous-stop-before range-text range-atom-texts
    define-layer-type! layer-of layers-for layer-type-keymap-of
    set-layer-spans! add-layer-span! remove-layer-spans! layer-spans layer-spans-at travelling-spans-of
    make-anchor! anchor-current-position move-anchor! anchor-deleted-now?)
@@ -27,6 +27,7 @@
       (document:length removed) (document:length inserted) (not (eq? removed inserted))))
 
   (define-table kinds)
+  (define-table constructor-kinds)
   (define-table layer-types)
 
   (define by-name (make-hashtable string-hash string=?))
@@ -175,6 +176,9 @@
 
   (define (find-kind name) (table-ref kinds name #f))
 
+  (define (find-constructor-kind constructor)
+    (let ([name (table-ref constructor-kinds constructor #f)]) (and name (find-kind name))))
+
   (define (kind-of node) (table-ref kinds (document:node-kind node) #f))
 
   (define (node-content node)
@@ -202,15 +206,22 @@
     (unless (or (not v) (procedure? v))
       (assertion-violation who "not a procedure or #f" v)))
 
-  (define (define-kind! id content inline? sticky stops draw keymap consent whole?)
+  (define (define-kind! id content inline? sticky stops draw keymap consent whole? text)
     (check-optional-procedure 'buffers:define-kind draw)
     (check-optional-procedure 'buffers:define-kind consent)
+    (check-optional-procedure 'buffers:define-kind text)
     (let ([name (exported-symbol id)])
       (table-set! kinds name
-        (make-kind-entry name content inline? sticky stops draw keymap consent (or whole? (eq? content 'atom))))
+        (make-kind-entry name content inline? sticky stops draw keymap consent (or whole? (eq? content 'atom))
+          text (current-owner)))
       (if (eq? content 'atom)
           (lambda (attributes) (vector name attributes))
           (lambda (attributes . datums) (cons* name attributes datums)))))
+
+  ;; A plugin's name for its constructor gives a procedure that forwards
+  ;; to it, which is what other code holds, so that is the one noted.
+  (define (note-constructor! constructor id)
+    (table-set! constructor-kinds constructor (exported-symbol id)))
 
   ;; A document whose only node is its root, as a file's is, needs no
   ;; search for the nodes around a position: inside, there is the root
@@ -404,14 +415,21 @@
       (let-values ([(new st) (replace-step doc s s c)])
         (values new (list st) (lambda (x end?) (fx+ s x)) c (list parent)))))
 
+  ;; An atom's text may be longer than the one character it counts as,
+  ;; so a position in the content moves on by the extra length of each
+  ;; atom before it.
   (define (insert-as-text doc s c anc)
-    (let ([text (document:text c)])
+    (let* ([atoms (range-atom-texts c 0 (document:length c))] [text (document:text c 0 (document:length c) atoms)])
       (when (string=? text "") (misfit))
       (let ([t (string->document text)] [parent (and (pair? anc) (car anc))])
         (unless (text-node? parent) (misfit))
         (let-values ([(new st) (replace-step doc s s t)])
           (values new (list st)
-                  (lambda (x end?) (fx+ s (document:offset c x (document:unit characters))))
+                  (lambda (x end?)
+                    (fold-left (lambda (p atom)
+                                 (if (fx< (car atom) x) (fx+ p (fx- (string-length (cdr atom)) 1)) p))
+                               (fx+ s (document:offset c x (document:unit characters)))
+                               atoms))
                   t (list parent))))))
 
   (define (insert-blocks doc s c anc)
@@ -983,7 +1001,18 @@
            (for-all (lambda (n) (not (eq? (node-stops n) 'none))) as)
            (or (and (eq? (node-content (car as)) 'text) (eq? (node-stops (car as)) 'all))
                (let ([t (document:token doc q)]) (and (document:node? t) (document:atom? t))))
+           (not (after-block-text? doc q (car as)))
            (length as))))
+
+  ;; A block's text ends with its line break, which ends its last line
+  ;; rather than starting another, so the place after it is no line to
+  ;; rest on. The root's end is: a file's last line may be empty. An
+  ;; inline node's line break is text, as one pasted into a field.
+  (define (after-block-text? doc q n)
+    (and (eq? (document:token doc q) 'close)
+         (fx> (document:node-start n) 0)
+         (eqv? (document:token doc (fx- q 1)) #\newline)
+         (let ([k (kind-of n)]) (not (and k (kind-entry-inline? k))))))
 
   (define (consents-to-typing? b doc q)
     (let ([n (document:enclosing doc q)])
@@ -1186,8 +1215,37 @@
                 (buffer-logged-set! b log-limit))))))
       made))
 
+  (define (atoms-between doc start end)
+    (let* ([unit (document:unit atoms)] [first (document:offset doc start unit)])
+      (let loop ([k (document:offset doc end unit)] [acc '()])
+        (if (fx= k first)
+            acc
+            (loop (fx- k 1) (cons (document:token doc (fx- (document:position doc k unit) 1)) acc))))))
+
+  (define (atom-text atom)
+    (let* ([k (kind-of atom)] [text (and k (kind-entry-text k))])
+      (if text
+          (guard (c [(not (quit-condition? c)) (report-for k c) ""])
+            (let ([s (text atom)])
+              (unless (string? s)
+                (assertion-violation (kind-entry-name k) "a text procedure returned what is not a string" s))
+              s))
+          "")))
+
+  (define (report-for k c)
+    (let ([owner (kind-entry-owner k)])
+      (if (member owner (loaded-modules))
+          (as-module owner (report c))
+          (report c))))
+
+  (define (range-atom-texts doc start end)
+    (map (lambda (atom) (cons (document:node-start atom) (atom-text atom))) (atoms-between doc start end)))
+
+  (define (range-text doc start end)
+    (document:text doc start end (range-atom-texts doc start end)))
+
   (table-set! kinds 'document:raw-byte
-    (make-kind-entry 'document:raw-byte 'atom #f 'both 'all #f #f #f #t))
+    (make-kind-entry 'document:raw-byte 'atom #f 'both 'all #f #f #f #t (lambda (atom) "\xFFFD;") '(buffers)))
 
   (run-with-idle-timer 1 trim-logs!))
 
@@ -1352,9 +1410,16 @@
       [(_ id clause ...)
        (identifier? #'id)
        (let loop ([clauses #'(clause ...)] [seen '()] [content #''text] [inline #'#f] [sticky #''both]
-                  [stops #''all] [draw #'#f] [keymap #'#f] [consent #'#f] [whole #'#f])
+                  [stops #''all] [draw #'#f] [keymap #'#f] [consent #'#f] [whole #'#f] [text #f])
          (if (null? clauses)
-             #`(define-public id (define-kind! 'id #,content #,inline #,sticky #,stops #,draw #,keymap #,consent #,whole))
+             (begin
+               (when (and text (not (equal? (syntax->datum content) ''atom)))
+                 (syntax-violation 'buffers:define-kind "a text clause needs (content atom)" x text))
+               #`(begin
+                   (define-public id
+                     (define-kind! 'id #,content #,inline #,sticky #,stops #,draw #,keymap #,consent #,whole
+                       #,(if text (syntax-case text () [(_ e) #'e]) #'#f)))
+                   (define-values () (begin (note-constructor! id 'id) (values)))))
              (let* ([c (car clauses)] [rest (cdr clauses)]
                     [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ (invalid c)])])
                (define (choice options)
@@ -1367,20 +1432,21 @@
                  (syntax-violation 'buffers:define-kind "clause given twice" x c))
                (let ([seen (cons name seen)])
                  (case name
-                   [(content) (loop rest seen (choice '(text nodes atom)) inline sticky stops draw keymap consent whole)]
+                   [(content) (loop rest seen (choice '(text nodes atom)) inline sticky stops draw keymap consent whole text)]
                    [(inline)
                     (syntax-case c ()
-                      [(_) (loop rest seen content #'#t sticky stops draw keymap consent whole)]
+                      [(_) (loop rest seen content #'#t sticky stops draw keymap consent whole text)]
                       [_ (invalid c)])]
-                   [(sticky) (loop rest seen content inline (choice '(before after both neither)) stops draw keymap consent whole)]
-                   [(stops) (loop rest seen content inline sticky (choice '(all children none)) draw keymap consent whole)]
-                   [(draw) (loop rest seen content inline sticky stops (expression) keymap consent whole)]
-                   [(keymap) (loop rest seen content inline sticky stops draw (expression) consent whole)]
-                   [(consent) (loop rest seen content inline sticky stops draw keymap (expression) whole)]
+                   [(sticky) (loop rest seen content inline (choice '(before after both neither)) stops draw keymap consent whole text)]
+                   [(stops) (loop rest seen content inline sticky (choice '(all children none)) draw keymap consent whole text)]
+                   [(draw) (loop rest seen content inline sticky stops (expression) keymap consent whole text)]
+                   [(keymap) (loop rest seen content inline sticky stops draw (expression) consent whole text)]
+                   [(consent) (loop rest seen content inline sticky stops draw keymap (expression) whole text)]
                    [(whole)
                     (syntax-case c ()
-                      [(_) (loop rest seen content inline sticky stops draw keymap consent #'#t)]
+                      [(_) (loop rest seen content inline sticky stops draw keymap consent #'#t text)]
                       [_ (invalid c)])]
+                   [(text) (expression) (loop rest seen content inline sticky stops draw keymap consent whole c)]
                    [else (invalid c)])))))]
       [_ (syntax-violation 'buffers:define-kind "expected (buffers:define-kind id clause ...)" x)])))
 
@@ -1402,6 +1468,35 @@
   (kind-entry-whole? kind))
 
 (define (kind? v) (kind-entry? v))
+
+(define (kind-name kind)
+  (check-kind 'buffers:kind-name kind)
+  (kind-entry-name kind))
+
+(define (kind-owner kind)
+  (check-kind 'buffers:kind-owner kind)
+  (kind-entry-owner kind))
+
+(define (constructor-kind constructor)
+  (unless (procedure? constructor)
+    (assertion-violation 'buffers:constructor-kind "not a procedure" constructor))
+  (find-constructor-kind constructor))
+
+(define (%check-document-range who doc start end)
+  (unless (document? doc)
+    (assertion-violation who "not a document" doc))
+  (unless (and (fixnum? start) (fixnum? end) (fx<= 0 start end (document:length doc)))
+    (assertion-violation who "not a range of the document" start end)))
+
+(define (text-between doc start end)
+  (check-main-thread 'buffers:text-between)
+  (%check-document-range 'buffers:text-between doc start end)
+  (range-text doc start end))
+
+(define (atom-texts doc start end)
+  (check-main-thread 'buffers:atom-texts)
+  (%check-document-range 'buffers:atom-texts doc start end)
+  (range-atom-texts doc start end))
 
 (define (stop buffer position)
   (check-buffer 'buffers:stop buffer)

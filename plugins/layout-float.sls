@@ -52,7 +52,7 @@
 
 (import %internals)
 
-(define (%kind) (car (container '())))
+(define (%kind) (buffers:kind-name (buffers:constructor-kind container)))
 
 ;; Each module that shows popups has an entry of the numbers of their
 ;; views, so that they go when it unloads; a number outlives a view

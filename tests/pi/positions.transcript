@@ -1,0 +1,40 @@
+; Where point is in a chat: the conversation counts your messages, the
+; prompt has its own lines, and the rest shows no position.
+> (define chat (pi:start (getenv "HOME")))
+> (define f (fake-of chat))
+> (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
+> (in-client (lambda () (pi-chat:show! chat)))
+> (define b (pi-chat:buffer chat))
+> (define opening (assistant-message "stop" (text-block "Hello")))
+> (say! f (event "agent_start") (event "message_start" (cons "message" opening)) (event "message_end" (cons "message" opening)))
+> (append-entry! f (entry "a0" #f opening))
+> (say! f (event "agent_end") (event "agent_settled" '("aborted" . #f)))
+> (wait-until (lambda () (= 1 (length (filter pi:item-entry-id (pi:chat-transcript chat))))))
+> (run-turn! f "u1" "a1" "First" '("Answer one"))
+> (wait-until (lambda () (= 3 (length (filter pi:item-entry-id (pi:chat-transcript chat))))))
+> (run-turn! f "u2" "a2" "Second" '("Answer two"))
+> (wait-until (lambda () (= 5 (length (filter pi:item-entry-id (pi:chat-transcript chat))))))
+> (define (where) (views:with-view (view) ((views:position-description) (view))))
+> (type! "ab")
+> (press! "S-RET")
+> (type! "cd")
+> (where)
+"L2"
+> (define (at text) (let ([s (document:text (buffers:document b))]) (let loop ([i 0]) (if (string=? (substring s i (+ i (string-length text))) text) (buffers:stop b (document:position (buffers:document b) i (document:unit characters))) (loop (+ i 1))))))
+> (map (lambda (text) (views:set-point! (view) (at text)) (where)) '("Hello" "First" "Answer one" "Second" "Answer two"))
+(#f "message 1 of 2" "message 1 of 2" "message 2 of 2" "message 2 of 2")
+; n and p in the conversation go from message to message.
+> (views:set-point! (view) (at "Hello"))
+> (define (moved command) (in-client (lambda () (commands:run command))) (where))
+> (map moved (list pi-chat:next-message pi-chat:next-message pi-chat:previous-message))
+("message 1 of 2" "message 2 of 2" "message 1 of 2")
+> (in-client (lambda () (commands:run pi-chat:previous-message)))
+! pi-chat:previous-message: no earlier message
+; M-> goes to the end of the prompt's text, where typing goes, and C-k
+; there may not remove the line break the prompt is read up to.
+> (press! "M->")
+> (type! "!")
+> (press! "C-k")
+! buffers:replace!: the node refuses the edit with irritant pi-chat:prompt
+> (shown chat)
+"Hello\nFirst\nAnswer one\nSecond\nAnswer two\nab\ncd!\n"

@@ -124,8 +124,8 @@
 (define (%draw-prompt node view)
   (haml (:div.pi-chat-prompt (views:draw-children view node))))
 
-;; An edit past a field's last newline would join the field to the node
-;; after it.
+;; The field's text is read up to its last line break, so an edit may not
+;; remove it.
 (define (%field-edit? node edit)
   (let ([start (buffers:edit-start edit)] [last-newline (fx- (document:node-end node) 2)])
     (and (fx> start (document:node-start node))
@@ -133,6 +133,8 @@
          (or (%attribute node 'lines)
              (not (memv #\newline (string->list (document:text (buffers:edit-inserted edit)))))))))
 
+;; The prompt's text is read up to its last line break, so an edit may not
+;; remove it.
 (define (%prompt-edit? node edit)
   (let ([start (buffers:edit-start edit)] [last-newline (fx- (document:node-end node) 2)])
     (and (fx> start (document:node-start node))
@@ -883,7 +885,7 @@
         (string-append (%relative (pi:chat-directory chat) path) ":" (number->string first)
                        (if (fx= first last) "" (string-append "-" (number->string last))))
         (string-append "```" (buffers:name b) " lines " (number->string first) "-" (number->string last) "\n"
-                       (%line (document:text doc start end)) "```"))))
+                       (%line (buffers:text-between doc start end)) "```"))))
 
 (define (region-text chat b start end)
   (%check-chat 'pi-chat:region-text chat)
@@ -1126,20 +1128,35 @@
         [(%path-line-at b position) => (lambda (p) (%visit! chat (car p) (cdr p)))]
         [else (error 'pi-chat:visit "no file is at point")]))))
 
-(define (%message-starts b)
-  (let walk ([wrappers (%children (%part b 'pi-chat:transcript))] [acc '()])
-    (if (null? wrappers)
-        (reverse acc)
-        (walk (cdr wrappers)
-              (let ([item (car (%children (car wrappers)))])
-                (if (eq? (document:node-kind item) 'pi-chat:user-message)
-                    (cons (document:node-start item) acc)
-                    acc))))))
+;; The status line asks on every draw, and reading every item back from
+;; the document takes a long chat milliseconds; the record of what was
+;; written gives each item's kind and length.
+(define (%message-starts b transcript)
+  (let ([written (hashtable-ref %written-transcripts b #f)])
+    (if written
+        (let ([datums (%written-datums written)] [lengths (%written-lengths written)])
+          (let loop ([j 0] [at (fx+ (document:node-start transcript) 1)] [acc '()])
+            (if (fx= j (vector-length datums))
+                (reverse acc)
+                (loop (fx+ j 1) (fx+ at (vector-ref lengths j))
+                      (if (eq? (car (vector-ref datums j)) 'pi-chat:user-message) (cons (fx+ at 1) acc) acc)))))
+        '())))
+
+(define (describe-message transcript view)
+  (unless (and (views:view? view) (views:buffer view))
+    (assertion-violation 'pi-chat:describe-message "not a view showing a buffer" view))
+  (unless (and (document:node? transcript) (eq? (document:node-kind transcript) 'pi-chat:transcript))
+    (assertion-violation 'pi-chat:describe-message "not a chat's conversation" transcript))
+  (let* ([p (views:point view)] [starts (%message-starts (views:buffer view) transcript)]
+         [k (length (filter (lambda (s) (fx<= s p)) starts))])
+    (and (fx> k 0) (format "message ~a of ~a" k (length starts)))))
+
+(define (%describe-nothing node view) #f)
 
 (commands:define-command (next-message)
   "Moves point to your next message."
   (let* ([v (views:current)] [b (views:buffer v)] [p (views:point v)]
-         [next (find (lambda (s) (fx> s p)) (%message-starts b))])
+         [next (find (lambda (s) (fx> s p)) (%message-starts b (%part b 'pi-chat:transcript)))])
     (unless next (error 'pi-chat:next-message "no later message"))
     (views:set-point! v (fx+ next 1))))
 
@@ -1147,7 +1164,7 @@
   "Moves point to your previous message."
   (let* ([v (views:current)] [b (views:buffer v)] [p (views:point v)]
          [here (%enclosing-of b p '(pi-chat:user-message))]
-         [before (filter (lambda (s) (fx< s (if here (document:node-start here) p))) (%message-starts b))])
+         [before (filter (lambda (s) (fx< s (if here (document:node-start here) p))) (%message-starts b (%part b 'pi-chat:transcript)))])
     (when (null? before) (error 'pi-chat:previous-message "no earlier message"))
     (views:set-point! v (fx+ (car (last-pair before)) 1))))
 
@@ -1420,6 +1437,9 @@
 (table-set! commands:command-modes restart (list mode))
 (table-set! commands:command-modes stop (list mode))
 
+(table-set! views:position-describers %chat %describe-nothing)
+(table-set! views:position-describers transcript describe-message)
+(table-set! views:position-describers prompt views:describe-line)
 (table-set! web:stylesheets 'pi-chat "pi-chat/pi-chat.css")
 
 (add-hook! pi:chat-changed %chat-changed)

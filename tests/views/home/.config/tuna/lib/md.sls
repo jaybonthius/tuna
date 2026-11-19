@@ -18,3 +18,5 @@
 (define (draw-grid node view) (haml (:div.grid (views:draw-children view node))))
 
 (buffers:define-kind grid (content nodes) (whole) (draw draw-grid))
+
+(buffers:define-kind blank (content atom))

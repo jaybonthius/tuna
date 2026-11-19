@@ -110,6 +110,21 @@
 (#f #f)
 > (list (md:image '((src . "x.png"))) (md:para '() "a" (md:link '() "b")))
 (#(md:image ((src . "x.png"))) (md:para () "a" (md:link () "b")))
+; A constructor names its kind, and a kind its name and the module that
+; defined it.
+> (map (lambda (k) (and k (list (buffers:kind-name k) (buffers:kind-owner k)))) (list (buffers:constructor-kind md:para) (buffers:constructor-kind fresh)))
+((md:para (md)) #f)
+> (buffers:define-kind own)
+> (eq? (buffers:constructor-kind own) (buffers:kind 'own))
+#t
+> (buffers:kind-owner (buffers:kind 'own))
+(repl)
+> (buffers:kind-owner (buffers:kind 'document:raw-byte))
+(buffers)
+> (buffers:constructor-kind 'md:para)
+! buffers:constructor-kind: not a procedure with irritant md:para
+> (buffers:kind-name 'md:para)
+! buffers:kind-name: not a kind with irritant md:para
 > (buffers:define-kind bad (content text) (content nodes))
 ! buffers:define-kind: clause given twice (content nodes) in (buffers:define-kind bad (content text) (content nodes))
 > (buffers:define-kind bad (colour red))
@@ -143,15 +158,16 @@
 (buffers:text () "abxc\n")
 ; Stops: none inside a node with (stops none); a node of an undefined
 ; kind has the stops of text, but typing goes outside it where it can,
-; and edits inside it are refused while deleting it whole is not.
+; and edits inside it are refused while deleting it whole is not. A
+; block's end after its last line break is no stop.
 > (buffers:define-kind passed (inline) (stops none))
 > (all-stops (fresh '(md:doc () (md:para () "ab" (passed () "cd") "ef\n"))))
-(2 3 4 8 9 10 11)
+(2 3 4 8 9 10)
 > (define u (fresh '(md:doc () (md:para () "ab" (unknown:kind () "cd") "ef\n"))))
 > (all-stops u)
-(2 3 4 6 8 9 10 11)
+(2 3 4 6 8 9 10)
 > (list (buffers:stop u 5) (buffers:stop u 0) (buffers:stop u 13))
-(4 2 11)
+(4 2 #f)
 > (buffers:replace! u 6 6 "x")
 ! buffers:replace!: inside a node whose kind is not loaded with irritant unknown:kind
 > (buffers:replace! u 3 7 "")

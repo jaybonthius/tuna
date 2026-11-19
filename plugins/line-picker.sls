@@ -1,36 +1,19 @@
 #!tuna
-(import (minibuffer) (completion) (buffers) (commands) (document) (jobs) (keys) (views))
+(import (minibuffer) (completion) (buffers) (commands) (document) (jobs) (keys) (views) (line-picker lines))
 
 (define-saved goto-line-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
 (completion:define-category line-category "Lines of the current buffer, valued by the line's start.")
 
-(define (%line-candidates doc first last)
-  (let ([n (fx+ (fx- last first) 1)])
-    (let ([v (make-vector n)] [end (document:length doc)])
-      (do ([k first (fx+ k 1)]) ((fx> k last) v)
-        (let* ([start (document:line-start doc k)]
-               [stop (if (fx< k (document:line doc (fx- end 1))) (fx- (document:line-start doc (fx+ k 1)) 1) (fx- end 1))])
-          (vector-set! v (fx- k first) (cons (document:text doc start (fxmax start stop)) start)))))))
-
-(jobs:define-worker (%split-lines doc emit receive)
-  (import (document))
-  (let* ([end (fx- (document:length doc) 1)] [final (document:line doc end)]
-         [last (if (and (fx> final 1) (fx= (document:line-start doc final) end)) (fx- final 1) final)])
-    (let loop ([k 1])
+(jobs:define-worker (%split-lines input emit receive)
+  (import (document) (line-picker lines))
+  (let* ([doc (car input)] [last (last-line doc)])
+    (let loop ([k 1] [atoms (cdr input)])
       (when (fx<= k last)
         (let ([to (fxmin last (fx+ k 999))])
-          (emit (let ([v (make-vector (fx+ (fx- to k) 1))])
-                  (do ([j k (fx+ j 1)]) ((fx> j to) v)
-                    (let* ([start (document:line-start doc j)]
-                           [stop (if (fx< j final) (fx- (document:line-start doc (fx+ j 1)) 1) end)])
-                      (vector-set! v (fx- j k) (cons (document:text doc start (fxmax start stop)) start))))))
-          (loop (fx+ to 1)))))))
-
-;; The empty run after a final newline is no line to go to.
-(define (%last-line doc)
-  (let* ([end (fx- (document:length doc) 1)] [last (document:line doc end)])
-    (if (and (fx> last 1) (fx= (document:line-start doc last) end)) (fx- last 1) last)))
+          (let-values ([(lines atoms) (line-candidates doc atoms k to)])
+            (emit lines)
+            (loop (fx+ to 1) atoms)))))))
 
 ;; Matches the main thread's limit, so a buffer that completion would match
 ;; there is split there too.
@@ -38,16 +21,17 @@
   (and (fx<= (document:length doc) 50000) (fx<= (document:line doc (fx- (document:length doc) 1)) 1000)))
 
 (define (%read-line)
-  (let* ([view (views:current)] [doc (buffers:document (views:buffer view))] [point (views:point view)])
+  (let* ([view (views:current)] [doc (buffers:document (views:buffer view))] [point (views:point view)]
+         [atoms (buffers:atom-texts doc 0 (document:length doc))])
     (completion:read "Go to line: "
       (list (if (%small? doc)
                 (completion:source
-                  (candidates (%line-candidates doc 1 (%last-line doc)))
+                  (candidates (let-values ([(lines rest) (line-candidates doc atoms 1 (last-line doc))]) lines))
                   (in-order)
                   (category line-category)
                   (preview (lambda (p) (views:set-point! view (or p point)))))
                 (completion:source
-                  (job %split-lines doc)
+                  (job %split-lines (cons doc atoms))
                   (in-order)
                   (category line-category)
                   (preview (lambda (p) (views:set-point! view (or p point))))))))))

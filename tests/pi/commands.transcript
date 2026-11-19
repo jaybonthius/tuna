@@ -47,6 +47,13 @@
 > (run! pi-chat:add-region)
 > (shown chat)
 "lib/a.txt:2-3\n```a.txt lines 1-1\nxone\n```\n"
+; An atom in the region goes as its text: a raw byte as U+FFFD.
+> (in-client (lambda () (layout:switch-to-buffer file-buffer)))
+> (in-client (lambda () (buffers:splice! file-buffer 2 2 (document:from-utf8 #vu8(#xFF))) (void)))
+> (in-client (lambda () (views:set-point! (view) 1) (views:set-mark! (view) 4)))
+> (run! pi-chat:add-region)
+> (string=? (shown chat) "lib/a.txt:2-3\n```a.txt lines 1-1\nxone\n```\n```a.txt lines 1-1\nx\xFFFD;o\n```\n")
+#t
 ; Pi's terminal commands typed at the prompt's start run the chat's own
 ; procedures, with what follows the name; Pi's others are refused, since
 ; sent to Pi they would reach the model as text; Pi's own commands go to
@@ -56,7 +63,7 @@
 > (define t (start! (lambda () (press! "RET"))))
 > (result t)
 > (ref (last-request f "prompt") "message")
-"lib/a.txt:2-3\n```a.txt lines 1-1\nxone\n```"
+"lib/a.txt:2-3\n```a.txt lines 1-1\nxone\n```\n```a.txt lines 1-1\nx�o\n```"
 > (type! "/name Refactor")
 > (define t (start! (lambda () (press! "RET"))))
 > (result t)

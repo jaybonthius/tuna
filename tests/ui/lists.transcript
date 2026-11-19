@@ -12,7 +12,13 @@
 > (keys-shown)
 ((0 . 0) (0 . 1) (0 . 2) (0 . 3) (0 . 4))
 > (element (view) "<ul" "ul")
-"<ul class=\"ui-list\"><span class=\"cursor primary\"></span><div class=\"node whole\" id=\"v1-1\" data-at=\"1\" data-to=\"2\"><li class=\"ui-list-row\" aria-current=\"true\"><span class=\"ui-label\">0</span></li></div><div class=\"node whole\" id=\"v1-2\" data-at=\"2\" data-to=\"3\"><li class=\"ui-list-row\"><span class=\"ui-label\">1</span></li></div><div class=\"node whole\" id=\"v1-3\" data-at=\"3\" data-to=\"4\"><li class=\"ui-list-row\"><span class=\"ui-label\">2</span></li></div><div class=\"node whole\" id=\"v1-4\" data-at=\"4\" data-to=\"5\"><li class=\"ui-list-row\"><span class=\"ui-label\">3</span></li></div><div class=\"node whole\" id=\"v1-5\" data-at=\"5\" data-to=\"6\"><li class=\"ui-list-row\"><span class=\"ui-label\">4</span></li></div></ul>"
+"<ul class=\"ui-list\"><div class=\"node whole at-cursor primary\" id=\"v1-1\" data-at=\"1\" data-to=\"2\"><li class=\"ui-list-row\" aria-current=\"true\"><span class=\"ui-label\">0</span></li></div><div class=\"node whole\" id=\"v1-2\" data-at=\"2\" data-to=\"3\"><li class=\"ui-list-row\"><span class=\"ui-label\">1</span></li></div><div class=\"node whole\" id=\"v1-3\" data-at=\"3\" data-to=\"4\"><li class=\"ui-list-row\"><span class=\"ui-label\">2</span></li></div><div class=\"node whole\" id=\"v1-4\" data-at=\"4\" data-to=\"5\"><li class=\"ui-list-row\"><span class=\"ui-label\">3</span></li></div><div class=\"node whole\" id=\"v1-5\" data-at=\"5\" data-to=\"6\"><li class=\"ui-list-row\"><span class=\"ui-label\">4</span></li></div></ul>"
+; Point rests before the selected row's atom, so the cursor is drawn on
+; the row, which ui:describe-list numbers among all the rows.
+> (ui:describe-list (lst) (view))
+"row 1 of 100"
+> (views:with-view (view) (views:describe-at-point (view)))
+"row 1 of 100"
 ; Moving inside the shown rows only moves point; past them, the rows
 ; shown slide: one row goes and one comes.
 > (define v0 (buffers:version b))
@@ -130,7 +136,7 @@
 > (load-module! '(maker))
 > (show! (buffers:find "*made*"))
 > (element (view) "<ul" "ul")
-"<ul class=\"ui-list\"><span class=\"cursor primary\"></span><div class=\"node whole\" id=\"v1-10\" data-at=\"1\" data-to=\"2\"><li class=\"ui-list-row\" aria-current=\"true\"><span class=\"ui-label\">p!</span></li></div><div class=\"node whole\" id=\"v1-11\" data-at=\"2\" data-to=\"3\"><li class=\"ui-list-row\"><span class=\"ui-label\">q!</span></li></div></ul>"
+"<ul class=\"ui-list\"><div class=\"node whole at-cursor primary\" id=\"v1-10\" data-at=\"1\" data-to=\"2\"><li class=\"ui-list-row\" aria-current=\"true\"><span class=\"ui-label\">p!</span></li></div><div class=\"node whole\" id=\"v1-11\" data-at=\"2\" data-to=\"3\"><li class=\"ui-list-row\"><span class=\"ui-label\">q!</span></li></div></ul>"
 > (unload-module! '(maker))
 > (element (view) "<ul" "ul")
 ! maker:shout: module (maker) is unloaded
@@ -185,3 +191,11 @@
 > (press! "RET")
 > (car chosen)
 0
+; A list with no rows describes nothing; ui:describe-list takes a list
+; of the view's buffer.
+> (define e (buffers:make "*empty*" (ui:list '())))
+> (views:set-buffer! (view) e)
+> (ui:describe-list (document:token (buffers:document e) 0) (view))
+#f
+> (raised (lambda () (ui:describe-list (lst) (view))))
+(ui:describe-list "not a list of the buffer")

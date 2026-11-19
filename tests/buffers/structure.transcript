@@ -14,7 +14,8 @@
 > (root file)
 (buffers:text () "adb\nc\n")
 ; A buffer that code built: C-f and C-b visit the same stops, one per
-; character and atom, plus the end.
+; character and atom. Its end, after the last block's line break, is
+; none, as the place after each block's last line break is none.
 > (define md (fresh md-datum))
 > (equal? (root md) md-datum)
 #t
@@ -23,7 +24,7 @@
             (if p (loop (buffers:previous-stop md p) (cons p acc)) acc))
           stops)
 #t
-> (= (length stops) (+ 1 (string-length (document:text (buffers:document md)))))
+> (= (length stops) (string-length (document:text (buffers:document md))))
 #t
 > (= (buffers:next-stop md (at md "Title|\n")) (at md "|Alpha"))
 #t

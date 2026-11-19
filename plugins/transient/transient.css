@@ -13,11 +13,6 @@
     padding-inline: var(--tuna-space-5);
   }
 
-  /* The menu's view is never selected, so its cursor marks nothing. */
-  .transient-menu .cursor {
-    display: none;
-  }
-
   .transient-title {
     flex: 1 0 100%;
     margin: 0;
