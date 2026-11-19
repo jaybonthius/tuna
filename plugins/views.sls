@@ -663,15 +663,6 @@
           [t (document:token doc p)])
       (if (document:node? t) (append inner (list t)) inner)))
 
-  ;; A node beside text or a newline in its parent is drawn in that line.
-  ;; Only its neighbours are read, so a node among other nodes on a line
-  ;; that holds text further along counts as standing alone.
-  (define (in-line-run? doc n x)
-    (let ([after (document:token doc (document:node-end x))]
-          [before (let ([b (fx- (document:node-start x) 1)])
-                    (and (fx> b (document:node-start n)) (document:token doc b)))])
-      (or (char? after) (and (char? before) (not (char=? before #\newline))))))
-
   (define (token-near doc lo hi p)
     (let forward ([q (fxmax lo (fxmin p (fx- hi 1)))])
       (cond
@@ -694,7 +685,7 @@
                   (values (run-start doc n p lo) (run-end doc n p hi))
                   (let ([x (car rest)])
                     (cond
-                      [(in-line-run? doc n x)
+                      [(document:in-line? x)
                        (let ([s (document:node-start x)]) (values (run-start doc n s lo) (run-end doc n s hi)))]
                       [(whole-node? x) (values (fxmax lo (document:node-start x)) (fxmin hi (document:node-end x)))]
                       [(or (pair? (cdr rest)) (not at-node?)) (loop x (cdr rest))]
@@ -744,15 +735,16 @@
                     (let-values ([(a z) (view-item v doc e)])
                       (forward (if (fx> z e) z (fx+ e 1)) (fx- k 1))))))))
 
-  ;; Atoms count as characters and are U+FFFC in UTF-8, three bytes, so in
-  ;; mostly ASCII text the atoms are about half the bytes beyond the
-  ;; characters. Each other node is an opening and a closing.
+  ;; Atoms count as characters too, so the text's characters are the
+  ;; characters less the atoms standing alone; an atom drawn in a line
+  ;; takes room as a character does. Each other node is an opening and a
+  ;; closing.
   (define (counter doc)
-    (let ([chars (document:unit characters)] [bytes (document:unit bytes)])
+    (define (between a z unit) (fx- (document:offset doc z unit) (document:offset doc a unit)))
+    (let ([chars (document:unit characters)] [atoms (document:unit atoms)] [in-line (document:unit in-line-atoms)])
       (lambda (a z)
-        (let* ([n (fx- (document:offset doc z chars) (document:offset doc a chars))]
-               [atoms (fxmax 0 (fxmin n (fxquotient (fx- (fx- (document:offset doc z bytes) (document:offset doc a bytes)) n) 2)))])
-          (values (fx- (document:line doc z) (document:line doc a)) (fx- n atoms) atoms
+        (let ([n (between a z chars)] [standing (fx- (between a z atoms) (between a z in-line))])
+          (values (fx- (document:line doc z) (document:line doc a)) (fx- n standing) standing
                   (fxquotient (fx- (fx- z a) n) 2))))))
 
   (define (device-view! v device)

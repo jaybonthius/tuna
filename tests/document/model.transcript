@@ -29,6 +29,6 @@
 ; Random documents and edits, every query compared with a flat model of
 ; tokens: each result is the number of checks and the number that failed.
 > (edit-checks 1 12 30 12)
-(81142 0)
+(101430 0)
 > (typing-checks 2 6000 15)
-(1941 0)
+(2418 0)

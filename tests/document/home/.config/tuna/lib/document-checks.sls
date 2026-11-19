@@ -89,6 +89,7 @@
        (case unit
          [(characters) 1]
          [(bytes) (bytevector-length (string->utf8 (string t)))]
+         [(atoms) 0]
          [else (if (> (char->integer t) #xFFFF) 2 1)])]
       [(atom-token? t)
        (case unit
@@ -98,6 +99,25 @@
 
   (define (offset-of v p unit)
     (let loop ([i 0] [n 0]) (if (= i p) n (loop (+ i 1) (+ n (units (vector-ref v i) unit))))))
+
+  (define (in-line? v start end)
+    (let ([after (let loop ([i end])
+                   (cond
+                     [(= i (vector-length v)) #f]
+                     [(atom-token? (vector-ref v i)) (loop (+ i 1))]
+                     [else (vector-ref v i)]))]
+          [before (let loop ([i (- start 1)])
+                    (cond
+                      [(< i 0) #f]
+                      [(atom-token? (vector-ref v i)) (loop (- i 1))]
+                      [else (vector-ref v i)]))])
+      (or (char? after) (and (char? before) (not (char=? before #\newline))))))
+
+  (define (in-line-offsets v)
+    (let* ([n (vector-length v)] [r (make-vector (+ n 1) 0)])
+      (do ([i 0 (+ i 1)]) ((= i n) r)
+        (vector-set! r (+ i 1)
+          (+ (vector-ref r i) (if (and (atom-token? (vector-ref v i)) (in-line? v i (+ i 1))) 1 0))))))
 
   (define (enclosing v p)
     (let loop ([i (- p 1)] [depth 0])
@@ -205,8 +225,9 @@
 
   (define (check-document! what doc v sample)
     (let* ([n (vector-length v)]
-           [offsets (map (lambda (unit) (cons unit (prefix-vector v (lambda (t) (units t unit)))))
-                         '(characters bytes utf-16))]
+           [offsets (cons (cons 'in-line-atoms (in-line-offsets v))
+                          (map (lambda (unit) (cons unit (prefix-vector v (lambda (t) (units t unit)))))
+                               '(characters bytes utf-16 atoms)))]
            [newlines (prefix-vector v (lambda (t) (if (eqv? t #\newline) 1 0)))])
       (check! (list what 'length) n (document:length doc))
       (check! (list what 'datums) (tokens->datums (vector->list v)) (document:datums doc))
@@ -245,6 +266,7 @@
                           (document:datums slice))))
               (when (and (< p n) (pair? (vector-ref v p)))
                 (check! (list what 'node-end p) (node-end v p) (document:node-end (document:token doc p)))
+                (check! (list what 'in-line p) (in-line? v p (node-end v p)) (document:in-line? (document:token doc p)))
                 (check! (list what 'children p s e) (model-children v p s e) (children doc p s e))))))
         (sample-positions n sample))
       (let ([lines (+ 1 (vector-ref newlines n))])

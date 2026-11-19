@@ -89,6 +89,66 @@
 ! document:position: offset past the end with irritant 8
 > (document:offset units 0 'lines)
 ! document:offset: not a unit with irritant lines
+; Atoms, raw bytes among them, are a unit of their own; text outside
+; ASCII counts none.
+> (define atoms (document:from-datum '(p () "│é" #(img ()) "⠿" #(document:raw-byte ((byte . 255))) "x")))
+> (map (lambda (p) (document:offset atoms p (document:unit atoms))) (list 0 3 4 5 6 7 8))
+(0 0 1 1 2 2 2)
+> (list (document:position atoms 1 (document:unit atoms)) (document:position atoms 2 (document:unit atoms)))
+(4 6)
+> (document:position atoms 3 (document:unit atoms))
+! document:position: offset past the end with irritant 3
+; An atom is in a line when, past the atoms next to it, a character
+; follows, or a character other than a newline comes before: raw bytes
+; between letters, atoms between newlines and atoms after a letter are;
+; atoms after a newline before a closing, and atoms between nodes, are
+; not.
+> (define lines
+    '(p ()
+       (q () "a" #(document:raw-byte ((byte . 255))) #(document:raw-byte ((byte . 254))) #(document:raw-byte ((byte . 253))) "b")
+       (q () "x\n" #(img ()) #(img ()) "\ny")
+       (q () "x" #(img ()))
+       (q () "x\n" #(img ()))
+       (q () (r () "x") #(img ()) #(img ()) (r () "y"))))
+> (define (atoms-in doc)
+    (filter (lambda (t) (and (document:node? t) (document:atom? t)))
+            (map (lambda (p) (document:token doc p)) (iota (document:length doc)))))
+> (map document:in-line? (atoms-in (document:from-datum lines)))
+(#t #t #t #t #t #t #f #f #f)
+> (map document:in-line? (atoms-in (document:from-datum '(p () #(img ()) (q ()) "\n" #(img ())))))
+(#f #f)
+; The in-line atoms are a unit of their own. Checked against the
+; predicate at every position of a document whose tree has many levels.
+> (define in-line (document:unit in-line-atoms))
+> (define (walked doc)
+    (let loop ([p 0] [k 0] [acc '()])
+      (let ([acc (cons k acc)])
+        (if (= p (document:length doc))
+            (list->vector (reverse acc))
+            (let ([t (document:token doc p)])
+              (loop (+ p 1) (if (and (document:node? t) (document:atom? t) (document:in-line? t)) (+ k 1) k) acc))))))
+> (define (agrees? doc)
+    (let* ([w (walked doc)] [n (document:length doc)] [total (vector-ref w n)])
+      (and (for-all (lambda (p) (= (vector-ref w p) (document:offset doc p in-line))) (iota (+ n 1)))
+           (for-all (lambda (k)
+                      (let ([p (document:position doc k in-line)])
+                        (and (= (vector-ref w p) k) (or (= p 0) (< (vector-ref w (- p 1)) k)))))
+                    (iota (+ total 1)))
+           total)))
+> (define many (apply document:from-datum (make-list 300 lines)))
+> (list (document:length many) (agrees? many))
+(10800 1800)
+> (document:position many 1801 in-line)
+! document:position: offset past the end with irritant 1801
+; Typing a newline after a letter, or deleting the newline before atoms,
+; changes how the atoms after it are judged.
+> (define copy-150 (* 150 36))
+> (define typed (document:replace many (+ copy-150 18) (+ copy-150 18) (document:from-datum "\n")))
+> (list (document:in-line? (document:token typed (+ copy-150 19))) (agrees? typed))
+(#f 1799)
+> (define deleted (document:replace many (+ copy-150 22) (+ copy-150 23) (document:from-datum)))
+> (list (document:in-line? (document:token deleted (+ copy-150 22))) (agrees? deleted))
+(#t 1801)
 ; The first position before which the offset comes: before an opening,
 ; not after it.
 > (list (document:position doc 0 (document:unit characters)) (document:position doc 4 (document:unit characters)))

@@ -57,19 +57,19 @@
 (1 81 81 () (20205))
 > (views:narrow! w (line-start w 100) (+ 3 (line-start w 300)))
 > (drawn w desktop)
-(100 160 61 () (4006))
+(100 160 61 () (4032))
 > (views:widen! w)
 > (drawn w desktop)
-(50 150 101 (980) (19998))
+(50 150 101 (980) (20205))
 > (views:fold! w (line-start w 130) (line-start w 600))
 > (drawn w desktop)
-(50 130 81 (980) (19998))
+(50 130 81 (980) (20104))
 ; A fold hides the newlines it holds, so its first line and the text
 ; after it are one item. Once a report measures it, the run goes on
 ; past it.
 > (report! desktop w 125 0 #t)
 > (drawn w desktop)
-(85 655 101 (1680) (10600))
+(85 654 100 (1680) (10704))
 > (and (search (html-of w desktop) "</span>line 600</div>" 0) #t)
 #t
 > (views:unfold! w (line-start w 130))

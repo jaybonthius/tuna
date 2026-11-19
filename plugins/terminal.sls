@@ -439,24 +439,31 @@
 
 (define (%write-rows! t new)
   (let* ([old (%terminal-rows t)] [n (vector-length new)] [m (vector-length old)]
-         [first (let loop ([i 0])
-                  (if (and (fx< i n) (fx< i m) (%row-equal? (vector-ref old i) (vector-ref new i))) (loop (fx+ i 1)) i))])
-    (unless (and (fx= n m) (fx= first n))
-      (let* ([last-old (let loop ([i (fx- m 1)] [j (fx- n 1)])
-                         (if (and (fx>= i first) (fx>= j first) (%row-equal? (vector-ref old i) (vector-ref new j)))
-                             (loop (fx- i 1) (fx- j 1))
-                             (cons i j)))]
-             [old-end (fx+ (car last-old) 1)] [new-end (fx+ (cdr last-old) 1)]
-             [b (%terminal-buffer t)]
-             [start (%row-start t first)]
-             [end (let loop ([j first] [at start])
-                    (if (fx= j old-end) at (loop (fx+ j 1) (fx+ at (fx+ (string-length (%row-text (vector-ref old j))) 1)))))]
-             [rows (let loop ([j (fx- new-end 1)] [acc '()]) (if (fx< j first) acc (loop (fx- j 1) (cons (vector-ref new j) acc))))]
-             [text (%rows-text rows)])
-        (%splice-text! b start end text)
-        (%set-row-spans! b start (fx+ start (string-length text)) rows)
-        (%terminal-rows-set! t new)
-        (%terminal-changed?-set! t #t)))))
+         [b (%terminal-buffer t)]
+         [starts (let ([v (make-vector (fx+ m 1) (%screen-start t))])
+                   (do ([i 0 (fx+ i 1)]) ((fx= i m) v)
+                     (vector-set! v (fx+ i 1) (fx+ (vector-ref v i) (string-length (%row-text (vector-ref old i))) 1))))]
+         [changed? (not (fx= n m))])
+    (cond
+      [(fx> n m)
+       (let* ([rows (vector->list (vector-copy new m (fx- n m)))] [text (%rows-text rows)] [at (vector-ref starts m)])
+         (%splice-text! b at at text)
+         (%set-row-spans! b at (fx+ at (string-length text)) rows))]
+      [(fx< n m) (%splice-text! b (vector-ref starts n) (vector-ref starts m) "")])
+    ;; Last first, so the starts of the rows before stay true.
+    (do ([i (fx- (fxmin n m) 1) (fx- i 1)]) ((fx< i 0))
+      (unless (%row-equal? (vector-ref old i) (vector-ref new i))
+        (%write-row! b (vector-ref starts i) (vector-ref old i) (vector-ref new i))
+        (set! changed? #t)))
+    (when changed?
+      (%terminal-rows-set! t new)
+      (%terminal-changed?-set! t #t))))
+
+(define (%write-row! b start old new)
+  (let ([text (%row-text new)])
+    (unless (string=? (%row-text old) text)
+      (%splice-text! b start (fx+ start (string-length (%row-text old))) text))
+    (%set-row-spans! b start (fx+ start (string-length text)) (list new))))
 
 (define (%append-scrollback! t rows)
   (unless (null? rows)
@@ -552,10 +559,54 @@
       (append (%row-inputs a) (%spans-shifted (%row-inputs b) n)))))
 
 (define (%append-history! t rows)
+  (let* ([moved (%rows-still-shown t rows)] [rest (list-tail rows moved)])
+    (%move-to-scrollback! t (list-head rows moved))
+    (unless (null? rest)
+      (let-values ([(lines open?) (%join-wrapped rest)])
+        (%append-scrollback! t lines)
+        (%terminal-joining?-set! t open?)))))
+
+;; Rows leave the screen at its top, so the history's newest rows are the
+;; buffer's first screen rows wherever the program has not changed them
+;; since they were written.
+(define (%rows-still-shown t rows)
+  (let ([shown (%terminal-rows t)])
+    (let loop ([rows rows] [i 0])
+      (if (and (pair? rows) (fx< i (vector-length shown)) (%row-equal? (caar rows) (vector-ref shown i)))
+          (loop (cdr rows) (fx+ i 1))
+          i))))
+
+;; The rows' text is kept and only the boundary between the scrollback
+;; and the screen moves past it, so every view keeps the rows' items and
+;; their measured heights. The boundary takes the place of the last
+;; row's newline rather than going in after it, where it would push the
+;; next row's item anchor into the scrollback.
+(define (%move-to-scrollback! t rows)
   (unless (null? rows)
-    (let-values ([(lines open?) (%join-wrapped rows)])
-      (%append-scrollback! t lines)
-      (%terminal-joining?-set! t open?))))
+    (let* ([b (%terminal-buffer t)] [doc (buffers:document b)] [node (%scrollback-node b)]
+           [close (fx- (document:node-end node) 1)]
+           [boundary (document:slice doc close (fx+ close 2))]
+           [joins-last? (and (%terminal-joining? t) (fx> close (fx+ (document:node-start node) 1)))]
+           [ends (let loop ([rows rows] [at close] [acc '()])
+                   (if (null? rows)
+                       acc
+                       (let ([end (fx+ at (string-length (%row-text (caar rows))))])
+                         (loop (cdr rows) (fx+ end 1) (cons (cons end (cdar rows)) acc)))))]
+           [size (fx- (fx+ (caar ends) 1) close)]
+           [shown (%terminal-rows t)] [k (length rows)] [cursor (%terminal-cursor t)])
+      (%splice! b close (fx+ close 2) (document:from-datum))
+      (%splice! b (caar ends) (fx+ (caar ends) 1) (document:replace boundary 0 0 (document:from-datum "\n")))
+      ;; A wrapped row goes on with the next one, so its newline goes;
+      ;; the last row's stays, ending the scrollback's open line.
+      (let ([joins (filter cdr (cdr ends))])
+        (for-each (lambda (e) (%splice-text! b (car e) (fx+ (car e) 1) "")) joins)
+        (when joins-last? (%splice-text! b (fx- close 1) close ""))
+        (%terminal-scrollback-count-set! t
+          (fx- (fx+ (%terminal-scrollback-count t) k) (length joins) (if joins-last? 1 0))))
+      (%terminal-joining?-set! t (cdar ends))
+      (%terminal-rows-set! t (vector-copy shown k (fx- (vector-length shown) k)))
+      (%terminal-cursor-set! t (and cursor (fx>= (car cursor) k) (cons (fx- (car cursor) k) (cdr cursor))))
+      (%trim-scrollback! t))))
 
 (define (%track-newest! t count)
   (let ([old (%terminal-tracked t)])
@@ -649,18 +700,19 @@
             (views:widen! v)))
       (views:showing b))))
 
-(define (%refresh! t)
-  (when (%writing? t) (%write-screen! t)))
+(define (%refresh! t following)
+  (when (%writing? t) (%write-screen! t following)))
 
-(define (%write-screen! t)
+;; Copying the history can move the cursor's row into the scrollback, so
+;; the views at the cursor are found before it.
+(define (%write-screen! t following)
   (%update-alternate! t)
   (unless (%terminal-alternate? t)
     (%copy-history! t))
-  (let ([following (%following-views t)])
-    (let-values ([(rows cursor) (%screen-rows t)])
-      (%write-rows! t rows)
-      (%terminal-cursor-set! t cursor))
-    (%follow! t following)))
+  (let-values ([(rows cursor) (%screen-rows t)])
+    (%write-rows! t rows)
+    (%terminal-cursor-set! t cursor))
+  (%follow! t following))
 
 ;; Effects arrive inside libghostty's callbacks, where the terminal
 ;; cannot change, so the hooks run once the output is applied.
@@ -675,7 +727,7 @@
 (define %slice 8192)
 
 (define (%apply-output! t bytes end)
-  (let ([emu (%terminal-emulator t)] [n (bytevector-length bytes)])
+  (let ([emu (%terminal-emulator t)] [n (bytevector-length bytes)] [following (%following-views t)])
     (let loop ([start 0])
       (when (fx< start n)
         (let ([stop (fxmin n (fx+ start %slice))])
@@ -684,7 +736,7 @@
             (%copy-history! t))
           (loop stop))))
     (%terminal-applied-set! t end)
-    (%refresh! t)
+    (%refresh! t following)
     (%run-events! t)))
 
 (define (%on-output t)
@@ -960,7 +1012,7 @@
          [b (%make-buffer (%unique-name name))]
          [t (%make-terminal b process (ghostty:make-terminal (car size) (cdr size)) command directory 'semi-char client)])
     (%register! t)
-    (%refresh! t)
+    (%refresh! t (%following-views t))
     (%attach! t 0)
     (%save-entries!)
     b))
@@ -1055,7 +1107,7 @@
 (define (%leave-copy-mode! t)
   (%set-input-mode! t (%terminal-mode-before-copy t))
   (for-each (lambda (v) (views:set-mark! v #f)) (views:showing (%terminal-buffer t)))
-  (%refresh! t)
+  (%refresh! t (%following-views t))
   (%follow! t (views:showing (%terminal-buffer t))))
 
 (define (%enter-copy-mode! t)
@@ -1402,7 +1454,7 @@
               (let ([following (%following-views t)])
                 (ghostty:terminal-resize! (%terminal-emulator t) columns rows)
                 (processes:resize! (%terminal-process t) rows columns)
-                (%refresh! t)
+                (%refresh! t following)
                 (%follow! t following)))))))))
 
 (define (%report-focus! t)
@@ -1452,7 +1504,7 @@
   (for-each
     (lambda (t)
       (when (and (%terminal-process t) (not (%terminal-status t)))
-        (%write-screen! t)
+        (%write-screen! t (%following-views t))
         (let ([snapshot (ghostty:terminal->snapshot (%terminal-emulator t))] [id (processes:id (%terminal-process t))])
           (screens:keep-screen! id snapshot (%terminal-applied t))
           (screens:write-screen! (%screen-file id) snapshot (%terminal-applied t)))))
@@ -1510,7 +1562,7 @@
             (ghostty:terminal-reset! emu)
             (%track-newest! t 0)
             (%note! t "[Output was lost here.]")
-            (%refresh! t)
+            (%refresh! t (%following-views t))
             (let ([size (%terminal-size t)])
               (processes:resize! process (cdr size) (fxmax 1 (fx- (car size) 1)))
               (processes:resize! process (cdr size) (car size)))))))))
@@ -1560,7 +1612,7 @@
                    [start (fx+ (document:node-start node) 1)] [end (fx- (document:node-end node) 1)])
               (if (fx= start end) 0 (fx- (document:line doc end) (document:line doc start)))))
           (%register! t)
-          (%refresh! t)
+          (%refresh! t (%following-views t))
           (%attach! t 0))))))
 
 ;; A shell is revived only once the configuration has set the options it

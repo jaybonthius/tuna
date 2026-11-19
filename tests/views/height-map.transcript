@@ -21,15 +21,33 @@
 (10 20 50.0 #t)
 > (call-with-values (lambda () (height-map-stretch m 25)) list)
 (20 100 1600.0 #f)
-; An edit makes every stretch it touches one estimate of its new length,
-; counted in the document after it; text inserted at a stretch's end
-; belongs to the stretch holding that position.
+; An edit in a measured stretch makes the whole stretch one estimate of
+; its new length, counted in the document after it; text inserted at a
+; stretch's end belongs to the stretch holding that position.
 > (height-map-replace! m 15 15 25 count)
 > (list (height-map-length m) (height-map-stretches m))
 (110 ((0 10 200.0 #f) (10 30 400.0 #f) (30 110 1600.0 #f)))
+; An edit in an estimate cuts it at the edit: the parts left keep their
+; share of its px, so no position before the edit moves, and only the
+; inserted text is counted.
 > (height-map-replace! m 50 60 50 count)
-> (list (height-map-length m) (height-map-total m))
-(100 2000.0)
+> (list (height-map-length m) (height-map-total m) (height-map-stretches m))
+(100 2000.0 ((0 10 200.0 #f) (10 30 400.0 #f) (30 50 400.0 #f) (50 100 1000.0 #f)))
+> (define e (make-height-map 100 20.0 #f count))
+> (height-map-px e 40)
+800.0
+> (height-map-replace! e 40 50 40 count)
+> (height-map-px e 40)
+800.0
+> (height-map-replace! e 60 60 65 count)
+> (list (height-map-px e 40) (height-map-px e 60) (height-map-stretches e))
+(800.0 1200.0 ((0 40 800.0 #f) (40 60 400.0 #f) (60 65 100.0 #f) (65 95 600.0 #f)))
+; An edit from an estimate into a measured stretch cuts the estimate at
+; the edit and takes the measured stretch whole.
+> (height-map-measure! e 70 80 300.0 #f)
+> (height-map-replace! e 66 72 66 count)
+> (list-tail (height-map-stretches e) 3)
+((65 66 20.0 #f) (66 74 160.0 #f) (74 89 300.0 #f))
 ; A whole node in a new estimate counts the mean advance of the whole
 ; items measured; a node that opens counts a row. Estimates made before
 ; keep their px, so measuring never moves another position.
@@ -39,7 +57,7 @@
 1280.0
 > (height-map-replace! m 40 40 41 (lambda (a z) (values 0 0 1 1)))
 > (call-with-values (lambda () (height-map-stretch m 40)) list)
-(31 101 220.0 #f)
+(40 41 220.0 #f)
 ; Wrapped text takes a row for each row's worth of characters beyond
 ; half a row per line: two lines of 100 characters, 40 to a row.
 > (define w (make-height-map 10 20.0 40 (lambda (a z) (values 2 200 0 0))))

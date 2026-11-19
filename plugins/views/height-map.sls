@@ -151,17 +151,23 @@
           (height-map-whole-px-set! m (fl+ (height-map-whole-px m) px))
           (height-map-whole-count-set! m (fx+ (height-map-whole-count m) 1))))))
 
-  ;; The tokens from START to OLD-END became those from START to NEW-END:
-  ;; every stretch they touch, or the one holding START when none were
-  ;; removed, becomes one estimate, so no measure of what changed is kept.
-  ;; COUNT reads the document as it is after the change.
+  ;; A measured stretch the edit touches no longer measures anything, so it
+  ;; goes whole; an estimate the edit cuts keeps the px of its untouched
+  ;; parts, as split shares them, so an edit moves no position before it
+  ;; and COUNT, which reads the document after the change, reads only what
+  ;; changed.
   (define (height-map-replace! m start old-end new-end count)
     (let*-values ([(from first-end first-px first-measured?) (height-map-stretch m start)]
                   [(last-start to last-px last-measured?) (height-map-stretch m (fxmax start (fx- old-end 1)))]
-                  [(a rest) (split (height-map-tree m) from)]
-                  [(old b) (split rest (fx- to from))])
-      (let ([new-to (fx+ to (fx- new-end old-end))])
-        (height-map-tree-set! m (if (fx> new-to from) (join (join a (estimate m count from new-to)) b) (join a b))))))
+                  [(cut-start) (if first-measured? from start)]
+                  [(cut-end) (if last-measured? to old-end)]
+                  [(a rest) (split (height-map-tree m) cut-start)]
+                  [(old b) (split rest (fx- cut-end cut-start))])
+      (let ([new-cut-end (fx+ cut-end (fx- new-end old-end))])
+        (height-map-tree-set! m
+          (if (fx> new-cut-end cut-start)
+              (join (join a (estimate m count cut-start new-cut-end)) b)
+              (join a b))))))
 
   (define (height-map-stretches m)
     (let loop ([t (height-map-tree m)] [start 0] [acc '()])

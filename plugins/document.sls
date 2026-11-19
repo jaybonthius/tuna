@@ -3,7 +3,8 @@
           document:length document:token document:text document:for-each-utf8-chunk
           document:unit document:offset document:position document:line document:line-start
           document:enclosing document:node? document:atom? document:node-kind
-          document:node-attribute document:node-start document:node-end document:for-each-child
+          document:node-attribute document:node-start document:node-end document:in-line?
+          document:for-each-child
           document:slice document:open-start document:open-end document:replace document:freeze)
   (import (chezscheme))
 
@@ -34,7 +35,7 @@
   (define (document-open-end d) (vector-ref d 3))
   (define (document-openings d) (vector-ref d 4))
 
-  (define stride 28)
+  (define stride 48)
 
   (define (entry i) (fx* i stride))
   (define (tokens-ref s i) (bytevector-u32-native-ref s (entry i)))
@@ -42,20 +43,72 @@
   (define (chars-ref s i) (bytevector-u32-native-ref s (fx+ (entry i) 8)))
   (define (bytes-ref s i) (bytevector-u32-native-ref s (fx+ (entry i) 12)))
   (define (astral-ref s i) (bytevector-u32-native-ref s (fx+ (entry i) 16)))
-  (define (net-ref s i) (bytevector-s32-native-ref s (fx+ (entry i) 20)))
+  (define (atoms-ref s i) (bytevector-u32-native-ref s (fx+ (entry i) 20)))
+  (define (net-ref s i) (bytevector-s32-native-ref s (fx+ (entry i) 24)))
   ;; The lowest depth at any gap of a child, relative to its start, lets a
   ;; search for a depth skip the children that cannot hold it.
-  (define (low-ref s i) (bytevector-s32-native-ref s (fx+ (entry i) 24)))
+  (define (low-ref s i) (bytevector-s32-native-ref s (fx+ (entry i) 28)))
+  (define (lead-ref s i) (bytevector-u32-native-ref s (fx+ (entry i) 32)))
+  (define (trail-ref s i) (bytevector-u32-native-ref s (fx+ (entry i) 36)))
+  (define (inner-ref s i) (bytevector-u32-native-ref s (fx+ (entry i) 40)))
+  (define (first-ref s i) (bytevector-u8-ref s (fx+ (entry i) 44)))
+  (define (last-ref s i) (bytevector-u8-ref s (fx+ (entry i) 45)))
 
-  (define (entry-set! s i tokens newlines chars bytes astral net low)
+  (define (entry-set! s i tokens newlines chars bytes astral atoms net low)
     (let ([e (entry i)])
       (bytevector-u32-native-set! s e tokens)
       (bytevector-u32-native-set! s (fx+ e 4) newlines)
       (bytevector-u32-native-set! s (fx+ e 8) chars)
       (bytevector-u32-native-set! s (fx+ e 12) bytes)
       (bytevector-u32-native-set! s (fx+ e 16) astral)
-      (bytevector-s32-native-set! s (fx+ e 20) net)
-      (bytevector-s32-native-set! s (fx+ e 24) low)))
+      (bytevector-u32-native-set! s (fx+ e 20) atoms)
+      (bytevector-s32-native-set! s (fx+ e 24) net)
+      (bytevector-s32-native-set! s (fx+ e 28) low)))
+
+  ;; Whether an atom is in a line depends on the tokens on both sides of
+  ;; its run of atoms, which may lie in other entries, so an entry keeps
+  ;; the atoms before its first other token and after its last unjudged,
+  ;; with those tokens' classes. An entry of atoms alone has no class.
+  (define (shape-set! s i lead first inner trail last)
+    (let ([e (entry i)])
+      (bytevector-u32-native-set! s (fx+ e 32) lead)
+      (bytevector-u32-native-set! s (fx+ e 36) trail)
+      (bytevector-u32-native-set! s (fx+ e 40) inner)
+      (bytevector-u8-set! s (fx+ e 44) first)
+      (bytevector-u8-set! s (fx+ e 45) last)))
+
+  (define no-class 0)
+  (define newline-class 1)
+  (define char-class 2)
+  (define node-class 3)
+
+  (define (byte-class x) (if (fx= x 10) newline-class char-class))
+
+  ;; A newline belongs to the line it ends, so a newline after a run puts
+  ;; the run in that line, and a newline before it does not.
+  (define (in-line-between? before after)
+    (or (fx= after newline-class) (fx= after char-class) (fx= before char-class)))
+
+  (define (run-shape! s i run)
+    (shape-set! s i 0 (byte-class (bytevector-u8-ref run 0)) 0
+                0 (byte-class (bytevector-u8-ref run (fx- (bytevector-length run) 1)))))
+
+  (define (shape-total! s j t)
+    (let ([ts (tree-sums t)] [n (tree-count t)])
+      (let loop ([i 0] [lead 0] [first no-class] [inner 0] [trail 0] [last no-class])
+        (if (fx= i n)
+            (shape-set! s j lead first inner trail last)
+            (let ([f (first-ref ts i)])
+              (cond
+                [(fx= f no-class)
+                 (let ([k (lead-ref ts i)])
+                   (loop (fx+ i 1) (if (fx= first no-class) (fx+ lead k) lead) first inner (fx+ trail k) last))]
+                [(fx= first no-class)
+                 (loop (fx+ i 1) (fx+ lead (lead-ref ts i)) f (inner-ref ts i) (trail-ref ts i) (last-ref ts i))]
+                [else
+                 (loop (fx+ i 1) lead first
+                       (fx+ inner (inner-ref ts i) (if (in-line-between? last f) (fx+ trail (lead-ref ts i)) 0))
+                       (trail-ref ts i) (last-ref ts i))]))))))
 
   ;; UTF-16 units need no count of their own: they are characters plus
   ;; characters above U+FFFF.
@@ -66,6 +119,7 @@
       [(characters) chars-ref]
       [(bytes) bytes-ref]
       [(utf-16) utf-16-ref]
+      [(atoms) atoms-ref]
       [(newlines) newlines-ref]))
 
   (define (tree-height t) (vector-ref t 0))
@@ -91,17 +145,19 @@
 
   (define (total! s j t)
     (let ([ts (tree-sums t)] [n (tree-count t)])
-      (let loop ([i 0] [tokens 0] [newlines 0] [chars 0] [bytes 0] [astral 0] [net 0] [low 0])
+      (let loop ([i 0] [tokens 0] [newlines 0] [chars 0] [bytes 0] [astral 0] [atoms 0] [net 0] [low 0])
         (if (fx= i n)
-            (entry-set! s j tokens newlines chars bytes astral net low)
+            (entry-set! s j tokens newlines chars bytes astral atoms net low)
             (loop (fx+ i 1)
                   (fx+ tokens (tokens-ref ts i))
                   (fx+ newlines (newlines-ref ts i))
                   (fx+ chars (chars-ref ts i))
                   (fx+ bytes (bytes-ref ts i))
                   (fx+ astral (astral-ref ts i))
+                  (fx+ atoms (atoms-ref ts i))
                   (fx+ net (net-ref ts i))
-                  (fxmin low (fx+ net (low-ref ts i))))))))
+                  (fxmin low (fx+ net (low-ref ts i)))))))
+    (shape-total! s j t))
 
   (define (tree-depths t)
     (let ([s (tree-sums t)] [n (tree-count t)])
@@ -121,9 +177,19 @@
 
   (define (token-sums! s i item)
     (cond
-      [(eq? item 'close) (entry-set! s i 1 0 0 0 0 -1 -1)]
-      [(opening? item) (entry-set! s i 1 0 0 0 0 1 0)]
-      [else (entry-set! s i 1 0 1 (if (raw-byte item) 1 3) 0 0 0)]))
+      [(eq? item 'close)
+       (entry-set! s i 1 0 0 0 0 0 -1 -1)
+       (shape-set! s i 0 node-class 0 0 node-class)]
+      [(opening? item)
+       (entry-set! s i 1 0 0 0 0 0 1 0)
+       (shape-set! s i 0 node-class 0 0 node-class)]
+      [else
+       (entry-set! s i 1 0 1 (if (raw-byte item) 1 3) 0 1 0 0)
+       (shape-set! s i 1 no-class 0 1 no-class)]))
+
+  (define (run-sums! s i run chars newlines astral)
+    (entry-set! s i chars newlines chars (bytevector-length run) astral 0 0 0)
+    (run-shape! s i run))
 
   (define object-replacement (bytevector->immutable-bytevector (string->utf8 "\xFFFC;")))
 
@@ -236,11 +302,11 @@
     (fields (mutable leaf) (mutable count) (mutable leaves))
     (protocol (lambda (new) (lambda () (new (make-tree 0 leaf-fill) 0 '())))))
 
-  (define (builder-add! b item tokens newlines chars bytes astral)
+  (define (builder-add! b item chars newlines astral)
     (let ([t (builder-leaf b)] [i (builder-count b)])
       (vector-set! t (fx+ i 2) item)
       (if (bytevector? item)
-          (entry-set! (tree-sums t) i tokens newlines chars bytes astral 0 0)
+          (run-sums! (tree-sums t) i item chars newlines astral)
           (token-sums! (tree-sums t) i item))
       (if (fx= (fx+ i 1) leaf-fill)
           (begin
@@ -249,11 +315,8 @@
             (builder-count-set! b 0))
           (builder-count-set! b (fx+ i 1)))))
 
-  (define (builder-add-run! b run chars newlines astral)
-    (builder-add! b run chars newlines chars (bytevector-length run) astral))
-
   (define (builder-add-token! b item)
-    (builder-add! b item 1 0 0 0 0))
+    (builder-add! b item 0 0 0))
 
   (define (builder-tree b)
     (let* ([n (builder-count b)]
@@ -324,7 +387,7 @@
   (define (run-leaf run chars newlines astral)
     (let ([t (make-tree 0 1)])
       (vector-set! t 2 run)
-      (entry-set! (tree-sums t) 0 chars newlines chars (bytevector-length run) astral 0 0)
+      (run-sums! (tree-sums t) 0 run chars newlines astral)
       t))
 
   (define (trim t)
@@ -418,10 +481,12 @@
         (fx+ (newlines-ref sa i) (newlines-ref sb j))
         (fx+ (astral-ref sa i) (astral-ref sb j)))))
 
-  (define (no-edit) (values #f 0 0 0 0))
+  (define (no-edit) (values #f 0 0 0 0 #f))
 
   ;; Typing changes one run, so only the path to it is copied, and every
-  ;; count changes by the same amount at each level.
+  ;; count changes by the same amount at each level. No atom changes, so
+  ;; the runs of atoms are judged again only when the class of the run's
+  ;; first or last character changes.
   (define (edit-run t s e c)
     (let ([sums (tree-sums t)] [n (tree-count t)])
       (let find ([i 0] [acc 0])
@@ -432,9 +497,9 @@
                 [(if (fx= s e) (fx< next s) (fx<= next s)) (find (fx+ i 1) next)]
                 [(fx> e next) (no-edit)]
                 [(fx> (tree-height t) 0)
-                 (let-values ([(child dt dn db da) (edit-run (tree-child t i) (fx- s acc) (fx- e acc) c)])
+                 (let-values ([(child dt dn db da reshaped?) (edit-run (tree-child t i) (fx- s acc) (fx- e acc) c)])
                    (if child
-                       (values (with-child t i child dt dn db da) dt dn db da)
+                       (values (with-child t i child dt dn db da reshaped?) dt dn db da reshaped?)
                        (no-edit)))]
                 [(bytevector? (tree-child t i)) (edit-item t i (fx- s acc) (fx- e acc) c)]
                 [(and (fx= s e next) (fx< (fx+ i 1) n) (bytevector? (tree-child t (fx+ i 1))))
@@ -461,11 +526,13 @@
               (let ([dt (fx- (if ins (chars-ref content-sums 0) 0) rc)]
                     [dn (fx- (if ins (newlines-ref content-sums 0) 0) rn)]
                     [db (fx- ib (fx- be bs))]
-                    [da (fx- (if ins (astral-ref content-sums 0) 0) ra)])
-                (values (with-child t i (bytevector->immutable-bytevector r) dt dn db da)
-                        dt dn db da)))))))
+                    [da (fx- (if ins (astral-ref content-sums 0) 0) ra)]
+                    [reshaped? (not (and (fx= (byte-class (bytevector-u8-ref r 0)) (first-ref sums i))
+                                         (fx= (byte-class (bytevector-u8-ref r (fx- len 1))) (last-ref sums i))))])
+                (values (with-child t i (bytevector->immutable-bytevector r) dt dn db da reshaped?)
+                        dt dn db da reshaped?)))))))
 
-  (define (with-child t i child dt dn db da)
+  (define (with-child t i child dt dn db da reshaped?)
     (let ([v (vector-set/copy t (fx+ i 2) child)] [s (bytevector-copy (tree-sums t))])
       (let ([e (entry i)])
         (bytevector-u32-native-set! s e (fx+ (tokens-ref s i) dt))
@@ -473,6 +540,10 @@
         (bytevector-u32-native-set! s (fx+ e 8) (fx+ (chars-ref s i) dt))
         (bytevector-u32-native-set! s (fx+ e 12) (fx+ (bytes-ref s i) db))
         (bytevector-u32-native-set! s (fx+ e 16) (fx+ (astral-ref s i) da)))
+      (when reshaped?
+        (if (bytevector? child)
+            (run-shape! s i child)
+            (shape-total! s i child)))
       (vector-set! v 1 s)
       v))
 
@@ -506,6 +577,7 @@
       (cond
         [(eq? unit 'characters) k]
         [(eq? unit 'bytes) (run-index run k chars)]
+        [(eq? unit 'atoms) 0]
         [else
          (let ([newlines? (eq? unit 'newlines)] [n (bytevector-length run)])
            (define (counted? x) (if newlines? (fx= x 10) (fx>= x #xF0)))
@@ -662,7 +734,7 @@
     (let ([n (string-length s)] [buf (make-bytevector run-cut)])
       (define (flush! len chars newlines astral)
         (when (fx> len 0)
-          (builder-add-run! b (subbytes buf 0 len) chars newlines astral)))
+          (builder-add! b (subbytes buf 0 len) chars newlines astral)))
       (let loop ([i 0] [len 0] [chars 0] [newlines 0] [astral 0])
         (if (fx= i n)
             (flush! len chars newlines astral)
@@ -714,7 +786,7 @@
     (let ([b (make-builder)] [n (bytevector-length bv)])
       (define (flush! from to chars newlines astral)
         (when (fx< from to)
-          (builder-add-run! b (subbytes bv from to) chars newlines astral)))
+          (builder-add! b (subbytes bv from to) chars newlines astral)))
       (let loop ([i 0] [from 0] [chars 0] [newlines 0] [astral 0])
         (if (fx= i n)
             (flush! from i chars newlines astral)
@@ -853,17 +925,85 @@
                #t))))
     (void))
 
-  (define-enumeration document:unit (characters bytes utf-16) document:units)
+  (define-enumeration document:unit (characters bytes utf-16 atoms in-line-atoms) document:units)
 
   (define (check-unit who unit)
-    (unless (memq unit '(characters bytes utf-16))
+    (unless (memq unit '(characters bytes utf-16 atoms in-line-atoms))
       (assertion-violation who "not a unit" unit)))
 
   (define (document:offset doc p unit)
     (check-document 'document:offset doc)
     (check-position 'document:offset doc p)
     (check-unit 'document:offset unit)
-    (measure-before (document-tree doc) p unit))
+    (if (eq? unit 'in-line-atoms)
+        (in-line-atoms-before (document-tree doc) p)
+        (measure-before (document-tree doc) p unit)))
+
+  (define (shape-before t p)
+    (let down ([t t] [p p] [done 0] [pending 0] [before no-class])
+      (let ([s (tree-sums t)])
+        (let loop ([i 0] [p p] [done done] [pending pending] [before before])
+          (if (fx= p 0)
+              (values done pending before)
+              (let ([tokens (tokens-ref s i)] [f (first-ref s i)])
+                (cond
+                  [(and (fx<= tokens p) (fx= f no-class))
+                   (loop (fx+ i 1) (fx- p tokens) done (fx+ pending (lead-ref s i)) before)]
+                  [(fx<= tokens p)
+                   (loop (fx+ i 1) (fx- p tokens)
+                         (fx+ done (inner-ref s i) (if (in-line-between? before f) (fx+ pending (lead-ref s i)) 0))
+                         (trail-ref s i) (last-ref s i))]
+                  [(leaf? t)
+                   (let* ([run (tree-child t i)] [b (run-index run p (chars-ref s i))])
+                     (values (fx+ done pending) 0 (byte-class (bytevector-u8-ref run (fx- b 1)))))]
+                  [else (down (tree-child t i) p done pending before)])))))))
+
+  (define (class-after t p)
+    (let down ([t t] [p p])
+      (let ([s (tree-sums t)] [n (tree-count t)])
+        (let loop ([i 0] [p p])
+          (if (fx= i n)
+              no-class
+              (let ([tokens (tokens-ref s i)])
+                (cond
+                  [(fx<= tokens p) (loop (fx+ i 1) (fx- p tokens))]
+                  [(fx= p 0)
+                   (let ([f (first-ref s i)]) (if (fx= f no-class) (loop (fx+ i 1) 0) f))]
+                  [(leaf? t)
+                   (let ([run (tree-child t i)])
+                     (byte-class (bytevector-u8-ref run (run-index run p (chars-ref s i)))))]
+                  [else
+                   (let ([f (down (tree-child t i) p)]) (if (fx= f no-class) (loop (fx+ i 1) 0) f))])))))))
+
+  (define (in-line-atoms-before t p)
+    (let-values ([(done pending before) (shape-before t p)])
+      (if (and (fx> pending 0) (in-line-between? before (class-after t p)))
+          (fx+ done pending)
+          done)))
+
+  ;; The run that holds the atom sought is judged once its last atom is
+  ;; passed, and its atoms are adjacent, so the atom is found from the
+  ;; run's start. An entry's first and last runs of atoms may go on into
+  ;; its neighbours, so only its inner runs are sought inside it.
+  (define (in-line-position t offset who)
+    (let down ([t t] [at 0] [done 0] [pending 0] [start 0] [before no-class])
+      (let ([s (tree-sums t)] [n (tree-count t)])
+        (let loop ([i 0] [at at] [done done] [pending pending] [start start] [before before])
+          (if (fx= i n)
+              (if (and (in-line-between? before no-class) (fx<= offset (fx+ done pending)))
+                  (fx+ start (fx- offset done))
+                  (assertion-violation who "offset past the end" offset))
+              (let ([tokens (tokens-ref s i)] [f (first-ref s i)] [lead (lead-ref s i)]
+                    [start (if (fx= pending 0) at start)])
+                (if (fx= f no-class)
+                    (loop (fx+ i 1) (fx+ at tokens) done (fx+ pending lead) start before)
+                    (let ([run (if (in-line-between? before f) (fx+ pending lead) 0)] [inner (inner-ref s i)])
+                      (cond
+                        [(fx<= offset (fx+ done run)) (fx+ start (fx- offset done))]
+                        [(fx<= offset (fx+ done run inner)) (down (tree-child t i) at done pending start before)]
+                        [else
+                         (let ([trail (trail-ref s i)] [next (fx+ at tokens)])
+                           (loop (fx+ i 1) next (fx+ done run inner) trail (fx- next trail) (last-ref s i)))])))))))))
 
   (define (document:position doc offset unit)
     (define who 'document:position)
@@ -871,22 +1011,24 @@
     (check-unit who unit)
     (unless (and (fixnum? offset) (fx>= offset 0))
       (assertion-violation who "not an offset" offset))
-    (if (fx= offset 0)
-        0
-        (let ([ref (unit-ref unit)])
-          (let down ([t (document-tree doc)] [off offset] [pos 0])
-            (let ([s (tree-sums t)] [n (tree-count t)])
-              (let loop ([i 0] [off off] [pos pos])
-                (if (fx= i n)
-                    (assertion-violation who "offset past the end" offset)
-                    (let ([x (ref s i)])
-                      (cond
-                        [(fx< x off) (loop (fx+ i 1) (fx- off x) (fx+ pos (tokens-ref s i)))]
-                        [(not (leaf? t)) (down (tree-child t i) off pos)]
-                        [(bytevector? (tree-child t i))
-                         (fx+ pos (run-position (tree-child t i) off (chars-ref s i) unit who offset))]
-                        [(fx= off x) (fx+ pos 1)]
-                        [else (assertion-violation who "offset inside a character" offset)])))))))))
+    (cond
+      [(fx= offset 0) 0]
+      [(eq? unit 'in-line-atoms) (in-line-position (document-tree doc) offset who)]
+      [else
+       (let ([ref (unit-ref unit)])
+         (let down ([t (document-tree doc)] [off offset] [pos 0])
+           (let ([s (tree-sums t)] [n (tree-count t)])
+             (let loop ([i 0] [off off] [pos pos])
+               (if (fx= i n)
+                   (assertion-violation who "offset past the end" offset)
+                   (let ([x (ref s i)])
+                     (cond
+                       [(fx< x off) (loop (fx+ i 1) (fx- off x) (fx+ pos (tokens-ref s i)))]
+                       [(not (leaf? t)) (down (tree-child t i) off pos)]
+                       [(bytevector? (tree-child t i))
+                        (fx+ pos (run-position (tree-child t i) off (chars-ref s i) unit who offset))]
+                       [(fx= off x) (fx+ pos 1)]
+                       [else (assertion-violation who "offset inside a character" offset)])))))))]))
 
   (define (run-position run off chars unit who offset)
     (define (inside) (assertion-violation who "offset inside a character" offset))
@@ -987,6 +1129,16 @@
         (let ([closing (node-closing n)] [t (document-tree (node-document n))])
           (if (fx= closing (tree-tokens t)) closing (fx+ closing 1)))))
 
+  ;; Atoms next to the node are looked past, so a run of raw bytes inside
+  ;; text is in the text's line. Only the nearest other tokens are read,
+  ;; so a node among other nodes on a line that holds text further along
+  ;; is not in that line.
+  (define (document:in-line? n)
+    (check-node 'document:in-line? n)
+    (let ([t (document-tree (node-document n))])
+      (let-values ([(done pending before) (shape-before t (node-start n))])
+        (in-line-between? before (class-after t (document:node-end n))))))
+
   (define (document:enclosing doc p)
     (check-document 'document:enclosing doc)
     (check-position 'document:enclosing doc p)
@@ -1065,7 +1217,7 @@
       (cond
         [(and (fx= start end) (empty-tree? c)) doc]
         [(and (leaf? c) (fx<= (tree-count c) 1) (or (empty-tree? c) (bytevector? (tree-child c 0)))
-              (let-values ([(tree dt dn db da) (edit-run t start end c)]) tree))
+              (let-values ([(tree dt dn db da reshaped?) (edit-run t start end c)]) tree))
          => result]
         [else
          (let*-values ([(before rest) (tree-split t start)]
