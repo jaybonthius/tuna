@@ -73,14 +73,17 @@
 ! &quit
 ; At the name of a folder, ending in /, no match is selected, so RET
 ; answers with the folder; C-n selects its first entry, and a name that
-; is not a folder's selects the first match again.
+; is not a folder's selects the first match again. Each listing is done,
+; so the read is not busy, and the file read before sorts first.
 > (define t (start! (lambda () (file-picker:read-file-name "File: " "~/src/"))))
 > (sleep-for 0.3)
-> (list (input) (selected-text (session)))
-("~/src/" #f)
+> (list (input) (selected-text (session)) (completion:session-busy? (session)))
+("~/src/" #f #f)
+> (texts (session))
+("text.txt" ".hidden" "blob.bin" "link.txt")
 > (press! "C-n")
 > (selected-text (session))
-".hidden"
+"text.txt"
 > (type! "te")
 > (sleep-for 0.3)
 > (selected-text (session))

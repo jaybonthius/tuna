@@ -1,5 +1,5 @@
 #!tuna
-(import (minibuffer) (completion) (buffers) (commands) (document) (jobs) (keys) (views) (line-picker lines))
+(import (minibuffer) (completion) (buffers) (commands) (document) (jobs) (keys) (views))
 
 (define-saved goto-line-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
@@ -15,26 +15,15 @@
             (emit lines)
             (loop (fx+ to 1) atoms)))))))
 
-;; Matches the main thread's limit, so a buffer that completion would match
-;; there is split there too.
-(define (%small? doc)
-  (and (fx<= (document:length doc) 50000) (fx<= (document:line doc (fx- (document:length doc) 1)) 1000)))
-
 (define (%read-line)
   (let* ([view (views:current)] [doc (buffers:document (views:buffer view))] [point (views:point view)]
          [atoms (buffers:atom-texts doc 0 (document:length doc))])
     (completion:read "Go to line: "
-      (list (if (%small? doc)
-                (completion:source
-                  (candidates (let-values ([(lines rest) (line-candidates doc atoms 1 (last-line doc))]) lines))
-                  (in-order)
-                  (category line-category)
-                  (preview (lambda (p) (views:set-point! view (or p point)))))
-                (completion:source
-                  (job %split-lines (cons doc atoms))
-                  (in-order)
-                  (category line-category)
-                  (preview (lambda (p) (views:set-point! view (or p point))))))))))
+      (list (completion:source
+              (job %split-lines (cons doc atoms))
+              (in-order)
+              (category line-category)
+              (preview (lambda (p) (views:set-point! view (or p point)))))))))
 
 (commands:define-command (line [position (%read-line)])
   "Moves point to POSITION, the start of a line read from the current buffer."

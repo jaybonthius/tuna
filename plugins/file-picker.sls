@@ -18,10 +18,6 @@
       [(char=? (string-ref input (fx- i 1)) #\/) i]
       [else (loop (fx- i 1))])))
 
-(define (%names-folder? input)
-  (let ([n (string-length input)])
-    (and (fx> n 0) (char=? (string-ref input (fx- n 1)) #\/) (file-directory? (%expand input)))))
-
 (jobs:define-worker (%list-directory places emit receive)
   (import (completion matcher))
   (let ([home (car places)] [start (cdr places)])
@@ -67,11 +63,16 @@
         (components (substring prefix n (string-length prefix)))))
     (let loop ([prefix (receive)])
       (emit 'clear)
-      (if (or (string=? prefix "") (directory? (expand prefix)))
-          (emit (list->vector (entries (expand prefix) "")))
-          (let ([n (base-length prefix)])
-            (emit (list 'base n))
-            (emit (list->vector (apply append (map (lambda (dir) (entries (car dir) (cdr dir))) (expansions n prefix)))))))
+      (cond
+        [(string=? prefix "") (emit (list->vector (entries (expand prefix) "")))]
+        [(directory? (expand prefix))
+         (emit 'prefer-input)
+         (emit (list->vector (entries (expand prefix) "")))]
+        [else
+         (let ([n (base-length prefix)])
+           (emit (list 'base n))
+           (emit (list->vector (apply append (map (lambda (dir) (entries (car dir) (cdr dir))) (expansions n prefix))))))])
+      (emit 'done)
       (loop (receive)))))
 
 (define read-file-name
@@ -104,5 +105,4 @@
 ;; A candidate under a folder part that does not exist carries that
 ;; part, such as c/t/m's code/tuna/main.sls, which only partial matches.
 (table-set! completion:category-styles completion:file-category (list completion:partial))
-(table-set! completion:category-prefers-input completion:file-category %names-folder?)
 (keys:bind! keys:global "C-x C-f" find-file)

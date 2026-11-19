@@ -1,0 +1,76 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  /* A row never wraps, as Vertico's and Corfu's do, so each row is one
+     line and a list's height in rows holds. */
+  .completion-row {
+    display: flex;
+    align-items: baseline;
+    column-gap: var(--tuna-space-3, 1ch);
+    overflow: hidden;
+  }
+
+  /* Capitals by transform, so the title stays as written for screen
+     readers and copying. */
+  .completion-title {
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-1);
+    font-weight: var(--tuna-font-weight-semibold, bold);
+    text-transform: uppercase;
+    font-feature-settings: "case";
+    letter-spacing: var(--tuna-letter-spacing-wider);
+    color: var(--tuna-text-muted);
+  }
+
+  .completion-text {
+    flex: none;
+    white-space: pre;
+  }
+
+  .completion-text mark {
+    background: none;
+  }
+
+  /* This selector outweighs a face's rule, so it keeps off a match drawn
+     in a face. */
+  .completion-text mark:not([data-face]) {
+    color: var(--completion-match-text, var(--tuna-link));
+    font-weight: var(--tuna-font-weight-bold);
+  }
+
+  /* The link colour and the faces of any-order's components can fall
+     under 4.5:1 on the selection, as Modus's do in dark, so on the
+     selected row a match takes the row's own colour and an underline. */
+  .ui-list-row[aria-current="true"] .completion-text mark {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.15em;
+  }
+
+  /* Annotations are what the program says about a candidate, so they are
+     in the UI font; the candidate is buffer text and stays in the code
+     font, lined up with what was typed. */
+  .completion-column {
+    flex: 0 0 var(--completion-column-size, auto);
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: pre;
+    text-align: end;
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-ui);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Marginalia truncates the last annotation, such as a command's
+     documentation, to the room left. */
+  .completion-column:last-child {
+    flex-shrink: 1;
+  }
+
+  /* As Marginalia aligns them, the annotations sit at the row's end. */
+  .completion-text + .completion-column {
+    margin-inline-start: auto;
+  }
+}

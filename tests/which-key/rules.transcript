@@ -57,7 +57,7 @@
 > (define t (start! (lambda () (press! "f"))))
 > (popup)
 #f
-> (press! "n" "RET")
+> (press! "x" "RET")
 > (result t)
 ; The popup is drawn only for the client whose keys are pending.
 > (press! "C-c")

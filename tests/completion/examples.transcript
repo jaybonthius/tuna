@@ -116,7 +116,7 @@ words:word-category
 > (texts (session))
 ("buf" "buffer")
 > (popups)
-((" *Completion-popup-2*" (columns 15) (lines 2)))
+((" *Completions-5*" (columns 15) (lines 2)))
 > (press! "C-g")
 > (session)
 #f

@@ -100,6 +100,22 @@
 > (sleep-for 0.1)
 > (processes:status slower)
 -1
+; RET with nothing selected, as when a fast typist's key comes before a
+; broad search's matches, chooses the line whose text is the input.
+> (set-option! grep:command-line (list (string-append (getenv "HOME") "/bin/many-rg")))
+> (define t (start! (lambda () (press! "M-s" "r"))))
+> (define s (session))
+> (type! "line")
+> (wait-matches s)
+> (completion:matches-count (completion:session-matches s))
+5000
+> (begin (type! "#many.txt:4321:line 4321") (completion:selected s))
+#f
+> (press! "RET")
+> (result t)
+> (files:path (views:buffer (view)))
+"$HOME/src/many.txt"
+> (views:set-buffer! (view) (files:visit "~/src/text.txt"))
 ; Without rg, each search says so.
 > (set-option! grep:command-line (list "no-such-rg"))
 > (define t (start! (lambda () (press! "M-s" "r"))))

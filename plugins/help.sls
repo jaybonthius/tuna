@@ -12,9 +12,6 @@
 (completion:define-category name-category
   "Exported names of loaded modules and of Tuna's own libraries, valued by the name.")
 
-(completion:define-category apropos-category
-  "Loaded commands read by help:apropos-command, valued by the command.")
-
 (define-table keymap "The help commands, bound to C-h.")
 
 (define-table mode-keymap "Keys in *Help*.")
@@ -368,15 +365,19 @@
                  [end (let loop ([i p]) (if (and (fx< i n) (%name-char? (document:token doc i))) (loop (fx+ i 1)) i))])
              (and (fx< start end) (string->symbol (document:text doc start end))))))))
 
-(define (%read-command question category)
-  (let* ([at (%name-at-point)] [default (and at (commands:command-named at) (symbol->string at))])
-    (completion:read question
-      (list (completion:source
-              (candidates (list->vector
-                            (map (lambda (name) (cons (symbol->string name) (commands:command-named name)))
-                                 (remp %private-name? (commands:command-names)))))
-              (category category)))
-      command-history default)))
+(define %read-command
+  (case-lambda
+    [(question) (%read-command question #f)]
+    [(question styles)
+     (let* ([at (%name-at-point)] [default (and at (commands:command-named at) (symbol->string at))])
+       (completion:read question
+         (list (completion:source
+                 (candidates (list->vector
+                               (map (lambda (name) (cons (symbol->string name) (commands:command-named name)))
+                                    (remp %private-name? (commands:command-names)))))
+                 (category completion:command-category)
+                 (styles styles)))
+         command-history default))]))
 
 (define (%read-name)
   (let* ([names (%offered-names)] [at (%name-at-point)] [default (and at (memq at names) (symbol->string at))])
@@ -405,7 +406,7 @@
         [(table? found) (string-append (%where keys) " is a prefix")]
         [else (string-append (%where keys) " runs " (%command-label found))]))))
 
-(commands:define-command (where-is [command (%read-command "Where is command: " completion:command-category)] [view (views:current)])
+(commands:define-command (where-is [command (%read-command "Where is command: ")] [view (views:current)])
   "Shows in the echo area the key sequences that run COMMAND in VIEW."
   (unless (commands:command? command)
     (assertion-violation 'help:where-is "not a command" command))
@@ -424,14 +425,16 @@
       (cons (%title-datum "Key bindings") (%sections-datums (keys:active-bindings (web:current-client)))))
     view))
 
-(commands:define-command (describe-command [command (%read-command "Describe command: " completion:command-category)] [view (views:current)])
+(commands:define-command (describe-command [command (%read-command "Describe command: ")] [view (views:current)])
   "Shows in *Help* COMMAND's module, the keys that run it in VIEW, its modes, its documentation, and its overrides and advice."
   (unless (commands:command? command)
     (assertion-violation 'help:describe-command "not a command" command))
   (%check-view 'help:describe-command view)
   (%describe! (%command-content (commands:command-name command)) view))
 
-(commands:define-command (apropos-command [command (%read-command "Apropos command: " apropos-category)] [view (views:current)])
+;; Apropos is a search by the words of a name in any order, whichever
+;; styles a configuration chooses.
+(commands:define-command (apropos-command [command (%read-command "Apropos command: " (list completion:any-order))] [view (views:current)])
   "Describes COMMAND in VIEW as help:describe-command does, reading it by words of its name in any order."
   (unless (commands:command? command)
     (assertion-violation 'help:apropos-command "not a command" command))
@@ -567,13 +570,4 @@
 (keys:bind! mode-keymap "DEL" views:scroll-down)
 (table-set! web:stylesheets 'help "help/help.css")
 (table-set! completion:category-default-styles name-category (list completion:prefix completion:substring))
-;; Apropos is a search by the words of a name in any order, whichever
-;; styles a configuration chooses.
-(table-set! completion:category-styles apropos-category (list completion:any-order))
-;; Looked up at each read, not at load, since the plugin that annotates
-;; commands may load after help.
-(table-set! completion:annotators apropos-category
-  (lambda (session)
-    (let ([make (table-ref completion:annotators completion:command-category #f)])
-      (and make (make session)))))
 (advice-add! keys:undefined %describe-prefix)

@@ -8,9 +8,9 @@
 > (session)
 #f
 ; start-at-point needs the minimum before point.
-> (in-client (lambda () (completion:start-at-point client 4)))
+> (in-client (lambda () (completion:start-at-point 4)))
 #f
-> (in-client (lambda () (completion:start-at-point client 3)))
+> (in-client (lambda () (completion:start-at-point 3)))
 #t
 > (define s (session))
 > (texts s)
@@ -18,7 +18,14 @@
 > (completion:selected s)
 #f
 > (popups)
-((" *Completion-popup-1*" (columns 15) (lines 2)))
+((" *Completions-1*" (columns 15) (lines 2)))
+; With nothing selected, no row is drawn as selected.
+> (define (holds? text piece)
+    (let loop ([i 0])
+      (and (<= (+ i (string-length piece)) (string-length text))
+           (or (string=? (substring text i (+ i (string-length piece))) piece) (loop (+ i 1))))))
+> (holds? (lines-html (list-view)) "aria-current")
+#f
 ; With nothing selected, RET types a newline; the entry gives no region
 ; at point, so the session ends.
 > (press! "RET")
@@ -36,6 +43,9 @@
 > (press! "M-n" "M-n")
 > (selected-text (session))
 "alm"
+; The popup's own view, which layout-float makes, shows the selection.
+> (holds? (lines-html (list-view)) "aria-current=\"true\"><div class=\"completion-row\"><span class=\"completion-text\"><mark data-face=\"completion.match-0\">al</mark>m<")
+#t
 > (press! "M-p")
 > (selected-text (session))
 "al"
@@ -55,7 +65,7 @@
 > (texts (session))
 ("apple")
 > (popups)
-((" *Completion-popup-3*" (columns 15) (lines 1)))
+((" *Completions-3*" (columns 15) (lines 1)))
 > (press! "C-a")
 > (session)
 #f
@@ -94,6 +104,96 @@
 "alpha almond apple\nalm\nal apple a alpha"
 > (session)
 #f
+; TAB with nothing selected puts in the longest common start of the
+; matches' whole texts, each its source's prefix and its text, from the
+; region's start, though the region's sources split it differently.
+> (define (after-slash input)
+    (let loop ([i (string-length input)])
+      (cond [(= i 0) 0] [(char=? (string-ref input (- i 1)) #\/) i] [else (loop (- i 1))])))
+> (define two (buffers:make "two" ""))
+> (define (two-region)
+    (let ([v (views:current)])
+      (and (eq? (views:buffer v) two)
+           (completion:region 1 (views:point v)
+             (list (completion:source (candidates (vector "main.sls" "mainly")) (split after-slash))
+                   (completion:source (candidates (vector "lib/maint"))))))))
+> (add-hook! completion:find-region two-region)
+> (views:set-buffer! (view) two)
+> (type! "lib/ma")
+> (press! "C-M-i")
+> (texts (session))
+("mainly" "main.sls" "lib/maint")
+> (completion:selected (session))
+#f
+> (press! "TAB")
+> (text two)
+"lib/main"
+> (texts (session))
+("mainly" "main.sls" "lib/maint")
+> (press! "C-g")
+> (remove-hook! completion:find-region two-region)
+> (views:set-buffer! (view) notes)
+> (press! "M->")
+; A session at point in a prompt, as M-: has, is drawn by the popup,
+; anchored in the prompt's part, and the list leaves the prompt as it is.
+> (define (prompt-words)
+    (let ([p (minibuffer:current-prompt)])
+      (and p (eq? (views:current) (minibuffer:prompt-view p))
+           (completion:region (minibuffer:input-start p) (views:point (views:current))
+             (list (completion:source (candidates (vector "alpha" "almond"))))))))
+> (add-hook! completion:find-region prompt-words)
+> (define t (start! (lambda () (minibuffer:read "Eval: " #f))))
+> (type! "al")
+> (press! "C-M-i")
+> (texts (session))
+("alpha" "almond")
+> (completion:session-prompt (session))
+#f
+> (map car (popups))
+(" *Completions-9*")
+> (filter (lambda (name) (and (> (string-length name) 13) (string=? (substring name 0 13) " *Completions"))) (map buffers:name (buffers:all)))
+(" *Completions-9*")
+> (press! "C-n" "RET")
+> (input)
+"alpha"
+> (session)
+#f
+> (press! "RET")
+> (result t)
+"alpha"
+> (remove-hook! completion:find-region prompt-words)
+; The popup is as wide as its widest row, between completion-popup:min-width
+; and completion-popup:max-width.
+> (set-option! completion-popup:min-width 20)
+> (press! "SPC")
+> (type! "alp")
+> (press! "C-M-i")
+> (popups)
+((" *Completions-10*" (columns 20) (lines 2)))
+> (press! "C-g")
+> (set-option! completion-popup:min-width 1)
+> (set-option! completion-popup:max-width 3)
+> (press! "C-M-i")
+> (popups)
+((" *Completions-11*" (columns 3) (lines 2)))
+> (remove-option! completion-popup:min-width)
+> (remove-option! completion-popup:max-width)
+> (press! "C-g")
+; Completion at point starts by itself only after the commands of
+; completion-popup:auto-commands.
+> (buffers:with-buffer notes (set-option-local! completion-popup:auto-delay 0.05))
+> (set-option! completion-popup:auto-commands (list editing:delete-backward-char))
+> (type! "h")
+> (sleep-for 0.2)
+> (session)
+#f
+> (press! "DEL")
+> (sleep-for 0.2)
+> (texts (session))
+("alp" "alpha")
+> (press! "C-g")
+> (remove-option! completion-popup:auto-commands)
+> (buffers:with-buffer notes (remove-option-local! completion-popup:auto-delay))
 ; In a read, the list shows below the input with its count, and the
 ; arrow keys move the selection; a click on a row chooses it.
 > (define-saved h '() list?)
@@ -117,7 +217,7 @@
 > (buffers:with-buffer (views:buffer lv) (views:cursor-visible))
 #f
 > (lines-html lv)
-"<div class=\"view-lines\"><div class=\"completion-list\" style=\"--completion-list-rows:4\"><div class=\"node whole\" id=\"v12-1\" data-at=\"1\" data-to=\"2\"><div class=\"completion-list-count\" data-face=\"shadow\">1/4</div></div><div class=\"node whole\" id=\"v12-2\" data-at=\"2\" data-to=\"3\"></div><div class=\"node\" id=\"v12-7\" data-at=\"3\" data-to=\"9\"><ul class=\"ui-list\"><div class=\"node whole\" id=\"v12-3\" data-at=\"4\" data-to=\"5\"><li class=\"ui-list-row\" aria-current=\"true\"><div class=\"completion-list-title\">Words</div><div class=\"completion-list-row\"><span class=\"completion-list-text\">alpha</span></div></li></div><div class=\"node whole\" id=\"v12-4\" data-at=\"5\" data-to=\"6\"><li class=\"ui-list-row\"><div class=\"completion-list-row\"><span class=\"completion-list-text\">apple</span></div></li></div><div class=\"node whole\" id=\"v12-5\" data-at=\"6\" data-to=\"7\"><li class=\"ui-list-row\"><div class=\"completion-list-row\"><span class=\"completion-list-text\">almond</span></div></li></div><div class=\"node whole\" id=\"v12-6\" data-at=\"7\" data-to=\"8\"><li class=\"ui-list-row\"><div class=\"completion-list-row\"><span class=\"completion-list-text\">banana</span></div></li></div></ul></div></div></div></div>"
+"<div class=\"view-lines\"><div class=\"completion-list\" style=\"--completion-list-rows:4\"><div class=\"node whole\" id=\"v17-1\" data-at=\"1\" data-to=\"2\"><div class=\"completion-list-count\" data-face=\"shadow\">1/4</div></div><div class=\"node whole\" id=\"v17-2\" data-at=\"2\" data-to=\"3\"></div><div class=\"node\" id=\"v17-7\" data-at=\"3\" data-to=\"9\"><ul class=\"ui-list\"><div class=\"node whole\" id=\"v17-3\" data-at=\"4\" data-to=\"5\"><li class=\"ui-list-row\" aria-current=\"true\"><div class=\"completion-title\">Words</div><div class=\"completion-row\"><span class=\"completion-text\">alpha</span></div></li></div><div class=\"node whole\" id=\"v17-4\" data-at=\"5\" data-to=\"6\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">apple</span></div></li></div><div class=\"node whole\" id=\"v17-5\" data-at=\"6\" data-to=\"7\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">almond</span></div></li></div><div class=\"node whole\" id=\"v17-6\" data-at=\"7\" data-to=\"8\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">banana</span></div></li></div></ul></div></div></div></div>"
 > (click-token! lv (row-position lv 2))
 > (result t)
 "almond"
