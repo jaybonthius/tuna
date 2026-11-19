@@ -42,15 +42,14 @@
 > (define b (buffers:make "*loud*" (loud '() "text\n")))
 > (buffers:replace! b 1 1 "x")
 > (list (document:text (buffers:document b)) (echo-area:current-message))
-; A report raised while a screen is drawn shows in the next batch, the
-; same on every client.
+; A report raised while the clients are drawn after a batch shows in
+; the next batch, the same on every client.
 > (define (broken-draw node view) (error 'notes:draw "cannot draw"))
 > (buffers:define-kind broken (draw broken-draw))
 > (define c (buffers:make "*broken*" (broken '() "text\n")))
-> (views:set-buffer! (view) c)
 > (echo-area:message! "Before")
-> (begin (layout:screen client) (layout:screen other-client) (echo-area:current-message))
-> (echo-area:current-message)
+> (begin (views:set-buffer! (view) c) (echo-area:current-message))
+> (begin (views:set-buffer! (view) b) (echo-area:current-message))
 > (string=? (echo-area-element) (echo-area-element-for other-client))
 > (messages)
 ; Reports queued before a message show before it.
@@ -87,7 +86,7 @@
 > (advice-remove! echo-area:message! refuse-second)
 > (let ([log (messages)]) (substring log (- (string-length log) 41) (string-length log)))
 ! car: () is not a pair
-("car: () is not a pair" "<div class=\"echo-area-message\" role=\"status\" data-face=\"error\"><div class=\"line\" id=\"v3-1\" data-line=\"1\" data-at=\"1\">car: () is not a pair</div></div>")
+("car: () is not a pair" "<div class=\"echo-area-message\" role=\"status\" data-face=\"error\"><div class=\"line\" id=\"v3-2\" data-line=\"1\" data-at=\"1\">car: () is not a pair</div></div>")
 (#t "spell:check: no dictionary")
 (#t "spell:check: no word with irritant 42")
 (#t "two irritants with irritants (1 \"b\")")
@@ -96,25 +95,29 @@
 (#t "g: &error with irritants (1 2)")
 (#t "non-condition value 42")
 ! spell:check: aspell is slow
-"<div class=\"echo-area-message\" role=\"status\" data-face=\"warning\"><div class=\"line\" id=\"v3-2\" data-line=\"1\" data-at=\"1\">spell:check: aspell is slow</div></div>"
+"<div class=\"echo-area-message\" role=\"status\" data-face=\"warning\"><div class=\"line\" id=\"v3-4\" data-line=\"1\" data-at=\"1\">spell:check: aspell is slow</div></div>"
 ! notes:consent: not today
 ("text\n" "notes:consent: not today")
-! notes:draw: cannot draw
-! notes:draw: cannot draw
 "Before"
+! notes:draw: cannot draw
+! notes:draw: cannot draw
+! notes:draw: cannot draw
+! notes:draw: cannot draw
+! notes:draw: cannot draw
+! notes:draw: cannot draw
 "notes:draw: cannot draw"
 #t
-"car: () is not a pair\nspell:check: no dictionary\nspell:check: no word with irritant 42\ntwo irritants with irritants (1 \"b\")\nf: bad 3 and \"x\"\nspell:check: slow\ng: &error with irritants (1 2)\nnon-condition value 42\nspell:check: aspell is slow\nnotes:consent: not today\nBefore\nnotes:draw: cannot draw [2 times]\n"
+"car: () is not a pair\nspell:check: no dictionary\nspell:check: no word with irritant 42\ntwo irritants with irritants (1 \"b\")\nf: bad 3 and \"x\"\nspell:check: slow\ng: &error with irritants (1 2)\nnon-condition value 42\nspell:check: aspell is slow\nnotes:consent: not today\nBefore\nnotes:draw: cannot draw [6 times]\n"
 ! first
-"car: () is not a pair\nspell:check: no dictionary\nspell:check: no word with irritant 42\ntwo irritants with irritants (1 \"b\")\nf: bad 3 and \"x\"\nspell:check: slow\ng: &error with irritants (1 2)\nnon-condition value 42\nspell:check: aspell is slow\nnotes:consent: not today\nBefore\nnotes:draw: cannot draw [2 times]\nfirst\nsecond\n"
+"car: () is not a pair\nspell:check: no dictionary\nspell:check: no word with irritant 42\ntwo irritants with irritants (1 \"b\")\nf: bad 3 and \"x\"\nspell:check: slow\ng: &error with irritants (1 2)\nnon-condition value 42\nspell:check: aspell is slow\nnotes:consent: not today\nBefore\nnotes:draw: cannot draw [6 times]\nfirst\nsecond\n"
 ! &quit
 #t
 "Quit"
-"car: () is not a pair\nspell:check: no dictionary\nspell:check: no word with irritant 42\ntwo irritants with irritants (1 \"b\")\nf: bad 3 and \"x\"\nspell:check: slow\ng: &error with irritants (1 2)\nnon-condition value 42\nspell:check: aspell is slow\nnotes:consent: not today\nBefore\nnotes:draw: cannot draw [2 times]\nfirst\nsecond\nQuit\n"
-"car: () is not a pair\nspell:check: no dictionary\nspell:check: no word with irritant 42\ntwo irritants with irritants (1 \"b\")\nf: bad 3 and \"x\"\nspell:check: slow\ng: &error with irritants (1 2)\nnon-condition value 42\nspell:check: aspell is slow\nnotes:consent: not today\nBefore\nnotes:draw: cannot draw [2 times]\nfirst\nsecond\nQuit [2 times]\n"
+"car: () is not a pair\nspell:check: no dictionary\nspell:check: no word with irritant 42\ntwo irritants with irritants (1 \"b\")\nf: bad 3 and \"x\"\nspell:check: slow\ng: &error with irritants (1 2)\nnon-condition value 42\nspell:check: aspell is slow\nnotes:consent: not today\nBefore\nnotes:draw: cannot draw [6 times]\nfirst\nsecond\nQuit\n"
+"car: () is not a pair\nspell:check: no dictionary\nspell:check: no word with irritant 42\ntwo irritants with irritants (1 \"b\")\nf: bad 3 and \"x\"\nspell:check: slow\ng: &error with irritants (1 2)\nnon-condition value 42\nspell:check: aspell is slow\nnotes:consent: not today\nBefore\nnotes:draw: cannot draw [6 times]\nfirst\nsecond\nQuit [2 times]\n"
 ! both
 ("both" #f)
-"<div class=\"echo-area-message\" role=\"status\" data-face=\"error\"><div class=\"line\" id=\"v3-5\" data-line=\"1\" data-at=\"1\">both</div></div>"
+"<div class=\"echo-area-message\" role=\"status\" data-face=\"error\"><div class=\"line\" id=\"v3-12\" data-line=\"1\" data-at=\"1\">both</div></div>"
 ! first
 ! second
 ! third

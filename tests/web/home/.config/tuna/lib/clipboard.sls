@@ -1,12 +1,12 @@
 #!tuna
-(import (web) (layout) (commands) (editing) (kill-ring))
+(import (web) (views) (layout) (commands) (editing) (kill-ring))
 
 (define pasted #f)
 
 (define (paste client item)
   (let ([text (cdr (assoc "text" item))])
     (set! pasted text)
-    (layout:call-with-frame (layout:frame client)
+    (views:call-with-view (layout:selected-view)
       (lambda () (commands:run editing:paste text)))))
 
 (define (copy entry)

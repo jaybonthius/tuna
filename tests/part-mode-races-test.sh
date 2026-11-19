@@ -72,7 +72,7 @@ cat > "$dir/input" <<'END'
                   [(13) (case (mod k 4)
                           [(0) (layout:zoom (if (even? (div k 4)) #f '(4)))]
                           [(1) (layout:other-view)]
-                          [(2) ((layout-sides:display-at-side (layout:direction left) 50 '(columns 20)) side)]
+                          [(2) ((layout-split:display-at-side (layout:direction left) 50 '(columns 20)) side)]
                           [else (let ([v (layout:find-view side)]) (when v (layout:delete-part! (layout:view-node v))))])]
                   [(14) (layout:screen client)]
                   [(15) (layout:part-mode-leave) (layout:part-mode)]

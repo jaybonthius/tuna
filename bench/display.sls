@@ -88,7 +88,7 @@
       (loop (+ n 1)))))
 
 ;; The pages confirm no screen, so that their work does not share the
-;; CPUs with what display costs the main thread.
+;; CPUs with what drawing costs the main thread.
 (define (connect-pages! n)
   (let ([before (length (web:clients))])
     (for-each (lambda (i) (http:connect! (http:page))) (iota n))
@@ -114,7 +114,7 @@
   (ns-per-op 200
     (lambda (i)
       (edit! i)
-      (web:send-screen! client (layout:screen client)))))
+      (web:send-screen! client (layout:screen client) "text - Tuna"))))
 
 (define (batch-cost client)
   (ns-per-op 200

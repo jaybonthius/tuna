@@ -54,7 +54,7 @@
 6
 ; The root's part has no parent and no siblings. A level is a part the
 ; mode visits, and so is a part placed outside it, such as the echo area.
-> (define echo ((layout-sides:display-at-side (layout:direction down) 90 'content '((locked . #t))) (buffers:make "*Echo*" "")))
+> (define echo ((layout-split:display-at-side (layout:direction down) 90 'content '((locked . #t))) (buffers:make "*Echo*" "")))
 > (type! desktop "i" "i" "i" "i")
 > (part)
 (((3 (4 5 6) 7)) 8)

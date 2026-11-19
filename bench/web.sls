@@ -246,7 +246,7 @@
     (let ([elapsed (time-ns
                      (lambda ()
                        (do ([i 0 (fx+ i 1)]) ((fx= i n))
-                         (web:send-screen! client (vector-ref screens (fxand i 1))))))])
+                         (web:send-screen! client (vector-ref screens (fxand i 1)) "Tuna"))))])
       (off-main-thread (lambda () (shut-down stream) (close-connection stream)))
       (/ elapsed n 1.0))))
 
@@ -288,8 +288,8 @@
     (wait-for (lambda () (= n (length (web:clients)))))
     (for-each
       (lambda (client)
-        (web:send-screen! client (make-bytevector 28000 65))
-        (web:send-screen! client (make-bytevector 28000 66)))
+        (web:send-screen! client (make-bytevector 28000 65) "Tuna")
+        (web:send-screen! client (make-bytevector 28000 66) "Tuna"))
       (web:clients))
     (let ([after (heap-bytes)])
       (off-main-thread (lambda () (for-each (lambda (s) (shut-down s) (close-connection s)) streams)))
@@ -328,4 +328,4 @@
 (advice-add! batch-ended
   (lambda (ended)
     (ended)
-    (for-each (lambda (client) (web:send-screen! client (screen-of typed))) (web:clients))))
+    (for-each (lambda (client) (web:send-screen! client (screen-of typed) "Tuna")) (web:clients))))

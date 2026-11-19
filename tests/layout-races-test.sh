@@ -69,7 +69,7 @@ cat > "$dir/input" <<'END'
                     [(10) (let ([v (layout:find-view side)])
                             (if v
                                 (layout:delete-part! (layout:view-node v))
-                                ((layout-sides:display-at-side (pick '(left right up down) k) 50 'content '((locked . #t))) side)))]
+                                ((layout-split:display-at-side (pick '(left right up down) k) 50 'content '((locked . #t))) side)))]
                     [(11) (when many? (layout:reset-layout))]
                     [(12) (case (mod (div k 14) 3)
                             [(0) (unless (or many? (layout:locked? (layout:view-node selected))) (commands:run layout-split:split-right))]

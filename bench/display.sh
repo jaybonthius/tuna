@@ -21,7 +21,6 @@ cat > "$dir/home/.config/tuna/init.ss" <<'END'
 (use-plugin web (config (set-option! web:port (http:free-port))))
 (use-plugin layout)
 (use-plugin layout-split)
-(use-plugin display)
 (import (display-bench))
 (display-bench:run)
 (exit)

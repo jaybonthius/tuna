@@ -21,13 +21,13 @@ Tuna is at http://127.0.0.1:PORT/
                        (format "~a (define (name-~a x) (+ x ~a))~a\n"
                                i (mod (* i 7919) 997) (mod (* i 104729) 89) (if (= i 200) (make-string n #\x) "")))
                      (iota 400)))))
-> (web:send-screen! c (typed-screen 0))
+> (web:send-screen! c (typed-screen 0) "Tuna")
 > (define first-bytes (http:raw-next s))
 > (> first-bytes 2000)
 #t
 > (define (typed! n)
     (http:confirm! p n)
-    (web:send-screen! c (typed-screen n))
+    (web:send-screen! c (typed-screen n) "Tuna")
     (http:raw-next s))
 > (let* ([a (typed! 1)] [b (typed! 2)] [d (typed! 3)] [e (typed! 4)])
     (for-all (lambda (bytes) (< 0 bytes 200)) (list a b d e)))

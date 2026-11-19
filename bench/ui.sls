@@ -26,7 +26,7 @@
 
 (define (in-client thunk)
   (parameterize ([web:current-client client])
-    (layout:call-with-frame (layout:frame client) thunk)))
+    (views:call-with-view (layout:selected-view) thunk)))
 
 (define handle (table-ref web:input-handlers "mouse"))
 

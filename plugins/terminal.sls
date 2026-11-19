@@ -962,7 +962,7 @@
 
 (define (%start-size client)
   (let-values ([(columns rows) (if client
-                                   (views:body-size (layout:selected-view (layout:frame client)) client)
+                                   (views:body-size (layout:selected-view) client)
                                    (values #f #f))])
     (if (and columns rows) (cons columns rows) (cons 80 24))))
 

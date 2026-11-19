@@ -8,9 +8,9 @@
         (cdr (assq 'buffer (vector-ref d 1)))
         (cons (car d) (map shape (cddr d)))))
 > (define placements
-    (list (cons "*echo*" (layout-sides:display-at-side (layout:direction down) 90 'content '((locked . #t))))
-          (cons "*explorer*" (layout-sides:display-at-side (layout:direction left) 50 '(columns 30)))
-          (cons "*outline*" (layout-sides:display-at-side (layout:direction right) 60 '(columns 24)))))
+    (list (cons "*echo*" (layout-split:display-at-side (layout:direction down) 90 'content '((locked . #t))))
+          (cons "*explorer*" (layout-split:display-at-side (layout:direction left) 50 '(columns 30)))
+          (cons "*outline*" (layout-split:display-at-side (layout:direction right) 60 '(columns 24)))))
 > (define (permutations l)
     (if (null? l)
         '(())
@@ -46,9 +46,9 @@
 > (start!)
 > (place-all! placements)
 (layout:level (layout-split:container (layout-split:container "*explorer*" (layout:level (layout-split:container "notes.org" "*pi*")) "*outline*") "*echo*"))
-> ((layout-sides:display-at-side (layout:direction down) 100 'content) (named "*minibuffer*"))
+> ((layout-split:display-at-side (layout:direction down) 100 'content) (named "*minibuffer*"))
 #<view 70>
-> ((layout-sides:display-at-side (layout:direction left) 50 '(columns 20)) (named "*bookmarks*"))
+> ((layout-split:display-at-side (layout:direction left) 50 '(columns 20)) (named "*bookmarks*"))
 #<view 71>
 > (shape (tree))
 (layout:level (layout-split:container (layout-split:container "*bookmarks*" "*explorer*" (layout:level (layout-split:container "notes.org" "*pi*")) "*outline*") "*echo*" "*minibuffer*"))
@@ -58,7 +58,7 @@
 > (define t2 (views:make (named "*pi*")))
 > (set-parts! (layout-tabs:container '() (atom t1) (layout:level '() (atom t2))))
 > (layout:select! t1)
-> ((layout-sides:display-at-side (layout:direction down) 90 'content) (named "*echo*"))
+> ((layout-split:display-at-side (layout:direction down) 90 'content) (named "*echo*"))
 #<view 74>
 > (shape (tree))
 (layout:level (layout-split:container (layout:level (layout-tabs:container "notes.org" (layout:level "*pi*"))) "*echo*"))

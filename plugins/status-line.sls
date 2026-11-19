@@ -380,7 +380,7 @@
         (list content (draw view client))
         content)))
 
-;; The line is rewritten before display draws, which it does after the
+;; The line is rewritten before layout draws the clients, which it does after the
 ;; batch's end. Layout drops a deleted part's views at the batch's end,
 ;; so a status view can be seen to have lost its window only after it.
 (define (%after-batch ended)

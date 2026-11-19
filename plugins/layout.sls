@@ -7,16 +7,16 @@
   "Maps a predicate on buffers to the action that shows the buffers it accepts.")
 
 (define-option page-title (lambda (name) (string-append name " - Tuna")) procedure?
-  "A procedure of the selected view's buffer name that returns the title layout gives every client's page, through web:title.")
+  "A procedure of the selected view's buffer name that returns the title of every client's page.")
 
 (define-option history-limit 10 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
   "How many window changes each level's history keeps to go back through; 0 keeps none.")
 
 (module %internals
   (check-main-thread check-view check-direction register-container! check-parts check-popup-parts check-level
-   the-frame frame-record? open-layout! opened-popups current-index index-atom index-of-id atom-of part-of
-   view-of atom-id selected-id shown-views select-id! set-zoom! frame-zoom frame-order zoom-level children root-node
-   locked-node? locked-in? title-of draw-layout draw-popups neighbour-of remove-part! removed-part removal-refusal node-datum
+   open-layout! opened-popups current-index index-atom index-of-id atom-of part-of
+   view-of atom-id selected-id shown-views select-id! set-zoom! current-zoom current-order zoom-level children root-node
+   locked-node? locked-in? title-of shown-buffer-name draw-layout draw-popups neighbour-of remove-part! removed-part removal-refusal node-datum
    note-batch save-now! selected-keymaps enclosing-keymaps last-selected-unlocked-atom lead-down order-views
    enclosing-level reference-atom level-units placed-atom? same-node? same-level? visible-atoms index-atoms
    in-part-mode? enter-part-mode! leave-part-mode! selection-in choose-part! drawn-part-class
@@ -145,32 +145,29 @@
   (define (zoom? v)
     (and (pair? v) (positive-fixnum? (car v)) (or (eq? (cdr v) 'root) (positive-fixnum? (cdr v)))))
 
-  (define (frame-state? v)
+  (define (selection-state? v)
     (and (list? v) (fx= (length v) 2)
          (list? (car v)) (for-all positive-fixnum? (car v))
          (or (not (cadr v)) (zoom? (cadr v)))))
 
-  (define-saved saved-frame '(() #f) frame-state?)
+  (define-saved saved-selection '(() #f) selection-state?)
 
-  ;; A frame keeps the views in the order they were last selected, the
+  ;; The views' ids are kept in the order they were last selected, the
   ;; selected one first, and nothing per container: a container's focused
   ;; child is the child holding the first of them, so selecting a view
   ;; focuses every container on its path, and deleting one leaves no
   ;; stale focus.
-  (define-record-type frame-record
-    (sealed #t)
-    (fields (mutable order) (mutable zoom)))
+  (define view-order (car (saved-selection)))
+  (define zoom-state (cadr (saved-selection)))
 
-  (define the-frame (make-frame-record (car (saved-frame)) (cadr (saved-frame))))
+  (define (current-zoom) (current-index) zoom-state)
 
-  (define (frame-zoom) (current-index) (frame-record-zoom the-frame))
-
-  (define (frame-order) (current-index) (frame-record-order the-frame))
+  (define (current-order) (current-index) view-order)
 
   (define layout-buffer #f)
   (define popups-buffer #f)
   (define saved-key #f)
-  (define frame-dirty? #f)
+  (define selection-dirty? #f)
   (define known-ids '())
 
   (define (layout-doc) (buffers:document layout-buffer))
@@ -222,9 +219,9 @@
           atoms)
         (make-index doc (reverse atoms) ids kids parents))))
 
-  ;; The frame is checked against each new document when it is first
-  ;; read, not in an edit's hook, so a quit landing in the check leaves it
-  ;; to be made again at the next read.
+  ;; The order and the zoom are checked against each new document when
+  ;; it is first read, not in an edit's hook, so a quit landing in the
+  ;; check leaves it to be made again at the next read.
   (define synced-doc #f)
   (define synced-popups-doc #f)
 
@@ -235,7 +232,7 @@
       (unless (and last-popups-index (eq? (index-doc last-popups-index) popups))
         (set! last-popups-index (build-index popups)))
       (unless (and (eq? synced-doc doc) (eq? synced-popups-doc popups))
-        (fix-frame! last-index last-popups-index)
+        (fix-selection! last-index last-popups-index)
         (set! synced-doc doc)
         (set! synced-popups-doc popups))
       last-index))
@@ -308,7 +305,7 @@
         [p (values px p)]
         [else (assertion-violation who "not a part of the layout" node)])))
 
-  (define (selected-id) (current-index) (car (frame-record-order the-frame)))
+  (define (selected-id) (current-index) (car view-order))
 
   (define (level? n) (and (not (document:atom? n)) (eq? (document:node-kind n) 'layout:level)))
 
@@ -362,7 +359,7 @@
   ;; Selecting a view in a part its container hides shows that part, so
   ;; whether a selection ends the zoom asks only what the zoom leaves.
   (define (shown-atoms)
-    (let* ([ix (current-index)] [z (frame-record-zoom the-frame)])
+    (let* ([ix (current-index)] [z zoom-state])
       (unless (and (eq? (shown-entry-index zoom-cache) ix) (equal? (shown-entry-zoom zoom-cache) z))
         (set! zoom-cache (make-shown-entry ix z (atoms-under ix (zoom-place ix z) #f))))
       (shown-entry-atoms zoom-cache)))
@@ -374,7 +371,7 @@
   (define visible-cache (make-visible-entry #f #f #f '()))
 
   (define (visible-atoms)
-    (let* ([ix (current-index)] [z (frame-record-zoom the-frame)] [order (frame-record-order the-frame)])
+    (let* ([ix (current-index)] [z zoom-state] [order view-order])
       (unless (and (eq? (visible-entry-index visible-cache) ix) (equal? (visible-entry-zoom visible-cache) z)
                    (eq? (visible-entry-order visible-cache) order))
         (set! visible-cache (make-visible-entry ix z order (atoms-under ix (zoom-place ix z) #t))))
@@ -393,7 +390,7 @@
   ;; every container above it, so a later one stops where it meets one
   ;; known.
   (define (focus-table ix)
-    (let ([order (frame-record-order the-frame)]
+    (let ([order view-order]
           [cache (if (eq? ix last-popups-index) popups-focus-cache focus-cache)])
       (if (and (eq? (focus-entry-index cache) ix) (eq? (focus-entry-order cache) order))
           (focus-entry-table cache)
@@ -423,30 +420,30 @@
           (and c (lead-down ix c)))))
 
   (define (set-order! order)
-    (unless (equal? order (frame-record-order the-frame))
-      (frame-record-order-set! the-frame order)
-      (set! frame-dirty? #t)))
+    (unless (equal? order view-order)
+      (set! view-order order)
+      (set! selection-dirty? #t)))
 
   (define (set-zoom! z)
-    (unless (equal? z (frame-record-zoom the-frame))
-      (frame-record-zoom-set! the-frame z)
-      (set! frame-dirty? #t)))
+    (unless (equal? z zoom-state)
+      (set! zoom-state z)
+      (set! selection-dirty? #t)))
 
   ;; Popups are drawn over the whole layout, zoomed or not.
   (define (select-id! id)
     (unless (or (index-atom (popups-index) id) (exists (lambda (a) (eqv? (atom-id a) id)) (shown-atoms)))
       (set-zoom! #f))
-    (set-order! (cons id (remv id (frame-record-order the-frame)))))
+    (set-order! (cons id (remv id view-order))))
 
   ;; A deleted view leaves the order, so the first view left is where the
   ;; focused children lead from the root.
-  (define (fix-frame! ix px)
-    (let* ([order (filter (lambda (id) (or (index-atom ix id) (index-atom px id))) (frame-record-order the-frame))])
+  (define (fix-selection! ix px)
+    (let* ([order (filter (lambda (id) (or (index-atom ix id) (index-atom px id))) view-order)])
       (set-order!
         (if (null? order)
             (let ([a (or (lead-down ix (root-node)) (car (index-atom-list ix)))]) (list (atom-id a)))
             order))
-      (let ([z (frame-record-zoom the-frame)])
+      (let ([z zoom-state])
         (unless (and z (index-atom ix (car z)))
           (set-zoom! #f)))))
 
@@ -542,7 +539,7 @@
     (let ([ix (current-index)])
       (fluid-let ([drawn-selection (and mode-on? (let ([n (selection-in ix)]) (and n (node-range n))))]
                   [drawn-level (and mode-on? (document:node-start (enclosing-level ix (reference-atom ix))))])
-        (draw-tree ix (root-node) (zoom-place ix (frame-record-zoom the-frame)) client))))
+        (draw-tree ix (root-node) (zoom-place ix zoom-state) client))))
 
   (define (draw-popups client)
     (let ([px (popups-index)])
@@ -637,7 +634,7 @@
   (define (same-level? ix a b) (same-node? (enclosing-level ix a) (enclosing-level ix b)))
 
   (define (reference-atom ix)
-    (or (exists (lambda (id) (index-atom ix id)) (frame-record-order the-frame))
+    (or (exists (lambda (id) (index-atom ix id)) view-order)
         (car (index-atom-list ix))))
 
   (define (unit-of ix atom level)
@@ -648,7 +645,7 @@
   ;; The atoms of one nested level are adjacent in the layout's order,
   ;; and stand for it by the one of them selected last.
   (define (level-units ix level atoms)
-    (let ([s (document:node-start level)] [e (document:node-end level)] [order (frame-record-order the-frame)])
+    (let ([s (document:node-start level)] [e (document:node-end level)] [order view-order])
       (let loop ([as (filter (lambda (a) (and (fx< s (document:node-start a)) (fx<= (document:node-end a) e))) atoms)]
                  [acc '()])
         (if (null? as)
@@ -688,7 +685,7 @@
       (fold-right
         (lambda (id acc)
           (let ([a (or (index-atom ix id) (index-atom px id))]) (if a (cons (view-of a) acc) acc)))
-        '() (frame-record-order the-frame))))
+        '() view-order)))
 
   ;; An atom names its buffer so that a view restarts on it; the view's
   ;; buffer may have changed since the atom was written.
@@ -724,13 +721,13 @@
             (set-saved! saved-layout d)))
         (set! saved-key key)))
     ;; Popups are never saved, so neither are their places in the order.
-    (when frame-dirty?
+    (when selection-dirty?
       (let* ([ix (current-index)]
-             [state (list (filter (lambda (id) (index-atom ix id)) (frame-record-order the-frame))
-                          (frame-record-zoom the-frame))])
-        (unless (equal? state (saved-frame))
-          (set-saved! saved-frame state)))
-      (set! frame-dirty? #f)))
+             [state (list (filter (lambda (id) (index-atom ix id)) view-order)
+                          zoom-state)])
+        (unless (equal? state (saved-selection))
+          (set-saved! saved-selection state)))
+      (set! selection-dirty? #f)))
 
   ;; Views whose atoms left the layout are dropped once the batch ends, so
   ;; a part moved by two edits keeps its views.
@@ -753,23 +750,14 @@
         (hashtable-keys registered)))
     (follow-focus!)
     (note-history-levels!)
-    (save-now!)
-    (note-title!))
-
-  (define last-title #f)
-
-  (define (note-title!)
-    (let ([title ((page-title) (shown-buffer-name (atom-of (selected-id))))])
-      (unless (equal? title last-title)
-        (as-module (this-module) (set-option! web:title title))
-        (set! last-title title))))
+    (save-now!))
 
   (define (last-selected-unlocked-atom node)
     (let ([atoms (filter (lambda (a)
                            (and (holds-range? a (document:node-start node) (document:node-end node))
                                 (not (locked-node? a))))
                          (index-atoms))])
-      (or (exists (lambda (id) (find (lambda (a) (eqv? (atom-id a) id)) atoms)) (frame-order))
+      (or (exists (lambda (id) (find (lambda (a) (eqv? (atom-id a) id)) atoms)) (current-order))
           (and (pair? atoms) (car atoms)))))
 
   (define (first-buffer)
@@ -1422,10 +1410,7 @@
                 (history-back-set! g (history-back h))
                 (history-forward-set! g (history-forward h)))))
           (history-back-set! h '())
-          (history-forward-set! h '())))))
-
-  (record-writer (record-type-descriptor frame-record)
-    (lambda (f p wr) (display "#<frame>" p))))
+          (history-forward-set! h '()))))))
 
 (import %internals)
 
@@ -1472,23 +1457,6 @@
                    [else (invalid c)])))))]
       [_ (syntax-violation 'layout:define-container "expected (layout:define-container id clause ...)" x)])))
 
-(define (frame client)
-  (unless (web:client? client)
-    (assertion-violation 'layout:frame "not a client" client))
-  the-frame)
-
-(define (frame? v) (frame-record? v))
-
-(define (call-with-frame frame thunk)
-  (unless (frame-record? frame)
-    (assertion-violation 'layout:call-with-frame "not a frame" frame))
-  (unless (procedure? thunk)
-    (assertion-violation 'layout:call-with-frame "not a procedure" thunk))
-  (check-main-thread 'layout:call-with-frame)
-  (views:call-with-view (selected-view frame) thunk))
-
-(define (current-frame) the-frame)
-
 (define (screen client)
   (unless (web:client? client)
     (assertion-violation 'layout:screen "not a client" client))
@@ -1498,14 +1466,9 @@
           (draw-layout client)
           (draw-popups client))))
 
-(define selected-view
-  (case-lambda
-    [() (selected-view (current-frame))]
-    [(frame)
-     (unless (frame-record? frame)
-       (assertion-violation 'layout:selected-view "not a frame" frame))
-     (check-main-thread 'layout:selected-view)
-     (view-of (atom-of (selected-id)))]))
+(define (selected-view)
+  (check-main-thread 'layout:selected-view)
+  (view-of (atom-of (selected-id))))
 
 (define (select! view)
   (check-view 'layout:select! view)
@@ -1516,24 +1479,14 @@
     (select-id! id)
     (void)))
 
-(define zoomed-view
-  (case-lambda
-    [() (zoomed-view (current-frame))]
-    [(frame)
-     (unless (frame-record? frame)
-       (assertion-violation 'layout:zoomed-view "not a frame" frame))
-     (check-main-thread 'layout:zoomed-view)
-     (let ([z (frame-zoom)])
-       (and z (view-of (index-atom (current-index) (car z)))))]))
+(define (zoomed-view)
+  (check-main-thread 'layout:zoomed-view)
+  (let ([z (current-zoom)])
+    (and z (view-of (index-atom (current-index) (car z))))))
 
-(define views
-  (case-lambda
-    [() (views (current-frame))]
-    [(frame)
-     (unless (frame-record? frame)
-       (assertion-violation 'layout:views "not a frame" frame))
-     (check-main-thread 'layout:views)
-     (shown-views)]))
+(define (views)
+  (check-main-thread 'layout:views)
+  (shown-views))
 
 (define (neighbour view direction)
   (check-view 'layout:neighbour view)
@@ -1544,14 +1497,9 @@
       (assertion-violation 'layout:neighbour "not a view in the layout" view))
     (neighbour-of ix (index-atom ix id) direction)))
 
-(define selection-order
-  (case-lambda
-    [() (selection-order (current-frame))]
-    [(frame)
-     (unless (frame-record? frame)
-       (assertion-violation 'layout:selection-order "not a frame" frame))
-     (check-main-thread 'layout:selection-order)
-     (order-views)]))
+(define (selection-order)
+  (check-main-thread 'layout:selection-order)
+  (order-views))
 
 (define-table keymap "The layout's keymap, last on the focus path and for mouse keys on the layout's own drawing.")
 
@@ -1681,7 +1629,7 @@
         (let* ([selected (selected-id)]
                [candidates (filter (lambda (u) (not (or (eqv? (atom-id u) selected) (locked-in? ix u) (placed-atom? ix u))))
                                    units)]
-               [order (frame-order)]
+               [order (current-order)]
                [age (lambda (u) (let ([m (memv (atom-id u) order)]) (if m (length m) 0)))])
           (and (pair? candidates)
                (let ([v (view-of (fold-left (lambda (best u) (if (< (age u) (age best)) u best)) (car candidates) (cdr candidates)))])
@@ -1750,7 +1698,7 @@
     (and n (or (and (document:node-attribute n 'other-view #f) #t) (loop (parent-in ix n))))))
 
 (define (%after-other-view ix)
-  (let ([b (exists (lambda (id) (let ([a (index-atom ix id)]) (and a (not (%other-view-in? ix a)) a))) (frame-order))])
+  (let ([b (exists (lambda (id) (let ([a (index-atom ix id)]) (and a (not (%other-view-in? ix a)) a))) (current-order))])
     (and b (find (lambda (u) (not (locked-in? ix u))) (level-units ix (enclosing-level ix b) (visible-atoms))))))
 
 (commands:define-command (other-view)
@@ -1826,7 +1774,7 @@
 
 (commands:define-command (zoom [prefix (commands:prefix-argument)])
   "Zooms the selected view to fill its level; with a number n, the level n out; with C-u, the screen. When zoomed, shows the whole layout again."
-  (if (frame-zoom)
+  (if (current-zoom)
       (set-zoom! #f)
       (let* ([ix (current-index)] [a (index-atom ix (selected-id))])
         (when a
@@ -2002,7 +1950,7 @@
          (views:call-with-view screen-view (lambda () (keys:press! client key))))]
       [else
        (when (in-part-mode?) (leave-part-mode!))
-       (call-with-frame (frame client) (lambda () (keys:press! client key)))])))
+       (views:call-with-view (selected-view) (lambda () (keys:press! client key)))])))
 
 ;; Clicks reach keys without the layout's key handler.
 (define (%leave-on-other-input command)
@@ -2022,6 +1970,61 @@
     [else '()]))
 
 (define (%keep-layout b) (not (or (eq? b buffer) (eq? b popups-buffer))))
+
+;; Weak, so a client web has removed leaves no entry behind.
+(define %failing (make-weak-eq-hashtable))
+
+;; After a warning the code that raised it continues, so a guard here
+;; lets a warning pass on to the core, which reports it and returns.
+(define (%warning-only? c)
+  (and (warning? c) (not (serious-condition? c))))
+
+(define (%condition-text c)
+  (call-with-string-output-port (lambda (p) (display-condition c p))))
+
+;; A quit is not a failure: the user asked to stop work, and the next
+;; batch draws this client again. The draw has succeeded once the screen
+;; is made; clearing the mark after the send instead would leave the
+;; client marked when a quit lands between the two.
+(define (%draw client title)
+  (guard (c [(quit-condition? c) (void)]
+            [(not (%warning-only? c))
+             (unless (hashtable-ref %failing client #f)
+               (report c)
+               (hashtable-set! %failing client #t))
+             (web:send-screen! client (haml (:pre.layout-error (%condition-text c))) title)])
+    (let ([html (screen client)])
+      (hashtable-delete! %failing client)
+      (web:send-screen! client html title))))
+
+(define %title-failing #f)
+
+;; Every client shows the one title, so a failure to make it is reported
+;; once and costs the pages their name, not their screens.
+(define (%page-title)
+  (guard (c [(not (or (quit-condition? c) (%warning-only? c)))
+             (unless %title-failing
+               (report c)
+               (set! %title-failing #t))
+             "Tuna"])
+    (let ([title ((page-title) (shown-buffer-name (atom-of (selected-id))))])
+      (unless (string? title)
+        (assertion-violation 'layout:page-title "returned what is not a string" title))
+      (set! %title-failing #f)
+      title)))
+
+;; A raise in note-batch must not skip the advice it encloses, which
+;; ends the batch for the plugins loaded before this one; nor may a raise
+;; there stop the clients being drawn, or every screen would freeze with
+;; nothing on it to act on.
+(define (%end-batch ended)
+  (guard (c [#t (report c)]) (note-batch))
+  (guard (c [(not (%warning-only? c)) (report c)])
+    (ended))
+  (let ([clients (web:clients)])
+    (unless (null? clients)
+      (let ([title (%page-title)])
+        (for-each (lambda (client) (%draw client title)) clients)))))
 
 (keys:bind! keys:global "C-x o" other-view)
 (keys:bind! keys:global "C-x 0" delete-view)
@@ -2071,8 +2074,6 @@
 (add-hook! buffers:kill-queries %keep-layout)
 (table-set! web:input-handlers "key" %handle-key)
 (table-set! web:stylesheets 'layout "layout/layout.css")
-;; A raise in note-batch must not skip the advice it encloses, which
-;; ends the batch for the plugins loaded before this one.
-(advice-add! batch-ended (lambda (ended) (guard (c [#t (report c)]) (note-batch)) (ended)))
+(advice-add! batch-ended %end-batch)
 (on-unload save-now!)
 (on-unload (lambda () (views:drop! screen-view)))

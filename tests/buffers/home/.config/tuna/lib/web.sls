@@ -8,7 +8,7 @@
 (define-table stylesheets)
 (define-table early-scripts)
 
-(define-option title "Tuna" string?)
+(define (send-screen! client screen title) (void))
 
 (define-hook client-removed)
 

@@ -10,7 +10,7 @@
 > (define prompt (buffers:make " *Minibuf*" ""))
 > (define notice (buffers:make "*notice*" ""))
 > (define late (buffers:make "*late*" ""))
-> (define (place b depth) ((layout-sides:display-at-side (layout:direction down) depth 'content '((locked . #t))) b))
+> (define (place b depth) ((layout-split:display-at-side (layout:direction down) depth 'content '((locked . #t))) b))
 > (place prompt 100)
 #<view 4>
 > (place notice 95)
@@ -26,7 +26,7 @@
 > (bottom)
 (" *Echo Area*")
 > (raised (lambda () (place prompt 'high)))
-(layout-sides:display-at-side "not a real number")
+(layout-split:display-at-side "not a real number")
 ; Its view is locked, so other-view passes over it, and its buffer's
 ; name starts with a space.
 > (layout:locked? (layout:view-node (echo-view)))
@@ -59,7 +59,7 @@
 ; A message of "" clears it at once and logs nothing.
 > (echo-area:message! "")
 > (list (echo-area:current-message) (echo-area-element))
-(#f "<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-1\" data-line=\"1\" data-at=\"1\"><br></div></div>")
+(#f "<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-5\" data-line=\"1\" data-at=\"1\"><br></div></div>")
 ; Each message is logged; an equal one counts on the last line, and a
 ; message of several lines takes several lines.
 > (echo-area:message! "Saved")
@@ -170,7 +170,7 @@ echo-area:show-messages
 #f
 > (advice-remove! echo-area:hidden? hide)
 > (echo-area-element)
-"<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-2\" data-line=\"1\" data-at=\"1\"><br></div></div>"
+"<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-13\" data-line=\"1\" data-at=\"1\"><br></div></div>"
 ; echo-area:current-face is the current message's face, or #f.
 > (echo-area:message! "Plain")
 > (echo-area:current-face)

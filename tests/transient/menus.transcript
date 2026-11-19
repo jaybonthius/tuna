@@ -115,7 +115,7 @@
 ; A display rule may put the menu elsewhere, such as at the bottom of the
 ; screen, as in Emacs; closing it removes that part.
 > (table-set! layout:display-rules transient:buffer?
-    (layout-sides:display-at-side (layout:direction down) 95 'content '((locked . #t))))
+    (layout-split:display-at-side (layout:direction down) 95 'content '((locked . #t))))
 > (press! "C-c" "m")
 > (datums layout:buffer)
 ((layout:level () (layout-split:container ((direction . column)) (layout:level () #(views:view ((view . 9) (buffer . "notes")))) #(views:view ((view . 3) (buffer . " *Echo Area*") (depth . 90) (size . content) (locked . #t))) #(views:view ((view . 11) (buffer . " *transient*") (depth . 95) (size . content) (locked . #t))) #(views:view ((view . 4) (buffer . " *Minibuf*") (depth . 100) (size . content) (locked . #t))))))

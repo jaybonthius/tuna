@@ -36,9 +36,9 @@
     (set! last-draw-ns (- (now-ns) start))
     s))
 
-(define (counted-send send client screen)
+(define (counted-send send client screen title)
   (let* ([start (now-ns)] [bytes (html->bytevector screen)])
-    (send client bytes)
+    (send client bytes title)
     (let ([k (let loop ([cs (web:clients)] [k 0]) (cond [(null? cs) -1] [(eq? (car cs) client) k] [else (loop (cdr cs) (+ k 1))]))])
       (set! samples (cons (list k last-draw-ns (- (now-ns) start) (bytevector-length bytes)) samples))
       (when (= k 0) (set! kept (cons bytes kept))))))

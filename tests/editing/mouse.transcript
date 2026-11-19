@@ -198,7 +198,7 @@
 > (mouse-in! second "click" 6)
 > (list (eq? (layout:selected-view) second) (views:point second) (views:point first))
 (#t 6 14)
-> (define echo ((layout-sides:display-at-side (layout:direction down) 90 (quote content) (quote ((locked . #t)))) (buffers:make "*Echo*" "")))
+> (define echo ((layout-split:display-at-side (layout:direction down) 90 (quote content) (quote ((locked . #t)))) (buffers:make "*Echo*" "")))
 > (mouse-in! echo "down" 1)
 > (mouse-in! echo "click" 1)
 > (eq? (layout:selected-view) second)

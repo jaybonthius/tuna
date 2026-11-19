@@ -20,7 +20,7 @@ output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins"
 echo "$output" | awk '
   BEGIN {
     unit["focus-keymaps"] = "ns"
-    unit["call-with-frame"] = "ns"
+    unit["call-with-selected-view"] = "ns"
     unit["display-buffer"] = "ns"
     unit["window-command"] = "ns"
     unit["place-side-part"] = "ns"

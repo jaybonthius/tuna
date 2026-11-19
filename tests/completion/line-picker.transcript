@@ -51,7 +51,7 @@ waiting
 > (input)
 ""
 > (lines-html (minibuffer:prompt-view (prompt)))
-"<div class=\"view-lines\"><div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-3\" data-at=\"1\" data-to=\"34\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-1\" data-line=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"28\"><span class=\"minibuffer-question\"><span data-at=\"3\">Go to line (default 3): </span></span></span><span class=\"node\" data-at=\"28\" data-to=\"30\"><span class=\"minibuffer-input\"><span data-at=\"29\"><span class=\"cursor primary\"></span></span><span class=\"minibuffer-message\" role=\"status\"> [Please enter a number]</span></span></span><br></div><div class=\"node\" id=\"v4-2\" data-at=\"31\" data-to=\"33\"><div class=\"minibuffer-content\"></div></div></div></div></div></div></div>"
+"<div class=\"view-lines\"><div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-13\" data-at=\"1\" data-to=\"34\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-14\" data-line=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"28\"><span class=\"minibuffer-question\"><span data-at=\"3\">Go to line (default 3): </span></span></span><span class=\"node\" data-at=\"28\" data-to=\"30\"><span class=\"minibuffer-input\"><span data-at=\"29\"><span class=\"cursor primary\"></span></span><span class=\"minibuffer-message\" role=\"status\"> [Please enter a number]</span></span></span><br></div><div class=\"node\" id=\"v4-15\" data-at=\"31\" data-to=\"33\"><div class=\"minibuffer-content\"></div></div></div></div></div></div></div>"
 > (minibuffer:set-input! (prompt) "2.5")
 > (press! "RET")
 > (result t)

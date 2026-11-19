@@ -1,5 +1,5 @@
 #!tuna
-(import (web) (layout) (keys) (commands) (editing) (kill-ring))
+(import (web) (views) (layout) (keys) (commands) (editing) (kill-ring))
 
 ;; A paste puts its text on the kill ring, where this plugin would copy
 ;; it back to the computer's clipboard, which holds it already.
@@ -14,7 +14,7 @@
 (define (%paste client item)
   (let ([text (%text item "text")])
     (set! %pasted text)
-    (layout:call-with-frame (layout:frame client)
+    (views:call-with-view (layout:selected-view)
       (lambda () (commands:run (or (keys:command-remapping client editing:paste) editing:paste) text)))))
 
 (define (copy-to! client text)

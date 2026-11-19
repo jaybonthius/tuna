@@ -66,7 +66,6 @@ cat > "$server/.config/tuna/init.ss" <<'END'
 (use-plugin command-picker)
 (use-plugin line-picker)
 (use-plugin grep)
-(use-plugin display)
 (use-plugin command-line)
 END
 printf 'one\n' > "$dir/work/notes.txt"

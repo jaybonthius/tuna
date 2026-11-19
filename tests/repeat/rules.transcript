@@ -31,7 +31,7 @@
 ((9/5 1/5) (layout:keymap keys:global))
 ; Keys no client typed repeat nothing.
 > (press! c1 "C-x" "+")
-> (layout:call-with-frame (layout:frame c1) (lambda () (keys:press! c1 "C-x") (keys:press! c1 "}")))
+> (views:call-with-view (layout:selected-view) (lambda () (keys:press! c1 "C-x") (keys:press! c1 "}")))
 > (list (weights) (keymap-names c1))
 ((6/5 4/5) (layout:keymap keys:global))
 ; Each client repeats on its own.

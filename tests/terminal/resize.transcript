@@ -44,6 +44,6 @@
 > (terminal:send! t "stty size\r")
 > (wait-for t "\n15 61\n$ stty size\n15 61\n")
 > (parameterize ([web:current-client phone])
-    (layout:call-with-frame (layout:frame phone) (lambda () (keys:press! phone "SPC") (keys:press! phone "DEL"))))
+    (views:call-with-view (layout:selected-view) (lambda () (keys:press! phone "SPC") (keys:press! phone "DEL"))))
 > (terminal:send! t "stty size\r")
 > (wait-for t "\n5 20\n")

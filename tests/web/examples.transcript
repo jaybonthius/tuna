@@ -16,7 +16,7 @@ Tuna is at http://127.0.0.1:PORT/
 > (http:send! p '(("type" . "ping")))
 1
 204
-> (web:send-screen! (car (web:clients)) (haml (:p "Hello")))
+> (web:send-screen! (car (web:clients)) (haml (:p "Hello")) "Tuna")
 > (http:show (http:next p))
 (screen 1 1 "<p>Hello</p>")
 ; A plugin's stylesheet, and a theme that replaces it.
@@ -42,7 +42,7 @@ Tuna is at http://127.0.0.1:PORT/
 > (http:send! q '(("type" . "paste") ("text" . "from the browser")))
 204
 > editing:pastes
-(("from the browser" (frame #<client 5>)))
+(("from the browser" selected-view))
 > (kill-ring:push! "from the browser")
 > (http:next q 0.2)
 timeout

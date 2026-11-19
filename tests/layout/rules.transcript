@@ -10,15 +10,9 @@
 > (define a (views:make notes))
 > (define b (views:make mail))
 > (define c (views:make notes))
-; Every client shows the one frame.
+; Every client shows the same selected view and zoom.
 > (define c1 (web:add-client! 1))
 > (define c2 (web:add-client! 2))
-> (eq? (layout:frame c1) (layout:frame c2))
-#t
-> (list (layout:frame? (layout:frame c1)) (layout:frame? c1) (eq? (layout:current-frame) (layout:frame c1)))
-(#t #f #t)
-> (raised (lambda () (layout:frame 'nobody)))
-(layout:frame "not a client")
 > (set-parts! (layout-split:container '((direction . row)) (atom a) (boxes:box '() (atom b) (atom c))))
 > (tree)
 (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail"))) #(views:view ((view . 5) (buffer . "notes"))))))
@@ -71,8 +65,8 @@
 (box root global)
 > (eq? (keys:lookup c1 "C-c b") boxes:box-command)
 #t
-; Keys from a client run in its frame's selected view, each client with
-; its own keys in progress.
+; Keys from a client run in the selected view, each client with its own
+; keys in progress.
 > (press! c1 '("x" "control"))
 > (keys:pending c1)
 "C-x"
@@ -91,10 +85,8 @@
 > (press! c2 '("c" "control") '("w"))
 > last-where
 (3 "notes")
-> (layout:call-with-frame (layout:frame c1) (lambda () (list (views:id (views:current)) (buffers:name (buffers:current)))))
+> (views:call-with-view (layout:selected-view) (lambda () (list (views:id (views:current)) (buffers:name (buffers:current)))))
 (3 "notes")
-> (raised (lambda () (layout:call-with-frame c1 void)))
-(layout:call-with-frame "not a frame")
 ; C-x o goes through the views not locked, in the layout's order.
 > (commands:run layout:other-view)
 > (selected)
@@ -247,7 +239,10 @@ refused
 > (buffers:live? layout:buffer)
 #t
 ; A kind whose draw raises is reported, and its children drawn plainly;
-; a kind whose neighbour names a part that is not its child raises.
+; a kind whose neighbour names a part that is not its child raises. Each
+; client is drawn after each batch, so the clients leave first, lest
+; every batch report the kind again.
+> (for-each web:remove-client! (web:clients))
 > (define d (views:make notes))
 > (set-parts! (layout-split:container '((direction . column)) (boxes:broken '() (atom a)) (boxes:stray '() (atom d)) (atom (views:make bar) '(locked . #t))))
 > (show-screen c1)

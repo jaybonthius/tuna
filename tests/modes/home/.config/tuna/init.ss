@@ -19,13 +19,13 @@
   (for-each
     (lambda (key)
       (parameterize ([web:current-client client])
-        (layout:call-with-frame (layout:frame client)
+        (views:call-with-view (layout:selected-view)
           (lambda () (keys:press! client key)))))
     keys))
 
 (define (in-frame thunk)
   (parameterize ([web:current-client client])
-    (layout:call-with-frame (layout:frame client) thunk)))
+    (views:call-with-view (layout:selected-view) thunk)))
 
 (define (view) (layout:selected-view))
 

@@ -52,10 +52,10 @@
 ; of the layout, except for locked parts, such as the echo area, and
 ; popups, and where status-line:visible is #f. A part placed at a side
 ; that is not locked has one.
-> (define bar ((layout-sides:display-at-side (layout:direction down) 50 'content '((locked . #t))) (buffers:make "*bar*" "")))
-> (define side ((layout-sides:display-at-side (layout:direction left) 40 '(columns 20)) (buffers:make "*side*" "")))
+> (define bar ((layout-split:display-at-side (layout:direction down) 50 'content '((locked . #t))) (buffers:make "*bar*" "")))
+> (define side ((layout-split:display-at-side (layout:direction left) 40 '(columns 20)) (buffers:make "*side*" "")))
 > (layout-split:split-view! (view) (layout-split:direction row))
-#<view 8>
+#<view 9>
 > (map (lambda (s) (cdr (assoc "status-line:buffer-name" s))) (screen-status-lines client))
 ("*side*" "notes.txt" "notes.txt")
 > (layout:delete-part! (layout:view-node side))
@@ -126,6 +126,10 @@
 > (table-set! status-line:segments number (status-line:left 41))
 > (cdr (assoc "flaky" (status (view))))
 ! car: () is not a pair
+! car: () is not a pair
+! car: () is not a pair
+! number: a show procedure returned what is not HTML, a string or #f with irritant 42
+! number: a show procedure returned what is not HTML, a string or #f with irritant 42
 ! number: a show procedure returned what is not HTML, a string or #f with irritant 42
 ""
 > (cdr (assoc "flaky" (status (view))))
@@ -134,6 +138,8 @@
 > (cdr (assoc "flaky" (status (view))))
 "fine"
 > (set! fail? #t)
+! car: () is not a pair
+! car: () is not a pair
 > (cdr (assoc "flaky" (status (view))))
 ! car: () is not a pair
 ""

@@ -4,7 +4,7 @@
 ; Emacs, and q to close one.
 > (keys:bind! transient:keymap "q" transient:quit)
 > (table-set! layout:display-rules transient:buffer?
-    (layout-sides:display-at-side (layout:direction down) 95 'content '((locked . #t))))
+    (layout-split:display-at-side (layout:direction down) 95 'content '((locked . #t))))
 ; magit.sls: the merge menu, and an entry removed by the user.
 > (import (magit))
 > (press! "C-c" "m")

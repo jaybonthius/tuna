@@ -53,7 +53,7 @@
 > (buffers:replace! layout:buffer (document:node-start (layout:view-node (car windows))) (document:node-end (layout:view-node (car windows))) "")
 > (views:find gone-id)
 > (length (views:showing line-buffer))
-#<view 3>
+#<view 4>
 2
 (#t #t)
 (#t #t)

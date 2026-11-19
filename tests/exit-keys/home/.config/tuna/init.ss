@@ -6,5 +6,5 @@
 
 (define (press! key)
   (parameterize ([web:current-client client])
-    (layout:call-with-frame (layout:frame client) (lambda () (keys:press! client key)))))
+    (views:call-with-view (layout:selected-view) (lambda () (keys:press! client key)))))
 (import (console))

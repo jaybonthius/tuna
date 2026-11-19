@@ -20,7 +20,7 @@ Tuna is at http://127.0.0.1:PORT/
 > (define c (car (web:clients)))
 > (define seen (http:auto-confirm! p))
 > (do ([i 1 (+ i 1)]) ((> i 2000))
-    (web:send-screen! c (string->utf8 (number->string i)))
+    (web:send-screen! c (string->utf8 (number->string i)) "Tuna")
     (when (zero? (mod i 50)) (sleep-for 0)))
 > (wait-until (lambda () (let ([s (seen)]) (and (pair? s) (equal? (cdr (car (last-pair s))) "2000")))))
 > (let ([s (seen)])
@@ -59,7 +59,7 @@ Tuna is at http://127.0.0.1:PORT/
           (fork-thread quitter))
         (let loop ([i 0])
           (when (< (real-time) until)
-            (web:send-screen! c (string->utf8 (string-append "q" (number->string i))))
+            (web:send-screen! c (string->utf8 (string-append "q" (number->string i))) "Tuna")
             (when (zero? (mod i 1000)) (web:call-page! c "noop" i))
             (web:clients)
             (loop (+ i 1))))
@@ -70,7 +70,7 @@ Tuna is at http://127.0.0.1:PORT/
     (stress (+ (real-time) 1000))
     (> quits 10))
 #t
-> (web:send-screen! c (haml (:p "after the quits")))
+> (web:send-screen! c (haml (:p "after the quits")) "Tuna")
 > (wait-until (lambda () (equal? (cdr (car (last-pair (seen)))) "<p>after the quits</p>")))
 > (cdr (car (last-pair (seen))))
 "<p>after the quits</p>"

@@ -68,7 +68,7 @@
 ! layout:quit-view: no other buffer to show
 ; A locked part is never deleted.
 > (define echo (layout:display-buffer (buffers:make "*Echo*" "")
-                 (layout-sides:display-at-side (layout:direction down) 90 'content '((locked . #t)))))
+                 (layout-split:display-at-side (layout:direction down) 90 'content '((locked . #t)))))
 > (layout:select! echo)
 > (commands:run layout:quit-view)
 ! layout:quit-view: a locked part with irritant #<node views:view 5>

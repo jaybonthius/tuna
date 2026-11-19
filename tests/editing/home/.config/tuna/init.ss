@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (web) (md) (layout-sides))
+(import (tuna) (tuna plugins) (document) (web) (md) (layout-split))
 (use-plugin editing
   (config
     (set-option! editing:delete-selection #t)))
@@ -10,7 +10,7 @@
   (for-each
     (lambda (key)
       (parameterize ([web:current-client client])
-        (layout:call-with-frame (layout:frame client)
+        (views:call-with-view (layout:selected-view)
           (lambda () (keys:press! client key)))))
     keys))
 
@@ -48,6 +48,6 @@
 
 (define (run command . args)
   (parameterize ([web:current-client client])
-    (layout:call-with-frame (layout:frame client)
+    (views:call-with-view (layout:selected-view)
       (lambda () (apply commands:run command args)))))
 (import (console))

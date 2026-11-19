@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (layout-split) (layout-sides) (views) (buffers) (document) (keys) (web) (haml))
+(import (layout) (layout-split) (views) (buffers) (document) (keys) (web) (haml))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -27,7 +27,7 @@
     (unless (= n 0)
       (let ([new (layout-split:split-view! v d)])
         (loop (- n 1) (if (even? n) new v) (if (eq? d 'row) 'column 'row)))))
-  ((layout-sides:display-at-side (layout:direction down) 90 (quote content) (quote ((locked . #t)))) (buffers:make "*Echo*" "")))
+  ((layout-split:display-at-side (layout:direction down) 90 (quote content) (quote ((locked . #t)))) (buffers:make "*Echo*" "")))
 
 (define (parts)
   (let count ([d (car (document:datums (buffers:document layout:buffer)))])
@@ -35,15 +35,14 @@
 
 (define (run)
   (let* ([notes (buffers:make "notes" "one\ntwo\nthree\n")]
-         [client (web:add-client! 1)]
-         [frame (layout:frame client)])
+         [client (web:add-client! 1)])
     (layout:switch-to-buffer notes)
     (build! notes)
     (show "parts" (parts))
     (do ([i 0 (fx+ i 1)]) ((fx= i 20))
       (table-set! layout:display-rules (lambda (b) (eq? b 'never)) declining))
     (show "focus-keymaps" (ns-per-op 2000 (lambda () (keys:active-keymaps client))))
-    (show "call-with-frame" (ns-per-op 2000 (lambda () (layout:call-with-frame frame void))))
+    (show "call-with-selected-view" (ns-per-op 2000 (lambda () (views:call-with-view (layout:selected-view) void))))
     (show "display-buffer" (ns-per-op 2000 (lambda () (layout:display-buffer notes))))
     (show "window-command"
       (/ (ns-per-op 200
@@ -57,7 +56,7 @@
       (show "place-side-part"
         (/ (ns-per-op 200
              (lambda ()
-               (let ([v ((layout-sides:display-at-side (layout:direction left) 50 '(columns 30)) side)])
+               (let ([v ((layout-split:display-at-side (layout:direction left) 50 '(columns 30)) side)])
                  (batch-ended)
                  (layout:delete-part! (layout:view-node v))
                  (batch-ended))))

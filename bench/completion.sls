@@ -60,11 +60,11 @@
                   (format "lib/d-~a.sls" i) (format "lib/e-~a.sls" i)))))
 
 (define (run)
-  (let* ([client (web:add-client! 1)] [frame (layout:frame client)]
-         [in-frame (lambda (thunk) (parameterize ([web:current-client client]) (layout:call-with-frame frame thunk)))]
-         [press (lambda (key) (in-frame (lambda () (keys:press! client key))))])
+  (let* ([client (web:add-client! 1)]
+         [in-view (lambda (thunk) (parameterize ([web:current-client client]) (views:call-with-view (layout:selected-view) thunk)))]
+         [press (lambda (key) (in-view (lambda () (keys:press! client key))))])
     ;; One character typed and deleted, so the input stays the same.
-    (let ([t (spawn-task (lambda () (in-frame (lambda () (completion:read "M-x " (list (completion:source (candidates (names 900)))) %history)))))])
+    (let ([t (spawn-task (lambda () (in-view (lambda () (completion:read "M-x " (list (completion:source (candidates (names 900)))) %history)))))])
       (sleep-for 0.05)
       (press "f")
       (show "read-key-900-names" (/ (ns-per-op 200 (lambda () (press "i") (press "DEL"))) 2) "ns")
@@ -76,9 +76,9 @@
            [start-read
             (lambda ()
               (let ([start (thread-ns)])
-                (spawn-task (lambda () (in-frame (lambda () (completion:read "File: " (list (completion:source (candidates big))) %history)))))
+                (spawn-task (lambda () (in-view (lambda () (completion:read "File: " (list (completion:source (candidates big))) %history)))))
                 (sleep-for 0)
-                (let ([ns (- (thread-ns) start)] [s (in-frame completion:current-session)])
+                (let ([ns (- (thread-ns) start)] [s (in-view completion:current-session)])
                   (wait-until (lambda () (not (completion:session-busy? s))))
                   (values s ns))))])
       (let-values ([(s ns) (start-read)])
@@ -104,9 +104,9 @@
       (press "C-g")
       (sleep-for 0.05))
     (let ([start (thread-ns)])
-      (spawn-task (lambda () (in-frame (lambda () (completion:read "File: " (list (completion:source (job %few-at-a-time 16000))) %history)))))
+      (spawn-task (lambda () (in-view (lambda () (completion:read "File: " (list (completion:source (job %few-at-a-time 16000))) %history)))))
       (sleep-for 0)
-      (let ([s (in-frame completion:current-session)])
+      (let ([s (in-view completion:current-session)])
         (wait-until (lambda () (not (completion:session-busy? s))))
         (show "job-16000-emissions-main-thread" (/ (- (thread-ns) start) 1000.0) "µs"))
       (press "C-g")
@@ -118,7 +118,7 @@
       (show "store-100000-paths" (/ (ns-per-op 1 (lambda () (make-store (paths 100000) (make-vector 100000 0)))) 1000.0) "µs"))
     (let ([s (make-store (list->vector (map (lambda (i) (format "~50,,,'-a" i)) (iota 1000))) (make-vector 1000 0))])
       (show "match-inline-limit-flex" (/ (ns-per-op 50 (lambda () (store-matches s '((contains "1" "2" "3"))))) 1000.0) "µs"))
-    (let ([t (spawn-task (lambda () (in-frame (lambda () (completion:read "M-x " (list (completion:source (candidates (names 900)))) %history)))))])
+    (let ([t (spawn-task (lambda () (in-view (lambda () (completion:read "M-x " (list (completion:source (candidates (names 900)))) %history)))))])
       (sleep-for 0.05)
       (let ([v (layout:selected-view)])
         (show "draw-prompt-with-15-rows" (/ (ns-per-op 200 (lambda () (html->bytevector (views:draw v client)))) 1000.0) "µs")
@@ -127,7 +127,7 @@
         (show "draw-prompt-with-message" (/ (ns-per-op 200 (lambda () (html->bytevector (views:draw v client)))) 1000.0) "µs"))
       (press "C-g")
       (sleep-for 0.05))
-    (let ([t (spawn-task (lambda () (in-frame (lambda () (commands:run command-picker:execute-extended-command)))))])
+    (let ([t (spawn-task (lambda () (in-view (lambda () (commands:run command-picker:execute-extended-command)))))])
       (sleep-for 0.05)
       (let ([v (layout:selected-view)])
         (show "draw-m-x-annotated" (/ (ns-per-op 200 (lambda () (html->bytevector (views:draw v client)))) 1000.0) "µs")
@@ -137,10 +137,10 @@
     (let ([b (buffers:make "big" (apply string-append (map (lambda (i) (format "line ~60,,,'.a\n" i)) (iota 16000))))])
       (layout:switch-to-buffer b)
       (let* ([start (now-ns)] [thread-start (thread-ns)]
-             [t (spawn-task (lambda () (in-frame (lambda () (commands:run line-picker:line)))))])
+             [t (spawn-task (lambda () (in-view (lambda () (commands:run line-picker:line)))))])
         (sleep-for 0)
         (show "line-start-1mb-main-thread" (/ (- (thread-ns) thread-start) 1000.0) "µs")
-        (let ([s (in-frame completion:current-session)])
+        (let ([s (in-view completion:current-session)])
           (wait-until (lambda () (not (completion:session-busy? s))))
           (show "line-matches-1mb" (/ (- (now-ns) start) 1000.0) "µs"))
         (press "C-g")

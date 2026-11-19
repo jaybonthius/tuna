@@ -32,15 +32,14 @@
 (define (run)
   (let* ([notes (buffers:make "notes" "one\ntwo\nthree\n")]
          [client (web:add-client! 1)]
-         [clients (cons client (map web:add-client! '(2 3 4)))]
-         [frame (layout:frame client)])
+         [clients (cons client (map web:add-client! '(2 3 4)))])
     (layout:switch-to-buffer notes)
     (layout-split:split-view! (layout:selected-view) (layout-split:direction row))
     (batch-ended)
     (keys:bind! keys:global "a" nothing)
     (keys:bind! keys:global "b" say)
     (parameterize ([web:current-client client])
-      (let ([press (lambda (key) (lambda () (layout:call-with-frame frame (lambda () (keys:press! client key)))))])
+      (let ([press (lambda (key) (lambda () (views:call-with-view (layout:selected-view) (lambda () (keys:press! client key)))))])
         (echo-area:message! "")
         (show "press-key" (ns-per-op 2000 (press "a")) "ns")
         (show "press-key-bytes" (bytes-per-op 2000 (press "a")) "B")

@@ -22,7 +22,7 @@ closed
 > (http:connect! q)
 > (web:clients)
 (#<client 1>)
-> (web:send-screen! (car (web:clients)) (haml (:p "new")))
+> (web:send-screen! (car (web:clients)) (haml (:p "new")) "Tuna")
 > (http:show (http:next q))
 (screen 1 0 "<p>new</p>")
 ; Unloading web stops its server.

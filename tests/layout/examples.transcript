@@ -12,7 +12,7 @@
        #(views:view ((view . 4) (buffer . " *Echo Area*") (depth . 90) (size . content) (locked . #t)))))
 > (tree)
 (layout:level () (layout-split:container ((direction . column)) (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes.org"))) (layout-tabs:container ((weight . 2)) #(views:view ((view . 2) (buffer . "*scratch*"))) #(views:view ((view . 3) (buffer . "init.ss")))))) #(views:view ((view . 4) (buffer . " *Echo Area*") (depth . 90) (size . content) (locked . #t)))))
-> (layout:call-with-frame (layout:frame client)
+> (views:call-with-view (layout:selected-view)
     (lambda () (commands:run layout-tabs:new-tab)))
 > (tree)
 (layout:level () (layout-split:container ((direction . column)) (layout:level () (layout-split:container ((direction . row)) (layout-tabs:container () #(views:view ((view . 1) (buffer . "notes.org"))) #(views:view ((view . 5) (buffer . "*Pager*")))) (layout-tabs:container ((weight . 2)) #(views:view ((view . 2) (buffer . "*scratch*"))) #(views:view ((view . 3) (buffer . "init.ss")))))) #(views:view ((view . 4) (buffer . " *Echo Area*") (depth . 90) (size . content) (locked . #t)))))

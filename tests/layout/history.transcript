@@ -13,7 +13,7 @@
 > (set-parts! (layout-split:container '((direction . row)) (atom notes) (atom pi)))
 > (layout:select! notes)
 > (define echo (place-echo (named " *Echo Area*")))
-> (define explorer ((layout-sides:display-at-side (layout:direction left) 50 '(columns 30)) (named "*explorer*")))
+> (define explorer ((layout-split:display-at-side (layout:direction left) 50 '(columns 30)) (named "*explorer*")))
 > (outline)
 (layout:level (layout-split:container (layout-split:container "*explorer*" (layout:level (layout-split:container "notes.org" "*pi*"))) " *Echo Area*"))
 > (define (back!) (press! c1 '("c" "control") '("ArrowLeft")))
@@ -49,7 +49,7 @@
 > (outline)
 (layout:level (layout-split:container (layout:level (layout-split:container "notes.org" "*pi*")) " *Echo Area*"))
 ; A part placed between steps stays too.
-> (define outline-view ((layout-sides:display-at-side (layout:direction right) 60 '(columns 24)) (named "*outline*")))
+> (define outline-view ((layout-split:display-at-side (layout:direction right) 60 '(columns 24)) (named "*outline*")))
 > (forward!)
 > (outline)
 (layout:level (layout-split:container (layout-split:container (layout:level (layout-split:container (layout-split:container "notes.org" "notes.org") "*pi*")) "*outline*") " *Echo Area*"))
@@ -138,7 +138,7 @@
 > (press! c1 '("x" "control") '("3"))
 > (outline)
 (layout:level (layout-split:container "one" "one"))
-> ((layout-sides:display-at-side (layout:direction down) 90 'content '((locked . #t))) (named "*bottom*"))
+> ((layout-split:display-at-side (layout:direction down) 90 'content '((locked . #t))) (named "*bottom*"))
 #<view 21>
 > (outline)
 (layout:level (layout-split:container (layout:level (layout-split:container "one" "one")) "*bottom*"))

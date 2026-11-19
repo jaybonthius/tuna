@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (haml) (web) (pager) (magit) (boxes) (layout-sides))
+(import (tuna) (tuna plugins) (document) (haml) (web) (pager) (magit) (boxes) (layout-split))
 (use-plugin layout-split)
 (use-plugin layout-tabs
   (config
@@ -51,7 +51,7 @@
 (import (console))
 
 (define (place-echo b)
-  ((layout-sides:display-at-side (layout:direction down) 90 'content '((locked . #t))) b))
+  ((layout-split:display-at-side (layout:direction down) 90 'content '((locked . #t))) b))
 
 (define (with-echo part echo)
   (layout-split:container '((direction . column))

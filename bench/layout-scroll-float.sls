@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (layout-split) (layout-sides) (layout-scroll) (layout-float) (views) (buffers) (document) (commands) (web) (haml))
+(import (layout) (layout-split) (layout-scroll) (layout-float) (views) (buffers) (document) (commands) (web) (haml))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -40,7 +40,7 @@
           (column-of notes '(place box 1/4 1/4))
           (column-of notes '(place box 3/4 3/4))))))
   (layout:select! (car (layout:views)))
-  ((layout-sides:display-at-side (layout:direction down) 90 (quote content) (quote ((locked . #t)))) (buffers:make "*Echo*" "")))
+  ((layout-split:display-at-side (layout:direction down) 90 (quote content) (quote ((locked . #t)))) (buffers:make "*Echo*" "")))
 
 (define (parts)
   (let count ([d (car (document:datums (buffers:document layout:buffer)))])

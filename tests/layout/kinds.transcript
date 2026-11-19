@@ -34,8 +34,8 @@
 > (layout:delete-part! (layout:view-node b))
 > (tree)
 (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes") (weight . 3))) #(views:view ((view . 5) (buffer . "notes")))))
-; The frame's state and the layout survive a reload of layout, which
-; reloads layout-split too.
+; The selection order, the zoom and the layout survive a reload of
+; layout, which reloads layout-split too.
 > (layout:select! c)
 > (commands:run layout:zoom)
 > (define before (tree))

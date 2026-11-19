@@ -5,7 +5,7 @@
 ;; definition, which can change under a running thread.
 (module %internals
   (client-record? client-record-device connected-clients give-screen! call-page start-server! restart-server!
-   stop-server! allow-hosts! retitle! refresh-head-files! post-start! release-first-screens! home-path?)
+   stop-server! allow-hosts! refresh-head-files! post-start! release-first-screens! home-path?)
 
   (define main-thread (get-thread-id))
   (define lock (make-mutex))
@@ -37,7 +37,9 @@
   ;; Only the main thread uses through and removal-timer; the lock guards
   ;; the other mutable fields.
   ;; FIRST is the screen the page carries: #f until a batch draws one,
-  ;; and the symbol served once the page has gone with it.
+  ;; and the symbol served once the page has gone with it. TITLE is the
+  ;; one the page shows, as far as this plugin knows; #f when it cannot
+  ;; know, after the page's stream was opened again.
   (define-record-type (client make-client client-record?)
     (sealed #t)
     (fields id number (immutable device client-record-device) pending (mutable next) (mutable removed?) (mutable stream)
@@ -46,8 +48,8 @@
             (mutable waiting) (mutable calls) (mutable links) (mutable scripts-version) (mutable title) (mutable first))
     (protocol
       (lambda (new)
-        (lambda (id number device links scripts-version title)
-          (new id number device (make-eqv-hashtable) 1 #f #f 0 #f #f 0 #f 0 #f '() links scripts-version title #f)))))
+        (lambda (id number device links scripts-version)
+          (new id number device (make-eqv-hashtable) 1 #f #f 0 #f #f 0 #f 0 #f '() links scripts-version "Tuna" #f)))))
 
   (define-record-type head-file
     (sealed #t)
@@ -82,7 +84,6 @@
   (define early-files '())
   (define early-hrefs '())
   (define scripts-version 0)
-  (define page-title #f)
   (define files-checked 0)
 
   (define max-held-items 10000)
@@ -228,7 +229,7 @@
           (patch-elements stream (screen-element n through content))
           (for-each (lambda (script) (execute-script stream script)) calls)))))
 
-  (define (give-screen! c screen)
+  (define (give-screen! c screen title)
     (let ([content (if (bytevector? screen) screen (html->bytevector screen))]
           [through (client-through c)]
           [now (real-time)])
@@ -236,10 +237,14 @@
         (set! files-checked now)
         (check-files!))
       (with-lock
-        (let ([last (client-last c)])
+        (let ([last (client-last c)] [stream (client-stream c)])
           (when (memq c opening)
-            (client-first-set! c content))
-          (when (and (client-stream c) (not (and last (bytevector=? content last))))
+            (client-first-set! c content)
+            (client-title-set! c title))
+          (when (and stream (not (equal? title (client-title c))))
+            (client-title-set! c title)
+            (enqueue! (lambda () (patch-elements stream (title-element title)))))
+          (when (and stream (not (and last (bytevector=? content last))))
             (client-last-set! c content)
             (if (and (client-in-flight c) (fx< (fx- now (client-sent-at c)) confirmation-wait))
                 (client-waiting-set! c (cons content through))
@@ -275,6 +280,8 @@
         (enqueue! (lambda () (stream-close! old)))))
     (client-stream-set! c stream)
     (client-last-set! c (let ([first (client-first c)]) (and (bytevector? first) first)))
+    (when (eq? (client-first c) 'served)
+      (client-title-set! c #f))
     (client-first-set! c 'served)
     (client-in-flight-set! c #f)
     (client-waiting-set! c #f)
@@ -439,26 +446,14 @@
         [(not (fx= (client-scripts-version c) scripts-version))
          (client-scripts-version-set! c scripts-version)
          (client-links-set! c links)
-         (client-title-set! c page-title)
          (enqueue! (lambda () (reload-page stream)))]
-        [else
-         (unless (eq? (client-links c) links)
-           (let ([old (client-links c)] [new links])
-             (client-links-set! c new)
-             (enqueue! (lambda () (patch-links stream old new)))))
-         (unless (string=? (client-title c) page-title)
-           (let ([new page-title])
-             (client-title-set! c new)
-             (enqueue! (lambda () (patch-elements stream (title-element new))))))])))
+        [(not (eq? (client-links c) links))
+         (let ([old (client-links c)] [new links])
+           (client-links-set! c new)
+           (enqueue! (lambda () (patch-links stream old new))))])))
 
   (define (title-element text)
     (haml (:title ([id "tuna-title"]) text)))
-
-  (define (retitle!)
-    (let ([new (parameterize ([current-scope #f]) (title))])
-      (with-lock
-        (set! page-title new)
-        (for-each sync-head! connected))))
 
   (define (link-element link)
     (haml (:link ([id "tuna-stylesheet-" (car link)] [rel "stylesheet"] [href (cdr link)]))))
@@ -602,12 +597,12 @@
                [id (random-id)]
                [c (with-lock
                     (set! added (fx+ added 1))
-                    (let ([c (make-client id added device links scripts-version page-title)])
+                    (let ([c (make-client id added device links scripts-version)])
                       (hashtable-set! clients-by-id id c)
                       (set! opening (cons c opening))
                       c))])
           (post-as-web (lambda () (schedule-removal! c) (set! added-now (cons c added-now)) (client-added c)))
-          (let-values ([(first modules early)
+          (let-values ([(first title modules early)
                         (with-mutex lock
                           (let ([deadline (add-duration (current-time 'time-utc) (make-time 'time-duration 0 first-screen-wait))])
                             (let wait ()
@@ -615,14 +610,15 @@
                                 (condition-wait first-screens lock deadline)
                                 (wait))))
                           (set! opening (remq c opening))
-                          (values (let ([first (client-first c)]) (and (bytevector? first) first)) script-hrefs early-hrefs))])
+                          (values (let ([first (client-first c)]) (and (bytevector? first) first)) (client-title c)
+                                  script-hrefs early-hrefs))])
             (response 200
               (if given
                   page-headers
                   (cons (set-cookie-header "tuna-device" device (cookie-path "/") (cookie-http-only)
                           (cookie-same-site (same-site strict)) (cookie-max-age device-cookie-seconds))
                         page-headers))
-              (html->bytevector (shell id (client-title c) (client-links c) modules early first)))))
+              (html->bytevector (shell id title (client-links c) modules early first)))))
         not-found))
 
   (define forbidden (response 403 '(("content-type" . "text/plain")) "Forbidden\n"))
@@ -768,7 +764,6 @@
     (set! started? #t)
     (let ([p (port)] [also (proxy-address)] [me (list 'sender)])
       (allow-hosts!)
-      (retitle!)
       (set! server
         (if also
             (guard (e [(not (quit-condition? e)) (report e) (listen p '("127.0.0.1"))])
@@ -842,10 +837,6 @@
   "The file, of mode 600, whose text a request from a peer other than 127.0.0.1 or ::1 must give as Tuna-Proxy-Secret."
   (lambda (v) (restart-server!)))
 
-(define-option title "Tuna" string?
-  "The title of every client's page, which its browser tab shows."
-  (lambda (v) (retitle!)))
-
 (define-hook client-added "Called with a client when its page is served.")
 
 (define-hook client-removed "Called with a client that has been removed.")
@@ -875,12 +866,14 @@
     (assertion-violation 'web:client-device "not a client" client))
   (client-record-device client))
 
-(define (send-screen! client screen)
+(define (send-screen! client screen title)
   (unless (client-record? client)
     (assertion-violation 'web:send-screen! "not a client" client))
   (unless (or (html? screen) (bytevector? screen))
     (assertion-violation 'web:send-screen! "not html or a bytevector" screen))
-  (give-screen! client screen))
+  (unless (string? title)
+    (assertion-violation 'web:send-screen! "not a string" title))
+  (give-screen! client screen title))
 
 (define (call-page! client name value)
   (unless (client-record? client)

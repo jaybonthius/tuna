@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (layout-sides) (keys) (commands) (faces) (web) (haml) (undo))
+(import (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (faces) (web) (haml) (undo))
 
 (define face
   (make-thread-parameter #f
@@ -235,7 +235,7 @@
   (press client key))
 
 ;; Report runs inside the code that raised, so the queue shows here,
-;; before display draws, rather than in the middle of a failed edit or
+;; before layout draws the clients, rather than in the middle of a failed edit or
 ;; draw. A raise here must not skip the advice it encloses.
 (define (%show-reports ended)
   (guard (c [#t (report c)])
@@ -250,7 +250,7 @@
 (define (%show-command-reports command) (flush-reports!))
 
 (messages-buffer)
-(layout:display-buffer echo-buffer (layout-sides:display-at-side (layout:direction down) 90 'content '((locked . #t))))
+(layout:display-buffer echo-buffer (layout-split:display-at-side (layout:direction down) 90 'content '((locked . #t))))
 (keys:bind! keymap "<mouse-1>" show-messages)
 (keys:bind! keymap "<down-mouse-1>" keys:ignore)
 (keys:bind! keys:global "C-h e" show-messages)

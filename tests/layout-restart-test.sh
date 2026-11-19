@@ -1,8 +1,8 @@
 #!/bin/sh
-# The layout and the frame come back after a restart, with each view's
-# cursor; a saved layout that its check refuses is set aside with a
-# warning and the default used; with no buffer at all, the default shows
-# a new *scratch*.
+# The layout, the selection order and the zoom come back after a
+# restart, with each view's cursor; a saved layout that its check
+# refuses is set aside with a warning and the default used; with no
+# buffer at all, the default shows a new *scratch*.
 set -eu
 tuna=${1:?usage: layout-restart-test.sh TUNA}
 case $tuna in
@@ -52,8 +52,8 @@ expect "after a restart" "$output" '(layout:level () (layout-split:container ((d
 (3 (3) 5)'
 
 # The zoom is saved as the view's number and how far out its level is.
-frame=$home/.local/share/tuna/saved/tuna/layout/saved-frame.ss
-expect "the saved frame" "$(cat "$frame")" '((3 1) (3 . 1))'
+selection=$home/.local/share/tuna/saved/tuna/layout/saved-selection.ss
+expect "the saved selection" "$(cat "$selection")" '((3 1) (3 . 1))'
 
 saved=$home/.local/share/tuna/saved/tuna/layout/saved-layout.ss
 [ -f "$saved" ] || fail "no saved layout at $saved"

@@ -19,13 +19,13 @@
 
 (define (in-client thunk)
   (parameterize ([web:current-client client])
-    (layout:call-with-frame (layout:frame client) thunk)))
+    (views:call-with-view (layout:selected-view) thunk)))
 
 (define (press! . keys)
   (for-each
     (lambda (key)
       (parameterize ([web:current-client client])
-        (layout:call-with-frame (layout:frame client) (lambda () (keys:press! client key)))))
+        (views:call-with-view (layout:selected-view) (lambda () (keys:press! client key)))))
     keys))
 
 ;; A command that reads pauses its task, so tests start it in a task of

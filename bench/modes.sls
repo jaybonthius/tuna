@@ -71,7 +71,7 @@
     (modes:set-major-mode leaf b)
     (buffers:with-buffer b (set-option-local! o3 #t o11 #t o20 #t))
     (keys:bind! keys:global "a" nothing)
-    (let ([view (layout:selected-view)] [frame (layout:frame client)])
+    (let ([view (layout:selected-view)])
       (show "active-keymaps"
         (views:with-view view (ns-per-op 20000 (lambda () (modes:active-keymaps client #f))))
         "ns")
@@ -80,7 +80,7 @@
         "B")
       (show "active-minor-modes" (ns-per-op 20000 (lambda () (modes:active-minor-modes view))) "ns")
       (parameterize ([web:current-client client])
-        (let ([press (lambda () (layout:call-with-frame frame (lambda () (keys:press! client "a"))))])
+        (let ([press (lambda () (views:call-with-view (layout:selected-view) (lambda () (keys:press! client "a"))))])
           (show "press-key-with-modes" (ns-per-op 2000 press) "ns")
           (remove-hook! keys:find-keymaps modes:active-keymaps)
           (show "press-key-without-modes" (ns-per-op 2000 press) "ns")

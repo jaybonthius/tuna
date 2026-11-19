@@ -43,7 +43,7 @@ Tuna is at http://127.0.0.1:PORT/
     (lambda () (display "main { color: blue; }\n"))
     'replace)
 > (sleep-for 1.1)
-> (web:send-screen! (car (web:clients)) (haml (:p "after")))
+> (web:send-screen! (car (web:clients)) (haml (:p "after")) "Tuna")
 > (http:take p 2)
 ((datastar-patch-elements ("elements" "<link id=\"tuna-stylesheet-1\" rel=\"stylesheet\" href=\"/files/1/styler.css?v=2\">")) (screen 1 0 "<p>after</p>"))
 > (file "/files/1/styler.css")

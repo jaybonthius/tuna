@@ -1,7 +1,11 @@
 (import (tuna) (tuna plugins))
-(use-plugin web)
-(use-plugin display)
+(use-plugin layout)
 (import (haml) (console))
+
+;; A short screen keeps the transcripts readable; the layout's own
+;; screen is the layout tests' subject.
+(define (hello screen client) (haml (:p "Hello from Tuna")))
+(advice-add! layout:screen hello)
 
 (define (last-shown client)
   (let ([g (web:given! client)])

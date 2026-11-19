@@ -39,9 +39,10 @@
 (("h" "+horn" label) ("y" "+prefix" label))
 > (press! "z")
 > (table-remove! which-key:labels "C-c h")
-; A label must be a string.
+; A label must be a string; the draw after the batch reports it.
 > (table-set! which-key:labels "C-c h" 'horn)
 > (press! "C-c")
+! which-key:labels: not a string with irritant horn
 > (raised (lambda () (screen-of client)))
 (which-key:labels "not a string")
 > (press! "z")

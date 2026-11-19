@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (haml) (web) (layout-sides))
+(import (tuna) (tuna plugins) (document) (haml) (web) (layout-split))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin modes)
@@ -19,7 +19,7 @@
 
 (define (in-client thunk)
   (parameterize ([web:current-client client])
-    (layout:call-with-frame (layout:frame client) thunk)))
+    (views:call-with-view (layout:selected-view) thunk)))
 
 (define (press! . keys)
   (for-each (lambda (key) (in-client (lambda () (keys:press! client key)))) keys))

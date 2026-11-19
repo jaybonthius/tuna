@@ -1,4 +1,4 @@
-; After each batch, display draws each client of web:clients, in order,
+; After each batch, layout draws each client of web:clients, in order,
 ; with layout:screen.
 > (define desktop (web:connect! 'desktop))
 > (define phone (web:connect! 'phone))
@@ -16,7 +16,7 @@
 > (let ([n (length (web:given! desktop))])
     (list (> n 0) (= n (- web:batches start))))
 (#t #t)
-; The advice beneath display's runs first, so what it did is drawn.
+; The advice beneath layout's runs first, so what it did is drawn.
 > (define (with-batches screen client) (haml (:p "batch " web:batches)))
 > (advice-add! layout:screen with-batches)
 > (begin
@@ -34,13 +34,14 @@
 > (advice-add! layout:screen with-owner)
 > (list (last-shown desktop) (> draws 0))
 ("<p>(tuna)</p>" #t)
+> (define timers-before (timers))
 > (define (with-timer screen client) (run-with-timer 60 void) (screen client))
 > (advice-add! layout:screen with-timer)
 ! run-with-timer: this code acts for no module; name its module with as-module
 ! run-with-timer: this code acts for no module; name its module with as-module
 ; haml writes a newline after <pre>, which a browser drops.
 > (last-shown phone)
-"<pre class=\"display-error\">\nException in run-with-timer: this code acts for no module; name its module with as-module</pre>"
+"<pre class=\"layout-error\">\nException in run-with-timer: this code acts for no module; name its module with as-module</pre>"
 > (advice-remove! layout:screen with-timer)
 > (define (with-post screen client) (post! void) (screen client))
 > (advice-add! layout:screen with-post)
@@ -48,8 +49,8 @@
 ! post!: this code acts for no module; name its module with as-module
 > (advice-remove! layout:screen with-post)
 > (advice-remove! layout:screen with-owner)
-> (timers)
-()
+> (equal? (timers) timers-before)
+#t
 ; A draw that raises is reported once, until a draw for that client
 ; succeeds, and the client shows the condition. The other clients are
 ; drawn.
@@ -59,7 +60,7 @@
 ! car: () is not a pair
 > (sleep-for 0)
 > (list (last-shown desktop) (last-shown phone))
-("<pre class=\"display-error\">\nException in car: () is not a pair</pre>" "<p>Hello from Tuna</p>")
+("<pre class=\"layout-error\">\nException in car: () is not a pair</pre>" "<p>Hello from Tuna</p>")
 > (advice-remove! layout:screen desktop-fails)
 > (last-shown desktop)
 "<p>Hello from Tuna</p>"
@@ -71,7 +72,7 @@
 ! non-condition value oops
 ! non-condition value oops
 > (last-shown desktop)
-"<pre class=\"display-error\">\nException occurred with non-condition value oops</pre>"
+"<pre class=\"layout-error\">\nException occurred with non-condition value oops</pre>"
 > (advice-remove! layout:screen raises-oops)
 ; A warning while drawing is reported, and the draw goes on.
 > (define warn? #f)
@@ -117,7 +118,7 @@
     (sent (web:given! desktop)))
 ("<p>step 1</p>" "<p>step 2</p>" "<p>step 3</p>")
 > (advice-remove! layout:screen with-progress)
-; A raise in the advice beneath display's is reported, and the clients
+; A raise in the advice beneath layout's is reported, and the clients
 ; are still drawn.
 > (define fail? #f)
 > (define (fails-once count)
@@ -156,11 +157,12 @@
 > draws
 0
 > (advice-remove! layout:screen count-draws)
-; Turned off, display draws nothing; turned on again, it draws.
+; Turned off, layout draws nothing; turned on again, it draws, without
+; the configuration's advice, which went with the definition.
 > (define laptop (web:connect! 'laptop))
-> (unload-module! '(display))
+> (unload-module! '(layout))
 > (begin (web:given! laptop) (sleep-for 0) (web:given! laptop))
 ()
-> (load-module! '(display))
-> (last-shown laptop)
-"<p>Hello from Tuna</p>"
+> (load-module! '(layout))
+> (substring (last-shown laptop) 0 26)
+"<div class=\"layout-screen\""

@@ -1,9 +1,9 @@
 ; Quits requested from another thread land anywhere in drawing, mostly in
-; the draws themselves. Display reports none of them as an error and goes
+; the draws themselves. Layout reports none of them as an error and goes
 ; on drawing, and once the quits stop every client shows the newest
 ; screen. A loaded machine draws and quits less often, so the storm goes
 ; on until more than a hundred draws were quit, giving up twenty seconds
-; on, so that a display that stops drawing shows as a false result rather
+; on, so that a layout that stops drawing shows as a false result rather
 ; than a timeout.
 > (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 > (define desktop (web:connect! 'desktop))
@@ -13,7 +13,7 @@
 > (define finished 0)
 > (define (heavy screen client)
     (set! started (+ started 1))
-    (let ([s (haml (:div (for-each (lambda (i) (:p "line " i)) (iota 200)) (:p "n " n)))])
+    (let ([s (haml (:div (map (lambda (i) (haml (:p "line " i))) (iota 200)) (:p "n " n)))])
       (set! finished (+ finished 1))
       s))
 > (advice-add! layout:screen heavy)

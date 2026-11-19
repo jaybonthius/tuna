@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (layout-sides) (keys) (commands) (modes) (echo-area) (web) (haml) (undo) (ask))
+(import (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (modes) (echo-area) (web) (haml) (undo) (ask))
 
 (define-saved history '() (lambda (v) (and (list? v) (for-all string? v))))
 
@@ -217,7 +217,7 @@
   (define bottom-id #f)
 
   (define (at-bottom b)
-    (let ([v ((layout-sides:display-at-side (layout:direction down) 100 'content '((locked . #t))) b)])
+    (let ([v ((layout-split:display-at-side (layout:direction down) 100 'content '((locked . #t))) b)])
       (set! bottom-id (views:id v))
       v))
 

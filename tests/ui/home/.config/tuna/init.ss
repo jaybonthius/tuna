@@ -9,7 +9,7 @@
 
 (define (in-client thunk)
   (parameterize ([web:current-client client])
-    (layout:call-with-frame (layout:frame client) thunk)))
+    (views:call-with-view (layout:selected-view) thunk)))
 
 (define (press! . keys)
   (for-each (lambda (key) (in-client (lambda () (keys:press! client key)))) keys))
