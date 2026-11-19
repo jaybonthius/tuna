@@ -131,3 +131,42 @@ waiting
 > (press! "RET")
 > (result t)
 #t
+; read-number asks again until the input is a number; RET alone answers
+; with the default.
+> (define t (start! (lambda () (minibuffer:read-number "Count: "))))
+> (type! "ten")
+> (press! "RET")
+> (result t)
+waiting
+> (input)
+""
+> (minibuffer:set-input! (prompt) "2.5")
+> (press! "RET")
+> (result t)
+2.5
+> (define t (start! (lambda () (minibuffer:read-number "Count (default 7): " minibuffer:history 7))))
+> (minibuffer:prompt-default (prompt))
+"7"
+> (press! "RET")
+> (result t)
+7
+> (raised (lambda () (minibuffer:read-number "Count: " minibuffer:history "7")))
+(minibuffer:read-number "neither a real number nor #f")
+; ask:number is answered by read-number.
+> (define t (start! (lambda () (ask:number "Columns: "))))
+> (type! "80")
+> (press! "RET")
+> (result t)
+80
+; read-number's answers go into a history of their own, which M-p recalls.
+> (minibuffer:number-history)
+("80" "2.5" "ten")
+> (car (minibuffer:history))
+"notes"
+> (define t (start! (lambda () (minibuffer:read-number "Count: "))))
+> (press! "M-p")
+> (input)
+"80"
+> (press! "RET")
+> (result t)
+80

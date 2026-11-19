@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (buffers) (commands) (keys) (views) (layout) (files))
+(import (completion) (buffers) (commands) (editing) (keys) (views) (layout) (files))
 
 (define-saved buffer-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
@@ -49,13 +49,21 @@
   (let* ([view (views:current)]
          [v (completion:read-or-input "Switch to buffer: " (map (lambda (p) (p view)) (sources)) buffer-history)])
     (cond
-      [(buffers:buffer? v) v]
-      [(and (pair? v) (string? (car v))) (files:visit (car v))]
+      [(or (buffers:buffer? v) (pair? v)) v]
       [else (or (buffers:find v) (buffers:make v ""))])))
 
-(commands:define-command (switch-to-buffer [buffer (%read-switch)])
-  "Shows BUFFER in the selected view."
-  (layout:switch-to-buffer buffer))
+(define (%location? v)
+  (and (pair? v) (string? (car v)) (integer? (cdr v)) (exact? (cdr v))))
+
+(commands:define-command (switch-to-buffer [target (%read-switch)])
+  "Shows TARGET in the selected view: a buffer, or a location, a pair of a path and a line number, whose file it visits at that line."
+  (cond
+    [(buffers:buffer? target) (layout:switch-to-buffer target)]
+    [(%location? target)
+     (let ([b (files:visit (car target))])
+       (layout:switch-to-buffer b)
+       (views:set-point! (layout:selected-view) (editing:line-position b (cdr target))))]
+    [else (assertion-violation 'buffer-picker:switch-to-buffer "neither a buffer nor a location" target)]))
 
 (commands:define-command (kill-buffer [buffer (read-buffer "Kill buffer: " buffer-history (%current-buffer))])
   "Kills BUFFER."

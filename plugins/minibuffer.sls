@@ -3,6 +3,8 @@
 
 (define-saved history '() (lambda (v) (and (list? v) (for-all string? v))))
 
+(define-saved number-history '() (lambda (v) (and (list? v) (for-all string? v))))
+
 (define-option history-length 100 (lambda (v) (and (fixnum? v) (fx>= v 0)))
   "How many answers a history keeps.")
 
@@ -81,7 +83,7 @@
 
 (module %internals
   (check-main-thread check-prompt check-live buffer prompts make-prompt prompt-record? prompt-depth prompt-task
-   history-of prompt-default shown-in prompt-keymaps prompt-keymaps-set! prompt-message prompt-message-set!
+   history-of default-of shown-in prompt-keymaps prompt-keymaps-set! prompt-message prompt-message-set!
    prompt-recalled prompt-recalled-set! prompt-typed prompt-typed-set! prompt-ended? prompt-node prompt-parts
    input-range input-text prompt-holding prompt-at start-prompt! end-prompt! answer! prompt-of
    setups prompt-keymaps-at quit-condition without-quits bar-view narrow-views! at-bottom bottom-prompt
@@ -96,7 +98,7 @@
   (define-record-type (prompt-record make-prompt prompt-record?)
     (sealed #t)
     (fields (immutable depth prompt-depth) (immutable task prompt-task) (immutable history history-of)
-            (immutable default prompt-default) (mutable view shown-in shown-in-set!) (mutable view-id shown-id shown-id-set!)
+            (immutable default default-of) (mutable view shown-in shown-in-set!) (mutable view-id shown-id shown-id-set!)
             (mutable keymaps prompt-keymaps prompt-keymaps-set!) (mutable message prompt-message prompt-message-set!)
             (mutable recalled prompt-recalled prompt-recalled-set!) (mutable typed prompt-typed prompt-typed-set!)
             (mutable ended? prompt-ended? prompt-ended?-set!) (mutable resume prompt-resume prompt-resume-set!)
@@ -323,6 +325,10 @@
   (check-prompt 'minibuffer:prompt-history p)
   (history-of p))
 
+(define (prompt-default p)
+  (check-prompt 'minibuffer:prompt-default p)
+  (default-of p))
+
 (define (input p)
   (check-prompt 'minibuffer:input p)
   (check-main-thread 'minibuffer:input)
@@ -438,6 +444,24 @@
         [(string=? answer "no") #f]
         [else (loop "Please answer yes or no")]))))
 
+(define read-number
+  (case-lambda
+    [(question) (read-number question number-history #f)]
+    [(question h) (read-number question h #f)]
+    [(question h default)
+     (unless (string? question)
+       (assertion-violation 'minibuffer:read-number "not a string" question))
+     (unless (or (not h) (saved? h))
+       (assertion-violation 'minibuffer:read-number "neither saved data nor #f" h))
+     (unless (or (not default) (real? default))
+       (assertion-violation 'minibuffer:read-number "neither a real number nor #f" default))
+     (let loop ([complaint #f])
+       (let* ([answer (call-with-setup
+                        (lambda (p) (when complaint (message! p complaint)))
+                        (lambda () (%read question h (and default (number->string default)))))]
+              [n (string->number answer 10)])
+         (if (and n (real? n)) n (loop "Please enter a number"))))]))
+
 (define-table %y-or-n-keymap)
 
 (commands:define-command (%answer-y-or-n [char (keys:typed-char)])
@@ -478,7 +502,7 @@
   "Ends the prompt holding point with its input as the answer."
   (let* ([v (views:current)]
          [p (or (and v (eq? (views:buffer v) buffer) (prompt-at (views:point v))) (%innermost 'minibuffer:exit))]
-         [text (input-text p)] [default (prompt-default p)])
+         [text (input-text p)] [default (default-of p)])
     (exit! p (if (and default (string=? text "")) default text))))
 
 (commands:define-command (abort)
@@ -488,21 +512,21 @@
     (signal-task (prompt-task p) (quit-condition))))
 
 (define (%recall! p n who)
-  (let* ([h (history-of p)] [entries (if h (h) '())] [k (+ (prompt-recalled p) n)])
+  (let* ([h (history-of p)] [entries (if h (h) '())] [k (+ (prompt-recalled p) n)] [default (default-of p)])
     (cond
       [(> k (length entries)) (error who "beginning of history")]
-      [(< k 0) (error who "end of history")]
+      [(< k (if default -1 0)) (error who (if default "end of defaults" "end of history"))]
       [else
        (when (fx= (prompt-recalled p) 0) (prompt-typed-set! p (input-text p)))
        (prompt-recalled-set! p k)
-       (set-input! p (if (fx= k 0) (prompt-typed p) (list-ref entries (fx- k 1))))])))
+       (set-input! p (cond [(fx= k -1) default] [(fx= k 0) (prompt-typed p)] [else (list-ref entries (fx- k 1))]))])))
 
 (commands:define-command (previous-history [n (commands:prefix-number)])
   "Replaces the input with the history entry N older than the one shown."
   (%recall! (%innermost 'minibuffer:previous-history) n 'minibuffer:previous-history))
 
 (commands:define-command (next-history [n (commands:prefix-number)])
-  "Replaces the input with the history entry N newer, ending at what was typed."
+  "Replaces the input with the history entry N newer, ending at what was typed, then the prompt's default."
   (%recall! (%innermost 'minibuffer:next-history) (- n) 'minibuffer:next-history))
 
 (commands:define-command (mouse-set-point [event (keys:command-event)])
@@ -557,6 +581,7 @@
   (list exit abort previous-history next-history mouse-set-point))
 (add-hook! keys:find-keymaps %prompt-keymaps 40)
 (set-option! ask:line-reader read)
+(set-option! ask:number-reader read-number)
 (set-option! ask:yes-or-no-reader ask-yes-or-no)
 (set-option! ask:y-or-n-reader ask-y-or-n)
 (table-set! web:stylesheets 'minibuffer "minibuffer/minibuffer.css")

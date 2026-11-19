@@ -225,6 +225,17 @@
 (define (command-names)
   (map car (table-entries registry)))
 
+(define (%private-name? name)
+  (let* ([s (symbol->string name)] [n (string-length s)])
+    (let loop ([i (fx- n 1)])
+      (cond
+        [(fx< i 0) (and (fx> n 0) (char=? (string-ref s 0) #\%))]
+        [(char=? (string-ref s i) #\:) (and (fx< (fx+ i 1) n) (char=? (string-ref s (fx+ i 1)) #\%))]
+        [else (loop (fx- i 1))]))))
+
+(define (public-command-names)
+  (remp %private-name? (command-names)))
+
 (define (run command . args)
   (check-main-thread 'commands:run)
   (let ([name (command-name-of command)])

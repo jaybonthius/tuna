@@ -9,6 +9,9 @@
 (define-option line-reader (%no-reader 'ask:line-reader) procedure?
   "A procedure of a question that reads a line of text and returns it, as Emacs's read-string.")
 
+(define-option number-reader (%no-reader 'ask:number-reader) procedure?
+  "A procedure of a question that reads a number and returns it, as Emacs's read-number.")
+
 (define-option yes-or-no-reader (%no-reader 'ask:yes-or-no-reader) procedure?
   "A procedure of a question that asks for yes or no and returns true for yes.")
 
@@ -39,6 +42,10 @@
 (define (line question)
   (%check-question 'ask:line question)
   ((line-reader) question))
+
+(define (number question)
+  (%check-question 'ask:number question)
+  ((number-reader) question))
 
 (define (yes-or-no? question)
   (%check-question 'ask:yes-or-no? question)

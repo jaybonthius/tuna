@@ -258,3 +258,27 @@
 ! &quit
 > (result t)
 (raised #<condition &quit>)
+; M-n past what was typed inserts the prompt's default, as Emacs's
+; future history; M-p goes back to what was typed.
+> (define t (start! (lambda () (minibuffer:read "Name: " #f "fallback"))))
+> (minibuffer:prompt-default (prompt))
+"fallback"
+> (type! "typed")
+> (press! "M-n")
+> (input)
+"fallback"
+> (press! "M-n")
+! minibuffer:next-history: end of defaults
+> (input)
+"fallback"
+> (press! "M-p")
+> (input)
+"typed"
+> (press! "M-p")
+! minibuffer:previous-history: beginning of history
+> (press! "C-g")
+! &quit
+> (result t)
+(raised #<condition &quit>)
+> (raised (lambda () (minibuffer:prompt-default 'no)))
+(minibuffer:prompt-default "not a prompt")

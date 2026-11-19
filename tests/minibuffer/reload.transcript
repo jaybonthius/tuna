@@ -17,6 +17,8 @@
 > (use-plugin minibuffer)
 > (eq? (ask:line-reader) minibuffer:read)
 #t
+> (eq? (ask:number-reader) minibuffer:read-number)
+#t
 > (datums layout:buffer)
 ((layout:level () (layout-split:container ((direction . column)) (layout:level () #(views:view ((view . 1) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . " *Echo Area*") (depth . 90) (size . content) (locked . #t))) #(views:view ((view . 5) (buffer . " *Minibuf*") (depth . 100) (size . content) (locked . #t))))))
 > (define minibuf (buffers:find " *Minibuf*"))

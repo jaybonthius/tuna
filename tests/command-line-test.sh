@@ -118,7 +118,7 @@ expect "a folder" "$(printf '%s\n' "$output" | grep -v '^configured \|^Tuna is a
 (\"f.txt\" 3)
 \"e.txt\""
 
-# +N past the last line goes to the last line.
+# +N past the last line goes to the end, after the final newline.
 output=$(run '(wait-until (lambda () (showing? "f.txt")))
 (shown)' +99 f.txt)
 expect "past the last line" "$(printf '%s\n' "$output" | grep -v '^configured \|^Tuna is at ')" '("f.txt" 5)'

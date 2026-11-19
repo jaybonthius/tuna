@@ -3,14 +3,6 @@
 
 (define-saved command-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(define (%private-name? name)
-  (let* ([s (symbol->string name)] [n (string-length s)])
-    (let loop ([i 0])
-      (cond
-        [(fx= i n) (and (fx> n 0) (char=? (string-ref s 0) #\%))]
-        [(char=? (string-ref s i) #\:) (and (fx< (fx+ i 1) n) (char=? (string-ref s (fx+ i 1)) #\%))]
-        [else (loop (fx+ i 1))]))))
-
 (define (command-for-view? command view)
   (let ([modes (table-ref commands:command-modes command #f)])
     (or (not modes) (exists (lambda (mode) (modes:on? mode view)) modes))))
@@ -35,7 +27,7 @@
      (let ([view (views:current)])
        (%read-command-from question h
          (filter (lambda (c) (%offered? c view))
-                 (map commands:command-named (remp %private-name? (commands:command-names))))))]))
+                 (map commands:command-named (commands:public-command-names)))))]))
 
 (define (%bound-commands keymaps)
   (let ([found '()])

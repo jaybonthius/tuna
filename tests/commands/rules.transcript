@@ -108,3 +108,8 @@ later
 (#t #t "Hello, you!")
 > (module-changes '(demo))
 ((table-entry commands:registry demo:later) (define demo:later #f) (table-entry commands:registry demo:which-task) (define demo:which-task #f) (table-entry commands:registry demo:slow) (define demo:slow #f) (table-entry commands:registry demo:ordered) (define demo:ordered #f) (table-entry commands:registry demo:add) (define demo:add #f) (table-entry commands:registry demo:hello) (define demo:hello #f) (define demo:note! #f) (define demo:order #f))
+; public-command-names leaves out the commands whose names have a % after
+; the module's prefix, as a plugin's interface leaves out its % names.
+> (commands:define-command (%hidden) "A private command." 'hidden)
+> (list (and (memq '%hidden (commands:command-names)) #t) (memq '%hidden (commands:public-command-names)) (and (memq 'demo:hello (commands:public-command-names)) #t))
+(#t #f #t)

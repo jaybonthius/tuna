@@ -74,3 +74,26 @@
 > (result t)
 > (views:buffer (view))
 #<buffer back>
+; A location chosen in C-x b visits its file and goes to its line; a line
+; past the last goes to the end.
+> (define a-path (string-append (getenv "HOME") "/notes/a.txt"))
+> (define (lines-source view) (completion:source (candidates (vector (cons "a.txt:2" (cons a-path 2)) (cons "a.txt:9" (cons a-path 9)))) (category completion:location-category)))
+> (set-option! buffer-picker:sources (list buffer-picker:buffers lines-source))
+> (define t (start! (lambda () (press! "C-x" "b"))))
+> (type! "a.txt:2")
+> (wait-matches (session))
+> (press! "RET")
+> (result t)
+> (buffers:name (views:buffer (view)))
+"a.txt"
+> (views:point (view))
+12
+> (define t (start! (lambda () (press! "C-x" "b"))))
+> (type! "a.txt:9")
+> (wait-matches (session))
+> (press! "RET")
+> (result t)
+> (views:point (view))
+39
+> (raised (lambda () (buffer-picker:switch-to-buffer 5)))
+(buffer-picker:switch-to-buffer "neither a buffer nor a location")

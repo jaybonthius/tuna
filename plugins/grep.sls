@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (buffers) (commands) (document) (files) (keys) (layout) (processes) (projects) (views))
+(import (completion) (commands) (editing) (files) (keys) (layout) (processes) (projects) (views))
 
 (define-option command-line
   (list "rg" "--null" "--line-buffered" "--color=never" "--max-columns=1000" "--path-separator" "/"
@@ -185,8 +185,6 @@
   "Visits LOCATION, a line found by rg in the files of the current buffer's project, else under its directory."
   (let ([b (files:visit (car location))])
     (layout:switch-to-buffer b)
-    (let ([doc (buffers:document b)])
-      (views:set-point! (views:current)
-        (document:line-start doc (fxmax 1 (fxmin (cdr location) (document:line doc (fx- (document:length doc) 1)))))))))
+    (views:set-point! (layout:selected-view) (editing:line-position b (cdr location)))))
 
 (keys:bind! keys:global "M-s r" grep)

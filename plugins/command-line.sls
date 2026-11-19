@@ -1,5 +1,5 @@
 #!tuna
-(import (tuna eval) (files) (layout) (views) (buffers) (document) (command-line handled))
+(import (tuna eval) (files) (layout) (views) (editing) (command-line handled))
 
 (define (%starts-with? prefix argument)
   (let ([n (string-length prefix)])
@@ -22,8 +22,7 @@
 (define (%show! b line)
   (layout:switch-to-buffer b)
   (when line
-    (let* ([doc (buffers:document b)] [last (document:line doc (document:length doc))])
-      (views:set-point! (layout:selected-view) (fxmax 1 (document:line-start doc (max 1 (min line last))))))))
+    (views:set-point! (layout:selected-view) (editing:line-position b line))))
 
 ;; Only the last file is shown, so a +N before another file has no view
 ;; to move.

@@ -618,6 +618,12 @@
 (20 12 17 7 2 12 20)
 > (editing:forward-word-position n 2 3)
 17
+> (map (lambda (line) (editing:line-position n line)) '(-1 1 2 3 4 9))
+(2 2 12 20 31 32)
+> (raised (lambda () (editing:line-position n 1.5)))
+(editing:line-position "not an exact integer")
+> (raised (lambda () (editing:line-position "n" 1)))
+(editing:line-position "not a buffer")
 > (views:set-point! (view) 2)
 > (press! "M-u" "M-u" "M-u" "M-u")
 > (state)

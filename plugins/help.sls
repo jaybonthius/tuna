@@ -374,7 +374,7 @@
          (list (completion:source
                  (candidates (list->vector
                                (map (lambda (name) (cons (symbol->string name) (commands:command-named name)))
-                                    (remp %private-name? (commands:command-names)))))
+                                    (commands:public-command-names))))
                  (category completion:command-category)
                  (styles styles)))
          command-history default))]))

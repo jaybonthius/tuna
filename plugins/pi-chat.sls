@@ -1144,9 +1144,9 @@
       [else s])))
 
 (define (%visit! chat path line)
-  (layout:switch-to-buffer (files:visit (%absolute (pi:chat-directory chat) path)))
-  (let* ([v (layout:selected-view)] [doc (buffers:document (views:buffer v))])
-    (views:set-point! v (document:line-start doc (max 1 (min line (document:line doc (document:length doc))))))))
+  (let ([b (files:visit (%absolute (pi:chat-directory chat) path))])
+    (layout:switch-to-buffer b)
+    (views:set-point! (layout:selected-view) (editing:line-position b line))))
 
 (commands:define-command (visit)
   "Opens the file of the tool call at point at its line, or the path:line at point."

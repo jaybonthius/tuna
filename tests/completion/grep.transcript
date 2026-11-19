@@ -174,3 +174,24 @@
 > (result t)
 > (views:buffer (view))
 #<buffer top.sls>
+; A location past the file's last line goes to its end.
+> (define deep (string-append (getenv "HOME") "/code/tuna/lib/sub/deep.sls"))
+> (in-client (lambda () (grep:grep (cons deep 99))))
+> (views:buffer (view))
+#<buffer deep.sls>
+> (= (views:point (view)) (- (document:length (buffers:document (views:buffer (view)))) 1))
+#t
+> (in-client (lambda () (grep:grep (cons deep 0))))
+> (views:point (view))
+1
+; While a prompt waits, its locked view is selected, so the file shows in
+; another view; point moves in the view that shows it.
+> (define text-path (string-append (getenv "HOME") "/src/text.txt"))
+> (define t (start! (lambda () (press! "M-g" "g"))))
+> (buffers:name (views:buffer (view)))
+" *Minibuf*"
+> (in-client (lambda () (grep:grep (cons text-path 3))))
+> (buffers:name (views:buffer (view)))
+"text.txt"
+> (document:line (buffers:document (views:buffer (view))) (views:point (view)))
+3
