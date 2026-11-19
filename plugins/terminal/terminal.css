@@ -58,10 +58,27 @@
   [data-terminal~="underline-dashed"] { text-decoration-line: underline; text-decoration-style: dashed; }
   [data-terminal~="underline-color"] { text-decoration-color: var(--terminal-underline); }
 
-  /* A glyph from a fallback font has its own width; the cells libghostty
-     gives it keep the columns of box drawing and tables. */
+  /* A run's background covers the font's own extent, not the line's, so
+     a row taller than a cell shows the terminal's background between
+     rows, and block elements and box drawing break there. The view
+     counts and scrolls rows by its own line height, so it takes the
+     cells'. */
+  .view:has(> .view-lines > .terminal) {
+    line-height: normal;
+  }
+
+  /* The screen is a grid the program laid out at its own width, so a row
+     never wraps, even in a view not yet resized to it. */
+  .terminal-screen {
+    white-space: pre;
+  }
+
+  /* A glyph from a fallback font has its own width and extent; the cells
+     libghostty gives it keep the columns of box drawing and tables, and
+     its row one cell high. */
   [data-cells] {
     display: inline-block;
+    block-size: 1lh;
     overflow: clip;
     vertical-align: top;
     text-align: center;

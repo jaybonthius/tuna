@@ -96,10 +96,12 @@
     view.scrollLeft = number(view, `data-${prefix}-left`) ?? 0;
   }
 
+  // The computed style names a line height of normal only as a keyword;
+  // the font's extent it stands for is 1lh in a registered length.
   function lineHeight(view) {
     const style = getComputedStyle(view);
     const height = parseFloat(style.lineHeight);
-    return Number.isFinite(height) ? height : 1.2 * parseFloat(style.fontSize);
+    return Number.isFinite(height) ? height : parseFloat(style.getPropertyValue("--views-line-height"));
   }
 
   // Emacs keeps the scroll margin under a quarter of the view, so a short

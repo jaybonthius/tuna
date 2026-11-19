@@ -1,5 +1,11 @@
 @layer defaults, themes, preferences;
 
+@property --views-line-height {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 @layer defaults {
   /* The last spacer's row takes what the rest leave of the scroll sizer's
      height, whatever the drawn lines' real heights, so the view's total
@@ -17,6 +23,7 @@
     font-family: var(--tuna-font-code);
     font-size: var(--tuna-font-size-code);
     line-height: var(--tuna-line-height-code);
+    --views-line-height: 1lh;
     display: grid;
     grid-template-columns: minmax(0, 1fr) 0;
     grid-template-rows: auto auto 1fr;
@@ -53,11 +60,8 @@
     min-block-size: 0;
   }
 
-  /* A stacking context, so a region's shape paints under every line's
-     text, its own included, and over the view's background. */
   .view > .view-lines {
     grid-area: 2 / 1;
-    isolation: isolate;
   }
 
   .view > [data-spacer="below"] {
@@ -85,9 +89,13 @@
                                           transparent 0.75lh 1lh);
   }
 
-  /* Margins would fall outside what the page measures of a line. */
+  /* Margins would fall outside what the page measures of a line. A line
+     is a stacking context, so a region's shape, drawn behind the text,
+     paints over every background a kind draws around the line rather
+     than under it. */
   .view .line {
     margin-block: 0;
+    isolation: isolate;
   }
 
   /* A node's element and a datum's only name the positions they stand for,
