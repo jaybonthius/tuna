@@ -5,7 +5,8 @@
 ;; definition, which can change under a running thread.
 (module %internals
   (client-record? client-record-device connected-clients give-screen! call-page start-server! restart-server!
-   stop-server! allow-hosts! refresh-head-files! post-start! release-first-screens! home-path?)
+   stop-server! allow-hosts! refresh-head-files! refresh-upload-handlers! post-start! release-first-screens!
+   home-path? valid-name?)
 
   (define main-thread (get-thread-id))
   (define lock (make-mutex))
@@ -83,6 +84,8 @@
   (define early-entries '())
   (define early-files '())
   (define early-hrefs '())
+  (define upload-entries '())
+  (define uploads '())
   (define scripts-version 0)
   (define files-checked 0)
 
@@ -205,6 +208,55 @@
           (when c
             (post-as-web (lambda () (forget-client! c)))))))
     no-content)
+
+  (define (valid-name? v)
+    (and (string? v)
+         (fx<= 1 (string-length v) 64)
+         (for-all (lambda (c) (or (char<=? #\a c #\z) (char<=? #\A c #\Z) (char<=? #\0 c #\9) (char=? c #\-)))
+                  (string->list v))))
+
+  (define (usable-upload-entry? entry)
+    (define (refuse message irritant)
+      (unless (member entry upload-entries)
+        (report (condition (make-warning) (make-who-condition 'web:upload-handlers)
+                  (make-message-condition message) (make-irritants-condition (list irritant)))))
+      #f)
+    (cond
+      [(not (valid-name? (car entry))) (refuse "not 1 to 64 letters, digits and hyphens" (car entry))]
+      [(not (procedure? (cadr entry))) (refuse "not a procedure" (cadr entry))]
+      [else #t]))
+
+  (define (refresh-upload-handlers!)
+    (let ([entries (table-files upload-handlers)])
+      (unless (equal? entries upload-entries)
+        (let ([usable (filter usable-upload-entry? entries)])
+          (set! upload-entries entries)
+          (with-lock (set! uploads usable))))))
+
+  (define upload-failed (response 500 '(("content-type" . "text/plain")) "The upload's handler failed\n"))
+
+  ;; The server's copy of the table keeps an entry until the batch that
+  ;; unloads its module ends, so as-module may refuse the owner: the name
+  ;; then has no handler. Advice on report may touch editor state, so a
+  ;; handler's raise is reported on the main thread, as the handler's
+  ;; module's.
+  (define (run-upload entry c body)
+    (guard (e [(and (assertion-violation? e) (who-condition? e) (eq? (condition-who e) 'as-module))
+               not-found])
+      (as-module (caddr entry)
+        (guard (e [#t (post! (lambda () (report e))) upload-failed])
+          ((cadr entry) c body)
+          no-content))))
+
+  (define (upload request)
+    (let* ([parts (request-parts request "/upload/")]
+           [entry (and parts (null? (cdr parts))
+                       (let ([name (car parts)]) (with-lock (assoc name uploads))))])
+      (cond
+        [(not entry) not-found]
+        [(with-lock (client-with-id (request-header request "tuna-client")))
+         => (lambda (c) (run-upload entry c (request-body request)))]
+        [else no-content])))
 
   (define (signal-client request)
     (let ([signals (guard (e [(json-error? e) #f]) (read-signals request))])
@@ -749,6 +801,7 @@
                       (compress (encodings zstd br gzip) (qualities [zstd 9] [br 5] [gzip 1])))
                     (route "/input" (checked input))
                     (route "/applied" (checked applied))
+                    (route "/upload/" (checked upload))
                     (route "/goodbye" (checked goodbye))
                     (route "/web/" (checked page-file))
                     (route "/files/" (checked served-file))
@@ -843,6 +896,9 @@
 
 (define-table input-handlers "Maps an item's type to a procedure of the client and the item.")
 
+(define-table upload-handlers
+  "Maps a name to a procedure of a client and a bytevector, called on a server thread with the body of each upload to /upload/NAME.")
+
 (define-table stylesheets "Maps a name to a CSS file that every page links.")
 
 (define-table scripts "Maps a name to a JavaScript module that every page loads.")
@@ -878,10 +934,7 @@
 (define (call-page! client name value)
   (unless (client-record? client)
     (assertion-violation 'web:call-page! "not a client" client))
-  (unless (and (string? name)
-               (fx<= 1 (string-length name) 64)
-               (for-all (lambda (c) (or (char<=? #\a c #\z) (char<=? #\A c #\Z) (char<=? #\0 c #\9) (char=? c #\-)))
-                        (string->list name)))
+  (unless (valid-name? name)
     (assertion-violation 'web:call-page! "not 1 to 64 letters, digits and hyphens" name))
   (guard (e [(json-error? e) (assertion-violation 'web:call-page! "(json) cannot write it" value)])
     (call-page client name value)))
@@ -891,6 +944,7 @@
     (ended)
     (post-start!)
     (release-first-screens!)
-    (refresh-head-files!)))
+    (refresh-head-files!)
+    (refresh-upload-handlers!)))
 
 (on-unload stop-server!)

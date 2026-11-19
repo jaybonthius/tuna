@@ -948,6 +948,27 @@
                      (session-running-set! s
                        (remp (lambda (e) (or (eq? e entry) (task-done? (car e)))) (session-running s))))]))])))])))
 
+;; Input that is no key, such as a paste, comes on its own clock, not
+;; after the client's last key, so it leaves the client's pending keys,
+;; prefix argument and temporary keymaps to the keys that follow.
+(define (run-as-input client command . args)
+  (check-main-thread 'keys:run-as-input)
+  (unless (commands:command? command)
+    (assertion-violation 'keys:run-as-input "not a command" command))
+  (let ([command (remapped (keymaps-of client #f) command)]
+        [s (session-of client)]
+        [entry (list (current-task))])
+    (when (car entry)
+      (session-running-set! s (cons entry (session-running s))))
+    (call-with-values
+      (lambda ()
+        (parameterize ([current-press #f] [commands:prefix-argument #f] [web:current-client client])
+          (apply commands:run command args)))
+      (lambda results
+        (session-running-set! s
+          (remp (lambda (e) (or (eq? e entry) (task-done? (car e)))) (session-running s)))
+        (apply values results)))))
+
 (define (pending client)
   (check-main-thread 'keys:pending)
   (let ([s (eq-hashtable-ref sessions client #f)])

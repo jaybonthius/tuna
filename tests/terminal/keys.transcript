@@ -52,6 +52,10 @@
 > (press! "q")
 > (list (in-client terminal:copy-mode?) (views:mark (view)))
 (#f #f)
+; A typed key leaves copy mode and goes to the program encoded, SPC as
+; any other printing key.
+> (bytes-read (list "C-c" "C-t" "a" "C-c" "C-t" "SPC") 10 "printf '\\033[>8u'; ")
+"1b 5b 39 37 75 1b 5b 33 32 75"
 > (press! "C-c" "C-t")
 > (in-client terminal:copy-mode?)
 #t
@@ -64,3 +68,25 @@
 ! C-c C-t is undefined
 > (in-client (lambda () (commands:run terminal:copy-mode)))
 ! terminal:copy-mode: not a terminal with irritant #<buffer notes>
+; Input that is no key, such as dictated text, runs editing:self-insert
+; with its character; the terminal remaps it to send the character to
+; the program as an input method's text, unencoded, also under the Kitty
+; keyboard protocol, and leaves copy mode first.
+> (define (insert-as-input char n) (lambda () (in-client (lambda () (keys:run-as-input client editing:self-insert n char)))))
+> (bytes-read (list (insert-as-input #\a 1) (insert-as-input #\é 2) (insert-as-input #\A 1)) 6)
+"61 c3 a9 c3 a9 41"
+> (bytes-read (list (insert-as-input #\a 1)) 1 "printf '\\033[>31u'; ")
+"61"
+> (define t (shell!))
+> (in-client (lambda () (layout:switch-to-buffer t)))
+> (eq? (in-client (lambda () (keys:command-remapping client editing:self-insert))) terminal:self-insert)
+#t
+> (press! "C-c" "C-t")
+> ((insert-as-input #\z 1))
+> (list (in-client terminal:copy-mode?) (in-client terminal:semi-char-mode?))
+(#f #t)
+> (wait-for t "$ z")
+> (screen-lines t)
+("$ z")
+> (in-client (lambda () (commands:run terminal:self-insert 1 #f)))
+! terminal:self-insert: no character was typed

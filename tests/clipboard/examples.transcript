@@ -19,6 +19,13 @@
 > (press! laptop "M-d")
 > (copies)
 ((1 "copy" " three"))
+; A paste between keys leaves them alone: after C-u, the next key still
+; takes the prefix argument.
+> (press! laptop "C-u")
+> (handle! laptop "paste" '("text" . "-"))
+> (press! laptop "x")
+> (text)
+" twopasted -xxxx"
 ; A page with no clipboard, or one the browser refuses, says why through
 ; ask:message.
 > (define told '())

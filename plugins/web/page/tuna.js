@@ -20,6 +20,16 @@ export function send(item) {
   post(250);
 }
 
+// Unlike an item, an upload is not sent again: a stream's data, such as
+// audio, is better lost than late.
+export function upload(name, bytes) {
+  return fetch(`/upload/${name}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream", "Tuna-Client": client() },
+    body: bytes,
+  });
+}
+
 const procedures = new Map();
 
 export function define(name, procedure) {

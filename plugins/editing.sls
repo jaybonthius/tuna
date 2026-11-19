@@ -550,12 +550,14 @@
     (words-from doc position n 1 (fx- (document:length doc) 1)
                 (word-characters-in buffer))))
 
-(commands:define-command (self-insert [n (commands:prefix-number)])
-  "Inserts the character typed N times at each cursor."
+(commands:define-command (self-insert [n (commands:prefix-number)] [char (keys:typed-char)])
+  "Inserts CHAR, by default the character typed, N times at each cursor."
   (check-nonnegative-count 'editing:self-insert n)
-  (let ([char (keys:typed-char)] [view (command-view 'editing:self-insert)])
-    (unless char
-      (assertion-violation 'editing:self-insert "no character was typed"))
+  (unless char
+    (assertion-violation 'editing:self-insert "no character was typed"))
+  (unless (char? char)
+    (assertion-violation 'editing:self-insert "not a character" char))
+  (let ([view (command-view 'editing:self-insert)])
     (undo:amalgamate!)
     (insert-at-cursors! view (make-string n char) (delete-selection) (lambda (start end) end))))
 

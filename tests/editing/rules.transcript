@@ -417,8 +417,17 @@
 ! editing:delete-backward-char: beginning of buffer
 > (press! "M--" "C-d")
 ! editing:delete-char: beginning of buffer
-> (raised (lambda () (views:with-view (view) (editing:self-insert 1))))
+> (raised (lambda () (views:with-view (view) (editing:self-insert 1 #f))))
 (editing:self-insert "no character was typed")
+> (raised (lambda () (views:with-view (view) (editing:self-insert 1 "x"))))
+(editing:self-insert "not a character")
+; Code passes the character, which goes in at each cursor as a typed one
+; does.
+> (start! "abc" 2 4)
+("abc" ((2 #f) (4 #f)))
+> (run editing:self-insert 2 #\é)
+> (state)
+("aéébcéé" ((4 #f) (8 #f)))
 ; Each command's edits to a buffer are one undo group; typing and
 ; deleting join up to 20 runs.
 > (start! "\n" 1)

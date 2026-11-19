@@ -1248,6 +1248,20 @@
     (let ([bytes (%encoded-key t (%last-key keys))])
       (when bytes (%send-bytes! t bytes)))))
 
+;; libghostty encodes the text an input method commits as the text
+;; itself, in every keyboard mode, so the character goes unencoded.
+(commands:define-command (self-insert [n (commands:prefix-number)] [char (keys:typed-char)])
+  "Sends CHAR, by default the character typed, N times to the program, as an input method's text; in copy mode, first leaves it."
+  (let ([t (%current 'terminal:self-insert)])
+    (unless (and (integer? n) (exact? n) (>= n 0))
+      (assertion-violation 'terminal:self-insert "not a non-negative count" n))
+    (unless char
+      (assertion-violation 'terminal:self-insert "no character was typed"))
+    (unless (char? char)
+      (assertion-violation 'terminal:self-insert "not a character" char))
+    (when (eq? (%terminal-input-mode t) 'copy) (%leave-copy-mode! t))
+    (%send-bytes! t (string->utf8 (make-string n char)))))
+
 (commands:define-command (send-next-key)
   "Reads the next key and sends it to the program, whatever its bindings; a mouse key sends nothing."
   (%current 'terminal:send-next-key)
@@ -1671,6 +1685,9 @@
   (keys:remap! semi-char-keymap editing:yank yank)
   (keys:bind! char-keymap "M-RET" semi-char-mode)
   (keys:bind! copy-keymap "<printing-char>" send-key)
+  ;; <printing-char> matches only a key named by its character, which SPC
+  ;; is not.
+  (keys:bind! copy-keymap "SPC" send-key)
   (keys:bind! copy-keymap "q" copy-mode)
   (keys:bind! copy-keymap "C-g" copy-mode)
   (keys:bind! copy-keymap "RET" open-link)
@@ -1688,6 +1705,7 @@
   (keys:bind! keymap "C-c M-n" next-prompt)
   (keys:bind! keymap "C-c M-p" previous-prompt)
   (keys:remap! keymap editing:paste paste)
+  (keys:remap! keymap editing:self-insert self-insert)
   (keys:remap! keymap editing:mouse-yank-primary mouse-yank-primary)
   (for-each
     (lambda (modifiers)

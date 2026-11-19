@@ -3,7 +3,7 @@
 
 ;; The client works on threads of its own, since code on the main thread
 ;; must not wait on the network.
-(module (request response-status response-header response-body open-page page-id page-first-screen page-text
+(module (request request-in-batch response-status response-header response-body open-page page-id page-first-screen page-text
          page-connect! page-close! page-send! page-send-numbered! send-items page-send-all! page-send-range!
          page-confirm! page-goodbye! page-next page-events-closed? page-connect-and-next! heartbeats-seen
          wait-for-server occupy-port! unused-port target-port target-address source-address set-port-source! percent-encode-all
@@ -223,24 +223,31 @@
 
   ;; A whole response; for an event stream, what came before the server
   ;; ended it, since this client asks for no keep-alive.
+  (define (exchange port to from method path headers body)
+    (let ([c (connect port to from)])
+      (send-all c (request-bytes port method path headers body))
+      (let-values ([(status response-headers) (read-head c)])
+        (let ([body (cond
+                      [(memv status '(204 304)) #vu8()]
+                      [(equal? (header response-headers "transfer-encoding") "chunked")
+                       (let-values ([(p extract) (open-bytevector-output-port)])
+                         (read-chunks c (lambda (bytes) (put-bytevector p bytes)))
+                         (extract))]
+                      [(header response-headers "content-length")
+                       => (lambda (n) (read-bytes c (string->number n)))]
+                      [else (read-bytes c 0)])])
+          (c-close (connection-fd c))
+          (make-response status response-headers body)))))
+
   (define (request method path headers body)
     (let ([port (server-port)] [to (target-address)] [from (source-address)])
       (off-main-thread
-        (lambda ()
-          (let ([c (connect port to from)])
-            (send-all c (request-bytes port method path headers body))
-            (let-values ([(status response-headers) (read-head c)])
-              (let ([body (cond
-                            [(memv status '(204 304)) #vu8()]
-                            [(equal? (header response-headers "transfer-encoding") "chunked")
-                             (let-values ([(p extract) (open-bytevector-output-port)])
-                               (read-chunks c (lambda (bytes) (put-bytevector p bytes)))
-                               (extract))]
-                            [(header response-headers "content-length")
-                             => (lambda (n) (read-bytes c (string->number n)))]
-                            [else (read-bytes c 0)])])
-                (c-close (connection-fd c))
-                (make-response status response-headers body))))))))
+        (lambda () (exchange port to from method path headers body)))))
+
+  ;; The main thread waits for the response, so the batch it is in cannot
+  ;; end before the server has answered.
+  (define (request-in-batch method path headers body)
+    (exchange (server-port) (target-address) (source-address) method path headers body))
 
   (define (read-response-body c status response-headers)
     (cond
@@ -549,6 +556,8 @@
     [(path headers) (request "GET" path headers #f)]))
 
 (define (post path headers body) (request "POST" path headers body))
+
+(define (post-in-batch path headers body) (request-in-batch "POST" path headers body))
 
 (define (status r) (response-status r))
 
