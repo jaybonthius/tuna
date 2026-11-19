@@ -1,5 +1,5 @@
 #!tuna
-(import (pi) (processes) (markdown) (ask) (buffers) (document) (views) (layout) (keys) (commands) (modes)
+(import (pi) (processes) (projects) (markdown) (ask) (buffers) (document) (views) (layout) (keys) (commands) (modes)
         (status-line) (ui) (undo) (kill-ring) (files) (editing) (faces) (web) (haml))
 
 (define-saved prompt-history '() (lambda (v) (and (list? v) (for-all string? v))))
@@ -799,37 +799,39 @@
       path
       (string-append (%without-slash dir) "/" path)))
 
+(define (%with-slash dir)
+  (if (and (fx> (string-length dir) 0) (char=? (string-ref dir (fx- (string-length dir) 1)) #\/))
+      dir
+      (string-append dir "/")))
+
+(define (%project-folder folder)
+  (cond
+    [(projects:find folder) => projects:root]
+    [else (%with-slash folder)]))
+
+(define (folder-for b)
+  (unless (buffers:buffer? b)
+    (assertion-violation 'pi-chat:folder-for "not a buffer" b))
+  (let ([chat (chat-of b)])
+    (if chat (pi:chat-directory chat) (%project-folder (files:directory b)))))
+
 (define (%project-of b)
   (let ([chat (chat-of b)])
-    (if chat
-        (pi:chat-directory chat)
-        (let ([start (%without-slash (files:directory b))])
-          (let loop ([d start])
-            (cond
-              [(file-exists? (string-append d "/.git")) d]
-              [(or (string=? d "/") (string=? d "")) start]
-              [else
-               (let ([i (let find ([i (fx- (string-length d) 1)])
-                          (cond [(fx< i 0) #f] [(char=? (string-ref d i) #\/) i] [else (find (fx- i 1))]))])
-                 (if i (loop (if (fx= i 0) "/" (substring d 0 i))) start))]))))))
+    (%project-folder (if chat (pi:chat-directory chat) (files:directory b)))))
 
-(define (project-of b)
-  (unless (buffers:buffer? b)
-    (assertion-violation 'pi-chat:project-of "not a buffer" b))
-  (%project-of b))
+(define (%in-project? project)
+  (lambda (c) (string=? (%project-folder (pi:chat-directory c)) project)))
 
 (define (chats-for b)
   (unless (buffers:buffer? b)
     (assertion-violation 'pi-chat:chats-for "not a buffer" b))
-  (let* ([project (%project-of b)]
-         [ordered (append (filter (lambda (c) (memq c (pi:chats))) %used)
-                          (filter (lambda (c) (not (memq c %used))) (reverse (pi:chats))))])
-    (append (filter (lambda (c) (string=? (%without-slash (pi:chat-directory c)) project)) ordered)
-            (filter (lambda (c) (not (string=? (%without-slash (pi:chat-directory c)) project))) ordered))))
+  (let ([ordered (append (filter (lambda (c) (memq c (pi:chats))) %used)
+                         (filter (lambda (c) (not (memq c %used))) (reverse (pi:chats))))])
+    (let-values ([(in out) (partition (%in-project? (%project-of b)) ordered)])
+      (append in out))))
 
 (define (%last-chat-in b)
-  (let ([project (%project-of b)])
-    (find (lambda (c) (string=? (%without-slash (pi:chat-directory c)) project)) (chats-for b))))
+  (find (%in-project? (%project-of b)) (chats-for b)))
 
 (define (show! chat)
   (%check-chat 'pi-chat:show! chat)
@@ -862,13 +864,13 @@
 (commands:define-command (open [new? (and (commands:prefix-argument) #t)])
   "Shows the chat used last in the current buffer's project, point in its prompt, starting one when there is none; with C-u, always a new one."
   (let ([b (%current-buffer)])
-    (show! (or (and (not new?) (%last-chat-in b)) (pi:start (%project-of b))))))
+    (show! (or (and (not new?) (%last-chat-in b)) (pi:start (folder-for b))))))
 
 (commands:define-command (toggle)
   "Shows the chat used last in the current buffer's project, or removes the view showing it."
   (let* ([b (%current-buffer)] [chat (%last-chat-in b)] [v (and chat (layout:find-view (%buffer-of chat)))])
     (cond
-      [(not v) (show! (or chat (pi:start (%project-of b))))]
+      [(not v) (show! (or chat (pi:start (folder-for b))))]
       [(not (layout:deletable? (layout:view-node v)))
        (let ([other (find (lambda (o) (and (not (chat-of o)) (not (buffers:internal-name? (buffers:name o)))))
                           (reverse (buffers:all)))])
@@ -907,8 +909,9 @@
     (unless mark
       (error 'pi-chat:add-region "the region is empty"))
     (let ([chat (or (%last-chat-in b)
-                    (and (ask:y-or-n? (string-append "Start a Pi chat in " (%project-of b) "? "))
-                         (pi:start (%project-of b))))])
+                    (let ([folder (folder-for b)])
+                      (and (ask:y-or-n? (string-append "Start a Pi chat in " folder "? "))
+                           (pi:start folder))))])
       (when chat
         (add-to-prompt! chat (%region-text chat b (fxmin mark (views:point v)) (fxmax mark (views:point v))))
         (show! chat)))))

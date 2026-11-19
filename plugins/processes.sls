@@ -11,7 +11,7 @@
 
 (module %internals
   (check-main-thread check-process check-procedure input-bytes make-checked-options no-options
-   ignore-exit hold-quits start-own start-user run-program attach-from offset?)
+   ignore-exit hold-quits start-own start-user run-program attach-from offset? first-line)
 
   (define (check-main-thread who)
     (unless (running:on-main-thread?)
@@ -137,6 +137,14 @@
                   (set! process
                     (running:start-run! program arguments bytes options (current-owner) resume))))))))))
 
+  (define (first-line bytes)
+    (let ([text (utf8->string bytes)])
+      (let loop ([i 0])
+        (cond
+          [(fx= i (string-length text)) text]
+          [(char=? (string-ref text i) #\newline) (substring text 0 i)]
+          [else (loop (fx+ i 1))]))))
+
   (define (attach-from process from on-output on-exit)
     (check-main-thread 'processes:attach!)
     (check-process 'processes:attach! process)
@@ -215,62 +223,67 @@
 
 ;; Lines are decoded only once whole, since a chunk can end inside a
 ;; character.
-(define (line-receiver from on-line)
-  (unless (offset? from)
-    (assertion-violation 'processes:line-receiver "not an output offset" from))
-  (check-procedure 'processes:line-receiver on-line)
-  (let ([held '()] [skipping? #f] [first? #t])
-    (define (line-text parts)
-      (let* ([bytes (cond
-                      [(null? (cdr parts)) (car parts)]
-                      [else
-                       (let ([joined (make-bytevector
-                                       (fold-left (lambda (n part) (+ n (bytevector-length part))) 0 parts))])
-                         (fold-left
-                           (lambda (at part)
-                             (bytevector-copy! part 0 joined at (bytevector-length part))
-                             (+ at (bytevector-length part)))
-                           0 parts)
-                         joined)])]
-             [n (bytevector-length bytes)])
-        (utf8->string
-          (cond
-            [(and (fx> n 0) (fx= (bytevector-u8-ref bytes (fx- n 1)) 13))
-             (let ([trimmed (make-bytevector (fx- n 1))])
-               (bytevector-copy! bytes 0 trimmed 0 (fx- n 1))
-               trimmed)]
-            [else bytes]))))
-    (define (part bytes start end)
-      (let ([p (make-bytevector (fx- end start))])
-        (bytevector-copy! bytes start p 0 (fx- end start))
-        p))
-    (lambda (bytes end)
-      (cond
-        [(eof-object? bytes)
-         (unless (or skipping? (null? held))
-           (on-line (line-text (reverse held)) end))
-         (set! held '())
-         (on-line bytes end)]
-        [else
-         (let ([start (- end (bytevector-length bytes))] [n (bytevector-length bytes)])
-           (when first?
-             (set! first? #f)
-             (set! skipping? (> start from)))
-           (let loop ([i 0])
-             (let scan ([j i])
-               (cond
-                 [(fx= j n)
-                  (unless (or skipping? (fx= i n))
-                    (set! held (cons (part bytes i n) held)))]
-                 [(fx= (bytevector-u8-ref bytes j) 10)
+(define line-receiver
+  (case-lambda
+    [(from on-line) (line-receiver from on-line 10)]
+    [(from on-line separator)
+     (unless (offset? from)
+       (assertion-violation 'processes:line-receiver "not an output offset" from))
+     (check-procedure 'processes:line-receiver on-line)
+     (unless (and (fixnum? separator) (fx<= 0 separator 255))
+       (assertion-violation 'processes:line-receiver "not a byte" separator))
+     (let ([held '()] [skipping? #f] [first? #t] [trim? (fx= separator 10)])
+       (define (line-text parts)
+         (let* ([bytes (cond
+                         [(null? (cdr parts)) (car parts)]
+                         [else
+                          (let ([joined (make-bytevector
+                                          (fold-left (lambda (n part) (+ n (bytevector-length part))) 0 parts))])
+                            (fold-left
+                              (lambda (at part)
+                                (bytevector-copy! part 0 joined at (bytevector-length part))
+                                (+ at (bytevector-length part)))
+                              0 parts)
+                            joined)])]
+                [n (bytevector-length bytes)])
+           (utf8->string
+             (cond
+               [(and trim? (fx> n 0) (fx= (bytevector-u8-ref bytes (fx- n 1)) 13))
+                (let ([trimmed (make-bytevector (fx- n 1))])
+                  (bytevector-copy! bytes 0 trimmed 0 (fx- n 1))
+                  trimmed)]
+               [else bytes]))))
+       (define (part bytes start end)
+         (let ([p (make-bytevector (fx- end start))])
+           (bytevector-copy! bytes start p 0 (fx- end start))
+           p))
+       (lambda (bytes end)
+         (cond
+           [(eof-object? bytes)
+            (unless (or skipping? (null? held))
+              (on-line (line-text (reverse held)) end))
+            (set! held '())
+            (on-line bytes end)]
+           [else
+            (let ([start (- end (bytevector-length bytes))] [n (bytevector-length bytes)])
+              (when first?
+                (set! first? #f)
+                (set! skipping? (> start from)))
+              (let loop ([i 0])
+                (let scan ([j i])
                   (cond
-                    [skipping? (set! skipping? #f)]
-                    [else
-                     (let ([line (line-text (reverse (cons (part bytes i j) held)))])
-                       (set! held '())
-                       (on-line line (+ start j 1)))])
-                  (loop (fx+ j 1))]
-                 [else (scan (fx+ j 1))]))))]))))
+                    [(fx= j n)
+                     (unless (or skipping? (fx= i n))
+                       (set! held (cons (part bytes i n) held)))]
+                    [(fx= (bytevector-u8-ref bytes j) separator)
+                     (cond
+                       [skipping? (set! skipping? #f)]
+                       [else
+                        (let ([line (line-text (reverse (cons (part bytes i j) held)))])
+                          (set! held '())
+                          (on-line line (+ start j 1)))])
+                     (loop (fx+ j 1))]
+                    [else (scan (fx+ j 1))]))))])))]))
 
 (define (send! process input)
   (check-main-thread 'processes:send!)
@@ -351,6 +364,14 @@
 (define (error-output process)
   (check-process 'processes:error-output process)
   (running:error-output process))
+
+(define (report-error-output process who)
+  (check-process 'processes:report-error-output process)
+  (unless (or (symbol? who) (string? who))
+    (assertion-violation 'processes:report-error-output "not a symbol or string" who))
+  (let ([errors (running:error-output process)])
+    (when (and errors (fx> (bytevector-length errors) 0))
+      (report (condition (make-warning) (make-who-condition who) (make-message-condition (first-line errors)))))))
 
 (define (set-buffer! process buffer)
   (check-main-thread 'processes:set-buffer!)

@@ -16,13 +16,15 @@
 > (define (working! f) (fake-state-set! f '(("isStreaming" . #t))) (say! f (event "agent_start")))
 > (define (settled! f) (fake-state-set! f '()) (say! f (event "agent_settled" '("aborted" . #f))))
 > (define project (string-append (getenv "HOME") "/src/tuna"))
-> (system (string-append "mkdir -p " project "/.git " project "/lib/deep " project "/.hidden"))
+> (system (string-append "mkdir -p " project "/lib/deep " project "/.hidden && git init -q " project))
 0
 > (write-file! (string-append project "/lib/a.txt") "one\ntwo\nthree\n")
 > (write-file! (string-append project "/lib/deep/b.txt") "b\n")
 > (write-file! (string-append project "/README") "r\n")
 > (write-file! (string-append project "/.hidden/secret") "s\n")
 > (write-file! (string-append project "/.hidden/deep.txt") "d\n")
+> (write-file! (string-append project "/.gitignore") "*.log\n")
+> (write-file! (string-append project "/lib/run.log") "l\n")
 > (in-client (lambda () (layout:switch-to-buffer (files:visit (string-append project "/lib/a.txt")))))
 > (define file-buffer (views:buffer (view)))
 > (run! pi-chat:open)
@@ -39,7 +41,7 @@
 > (define s (session))
 > (wait-matches s)
 > (rows s)
-(("*pi: home*" (shadow . "~") (shadow . "idle")) ("*pi: tuna*" (shadow . "~/src/tuna") (shadow . "idle")))
+(("*pi: home*" (shadow . "~") (shadow . "idle")) ("*pi: tuna*" (shadow . "~/src/tuna/") (shadow . "idle")))
 > (buffers:name (views:buffer (main-view)))
 "*pi: home*"
 > (press! "C-g")
@@ -139,7 +141,7 @@
 > (result t)
 > (define resumed (pi-chat:chat-of (views:buffer (view))))
 > (list (length (pi:chats)) (pi:chat-session-id resumed) (pi:chat-directory resumed))
-(3 "bbb" "~/src/tuna")
+(3 "bbb" "~/src/tuna/")
 > (in-client (lambda () (layout:switch-to-buffer file-buffer)))
 > (define t (start! (lambda () (run! pi-picker:resume))))
 > (wait-matches (session))
@@ -308,22 +310,21 @@
 > (result t)
 > (ref (last-request f "prompt") "message")
 "/skill:tdd"
-; TAB in the prompt completes @ and a path from the chat folder's files,
-; hidden ones left out, shallower ones first; a query shorter than
-; pi-picker:mention-min-input gets only the folder's own entries. An @
-; inside a word starts nothing.
+; TAB in the prompt completes @ and a path from the files of the chat
+; folder's project, as git lists them, and the folders holding them. An
+; @ inside a word starts nothing.
 > (type! "see @")
 > (press! "TAB")
 > (define s (session))
-> (wait-until (lambda () (= 2 (length (texts s)))))
+> (wait-matches s)
 > (texts s)
-("README" "lib/")
+("lib/" "README" ".hidden/" "lib/a.txt" "lib/deep/" ".gitignore" ".hidden/secret" "lib/deep/b.txt" ".hidden/deep.txt")
 > (type! "l/")
-> (wait-until (lambda () (= 1 (length (texts s)))))
+> (wait-matches s)
 > (texts s)
-("lib/")
+("lib/" "lib/a.txt" "lib/deep/" "lib/deep/b.txt")
 > (type! "d")
-> (wait-until (lambda () (= 2 (length (texts s)))))
+> (wait-matches s)
 > (texts s)
 ("lib/deep/" "lib/deep/b.txt")
 > (press! "TAB")
@@ -376,13 +377,13 @@
 > (raised (lambda () (in-client (lambda () (pi-picker:select-thinking-level 'high)))))
 (raised "not a string")
 ; What the picker builds on in pi-chat: the chat of the current view, the
-; project of a buffer, the text the region adds to a prompt, the prompt's
-; text range, replacing the prompt, and showing or folding Pi's finished
-; thinking in every chat.
+; folder a chat for a buffer works in, the text the region adds to a
+; prompt, the prompt's text range, replacing the prompt, and showing or
+; folding Pi's finished thinking in every chat.
 > (eq? (in-client pi-chat:current-chat) chat)
 #t
-> (list (pi-chat:project-of file-buffer) (pi-chat:project-of (pi-chat:buffer other)))
-("~/src/tuna" "~")
+> (list (pi-chat:folder-for file-buffer) (pi-chat:folder-for (pi-chat:buffer other)))
+("~/src/tuna/" "~")
 > (pi-chat:region-text chat file-buffer 1 5)
 "lib/a.txt:1"
 > (in-client (lambda () (layout:switch-to-buffer file-buffer)))
@@ -393,7 +394,7 @@
 "```a.txt lines 1-1\nxone\n```"
 > (raised (lambda () (pi-chat:region-text chat file-buffer 5 1)))
 (raised "not a start and an end in the buffer")
-> (raised (lambda () (pi-chat:project-of 'b)))
+> (raised (lambda () (pi-chat:folder-for 'b)))
 (raised "not a buffer")
 > (pi-chat:set-prompt! chat "Replaced\nwhole")
 > (shown chat)

@@ -45,6 +45,9 @@
 #t
 > (list-tail (fake-args (fake-of other)) 2)
 ("--session-id" "fixed-session")
+; A chat works in an absolute folder.
+> (pi:start "src/tuna")
+! pi:start: not an absolute path with irritant "src/tuna"
 ; Pi's commands, read when Pi starts, after each change of session and
 ; after each settle.
 > (define g (fake-of other))

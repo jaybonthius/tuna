@@ -113,7 +113,20 @@
 > (resumed (string->utf8 "ut line\nwhole\n") 18)
 > (taken!)
 (("whole" 18))
+; Given a separator byte, it splits on that byte instead, and trims no
+; carriage return.
+> (define split-on-nul (processes:line-receiver 0 (lambda (line end) (note! (list line end))) 0))
+> (split-on-nul (bytevector 97 13 0 98 10 99 0 100) 8)
+> (split-on-nul (eof-object) 8)
+> (taken!)
+(("a\r" 3) ("b\nc" 7) ("d" 8) (#!eof 8))
+> (define resumed-on-nul (processes:line-receiver 2 (lambda (line end) (note! (list line end))) 0))
+> (resumed-on-nul (bytevector 120 0 121 0) 7)
+> (taken!)
+(("y" 7))
 > (processes:line-receiver -1 note!)
 ! processes:line-receiver: not an output offset with irritant -1
 > (processes:line-receiver 0 'note!)
 ! processes:line-receiver: not a procedure with irritant note!
+> (processes:line-receiver 0 note! 256)
+! processes:line-receiver: not a byte with irritant 256

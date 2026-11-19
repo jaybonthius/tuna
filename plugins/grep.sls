@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (buffers) (commands) (document) (files) (keys) (layout) (processes) (views))
+(import (completion) (buffers) (commands) (document) (files) (keys) (layout) (processes) (projects) (views))
 
 (define-option command-line
   (list "rg" "--null" "--line-buffered" "--color=never" "--max-columns=1000" "--path-separator" "/"
@@ -105,20 +105,6 @@
                         [else #f]))))]
             [else (find-path-end (fx+ i 1))]))))))
 
-(define (%first-line bytes)
-  (let ([text (utf8->string bytes)])
-    (let loop ([i 0])
-      (cond
-        [(fx= i (string-length text)) text]
-        [(char=? (string-ref text i) #\newline) (substring text 0 i)]
-        [else (loop (fx+ i 1))]))))
-
-(define (%report-errors process)
-  (let ([errors (processes:error-output process)])
-    (when (and errors (fx> (bytevector-length errors) 0))
-      (report (condition (make-warning) (make-who-condition 'grep:grep)
-                         (make-message-condition (%first-line errors)))))))
-
 (define (%search-source directory)
   (lambda (emit)
     (let ([search #f] [timer #f] [running #f])
@@ -156,7 +142,7 @@
                    (lambda (status)
                      (when (eq? process running)
                        (set! running #f)
-                       (when (fixnum? status) (%report-errors process))
+                       (when (fixnum? status) (processes:report-error-output process 'grep:grep))
                        (clear!)
                        (emit 'done)))
                    (processes:options [directory directory] [separate-stderr #t])))
@@ -181,16 +167,22 @@
                      (set! timer #f)
                      (run! command minimum))))))])))))
 
+(define (%search-folder)
+  (let ([folder (files:directory)])
+    (cond
+      [(projects:find folder) => projects:root]
+      [else folder])))
+
 (define (%read-location)
   (completion:read "Grep: "
     (list (completion:source
-            (stream (%search-source (files:directory)))
+            (stream (%search-source (%search-folder)))
             (split %split)
             (in-order)
             (category completion:location-category)))))
 
 (commands:define-command (grep [location (%read-location)])
-  "Visits LOCATION, a line found by rg in the files under the current buffer's directory."
+  "Visits LOCATION, a line found by rg in the files of the current buffer's project, else under its directory."
   (let ([b (files:visit (car location))])
     (layout:switch-to-buffer b)
     (let ([doc (buffers:document b)])

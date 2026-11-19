@@ -1,0 +1,54 @@
+; projects:list-with-git asks git its version once, and passes
+; --deduplicate from git 2.31 and --sparse from 2.35, since an older git
+; refuses an option it does not know. This git says 2.34.1 and refuses
+; --sparse, as git 2.34 does.
+> (define (fake-git! version)
+    (write-file! "fake-git/git"
+      (string-append
+        "#!/bin/sh\n"
+        "echo \"$*\" >> \"$HOME/fake-git/calls\"\n"
+        "PATH=${PATH#*:}\n"
+        "case \"$1\" in version) echo '" version "'; exit 0;; esac\n"
+        "for a; do [ \"$a\" = --sparse ] && { echo \"error: unknown option \\`sparse'\" >&2; exit 129; }; done\n"
+        "exec git \"$@\"\n"))
+    (sh "chmod +x fake-git/git && rm -f fake-git/calls"))
+> (define (calls)
+    (let ([file (string-append home "/fake-git/calls")])
+      (if (file-exists? file)
+          (call-with-input-file file
+            (lambda (p)
+              (let loop ([lines '()])
+                (let ([line (get-line p)])
+                  (if (eof-object? line) (list-sort string<? lines) (loop (cons line lines)))))))
+          '())))
+> (fake-git! "git version 2.34.1")
+> (putenv "PATH" (string-append home "/fake-git:" (getenv "PATH")))
+> (listed-in "src/app/libs/lib")
+(".gitignore" ".gitmodules" ".hidden" "README" "lib/a.ss" "lib/deep/b.ss" "libs/lib/.gitmodules" "libs/lib/lib.ss" "libs/lib/vendor/inner/inner.ss" "notes.txt" "odd\nname" "pkg/go.mod" "pkg/main.go")
+> (calls)
+("ls-files -z -c -o --exclude-standard --deduplicate" "ls-files -z -c -o --exclude-standard --deduplicate" "ls-files -z -c -o --exclude-standard --deduplicate" "version")
+; The version is asked once in a process: a second listing does not ask.
+> (sh "rm fake-git/calls")
+> (listed-in "src/lib")
+(".gitmodules" "lib.ss" "vendor/inner/inner.ss")
+> (calls)
+("ls-files -z -c -o --exclude-standard --deduplicate" "ls-files -z -c -o --exclude-standard --deduplicate")
+; A version with words after its numbers, as Apple's and Windows's
+; builds print, is read by its numbers; one older than 2.31 gets neither
+; option. Loading projects again forgets the version.
+> (fake-git! "git version 2.30.1 (Apple Git-130)")
+> (unload-module! '(projects))
+> (load-module! '(projects))
+> (listed-in "src/lib")
+(".gitmodules" "lib.ss" "vendor/inner/inner.ss")
+> (calls)
+("ls-files -z -c -o --exclude-standard" "ls-files -z -c -o --exclude-standard" "version")
+; Stopping the listing while git's version is asked stops it all.
+> (sh "rm fake-git/calls")
+> (unload-module! '(projects))
+> (load-module! '(projects))
+> (define calls-made 0)
+> ((projects:list-files (projects:find (string-append home "/src/lib")) (lambda (files) (set! calls-made (+ calls-made 1)))))
+> (sleep-for 0.5)
+> (list calls-made (remove "version" (calls)))
+(0 ())

@@ -1,5 +1,5 @@
 #!tuna
-(import (pi) (pi-chat) (completion) (minibuffer) (ask) (commands) (keys) (views) (buffers) (document) (jobs)
+(import (pi) (pi-chat) (projects) (completion) (minibuffer) (ask) (commands) (keys) (views) (buffers) (document)
         (faces))
 
 (completion:define-category chat-category "Live Pi chats, valued by the chat.")
@@ -117,7 +117,7 @@
 (define (%folder who)
   (let ([b (%current-buffer)])
     (unless b (error who "no buffer is current"))
-    (pi-chat:project-of b)))
+    (pi-chat:folder-for b)))
 
 (define (%read-session folder input)
   (%choose "Resume session: "
@@ -232,58 +232,64 @@
         (loop (fx+ i 1))
         i)))
 
-(define-option mention-min-input 3 (lambda (v) (and (fixnum? v) (fx>= v 0)))
-  "How many characters after @ the query must hold before pi-picker:complete-mention searches below the chat's folder.")
+(define (%with-slash dir)
+  (if (and (fx> (string-length dir) 0) (char=? (string-ref dir (fx- (string-length dir) 1)) #\/))
+      dir
+      (string-append dir "/")))
 
-;; Completion keeps every candidate a job emits until the job clears them,
-;; so the job emits only paths that match the query, and a query too short
-;; to narrow a large tree gets only the folder's own entries.
-(jobs:define-worker (%list-files options emit receive)
-  (import (completion matcher))
-  (let ([root (car options)] [minimum (cdr options)])
-    (define (entries dir)
-      (guard (c [(i/o-error? c) '()])
-        (list-sort string<? (remp (lambda (name) (char=? (string-ref name 0) #\.)) (directory-list dir)))))
-    (define (matcher query)
-      (if (string=? query "")
-          (lambda (text) #t)
-          (let ([partial (pattern-matcher (partial-pattern query))]
-                [contains (pattern-matcher (list (list 'contains query)))])
-            (lambda (text) (or (partial text) (contains text))))))
-    (define (walk! deep? matches?)
-      (call/cc
-        (lambda (k)
-          (let level ([dirs (list (cons root ""))])
-            (let next ([dirs dirs] [below '()])
-              (cond
-                [(pair? dirs)
-                 (let ([newer (receive 0)])
-                   (unless (eof-object? newer) (k newer)))
-                 (let ([dir (caar dirs)] [shown (cdar dirs)])
-                   (let each ([names (entries dir)] [found '()] [below below])
-                     (if (null? names)
-                         (begin
-                           (unless (null? found) (emit (list->vector (reverse found))))
-                           (next (cdr dirs) below))
-                         (let* ([name (car names)] [path (string-append dir "/" name)]
-                                [folder? (and (not (file-symbolic-link? path)) (file-directory? path))]
-                                [text (if folder? (string-append shown name "/") (string-append shown name))])
-                           (each (cdr names)
-                                 (if (matches? text)
-                                     (cons (cons text (if folder? (string-append path "/") path)) found)
-                                     found)
-                                 (if folder? (cons (cons path text) below) below))))))]
-                [(and deep? (pair? below)) (level (reverse below))]
-                [else #f]))))))
-    (let loop ([query (receive)])
-      (emit 'clear)
-      (emit '(base 0))
-      (let ([newer (walk! (fx>= (string-length query) minimum) (matcher query))])
-        (loop (or newer (receive)))))))
+(define (%starts-with? s part)
+  (let ([n (string-length part)])
+    (and (fx<= n (string-length s))
+         (let loop ([i 0])
+           (or (fx= i n) (and (char=? (string-ref s i) (string-ref part i)) (loop (fx+ i 1))))))))
 
-(define (%without-slash dir)
-  (let ([n (string-length dir)])
-    (if (and (fx> n 1) (char=? (string-ref dir (fx- n 1)) #\/)) (%without-slash (substring dir 0 (fx- n 1))) dir)))
+(define (%last-slash text before)
+  (let loop ([i (fx- before 1)])
+    (cond
+      [(fx< i 0) #f]
+      [(char=? (string-ref text i) #\/) i]
+      [else (loop (fx- i 1))])))
+
+(define (%mention-receiver emit root folder)
+  (let ([under (and (%starts-with? folder root) (substring folder (string-length root) (string-length folder)))]
+        [seen (make-hashtable string-hash string=?)])
+    ;; A folder is seen only with every folder above it, so the walk up
+    ;; ends at the first one seen.
+    (define (add-folders text slash found)
+      (let ([shown (substring text 0 (fx+ slash 1))])
+        (if (hashtable-contains? seen shown)
+            found
+            (let ([above (%last-slash text slash)])
+              (hashtable-set! seen shown #t)
+              (cons (cons shown (string-append folder shown))
+                    (if above (add-folders text above found) found))))))
+    (lambda (files)
+      (cond
+        [(eof-object? files) (emit 'done)]
+        [under
+         (let ([found '()])
+           (vector-for-each
+             (lambda (path)
+               (when (%starts-with? path under)
+                 (let* ([text (if (string=? under "") path (substring path (string-length under) (string-length path)))]
+                        [slash (%last-slash text (string-length text))])
+                   (set! found (cons (cons text (string-append root path))
+                                     (if slash (add-folders text slash found) found))))))
+             files)
+           (unless (null? found) (emit (list->vector (reverse found)))))]))))
+
+(define (%mention-stream folder)
+  (lambda (emit)
+    (let ([stop #f])
+      (lambda (prefix)
+        (cond
+          [(eof-object? prefix) (when stop (stop))]
+          [(projects:find folder)
+           => (lambda (project)
+                (set! stop
+                  (as-module (this-module)
+                    (projects:list-files project (%mention-receiver emit (projects:root project) folder)))))]
+          [else (emit 'done)])))))
 
 (define (%point-in-prompt chat)
   (let ([point (views:point (views:current))])
@@ -299,8 +305,7 @@
                 (eqv? (document:token doc start) #\@)
                 (completion:region (fx+ start 1) (%word-end doc point (pi-chat:prompt-end chat))
                   (list (completion:source
-                          (job %list-files (cons (%without-slash (pi:chat-directory chat)) (mention-min-input)))
-                          (split string-length)
+                          (stream (%mention-stream (%with-slash (pi:chat-directory chat))))
                           (category completion:file-category)))))))))
 
 (define (%command-choices chat)

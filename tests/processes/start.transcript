@@ -74,6 +74,23 @@
 > (wait-until exited?)
 > (list (joined!) (utf8->string (processes:error-output apart)))
 ((("out\n" 4) (eof 4) (exit 0)) "err\n")
+; processes:report-error-output reports the first line of what
+; processes:error-output reads, as a warning under the who given, and
+; nothing for a process with none.
+> (define complaining (processes:start "sh" (list "-c" "echo 'bad flag' >&2; echo more >&2; exit 2") noting-output noting-exit
+                       (processes:options [separate-stderr #t])))
+> (wait-until exited?)
+> (joined!)
+((eof 0) (exit 2))
+> (processes:report-error-output complaining 'my-lister)
+! my-lister: bad flag
+> (processes:report-error-output joined 'my-lister)
+> (processes:report-error-output apart "sh")
+! sh: err
+> (processes:report-error-output complaining 3)
+! processes:report-error-output: not a symbol or string with irritant 3
+> (processes:report-error-output 'complaining 'my-lister)
+! processes:report-error-output: not a process with irritant complaining
 ; Output not yet taken stops reading at processes:log-size bytes, so a
 ; flood comes in pieces no larger, whole and in order.
 > (set-option! processes:log-size 1000)
@@ -82,7 +99,7 @@
     (lambda (bytes end)
       (unless (eof-object? bytes) (set! pieces (cons (cons (bytevector-length bytes) end) pieces))))
     noting-exit)
-#<process 11 head>
+#<process 12 head>
 > (wait-until exited?)
 > (taken!)
 ((exit 0))
@@ -98,7 +115,7 @@
 > (processes:start "printf" '("x")
     (lambda (bytes end) (if (eof-object? bytes) (note! 'eof) (car bytes)))
     (lambda (status) (note! (list 'exit status))))
-#<process 12 printf>
+#<process 13 printf>
 > (wait-until exited?)
 ! car: #vu8(120) is not a pair
 > (taken!)
@@ -158,7 +175,7 @@
     (apply start program arguments rest))
 > (advice-add! processes:start logged)
 > (processes:start "true" '() noting-output noting-exit)
-#<process 13 true>
+#<process 14 true>
 > (wait-until exited?)
 > (taken!)
 ((starting "true") (eof 0) (exit 0))

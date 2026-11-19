@@ -33,4 +33,6 @@
 > (result (start! (lambda () (pi:sessions "/nowhere"))))
 ()
 > (pi:sessions 'x)
-! pi:sessions: not a string with irritant x
+! pi:sessions: not an absolute path with irritant x
+> (pi:sessions "~/src")
+! pi:sessions: not an absolute path with irritant "~/src"

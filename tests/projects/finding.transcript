@@ -1,0 +1,57 @@
+; projects:find gives the project of the nearest folder holding .git,
+; .svn, .bzr or .hg, its root ending in /.
+> (map root-of '("src/app" "src/app/lib/deep" "src/app/lib/deep/" "hg-thing/sub"))
+("~/src/app/" "~/src/app/" "~/src/app/" "~/hg-thing/")
+> (root-of "notes/proj")
+#f
+; A git submodule belongs to the project of the repository holding it,
+; through any depth of submodules; a worktree is a project of its own.
+> (map root-of '("src/app/libs/lib" "src/app/libs/lib/vendor/inner" "src/app-wt/lib"))
+("~/src/app/" "~/src/app/" "~/src/app-wt/")
+> (set-option! projects:merge-submodules? #f)
+> (map root-of '("src/app/libs/lib" "src/app/libs/lib/vendor/inner"))
+("~/src/app/libs/lib/" "~/src/app/libs/lib/vendor/inner/")
+> (set-option! projects:merge-submodules? #t)
+; An extra root marker makes its folder a root, inside a repository or
+; outside any.
+> (set-option! projects:extra-root-markers (list "go.mod" ".project"))
+> (map root-of '("src/app/pkg" "src/app/lib" "notes/proj"))
+("~/src/app/pkg/" "~/src/app/" "~/notes/proj/")
+> (set-option! projects:extra-root-markers '())
+; The walk looks in the home folder last, so a repository above it holds
+; no folder inside it, while it holds a folder outside the home folder.
+> (define above (path-parent home))
+> (sh "mkdir ../.git")
+> (list (root-of "notes") (equal? (projects:root (projects:find (string-append above "/work"))) (string-append above "/")))
+(#f #t)
+> (sh "rmdir ../.git")
+; A finder added at the default depth is asked before projects:try-vc.
+> (define (notes-finder folder)
+    (and (string=? folder (string-append home "/notes/"))
+         (projects:make-project folder projects:list-with-find)))
+> (add-hook! projects:finders notes-finder)
+> (map root-of '("notes" "src/app"))
+("~/notes/" "~/src/app/")
+> (projects:project? (projects:find (string-append home "/notes")))
+#t
+> (remove-hook! projects:finders notes-finder)
+> (root-of "notes")
+#f
+; What code passes is checked.
+> (add-hook! projects:finders (lambda (folder) 'yes))
+> (projects:find home)
+! projects:find: a finder answered neither a project nor #f with irritant yes
+> (projects:find "src/app")
+! projects:find: not an absolute path with irritant "src/app"
+> (projects:try-vc 'app)
+! projects:try-vc: not an absolute path with irritant app
+> (projects:make-project "~/app" projects:list-with-git)
+! projects:make-project: not an absolute path with irritant "~/app"
+> (projects:make-project home 'git)
+! projects:make-project: not a procedure with irritant git
+> (projects:root 'app)
+! projects:root: not a project with irritant app
+> (projects:project? 'app)
+#f
+> (set-option! projects:extra-root-markers (list "a/b"))
+! set-option!: ("a/b") is not a valid value for projects:extra-root-markers

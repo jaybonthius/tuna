@@ -366,6 +366,10 @@
   (unless (chat-record? v)
     (assertion-violation who "not a chat" v)))
 
+(define (%check-directory who v)
+  (unless (and (string? v) (fx> (string-length v) 0) (char=? (string-ref v 0) #\/))
+    (assertion-violation who "not an absolute path" v)))
+
 (define (%check-dialog who v)
   (unless (dialog? v)
     (assertion-violation who "not a question" v)))
@@ -1103,8 +1107,7 @@
   (case-lambda
     [(directory) (start directory #f)]
     [(directory session-id)
-     (unless (string? directory)
-       (assertion-violation 'pi:start "not a string" directory))
+     (%check-directory 'pi:start directory)
      (unless (or (not session-id) (string? session-id))
        (assertion-violation 'pi:start "not a session id" session-id))
      (when %version-refusal
@@ -1425,14 +1428,13 @@
               (if (and (fx> (string-length d) 1) (char=? (string-ref d (fx- (string-length d) 1)) #\/))
                   (loop (substring d 0 (fx- (string-length d) 1)))
                   d))]
-         [d (if (and (fx> (string-length d) 0) (char=? (string-ref d 0) #\/)) (substring d 1 (string-length d)) d)])
+         [d (substring d 1 (string-length d))])
     (string-append (%agent-folder) "/sessions/--"
                    (list->string (map (lambda (c) (if (memv c '(#\/ #\\ #\:)) #\- c)) (string->list d)))
                    "--")))
 
 (define (sessions directory)
-  (unless (string? directory)
-    (assertion-violation 'pi:sessions "not a string" directory))
+  (%check-directory 'pi:sessions directory)
   (let ([found
          (suspend
            (lambda (resume)

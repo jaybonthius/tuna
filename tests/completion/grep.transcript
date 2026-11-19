@@ -140,3 +140,21 @@
 ("  (display x))")
 > (press! "C-g")
 ! &quit
+; In a project, M-s r searches the project from its root; a file in a git
+; submodule searches its parent repository's project.
+> (system "cd ~/code && git init -q tuna && mkdir -p tuna/lib/sub && echo 'gitdir: ../../.git/modules/lib/sub' > tuna/lib/sub/.git && echo '(define needle 1)' > tuna/lib/sub/deep.sls && echo '(define top 1)' > tuna/top.sls")
+0
+> (views:set-buffer! (view) (files:visit (string-append (getenv "HOME") "/code/tuna/lib/sub/deep.sls")))
+> (define t (start! (lambda () (press! "M-s" "r"))))
+> (define s (session))
+> (type! "define")
+> (wait-matches s)
+> (sort string<? (texts s))
+("lib/sub/deep.sls:1:(define needle 1)" "top.sls:1:(define top 1)")
+> (press! "C-a" "C-k")
+> (type! "define top")
+> (wait-matches s)
+> (press! "RET")
+> (result t)
+> (views:buffer (view))
+#<buffer top.sls>

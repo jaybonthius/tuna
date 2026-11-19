@@ -1,23 +1,34 @@
 > (define (write-file! path text) (call-with-output-file path (lambda (p) (display text p)) '(replace)))
 > (define (run! command) (in-client (lambda () (commands:run command))))
 > (define project (string-append (getenv "HOME") "/src/tuna"))
-> (system (string-append "mkdir -p " project "/.git " project "/lib"))
+> (system (string-append "mkdir -p " project "/lib && git init -q " project))
 0
 > (write-file! (string-append project "/lib/a.txt") "one\ntwo\nthree\nfour\n")
-; C-c a p shows the chat used last in the buffer's project, the nearest
-; folder holding .git, starting one when there is none.
+; C-c a p shows the chat used last in the buffer's project, starting one
+; in the project's root when there is none.
 > (in-client (lambda () (layout:switch-to-buffer (files:visit (string-append project "/lib/a.txt")))))
 > (define file-buffer (views:buffer (view)))
 > (run! pi-chat:open)
 > (define chat (car (pi:chats)))
 > (list (pi:chat-directory chat) (buffers:name (views:buffer (view))))
-("~/src/tuna" "*pi: tuna*")
+("~/src/tuna/" "*pi: tuna*")
 > (define f (fake-of chat))
 > (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 > (in-client (lambda () (layout:switch-to-buffer file-buffer)))
 > (run! pi-chat:open)
 > (list (length (pi:chats)) (eq? (pi-chat:chat-of (views:buffer (view))) chat))
 (1 #t)
+; A file in a git submodule belongs to the parent repository's project,
+; so the same chat shows there.
+> (system (string-append "mkdir -p " project "/libs/sub && echo 'gitdir: ../../.git/modules/libs/sub' > " project "/libs/sub/.git"))
+0
+> (write-file! (string-append project "/libs/sub/b.txt") "b\n")
+> (in-client (lambda () (layout:switch-to-buffer (files:visit (string-append project "/libs/sub/b.txt")))))
+> (define sub-buffer (views:buffer (view)))
+> (run! pi-chat:open)
+> (list (length (pi:chats)) (eq? (pi-chat:chat-of (views:buffer (view))) chat) (pi-chat:folder-for sub-buffer))
+(1 #t "~/src/tuna/")
+> (in-client (lambda () (buffers:kill! sub-buffer) (void)))
 ; With C-u, always a new one.
 > (in-client (lambda () (parameterize ([commands:prefix-argument '(4)]) (commands:run pi-chat:open))))
 > (define second (cadr (pi:chats)))
@@ -27,6 +38,14 @@
 > (sleep-for 0.1)
 > (buffers:find "*pi: tuna*<2>")
 #f
+; A chat started in a folder inside the project, as resume can start
+; one, is in the project's group.
+> (define inside (pi:start (string-append project "/lib")))
+> (define elsewhere (pi:start (getenv "HOME")))
+> (map pi:chat-directory (pi-chat:chats-for file-buffer))
+("~/src/tuna/" "~/src/tuna/lib" "~")
+> (for-each pi:stop! (list inside elsewhere))
+> (wait-until (lambda () (= (length (pi:chats)) 1)))
 ; C-c a t removes the view showing the chat, or shows it.
 > (in-client (lambda () (layout:switch-to-buffer file-buffer)))
 > (run! pi-chat:toggle)

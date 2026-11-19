@@ -20,7 +20,7 @@
          (cddr (car (document:datums (buffers:document (menu-buffer)))))))
 > (define (group name) (find (lambda (g) (and (pair? g) (equal? (car g) name))) (menu)))
 > (define project (string-append (getenv "HOME") "/src/tuna"))
-> (system (string-append "mkdir -p " project "/.git"))
+> (system (string-append "mkdir -p " project " && git init -q " project))
 0
 > (define notes (buffers:make "notes" "one\n"))
 > (in-client (lambda () (layout:switch-to-buffer notes)))
