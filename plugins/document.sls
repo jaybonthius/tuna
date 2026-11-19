@@ -5,7 +5,8 @@
           document:enclosing document:node? document:atom? document:node-kind
           document:node-attribute document:node-start document:node-end document:in-line?
           document:for-each-child
-          document:slice document:open-start document:open-end document:replace document:freeze)
+          document:slice document:open-start document:open-end document:replace document:repeat
+          document:same-tokens? document:freeze)
   (import (chezscheme))
 
   ;; A document is built of vectors, bytevectors, symbols and lists, never
@@ -1255,6 +1256,80 @@
                         (fx= (fx- net low) (document-open-end doc)))
              (assertion-violation who "openings and closings would not match" start end))
            (result tree))])))
+
+  (define (document:repeat doc n)
+    (define who 'document:repeat)
+    (check-document who doc)
+    (unless (and (fixnum? n) (fx>= n 0))
+      (assertion-violation who "not a count" n))
+    (unless (and (fx= (document-open-start doc) 0) (fx= (document-open-end doc) 0))
+      (assertion-violation who "the document leaves a node open"))
+    (let loop ([n n] [unit (document-tree doc)] [acc (empty-tree)])
+      (if (fx= n 0)
+          (make-document acc 0 0 '())
+          (loop (fxsrl n 1)
+                (if (fx> n 1) (join unit unit) unit)
+                (if (fxodd? n) (join acc unit) acc)))))
+
+  (define (cursor-down t path)
+    (let ([path (cons (cons t 0) path)])
+      (if (leaf? t) path (cursor-down (tree-child t 0) path))))
+
+  (define (cursor-first t)
+    (if (empty-tree? t) '() (cursor-down t '())))
+
+  (define (cursor-next path)
+    (if (null? path)
+        '()
+        (let ([t (caar path)] [i (fx+ (cdar path) 1)])
+          (cond
+            [(fx= i (tree-count t)) (cursor-next (cdr path))]
+            [(leaf? t) (cons (cons t i) (cdr path))]
+            [else (cursor-down (tree-child t i) (cons (cons t i) (cdr path)))]))))
+
+  (define (cursor-item path)
+    (tree-child (caar path) (cdar path)))
+
+  (define (shared-levels x y)
+    (let loop ([x x] [y y] [k 0])
+      (if (and (pair? x) (pair? y) (fx= (cdar x) 0) (fx= (cdar y) 0) (eq? (caar x) (caar y)))
+          (loop (cdr x) (cdr y) (fx+ k 1))
+          (and (fx> k 0) k))))
+
+  (define (cursor-past path levels)
+    (cursor-next (list-tail path levels)))
+
+  (define (bytes=? a i b j n)
+    (let loop ([k 0])
+      (or (fx= k n)
+          (and (fx= (bytevector-u8-ref a (fx+ i k)) (bytevector-u8-ref b (fx+ j k)))
+               (loop (fx+ k 1))))))
+
+  ;; Two documents split the same text into runs at different places, so
+  ;; the walk keeps an offset into each one's current run.
+  (define (document:same-tokens? a b)
+    (define who 'document:same-tokens?)
+    (check-document who a)
+    (check-document who b)
+    (let ([ta (document-tree a)] [tb (document-tree b)])
+      (and (fx= (tree-tokens ta) (tree-tokens tb))
+           (let loop ([x (cursor-first ta)] [xo 0] [y (cursor-first tb)] [yo 0])
+             (cond
+               [(null? x) (null? y)]
+               [(null? y) #f]
+               [(and (fx= xo 0) (fx= yo 0) (shared-levels x y))
+                => (lambda (k) (loop (cursor-past x k) 0 (cursor-past y k) 0))]
+               [else
+                (let ([u (cursor-item x)] [v (cursor-item y)])
+                  (cond
+                    [(bytevector? u)
+                     (and (bytevector? v)
+                          (let* ([nu (fx- (bytevector-length u) xo)] [nv (fx- (bytevector-length v) yo)]
+                                 [n (fxmin nu nv)])
+                            (and (bytes=? u xo v yo n)
+                                 (loop (if (fx= n nu) (cursor-next x) x) (if (fx= n nu) 0 (fx+ xo n))
+                                       (if (fx= n nv) (cursor-next y) y) (if (fx= n nv) 0 (fx+ yo n))))))]
+                    [else (and (not (bytevector? v)) (equal? u v) (loop (cursor-next x) 0 (cursor-next y) 0))]))])))))
 
   (define (document:freeze doc freeze)
     (check-document 'document:freeze doc)

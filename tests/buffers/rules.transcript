@@ -506,6 +506,17 @@ mark-keys
 #<edit 1>
 > (list (buffers:version e) (buffers:anchor-position e-anchor))
 (1 2)
+; Replacing a million rows by a new set's moves every position inside
+; them to the start; replacing them by the same rows moves none.
+> (define (rows generation n)
+    (document:repeat (document:from-datum (vector 'row (list (cons 'generation generation)))) n))
+> (define listing (fresh (document:replace (document:from-datum '(buffers:text ())) 1 1 (rows 1 1000000))))
+> (define new-set (buffers:splice! listing 1 1000001 (rows 2 1000000)))
+> (list (buffers:edit-moves? new-set) (buffers:map-position listing 500001 0))
+(#t 1)
+> (define same-set (buffers:splice! listing 1 1000001 (rows 2 1000000)))
+> (list (buffers:edit-moves? same-set) (buffers:map-position listing 500001 1))
+(#f 500001)
 ; Spans a piece brings for a layer type the buffer has no layer of make
 ; that layer.
 > (define tagged (let ([x (fresh "xy\n")]) (buffers:add-span! (buffers:layer x responses) 1 3 'tag) (buffers:piece x 1 3)))

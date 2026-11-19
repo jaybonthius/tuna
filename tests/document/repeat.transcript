@@ -1,0 +1,31 @@
+> (document:datums (document:repeat (document:from-datum "ab") 3))
+("ababab")
+> (document:datums (document:repeat (document:from-datum '(li () "x") '#(hr ((rule . 1)))) 2))
+((li () "x") #(hr ((rule . 1))) (li () "x") #(hr ((rule . 1))))
+> (document:length (document:repeat (document:from-datum "ab") 0))
+0
+> (document:repeat (document:from-datum "ab") -1)
+! document:repeat: not a count with irritant -1
+> (define open-slice (document:slice (document:from-datum '(p () "ab")) 0 2))
+> (document:repeat open-slice 2)
+! document:repeat: the document leaves a node open
+; Copies share one tree, so millions of rows of a list take under a
+; megabyte.
+> (define rows (document:repeat (document:from-datum '#(row ((generation . 1)))) 3880000))
+> (< (compute-size rows) 1000000)
+#t
+> (list (document:length rows) (document:node-kind (document:token rows 3879999)))
+(3880000 row)
+> (document:offset rows 3880000 (document:unit atoms))
+3880000
+; A new set of rows differs from the old at its first row.
+> (document:same-tokens? rows (document:repeat (document:from-datum '#(row ((generation . 2)))) 3880000))
+#f
+> (document:same-tokens? rows (document:repeat (document:from-datum '#(row ((generation . 1)))) 3880000))
+#t
+> (document:same-tokens? (document:from-datum "abc" '(p () "d")) (document:from-datum "ab" "c" '(p () "d")))
+#t
+> (document:same-tokens? (document:from-datum "abc") (document:from-datum "abd"))
+#f
+> (document:same-tokens? (document:from-datum "ab") 'ab)
+! document:same-tokens?: not a document with irritant ab

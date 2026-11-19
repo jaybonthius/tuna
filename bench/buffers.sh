@@ -38,6 +38,8 @@ echo "$output" | awk '
     }
     unit["reconcile-0mb"] = "ms"
     unit["trim-anchors-1mb"] = "ms"
+    unit["replace-rows-0mb"] = "ms"
+    unit["replace-same-rows-0mb"] = "ms"
     missing = 0
   }
   $1 in unit {

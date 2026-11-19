@@ -199,9 +199,32 @@
                    (/ (- (now-ns) start) 1e6))))
              (iota 9))))))
 
+(define list-rows 3880000)
+
+(define (rows generation)
+  (document:repeat (document:from-datum (vector 'row (list (cons 'generation generation)))) list-rows))
+
+;; A new set of rows differs from the old at its first row; the same set
+;; again is read to its end.
+(define (bench-replace-rows)
+  (let ([b (buffers:make "bench-rows" (document:replace (document:from-datum '(buffers:text ())) 1 1 (rows 0)))]
+        [generation 0])
+    (define (replace-ms next-generation)
+      (median
+        (map (lambda (k)
+               (let ([content (rows (next-generation))])
+                 (collect-rendezvous)
+                 (let ([start (now-ns)])
+                   (buffers:splice! b 1 (+ list-rows 1) content)
+                   (/ (- (now-ns) start) 1e6))))
+             (iota 9))))
+    (show "replace-rows" 0 (replace-ms (lambda () (set! generation (+ generation 1)) generation)))
+    (show "replace-same-rows" 0 (replace-ms (lambda () generation)))))
+
 (define (run)
   (random-seed 7)
   (for-each bench '(1 10 100))
   (for-each bench-structured '(1 10))
   (bench-reconcile)
-  (bench-trim-anchors))
+  (bench-trim-anchors)
+  (bench-replace-rows))

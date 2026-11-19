@@ -31,6 +31,8 @@ echo "$output" | awk '
       unit["from-datum" s] = "ms/MB"
       unit["utf8-chunks" s] = "ms/MB"
     }
+    unit["repeat-rows"] = "ms"
+    unit["repeat-rows-size"] = "KB"
     missing = 0
   }
   $1 in unit {

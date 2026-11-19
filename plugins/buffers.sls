@@ -717,15 +717,11 @@
                (assertion-violation who "not a position in the buffer at the version" p version))
              (fold-left (lambda (p e) (map-through e p)) p edits)))))
 
-  (define (same-tokens? a b)
-    (and (fx= (document:length a) (document:length b))
-         (equal? (document:datums a) (document:datums b))))
-
   ;; The edit is made whole or not at all: a quit landing in it would
   ;; leave the document, the version and the layers out of step.
   (define (commit! b doc start old-end new-end removed inserted carried)
     (let* ([silent? (silent-now? b)]
-           [moves? (not (same-tokens? removed inserted))]
+           [moves? (not (document:same-tokens? removed inserted))]
            [inserted (if moves? inserted removed)]
            [travels? (or carried (exists travelling? (buffer-layers b)))]
            [removed-spans (if travels? (travelling-spans-of b start old-end) '())]

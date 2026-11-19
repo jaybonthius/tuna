@@ -9,6 +9,8 @@
   "Whether a line longer than the view wraps onto several screen lines.")
 (define-option cursor-visible #t boolean?
   "Whether a view draws its cursors.")
+(define-option hand-scroll-moves-point #t boolean?
+  "Whether a scroll made with the pointer that leaves point outside the view moves point into it.")
 (define-option column-number #f boolean?
   "Whether views:describe-line shows the column after the line.")
 
@@ -1071,7 +1073,7 @@
     (let ([owed (client-view-owed cs)])
       (cond
         [owed (client-view-owed-set! cs #f) (when-measured! cs owed)]
-        [(eq? how 'moved) (move-point-into-view! v b cs)]
+        [(and (eq? how 'moved) (hand-scroll-moves-point)) (move-point-into-view! v b cs)]
         [(and (eq? how 'commanded) (eq? (view-record-moved-last v) 'scrolled)) (move-point-into-view! v b cs)])))
 
   ;; A scroll command reads what the client's browser shows, so it waits
@@ -2138,7 +2140,7 @@
 
   (define own-options
     (list (cons 'drawn-screens drawn-screens) (cons 'scroll-margin scroll-margin) (cons 'wrap-lines wrap-lines)
-          (cons 'cursor-visible cursor-visible)))
+          (cons 'cursor-visible cursor-visible) (cons 'hand-scroll-moves-point hand-scroll-moves-point)))
 
   (define (position? p) (and (fixnum? p) (fx>= p 0)))
 

@@ -89,6 +89,21 @@
     (show "token" megabytes
       (ns-per-op size (lambda (ps) (vector-for-each (lambda (p) (document:token doc p)) ps))))))
 
+(define list-rows 3880000)
+
+(define (bench-repeat)
+  (let ([row (document:from-datum '#(row ((generation . 1))))])
+    (printf "repeat-rows ~,3f\n"
+      (median
+        (map (lambda (k)
+               (collect-rendezvous)
+               (let ([start (now-ns)])
+                 (document:repeat row list-rows)
+                 (/ (- (now-ns) start) 1e6)))
+             (iota 9))))
+    (printf "repeat-rows-size ~,2f\n" (/ (compute-size (document:repeat row list-rows)) 1000.))))
+
 (define (run)
   (random-seed 7)
-  (for-each bench '(1 10 100)))
+  (for-each bench '(1 10 100))
+  (bench-repeat))

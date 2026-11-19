@@ -223,8 +223,11 @@
   (define (first-index r x)
     (let loop ([q 0]) (if (= (vector-ref r q) x) q (loop (+ q 1)))))
 
+  ;; The same tokens built afresh are split into runs and trees at other
+  ;; places, which document:same-tokens? must look past.
   (define (check-document! what doc v sample)
     (let* ([n (vector-length v)]
+           [rebuilt (apply document:from-datum (tokens->datums (vector->list v)))]
            [offsets (cons (cons 'in-line-atoms (in-line-offsets v))
                           (map (lambda (unit) (cons unit (prefix-vector v (lambda (t) (units t unit)))))
                                '(characters bytes utf-16 atoms)))]
@@ -233,6 +236,7 @@
       (check! (list what 'datums) (tokens->datums (vector->list v)) (document:datums doc))
       (check! (list what 'text) (text-of (vector->list v)) (document:text doc))
       (check! (list what 'utf8) (utf8-of (vector->list v)) (chunks doc 0 n))
+      (check! (list what 'same-tokens) #t (document:same-tokens? doc rebuilt))
       (for-each
         (lambda (p)
           (check! (list what 'token p) (model-token v p) (token-of doc p))
@@ -263,7 +267,11 @@
                                       (if (= k 0) acc
                                           (let ([a (enclosing v p)]) (loop a (- k 1) (cons (vector-ref v a) acc)))))
                                     tokens))
-                          (document:datums slice))))
+                          (document:datums slice))
+                  (let ([s2 (random (+ (- n (- e s)) 1))])
+                    (check! (list what 'same-tokens s e s2)
+                            (equal? tokens (sub v s2 (+ s2 (- e s))))
+                            (document:same-tokens? slice (document:slice rebuilt s2 (+ s2 (- e s))))))))
               (when (and (< p n) (pair? (vector-ref v p)))
                 (check! (list what 'node-end p) (node-end v p) (document:node-end (document:token doc p)))
                 (check! (list what 'in-line p) (in-line? v p (node-end v p)) (document:in-line? (document:token doc p)))
@@ -293,6 +301,26 @@
   (define (vector-replace v s e new)
     (list->vector (append (sub v 0 s) (vector->list new) (sub v e (vector-length v)))))
 
+  ;; A document with one character changed shares every subtree off the
+  ;; path to that character, so a comparison that skips shared subtrees
+  ;; too far takes the two for equal.
+  (define (changed-character-checks what doc v)
+    (let ([places (filter (lambda (p) (char? (vector-ref v p))) (iota (vector-length v)))])
+      (unless (null? places)
+        (let* ([p (list-ref places (random (length places)))]
+               [old (vector-ref v p)]
+               [new (let pick () (let ([c (random-char)]) (if (char=? c old) (pick) c)))]
+               [changed (document:replace doc p (+ p 1) (document:from-datum (string new)))]
+               [n (vector-length v)])
+          (check! (list what 'changed p) #f (document:same-tokens? doc changed))
+          (check! (list what 'changed-reversed p) #f (document:same-tokens? changed doc))
+          (check! (list what 'changed-repeated p) #f
+                  (document:same-tokens? (document:repeat doc 3) (document:repeat changed 3)))
+          (check! (list what 'before-change p) #t
+                  (document:same-tokens? (document:slice doc 0 p) (document:slice changed 0 p)))
+          (check! (list what 'after-change p) #t
+                  (document:same-tokens? (document:slice doc (+ p 1) n) (document:slice changed (+ p 1) n)))))))
+
   (define (edit-checks seed rounds edits sample)
     (random-seed seed)
     (set! failures 0)
@@ -301,6 +329,7 @@
       (let ([datums (random-datums (if (even? round) (+ 1 (random 4)) (+ 100 (random 400))))])
         (let loop ([k 0] [doc (apply document:from-datum datums)] [v (apply model datums)])
           (check-document! (list 'round round 'edit k) doc v sample)
+          (changed-character-checks (list 'round round 'edit k) doc v)
           (when (< k edits)
             (let* ([n (vector-length v)]
                    [s (random (+ n 1))]
@@ -308,9 +337,11 @@
                    [new-datums (if (= (random 3) 0)
                                    (list (random-string (random 3)))
                                    (random-datums (random 3)))]
-                   [content (apply document:from-datum new-datums)])
-              (loop (+ k 1) (document:replace doc s e content)
-                    (vector-replace v s e (apply model new-datums))))))))
+                   [content (apply document:from-datum new-datums)]
+                   [edited (document:replace doc s e content)])
+              (check! (list 'round round 'edit k 'same-tokens-before s)
+                      #t (document:same-tokens? (document:slice doc 0 s) (document:slice edited 0 s)))
+              (loop (+ k 1) edited (vector-replace v s e (apply model new-datums))))))))
     (list checks failures))
 
   ;; Typing at one place grows a run past its limit, so it splits, and
