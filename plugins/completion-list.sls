@@ -7,8 +7,6 @@
 (define-option fixed-height? #f boolean?
   "When true, a read's list is completion-list:rows tall from its first draw; otherwise it grows as rows arrive and keeps its height until the read ends.")
 
-;; Point rests in the empty node while nothing is selected, since a
-;; list's selected row is the row at point.
 (define (%draw-nothing node view) '())
 
 (define (%draw-count node view) (%counts view))
@@ -21,7 +19,11 @@
 
 (buffers:define-kind %root (content nodes) (draw %draw-root))
 
-(buffers:define-kind %none (draw %draw-nothing))
+;; Point rests on this atom while nothing is selected, since a list's
+;; selected row is the row at point. An empty node would not do: with no
+;; text between them, its inside and the first row are one place, and
+;; point goes to the row.
+(buffers:define-kind %none (content atom) (draw %draw-nothing))
 
 (buffers:define-kind %count-line (content atom) (draw %draw-count))
 
@@ -51,7 +53,7 @@
   (let ([doc (buffers:document b)] [found #f])
     (document:for-each-child (document:token doc 0) 1 (fx- (document:length doc) 1)
       (lambda (c at) (when (and (document:node? c) (not found) (eq? (document:node-kind c) 'completion-list:%none))
-                       (set! found (fx+ (document:node-start c) 1)))))
+                       (set! found (document:node-start c)))))
     found))
 
 (define (%index-of m matches)

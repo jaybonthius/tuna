@@ -40,11 +40,14 @@
             [(float-node? n kind) (values n child)]
             [else (climb n)])))))
 
+  ;; A size in columns or lines is the view's, so the float's border is
+  ;; added to it: a border taken from it would leave the view short of its
+  ;; last line, and a view following point there would scroll.
   (define (length-css v)
     (cond
       [(and (real? v) (exact? v) (< 0 v) (<= v 1)) (string-append (number->string (inexact (* 100 v))) "%")]
       [(and (list? v) (fx= (length v) 2) (memq (car v) '(columns lines)) (fixnum? (cadr v)) (fx> (cadr v) 0))
-       (string-append (number->string (cadr v)) (if (eq? (car v) 'columns) "ch" "lh"))]
+       (string-append "calc(" (number->string (cadr v)) (if (eq? (car v) 'columns) "ch" "lh") " + var(--layout-float-frame))")]
       [else "50%"]))
 
   (define (view-datum v . attributes)

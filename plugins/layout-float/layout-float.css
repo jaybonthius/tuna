@@ -35,6 +35,7 @@
     font-size: var(--tuna-font-size-code);
     line-height: var(--tuna-line-height-code);
     background: var(--layout-float-background, var(--tuna-surface-raised, Canvas));
+    --layout-float-frame: calc(2 * var(--tuna-border-width, 1px));
     border: var(--tuna-border-width, 1px) solid var(--layout-float-border, var(--tuna-border, CanvasText));
     border-radius: var(--layout-float-radius, var(--tuna-panel-radius));
     box-shadow: var(--layout-float-shadow, var(--tuna-shadow-raised));

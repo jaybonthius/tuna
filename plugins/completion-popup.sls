@@ -11,17 +11,19 @@
 (define-option auto-prefix 3 (lambda (v) (and (fixnum? v) (fx>= v 0)))
   "How many characters the completed text must hold before point for completion to start by itself.")
 
-;; Point rests in the empty node while nothing is selected, since a
-;; list's selected row is the row at point.
 (define (%draw-nothing node view) '())
 
 (buffers:define-kind %root (content nodes))
 
-(buffers:define-kind %none (draw %draw-nothing))
+;; Point rests on this atom while nothing is selected, since a list's
+;; selected row is the row at point. An empty node would not do: with no
+;; text between them, its inside and the first row are one place, and
+;; point goes to the row.
+(buffers:define-kind %none (content atom) (draw %draw-nothing))
 
 (define-record-type %shown
   (sealed #t)
-  (fields session buffer view (mutable popup-id) (mutable matches) (mutable count) (mutable widths)))
+  (fields session buffer (mutable popup-id) (mutable matches) (mutable count) (mutable widths)))
 
 (define %popups '())
 
@@ -43,7 +45,7 @@
   (let ([doc (buffers:document b)] [found #f])
     (document:for-each-child (document:token doc 0) 1 (fx- (document:length doc) 1)
       (lambda (c at) (when (and (document:node? c) (not found) (eq? (document:node-kind c) 'completion-popup:%none))
-                       (set! found (fx+ (document:node-start c) 1)))))
+                       (set! found (document:node-start c)))))
     found))
 
 (define (%mark text spans)
@@ -115,8 +117,11 @@
 
 ;; The popup's view is dropped once layout-float removes it, as when the
 ;; completed text's view goes, so it is kept by number.
+(define (%popup-view l)
+  (let ([id (%shown-popup-id l)]) (and id (views:find id))))
+
 (define (%close-popup! l)
-  (let* ([id (%shown-popup-id l)] [v (and id (views:find id))])
+  (let ([v (%popup-view l)])
     (%shown-popup-id-set! l #f)
     (when (and v (layout:popup-node v))
       (layout-float:close! v))))
@@ -125,7 +130,7 @@
 ;; rows they add are given to the list, once it shows as many as it can:
 ;; the popup's size is that of the rows shown.
 (define (%show! l)
-  (let* ([s (%shown-session l)] [b (%shown-buffer l)] [v (%shown-view l)]
+  (let* ([s (%shown-session l)] [b (%shown-buffer l)]
          [matches (completion:session-matches s)] [n (completion:matches-count matches)] [m (completion:selected s)])
     (cond
       [(or (not (eq? matches (%shown-matches l))) (and (fx< (%shown-count l) (rows)) (fx> n (%shown-count l))))
@@ -148,10 +153,13 @@
       [(fx> n (%shown-count l))
        (ui:add-rows! b (%list-node b) (%indices (%shown-count l) n))
        (%shown-count-set! l n)])
-    (let ([k (and m (%index-of m matches))])
-      (if k
-          (ui:select-row! (%list-node b) v k)
-          (views:set-point! v (%empty-position b))))))
+    ;; Each view of a list selects its own row, so the selection goes to
+    ;; the view the popup shows.
+    (let ([v (%popup-view l)] [k (and m (%index-of m matches))])
+      (when v
+        (if k
+            (ui:select-row! (%list-node b) v k)
+            (views:set-point! v (%empty-position b)))))))
 
 ;; A prompt sits in a locked part and a field may be drawn inside another
 ;; buffer; only a view the user edits in, an unlocked part of the layout,
@@ -160,7 +168,7 @@
   (let* ([view (completion:session-view s)] [node (layout:view-node view)])
     (when (and node (not (layout:locked? node)))
       (let* ([b (buffers:make (%next-name) (%root '() (%none '()) (ui:list '())))]
-             [l (make-%shown s b (views:make b) #f #f 0 '())])
+             [l (make-%shown s b #f #f 0 '())])
         (buffers:with-buffer b (set-option-local! views:cursor-visible #f))
         (set! %popups (cons l %popups))))))
 
@@ -173,7 +181,6 @@
     (when l
       (set! %popups (remq l %popups))
       (%close-popup! l)
-      (views:drop! (%shown-view l))
       (buffers:kill! (%shown-buffer l)))))
 
 (define %timer #f)

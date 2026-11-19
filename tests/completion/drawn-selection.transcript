@@ -1,0 +1,70 @@
+; The row a list draws as selected, in the view that shows it, is the
+; session's selection after every move, and no row while nothing is
+; selected.
+> (define (strip-tags s)
+    (let loop ([i 0] [in? #f] [acc '()])
+      (cond
+        [(= i (string-length s)) (list->string (reverse acc))]
+        [(char=? (string-ref s i) #\<) (loop (+ i 1) #t acc)]
+        [(char=? (string-ref s i) #\>) (loop (+ i 1) #f acc)]
+        [in? (loop (+ i 1) #t acc)]
+        [else (loop (+ i 1) #f (cons (string-ref s i) acc))])))
+> (define (search s pattern from)
+    (let loop ([i from])
+      (cond
+        [(> (+ i (string-length pattern)) (string-length s)) #f]
+        [(string=? (substring s i (+ i (string-length pattern))) pattern) i]
+        [else (loop (+ i 1))])))
+> (define (drawn-selected v)
+    (let* ([s (lines-html v)] [at (search s "aria-current=\"true\"" 0)])
+      (and at
+           (let* ([text (search s "-text\">" at)] [start (+ text 7)] [end (search s "</span>" start)])
+             (strip-tags (substring s start end))))))
+> (define (drawn-rows v)
+    (let ([s (lines-html v)])
+      (let loop ([at 0] [acc '()])
+        (let ([text (search s "-text\">" at)])
+          (if text
+              (let* ([start (+ text 7)] [end (search s "</span>" start)])
+                (loop end (cons (strip-tags (substring s start end)) acc)))
+              (reverse acc))))))
+> (define (state lv) (list (selected-text (session)) (drawn-selected lv) (car (drawn-rows lv)) (length (drawn-rows lv))))
+; A popup at point preselects nothing; each move down and up shows in
+; the popup's own view, past the ten rows it shows at once.
+> (define notes (buffers:make "notes" "aba abb abc abd abe abf abg abh abi abj abk abl abm abn abo abp\n"))
+> (views:set-buffer! (view) notes)
+> (press! "M->")
+> (type! "ab")
+> (press! "C-M-i")
+> (define lv (list-view))
+> (texts (session))
+("ab" "aba" "abb" "abc" "abd" "abe" "abf" "abg" "abh" "abi" "abj" "abk" "abl" "abm" "abn" "abo" "abp")
+> (state lv)
+(#f #f "ab" 10)
+> (define (moves! key n) (let loop ([k 0] [acc '()]) (if (= k n) (reverse acc) (begin (press! key) (loop (+ k 1) (cons (state lv) acc))))))
+> (moves! "<down>" 12)
+(("ab" "ab" "ab" 10) ("aba" "aba" "ab" 10) ("abb" "abb" "ab" 10) ("abc" "abc" "ab" 10) ("abd" "abd" "ab" 10) ("abe" "abe" "ab" 10) ("abf" "abf" "ab" 10) ("abg" "abg" "ab" 10) ("abh" "abh" "ab" 10) ("abi" "abi" "ab" 10) ("abj" "abj" "aba" 10) ("abk" "abk" "abb" 10))
+> (moves! "<up>" 12)
+(("abj" "abj" "abb" 10) ("abi" "abi" "abb" 10) ("abh" "abh" "abb" 10) ("abg" "abg" "abb" 10) ("abf" "abf" "abb" 10) ("abe" "abe" "abb" 10) ("abd" "abd" "abb" 10) ("abc" "abc" "abb" 10) ("abb" "abb" "abb" 10) ("aba" "aba" "aba" 10) ("ab" "ab" "ab" 10) ("ab" "ab" "ab" 10))
+> (moves! "C-n" 2)
+(("aba" "aba" "ab" 10) ("abb" "abb" "ab" 10))
+> (moves! "C-p" 1)
+(("aba" "aba" "ab" 10))
+> (press! "C-g")
+> (session)
+#f
+; A read whose input is preferred over its first match draws no row
+; selected until a move selects one.
+> (set-option! completion:read-preselect 'none)
+> (define t (start! (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "alpha" "almond" "apple" "banana")))) #f))))
+> (define lv (list-view))
+> (state lv)
+(#f #f "alpha" 4)
+> (moves! "<down>" 2)
+(("alpha" "alpha" "alpha" 4) ("apple" "apple" "alpha" 4))
+> (moves! "C-p" 1)
+(("alpha" "alpha" "alpha" 4))
+> (press! "RET")
+> (result t)
+"alpha"
+> (remove-option! completion:read-preselect)

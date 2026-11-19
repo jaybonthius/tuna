@@ -18,13 +18,13 @@
             (reverse acc)))))
 > (for-each (lambda (f) (display f) (newline)) (floats-of (screen-of desktop)))
 class="float-child" style="--layout-float-inline-size:50.0%;--layout-float-block-size:50.0%;--layout-float-x:0.25;--layout-float-y:0.75;--layout-float-z:1
-class="float-child" style="--layout-float-inline-size:30ch;--layout-float-block-size:8lh;--layout-float-x:1.0;--layout-float-y:0.0;--layout-float-z:2
+class="float-child" style="--layout-float-inline-size:calc(30ch + var(--layout-float-frame));--layout-float-block-size:calc(8lh + var(--layout-float-frame));--layout-float-x:1.0;--layout-float-y:0.0;--layout-float-z:2
 ; Floats stack by their last selection, the latest on top, and those
 ; never selected in the layout's order: selecting one raises it.
 > (layout:select! vb)
 > (for-each (lambda (f) (display f) (newline)) (floats-of (screen-of desktop)))
 class="float-child" style="--layout-float-inline-size:50.0%;--layout-float-block-size:50.0%;--layout-float-x:0.25;--layout-float-y:0.75;--layout-float-z:2
-class="float-child" style="--layout-float-inline-size:30ch;--layout-float-block-size:8lh;--layout-float-x:1.0;--layout-float-y:0.0;--layout-float-z:1
+class="float-child" style="--layout-float-inline-size:calc(30ch + var(--layout-float-frame));--layout-float-block-size:calc(8lh + var(--layout-float-frame));--layout-float-x:1.0;--layout-float-y:0.0;--layout-float-z:1
 > (map views:id (layout:selection-order))
 (4 3)
 ; From a float, left and right go to the floats before and after it in
@@ -91,7 +91,7 @@ class="float-child" style="--layout-float-inline-size:30ch;--layout-float-block-
 (7 #t 15)
 > (let ([html (screen-of desktop)])
     (list (< (search html "view-anchor" 0) (search html "layout-popups" 0))
-          (and (search html (format "--layout-float-anchor:--view-anchor-~a;--layout-float-inline-size:50.0%;--layout-float-block-size:4lh" (anchor-number)) 0) #t)))
+          (and (search html (format "--layout-float-anchor:--view-anchor-~a;--layout-float-inline-size:50.0%;--layout-float-block-size:calc(4lh + var(--layout-float-frame))" (anchor-number)) 0) #t)))
 (#t #t)
 > (begin (buffers:replace! a 1 1 "xy") (views:anchor-position anchor))
 9
