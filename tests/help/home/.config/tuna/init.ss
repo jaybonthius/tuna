@@ -85,6 +85,17 @@
 
 (define (message) (echo-area:current-message))
 
+(define (echo)
+  (let* ([v (layout:find-view (buffers:find " *Echo Area*"))]
+         [s (apply string-append (map html->string (layout:draw-view-atom (layout:view-node v) v client)))])
+    (let loop ([i 0] [tag? #f] [out '()])
+      (cond
+        [(= i (string-length s)) (list->string (reverse out))]
+        [(char=? (string-ref s i) #\<) (loop (+ i 1) #t out)]
+        [(char=? (string-ref s i) #\>) (loop (+ i 1) #f out)]
+        [tag? (loop (+ i 1) #t out)]
+        [else (loop (+ i 1) #f (cons (string-ref s i) out))]))))
+
 (define (help-view) (car (views:showing (help-buffer))))
 
 (define (link-to name)

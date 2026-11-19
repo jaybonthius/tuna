@@ -214,6 +214,7 @@
     --faces-markup-heading-color: var(--modus-fg-heading-1);
     --faces-markup-raw-color: var(--modus-fg-prose-code);
     --minibuffer-prompt-color: var(--modus-fg-prompt);
+    --echo-area-prompt-color: var(--modus-fg-prompt);
     --completion-match-0-color: var(--modus-fg-completion-match-0);
     --completion-match-1-color: var(--modus-fg-completion-match-1);
     --completion-match-2-color: var(--modus-fg-completion-match-2);

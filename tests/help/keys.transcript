@@ -108,8 +108,23 @@ Honks once.
 ! &quit
 > (title)
 "<mouse-1> at that spot runs the command harpo:honk, bound by (repl)"
+; C-h k and C-h c ask in the echo area, and the keys read so far show
+; after the question.
+> (start! "C-h" "k")
+> (echo)
+"Describe the following key or mouse click: "
+> (press! "C-x")
+> (echo)
+"Describe the following key or mouse click: C-x-"
+> (press! "C-g")
+> (settle)
+! &quit
+> (echo)
+"Quit"
 ; C-h c shows the first line in the echo area, without the binder.
 > (start! "C-h" "c")
+> (keys:reading-prompt client)
+"Describe the following key or mouse click: "
 > (press! "C-x" "C-f")
 > (settle)
 > (message)

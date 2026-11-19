@@ -89,10 +89,10 @@
 ("<f5>" harpo:honk)
 ; Unloading it takes back its advice and its hook entry.
 > (map car (definition-changes keys:press!))
-((lossage) (minibuffer) (echo-area) (keys))
+((lossage) (minibuffer) (echo-area) (echo-area) (keys))
 > (define entries (length (hook-entries commands:before-command)))
 > (unload-module! '(lossage))
 > (map car (definition-changes keys:press!))
-((minibuffer) (echo-area) (keys))
+((minibuffer) (echo-area) (echo-area) (keys))
 > (- entries (length (hook-entries commands:before-command)))
 1

@@ -142,3 +142,16 @@
 > (shows?)
 #f
 > (press! "a")
+; The echo area shows the pending keys after its own pause, and the
+; popup shows and follows them as before.
+> (set-option! echo-area:echo-keystrokes 0.3)
+> (press! "C-c")
+> (wait-out)
+> (list (car (popup)) (and (search (screen-of client) "<div class=\"echo-area-echo\">C-c-</div>" 0) #t))
+("C-c" #t)
+> (press! "h")
+> (list (car (popup)) (and (search (screen-of client) "<div class=\"echo-area-echo\">C-c h-</div>" 0) #t))
+("C-c h" #t)
+> (press! "s")
+> (popup)
+#f

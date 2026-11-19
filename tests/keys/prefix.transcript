@@ -49,3 +49,23 @@
 ((keys:set-prefix-argument! "not a prefix argument") (keys:set-prefix-argument! "not a prefix argument") (keys:set-prefix-argument! "not a prefix argument") (keys:set-prefix-argument! "not a prefix argument") (keys:set-prefix-argument! "not a prefix argument"))
 > (on-thread (lambda () (keys:set-prefix-argument! 3)))
 (keys:set-prefix-argument! "not on the main thread")
+; keys:prefix-description gives a client's pending prefix argument as
+; the keys that give it, as an echo of unfinished keys shows it.
+> (commands:define-command (count-list)
+    "Makes the next command's prefix argument (12)."
+    (keys:set-prefix-argument! '(12)))
+> (keys:bind! keys:global "C-c l" count-list)
+> (define (described keys)
+    (apply press-all! one keys)
+    (let ([d (keys:prefix-description one)]) (press-all! one "C-g") d))
+> (map described '(("C-u") ("C-u" "C-u") ("C-u" "C-u" "C-u") ("M-5") ("C-u" "1" "2") ("M--") ("M--" "3") ("C-c" "3") ("C-c" "l")))
+("C-u" "C-u C-u" "C-u C-u C-u" "C-u 5" "C-u 12" "C-u -" "C-u -3" "C-u 3" "C-u (12)")
+; Each client has its own; the other's C-c 3 still waits.
+> (press-all! one "C-u")
+> (list (keys:prefix-description one) (keys:prefix-description (layout:other-frame)))
+("C-u" "C-u 3")
+> (press-all! one "C-c" "n")
+> (list (take-seen!) (keys:prefix-description one))
+((((4) keys:keyboard-quit)) #f)
+> (on-thread (lambda () (keys:prefix-description one)))
+(keys:prefix-description "not on the main thread")

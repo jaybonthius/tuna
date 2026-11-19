@@ -18,14 +18,14 @@
    remember-name! bound-name
    sessions session-of session-pending session-pending-set! session-prefix session-prefix-set!
    session-temporaries session-running session-running-set! session-reading
-   read-next end-read! waiting-read-sequence? reading-keys quit-reads! quit-client-reads!
+   read-next end-read! waiting-read-sequence? reading-keys reading-prompt-of quit-reads! quit-client-reads!
    keymaps-of resolve-key resolve-sequence prefix-binding? lone-escape? remapped
    keymap-bindings bindings-found found-binding-keymap found-binding-sequence found-binding-command
    last-key key-count browser-key mouse-item-key screen-key valid-event? key-or-event? check-event event-key-clicks
    event-basic-type-of event-modifiers-of dropped-mouse-key? drag-as-click pending-typed pending-seq pending-posn make-pending
    current-press make-press current-keys current-shifted current-session current-event make-quit
    push-temporary! end-temporary! end-temporaries! end-owned! test-temporaries! quit-paused!
-   set-prefix! universal-arguments push-universal-arguments! give-page-settings!)
+   set-prefix! prefix-keys universal-arguments push-universal-arguments! give-page-settings!)
 
   (define main-thread (get-thread-id))
 
@@ -682,7 +682,7 @@
 
   (define-record-type waiting-read
     (sealed #t)
-    (fields session sequence? task keys (mutable resume)))
+    (fields session sequence? task keys prompt (mutable resume)))
 
   ;; A read stays listed until its command has its key, not only until the
   ;; key is handed over, so a quit still reaches a command whose key waits
@@ -697,14 +697,16 @@
 
   ;; A handler, not dynamic-wind, clears the read: a wind's after thunk
   ;; would run at every pause.
-  (define (read-next who sequence?)
+  (define (read-next who sequence? prompt)
     (check-main-thread who)
+    (unless (or (not prompt) (string? prompt))
+      (assertion-violation who "neither a string nor #f" prompt))
     (let ([s (current-session)])
       (unless s
         (assertion-violation who "no command a key ran is running"))
       (when (session-reading s)
         (assertion-violation who "a key is already being read for this client"))
-      (let ([r (make-waiting-read s sequence? (current-task) (current-keys) #f)])
+      (let ([r (make-waiting-read s sequence? (current-task) (current-keys) prompt #f)])
         (guard (c [#t (forget-read! r) (raise c)])
           (let ([key (suspend
                        (lambda (resume)
@@ -723,6 +725,10 @@
     (let ([r (and s (session-reading s))])
       (and r (waiting-read-keys r))))
 
+  (define (reading-prompt-of s)
+    (let ([r (and s (session-reading s))])
+      (and r (waiting-read-prompt r))))
+
   (define (quit-reads! chosen?)
     (for-each
       (lambda (r)
@@ -739,6 +745,15 @@
   (define (set-prefix! s prefix)
     (session-prefix-set! s prefix)
     (commands:keep-last-command!))
+
+  (define (prefix-keys prefix)
+    (or (and (pair? prefix)
+             (let loop ([n (car prefix)] [keys "C-u"])
+               (cond
+                 [(= n 4) keys]
+                 [(and (> n 4) (zero? (mod n 4))) (loop (div n 4) (string-append keys " C-u"))]
+                 [else #f])))
+        (format "C-u ~a" prefix)))
 
   (define-table universal-arguments)
 
@@ -981,13 +996,28 @@
 
 (define (shift-translated?) (current-shifted))
 
-(define (read-key) (read-next 'keys:read-key #f))
+(define read-key
+  (case-lambda
+    [() (read-key #f)]
+    [(prompt) (read-next 'keys:read-key #f prompt)]))
 
-(define (read-key-sequence) (read-next 'keys:read-key-sequence #t))
+(define read-key-sequence
+  (case-lambda
+    [() (read-key-sequence #f)]
+    [(prompt) (read-next 'keys:read-key-sequence #t prompt)]))
 
 (define (reading client)
   (check-main-thread 'keys:reading)
   (reading-keys (eq-hashtable-ref sessions client #f)))
+
+(define (reading-prompt client)
+  (check-main-thread 'keys:reading-prompt)
+  (reading-prompt-of (eq-hashtable-ref sessions client #f)))
+
+(define (prefix-description client)
+  (check-main-thread 'keys:prefix-description)
+  (let* ([s (eq-hashtable-ref sessions client #f)] [prefix (and s (session-prefix s))])
+    (and prefix (prefix-keys prefix))))
 
 (define push-keymap!
   (case-lambda

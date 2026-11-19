@@ -11,6 +11,9 @@
 (define-option log-max 1000 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
   "How many lines *Messages* keeps; the oldest go first.")
 
+(define-option echo-keystrokes 1 (lambda (v) (and (real? v) (finite? v) (not (negative? v))))
+  "Seconds of pause after which the echo area shows a client's unfinished keys; 0 shows none.")
+
 (define-table keymap "The echo area's keymap, for clicks on it.")
 
 ;; The plugin writes both buffers with splice!, which asks no kind, so
@@ -32,7 +35,8 @@
 (buffers:define-kind %log (consent %refuse-edits))
 
 (module %internals
-  (check-main-thread echo-buffer messages-buffer shown? show! log! queue-report! flushing? flush-reports! report-text)
+  (check-main-thread echo-buffer messages-buffer shown? show! log! queue-report! flushing? flush-reports! report-text
+   echo-text-prompt echo-text-keys echo-text-waiting? shown-echo uncover-echo! follow-key! follow-echoes! forget-echo!)
 
   (define main-thread (get-thread-id))
 
@@ -53,7 +57,115 @@
     (set! shown? (or shown? (not (string=? text ""))))
     (buffers:splice! echo-buffer 0 (document:length (buffers:document echo-buffer))
       (document:from-datum (area (if face (list (cons 'face face)) '()) text)))
-    (set! shown? (not (string=? text ""))))
+    (set! shown? (not (string=? text "")))
+    (when shown? (cover-echoes!)))
+
+  (define-record-type echo-text
+    (sealed #t)
+    (fields prompt keys waiting?))
+
+  (define-record-type echo
+    (sealed #t)
+    (fields client (mutable echoing?) (mutable timer) (mutable left) (mutable covered?) (mutable presses)))
+
+  ;; Ephemeron, since each echo holds its client.
+  (define echoes (make-ephemeron-eq-hashtable))
+
+  (define (echo-for! client)
+    (or (eq-hashtable-ref echoes client #f)
+        (let ([e (make-echo client #f #f #f #f 0)])
+          (eq-hashtable-set! echoes client e)
+          e)))
+
+  (define (cover-echoes!)
+    (vector-for-each
+      (lambda (e)
+        (echo-covered?-set! e #t)
+        (echo-left-set! e #f))
+      (hashtable-values echoes)))
+
+  ;; A read with a prompt shows the keys it has read after the prompt,
+  ;; which stands in for the keys of the command reading.
+  (define (keys-in-progress client prompt)
+    (let ([parts (filter values (list (keys:prefix-description client)
+                                      (and (not prompt) (keys:reading client))
+                                      (keys:pending client)))])
+      (and (pair? parts)
+           (fold-left (lambda (text part) (string-append text " " part)) (car parts) (cdr parts)))))
+
+  (define (in-progress? client)
+    (and (or (keys:reading client) (keys:pending client) (keys:prefix-description client)) #t))
+
+  (define (live-text e)
+    (let* ([client (echo-client e)] [prompt (keys:reading-prompt client)]
+           [keys (and (or prompt (echo-echoing? e)) (> (echo-keystrokes) 0) (keys-in-progress client prompt))])
+      (and (or prompt keys) (make-echo-text prompt keys #t))))
+
+  (define (shown-echo client)
+    (let ([e (and client (eq-hashtable-ref echoes client #f))])
+      (and e (not (and shown? (echo-covered? e))) (or (live-text e) (echo-left e)))))
+
+  (define (uncover-echo! client)
+    (echo-covered?-set! (echo-for! client) #f))
+
+  (define (stop-timer! e)
+    (when (echo-timer e)
+      (cancel-timer! (echo-timer e))
+      (echo-timer-set! e #f)))
+
+  (define (start-timer! e)
+    (as-module (this-module)
+      (echo-timer-set! e
+        (run-with-timer (echo-keystrokes)
+          (lambda ()
+            (echo-timer-set! e #f)
+            (when (in-progress? (echo-client e))
+              (echo-echoing?-set! e #t)))))))
+
+  (define (finished-text before key)
+    (let ([prompt (echo-text-prompt before)] [keys (echo-text-keys before)] [name (if (pair? key) (car key) key)])
+      (let ([keys (and (> (echo-keystrokes) 0) (if keys (string-append keys " " name) name))])
+        (and (or prompt keys) (make-echo-text prompt keys #f)))))
+
+  ;; The keys a key finishes are taken before it runs, since a finished
+  ;; sequence leaves no pending keys to show them by, and its command may
+  ;; pause. A key returns only when its command ends, maybe after other
+  ;; keys of the client, so it settles the echo only if it is still the
+  ;; client's latest; a key that returns at once with keys in progress
+  ;; finished nothing.
+  (define (follow-key! press client key)
+    (let* ([e (echo-for! client)] [before (live-text e)] [n (fx+ (echo-presses e) 1)])
+      (echo-presses-set! e n)
+      (unless (echo-echoing? e) (stop-timer! e))
+      (cond
+        [before (echo-left-set! e (finished-text before key))]
+        [(string? key) (echo-left-set! e #f)])
+      (press client key)
+      (when (fx= (echo-presses e) n)
+        (if (in-progress? client)
+            (echo-left-set! e #f)
+            (echo-echoing?-set! e #f)))))
+
+  ;; A read can start in a task a key resumed rather than in the key's
+  ;; command, and keys can end without a key, so each batch's end
+  ;; settles what the keys left.
+  (define (follow-echoes!)
+    (vector-for-each
+      (lambda (e)
+        (let ([client (echo-client e)])
+          (cond
+            [(not (in-progress? client))
+             (echo-echoing?-set! e #f)
+             (stop-timer! e)]
+            [(not (or (echo-echoing? e) (echo-timer e) (keys:reading-prompt client) (zero? (echo-keystrokes))))
+             (start-timer! e)])))
+      (hashtable-values echoes)))
+
+  (define (forget-echo! client)
+    (let ([e (eq-hashtable-ref echoes client #f)])
+      (when e
+        (stop-timer! e)
+        (eq-hashtable-delete! echoes client))))
 
   (define log-buffer #f)
 
@@ -234,6 +346,42 @@
     (show! "" #f))
   (press client key))
 
+(define (keys-text client)
+  (check-main-thread 'echo-area:keys-text)
+  (unless (web:client? client)
+    (assertion-violation 'echo-area:keys-text "not a client" client))
+  (let* ([text (shown-echo client)] [keys (and text (echo-text-keys text))])
+    (and keys (if (echo-text-waiting? text) (string-append keys "-") keys))))
+
+;; A view draws the same for every client, so a client's echo is drawn
+;; here, where the client is known, in place of the echo area's view.
+(define (%draw-client-echo draw-view-atom node view client)
+  (let ([text (and view (eq? (views:buffer view) echo-buffer) (not (hidden?)) (shown-echo client))])
+    (if text
+        (let ([prompt (echo-text-prompt text)] [keys (keys-text client)])
+          (list (haml (:div.echo-area-message ([role "status"] [data-keymap (views:keymap-mark keymap)])
+                        (:div.echo-area-echo
+                          (when prompt (:span.echo-area-prompt prompt))
+                          (when keys keys))))))
+        (draw-view-atom node view client))))
+
+(define (%follow-key press client key) (follow-key! press client key))
+
+(define (%forget-echo client) (forget-echo! client))
+
+;; A message covers every client's echo while it shows, but a read's
+;; prompt must show while it waits for a key.
+(define (%show-prompt read . prompt)
+  (let ([client (web:current-client)])
+    (when (and client (pair? prompt) (string? (car prompt)))
+      (uncover-echo! client)))
+  (apply read prompt))
+
+(define (%follow-echoes ended)
+  (guard (c [#t (report c)])
+    (follow-echoes!))
+  (ended))
+
 ;; Report runs inside the code that raised, so the queue shows here,
 ;; before layout draws the clients, rather than in the middle of a failed edit or
 ;; draw. A raise here must not skip the advice it encloses.
@@ -260,5 +408,11 @@
 (advice-add! report %queue-report)
 (advice-add! keys:keyboard-quit %say-quit)
 (advice-add! keys:press! %clear-on-key)
+(advice-add! keys:press! %follow-key)
+(advice-add! keys:read-key %show-prompt)
+(advice-add! keys:read-key-sequence %show-prompt)
+(advice-add! layout:draw-view-atom %draw-client-echo)
 (advice-add! batch-ended %show-reports)
+(advice-add! batch-ended %follow-echoes)
+(add-hook! web:client-removed %forget-echo)
 (on-unload (lambda () (let ([v (layout:find-view echo-buffer)]) (when v (layout:delete-part! (layout:view-node v))))))

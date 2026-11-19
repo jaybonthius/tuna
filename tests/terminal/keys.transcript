@@ -5,9 +5,18 @@
 > (bytes-read '("<f5>" "C-<left>" "C-M-x") 13)
 "1b 5b 31 35 7e 1b 5b 31 3b 35 44 1b 18"
 ; C-c C-c and its kin send the keys Tuna keeps, and C-q sends the next
-; key whatever its bindings.
-> (bytes-read '("C-c" "C-c" "C-c" "C-z" "C-c" "C-\\" "C-c" "C-d" "C-q" "C-x" "C-c" "C-q" "C-c") 6)
+; key whatever its bindings. C-q reads the key, which pauses the task it
+; was pressed in, so it is pressed in a task of its own.
+> (define (in-task key) (lambda () (spawn-task (lambda () (press! key))) (sleep-for 0.02)))
+> (bytes-read (list "C-c" "C-c" "C-c" "C-z" "C-c" "C-\\" "C-c" "C-d" (in-task "C-q") "C-x" "C-c" (in-task "C-q") "C-c") 6)
 "03 1a 1c 04 18 03"
+; It reads with no prompt, as Emacs's terminals read the next event, so
+; the echo area shows C-q- after a pause; a quit key is read too.
+> (define seen #f)
+> (bytes-read (list (in-task "C-q") (lambda () (set! seen (list (keys:reading client) (keys:reading-prompt client)))) "C-g") 1)
+"07"
+> seen
+("C-q" #f)
 ; The encoder follows the modes the program sets: application cursor
 ; keys, and the Kitty keyboard protocol, in which S-RET is its own key.
 > (bytes-read '("<up>") 3 "printf '\\033[?1h'; ")

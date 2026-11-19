@@ -347,10 +347,11 @@
 (define %make-quit (record-constructor (record-constructor-descriptor &quit)))
 
 ;; A read returns quit keys as data, so a sequence ended by one cancels
-;; here.
+;; here, and says so, as a quit key does outside a read.
 (define (%read-keys)
-  (let ([keys (keys:read-key-sequence)])
+  (let ([keys (keys:read-key-sequence "Describe the following key or mouse click: ")])
     (when (member (%last-key (%sequence-of keys)) (keys:quit-keys))
+      (echo-area:message! "Quit")
       (raise (%make-quit)))
     keys))
 

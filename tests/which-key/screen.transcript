@@ -2,7 +2,7 @@
 ; layout's screen and, while the popup shows, the popup after it, in one
 ; div.which-key-screen.
 > (map car (definition-changes keys:press!))
-((which-key) (minibuffer) (echo-area) (keys))
+((which-key) (minibuffer) (echo-area) (echo-area) (keys))
 > (map car (definition-changes layout:screen))
 ((which-key) (layout))
 > (define (ends-with html end) (string=? end (substring html (- (string-length html) (string-length end)) (string-length html))))
@@ -14,13 +14,14 @@
 > (let ([html (screen-of client)]) (list (search html wrapped 0) (ends-with html "</span></button></li></ul></div></div>")))
 (0 #t)
 > (press! "z")
-; A client that web removes takes its timer with it.
+; A client that web removes takes its timer with it, and the echo
+; area's.
 > (set-option! which-key:delay 0.5)
 > (press-in! other-client "C-c")
 > (define before (length (timers)))
 > (web:client-removed other-client)
 > (- before (length (timers)))
-1
+2
 ; Unloading it takes back its advice, its entry in web:client-removed
 ; and its timer.
 > (press! "C-c")
@@ -32,7 +33,7 @@
 > (map car (definition-changes layout:screen))
 ((layout))
 > (map car (definition-changes keys:press!))
-((minibuffer) (echo-area) (keys))
+((minibuffer) (echo-area) (echo-area) (keys))
 > (search (screen-of client) "<div class=\"layout-screen\"" 0)
 0
 > (press! "z")

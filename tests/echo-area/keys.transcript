@@ -1,0 +1,260 @@
+; The echo area shows a client's unfinished keys after a pause of
+; echo-area:echo-keystrokes seconds, 1 by default.
+> (echo-area:echo-keystrokes)
+1
+> (set-option! echo-area:echo-keystrokes 0.2)
+> (commands:define-command (nothing) "Does nothing." (void))
+> (keys:bind! keys:global "C-x n" nothing)
+> (keys:bind! keys:global "C-x 4 n" nothing)
+> (press! "C-x")
+> (echo)
+#f
+> (sleep-for 0.4)
+> (echo)
+"C-x-"
+; Once it shows, each next key shows at once. A key that finishes the
+; sequence leaves it shown, as typed, until the client's next typed key.
+> (press! "4")
+> (echo)
+"C-x 4-"
+> (press! "C-g")
+! C-x 4 C-g is undefined
+> (press! "C-x")
+> (echo)
+#f
+> (sleep-for 0.4)
+> (press! "n")
+> (echo)
+"C-x n"
+> (press! "a")
+> (echo)
+#f
+; A key whose command pauses shows what it finished while the command
+; waits, and the client's later keys replace it for good.
+> (define waiting #f)
+> (commands:define-command (pausing) "Pauses until resumed." (suspend (lambda (resume) (set! waiting resume))))
+> (keys:bind! keys:global "C-x p" pausing)
+> (press! "C-x")
+> (sleep-for 0.4)
+> (start! "p")
+> (echo)
+"C-x p"
+> (press! "a")
+> (echo)
+#f
+> (waiting (lambda () (void)))
+> (sleep-for 0.1)
+> (echo)
+#f
+; A sequence finished before the pause shows nothing.
+> (press! "C-x" "n")
+> (sleep-for 0.4)
+> (echo)
+#f
+; Each key before the pause starts it again.
+> (press! "C-x")
+> (sleep-for 0.12)
+> (press! "4")
+> (sleep-for 0.12)
+> (echo)
+#f
+> (sleep-for 0.2)
+> (echo)
+"C-x 4-"
+> (press! "C-g")
+! C-x 4 C-g is undefined
+; A message covers the keys, and the next typed key shows them again.
+> (press! "C-x")
+> (sleep-for 0.4)
+> (echo-area:message! "Saved")
+> (echo)
+"Saved"
+> (press! "4")
+> (echo)
+"C-x 4-"
+> (press! "C-g")
+! C-x 4 C-g is undefined
+> (echo)
+"C-x 4 C-g is undefined"
+; A pending prefix argument shows as the keys that give it.
+> (press! "C-u")
+> (sleep-for 0.4)
+> (echo)
+"C-u-"
+> (press! "C-u" "5")
+> (echo)
+"C-u 5-"
+> (press! "C-x")
+> (echo)
+"C-u 5 C-x-"
+> (press! "n")
+> (echo)
+"C-u 5 C-x n"
+> (press! "M--")
+> (sleep-for 0.4)
+> (echo)
+"C-u --"
+> (press! "C-g")
+> (echo)
+"Quit"
+; A read with no prompt shows the keys of the command reading, as keys
+; still to be finished: C-q waits for the key to insert.
+> (start! "C-q")
+> (echo)
+#f
+> (sleep-for 0.4)
+> (echo)
+"C-q-"
+> (press! "b")
+> (echo)
+"C-q b"
+; A read with a prompt shows it at once, and the keys read after it as
+; they come.
+> (commands:define-command (read-with-prompt)
+    "Reads a key sequence with a prompt and says what was read."
+    (echo-area:message! "Read ~a" (keys:read-key-sequence "Key: ")))
+> (keys:bind! keys:global "C-c r" read-with-prompt)
+> (start! "C-c" "r")
+> (echo)
+"Key: "
+> (press! "C-x")
+> (echo)
+"Key: C-x-"
+> (echo-element)
+"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"1\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Key: </span>C-x-</div></div>"
+> (press! "4")
+> (echo)
+"Key: C-x 4-"
+> (press! "n")
+> (sleep-for 0.02)
+> (echo)
+"Read C-x 4 n"
+; A read whose command shows nothing leaves the prompt and the keys
+; until the next typed key.
+> (commands:define-command (read-quietly) "Reads a key with a prompt." (keys:read-key "Press a key: "))
+> (keys:bind! keys:global "C-c q" read-quietly)
+> (start! "C-c" "q")
+> (press! "z")
+> (sleep-for 0.02)
+> (echo)
+"Press a key: z"
+> (press! "a")
+> (echo)
+#f
+; A read with a prompt shows it as the read starts, over a message.
+; A message shown while it waits covers it while the message shows.
+> (commands:define-command (say-then-read)
+    "Says hello, then reads a key with a prompt."
+    (echo-area:message! "Hello")
+    (keys:read-key "Press a key: "))
+> (keys:bind! keys:global "C-c h" say-then-read)
+> (start! "C-c" "h")
+> (echo)
+"Press a key: "
+> (sleep-for 0.4)
+> (echo)
+"Press a key: "
+> (echo-area:message! "Saved")
+> (echo)
+"Saved"
+> (sleep-for 0.4)
+> (echo)
+"Saved"
+> (press! "z")
+> (sleep-for 0.02)
+> (echo)
+"Press a key: z"
+> (press! "a")
+; A click that starts a read with a prompt shows it over a message too.
+> (define notes (buffers:make "notes" "one\ntwo\n"))
+> (views:set-buffer! (view) notes)
+> (keys:bind! keys:global "<mouse-1>" read-quietly)
+> (echo-area:message! "Hello")
+> (define clicking (spawn-task (lambda () (click-at! (view) 2))))
+> (sleep-for 0.02)
+> (echo)
+"Press a key: "
+> (press! "z")
+> (keys:bind! keys:global "<mouse-1>" editing:mouse-set-point)
+> (press! "a")
+; Each client sees only its own keys, and a message covers them all
+; while it shows. A typed key clears the message for every client, and
+; each client's keys in progress show again.
+> (press-in! other-client "C-x")
+> (sleep-for 0.4)
+> (list (echo) (echo-for other-client))
+(#f "C-x-")
+> (press! "C-x")
+> (sleep-for 0.4)
+> (list (echo) (echo-for other-client))
+("C-x-" "C-x-")
+> (echo-area:message! "Both")
+> (list (echo) (echo-for other-client))
+("Both" "Both")
+> (press-in! other-client "n")
+> (list (echo) (echo-for other-client))
+("C-x-" "C-x n")
+> (press! "n")
+; A read's prompt covered by a message shows again when another
+; client's key clears the message.
+> (start! "C-c" "q")
+> (echo-area:message! "From two")
+> (list (echo) (echo-for other-client))
+("From two" "From two")
+> (press-in! other-client "a")
+> (list (echo-area:current-message) (echo))
+(#f "Press a key: ")
+> (sleep-for 0.4)
+> (echo)
+"Press a key: "
+> (press! "q")
+> (sleep-for 0.02)
+> (echo)
+"Press a key: q"
+> (press! "a")
+; What follows the prompt is echo-area:keys-text, which advice changes.
+> (define (with-hint keys-text c)
+    (let ([text (keys-text c)]) (and text (string-append text " (C-h for help)"))))
+> (advice-add! echo-area:keys-text with-hint)
+> (press! "C-x")
+> (sleep-for 0.4)
+> (list (echo-area:keys-text client) (echo))
+("C-x- (C-h for help)" "C-x- (C-h for help)")
+> (advice-remove! echo-area:keys-text with-hint)
+> (press! "n")
+> (echo-area:keys-text client)
+"C-x n"
+> (raised (lambda () (echo-area:keys-text 'nobody)))
+(echo-area:keys-text "not a client")
+; While the echo area is hidden it shows no keys either.
+> (define (hide hidden?) #t)
+> (advice-add! echo-area:hidden? hide)
+> (press! "C-x")
+> (sleep-for 0.4)
+> (echo)
+#f
+> (advice-remove! echo-area:hidden? hide)
+> (echo)
+"C-x-"
+> (press! "n")
+; At 0, no keys show, but a prompt still does.
+> (set-option! echo-area:echo-keystrokes 0)
+> (press! "C-x")
+> (sleep-for 0.4)
+> (echo)
+#f
+> (press! "n")
+> (start! "C-c" "r")
+> (press! "C-x")
+> (echo)
+"Key: "
+> (press! "n")
+> (raised (lambda () (set-option! echo-area:echo-keystrokes -1)))
+(set-option! "-1 is not a valid value for echo-area:echo-keystrokes")
+; A client removed takes its echo with it.
+> (set-option! echo-area:echo-keystrokes 0.2)
+> (press-in! other-client "C-x")
+> (web:client-removed other-client)
+> (sleep-for 0.4)
+> (echo-for other-client)
+#f

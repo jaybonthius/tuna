@@ -36,7 +36,6 @@
 (define-table semi-char-keymap "Keys in a terminal in semi-char mode.")
 (define-table char-keymap "Keys in a terminal in char mode.")
 (define-table copy-keymap "Keys in a terminal in copy mode.")
-(define-table %next-keymap "Every key the keymaps bind, for the one key sent whatever its bindings.")
 (define-table mouse-keymap "Mouse keys on the screen of a program that takes the mouse.")
 (define-table %link-keymap "Mouse keys on a link.")
 
@@ -1254,9 +1253,10 @@
       (when bytes (%send-bytes! t bytes)))))
 
 (commands:define-command (send-next-key)
-  "Sends the next key to the program, whatever its bindings."
+  "Reads the next key and sends it to the program, whatever its bindings; a mouse key sends nothing."
   (%current 'terminal:send-next-key)
-  (keys:push-keymap! (web:current-client) %next-keymap (lambda (found command) #f)))
+  (let ([key (keys:read-key)])
+    (when (string? key) (send-key key))))
 
 (define (%paste-text! t text)
   (cond
@@ -1663,11 +1663,9 @@
 (define (%bind-keys!)
   (for-each
     (lambda (key)
-      (keys:bind! %next-keymap key send-key)
       (unless (string=? key "M-RET") (keys:bind! char-keymap key send-key))
       (unless (member key %semi-char-exceptions) (keys:bind! semi-char-keymap key send-key)))
     (%sendable-keys))
-  (keys:bind! %next-keymap "<printing-char>" send-key)
   (keys:bind! char-keymap "<printing-char>" send-key)
   (keys:bind! semi-char-keymap "<printing-char>" send-key)
   (keys:bind! semi-char-keymap "C-y" yank)

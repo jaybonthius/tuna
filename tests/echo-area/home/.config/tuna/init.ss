@@ -39,6 +39,33 @@
 
 (define (view) (layout:selected-view))
 
+;; A command that reads keys pauses the task it runs in, so its keys are
+;; pressed in a task of their own.
+(define (start-in c . keys)
+  (spawn-task (lambda () (apply press-in! c keys)))
+  (sleep-for 0.02))
+
+(define (start! . keys) (apply start-in client keys))
+
+(define (echo-for c)
+  (let* ([v (echo-view)]
+         [s (apply string-append (map html->string (layout:draw-view-atom (layout:view-node v) v c)))])
+    (let loop ([i 0] [tag? #f] [out '()])
+      (cond
+        [(= i (string-length s))
+         (let ([text (list->string (reverse out))])
+           (and (not (string=? text "")) text))]
+        [(char=? (string-ref s i) #\<) (loop (+ i 1) #t out)]
+        [(char=? (string-ref s i) #\>) (loop (+ i 1) #f out)]
+        [tag? (loop (+ i 1) #t out)]
+        [else (loop (+ i 1) #f (cons (string-ref s i) out))]))))
+
+(define (echo) (echo-for client))
+
+(define (echo-element)
+  (let ([v (echo-view)])
+    (apply string-append (map html->string (layout:draw-view-atom (layout:view-node v) v client)))))
+
 (define (text b) (document:text (buffers:document b)))
 
 (define (messages) (text (buffers:find "*Messages*")))

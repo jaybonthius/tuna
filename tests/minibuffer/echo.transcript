@@ -116,6 +116,21 @@
 ! &quit
 > (result t)
 (raised #<condition &quit>)
+; The keys that ran a command that prompts are not echoed again once the
+; prompt is answered.
+> (set-option! echo-area:echo-keystrokes 0.2)
+> (commands:define-command (ask-name) "Reads a name." (minibuffer:read "Name: "))
+> (keys:bind! keys:global "C-x r" ask-name)
+> (press! "C-x")
+> (sleep-for 0.4)
+> (echo-area:keys-text client)
+"C-x-"
+> (define t (start! (lambda () (press! "r"))))
+> (type! "abc")
+> (press! "RET")
+> (sleep-for 0.1)
+> (list (prompt) (echo-area:keys-text client))
+(#f #f)
 ; Unloading the minibuffer takes its advice back.
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
 > (echo-area:hidden?)

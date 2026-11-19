@@ -15,6 +15,21 @@
     max-block-size: 25dvh;
     overflow-y: auto;
     padding-inline: calc(var(--tuna-space-4) + var(--tuna-border-width));
+    /* A client's echo is drawn in place of the area's view, outside it,
+       so it takes the view's font here. */
+    font-family: var(--tuna-font-code);
+    font-size: var(--tuna-font-size-code);
+    line-height: var(--tuna-line-height-code);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* A read's prompt is the program's, as the minibuffer's question is,
+     so it looks like one; the keys after it are typed. */
+  .echo-area-prompt {
+    font-family: var(--tuna-font-ui);
+    font-weight: var(--tuna-font-weight-bold);
+    color: var(--echo-area-prompt-color, var(--tuna-info));
   }
 
   /* The weight marks a problem where colour is not seen. */
