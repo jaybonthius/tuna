@@ -16,15 +16,15 @@
       (unload-module! '(notes))
       (eval-file file)))
 > (use-source! "bob/notes" "alice/notes")
-! use-plugin: replaced ~/.local/share/tuna/plugins/notes, installed from another source or commit than its line's
+! use-plugin: replaced $HOME/.local/share/tuna/plugins/notes, installed from another source or commit than its line's
 > (list (notes:origin) (notes:hits))
 ("alice" 0)
 > (set-saved! notes:hits 1)
 > (use-source! "alice/notes" "bob/notes")
-! use-plugin: replaced ~/.local/share/tuna/plugins/notes, installed from another source or commit than its line's
+! use-plugin: replaced $HOME/.local/share/tuna/plugins/notes, installed from another source or commit than its line's
 > (list (notes:origin) (notes:hits))
 ("bob" 7)
 > (use-source! "bob/notes" "alice/notes")
-! use-plugin: replaced ~/.local/share/tuna/plugins/notes, installed from another source or commit than its line's
+! use-plugin: replaced $HOME/.local/share/tuna/plugins/notes, installed from another source or commit than its line's
 > (list (notes:origin) (notes:hits))
 ("alice" 1)

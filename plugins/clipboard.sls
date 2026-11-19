@@ -1,5 +1,5 @@
 #!tuna
-(import (web) (views) (layout) (keys) (commands) (editing) (kill-ring))
+(import (web) (views) (layout) (keys) (commands) (editing) (kill-ring) (ask))
 
 ;; A paste puts its text on the kill ring, where this plugin would copy
 ;; it back to the computer's clipboard, which holds it already.
@@ -33,12 +33,10 @@
 ;; A browser offers its clipboard only to a page served over HTTPS or
 ;; from localhost, and may refuse it when the page is not focused.
 (define (%failed client item)
-  (raise-continuable
-    (condition (make-warning)
-      (make-message-condition
-        (if (equal? (cdr (or (assoc "outcome" item) '(#f . #f))) "unavailable")
-            "Copy failed: the page has no clipboard, which needs HTTPS or localhost"
-            (format "Copy failed: the browser refused the clipboard (~a)" (%text item "reason")))))))
+  (ask:message
+    (if (equal? (cdr (or (assoc "outcome" item) '(#f . #f))) "unavailable")
+        "Copy failed: the page has no clipboard, which needs HTTPS or localhost"
+        (format "Copy failed: the browser refused the clipboard (~a)" (%text item "reason")))))
 
 (table-set! web:scripts 'clipboard "clipboard/clipboard.js")
 (table-set! web:input-handlers "paste" %paste)

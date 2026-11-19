@@ -163,15 +163,18 @@
         (delete-file path #f)))
 
   ;; A rename replaces only a file or an empty folder, so what the logs
-  ;; hold under the new path is of files no longer there.
+  ;; hold under the new path is of files no longer there, whether or not
+  ;; the renamed path has logs of its own.
   (define (move-logs! from to)
     (for-each
       (lambda (from to)
-        (when (file-exists? from #f)
-          (when (file-exists? to #f) (delete-tree! to))
-          (make-folders! (path-parent to))
-          (rename-file from to)
-          (sync-folder! (path-parent from))
-          (sync-folder! (path-parent to))))
+        (let ([stale? (file-exists? to #f)] [own? (file-exists? from #f)])
+          (when stale? (delete-tree! to))
+          (when own?
+            (make-folders! (path-parent to))
+            (rename-file from to)
+            (sync-folder! (path-parent from)))
+          (when (or stale? own?)
+            (sync-folder! (path-parent to)))))
       (list (string-append from ".ss") from)
       (list (string-append to ".ss") to))))

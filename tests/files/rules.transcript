@@ -59,7 +59,7 @@
 > (list (disk-checks:read-text "~/fresh.txt") (buffers:modified? fresh))
 ("new\n" #f)
 > (files:path (files:visit "~/no/such/folder/x.txt"))
-"~/no/such/folder/x.txt"
+"$HOME/no/such/folder/x.txt"
 > (files:visit "~")
 ! files:read-document: is a folder with irritant "~"
 ; A save renames a new file over the old one, keeping its mode, and
@@ -80,7 +80,7 @@
 0
 > (define linked (files:visit "~/kept/link.txt"))
 > (list linked (files:path linked) (eq? linked (files:visit "~/kept/target.txt")) (eq? linked (files:buffer-visiting "~/kept/./link.txt")))
-(#<buffer target.txt> "~/kept/target.txt" #t #t)
+(#<buffer target.txt> "$HOME/kept/target.txt" #t #t)
 > (buffers:replace! linked 1 1 "the ")
 #<edit 1>
 > (files:save-buffer linked)
@@ -140,7 +140,7 @@
 > (define draft (buffers:make "*draft*" "(+ 1 2)"))
 > (files:write-file "~/work/sum.ss" draft)
 > (list (buffers:name draft) (files:path draft) (disk-checks:read-text "~/work/sum.ss") (buffers:modified? draft))
-("sum.ss" "~/work/sum.ss" "(+ 1 2)\n" #f)
+("sum.ss" "$HOME/work/sum.ss" "(+ 1 2)\n" #f)
 > (disk-checks:write-text! "~/work/sum.ss" "elsewhere\n")
 > (buffers:replace! draft 1 1 ";")
 #<edit 2>

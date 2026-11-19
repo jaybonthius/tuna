@@ -11,7 +11,7 @@
 > (run! pi-chat:open)
 > (define chat (car (pi:chats)))
 > (list (pi:chat-directory chat) (buffers:name (views:buffer (view))))
-("~/src/tuna/" "*pi: tuna*")
+("$HOME/src/tuna/" "*pi: tuna*")
 > (define f (fake-of chat))
 > (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 > (in-client (lambda () (layout:switch-to-buffer file-buffer)))
@@ -27,7 +27,7 @@
 > (define sub-buffer (views:buffer (view)))
 > (run! pi-chat:open)
 > (list (length (pi:chats)) (eq? (pi-chat:chat-of (views:buffer (view))) chat) (pi-chat:folder-for sub-buffer))
-(1 #t "~/src/tuna/")
+(1 #t "$HOME/src/tuna/")
 > (in-client (lambda () (buffers:kill! sub-buffer) (void)))
 ; With C-u, always a new one.
 > (in-client (lambda () (parameterize ([commands:prefix-argument '(4)]) (commands:run pi-chat:open))))
@@ -43,7 +43,7 @@
 > (define inside (pi:start (string-append project "/lib")))
 > (define elsewhere (pi:start (getenv "HOME")))
 > (map pi:chat-directory (pi-chat:chats-for file-buffer))
-("~/src/tuna/" "~/src/tuna/lib" "~")
+("$HOME/src/tuna/" "$HOME/src/tuna/lib" "$HOME")
 > (for-each pi:stop! (list inside elsewhere))
 > (wait-until (lambda () (= (length (pi:chats)) 1)))
 ; C-c a t removes the view showing the chat, or shows it.
@@ -284,3 +284,14 @@ thinking
 > (wait-until (lambda () (processes:status process)))
 > (list (pi:chats) (processes:status process))
 (() -1)
+; With no chat in the buffer's project, C-c a r asks whether to start
+; one, naming the folder with ~.
+> (define questions '())
+> (set-option! ask:y-or-n-reader (lambda (question) (set! questions (cons question questions)) #f))
+> (write-file! (string-append project "/lib/c.txt") "c\n")
+> (in-client (lambda () (layout:switch-to-buffer (files:visit (string-append project "/lib/c.txt")))))
+> (in-client (lambda () (views:set-point! (view) 1) (views:set-mark! (view) 2)))
+> (run! pi-chat:add-region)
+> (list questions (pi:chats))
+(("Start a Pi chat in ~/src/tuna/? ") ())
+> (remove-option! ask:y-or-n-reader)

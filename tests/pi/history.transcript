@@ -29,4 +29,4 @@
 > (press! "y")
 > (result t)
 > (list (length (pi:chats)) (pi:chat-directory (cadr (pi:chats))) (shown (cadr (pi:chats))))
-(2 "~/" "```notes lines 1-1\na \n```\n")
+(2 "$HOME/" "```notes lines 1-1\na \n```\n")

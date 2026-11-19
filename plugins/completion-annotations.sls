@@ -27,7 +27,7 @@
   (lambda (b)
     (if (buffers:live? b)
         (list (cons faces:shadow (number->string (%characters b)))
-              (cons faces:shadow (or (files:path b) "")))
+              (cons faces:shadow (let ([path (files:path b)]) (if path (files:abbreviated-path path) ""))))
         '())))
 
 (define (%characters b)

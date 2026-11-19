@@ -24,7 +24,7 @@ build of 5f6001bb7fdad8e837ea98a8b5d16a2d5978a82f, status 0
 wrote gen.sls
 ; A failed build fails the update before any module is looked for.
 > (update-plugin! 'gen "cec7478")
-! update-plugin!: the build of gen failed with status 3: no compiler (output in ~/.cache/tuna/builds/gen.log)
+! update-plugin!: the build of gen failed with status 3: no compiler (output in $HOME/.cache/tuna/builds/gen.log)
 > (plugin-commit 'gen)
 "5f6001bb7fdad8e837ea98a8b5d16a2d5978a82f"
 > (gen:version)

@@ -1,6 +1,6 @@
 #!tuna
 (import (pi) (pi-chat) (projects) (completion) (minibuffer) (ask) (commands) (keys) (views) (buffers) (document)
-        (faces))
+        (faces) (files))
 
 (completion:define-category chat-category "Live Pi chats, valued by the chat.")
 
@@ -327,14 +327,6 @@
                           (candidates (lambda (prefix) (%command-choices chat)))
                           (category command-category)))))))))
 
-(define (%abbreviated path)
-  (let ([home (getenv "HOME")])
-    (if (and home (fx> (string-length home) 1) (fx>= (string-length path) (string-length home))
-             (string=? (substring path 0 (string-length home)) home)
-             (or (fx= (string-length path) (string-length home)) (char=? (string-ref path (string-length home)) #\/)))
-        (string-append "~" (substring path (string-length home) (string-length path)))
-        path)))
-
 (define (%age t)
   (let ([seconds (max 0 (time-second (time-difference (current-time 'time-utc) t)))])
     (cond
@@ -354,7 +346,7 @@
 
 (define (annotate-chat session)
   (lambda (chat)
-    (list (cons faces:shadow (%abbreviated (pi:chat-directory chat)))
+    (list (cons faces:shadow (files:abbreviated-path (pi:chat-directory chat)))
           (cons faces:shadow (symbol->string (pi:chat-activity chat))))))
 
 (define (annotate-session session)

@@ -114,7 +114,7 @@ expect "files" "$(printf '%s\n' "$output" | grep -v '^configured \|^Tuna is at '
 output=$(run '(wait-until (lambda () (showing? "f.txt")))
 (shown)
 (buffers:name (files:buffer-visiting "e.txt"))' +2 e.txt +3 f.txt '~/folder' +9)
-expect "a folder" "$(printf '%s\n' "$output" | grep -v '^configured \|^Tuna is at ')" "! (command-line) files:read-document: is a folder with irritant \"$home/folder\"
+expect "a folder" "$(printf '%s\n' "$output" | grep -v '^configured \|^Tuna is at ')" "! (command-line) files:read-document: is a folder with irritant \"~/folder\"
 (\"f.txt\" 3)
 \"e.txt\""
 

@@ -148,7 +148,8 @@
 > (taken!)
 ((ended stopped))
 ; A stop cannot skip the out of a critical wind, and a guard does not
-; catch it. A value emitted after the stop ends the job at once.
+; catch it. A value emitted after the stop is sent, since the stop did not
+; undo the work it reports, and then ends the job.
 > (import (progress))
 > (jobs:define-worker (cleans x emit)
     (import (progress))
@@ -159,9 +160,9 @@
 > (define cleaning (jobs:start cleans 0 note! (lambda (ended) (note! (list 'ended ended)))))
 > (sleep-for 0.05)
 > (jobs:stop! cleaning)
-> (wait-until (lambda () (= (length log) 2)))
+> (wait-until (lambda () (= (length log) 3)))
 > (list (taken!) (counted))
-((running (ended stopped)) 1)
+((running cleaned (ended stopped)) 1)
 ; Values are checked where they cross: in jobs:start, jobs:send! and
 ; emit. Arguments are checked.
 > (jobs:start match-names car note!)

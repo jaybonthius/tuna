@@ -1,6 +1,6 @@
 ; A copy of a plugin that Tuna's own library holds goes when the
 ; configuration's line for it has no source and no index names it.
-! use-plugin: removed ~/.local/share/tuna/plugins/files: its line finds the plugin in Tuna's own library
+! use-plugin: removed $HOME/.local/share/tuna/plugins/files: its line finds the plugin in Tuna's own library
 > (files:who)
 "bundled"
 > (installed-plugins)

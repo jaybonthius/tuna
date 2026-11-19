@@ -80,7 +80,7 @@
 > (checks:write-text! "~/a.txt" "changed\n")
 > (reload! "buffers")
 > (wait-until (lambda () (= (length (files:buffers)) 1)))
-! (files) undo-log: the file changed outside Tuna, so the log of its unsaved edits is set aside as with irritant "~/undo-logs~/a.txt.ss.stale"
+! (files) undo-log: the file changed outside Tuna, so the log of its unsaved edits is set aside as with irritant "~/undo-logs$HOME/a.txt.ss.stale"
 > (define a (files:visit "~/a.txt"))
 > (list (text a) (buffers:modified? a) (tree a))
 ("changed\n" #f (0 0 (0 #f)))
@@ -136,7 +136,7 @@
 ; Writing to another file starts a log there, with the whole history.
 > (files:write-file "~/b.txt" a)
 > (list (files:path a) (tree a))
-("~/b.txt" (3 3 (0 #f) (1 0) (2 1) (3 1)))
+("$HOME/b.txt" (3 3 (0 #f) (1 0) (2 1) (3 1)))
 > (logged "~/b.txt" 7)
 (undo-history group group group saved saved at)
 > (in-a undo:undo 1)
@@ -173,7 +173,7 @@
 > (begin
     (reload! "buffers")
     (wait-until (lambda () (= (length (files:buffers)) open))))
-! (undo-log) open-file-input-port: failed for ~/undo-logs~/c.txt.ss: permission denied
+! (undo-log) open-file-input-port: failed for $HOME/undo-logs$HOME/c.txt.ss: permission denied
 > (define c (files:visit "~/c.txt"))
 > (list (text c) (tree c))
 ("gamma\n" (0 0 (0 #f)))
@@ -185,7 +185,7 @@
 #<edit 2>
 > (reload! "undo-log")
 > (sleep-for 0.2)
-! (undo-log) open-file-input-port: failed for ~/undo-logs~/c.txt.ss: permission denied
+! (undo-log) open-file-input-port: failed for $HOME/undo-logs$HOME/c.txt.ss: permission denied
 > (buffers:with-buffer c (commands:run checks:insert 1 "z "))
 #<edit 3>
 > (sleep-for 0.2)

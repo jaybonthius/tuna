@@ -4,7 +4,7 @@
 #<buffer notes.txt>
 > (define notes (files:visit "~/notes.txt"))
 > (files:path notes)
-"~/notes.txt"
+"$HOME/notes.txt"
 > (files:buffer-visiting "~/notes.txt")
 #<buffer notes.txt>
 > (files:buffers)

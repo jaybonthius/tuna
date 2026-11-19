@@ -248,18 +248,20 @@
                ended))))))
 
   ;; Runs on the job's thread with stops held off, since it takes the
-  ;; job's mutex.
+  ;; job's mutex. A stopped job's value is still sent, since a stop does
+  ;; not undo the work the value reports; the job ends after it.
   (define (queue-result! j v)
-    (let ([n (with-mutex (job-mutex j)
-               (let wait ()
-                 (when (and (fx>= (fx- (job-sent j) (job-delivered j)) result-limit) (not (job-stop? j)))
-                   (condition-wait (job-wake j) (job-mutex j))
-                   (wait)))
-               (and (not (job-stop? j))
+    (let-values ([(n stopped?)
+                  (with-mutex (job-mutex j)
+                    (let wait ()
+                      (when (and (fx>= (fx- (job-sent j) (job-delivered j)) result-limit) (not (job-stop? j)))
+                        (condition-wait (job-wake j) (job-mutex j))
+                        (wait)))
                     (let ([n (fx+ (job-sent j) 1)])
                       (job-sent-set! j n)
-                      n)))])
-      (and n (begin (post! (lambda () (deliver! j n v))) #t))))
+                      (values n (job-stop? j))))])
+      (post! (lambda () (deliver! j n v)))
+      (not stopped?)))
 
   (define (seconds->time-utc seconds)
     (let ([ns (exact (round (* seconds 1000000000)))])

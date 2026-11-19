@@ -141,7 +141,7 @@
 > (result t)
 > (define resumed (pi-chat:chat-of (views:buffer (view))))
 > (list (length (pi:chats)) (pi:chat-session-id resumed) (pi:chat-directory resumed))
-(3 "bbb" "~/src/tuna/")
+(3 "bbb" "$HOME/src/tuna/")
 > (in-client (lambda () (layout:switch-to-buffer file-buffer)))
 > (define t (start! (lambda () (run! pi-picker:resume))))
 > (wait-matches (session))
@@ -383,7 +383,7 @@
 > (eq? (in-client pi-chat:current-chat) chat)
 #t
 > (list (pi-chat:folder-for file-buffer) (pi-chat:folder-for (pi-chat:buffer other)))
-("~/src/tuna/" "~")
+("$HOME/src/tuna/" "$HOME")
 > (pi-chat:region-text chat file-buffer 1 5)
 "lib/a.txt:1"
 > (in-client (lambda () (layout:switch-to-buffer file-buffer)))

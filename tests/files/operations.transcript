@@ -17,10 +17,10 @@
 #<edit 1>
 > (files:rename-file "~/d/one.txt" "~/d/uno.txt")
 > (list (buffers:name one) (files:path one) (buffers:modified? one) (disk-checks:folder-files "~/d") renames)
-("uno.txt" "~/d/uno.txt" #t ("two.txt" "uno.txt") (("~/d/one.txt" "~/d/uno.txt")))
+("uno.txt" "$HOME/d/uno.txt" #t ("two.txt" "uno.txt") (("$HOME/d/one.txt" "$HOME/d/uno.txt")))
 > (files:rename-file "~/d" "~/e")
 > (list (files:path one) (disk-checks:exists? "~/d") (car renames))
-("~/e/uno.txt" #f ("~/d" "~/e"))
+("$HOME/e/uno.txt" #f ("$HOME/d" "$HOME/e"))
 ; A target that exists is replaced only with no-fail; a folder never goes
 ; inside itself; failures name the path and the system's reason.
 > (raised (lambda () (files:rename-file "~/e/uno.txt" "~/e/two.txt")))
@@ -30,9 +30,11 @@
 (("two.txt") "one\n")
 > (raised (lambda () (files:rename-file "~/e" "~/e/inner")))
 (files:rename-file "cannot put a folder inside itself")
+; A failure's message names a path under the home folder with ~, as the
+; questions do; its filename stays whole, for code.
 > (guard (c [(i/o-filename-error? c) (list (i/o-error-filename c) (condition-message c))])
     (files:rename-file "~/none" "~/other"))
-("~/none" "failed for ~/none: no such file or directory")
+("$HOME/none" "failed for ~/none: no such file or directory")
 ; A rename refuses a target, or a file under it, that a buffer it does
 ; not move visits, as write-file does, before it touches the disk; and a
 ; file renamed or copied to itself is refused as the same file.
@@ -43,8 +45,11 @@
 > (define b (files:visit "~/r/b.txt"))
 > (raised (lambda () (files:rename-file "~/r/a.txt" "~/r/b.txt" (file-options no-fail))))
 (files:rename-file "another buffer visits the file")
+> (guard (c [#t (condition-irritants c)])
+    (files:rename-file "~/r/a.txt" "~/r/b.txt" (file-options no-fail)))
+("~/r/b.txt")
 > (list (map buffers:name (list a b)) (map files:path (list a b)) (disk-checks:folder-files "~/r") (car renames))
-(("a.txt" "b.txt") ("~/r/a.txt" "~/r/b.txt") ("a.txt" "b.txt") ("~/e/uno.txt" "~/e/two.txt"))
+(("a.txt" "b.txt") ("$HOME/r/a.txt" "$HOME/r/b.txt") ("a.txt" "b.txt") ("$HOME/e/uno.txt" "$HOME/e/two.txt"))
 > (disk-checks:folder! "~/s")
 > (define new (files:visit "~/s/new.txt"))
 > (raised (lambda () (files:rename-file "~/r" "~/s" (file-options no-fail))))
@@ -53,7 +58,7 @@
 #t
 > (files:rename-file "~/r" "~/s" (file-options no-fail))
 > (list (map files:path (list a b)) (disk-checks:exists? "~/r"))
-(("~/s/a.txt" "~/s/b.txt") #f)
+(("$HOME/s/a.txt" "$HOME/s/b.txt") #f)
 > (list (raised (lambda () (files:rename-file "~/s/a.txt" "~/s/a.txt")))
         (raised (lambda () (files:copy-file "~/s" "~/s"))))
 ((files:rename-file "the same file") (files:copy-file "the same file"))

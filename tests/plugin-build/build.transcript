@@ -4,14 +4,14 @@
 > (wrap:add 2 3)
 5
 > (wrap:build-facts)
-("Chez Scheme Version 10.4.1" () "0" #t "~/.local/share/tuna/plugins/wrap")
+("Chez Scheme Version 10.4.1" () "0" #t "$HOME/.local/share/tuna/plugins/wrap")
 > (show ".cache/tuna/builds/wrap.log")
 build of 64d7a8187825fb8a1aff128735f0ea4f70d7b37e, status 0
 built
 ; A failed build fails the update, which goes back to the previous commit
 ; and builds it again. init.ss is unchanged, and the log holds both builds.
 > (update-plugin! 'wrap "a8fdfe6")
-! update-plugin!: the build of wrap failed with status 255: Exception in build: cc is missing (output in ~/.cache/tuna/builds/wrap.log)
+! update-plugin!: the build of wrap failed with status 255: Exception in build: cc is missing (output in $HOME/.cache/tuna/builds/wrap.log)
 > (plugin-commit 'wrap)
 "64d7a8187825fb8a1aff128735f0ea4f70d7b37e"
 > (wrap:add 2 3)
@@ -55,11 +55,11 @@ build of 7e117645e8cca0cfc2a08aa88e8e1fe55a0a67f6, status 0
 built
 ; A failed build fails the install and leaves the plugin as it was.
 > (use-plugin broken (git "https://github.com/bob/broken"))
-! use-plugin: the build of broken failed with status 3: no compiler (output in ~/.cache/tuna/builds/broken.log)
+! use-plugin: the build of broken failed with status 3: no compiler (output in $HOME/.cache/tuna/builds/broken.log)
 > (exists? ".local/share/tuna/plugins/broken")
 #f
 > (install-plugin! '(use-plugin broken (git "https://github.com/bob/broken")))
-! install-plugin!: the build of broken failed with status 3: no compiler (output in ~/.cache/tuna/builds/broken.log)
+! install-plugin!: the build of broken failed with status 3: no compiler (output in $HOME/.cache/tuna/builds/broken.log)
 > (list (exists? ".local/share/tuna/plugins/broken") (installed-plugins))
 (#f (wrap loc))
 > (show ".cache/tuna/builds/broken.log")

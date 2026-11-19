@@ -190,7 +190,7 @@
     (when (unsaved-edits? records saves)
       (send! (list (vector 'aside file)))
       (warn 'undo-log "the file changed outside Tuna, so the log of its unsaved edits is set aside as"
-            (list (string-append file ".stale")))))
+            (list (files:abbreviated-path (string-append file ".stale"))))))
 
   (define-record-type prepared
     (sealed #t)

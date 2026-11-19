@@ -2,15 +2,15 @@
 ; and its config forms do not run. In a line that loads, each config form
 ; that raises is reported with the form and its position, and the next
 ; form runs.
-! use-plugin: plugin nothere holds no module (nothere) (use-plugin nothere (local "~/src/nothere") (config (display "[nothere config]\n"))) at line 2, char 1 of ~/.config/tuna/init.ss
-! use-plugin: commit 0000000 not found in https://github.com/bob/dict (use-plugin dict (git "https://github.com/bob/dict") (commit "0000000") (config (display "[dict config]\n"))) at line 5, char 1 of ~/.config/tuna/init.ss
-! (broken) car: () is not a pair (use-plugin broken (config (set-option! broken:level 3) (display "[broken config]\n"))) at line 8, char 1 of ~/.config/tuna/init.ss
+! use-plugin: plugin nothere holds no module (nothere) (use-plugin nothere (local "~/src/nothere") (config (display "[nothere config]\n"))) at line 2, char 1 of $HOME/.config/tuna/init.ss
+! use-plugin: commit 0000000 not found in https://github.com/bob/dict (use-plugin dict (git "https://github.com/bob/dict") (commit "0000000") (config (display "[dict config]\n"))) at line 5, char 1 of $HOME/.config/tuna/init.ss
+! (broken) car: () is not a pair (use-plugin broken (config (set-option! broken:level 3) (display "[broken config]\n"))) at line 8, char 1 of $HOME/.config/tuna/init.ss
 [spell body]
-! set-option!: 42 is not a valid value for spell:language (set-option! spell:language 42) at line 14, char 5 of ~/.config/tuna/init.ss
+! set-option!: 42 is not a valid value for spell:language (set-option! spell:language 42) at line 14, char 5 of $HOME/.config/tuna/init.ss
 [second form]
-! invalid syntax (let ((x)) x) at line 16, char 5 of ~/.config/tuna/init.ss
-! incorrect number of arguments 0 to #<procedure spell:check> (spell:check) at line 17, char 5 of ~/.config/tuna/init.ss
-! &error (raise (make-error)) at line 18, char 5 of ~/.config/tuna/init.ss
+! invalid syntax (let ((x)) x) at line 16, char 5 of $HOME/.config/tuna/init.ss
+! incorrect number of arguments 0 to #<procedure spell:check> (spell:check) at line 17, char 5 of $HOME/.config/tuna/init.ss
+! &error (raise (make-error)) at line 18, char 5 of $HOME/.config/tuna/init.ss
 [last form]
 (after en)
 > (module-changes '(init))

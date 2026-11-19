@@ -1,5 +1,5 @@
 (library (files attributes)
-  (export read-file-attributes file-attributes? file-type file-system-space true-path
+  (export read-file-attributes file-attributes? file-type file-system-space
           file-attributes-type file-attributes-size file-attributes-blocks file-attributes-modified
           file-attributes-mode file-attributes-links file-attributes-uid file-attributes-gid
           file-attributes-owner file-attributes-group file-attributes-target make-owner-names)
@@ -18,8 +18,6 @@
       (load-shared-object #f)
       (foreign-procedure __collect_safe __errno "lstat" (uptr uptr) int)))
   (define c-readlink (foreign-procedure __collect_safe __errno "readlink" (uptr uptr size_t) ssize_t))
-  (define c-realpath (foreign-procedure __collect_safe "realpath" (uptr uptr) uptr))
-  (define c-free (foreign-procedure "free" (uptr) void))
   (define c-statvfs (foreign-procedure __collect_safe __errno "statvfs" (uptr uptr) int))
   (define c-getpwuid-r (foreign-procedure __collect_safe "getpwuid_r" (unsigned-32 uptr uptr size_t uptr) int))
   (define c-getgrgid-r (foreign-procedure __collect_safe "getgrgid_r" (unsigned-32 uptr uptr size_t uptr) int))
@@ -60,11 +58,11 @@
         (lambda ()
           (let retry ([size 1024])
             (let ([buffer (foreign-alloc size)])
-              (let* ([error (lookup id entry buffer size found)]
-                     [name (and (fx= error 0) (not (fx= (foreign-ref 'uptr found 0) 0))
+              (let* ([errno (lookup id entry buffer size found)]
+                     [name (and (fx= errno 0) (not (fx= (foreign-ref 'uptr found 0) 0))
                                 (c-string->string (name-of entry)))])
                 (foreign-free buffer)
-                (if (fx= error erange) (retry (fx* size 2)) name)))))
+                (if (fx= errno erange) (retry (fx* size 2)) name)))))
         (lambda () (foreign-free entry) (foreign-free found)))))
 
   (define (owner-name uid)
@@ -175,43 +173,6 @@
   (define-accessor file-attributes-owner 9)
   (define-accessor file-attributes-group 10)
   (define-accessor file-attributes-target 11)
-
-  (define (realpath path)
-    (call-with-c-string path
-      (lambda (p)
-        (let ([r (c-realpath p 0)])
-          (and (not (eqv? r 0))
-               (let ([s (c-string->string r)])
-                 (c-free r)
-                 s))))))
-
-  (define (join folder name)
-    (if (and (fx> (string-length folder) 0)
-             (char=? (string-ref folder (fx- (string-length folder) 1)) #\/))
-        (string-append folder name)
-        (string-append folder "/" name)))
-
-  (define (absolute path)
-    (cond
-      [(and (fx>= (string-length path) 1) (char=? (string-ref path 0) #\/)) path]
-      [(or (string=? path "~") (and (fx>= (string-length path) 2) (string=? (substring path 0 2) "~/")))
-       (string-append (or (getenv "HOME") "") (substring path 1 (string-length path)))]
-      [else (join (current-directory) path)]))
-
-  ;; A missing file's path still resolves the folders that exist, so the
-  ;; first save writes where a later visit will look.
-  (define (true-path path)
-    (let resolve ([path (absolute path)])
-      (or (realpath path)
-          (let ([folder (path-parent path)] [name (path-last path)])
-            (if (or (string=? folder path) (string=? folder ""))
-                path
-                (let ([folder (resolve folder)])
-                  (cond
-                    [(or (string=? name "") (string=? name ".")) folder]
-                    [(string=? name "..") (path-parent folder)]
-                    [else (join folder name)])))))))
-
 
   (define (file-system-space path)
     (unless (string? path)

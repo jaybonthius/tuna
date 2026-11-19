@@ -88,10 +88,11 @@ awk -v input="$dir/input" -v expected="$dir/expected" '
 status=0
 (cd "$dir/work" && TUNA_LIBRARY="$dir/library" "$tuna" < "$dir/input" > "$dir/actual" 2>&1) || status=$?
 
-# Each run has a fresh home folder, so a transcript writes its path as ~,
-# and the remotes' as remotes. A test's server listens on a port the
-# system chose, so a transcript writes it as PORT.
-sed -E -e "s|$dir/home|~|g" -e "s|$dir/remotes|remotes|g" \
+# Each run has a fresh home folder, so a transcript writes its path as
+# $HOME, and the remotes' as remotes; not as ~, which Tuna itself writes
+# for the home folder. A test's server listens on a port the system
+# chose, so a transcript writes it as PORT.
+sed -E -e "s|$dir/home|\$HOME|g" -e "s|$dir/remotes|remotes|g" \
   -e 's/(127\.0\.0\.1:| port )[0-9]+/\1PORT/g' "$dir/actual" > "$dir/shown"
 
 if [ "$status" -ne 0 ]; then

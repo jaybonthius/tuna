@@ -3,7 +3,7 @@
 ; configuration runs and says so.
 ; The configuration then overrides and sets spell's definitions, with no
 ; other report.
-! use-plugin: replaced ~/.local/share/tuna/plugins/spell, installed from another source or commit than its line's
+! use-plugin: replaced $HOME/.local/share/tuna/plugins/spell, installed from another source or commit than its line's
 > (list (spell:dictionary-path) (spell:language))
 ("/home/groucho/words" "en-GB")
 > (plugin-commit 'spell)
@@ -26,7 +26,7 @@
 "8f4a7345babf351f103b3a03a5d290d170e5e95e"
 > (unload-module! '(spell))
 > (eval-text "(use-plugin spell (git \"https://github.com/bob/spell\") (commit \"624c303\"))" "~/.config/tuna/init.ss")
-! use-plugin: replaced ~/.local/share/tuna/plugins/spell, installed from another source or commit than its line's
+! use-plugin: replaced $HOME/.local/share/tuna/plugins/spell, installed from another source or commit than its line's
 > (plugin-commit 'spell)
 "624c3038631852c7011bc1be6dfb1aed74fd271a"
 > (list (spell:dictionary-path) (spell:language))

@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (jobs) (commands) (keys) (ask) (files disk))
+(import (buffers) (document) (jobs) (commands) (keys) (ask) (files disk) (files paths))
 
 (define-option require-final-newline #f boolean?
   "When true, saving a file buffer whose text does not end in a line break adds one, as an edit.")
@@ -38,6 +38,40 @@
             (list path from to))
   (and (%within? path from)
        (string-append to (substring path (string-length from) (string-length path)))))
+
+(define (%without-final-slash folder)
+  (let ([n (string-length folder)])
+    (if (and (fx> n 1) (char=? (string-ref folder (fx- n 1)) #\/))
+        (substring folder 0 (fx- n 1))
+        folder)))
+
+;; Files are named by their true paths, so the home folder is matched as
+;; HOME gives it and resolved through symbolic links too. A home of / is
+;; left alone, as Emacs leaves it, since every path would start with ~.
+(define (%home-forms home)
+  (let ([given (and home (%without-final-slash home))])
+    (if (and given (fx> (string-length given) 1))
+        (let ([true (true-path given)])
+          (if (or (string=? true given) (fx<= (string-length true) 1)) (list given) (list given true)))
+        '())))
+
+;; Resolving the home folder reads the disk, so it is done once for each
+;; value of HOME.
+(define %home-folders-of #f)
+
+(define (%home-folders)
+  (let ([home (getenv "HOME")])
+    (unless (and %home-folders-of (equal? (car %home-folders-of) home))
+      (set! %home-folders-of (cons home (%home-forms home))))
+    (cdr %home-folders-of)))
+
+(define (abbreviated-path path)
+  (unless (string? path)
+    (assertion-violation 'files:abbreviated-path "not a string" path))
+  (let ([home (find (lambda (home) (%within? path home)) (%home-folders))])
+    (if home
+        (string-append "~" (substring path (string-length home) (string-length path)))
+        path)))
 
 (define-option offer-save? #t boolean?
   "When false in a buffer that visits no file, the buffer holds nothing to save: killing it asks nothing, and files:save-buffer leaves it alone.")
@@ -80,7 +114,7 @@
 
 (jobs:define-worker (%renamer input emit)
   (import (files disk))
-  (emit (guard (c [#t (failure c)]) (apply rename-path input))))
+  (emit (guard (c [#t (failure c)]) (apply rename-path (append input (list (lambda () (emit 'moved))))))))
 
 (jobs:define-worker (%copier input emit)
   (import (files disk))
@@ -317,16 +351,19 @@
                   (save-visits!)
                   e)))))))
 
+  ;; The hook is called as the save is recorded, not when the saving task
+  ;; resumes, since a quit can reach that task after the file is written.
   (define (record-save! e version result)
     (when (and (entry-live? e) (pair? result) (number? (car result)))
-      (without-quits
-        (lambda ()
-          (entry-length-set! e (car result))
-          (entry-hash-set! e (cadr result))
-          (let ([b (entry-buffer e)])
+      (let ([b (entry-buffer e)])
+        (without-quits
+          (lambda ()
+            (entry-length-set! e (car result))
+            (entry-hash-set! e (cadr result))
             (when (= version (buffers:version b))
-              (buffers:set-modified! b #f)))
-          (save-visits!)))))
+              (buffers:set-modified! b #f))
+            (save-visits!)))
+        (buffers:with-buffer b (after-save b)))))
 
   ;; Recorded before the edit, so a quit between them leaves the buffer
   ;; modified against the file now on disk rather than against the old one.
@@ -340,7 +377,8 @@
 
   (define (changed-on-disk who path)
     (condition (%make-changed-on-disk) (make-who-condition who)
-               (make-message-condition "another program changed the file") (make-irritants-condition (list path))))
+               (make-message-condition "another program changed the file")
+               (make-irritants-condition (list (abbreviated-path path)))))
 
   (define (add-final-newline! b)
     (let* ([doc (buffers:document b)] [n (document:length doc)])
@@ -419,13 +457,17 @@
 
   (define (failed result who)
     (and (failure? result)
-         (raise (condition (cond
-                             [(failure-violation? result) (make-assertion-violation)]
-                             [(failure-already-exists? result) (make-i/o-file-already-exists-error (failure-filename result))]
-                             [(failure-filename result) => make-i/o-filename-error]
-                             [else (make-i/o-error)])
-                           (make-who-condition who) (make-message-condition (failure-message result))
-                           (make-irritants-condition (failure-irritants result))))))
+         (let ([irritants (map (lambda (x) (if (string? x) (abbreviated-path x) x)) (failure-irritants result))]
+               [format? (failure-format? result)])
+           (raise (condition (cond
+                               [(failure-violation? result) (make-assertion-violation)]
+                               [(failure-already-exists? result) (make-i/o-file-already-exists-error (failure-filename result))]
+                               [(failure-filename result) => make-i/o-filename-error]
+                               [else (make-i/o-error)])
+                             (make-who-condition who)
+                             (make-message-condition
+                               (if format? (apply format (failure-message result) irritants) (failure-message result)))
+                             (make-irritants-condition (if format? '() irritants)))))))
 
   ;; The job is this module's, so it outlives a reload of the caller's
   ;; module. Its result is recorded as it arrives, so a save is known even
@@ -460,28 +502,34 @@
 
   ;; Unlike a save, an operation on files may run long, so a quit of the
   ;; task waiting for it stops the job; the files already done stay done.
-  (define (run-operation who worker input)
-    (let ([job #f] [result #f])
-      (guard (c [#t (when job (jobs:stop! job)) (raise c)])
-        (suspend
-          (lambda (resume)
-            (let ([w (cons who resume)])
-              (without-quits
-                (lambda ()
-                  (as-module (this-module)
-                    (set! job
-                      (jobs:start worker input
-                        (lambda (v) (set! result v))
-                        (lambda (ended)
-                          (when (take-waiter! w)
-                            (resume
-                              (lambda ()
-                                (cond
-                                  [(condition? ended) (raise ended)]
-                                  [ended (assertion-violation who "the job was stopped")])
-                                (failed result who)
-                                result)))))))
-                  (set! waiting (cons w waiting))))))))))
+  ;; Each value is recorded as it arrives, as a save's is, since a quit
+  ;; can reach the task after the job has done its work but before the
+  ;; task resumes.
+  (define run-operation
+    (case-lambda
+      [(who worker input) (run-operation who worker input (lambda (v) (void)))]
+      [(who worker input record!)
+       (let ([job #f] [result #f])
+         (guard (c [#t (when job (jobs:stop! job)) (raise c)])
+           (suspend
+             (lambda (resume)
+               (let ([w (cons who resume)])
+                 (without-quits
+                   (lambda ()
+                     (as-module (this-module)
+                       (set! job
+                         (jobs:start worker input
+                           (lambda (v) (set! result v) (record! v))
+                           (lambda (ended)
+                             (when (take-waiter! w)
+                               (resume
+                                 (lambda ()
+                                   (cond
+                                     [(condition? ended) (raise ended)]
+                                     [ended (assertion-violation who "the job was stopped")])
+                                   (failed result who)
+                                   result)))))))
+                     (set! waiting (cons w waiting)))))))))]))
 
   ;; Moving the renamed buffers onto a path another buffer visits would
   ;; leave two buffers on one file, so the rename is refused first, as
@@ -491,7 +539,7 @@
       (lambda (e)
         (let ([path (entry-path e)])
           (when (and (%within? path to) (not (%within? path from)))
-            (error who "another buffer visits the file" path))))
+            (error who "another buffer visits the file" (abbreviated-path path)))))
       visited))
 
   (define (move-entries-under! from to)
@@ -514,9 +562,7 @@
                          (lambda (result) (record-save! e version result))
                          e)])
           (when (eq? result 'changed)
-            (raise (changed-on-disk who (entry-path e))))
-          (when (entry-live? e)
-            (buffers:with-buffer b (after-save b)))))))
+            (raise (changed-on-disk who (entry-path e))))))))
 
   (define (forget-killed! buffer)
     (let ([e (entry-of buffer)])
@@ -548,7 +594,7 @@
          [read (run-job 'files:read-document %reader path (lambda (read) (void)) #f)])
     (when (eq? read 'folder)
       (raise (condition (%make-folder path) (make-who-condition 'files:read-document)
-                        (make-message-condition "is a folder") (make-irritants-condition (list path)))))
+                        (make-message-condition "is a folder") (make-irritants-condition (list (abbreviated-path path))))))
     (remember-read! read)
     (values (contents-document read) (contents-length read) (contents-hash read))))
 
@@ -602,7 +648,7 @@
 
 (define (%cancel who path)
   (raise (condition (%make-canceled) (make-who-condition who)
-                    (make-message-condition "canceled") (make-irritants-condition (list path)))))
+                    (make-message-condition "canceled") (make-irritants-condition (list (abbreviated-path path))))))
 
 (define (%confirm-overwrite who path)
   (when (and (file-exists? path) (not (ask:y-or-n? "File exists; overwrite? ")))
@@ -612,7 +658,7 @@
   (let ([folder (path-parent path)])
     (cond
       [(not (file-exists? folder))
-       (unless (ask:y-or-n? (format "Folder ~a does not exist; create? " folder))
+       (unless (ask:y-or-n? (format "Folder ~a does not exist; create? " (abbreviated-path folder)))
          (%cancel who folder))
        (run-job who %folder-maker folder (lambda (made) (void)) #f)]
       [(and (file-exists? path) (not (writable? path))
@@ -622,9 +668,9 @@
 (define (%check-file-to-save who path buffer)
   (let ([other (buffer-at path)])
     (when (file-directory? path)
-      (error who "is a folder" path))
+      (error who "is a folder" (abbreviated-path path)))
     (when (and other (not (eq? other buffer)))
-      (error who "another buffer visits the file" path))
+      (error who "another buffer visits the file" (abbreviated-path path)))
     path))
 
 (define (%ask-file-name who question buffer)
@@ -678,9 +724,9 @@
   (check-task 'files:write-file)
   (let* ([path (true-path (%file-in-folder path buffer))] [other (buffer-at path)])
     (when (file-directory? path)
-      (error 'files:write-file "is a folder" path))
+      (error 'files:write-file "is a folder" (abbreviated-path path)))
     (when (and other (not (eq? other buffer)))
-      (assertion-violation 'files:write-file "another buffer visits the file" path))
+      (assertion-violation 'files:write-file "another buffer visits the file" (abbreviated-path path)))
     (let ([e (move-entry! buffer path)])
       (with-entry-lock 'files:write-file e
         (lambda ()
@@ -693,7 +739,7 @@
   (for-each
     (lambda (b)
       (when (and (entry-of b) (buffers:modified? b)
-                 (ask:y-or-n? (format "Save file ~a? " (path b)))
+                 (ask:y-or-n? (format "Save file ~a? " (abbreviated-path (path b))))
                  (entry-of b))
         (save-buffer b)))
     (visited-buffers)))
@@ -779,9 +825,12 @@
      (let* ([from (%operation-path 'files:rename-file from)] [to (%operation-path 'files:rename-file to)]
             [replace? (%replace? 'files:rename-file options)])
        (check-not-visited-under 'files:rename-file from to)
-       (run-operation 'files:rename-file %renamer (list from to replace?))
-       (move-entries-under! from to)
-       (after-rename from to))]))
+       (run-operation 'files:rename-file %renamer (list from to replace?)
+         (lambda (v)
+           (when (eq? v 'moved)
+             (move-entries-under! from to)
+             (after-rename from to))))
+       (void))]))
 
 (define copy-file
   (case-lambda

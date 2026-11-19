@@ -1,7 +1,7 @@
 ; A module is looked for in lib/, then in the installed plugins, then in
 ; Tuna's own library; a module in lib/ that replaces an installed plugin's
 ; is reported at start.
-! import: (shadowed) in lib/ replaces ~/.local/share/tuna/plugins/shadowed/shadowed.sls
+! import: (shadowed) in lib/ replaces $HOME/.local/share/tuna/plugins/shadowed/shadowed.sls
 > (import (shadowed))
 > (shadowed:where)
 "lib/"

@@ -42,7 +42,7 @@
 > (set! events '())
 > (write-module! good "#!tuna\n(define (hello) (let ((y)) y))\n")
 > (eval-file good)
-! invalid syntax (let ((y)) y) at line 2, char 17 of ~/.config/tuna/lib/good.sls
+! invalid syntax (let ((y)) y) at line 2, char 17 of $HOME/.config/tuna/lib/good.sls
 [good body]
 > (reverse events)
 ((report (repl)) (loaded (good)))

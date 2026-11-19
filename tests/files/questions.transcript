@@ -15,7 +15,7 @@
 (("Write file: " "File exists; overwrite? ") #f "taken\n")
 > (parameterize ([commands:prefix-argument '(4)]) (buffers:with-buffer draft (commands:run files:write-file)))
 > (list (questions) (files:path draft) (disk-checks:read-text "~/taken.txt"))
-(("Write file: ") "~/taken.txt" "draft\n")
+(("Write file: ") "$HOME/taken.txt" "draft\n")
 > (files:write-file "~/taken.txt" draft)
 > (questions)
 ()
@@ -49,7 +49,7 @@
 > (disk-checks:folder! "~/named")
 > (files:write-file "~/named/named.txt" named)
 > (list (buffers:name named) (files:path named))
-("named.txt" "~/named/named.txt")
+("named.txt" "$HOME/named/named.txt")
 ; C-x s asks y or n for each modified file buffer, in the order they
 ; were visited, and saves those answered y.
 > (commands:command-name (table-ref keys:global "C-x s"))
@@ -104,7 +104,7 @@ files:save-some-buffers
 > (set-option! ask:file-name-reader (answer "~/jot.txt"))
 > (files:save-buffer jot)
 > (list (questions) (files:path jot) (buffers:name jot) (disk-checks:read-text "~/jot.txt") (buffers:modified? jot))
-(("File to save in: ") "~/jot.txt" "jot.txt" "jot\n" #f)
+(("File to save in: ") "$HOME/jot.txt" "jot.txt" "jot\n" #f)
 ; A folder, or a file another buffer visits, is refused as the file to
 ; save in, before the buffer is renamed or a folder is made.
 > (define loose (buffers:make "*loose*" ""))
@@ -138,16 +138,16 @@ files:save-some-buffers
 #<edit 1>
 > (files:write-file "~/new/" moved)
 > (list (files:path moved) (buffers:name moved) (disk-checks:read-text "~/new/moved.txt"))
-("~/new/moved.txt" "moved.txt" "moved\n")
+("$HOME/new/moved.txt" "moved.txt" "moved\n")
 > (files:write-file "~/new/folder" moved)
 > (list (files:path moved) (disk-checks:read-text "~/new/folder/moved.txt"))
-("~/new/folder/moved.txt" "moved\n")
+("$HOME/new/folder/moved.txt" "moved\n")
 > (define scrap (buffers:make "*scrap*" "scrap"))
 > (set-option! ask:file-name-reader (answer "~/fresh/"))
 > (set-option! ask:y-or-n-reader (answer #t))
 > (buffers:with-buffer scrap (commands:run files:write-file))
 > (list (questions) (files:path scrap) (buffers:name scrap) (disk-checks:read-text "~/fresh/*scrap*"))
-(("Write file: " "Folder ~/fresh does not exist; create? ") "~/fresh/*scrap*" "*scrap*" "scrap\n")
+(("Write file: " "Folder ~/fresh does not exist; create? ") "$HOME/fresh/*scrap*" "*scrap*" "scrap\n")
 > (set-option! ask:y-or-n-reader (answer #f))
 > (buffers:with-buffer scrap (commands:run files:write-file))
 ! files:write-file: canceled with irritant "~/fresh/*scrap*"
@@ -159,11 +159,11 @@ files:save-some-buffers
 > (buffers:with-buffer scrap (commands:run files:write-file))
 ! files:write-file: is a folder with irritant "~/box/*scrap*"
 > (list (questions) (files:path scrap))
-(("Write file: ") "~/fresh/*scrap*")
+(("Write file: ") "$HOME/fresh/*scrap*")
 > (files:write-file "~/box/" scrap)
 ! files:write-file: is a folder with irritant "~/box/*scrap*"
 > (list (files:path scrap) (buffers:name scrap))
-("~/fresh/*scrap*" "*scrap*")
+("$HOME/fresh/*scrap*" "*scrap*")
 ; A command that kills a modified buffer asks first, unless an entry of
 ; files:unsaved-kept keeps its edits, whether or not it visits a file.
 ; Code outside a command, an unmodified buffer and an internal one are
@@ -214,8 +214,8 @@ files:save-some-buffers
 ; files:directory is the folder of a buffer's file, else the home folder;
 ; without a buffer it is the current buffer's.
 > (map files:directory (list deep jot (buffers:make "*none*" "")))
-("~/new/folder/" "~/" "~/")
+("$HOME/new/folder/" "$HOME/" "$HOME/")
 > (buffers:with-buffer deep (files:directory))
-"~/new/folder/"
+"$HOME/new/folder/"
 > (files:directory "notes")
 ! files:directory: not a buffer with irritant "notes"

@@ -19,10 +19,14 @@
 > (press! laptop "M-d")
 > (copies)
 ((1 "copy" " three"))
-; A page with no clipboard, or one the browser refuses, says why.
+; A page with no clipboard, or one the browser refuses, says why through
+; ask:message.
+> (define told '())
+> (set-option! ask:message-writer (lambda (text) (set! told (cons text told))))
 > (handle! phone "clipboard" '("outcome" . "unavailable"))
-! Copy failed: the page has no clipboard, which needs HTTPS or localhost
 > (handle! phone "clipboard" '("outcome" . "refused") '("reason" . "NotAllowedError"))
-! Copy failed: the browser refused the clipboard (NotAllowedError)
+> (reverse told)
+("Copy failed: the page has no clipboard, which needs HTTPS or localhost" "Copy failed: the browser refused the clipboard (NotAllowedError)")
+> (remove-option! ask:message-writer)
 > (handle! phone "paste")
 ! clipboard: not a clipboard item with irritant (("type" . "paste"))

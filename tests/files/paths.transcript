@@ -1,0 +1,53 @@
+; files:abbreviated-path writes the home folder as ~, as the questions and
+; the failures show a path; a name that only starts as the home folder's
+; does is left whole.
+> (define home (getenv "HOME"))
+> (map files:abbreviated-path
+       (list home (string-append home "/") (string-append home "/a/b.txt") (string-append home "x/a") "/etc/hosts"))
+("~" "~/" "~/a/b.txt" "$HOMEx/a" "/etc/hosts")
+; A home of / is left alone, as Emacs leaves it.
+> (putenv "HOME" "/")
+> (files:abbreviated-path "/")
+"/"
+> (putenv "HOME" home)
+> (files:abbreviated-path 'notes)
+! files:abbreviated-path: not a string with irritant notes
+; Files are named by their true paths, so a home reached through a
+; symbolic link is written as ~ in both forms: in a buffer's path, and in
+; the message of a job's failure.
+> (define linked (string-append home "-link"))
+> (disk-checks:symlink! home linked)
+0
+> (putenv "HOME" linked)
+> (disk-checks:write-text! "~/notes.txt" "n\n")
+> (define notes (files:visit "~/notes.txt"))
+> (files:path notes)
+"$HOME/notes.txt"
+> (map files:abbreviated-path (list (files:path notes) (string-append linked "/notes.txt") linked))
+("~/notes.txt" "~/notes.txt" "~")
+> (guard (c [(i/o-filename-error? c) (list (i/o-error-filename c) (condition-message c))])
+    (files:rename-file "~/none" "~/other"))
+("$HOME/none" "failed for ~/none: no such file or directory")
+> (putenv "HOME" home)
+; Advice names other folders, as Emacs's directory-abbrev-alist does, in
+; every message: here a folder reached through a link is named by the
+; link.
+> (disk-checks:folder! "~/data")
+> (disk-checks:symlink! (disk-checks:expand "~/data") "~/code")
+0
+> (define (by-link abbreviate path)
+    (abbreviate (or (files:renamed-path path (string-append home "/data") (string-append home "/code")) path)))
+> (advice-add! files:abbreviated-path by-link)
+> (files:abbreviated-path (string-append home "/data/tuna"))
+"~/code/tuna"
+> (guard (c [#t (condition-message c)]) (files:rename-file "~/code/none" "~/code/other"))
+"failed for ~/code/none: no such file or directory"
+> (advice-remove! files:abbreviated-path by-link)
+; true-path makes a path absolute, from ~ too, and resolves the links in
+; the folders that exist.
+> (import (files paths))
+> (disk-checks:folder! "~/real")
+> (disk-checks:symlink! (disk-checks:expand "~/real") "~/alias")
+0
+> (list (true-path "~/alias/new.txt") (true-path "~"))
+("$HOME/real/new.txt" "$HOME")

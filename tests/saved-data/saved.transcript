@@ -17,7 +17,7 @@
 > (define-saved kind '(1 2) list?)
 > (set-saved! kind '(1 2 3))
 > (define-saved kind 0 fixnum?)
-! define-saved: ~/.local/share/tuna/saved/user/repl/kind.ss holds a value that fails its check; it is moved to ~/.local/share/tuna/saved/user/repl/kind.ss.rejected
+! define-saved: $HOME/.local/share/tuna/saved/user/repl/kind.ss holds a value that fails its check; it is moved to $HOME/.local/share/tuna/saved/user/repl/kind.ss.rejected
 > (kind)
 0
 > (define-saved kind "none" string?)
@@ -72,12 +72,12 @@
 ; is not plain data or fails its check is moved aside and reported, and the
 ; datum starts from its initial value.
 > (import (hist))
-! (hist) define-saved: ~/.local/share/tuna/saved/user/hist/broken.ss cannot be read; it is moved to ~/.local/share/tuna/saved/user/hist/broken.ss.rejected
-! (hist) define-saved: ~/.local/share/tuna/saved/user/hist/trailing.ss cannot be read; it is moved to ~/.local/share/tuna/saved/user/hist/trailing.ss.rejected
-! (hist) define-saved: ~/.local/share/tuna/saved/user/hist/empty.ss cannot be read; it is moved to ~/.local/share/tuna/saved/user/hist/empty.ss.rejected
-! (hist) define-saved: ~/.local/share/tuna/saved/user/hist/boxed.ss holds a value that is not plain data; it is moved to ~/.local/share/tuna/saved/user/hist/boxed.ss.rejected
-! (hist) define-saved: ~/.local/share/tuna/saved/user/hist/cyclic.ss holds a value that is not plain data; it is moved to ~/.local/share/tuna/saved/user/hist/cyclic.ss.rejected
-! (hist) define-saved: ~/.local/share/tuna/saved/user/hist/wrong.ss holds a value that fails its check; it is moved to ~/.local/share/tuna/saved/user/hist/wrong.ss.rejected
+! (hist) define-saved: $HOME/.local/share/tuna/saved/user/hist/broken.ss cannot be read; it is moved to $HOME/.local/share/tuna/saved/user/hist/broken.ss.rejected
+! (hist) define-saved: $HOME/.local/share/tuna/saved/user/hist/trailing.ss cannot be read; it is moved to $HOME/.local/share/tuna/saved/user/hist/trailing.ss.rejected
+! (hist) define-saved: $HOME/.local/share/tuna/saved/user/hist/empty.ss cannot be read; it is moved to $HOME/.local/share/tuna/saved/user/hist/empty.ss.rejected
+! (hist) define-saved: $HOME/.local/share/tuna/saved/user/hist/boxed.ss holds a value that is not plain data; it is moved to $HOME/.local/share/tuna/saved/user/hist/boxed.ss.rejected
+! (hist) define-saved: $HOME/.local/share/tuna/saved/user/hist/cyclic.ss holds a value that is not plain data; it is moved to $HOME/.local/share/tuna/saved/user/hist/cyclic.ss.rejected
+! (hist) define-saved: $HOME/.local/share/tuna/saved/user/hist/wrong.ss holds a value that fails its check; it is moved to $HOME/.local/share/tuna/saved/user/hist/wrong.ss.rejected
 > (list (hist:entries) (hist:stored) (hist:broken) (hist:trailing) (hist:empty) (hist:boxed) (hist:cyclic) (hist:wrong))
 (("first") 42 0 0 0 0 () 0)
 ; The body's set-saved! is written on another thread, so the listing

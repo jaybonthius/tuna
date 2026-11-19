@@ -1,10 +1,10 @@
-! import: gives back Chez's exit, dynamic-wind, which Tuna replaces or withholds; import them under another name (import (rnrs)) at line 2, char 1 of ~/.config/tuna/init.ss
+! import: gives back Chez's exit, dynamic-wind, which Tuna replaces or withholds; import them under another name (import (rnrs)) at line 2, char 1 of $HOME/.config/tuna/init.ss
 ; An import that gives back a Chez name Tuna replaces or withholds is a
 ; syntax error, in a module and at the top level, naming the import.
 > (import (old))
-! import: gives back Chez's exit, dynamic-wind, which Tuna replaces or withholds; import them under another name (import (rnrs)) at line 2, char 1 of ~/.config/tuna/lib/old.sls
+! import: gives back Chez's exit, dynamic-wind, which Tuna replaces or withholds; import them under another name (import (rnrs)) at line 2, char 1 of $HOME/.config/tuna/lib/old.sls
 > (import (second))
-! import: gives back Chez's sleep, which Tuna replaces or withholds; import it under another name (import (only (chezscheme) sleep car)) at line 3, char 1 of ~/.config/tuna/lib/second.sls
+! import: gives back Chez's sleep, which Tuna replaces or withholds; import it under another name (import (only (chezscheme) sleep car)) at line 3, char 1 of $HOME/.config/tuna/lib/second.sls
 > (import (chezscheme))
 ! import: gives back Chez's exit, fork-thread, dynamic-wind, with-mutex, sleep, set-timer, timer-interrupt-handler, make-engine, which Tuna replaces or withholds; import them under another name (import (chezscheme))
 > (begin (import (only (rnrs) exit)) 'imported)
@@ -25,11 +25,11 @@
 > (make-engine (lambda () 1))
 ! make-engine: withheld because the main thread's timer delivers quits and tick (make-engine (lambda () 1))
 > (import (timer))
-! set-timer: withheld because the main thread's timer delivers quits and tick (set-timer 0) at line 2, char 15 of ~/.config/tuna/lib/timer.sls
+! set-timer: withheld because the main thread's timer delivers quits and tick (set-timer 0) at line 2, char 15 of $HOME/.config/tuna/lib/timer.sls
 > (import (engine))
-! make-engine: withheld because the main thread's timer delivers quits and tick (make-engine thunk) at line 2, char 22 of ~/.config/tuna/lib/engine.sls
+! make-engine: withheld because the main thread's timer delivers quits and tick (make-engine thunk) at line 2, char 22 of $HOME/.config/tuna/lib/engine.sls
 > (import (basic))
-! sleep: withheld because it would block the main thread (sleep (make-time (quote time-duration) 0 1)) at line 2, char 17 of ~/.config/tuna/lib/basic.sls
+! sleep: withheld because it would block the main thread (sleep (make-time (quote time-duration) 0 1)) at line 2, char 17 of $HOME/.config/tuna/lib/basic.sls
 > (import (rename (only (chezscheme) dynamic-wind with-mutex) (dynamic-wind chez:dynamic-wind) (with-mutex chez:with-mutex)))
 > (eq? dynamic-wind chez:dynamic-wind)
 #f

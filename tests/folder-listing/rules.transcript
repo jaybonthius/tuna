@@ -8,7 +8,7 @@
 > (touch! "src/sub/inner.txt" "in\n")
 > (define b (folder-listing:visit (at "src")))
 > (list (buffers:name b) (folder-listing:folder b) (modes:major-mode b) (modes:lighter folder-listing:mode))
-("~/src/" "~/src/" folder-listing:mode "Folder")
+("~/src/" "$HOME/src/" folder-listing:mode "Folder")
 > (listing-lines b)
 ("  ." "  .." "  .hidden" "  A.txt" "  b.txt" "  sub")
 ; Visiting again returns the same listing, through files:visit too, so

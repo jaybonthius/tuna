@@ -45,18 +45,31 @@
 > (list (questions) (message) (listing-lines b))
 (("Delete * [2 files]? ") "1 of 2 files failed: keep: a folder that holds files (\"~/ops/keep\")" ("  ." "  .." "* keep"))
 > (remove-option! folder-listing:recursive-deletes)
-; With files:delete-by-moving-to-trash?, the question says Trash and the
+; With files:delete-by-moving-to-trash?, the questions say trash and the
 ; files go to the freedesktop.org trash, with their .trashinfo.
 > (set-option! files:delete-by-moving-to-trash? #t)
 > (press! "D")
 > (settle)
 > (list (questions) (message) (listing-lines b) (exists? ".local/share/Trash/files/keep/inside.txt") (exists? ".local/share/Trash/info/keep.trashinfo"))
-(("Trash keep? " "Recursively delete keep? ") "Trashed 1 file" ("  ." "  ..") #t #t)
+(("Trash keep? " "Recursively trash keep? ") "Trashed 1 file" ("  ." "  ..") #t #t)
 > (remove-option! files:delete-by-moving-to-trash?)
 ; x deletes the entries flagged D, and says so when none are.
 > (press! "x")
 > (message)
-"No deletions requested"
+"(No deletions requested)"
+; Declining the question deletes nothing, and says so, as Dired does.
+> (touch! "ops/no.txt" "n\n")
+> (press! "g")
+> (settle)
+> (goto "no.txt")
+> (set-option! folder-listing:deletion-confirmer (answer #f))
+> (press! "D")
+> (settle)
+> (list (questions) (message) (exists? "ops/no.txt"))
+(("Delete no.txt? ") "(No deletions performed)" #t)
+> (remove-option! folder-listing:deletion-confirmer)
+> (delete-file (at "ops/no.txt"))
+#t
 > (touch! "ops/x.txt" "x\n")
 > (touch! "ops/y.txt" "y\n")
 > (press! "g")
@@ -77,7 +90,7 @@
 > (press! "R")
 > (settle)
 > (list (questions) (message) (listing-lines b) (buffers:name y) (files:path y))
-(("Rename y.txt to: ") "Moved 1 file" ("  ." "  .." "* z.txt") "z.txt" "~/ops/z.txt")
+(("Rename y.txt to: ") "Moved 1 file" ("  ." "  .." "* z.txt") "z.txt" "$HOME/ops/z.txt")
 ; Point follows the renamed file; a file renamed to itself fails.
 > (point-name)
 "z.txt"
@@ -139,7 +152,7 @@
 ("w.txt" "w.txt")
 > (press! "0" "w")
 > (kill-ring:text (kill-ring:current))
-"~/ops/w.txt"
+"$HOME/ops/w.txt"
 ; With folder-listing:other-listing-target?, R and C start in the
 ; folder of another view's listing.
 > (define started #f)
@@ -152,7 +165,7 @@
 > (press! "C")
 > (settle)
 > started
-"~/ops/into/"
+"$HOME/ops/into/"
 ; The listing taken is the first in the views after the selected one,
 ; not the one selected last.
 > (touch! "ops/third/t.txt" "t\n")
@@ -160,14 +173,14 @@
 > (layout:switch-to-buffer (folder-listing:visit (at "ops/third")))
 > (define listed (map views:buffer (layout:views)))
 > (map folder-listing:folder (filter folder-listing:folder listed))
-("~/ops/into/" "~/ops/third/" "~/ops/")
+("$HOME/ops/into/" "$HOME/ops/third/" "$HOME/ops/")
 > (for-each (lambda (name) (layout:select! (find (lambda (v) (equal? (folder-listing:folder (views:buffer v)) name)) (layout:views))))
             (map at '("ops/" "ops/into/" "ops/third/")))
 > (goto "t.txt")
 > (press! "C")
 > (settle)
 > started
-"~/ops/"
+"$HOME/ops/"
 ; R onto a file another buffer visits is refused before Overwrite is
 ; asked, and nothing moves.
 > (touch! "ops/third/u.txt" "u\n")
@@ -182,7 +195,7 @@
 > (press! "R")
 > (settle)
 > (list (questions) (message) (map entry-name (entries (views:buffer (view)))) (files:path u))
-(("Rename t.txt to: ") "1 of 1 file failed: t.txt: another buffer visits the file (\"~/ops/third/u.txt\")" ("." ".." "t.txt" "u.txt") "~/ops/third/u.txt")
+(("Rename t.txt to: ") "1 of 1 file failed: t.txt: another buffer visits the file (\"~/ops/third/u.txt\")" ("." ".." "t.txt" "u.txt") "$HOME/ops/third/u.txt")
 ; A folder the user declines to delete or copy recursively is named
 ; apart from those done.
 > (touch! "ops/third/full/inside.txt" "i\n")
@@ -215,3 +228,42 @@
 > (settle)
 > (list (questions) (message) (exists? "ops/dst/l/precious.txt"))
 (("Copy l to: " "Overwrite ~/ops/dst/l? ") "1 of 1 file failed: l: failed for ~/ops/dst/l: is a directory" #t)
+; C-u D, R and C act on the entry at point even with others marked, as
+; Dired's do; C-u w names the marked entries, as Dired's C-u w does.
+> (touch! "ops/pick/a.txt" "a\n")
+> (touch! "ops/pick/b.txt" "b\n")
+> (touch! "ops/pick/c.txt" "c\n")
+> (layout:switch-to-buffer (folder-listing:visit (at "ops/pick")))
+> (goto "b.txt")
+> (press! "m")
+> (goto "a.txt")
+> (set-option! folder-listing:deletion-confirmer (answer #t))
+> (press! "C-u" "D")
+> (settle)
+> (list (questions) (message) (listing-lines (views:buffer (view))))
+(("Delete a.txt? ") "Deleted 1 file" ("  ." "  .." "* b.txt" "  c.txt"))
+> (remove-option! folder-listing:deletion-confirmer)
+> (goto "c.txt")
+> (set-option! ask:file-name-reader (answer "~/ops/pick/d.txt"))
+> (press! "C-u" "R")
+> (settle)
+> (list (questions) (message) (listing-lines (views:buffer (view))))
+(("Rename c.txt to: ") "Moved 1 file" ("  ." "  .." "* b.txt" "  d.txt"))
+> (goto "d.txt")
+> (set-option! ask:file-name-reader (answer "~/ops/pick/e.txt"))
+> (press! "C-u" "C")
+> (settle)
+> (list (questions) (message) (listing-lines (views:buffer (view))))
+(("Copy d.txt to: ") "Copied 1 file" ("  ." "  .." "* b.txt" "  d.txt" "C e.txt"))
+> (goto "d.txt")
+> (press! "C-u" "w")
+> (message)
+"b.txt"
+> (parameterize ([commands:prefix-argument '-]) (map path-last (folder-listing:operation-paths (view))))
+("d.txt")
+; folder-listing:operation-paths takes a prefix argument of its own, so a
+; command whose C-u means something else asks for the marked entries.
+> (parameterize ([commands:prefix-argument '(4)]) (map path-last (folder-listing:operation-paths (view) #f)))
+("b.txt")
+> (map path-last (folder-listing:operation-paths (view) '(4)))
+("d.txt")

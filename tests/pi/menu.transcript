@@ -37,7 +37,7 @@
 ; command Pi has none of has no entry.
 > (press! "C-c" "C-p")
 > (menu)
-("Pi in ~/src/tuna" ("Session" ("n" "New") ("r" "Resume") ("f" "Fork") ("C" "Clone") ("N" "Name") ("e" "Export as HTML") ("R" "Restart Pi") ("Q" "Stop Pi and end the chat")) ("Context" ("c" "Compact") ("a" "Pi's own compaction (on)")) ("Model" ("m" "Model (Fake Model)") ("t" "Thinking level (medium)")) ("Display" ("T" "Finished thinking (folded)") ("o" "Fold or unfold every block")))
+("Pi in $HOME/src/tuna" ("Session" ("n" "New") ("r" "Resume") ("f" "Fork") ("C" "Clone") ("N" "Name") ("e" "Export as HTML") ("R" "Restart Pi") ("Q" "Stop Pi and end the chat")) ("Context" ("c" "Compact") ("a" "Pi's own compaction (on)")) ("Model" ("m" "Model (Fake Model)") ("t" "Thinking level (medium)")) ("Display" ("T" "Finished thinking (folded)") ("o" "Fold or unfold every block")))
 > (press! "C-g")
 > (menu)
 ()

@@ -7,11 +7,11 @@
 > (press! "C-x" "d")
 > (settle)
 > (list started (shown) (point-name))
-(("Folder: " "~/") (("~/v/" #t)) "f.txt")
+(("Folder: " "$HOME/") (("~/v/" #t)) "f.txt")
 > (press! "C-x" "d")
 > (settle)
 > started
-("Folder: " "~/v/")
+("Folder: " "$HOME/v/")
 ; RET visits the entry at point, a folder showing its listing; ^ shows
 ; the parent's listing with point on the folder; C-x C-j from a file
 ; shows its folder's listing with point on it.
@@ -94,3 +94,33 @@
 (folder-listing:visit "not a folder")
 > (raised (lambda () (folder-listing:visit (at "v/none"))))
 (folder-listing:visit "failed for ~/v/none: no such file or directory")
+> (guard (c [#t (cons (condition-message c) (condition-irritants c))])
+    (folder-listing:refresh gone))
+("no such folder" "~/v/sub/")
+; A home reached through a symbolic link names a listing, and a
+; worker's failure, with ~ too, since a listing's folder is its true path.
+> (symlink! home "../home-link")
+0
+> (folder! "linked")
+> (putenv "HOME" (string-append home "-link"))
+> (buffers:name (folder-listing:visit "~/linked"))
+"~/linked/"
+> (raised (lambda () (folder-listing:visit "~/v/none")))
+(folder-listing:visit "failed for ~/v/none: no such file or directory")
+> (putenv "HOME" home)
+; folder-listing:place-point! puts point where a shown listing starts,
+; on its first file; advice on it starts point elsewhere, as Emacs's
+; dired-initial-position-hook does.
+> (touch! "w/a.txt" "a\n")
+> (touch! "w/b.txt" "b\n")
+> (define (on-last-entry place view)
+    (place view)
+    (let ([last (car (reverse (entries (views:buffer view))))])
+      (views:set-point! view (+ 1 (document:node-start last)))))
+> (advice-add! folder-listing:place-point! on-last-entry)
+> (set-option! ask:file-name-reader (lambda (q folder) "~/w"))
+> (press! "C-x" "d")
+> (settle)
+> (list (buffers:name (views:buffer (view))) (point-name))
+("~/w/" "b.txt")
+> (advice-remove! folder-listing:place-point! on-last-entry)

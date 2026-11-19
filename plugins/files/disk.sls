@@ -1,10 +1,10 @@
 (library (files disk)
-  (export true-path true-folders-path writable? make-folders read-file revert-file save-file fnv-basis
-          failure failure? failure-violation? failure-message failure-irritants failure-filename
+  (export true-folders-path writable? make-folders read-file revert-file save-file fnv-basis
+          failure failure? failure-violation? failure-message failure-irritants failure-format? failure-filename
           failure-already-exists?
           rename-path copy-path delete-path trash-path make-new-folder
           contents-document contents-length contents-hash contents-bom? contents-crlf?)
-  (import (chezscheme) (document) (files attributes) (files system))
+  (import (chezscheme) (document) (files attributes) (files system) (files paths))
 
   ;; Each call that can wait on a slow or network file system lets other
   ;; threads collect meanwhile, so it takes no Scheme string: memory it
@@ -50,29 +50,30 @@
 
   ;; Irritants cross to the main thread as text, since a job sends only
   ;; plain data. A violation stays one, so a defect here does not pass for
-  ;; a disk error.
+  ;; a disk error. The main thread formats the message, so that it names
+  ;; paths as the user's questions do; it is marked a format only when it
+  ;; formats with the irritants as sent, so formatting there cannot fail.
   (define (failure c)
     (define (plain x) (if (or (string? x) (symbol? x) (number? x)) x (format "~s" x)))
     (cond
-      [(not (condition? c)) (list 'failed #f (format "non-condition value ~s" c) '() #f #f)]
+      [(not (condition? c)) (list 'failed #f (format "non-condition value ~s" c) '() #f #f #f)]
       [else
-       (let ([violation (violation? c)]
-             [message (if (message-condition? c) (condition-message c) "failed")]
-             [irritants (if (irritants-condition? c) (condition-irritants c) '())]
-             [filename (and (i/o-filename-error? c) (plain (i/o-error-filename c)))]
-             [already-exists (i/o-file-already-exists-error? c)])
-         (cond
-           [(and (format-condition? c) (guard (e [#t #f]) (apply format message irritants)))
-            => (lambda (text) (list 'failed violation text '() filename already-exists))]
-           [else (list 'failed violation message (if (list? irritants) (map plain irritants) '()) filename
-                       already-exists)]))]))
+       (let ([message (if (message-condition? c) (condition-message c) "failed")]
+             [irritants (if (and (irritants-condition? c) (list? (condition-irritants c)))
+                            (map plain (condition-irritants c))
+                            '())])
+         (list 'failed (violation? c) message irritants
+               (and (format-condition? c) (guard (e [#t #f]) (apply format message irritants) #t))
+               (and (i/o-filename-error? c) (plain (i/o-error-filename c)))
+               (i/o-file-already-exists-error? c)))]))
 
   (define (failure? v) (and (pair? v) (eq? (car v) 'failed)))
   (define (failure-violation? f) (cadr f))
   (define (failure-message f) (caddr f))
   (define (failure-irritants f) (cadddr f))
-  (define (failure-filename f) (list-ref f 4))
-  (define (failure-already-exists? f) (list-ref f 5))
+  (define (failure-format? f) (list-ref f 4))
+  (define (failure-filename f) (list-ref f 5))
+  (define (failure-already-exists? f) (list-ref f 6))
 
   (define (read-bytes path)
     (let ([bytes (call-with-port (open-file-input-port path) get-bytevector-all)])
@@ -322,18 +323,20 @@
         (delete-path to))))
 
   ;; Across file systems rename(2) fails, and the file is copied, then
-  ;; deleted, as mv does.
-  (define (rename-path from to replace?)
+  ;; deleted, as mv does. moved is called once to holds the whole file,
+  ;; before the deletion, which a quit can stop part way.
+  (define (rename-path from to replace? moved)
     (check-not-inside 'rename-path from to)
     (check-absent 'rename-path to replace?)
     (let-values ([(result errno)
                   (call-with-c-string from
                     (lambda (f) (call-with-c-string to (lambda (t) (c-rename f t)))))])
       (cond
-        [(fx= result 0) #t]
+        [(fx= result 0) (moved) #t]
         [(fx= errno exdev)
          (clear-target! from to)
          (copy-path from to #f)
+         (moved)
          (delete-path from)]
         [else (raise-system-failure 'rename-path from errno)])))
 
@@ -460,7 +463,7 @@
                   (lambda (port)
                     (put-string port (format "[Trash Info]\nPath=~a\nDeletionDate=~a\n" (percent-encoded path) (trash-date)))))
                 (guard (c [#t (delete-file info-file #f) (raise c)])
-                  (rename-path path (join files name) #f))
+                  (rename-path path (join files name) #f void))
                 #t)
               (loop (fx+ n 1)))))))
 

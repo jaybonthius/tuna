@@ -143,7 +143,10 @@ words:word-category
 > (press! "RET")
 > (result t)
 > (files:path (views:buffer (view)))
-"~/notes/a.txt"
+"$HOME/notes/a.txt"
+; A file buffer is annotated with its path, the home folder written ~.
+> (map cdr ((completion-annotations:buffer #f) (views:buffer (view))))
+("38" "~/notes/a.txt")
 ; C-s goes to a line.
 > (define t (start! (lambda () (press! "C-s"))))
 > (texts (session))

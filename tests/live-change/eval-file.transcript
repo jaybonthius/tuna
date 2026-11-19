@@ -26,7 +26,7 @@ configuration unloading
 > (module-changes '(repl))
 ()
 > (eval-file "~/nothere.ss")
-! open-file-input-port: failed for ~/nothere.ss: no such file or directory
+! open-file-input-port: failed for $HOME/nothere.ss: no such file or directory
 > (eval-file 'scratch)
 ! eval-file: not a path with irritant scratch
 ; A module's file that no import has loaded loads it.
@@ -66,7 +66,7 @@ assigned
 ; A #!tuna file that its name's lookup does not find is not a module.
 > (put-version! "fresh.sls" ".config/tuna/lib/magit.sls")
 > (eval-file "~/.local/share/tuna/plugins/magit/magit.sls")
-! eval-file: ~/.local/share/tuna/plugins/magit/magit.sls is not a module: module (magit) is ~/.config/tuna/lib/magit.sls
+! eval-file: $HOME/.local/share/tuna/plugins/magit/magit.sls is not a module: module (magit) is $HOME/.config/tuna/lib/magit.sls
 ; A module whose name's first part names no module and no plugin
 ; reloads like any other.
 > (put-version! "highlight-1.sls" ".config/tuna/lib/slice/highlight.sls")

@@ -11,14 +11,6 @@
         (string-append (%home) (substring path 1 n))
         path)))
 
-(define (%abbreviate path)
-  (let ([home (%home)])
-    (let ([n (string-length home)])
-      (if (and (fx> n 1) (fx>= (string-length path) n) (string=? (substring path 0 n) home)
-               (or (fx= (string-length path) n) (char=? (string-ref path n) #\/)))
-          (string-append "~" (substring path n (string-length path)))
-          path))))
-
 (define (%after-last-slash input)
   (let loop ([i (string-length input)])
     (cond
@@ -95,7 +87,7 @@
                      (string-append dir "/"))])
        (%expand
          (minibuffer:call-with-setup
-           (lambda (p) (minibuffer:set-input! p (%abbreviate dir)))
+           (lambda (p) (minibuffer:set-input! p (files:abbreviated-path dir)))
            (lambda ()
              (completion:read-or-input question
                (list (completion:source

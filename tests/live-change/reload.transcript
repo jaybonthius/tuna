@@ -72,12 +72,12 @@ checking d against /home/groucho/words
 > (put-version! "spell-syntax-error.sls" ".local/share/tuna/plugins/spell/spell.sls")
 > (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
 speller unloading
-! invalid syntax (if) at line 4, char 20 of ~/.local/share/tuna/plugins/spell/spell.sls
+! invalid syntax (if) at line 4, char 20 of $HOME/.local/share/tuna/plugins/spell/spell.sls
 > (speller:go)
 (v2 "z")
 > (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
 speller unloading
-! invalid syntax (if) at line 4, char 20 of ~/.local/share/tuna/plugins/spell/spell.sls
+! invalid syntax (if) at line 4, char 20 of $HOME/.local/share/tuna/plugins/spell/spell.sls
 > (speller:go)
 (v2 "z")
 ; A fixed file reloads.

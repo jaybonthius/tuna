@@ -105,4 +105,4 @@ ticker's timer quit
 "only the main thread makes changes"
 ; #!tuna/base is without the standard library.
 > (import (base-timer))
-! attempt to reference unbound identifier run-with-timer at line 2, char 16 of ~/.config/tuna/lib/base-timer.sls
+! attempt to reference unbound identifier run-with-timer at line 2, char 16 of $HOME/.config/tuna/lib/base-timer.sls

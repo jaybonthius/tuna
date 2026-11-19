@@ -941,7 +941,7 @@
       (error 'pi-chat:add-region "the region is empty"))
     (let ([chat (or (%last-chat-in b)
                     (let ([folder (folder-for b)])
-                      (and (ask:y-or-n? (string-append "Start a Pi chat in " folder "? "))
+                      (and (ask:y-or-n? (string-append "Start a Pi chat in " (files:abbreviated-path folder) "? "))
                            (pi:start folder))))])
       (when chat
         (add-to-prompt! chat (%region-text chat b (fxmin mark (views:point v)) (fxmax mark (views:point v))))

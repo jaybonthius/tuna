@@ -12,7 +12,7 @@
 > (let ([p (pi:chat-process chat)]) (list (processes:owner p) (bytevector? (processes:error-output p))))
 (#f #t)
 > (pi:chat-directory chat)
-"~"
+"$HOME"
 ; Until Pi answers it is starting; then idle, with what Pi said.
 > (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 > (activities!)

@@ -12,7 +12,7 @@
 > (buffers:rename! b "my b")
 > (reload! "files")
 > (list (equal? (files:buffers) (list a b)) (buffers:modified? a) (buffers:modified? b) (files:path b))
-(#t #t #f "~/b.txt")
+(#t #t #f "$HOME/b.txt")
 > (eq? b (files:visit "~/b.txt"))
 #t
 > (files:save-buffer a)

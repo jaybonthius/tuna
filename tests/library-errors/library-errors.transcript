@@ -1,7 +1,7 @@
 > (import (syntax-error))
-! invalid syntax (let ((x)) x) at line 4, char 15 of ~/.config/tuna/lib/syntax-error.sls
+! invalid syntax (let ((x)) x) at line 4, char 15 of $HOME/.config/tuna/lib/syntax-error.sls
 > (import (unknown-language))
-! read-language: unknown language lang/nope: library (lang nope lang) not found "lang/nope" at line 1, char 3 of ~/.config/tuna/lib/unknown-language.sls
+! read-language: unknown language lang/nope: library (lang nope lang) not found "lang/nope" at line 1, char 3 of $HOME/.config/tuna/lib/unknown-language.sls
 ; Chez's source optimizer runs twice and raises this warning each time.
 > (import (argument-count))
 ! compile: possible incorrect argument count in call (g 1 2)

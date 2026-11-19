@@ -2,8 +2,8 @@
   (export resolve-folder resolved-path resolved-modified
           read-folder folder-read-attributes folder-read-space folder-read-entries
           listed-name listed-attributes listed-broken?
-          non-empty-folders failure? failure-message failure-irritants)
-  (import (chezscheme) (files attributes))
+          non-empty-folders failure? failure-message failure-irritants failure-format?)
+  (import (chezscheme) (files attributes) (files paths))
 
   ;; What a job sends back is plain data, so each result is a vector, read
   ;; through the accessors below.
@@ -15,22 +15,24 @@
   (define (listed-name e) (vector-ref e 0))
   (define (listed-attributes e) (vector-ref e 1))
   (define (listed-broken? e) (vector-ref e 2))
-  (define (failure? v) (and (vector? v) (fx= (vector-length v) 3) (eq? (vector-ref v 0) 'failed)))
+  (define (failure? v) (and (vector? v) (fx= (vector-length v) 4) (eq? (vector-ref v 0) 'failed)))
   (define (failure-message f) (vector-ref f 1))
   (define (failure-irritants f) (vector-ref f 2))
+  (define (failure-format? f) (vector-ref f 3))
 
   ;; A job's raise would go to report as well as to the task waiting for
-  ;; it, so a worker hands back its failure as data.
+  ;; it, so a worker hands back its failure as data. The main thread
+  ;; formats the message, so that it names paths as the listing's
+  ;; questions do; it is marked a format only when it formats with the
+  ;; irritants as sent, so formatting there cannot fail.
   (define (failing thunk)
     (define (plain x) (if (or (string? x) (symbol? x) (number? x)) x (format "~s" x)))
-    (guard (c [#t (vector 'failed
-                          (cond
-                            [(not (message-condition? c)) "failed"]
-                            [(format-condition? c) (apply format (condition-message c) (condition-irritants c))]
-                            [else (condition-message c)])
-                          (if (and (irritants-condition? c) (not (format-condition? c)))
-                              (map plain (condition-irritants c))
-                              '()))])
+    (guard (c [#t (let ([message (if (message-condition? c) (condition-message c) "failed")]
+                        [irritants (if (and (irritants-condition? c) (list? (condition-irritants c)))
+                                       (map plain (condition-irritants c))
+                                       '())])
+                    (vector 'failed message irritants
+                            (and (format-condition? c) (guard (e [#t #f]) (apply format message irritants) #t))))])
       (thunk)))
 
   (define (folder? a) (eq? (file-attributes-type a) (file-type folder)))

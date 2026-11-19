@@ -84,7 +84,7 @@ inside
 from-thread
 ; #!tuna/base lacks the task names.
 > (import (base-tasks))
-! attempt to reference unbound identifier spawn-task at line 2, char 18 of ~/.config/tuna/lib/base-tasks.sls
+! attempt to reference unbound identifier spawn-task at line 2, char 18 of $HOME/.config/tuna/lib/base-tasks.sls
 ; Unloading a module resumes its paused tasks with &quit raised; a task
 ; that has not started never runs.
 > (import (waiter))

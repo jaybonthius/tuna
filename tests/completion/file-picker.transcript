@@ -14,7 +14,7 @@
 > (press! "RET")
 > (result t)
 > (files:path (views:buffer (view)))
-"~/src/text.txt"
+"$HOME/src/text.txt"
 ; A path that does not exist is taken too, with ~ expanded.
 > (define t (start! (lambda () (file-picker:read-file-name "File: "))))
 > (minibuffer:input (prompt))
@@ -37,7 +37,7 @@
 > (define t (start! (lambda () (press! "C-x" "C-f"))))
 > (result t)
 > (list asked (files:path (views:buffer (view))))
-(("Find file: ") "~/src/other.txt")
+(("Find file: ") "$HOME/src/other.txt")
 > (remove-option! ask:file-name-reader)
 > (unload-module! '(file-picker))
 > (list (keys:lookup client "C-x C-f") (raised (lambda () (ask:file-name "File: "))))

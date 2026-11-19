@@ -50,7 +50,7 @@ Tuna is at http://127.0.0.1:PORT/
 (200 "text/css; charset=utf-8" "main { color: blue; }\n")
 ; A file that cannot be read is left off the page, with a warning.
 > (table-set! web:stylesheets 'missing "missing.css")
-! web:stylesheets: cannot read the file with irritant "~/.config/tuna/missing.css"
+! web:stylesheets: cannot read the file with irritant "$HOME/.config/tuna/missing.css"
 > (table-set! web:stylesheets 'number 42)
 ! web:stylesheets: cannot read the file with irritant 42
 > (http:head-files)

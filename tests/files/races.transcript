@@ -168,3 +168,132 @@ stopped
 ((#f #t) (#f #t) (#f #t))
 > (equal? (map (lambda (v) (vector-ref v 0)) (files:%visits)) (map files:path (files:buffers)))
 #t
+; A quit that reaches a renaming task after the job renamed the file but
+; before the task resumes, here signalled as the job ends, still finds
+; the buffer moved and files:after-rename called.
+> (disk-checks:write-text! "~/before.txt" "before\n")
+> (define moving (files:visit "~/before.txt"))
+> (define renamed '())
+> (define (note-rename from to) (set! renamed (list (base from) (base to))))
+> (define (base path) (path-last path))
+> (add-hook! files:after-rename note-rename)
+> (define renamer #f)
+> (define (quit-as-job-ends start worker input on-result . on-end)
+    (if renamer
+        (start worker input on-result
+          (lambda (ended)
+            (signal-task renamer 'quit)
+            ((car on-end) ended)))
+        (apply start worker input on-result on-end)))
+> (advice-add! jobs:start quit-as-job-ends)
+> (guard (c [(symbol? c) c])
+    (set! renamer (current-task))
+    (files:rename-file "~/before.txt" "~/after.txt"))
+quit
+> (set! renamer #f)
+> (list (files:path moving) (buffers:name moving) renamed (disk-checks:exists? "~/after.txt"))
+("$HOME/after.txt" "after.txt" ("before.txt" "after.txt") #t)
+; Across file systems a rename copies, then deletes; a quit once the copy
+; is whole, here as its first value arrives, finds the buffer on the copy.
+> (define other (format "/dev/shm/tuna-races-~a" (get-process-id)))
+> (files:make-folder other)
+> (define (quit-at-first-value start worker input on-result . on-end)
+    (if renamer
+        (apply start worker input
+               (lambda (v)
+                 (signal-task renamer 'quit)
+                 (on-result v))
+               on-end)
+        (apply start worker input on-result on-end)))
+> (advice-remove! jobs:start quit-as-job-ends)
+> (advice-add! jobs:start quit-at-first-value)
+> (guard (c [(symbol? c) c])
+    (set! renamer (current-task))
+    (files:rename-file "~/after.txt" (string-append other "/after.txt")))
+quit
+> (set! renamer #f)
+> (advice-remove! jobs:start quit-at-first-value)
+> (list (equal? (files:path moving) (string-append other "/after.txt")) renamed
+        (disk-checks:read-text (string-append other "/after.txt")))
+(#t ("after.txt" "after.txt") "before\n")
+> (files:delete-file other)
+> (remove-hook! files:after-rename note-rename)
+; A quit that reaches the renaming task while its job runs stops the job,
+; which rename(2) does not wait for: the job still reports the move, so
+; the buffer follows the file and files:after-rename is called. Here the
+; job is stopped as it starts, as the quit's guard stops it.
+> (disk-checks:write-text! "~/a.txt" "a\n")
+> (define a (files:visit "~/a.txt"))
+> (set! renamed '())
+> (add-hook! files:after-rename note-rename)
+> (define (stop-at-start start worker input on-result . on-end)
+    (let ([j (apply start worker input on-result on-end)])
+      (jobs:stop! j)
+      j))
+> (advice-add! jobs:start stop-at-start)
+> (guard (c [#t (condition-message c)]) (files:rename-file "~/a.txt" "~/b.txt"))
+"the job was stopped"
+> (advice-remove! jobs:start stop-at-start)
+> (list (disk-checks:exists? "~/a.txt") (disk-checks:exists? "~/b.txt") (files:path a) renamed)
+(#f #t "$HOME/b.txt" ("a.txt" "b.txt"))
+> (remove-hook! files:after-rename note-rename)
+; With real quits: a task started as the job starts signals the renaming
+; task, as a C-g typed during the rename does. Whether or not the file
+; moved, its buffer visits it where it is.
+> (define (signal-at-start start worker input on-result . on-end)
+    (let ([j (apply start worker input on-result on-end)])
+      (when renamer
+        (let ([t renamer]) (spawn-task (lambda () (signal-task t 'quit)))))
+      j))
+> (advice-add! jobs:start signal-at-start)
+> (define (rename-quitting n)
+    (let ([from (format "~~/f~a.txt" n)] [to (format "~~/g~a.txt" n)])
+      (disk-checks:write-text! from "x\n")
+      (let ([b (files:visit from)])
+        (guard (c [(symbol? c) c])
+          (set! renamer (current-task))
+          (files:rename-file from to)
+          (sleep-for 0.05))
+        (set! renamer #f)
+        (sleep-for 0.02)
+        (list n (disk-checks:exists? to)
+              (equal? (files:path b) (disk-checks:expand (if (disk-checks:exists? to) to from)))))))
+> (filter (lambda (r) (not (caddr r))) (map rename-quitting (iota 100)))
+()
+> (advice-remove! jobs:start signal-at-start)
+; A quit that reaches a saving task after the file is written, here
+; signalled as the job ends, still finds the save recorded and
+; files:after-save called.
+> (disk-checks:write-text! "~/saved.txt" "a\n")
+> (define saving (files:visit "~/saved.txt"))
+> (define saved '())
+> (define (note-saved b) (set! saved (cons (buffers:name b) saved)))
+> (add-hook! files:after-save note-saved)
+> (begin (buffers:replace! saving 1 1 "s") #t)
+#t
+> (advice-add! jobs:start quit-as-job-ends)
+> (guard (c [(symbol? c) c])
+    (set! renamer (current-task))
+    (files:save-buffer saving))
+quit
+> (set! renamer #f)
+> (advice-remove! jobs:start quit-as-job-ends)
+> (list saved (buffers:modified? saving) (disk-checks:read-text "~/saved.txt"))
+(("saved.txt") #f "sa\n")
+> (remove-hook! files:after-save note-saved)
+; files:after-rename and files:after-save are called as the job reports
+; its work, in a task other than the caller's, so an entry that pauses
+; finishes after the call that renamed or saved has returned.
+> (disk-checks:write-text! "~/order-a.txt" "a\n")
+> (disk-checks:write-text! "~/order-other.txt" "o\n")
+> (define order '())
+> (define (pausing from to)
+    (set! order (cons 'entry-starts order))
+    (files:visit "~/order-other.txt")
+    (set! order (cons 'entry-ends order)))
+> (add-hook! files:after-rename pausing)
+> (begin (files:rename-file "~/order-a.txt" "~/order-c.txt") (set! order (cons 'rename-returned order)))
+> (wait-until (lambda () (memq 'entry-ends order)))
+> (reverse order)
+(entry-starts rename-returned entry-ends)
+> (remove-hook! files:after-rename pausing)

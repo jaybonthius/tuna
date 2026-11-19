@@ -9,7 +9,7 @@
 ; A library from a local folder, with no library-directories: the folder
 ; is its root, and Chez compiles it into Tuna's cache.
 > (library mine (local "~/src/mine"))
-! import: (mine thing) in lib/ replaces ~/src/mine/mine/thing.sls
+! import: (mine thing) in lib/ replaces $HOME/src/mine/mine/thing.sls
 > (import (mine other))
 > (mine-other)
 "from ~/src/mine"
@@ -32,7 +32,7 @@
 ; A plugin's tuna.deps holds only library lines with a git source and a
 ; commit.
 > (use-plugin broken-deps (git "https://github.com/bob/broken-deps"))
-! use-plugin: ~/.local/share/tuna/plugins/broken-deps/tuna.deps holds (library chez-adder (local "/tmp")), which is not a library line with a git source and a commit
+! use-plugin: $HOME/.local/share/tuna/plugins/broken-deps/tuna.deps holds (library chez-adder (local "/tmp")), which is not a library line with a git source and a commit
 ; A git source needs a commit.
 > (library chez-adder (git "https://github.com/bob/chez-adder"))
 ! library: expected an id and clauses (git url) with (commit hex), (local folder), (library-directories root ...) or (build program argument ...) (library chez-adder (git "https://github.com/bob/chez-adder"))
