@@ -89,8 +89,3 @@
 > (buffers:with-buffer rows (set-option-local! views:position-description #f))
 > (list (views:with-view (view) (status-line:show-position (view))) (cdr (assoc "status-line:position" (status (view)))))
 (#f "")
-; The status line's own views draw no cursor.
-> (buffers:with-buffer line-buffer (views:cursor-visible))
-#f
-> (search (hide-placements (html->string (status-line:draw (view) client))) "cursor" 0)
-#f

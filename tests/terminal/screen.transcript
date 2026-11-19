@@ -77,7 +77,7 @@
                          (substring html at (+ (from html ">" at) 1))))
 > (screen-tag)
 > (define (cell-click! key column row)
-    (in-client (lambda () (keys:press! client (list key (views:%make-posn (view) (+ (document:node-start (screen-node)) 1) (screen-node) terminal:mouse-keymap column row))))))
+    (in-client (lambda () (keys:press! client (list key (views:%make-posn (view) (+ (document:node-start (screen-node)) 1) (screen-node) (list terminal:mouse-keymap) column row))))))
 > (cell-click! "C-<down-mouse-1>" 2 0)
 > (cell-click! "C-<mouse-1>" 2 0)
 > (web:take-page-calls!)

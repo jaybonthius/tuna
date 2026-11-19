@@ -1,27 +1,20 @@
 > (map car (status (view)))
 ("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode" "status-line:minor-modes")
-; A killed line is made again when the next line is drawn, which acts
-; for no module, and keeps no undo. Its status views go with it; a line
-; drawn in the batch of the kill is empty until the batch's end writes
-; the segments.
-> (begin (buffers:kill! (buffers:find " *status-line*")) (map car (status (view))))
-()
-> (map car (status (view)))
-("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode" "status-line:minor-modes")
-> (buffers:kill! (buffers:find " *status-line*"))
-#t
-> (map car (status (view)))
-("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode" "status-line:minor-modes")
-> (map car (status (view)))
-("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode" "status-line:minor-modes")
-> (buffers:with-buffer (buffers:find " *status-line*") (undo:limit))
-0
-> (set! line-buffer (buffers:find " *status-line*"))
 ; The plugin's seven segments, in their places: the modified mark, the
 ; buffer's name, the position, the percent position and the region size
-; on the left, the major and minor modes' lighters on the right.
-> (line)
-(status-line:line () #(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(status-line:position ((key . status-line:position))) #(status-line:percent-position ((key . status-line:percent-position))) #(status-line:region-size ((key . status-line:region-size))) #(status-line:major-mode ((key . status-line:major-mode) (right . #t))) #(status-line:minor-modes ((key . status-line:minor-modes))))
+; on the left, the major and minor modes' lighters on the right. A
+; status line is a footer marked with status-line:keymap; a segment is a
+; span, or a button marked with its keymap when it has one; the right
+; side's are in their own element.
+> (define (marks-of keymap) (format "data-keymap=\"~a\"" (views:keymap-mark keymap)))
+> (define drawn (html->string (status-line:draw (view) client)))
+> (string=? (substring drawn 0 (search drawn ">" 0)) (string-append "<footer class=\"status-line\" " (marks-of status-line:keymap)))
+#t
+> (let ([i (search drawn "<div class=\"status-line-right\">" 0)])
+    (list (map car (segments-in (substring drawn 0 i))) (map car (segments-in (substring drawn i (string-length drawn))))))
+(("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size") ("status-line:major-mode" "status-line:minor-modes"))
+> (buffers:find " *status-line*")
+#f
 > (define notes (files:visit (string-append (getenv "HOME") "/notes.txt")))
 > (views:set-buffer! (view) notes)
 > (status (view))
@@ -55,7 +48,7 @@
 > (define bar ((layout-split:display-at-side (layout:direction down) 50 'content '((locked . #t))) (buffers:make "*bar*" "")))
 > (define side ((layout-split:display-at-side (layout:direction left) 40 '(columns 20)) (buffers:make "*side*" "")))
 > (layout-split:split-view! (view) (layout-split:direction row))
-#<view 9>
+#<view 5>
 > (map (lambda (s) (cdr (assoc "status-line:buffer-name" s))) (screen-status-lines client))
 ("*side*" "notes.txt" "notes.txt")
 > (layout:delete-part! (layout:view-node side))
@@ -76,15 +69,8 @@
 > (buffers:with-buffer notes (remove-option-local! status-line:visible))
 > (length (screen-status-lines client))
 2
-; ` *status-line*` holds one atom per placed segment, the left side's
-; then the right side's, each in order; equal numbers keep the order in
-; which they were first placed. It is rewritten only when the table
-; changes, never by a window command.
-> (define version (buffers:version line-buffer))
-> (in-client (lambda () (commands:run layout:other-view)))
-> (in-client (lambda () (commands:run layout-split:split-below)))
-> (= version (buffers:version line-buffer))
-#t
+; Segments show the left side's, then the right side's, each in order;
+; equal numbers keep the order in which they were first placed.
 > (define (show-a view) "a")
 > (define (show-b view) "b")
 > (status-line:define-segment seg-a (show show-a))
@@ -96,15 +82,14 @@
 > (table-set! status-line:segments seg-b (status-line:right 0))
 > (map car (status (view)))
 ("status-line:modified" "status-line:buffer-name" "seg-a" "status-line:position" "status-line:percent-position" "status-line:region-size" "seg-b" "status-line:major-mode" "status-line:minor-modes")
-> (cddr (line))
-(#(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(seg-a ((key . seg-a))) #(status-line:position ((key . status-line:position))) #(status-line:percent-position ((key . status-line:percent-position))) #(status-line:region-size ((key . status-line:region-size))) #(seg-b ((key . seg-b) (right . #t))) #(status-line:major-mode ((key . status-line:major-mode))) #(status-line:minor-modes ((key . status-line:minor-modes))))
-> (< version (buffers:version line-buffer))
-#t
+; A segment is its name, as a mode is.
+> (list seg-a status-line:position)
+(seg-a status-line:position)
 ; A value that is not a place goes to report once, and its segment is
 ; not shown; a key that is not a segment is left out.
 > (table-set! status-line:segments seg-a 'left)
-! (status-line) status-line:segments: not a place with irritant left
 > (map car (status (view)))
+! status-line:segments: not a place with irritant left
 ("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "seg-b" "status-line:major-mode" "status-line:minor-modes")
 > (map car (status (view)))
 ("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "seg-b" "status-line:major-mode" "status-line:minor-modes")
@@ -127,8 +112,6 @@
 > (cdr (assoc "flaky" (status (view))))
 ! car: () is not a pair
 ! car: () is not a pair
-! car: () is not a pair
-! number: a show procedure returned what is not HTML, a string or #f with irritant 42
 ! number: a show procedure returned what is not HTML, a string or #f with irritant 42
 ! number: a show procedure returned what is not HTML, a string or #f with irritant 42
 ""
@@ -141,7 +124,6 @@
 ! car: () is not a pair
 ! car: () is not a pair
 > (cdr (assoc "flaky" (status (view))))
-! car: () is not a pair
 ""
 > (cdr (assoc "number" (status (view))))
 ""
@@ -178,8 +160,8 @@
 (#t #t #f)
 > (raised (lambda () (status-line:draw 'v client)))
 (status-line:draw "not a view")
-> (raised (lambda () (status-line:posn-view 'posn)))
-(views:posn-view "not a position of a mouse key")
+> (status-line:define-segment bad (show show-a) (keymap 'keys))
+! status-line:define-segment: not a keymap or #f with irritant keys
 > (define result #f)
 > (let ([v (view)]) (fork-thread (lambda () (set! result (raised (lambda () (status-line:draw v client)))))))
 #<thread 6>

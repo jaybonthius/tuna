@@ -1,86 +1,76 @@
-; Each window's status line is a view of ` *status-line*` of its own,
-; made the first time the line is drawn and dropped after the window's
-; view is dropped.
+; A window's status line is drawn in the window's element of the layout,
+; so a click on it is a mouse key in layout:screen-view at the window's
+; atom. No buffer or view is made for it.
 > (define notes (buffers:make "notes" "one\ntwo\n"))
 > (views:set-buffer! (view) notes)
 > (layout-split:split-view! (view) (layout-split:direction row))
+#<view 3>
 > (define windows (layout:views))
 > (length (screen-status-lines client))
-> (define status-views (map status-view-of windows))
-> (map (lambda (sv) (eq? (views:buffer sv) line-buffer)) status-views)
-> (map (lambda (sv w) (eq? (status-line:posn-view (views:%make-posn sv 1)) w)) status-views windows)
-> (status-line:posn-view (views:%make-posn (car windows) 1))
-; A click on a segment with no keymap of its own is looked up in
-; status-line:keymap, which selects the clicked window; a click on a
-; locked window's line selects nothing.
+2
+> (buffers:find " *status-line*")
+#f
+; A click with no segment keymap of its own is looked up in
+; status-line:keymap, then at the window's atom: layout's keymap selects
+; the clicked window. A click on a locked window's line selects nothing.
 > (map (lambda (b) (cons (car b) (commands:command-name (cdr b)))) (keys:bindings status-line:keymap))
+(("<mouse-2>" . status-line:mouse-reset-layout) ("<mouse-3>" . status-line:mouse-delete-view) ("<down-mouse-1>" . keys:ignore) ("<drag-mouse-1>" . keys:ignore))
 > (layout:select! (car windows))
-> (click-token! (cadr status-views) 2)
+> (click-status! (cadr windows) 1)
 > (eq? (view) (cadr windows))
+#t
 > (buffers:replace! layout:buffer (document:node-start (layout:view-node (car windows))) (document:node-end (layout:view-node (car windows)))
     (views:view `((view . ,(views:id (car windows))) (buffer . "notes") (locked . #t))))
-> (click-token! (status-view-of (car windows)) 2)
+#<edit 2>
+> (click-status! (car windows) 1)
 > (eq? (view) (cadr windows))
-; A segment's keymap comes first. A command it runs runs inside the
-; status view, with ` *status-line*` current, and finds its window with
-; status-line:posn-view.
+#t
+> (buffers:replace! layout:buffer (document:node-start (layout:view-node (car windows))) (document:node-end (layout:view-node (car windows)))
+    (views:view `((view . ,(views:id (car windows))) (buffer . "notes"))))
+#<edit 3>
+; A segment's keymap comes first. A command it runs finds its window as
+; the part the clicked node of the layout leads to.
 > (define clicked '())
 > (commands:define-command (note-click [event (keys:command-event)])
     "Notes where a click on the segment ran."
-    (set! clicked (list (eq? (views:current) (status-view-of (cadr windows)))
-                        (buffers:name (buffers:current))
-                        (eq? (status-line:posn-view (keys:event-end event)) (cadr windows)))))
+    (set! clicked (list (eq? (views:current) layout:screen-view)
+                        (eq? (layout:part-view (views:posn-node (keys:event-end event))) (cadr windows)))))
 > (define-table name-keys "Clicks on the name.")
 > (define (show-name view) (buffers:name (views:buffer view)))
 > (status-line:define-segment name (show show-name) (keymap name-keys))
 > (keys:bind! name-keys "<mouse-1>" note-click)
 > (table-set! status-line:segments name (status-line:left 25))
-> (cddr (line))
-> (click-token! (status-view-of (cadr windows)) 3)
+> (click-status! (cadr windows) 1 name-keys)
 > clicked
-; A click on a segment removed since its line was drawn is stale; one
-; on a segment still placed finds it where it is now.
-> (define drawn (buffers:version line-buffer))
-> (table-remove! status-line:segments status-line:modified)
-> (click-token! (status-view-of (cadr windows)) 1 drawn)
-> (set! clicked '())
-> (click-token! (status-view-of (cadr windows)) 3 drawn)
-> clicked
-; When a window's view goes, its status view goes at the end of the
-; batch.
-> (define gone (status-view-of (car windows)))
-> (define gone-id (views:id gone))
-> (buffers:replace! layout:buffer (document:node-start (layout:view-node (car windows))) (document:node-end (layout:view-node (car windows))) "")
-> (views:find gone-id)
-> (length (views:showing line-buffer))
+(#t #t)
+; A key the segment's keymap does not bind falls through to
+; status-line:keymap, as Emacs's local-map on a mode-line string falls
+; through to the mode line's mouse bindings: the middle button keeps only
+; the clicked window in its level.
+> (click-status! (cadr windows) 2 name-keys)
+> (list (length (layout:views)) (eq? (view) (cadr windows)))
+(1 #t)
+> (table-remove! status-line:segments name)
+; A click whose window was deleted since its line was drawn is stale.
+> (layout-split:split-view! (view) (layout-split:direction row))
 #<view 4>
-2
-(#t #t)
-(#t #t)
-#f
-(("<mouse-1>" . status-line:mouse-select-view) ("<mouse-2>" . status-line:mouse-reset-layout) ("<mouse-3>" . status-line:mouse-delete-view) ("<down-mouse-1>" . keys:ignore) ("<drag-mouse-1>" . keys:ignore))
-#t
-#<edit 2>
-#t
-(#(status-line:modified ((key . status-line:modified))) #(status-line:buffer-name ((key . status-line:buffer-name))) #(name ((key . name))) #(status-line:position ((key . status-line:position))) #(status-line:percent-position ((key . status-line:percent-position))) #(status-line:region-size ((key . status-line:region-size))) #(status-line:major-mode ((key . status-line:major-mode) (right . #t))) #(status-line:minor-modes ((key . status-line:minor-modes))))
-(#t " *status-line*" #t)
+> (define two (layout:views))
+> (define drawn (buffers:version layout:buffer))
+> (define at (document:node-start (layout:view-node (cadr two))))
+> (buffers:replace! layout:buffer at (document:node-end (layout:view-node (cadr two))) "")
+#<edit 6>
+> (parameterize ([web:current-client client])
+    ((table-ref web:input-handlers "mouse") client
+     `(("type" . "mouse") ("action" . "click") ("button" . 3) ("clicks" . 1) ("modifiers" . #())
+       ("view" . ,(views:id layout:screen-view)) ("version" . ,drawn)
+       ("showing" . ,(views:shown-count layout:screen-view)) ("token" . ,at)
+       ("keymaps" . ,(vector (views:keymap-mark status-line:keymap))))))
 ! Stale click: what was clicked is gone
-(#t " *status-line*" #t)
-#<edit 3>
-#f
+> (length (layout:views))
 1
 ; As on Emacs's mode line, the middle button keeps only the clicked
 ; window in its level and the right button deletes the clicked window,
 ; whichever is selected.
-> (define (button-click! v button at)
-    (for-each
-      (lambda (action)
-        (parameterize ([web:current-client client])
-          ((table-ref web:input-handlers "mouse") client
-           `(("type" . "mouse") ("action" . ,action) ("button" . ,button) ("clicks" . 1) ("modifiers" . #())
-             ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))
-             ("showing" . ,(views:shown-count v)) ("token" . ,at)))))
-      '("down" "click")))
 > (define (split!) (layout-split:split-view! (view) (layout-split:direction row)) (void))
 > (split!)
 > (split!)
@@ -88,42 +78,42 @@
 > (length (screen-status-lines client))
 3
 > (layout:select! (car three))
-> (button-click! (status-view-of (caddr three)) 3 2)
+> (click-status! (caddr three) 3)
 > (list (length (layout:views)) (eq? (view) (car three)) (memq (caddr three) (layout:views)))
 (2 #t #f)
-> (button-click! (status-view-of (cadr three)) 2 2)
+> (click-status! (cadr three) 2)
 > (list (length (layout:views)) (eq? (view) (cadr three)))
 (1 #t)
 ; The right button deletes neither a locked window nor the only window
 ; of its level, even inside a container holding only it, and selects
 ; neither.
-> (button-click! (status-view-of (view)) 3 2)
+> (click-status! (view) 3)
 > (list (length (layout:views)) (eq? (view) (cadr three)))
 (1 #t)
 > (commands:run layout:part-mode)
 > (commands:run layout-split:wrap-in-row)
 > (commands:run layout:part-mode-leave)
 > (document:node-kind (document:enclosing (buffers:document layout:buffer) (document:node-start (layout:view-node (view)))))
-> (length (screen-status-lines client))
 layout-split:container
+> (length (screen-status-lines client))
 1
-> (button-click! (status-view-of (view)) 3 2)
+> (click-status! (view) 3)
 > (list (length (layout:views)) (eq? (view) (cadr three)))
 (1 #t)
 > (split!)
 > (define two (layout:views))
 > (layout:select! (car two))
 > (length (screen-status-lines client))
+2
 > (buffers:replace! layout:buffer (document:node-start (layout:view-node (cadr two))) (document:node-end (layout:view-node (cadr two)))
     (views:view `((view . ,(views:id (cadr two))) (buffer . "notes") (locked . #t))))
-> (button-click! (status-view-of (cadr two)) 3 2)
+#<edit 13>
+> (click-status! (cadr two) 3)
 > (list (length (layout:views)) (eq? (view) (car two)))
-2
-#<edit 10>
 (2 #t)
 ; Nor the last view that is not locked, which layout keeps.
 > (layout:deletable? (layout:view-node (car two)))
-> (button-click! (status-view-of (car two)) 3 2)
-> (list (length (layout:views)) (eq? (view) (car two)))
 #f
+> (click-status! (car two) 3)
+> (list (length (layout:views)) (eq? (view) (car two)))
 (2 #t)

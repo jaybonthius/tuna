@@ -11,22 +11,15 @@
 ("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode")
 > (screen-status-lines client)
 ((("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:position" . "L1") ("status-line:percent-position" . "Top") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental")))
-; Its status views are dropped and its buffer killed when it unloads, as
-; when it reloads; the buffer is made when it loads and the views when
-; the next line is drawn. Unloading takes back every change to its table,
-; so the segments are placed as by default.
-> (set! line-buffer (buffers:find " *status-line*"))
-> (length (views:showing line-buffer))
-1
+; Unloading takes back every change to its table, so the segments are
+; placed as by default when it loads again; while it is unloaded, no
+; status line is drawn.
 > (unload-module! '(status-line))
-> (list (buffers:live? line-buffer) (buffers:find " *status-line*"))
-(#f #f)
+> (screen-status-lines client)
+()
 > (load-module! '(status-line))
-> (set! line-buffer (buffers:find " *status-line*"))
 > (map car (status (view)))
 ("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode" "status-line:minor-modes")
-> (length (views:showing line-buffer))
-1
 ; Unloading the module that defines and places a segment hides it;
 ; loading it again shows it.
 > (import (cursors))

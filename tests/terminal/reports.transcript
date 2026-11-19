@@ -33,7 +33,7 @@
                      (let loop ([p 1]) (let ([t (document:token doc p)])
                                          (if (and (document:node? t) (eq? (document:node-kind t) 'terminal:%screen)) t (loop (+ p 1)))))))
 > (define (mouse! key column row)
-    (in-client (lambda () (keys:press! client (list key (views:%make-posn (view) (+ (document:node-start (screen)) 1) (screen) terminal:mouse-keymap column row))))))
+    (in-client (lambda () (keys:press! client (list key (views:%make-posn (view) (+ (document:node-start (screen)) 1) (screen) (list terminal:mouse-keymap) column row))))))
 > (mouse! "<down-mouse-1>" 2 0)
 > (mouse! "<mouse-1>" 2 0)
 > (read-by r)
@@ -61,7 +61,7 @@
 ; as the program's modes encode them.
 > (define r (reader 6 "printf '\\033[?1049h'; "))
 > (in-client (lambda () (layout:switch-to-buffer r)))
-> (define (wheel! key) (in-client (lambda () (keys:press! client (list key (views:%make-posn (view) (+ (document:node-start (screen)) 1) (screen) #f 0 0))))))
+> (define (wheel! key) (in-client (lambda () (keys:press! client (list key (views:%make-posn (view) (+ (document:node-start (screen)) 1) (screen) (list) 0 0))))))
 > (wheel! "<wheel-up>")
 > (wheel! "<wheel-down>")
 > (read-by r)
@@ -76,7 +76,7 @@
 "78"
 ; With Shift the event names the character, and the editing commands
 ; bound under the screen's keymap run.
-> (define (shift-mouse! key position) (in-client (lambda () (keys:press! client (list key (views:%make-posn (view) position #f terminal:mouse-keymap #f #f))))))
+> (define (shift-mouse! key position) (in-client (lambda () (keys:press! client (list key (views:%make-posn (view) position #f (list terminal:mouse-keymap) #f #f))))))
 > (shift-mouse! "S-<down-mouse-1>" 7)
 > (shift-mouse! "S-<mouse-1>" 7)
 > (views:point (view))

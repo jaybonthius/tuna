@@ -218,6 +218,5 @@
 (keys:bind! keymap "<mouse-2>" mouse-close-tab)
 (keys:bind! close-keymap "<down-mouse-1>" keys:ignore)
 (keys:bind! close-keymap "<mouse-1>" mouse-close-tab)
-(keys:bind! close-keymap "<mouse-2>" mouse-close-tab)
 (keys:bind! layout:part-mode-keymap "w t" wrap-in-tabs)
 (table-set! web:stylesheets 'layout-tabs "layout-tabs/layout-tabs.css")

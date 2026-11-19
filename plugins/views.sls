@@ -35,8 +35,8 @@
    set-view-option! remove-view-option! state-entry view-record-states view-record-states-set!
    scroll-to-place! estimate-range! draw-view current-context context-view context-client in-line? make-context children-html drawing?
    atom-view-of keymaps-at note-edit note-kill after-batch scroll-report mouse-item posn-keymaps forget-client!
-   posn-record? make-posn-record posn-record-view posn-record-point posn-record-node posn-record-keymap
-   posn-record-x posn-record-y posn-record-column posn-record-row keymap-id marked-keymap
+   posn-record? make-posn-record posn-record-view posn-record-point posn-record-node posn-record-keymaps
+   posn-record-x posn-record-y posn-record-column posn-record-row keymap-id marked-keymaps
    view-client when-measured! scroll-by! recenter!
    face-attributes title-attributes
    anchor-record? anchor-record-id anchor-record-view anchor-record-spot anchor-record-gone?
@@ -2364,9 +2364,9 @@
   ;; Nongenerative, so an event made before this module reloads still
   ;; holds a posn its accessors take.
   (define-record-type posn-record
-    (nongenerative views:posn/view/point/node/keymap/x/y/column/row)
+    (nongenerative views:posn/view/point/node/keymaps/x/y/column/row)
     (sealed #t)
-    (fields view point node keymap x y column row))
+    (fields view point node keymaps x y column row))
 
   ;; The page holds no Scheme value, so it names a marked keymap by a
   ;; number. Both tables hold the keymap weakly, so a keymap made for a
@@ -2397,6 +2397,12 @@
   (define (marked-keymap id)
     (let ([entry (and (fixnum? id) (hashtable-ref id-keymaps id #f))])
       (and entry (table? (car entry)) (car entry))))
+
+  (define (marked-keymaps ids)
+    (if (vector? ids)
+        (fold-right (lambda (id acc) (let ([keymap (marked-keymap id)]) (if keymap (cons keymap acc) acc)))
+                    '() (vector->list ids))
+        '()))
 
   (define (stale-click)
     (raise-continuable
@@ -2462,13 +2468,13 @@
   ;; The cell is counted in what the sending client last measured of the
   ;; view, when the item arrives, so the page sends only facts.
   (define (item-posn v c id p node item field)
-    (let ([x (field "x")] [y (field "y")] [keymap (marked-keymap (field "keymap"))])
+    (let ([x (field "x")] [y (field "y")] [keymaps (marked-keymaps (field "keymaps"))])
       (if (and (real? x) (real? y))
           (let* ([cs (and v (hashtable-ref (view-record-clients v) c #f))] [f (and cs (client-view-facts cs))])
             (define (cell at size) (exact (max 0 (floor (/ at size)))))
-            (make-posn-record id p node keymap x y
+            (make-posn-record id p node keymaps x y
                               (and f (cell x (facts-char-width f))) (and f (cell y (facts-line-height f)))))
-          (make-posn-record id p node keymap #f #f #f #f))))
+          (make-posn-record id p node keymaps #f #f #f #f))))
 
   (define (mouse-item c item)
     (define (field key) (let ([e (assoc key item)]) (and e (cdr e))))
@@ -2511,7 +2517,7 @@
                 (let* ([start (mouse-press-anchor press)] [from (mouse-press-posn press)])
                   (run! (list key
                               (make-posn-record id (and start (buffers:anchor-position start)) (posn-record-node from)
-                                                (posn-record-keymap from) (posn-record-x from) (posn-record-y from)
+                                                (posn-record-keymaps from) (posn-record-x from) (posn-record-y from)
                                                 (posn-record-column from) (posn-record-row from))
                               (if (eq? p 'stale) (item-posn v c id #f #f item field) (posn)))))]
                [else (stale-click)])])))))
@@ -2888,8 +2894,7 @@
 (define (%posn-keymaps client posn) (if posn (posn-keymaps posn) '()))
 
 (define (%marked-keymaps client posn)
-  (let ([keymap (and (posn-record? posn) (posn-record-keymap posn))])
-    (if keymap (list keymap) '())))
+  (if (posn-record? posn) (posn-record-keymaps posn) '()))
 
 (define (keymap-mark keymap)
   (unless (table? keymap)
@@ -2907,10 +2912,10 @@
 
 (define %make-posn
   (case-lambda
-    [(view position) (%make-posn view position #f #f #f #f)]
-    [(view position node keymap column row)
+    [(view position) (%make-posn view position #f '() #f #f)]
+    [(view position node keymaps column row)
      (check-view 'views:%make-posn view)
-     (make-posn-record (view-record-id view) position node keymap #f #f column row)]))
+     (make-posn-record (view-record-id view) position node keymaps #f #f column row)]))
 
 (define (posn-view posn)
   (%check-posn 'views:posn-view posn)
@@ -3062,8 +3067,8 @@
 (table-set! web:input-handlers "mouse" %mouse-item)
 (table-set! web:input-handlers "scroller" %scroller-report)
 (add-hook! keys:find-keymaps %posn-keymaps)
-;; A keymap marked on the element clicked comes before every other
-;; keymap at the position, as Emacs's keymap text property does.
+;; The keymaps marked around the element clicked come before every other
+;; keymap at the position.
 (add-hook! keys:find-keymaps %marked-keymaps -100)
 (add-hook! web:client-removed forget-client!)
 (keys:bind! keys:global "C-v" scroll-up)

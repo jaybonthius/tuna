@@ -105,20 +105,22 @@
 ; line selects on the press. The tab's element carries its child's marks
 ; and layout-tabs:keymap, so the press names the child and is looked up
 ; there first, even when the tab's first view starts where views places
-; the click.
-> (define (mouse! keymap buttons place . fields)
+; the click. The page sends the keymaps marked around the element
+; clicked, innermost first.
+> (define (mouse! keymaps buttons place . fields)
     (let ([s layout:screen-view])
       (parameterize ([web:current-client c1])
         (for-each
           (lambda (action)
             ((table-ref web:input-handlers "mouse") c1
              (append fields (list place)
-                     (if keymap (list (cons "keymap" (views:keymap-mark keymap))) '())
+                     (if (null? keymaps) '() (list (cons "keymaps" (list->vector (map views:keymap-mark keymaps)))))
                      `(("type" . "mouse") ("action" . ,action) ("button" . ,buttons) ("clicks" . 1) ("modifiers" . #())
                        ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))
                        ("showing" . ,(views:shown-count s))))))
           '("down" "click")))))
-> (define (click! . place) (apply mouse! layout-tabs:keymap 1 place))
+> (define (click! . place) (apply mouse! (list layout-tabs:keymap) 1 place))
+> (define close-keymaps (list layout-tabs:close-keymap layout-tabs:keymap))
 > (define (label-at v) (document:node-start (layout:view-node v)))
 > (define (tab-at child) (cons "token" (document:node-start child)))
 > (layout:select! c)
@@ -136,7 +138,7 @@
 7
 ; A click deeper in a tab, on a view's own element, which carries no
 ; keymap, selects that view.
-> (mouse! #f 1 (cons "token" (label-at c)))
+> (mouse! (list) 1 (cons "token" (label-at c)))
 > (selected)
 8
 ; A click on a tab closed since its screen was drawn is stale.
@@ -369,27 +371,28 @@
 > (parameterize ([web:current-client c1])
     ((table-ref web:input-handlers "mouse") c1
      `(("type" . "mouse") ("action" . "click") ("button" . 1) ("clicks" . 1) ("modifiers" . #())
-       ("token" . ,(label-at r1)) ("keymap" . ,(views:keymap-mark layout-tabs:keymap))
+       ("token" . ,(label-at r1)) ("keymaps" . ,(vector (views:keymap-mark layout-tabs:keymap)))
        ("view" . ,(views:id layout:screen-view)) ("version" . ,(buffers:version layout:buffer))
        ("showing" . ,(views:shown-count layout:screen-view)))))
 > (eq? (layout:selected-view) r2)
 #t
 ; The close button carries layout-tabs:close-keymap, so its click closes
 ; the tab clicked, with every part in it, without selecting it first; the
-; middle button on a tab closes it too. Each names the tab by its child,
-; not by the selected view.
+; middle button on a tab closes it too, and on the close button, which
+; leaves it to the tab's keymap. Each names the tab by its child, not by
+; the selected view.
 > (define r3 (views:make notes))
 > (set-parts! (layout-tabs:container '() (atom r1) (layout-split:container '((direction . row)) (atom r2) (atom r3))))
 > (layout:select! r1)
-> (mouse! layout-tabs:close-keymap 1 (tab-at (cadr (tabs-children))))
+> (mouse! close-keymaps 1 (tab-at (cadr (tabs-children))))
 > (list (eq? (layout:selected-view) r1) (length (tabs-children)))
 (#t 1)
 > (define r4 (layout-tabs:add-tab! r1 other))
-> (mouse! layout-tabs:keymap 2 (tab-at (car (tabs-children))))
+> (mouse! (list layout-tabs:keymap) 2 (tab-at (car (tabs-children))))
 > (list (eq? (layout:selected-view) r4) (length (tabs-children)))
 (#t 1)
 > (layout:select! (layout-tabs:add-tab! r4 other))
-> (mouse! layout-tabs:close-keymap 2 (tab-at (car (tabs-children))))
+> (mouse! close-keymaps 2 (tab-at (car (tabs-children))))
 > (length (tabs-children))
 1
 ; A tab holding a locked part stays, as close-other-tabs keeps one.
@@ -397,12 +400,12 @@
 > (define r6 (views:make notes))
 > (set-parts! (layout-tabs:container '() (atom r5) (atom r6 '(locked . #t))))
 > (layout:select! r5)
-> (mouse! layout-tabs:close-keymap 1 (tab-at (cadr (tabs-children))))
+> (mouse! close-keymaps 1 (tab-at (cadr (tabs-children))))
 > (length (tabs-children))
 2
 ; The close button's press does nothing, so pressing it selects no tab.
 > (map (lambda (b) (cons (car b) (commands:command-name (cdr b)))) (keys:bindings layout-tabs:close-keymap))
-(("<down-mouse-1>" . keys:ignore) ("<mouse-1>" . layout-tabs:mouse-close-tab) ("<mouse-2>" . layout-tabs:mouse-close-tab))
+(("<down-mouse-1>" . keys:ignore) ("<mouse-1>" . layout-tabs:mouse-close-tab))
 ; A tab's child names the tab even when it is a tabs container, whose
 ; first tab's child starts where the outer tab's child is entered.
 > (define r7 (views:make notes))
@@ -413,9 +416,9 @@
 > (define (inner-first) (document:token (buffers:document layout:buffer) (+ (document:node-start (cadr (tabs-children))) 1)))
 > (= (document:node-start (inner-first)) (+ (document:node-start (cadr (tabs-children))) 1))
 #t
-> (mouse! layout-tabs:close-keymap 1 (tab-at (inner-first)))
+> (mouse! close-keymaps 1 (tab-at (inner-first)))
 > (tree)
 (layout:level () (layout-tabs:container () #(views:view ((view . 50) (buffer . "notes"))) (layout-tabs:container () #(views:view ((view . 52) (buffer . "other"))))))
-> (mouse! layout-tabs:close-keymap 1 (tab-at (cadr (tabs-children))))
+> (mouse! close-keymaps 1 (tab-at (cadr (tabs-children))))
 > (tree)
 (layout:level () (layout-tabs:container () #(views:view ((view . 50) (buffer . "notes")))))

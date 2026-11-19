@@ -757,8 +757,13 @@ function referenceOf(target, view, grid) {
   return view;
 }
 
-function keymapOf(target, view) {
-  return markedWithin(target, view, "data-keymap")?.getAttribute("data-keymap") ?? null;
+function keymapsOf(target, view) {
+  const keymaps = [];
+  for (let e = target; e !== null; e = e.parentElement) {
+    if (e.hasAttribute("data-keymap")) keymaps.push(Number(e.getAttribute("data-keymap")));
+    if (e === view) break;
+  }
+  return keymaps;
 }
 
 function contentBox(element) {
@@ -798,8 +803,8 @@ function sendMove(view) {
   return true;
 }
 
-function keymapField(keymap) {
-  return keymap === null ? {} : { keymap: Number(keymap) };
+function keymapsField(keymaps) {
+  return keymaps.length === 0 ? {} : { keymaps };
 }
 
 function release(event) {
@@ -808,7 +813,7 @@ function release(event) {
   const inView = event.target instanceof Element && event.target.closest("[data-view]") === p.view;
   const place = inView ? placeFor(p.view, p.grid, event.target, event.clientX, event.clientY) : null;
   sendMouse(p.view, p.dragging ? "drag" : "click", place ?? {},
-    { button: p.button, clicks: p.clicks, modifiers: modifierNames(event), ...keymapField(p.keymap),
+    { button: p.button, clicks: p.clicks, modifiers: modifierNames(event), ...keymapsField(p.keymaps),
       ...(inView ? pointer(p.reference, event) : {}) });
 }
 
@@ -848,12 +853,12 @@ document.addEventListener("mousedown", (event) => {
   event.preventDefault();
   taken = true;
   const grid = takenWithin(event.target, view, "data-grid", event);
-  const keymap = keymapOf(event.target, view);
+  const keymaps = keymapsOf(event.target, view);
   const reference = referenceOf(event.target, view, grid);
   press = { view, x: event.clientX, y: event.clientY, clicks: event.detail, button, mask: buttonMasks[event.button],
-            keymap, grid, reference, dragging: false, pending: null };
+            keymaps, grid, reference, dragging: false, pending: null };
   sendMouse(view, "down", placeFor(view, grid, event.target, event.clientX, event.clientY) ?? {},
-    { button, clicks: event.detail, modifiers: modifierNames(event), ...keymapField(keymap),
+    { button, clicks: event.detail, modifiers: modifierNames(event), ...keymapsField(keymaps),
       ...pointer(reference, event) });
 }, true);
 
@@ -912,7 +917,7 @@ function wheelTurned(event) {
   const grid = takenWithin(event.target, view, "data-grid", event) ?? element;
   const reference = referenceOf(event.target, view, grid);
   const place = placeFor(view, grid, event.target, event.clientX, event.clientY) ?? {};
-  const extra = { modifiers: modifierNames(event), ...keymapField(keymapOf(event.target, view)), ...pointer(reference, event) };
+  const extra = { modifiers: modifierNames(event), ...keymapsField(keymapsOf(event.target, view)), ...pointer(reference, event) };
   for (const [axis, less, more] of [["y", "up", "down"], ["x", "left", "right"]]) {
     while (Math.abs(rest[axis]) >= 1) {
       const step = Math.sign(rest[axis]);

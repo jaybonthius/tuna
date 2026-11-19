@@ -74,7 +74,7 @@
               (lambda (action)
                 (mouse client
                   `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
-                    ("token" . ,(label k)) ("keymap" . ,(views:keymap-mark layout-tabs:keymap)) ("view" . ,(views:id s))
+                    ("token" . ,(label k)) ("keymaps" . ,(vector (views:keymap-mark layout-tabs:keymap))) ("view" . ,(views:id s))
                     ("version" . ,(buffers:version layout:buffer)) ("showing" . ,(views:shown-count s)))))
               '("down" "click")))
           (batch-ended))

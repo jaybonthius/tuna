@@ -191,7 +191,7 @@
 ; reported for the view, from 0.
 > (mouse! v '("action" . "click") '("at" . 1) '("count" . 0) '("x" . 35.5) '("y" . 12))
 > (report! c1 v 1 0 #t)
-> (mouse! v '("action" . "click") '("at" . 1) '("count" . 0) '("x" . 35.5) '("y" . 42) '("keymap" . 99))
+> (mouse! v '("action" . "click") '("at" . 1) '("count" . 0) '("x" . 35.5) '("y" . 42) '("keymaps" . #(99)))
 > (map (lambda (e) (let ([posn (cadr (car e))])
                      (list (call-with-values (lambda () (views:posn-x-y posn)) list)
                            (call-with-values (lambda () (views:posn-cell posn)) list))))
@@ -199,6 +199,8 @@
 (((35.5 12) (#f #f)) ((35.5 42) (3 2)))
 ; An element may carry a keymap that views:keymap-mark names; a click in
 ; it looks the mouse key up there before every keymap at its position.
+; The page sends the keymaps of the marked elements from the one clicked
+; out, innermost first.
 > (define-table close-keys)
 > (commands:define-command (on-close [event (keys:command-event)])
     "Records a click on a close button."
@@ -207,8 +209,8 @@
 > (define close-mark (views:keymap-mark close-keys))
 > (list (fixnum? close-mark) (eqv? close-mark (views:keymap-mark close-keys)) (eqv? close-mark (views:keymap-mark link-keys)))
 (#t #t #f)
-> (mouse! w '("action" . "down") '("token" . 6) `("keymap" . ,close-mark))
-> (mouse! w '("action" . "click") '("token" . 6) `("keymap" . ,close-mark))
+> (mouse! w '("action" . "down") '("token" . 6) `("keymaps" . ,(vector close-mark)))
+> (mouse! w '("action" . "click") '("token" . 6) `("keymaps" . ,(vector close-mark)))
 > (mouse! w '("action" . "click") '("token" . 6))
 > (map car (take!))
 (("<down-mouse-1>" #<posn 2 7>) close ("<mouse-1>" #<posn 2 7>))
@@ -216,10 +218,27 @@
 ; the press above was.
 > (map (lambda (k) (eq? (keys:lookup c1 (list k (views:%make-posn w 7))) record)) '("<down-mouse-1>" "<mouse-1>"))
 (#t #t)
+; A key the innermost marked keymap does not bind is looked up in the
+; marked keymaps around it, then at the position.
+> (define-table tab-keys)
+> (commands:define-command (on-tab [event (keys:command-event)])
+    "Records a click on a tab."
+    (set! seen (cons (list 'tab (views:posn-point (keys:event-start event))) seen)))
+> (keys:bind! tab-keys "<mouse-1>" on-tab)
+> (keys:bind! tab-keys "<mouse-2>" on-tab)
+> (define both (vector close-mark (views:keymap-mark tab-keys)))
+> (mouse! w '("action" . "click") '("token" . 6) `("keymaps" . ,both))
+> (mouse! w '("action" . "click") '("button" . 2) '("token" . 6) `("keymaps" . ,both))
+> (mouse! w '("action" . "click") '("token" . 6) `("keymaps" . ,(vector (views:keymap-mark tab-keys) close-mark)))
+> (map car (take!))
+(close tab tab)
+> (map (lambda (k) (commands:command-name (keys:lookup c1 (list k (views:%make-posn w 7 #f (list close-keys tab-keys) #f #f)))))
+       '("<mouse-1>" "<mouse-2>" "<down-mouse-1>"))
+(on-close on-tab record)
 > (raised (lambda () (views:keymap-mark 'close-keys)))
 (views:keymap-mark "not a keymap")
 ; A number that names no keymap marks none.
-> (mouse! w '("action" . "click") '("token" . 6) '("keymap" . 12345))
+> (mouse! w '("action" . "click") '("token" . 6) '("keymaps" . #(12345)))
 > (map car (take!))
 (("<mouse-1>" #<posn 2 7>))
 ; A wheel item is a wheel key at its place, as a click is.

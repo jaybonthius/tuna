@@ -1,8 +1,6 @@
 ; Quits requested every millisecond land in drawing status lines, in
-; changes of the segments, in window commands and in clicks on segments.
-; Afterwards each window has one status view, no other view of
-; ` *status-line*` is left, the line holds the placed segments, and
-; every status line draws as before.
+; changes of the segments, in window commands and in clicks on status lines.
+; Afterwards every status line draws as before.
 > (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 > (define notes (buffers:make "notes" "one\ntwo\n"))
 > (views:set-buffer! (view) notes)
@@ -47,7 +45,7 @@
               [(2) (if (< (window-count) 4)
                        (in-client (lambda () (commands:run layout-split:split-right)))
                        (in-client (lambda () (commands:run layout:delete-view))))]
-              [(3) (let ([sv (status-view-of (view))]) (when sv (click-token! sv 2)))]
+              [(3) (click-status! (view) 1)]
               [(4) (batch-ended)]
               [else (status (view))])
             (set! rounds (+ rounds 1))
@@ -71,9 +69,3 @@
 (("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("seg-a" . "a") ("status-line:position" . "L1") ("status-line:percent-position" . "Top") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental") ("status-line:minor-modes" . ""))
 > (equal? lines (screen-status-lines other-client))
 #t
-> (= (length (views:showing line-buffer)) (window-count))
-#t
-> (for-all (lambda (w) (and (status-view-of w) #t)) (layout:views))
-#t
-> (map (lambda (d) (vector-ref d 0)) (cddr (line)))
-(status-line:modified status-line:buffer-name seg-a status-line:position status-line:percent-position status-line:region-size status-line:major-mode status-line:minor-modes)

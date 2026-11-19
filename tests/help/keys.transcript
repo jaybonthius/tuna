@@ -71,7 +71,7 @@ Honks once.
 ; one, answers first, and C-h k says who bound the key there.
 > (define-table close-keys "A close button's keys.")
 > (keys:bind! close-keys "<mouse-1>" keys:ignore)
-> (in-client (lambda () (help:describe-key (list "<mouse-1>" (views:%make-posn (view) 2 #f close-keys #f #f)) (view))))
+> (in-client (lambda () (help:describe-key (list "<mouse-1>" (views:%make-posn (view) 2 #f (list close-keys) #f #f)) (view))))
 > (title)
 "<mouse-1> at that spot runs the command keys:ignore, bound by (repl)"
 ; Reading reads past a press to the click that ends it, and describes
