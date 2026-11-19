@@ -9,8 +9,7 @@
 (use-plugin minibuffer)
 (use-plugin completion
   (config
-    (set-option! completion:styles (list completion:any-order))
-    (table-set! completion:category-styles completion:file-category (list completion:partial))))
+    (set-option! completion:styles (list completion:any-order))))
 (use-plugin ui)
 (use-plugin layout-float)
 (use-plugin completion-list

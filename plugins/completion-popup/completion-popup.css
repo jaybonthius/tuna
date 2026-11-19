@@ -13,8 +13,21 @@
 
   .completion-popup-text mark {
     background: none;
+  }
+
+  /* This selector outweighs a face's rule, so it keeps off a match drawn
+     in a face. */
+  .completion-popup-text mark:not([data-face]) {
     color: inherit;
     font-weight: var(--tuna-font-weight-semibold, bold);
+    text-decoration: underline;
+  }
+
+  /* The faces of any-order's components can fall under 4.5:1 on the
+     selection, as Modus's do in dark, so on the selected row a match
+     takes the row's own colour. */
+  .ui-list-row[aria-current="true"] .completion-popup-text mark {
+    color: inherit;
     text-decoration: underline;
   }
 

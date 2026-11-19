@@ -33,13 +33,18 @@
 
   .completion-list-text mark {
     background: none;
+  }
+
+  /* This selector outweighs a face's rule, so it keeps off a match drawn
+     in a face. */
+  .completion-list-text mark:not([data-face]) {
     color: var(--completion-list-match-text, var(--tuna-link));
     font-weight: var(--tuna-font-weight-bold);
   }
 
-  /* The link colour can fall under 4.5:1 on the selection, as Modus's
-     does in dark, so on the selected row a match takes the row's own
-     colour and an underline. */
+  /* The link colour and the faces of any-order's components can fall
+     under 4.5:1 on the selection, as Modus's do in dark, so on the
+     selected row a match takes the row's own colour and an underline. */
   .ui-list-row[aria-current="true"] .completion-list-text mark {
     color: inherit;
     text-decoration: underline;

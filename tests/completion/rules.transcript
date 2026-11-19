@@ -1,7 +1,8 @@
 ; The matcher's library: patterns, order, spans, and the store a job keeps.
 > (import (completion matcher))
-> (map pattern? '(((contains "a")) ((contains)) ((ends "a" "b")) ((not (starts "x"))) ((regexp "a")) x))
-(#t #f #f #t #f #f)
+> (map pattern? '(((contains "a")) ((contains)) ((ends "a" "b")) ((not (starts "x"))) ((regexp "a")) x
+                  ((face m (contains "a"))) ((face "m" (contains "a"))) ((face m))))
+(#t #f #f #t #f #f #t #f #f)
 > (define s (make-store (vector "find-file" "files:find-file" "fundamental" "Find" "f") (vector 0 0 0 0 0)))
 > (store-matches s '((contains "f" "n" "d")))
 #(3 0 2 1)
@@ -14,7 +15,17 @@
 > (store-matches s '())
 #(4 3 0 2 1)
 > (pattern-spans '((contains "f" "n" "d") (contains "file")) "files:find-file")
-((0 . 4) (8 . 10))
+((0 4 #f) (8 10 #f))
+; A span carries its term's face. A later term's match is drawn over an
+; earlier one's; matches of one face that touch join.
+> (pattern-spans '((face a (contains "find")) (not (contains "x")) (face b (ends "file"))) "files:find-file")
+((6 10 a) (11 15 b))
+> (pattern-spans '((face a (contains "file")) (face b (contains "les:f"))) "files:find-file")
+((0 2 a) (2 7 b))
+> (pattern-spans '((face a (contains "fi")) (face a (contains "les"))) "files")
+((0 5 a))
+> ((pattern-matcher '((face a (contains "define")) (not (contains "x")))) "define-record")
+#t
 > ((pattern-matcher '((contains "define") (not (contains "x")))) "define-record")
 #t
 ; Ranks sort first, then gaps, then length, then text.
@@ -50,12 +61,20 @@
 > (completion:substring "fi")
 ((contains "fi"))
 > (completion:any-order "a\\ b ~xyz =!x y$ !")
-((contains "a b") (contains "x" "y" "z") (contains "!x") (ends "y"))
+((face completion.match-0 (contains "a b")) (face completion.match-1 (contains "x" "y" "z")) (face completion.match-2 (contains "!x")) (face completion.match-3 (ends "y")))
+; Components take the faces in turn, starting again after the last; a
+; negated one takes none.
+> (completion:any-order "a !b\\ c d e f g")
+((face completion.match-0 (contains "a")) (not (contains "b c")) (face completion.match-1 (contains "d")) (face completion.match-2 (contains "e")) (face completion.match-3 (contains "f")) (face completion.match-0 (contains "g")))
+> (with-options ([completion:any-order-faces (list completion:match-2)]) (completion:any-order "a b"))
+((face completion.match-2 (contains "a")) (face completion.match-2 (contains "b")))
+> (with-options ([completion:any-order-faces '()]) (completion:any-order "a b"))
+((contains "a") (contains "b"))
 > (completion:any-order "")
 ()
 > (table-set! completion:any-order-dispatch #\, (lambda (rest) (list 'starts rest)))
 > (completion:any-order ",ab")
-((starts "ab"))
+((face completion.match-0 (starts "ab")))
 > (table-remove! completion:any-order-dispatch #\,)
 ; Smart case per term: a capital in a term makes it exact.
 > (define-saved h '() list?)

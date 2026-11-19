@@ -144,6 +144,8 @@
     --modus-variable-use: light-dark(#2a5045, #76afbf);
     --modus-fg-completion-match-0: light-dark(#0031a9, #00bcff);
     --modus-fg-completion-match-1: light-dark(#8f0075, #f78fe7);
+    --modus-fg-completion-match-2: light-dark(#00598b, #6ae4b9);
+    --modus-fg-completion-match-3: light-dark(#a60000, #d0bc00);
     --modus-fg-link: light-dark(#3546c2, #79a8ff);
     --modus-fg-link-visited: light-dark(#721045, #feacd0);
     --modus-fg-prompt: light-dark(#00603f, #4ae2f0);
@@ -212,6 +214,10 @@
     --faces-markup-heading-color: var(--modus-fg-heading-1);
     --faces-markup-raw-color: var(--modus-fg-prose-code);
     --minibuffer-prompt-color: var(--modus-fg-prompt);
+    --completion-match-0-color: var(--modus-fg-completion-match-0);
+    --completion-match-1-color: var(--modus-fg-completion-match-1);
+    --completion-match-2-color: var(--modus-fg-completion-match-2);
+    --completion-match-3-color: var(--modus-fg-completion-match-3);
     --layout-part-mode-color: var(--modus-magenta-cooler);
     --rainbow-delimiters-depth-1-color: var(--modus-fg-main);
     --rainbow-delimiters-depth-2-color: var(--modus-magenta-intense);

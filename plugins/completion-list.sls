@@ -76,10 +76,11 @@
     (cond
       [(null? spans) (reverse (if (fx< at (string-length text)) (cons (substring text at (string-length text)) acc) acc))]
       [else
-       (let ([s (fxmax at (caar spans))] [e (fxmin (string-length text) (cdar spans))])
+       (let* ([span (car spans)] [s (fxmax at (car span))] [e (fxmin (string-length text) (cadr span))]
+              [face (caddr span)])
          (if (fx< s e)
              (loop e (cdr spans)
-                   (cons (haml (:mark (substring text s e)))
+                   (cons (haml (:mark ([data-face (and face (symbol->string face))]) (substring text s e)))
                          (if (fx< at s) (cons (substring text at s) acc) acc)))
              (loop at (cdr spans) acc)))])))
 

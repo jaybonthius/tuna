@@ -1,13 +1,17 @@
 ; The configuration's settings. By default sources try prefix, then
 ; partial, as Emacs's basic and partial-completion, but buffers and
-; commands try prefix, then substring, and locations and lines substring;
-; the configuration gives files partial.
+; commands try prefix, then substring, and locations and lines substring.
+; The configuration sets the styles, which puts those defaults aside.
+; Files try partial before them.
 > (equal? (option-default completion:styles) (list completion:prefix completion:partial))
 #t
 > (equal? (completion:styles) (list completion:any-order))
 #t
-> (map (lambda (e) (cons (car e) (map (lambda (style) (style "a b")) (cdr e)))) (table-entries completion:category-styles))
-((completion:buffer-category ((starts "a b")) ((contains "a b"))) (completion:location-category ((contains "a b"))) (completion:command-category ((starts "a b")) ((contains "a b"))) (completion:file-category ((starts "a" " b"))) (line-picker:line-category ((contains "a b"))))
+> (define (entries t) (map (lambda (e) (cons (car e) (map (lambda (style) (style "a b")) (cdr e)))) (table-entries t)))
+> (entries completion:category-default-styles)
+((completion:buffer-category ((starts "a b")) ((contains "a b"))) (completion:location-category ((contains "a b"))) (completion:command-category ((starts "a b")) ((contains "a b"))) (line-picker:line-category ((contains "a b"))))
+> (entries completion:category-styles)
+((completion:file-category ((starts "a" " b"))))
 > (completion-list:rows)
 15
 ; completion:read, with a history.
@@ -52,7 +56,7 @@ words:word-category
 > (completion:flex "fnd")
 ((contains "f" "n" "d"))
 > (completion:any-order "buf ^find !x")
-((contains "buf") (starts "find") (not (contains "x")))
+((face completion.match-0 (contains "buf")) (face completion.match-1 (starts "find")) (not (contains "x")))
 ; completion:start over a field that is no prompt.
 > (define tags (buffers:make "*tags*" "lisp"))
 > (define tags-view (views:make tags))

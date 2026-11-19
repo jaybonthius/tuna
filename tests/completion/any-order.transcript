@@ -1,0 +1,141 @@
+; The configuration sets completion:styles to any-order, which puts aside
+; the styles plugins give their categories by default: every picker
+; matches the words of its input in any order, as Orderless does.
+> (define (offered keys text)
+    (let ([t (start! (lambda () (apply press! keys)))])
+      (wait-until session)
+      (type! text)
+      (wait-matches (session))
+      (let ([r (texts (session))]) (press! "C-g") r)))
+> (define (first-spans keys text)
+    (let ([t (start! (lambda () (apply press! keys)))])
+      (wait-until session)
+      (type! text)
+      (wait-matches (session))
+      (let* ([s (session)] [r (completion:spans s (car (match-list s)))]) (press! "C-g") r)))
+> (offered '("M-x") "find file")
+("file-picker:find-file")
+! &quit
+> (offered '("M-x") "file find")
+("file-picker:find-file")
+! &quit
+> (offered '("M-x") "find")
+("file-picker:find-file")
+! &quit
+; Dispatch characters, in either order with a plain word: ! leaves out,
+; = is literal, ^ anchors at the start, ~ is flex, $ anchors at the end.
+> (offered '("M-x") "find !files")
+("file-picker:find-file")
+! &quit
+> (offered '("M-x") "!files find")
+("file-picker:find-file")
+! &quit
+> (offered '("M-x") "picker: =find-file")
+("file-picker:find-file")
+! &quit
+> (offered '("M-x") "=find-file picker:")
+("file-picker:find-file")
+! &quit
+> (offered '("M-x") "file ^files")
+("files:write-file" "files:save-buffer" "files:not-modified" "files:revert-buffer" "files:save-some-buffers" "files:save-buffers-kill-tuna")
+! &quit
+> (offered '("M-x") "^files file")
+("files:write-file" "files:save-buffer" "files:not-modified" "files:revert-buffer" "files:save-some-buffers" "files:save-buffers-kill-tuna")
+! &quit
+> (offered '("M-x") "~ffl files")
+("files:write-file" "files:save-buffers-kill-tuna")
+! &quit
+> (offered '("M-x") "files ~ffl")
+("files:write-file" "files:save-buffers-kill-tuna")
+! &quit
+> (offered '("M-x") "find file$")
+("file-picker:find-file")
+! &quit
+> (offered '("M-x") "file$ find")
+("file-picker:find-file")
+! &quit
+; Each component's match is drawn in its own face, by the component's
+; place among those not negated.
+> (first-spans '("M-x") "find file")
+((0 4 completion.match-1) (12 16 completion.match-0))
+! &quit
+> (first-spans '("M-x") "file find")
+((0 4 completion.match-0) (12 16 completion.match-1))
+! &quit
+> (first-spans '("M-x") "!files file$ ^file ~fnd")
+((0 1 completion.match-2) (1 4 completion.match-1) (14 16 completion.match-2) (17 21 completion.match-0))
+! &quit
+; The list draws each match in its face.
+> (define (marks html)
+    (let loop ([i 0] [acc '()])
+      (let ([open (let find ([k i]) (cond [(> (+ k 5) (string-length html)) #f] [(string=? (substring html k (+ k 5)) "<mark") k] [else (find (+ k 1))]))])
+        (if open
+            (let ([close (let find ([k open]) (if (string=? (substring html k (+ k 7)) "</mark>") (+ k 7) (find (+ k 1))))])
+              (loop close (cons (substring html open close) acc)))
+            (reverse acc)))))
+> (define t (start! (lambda () (press! "M-x"))))
+> (type! "file find")
+> (wait-matches (session))
+> (texts (session))
+("file-picker:find-file")
+> (marks (lines-html (minibuffer:prompt-view (prompt))))
+("<mark data-face=\"completion.match-0\">file</mark>" "<mark data-face=\"completion.match-1\">find</mark>")
+> (press! "C-g")
+! &quit
+; Other styles keep one look: their matches have no face. Files try
+; partial first.
+> (define t (start! (lambda () (completion:read "File: " (list (completion:source (candidates (vector "alpha.txt" "beta.txt")) (category completion:file-category)))))))
+> (type! "al.t")
+> (texts (session))
+("alpha.txt")
+> (completion:spans (session) (car (match-list (session))))
+((0 2 #f) (5 7 #f))
+> (press! "C-g")
+! &quit
+; C-x b, the line picker and grep's filter after # take the words in any
+; order too.
+> (define notes (buffers:make "notes" "alpha beta\nbeta gamma\ngamma alpha\n"))
+> (define other (buffers:make "other notes" ""))
+> (views:set-buffer! (view) notes)
+> (offered '("C-x" "b") "notes other")
+("other notes")
+! &quit
+> (offered '("M-s" "l") "alpha gamma")
+("gamma alpha")
+! &quit
+> (offered '("M-s" "l") "beta !gamma")
+("alpha beta")
+! &quit
+> (views:set-buffer! (view) (files:visit (string-append (getenv "HOME") "/src/text.txt")))
+> (offered '("M-s" "r") "needle#two text")
+("text.txt:3:needle two")
+! &quit
+> (offered '("M-s" "r") "needle#text two")
+("text.txt:3:needle two")
+! &quit
+; A style set for a category is tried before completion:styles, which
+; still finds what it misses. While completion:styles holds its default,
+; the categories' defaults stand in for it.
+> (table-set! completion:category-styles completion:command-category (list completion:prefix))
+> (offered '("M-x") "find file")
+("file-picker:find-file")
+! &quit
+> (table-remove! completion:category-styles completion:command-category)
+> (set-option! completion:styles (option-default completion:styles))
+> (offered '("M-x") "find file")
+()
+! &quit
+> (offered '("M-x") "find-file")
+("file-picker:find-file")
+! &quit
+> (remove-option! completion:styles)
+> (offered '("M-x") "find file")
+("file-picker:find-file")
+! &quit
+; Files try partial, then the styles set: in ~/src, the folder of the
+; buffer shown, flex finds a name partial misses.
+> (set-option! completion:styles (list completion:flex))
+> (offered '("C-x" "C-f") "tet")
+("text.txt")
+! &quit
+> (remove-option! completion:styles)

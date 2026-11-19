@@ -50,7 +50,6 @@
 ; The file reader expands a directory part that does not exist, component
 ; by component, and its candidates follow the part that does: choosing
 ; one replaces the rest.
-> (table-set! completion:category-styles completion:file-category (list completion:partial completion:any-order))
 > (define t (start! (lambda () (file-picker:read-file-name "File: " "~/"))))
 > (type! "c/t/m")
 > (sleep-for 0.3)
@@ -72,7 +71,6 @@
 ("b.sls")
 > (press! "C-g")
 ! &quit
-> (table-remove! completion:category-styles completion:file-category)
 ; At the name of a folder, ending in /, no match is selected, so RET
 ; answers with the folder; C-n selects its first entry, and a name that
 ; is not a folder's selects the first match again.

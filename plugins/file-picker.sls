@@ -109,6 +109,8 @@
   (layout:switch-to-buffer (files:visit path)))
 
 (set-option! ask:file-name-reader read-file-name)
-(table-set! completion:category-styles completion:file-category (list completion:partial completion:any-order))
+;; A candidate under a folder part that does not exist carries that
+;; part, such as c/t/m's code/tuna/main.sls, which only partial matches.
+(table-set! completion:category-styles completion:file-category (list completion:partial))
 (table-set! completion:category-prefers-input completion:file-category %names-folder?)
 (keys:bind! keys:global "C-x C-f" find-file)

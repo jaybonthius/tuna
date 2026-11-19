@@ -8,6 +8,7 @@
            [(contains starts) (and (pair? (cdr t)) (for-all non-empty-string? (cdr t)))]
            [(ends) (and (pair? (cdr t)) (null? (cddr t)) (non-empty-string? (cadr t)))]
            [(not) (and (pair? (cdr t)) (null? (cddr t)) (term? (cadr t)))]
+           [(face) (and (pair? (cdr t)) (symbol? (cadr t)) (pair? (cddr t)) (null? (cdddr t)) (term? (caddr t)))]
            [else #f])))
 
   (define (non-empty-string? s) (and (string? s) (fx> (string-length s) 0)))
@@ -45,10 +46,13 @@
                  (loop (fx+ i 1)))))))
 
   (define (compile-term t)
-    (if (eq? (car t) 'not)
-        (vector 'not #f (compile-term (cadr t)))
-        (let ([fold? (not (exists capital? (cdr t)))])
-          (vector (car t) fold? (if fold? (map fold (cdr t)) (cdr t))))))
+    (let walk ([t t] [face #f])
+      (case (car t)
+        [(not) (vector 'not #f (walk (cadr t) #f) #f)]
+        [(face) (walk (caddr t) (cadr t))]
+        [else
+         (let ([fold? (not (exists capital? (cdr t)))])
+           (vector (car t) fold? (if fold? (map fold (cdr t)) (cdr t)) face))])))
 
   (define (compile-pattern pattern) (map compile-term pattern))
 
@@ -125,30 +129,44 @@
       (lambda (text) (and (gaps-of terms text) #t))))
 
   (define (pattern-spans pattern text)
-    (let ([spans '()])
-      (for-each
-        (lambda (t)
-          (let ([fold? (vector-ref t 1)])
+    (join-spans
+      (fold-left
+        (lambda (spans t)
+          (let ([fold? (vector-ref t 1)] [face (vector-ref t 3)])
             (case (vector-ref t 0)
-              [(not) (void)]
+              [(not) spans]
               [(ends)
                (let* ([piece (car (vector-ref t 2))] [at (fx- (string-length text) (string-length piece))])
-                 (when (and (fx>= at 0) (starts-at? text fold? piece at))
-                   (set! spans (cons (cons at (string-length text)) spans))))]
+                 (if (and (fx>= at 0) (starts-at? text fold? piece at))
+                     (paint spans at (string-length text) face)
+                     spans))]
               [else
                (let ([found '()])
-                 (when (pieces-gaps text fold? (vector-ref t 2) (eq? (vector-ref t 0) 'starts)
-                         (lambda (at len) (set! found (cons (cons at (fx+ at len)) found))))
-                   (set! spans (append found spans))))])))
-        (compile-pattern pattern))
-      (merge-spans (list-sort (lambda (a b) (fx< (car a) (car b))) spans))))
+                 (if (pieces-gaps text fold? (vector-ref t 2) (eq? (vector-ref t 0) 'starts)
+                       (lambda (at len) (set! found (cons (cons at (fx+ at len)) found))))
+                     (fold-left (lambda (spans f) (paint spans (car f) (cdr f) face)) spans found)
+                     spans))])))
+        '()
+        (compile-pattern pattern))))
 
-  (define (merge-spans spans)
+  (define (paint spans start end face)
+    (list-sort (lambda (a b) (fx< (car a) (car b)))
+      (cons (list start end face)
+            (fold-right
+              (lambda (s acc)
+                (let ([a (car s)] [b (cadr s)] [f (caddr s)])
+                  (append (if (fx< a start) (list (list a (fxmin b start) f)) '())
+                          (if (fx> b end) (list (list (fxmax a end) b f)) '())
+                          acc)))
+              '()
+              spans))))
+
+  (define (join-spans spans)
     (cond
       [(or (null? spans) (null? (cdr spans))) spans]
-      [(fx<= (car (cadr spans)) (cdar spans))
-       (merge-spans (cons (cons (caar spans) (fxmax (cdar spans) (cdr (cadr spans)))) (cddr spans)))]
-      [else (cons (car spans) (merge-spans (cdr spans)))]))
+      [(and (fx= (cadr (car spans)) (car (cadr spans))) (eq? (caddr (car spans)) (caddr (cadr spans))))
+       (join-spans (cons (list (car (car spans)) (cadr (cadr spans)) (caddr (car spans))) (cddr spans)))]
+      [else (cons (car spans) (join-spans (cdr spans)))]))
 
   ;; Candidates may come a few at a time, thousands of times, so those
   ;; added to a sorted store wait at the end of order, past merged, and

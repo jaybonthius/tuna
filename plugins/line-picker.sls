@@ -63,7 +63,7 @@
   (let* ([view (views:current)] [doc (buffers:document (views:buffer view))] [end (document:length doc)])
     (views:set-point! view (if (> line (document:line doc end)) end (document:line-start doc (max line 1))))))
 
-(table-set! completion:category-styles line-category (list completion:substring))
+(table-set! completion:category-default-styles line-category (list completion:substring))
 (keys:bind! keys:global "M-s l" line)
 (keys:bind! keys:global "M-g g" goto-line)
 (keys:bind! keys:global "M-g M-g" goto-line)

@@ -1,0 +1,23 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  [data-face="completion.match-0"] {
+    color: var(--completion-match-0-color, var(--tuna-blue-11));
+    font-weight: var(--tuna-font-weight-bold);
+  }
+
+  [data-face="completion.match-1"] {
+    color: var(--completion-match-1-color, var(--tuna-pink-11));
+    font-weight: var(--tuna-font-weight-bold);
+  }
+
+  [data-face="completion.match-2"] {
+    color: var(--completion-match-2-color, var(--tuna-green-11));
+    font-weight: var(--tuna-font-weight-bold);
+  }
+
+  [data-face="completion.match-3"] {
+    color: var(--completion-match-3-color, var(--tuna-amber-11));
+    font-weight: var(--tuna-font-weight-bold);
+  }
+}

@@ -12,7 +12,11 @@
 (define-hook find-region
   "Its entries take no arguments and return a region for point in the current view, or #f.")
 
-(define-table category-styles "Maps a category to the styles used in place of completion:styles.")
+(define-table category-styles
+  "Maps a category to the styles tried before its default styles: its completion:category-default-styles entry while completion:styles holds its default, else completion:styles.")
+
+(define-table category-default-styles
+  "Maps a category to the styles used in place of completion:styles while that option holds its default.")
 
 (define-table category-prefers-input
   "Maps a category to a predicate of a session's input; while it holds for a category of the session's sources, new matches select none, so RET acts as with nothing selected: completion:read-or-input answers with the input.")
@@ -175,22 +179,39 @@
       [(char=? (car cs) #\space) (loop (cdr cs) '() (finish))]
       [else (loop (cdr cs) (cons (car cs) current) acc)])))
 
-(define (any-order query)
-  (fold-right
-    (lambda (component terms)
-      (let* ([n (string-length component)]
-             [first (table-ref any-order-dispatch (string-ref component 0) #f)]
-             [last (and (fx> n 1) (table-ref any-order-dispatch (string-ref component (fx- n 1)) #f))]
-             [term (cond
-                     [(and first (fx> n 1)) (first (string-part component 1 n))]
-                     [last (last (string-part component 0 (fx- n 1)))]
-                     [(or first (and (fx= n 1) (table-ref any-order-dispatch (string-ref component 0) #f))) #f]
-                     [else (list 'contains component)])])
-        (if term (cons term terms) terms)))
-    '()
-    (components query)))
+(define match-0 'completion.match-0)
+(define match-1 'completion.match-1)
+(define match-2 'completion.match-2)
+(define match-3 'completion.match-3)
 
-(define (%dispatch-not rest) (let ([t (any-order rest)]) (and (pair? t) (list 'not (car t)))))
+(define-option any-order-faces (list match-0 match-1 match-2 match-3) (lambda (v) (and (list? v) (for-all symbol? v)))
+  "The faces completion:any-order draws its components' matches in, in turn; with none, as other styles' matches.")
+
+(define (%component-term component)
+  (let* ([n (string-length component)]
+         [at-start (table-ref any-order-dispatch (string-ref component 0) #f)]
+         [at-end (and (fx> n 1) (table-ref any-order-dispatch (string-ref component (fx- n 1)) #f))])
+    (cond
+      [(and at-start (fx> n 1)) (at-start (string-part component 1 n))]
+      [at-end (at-end (string-part component 0 (fx- n 1)))]
+      [at-start #f]
+      [else (list 'contains component)])))
+
+;; A negated component matches nothing to draw, so it takes no face and
+;; the next component takes the face it would have had, as in Orderless.
+(define (any-order query)
+  (let ([faces (any-order-faces)])
+    (let loop ([cs (components query)] [k 0] [terms '()])
+      (if (null? cs)
+          (reverse terms)
+          (let ([t (%component-term (car cs))])
+            (cond
+              [(not t) (loop (cdr cs) k terms)]
+              [(or (null? faces) (eq? (car t) 'not)) (loop (cdr cs) k (cons t terms))]
+              [else (loop (cdr cs) (fx+ k 1)
+                          (cons (list 'face (list-ref faces (fxmodulo k (length faces))) t) terms))]))))))
+
+(define (%dispatch-not rest) (let ([t (%component-term rest)]) (and t (list 'not t))))
 (define (%dispatch-literal rest) (list 'contains rest))
 (define (%dispatch-starts rest) (list 'starts rest))
 (define (%dispatch-flex rest) (cons 'contains (map string (string->list rest))))
@@ -328,8 +349,11 @@
   (define (candidate-value c) (if (string? c) c (cdr c)))
 
   (define (styles-for source)
-    (let ([c (%source-category source)])
-      (or (and c (table-ref category-styles c #f)) (styles))))
+    (let* ([c (%source-category source)]
+           [chosen (if c (table-ref category-styles c '()) '())]
+           [defaults (or (and c (equal? (styles) (option-default styles)) (table-ref category-default-styles c #f))
+                         (styles))])
+      (append chosen (remp (lambda (style) (memq style chosen)) defaults))))
 
   (define (history-ranks h default)
     (let ([t (make-hashtable string-hash string=?)] [entries (if h (h) '())])
@@ -1154,11 +1178,12 @@
 (table-set! any-order-dispatch #\^ %dispatch-starts)
 (table-set! any-order-dispatch #\~ %dispatch-flex)
 (table-set! any-order-dispatch #\$ %dispatch-ends)
-(table-set! category-styles buffer-category (list prefix substring))
-(table-set! category-styles location-category (list substring))
+(table-set! category-default-styles buffer-category (list prefix substring))
+(table-set! category-default-styles location-category (list substring))
 ;; Every command's name starts with its plugin's name, so matching only at
 ;; the start would not find a command by the word it is known by.
-(table-set! category-styles command-category (list prefix substring))
+(table-set! category-default-styles command-category (list prefix substring))
+(table-set! web:stylesheets 'completion "completion/completion.css")
 (keys:bind! minibuffer:keymap "M-r" search-history)
 (keys:bind! minibuffer:keymap "M-s" search-history)
 (keys:bind! keymap "RET" exit)

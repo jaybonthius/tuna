@@ -569,7 +569,9 @@
 (keys:bind! mode-keymap "S-SPC" views:scroll-down)
 (keys:bind! mode-keymap "DEL" views:scroll-down)
 (table-set! web:stylesheets 'help "help/help.css")
-(table-set! completion:category-styles name-category (list completion:prefix completion:substring))
+(table-set! completion:category-default-styles name-category (list completion:prefix completion:substring))
+;; Apropos is a search by the words of a name in any order, whichever
+;; styles a configuration chooses.
 (table-set! completion:category-styles apropos-category (list completion:any-order))
 ;; Looked up at each read, not at load, since the plugin that annotates
 ;; commands may load after help.

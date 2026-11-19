@@ -253,7 +253,7 @@
 (define stylesheets
   '("design-tokens/design-tokens.css" "faces/faces.css" "views/views.css" "layout/layout.css" "layout-split/layout-split.css" "ui/ui.css"
     "layout-tabs/layout-tabs.css" "status-line/status-line.css" "completion-list/completion-list.css"
-    "echo-area/echo-area.css" "minibuffer/minibuffer.css"))
+    "echo-area/echo-area.css" "minibuffer/minibuffer.css" "completion/completion.css"))
 
 (define (references css)
   (map (lambda (i)
