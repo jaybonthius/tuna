@@ -74,12 +74,16 @@ key() {
   printf "(http:send! p (quote ((\"type\" . \"key\") (\"key\" . \"%s\") (\"code\" . \"%s\") (\"modifiers\" . #(%s)))))\n" "$1" "$2" "$3"
 }
 
-# Each run sends its keys, then C-x C-c and y to the exit question, from a
-# page, and Tuna must exit with status 0, printing only its address. The
-# second run's cache is the first's, so it starts at once.
+# Each run sends its keys, then C-x C-c, from a page, and Tuna must exit
+# with status 0, printing only its address. C-x C-c asks no question by
+# default, so a key sent after it races the server's shutdown. The second
+# run's cache is the first's, so it starts at once.
 run() {
   name=$1
   shift
+  # The background process truncates the file itself, so until then the
+  # loop below would read the previous run's address.
+  rm -f "$dir/server.out"
   (cd "$dir/work" && HOME="$server" TUNA_LIBRARY="$dir/library" exec "$tuna" notes.txt \
     < /dev/null > "$dir/server.out" 2>&1) &
   pid=$!
@@ -105,10 +109,9 @@ END
   output=$( (printf '%s\n' '(http:wait-for-server)' '(define p (http:page))' '(http:connect! p)'
              for k in "$@"; do key $k; done
              key x KeyX '"control"'
-             key c KeyC '"control"'
-             key y KeyY '') \
+             key c KeyC '"control"') \
     | (cd "$dir/work" && HOME="$client" TUNA_LIBRARY="$dir/library" "$tuna" 2>&1))
-  expected=$(for k in "$@" x c y; do echo 204; done)
+  expected=$(for k in "$@" x c; do echo 204; done)
   if [ "$output" != "$expected" ]; then
     echo "$0: FAIL: $name: the page: expected $(printf '%s' "$expected" | tr '\n' '|'), got $(printf '%s' "$output" | tr '\n' '|')"
     exit 1
