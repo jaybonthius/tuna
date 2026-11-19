@@ -1,0 +1,4 @@
+; The echo area shows what ask:message tells, as a message.
+> (ask:message "Deleted 2 files")
+> (echo-area:current-message)
+"Deleted 2 files"

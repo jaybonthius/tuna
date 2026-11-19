@@ -1,0 +1,217 @@
+; D deletes the entry at point after asking with
+; folder-listing:deletion-confirmer, then reads the listing again.
+> (touch! "ops/a.txt" "a\n")
+> (touch! "ops/b.txt" "b\n")
+> (touch! "ops/c.txt" "c\n")
+> (touch! "ops/full/inside.txt" "i\n")
+> (folder! "ops/empty")
+> (define b (folder-listing:visit (at "ops")))
+> (layout:switch-to-buffer b)
+> (set-option! ask:yes-or-no-reader (answer #t))
+> (goto "a.txt")
+> (press! "D")
+> (settle)
+> (list (questions) (message) (exists? "ops/a.txt") (listing-lines b))
+(("Delete a.txt? ") "Deleted 1 file" #f ("  ." "  .." "  b.txt" "  c.txt" "  empty" "  full"))
+; Several marked entries are named in  *Deletions* while it asks, which
+; goes when answered; a folder that holds files is asked about, as
+; folder-listing:recursive-deletes is top.
+> (define shown-while-asking #f)
+> (set-option! folder-listing:deletion-confirmer
+    (lambda (q)
+      (set! shown-while-asking
+        (let ([d (buffers:find " *Deletions*")])
+          (and d (document:text (buffers:document d)) (pair? (views:showing d)))))
+      ((answer #t) q)))
+> (goto "b.txt")
+> (press! "m" "m" "m" "m")
+> (press! "D")
+> (settle)
+> (list (questions) shown-while-asking (buffers:find " *Deletions*") (message) (listing-lines b))
+(("Delete * [4 files]? " "Recursively delete full? ") #t #f "Deleted 4 files" ("  ." "  .."))
+> (remove-option! folder-listing:deletion-confirmer)
+; With folder-listing:recursive-deletes never, a folder that holds files
+; is refused; the other paths are still deleted, and the message names
+; what failed and why.
+> (touch! "ops/keep/inside.txt" "i\n")
+> (touch! "ops/gone.txt" "g\n")
+> (press! "g")
+> (settle)
+> (set-option! folder-listing:recursive-deletes (folder-listing:recursion never))
+> (folder-listing:mark-where! b (lambda (e) #t) #\*)
+2
+> (press! "D")
+> (settle)
+> (list (questions) (message) (listing-lines b))
+(("Delete * [2 files]? ") "1 of 2 files failed: keep: a folder that holds files (\"~/ops/keep\")" ("  ." "  .." "* keep"))
+> (remove-option! folder-listing:recursive-deletes)
+; With files:delete-by-moving-to-trash?, the question says Trash and the
+; files go to the freedesktop.org trash, with their .trashinfo.
+> (set-option! files:delete-by-moving-to-trash? #t)
+> (press! "D")
+> (settle)
+> (list (questions) (message) (listing-lines b) (exists? ".local/share/Trash/files/keep/inside.txt") (exists? ".local/share/Trash/info/keep.trashinfo"))
+(("Trash keep? " "Recursively delete keep? ") "Trashed 1 file" ("  ." "  ..") #t #t)
+> (remove-option! files:delete-by-moving-to-trash?)
+; x deletes the entries flagged D, and says so when none are.
+> (press! "x")
+> (message)
+"No deletions requested"
+> (touch! "ops/x.txt" "x\n")
+> (touch! "ops/y.txt" "y\n")
+> (press! "g")
+> (settle)
+> (goto "x.txt")
+> (press! "d")
+> (press! "x")
+> (settle)
+> (list (questions) (listing-lines b))
+(("Delete x.txt? ") ("  ." "  .." "  y.txt"))
+; R renames the entry at point; a buffer visiting it follows, and the
+; entry keeps its mark.
+> (define y (files:visit (at "ops/y.txt")))
+> (goto "y.txt")
+> (press! "m")
+> (goto "y.txt")
+> (set-option! ask:file-name-reader (answer "~/ops/z.txt"))
+> (press! "R")
+> (settle)
+> (list (questions) (message) (listing-lines b) (buffers:name y) (files:path y))
+(("Rename y.txt to: ") "Moved 1 file" ("  ." "  .." "* z.txt") "z.txt" "~/ops/z.txt")
+; Point follows the renamed file; a file renamed to itself fails.
+> (point-name)
+"z.txt"
+> (press! "U")
+> (set-option! ask:file-name-reader (answer "~/ops/z.txt"))
+> (press! "R")
+> (settle)
+> (list (questions) (message))
+(("Rename z.txt to: ") "1 of 1 file failed: z.txt: the same file (\"~/ops/z.txt\")")
+> (press! "C-/")
+; Several paths move into a folder, which the listing of that folder
+; shows, with their marks; an existing target is asked about, and one
+; the user declines is named apart from those moved.
+> (touch! "ops/w.txt" "w\n")
+> (folder! "ops/into")
+> (touch! "ops/into/w.txt" "old\n")
+> (define into (folder-listing:visit (at "ops/into")))
+> (press! "g")
+> (settle)
+> (goto "w.txt")
+> (press! "m")
+> (set-option! ask:file-name-reader (answer "~/ops/into/"))
+> (set-option! ask:y-or-n-reader (answer #f))
+> (press! "R")
+> (settle)
+> (list (questions) (message) (listing-lines b) (listing-lines into))
+(("Move * [2 files] to: " "Overwrite ~/ops/into/w.txt? ") "Moved 1 file; declined w.txt" ("  ." "  .." "  into" "* w.txt") ("  ." "  .." "  w.txt" "* z.txt"))
+; C copies, keeping the modification time, and marks the copy C.
+> (goto "w.txt")
+> (press! "u")
+> (goto "w.txt")
+> (set-option! ask:file-name-reader (answer "~/ops/v.txt"))
+> (press! "C")
+> (settle)
+> (list (questions) (message) (listing-lines b)
+        (= (file-attributes-modified (read-file-attributes (at "ops/w.txt")))
+           (file-attributes-modified (read-file-attributes (at "ops/v.txt")))))
+(("Copy w.txt to: ") "Copied 1 file" ("  ." "  .." "  into" "C v.txt" "  w.txt") #t)
+; A folder is copied with everything in it after asking, as
+; folder-listing:recursive-copies is top.
+> (goto "into")
+> (set-option! ask:file-name-reader (answer "~/ops/into2"))
+> (set-option! ask:yes-or-no-reader (answer #t))
+> (press! "C")
+> (settle)
+> (list (questions) (exists? "ops/into2/z.txt") (listing-lines b))
+(("Copy into to: " "Recursive copies of into? ") #t ("  ." "  .." "  into" "C into2" "C v.txt" "  w.txt"))
+; + makes a folder and the missing folders above it, with point on the
+; first made.
+> (set-option! ask:file-name-reader (answer "~/ops/made/deeper"))
+> (press! "+")
+> (settle)
+> (list (questions) (exists? "ops/made/deeper") (point-name))
+(("Create folder: ") #t "made")
+; w copies the names to the kill ring, and with 0 the whole paths.
+> (goto "w.txt")
+> (press! "w")
+> (list (kill-ring:text (kill-ring:current)) (message))
+("w.txt" "w.txt")
+> (press! "0" "w")
+> (kill-ring:text (kill-ring:current))
+"~/ops/w.txt"
+; With folder-listing:other-listing-target?, R and C start in the
+; folder of another view's listing.
+> (define started #f)
+> (set-option! ask:file-name-reader (lambda (q folder) (set! started folder) "~/ops/w2.txt"))
+> (set-option! folder-listing:other-listing-target? #t)
+> (layout-split:split-right)
+> (layout:switch-to-buffer into)
+> (layout:other-view)
+> (goto "w.txt")
+> (press! "C")
+> (settle)
+> started
+"~/ops/into/"
+; The listing taken is the first in the views after the selected one,
+; not the one selected last.
+> (touch! "ops/third/t.txt" "t\n")
+> (layout-split:split-right)
+> (layout:switch-to-buffer (folder-listing:visit (at "ops/third")))
+> (define listed (map views:buffer (layout:views)))
+> (map folder-listing:folder (filter folder-listing:folder listed))
+("~/ops/into/" "~/ops/third/" "~/ops/")
+> (for-each (lambda (name) (layout:select! (find (lambda (v) (equal? (folder-listing:folder (views:buffer v)) name)) (layout:views))))
+            (map at '("ops/" "ops/into/" "ops/third/")))
+> (goto "t.txt")
+> (press! "C")
+> (settle)
+> started
+"~/ops/"
+; R onto a file another buffer visits is refused before Overwrite is
+; asked, and nothing moves.
+> (touch! "ops/third/u.txt" "u\n")
+> (define u (files:visit (at "ops/third/u.txt")))
+> (press! "g")
+> (settle)
+> (questions)
+("Overwrite ~/ops/w2.txt? ")
+> (goto "t.txt")
+> (set-option! ask:file-name-reader (answer "~/ops/third/u.txt"))
+> (set-option! ask:y-or-n-reader (answer #t))
+> (press! "R")
+> (settle)
+> (list (questions) (message) (map entry-name (entries (views:buffer (view)))) (files:path u))
+(("Rename t.txt to: ") "1 of 1 file failed: t.txt: another buffer visits the file (\"~/ops/third/u.txt\")" ("." ".." "t.txt" "u.txt") "~/ops/third/u.txt")
+; A folder the user declines to delete or copy recursively is named
+; apart from those done.
+> (touch! "ops/third/full/inside.txt" "i\n")
+> (press! "g")
+> (settle)
+> (goto "full")
+> (set-option! folder-listing:deletion-confirmer (answer #t))
+> (set-option! ask:yes-or-no-reader (answer #f))
+> (press! "D")
+> (settle)
+> (list (questions) (message) (exists? "ops/third/full/inside.txt"))
+(("Delete full? " "Recursively delete full? ") "Deleted 0 files; declined full" #t)
+> (remove-option! folder-listing:deletion-confirmer)
+> (set-option! ask:file-name-reader (answer "~/ops/copy"))
+> (press! "C")
+> (settle)
+> (list (questions) (message) (exists? "ops/copy"))
+(("Copy full to: " "Recursive copies of full? ") "Copied 0 files; declined full" #f)
+; C of a link onto a folder fails after Overwrite, as is a directory, and
+; the folder keeps its files.
+> (symlink! "elsewhere" "ops/third/l")
+0
+> (touch! "ops/dst/l/precious.txt" "keep\n")
+> (press! "g")
+> (settle)
+> (goto "l")
+> (set-option! ask:file-name-reader (answer "~/ops/dst/"))
+> (set-option! ask:y-or-n-reader (answer #t))
+> (press! "C")
+> (settle)
+> (list (questions) (message) (exists? "ops/dst/l/precious.txt"))
+(("Copy l to: " "Overwrite ~/ops/dst/l? ") "1 of 1 file failed: l: failed for ~/ops/dst/l: is a directory" #t)

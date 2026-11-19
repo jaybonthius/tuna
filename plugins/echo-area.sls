@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (faces) (web) (haml))
+(import (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (faces) (web) (haml) (ask))
 
 (define face
   (make-thread-parameter #f
@@ -398,6 +398,7 @@
 (keys:bind! keymap "<down-mouse-1>" keys:ignore)
 (keys:bind! keys:global "C-h e" show-messages)
 (table-set! web:stylesheets 'echo-area "echo-area/echo-area.css")
+(set-option! ask:message-writer (lambda (text) (message! "~a" text)))
 (add-hook! buffers:kill-queries %keep-echo-area)
 (add-hook! commands:after-command %show-command-reports -100)
 (advice-add! report %queue-report)

@@ -15,8 +15,8 @@
 (define-saved %log-folder "" string?)
 
 (module %internals
-  (read-with-log note-visit! note-saved! note-killed! note-silent-edit! flush-logs! logged? attach-open-buffers
-   start-writer! stop! ensure-log-folder!)
+  (read-with-log note-visit! note-saved! note-killed! note-silent-edit! note-rename! flush-logs! logged?
+   attach-open-buffers start-writer! stop! ensure-log-folder!)
 
   (define (warn who message irritants)
     (report (condition (make-warning) (make-who-condition who) (make-message-condition message)
@@ -31,8 +31,8 @@
   ;; state saved is undo's to tell once the batch's edits are in.
   (define-record-type entry
     (sealed #t)
-    (fields buffer path file (mutable saves) (mutable written?) (mutable whole?) (mutable ready?)
-            (mutable save) (mutable queued)))
+    (fields buffer (mutable path) (mutable file) (mutable saves) (mutable written?) (mutable whole?)
+            (mutable ready?) (mutable save) (mutable queued)))
 
   (define logs (make-weak-eq-hashtable))
 
@@ -73,9 +73,11 @@
     (guard (c [(not (quit-condition? c)) (report c) #f])
       (and ((keep-log?) path) #t)))
 
-  (define (log-file path)
+  (define (log-name path)
     (string-append (%log-folder) (if (and (fx> (string-length path) 0) (char=? (string-ref path 0) #\/)) "" "/")
-                   path ".ss"))
+                   path))
+
+  (define (log-file path) (string-append (log-name path) ".ss"))
 
   (define (limit-of b) (buffers:with-buffer b (undo:limit)))
 
@@ -375,6 +377,26 @@
                   (send! (list (vector 'append (entry-file entry) (list (list 'at saved)))))))))
           (eq-hashtable-delete! logs b)))))
 
+  ;; The move goes through the writer's queue, so the log's earlier
+  ;; writes land before it and its later ones after, at the new path.
+  (define (note-rename! from to)
+    (without-quits
+      (lambda ()
+        (vector-for-each
+          (lambda (entry)
+            (let ([path (files:renamed-path (entry-path entry) from to)])
+              (when path
+                (entry-path-set! entry path)
+                (entry-file-set! entry (log-file path)))))
+          (hashtable-values logs))
+        (let-values ([(buffers paths) (hashtable-entries unreadable-logs)])
+          (vector-for-each
+            (lambda (b path)
+              (let ([new (files:renamed-path path from to)])
+                (when new (eq-hashtable-set! unreadable-logs b new))))
+            buffers paths))
+        (send! (list (vector 'move (log-name from) (log-name to)))))))
+
   (define (compact! file)
     (let ([entry (find (lambda (entry) (equal? (entry-file entry) file)) (vector->list (hashtable-values logs)))])
       (when entry (entry-whole?-set! entry #t))))
@@ -491,7 +513,11 @@
                     [(replace) (attempt (lambda () (replace-records! file (vector-ref item 2))))]
                     [(read) (answer-read! file (vector-ref item 2))]
                     [(aside) (attempt (lambda () (set-log-aside! file) (hashtable-delete! sizes file)))]
-                    [(delete) (attempt (lambda () (delete-log! file) (hashtable-delete! sizes file)))])))))
+                    [(delete) (attempt (lambda () (delete-log! file) (hashtable-delete! sizes file)))]
+                    [(move)
+                     (for-each (lambda (entry) (flush-appends! (car entry))) appends)
+                     (hashtable-clear! sizes)
+                     (attempt (lambda () (move-logs! file (vector-ref item 2))))])))))
         items)
       (for-each (lambda (entry) (flush-appends! (car entry))) (reverse appends))))
 
@@ -546,6 +572,7 @@
 (add-hook! files:after-save note-saved!)
 (add-hook! files:after-revert note-saved!)
 (add-hook! files:unsaved-kept logged?)
+(add-hook! files:after-rename note-rename!)
 (add-hook! buffers:after-edit note-silent-edit!)
 ;; Ahead of undo's entry, which drops the history.
 (add-hook! buffers:killed note-killed! -100)

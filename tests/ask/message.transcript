@@ -1,0 +1,21 @@
+; ask:message tells the user a text through ask:message-writer; with no
+; writer set it is a warning, which report writes and after which the
+; caller goes on.
+> (begin (ask:message "Copied 2 files") 'went-on)
+! ask:message: Copied 2 files
+went-on
+> (define told '())
+> (set-option! ask:message-writer (lambda (text) (set! told (cons text told))))
+> (ask:message "Deleted 1 file")
+> told
+("Deleted 1 file")
+> (raised (lambda () (ask:message 'text)))
+(ask:message "not a string")
+; ask:file-name passes a starting folder to its reader when given one.
+> (set-option! ask:file-name-reader (lambda (question . folder) (cons question folder)))
+> (ask:file-name "Copy notes.txt to: " "/home/ada/archive/")
+("Copy notes.txt to: " "/home/ada/archive/")
+> (ask:file-name "Find file: ")
+("Find file: ")
+> (raised (lambda () (ask:file-name "Copy to: " 'home)))
+(ask:file-name "not a string")

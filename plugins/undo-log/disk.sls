@@ -1,5 +1,5 @@
 (library (undo-log disk)
-  (export read-log records->bytes append-log! replace-log! set-log-aside! delete-log! log-size)
+  (export read-log records->bytes append-log! replace-log! set-log-aside! delete-log! move-logs! log-size)
   (import (chezscheme) (document))
 
   (define c-fsync
@@ -153,4 +153,25 @@
       aside))
 
   (define (delete-log! file)
-    (delete-file file #f)))
+    (delete-file file #f))
+
+  (define (delete-tree! path)
+    (if (file-directory? path #f)
+        (begin
+          (for-each (lambda (name) (delete-tree! (string-append path "/" name))) (directory-list path))
+          (delete-directory path))
+        (delete-file path #f)))
+
+  ;; A rename replaces only a file or an empty folder, so what the logs
+  ;; hold under the new path is of files no longer there.
+  (define (move-logs! from to)
+    (for-each
+      (lambda (from to)
+        (when (file-exists? from #f)
+          (when (file-exists? to #f) (delete-tree! to))
+          (make-folders! (path-parent to))
+          (rename-file from to)
+          (sync-folder! (path-parent from))
+          (sync-folder! (path-parent to))))
+      (list (string-append from ".ss") from)
+      (list (string-append to ".ss") to))))
