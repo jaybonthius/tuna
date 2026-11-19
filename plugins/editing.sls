@@ -558,6 +558,14 @@
   (let* ([doc (buffers:document buffer)] [end (fx- (document:length doc) 1)])
     (first-stop buffer (if (> line (document:line doc end)) end (document:line-start doc (max line 1))))))
 
+(define (insert! view text)
+  (unless (views:view? view)
+    (assertion-violation 'editing:insert! "not a view" view))
+  (unless (string? text)
+    (assertion-violation 'editing:insert! "not a string" text))
+  (check-main-thread 'editing:insert!)
+  (insert-at-cursors! view text (delete-selection) (lambda (start end) end)))
+
 (commands:define-command (self-insert [n (commands:prefix-number)] [char (keys:typed-char)])
   "Inserts CHAR, by default the character typed, N times at each cursor."
   (check-nonnegative-count 'editing:self-insert n)

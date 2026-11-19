@@ -6,6 +6,9 @@
 (define-table repeat-keymaps
   "Repeating keymaps, as keys: with the repeat plugin loaded, after a command run by two or more keys, the first that binds the last of them to that command stays while each next key is found in it.")
 
+(define-table universal-argument-keymap
+  "Pushed as a temporary keymap by the prefix-argument commands, so the keys it binds, digits and -, go on typing the prefix argument.")
+
 (define-hook find-keymaps
   "Called with a client and a mouse key's position or #f; each entry returns a list of the client's keymaps, innermost first.")
 
@@ -21,11 +24,11 @@
    read-next end-read! waiting-read-sequence? reading-keys reading-prompt-of quit-reads! quit-client-reads!
    keymaps-of resolve-key resolve-sequence prefix-binding? lone-escape? remapped
    keymap-bindings bindings-found found-binding-keymap found-binding-sequence found-binding-command
-   last-key key-count browser-key mouse-item-key screen-key valid-event? key-or-event? check-event event-key-clicks
+   last-key key-count key-digit browser-key mouse-item-key screen-key valid-event? key-or-event? check-event event-key-clicks
    event-basic-type-of event-modifiers-of dropped-mouse-key? drag-as-click pending-typed pending-seq pending-posn make-pending
    current-press make-press current-keys current-shifted current-session current-event make-quit
    push-temporary! end-temporary! end-temporaries! end-owned! test-temporaries! quit-paused!
-   set-prefix! prefix-keys universal-arguments push-universal-arguments! give-page-settings!)
+   set-prefix! prefix-keys push-universal-arguments! give-page-settings!)
 
   (define main-thread (get-thread-id))
 
@@ -115,6 +118,10 @@
   (define (last-key s)
     (let ([i (last-space s)])
       (if i (substring s (fx+ i 1) (string-length s)) s)))
+
+  (define (key-digit key)
+    (let ([c (string-ref key (fx- (string-length key) 1))])
+      (and (char<=? #\0 c #\9) (fx- (char->integer c) (char->integer #\0)))))
 
   (define (key-count s)
     (let loop ([i 0] [n 1])
@@ -755,13 +762,11 @@
                  [else #f])))
         (format "C-u ~a" prefix)))
 
-  (define-table universal-arguments)
-
   (define (push-universal-arguments! s)
     (let ([ts (session-temporaries s)])
-      (unless (and (pair? ts) (eq? (temporary-keymap (car ts)) universal-arguments))
-        (push-temporary! s universal-arguments
-          (lambda (found command) (eq? found universal-arguments))
+      (unless (and (pair? ts) (eq? (temporary-keymap (car ts)) universal-argument-keymap))
+        (push-temporary! s universal-argument-keymap
+          (lambda (found command) (eq? found universal-argument-keymap))
           void (this-module)))))
 
   ;; The page script names each key as it is typed, so that a quit key
@@ -849,16 +854,22 @@
   (check-main-thread 'keys:active-keymaps)
   (keymaps-of client #f))
 
+(define (lookup-in keymaps keys)
+  (check-main-thread 'keys:lookup-in)
+  (unless (and (list? keymaps) (for-all table? keymaps))
+    (assertion-violation 'keys:lookup-in "not a list of keymaps" keymaps))
+  (check-sequence 'keys:lookup-in keys)
+  (let-values ([(v found shifted?) (resolve-sequence keymaps keys)])
+    (cond
+      [(eq? v #t) found]
+      [(table? v) v]
+      [else (remapped keymaps v)])))
+
 (define (lookup client keys)
   (check-main-thread 'keys:lookup)
   (unless (valid-event? keys)
     (check-sequence 'keys:lookup keys))
-  (let ([keymaps (keymaps-of client (and (pair? keys) (cadr keys)))])
-    (let-values ([(v found shifted?) (resolve-sequence keymaps (if (pair? keys) (car keys) keys))])
-      (cond
-        [(eq? v #t) found]
-        [(table? v) v]
-        [else (remapped keymaps v)]))))
+  (lookup-in (keymaps-of client (and (pair? keys) (cadr keys))) (if (pair? keys) (car keys) keys)))
 
 (define (command-remapping client command)
   (check-main-thread 'keys:command-remapping)
@@ -1093,39 +1104,45 @@
     (condition (make-warning)
       (make-message-condition (format "~a is undefined" (or (current-keys) "the key"))))))
 
+(define (prefix-after command key prefix)
+  (check-sequence 'keys:prefix-after key)
+  (unless (prefix-argument? prefix)
+    (assertion-violation 'keys:prefix-after "not a prefix argument" prefix))
+  (cond
+    [(eq? command universal-argument) (if (pair? prefix) (list (* 4 (car prefix))) '(4))]
+    [(eq? command negative-argument)
+     (cond
+       [(integer? prefix) (- prefix)]
+       [(eq? prefix '-) #f]
+       [else '-])]
+    [(and (eq? command digit-argument) (key-digit key))
+     => (lambda (d)
+          (cond
+            [(integer? prefix) (+ (* prefix 10) (if (< prefix 0) (- d) d))]
+            [(eq? prefix '-) (if (fx= d 0) '- (- d))]
+            [else d]))]
+    [else (assertion-violation 'keys:prefix-after "not a prefix command for the key" command key)]))
+
 (commands:define-command (universal-argument)
   "Sets the prefix argument to (4), or four times a list one, then digits and - go on typing it."
   (let ([s (current-session)])
     (when s
-      (let ([p (commands:prefix-argument)])
-        (set-prefix! s (if (pair? p) (list (* 4 (car p))) '(4)))
-        (push-universal-arguments! s)))))
+      (set-prefix! s (prefix-after universal-argument (current-keys) (commands:prefix-argument)))
+      (push-universal-arguments! s))))
 
 (commands:define-command (digit-argument)
   "Appends the digit of the keys that ran it to the prefix argument."
   (let ([s (current-session)] [keys (current-keys)])
-    (when (and s keys)
-      (let* ([key (last-key keys)] [c (string-ref key (fx- (string-length key) 1))])
-        (when (char<=? #\0 c #\9)
-          (let ([d (fx- (char->integer c) (char->integer #\0))] [p (commands:prefix-argument)])
-            (set-prefix! s
-              (cond
-                [(integer? p) (+ (* p 10) (if (< p 0) (- d) d))]
-                [(eq? p '-) (if (fx= d 0) '- (- d))]
-                [else d]))
-            (push-universal-arguments! s)))))))
+    (when (and s keys (key-digit keys))
+      (set-prefix! s (prefix-after digit-argument keys (commands:prefix-argument)))
+      (push-universal-arguments! s))))
 
 (commands:define-command (negative-argument)
   "Negates the prefix argument, or makes it -."
   (let ([s (current-session)])
     (when s
-      (let ([p (commands:prefix-argument)])
-        (set-prefix! s
-          (cond
-            [(integer? p) (- p)]
-            [(eq? p '-) #f]
-            [else '-]))
-        (push-universal-arguments! s)))))
+      (set-prefix! s (prefix-after negative-argument (current-keys) (commands:prefix-argument)))
+      (push-universal-arguments! s))))
 
 (bind! global "C-g" keyboard-quit)
 (bind! global "ESC" keyboard-quit)
@@ -1134,9 +1151,9 @@
 (for-each
   (lambda (d)
     (bind! global (string-append "M-" d) digit-argument)
-    (bind! universal-arguments d digit-argument))
+    (bind! universal-argument-keymap d digit-argument))
   '("0" "1" "2" "3" "4" "5" "6" "7" "8" "9"))
-(bind! universal-arguments "-" negative-argument)
+(bind! universal-argument-keymap "-" negative-argument)
 
 (table-set! commands:command-modes ignore '())
 (table-set! commands:command-modes undefined '())

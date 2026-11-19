@@ -69,3 +69,55 @@
 ((((4) keys:keyboard-quit)) #f)
 > (on-thread (lambda () (keys:prefix-description one)))
 (keys:prefix-description "not on the main thread")
+; keys:lookup-in looks keys up in given keymaps by keys' one rule, as
+; keys:lookup does in a client's: shift translation, <printing-char>, a
+; keymap for a prefix, and the keymaps' remaps.
+> (define-table first-keymap)
+> (define-table second-keymap)
+> (define-table inner-keymap)
+> (keys:bind! first-keymap "k" note)
+> (keys:bind! second-keymap "<printing-char>" count-three)
+> (keys:bind! second-keymap "x k" count-more)
+> (keys:bind! second-keymap "C-c" inner-keymap)
+> (keys:bind! inner-keymap "i" note)
+> (define both (list first-keymap second-keymap))
+> (map (lambda (k) (let ([v (keys:lookup-in both k)]) (if (procedure? v) (name-of v) v)))
+    '("k" "q" "K" "x k" "C-c i" "x z" "M-q"))
+(note count-three count-three count-more note #f #f)
+> (name-of (keys:lookup-in (list first-keymap) "K"))
+note
+> (list (eq? (keys:lookup-in both "x") second-keymap) (eq? (keys:lookup-in both "C-c") inner-keymap))
+(#t #t)
+> (keys:remap! second-keymap note count-three)
+> (name-of (keys:lookup-in both "k"))
+count-three
+> (keys:lookup-in 'x "k")
+! keys:lookup-in: not a list of keymaps with irritant x
+> (keys:lookup-in both "C-")
+! keys:lookup-in: not a valid key sequence with irritant "C-"
+> (on-thread (lambda () (keys:lookup-in both "k")))
+(keys:lookup-in "not on the main thread")
+; A command that reads keys takes a prefix argument typed among them with
+; keys:lookup-in and keys:prefix-after, as it would be typed before a
+; command: C-u, M-<digit> and M-- start one in the client's keymaps, and
+; once begun, keys:universal-argument-keymap, searched first, goes on with
+; digits and -. A count reader that searches that keymap from the start
+; takes bare digits, as Vim's counts are typed.
+> (define (prefix-command? v) (and (memq v (list keys:universal-argument keys:digit-argument keys:negative-argument)) #t))
+> (define (typed-prefix first . keys)
+    (let loop ([keys keys] [prefix #f] [keymaps first])
+      (let ([c (and (pair? keys) (keys:lookup-in keymaps (car keys)))])
+        (if (prefix-command? c)
+            (loop (cdr keys) (keys:prefix-after c (car keys) prefix)
+                  (cons keys:universal-argument-keymap (keys:active-keymaps one)))
+            (list prefix keys)))))
+> (define active (keys:active-keymaps one))
+> (define counting (cons keys:universal-argument-keymap active))
+> (list (typed-prefix active "C-u" "C-u" "x") (typed-prefix active "C-u" "1" "2" "x") (typed-prefix active "M-5" "-" "x")
+        (typed-prefix active "M--" "3" "x") (typed-prefix active "C-u" "-" "-" "7" "x") (typed-prefix active "3" "x")
+        (typed-prefix counting "3" "2" "x") (typed-prefix active "x"))
+(((16) ("x")) (12 ("x")) (-5 ("x")) (-3 ("x")) (7 ("x")) (#f ("3" "x")) (32 ("x")) (#f ("x")))
+> (keys:prefix-after keys:digit-argument "M-x" 4)
+! keys:prefix-after: not a prefix command for the key with irritants (#<procedure> "M-x")
+> (keys:prefix-after keys:universal-argument "C-u" 'x)
+! keys:prefix-after: not a prefix argument with irritant x

@@ -20,6 +20,8 @@
 
 (define-table annotators "Maps a category to a procedure of a session that returns its annotator.")
 
+(define-table action-keymaps "Maps a category to the list of keymaps of the actions on its candidates, searched in order.")
+
 (define-table any-order-dispatch
   "Maps a character to a procedure of the rest of a component that returns a term.")
 
@@ -60,6 +62,16 @@
 (define-category file-category "File names, valued by the whole path.")
 
 (define-category location-category "Lines of files, valued by a location: a pair of a path and a line number.")
+
+;; Several plugins bind actions on the shared categories, so their
+;; keymaps are defined beside them.
+(define-table buffer-action-keymap "The actions on buffers.")
+
+(define-table command-action-keymap "The actions on commands.")
+
+(define-table file-action-keymap "The actions on file names.")
+
+(define-table location-action-keymap "The actions on locations.")
 
 (define-record-type (%source %make-source source?)
   (sealed #t)
@@ -263,8 +275,9 @@
   (check-main-thread check-session session-record? make-session session-record-view session-record-ended?
    session-record-matches session-record-selected session-record-input session-record-input-set!
    session-record-bounds session-record-prompt candidate-match?
-   session-record-states session-record-accept session-record-default sessions open-session! start-session!
-   end-session! input-of rematch! select-match! match-text match-value match-title match-spans match-annotation
+   session-record-states session-categories-of session-record-accept session-record-default sessions open-session! start-session!
+   end-session! input-of rematch! select-match! match-text match-whole-text match-value match-title match-category
+   match-spans match-annotation
    busy? query-start find-named! sole-match? common-whole-start
    match-list? make-match-list match-list-count match-list-ref match-list-index no-matches)
 
@@ -796,6 +809,9 @@
   (define (match-text s m) (utf8->string (match-bytes s m)))
   (define (match-value s m) (let ([st (owner-of s m)]) (vector-ref (state-vals st) (local-of s st m))))
   (define (match-title s m) (%source-title (state-source (owner-of s m))))
+  (define (match-category s m) (%source-category (state-source (owner-of s m))))
+  (define (session-categories-of s) (map (lambda (st) (%source-category (state-source st))) (session-record-states s)))
+  (define (match-whole-text s m) (string-append (lead (owner-of s m)) (match-text s m)))
 
   (define (match-spans s m)
     (let ([st (owner-of s m)])
@@ -980,6 +996,14 @@
   (check-session 'completion:session-input s)
   (or (session-record-input s) ""))
 
+(define (session-categories s)
+  (check-session 'completion:session-categories s)
+  (session-categories-of s))
+
+(define (session-default s)
+  (check-session 'completion:session-default s)
+  (session-record-default s))
+
 (define (session-matches s)
   (check-session 'completion:session-matches s)
   (or (session-record-matches s) no-matches))
@@ -1018,6 +1042,10 @@
 
 (define (title s m) (%check-match 'completion:title s m) (match-title s m))
 
+(define (category s m) (%check-match 'completion:category s m) (match-category s m))
+
+(define (whole-text s m) (%check-match 'completion:whole-text s m) (match-whole-text s m))
+
 (define (spans s m) (%check-match 'completion:spans s m) (match-spans s m))
 
 (define (annotation s m) (%check-match 'completion:annotation s m) (match-annotation s m))
@@ -1051,6 +1079,13 @@
           [named (minibuffer:exit! prompt (match-value s named))]
           [(%read-state-any? r) (minibuffer:exit! prompt input)]
           [else (minibuffer:message! prompt "No match")])))))
+
+(define (answer-input! p)
+  (unless (minibuffer:prompt? p)
+    (assertion-violation 'completion:answer-input! "not a prompt" p))
+  (check-main-thread 'completion:answer-input!)
+  (let ([r (%read-of-prompt p)] [input (minibuffer:input p)])
+    (if r (%answer-input! r input) (minibuffer:exit! p input))))
 
 (define (%answer! s m)
   (let* ([r (%read-of s)] [prompt (%read-state-prompt r)] [input (minibuffer:input prompt)]
@@ -1242,11 +1277,8 @@
     ((session-record-accept s) s m)))
 
 (commands:define-command (exit-input)
-  "Answers the read with its input as typed, when it names a candidate or the read takes any input."
-  (let* ([s (%current 'completion:exit-input)] [r (%read-of s)])
-    (unless r
-      (assertion-violation 'completion:exit-input "not a read" s))
-    (%answer-input! r (minibuffer:input (%read-state-prompt r)))))
+  "Answers the innermost prompt with its input as typed, as completion:answer-input! does."
+  (answer-input! (or (minibuffer:current-prompt) (assertion-violation 'completion:exit-input "no prompt waits"))))
 
 (commands:define-command (complete)
   "Replaces the query with the selected match's text; with none selected, replaces the input with the longest common start of the matches' whole texts when it is longer."
@@ -1310,6 +1342,10 @@
 ;; Every command's name starts with its plugin's name, so matching only at
 ;; the start would not find a command by the word it is known by.
 (table-set! category-default-styles command-category (list prefix substring))
+(table-set! action-keymaps buffer-category (list buffer-action-keymap))
+(table-set! action-keymaps command-category (list command-action-keymap))
+(table-set! action-keymaps file-category (list file-action-keymap))
+(table-set! action-keymaps location-category (list location-action-keymap))
 (table-set! web:stylesheets 'completion "completion/completion.css")
 (keys:bind! minibuffer:keymap "M-r" search-history)
 (keys:bind! minibuffer:keymap "M-s" search-history)

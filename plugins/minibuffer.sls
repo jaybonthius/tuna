@@ -87,7 +87,7 @@
    prompt-recalled prompt-recalled-set! prompt-typed prompt-typed-set! prompt-ended? prompt-node prompt-parts
    input-range input-text prompt-holding prompt-at start-prompt! end-prompt! answer! prompt-of
    setups prompt-keymaps-at quit-condition without-quits bar-view narrow-views! at-bottom bottom-prompt
-   write-content! prompt-answer prompt-resume-set! clear-messages!)
+   write-content! prompt-answer prompt-resume-set! clear-messages! prompt-before-id live-view)
 
   (define main-thread (get-thread-id))
 
@@ -320,6 +320,12 @@
 (define (prompt-view p)
   (check-prompt 'minibuffer:prompt-view p)
   (shown-in p))
+
+(define (prompt-selected-view p)
+  (check-prompt 'minibuffer:prompt-selected-view p)
+  (check-main-thread 'minibuffer:prompt-selected-view)
+  (let ([v (live-view (prompt-before-id p))])
+    (and v (or (layout:view-node v) (layout:popup-node v)) v)))
 
 (define (prompt-history p)
   (check-prompt 'minibuffer:prompt-history p)

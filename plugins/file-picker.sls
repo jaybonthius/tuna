@@ -106,3 +106,4 @@
 ;; part, such as c/t/m's code/tuna/main.sls, which only partial matches.
 (table-set! completion:category-styles completion:file-category (list completion:partial))
 (keys:bind! keys:global "C-x C-f" find-file)
+(keys:bind! completion:file-action-keymap "f" find-file)

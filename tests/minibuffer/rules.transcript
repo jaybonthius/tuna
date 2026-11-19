@@ -282,3 +282,15 @@
 (raised #<condition &quit>)
 > (raised (lambda () (minibuffer:prompt-default 'no)))
 (minibuffer:prompt-default "not a prompt")
+; minibuffer:prompt-selected-view gives the view selected when the prompt
+; started, while it lives in the layout.
+> (define before (view))
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (list (eq? (minibuffer:prompt-selected-view (prompt)) before) (eq? (view) before))
+(#t #f)
+> (press! "C-g")
+! &quit
+> (result t)
+(raised #<condition &quit>)
+> (raised (lambda () (minibuffer:prompt-selected-view 'no)))
+(minibuffer:prompt-selected-view "not a prompt")

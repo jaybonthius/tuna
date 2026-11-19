@@ -561,6 +561,7 @@
 (keys:bind! keymap "v" describe-name)
 (keys:bind! keymap "w" where-is)
 (keys:bind! keymap "x" describe-command)
+(keys:bind! completion:command-action-keymap "h" describe-command)
 (keys:bind! mode-keymap "q" layout:quit-view)
 (keys:bind! mode-keymap "l" back)
 (keys:bind! mode-keymap "r" forward)

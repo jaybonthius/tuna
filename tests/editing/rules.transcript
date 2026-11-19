@@ -662,3 +662,12 @@
 > (press! "C-y" "M-2" "M-y")
 > (text)
 "oxne two three\nx"
+; editing:insert! inserts a text at each cursor of a view, replacing a
+; selection when editing:delete-selection is on, with each point after it.
+> (start! "ab" 1 2)
+("ab" ((1 #f) (2 #f)))
+> (editing:insert! (view) "xy")
+> (state)
+("xyaxyb" ((3 #f) (6 #f)))
+> (map (lambda (args) (raised (lambda () (apply editing:insert! args)))) (list (list 'v "x") (list (view) 'x)))
+((editing:insert! "not a view") (editing:insert! "not a string"))

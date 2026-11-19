@@ -72,3 +72,5 @@
 
 (keys:bind! keys:global "C-x b" switch-to-buffer)
 (keys:bind! keys:global "C-x k" kill-buffer)
+(keys:bind! completion:buffer-action-keymap "b" switch-to-buffer)
+(keys:bind! completion:buffer-action-keymap "k" kill-buffer)
