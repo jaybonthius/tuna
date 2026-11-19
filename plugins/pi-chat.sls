@@ -1108,7 +1108,7 @@
       [else s])))
 
 (define (%visit! chat path line)
-  (files:find-file (%absolute (pi:chat-directory chat) path))
+  (layout:switch-to-buffer (files:visit (%absolute (pi:chat-directory chat) path)))
   (let* ([v (layout:selected-view)] [doc (buffers:document (views:buffer v))])
     (views:set-point! v (document:line-start doc (max 1 (min line (document:line doc (document:length doc))))))))
 

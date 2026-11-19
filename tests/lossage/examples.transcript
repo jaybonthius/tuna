@@ -4,7 +4,7 @@
 > (press! "n" "RET")
 > (result t)
 > (lossage:recent-keys)
-("C-x" "C-f" files:find-file "n" editing:self-insert "RET" completion:exit)
+("C-x" "C-f" file-picker:find-file "n" editing:self-insert "RET" completion:exit)
 ; The configuration's setting.
 > (lossage:size)
 1000

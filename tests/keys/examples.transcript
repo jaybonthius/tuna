@@ -6,10 +6,10 @@
 > groucho:browsed
 1
 ; Binding a command and a prefix keymap.
-> (keys:bind! keys:global "C-x C-f" files:find-file)
+> (keys:bind! keys:global "C-x C-f" file-picker:find-file)
 > (keys:bind! keys:global "C-c p" cape:prefix-map)
 > (press-all! frame "C-x" "C-f")
-> files:visits
+> file-picker:visits
 (("notes.txt" #f))
 > (map name-of (list (keys:lookup frame "C-c p") (keys:lookup frame "C-c p f")))
 (keymap cape:file)
@@ -21,7 +21,7 @@
 (1 ())
 > (keys:lookup (layout:current-frame) "C-x C-f")
 #<procedure>
-> (eq? (keys:lookup (layout:current-frame) "C-x C-f") files:find-file)
+> (eq? (keys:lookup (layout:current-frame) "C-x C-f") file-picker:find-file)
 #t
 > (keys:where-is (layout:current-frame) layout:other-view)
 ("C-x o")

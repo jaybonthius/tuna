@@ -52,7 +52,7 @@ Harpo's keys.
 [C-c h]        <harpo:honk>
 [C-c p C-c q]  <harpo:quiet>
 [C-x h]            <editing:mark-whole-buffer>
-[C-x C-f]          <files:find-file>
+[C-x C-f]          <file-picker:find-file>
 ; Going back, going forward and refreshing describe from the view first
 ; described, not from *Help*.
 > (layout:select! (help-view))

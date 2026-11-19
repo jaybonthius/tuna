@@ -1,22 +1,47 @@
 #!tuna
-(import (tuna eval))
+(import (tuna eval) (files) (layout) (views) (buffers) (document) (command-line handled))
 
-;; The process id and the command line handled, so a reload in the same
-;; process evaluates nothing again.
-(define-saved %arguments '() list?)
+(define (%starts-with? prefix argument)
+  (let ([n (string-length prefix)])
+    (and (fx>= (string-length argument) n) (string=? (substring argument 0 n) prefix))))
 
-(post!
-  (lambda ()
-    (let ([handled (cons (get-process-id) (command-line-arguments))])
-      (unless (equal? (%arguments) handled)
-        (for-each
-          (lambda (argument)
-            (cond
-              [(and (fx>= (string-length argument) 7) (string=? (substring argument 0 7) "--eval="))
-               (guard (c [(not (quit-condition? c)) (report c)])
-                 (eval-text (substring argument 7 (string-length argument))))]
-              [(and (fx>= (string-length argument) 2) (string=? (substring argument 0 2) "--"))
-               (report (condition (make-warning)
-                         (make-message-condition (format "unknown flag ~a; the only flag is --eval=EXPR" argument))))]))
-          (cdr handled))
-        (set-saved! %arguments handled)))))
+(define (%line-number argument)
+  (and (fx> (string-length argument) 1)
+       (char=? (string-ref argument 0) #\+)
+       (for-all char-numeric? (cdr (string->list argument)))
+       (string->number (substring argument 1 (string-length argument)))))
+
+(define (%evaluate! argument)
+  (guard (c [(not (quit-condition? c)) (report c)])
+    (eval-text (substring argument 7 (string-length argument)))))
+
+(define (%visit argument)
+  (guard (c [(not (quit-condition? c)) (report c) #f])
+    (files:visit argument)))
+
+(define (%show! b line)
+  (layout:switch-to-buffer b)
+  (when line
+    (let* ([doc (buffers:document b)] [last (document:line doc (document:length doc))])
+      (views:set-point! (layout:selected-view) (fxmax 1 (document:line-start doc (max 1 (min line last))))))))
+
+;; Only the last file is shown, so a +N before another file has no view
+;; to move.
+(define (%handle-arguments! arguments)
+  (let loop ([arguments arguments] [line #f] [shown #f])
+    (cond
+      [(null? arguments) (when shown (%show! (car shown) (cdr shown)))]
+      [(%starts-with? "--eval=" (car arguments))
+       (%evaluate! (car arguments))
+       (loop (cdr arguments) line shown)]
+      [(%starts-with? "--" (car arguments))
+       (report (condition (make-warning)
+                 (make-message-condition
+                   (format "unknown flag ~a; the only flag is --eval=EXPR" (car arguments)))))
+       (loop (cdr arguments) line shown)]
+      [(%line-number (car arguments)) => (lambda (n) (loop (cdr arguments) n shown))]
+      [else
+       (let ([b (%visit (car arguments))])
+         (loop (cdr arguments) #f (if b (cons b line) shown)))])))
+
+(spawn-task (lambda () (%handle-arguments! (take-arguments!))))

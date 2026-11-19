@@ -1,13 +1,13 @@
-> (define notes (buffers:make "notes" "(harpo:squeeze 3) harpo:honk files:find-file\n"))
+> (define notes (buffers:make "notes" "(harpo:squeeze 3) harpo:honk file-picker:find-file\n"))
 > (layout:switch-to-buffer notes)
 > (modes:set-major-mode harpo:mode notes)
 > (define (describe name) (in-client (lambda () (help:describe-name name (view)))) (help))
 ; A command: its module, the keys that run it in the view, the modes it
 ; is marked for, its documentation, and each name a link.
-> (in-client (lambda () (help:describe-command files:find-file (view))))
+> (in-client (lambda () (help:describe-command file-picker:find-file (view))))
 > (help)
-# files:find-file
-<files:find-file> is a command in (files).
+# file-picker:find-file
+<file-picker:find-file> is a command in (file-picker).
 It is on [C-x C-f].
 Visits PATH and shows its buffer in the selected view.
 > (describe 'harpo:honk)

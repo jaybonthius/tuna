@@ -13,7 +13,7 @@
           (lambda () (keys:pending one))
           (lambda () (keys:push-keymap! one km (lambda (f c) #t)))
           (lambda () (keys:bind! km "b" layout:other-view))
-          (lambda () (keys:remap! km layout:other-view files:find-file))
+          (lambda () (keys:remap! km layout:other-view file-picker:find-file))
           (lambda () (keys:unbind! km "a"))
           (lambda () (length (keys:bindings km)))
           (lambda () (list (keys:command-keys) (keys:typed-char) (keys:shift-translated?)))
@@ -90,7 +90,7 @@
 ; pending, and keys work as before.
 > (import (sticky))
 > (keys:bind! keys:global "C-c o" sticky:other-view-repeat)
-> (keys:bind! keys:global "C-x C-f" files:find-file)
+> (keys:bind! keys:global "C-x C-f" file-picker:find-file)
 > (keys:bind! keys:global "M-x" editing:next-line)
 > (define quits-reported 0)
 > (define (count-quits report c)
@@ -154,9 +154,9 @@
 #t
 > (list (keys:pending one) (map name-of (keys:active-keymaps one)))
 (#f (keys:global))
-> (define dropped (list (files:take!) (editing:take!)))
+> (define dropped (list (file-picker:take!) (editing:take!)))
 > (press-all! one "C-u" "C-x" "C-f" "x" "ESC" "x")
-> (list (files:take!) (editing:take!))
+> (list (file-picker:take!) (editing:take!))
 ((("notes.txt" (4))) ((self-insert #\x 1) (next-line 1)))
 ; Reloading the plugin ends every temporary keymap, starts each frame's
 ; session afresh, reloads the modules that import it, and keeps the
@@ -172,7 +172,7 @@
 > (map (lambda (k) (name-of (keys:lookup one k))) '("C-c g o" "C-c o" "C-x o" "C-g" "M-5" "C-n"))
 (groucho:browse-remote sticky:other-view-repeat layout:other-view keys:keyboard-quit keys:digit-argument editing:next-line)
 > (press-all! one "C-u" "C-x" "C-f")
-> (files:take!)
+> (file-picker:take!)
 (("notes.txt" (4)))
 > (end-t)
 > exits

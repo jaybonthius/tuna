@@ -23,7 +23,7 @@
 > (write-file! (string-append project "/README") "r\n")
 > (write-file! (string-append project "/.hidden/secret") "s\n")
 > (write-file! (string-append project "/.hidden/deep.txt") "d\n")
-> (in-client (lambda () (files:find-file (string-append project "/lib/a.txt"))))
+> (in-client (lambda () (layout:switch-to-buffer (files:visit (string-append project "/lib/a.txt")))))
 > (define file-buffer (views:buffer (view)))
 > (run! pi-chat:open)
 > (define chat (car (pi:chats)))

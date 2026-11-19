@@ -20,6 +20,7 @@ cp -R tests/files/home/.config/tuna/lib/. "$home/.config/tuna/lib/"
 cat > "$home/.config/tuna/init.ss" <<'END'
 (import (tuna) (tuna plugins) (document))
 (use-plugin files)
+(use-plugin command-line)
 (define (wait-until done?)
   (let loop ([n 0])
     (unless (or (done?) (= n 1000))
@@ -51,7 +52,8 @@ output=$(run '(wait-until (lambda () (showing? "b.txt")))
 (map buffers:name (files:buffers))
 (shown)
 (buffers:replace! (files:buffer-visiting "b.txt") 1 1 "unsaved ")' --eval='(void)' a.txt +3 --other b.txt)
-expect "first start" "$output" '("a.txt" "b.txt")
+expect "first start" "$output" '! (command-line) unknown flag --other; the only flag is --eval=EXPR
+("a.txt" "b.txt")
 ("b.txt" 3)
 #<edit 1>'
 
@@ -69,14 +71,15 @@ expect "restart" "$output" '("a.txt" "b.txt")
 
 # C-x C-c exits without asking when no edits would be lost, with the
 # open files kept for the next start. A missing file is an empty buffer
-# of one line, so +2 goes to line 1.
+# of one line, so +2 goes to line 1. The files reopened and those on the
+# command line are read side by side, so their order is not fixed.
 output=$(run '(wait-until (lambda () (showing? "c.txt")))
 (shown)
 (commands:run (table-ref keys:global "C-x C-c"))
 (display "not reached")' +2 c.txt)
 expect "quit command" "$output" '("c.txt" 1)'
 output=$(run '(wait-until (lambda () (= (length (files:buffers)) 3)))
-(map buffers:name (files:buffers))')
+(list-sort string<? (map buffers:name (files:buffers)))')
 expect "after the quit command" "$output" '("a.txt" "b.txt" "c.txt")'
 
 [ "$failures" -eq 0 ] || exit 1

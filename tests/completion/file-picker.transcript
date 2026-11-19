@@ -26,19 +26,27 @@
 #t
 > (file-picker:file-name-history)
 ("~/src/new.txt" "~/src/text.txt")
-; files asks for a name through ask:file-name, whose reader file-picker
-; fills when it loads and takes back when it unloads.
+; C-x C-f asks for a name through ask:file-name, as files does, whose
+; reader file-picker fills when it loads and takes back when it unloads;
+; a reader set in its place answers C-x C-f too.
 > (eq? (ask:file-name-reader) file-picker:read-file-name)
 #t
-> (unload-module! '(file-picker))
+> (define asked '())
+> (set-option! ask:file-name-reader (lambda (question) (set! asked (cons question asked)) "~/src/other.txt"))
+> (views:set-buffer! (view) notes)
 > (define t (start! (lambda () (press! "C-x" "C-f"))))
-! ask:file-name-reader: no reader is loaded
 > (result t)
+> (list asked (files:path (views:buffer (view))))
+(("Find file: ") "~/src/other.txt")
+> (remove-option! ask:file-name-reader)
+> (unload-module! '(file-picker))
+> (list (keys:lookup client "C-x C-f") (raised (lambda () (ask:file-name "File: "))))
+(#f (ask:file-name-reader "no reader is loaded"))
 > (use-plugin file-picker)
 > (eq? (ask:file-name-reader) file-picker:read-file-name)
 #t
-> (keys:lookup client "C-x C-f")
-#<procedure>
+> (eq? (keys:lookup client "C-x C-f") file-picker:find-file)
+#t
 ; The file reader expands a directory part that does not exist, component
 ; by component, and its candidates follow the part that does: choosing
 ; one replaces the rest.

@@ -1,7 +1,7 @@
 ; Commands as their documented examples use them, in order. The
 ; configuration keeps every command an outermost run ends with in
-; recent-commands. Views, editing and files are stand-ins.
-> (import (buffers) (views) (goto) (words) (editing) (files))
+; recent-commands. Views, editing and file-picker are stand-ins.
+> (import (buffers) (views) (goto) (words) (editing) (file-picker))
 > (define notes (buffers:make "notes" "one two\nthree four\nfive six\n"))
 > (views:show! notes)
 > (parameterize ([commands:prefix-argument 3]) (commands:run goto:goto-line))
@@ -10,14 +10,14 @@
 > (goto:goto-line 2)
 > (views:point (views:current))
 9
-> (commands:command-name files:find-file)
-files:find-file
+> (commands:command-name file-picker:find-file)
+file-picker:find-file
 > (commands:run editing:forward-char 3)
 > (commands:command-name (commands:last-command))
 editing:forward-char
 > (parameterize ([commands:prefix-argument '(4)])
-    (commands:run files:find-file))
-> files:visits
+    (commands:run file-picker:find-file))
+> file-picker:visits
 (("notes.txt" (4)))
 > (views:set-point! (views:current) 1)
 > (parameterize ([commands:prefix-argument 2]) (commands:run words:forward-word))
@@ -29,4 +29,4 @@ editing:forward-char
 > (commands:run words:forward-word)
 words:forward-word
 > (recent-names)
-(words:forward-word words:forward-word files:find-file editing:forward-char goto:goto-line)
+(words:forward-word words:forward-word file-picker:find-file editing:forward-char goto:goto-line)

@@ -6,7 +6,7 @@
 > (write-file! (string-append project "/lib/a.txt") "one\ntwo\nthree\nfour\n")
 ; C-c a p shows the chat used last in the buffer's project, the nearest
 ; folder holding .git, starting one when there is none.
-> (in-client (lambda () (files:find-file (string-append project "/lib/a.txt"))))
+> (in-client (lambda () (layout:switch-to-buffer (files:visit (string-append project "/lib/a.txt")))))
 > (define file-buffer (views:buffer (view)))
 > (run! pi-chat:open)
 > (define chat (car (pi:chats)))

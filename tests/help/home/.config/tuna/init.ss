@@ -6,6 +6,7 @@
 (use-plugin minibuffer)
 (use-plugin completion)
 (use-plugin files)
+(use-plugin file-picker)
 (use-plugin command-picker)
 (use-plugin undo)
 (use-plugin help

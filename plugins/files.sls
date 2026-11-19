@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (jobs) (commands) (keys) (layout) (views) (ask) (files disk))
+(import (buffers) (document) (jobs) (commands) (keys) (ask) (files disk))
 
 (define-option require-final-newline #f boolean?
   "When true, saving a file buffer whose text does not end in a line break adds one, as an edit.")
@@ -31,10 +31,6 @@
 
 (define-saved %visits '() (lambda (v) (and (list? v) (for-all %visit? v))))
 
-;; The process id and the command line handled, so a reload in the same
-;; process opens nothing again.
-(define-saved %arguments '() list?)
-
 (define-condition-type &changed-on-disk &error %make-changed-on-disk %changed-on-disk?)
 
 (define-condition-type &canceled &error %make-canceled %canceled?)
@@ -61,7 +57,7 @@
   (check-main-thread check-buffer check-path check-task file-entry entry-of entry-path entry-length entry-hash
    entry-live? visited-buffers buffer-at open-buffer! remember-read! take-read!
    move-entry! with-entry-lock run-job record-read! save! forget-killed! take-back!
-   open-pending! arguments-handled? handle-arguments! save-visits! stop-waiting!)
+   open-pending! save-visits! stop-waiting!)
 
   (define main-thread (get-thread-id))
 
@@ -449,44 +445,7 @@
                 (guard (c [(not (quit-condition? c)) (report c)])
                   (visit (visit-path v)))
                 (set! pending (remq v pending)))
-              pending))
-
-  (define (handled-arguments) (cons (get-process-id) (command-line-arguments)))
-
-  (define (arguments-handled?) (equal? (%arguments) (handled-arguments)))
-
-  (define (line-argument s)
-    (and (fx> (string-length s) 1)
-         (char=? (string-ref s 0) #\+)
-         (for-all char-numeric? (cdr (string->list s)))
-         (string->number (substring s 1 (string-length s)))))
-
-  (define (flag? s)
-    (and (fx>= (string-length s) 2) (char=? (string-ref s 0) #\-) (char=? (string-ref s 1) #\-)))
-
-  (define (line-start doc line)
-    (let ([last (document:line doc (document:length doc))])
-      (fxmax 1 (document:line-start doc (fxmax 1 (fxmin line last))))))
-
-  ;; Only the last file is shown, so a +N before another has no view to
-  ;; move.
-  (define (handle-arguments! visit)
-    (let ([handled (handled-arguments)])
-      (let loop ([arguments (cdr handled)] [line #f] [shown #f])
-        (cond
-          [(null? arguments)
-           (when shown
-             (let ([b (car shown)] [line (cdr shown)])
-               (layout:switch-to-buffer b)
-               (when line
-                 (views:set-point! (layout:selected-view) (line-start (buffers:document b) line)))))]
-          [(flag? (car arguments)) (loop (cdr arguments) line shown)]
-          [(line-argument (car arguments)) => (lambda (n) (loop (cdr arguments) n shown))]
-          [else
-           (let ([b (guard (c [(not (quit-condition? c)) (report c) #f])
-                      (visit (car arguments)))])
-             (loop (cdr arguments) #f (if b (cons b line) shown)))]))
-      (set-saved! %arguments handled))))
+              pending)))
 
 (import %internals)
 
@@ -507,10 +466,6 @@
                 (let ([b (open-buffer! path doc length hash read)])
                   (buffers:with-buffer b (after-visit b))
                   b)))))))
-
-(commands:define-command (find-file [path (ask:file-name "Find file: ")])
-  "Visits PATH and shows its buffer in the selected view."
-  (layout:switch-to-buffer (visit path)))
 
 (define (path buffer)
   (check-buffer 'files:path buffer)
@@ -703,7 +658,6 @@
 
 (add-hook! buffers:killed forget-killed!)
 (add-hook! buffers:kill-queries %confirm-kill)
-(keys:bind! keys:global "C-x C-f" find-file)
 (keys:bind! keys:global "C-x C-w" write-file)
 (keys:bind! keys:global "C-x C-s" save-buffer)
 (keys:bind! keys:global "C-x s" save-some-buffers)
@@ -712,8 +666,4 @@
 (on-unload save-visits!)
 (on-unload stop-waiting!)
 (take-back!)
-(spawn-task
-  (lambda ()
-    (open-pending! visit)
-    (unless (arguments-handled?)
-      (handle-arguments! visit))))
+(spawn-task (lambda () (open-pending! visit)))

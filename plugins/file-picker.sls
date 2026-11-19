@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (minibuffer) (files) (jobs) (ask))
+(import (completion) (minibuffer) (files) (jobs) (ask) (layout) (commands) (keys))
 
 (define-saved file-name-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
@@ -104,6 +104,11 @@
                        (category completion:file-category)))
                h)))))]))
 
+(commands:define-command (find-file [path (ask:file-name "Find file: ")])
+  "Visits PATH and shows its buffer in the selected view."
+  (layout:switch-to-buffer (files:visit path)))
+
 (set-option! ask:file-name-reader read-file-name)
 (table-set! completion:category-styles completion:file-category (list completion:partial completion:any-order))
 (table-set! completion:category-prefers-input completion:file-category %names-folder?)
+(keys:bind! keys:global "C-x C-f" find-file)

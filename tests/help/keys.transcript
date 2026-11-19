@@ -29,7 +29,7 @@ Honks once.
 > (set-option! keys:quit-keys '("C-g"))
 > (keys:unbind! keys:global "ESC")
 > (map title-of '("x" "S-<right>" "ESC x" "M-x" "C-x C-f"))
-("x runs the command editing:self-insert" "S-<right> runs the command editing:forward-char" "ESC x runs the command command-picker:execute-extended-command" "M-x runs the command command-picker:execute-extended-command, bound by (command-picker)" "C-x C-f runs the command files:find-file, bound by (files)")
+("x runs the command editing:self-insert" "S-<right> runs the command editing:forward-char" "ESC x runs the command command-picker:execute-extended-command" "M-x runs the command command-picker:execute-extended-command, bound by (command-picker)" "C-x C-f runs the command file-picker:find-file, bound by (file-picker)")
 > (set-option! keys:quit-keys '("C-g" "ESC"))
 > (keys:bind! keys:global "ESC" keys:keyboard-quit)
 ; A prefix lists the bindings after it, as C-h b lists them: one section
@@ -56,11 +56,11 @@ Honks once.
 [C-x C-t]  <editing:transpose-lines>
 [C-x C-u]  <editing:upcase-region>
 [C-x C-l]  <editing:downcase-region>
-[C-x C-f]  <files:find-file>
 [C-x C-w]  <files:write-file>
 [C-x C-s]  <files:save-buffer>
 [C-x s]    <files:save-some-buffers>
 [C-x C-c]  <files:save-buffers-kill-tuna>
+[C-x C-f]  <file-picker:find-file>
 ; A click is looked up at its position, here in notes, whose mode binds
 ; it.
 > (keys:bind! harpo:keymap "<mouse-1>" harpo:honk)
@@ -113,7 +113,7 @@ Honks once.
 > (press! "C-x" "C-f")
 > (settle)
 > (message)
-"C-x C-f runs files:find-file"
+"C-x C-f runs file-picker:find-file"
 > (in-client (lambda () (help:describe-key-briefly "C-c z" (view))))
 > (message)
 "C-c z is undefined"
@@ -122,11 +122,11 @@ Honks once.
 "C-x is a prefix"
 ; C-h w reads a command and shows the keys that run it.
 > (start! "C-h" "w")
-> (type! "files:find-file")
+> (type! "file-picker:find-file")
 > (press! "RET")
 > (settle)
 > (message)
-"files:find-file is on C-x C-f"
+"file-picker:find-file is on C-x C-f"
 > (in-client (lambda () (help:where-is harpo:quiet (view))))
 > (message)
 "harpo:quiet is on no key"

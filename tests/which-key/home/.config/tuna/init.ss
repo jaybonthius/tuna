@@ -22,7 +22,7 @@
     (table-set! which-key:labels "C-c t" "TODO")
     (table-set! which-key:labels "C-c w" "windows")))
 
-(keys:bind! keys:global "C-c f f" files:find-file)
+(keys:bind! keys:global "C-c f f" file-picker:find-file)
 (keys:bind! keys:global "C-c l r" harpo:honk)
 (keys:bind! keys:global "C-c h" harpo:keymap)
 (keys:bind! keys:global "C-c q z" harpo:squeak)

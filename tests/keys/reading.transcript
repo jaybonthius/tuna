@@ -15,7 +15,7 @@
     (set! got (cons (recorded keys:read-key-sequence) got)))
 > (keys:bind! keys:global "C-c k" read-one)
 > (keys:bind! keys:global "C-c s" read-sequence)
-> (keys:bind! keys:global "C-x C-f" files:find-file)
+> (keys:bind! keys:global "C-x C-f" file-picker:find-file)
 > (keys:bind! keys:global "M-x" editing:next-line)
 > (define (start-in frame . keys)
     (spawn-task (lambda () (apply press-all! frame keys)))
@@ -32,7 +32,7 @@
 > (start-in one "C-c" "k")
 > (press-all! one "<f5>")
 > (settle)
-> (list (take-got!) (editing:take!) (files:take!))
+> (list (take-got!) (editing:take!) (file-picker:take!))
 ((("<f5>" #f "C-c k")) () ())
 ; A read returns every key, quit keys included, and C-g and ESC quit
 ; nothing.
@@ -64,7 +64,7 @@
 > (take-got!)
 (("C-u" 3 "C-c k"))
 > (press-all! one "C-x" "C-f")
-> (files:take!)
+> (file-picker:take!)
 (("notes.txt" #f))
 ; No temporary keymap is tested and advice on keys:press! sees the key.
 > (define-table temporary)
@@ -96,7 +96,7 @@
 ("C-x" "C-c s")
 > (press-all! one "C-f")
 > (settle)
-> (list (take-got!) (files:take!) (keys:pending one))
+> (list (take-got!) (file-picker:take!) (keys:pending one))
 (("C-x C-f") () #f)
 > (map (lambda (keys) (apply read-sequence-of keys))
     '(("ESC") ("C-F") ("C-g") ("C-x" "C-g") ("C-c" "z") (("<mouse-1>" #(3 7)))
@@ -126,7 +126,7 @@
 ("C-x" "C-c w")
 > (press-all! one "C-f")
 > (settle)
-> (list (take-got!) (files:take!))
+> (list (take-got!) (file-picker:take!))
 (("C-x C-f") ())
 > (start-in one "C-c" "w")
 > (press-all! one "C-x")
@@ -148,7 +148,7 @@
 ; Another client's keys run while one reads, and each client reads on
 ; its own.
 > (press-all! two "C-x" "C-f")
-> (files:take!)
+> (file-picker:take!)
 (("notes.txt" #f))
 > (start-in two "C-c" "k")
 > (list (keys:reading one) (keys:reading two))
@@ -159,10 +159,10 @@
 > (take-got!)
 (("c" #f "C-c k") ("d" #f "C-c k"))
 ; keys:lookup takes an event, with the fallbacks keys:press! applies.
-> (keys:bind! keys:global "<mouse-1>" files:find-file)
+> (keys:bind! keys:global "<mouse-1>" file-picker:find-file)
 > (map (lambda (k) (name-of (keys:lookup one k)))
     '(("<mouse-1>" #(3 7)) ("<drag-mouse-1>" #(3 7) #(3 9)) ("S-<double-mouse-1>" #(3 7)) "<mouse-1>"))
-(files:find-file files:find-file files:find-file files:find-file)
+(file-picker:find-file file-picker:find-file file-picker:find-file file-picker:find-file)
 ; Reading needs the main thread and a command a key ran.
 > (map on-thread (list keys:read-key keys:read-key-sequence (lambda () (keys:reading one))))
 ((keys:read-key "not on the main thread") (keys:read-key-sequence "not on the main thread") (keys:reading "not on the main thread"))

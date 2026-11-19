@@ -57,8 +57,8 @@
 ; Prefix arguments.
 > (define (with-prefix . keys)
     (apply press-all! one (append keys '("C-x" "C-f")))
-    (cadar (files:take!)))
-> (keys:bind! keys:global "C-x C-f" files:find-file)
+    (cadar (file-picker:take!)))
+> (keys:bind! keys:global "C-x C-f" file-picker:find-file)
 > (map (lambda (keys) (apply with-prefix keys))
     '(() ("C-u") ("C-u" "C-u") ("C-u" "C-u" "C-u") ("C-u" "1" "2") ("C-u" "0") ("M-5") ("M-1" "2")
       ("M-1" "M-2") ("M--") ("M--" "5") ("M--" "0") ("M--" "M--") ("C-u" "-") ("C-u" "-" "5")
@@ -70,17 +70,17 @@
 > (press-all! one "C-u" "4")
 > (press-all! two "C-x" "C-f")
 > (press-all! one "C-x")
-> (list (keys:pending one) (files:take!))
+> (list (keys:pending one) (file-picker:take!))
 ("C-x" (("notes.txt" #f)))
 > (press-all! one "C-f")
-> (files:take!)
+> (file-picker:take!)
 (("notes.txt" 4))
 ; Keys that find nothing run keys:undefined, which raises a warning; the
 ; pending keys and the prefix argument clear.
 > (press-all! one "C-u" "C-c" "z")
 ! C-c z is undefined
 > (press-all! one "C-x" "C-f")
-> (list (keys:pending one) (files:take!))
+> (list (keys:pending one) (file-picker:take!))
 (#f (("notes.txt" #f)))
 > (press-all! one "ESC" "ESC")
 ! ESC ESC is undefined
@@ -102,17 +102,17 @@
 > (keys:press! one "x")
 ! C-x ESC x is undefined
 ; A binding whose module is not loaded is reported.
-> (keys:bind! keys:global "C-c f" files:find-file)
+> (keys:bind! keys:global "C-c f" file-picker:find-file)
 > (keys:bind! keys:global "C-c v" (commands:command-named 'vertico:next))
-> (unload-module! '(files))
+> (unload-module! '(file-picker))
 > (press-all! one "C-c" "f")
-! C-c f runs files:find-file, which is not loaded
+! C-c f runs file-picker:find-file, which is not loaded
 > (press-all! one "C-c" "v")
 > vertico:moves
 1
-> (load-module! '(files))
+> (load-module! '(file-picker))
 > (press-all! one "C-c" "f")
-> (files:take!)
+> (file-picker:take!)
 (("notes.txt" #f))
 > (table-set! keys:global "C-c s" 'posted)
 > (press-all! one "C-c" "s")

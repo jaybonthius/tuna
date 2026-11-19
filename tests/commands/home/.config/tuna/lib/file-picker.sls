@@ -1,5 +1,5 @@
 #!tuna
-;; Stands in for the files plugin, which this configuration lacks.
+;; Stands in for the file-picker plugin, which this configuration lacks.
 (import (commands))
 
 (define visits '())

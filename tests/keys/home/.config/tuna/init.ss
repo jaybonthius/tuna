@@ -3,7 +3,7 @@
   (config
     (set-option! keys:right-option-meta? #f)
     (keys:bind! keys:global "C-c g o" groucho:browse-remote)))
-(import (layout) (files) (cape) (editing) (vertico))
+(import (layout) (file-picker) (cape) (editing) (vertico))
 
 (define (raised thunk)
   (guard (c [#t (list (if (who-condition? c) (condition-who c) 'none)

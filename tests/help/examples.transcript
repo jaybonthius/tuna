@@ -8,8 +8,8 @@
 > (shown)
 (("notes" #t) ("*Help*" #f))
 > (help)
-# C-x C-f runs the command files:find-file, bound by (files)
-<files:find-file> is a command in (files).
+# C-x C-f runs the command file-picker:find-file, bound by (file-picker)
+<file-picker:find-file> is a command in (file-picker).
 It is on [C-x C-f].
 Visits PATH and shows its buffer in the selected view.
 > (in-client (lambda () (help:describe-name 'undo:limit (layout:selected-view))))
