@@ -15,7 +15,7 @@
 (define-saved %log-folder "" string?)
 
 (module %internals
-  (read-with-log note-visit! note-saved! note-killed! flush-logs! logged? attach-open-buffers
+  (read-with-log note-visit! note-saved! note-killed! note-silent-edit! flush-logs! logged? attach-open-buffers
    start-writer! stop! ensure-log-folder!)
 
   (define (warn who message irritants)
@@ -48,6 +48,16 @@
     (let ([entry (eq-hashtable-ref logs b #f)])
       (and entry (entry-ready? entry) entry)))
 
+  ;; A silent edit that changes tokens is in no record, and undo moves
+  ;; the saved state past it, so the saved file no longer fits the log and
+  ;; its unsaved edits cannot be rebuilt. One that changes none leaves
+  ;; undo's history, and the log still rebuilds the tokens.
+  (define silenced (make-weak-eq-hashtable))
+
+  (define (note-silent-edit! b e)
+    (when (and (buffers:edit-silent? e) (buffers:edit-moves? e) (eq-hashtable-contains? logs b))
+      (eq-hashtable-set! silenced b #t)))
+
   ;; A log rebuilds unsaved edits from a saved state, so a history with
   ;; none, as after undo:forget! or a group larger than the limit, or
   ;; whose saved state the log has no record of, as for edits made while
@@ -55,6 +65,7 @@
   (define (logged? b)
     (let ([entry (entry-of b)])
       (and entry (equal? (logged-path b) (entry-path entry))
+           (not (eq-hashtable-contains? silenced b))
            (let ([saved (cadr (undo:history b))])
              (and saved (or (assv saved (entry-saves entry)) (entry-save entry)) #t)))))
 
@@ -338,6 +349,7 @@
     (set! attaching '()))
 
   (define (note-saved! b)
+    (eq-hashtable-delete! silenced b)
     (let ([entry (eq-hashtable-ref logs b #f)] [path (logged-path b)])
       (cond
         [(and entry (equal? path (entry-path entry))) (note-pending-save! entry b)]
@@ -534,6 +546,7 @@
 (add-hook! files:after-save note-saved!)
 (add-hook! files:after-revert note-saved!)
 (add-hook! files:unsaved-kept logged?)
+(add-hook! buffers:after-edit note-silent-edit!)
 ;; Ahead of undo's entry, which drops the history.
 (add-hook! buffers:killed note-killed! -100)
 (advice-add! files:read-document read-with-log)

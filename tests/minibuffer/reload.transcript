@@ -29,14 +29,12 @@
 "x"
 > (minibuffer:history)
 ("x")
-; Unloading undo: the minibuffer goes with it, since it imports it, and
-; comes back with it.
+; Unloading undo leaves the minibuffer, which does not import it.
 > (unload-module! '(undo))
-> (buffers:find " *Minibuf*")
-#f
-> (use-plugin undo)
-> (use-plugin minibuffer)
+> (eq? (buffers:find " *Minibuf*") minibuf)
+#t
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
 > (press! "RET")
 > (result t)
 ""
+> (use-plugin undo)

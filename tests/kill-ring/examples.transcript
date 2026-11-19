@@ -11,9 +11,9 @@
 > (define notes (buffers:make "notes" "Buy milk.\n"))
 > (kill-ring:push! (list "first"))
 > (buffers:with-buffer notes
-    (kill-ring:push! (list (kill-ring:piece (buffers:current) 1 6))))
+    (kill-ring:push! (list (buffers:piece (buffers:current) 1 6))))
 > (kill-ring:entries)
-((#<piece>) ("first"))
+((#<kill>) ("first"))
 > (kill-ring:text (kill-ring:current))
 "Buy m"
 > (kill-ring:push! (list "older"))
@@ -32,7 +32,7 @@
 ; A piece whose top node is a rectangle goes to the rectangles' yank.
 > (import (md))
 > (define grid (buffers:make "grid" (md:doc '() (rectangle:block '() "ab\ncd\n") (md:para '() "end\n"))))
-> (kill-ring:push! (list (kill-ring:piece grid 1 9)))
+> (kill-ring:push! (list (buffers:piece grid 1 9)))
 > (kill-ring:insert! grid 10 (car (kill-ring:current)))
 16
 > (list rectangle:yanks (root grid))

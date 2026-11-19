@@ -102,3 +102,39 @@
 > (sleep-for 0.2)
 > (list (buffers:modified? m) (cadr (undo:history m)) (exists (lambda (entry) (entry m)) (hook-entries files:unsaved-kept)))
 (#t 0 #f)
+; A silent edit is in no record, and undo moves the saved state past it,
+; so the saved file no longer fits the log: C-x C-c asks about the
+; buffer until it is saved again.
+> (checks:write-text! "~/s.txt" "silent\n")
+> (define s (files:visit "~/s.txt"))
+> (buffers:with-buffer s (commands:run checks:insert 1 "a "))
+#<edit 1>
+> (logged "~/s.txt" 4)
+(undo-history group saved at)
+> (define (kept? b) (exists (lambda (entry) (entry b)) (hook-entries files:unsaved-kept)))
+> (kept? s)
+#t
+> (buffers:with-silent-edits s (buffers:replace! s 3 3 "~"))
+#<edit 2>
+> (list (buffers:modified? s) (kept? s))
+(#t #f)
+> (files:save-buffer s)
+> (buffers:with-buffer s (commands:run checks:insert 1 "b "))
+#<edit 3>
+> (list (buffers:modified? s) (kept? s))
+(#t #t)
+; A silent edit that changes no token, as one that sets a travelling
+; layer's spans, leaves undo's history and its saved state, and the log
+; still rebuilds the tokens, so the buffer's edits stay kept.
+> (buffers:define-layer marks (travels))
+> (checks:write-text! "~/t.txt" "spans\n")
+> (define t (files:visit "~/t.txt"))
+> (buffers:with-buffer t (commands:run checks:insert 1 "a "))
+#<edit 1>
+> (logged "~/t.txt" 4)
+(undo-history group saved at)
+> (kept? t)
+#t
+> (buffers:with-silent-edits t (buffers:add-span! (buffers:layer t marks) 3 6 'seen))
+> (list (buffers:modified? t) (buffers:edit-moves? (car (reverse (buffers:edits-since t 1)))) (tree t) (kept? t))
+(#t #f (1 0 (0 #f) (1 0)) #t)

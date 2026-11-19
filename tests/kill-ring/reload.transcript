@@ -1,24 +1,25 @@
 ; The ring's text is saved data: written after the batch that changes
-; it, and rebuilt from it when the plugin loads again. A piece comes back
-; as its text; an entry with a piece over 4,096 characters, and the yank
+; it, and rebuilt from it when the plugin loads again. A kill comes back
+; as its text; an entry with a kill over 4,096 characters, and the yank
 ; pointer, do not.
 > (define b (buffers:make "b" "Hello world\n"))
 > (buffers:define-layer responses (travels) (sticky after))
 > (buffers:add-span! (buffers:layer b responses) 1 6 'gpt)
-> (define hello (kill-ring:piece b 1 6))
+> (define hello (buffers:piece b 1 6))
 > (define long-a (make-string 4096 #\a))
 > (kill-ring:push! (list long-a))
 > (kill-ring:push! (list "small" (make-string 4097 #\b)))
 > (kill-ring:push! (list "one" hello))
 > (kill-ring:push! (list "newest"))
-> (kill-ring:rotate! 1)
-("one" #<piece>)
+> (define one (kill-ring:rotate! 1))
+> one
+("one" #<kill>)
 > (define expected (list '("newest") '("one" "Hello") (list long-a)))
 > (wait-until (lambda () (equal? (saved-texts) expected)))
 > (equal? (saved-texts) expected)
 #t
 ; Reloading the plugin's source keeps the text, the configuration's
-; setting and hook entry; pieces made before it are still pieces.
+; setting and hook entry; kills made before it are still kills.
 > (import (tuna eval))
 > (eval-file (string-append (getenv "TUNA_LIBRARY") "/kill-ring.sls"))
 > (equal? (ring-texts) expected)
@@ -29,8 +30,8 @@
 > (kill-ring:push! (list "after"))
 > (take-pushed!)
 ("after")
-> (list (kill-ring:piece? hello) (kill-ring:insert! b 12 hello) (spans-of b responses))
-(#t 17 (("Hello" gpt) ("Hello" gpt)))
+> (list (kill-ring:insert! b 12 (cadr one)) (spans-of b responses))
+(17 (("Hello" gpt) ("Hello" gpt)))
 > (map car (definition-changes batch-ended))
 ((kill-ring) (tuna))
 ; Unloading saves a change made in the same batch, and takes back the

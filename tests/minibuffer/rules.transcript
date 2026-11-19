@@ -189,6 +189,29 @@
 > (remove-hook! minibuffer:prompt-started note-started)
 > (remove-hook! minibuffer:input-changed note-changed)
 > (remove-hook! minibuffer:prompt-ended note-ended)
+; The plugin's writes are silent, so content set on every key leaves the
+; input's undo whole.
+> (define (show-input p) (minibuffer:set-content! p (list (string-append "[" (minibuffer:input p) "]"))))
+> (add-hook! minibuffer:input-changed show-input)
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (type! "ab")
+> (press! "SPC")
+> (type! "cd")
+> (datums minibuf)
+((minibuffer:%prompts () (minibuffer:prompt ((depth . 1)) (minibuffer:question () "Name: ") (minibuffer:input-field () "ab cd") "\n" (minibuffer:content () "[ab cd]"))))
+> (press! "C-/")
+> (list (input) (datums minibuf))
+("" ((minibuffer:%prompts () (minibuffer:prompt ((depth . 1)) (minibuffer:question () "Name: ") (minibuffer:input-field ()) "\n" (minibuffer:content () "[]")))))
+> (press! "C-/")
+! undo:undo: no further undo information
+> (press! "C-?")
+> (list (input) (datums minibuf))
+("ab cd" ((minibuffer:%prompts () (minibuffer:prompt ((depth . 1)) (minibuffer:question () "Name: ") (minibuffer:input-field () "ab cd") "\n" (minibuffer:content () "[ab cd]")))))
+> (press! "C-g")
+! &quit
+> (result t)
+(raised #<condition &quit>)
+> (remove-hook! minibuffer:input-changed show-input)
 ; exit! on a prompt that ended raises.
 > (define p #f)
 > (define t (start! (lambda () (minibuffer:call-with-setup (lambda (q) (set! p q)) (lambda () (minibuffer:read "Name: "))))))

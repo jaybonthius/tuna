@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (faces) (web) (haml) (undo))
+(import (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (faces) (web) (haml))
 
 (define face
   (make-thread-parameter #f
@@ -169,14 +169,12 @@
 
   (define log-buffer #f)
 
-  ;; A killed log is made again by whatever code logs next. Its setting
-  ;; is this plugin's: code acting for no module cannot set it, and
-  ;; another module's unload would take it back.
+  ;; The log holds nothing to save, so it never reads as modified, which
+  ;; would make killing it ask.
   (define (messages-buffer)
     (unless (and log-buffer (buffers:live? log-buffer))
-      (as-module (this-module)
-        (set! log-buffer (or (buffers:find "*Messages*") (buffers:make "*Messages*" (%log '()))))
-        (buffers:with-buffer log-buffer (set-option-local! undo:limit 0))))
+      (set! log-buffer (or (buffers:find "*Messages*") (buffers:make "*Messages*" (%log '()))))
+      (buffers:set-silent! log-buffer #t))
     log-buffer)
 
   (define (newlines text)
@@ -197,9 +195,7 @@
         [else 0])))
 
   ;; As Emacs does, a repeated message is found by reading the log's last
-  ;; entry, so a count survives a reload of the plugin. The log holds
-  ;; nothing to save, so it never reads as modified, which would make
-  ;; killing it ask.
+  ;; entry, so a count survives a reload of the plugin.
   (define (log! text)
     (let ([max (log-max)])
       (when (> max 0)
@@ -214,8 +210,7 @@
           (let* ([doc (buffers:document b)] [end (fx- (document:length doc) 1)]
                  [lines (fx- (document:line doc end) 1)])
             (when (> lines max)
-              (buffers:splice! b 1 (document:line-start doc (+ (- lines max) 1)) (document:from-datum ""))))
-          (buffers:set-modified! b #f)))))
+              (buffers:splice! b 1 (document:line-start doc (+ (- lines max) 1)) (document:from-datum ""))))))))
 
   ;; Report runs on whichever thread raised, so the queue is a box changed
   ;; only by compare-and-swap.

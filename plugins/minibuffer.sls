@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (modes) (echo-area) (web) (haml) (undo) (ask))
+(import (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (modes) (echo-area) (web) (haml) (ask))
 
 (define-saved history '() (lambda (v) (and (list? v) (for-all string? v))))
 
@@ -29,7 +29,7 @@
 (define (%input-edit? input edit)
   (let ([start (buffers:edit-start edit)])
     (and (fx> start (document:node-start input))
-         (fx<= (fx+ start (document:length (buffers:edit-removed edit))) (document:node-end input)))))
+         (fx<= (fx+ start (buffers:piece-length (buffers:edit-removed edit))) (document:node-end input)))))
 
 (define (%prompt-consent node edit)
   (let ([input (%input-of node)])
@@ -83,7 +83,7 @@
   (check-main-thread check-prompt check-live buffer prompts make-prompt prompt-record? prompt-depth prompt-task
    history-of prompt-default shown-in prompt-keymaps prompt-keymaps-set! prompt-message prompt-message-set!
    prompt-recalled prompt-recalled-set! prompt-typed prompt-typed-set! prompt-ended? prompt-node prompt-parts
-   input-range input-text prompt-holding prompt-at start-prompt! end-prompt! answer! writing prompt-of
+   input-range input-text prompt-holding prompt-at start-prompt! end-prompt! answer! prompt-of
    setups prompt-keymaps-at quit-condition without-quits bar-view narrow-views! at-bottom bottom-prompt
    write-content! prompt-answer prompt-resume-set! clear-messages!)
 
@@ -122,23 +122,24 @@
 
   (define quit-condition (record-constructor (record-constructor-descriptor &quit)))
 
+  ;; An internal buffer starts silent, but the input's edits are the
+  ;; user's.
   (define buffer
     (let ([b (or (buffers:find " *Minibuf*") (buffers:make " *Minibuf*" (%prompts '())))])
       (let ([doc (buffers:document b)])
         (unless (fx= (document:length doc) 2)
-          (buffers:splice! b 0 (document:length doc) (document:from-datum (%prompts '())))))
+          (buffers:with-silent-edits b
+            (buffers:splice! b 0 (document:length doc) (document:from-datum (%prompts '()))))))
+      (buffers:set-silent! b #f)
       b))
 
   (define prompts '())
 
-  ;; Set while the plugin writes the buffer, so its own edits are not
-  ;; taken for edits of an input.
-  (define writing #f)
-
+  ;; The plugin's writes are silent, so undo in an input steps over them,
+  ;; and removing a prompt takes its input's history with it.
   (define (write! start end datum)
-    (fluid-let ([writing #t])
-      (buffers:splice! buffer start end (document:from-datum datum)))
-    (undo:forget! buffer))
+    (buffers:with-silent-edits buffer
+      (buffers:splice! buffer start end (document:from-datum datum))))
 
   (define (root-children)
     (let* ([doc (buffers:document buffer)] [acc '()])
@@ -460,7 +461,7 @@
       (if (boolean? answer) answer (loop "Please answer y or n")))))
 
 (define (%input-edited b e)
-  (when (and (eq? b buffer) (not writing))
+  (when (and (eq? b buffer) (not (buffers:edit-silent? e)))
     (let ([p (prompt-holding (buffers:edit-start e))])
       (when p (input-changed p)))))
 
@@ -539,10 +540,6 @@
   (buffers:kill! buffer))
 
 (modes:set-major-mode mode buffer)
-;; Undo keeps no history in a buffer whose name starts with a space
-;; unless its plugin turns it on, as Emacs's minibuffer does; setting the
-;; major mode drops local values, so this comes after.
-(buffers:with-buffer buffer (set-option-local! undo:limit (option-default undo:limit)))
 (at-bottom buffer)
 (narrow-views! #f)
 (keys:bind! keymap "RET" exit)

@@ -21,6 +21,10 @@ echo "$output" | awk '
     unit["record-ns"] = "ns"
     unit["batch-end-ns"] = "ns"
     unit["undo-step-us"] = "us"
+    unit["silent-batch-50-us"] = "us"
+    unit["silent-batch-200-us"] = "us"
+    unit["silent-batch-500-us"] = "us"
+    unit["silent-batch-typed-2000-us"] = "us"
     missing = 0
   }
   $1 in unit {

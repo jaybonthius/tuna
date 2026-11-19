@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (haml) (undo) (markdown))
+(import (buffers) (document) (views) (haml) (markdown))
 
 (define (draw-reply node view) (haml (:div.reply (views:draw-children view node))))
 (buffers:define-kind reply (content nodes) (draw draw-reply))
@@ -7,6 +7,7 @@
 
 (define (%make-chat)
   (let ([b (buffers:make "*chat*" (reply '()))])
+    (buffers:set-silent! b #t)
     (buffers:add-span! (buffers:layer b written) 0 2 '())
     b))
 
@@ -29,10 +30,7 @@
   (when %stale?
     (set! %stale? #f)
     (buffers:reconcile! chat (document:token (buffers:document chat) 0)
-      (if %done? (markdown:blocks %text) (markdown:unfinished-blocks %text)))
-    (buffers:set-modified! chat #f)))
-
-(buffers:with-buffer chat (set-option-local! undo:limit 0))
+      (if %done? (markdown:blocks %text) (markdown:unfinished-blocks %text)))))
 
 (advice-add! batch-ended
   (lambda (ended)

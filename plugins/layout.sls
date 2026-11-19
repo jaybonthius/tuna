@@ -110,17 +110,17 @@
   ;; already in either tree may be written again only where the edit
   ;; replaces it.
   (define (parts-fit? node edit empty-ok?)
-    (let* ([inserted (buffers:edit-inserted edit)] [datums (document:datums inserted)])
+    (let* ([inserted (buffers:piece-document (buffers:edit-inserted edit))] [datums (document:datums inserted)])
       (and (for-all (lambda (d) (part-datum? d container-entry)) datums)
            (or empty-ok?
                (fx> (fx+ (fx- (document:node-end node) (document:node-start node) 2)
-                         (fx- (document:length inserted) (document:length (buffers:edit-removed edit))))
+                         (fx- (document:length inserted) (buffers:piece-length (buffers:edit-removed edit))))
                     0))
            (let ([ids (fold-left (lambda (acc d) (datum-view-ids d acc)) '() datums)])
              (and (distinct-ids? ids)
                   (or (not layout-buffer)
                       (let* ([ix (current-index)] [px (popups-index)] [s (buffers:edit-start edit)]
-                             [e (fx+ s (document:length (buffers:edit-removed edit)))])
+                             [e (fx+ s (buffers:piece-length (buffers:edit-removed edit)))])
                         (for-all (lambda (id)
                                    (let ([a (index-atom ix id)] [p (index-atom px id)])
                                      (and (or (not a) (holds-range? a s e)) (or (not p) (holds-range? p s e)))))
@@ -131,9 +131,9 @@
   (define (check-popup-parts node edit) (parts-fit? node edit #t))
 
   (define (check-level node edit)
-    (let ([s (buffers:edit-start edit)] [datums (document:datums (buffers:edit-inserted edit))])
+    (let ([s (buffers:edit-start edit)] [datums (document:datums (buffers:piece-document (buffers:edit-inserted edit)))])
       (and (fx= s (fx+ (document:node-start node) 1))
-           (fx= (fx+ s (document:length (buffers:edit-removed edit))) (fx- (document:node-end node) 1))
+           (fx= (fx+ s (buffers:piece-length (buffers:edit-removed edit))) (fx- (document:node-end node) 1))
            (fx= (length datums) 1)
            (not (level-datum? (car datums)))
            (parts-fit? node edit #f))))
@@ -1294,10 +1294,10 @@
            (or (not edits)
                (let loop ([es edits] [lo (scope-start sc)] [hi (scope-end sc)])
                  (and (pair? es)
-                      (let* ([e (car es)] [s (buffers:edit-start e)] [r (document:length (buffers:edit-removed e))])
+                      (let* ([e (car es)] [s (buffers:edit-start e)] [r (buffers:piece-length (buffers:edit-removed e))])
                         (cond
                           [(fx< (fx+ s r) lo)
-                           (let ([shift (fx- (document:length (buffers:edit-inserted e)) r)])
+                           (let ([shift (fx- (buffers:piece-length (buffers:edit-inserted e)) r)])
                              (loop (cdr es) (fx+ lo shift) (fx+ hi shift)))]
                           [(fx> s hi) (loop (cdr es) lo hi)]
                           [else #t]))))))))

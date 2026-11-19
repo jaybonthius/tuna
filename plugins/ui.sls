@@ -155,7 +155,8 @@
   ;; Each view selecting a row of the list keeps its index, or the nearest
   ;; one the new window shows, rather than wherever the rows it was on
   ;; went. Rows of a new generation keep none of the old, so one splice
-  ;; writes them, at a quarter of the cost of reconciling.
+  ;; writes them, at a quarter of the cost of reconciling. The rows shown
+  ;; are not the buffer's text, so writing them is silent.
   (define (write-window! b node state first n)
     (let*-values ([(doc) (buffers:document b)] [(first0 n0) (window doc node)]
                   [(same-generation?) (eqv? (generation-of doc node) (rows-generation state))])
@@ -166,10 +167,11 @@
                                 (if i (cons (cons v i) acc) acc)))
                             '() (views:showing b))]
               [s (document:node-start node)])
-          (if same-generation?
-              (buffers:reconcile! b node (row-datums (rows-generation state) first n))
-              (buffers:splice! b (fx+ s 1) (fx- (document:node-end node) 1)
-                (apply document:from-datum (row-datums (rows-generation state) first n))))
+          (buffers:with-silent-edits b
+            (if same-generation?
+                (buffers:reconcile! b node (row-datums (rows-generation state) first n))
+                (buffers:splice! b (fx+ s 1) (fx- (document:node-end node) 1)
+                  (apply document:from-datum (row-datums (rows-generation state) first n)))))
           (let ([node (document:token (buffers:document b) s)])
             (for-each (lambda (sel) (views:set-point! (car sel) (index-position node first n (cdr sel))))
                       selections))))))
@@ -302,8 +304,8 @@
 ;; refuse the probe that makes the place before a row a stop, and point
 ;; could not rest on the first row of a list inside other text.
 (define (%keep-rows node edit)
-  (and (fx= (document:length (buffers:edit-removed edit)) 0)
-       (let ([inserted (buffers:edit-inserted edit)])
+  (and (fx= (buffers:piece-length (buffers:edit-removed edit)) 0)
+       (let ([inserted (buffers:piece-document (buffers:edit-inserted edit))])
          (let loop ([p 0])
            (or (fx= p (document:length inserted))
                (and (char? (document:token inserted p)) (loop (fx+ p 1))))))))
@@ -549,11 +551,13 @@
   (let ([b (buffers:find "*Showcase*")])
     (and b (eq? (document:node-kind (document:token (buffers:document b) 0)) %showcase-kind) b)))
 
+;; Read-only, so every edit is this plugin's, and it holds nothing to
+;; save.
 (define (%make-showcase)
   (let ([b (buffers:make "*Showcase*" (%showcase-datum))])
+    (buffers:set-silent! b #t)
     (buffers:add-span! (buffers:layer b %read-only) 0 (document:length (buffers:document b)) '())
     (%fill-showcase! b)
-    (buffers:set-modified! b #f)
     b))
 
 ;; Point starts on the first list's first row, so the showcase opens with

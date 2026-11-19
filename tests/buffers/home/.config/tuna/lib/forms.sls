@@ -2,7 +2,7 @@
 (import (buffers) (document) (views) (haml))
 
 (define (one-line? node edit)
-  (not (memv #\newline (string->list (document:text (buffers:edit-inserted edit))))))
+  (not (memv #\newline (string->list (document:text (buffers:piece-document (buffers:edit-inserted edit)))))))
 
 (define (draw-field node view)
   (haml (:span.field (views:draw-children view node))))

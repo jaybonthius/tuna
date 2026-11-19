@@ -46,7 +46,7 @@
 > (define t (fresh "abc\n"))
 > (define (note b e)
     (write (list 'edit (buffers:edit-version e) (buffers:edit-start e)
-                 (document:datums (buffers:edit-removed e)) (document:datums (buffers:edit-inserted e))
+                 (document:datums (buffers:piece-document (buffers:edit-removed e))) (document:datums (buffers:piece-document (buffers:edit-inserted e)))
                  (eq? b (buffers:current)) (width))))
 > (buffers:with-buffer t (set-option-local! width 4) (add-local-hook! buffers:after-edit note))
 > (buffers:replace! t 2 3 "XY")
@@ -89,7 +89,7 @@
 > (buffers:splice! t 0 0 (document:from-datum '(md:para ())))
 ! buffers:splice!: the buffer would not be one node with irritants (0 0)
 > (buffers:splice! t 1 1 "q")
-! buffers:splice!: not a document with irritant "q"
+! buffers:splice!: not a document or a piece with irritant "q"
 ; Content that fits nowhere raises, and so does an edit outside the root.
 > (define d (fresh '(md:doc () (md:para () "one\n"))))
 > (buffers:replace! d 1 1 "text between blocks")
@@ -178,8 +178,8 @@
 (md:doc () (md:para () "abef\n"))
 ; A kind's consent sees the node and the proposed edit.
 > (define (no-digits node edit)
-    (write (list 'asked (document:node-kind node) (buffers:edit-start edit) (document:text (buffers:edit-inserted edit))))
-    (not (exists char-numeric? (string->list (document:text (buffers:edit-inserted edit))))))
+    (write (list 'asked (document:node-kind node) (buffers:edit-start edit) (document:text (buffers:piece-document (buffers:edit-inserted edit)))))
+    (not (exists char-numeric? (string->list (document:text (buffers:piece-document (buffers:edit-inserted edit)))))))
 > (buffers:define-kind words (consent no-digits))
 > (define w (fresh '(md:doc () (words () "ab\n"))))
 > (buffers:replace! w 3 3 "c")
@@ -246,52 +246,76 @@
 #t
 > (all-spans h)
 ((4 6 old))
-; Travelling spans are content: they go into edits and kills, come back
-; with yank and undo, and setting them is an edit.
+; Travelling spans are content: a piece of a range carries them, edits
+; carry pieces, and setting them is an edit.
 > (define t (fresh "Hello world.\n"))
 > (buffers:define-layer responses (travels) (sticky after))
 > (define r (buffers:layer t responses))
 > (buffers:add-span! r 1 6 'gpt)
 > (buffers:version t)
 1
-> (call-with-values (lambda () (buffers:edit-spans (car (buffers:edits-since t 0)))) list)
-(() ((responses (0 5 gpt))))
+> (define (spans-in piece)
+    (let ([b (fresh "\n")])
+      (buffers:insert! b 1 piece)
+      (buffers:spans (buffers:layer b responses) 0 (document:length (buffers:document b)))))
+> (let ([e (car (buffers:edits-since t 0))]) (list (spans-in (buffers:edit-removed e)) (spans-in (buffers:edit-inserted e))))
+(() ((1 6 gpt)))
 > (buffers:replace! t 6 6 "!")
 #<edit 2>
 > (buffers:replace! t 3 3 "y")
 #<edit 3>
 > (all-spans r)
 ((1 8 gpt))
-> (define piece (document:slice (buffers:document t) 2 5))
-> (define piece-spans (buffers:travelling-spans t 2 5))
-> piece-spans
-((responses (0 3 gpt)))
-> (call-with-values (lambda () (buffers:edit-spans (buffers:replace! t 2 5 ""))) list)
-(((responses (0 3 gpt))) ())
+> (define piece (buffers:piece t 2 5))
+> (list (buffers:piece? piece) (buffers:piece? "ell") piece (buffers:piece-length piece) (buffers:piece-text piece) (document:datums (buffers:piece-document piece)))
+(#t #f #<piece> 3 "eyl" ("eyl"))
+> (spans-in piece)
+((1 4 gpt))
+> (let ([e (buffers:replace! t 2 5 "")]) (list (spans-in (buffers:edit-removed e)) (spans-in (buffers:edit-inserted e))))
+(((1 4 gpt)) ())
 > (list (document:text (buffers:document t)) (all-spans r))
 ("Hlo! world.\n" ((1 5 gpt)))
-> (buffers:replace! t 9 9 piece piece-spans)
-#<edit 5>
-> (buffers:replace! t 9 9 "plain" '())
+> (buffers:insert! t 9 piece)
+12
+> (buffers:replace! t 9 9 "plain")
 #<edit 6>
 > (list (document:text (buffers:document t)) (all-spans r))
 ("Hlo! worplaineylld.\n" ((1 5 gpt) (14 17 gpt)))
 > (define (undo! edit)
     (let ([start (buffers:edit-start edit)])
-      (buffers:splice! t start (+ start (document:length (buffers:edit-inserted edit))) (buffers:edit-removed edit)
-        (call-with-values (lambda () (buffers:edit-spans edit)) (lambda (removed inserted) removed)))))
+      (buffers:splice! t start (+ start (buffers:piece-length (buffers:edit-inserted edit))) (buffers:edit-removed edit))))
 > (for-each undo! (reverse (buffers:edits-since t 3)))
 #<edit 9>
 > (list (document:text (buffers:document t)) (all-spans r))
 ("Heyllo! world.\n" ((1 8 gpt)))
 > (define a (buffers:anchor t 3))
 > (define spans-edit (begin (buffers:set-spans! r 2 4 '((2 4 x))) (car (reverse (buffers:edits-since t 0)))))
-> (list (all-spans r) (buffers:anchor-position a) (eq? (buffers:edit-removed spans-edit) (buffers:edit-inserted spans-edit)))
+> (list (all-spans r) (buffers:anchor-position a) (eq? (buffers:piece-document (buffers:edit-removed spans-edit)) (buffers:piece-document (buffers:edit-inserted spans-edit))))
 (((1 2 gpt) (2 4 x) (4 8 gpt)) 3 #t)
 > (undo! spans-edit)
 #<edit 11>
 > (list (all-spans r) (buffers:anchor-position a))
 (((1 8 gpt)) 3)
+; A piece's text gives each atom its kind's text, and a piece checks
+; its arguments.
+> (map (lambda (args) (guard (c [#t (list (condition-who c) (condition-message c))]) (apply buffers:piece args)))
+       (list (list "t" 1 2) (list t 3 1) (list t 0 99)))
+((buffers:piece "not a buffer") (buffers:piece "the start is after the end") (buffers:piece "not a position in the buffer"))
+> (map (lambda (f) (guard (c [#t (list (condition-who c) (condition-message c))]) (f "x")))
+       (list buffers:piece-document buffers:piece-length buffers:piece-text))
+((buffers:piece-document "not a piece") (buffers:piece-length "not a piece") (buffers:piece-text "not a piece"))
+; Inserting returns the position after what went in, which fitting can
+; put further than the content's length.
+> (define q (fresh '(md:doc () (md:para () "One.\n") (md:para () "Two.\n"))))
+> (define two (buffers:piece q 8 15))
+> (list (document:datums (buffers:piece-document two)) (buffers:piece-length two))
+(((md:para () "Two.\n")) 7)
+> (buffers:insert! q 3 two)
+12
+> (root q)
+(md:doc () (md:para () "O") (md:para () "Two.\n") (md:para () "ne.\n") (md:para () "Two.\n"))
+> (guard (c [#t (list (condition-who c) (condition-message c))]) (buffers:insert! q 99 "x"))
+(buffers:insert! "not a position in the buffer")
 ; Joining two paragraphs deletes the boundary between them and moves
 ; nothing, so anchors and every span in the second stay on its text.
 > (define m (fresh '(md:doc () (md:para () "Alpha.\n") (md:para () "Beta gamma.\n"))))
@@ -317,7 +341,8 @@
 ("Beta")
 > (define o (fresh '(md:doc () (md:para () "Alpha.\n") (lists:bulleted () (md:item () "Beta gamma.\n")))))
 > (buffers:add-span! (buffers:layer o responses) 12 16 'bold)
-> (buffers:replace! o 8 12 "X" '((responses (0 1 x))))
+> (define x-piece (let ([x (fresh "X\n")]) (buffers:add-span! (buffers:layer x responses) 1 2 'x) (buffers:piece x 1 2)))
+> (buffers:replace! o 8 12 x-piece)
 #<edit 2>
 > (map (lambda (s) (list (document:text (buffers:document o) (car s) (cadr s)) (caddr s))) (buffers:spans (buffers:layer o responses) 0 20))
 (("X" x) ("Beta" bold))
@@ -330,7 +355,7 @@
 > (document:datums slice)
 ((md:para () "two.\n") (md:para () "Thre"))
 > (define (texts b) (map (lambda (s) (list (document:text (buffers:document b) (car s) (cadr s)) (caddr s))) (buffers:spans (buffers:layer b responses) 0 (document:length (buffers:document b)))))
-> (buffers:replace! y 30 30 slice (buffers:travelling-spans y 6 17))
+> (buffers:replace! y 30 30 (buffers:piece y 6 17))
 #<edit 3>
 > (root y)
 (md:doc () (md:para () "One two.\n") (md:para () "Three four.\n") (md:para () "Fivtwo.\n") (md:para () "Three six seven.\n"))
@@ -426,7 +451,7 @@ mark-keys
 > (reconcile! '((md:heading ((key . top)) "Top\n") (md:para ((key . a)) "alpha!\n") (md:para ((key . b)) "beta\n")))
 > (root s)
 (md:doc () (md:heading ((key . top)) "Top\n") (md:para ((key . a)) "alpha!\n") (md:para ((key . b)) "beta\n"))
-> (map (lambda (e) (list (buffers:edit-start e) (document:datums (buffers:edit-removed e)) (document:datums (buffers:edit-inserted e))))
+> (map (lambda (e) (list (buffers:edit-start e) (document:datums (buffers:piece-document (buffers:edit-removed e))) (document:datums (buffers:piece-document (buffers:edit-inserted e)))))
        (buffers:edits-since s 0))
 ((1 () ((md:heading ((key . top)) "Top\n"))) (13 () ("!")))
 > (document:text (buffers:document s) (buffers:anchor-position in-b) (+ (buffers:anchor-position in-b) 2))
@@ -438,7 +463,7 @@ mark-keys
 > (define in-link (buffers:anchor g 9))
 > (define version-g (buffers:version g))
 > (buffers:reconcile! g (document:token (buffers:document g) 0) '((md:para ((key . a)) "Some " (md:link () "bold") " text\n")))
-> (map (lambda (e) (list (buffers:edit-start e) (document:datums (buffers:edit-removed e)) (document:datums (buffers:edit-inserted e))))
+> (map (lambda (e) (list (buffers:edit-start e) (document:datums (buffers:piece-document (buffers:edit-removed e))) (document:datums (buffers:piece-document (buffers:edit-inserted e)))))
        (buffers:edits-since g version-g))
 ((10 ((md:link ())) ((md:link () "ld") " text")))
 > (list (root g) (buffers:anchor-position in-link))
@@ -481,11 +506,45 @@ mark-keys
 #<edit 1>
 > (list (buffers:version e) (buffers:anchor-position e-anchor))
 (1 2)
-; Spans that content brings for a layer type the buffer has no layer of
-; make that layer, travelling.
-> (buffers:replace! e 1 1 "xy" '((brought (0 2 tag))))
+; Spans a piece brings for a layer type the buffer has no layer of make
+; that layer.
+> (define tagged (let ([x (fresh "xy\n")]) (buffers:add-span! (buffers:layer x responses) 1 3 'tag) (buffers:piece x 1 3)))
+> (buffers:replace! e 1 1 tagged)
 #<edit 2>
 > (map (lambda (l) (buffers:spans l 0 7)) (buffers:layers e))
 (((1 3 tag)))
-> (buffers:replace! e 1 1 "z" '((brought (0 2 tag))))
-! buffers:replace!: not a list of layer types and their spans with irritant ((brought (0 2 tag)))
+; An edit to a buffer inside with-silent-edits of it is silent: undo
+; records none, and it leaves modified? as it was. Edits to other
+; buffers there are not.
+> (define quiet (fresh "abc\n"))
+> (define other (fresh "xyz\n"))
+> (buffers:with-silent-edits quiet (buffers:replace! other 1 1 "o") (buffers:replace! quiet 1 1 "q") (values 'one 'two))
+one
+two
+> (list (buffers:modified? quiet) (buffers:modified? other) (map buffers:edit-silent? (buffers:edits-since quiet 0)) (map buffers:edit-silent? (buffers:edits-since other 0)))
+(#f #t (#t) (#f))
+> (buffers:replace! quiet 1 1 "Q")
+#<edit 2>
+> (buffers:with-silent-edits quiet (buffers:replace! quiet 1 1 "q"))
+#<edit 3>
+> (list (buffers:modified? quiet) (buffers:save-stamp quiet))
+(#t 1)
+; A task that pauses inside the body is still inside it.
+> (spawn-task (lambda () (buffers:with-silent-edits quiet (sleep-for 0.01) (buffers:replace! quiet 1 1 "p"))))
+#<task>
+> (sleep-for 0.05)
+> (map buffers:edit-silent? (buffers:edits-since quiet 3))
+(#t)
+; A buffer is silent when every edit to it is; one made with an
+; internal name starts silent.
+> (define internal (buffers:make " internal" "\n"))
+> (list (buffers:silent? quiet) (buffers:silent? internal))
+(#f #t)
+> (buffers:set-silent! quiet #t)
+> (buffers:edit-silent? (buffers:replace! quiet 1 1 "s"))
+#t
+> (map (lambda (thunk) (guard (c [#t (list (condition-who c) (condition-message c))]) (thunk)))
+    (list (lambda () (buffers:silent? 'x)) (lambda () (buffers:set-silent! 'x #t))
+          (lambda () (buffers:call-with-silent-edits 'x void)) (lambda () (buffers:call-with-silent-edits quiet 'x))
+          (lambda () (buffers:edit-silent? 'x))))
+((buffers:silent? "not a buffer") (buffers:set-silent! "not a buffer") (buffers:call-with-silent-edits "not a buffer") (buffers:call-with-silent-edits "not a procedure") (buffers:edit-silent? "not an edit"))

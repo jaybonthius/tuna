@@ -5,13 +5,13 @@
 > (raised (lambda () (kill-ring:rotate! 1)))
 (kill-ring:rotate! "the kill ring is empty")
 > (map (lambda (v) (raised (lambda () (kill-ring:push! v)))) (list '() "x" (list 1) (cons "a" "b") (list "a" 'b)))
-((kill-ring:push! "not a non-empty list of strings and pieces") (kill-ring:push! "not a non-empty list of strings and pieces") (kill-ring:push! "not a non-empty list of strings and pieces") (kill-ring:push! "not a non-empty list of strings and pieces") (kill-ring:push! "not a non-empty list of strings and pieces"))
+((kill-ring:push! "not a non-empty list of strings, pieces and kills") (kill-ring:push! "not a non-empty list of strings, pieces and kills") (kill-ring:push! "not a non-empty list of strings, pieces and kills") (kill-ring:push! "not a non-empty list of strings, pieces and kills") (kill-ring:push! "not a non-empty list of strings, pieces and kills"))
 > (raised (lambda () (kill-ring:append! '())))
-(kill-ring:append! "not a non-empty list of strings and pieces")
+(kill-ring:append! "not a non-empty list of strings, pieces and kills")
 > (raised (lambda () (kill-ring:prepend! (list #f))))
-(kill-ring:prepend! "not a non-empty list of strings and pieces")
+(kill-ring:prepend! "not a non-empty list of strings, pieces and kills")
 > (raised (lambda () (kill-ring:text '())))
-(kill-ring:text "not a non-empty list of strings and pieces")
+(kill-ring:text "not a non-empty list of strings and kills")
 > (for-each (lambda (s) (kill-ring:push! (list s))) '("a" "b" "c"))
 > (list (kill-ring:entries) (kill-ring:current) (take-pushed!))
 ((("c") ("b") ("a")) ("c") ("a" "b" "c"))
@@ -66,7 +66,7 @@
 > (kill-ring:push! (list "Hello"))
 > (kill-ring:rotate! 1)
 ("Hello")
-> (kill-ring:push! (list (kill-ring:piece b 1 6)))
+> (kill-ring:push! (list (buffers:piece b 1 6)))
 > (list (kill-ring:current) (length (kill-ring:entries)) (take-pushed!))
 (("Hello") 1 ("Hello" "Hello"))
 > (kill-ring:push! (list "Hello" "x"))
@@ -101,16 +101,13 @@
 ("ab" "cd\n12" "cdef\n1234" "<cdef\n>1234" "single" "one single")
 > (kill-ring:text (kill-ring:current))
 "one single"
-; Pieces: a buffer's range with its nodes and travelling spans.
-> (map (lambda (args) (raised (lambda () (apply kill-ring:piece args))))
-    (list (list "b" 1 2) (list b 3 2) (list b -1 2) (list b 1 15) (list b 1.0 2)))
-((kill-ring:piece "not a buffer") (kill-ring:piece "not a range of the buffer") (kill-ring:piece "not a range of the buffer") (kill-ring:piece "not a range of the buffer") (kill-ring:piece "not a range of the buffer"))
-> (define p (kill-ring:piece b 1 6))
-> (list (kill-ring:piece? p) (kill-ring:piece? "Hello") (kill-ring:piece? (list p)) p)
-(#t #f #f #<piece>)
+; Yanks take a string, a piece of a buffer, or a kill the ring holds.
+> (define p (buffers:piece b 1 6))
 > (map (lambda (args) (raised (lambda () (apply kill-ring:insert! args))))
     (list (list "b" 1 p) (list b -1 p) (list b 1 5) (list b 1 (list p)) (list b 99 "x")))
-((kill-ring:insert! "not a buffer") (kill-ring:insert! "not a position") (kill-ring:insert! "not a string or a piece") (kill-ring:insert! "not a string or a piece") (kill-ring:insert! "not a position in the buffer"))
+((kill-ring:insert! "not a buffer") (kill-ring:insert! "not a position") (kill-ring:insert! "not a string, a piece or a kill") (kill-ring:insert! "not a string, a piece or a kill") (kill-ring:insert! "not a position in the buffer"))
+> (map (lambda (entry) (raised (lambda () (kill-ring:text entry)))) (list (list p) '() "x"))
+((kill-ring:text "not a non-empty list of strings and kills") (kill-ring:text "not a non-empty list of strings and kills") (kill-ring:text "not a non-empty list of strings and kills"))
 > (kill-ring:insert! b 12 p)
 17
 > (contents b)
@@ -123,8 +120,8 @@
 ; position after it is where its text ends.
 > (import (md))
 > (define m (buffers:make "m" (md:doc '() (md:para '() "Alpha " (md:link '() "beta") " gamma.\n") (md:para '() "Two three.\n"))))
-> (define across (kill-ring:piece m 4 26))
-> (kill-ring:text (list across))
+> (define across (buffers:piece m 4 26))
+> (buffers:piece-text across)
 "pha beta gamma.\nTw"
 > (define before (root m))
 > (buffers:replace! m 4 26 "")
@@ -143,8 +140,8 @@
 "pha beta gamma.\nTw"
 ; A whole paragraph put inside another splits it; the position after is
 ; at the start of the text it split off.
-> (define para (let ([l (document:length (buffers:document m))]) (kill-ring:piece m (- l 14) (- l 1))))
-> (kill-ring:text (list para))
+> (define para (let ([l (document:length (buffers:document m))]) (buffers:piece m (- l 14) (- l 1))))
+> (buffers:piece-text para)
 "Two three.\n"
 > (define n (buffers:make "n" (md:doc '() (md:para '() "abcd\n"))))
 > (define after (kill-ring:insert! n 4 para))
@@ -158,7 +155,7 @@
 > (define t (buffers:make "t" "Ask. Answer here. End.\n"))
 > (buffers:add-span! (buffers:layer t responses) 6 18 'gpt)
 > (buffers:add-span! (buffers:layer t marks) 6 18 'mark)
-> (define answer (kill-ring:piece t 6 18))
+> (define answer (buffers:piece t 6 18))
 > (buffers:replace! t 6 18 "")
 #<edit 2>
 > (list (contents t) (spans-of t responses) (spans-of t marks))
@@ -175,9 +172,9 @@
 ; and a yank puts each back in turn with its spans.
 > (define w (buffers:make "w" (md:doc '() (md:para '() "One two.\n") (md:para '() "Three four.\n"))))
 > (set! pushed '())
-> (kill-ring:push! (list (kill-ring:piece w 6 17)))
+> (kill-ring:push! (list (buffers:piece w 6 17)))
 > (kill-ring:append! (list "+"))
-> (kill-ring:append! (list (kill-ring:piece t 11 23)))
+> (kill-ring:append! (list (buffers:piece t 11 23)))
 > (kill-ring:prepend! (list "<"))
 > (take-pushed!)
 ("two.\nThre" "two.\nThre+" "two.\nThre+Answer here." "<two.\nThre+Answer here.")
@@ -192,15 +189,15 @@
 "<two.\nThre+Answer here.!"
 ; A part refused after others went in takes them back out: the buffer
 ; and its spans are as they were.
-> (define (one-line? node edit) (not (memv #\newline (string->list (document:text (buffers:edit-inserted edit))))))
+> (define (one-line? node edit) (not (memv #\newline (string->list (document:text (buffers:piece-document (buffers:edit-inserted edit)))))))
 > (buffers:define-kind field (consent one-line?))
 > (buffers:define-kind form (content nodes))
 > (define f (buffers:make "f" '(form () (field () "xy"))))
 > (buffers:add-span! (buffers:layer f responses) 3 4 'gpt)
-> (define three-parts (car (begin (kill-ring:push! (list "abc")) (kill-ring:append! (list (kill-ring:piece t 11 23))) (kill-ring:append! (list (kill-ring:piece w 6 17))) (kill-ring:current))))
+> (define three-parts (car (begin (kill-ring:push! (list "abc")) (kill-ring:append! (list (buffers:piece t 11 23))) (kill-ring:append! (list (buffers:piece w 6 17))) (kill-ring:current))))
 > (list (raised (lambda () (kill-ring:insert! f 3 three-parts))) (root f) (spans-of f responses) (buffers:version f))
-((buffers:replace! "the node refuses the edit") (form () (field () "xy")) (("y" gpt)) 5)
-> (kill-ring:insert! f 3 (car (begin (kill-ring:push! (list "abc")) (kill-ring:append! (list (kill-ring:piece t 11 23))) (kill-ring:current))))
+((buffers:insert! "the node refuses the edit") (form () (field () "xy")) (("y" gpt)) 5)
+> (kill-ring:insert! f 3 (car (begin (kill-ring:push! (list "abc")) (kill-ring:append! (list (buffers:piece t 11 23))) (kill-ring:current))))
 18
 > (list (root f) (spans-of f responses))
 ((form () (field () "xabcAnswer here.y")) (("Answer here.y" gpt)))
@@ -208,12 +205,12 @@
 ; to its procedure; otherwise, or once the entry goes, to replace!.
 > (define calls '())
 > (define (note-yank buffer position piece)
-    (set! calls (cons (list (buffers:name buffer) position (kill-ring:text (list piece))) calls))
+    (set! calls (cons (list (buffers:name buffer) position (buffers:piece-text piece)) calls))
     42)
 > (table-set! kill-ring:yankers 'md:image note-yank)
 > (table-set! kill-ring:yankers 'md:para note-yank)
 > (define v (buffers:make "v" (md:doc '() (md:para '() "Pic " (md:image '((src . "a.png"))) ".\n") (md:para '() "Last.\n"))))
-> (define (yank-range! start end) (kill-ring:insert! u 2 (kill-ring:piece v start end)))
+> (define (yank-range! start end) (kill-ring:insert! u 2 (buffers:piece v start end)))
 > (let* ([a (yank-range! 6 7)] [b (yank-range! 1 10)] [c (yank-range! 1 5)] [d (yank-range! 10 18)])
     (list a b c d (reverse calls) (root u)))
 (42 42 42 42 (("u" 2 "") ("u" 2 "Pic .\n") ("u" 2 "Pic") ("u" 2 "Last.\n")) (md:doc () (md:para () "x<two.\n") (md:para () "Thre+Answer here.y\n")))
@@ -222,13 +219,13 @@
 > (table-remove! kill-ring:yankers 'md:para)
 > (yank-range! 10 18)
 10
-> (raised (lambda () (kill-ring:insert! u 999 (kill-ring:piece v 1 10))))
+> (raised (lambda () (kill-ring:insert! u 999 (buffers:piece v 1 10))))
 (kill-ring:insert! "not a position in the buffer")
 > (list (root u) (length calls))
 ((md:doc () (md:para () "Last.\n") (md:para () "Last.\nPic " #(md:image ((src . "a.png"))) ".\n") (md:para () "Lax<two.\n") (md:para () "Thre+Answer here.y\n")) 4)
 ; The options, hook and table are documented, and the configuration's
 ; setting is in effect beneath the REPL's.
 > (map documentation (list kill-ring:max kill-ring:skip-duplicates kill-ring:after-push kill-ring:yankers))
-("How many entries the ring keeps; pushing one more drops the oldest." "When true, pushing an entry whose text equals the newest entry's only moves the yank pointer to the newest." "Called with the newest entry after each push!, append! and prepend!." "Maps a node kind's name to a procedure of a buffer, a position and a piece that yanks a piece whose top node has that kind, returning the position after what it inserted.")
+("How many entries the ring keeps; pushing one more drops the oldest." "When true, pushing an entry whose text equals the newest entry's only moves the yank pointer to the newest." "Called with the newest entry after each push!, append! and prepend!." "Maps a node kind's name to a procedure of a buffer, a position and a buffers:piece that yanks a piece whose top node has that kind, returning the position after what it inserted.")
 > (option-settings kill-ring:skip-duplicates)
 (((repl) #f) ((init) #t))

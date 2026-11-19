@@ -54,13 +54,25 @@
       (dynamic-wind (lambda () (set! result (thunk))) void void)
       result))
 
+  ;; An edit's content is a piece, or a document when the edit was read
+  ;; back from records, which hold no spans; buffers:splice! takes both.
+  ;; Each step of undo or redo keeps the piece it takes out of the buffer
+  ;; as the content to put back, as Emacs keeps deleted text with its
+  ;; properties, so spans set silently since the edit was made come back
+  ;; with redo.
   (define-record-type edit
     (sealed #t)
-    (fields start removed inserted removed-spans inserted-spans))
+    (fields (mutable start) (mutable removed) (mutable inserted)))
+
+  (define (content-length c)
+    (if (buffers:piece? c) (buffers:piece-length c) (document:length c)))
+
+  (define (content-document c)
+    (if (buffers:piece? c) (buffers:piece-document c) c))
 
   (define-record-type state
     (sealed #t)
-    (fields id (mutable parent) (mutable edits-newest-first) (mutable count) (mutable time) cursors
+    (fields id (mutable parent) (mutable edits-newest-first) (mutable count) (mutable time) (mutable cursors)
             (mutable children) (mutable left) (mutable length) (mutable size)
             (mutable command) (mutable run) (mutable joins) (mutable written-count) (mutable queued?)))
 
@@ -98,10 +110,10 @@
       s))
 
   (define (edit-delta e)
-    (fx- (document:length (edit-inserted e)) (document:length (edit-removed e))))
+    (fx- (content-length (edit-inserted e)) (content-length (edit-removed e))))
 
   (define (edit-size e)
-    (fx+ 32 (fx+ (document:length (edit-removed e)) (document:length (edit-inserted e)))))
+    (fx+ 32 (fx+ (content-length (edit-removed e)) (content-length (edit-inserted e)))))
 
   (define (push-edit! h s e)
     (let ([size (edit-size e)])
@@ -126,7 +138,7 @@
     (let loop ([n length] [es edits])
       (or (null? es)
           (let ([e (car es)])
-            (and (fx<= (fx+ (edit-start e) (document:length (edit-removed e))) n)
+            (and (fx<= (fx+ (edit-start e) (content-length (edit-removed e))) n)
                  (loop (fx+ n (edit-delta e)) (cdr es)))))))
 
   (define (drop-subtree! h s)
@@ -189,7 +201,7 @@
     (and (vector? v) (fx= (vector-length v) 3)
          (let ([start (vector-ref v 0)] [removed (vector-ref v 1)] [inserted (vector-ref v 2)])
            (and (fixnum? start) (fx>= start 0) (document? removed) (document? inserted)
-                (make-edit start removed inserted #f #f)))))
+                (make-edit start removed inserted)))))
 
   (define (vector-edits vs)
     (and (list? vs)
@@ -254,7 +266,7 @@
               [else (values h #f)])))))
 
   (define (edit-vector e)
-    (vector (edit-start e) (edit-removed e) (edit-inserted e)))
+    (vector (edit-start e) (content-document (edit-removed e)) (content-document (edit-inserted e))))
 
   (define (group-record s)
     (cons* 'group (state-id s) (state-id (state-parent s)) (state-time s) (state-cursors s)
@@ -367,13 +379,14 @@
 
   (define-record-type hold
     (sealed #t)
-    (fields history task open count))
+    (fields history task open edits))
 
   (define (take-hold! h)
     (without-quits
       (lambda ()
         (when (null? (history-holds h)) (close-group! h))
-        (let* ([o (history-open h)] [hold (make-hold h (current-task) o (if o (state-count o) 0))])
+        (let* ([o (history-open h)]
+               [hold (make-hold h (current-task) o (if o (state-edits-newest-first o) '()))])
           (history-holds-set! h (cons hold (history-holds h)))
           hold))))
 
@@ -413,27 +426,6 @@
 
   (define (limit-of b) (buffers:with-buffer b (limit)))
 
-  (define quieted (make-weak-eq-hashtable))
-
-  ;; As in Emacs, a buffer whose name starts with a space keeps no history
-  ;; unless its plugin turns it back on. The value is set as this module's
-  ;; own local value: a plugin that sets the option locally imports this
-  ;; module, so it comes later in the order of changes and its value wins.
-  ;; The name is read once, but the value is set again in each new scope
-  ;; the buffer gets, since setting a major mode drops local values and
-  ;; Emacs keeps such a buffer's undo off across it.
-  (define (quiet-internal! b)
-    (let ([quiet-scope (eq-hashtable-ref quieted b 'unseen)])
-      (when (and quiet-scope (buffers:live? b))
-        (let ([scope (buffers:with-buffer b (current-scope))])
-          (cond
-            [(eq? quiet-scope scope) (void)]
-            [(or (not (eq? quiet-scope 'unseen)) (buffers:internal-name? (buffers:name b)))
-             (eq-hashtable-set! quieted b scope)
-             (as-module (this-module)
-               (buffers:with-buffer b (set-option-local! limit 0)))]
-            [else (eq-hashtable-set! quieted b #f)])))))
-
   (define (begin-history! b length version)
     (let ([h (new-history 0 length (now))])
       (history-buffer-set! h b)
@@ -446,7 +438,6 @@
         (let ([waiting (eq-hashtable-ref attaching b #f)])
           (cond
             [(not waiting)
-             (quiet-internal! b)
              (begin-history! b (document:length (buffers:document b)) (buffers:version b))]
             [(current-task)
              (suspend (lambda (resume) (set-box! waiting (cons resume (unbox waiting)))))
@@ -477,10 +468,10 @@
           (set! command-points points)))))
 
   (define (point-before p e)
-    (let* ([start (edit-start e)] [end (fx+ start (document:length (edit-inserted e)))])
+    (let* ([start (edit-start e)] [end (fx+ start (content-length (edit-inserted e)))])
       (cond
         [(fx<= p start) p]
-        [(fx>= p end) (fx+ (fx- p end) (fx+ start (document:length (edit-removed e))))]
+        [(fx>= p end) (fx+ (fx- p end) (fx+ start (content-length (edit-removed e))))]
         [else start])))
 
   (define (cursors-before b e)
@@ -536,9 +527,102 @@
       (mark-dirty! h)))
 
   (define (edit-of e)
-    (let-values ([(removed-spans inserted-spans) (buffers:edit-spans e)])
-      (make-edit (buffers:edit-start e) (buffers:edit-removed e) (buffers:edit-inserted e)
-                 removed-spans inserted-spans)))
+    (make-edit (buffers:edit-start e) (buffers:edit-removed e) (buffers:edit-inserted e)))
+
+  (define (map-point p start removed inserted)
+    (cond
+      [(fx< p start) p]
+      [(fx>= p (fx+ start removed)) (fx+ p (fx- inserted removed))]
+      [else start]))
+
+  (define (map-cursors! x start removed inserted)
+    (unless (null? (state-cursors x))
+      (state-cursors-set! x (map (lambda (p) (map-point p start removed inserted)) (state-cursors x)))))
+
+  (define (drop-edits! h x dropped)
+    (for-each
+      (lambda (e)
+        (state-count-set! x (fx- (state-count x) 1))
+        (state-size-set! x (fx- (state-size x) (edit-size e)))
+        (history-size-set! h (- (history-size h) (edit-size e))))
+      dropped)
+    (state-edits-newest-first-set! x (remp (lambda (e) (memq e dropped)) (state-edits-newest-first x))))
+
+  ;; An edit inside the text a silent edit removes goes with it, since no
+  ;; later state holds that text to undo.
+  (define (carry! h x start removed inserted back?)
+    (let loop ([es (if back? (state-edits-newest-first x) (reverse (state-edits-newest-first x)))]
+               [start start] [removed removed] [dropped '()])
+      (if (null? es)
+          (begin
+            (unless (null? dropped) (drop-edits! h x dropped))
+            (values start removed))
+          (let* ([e (car es)] [at (edit-start e)]
+                 [near (content-length (if back? (edit-inserted e) (edit-removed e)))]
+                 [far (content-length (if back? (edit-removed e) (edit-inserted e)))])
+            (cond
+              [(fx<= (fx+ start removed) at)
+               (edit-start-set! e (fx+ at (fx- inserted removed)))
+               (loop (cdr es) start removed dropped)]
+              [(fx>= start (fx+ at near)) (loop (cdr es) (fx+ start (fx- far near)) removed dropped)]
+              [(and (fx<= start at) (fx<= (fx+ at near) (fx+ start removed)))
+               (loop (cdr es) start (fx+ (fx- removed near) far) (cons e dropped))]
+              [else (values #f #f)])))))
+
+  ;; A group left with no edits is no step of undo, so its children
+  ;; become its parent's.
+  (define (splice-out! h x)
+    (let ([p (state-parent x)] [children (state-children x)])
+      (for-each (lambda (k) (state-parent-set! k p)) children)
+      (state-children-set! p (fold-right (lambda (k acc) (if (eq? k x) (append children acc) (cons k acc)))
+                                         '() (state-children p)))
+      (when (eq? (state-left p) x) (state-left-set! p (redo-child x)))
+      (when (eq? (history-current h) x) (history-current-set! h p))
+      (when (eq? (history-open h) x) (history-open-set! h #f))
+      (when (eq? (history-stamped h) x) (history-stamped-set! h p))
+      (hashtable-delete! (history-states h) (state-id x))))
+
+  (define (emptied? x) (and (state-parent x) (fx= (state-count x) 0)))
+
+  (define (map-branch! h x start removed inserted)
+    (map-cursors! x start removed inserted)
+    (let-values ([(start removed*) (carry! h x start removed inserted #f)])
+      (if start
+          (begin
+            (state-length-set! x (fx+ (state-length x) (fx- inserted removed*)))
+            (for-each (lambda (k) (map-branch! h k start removed* inserted)) (state-children x))
+            (when (emptied? x) (splice-out! h x)))
+          (prune! h x))))
+
+  ;; A silent edit is not history, yet every state's text holds the text
+  ;; it changed. A group whose edits it cuts into cannot be undone past
+  ;; it: on the path that group's state becomes the root, and a branch is
+  ;; cut there. A group made the root is closed, since undo never takes
+  ;; back an edit pushed onto the root. Records already taken name the
+  ;; old positions, so the next take is whole.
+  (define (map-silent! h e)
+    (let ([inserted (buffers:piece-length (buffers:edit-inserted e))])
+      (let up ([x (history-current h)] [start (buffers:edit-start e)]
+               [removed (buffers:piece-length (buffers:edit-removed e))] [from #f] [emptied '()])
+        (state-length-set! x (fx+ (state-length x) (fx- inserted removed)))
+        (for-each (lambda (k) (unless (eq? k from) (map-branch! h k start removed inserted))) (state-children x))
+        (if (state-parent x)
+            (let-values ([(before removed*) (carry! h x start removed inserted #t)])
+              (cond
+                [before
+                 (map-cursors! x before removed* inserted)
+                 (up (state-parent x) before removed* x (if (emptied? x) (cons x emptied) emptied))]
+                [else
+                 (re-root! h x)
+                 (when (eq? (history-open h) x) (history-open-set! h #f))
+                 (for-each (lambda (x) (splice-out! h x)) emptied)]))
+            (for-each (lambda (x) (splice-out! h x)) emptied)))
+      (take-whole! h)))
+
+  (define (note-edit-of! h b e version)
+    (if (buffers:edit-silent? e)
+        (when (buffers:edit-moves? e) (map-silent! h e))
+        (add-edit! h b (edit-of e) version)))
 
   (define applying #f)
 
@@ -547,25 +631,25 @@
 
   (define (note-edit! b e)
     (unless (eq? b applying)
-      (quiet-internal! b)
       (let ([h (eq-hashtable-ref histories b #f)])
         (cond
+          [(and (not h) (buffers:edit-silent? e)) (void)]
           [(eqv? (limit) 0) (when h (drop! h))]
           [(eq-hashtable-contains? attaching b) (void)]
           [else
            (let ([version (buffers:edit-version e)]
                  [h (or h (begin-history! b (fx- (document:length (buffers:document b))
-                                                 (fx- (document:length (buffers:edit-inserted e))
-                                                      (document:length (buffers:edit-removed e))))
+                                                 (fx- (buffers:piece-length (buffers:edit-inserted e))
+                                                      (buffers:piece-length (buffers:edit-removed e))))
                                           (fx- (buffers:edit-version e) 1)))])
              (if (fx= version (fx+ (history-recorded-version h) 1))
                  (begin
-                   (add-edit! h b (edit-of e) version)
+                   (note-edit-of! h b e version)
                    (history-recorded-version-set! h version))
                  (catch-up! h)))]))))
 
   (define (add-edits! h b edits)
-    (for-each (lambda (e) (add-edit! h b (edit-of e) (buffers:edit-version e))) edits))
+    (for-each (lambda (e) (note-edit-of! h b e (buffers:edit-version e))) edits))
 
   ;; A quit that lands as the buffer calls its after-edit entries, before
   ;; this module's starts, skips the record; the buffer keeps its recent
@@ -610,18 +694,26 @@
 
   (define-record-type step
     (sealed #t)
-    (fields start out in spans))
+    (fields edit undo?))
 
-  (define (undo-steps s)
-    (map (lambda (e) (make-step (edit-start e) (edit-inserted e) (edit-removed e) (edit-removed-spans e)))
-         (state-edits-newest-first s)))
+  (define (step-start step) (edit-start (step-edit step)))
+
+  (define (step-out step)
+    (if (step-undo? step) (edit-inserted (step-edit step)) (edit-removed (step-edit step))))
+
+  (define (step-in step)
+    (if (step-undo? step) (edit-removed (step-edit step)) (edit-inserted (step-edit step))))
+
+  (define (undo-steps edits-newest-first)
+    (map (lambda (e) (make-step e #t)) edits-newest-first))
 
   (define (redo-steps s)
-    (map (lambda (e) (make-step (edit-start e) (edit-removed e) (edit-inserted e) (edit-inserted-spans e)))
-         (reverse (state-edits-newest-first s))))
+    (map (lambda (e) (make-step e #f)) (reverse (state-edits-newest-first s))))
 
   (define (move-steps move)
-    (if (eq? (car move) 'undo) (undo-steps (cdr move)) (redo-steps (cdr move))))
+    (if (eq? (car move) 'undo)
+        (undo-steps (state-edits-newest-first (cdr move)))
+        (redo-steps (cdr move))))
 
   (define (moves-steps moves) (apply append (map move-steps moves)))
 
@@ -637,10 +729,10 @@
   (define (play doc steps who)
     (fold-left
       (lambda (doc step)
-        (let ([start (step-start step)] [out (step-out step)])
+        (let ([start (step-start step)] [out (content-document (step-out step))])
           (unless (holds? doc start out) (stale who))
           (guard (c [(and (assertion-violation? c) (not (quit-condition? c))) (stale who)])
-            (document:replace doc start (fx+ start (document:length out)) (step-in step)))))
+            (document:replace doc start (fx+ start (document:length out)) (content-document (step-in step))))))
       doc steps))
 
   ;; A quit can leave the buffer's hook call after the splice is made,
@@ -652,21 +744,24 @@
       (set! applying b)
       (let loop ([steps steps] [n 0])
         (if (null? steps)
-            (begin (set! applying outer) (values #f #f))
+            (begin (set! applying outer) (values #f #f '()))
             (let* ([step (car steps)] [start (step-start step)]
-                   [end (fx+ start (document:length (step-out step)))] [spans (step-spans step)]
+                   [end (fx+ start (content-length (step-out step)))]
                    [version (fx+ (buffers:version b) 1)]
                    [raised (guard (c [#t c])
-                             (if spans
-                                 (buffers:splice! b start end (step-in step) spans)
-                                 (buffers:splice! b start end (step-in step)))
+                             (let ([out (buffers:edit-removed (buffers:splice! b start end (step-in step)))])
+                               (if (step-undo? step)
+                                   (edit-inserted-set! (step-edit step) out)
+                                   (edit-removed-set! (step-edit step) out)))
                              #f)]
                    [made? (fx>= (buffers:version b) version)]
                    [n (if made? (fx+ n 1) n)])
               (when made? (history-recorded-version-set! h version))
               (if (and (not raised) (fx= (buffers:version b) version))
                   (loop (cdr steps) n)
-                  (begin (set! applying outer) (values n raised))))))))
+                  (begin
+                    (set! applying outer)
+                    (values n raised (if made? (or (buffers:edits-since b version) '()) '())))))))))
 
   ;; A move cut short stops where it is: the steps spliced become a state
   ;; of their own and edits made meanwhile a group after it, so the
@@ -674,20 +769,39 @@
   (define (apply-moves! h b moves)
     (let loop ([moves moves])
       (if (null? moves)
-          (values #t #f)
+          (values #t #f '() #f)
           (let* ([move (car moves)] [s (cdr move)] [undo? (eq? (car move) 'undo)] [n (state-count s)])
-            (let-values ([(spliced raised) (splice-steps! h b (move-steps move))])
+            (let-values ([(spliced raised others) (splice-steps! h b (move-steps move))])
               (define (reach! child)
                 (state-left-set! (state-parent child) child)
                 (history-current-set! h (if (and undo? (eq? child s)) (state-parent s) child)))
               (cond
                 [(not spliced) (reach! s) (loop (cdr moves))]
                 [else
-                 (cond
-                   [(fx= spliced n) (reach! s)]
-                   [(fx> spliced 0) (reach! (split-state! h s (if undo? spliced (fx- n spliced))))])
-                 (close-group! h)
-                 (values (and (not raised) (fx= spliced n) (null? (cdr moves))) raised)]))))))
+                 (let ([split (and (fx< 0 spliced n) (split-state! h s (if undo? spliced (fx- n spliced))))])
+                   (reach! (or split s))
+                   (close-group! h)
+                   (values (and (not raised) (fx= spliced n) (null? (cdr moves))) raised others split))]))))))
+
+  (define (rejoin! h s parts)
+    (let ([p (state-parent s)])
+      (when (and p (memq p parts) (state-parent p) (null? (cdr (state-children p))))
+        (let ([q (state-parent p)])
+          (state-edits-newest-first-set! s (append (state-edits-newest-first s) (state-edits-newest-first p)))
+          (state-count-set! s (fx+ (state-count s) (state-count p)))
+          (state-size-set! s (fx+ (state-size s) (state-size p)))
+          (state-cursors-set! s (state-cursors p))
+          (state-parent-set! s q)
+          (state-children-set! q (map (lambda (k) (if (eq? k p) s k)) (state-children q)))
+          (when (eq? (state-left q) p) (state-left-set! q s))
+          (when (eq? (history-current h) p) (history-current-set! h s))
+          (when (eq? (history-stamped h) p) (history-stamped-set! h s))
+          (hashtable-delete! (history-states h) (state-id p))
+          (rejoin! h s parts)))))
+
+  (define (move-target moves)
+    (let ([last (car (last-pair moves))])
+      (if (eq? (car last) 'undo) (state-parent (cdr last)) (cdr last))))
 
   ;; The whole path is played on the document first, so a step that does
   ;; not fit changes nothing. Undo's own moves are changes for the first
@@ -695,17 +809,31 @@
   ;; marks the buffer unmodified again.
   (define (move! h b moves who)
     (unless (null? moves)
-      (play (buffers:document b) (moves-steps moves) who)
-      (let ([raised #f])
-        (unless (without-quits
-                  (lambda ()
-                    (unless (buffers:modified? b) (stamp! h b))
-                    (let-values ([(whole? c) (apply-moves! h b moves)])
-                      (set! raised c)
-                      (queue! h (list 'at (history-current h)))
-                      (mark-dirty! h)
-                      whole?)))
-          (if raised (raise raised) (stale who))))
+      (let ([target (move-target moves)] [parts '()])
+        (let retry ([rest moves])
+          (play (buffers:document b) (moves-steps rest) who)
+          (let ([raised #f] [others '()])
+            (unless (without-quits
+                      (lambda ()
+                        (unless (buffers:modified? b) (stamp! h b))
+                        (let-values ([(whole? c edits split) (apply-moves! h b rest)])
+                          (set! raised c)
+                          (set! others edits)
+                          (when split (set! parts (cons split parts)))
+                          (queue! h (list 'at (history-current h)))
+                          (mark-dirty! h)
+                          whole?)))
+              (cond
+                [raised (raise raised)]
+                [(and (pair? others) (for-all buffers:edit-silent? others) (live? h target))
+                 (let ([rest (path-moves (history-current h) target)])
+                   (unless (null? rest) (retry rest)))]
+                [else (stale who)]))))
+        (unless (null? parts)
+          (without-quits
+            (lambda ()
+              (for-each (lambda (move) (when (live? h (cdr move)) (rejoin! h (cdr move) parts))) moves)
+              (take-whole! h)))))
       (mark-if-saved! h b)))
 
   (define (mark-if-saved! h b)
@@ -718,7 +846,7 @@
 
   (define (group-end s)
     (let ([e (car (state-edits-newest-first s))])
-      (fx+ (edit-start e) (document:length (edit-inserted e)))))
+      (fx+ (edit-start e) (content-length (edit-inserted e)))))
 
   (define (ancestors s)
     (let loop ([s s] [acc '()])
@@ -756,30 +884,47 @@
         (for-each (lambda (c) (views:set-cursor! c (clamp b p) (views:cursor-mark c))) (views:cursors v)))))
 
   ;; A nested body that raises takes back only the edits made since it
-  ;; took its hold. A condition that stops the splices is dropped, since
-  ;; the body's own goes on.
+  ;; took its hold. The hold keeps the group's edits rather than their
+  ;; count, since a silent edit can take edits of the group with it. A
+  ;; condition that stops the splices is dropped, since the body's own
+  ;; goes on.
   (define (cancel-group! hold b)
     (let* ([h (hold-history hold)] [o (history-open h)])
       (when (and o (installed? h) (eq? o (history-current h)))
-        (let ([since (if (eq? (hold-open hold) o) (hold-count hold) 0)])
-          (when (fx> (state-count o) since)
+        (let ([kept (if (eq? (hold-open hold) o) (hold-edits hold) '())])
+          (define (cancelled)
+            (let loop ([es (state-edits-newest-first o)])
+              (if (or (null? es) (memq (car es) kept)) '() (cons (car es) (loop (cdr es))))))
+          (define (end-group!)
+            (cond
+              [(fx> (state-count o) 0)
+               (let ([written (state-written-count o)])
+                 (when (and written (fx> written (state-count o)))
+                   (take-whole! h)))]
+              [(state-parent o)
+               => (lambda (p)
+                    (history-open-set! h #f)
+                    (history-current-set! h p)
+                    (prune! h o)
+                    (queue! h (list 'at p))
+                    (queue! h (list 'prune o)))]))
+          (unless (null? (cancelled))
             (without-quits
               (lambda ()
-                (let*-values ([(steps) (list-head (undo-steps o) (fx- (state-count o) since))]
-                              [(spliced raised) (splice-steps! h b steps)])
-                  (drop-newest-edits! h o (or spliced (length steps)))
-                  (if (fx> (state-count o) 0)
-                      (let ([written (state-written-count o)])
-                        (when (and written (fx> written (state-count o)))
-                          (take-whole! h)))
-                      (let ([p (state-parent o)])
-                        (history-open-set! h #f)
-                        (history-current-set! h p)
-                        (prune! h o)
-                        (queue! h (list 'at p))
-                        (queue! h (list 'prune o))))
-                  (when spliced (catch-up! h))
-                  (mark-dirty! h))))
+                (let splice ([edits (cancelled)])
+                  (let-values ([(spliced raised others) (splice-steps! h b (undo-steps edits))])
+                    (drop-newest-edits! h o (or spliced (length edits)))
+                    (cond
+                      [(and (not raised) (pair? others) (for-all buffers:edit-silent? others)
+                            (fx> (state-count o) 0))
+                       (catch-up! h)
+                       (when (and (live? h o) (eq? (history-current h) o))
+                         (let ([edits (cancelled)])
+                           (if (null? edits) (end-group!) (splice edits))))]
+                      [else
+                       (end-group!)
+                       (when spliced (catch-up! h))])))
+                (mark-dirty! h)))
             (mark-if-saved! h b))))))
 
   (define (end-history-batch! h)
@@ -892,7 +1037,7 @@
 
   (define (length-at b edits)
     (fold-left (lambda (n e)
-                 (fx- n (fx- (document:length (buffers:edit-inserted e)) (document:length (buffers:edit-removed e)))))
+                 (fx- n (fx- (buffers:piece-length (buffers:edit-inserted e)) (buffers:piece-length (buffers:edit-removed e)))))
                (document:length (buffers:document b)) edits))
 
   ;; The buffer last marked unmodified at the version holds the saved

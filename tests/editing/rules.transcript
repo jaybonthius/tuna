@@ -107,6 +107,11 @@
 > (press! "C-SPC" "C-SPC" "C-SPC")
 > (state)
 ("axbcd" ((3 3)))
+; A silent edit is a plugin's own text, not the command's change: the
+; marks stay.
+> (commands:define-command (stamp-silently) "Writes a stamp silently at the buffer's start." (let ([b (views:buffer (view))]) (buffers:with-silent-edits b (buffers:replace! b 1 1 "#"))))
+> (begin (run stamp-silently) (state))
+("#axbcd" ((4 4)))
 > (start! "ab cd ef" 1)
 ("ab cd ef" ((1 #f)))
 > (press! "M-@")

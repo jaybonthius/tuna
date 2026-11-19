@@ -1,6 +1,6 @@
 #!tuna
 (import (pi) (processes) (projects) (markdown) (ask) (buffers) (document) (views) (layout) (keys) (commands) (modes)
-        (status-line) (ui) (undo) (kill-ring) (files) (editing) (faces) (web) (haml))
+        (status-line) (ui) (kill-ring) (files) (editing) (faces) (web) (haml))
 
 (define-saved prompt-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
@@ -23,10 +23,6 @@
 (define-hook %mode-hook)
 
 (modes:define-major-mode mode (lighter "Pi") (keymap keymap) (hook %mode-hook))
-
-;; The transcript is rebuilt from Pi's records, so its rewrites would join
-;; the prompt's edit groups, as a terminal's output would.
-(define (%keep-no-undo) (set-option-local! undo:limit 0))
 
 (define (%refuse-edits node edit) #f)
 
@@ -129,16 +125,16 @@
 (define (%field-edit? node edit)
   (let ([start (buffers:edit-start edit)] [last-newline (fx- (document:node-end node) 2)])
     (and (fx> start (document:node-start node))
-         (fx<= (fx+ start (document:length (buffers:edit-removed edit))) last-newline)
+         (fx<= (fx+ start (buffers:piece-length (buffers:edit-removed edit))) last-newline)
          (or (%attribute node 'lines)
-             (not (memv #\newline (string->list (document:text (buffers:edit-inserted edit)))))))))
+             (not (memv #\newline (string->list (document:text (buffers:piece-document (buffers:edit-inserted edit))))))))))
 
 ;; The prompt's text is read up to its last line break, so an edit may not
 ;; remove it.
 (define (%prompt-edit? node edit)
   (let ([start (buffers:edit-start edit)] [last-newline (fx- (document:node-end node) 2)])
     (and (fx> start (document:node-start node))
-         (fx<= (fx+ start (document:length (buffers:edit-removed edit))) last-newline))))
+         (fx<= (fx+ start (buffers:piece-length (buffers:edit-removed edit))) last-newline))))
 
 (buffers:define-kind %chat (content nodes) (consent %refuse-edits) (draw %draw-chat))
 (buffers:define-kind transcript (content nodes) (consent %refuse-edits) (keymap transcript-keymap) (draw %draw-transcript))
@@ -182,6 +178,8 @@
 (define %dirty '())
 
 (define %drafts-changed? #f)
+
+(define %draft-sessions (make-weak-eq-hashtable))
 
 (define %folds (make-hashtable equal-hash equal?))
 
@@ -243,6 +241,11 @@
                 (and process (processes:buffer process))
                 (%make-buffer! chat))])
     (hashtable-set! %buffers chat b)
+    ;; A reload of this plugin starts the table empty while chats keep
+    ;; their buffers and prompts, so a chat's entry is made when its buffer
+    ;; is first found, not only when made.
+    (unless (hashtable-contains? %draft-sessions chat)
+      (hashtable-set! %draft-sessions chat (pi:chat-session-id chat)))
     (when (and process (not (eq? (processes:buffer process) b)))
       (processes:set-buffer! process b))
     b))
@@ -720,15 +723,18 @@
           (views:set-point! v (views:point v))))
       (views:showing b))))
 
+;; The conversation is rebuilt from Pi's records, so its rewrites are no
+;; history of the prompt's.
 (define (%rewrite! chat b)
-  (%write-transcript! chat b)
-  (%write-dialogs! chat b)
-  (buffers:reconcile! b (%part b 'pi-chat:queue) (%queue-datums chat))
-  (buffers:reconcile! b (%part b 'pi-chat:%widgets '(placement . above)) (%widget-datums chat 'above))
-  (buffers:reconcile! b (%part b 'pi-chat:%widgets '(placement . below)) (%widget-datums chat 'below))
-  (let ([t (%part b 'pi-chat:transcript)])
-    (buffers:set-spans! (buffers:layer b %read-only) 0 (document:length (buffers:document b))
-      (list (list (document:node-start t) (document:node-end t) '()))))
+  (buffers:with-silent-edits b
+    (%write-transcript! chat b)
+    (%write-dialogs! chat b)
+    (buffers:reconcile! b (%part b 'pi-chat:queue) (%queue-datums chat))
+    (buffers:reconcile! b (%part b 'pi-chat:%widgets '(placement . above)) (%widget-datums chat 'above))
+    (buffers:reconcile! b (%part b 'pi-chat:%widgets '(placement . below)) (%widget-datums chat 'below))
+    (let ([t (%part b 'pi-chat:transcript)])
+      (buffers:set-spans! (buffers:layer b %read-only) 0 (document:length (buffers:document b))
+        (list (list (document:node-start t) (document:node-end t) '())))))
   (%follow-prompt! b))
 
 (define (%redraw-dirty!)
@@ -746,18 +752,43 @@
              (hashtable-delete! %buffers chat)
              (set! %used (remq chat %used))
              (when (and b (buffers:live? b))
-               (buffers:set-modified! b #f)
                (spawn-task (lambda () (when (buffers:live? b) (buffers:kill! b))))))]))
       dirty)
     (%convert-waiting!)
-    (when %drafts-changed?
+    (for-each %take-draft! live)
+    (when (or %drafts-changed? (exists %draft-moved? live))
       (set! %drafts-changed? #f)
       (set-saved! drafts
-        (filter (lambda (d) (not (string=? (cdr d) "")))
-          (map (lambda (chat)
-                 (let ([b (hashtable-ref %buffers chat #f)])
-                   (cons (pi:chat-session-id chat) (if (and b (buffers:live? b)) (%prompt-text b) (%draft-of chat)))))
-               live))))))
+        (fold-left
+          (lambda (ds chat)
+            (let ([b (hashtable-ref %buffers chat #f)])
+              (if (and b (buffers:live? b)) (%drafts-updated ds chat (%prompt-text b)) ds)))
+          (drafts) live)))))
+
+;; A draft is its session's, read back when the session is opened again,
+;; so it outlives the chat. The prompt keeps its text when its chat moves
+;; to another session, so the draft moves too: the session left keeping
+;; it would show text already sent or deleted when opened again.
+(define (%drafts-updated ds chat text)
+  (let ([id (pi:chat-session-id chat)] [left (hashtable-ref %draft-sessions chat #f)])
+    (hashtable-set! %draft-sessions chat id)
+    (let ([others (remp (lambda (d) (or (string=? (car d) id) (equal? (car d) left))) ds)])
+      (if (string=? text "") others (cons (cons id text) others)))))
+
+(define (%draft-moved? chat)
+  (let ([left (hashtable-ref %draft-sessions chat #f)])
+    (and left (not (equal? left (pi:chat-session-id chat))))))
+
+;; The session a chat moves into may keep a draft, as a killed chat's.
+;; Saving the prompt over it would lose that text, so the draft joins the
+;; prompt as a refused message does.
+(define (%moved-draft chat)
+  (and (%draft-moved? chat) (assoc (pi:chat-session-id chat) (drafts))))
+
+(define (%take-draft! chat)
+  (let ([b (hashtable-ref %buffers chat #f)] [d (%moved-draft chat)])
+    (when (and b (buffers:live? b) d)
+      (%put-back! chat b (cdr d)))))
 
 (define (%tool-calls chat)
   (apply append
@@ -964,16 +995,18 @@
             (loop (fx+ i 1))))
       (values #f #f)))
 
+(define (%joined text current)
+  (if (string=? current "") text (string-append text "\n" current)))
+
 (define (%put-back! chat b text)
-  (let ([current (%prompt-text b)])
-    (%set-prompt-text! b (if (string=? current "") text (string-append text "\n" current)))))
+  (%set-prompt-text! b (%joined text (%prompt-text b))))
 
 (define (%submit! chat tell!)
   (let* ([b (%buffer-of chat)] [text (%prompt-text b)])
     (unless (string=? (%trimmed text) "")
       (%remember! text)
       (hashtable-delete! %history-place b)
-      (%set-prompt-text! b "")
+      (buffers:with-silent-edits b (%set-prompt-text! b ""))
       (%use! chat)
       (let-values ([(name argument) (%slash-name text)])
         (cond
@@ -1352,15 +1385,17 @@
 
 (define (%chat-changed chat) (%mark-dirty! chat))
 
-;; The prompt's text is kept in saved data, so a chat is never unsaved.
 (define (%chat-edited b edit)
-  (when (chat-of b)
-    (buffers:set-modified! b #f)
+  (when (and (not (buffers:edit-silent? edit)) (chat-of b))
     (set! %drafts-changed? #t)))
+
+(define (%draft-kept? b) (and (chat-of b) #t))
 
 (define (%chat-buffer-killed b)
   (let ([chat (chat-of b)])
     (when chat
+      (let ([d (%moved-draft chat)] [text (%prompt-text b)])
+        (set-saved! drafts (%drafts-updated (drafts) chat (if d (%joined (cdr d) text) text))))
       (hashtable-delete! %buffers chat)
       (pi:stop! chat))))
 
@@ -1372,8 +1407,6 @@
   (let ([b (%buffer-of chat)])
     (%set-prompt-text! b text)
     (%mark-dirty! chat)))
-
-(add-hook! %mode-hook %keep-no-undo)
 
 (table-set! slash-commands "/new" (lambda (chat argument) (%new-session chat)))
 (table-set! slash-commands "/name"
@@ -1449,6 +1482,7 @@
 (add-hook! pi:editor-text-requested %editor-text)
 (add-hook! buffers:after-edit %chat-edited)
 (add-hook! buffers:killed %chat-buffer-killed)
+(add-hook! files:unsaved-kept %draft-kept?)
 (add-hook! option-changed %option-changed)
 
 (advice-add! batch-ended

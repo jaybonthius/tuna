@@ -9,7 +9,7 @@
   (check-main-thread check-buffer check-change check-position check-range check-layer check-anchor
    check-edit check-spans check-version check-kind check-layer-change check-layer-read
    make-buffer! find-buffer live-buffers buffer-live? rename-buffer! forget-buffer! with-current
-   current-buffer frozen-document
+   current-buffer frozen-document internal? with-silent check-piece
    replace-content! splice-content! reconcile-node! edits-after map-position-through
    define-kind! note-constructor! find-kind find-constructor-kind stop-at next-stop-after previous-stop-before range-text range-atom-texts
    define-layer-type! layer-of layers-for layer-type-keymap-of
@@ -22,9 +22,9 @@
     (unless (fx= (get-thread-id) main-thread)
       (assertion-violation who "not on the main thread")))
 
-  (define (make-edit version start removed inserted removed-spans inserted-spans)
-    (make-edit-record version start removed inserted removed-spans inserted-spans
-      (document:length removed) (document:length inserted) (not (eq? removed inserted))))
+  (define (make-edit version start removed inserted removed-spans inserted-spans silent?)
+    (make-edit-record version start (make-piece-record removed removed-spans) (make-piece-record inserted inserted-spans)
+      (document:length removed) (document:length inserted) (not (eq? removed inserted)) silent?))
 
   (define-table kinds)
   (define-table constructor-kinds)
@@ -34,6 +34,25 @@
   (define made '())
 
   (define current-buffer (make-thread-parameter #f))
+
+  (define silenced (make-thread-parameter '()))
+
+  (define (with-silent b thunk)
+    (if (memq b (silenced))
+        (thunk)
+        (parameterize ([silenced (cons b (silenced))])
+          (thunk))))
+
+  (define (silent-now? b)
+    (or (buffer-silent? b) (and (memq b (silenced)) #t)))
+
+  ;; A silent edit leaves modified? as it was, so on an unmodified buffer
+  ;; the save stamp follows the version.
+  (define (advance-version! b silent?)
+    (let ([version (buffer-version b)])
+      (when (and silent? (eqv? (buffer-save-stamp b) version))
+        (buffer-save-stamp-set! b (fx+ version 1)))
+      (buffer-version-set! b (fx+ version 1))))
 
   (define empty-document (document:from-datum))
   (define typing-probe (document:from-datum "x"))
@@ -73,6 +92,10 @@
     (unless (edit-record? e)
       (assertion-violation who "not an edit" e)))
 
+  (define (check-piece who p)
+    (unless (piece-record? p)
+      (assertion-violation who "not a piece" p)))
+
   (define (check-kind who k)
     (unless (kind-entry? k)
       (assertion-violation who "not a kind" k)))
@@ -98,14 +121,6 @@
     (unless (and (list? spans) (for-all (lambda (s) (span? s limit)) spans))
       (assertion-violation who "not a list of spans within the range" spans)))
 
-  (define (check-travelling who spans limit)
-    (unless (and (list? spans)
-                 (for-all (lambda (entry)
-                            (and (pair? entry) (symbol? (car entry)) (list? (cdr entry))
-                                 (for-all (lambda (s) (span? s limit)) (cdr entry))))
-                          spans))
-      (assertion-violation who "not a list of layer types and their spans" spans)))
-
   (define (refuse who message . irritants)
     (raise (condition (make-refused-condition) (make-who-condition who)
                       (make-message-condition message) (make-irritants-condition irritants))))
@@ -116,6 +131,9 @@
          (let ([t (document:token doc 0)])
            (and (document:node? t) (not (document:atom? t))
                 (fx= (document:node-end t) (document:length doc))))))
+
+  (define (internal? name)
+    (and (fx> (string-length name) 0) (char=? (string-ref name 0) #\space)))
 
   (define (make-buffer! who name content)
     (unless (string? name)
@@ -129,7 +147,7 @@
                  [else (document:from-datum content)])])
       (unless (one-node? doc)
         (assertion-violation who "not one node" (if (document? content) (document:datums content) content)))
-      (let ([b (make-buffer-record (string->immutable-string name) doc (make-scope))])
+      (let ([b (make-buffer-record (string->immutable-string name) doc (make-scope) (internal? name))])
         (with-interrupts-disabled
           (hashtable-set! by-name (buffer-name b) b)
           (set! made (cons b made)))
@@ -505,16 +523,19 @@
     (let ([common (common-ancestor anc-s anc-e)])
       (append (if common (list common) '()) (below common anc-s) (below common anc-e))))
 
-  (define (ask! who nodes edit)
-    (let loop ([nodes nodes] [asked '()])
+  ;; Most nodes ask nothing, so the proposed edit is made only for the
+  ;; first that does.
+  (define (ask! who nodes make-proposed)
+    (let loop ([nodes nodes] [asked '()] [edit #f])
       (unless (null? nodes)
         (let ([n (car nodes)])
           (if (or (not n) (node-member n asked))
-              (loop (cdr nodes) asked)
-              (let* ([k (kind-of n)] [consent (and k (kind-entry-consent k))])
+              (loop (cdr nodes) asked edit)
+              (let* ([k (kind-of n)] [consent (and k (kind-entry-consent k))]
+                     [edit (or edit (and consent (make-proposed)))])
                 (when (and consent (not (consent n edit)))
                   (refuse who "the node refuses the edit" (document:node-kind n)))
-                (loop (cdr nodes) (cons n asked))))))))
+                (loop (cdr nodes) (cons n asked) edit)))))))
 
   (define (refuse-undefined! who nodes)
     (for-each
@@ -703,7 +724,8 @@
   ;; The edit is made whole or not at all: a quit landing in it would
   ;; leave the document, the version and the layers out of step.
   (define (commit! b doc start old-end new-end removed inserted carried)
-    (let* ([moves? (not (same-tokens? removed inserted))]
+    (let* ([silent? (silent-now? b)]
+           [moves? (not (same-tokens? removed inserted))]
            [inserted (if moves? inserted removed)]
            [travels? (or carried (exists travelling? (buffer-layers b)))]
            [removed-spans (if travels? (travelling-spans-of b start old-end) '())]
@@ -725,11 +747,11 @@
                                 (if entry (cdr entry) '())))))
                      (buffer-layers b))
                    (let ([e (make-edit (fx+ (buffer-version b) 1) start removed inserted removed-spans
-                                       (if travels? (travelling-spans-of b start new-end) '()))])
+                                       (if travels? (travelling-spans-of b start new-end) '()) silent?)])
                      (buffer-doc-set! b doc)
                      (buffer-frozen?-set! b #f)
                      (log-append! b e)
-                     (buffer-version-set! b (fx+ (buffer-version b) 1))
+                     (advance-version! b silent?)
                      e))])
       (with-current b (lambda () (after-edit b edit)))
       edit))
@@ -808,7 +830,6 @@
                 [else (document:from-datum content)])]
            [anc-s (ancestors-in b d0 start)]
            [anc-e (if (fx= start end) anc-s (ancestors-in b d0 end))])
-      (when carried (check-travelling who carried (document:length c)))
       (refuse-undefined! who anc-s)
       (refuse-undefined! who anc-e)
       (refuse-read-only! who b start end (fx> (document:length c) 0))
@@ -817,6 +838,8 @@
                                        (values d0 '()))]
                     [(asks) (if (fx< start end) (deletion-asks anc-s anc-e) '())]
                     [(removed) (if (fx< start end) (document:slice d0 start end) empty-document)])
+        ;; Only content inserted directly is the edit's inserted tokens:
+        ;; fitting adds openings and closings around it.
         (define (finish doc steps place inserted)
           (let-values ([(lo hi-old hi-new) (compose (if (null? steps) (list (plain-step start start start)) steps))])
             (check-result who doc lo hi-old (document:length d0))
@@ -833,8 +856,8 @@
                     (guard (r [(or (refused-condition? r) (misfit-condition? r)) r])
                       (let-values ([(doc steps place inserted parents) ((car alternatives) d1 start c anc-s)])
                         (ask! who (append asks parents)
-                              (make-edit (fx+ (buffer-version b) 1) start removed inserted '() '()))
-                        (list doc (append deleted steps) place inserted)))])
+                              (lambda () (make-edit (fx+ (buffer-version b) 1) start removed inserted '() '() (silent-now? b))))
+                        (list doc (append deleted steps) place (and (eq? (car alternatives) insert-directly) inserted))))])
                (cond
                  [(refused-condition? outcome) (try (cdr alternatives) outcome misfit?)]
                  [(misfit-condition? outcome) (try (cdr alternatives) refusal #t)]
@@ -842,16 +865,13 @@
             [refusal (raise refusal)]
             [misfit? (does-not-fit who)]
             [else
-             (ask! who asks (make-edit (fx+ (buffer-version b) 1) start removed empty-document '() '()))
+             (ask! who asks (lambda () (make-edit (fx+ (buffer-version b) 1) start removed empty-document '() '() (silent-now? b))))
              (finish d1 deleted (lambda (x end?) start) empty-document)])))))
 
   (define (splice-content! who b start end c carried)
     (check-change who b)
     (check-range who b start end)
-    (unless (document? c)
-      (assertion-violation who "not a document" c))
     (let ([d0 (buffer-doc b)])
-      (when carried (check-travelling who carried (document:length c)))
       (let ([doc (guard (x [(and (assertion-violation? x) (who-condition? x) (eq? (condition-who x) 'document:replace))
                             (assertion-violation who "openings and closings would not match" start end)])
                    (document:replace d0 start end c))])
@@ -1021,7 +1041,8 @@
             (and k
                  (let ([consent (kind-entry-consent k)])
                    (or (not consent)
-                       (consent n (make-edit (fx+ (buffer-version b) 1) q empty-document typing-probe '() '())))))))))
+                       (consent n (make-edit (fx+ (buffer-version b) 1) q empty-document typing-probe '() '()
+                                             (silent-now? b))))))))))
 
   (define (sticky-edge? doc q)
     (let* ([n (document:enclosing doc q)] [k (and n (kind-of n))])
@@ -1142,14 +1163,15 @@
   (define (change-spans! who l lo hi change!)
     (let ([b (buffer-layer-buffer l)])
       (if (travelling? l)
-          (let* ([doc (buffer-doc b)] [same (document:slice doc lo hi)] [before (travelling-spans-of b lo hi)])
+          (let* ([doc (buffer-doc b)] [same (document:slice doc lo hi)] [before (travelling-spans-of b lo hi)]
+                 [silent? (silent-now? b)])
             (let ([edit (with-interrupts-disabled
                           (change! (buffer-layer-store l))
                           (coalesce! (buffer-layer-store l) lo hi)
                           (let ([e (make-edit (fx+ (buffer-version b) 1) lo same same before
-                                              (travelling-spans-of b lo hi))])
+                                              (travelling-spans-of b lo hi) silent?)])
                             (log-append! b e)
-                            (buffer-version-set! b (fx+ (buffer-version b) 1))
+                            (advance-version! b silent?)
                             e))])
               (with-current b (lambda () (after-edit b edit)))))
           (with-interrupts-disabled (change! (buffer-layer-store l))))
@@ -1267,7 +1289,7 @@
 (define (internal-name? name)
   (unless (string? name)
     (assertion-violation 'buffers:internal-name? "not a string" name))
-  (and (fx> (string-length name) 0) (char=? (string-ref name 0) #\space)))
+  (internal? name))
 
 (define (rename! buffer name)
   (check-change 'buffers:rename! buffer)
@@ -1339,23 +1361,44 @@
   (check-buffer 'buffers:save-stamp buffer)
   (buffer-save-stamp buffer))
 
-(define replace!
-  (case-lambda
-    [(buffer start end content)
-     (replace-content! 'buffers:replace! buffer start end content #f)]
-    [(buffer start end content spans)
-     (unless (list? spans)
-       (assertion-violation 'buffers:replace! "not a list" spans))
-     (replace-content! 'buffers:replace! buffer start end content spans)]))
+(define (silent? buffer)
+  (check-buffer 'buffers:silent? buffer)
+  (buffer-silent? buffer))
 
-(define splice!
-  (case-lambda
-    [(buffer start end content)
-     (splice-content! 'buffers:splice! buffer start end content #f)]
-    [(buffer start end content spans)
-     (unless (list? spans)
-       (assertion-violation 'buffers:splice! "not a list" spans))
-     (splice-content! 'buffers:splice! buffer start end content spans)]))
+(define (set-silent! buffer flag)
+  (check-change 'buffers:set-silent! buffer)
+  (buffer-silent?-set! buffer (and flag #t)))
+
+(define-syntax with-silent-edits
+  (syntax-rules ()
+    [(_ buffer-expr body1 body2 ...) (call-with-silent-edits buffer-expr (lambda () body1 body2 ...))]))
+
+(define (call-with-silent-edits buffer thunk)
+  (check-buffer 'buffers:call-with-silent-edits buffer)
+  (unless (procedure? thunk)
+    (assertion-violation 'buffers:call-with-silent-edits "not a procedure" thunk))
+  (with-silent buffer thunk))
+
+(define (%replace who buffer start end content)
+  (if (piece-record? content)
+      (replace-content! who buffer start end (piece-record-document content) (piece-record-spans content))
+      (replace-content! who buffer start end content #f)))
+
+(define (replace! buffer start end content)
+  (%replace 'buffers:replace! buffer start end content))
+
+;; Fitting can add openings and closings around the content, so the
+;; position after it is found from the edit, not the content's length.
+(define (insert! buffer position content)
+  (let ([edit (%replace 'buffers:insert! buffer position position content)])
+    (fx+ position (fx- (edit-record-inserted-length edit) (edit-record-removed-length edit)))))
+
+(define (splice! buffer start end content)
+  (cond
+    [(piece-record? content)
+     (splice-content! 'buffers:splice! buffer start end (piece-record-document content) (piece-record-spans content))]
+    [(document? content) (splice-content! 'buffers:splice! buffer start end content #f)]
+    [else (assertion-violation 'buffers:splice! "not a document or a piece" content)]))
 
 (define (reconcile! buffer node children)
   (check-change 'buffers:reconcile! buffer)
@@ -1395,9 +1438,13 @@
   (check-edit 'buffers:edit-inserted edit)
   (edit-record-inserted edit))
 
-(define (edit-spans edit)
-  (check-edit 'buffers:edit-spans edit)
-  (values (edit-record-removed-spans edit) (edit-record-inserted-spans edit)))
+(define (edit-moves? edit)
+  (check-edit 'buffers:edit-moves? edit)
+  (edit-record-moves? edit))
+
+(define (edit-silent? edit)
+  (check-edit 'buffers:edit-silent? edit)
+  (edit-record-silent? edit))
 
 (define (edit? v) (edit-record? v))
 
@@ -1594,11 +1641,27 @@
   (check-position 'buffers:spans-at (buffer-layer-buffer layer) position)
   (layer-spans-at layer position))
 
-(define (travelling-spans buffer start end)
-  (check-buffer 'buffers:travelling-spans buffer)
-  (check-main-thread 'buffers:travelling-spans)
-  (check-range 'buffers:travelling-spans buffer start end)
-  (travelling-spans-of buffer start end))
+(define (piece buffer start end)
+  (check-buffer 'buffers:piece buffer)
+  (check-main-thread 'buffers:piece)
+  (check-range 'buffers:piece buffer start end)
+  (make-piece-record (document:slice (buffer-doc buffer) start end) (travelling-spans-of buffer start end)))
+
+(define (piece? v) (piece-record? v))
+
+(define (piece-document piece)
+  (check-piece 'buffers:piece-document piece)
+  (piece-record-document piece))
+
+(define (piece-length piece)
+  (check-piece 'buffers:piece-length piece)
+  (document:length (piece-record-document piece)))
+
+(define (piece-text piece)
+  (check-piece 'buffers:piece-text piece)
+  (check-main-thread 'buffers:piece-text)
+  (let ([doc (piece-record-document piece)])
+    (range-text doc 0 (document:length doc))))
 
 (define (layer-keymap layer)
   (check-layer 'buffers:layer-keymap layer)

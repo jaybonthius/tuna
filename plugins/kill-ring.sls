@@ -12,11 +12,11 @@
   "Called with the newest entry after each push!, append! and prepend!.")
 
 (define-table yankers
-  "Maps a node kind's name to a procedure of a buffer, a position and a piece that yanks a piece whose top node has that kind, returning the position after what it inserted.")
+  "Maps a node kind's name to a procedure of a buffer, a position and a buffers:piece that yanks a piece whose top node has that kind, returning the position after what it inserted.")
 
 (module %internals
-  (check-main-thread check-entry check-piece make-buffer-piece piece-record? entry-text
-   current-entry ring-entries push-entry! add-to-newest! rotate-ring! join-pieces insert-piece!)
+  (check-main-thread check-entry check-kills check-item kill-record? to-kill entry-text
+   current-entry ring-entries push-entry! add-to-newest! rotate-ring! join-kills insert-item!)
 
   (define main-thread (get-thread-id))
 
@@ -24,79 +24,85 @@
     (unless (fx= (get-thread-id) main-thread)
       (assertion-violation who "not on the main thread")))
 
-  ;; Fixed uids, so a piece made before this module reloads is still a
-  ;; piece after. Joining two kills keeps both slices as parts, since
+  ;; Fixed uids, so a kill made before this module reloads is still a
+  ;; kill after. Joining two kills keeps both pieces as parts, since
   ;; document:replace cannot join slices whose open edges differ.
-  (define-record-type (piece-record make-piece-record piece-record?)
-    (nongenerative kill-ring:piece/parts)
+  (define-record-type (kill-record make-kill-record kill-record?)
+    (nongenerative kill-ring:kill/parts)
     (sealed #t)
     (fields parts))
 
-  ;; A part keeps the text of each atom in its slice, since a kind's text
+  ;; A part keeps the text of each atom in its piece, since a kind's text
   ;; is read only on the main thread and the part's text is read on any.
-  (define-record-type slice-part
-    (nongenerative kill-ring:slice-part/slice/spans/atom-texts)
+  (define-record-type piece-part
+    (nongenerative kill-ring:piece-part/piece/atom-texts)
     (sealed #t)
-    (fields slice spans atom-texts))
+    (fields piece atom-texts))
 
-  (define (piece-or-string? v) (or (string? v) (piece-record? v)))
+  (define (kill? v) (or (string? v) (kill-record? v)))
+
+  (define (item? v) (or (kill? v) (buffers:piece? v)))
 
   (define (check-entry who entry)
-    (unless (and (pair? entry) (list? entry) (for-all piece-or-string? entry))
-      (assertion-violation who "not a non-empty list of strings and pieces" entry)))
+    (unless (and (pair? entry) (list? entry) (for-all item? entry))
+      (assertion-violation who "not a non-empty list of strings, pieces and kills" entry)))
 
-  (define (check-piece who piece)
-    (unless (piece-or-string? piece)
-      (assertion-violation who "not a string or a piece" piece)))
+  (define (check-kills who entry)
+    (unless (and (pair? entry) (list? entry) (for-all kill? entry))
+      (assertion-violation who "not a non-empty list of strings and kills" entry)))
+
+  (define (check-item who item)
+    (unless (item? item)
+      (assertion-violation who "not a string, a piece or a kill" item)))
 
   (define chars (document:unit characters))
 
-  (define (make-buffer-piece buffer start end)
-    (let ([slice (document:slice (buffers:document buffer) start end)])
-      (make-piece-record
-        (list (make-slice-part slice
-                               (buffers:travelling-spans buffer start end)
-                               (buffers:atom-texts slice 0 (document:length slice)))))))
+  (define (to-kill item)
+    (if (buffers:piece? item)
+        (let ([doc (buffers:piece-document item)])
+          (make-kill-record
+            (list (make-piece-part item (buffers:atom-texts doc 0 (document:length doc))))))
+        item))
 
-  (define (parts piece)
-    (if (string? piece) (list piece) (piece-record-parts piece)))
+  (define (parts kill)
+    (if (string? kill) (list kill) (kill-record-parts kill)))
 
   (define (part-text part)
     (if (string? part)
         part
-        (let ([slice (slice-part-slice part)])
-          (document:text slice 0 (document:length slice) (slice-part-atom-texts part)))))
+        (let ([doc (buffers:piece-document (piece-part-piece part))])
+          (document:text doc 0 (document:length doc) (piece-part-atom-texts part)))))
 
   (define (part-length part)
     (if (string? part)
         (string-length part)
-        (let ([doc (slice-part-slice part)])
+        (let ([doc (buffers:piece-document (piece-part-piece part))])
           (fold-left (lambda (n a) (+ n (string-length (cdr a)) -1))
                      (document:offset doc (document:length doc) chars)
-                     (slice-part-atom-texts part)))))
+                     (piece-part-atom-texts part)))))
 
-  (define (piece-text piece)
-    (if (string? piece) piece (apply string-append (map part-text (piece-record-parts piece)))))
+  (define (kill-text kill)
+    (if (string? kill) kill (apply string-append (map part-text (kill-record-parts kill)))))
 
-  (define (piece-length piece)
-    (if (string? piece)
-        (string-length piece)
-        (fold-left (lambda (n part) (+ n (part-length part))) 0 (piece-record-parts piece))))
+  (define (kill-length kill)
+    (if (string? kill)
+        (string-length kill)
+        (fold-left (lambda (n part) (+ n (part-length part))) 0 (kill-record-parts kill))))
 
   (define (entry-length entry)
-    (fold-left (lambda (n piece) (+ n 1 (piece-length piece))) -1 entry))
+    (fold-left (lambda (n kill) (+ n 1 (kill-length kill))) -1 entry))
 
   (define (entry-text entry)
-    (let loop ([pieces (cdr entry)] [acc (list (piece-text (car entry)))])
-      (if (null? pieces)
+    (let loop ([kills (cdr entry)] [acc (list (kill-text (car entry)))])
+      (if (null? kills)
           (apply string-append (reverse acc))
-          (loop (cdr pieces) (cons* (piece-text (car pieces)) "\n" acc)))))
+          (loop (cdr kills) (cons* (kill-text (car kills)) "\n" acc)))))
 
-  (define (join-pieces a b)
+  (define (join-kills a b)
     (if (and (string? a) (string? b))
         (string-append a b)
         (let ([x (parts a)] [y (parts b)])
-          (make-piece-record
+          (make-kill-record
             (let ([last (car (last-pair x))])
               (if (and (string? last) (string? (car y)))
                   (append (list-head x (fx- (length x) 1))
@@ -106,11 +112,11 @@
   ;; Large kills are left out, so writing the ring after a kill stays
   ;; cheap whatever was killed before. set-saved! copies every mutable
   ;; string it is given, so each text is made immutable once, at its kill.
-  (define stored-piece-limit 4096)
+  (define stored-kill-limit 4096)
 
   (define (stored-form entry)
-    (and (for-all (lambda (piece) (<= (piece-length piece) stored-piece-limit)) entry)
-         (map (lambda (piece) (string->immutable-string (piece-text piece))) entry)))
+    (and (for-all (lambda (kill) (<= (kill-length kill) stored-kill-limit)) entry)
+         (map (lambda (kill) (string->immutable-string (kill-text kill))) entry)))
 
   (define (stored-entries? v)
     (and (list? v)
@@ -150,7 +156,7 @@
 
   (define (ring-entries) (map slot-entry (ring-slots state)))
 
-  ;; A piece's text costs its length to build, so a kill of a large range
+  ;; A kill's text costs its length to build, so a kill of a large range
   ;; builds no text unless the newest entry is as long.
   (define (same-text? entry newest)
     (and (= (entry-length entry) (entry-length (slot-entry newest)))
@@ -192,42 +198,39 @@
   ;; the rest of it has a top node: one that starts inside a node holds
   ;; part of that node's content, not the node.
   (define (top-kind piece)
-    (let ([x (piece-record-parts piece)])
-      (and (null? (cdr x))
-           (slice-part? (car x))
-           (let ([doc (slice-part-slice (car x))])
-             (and (fx= (document:open-start doc) 0)
-                  (fx> (document:length doc) 0)
-                  (let ([t (document:token doc 0)])
-                    (and (document:node? t)
-                         (fx= (document:node-end t) (document:length doc))
-                         (document:node-kind t))))))))
+    (let ([doc (buffers:piece-document piece)])
+      (and (fx= (document:open-start doc) 0)
+           (fx> (document:length doc) 0)
+           (let ([t (document:token doc 0)])
+             (and (document:node? t)
+                  (fx= (document:node-end t) (document:length doc))
+                  (document:node-kind t))))))
 
-  (define (replace-at! buffer position content spans)
-    (let ([edit (if spans
-                    (buffers:replace! buffer position position content spans)
-                    (buffers:replace! buffer position position content))])
-      (+ position
-         (- (document:length (buffers:edit-inserted edit))
-            (document:length (buffers:edit-removed edit))))))
+  (define (insert-piece! buffer position piece)
+    (let ([yank (let ([kind (top-kind piece)]) (and kind (table-ref yankers kind #f)))])
+      (if yank
+          (yank buffer position piece)
+          (buffers:insert! buffer position piece))))
 
   (define (insert-part! buffer position part)
     (if (string? part)
-        (replace-at! buffer position part #f)
-        (replace-at! buffer position (slice-part-slice part) (slice-part-spans part))))
+        (buffers:insert! buffer position part)
+        (buffers:insert! buffer position (piece-part-piece part))))
 
-  (define (insert-piece! buffer position piece)
+  (define (insert-item! buffer position item)
     (cond
-      [(string? piece) (replace-at! buffer position piece #f)]
-      [(let ([kind (top-kind piece)]) (and kind (table-ref yankers kind #f)))
-       => (lambda (yank) (yank buffer position piece))]
-      [(null? (cdr (piece-record-parts piece)))
-       (insert-part! buffer position (car (piece-record-parts piece)))]
+      [(string? item) (buffers:insert! buffer position item)]
+      [(buffers:piece? item) (insert-piece! buffer position item)]
+      [(null? (cdr (kill-record-parts item)))
+       (let ([part (car (kill-record-parts item))])
+         (if (string? part)
+             (buffers:insert! buffer position part)
+             (insert-piece! buffer position (piece-part-piece part))))]
       [else
        (let ([version (buffers:version buffer)])
          (guard (c [#t (restore! buffer version) (raise c)])
            (fold-left (lambda (at part) (insert-part! buffer at part))
-             position (piece-record-parts piece))))]))
+             position (kill-record-parts item))))]))
 
   ;; Each part is its own edit, so a part refused after others went in
   ;; would leave half a yank. Every edit since, after-edit hooks' too, is
@@ -236,9 +239,8 @@
     (for-each
       (lambda (e)
         (let ([start (buffers:edit-start e)])
-          (let-values ([(removed-spans inserted-spans) (buffers:edit-spans e)])
-            (buffers:splice! buffer start (+ start (document:length (buffers:edit-inserted e)))
-              (buffers:edit-removed e) removed-spans))))
+          (buffers:splice! buffer start (+ start (buffers:piece-length (buffers:edit-inserted e)))
+            (buffers:edit-removed e))))
       (reverse (buffers:edits-since buffer version))))
 
   (advice-add! batch-ended
@@ -248,36 +250,25 @@
 
   (on-unload save!)
 
-  (record-writer (record-type-descriptor piece-record)
-    (lambda (p port wr) (display "#<piece>" port))))
+  (record-writer (record-type-descriptor kill-record)
+    (lambda (k port wr) (display "#<kill>" port))))
 
 (import %internals)
-
-(define (piece buffer start end)
-  (unless (buffers:buffer? buffer)
-    (assertion-violation 'kill-ring:piece "not a buffer" buffer))
-  (check-main-thread 'kill-ring:piece)
-  (let ([size (document:length (buffers:document buffer))])
-    (unless (and (integer? start) (exact? start) (integer? end) (exact? end) (<= 0 start end size))
-      (assertion-violation 'kill-ring:piece "not a range of the buffer" start end)))
-  (make-buffer-piece buffer start end))
-
-(define (piece? v) (piece-record? v))
 
 (define (push! entry)
   (check-main-thread 'kill-ring:push!)
   (check-entry 'kill-ring:push! entry)
-  (push-entry! entry))
+  (push-entry! (map to-kill entry)))
 
 (define (append! entry)
   (check-main-thread 'kill-ring:append!)
   (check-entry 'kill-ring:append! entry)
-  (add-to-newest! entry join-pieces))
+  (add-to-newest! (map to-kill entry) join-kills))
 
 (define (prepend! entry)
   (check-main-thread 'kill-ring:prepend!)
   (check-entry 'kill-ring:prepend! entry)
-  (add-to-newest! entry (lambda (newest piece) (join-pieces piece newest))))
+  (add-to-newest! (map to-kill entry) (lambda (newest kill) (join-kills kill newest))))
 
 (define (current) (current-entry))
 
@@ -290,16 +281,16 @@
 (define (entries) (ring-entries))
 
 (define (text entry)
-  (check-entry 'kill-ring:text entry)
+  (check-kills 'kill-ring:text entry)
   (entry-text entry))
 
-(define (insert! buffer position piece)
+(define (insert! buffer position item)
   (unless (buffers:buffer? buffer)
     (assertion-violation 'kill-ring:insert! "not a buffer" buffer))
   (unless (and (integer? position) (exact? position) (>= position 0))
     (assertion-violation 'kill-ring:insert! "not a position" position))
-  (check-piece 'kill-ring:insert! piece)
+  (check-item 'kill-ring:insert! item)
   (check-main-thread 'kill-ring:insert!)
   (unless (<= position (document:length (buffers:document buffer)))
     (assertion-violation 'kill-ring:insert! "not a position in the buffer" position))
-  (insert-piece! buffer position piece))
+  (insert-item! buffer position item))

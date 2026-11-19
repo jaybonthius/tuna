@@ -40,7 +40,12 @@
 ; A travelling span after an atom moves by the length its text adds.
 > (buffers:define-layer responses (travels) (sticky after))
 > (define form (fresh (cards:rows '() (cards:plain '() "x\n"))))
-> (buffers:replace! form 2 2 (document:from-datum (cards:field '() "a" (cards:tag '((label . "TAG"))) "bc" (cards:blank '()) "de")) '((responses (6 8 x))))
+> (define source (fresh (md:doc '() (md:para '() (cards:field '() "a" (cards:tag '((label . "TAG"))) "bc" (cards:blank '()) "de") "\n"))))
+> (buffers:add-span! (buffers:layer source responses) 8 10 'x)
+> (define field (buffers:piece source 2 11))
+> (list (document:datums (buffers:piece-document field)) (buffers:piece-text field))
+(((cards:field () "a" #(cards:tag ((label . "TAG"))) "bc" #(cards:blank ()) "de")) "aTAGbcde")
+> (buffers:replace! form 2 2 field)
 #<edit 1>
 > (root form)
 (cards:rows () (cards:plain () "aTAGbcdex\n"))

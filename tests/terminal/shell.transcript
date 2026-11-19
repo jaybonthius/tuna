@@ -57,8 +57,8 @@
 > (before-point 3)
 "$  "
 ; A terminal keeps no undo history.
-> (buffers:with-buffer t (undo:limit))
-0
+> (buffers:silent? t)
+#t
 ; terminal:open shows the terminal selected last, or with a prefix
 ; argument starts a new one.
 > (in-client (lambda () (layout:switch-to-buffer (buffers:make "notes" ""))))

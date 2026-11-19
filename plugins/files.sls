@@ -20,7 +20,7 @@
   "Called with a buffer after its file has been read into it again.")
 
 (define-hook unsaved-kept
-  "Called with a modified file buffer when Tuna is asked to exit or to kill the buffer; an entry that returns true keeps the buffer's unsaved edits, so neither asks about it.")
+  "Called with a modified buffer when Tuna is asked to exit or to kill the buffer; an entry that returns true keeps the buffer's unsaved edits, so neither asks about it.")
 
 (define (%visit? v)
   (define (count? n) (and (fixnum? n) (fx>= n 0)))
@@ -652,7 +652,7 @@
   (let ([name (buffers:name buffer)])
     (or (not (commands:this-command))
         (not (buffers:modified? buffer))
-        (and (entry-of buffer) (%unsaved-kept? buffer))
+        (%unsaved-kept? buffer)
         (and (fx> (string-length name) 0) (char=? (string-ref name 0) #\space))
         (ask:y-or-n? (format "Buffer ~a has unsaved text; kill anyway? " name)))))
 

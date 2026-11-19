@@ -1,6 +1,6 @@
 #!tuna
 (import (keys) (commands) (lossage) (buffers) (document) (views) (layout) (modes) (completion)
-        (echo-area) (ui) (undo) (web) (haml))
+        (echo-area) (ui) (web) (haml))
 
 (define-option select-view? #f boolean?
   "Whether a describing command selects the view showing *Help*.")
@@ -64,15 +64,13 @@
 
 (define %buffer #f)
 
-;; A killed *Help* is made again by whatever code describes next, as
-;; this plugin's change.
+;; It holds nothing to save, so killing it never asks.
 (define (%help-buffer)
   (unless (and %buffer (buffers:live? %buffer))
-    (as-module (this-module)
-      (let ([b (or (buffers:find "*Help*") (buffers:make "*Help*" (%page '())))])
-        (modes:set-major-mode mode b)
-        (buffers:with-buffer b (set-option-local! undo:limit 0))
-        (set! %buffer b))))
+    (let ([b (or (buffers:find "*Help*") (buffers:make "*Help*" (%page '())))])
+      (buffers:set-silent! b #t)
+      (modes:set-major-mode mode b)
+      (set! %buffer b)))
   %buffer)
 
 (define (%show! datums)
@@ -80,8 +78,6 @@
     (buffers:splice! b 0 (document:length doc) (document:from-datum (apply %page '() datums)))
     (let ([n (document:length (buffers:document b))])
       (buffers:set-spans! (buffers:layer b %read-only) 0 n (list (list 0 n '()))))
-    ;; It holds nothing to save, so killing it never asks.
-    (buffers:set-modified! b #f)
     ;; Inside the title's node, so the cursor shows on the title's line
     ;; rather than on a line of its own before it.
     (let ([v (layout:display-buffer b)])

@@ -66,8 +66,49 @@
     (let ([id (car (undo:history b))])
       (/ (cpu-ns-per-op 1000 (lambda () (undo:go-to! b 0) (undo:go-to! b id))) 2.0))))
 
+(define (prompt-end b) (fx- (document:length (buffers:document b)) 2))
+
+(define (type-message! b message-length)
+  (do ([g 0 (fx+ g 1)]) ((fx= g (fxquotient message-length 20)))
+    (do ([c 0 (fx+ c 1)]) ((fx= c 20))
+      (buffers:replace! b (prompt-end b) (prompt-end b) "x"))
+    (batch-ended)))
+
+(define (send-message! b message-length)
+  (buffers:with-silent-edits b
+    (buffers:replace! b (fx- (prompt-end b) message-length) (prompt-end b) ""))
+  (batch-ended))
+
+(define (chat-buffer name sent message-length)
+  (let ([b (buffers:make name "Conversation.\n> \n")])
+    (do ([m 0 (fx+ m 1)]) ((fx= m sent))
+      (type-message! b message-length)
+      (send-message! b message-length))
+    (type-message! b message-length)
+    b))
+
+(define (streaming-batch b message-length)
+  (buffers:with-silent-edits b
+    (do ([k 0 (fx+ k 1)]) ((fx= k 5))
+      (let ([at (fx- (prompt-end b) (fx+ message-length 2))])
+        (buffers:replace! b at at "reply text "))))
+  (batch-ended))
+
+(define (silent-batch-cost sent message-length)
+  (let ([kept (chat-buffer (format "chat-~a-~a" sent message-length) sent message-length)]
+        [plain (buffers:make (format "plain-~a-~a" sent message-length)
+                 (string-append "Conversation.\n> " (make-string message-length #\x) "\n"))])
+    (cpu-ns-difference 20
+      (lambda () (streaming-batch kept message-length))
+      (lambda () (streaming-batch plain message-length)))))
+
 (define (run)
   (let ([record (record-cost)])
     (show "record-ns" record)
     (show "batch-end-ns" (batch-end-cost record)))
-  (show "undo-step-us" (/ (move-cost) 1000.0)))
+  (show "undo-step-us" (/ (move-cost) 1000.0))
+  (for-each
+    (lambda (sent)
+      (show (format "silent-batch-~a-us" sent) (/ (silent-batch-cost sent 200) 1000.0)))
+    '(50 200 500))
+  (show "silent-batch-typed-2000-us" (/ (silent-batch-cost 50 2000) 1000.0)))

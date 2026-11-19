@@ -12,7 +12,7 @@
    place-kept! move-kept! merge-met! edge-error stops-from chars end-of-line first-stop column clear-marks!
    set-marks! forget-temporary! exchange-marks! check-regions word-characters-in words-from
    line-motion-continues? note-line-motion! recase! capitalizer replace-region-or! insert-at-cursors! kill-ranges! after-kill?
-   remember-kill! yank-pieces! yanked-in? replace-yank! pure-text note-change! clear-changed-marks!
+   remember-kill! yank-kills! yanked-in? replace-yank! pure-text note-change! clear-changed-marks!
    nonempty-region? shift-selected keep-changed-marks! place! place-temporary! select-between! drag-keymap start-drag! drag-in
    drag-anchor-position drag-mode mouse-range
    drag-moved? drag-moved?-set!)
@@ -302,7 +302,7 @@
                  [start (buffers:edit-start edit)])
             (forget-temporary! c)
             (place-kept! view c
-              (after-insert start (fx+ start (document:length (buffers:edit-inserted edit))))
+              (after-insert start (fx+ start (buffers:piece-length (buffers:edit-inserted edit))))
               #f))))))
 
   (define (replace-region-or! view delete-selection? otherwise)
@@ -379,7 +379,7 @@
            [ends (map (lambda (c) (call-with-values (lambda () (ends-of c)) cons)) cursors)]
            [ranges (clip-ranges (map (lambda (e) (cons (fxmin (car e) (cdr e)) (fxmax (car e) (cdr e)))) ends))])
       (add-kill!
-        (map (lambda (r) (kill-ring:piece b (car r) (cdr r))) ranges)
+        (map (lambda (r) (buffers:piece b (car r) (cdr r))) ranges)
         (fx< (cdar ends) (caar ends))
         (after-kill?))
       (when delete?
@@ -395,22 +395,22 @@
   (define last-yank '())
   (define yank-view #f)
 
-  (define (piece-for entry count)
+  (define (kill-for entry count)
     (if (fx= (length entry) count)
         (lambda (i) (list-ref entry i))
         (let ([text (kill-ring:text entry)]) (lambda (i) text))))
 
-  ;; The record is set only once every piece is in, so a quit part-way
+  ;; The record is set only once every kill is in, so a quit part-way
   ;; makes the next yank-pop raise rather than act on half a record.
-  (define (yank-pieces! view entry delete-selection?)
-    (let ([b (views:buffer view)] [piece (piece-for entry (length (views:cursors view)))] [yanked '()])
+  (define (yank-kills! view entry delete-selection?)
+    (let ([b (views:buffer view)] [kill (kill-for entry (length (views:cursors view)))] [yanked '()])
       (set! last-yank '())
       (set! yank-view view)
       (for-each-cursor view
         (lambda (c p m)
           (let* ([r (selected-region p m delete-selection?)]
                  [start (if r (begin (buffers:replace! b (car r) (cdr r) "") (car r)) p)]
-                 [end (kill-ring:insert! b start (piece (length yanked)))])
+                 [end (kill-ring:insert! b start (kill (length yanked)))])
             (set! yanked (cons (anchor-range b c start end) yanked))
             (forget-temporary! c)
             (place-kept! view c end start))))
@@ -419,14 +419,14 @@
   (define (yanked-in? view) (and (eq? yank-view view) (pair? last-yank)))
 
   (define (replace-yank! view entry)
-    (let ([b (views:buffer view)] [ys last-yank] [piece (piece-for entry (length last-yank))])
+    (let ([b (views:buffer view)] [ys last-yank] [kill (kill-for entry (length last-yank))])
       (set! last-yank '())
       (let loop ([rs ys] [i 0])
         (unless (null? rs)
           (let ([r (car rs)])
             (let-values ([(start old-end) (range-bounds r)])
               (buffers:replace! b start old-end "")
-              (let ([end (kill-ring:insert! b start (piece i))])
+              (let ([end (kill-ring:insert! b start (kill i))])
                 ;; The start moved after the text inserted at it.
                 (buffers:set-anchor! (cursor-range-start r) start)
                 (buffers:set-anchor! (cursor-range-end r) end)
@@ -503,8 +503,10 @@
   (define changed '())
   (define keeping-marks? #f)
 
+  ;; A silent edit is a plugin's own text, not the command's change, so
+  ;; it leaves the marks.
   (define (note-change! buffer edit)
-    (when (and (commands:this-command) (not (memq buffer changed)))
+    (when (and (commands:this-command) (not (buffers:edit-silent? edit)) (not (memq buffer changed)))
       (set! changed (cons buffer changed))))
 
   (define (shift-selected view)
@@ -614,7 +616,7 @@
     (assertion-violation 'editing:paste "not a string" text))
   (let ([view (command-view 'editing:paste)])
     (kill-ring:push! (list text))
-    (yank-pieces! view (kill-ring:current) (delete-selection))))
+    (yank-kills! view (kill-ring:current) (delete-selection))))
 
 (define (move-cursors! who view n target)
   (check-main-thread 'editing:move-cursors!)
@@ -826,7 +828,7 @@
   (let ([view (command-view 'editing:yank)] [entry (kill-ring:current)])
     (unless entry
       (error 'editing:yank "the kill ring is empty"))
-    (yank-pieces! view entry (delete-selection))))
+    (yank-kills! view entry (delete-selection))))
 
 (commands:define-command (yank-pop [n (commands:prefix-number)])
   "Replaces the text the previous command yanked with the entry N older in the kill ring."
@@ -1029,18 +1031,18 @@
       (for-each-cursor view
         (lambda (c p m)
           (if (nonempty-region? p m)
-              (let ([piece (kill-ring:piece b (fxmin p m) (fxmax p m))])
+              (let ([piece (buffers:piece b (fxmin p m) (fxmax p m))])
                 (let loop ([at (fxmax p m)] [k n])
                   (unless (= k 0)
-                    (loop (kill-ring:insert! b at piece) (- k 1)))))
+                    (loop (buffers:insert! b at piece) (- k 1)))))
               (let ([doc (buffers:document b)])
                 (let-values ([(lo hi) (content-bounds view doc)])
                   (let-values ([(s e) (%line-text-range b doc (document:line doc p) hi)])
-                    (let ([piece (kill-ring:piece b s e)])
+                    (let ([piece (buffers:piece b s e)])
                       (let loop ([at e] [k n])
                         (unless (= k 0)
                           (buffers:replace! b at at "\n")
-                          (loop (kill-ring:insert! b (fx+ at 1) piece) (- k 1)))))))))
+                          (loop (buffers:insert! b (fx+ at 1) piece) (- k 1)))))))))
           (place-kept! view c p m)))
       (keep-changed-marks! view selected))))
 
@@ -1057,9 +1059,9 @@
          [end (end-of-line doc last hi)]
          [next (%line-text-start b doc (fx+ last 1) hi)]
          [following-end (end-of-line doc (fx+ last steps) hi)]
-         [following (kill-ring:piece b next following-end)]
-         [between (kill-ring:piece b end next)]
-         [shift (fx- (kill-ring:insert! b (kill-ring:insert! b start following) between) start)])
+         [following (buffers:piece b next following-end)]
+         [between (buffers:piece b end next)]
+         [shift (fx- (buffers:insert! b (buffers:insert! b start following) between) start)])
     (buffers:replace! b (fx+ end shift) (fx+ following-end shift) "")))
 
 (define (%move-block-up! b doc first last steps hi)
@@ -1067,9 +1069,9 @@
          [end (end-of-line doc last hi)]
          [previous (%line-text-start b doc (fx- first steps) hi)]
          [previous-end (end-of-line doc (fx- first 1) hi)]
-         [preceding (kill-ring:piece b previous previous-end)]
-         [between (kill-ring:piece b previous-end start)])
-    (kill-ring:insert! b (kill-ring:insert! b end between) preceding)
+         [preceding (buffers:piece b previous previous-end)]
+         [between (buffers:piece b previous-end start)])
+    (buffers:insert! b (buffers:insert! b end between) preceding)
     (buffers:replace! b previous start "")))
 
 (define-record-type (%line-move %make-line-move %line-move?)
@@ -1231,16 +1233,16 @@
 ;; an edit the buffer refuses leaves a copy of a line rather than losing
 ;; one.
 (define (%reorder-lines! b ranges order)
-  (let ([lines (map (lambda (r) (kill-ring:piece b (car r) (cdr r))) order)]
+  (let ([lines (map (lambda (r) (buffers:piece b (car r) (cdr r))) order)]
         [separators (let loop ([rs ranges] [acc '()])
                       (if (null? (cdr rs))
                           (reverse acc)
-                          (loop (cdr rs) (cons (kill-ring:piece b (cdar rs) (caadr rs)) acc))))])
-    (let ([inserted (kill-ring:insert! b (cdar (last-pair ranges)) (car (last-pair separators)))])
+                          (loop (cdr rs) (cons (buffers:piece b (cdar rs) (caadr rs)) acc))))])
+    (let ([inserted (buffers:insert! b (cdar (last-pair ranges)) (car (last-pair separators)))])
       (let loop ([at inserted] [lines lines] [separators separators])
-        (let ([at (kill-ring:insert! b at (car lines))])
+        (let ([at (buffers:insert! b at (car lines))])
           (unless (null? separators)
-            (loop (kill-ring:insert! b at (car separators)) (cdr lines) (cdr separators)))))
+            (loop (buffers:insert! b at (car separators)) (cdr lines) (cdr separators)))))
       (buffers:replace! b (caar ranges) inserted ""))))
 
 (commands:define-command (sort-lines)
@@ -1350,7 +1352,7 @@
     (when (and view (views:buffer view))
       (let* ([c (car (views:cursors view))] [p (views:cursor-point c)] [m (views:cursor-mark c)])
         (when (nonempty-region? p m)
-          (set! %primary (kill-ring:piece (views:buffer view) (fxmin p m) (fxmax p m))))))))
+          (set! %primary (buffers:piece (views:buffer view) (fxmin p m) (fxmax p m))))))))
 
 (define %saved-at #f)
 

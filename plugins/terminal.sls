@@ -1,6 +1,6 @@
 #!tuna
 (import (buffers) (document) (views) (keys) (commands) (modes) (editing) (kill-ring) (clipboard)
-        (undo) (files) (layout) (web) (haml) (ask) (processes) (browse-url)
+        (files) (layout) (web) (haml) (ask) (processes) (browse-url)
         (prefix (ghostty) ghostty:) (prefix (terminal screens) screens:))
 
 (define-option shell #f (lambda (v) (or (not v) (and (pair? v) (list? v) (for-all string? v))))
@@ -427,14 +427,8 @@
     (let loop ([j 0] [at (%screen-start t)])
       (if (fx= j i) at (loop (fx+ j 1) (fx+ at (fx+ (string-length (%row-text (vector-ref rows j))) 1)))))))
 
-;; The user's edits are refused, so every edit is the plugin's and
-;; leaves no unsaved text to ask about.
-(define (%splice! b start end datum)
-  (buffers:splice! b start end datum)
-  (buffers:set-modified! b #f))
-
 (define (%splice-text! b start end text)
-  (%splice! b start end (document:from-datum text)))
+  (buffers:splice! b start end (document:from-datum text)))
 
 (define (%write-rows! t new)
   (let* ([old (%terminal-rows t)] [n (vector-length new)] [m (vector-length old)]
@@ -492,7 +486,7 @@
              [start (fx+ (document:node-start node) 1)]
              [line (document:line doc start)]
              [end (document:line-start doc (fx+ line extra))])
-        (%splice! b start end (document:from-datum ""))
+        (buffers:splice! b start end (document:from-datum ""))
         (%terminal-scrollback-count-set! t (scrollback-lines))))))
 
 (define (%limit-scrollback!)
@@ -504,7 +498,7 @@
 
 (define (%clear-scrollback! t)
   (let* ([b (%terminal-buffer t)] [node (%scrollback-node b)])
-    (%splice! b (fx+ (document:node-start node) 1) (fx- (document:node-end node) 1) (document:from-datum ""))
+    (buffers:splice! b (fx+ (document:node-start node) 1) (fx- (document:node-end node) 1) (document:from-datum ""))
     (%terminal-scrollback-count-set! t 0)
     (%terminal-joining?-set! t #f)))
 
@@ -593,8 +587,8 @@
                          (loop (cdr rows) (fx+ end 1) (cons (cons end (cdar rows)) acc)))))]
            [size (fx- (fx+ (caar ends) 1) close)]
            [shown (%terminal-rows t)] [k (length rows)] [cursor (%terminal-cursor t)])
-      (%splice! b close (fx+ close 2) (document:from-datum))
-      (%splice! b (caar ends) (fx+ (caar ends) 1) (document:replace boundary 0 0 (document:from-datum "\n")))
+      (buffers:splice! b close (fx+ close 2) (document:from-datum))
+      (buffers:splice! b (caar ends) (fx+ (caar ends) 1) (document:replace boundary 0 0 (document:from-datum "\n")))
       ;; A wrapped row goes on with the next one, so its newline goes;
       ;; the last row's stays, ending the scrollback's open line.
       (let ([joins (filter cdr (cdr ends))])
@@ -968,8 +962,10 @@
 (define (%root-datum scrollback screen)
   (%root '() (%scrollback '() scrollback) (%screen '() screen)))
 
+;; The user's edits are refused, so every edit is the program's output.
 (define (%make-buffer name)
   (let ([b (buffers:make name (%root-datum "" ""))])
+    (buffers:set-silent! b #t)
     (modes:set-major-mode mode b)
     b))
 
@@ -1282,7 +1278,7 @@
   "Selects the view clicked and sends the primary selection to the program as a paste; does nothing without one."
   (let ([t (%current 'terminal:mouse-yank-primary)] [primary (editing:primary-selection)])
     (layout:select! (views:current))
-    (when primary (%paste-text! t (kill-ring:text (list primary))))))
+    (when primary (%paste-text! t (buffers:piece-text primary)))))
 
 (define (%posn-cell t posn)
   (let-values ([(column row) (views:posn-cell posn)])
@@ -1584,7 +1580,7 @@
       (let-values ([(rows cursor) (%screen-rows t)])
         ;; The old rows are unknown, so the screen is written whole.
         (%terminal-rows-set! t (vector))
-        (%splice! b (fx+ (document:node-start screen) 1) (fx- (document:node-end screen) 1) (document:from-datum ""))
+        (buffers:splice! b (fx+ (document:node-start screen) 1) (fx- (document:node-end screen) 1) (document:from-datum ""))
         (%write-rows! t rows)
         (%terminal-cursor-set! t cursor)))))
 
@@ -1599,7 +1595,7 @@
             (let ([rows (filter (lambda (r) (not (string=? (%row-text r) ""))) (vector->list (%terminal-rows ghost)))])
               (%terminal-rows-set! ghost (vector))
               (let ([screen (%screen-node b)])
-                (%splice! b (fx+ (document:node-start screen) 1) (fx- (document:node-end screen) 1) (document:from-datum "")))
+                (buffers:splice! b (fx+ (document:node-start screen) 1) (fx- (document:node-end screen) 1) (document:from-datum "")))
               (%append-scrollback! ghost rows)
               (%note! ghost "[The shell ended.]"))
             (%close-natives! ghost)))
@@ -1713,14 +1709,10 @@
   (keys:bind! %link-keymap "<mouse-1>" open-link)
   (keys:bind! %link-keymap "C-<mouse-1>" open-link))
 
-(define (%no-undo) (set-option-local! undo:limit 0))
-
 (modes:define-major-mode mode
   (lighter "Terminal")
   (keymap keymap)
   (hook mode-hook))
-
-(add-hook! mode-hook %no-undo)
 
 (table-set! modes:minor-modes copy-mode? -30)
 (table-set! modes:minor-modes char-mode? -20)

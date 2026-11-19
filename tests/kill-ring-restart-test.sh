@@ -31,12 +31,12 @@ expect() {
   [ "$2" = "$3" ] || fail "$1: expected $(printf '%s' "$3" | tr '\n' '|'), got $(printf '%s' "$2" | tr '\n' '|')"
 }
 
-# Exit writes the ring's text, the last kill's included; a piece goes as
-# its text, and an entry with a piece over 4,096 characters stays out.
+# Exit writes the ring's text, the last kill's included; a kill goes as
+# its text, and an entry with a kill over 4,096 characters stays out.
 output=$(run '(define b (buffers:make "b" "Hello world\n"))
 (kill-ring:push! (list "first"))
 (kill-ring:push! (list "x" (make-string 4097 #\z)))
-(kill-ring:push! (list (kill-ring:piece b 1 6) "two"))
+(kill-ring:push! (list (buffers:piece b 1 6) "two"))
 (kill-ring:append! (list " there" "!"))
 (kill-ring:push! (list "newest"))
 (kill-ring:rotate! 3)')

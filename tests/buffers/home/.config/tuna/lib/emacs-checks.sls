@@ -33,6 +33,12 @@
 
 (define (end-of b) (document:length (buffers:document b)))
 
+;; Emacs's insert brings no properties, so its text comes from a buffer
+;; with no spans.
+(define plain (buffers:make "emacs-plain" (make-string 16 #\y)))
+
+(define (plain-piece n) (buffers:piece plain 1 (+ n 1)))
+
 ;; Emacs counts positions from 1 within the text, and a buffer from 1 in
 ;; its root, so both differ from the recording's positions by one.
 (define (overlays-match? recording)
@@ -66,20 +72,20 @@
              (buffers:replace! b (+ (cadr op) 1) (+ (cadr op) 1) (make-string (caddr op) #\y))
              (loop (cdr ops) kills)]
             [(insert)
-             (buffers:replace! b (+ (cadr op) 1) (+ (cadr op) 1) (make-string (caddr op) #\y) '())
+             (buffers:replace! b (+ (cadr op) 1) (+ (cadr op) 1) (plain-piece (caddr op)))
              (loop (cdr ops) kills)]
             [(cut)
              (let ([start (+ (cadr op) 1)] [end (+ (caddr op) 1)])
-               (let ([kill (list start (- end start) (buffers:travelling-spans b start end))])
+               (let ([kill (cons start (buffers:piece b start end))])
                  (buffers:replace! b start end "")
                  (loop (cdr ops) (cons kill kills))))]
             [(undo)
              (let ([kill (car kills)])
-               (buffers:replace! b (car kill) (car kill) (make-string (cadr kill) #\y) (caddr kill))
+               (buffers:replace! b (car kill) (car kill) (cdr kill))
                (loop (cdr ops) (cdr kills)))]
             [else
              (let ([kill (car kills)] [at (+ (cadr op) 1)])
-               (buffers:replace! b at at (make-string (cadr kill) #\y) (caddr kill))
+               (buffers:replace! b at at (cdr kill))
                (loop (cdr ops) kills))]))))
     (let ([spans (buffers:spans l 0 (end-of b))])
       (equal? (map (lambda (i)

@@ -1,5 +1,5 @@
 #!tuna
-(import (ui) (buffers) (document) (layout) (undo) (commands))
+(import (ui) (buffers) (document) (layout) (commands))
 
 (define list-buffer
   (or (buffers:find "*buffer list*") (buffers:make "*buffer list*" (ui:list '()))))
@@ -11,5 +11,3 @@
   (ui:set-rows! list-buffer (document:token (buffers:document list-buffer) 0)
                 (list->vector (buffers:all)) buffer-row layout:switch-to-buffer)
   (layout:switch-to-buffer list-buffer))
-
-(buffers:with-buffer list-buffer (set-option-local! undo:limit 0))

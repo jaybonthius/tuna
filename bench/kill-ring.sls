@@ -85,15 +85,13 @@
     (show "prepend" (- (ns-per-op 2000 (lambda () (kill-ring:push! (list line)) (kill-ring:prepend! (list "x")))) push)))
   (show "rotate" (ns-per-op 2000 (lambda () (kill-ring:rotate! 1))))
   (let* ([b (buffers:make "large" (make-string 1000000 #\l))]
-         [p (kill-ring:piece b 1 (- (document:length (buffers:document b)) 1))])
+         [p (buffers:piece b 1 (- (document:length (buffers:document b)) 1))])
     (with-options ([kill-ring:skip-duplicates #t])
       (show "push-large"
         (/ (ns-per-op 200 (lambda () (kill-ring:push! (list p)) (kill-ring:push! (list "small")))) 2))))
   (let* ([b (line-buffer)]
-         [p (kill-ring:piece b 1 82)]
-         [slice (document:slice (buffers:document b) 1 82)]
-         [spans (buffers:travelling-spans b 1 82)])
-    (show "piece" (ns-per-op 2000 (lambda () (kill-ring:piece b 1 82))))
+         [p (buffers:piece b 1 82)])
+    (show "piece" (ns-per-op 2000 (lambda () (buffers:piece b 1 82))))
     ;; A view reads the document after each command, which freezes it, so
     ;; insert! reading it finds it frozen; without the read here, insert!
     ;; would be charged the freezing of the previous delete.
@@ -104,7 +102,7 @@
                       (buffers:replace! b 83 164 "")
                       (buffers:document b))
                     (lambda ()
-                      (buffers:replace! b 83 83 slice spans)
+                      (buffers:replace! b 83 83 p)
                       (buffers:replace! b 83 164 "")
                       (buffers:document b)))])
       (show "insert" insert)

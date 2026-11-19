@@ -2239,8 +2239,8 @@
 
   (define (update-edited-maps! vs buffer edit)
     (let* ([start (buffers:edit-start edit)]
-           [old-end (fx+ start (document:length (buffers:edit-removed edit)))]
-           [new-end (fx+ start (document:length (buffers:edit-inserted edit)))]
+           [old-end (fx+ start (buffers:piece-length (buffers:edit-removed edit)))]
+           [new-end (fx+ start (buffers:piece-length (buffers:edit-inserted edit)))]
            [doc (buffers:document buffer)]
            [before (fx- (document:length doc) (fx- new-end old-end))]
            [count (counter doc)])
@@ -2412,7 +2412,7 @@
     (assertion-violation 'views:mouse-item "not a mouse item" item))
 
   (define (edit-delta e)
-    (fx- (document:length (buffers:edit-inserted e)) (document:length (buffers:edit-removed e))))
+    (fx- (buffers:piece-length (buffers:edit-inserted e)) (buffers:piece-length (buffers:edit-removed e))))
 
   ;; A position names the gap before a token, so it follows that token,
   ;; and is gone with it.
@@ -2420,7 +2420,7 @@
     (let loop ([p p] [es edits])
       (if (null? es)
           p
-          (let* ([e (car es)] [s (buffers:edit-start e)] [removed (document:length (buffers:edit-removed e))])
+          (let* ([e (car es)] [s (buffers:edit-start e)] [removed (buffers:piece-length (buffers:edit-removed e))])
             (cond
               [(fx< p s) (loop p (cdr es))]
               [(fx< p (fx+ s removed)) #f]
@@ -2430,7 +2430,7 @@
     (fold-right
       (lambda (e doc)
         (let ([s (buffers:edit-start e)])
-          (document:replace doc s (fx+ s (document:length (buffers:edit-inserted e))) (buffers:edit-removed e))))
+          (document:replace doc s (fx+ s (buffers:piece-length (buffers:edit-inserted e))) (buffers:piece-document (buffers:edit-removed e)))))
       doc edits))
 
   (define (item-place b item field)

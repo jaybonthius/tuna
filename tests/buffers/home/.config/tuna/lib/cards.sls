@@ -15,7 +15,7 @@
 (buffers:define-kind field (inline))
 
 (define (characters-only node edit)
-  (let ([inserted (buffers:edit-inserted edit)])
+  (let ([inserted (buffers:piece-document (buffers:edit-inserted edit))])
     (let loop ([p 0])
       (or (fx= p (document:length inserted))
           (and (char? (document:token inserted p)) (loop (fx+ p 1)))))))

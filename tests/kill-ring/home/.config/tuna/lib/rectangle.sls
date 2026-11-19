@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (kill-ring))
+(import (buffers))
 
 (buffers:define-kind block)
 
@@ -7,4 +7,4 @@
 
 (define (yank-block buffer position piece)
   (set! yanks (cons position yanks))
-  (kill-ring:insert! buffer position (kill-ring:text (list piece))))
+  (buffers:insert! buffer position (buffers:piece-text piece)))

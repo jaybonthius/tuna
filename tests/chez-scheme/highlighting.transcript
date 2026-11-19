@@ -86,7 +86,7 @@
 > (faces w)
 (("'" punctuation.special) ("car-or-cdr" string.special.symbol) ("x" string.special.symbol))
 ; The spans do not travel, so a kill carries no highlights.
-> (buffers:travelling-spans w 0 13)
+> (let ([copy (buffers:make "copy" "\n")]) (buffers:insert! copy 1 (buffers:piece w 2 12)) (buffers:layers copy))
 ()
 ; The job is told where each edit was, so a space typed after a lexeme,
 ; among other spaces, loses the lexeme's face at the next lex.

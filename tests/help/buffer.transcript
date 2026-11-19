@@ -10,8 +10,8 @@
 > (define hooked 0)
 > (add-hook! help:mode-hook (lambda () (set! hooked (+ hooked 1))))
 > (press! "C-h" "m")
-> (list hooked (modes:major-mode (help-buffer)) (modes:lighter help:mode) (buffers:with-buffer (help-buffer) (undo:limit)) (buffers:modified? (help-buffer)))
-(1 help:mode "Help" 0 #f)
+> (list hooked (modes:major-mode (help-buffer)) (modes:lighter help:mode) (buffers:silent? (help-buffer)) (buffers:modified? (help-buffer)))
+(1 help:mode "Help" #t #f)
 ; C-h m: the minor modes on in the view, each with its lighter, its
 ; documentation and its keymap's; then the major mode and its ancestry.
 ; Bindings are each keymap's own, walking keymaps bound as prefixes.

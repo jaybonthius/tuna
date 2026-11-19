@@ -116,10 +116,10 @@
 > (define replayed
     (fold-left
       (lambda (doc e)
-        (let* ([start (buffers:edit-start e)] [end (+ start (document:length (buffers:edit-removed e)))])
-          (unless (equal? (document:datums (document:slice doc start end)) (document:datums (buffers:edit-removed e)))
+        (let* ([start (buffers:edit-start e)] [end (+ start (buffers:piece-length (buffers:edit-removed e)))])
+          (unless (equal? (document:datums (document:slice doc start end)) (document:datums (buffers:piece-document (buffers:edit-removed e))))
             (error 'replay "an edit removed what the document did not hold" (buffers:edit-version e)))
-          (document:replace doc start end (buffers:edit-inserted e))))
+          (document:replace doc start end (buffers:piece-document (buffers:edit-inserted e)))))
       first-document log))
 > (equal? (document:datums replayed) (document:datums (buffers:document b)))
 #t

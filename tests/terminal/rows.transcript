@@ -1,6 +1,6 @@
 ; Each edit as its start, the length it removed and the text it put in.
 > (define (edits b version)
-    (map (lambda (e) (list (buffers:edit-start e) (document:length (buffers:edit-removed e)) (document:text (buffers:edit-inserted e))))
+    (map (lambda (e) (list (buffers:edit-start e) (buffers:piece-length (buffers:edit-removed e)) (document:text (buffers:piece-document (buffers:edit-inserted e)))))
          (buffers:edits-since b version)))
 > (define (line-ids)
     (let ([html (html->string (views:draw (view) client))] [key "class=\"line\" id=\""])

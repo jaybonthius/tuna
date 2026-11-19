@@ -1,18 +1,18 @@
-; A piece keeps the text of each atom in its range, from the atom's
-; kind, and kill-ring:text joins it with the piece's characters on any
-; thread. An atom whose kind gives no text gives none.
+; A kill keeps the text of each atom in its piece, from the atom's kind,
+; and kill-ring:text joins it with the piece's characters on any thread. An atom whose kind gives no text gives none.
 > (import (md))
 > (define b (buffers:make "b" (md:doc '() (md:para '() "a " (md:badge '((label . "NEW"))) " b " (md:image '()) "c\n"))))
-> (define p (kill-ring:piece b 2 10))
-> (kill-ring:text (list p))
+> (define p (buffers:piece b 2 10))
+> (buffers:piece-text p)
 "a NEW b c"
-> (let ([result #f]) (thread-join (fork-thread (lambda () (set! result (kill-ring:text (list p)))))) result)
+> (kill-ring:push! (list p))
+> (define entry (kill-ring:current))
+> (let ([result #f]) (thread-join (fork-thread (lambda () (set! result (kill-ring:text entry))))) result)
 "a NEW b c"
 ; The text decides duplicates: pushing the same text again only moves the
 ; yank pointer.
-> (kill-ring:push! (list p))
 > (define count (length (kill-ring:entries)))
-> (kill-ring:push! (list (kill-ring:text (list p))))
+> (kill-ring:push! (list (kill-ring:text entry)))
 > (= count (length (kill-ring:entries)))
 #t
 ; Yanked back, the atoms come back as they were.

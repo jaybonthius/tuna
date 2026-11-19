@@ -1,7 +1,7 @@
 ; The layout keeps no undo history, so no key takes back the echo
 ; area's placement.
-> (buffers:with-buffer layout:buffer (undo:limit))
-0
+> (buffers:silent? layout:buffer)
+#t
 ; The echo area sits at the bottom of the screen at depth 90, outside the
 ; level of the user's windows; parts placed at the bottom are ordered by
 ; depth, then in the order placed.
@@ -103,8 +103,8 @@
 #t
 > (echo-area:message! "After")
 ; Neither buffer keeps undo history.
-> (map (lambda (b) (buffers:with-buffer b (undo:limit))) (list echo-buffer (buffers:find "*Messages*")))
-(0 0)
+> (map buffers:silent? (list echo-buffer (buffers:find "*Messages*")))
+(#t #t)
 ; A click on the echo area shows *Messages* in another view without
 ; selecting it, its point at the end.
 > (layout-split:split-view! (view) (layout-split:direction column))
@@ -145,14 +145,14 @@ echo-area:show-messages
 > (import (poker))
 > (poker:poke)
 > (unload-module! '(poker))
-> (list (messages) (buffers:with-buffer (buffers:find "*Messages*") (undo:limit)))
-("Poked\n" 0)
+> (list (messages) (buffers:silent? (buffers:find "*Messages*")))
+("Poked\n" #t)
 > (buffers:kill! (buffers:find "*Messages*"))
 #t
 > (define late? #t)
 > (advice-add! batch-ended (lambda (ended) (ended) (when late? (set! late? #f) (echo-area:message! "Late"))))
-> (list (messages) (buffers:with-buffer (buffers:find "*Messages*") (undo:limit)))
-("Late\n" 0)
+> (list (messages) (buffers:silent? (buffers:find "*Messages*")))
+("Late\n" #t)
 ; Advised to return #t, echo-area:hidden? makes the echo area draw
 ; nothing, so its part takes no room; messages show, are logged and are
 ; cleared as before.

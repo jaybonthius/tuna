@@ -107,8 +107,8 @@
       (when h
         (jobs:send! (highlighting-job h)
                     (cons* 'edit (buffers:version buffer) (buffers:edit-start edit)
-                           (document:length (buffers:edit-removed edit))
-                           (document:length (buffers:edit-inserted edit))
+                           (buffers:piece-length (buffers:edit-removed edit))
+                           (buffers:piece-length (buffers:edit-inserted edit))
                            (buffers:document buffer))))))
 
   (define (tell-bracket-users!)

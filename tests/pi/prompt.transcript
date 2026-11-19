@@ -3,22 +3,22 @@
 > (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 > (in-client (lambda () (pi-chat:show! chat)))
 > (define b (pi-chat:buffer chat))
-; The chat is a buffer of its own mode, named after its folder, linked to
-; Pi's process, and keeping no undo history.
+; The chat is a buffer of its own mode, named after its folder, and
+; linked to Pi's process. Its prompt's edits are history; the
+; conversation's rewrites are silent.
 > (list (buffers:name b) (modes:major-mode b) (eq? (pi-chat:chat-of b) chat) (eq? (processes:buffer (pi:chat-process chat)) b))
 ("*pi: home*" pi-chat:mode #t #t)
-> (buffers:with-buffer b (undo:limit))
-0
+> (buffers:silent? b)
+#f
 ; Point is in the prompt; RET sends it with pi:send!, the text moving at
 ; once into the prompt history. A key that waits for Pi pauses the task
 ; it runs in, so the test presses it in a task of its own.
 > (type! "Fix it")
 > (shown chat)
 "Fix it\n"
-; The prompt's text is kept in saved data, so typing leaves the chat
-; unmodified.
+; Typing marks the chat modified, as it does any buffer.
 > (buffers:modified? b)
-#f
+#t
 > (answer! f "prompt" (lambda (f r) #f))
 > (define t (start! (lambda () (press! "RET"))))
 > (define r (wait-held f "prompt"))
@@ -85,3 +85,122 @@
 ("clear_queue" "clear_queue" "abort")
 > (shown chat)
 "Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nSteer a\nFollow-up b\na\nb\na\nb\nThen\ntest\nmore\n"
+; Undo in the prompt keeps its history while Pi writes above it.
+> (define (shows? text)
+    (let ([s (shown chat)] [n (string-length text)])
+      (let loop ([i 0])
+        (and (<= (+ i n) (string-length s))
+             (or (string=? (substring s i (+ i n)) text) (loop (+ i 1)))))))
+> (type! " now")
+> (say! f (event "agent_start")
+        (event "message_start" (cons "message" (assistant-message "pending")))
+        (update '(("type" . "text_start") ("contentIndex" . 0)))
+        (update '(("type" . "text_delta") ("contentIndex" . 0) ("delta" . "Working"))))
+> (wait-until (lambda () (shows? "Working\n")))
+> (press! "C-/")
+> (shown chat)
+"Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nWorking\nSteer a\nFollow-up b\na\nb\na\nb\nThen\ntest\nmore\n"
+> (say! f (update '(("type" . "text_delta") ("contentIndex" . 0) ("delta" . " on it"))))
+> (wait-until (lambda () (shows? "Working on it")))
+> (press! "C-/")
+> (shown chat)
+"Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nWorking on it\nSteer a\nFollow-up b\na\nb\nThen\ntest\nmore\n"
+> (press! "C-?")
+> (list (shown chat) (buffers:modified? b))
+("Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nWorking on it\nSteer a\nFollow-up b\na\nb\na\nb\nThen\ntest\nmore\n" #t)
+; Keys typed over several batches join as in any buffer, so one C-/
+; takes back the word.
+> (type! " w")
+> (type! "o")
+> (type! "r")
+> (type! "d")
+> (press! "C-/")
+> (shown chat)
+"Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nWorking on it\nSteer a\nFollow-up b\na\nb\na\nb\nThen\ntest\nmore\n"
+; Sending clears the prompt silently, so its history goes with the text
+; sent: C-/ after RET does not bring it back, and M-p does.
+> (answer! f "prompt" (lambda (f r) #f))
+> (define t (start! (lambda () (press! "RET"))))
+> (define r (wait-held f "prompt"))
+> (respond! f r '(("disposition" . "started")))
+> (result t)
+> (shown chat)
+"Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nWorking on it\nSteer a\nFollow-up b\n\n"
+> (press! "C-/")
+! undo:undo: no further undo information
+> (press! "M-p")
+> (shown chat)
+"Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nWorking on it\nSteer a\nFollow-up b\na\nb\na\nb\nThen\ntest\nmore\n"
+; Killing a chat with an unsent prompt asks nothing: pi-chat:drafts keeps
+; the prompt, as an entry of files:unsaved-kept says.
+> (press! "C-/")
+> (type! "unsent")
+> (sleep-for 0.1)
+> (list (buffers:modified? b) (equal? (pi-chat:drafts) (list (cons (pi:chat-session-id chat) "unsent"))))
+(#t #t)
+> (define asked '())
+> (set-option! ask:y-or-n-reader (lambda (question) (set! asked (cons question asked)) #f))
+> (commands:define-command (kill-chat) "Kills the chat's buffer." (buffers:kill! b))
+> (commands:run kill-chat)
+#t
+> (list asked (buffers:live? b))
+(() #f)
+; The draft is the session's, so it outlives the chat: another chat's
+; prompt edits leave it.
+> (define other (pi:start (getenv "HOME")))
+> (wait-until (lambda () (eq? (pi:chat-activity other) 'idle)))
+> (in-client (lambda () (pi-chat:show! other)))
+> (type! "x")
+> (sleep-for 0.1)
+> (map cdr (pi-chat:drafts))
+("x" "unsent")
+; The prompt keeps its text when its chat moves to another session, so
+; the draft moves with it, and the session left keeps no copy to show
+; once the text is sent or deleted.
+> (define other-id (pi:chat-session-id other))
+> (fake-state-set! (fake-of other) '(("sessionId" . "s-new")))
+> (result (start! (lambda () (pi:new-session! other))))
+> (wait-until (lambda () (equal? (pi:chat-session-id other) "s-new")))
+> (sleep-for 0.1)
+> (list (shown other) (assoc other-id (pi-chat:drafts)) (assoc "s-new" (pi-chat:drafts)))
+("x\n" #f ("s-new" . "x"))
+> (in-client (lambda () (pi-chat:set-prompt! other "")))
+> (sleep-for 0.1)
+> (map cdr (pi-chat:drafts))
+("unsent")
+> (define again (pi:start (getenv "HOME") other-id))
+> (wait-until (lambda () (eq? (pi:chat-activity again) 'idle)))
+> (shown again)
+"\n"
+; A reload of the plugin keeps the draft moving with its chat.
+> (in-client (lambda () (pi-chat:show! again)))
+> (type! "kept")
+> (sleep-for 0.1)
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/pi-chat.sls"))
+> (fake-state-set! (fake-of again) '(("sessionId" . "s-after")))
+> (result (start! (lambda () (pi:new-session! again))))
+> (wait-until (lambda () (equal? (pi:chat-session-id again) "s-after")))
+> (sleep-for 0.1)
+> (list (assoc other-id (pi-chat:drafts)) (assoc "s-after" (pi-chat:drafts)))
+(#f ("s-after" . "kept"))
+; A chat killed in the batch it moves into a session that keeps a draft
+; saves that draft before its own prompt's text.
+> (define chat-id (pi:chat-session-id chat))
+> (define again-buffer (pi-chat:buffer again))
+> (add-hook! pi:chat-changed (lambda (c) (when (and (eq? c again) (equal? (pi:chat-session-id c) chat-id) (buffers:live? again-buffer)) (buffers:kill! again-buffer))))
+> (fake-state-set! (fake-of again) (list (cons "sessionId" chat-id)))
+> (define moving (start! (lambda () (pi:switch-session! again (string-append "/sessions/" chat-id ".jsonl")))))
+> (wait-until (lambda () (not (buffers:live? again-buffer))))
+> (sleep-for 0.1)
+> (list (cdr (assoc chat-id (pi-chat:drafts))) (assoc "s-after" (pi-chat:drafts)))
+("unsent\nkept" #f)
+; Resuming that session in another chat puts its draft back in the
+; prompt, before the text there.
+> (in-client (lambda () (pi-chat:show! other)))
+> (type! "typed")
+> (fake-state-set! (fake-of other) (list (cons "sessionId" chat-id)))
+> (result (start! (lambda () (pi:switch-session! other (string-append "/sessions/" chat-id ".jsonl")))))
+> (wait-until (lambda () (equal? (pi:chat-session-id other) chat-id)))
+> (sleep-for 0.1)
+> (list (shown other) (cdr (assoc chat-id (pi-chat:drafts))) (assoc "s-new" (pi-chat:drafts)))
+("unsent\nkept\ntyped\n" "unsent\nkept\ntyped" #f)

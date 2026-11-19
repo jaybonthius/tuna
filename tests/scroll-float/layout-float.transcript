@@ -68,8 +68,8 @@ class="float-child" style="--layout-float-inline-size:calc(30ch + var(--layout-f
 > (press! desktop '("v" "super"))
 > (tree)
 (layout:level () (layout-float:container () #(views:view ((view . 8) (buffer . "b"))) #(views:view ((view . 9) (buffer . "a") (place box 1/2 1/2) (width . 1/2) (height . 1/2)))))
-> (buffers:with-buffer layout:buffer (undo:limit))
-0
+> (buffers:silent? layout:buffer)
+#t
 > (define ve (views:make a))
 > (set-parts! (layout-split:container '() (atom (views:make b)) (layout:level '() (layout-split:container '() (atom ve) (atom (views:make b))))))
 > (layout:select! ve)

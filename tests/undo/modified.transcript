@@ -55,27 +55,22 @@
 ("yxa\n" #t #f)
 > (raised (lambda () (buffers:set-modified! 'm #f)))
 (buffers:set-modified! "not a buffer")
-; A buffer whose name starts with a space keeps no history, as in Emacs.
+; A buffer whose name starts with a space is silent, as Emacs's starts
+; with no undo list: it keeps no history and stays unmodified.
 > (define q (buffers:make " quiet" "\n"))
 > (buffers:replace! q 1 1 "a")
 #<edit 1>
-> (list (buffers:with-buffer q (undo:limit)) (tree q))
-(0 (0 #f (0 #f)))
+> (list (buffers:silent? q) (buffers:modified? q) (tree q))
+(#t #f (0 0 (0 #f)))
 > (buffers:with-buffer q (commands:run undo:undo 1))
 ! undo:undo: no further undo information
-; Undo's local value comes first in the order of changes, since whatever
-; names the option loads after undo, so a local value set by a plugin
-; or the configuration turns history back on.
-> (buffers:with-buffer q (set-option-local! undo:limit 1000))
+; Its plugin can make it not silent, and its edits are history.
+> (buffers:set-silent! q #f)
 > (buffers:replace! q 1 1 "b")
 #<edit 2>
 > (buffers:with-buffer q (commands:run undo:undo 1))
-> (text q)
-"a\n"
-; The space is read once, at undo's first record of the buffer.
-> (buffers:rename! q "loud")
-> (buffers:with-buffer q (undo:limit))
-1000
+> (list (text q) (buffers:modified? q))
+("a\n" #f)
 ; A body that raises takes its edits back, and when that comes back to
 ; the state the buffer was unmodified at, the buffer is unmodified again.
 > (define c (buffers:make "cancelled" "\n"))
@@ -83,14 +78,13 @@
 (body "stops")
 > (list (text c) (buffers:modified? c) (tree c))
 ("\n" #f (0 0 (0 #f)))
-; Setting a major mode drops local values; undo's own 0 is set again in
-; the buffer's new scope, so the quiet buffer stays quiet.
+; Silence is the buffer's own, so renaming the buffer or setting its
+; major mode keeps it.
 > (use-plugin modes)
 > (define p (buffers:make " plain" "\n"))
-> (buffers:replace! p 1 1 "a")
-#<edit 1>
+> (buffers:rename! p "plain")
 > (modes:set-major-mode modes:fundamental p)
 > (buffers:replace! p 1 1 "b")
-#<edit 2>
-> (list (buffers:with-buffer p (undo:limit)) (tree p))
-(0 (0 #f (0 #f)))
+#<edit 1>
+> (list (buffers:silent? p) (buffers:modified? p) (tree p))
+(#t #f (0 0 (0 #f)))

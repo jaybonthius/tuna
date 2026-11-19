@@ -164,10 +164,10 @@ files:save-some-buffers
 ! files:write-file: is a folder with irritant "~/box/*scrap*"
 > (list (files:path scrap) (buffers:name scrap))
 ("~/fresh/*scrap*" "*scrap*")
-; A command that kills a modified buffer asks first, unless the buffer
-; visits a file whose edits an entry of files:unsaved-kept keeps. Code
-; outside a command, an unmodified buffer and an internal one are not
-; asked about.
+; A command that kills a modified buffer asks first, unless an entry of
+; files:unsaved-kept keeps its edits, whether or not it visits a file.
+; Code outside a command, an unmodified buffer and an internal one are
+; not asked about.
 > (commands:define-command (kill [buffer (buffers:current)]) "Kills BUFFER." (buffers:kill! buffer))
 > (define unsaved (buffers:make "*unsaved*" ""))
 > (buffers:replace! unsaved 1 1 "text")
@@ -198,9 +198,9 @@ files:save-some-buffers
 > (buffers:replace! note 1 1 "text")
 #<edit 1>
 > (commands:run kill note)
-#f
+#t
 > (list (questions) (buffers:live? note))
-(("Buffer *note* has unsaved text; kill anyway? ") #t)
+(() #f)
 > (map (lambda (b) (commands:run kill b)) (list one (buffers:make "*clean*" "") internal))
 (#t #t #t)
 > (remove-hook! files:unsaved-kept keep-all)
