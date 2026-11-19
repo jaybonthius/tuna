@@ -242,6 +242,60 @@
     (set! count (+ count 1))
     (format "~a-~a-~a" loaded-at tuna-pid count))
 
+  (define-ftype passwd
+    (struct [name uptr] [password uptr] [uid unsigned-32] [gid unsigned-32] [gecos uptr] [home uptr] [shell uptr]))
+
+  (define (c-string address)
+    (let ([n (let loop ([i 0]) (if (fx= (foreign-ref 'unsigned-8 address i) 0) i (loop (fx+ i 1))))])
+      (let ([bytes (make-bytevector n)])
+        (do ([i 0 (fx+ i 1)]) ((fx= i n) (utf8->string bytes))
+          (bytevector-u8-set! bytes i (foreign-ref 'unsigned-8 address i))))))
+
+  (define (foreign-string s)
+    (let* ([bytes (string->utf8 s)] [n (bytevector-length bytes)] [address (foreign-alloc (fx+ n 1))])
+      (do ([i 0 (fx+ i 1)]) ((fx= i n) (foreign-set! 'unsigned-8 address n 0) address)
+        (foreign-set! 'unsigned-8 address i (bytevector-u8-ref bytes i)))))
+
+  ;; The lookup can wait on a network directory, so it runs on a spawning
+  ;; thread with collection allowed; getpwnam and getpwuid return one
+  ;; static entry that two spawning threads would share.
+  (define user-entry (foreign-procedure __collect_safe "getpwnam_r" (uptr uptr uptr size_t uptr) int))
+  (define own-entry (foreign-procedure __collect_safe "getpwuid_r" (unsigned-32 uptr uptr size_t uptr) int))
+  (define user-id (foreign-procedure "getuid" () unsigned-32))
+  (define erange 34)
+
+  (define (passwd-home lookup)
+    (let ([entry (foreign-alloc (ftype-sizeof passwd))] [found (foreign-alloc (foreign-sizeof 'uptr))])
+      (let retry ([size 1024])
+        (let* ([buffer (foreign-alloc size)]
+               [error (lookup entry buffer size found)]
+               [home (and (fx= error 0) (not (fx= (foreign-ref 'uptr found 0) 0))
+                          (c-string (ftype-ref passwd (home) (make-ftype-pointer passwd entry))))])
+          (foreign-free buffer)
+          (cond
+            [(fx= error erange) (retry (fx* size 2))]
+            [else
+             (foreign-free entry)
+             (foreign-free found)
+             home])))))
+
+  ;; Chez expands a leading ~ or ~user in every file name it opens, so
+  ;; Tuna's paths keep the ~ as typed; the system does not expand a
+  ;; program's directory.
+  (define (expand-home directory)
+    (if (and directory (fx> (string-length directory) 0) (char=? (string-ref directory 0) #\~))
+        (let* ([n (string-length directory)]
+               [end (let loop ([i 1]) (if (or (fx= i n) (char=? (string-ref directory i) #\/)) i (loop (fx+ i 1))))]
+               [home (if (fx= end 1)
+                         (or (getenv "HOME")
+                             (passwd-home (lambda (entry buffer size found) (own-entry (user-id) entry buffer size found))))
+                         (let* ([name (foreign-string (substring directory 1 end))]
+                                [home (passwd-home (lambda (entry buffer size found) (user-entry name entry buffer size found)))])
+                           (foreign-free name)
+                           home))])
+          (if home (string-append home (substring directory end n)) directory))
+        directory))
+
   (define (start! kind program arguments options owner on-output on-exit)
     (let* ([id (next-id!)]
            [p (make-process id count (cons program arguments) kind owner
@@ -327,7 +381,7 @@
     (for-each (lambda (p) (with-process-mutex p (condition-broadcast (process-room p)))) registry))
 
   (define (spawn-child p program arguments directory environment)
-    (let ([size (with-mutex (process-mutex p) (process-size p))])
+    (let ([size (with-mutex (process-mutex p) (process-size p))] [directory (expand-home directory)])
       (cond
         [size
          (let ([pty (native-open-pty (car size) (cdr size))])
@@ -396,7 +450,7 @@
                            (process-eof?-set! p #t))
                          (lambda () (raise c))])
              (let ([native (native-spawn-process program arguments
-                             (native-process-options [directory directory] [environment environment]
+                             (native-process-options [directory (expand-home directory)] [environment environment]
                                [stderr 'pipe] [process-group 'new]))])
                (when (with-mutex (process-mutex p)
                        (process-native-set! p native)

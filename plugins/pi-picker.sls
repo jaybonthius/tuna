@@ -235,7 +235,7 @@
 (define-option mention-min-input 3 (lambda (v) (and (fixnum? v) (fx>= v 0)))
   "How many characters after @ the query must hold before pi-picker:complete-mention searches below the chat's folder.")
 
-;; Completion keeps every candidate a job emits while its session lasts,
+;; Completion keeps every candidate a job emits until the job clears them,
 ;; so the job emits only paths that match the query, and a query too short
 ;; to narrow a large tree gets only the folder's own entries.
 (jobs:define-worker (%list-files options emit receive)

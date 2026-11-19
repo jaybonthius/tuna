@@ -5,7 +5,7 @@
 > (define t (start! (lambda () (press! "M-s" "l"))))
 > (define s (session))
 > (wait-matches s)
-> (vector-length (completion:session-matches s))
+> (completion:matches-count (completion:session-matches s))
 2000
 > (type! "1999")
 > (wait-matches s)
@@ -103,7 +103,7 @@ waiting
 > (define t (start! (lambda () (press! "M-s" "l"))))
 > (define s (session))
 > (wait-matches s)
-> (map (lambda (m) (cons (completion:text s m) (completion:value s m))) (vector->list (completion:session-matches s)))
+> (let ([ms (completion:session-matches s)]) (map (lambda (k) (let ([m (completion:matches-ref ms k)]) (cons (completion:text s m) (completion:value s m)))) (iota (completion:matches-count ms))))
 (("intro TAG" . 0) ("alpha" . 11) ("beta" . 12) ("end" . 13))
 > (type! "beta")
 > (wait-matches s)
@@ -119,7 +119,7 @@ waiting
 > (define t (start! (lambda () (press! "M-s" "l"))))
 > (define s (session))
 > (wait-matches s)
-> (vector-length (completion:session-matches s))
+> (completion:matches-count (completion:session-matches s))
 1103
 > (type! "row 2")
 > (wait-matches s)

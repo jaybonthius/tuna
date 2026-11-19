@@ -1,121 +1,200 @@
 #!tuna
-(import (completion) (buffers) (commands) (document) (files) (jobs) (keys) (layout) (views))
+(import (completion) (buffers) (commands) (document) (files) (keys) (layout) (processes) (views))
+
+(define-option command-line
+  (list "rg" "--null" "--line-buffered" "--color=never" "--max-columns=1000" "--path-separator" "/"
+        "--smart-case" "--no-heading" "--with-filename" "--line-number" "--search-zip")
+  (lambda (v) (and (pair? v) (list? v) (for-all string? v)))
+  "The program grep:grep runs, then the arguments it starts with.")
 
 (define-option min-input 3 (lambda (v) (and (fixnum? v) (fx>= v 0)))
-  "How many characters the search must hold before grep:grep starts a job.")
+  "How many characters the search must hold before grep:grep runs a search.")
 
 (define-option delay 0.2 (lambda (v) (and (real? v) (>= v 0)))
-  "Seconds without typing before grep:grep starts a job.")
+  "Seconds without typing before grep:grep runs a search.")
 
-(define-option max-file-size 1000000 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
-  "The largest file, in bytes, that grep:grep reads.")
-
-(jobs:define-worker (%grep options emit receive)
-  (import (completion matcher))
-  (let ([root (vector-ref options 0)] [minimum (vector-ref options 1)] [delay (vector-ref options 2)]
-        [max-size (vector-ref options 3)])
-    (define (search-of prefix)
-      (let ([n (string-length prefix)])
-        (if (and (fx> n 0) (char=? (string-ref prefix (fx- n 1)) #\#)) (substring prefix 0 (fx- n 1)) prefix)))
-    (define (components s)
-      (let loop ([cs (string->list s)] [current '()] [acc '()])
-        (define (finish) (if (null? current) acc (cons (list->string (reverse current)) acc)))
-        (cond
-          [(null? cs) (reverse (finish))]
-          [(and (char=? (car cs) #\\) (pair? (cdr cs)) (char=? (cadr cs) #\space))
-           (loop (cddr cs) (cons #\space current) acc)]
-          [(char=? (car cs) #\space) (loop (cdr cs) '() (finish))]
-          [else (loop (cdr cs) (cons (car cs) current) acc)])))
-    (define (binary? bv)
-      (let ([n (fxmin 8192 (bytevector-length bv))])
-        (let loop ([i 0]) (and (fx< i n) (or (fx= (bytevector-u8-ref bv i) 0) (loop (fx+ i 1)))))))
-    (define (read-text path)
-      (guard (c [#t #f])
-        (let ([p (open-file-input-port path)])
-          (dynamic-wind
-            void
-            (lambda ()
-              (and (<= (port-length p) max-size)
-                   (let ([bv (get-bytevector-all p)])
-                     (cond
-                       [(eof-object? bv) ""]
-                       [(binary? bv) #f]
-                       [else (utf8->string bv)]))))
-            (lambda () (close-port p))))))
-    (define (lines-of text)
-      (let loop ([i 0] [start 0] [acc '()])
-        (cond
-          [(fx= i (string-length text))
-           (reverse (if (fx< start i) (cons (substring text start i) acc) acc))]
-          [(char=? (string-ref text i) #\newline) (loop (fx+ i 1) (fx+ i 1) (cons (substring text start i) acc))]
-          [else (loop (fx+ i 1) start acc)])))
-    (define (walk! matches?)
-      (call/cc
-        (lambda (k)
-          (let visit ([dir root] [shown ""])
-            (for-each
-              (lambda (name)
-                (unless (char=? (string-ref name 0) #\.)
-                  (let ([path (string-append dir "/" name)] [rel (string-append shown name)])
-                    (let ([newer (receive 0)])
-                      (unless (eof-object? newer) (k newer)))
-                    (cond
-                      [(guard (c [#t #t]) (file-symbolic-link? path)) (void)]
-                      [(guard (c [#t #f]) (file-directory? path)) (visit path (string-append rel "/"))]
-                      [else
-                       (let ([text (read-text path)])
-                         (when text
-                           (let loop ([lines (lines-of text)] [n 1] [found '()])
-                             (cond
-                               [(null? lines) (unless (null? found) (emit (list->vector (reverse found))))]
-                               [(matches? (car lines))
-                                (loop (cdr lines) (fx+ n 1)
-                                      (cons (cons (string-append rel ":" (number->string n) ":" (car lines))
-                                                  (cons path n))
-                                            found))]
-                               [else (loop (cdr lines) (fx+ n 1) found)]))))]))))
-              (guard (c [#t '()]) (list-sort string<? (directory-list dir)))))
-          #f)))
-    (define (settle prefix)
-      (let ([next (receive delay)])
-        (if (eof-object? next) prefix (settle next))))
-    (let loop ([prefix (receive)] [last-search #f])
-      (let* ([prefix (settle prefix)] [search (search-of prefix)])
-        (if (equal? search last-search)
-            (loop (receive) search)
-            (begin
-              (emit 'clear)
-              (let ([newer (and (fx>= (string-length search) minimum)
-                                (let ([terms (map (lambda (c) (list 'contains c)) (components search))])
-                                  (and (pair? terms) (walk! (pattern-matcher terms)))))])
-                (if newer (loop newer #f) (loop (receive) search)))))))))
-
-(define (%grep-split input)
+(define (%split input)
   (let loop ([i 0])
     (cond
       [(fx= i (string-length input)) i]
       [(char=? (string-ref input i) #\#) (fx+ i 1)]
       [else (loop (fx+ i 1))])))
 
-(define (%grep-root)
-  (let ([dir (files:directory)])
-    (if (and (fx> (string-length dir) 1) (char=? (string-ref dir (fx- (string-length dir) 1)) #\/))
-        (substring dir 0 (fx- (string-length dir) 1))
-        dir)))
+(define (%search-of prefix)
+  (let ([n (string-length prefix)])
+    (if (and (fx> n 0) (char=? (string-ref prefix (fx- n 1)) #\#)) (substring prefix 0 (fx- n 1)) prefix)))
+
+(define (%option? component) (char=? (string-ref component 0) #\-))
+
+(define (%word component)
+  (if (and (fx> (string-length component) 1) (char=? (string-ref component 0) #\\)
+           (char=? (string-ref component 1) #\-))
+      (substring component 1 (string-length component))
+      component))
+
+(define (%words-and-options search)
+  (let loop ([cs (completion:components search)] [words '()])
+    (cond
+      [(null? cs) (values (reverse words) '())]
+      [(%option? (car cs))
+       (let options ([cs cs] [acc '()])
+         (cond
+           [(null? cs) (values (reverse words) (reverse acc))]
+           [(string=? (car cs) "--") (values (append (reverse words) (cdr cs)) (reverse acc))]
+           [else (options (cdr cs) (cons (car cs) acc))]))]
+      [else (loop (cdr cs) (cons (%word (car cs)) words))])))
+
+;; Words match a line in any order only through look-ahead, which rg's
+;; default regular expression engine lacks, and which a fixed string
+;; cannot hold.
+(define (%pattern-arguments words fixed?)
+  (cond
+    [(null? (cdr words)) (list "-e" (car words))]
+    [fixed?
+     (list "-e" (apply string-append (car words) (map (lambda (word) (string-append " " word)) (cdr words))))]
+    [else
+     (list "--engine=auto" "-e"
+           (apply string-append "^" (map (lambda (word) (string-append "(?=.*" word ")")) words)))]))
+
+;; Without a path, rg searches its standard input, which is a pipe.
+(define (%arguments first-arguments search)
+  (let-values ([(words options) (%words-and-options search)])
+    (and (pair? words)
+         (let ([fixed? (exists (lambda (argument) (member argument '("-F" "--fixed-strings")))
+                               (append first-arguments options))])
+           (append first-arguments (%pattern-arguments words fixed?) options (list "."))))))
+
+(define (%same-file? line end file)
+  (and (fx= (string-length file) end)
+       (let loop ([i 0])
+         (or (fx= i end) (and (char=? (string-ref line i) (string-ref file i)) (loop (fx+ i 1)))))))
+
+;; rg names each file by the path it was given, so a name under "." starts
+;; with "./". It prints a file's lines together, so they share one path
+;; string: a search can find millions of lines.
+(define (%line-parser directory)
+  (let ([file ""] [path #f])
+    (define (path-of! line end start)
+      (unless (%same-file? line end file)
+        (set! file (substring line 0 end))
+        (set! path (if (char=? (string-ref file 0) #\/)
+                       file
+                       (string-append directory (substring file start end)))))
+      path)
+    (lambda (line)
+      (let ([n (string-length line)])
+        (let find-path-end ([i 0])
+          (cond
+            [(fx= i n) #f]
+            [(char=? (string-ref line i) #\nul)
+             (let find-number-end ([j (fx+ i 1)] [number 0])
+               (and (fx> i 0) (fx< j n)
+                    (let ([c (string-ref line j)])
+                      (cond
+                        [(char<=? #\0 c #\9)
+                         (find-number-end (fx+ j 1)
+                           (+ (* number 10) (fx- (char->integer c) (char->integer #\0))))]
+                        [(and (fx> j (fx+ i 1)) (memv c '(#\: #\-)))
+                         (let* ([start (if (and (fx>= i 2) (char=? (string-ref line 0) #\.)
+                                                (char=? (string-ref line 1) #\/))
+                                           2
+                                           0)]
+                                [text (substring line start n)])
+                           (string-set! text (fx- i start) c)
+                           (cons text (cons (path-of! line i start) number)))]
+                        [else #f]))))]
+            [else (find-path-end (fx+ i 1))]))))))
+
+(define (%first-line bytes)
+  (let ([text (utf8->string bytes)])
+    (let loop ([i 0])
+      (cond
+        [(fx= i (string-length text)) text]
+        [(char=? (string-ref text i) #\newline) (substring text 0 i)]
+        [else (loop (fx+ i 1))]))))
+
+(define (%report-errors process)
+  (let ([errors (processes:error-output process)])
+    (when (and errors (fx> (bytevector-length errors) 0))
+      (report (condition (make-warning) (make-who-condition 'grep:grep)
+                         (make-message-condition (%first-line errors)))))))
+
+(define (%search-source directory)
+  (lambda (emit)
+    (let ([search #f] [timer #f] [running #f])
+      (define (stop!)
+        (when timer
+          (cancel-timer! timer)
+          (set! timer #f))
+        (when running
+          (processes:stop! running)
+          (set! running #f)))
+      (define (run! command minimum)
+        (let ([arguments (and (fx>= (string-length search) minimum) (%arguments (cdr command) search))])
+          (cond
+            [arguments
+             (let* ([found '()] [cleared? #f] [process #f] [parse (%line-parser directory)]
+                    [receive-line! (processes:line-receiver 0
+                                     (lambda (line end)
+                                       (unless (eof-object? line)
+                                         (let ([c (parse line)])
+                                           (when c (set! found (cons c found)))))))])
+               ;; The lines found before stay until the new search shows
+               ;; its own, so the list does not flash empty at each key.
+               (define (clear!)
+                 (unless cleared?
+                   (set! cleared? #t)
+                   (emit 'clear)))
+               (set! process
+                 (processes:start (car command) arguments
+                   (lambda (bytes end)
+                     (receive-line! bytes end)
+                     (unless (null? found)
+                       (clear!)
+                       (emit (list->vector (reverse found)))
+                       (set! found '())))
+                   (lambda (status)
+                     (when (eq? process running)
+                       (set! running #f)
+                       (when (fixnum? status) (%report-errors process))
+                       (clear!)
+                       (emit 'done)))
+                   (processes:options [directory directory] [separate-stderr #t])))
+               (set! running process)
+               (processes:close-input! process))]
+            [else
+             (emit 'clear)
+             (emit 'done)])))
+      (lambda (prefix)
+        (cond
+          [(eof-object? prefix) (stop!)]
+          [(equal? (%search-of prefix) search)
+           (unless (or timer running) (emit 'done))]
+          [else
+           (stop!)
+           (set! search (%search-of prefix))
+           (let ([command (command-line)] [minimum (min-input)])
+             (set! timer
+               (as-module (this-module)
+                 (run-with-timer (delay)
+                   (lambda ()
+                     (set! timer #f)
+                     (run! command minimum))))))])))))
 
 (define (%read-location)
   (completion:read "Grep: "
     (list (completion:source
-            (job %grep (vector (%grep-root) (min-input) (delay) (max-file-size)))
-            (split %grep-split)
+            (stream (%search-source (files:directory)))
+            (split %split)
+            (in-order)
             (category completion:location-category)))))
 
 (commands:define-command (grep [location (%read-location)])
-  "Visits LOCATION, a line read from the files under the current buffer's directory."
+  "Visits LOCATION, a line found by rg in the files under the current buffer's directory."
   (let ([b (files:visit (car location))])
     (layout:switch-to-buffer b)
     (let ([doc (buffers:document b)])
       (views:set-point! (views:current)
         (document:line-start doc (fxmax 1 (fxmin (cdr location) (document:line doc (fx- (document:length doc) 1)))))))))
 
-(keys:bind! keys:global "M-s g" grep)
+(keys:bind! keys:global "M-s r" grep)

@@ -62,14 +62,10 @@
 
 (define-record-type (%source %make-source source?)
   (sealed #t)
-  (fields candidates worker input category title split in-order? rank preview))
+  (fields candidates stream category title split in-order? rank preview))
 
-(define (%check-source candidates worker input category title split in-order? rank preview)
+(define (%check-source candidates stream category title split in-order? rank preview)
   (define who 'completion:source)
-  (unless (or (procedure? candidates) (%candidates? candidates))
-    (assertion-violation who "neither a vector of candidates nor a procedure" candidates))
-  (unless (or (not worker) (jobs:worker? worker))
-    (assertion-violation who "not a worker" worker))
   (unless (or (not category) (symbol? category))
     (assertion-violation who "not a category" category))
   (unless (or (not title) (string? title))
@@ -81,7 +77,17 @@
     (assertion-violation who "not a vector of fixnums, one for each candidate" rank))
   (unless (or (not preview) (procedure? preview))
     (assertion-violation who "not a procedure" preview))
-  (%make-source candidates worker input category title split in-order? rank preview))
+  (%make-source candidates stream category title split in-order? rank preview))
+
+(define (%candidates-clause candidates)
+  (unless (or (procedure? candidates) (%candidates? candidates))
+    (assertion-violation 'completion:source "neither a vector of candidates nor a procedure" candidates))
+  candidates)
+
+(define (%stream-clause stream)
+  (unless (procedure? stream)
+    (assertion-violation 'completion:source "not a procedure" stream))
+  stream)
 
 (define (%candidate? c) (or (string? c) (and (pair? c) (string? (car c)))))
 
@@ -94,36 +100,59 @@
     (define (invalid c) (syntax-violation 'completion:source "invalid clause" x c))
     (syntax-case x ()
       [(_ clause ...)
-       (let loop ([clauses #'(clause ...)] [seen '()] [candidates #f] [worker #f] [input #f]
+       (let loop ([clauses #'(clause ...)] [seen '()] [candidates #f] [stream #f]
                   [category #'#f] [title #'#f] [split #'#f] [in-order #'#f] [rank #'#f] [preview #'#f])
          (if (null? clauses)
              (begin
-               (unless (or candidates worker)
-                 (syntax-violation 'completion:source "a candidates or job clause is required" x))
-               (when (and candidates worker)
-                 (syntax-violation 'completion:source "both a candidates and a job clause" x))
-               #`(%check-source #,(or candidates #'(vector)) #,(or worker #'#f) #,(or input #'#f)
+               (unless (or candidates stream)
+                 (syntax-violation 'completion:source "a candidates, job or stream clause is required" x))
+               #`(%check-source #,(if candidates #`(%candidates-clause #,candidates) #'#f)
+                                #,(if stream #`(%stream-clause #,stream) #'#f)
                                 #,category #,title #,split #,in-order #,rank #,preview))
              (let* ([c (car clauses)] [rest (cdr clauses)]
                     [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ (invalid c)])])
                (when (memq name seen)
                  (syntax-violation 'completion:source "clause given twice" x c))
+               (when (and (memq name '(candidates job stream)) (or candidates stream))
+                 (syntax-violation 'completion:source "more than one of the candidates, job and stream clauses" x))
                (let ([seen (cons name seen)])
                  (define (one) (syntax-case c () [(_ e) #'e] [_ (invalid c)]))
                  (case name
-                   [(candidates) (loop rest seen (one) worker input category title split in-order rank preview)]
+                   [(candidates) (loop rest seen (one) stream category title split in-order rank preview)]
                    [(job) (syntax-case c ()
-                            [(_ w i) (loop rest seen candidates #'w #'i category title split in-order rank preview)]
+                            [(_ w i) (loop rest seen candidates #'(%job-stream w i) category title split in-order rank preview)]
                             [_ (invalid c)])]
-                   [(category) (loop rest seen candidates worker input (one) title split in-order rank preview)]
-                   [(title) (loop rest seen candidates worker input category (one) split in-order rank preview)]
-                   [(split) (loop rest seen candidates worker input category title (one) in-order rank preview)]
+                   [(stream) (loop rest seen candidates (one) category title split in-order rank preview)]
+                   [(category) (loop rest seen candidates stream (one) title split in-order rank preview)]
+                   [(title) (loop rest seen candidates stream category (one) split in-order rank preview)]
+                   [(split) (loop rest seen candidates stream category title (one) in-order rank preview)]
                    [(in-order) (syntax-case c ()
-                                 [(_) (loop rest seen candidates worker input category title split #'#t rank preview)]
+                                 [(_) (loop rest seen candidates stream category title split #'#t rank preview)]
                                  [_ (invalid c)])]
-                   [(rank) (loop rest seen candidates worker input category title split in-order (one) preview)]
-                   [(preview) (loop rest seen candidates worker input category title split in-order rank (one))]
+                   [(rank) (loop rest seen candidates stream category title split in-order (one) preview)]
+                   [(preview) (loop rest seen candidates stream category title split in-order rank (one))]
                    [else (invalid c)])))))])))
+
+(define (%job-stream worker input)
+  (unless (jobs:worker? worker)
+    (assertion-violation 'completion:source "not a worker" worker))
+  (lambda (emit)
+    (let ([job #f])
+      (lambda (prefix)
+        (cond
+          [(eof-object? prefix)
+           (when job
+             (jobs:stop! job)
+             (set! job #f))]
+          [else
+           (unless job
+             (set! job
+               (as-module (this-module)
+                 (jobs:start worker input emit
+                   (lambda (how)
+                     (set! job #f)
+                     (emit 'done))))))
+           (jobs:send! job prefix)])))))
 
 (define (prefix query) (if (string=? query "") '() (list (list 'starts query))))
 
@@ -134,7 +163,9 @@
 (define (flex query)
   (if (string=? query "") '() (list (cons 'contains (map string (string->list query))))))
 
-(define (%components query)
+(define (components query)
+  (unless (string? query)
+    (assertion-violation 'completion:components "not a string" query))
   (let loop ([cs (string->list query)] [current '()] [acc '()])
     (define (finish) (if (null? current) acc (cons (list->string (reverse current)) acc)))
     (cond
@@ -157,7 +188,7 @@
                      [else (list 'contains component)])])
         (if term (cons term terms) terms)))
     '()
-    (%components query)))
+    (components query)))
 
 (define (%dispatch-not rest) (let ([t (any-order rest)]) (and (pair? t) (list 'not (car t)))))
 (define (%dispatch-literal rest) (list 'contains rest))
@@ -215,10 +246,11 @@
 
 (module %internals
   (check-main-thread check-session session? make-session session-record-view session-record-ended?
-   session-record-matches session-record-selected session-record-input session-record-bounds session-record-count
+   session-record-matches session-record-selected session-record-input session-record-bounds candidate-match?
    session-record-states session-record-accept session-record-default sessions start-session! end-session!
    rematch! select-match! match-text match-value match-title match-spans match-annotation
-   busy? query-start named-match common-start state-source lead-length vector-index)
+   busy? query-start named-match common-start state-source lead-length
+   match-list? make-match-list match-list-count match-list-ref match-list-index no-matches)
 
   (define main-thread (get-thread-id))
 
@@ -228,17 +260,56 @@
 
   (define-record-type (session-record make-session session?)
     (sealed #t)
-    (fields view (mutable states) bounds accept preselect history default
-            (mutable texts) (mutable vals) (mutable owners) (mutable live) (mutable count)
+    (fields view (mutable states) width bounds accept preselect history default
             (mutable input) (mutable matches) (mutable selected) (mutable locked?) (mutable ended?)
-            (mutable inline?) (mutable annotators) annotations (mutable next-id) history-ranks (mutable dirty?)))
+            (mutable inline?) (mutable annotators) (mutable next-id) history-ranks (mutable dirty?)))
 
+  ;; A source's candidates are numbered on through those it dropped, and
+  ;; a match interleaves the numbers of a session's sources, so a match
+  ;; names one candidate until its source drops it and is never used again.
+  ;;
+  ;; A stream may bring millions of candidates, so while its pattern holds
+  ;; and its job keeps them in arrival order, a match asks only for those
+  ;; past matched-to and adds what it finds to the end of the same matches.
   (define-record-type state
     (sealed #t)
-    (fields source styles (mutable globals) (mutable count) (mutable texts) (mutable ranks)
-            (mutable prefix) (mutable candidate-job) (mutable match-job) (mutable pending)
-            (mutable done?) (mutable matches) (mutable pattern) (mutable style) (mutable query) (mutable base)
-            (mutable more?)))
+    (fields source styles index (mutable dropped) (mutable count) (mutable texts) (mutable vals) (mutable ranks)
+            (mutable annotations) (mutable prefix) (mutable receiver) (mutable match-job) (mutable job-dropped)
+            (mutable sorted?) (mutable pending) (mutable done?) (mutable matches) (mutable pending-kept) (mutable matched-to)
+            (mutable pending-end) (mutable matches-id) (mutable pattern) (mutable style) (mutable query)
+            (mutable base) (mutable more?)))
+
+  (define-record-type match-list
+    (sealed #t)
+    (fields (mutable vector) (mutable count)))
+
+  (define no-matches (make-match-list (vector) 0))
+
+  (define (match-list-ref ms k) (vector-ref (match-list-vector ms) k))
+
+  (define (match-list-index ms m)
+    (let ([v (match-list-vector ms)] [n (match-list-count ms)])
+      (let loop ([i 0])
+        (and (fx< i n) (if (eqv? (vector-ref v i) m) i (loop (fx+ i 1)))))))
+
+  ;; A match list made afresh takes a matcher's vector as it is when its
+  ;; numbers are the matches, rather than copying it.
+  (define (match-list-add! ms numbers dropped width index)
+    (let ([n (match-list-count ms)] [k (vector-length numbers)])
+      (cond
+        [(fx= k 0)]
+        [(and (fx= n 0) (fx= dropped 0) (fx= width 1)) (match-list-vector-set! ms numbers)]
+        [else
+         (let ([v (grow (match-list-vector ms) (fx+ n k -1) 0)])
+           (do ([i 0 (fx+ i 1)]) ((fx= i k))
+             (vector-set! v (fx+ n i) (fx+ (fx* (fx+ dropped (vector-ref numbers i)) width) index)))
+           (match-list-vector-set! ms v))])
+      (match-list-count-set! ms (fx+ n k))))
+
+  (define (numbers->match-list s st dropped numbers)
+    (let ([ms (make-match-list (vector) 0)])
+      (match-list-add! ms numbers dropped (session-record-width s) (state-index st))
+      ms))
 
   (define (check-session who s)
     (unless (session? s)
@@ -284,36 +355,26 @@
           rank)))
 
   (define (add-candidates! s st cands given)
-    (let* ([k (vector-length cands)] [texts (make-vector k)] [ranks (make-vector k)] [base (state-count st)]
-           [g0 (session-record-count s)] [end (fx+ g0 k)])
-      (session-record-texts-set! s (grow (session-record-texts s) end ""))
-      (session-record-vals-set! s (grow (session-record-vals s) end #f))
-      (session-record-owners-set! s (grow (session-record-owners s) end #f))
-      (session-record-live-set! s (grow (session-record-live s) end #f))
-      (state-globals-set! st (grow (state-globals st) (fx+ base k) 0))
-      (let ([all-texts (session-record-texts s)] [vals (session-record-vals s)] [owners (session-record-owners s)]
-            [live (session-record-live s)] [globals (state-globals st)] [rank-of (ranker s st given)])
-        (do ([i 0 (fx+ i 1)]) ((fx= i k))
-          (let* ([c (vector-ref cands i)] [text (candidate-text c)] [g (fx+ g0 i)])
-            (vector-set! all-texts g text)
-            (vector-set! vals g (candidate-value c))
-            (vector-set! owners g st)
-            (vector-set! live g #t)
-            (vector-set! globals (fx+ base i) g)
-            (vector-set! texts i text)
-            (vector-set! ranks i (rank-of i text)))))
-      (session-record-count-set! s end)
+    (let* ([k (vector-length cands)] [texts (make-vector k)] [vals (make-vector k)] [ranks (make-vector k)]
+           [base (state-count st)] [rank-of (ranker s st given)])
+      (do ([i 0 (fx+ i 1)]) ((fx= i k))
+        (let* ([c (vector-ref cands i)] [text (candidate-text c)])
+          (vector-set! texts i text)
+          (vector-set! vals i (candidate-value c))
+          (vector-set! ranks i (rank-of i text))))
       (state-count-set! st (fx+ base k))
       (if (fx= base 0)
-          (begin (state-texts-set! st texts) (state-ranks-set! st ranks))
+          (begin (state-texts-set! st texts) (state-vals-set! st vals) (state-ranks-set! st ranks))
           (begin
             (state-texts-set! st (append-at (state-texts st) base texts ""))
+            (state-vals-set! st (append-at (state-vals st) base vals #f))
             (state-ranks-set! st (append-at (state-ranks st) base ranks 0))))
-      (values texts ranks)))
+      (let ([job (state-match-job st)])
+        (when job (jobs:send! job (list 'add (jobs:freeze texts) ranks))))))
 
-  ;; A job source may emit thousands of times, a few candidates each, so
-  ;; its texts and ranks grow by doubling, not by a copy per emission;
-  ;; only the first state-count entries are candidates.
+  ;; A streamed source may emit thousands of times, a few candidates
+  ;; each, so its texts and ranks grow by doubling, not by a copy per
+  ;; emission; only the first state-count entries are candidates.
   (define (append-at v n w fill)
     (let ([v (grow v (fx+ n (vector-length w)) fill)])
       (vector-copy! w 0 v n (vector-length w))
@@ -324,10 +385,6 @@
       (unless (fx= (vector-length (state-texts st)) n)
         (state-texts-set! st (vector-copy (state-texts st) 0 n))
         (state-ranks-set! st (vector-copy (state-ranks st) 0 n)))))
-
-  (define (retire-locals! s st)
-    (do ([i 0 (fx+ i 1)]) ((fx= i (state-count st)))
-      (vector-set! (session-record-live s) (vector-ref (state-globals st) i) #f)))
 
   (define (check-candidates who v)
     (unless (%candidates? v)
@@ -364,11 +421,19 @@
                      (jobs:start (%matcher-worker (matcher)) #f
                        (lambda (result) (match-arrived! s st result))))])
           (state-match-job-set! st job)
+          (state-job-dropped-set! st (state-dropped st))
+          (state-sorted?-set! st #f)
           (trim-candidates! st)
           (unless (fx= (state-count st) 0)
             (jobs:send! job (list 'add (jobs:freeze (state-texts st)) (state-ranks st))))
-          (when (state-done? st) (jobs:send! job '(sort)))
+          (when (state-done? st) (send-sort! st))
           job)))
+
+  (define (send-sort! st)
+    (jobs:send! (state-match-job st) '(sort))
+    (state-sorted?-set! st #t)
+    (state-matched-to-set! st #f)
+    (state-pending-end-set! st #f))
 
   (define (stop-match-job! st)
     (let ([job (state-match-job st)])
@@ -376,27 +441,39 @@
         (jobs:stop! job)
         (state-match-job-set! st #f)
         (state-pending-set! st #f)
+        (state-matched-to-set! st #f)
         (state-more?-set! st #f))))
 
+  ;; The match job stays, told to drop what it holds, so its numbers go
+  ;; on counting with the state's.
+  (define (drop-candidates! s st)
+    (let ([job (state-match-job st)])
+      (when job
+        (jobs:send! job '(clear))
+        (state-sorted?-set! st #f)
+        (state-pending-set! st #f)
+        (state-matched-to-set! st #f)
+        (state-more?-set! st #f)))
+    (state-dropped-set! st (fx+ (state-dropped st) (state-count st)))
+    (state-count-set! st 0)
+    (state-texts-set! st (vector))
+    (state-vals-set! st (vector))
+    (state-ranks-set! st (vector))
+    (state-annotations-set! st (make-eqv-hashtable))
+    (set-state-matches! s st (make-match-list (vector) 0)))
+
   (define (refresh-candidates! s st prefix)
-    (let ([proc (%source-candidates (state-source st))])
-      (retire-locals! s st)
-      (stop-match-job! st)
-      (set-state-matches! s st (vector))
-      (state-globals-set! st (vector))
-      (state-count-set! st 0)
-      (state-texts-set! st (vector))
-      (state-ranks-set! st (vector))
-      (let ([v (proc prefix)])
-        (check-candidates 'completion:source v)
-        (add-candidates! s st v #f))))
+    (drop-candidates! s st)
+    (let ([v ((%source-candidates (state-source st)) prefix)])
+      (check-candidates 'completion:source v)
+      (add-candidates! s st v #f)))
 
   (define (decide-inline! s)
     (let loop ([sts (session-record-states s)] [n 0] [chars 0])
       (cond
         [(null? sts)
          (session-record-inline?-set! s #t)]
-        [(%source-worker (state-source (car sts))) (session-record-inline?-set! s #f)]
+        [(%source-stream (state-source (car sts))) (session-record-inline?-set! s #f)]
         [else
          (let* ([texts (state-texts (car sts))] [k (state-count (car sts))] [n (fx+ n k)])
            (if (fx> n %inline-candidates)
@@ -419,10 +496,6 @@
     (let ([style (list-ref (state-styles st) k)])
       (check-pattern style (style (state-query st)))))
 
-  (define (to-globals st locals)
-    (let ([g (state-globals st)])
-      (vector-map (lambda (i) (vector-ref g i)) locals)))
-
   (define (match-inline! s st)
     (trim-candidates! st)
     (let ([match (%matcher-match (matcher))] [n (length (state-styles st))])
@@ -433,37 +506,52 @@
               (loop (fx+ k 1))
               (begin
                 (state-pattern-set! st pattern)
-                (set-state-matches! s st (to-globals st locals))))))))
+                (set-state-matches! s st (numbers->match-list s st (state-dropped st) locals))))))))
 
   (define (send-match! s st k)
-    (let ([id (session-record-next-id s)] [pattern (pattern-of st k)])
+    (let* ([id (session-record-next-id s)] [pattern (pattern-of st k)] [job (match-job-of s st)]
+           [from (and (not (state-sorted? st)) (equal? pattern (state-pattern st)) (state-matched-to st))])
       (session-record-next-id-set! s (fx+ id 1))
       (state-style-set! st k)
       (state-pending-set! st id)
       (state-more?-set! st #f)
       (state-pattern-set! st pattern)
-      (jobs:send! (match-job-of s st) (list 'match id pattern))))
+      (state-pending-kept-set! st (if from (match-list-count (state-matches st)) 0))
+      (state-matched-to-set! st #f)
+      (state-pending-end-set! st (fx- (fx+ (state-dropped st) (state-count st)) (state-job-dropped st)))
+      (jobs:send! job (list 'match id pattern (or from 0)))))
+
+  ;; A first part of a match's results is the start of the whole, so the
+  ;; whole adds to the matches that took the part.
+  (define (take-matches! s st id numbers)
+    (let* ([kept (state-pending-kept st)]
+           [ms (if (or (fx> kept 0) (eqv? id (state-matches-id st))) (state-matches st) (make-match-list (vector) 0))])
+      (match-list-count-set! ms kept)
+      (match-list-add! ms numbers (state-job-dropped st) (session-record-width s) (state-index st))
+      (state-matches-id-set! st id)
+      (set-state-matches! s st ms)))
 
   (define (match-arrived! s st result)
     (unless (session-record-ended? s)
-      (let ([id (car result)] [done? (cadr result)] [locals (cddr result)])
+      (let ([id (car result)] [done? (cadr result)] [numbers (cddr result)])
         (when (eqv? id (state-pending st))
+          (when done? (state-matched-to-set! st (state-pending-end st)))
           (cond
             [(and done? (state-more? st))
-             (set-state-matches! s st (to-globals st locals))
+             (take-matches! s st id numbers)
              (send-match! s st 0)
              (combine! s)]
-            [(and done? (fx= (vector-length locals) 0) (fx< (fx+ (state-style st) 1) (length (state-styles st))))
+            [(and done? (fx= (fx+ (state-pending-kept st) (vector-length numbers)) 0)
+                  (fx< (fx+ (state-style st) 1) (length (state-styles st))))
              (send-match! s st (fx+ (state-style st) 1))]
             [else
              (when done? (state-pending-set! st #f))
-             (set-state-matches! s st (to-globals st locals))
+             (take-matches! s st id numbers)
              (combine! s)])))))
 
-  ;; Each match walks all of a source's candidates, and a job source may
-  ;; emit thousands of times; candidates that come while a match is under
-  ;; way wait for its end, so matching keeps pace with the matcher, not
-  ;; with the emissions.
+  ;; A streamed source may emit thousands of times; candidates that come
+  ;; while a match is under way wait for its end, so matching keeps pace
+  ;; with the matcher, not with the emissions.
   (define (request-match! s st)
     (if (state-pending st)
         (state-more?-set! st #t)
@@ -474,43 +562,33 @@
       (cond
         [(and (pair? v) (eq? (car v) 'base))
          (unless (and (pair? (cdr v)) (fixnum? (cadr v)) (fx>= (cadr v) 0))
-           (assertion-violation 'completion:source "a job emitted a base that is not a length" v))
+           (assertion-violation 'completion:source "a source emitted a base that is not a length" v))
          (state-base-set! st (cadr v))
          (update-query! s st)]
+        [(eq? v 'done)
+         (state-done?-set! st #t)
+         (when (state-match-job st) (send-sort! st))]
         [(eq? v 'clear)
+         (state-done?-set! st #f)
          (state-base-set! st #f)
          (update-query! s st)
-         (retire-locals! s st)
-         (let ([job (state-match-job st)] [k (state-count st)])
-           (when job
-             (jobs:send! job (list 'retire (let ([r (make-vector k)]) (do ([i 0 (fx+ i 1)]) ((fx= i k) r) (vector-set! r i i)))))))
-         (set-state-matches! s st (vector))]
+         (drop-candidates! s st)]
         [else
          (let-values ([(cands given) (if (pair? v) (values (car v) (cdr v)) (values v #f))])
            (check-candidates 'completion:source cands)
-           (let-values ([(texts ranks) (add-candidates! s st cands given)])
-             (jobs:send! (match-job-of s st) (list 'add (jobs:freeze texts) ranks))))])
+           (match-job-of s st)
+           (add-candidates! s st cands given))])
       (request-match! s st)
       (when (session-record-dirty? s) (combine! s))))
 
-  (define (candidates-ended! s st how)
-    (unless (session-record-ended? s)
-      (state-done?-set! st #t)
-      (state-candidate-job-set! st #f)
-      (let ([job (state-match-job st)])
-        (when job
-          (jobs:send! job '(sort))
-          (send-match! s st 0)))
-      (combine! s)))
-
-  (define (start-candidate-job! s st)
-    (let ([source (state-source st)])
-      (state-done?-set! st #f)
-      (state-candidate-job-set! st
-        (as-module (this-module)
-          (jobs:start (%source-worker source) (%source-input source)
-            (lambda (v) (candidates-arrived! s st v))
-            (lambda (how) (candidates-ended! s st how)))))))
+  (define (start-stream! s st)
+    (let ([receiver ((%source-stream (state-source st))
+                     (lambda (v)
+                       (check-main-thread 'completion:source)
+                       (candidates-arrived! s st v)))])
+      (unless (procedure? receiver)
+        (assertion-violation 'completion:source "a stream returned what is not a receiver" receiver))
+      (state-receiver-set! st receiver)))
 
   (define (rematch! s force?)
     (let ([input (input-of s)])
@@ -526,16 +604,17 @@
             (lambda (st)
               (let* ([n (prefix-length st input)] [prefix (string-part input 0 n)]
                      [new-prefix? (not (equal? prefix (state-prefix st)))] [source (state-source st)])
+                (when new-prefix? (state-prefix-set! st prefix))
+                (update-query! s st)
                 (when new-prefix?
-                  (state-prefix-set! st prefix)
                   (cond
+                    [(%source-stream source)
+                     (state-done?-set! st #f)
+                     (unless (state-receiver st) (start-stream! s st))
+                     ((state-receiver st) prefix)]
                     [(procedure? (%source-candidates source))
                      (refresh-candidates! s st prefix)
-                     (set! refreshed? #t)]
-                    [(%source-worker source)
-                     (unless (state-candidate-job st) (start-candidate-job! s st))
-                     (jobs:send! (state-candidate-job st) prefix)]))
-                (update-query! s st)))
+                     (set! refreshed? #t)]))))
             (session-record-states s))
           (when (or refreshed? (not (session-record-matches s))) (decide-inline! s))
           (for-each
@@ -547,7 +626,18 @@
     (let ([preview (%source-preview (state-source st))])
       (when preview (preview v))))
 
-  (define (owner-of s m) (and m (vector-ref (session-record-owners s) m)))
+  (define (owner-of s m)
+    (and m (list-ref (session-record-states s) (fxremainder m (session-record-width s)))))
+
+  (define (local-of s st m) (fx- (fxquotient m (session-record-width s)) (state-dropped st)))
+
+  (define (match-of s st local)
+    (fx+ (fx* (fx+ (state-dropped st) local) (session-record-width s)) (state-index st)))
+
+  (define (candidate-match? s m)
+    (and (fx> (session-record-width s) 0)
+         (let ([st (owner-of s m)])
+           (fx< -1 (local-of s st m) (state-count st)))))
 
   (define (set-selected! s m)
     (let ([old (session-record-selected s)])
@@ -555,7 +645,7 @@
         (session-record-selected-set! s m)
         (let ([was (owner-of s old)] [now (owner-of s m)])
           (when (and was (not (eq? was now))) (preview! was #f))
-          (when now (preview! now (vector-ref (session-record-vals s) m)))))))
+          (when now (preview! now (match-value s m)))))))
 
   (define (prefers-input? s)
     (let ([input (session-record-input s)])
@@ -566,11 +656,7 @@
                        (guard (e [(not (quit-condition? e)) (report e) #f]) (prefers? input)))))
               (session-record-states s))))
 
-  (define (vector-index m v)
-    (let loop ([i 0])
-      (and (fx< i (vector-length v)) (if (eqv? (vector-ref v i) m) i (loop (fx+ i 1))))))
-
-  ;; Only new matches rebuild the session's vector and select again, so a
+  ;; Only new matches set the session's matches and select again, so a
   ;; selection cleared while a job matches stays clear until they come.
   (define (combine! s)
     (when (session-record-dirty? s)
@@ -578,14 +664,21 @@
       (let ([matches (let ([sts (session-record-states s)])
                        (if (and (pair? sts) (null? (cdr sts)))
                            (state-matches (car sts))
-                           (apply vector-append (map state-matches sts))))])
+                           (let* ([n (fold-left (lambda (n st) (fx+ n (match-list-count (state-matches st)))) 0 sts)]
+                                  [v (make-vector n)])
+                             (fold-left (lambda (at st)
+                                          (let ([m (state-matches st)])
+                                            (vector-copy! (match-list-vector m) 0 v at (match-list-count m))
+                                            (fx+ at (match-list-count m))))
+                                        0 sts)
+                             (make-match-list v n))))])
         (session-record-matches-set! s matches)
         (let ([sel (session-record-selected s)])
-          (unless (and sel (session-record-locked? s) (vector-index sel matches))
+          (unless (and sel (session-record-locked? s) (match-list-index matches sel))
             (session-record-locked?-set! s #f)
-            (set-selected! s (and (eq? (session-record-preselect s) 'first) (fx> (vector-length matches) 0)
+            (set-selected! s (and (eq? (session-record-preselect s) 'first) (fx> (match-list-count matches) 0)
                                   (not (prefers-input? s))
-                                  (vector-ref matches 0)))))))
+                                  (match-list-ref matches 0)))))))
     (updated s))
 
   (define (set-state-matches! s st matches)
@@ -598,17 +691,20 @@
     (updated s))
 
   (define (start-session! view sources bounds accept preselect h default)
-    (let ([s (make-session view '() bounds accept preselect h default (vector) (vector) (vector) (vector) 0
-                           #f #f #f #f #f #t '() (make-eqv-hashtable) 0 (history-ranks h default) #t)])
+    (let ([s (make-session view '() (length sources) bounds accept preselect h default
+                           #f #f #f #f #f #t '() 0 (history-ranks h default) #t)])
       (session-record-states-set! s
-        (map (lambda (source)
-               (make-state source (styles-for source) (vector) 0 (vector) (vector) #f #f #f #f #t (vector) '() 0 "" #f #f))
-             sources))
+        (let loop ([sources sources] [index 0])
+          (if (null? sources)
+              '()
+              (cons (make-state (car sources) (styles-for (car sources)) index 0 0 (vector) (vector) (vector)
+                                (make-eqv-hashtable) #f #f #f 0 #f #f #t (make-match-list (vector) 0) 0 #f #f #f
+                                '() 0 "" #f #f)
+                    (loop (cdr sources) (fx+ index 1))))))
       (for-each
         (lambda (st)
           (let ([c (%source-candidates (state-source st))])
-            (when (and (vector? c) (not (%source-worker (state-source st))))
-              (add-candidates! s st c #f))))
+            (when (vector? c) (add-candidates! s st c #f))))
         (session-record-states s))
       (set! sessions (cons s sessions))
       (session-record-annotators-set! s
@@ -624,7 +720,10 @@
           '()
           (session-record-states s)))
       (started s)
-      (rematch! s #t)
+      ;; The caller gets no session to end when the start raises, such as
+      ;; when a source's procedure fails.
+      (guard (e [#t (end-session! s) (raise e)])
+        (rematch! s #t))
       s))
 
   (define (end-session! s)
@@ -634,14 +733,16 @@
       (for-each
         (lambda (st)
           (stop-match-job! st)
-          (let ([job (state-candidate-job st)])
-            (when job (jobs:stop! job) (state-candidate-job-set! st #f))))
+          (let ([receiver (state-receiver st)])
+            (when receiver
+              (state-receiver-set! st #f)
+              (guard (e [(not (quit-condition? e)) (report e)]) (receiver (eof-object))))))
         (session-record-states s))
       (for-each (lambda (st) (preview! st #f)) (session-record-states s))
       (ended s)))
 
-  (define (match-text s m) (vector-ref (session-record-texts s) m))
-  (define (match-value s m) (vector-ref (session-record-vals s) m))
+  (define (match-text s m) (let ([st (owner-of s m)]) (vector-ref (state-texts st) (local-of s st m))))
+  (define (match-value s m) (let ([st (owner-of s m)]) (vector-ref (state-vals st) (local-of s st m))))
   (define (match-title s m) (%source-title (state-source (owner-of s m))))
 
   (define (match-spans s m)
@@ -649,9 +750,9 @@
       ((%matcher-spans (matcher)) (state-pattern st) (match-text s m))))
 
   (define (match-annotation s m)
-    (let ([cache (session-record-annotations s)])
+    (let* ([st (owner-of s m)] [cache (state-annotations st)])
       (or (hashtable-ref cache m #f)
-          (let* ([c (%source-category (state-source (owner-of s m)))]
+          (let* ([c (%source-category (state-source st))]
                  [a (and c (assq c (session-record-annotators s)))]
                  [columns (if (and a (cdr a))
                               (guard (e [(not (quit-condition? e)) (report e) '()])
@@ -661,7 +762,7 @@
             columns))))
 
   (define (busy? s)
-    (exists (lambda (st) (or (state-pending st) (state-candidate-job st))) (session-record-states s)))
+    (exists (lambda (st) (not (and (state-done? st) (not (state-pending st))))) (session-record-states s)))
 
   (define (query-start s m)
     (let-values ([(start end) ((session-record-bounds s))])
@@ -669,21 +770,23 @@
         (fx+ start (lead-length st)))))
 
   (define (named-match s text)
-    (let loop ([g 0])
-      (and (fx< g (session-record-count s))
-           (if (and (vector-ref (session-record-live s) g)
-                    (let ([st (vector-ref (session-record-owners s) g)])
-                      (string=? (string-append (lead st) (vector-ref (session-record-texts s) g)) text)))
-               g
-               (loop (fx+ g 1))))))
+    (exists
+      (lambda (st)
+        (let ([lead (lead st)] [texts (state-texts st)])
+          (let loop ([i 0])
+            (and (fx< i (state-count st))
+                 (if (string=? (string-append lead (vector-ref texts i)) text)
+                     (match-of s st i)
+                     (loop (fx+ i 1)))))))
+      (session-record-states s)))
 
   (define (common-start s)
     (let ([matches (session-record-matches s)])
-      (and (fx> (vector-length matches) 0)
-           (let loop ([i 1] [common (match-text s (vector-ref matches 0))])
-             (if (fx= i (vector-length matches))
+      (and (fx> (match-list-count matches) 0)
+           (let loop ([i 1] [common (match-text s (match-list-ref matches 0))])
+             (if (fx= i (match-list-count matches))
                  common
-                 (let* ([t (match-text s (vector-ref matches i))]
+                 (let* ([t (match-text s (match-list-ref matches i))]
                         [n (let scan ([k 0])
                              (if (and (fx< k (string-length common)) (fx< k (string-length t))
                                       (char=? (string-ref common k) (string-ref t k)))
@@ -739,7 +842,21 @@
 
 (define (session-matches s)
   (check-session 'completion:session-matches s)
-  (or (session-record-matches s) (vector)))
+  (or (session-record-matches s) no-matches))
+
+(define (matches? v) (match-list? v))
+
+(define (matches-count ms)
+  (unless (match-list? ms)
+    (assertion-violation 'completion:matches-count "not matches" ms))
+  (match-list-count ms))
+
+(define (matches-ref ms k)
+  (unless (match-list? ms)
+    (assertion-violation 'completion:matches-ref "not matches" ms))
+  (unless (and (fixnum? k) (fx< -1 k (match-list-count ms)))
+    (assertion-violation 'completion:matches-ref "not a place in the matches" k))
+  (match-list-ref ms k))
 
 (define (session-busy? s)
   (check-session 'completion:session-busy? s)
@@ -747,7 +864,7 @@
 
 (define (%check-match who s m)
   (check-session who s)
-  (unless (and (fixnum? m) (fx< -1 m (session-record-count s)))
+  (unless (and (fixnum? m) (fx>= m 0) (candidate-match? s m))
     (assertion-violation who "not a match of the session" m)))
 
 (define (text s m) (%check-match 'completion:text s m) (match-text s m))
@@ -767,7 +884,7 @@
 (define (select! s m)
   (check-session 'completion:select! s)
   (check-main-thread 'completion:select!)
-  (unless (or (not m) (and (fixnum? m) (vector-index m (session-matches s))))
+  (unless (or (not m) (and (fixnum? m) (match-list-index (session-matches s) m)))
     (assertion-violation 'completion:select! "not one of the matches" m))
   (select-match! s m))
 
@@ -920,8 +1037,8 @@
 
 (define (%sole-match? s)
   (let ([matches (session-record-matches s)])
-    (and matches (fx= (vector-length matches) 1)
-         (string=? (match-text s (vector-ref matches 0))
+    (and matches (fx= (match-list-count matches) 1)
+         (string=? (match-text s (match-list-ref matches 0))
                    (let ([input (session-record-input s)] [st (car (session-record-states s))])
                      (string-part input (fxmin (string-length input) (lead-length st)) (string-length input)))))))
 
@@ -993,10 +1110,10 @@
       (when (and p (%sole-match? s)) (end-session! s)))))
 
 (define (%move who to)
-  (let* ([s (%current who)] [matches (session-matches s)] [n (vector-length matches)] [m (session-record-selected s)]
-         [k (and m (vector-index m matches))])
+  (let* ([s (%current who)] [matches (session-matches s)] [n (match-list-count matches)] [m (session-record-selected s)]
+         [k (and m (match-list-index matches m))])
     (unless (fx= n 0)
-      (select-match! s (vector-ref matches (fxmax 0 (fxmin (fx- n 1) (to k n))))))))
+      (select-match! s (match-list-ref matches (fxmax 0 (fxmin (fx- n 1) (to k n))))))))
 
 (commands:define-command (next [n (commands:prefix-number)])
   "Selects the match N after the selected one in the current session, stopping at the last; with none selected, the first."

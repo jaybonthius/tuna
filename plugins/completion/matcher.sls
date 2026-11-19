@@ -1,5 +1,5 @@
 (library (completion matcher)
-  (export pattern? pattern-matcher partial-pattern make-store store? store-add! store-retire! store-sort! store-matches pattern-spans serve)
+  (export pattern? pattern-matcher partial-pattern make-store store? store-add! store-clear! store-sort! store-matches pattern-spans serve)
   (import (chezscheme))
 
   (define (term? t)
@@ -25,6 +25,18 @@
              (do ([j 0 (fx+ j 1)]) ((fx= j n) f)
                (string-set! f j (char-downcase (string-ref s j)))))]))))
 
+  ;; Texts are folded as they are read rather than kept folded, which
+  ;; would hold a second copy of every text with a capital letter.
+  (define-syntax char-at
+    (syntax-rules ()
+      [(_ hay i fold?)
+       (let ([c (string-ref hay i)])
+         (cond
+           [(not fold?) c]
+           [(char<=? #\A c #\Z) (integer->char (fx+ (char->integer c) 32))]
+           [(char<? c #\x80) c]
+           [else (char-downcase c)]))]))
+
   (define (capital? s)
     (let ([n (string-length s)])
       (let loop ([i 0])
@@ -43,58 +55,58 @@
   (define (multi-piece? terms)
     (exists (lambda (t) (and (memq (vector-ref t 0) '(contains starts)) (pair? (cdr (vector-ref t 2))))) terms))
 
-  (define (find-piece hay piece start)
-    (let* ([hn (string-length hay)] [nn (string-length piece)] [c0 (string-ref piece 0)] [last (fx- hn nn)])
+  ;; The first piece's first character is sought at every place, so
+  ;; there a text's character is folded only when it could match.
+  (define (find-piece hay fold? piece start)
+    (let* ([hn (string-length hay)] [nn (string-length piece)] [c0 (string-ref piece 0)] [last (fx- hn nn)]
+           [capital (if (and fold? (char<=? #\a c0 #\z)) (integer->char (fx- (char->integer c0) 32)) c0)])
       (let outer ([i start])
         (and (fx<= i last)
-             (if (char=? (string-ref hay i) c0)
+             (if (let ([c (string-ref hay i)])
+                   (or (char=? c c0) (char=? c capital)
+                       (and fold? (char>? c #\x7f) (char=? (char-downcase c) c0))))
                  (let inner ([j 1])
                    (cond
                      [(fx= j nn) i]
-                     [(char=? (string-ref hay (fx+ i j)) (string-ref piece j)) (inner (fx+ j 1))]
+                     [(char=? (char-at hay (fx+ i j) fold?) (string-ref piece j)) (inner (fx+ j 1))]
                      [else (outer (fx+ i 1))]))
                  (outer (fx+ i 1)))))))
 
-  (define (starts-at? hay piece at)
+  (define (starts-at? hay fold? piece at)
     (let ([nn (string-length piece)])
       (and (fx<= (fx+ at nn) (string-length hay))
            (let loop ([j 0])
              (or (fx= j nn)
-                 (and (char=? (string-ref hay (fx+ at j)) (string-ref piece j)) (loop (fx+ j 1))))))))
+                 (and (char=? (char-at hay (fx+ at j) fold?) (string-ref piece j)) (loop (fx+ j 1))))))))
 
-  (define (pieces-at hay pieces anchored? found)
-    (let loop ([ps pieces] [from 0] [first? #t])
-      (or (null? ps)
+  (define (pieces-gaps hay fold? pieces anchored? found)
+    (let loop ([ps pieces] [from 0] [first? #t] [gaps 0])
+      (if (null? ps)
+          gaps
           (let ([at (if (and first? anchored?)
-                        (and (starts-at? hay (car ps) 0) 0)
-                        (find-piece hay (car ps) from))])
+                        (and (starts-at? hay fold? (car ps) 0) 0)
+                        (find-piece hay fold? (car ps) from))])
             (and at
                  (begin
-                   (found at (string-length (car ps)))
-                   (loop (cdr ps) (fx+ at (string-length (car ps))) #f)))))))
+                   (when found (found at (string-length (car ps))))
+                   (loop (cdr ps) (fx+ at (string-length (car ps))) #f (if first? gaps (fx+ gaps (fx- at from))))))))))
 
-  (define (term-gaps t text folded)
-    (let ([hay (if (vector-ref t 1) folded text)])
+  (define (term-gaps t text)
+    (let ([fold? (vector-ref t 1)])
       (case (vector-ref t 0)
-        [(not) (and (not (term-gaps (vector-ref t 2) text folded)) 0)]
+        [(not) (and (not (term-gaps (vector-ref t 2) text)) 0)]
         [(ends)
          (let ([piece (car (vector-ref t 2))])
-           (and (fx>= (string-length hay) (string-length piece))
-                (starts-at? hay piece (fx- (string-length hay) (string-length piece)))
+           (and (fx>= (string-length text) (string-length piece))
+                (starts-at? text fold? piece (fx- (string-length text) (string-length piece)))
                 0))]
-        [else
-         (let ([gaps 0] [end #f])
-           (and (pieces-at hay (vector-ref t 2) (eq? (vector-ref t 0) 'starts)
-                  (lambda (at len)
-                    (when end (set! gaps (fx+ gaps (fx- at end))))
-                    (set! end (fx+ at len))))
-                gaps))])))
+        [else (pieces-gaps text fold? (vector-ref t 2) (eq? (vector-ref t 0) 'starts) #f)])))
 
-  (define (gaps-of terms text folded)
+  (define (gaps-of terms text)
     (let loop ([ts terms] [total 0])
       (if (null? ts)
           total
-          (let ([g (term-gaps (car ts) text folded)])
+          (let ([g (term-gaps (car ts) text)])
             (and g (loop (cdr ts) (fx+ total g)))))))
 
   (define (partial-pattern query)
@@ -110,22 +122,22 @@
 
   (define (pattern-matcher pattern)
     (let ([terms (compile-pattern pattern)])
-      (lambda (text) (and (gaps-of terms text (fold text)) #t))))
+      (lambda (text) (and (gaps-of terms text) #t))))
 
   (define (pattern-spans pattern text)
-    (let ([folded (fold text)] [spans '()])
+    (let ([spans '()])
       (for-each
         (lambda (t)
-          (let ([hay (if (vector-ref t 1) folded text)])
+          (let ([fold? (vector-ref t 1)])
             (case (vector-ref t 0)
               [(not) (void)]
               [(ends)
-               (let* ([piece (car (vector-ref t 2))] [at (fx- (string-length hay) (string-length piece))])
-                 (when (and (fx>= at 0) (starts-at? hay piece at))
-                   (set! spans (cons (cons at (string-length hay)) spans))))]
+               (let* ([piece (car (vector-ref t 2))] [at (fx- (string-length text) (string-length piece))])
+                 (when (and (fx>= at 0) (starts-at? text fold? piece at))
+                   (set! spans (cons (cons at (string-length text)) spans))))]
               [else
                (let ([found '()])
-                 (when (pieces-at hay (vector-ref t 2) (eq? (vector-ref t 0) 'starts)
+                 (when (pieces-gaps text fold? (vector-ref t 2) (eq? (vector-ref t 0) 'starts)
                          (lambda (at len) (set! found (cons (cons at (fx+ at len)) found))))
                    (set! spans (append found spans))))])))
         (compile-pattern pattern))
@@ -140,13 +152,15 @@
 
   ;; Candidates may come a few at a time, thousands of times, so those
   ;; added to a sorted store wait at the end of order, past merged, and
-  ;; are sorted into it once, by the next match.
+  ;; are sorted into it once, by the next match. A cleared store numbers
+  ;; its candidates on from those it dropped, so a number names one
+  ;; candidate for the store's life.
   (define-record-type (store %make-store store?)
     (sealed #t)
-    (fields (mutable texts) (mutable folded) (mutable ranks) (mutable live) (mutable count)
+    (fields (mutable base) (mutable texts) (mutable ranks) (mutable count)
             (mutable order) (mutable merged) (mutable sorted?)))
 
-  (define (make-empty) (%make-store (vector) (vector) (vector) (vector) 0 (vector) 0 #f))
+  (define (make-empty) (%make-store 0 (vector) (vector) 0 (vector) 0 #f))
 
   (define (grow v n fill)
     (if (fx>= (vector-length v) n)
@@ -168,18 +182,23 @@
   (define (store-add! s texts ranks)
     (let* ([n (store-count s)] [k (vector-length texts)] [m (fx+ n k)])
       (store-texts-set! s (grow (store-texts s) m ""))
-      (store-folded-set! s (grow (store-folded s) m ""))
       (store-ranks-set! s (grow (store-ranks s) m 0))
-      (store-live-set! s (grow (store-live s) m #t))
-      (do ([i 0 (fx+ i 1)]) ((fx= i k))
-        (let ([text (vector-ref texts i)])
-          (vector-set! (store-texts s) (fx+ n i) text)
-          (vector-set! (store-folded s) (fx+ n i) (fold text))
-          (vector-set! (store-ranks s) (fx+ n i) (if ranks (vector-ref ranks i) 0))
-          (vector-set! (store-live s) (fx+ n i) #t)))
+      (vector-copy! texts 0 (store-texts s) n k)
+      (if ranks
+          (vector-copy! ranks 0 (store-ranks s) n k)
+          (do ([i n (fx+ i 1)]) ((fx= i m)) (vector-set! (store-ranks s) i 0)))
       (store-order-set! s (grow (store-order s) m 0))
       (do ([i n (fx+ i 1)]) ((fx= i m)) (vector-set! (store-order s) i i))
       (store-count-set! s m)))
+
+  (define (store-clear! s)
+    (store-base-set! s (fx+ (store-base s) (store-count s)))
+    (store-texts-set! s (vector))
+    (store-ranks-set! s (vector))
+    (store-order-set! s (vector))
+    (store-count-set! s 0)
+    (store-merged-set! s 0)
+    (store-sorted?-set! s #f))
 
   (define (merge-added! s)
     (let ([n (store-count s)] [m (store-merged s)])
@@ -197,48 +216,59 @@
           [(fx< j nb) (vector-set! v k (vector-ref b j)) (loop i (fx+ j 1) (fx+ k 1))]
           [else v]))))
 
-  (define (store-retire! s indices)
-    (vector-for-each
-      (lambda (i) (when (and (fixnum? i) (fx< -1 i (store-count s))) (vector-set! (store-live s) i #f)))
-      indices))
-
   (define (store-sort! s)
     (unless (store-sorted? s)
       (store-order-set! s (vector-sort (before? s) (vector-copy (store-order s) 0 (store-count s))))
       (store-merged-set! s (store-count s))
       (store-sorted?-set! s #t)))
 
-  (define (scan s pattern stop first)
+  ;; A scan may find every one of millions of candidates, so it keeps
+  ;; what it finds in vectors, a word for each, not in lists. Candidates
+  ;; in arrival order are in order of number, so a scan from a number
+  ;; starts there.
+  (define (scan s pattern from stop first)
     (merge-added! s)
     (let* ([terms (compile-pattern pattern)] [gaps? (and (store-sorted? s) (multi-piece? terms))]
-           [order (store-order s)] [n (store-count s)]
-           [texts (store-texts s)] [folded (store-folded s)] [live (store-live s)])
-      (let loop ([k 0] [found '()] [count 0])
+           [order (store-order s)] [n (store-count s)] [texts (store-texts s)] [base (store-base s)]
+           [lowest (fx- from base)])
+      (define (numbers found count)
+        (let ([v (make-vector count)])
+          (do ([j 0 (fx+ j 1)]) ((fx= j count) v)
+            (vector-set! v j (fx+ base (vector-ref found j))))))
+      (let loop ([k (if (store-sorted? s) 0 (fxmax 0 lowest))] [found (make-vector 64)]
+                 [gaps (if gaps? (make-vector 64) (vector))] [count 0])
         (cond
           [(fx= k n)
-           (let ([found (reverse found)])
-             (list->vector
-               (if gaps?
-                   (map car (list-sort (lambda (a b)
-                                         (let ([ra (vector-ref (store-ranks s) (car a))]
-                                               [rb (vector-ref (store-ranks s) (car b))])
-                                           (or (fx< ra rb) (and (fx= ra rb) (fx< (cdr a) (cdr b))))))
-                                       found))
-                   (map car found))))]
+           (if gaps?
+               (let ([ranks (store-ranks s)] [v (make-vector count)])
+                 (do ([j 0 (fx+ j 1)]) ((fx= j count)) (vector-set! v j j))
+                 (vector-sort!
+                   (lambda (a b)
+                     (let ([ra (vector-ref ranks (vector-ref found a))] [rb (vector-ref ranks (vector-ref found b))])
+                       (or (fx< ra rb)
+                           (and (fx= ra rb)
+                                (let ([ga (vector-ref gaps a)] [gb (vector-ref gaps b)])
+                                  (or (fx< ga gb) (and (fx= ga gb) (fx< a b))))))))
+                   v)
+                 (do ([j 0 (fx+ j 1)]) ((fx= j count) v)
+                   (vector-set! v j (fx+ base (vector-ref found (vector-ref v j))))))
+               (numbers found count))]
           [(and stop (fx= (fxand k 4095) 4095) (stop k)) #f]
           [else
-           (let ([i (vector-ref order k)])
-             (if (vector-ref live i)
-                 (let ([g (gaps-of terms (vector-ref texts i) (vector-ref folded i))])
-                   (if g
-                       (begin
-                         (when (and first (not gaps?) (fx= count 49))
-                           (first (list->vector (reverse (map car (cons (cons i g) found))))))
-                         (loop (fx+ k 1) (cons (cons i g) found) (fx+ count 1)))
-                       (loop (fx+ k 1) found count)))
-                 (loop (fx+ k 1) found count)))]))))
+           (let* ([i (vector-ref order k)] [g (and (fx>= i lowest) (gaps-of terms (vector-ref texts i)))])
+             (if g
+                 (let ([found (grow found (fx+ count 1) 0)] [gaps (if gaps? (grow gaps (fx+ count 1) 0) gaps)])
+                   (vector-set! found count i)
+                   (when gaps? (vector-set! gaps count g))
+                   (when (and first (not gaps?) (fx= count 49))
+                     (first (numbers found 50)))
+                   (loop (fx+ k 1) found gaps (fx+ count 1)))
+                 (loop (fx+ k 1) found gaps count)))]))))
 
-  (define (store-matches s pattern) (scan s pattern #f #f))
+  (define store-matches
+    (case-lambda
+      [(s pattern) (scan s pattern 0 #f #f)]
+      [(s pattern from) (scan s pattern from #f #f)]))
 
   (define (serve emit receive)
     (let ([s (make-empty)] [queue '()])
@@ -257,7 +287,7 @@
         (when (pair? m)
           (case (car m)
             [(add) (store-add! s (cadr m) (caddr m))]
-            [(retire) (store-retire! s (cadr m))]
+            [(clear) (store-clear! s)]
             [(sort) (store-sort! s)])))
       (let loop ()
         (let ([m (take!)])
@@ -267,8 +297,8 @@
                   (drain!)
                   (if (newer-match?)
                       (void)
-                      (let* ([id (cadr m)] [pattern (caddr m)]
-                             [all (scan s pattern
+                      (let* ([id (cadr m)] [pattern (caddr m)] [from (cadddr m)]
+                             [all (scan s pattern from
                                     (lambda (k) (drain!) (newer-match?))
                                     (lambda (part) (emit (cons* id #f part))))])
                         (when all (emit (cons* id #t all))))))

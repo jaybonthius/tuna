@@ -1,19 +1,19 @@
-> (views:set-buffer! (view) (files:visit (string-append (getenv "HOME") "/src/text.txt")))
-; M-s g searches the files under the current buffer's directory, leaving
-; out hidden files, symbolic links and binary files; after #, the input
+> (views:set-buffer! (view) (files:visit "~/src/text.txt"))
+; M-s r runs rg in the current buffer's directory, which leaves out
+; hidden files, binary files and symbolic links; after #, the input
 ; filters the lines found.
-> (define t (start! (lambda () (press! "M-s" "g"))))
+> (define t (start! (lambda () (press! "M-s" "r"))))
 > (define s (session))
 > (type! "ne")
 > (sleep-for 0.5)
 > (texts s)
 ()
 > (type! "edle")
-> (sleep-for 0.5)
+> (wait-matches s)
 > (texts s)
 ("text.txt:1:needle one" "text.txt:3:needle two")
 > (type! "#two")
-> (sleep-for 0.3)
+> (wait-matches s)
 > (texts s)
 ("text.txt:3:needle two")
 > (press! "RET")
@@ -22,25 +22,111 @@
 #<buffer text.txt>
 > (document:line (buffers:document (views:buffer (view))) (views:point (view)))
 3
-; Files over the size limit are left out.
-> (set-option! grep:max-file-size 10)
-> (define t (start! (lambda () (press! "M-s" "g"))))
+; Words match in any order, each a regular expression; words after one
+; that starts with - are rg's options.
+> (views:set-buffer! (view) (files:visit (string-append (getenv "HOME") "/src/text.txt")))
+> (define t (start! (lambda () (press! "M-s" "r"))))
 > (define s (session))
-> (type! "needle")
-> (sleep-for 0.5)
+> (type! "tw.* need")
+> (wait-matches s)
+> (texts s)
+("text.txt:3:needle two")
+> (type! " -A1")
+> (wait-matches s)
+> (texts s)
+("text.txt:3:needle two")
+; With -F, the words are one fixed string, as typed.
+> (press! "C-a" "C-k")
+> (type! "needle two -F")
+> (wait-matches s)
+> (texts s)
+("text.txt:3:needle two")
+> (press! "C-a" "C-k")
+> (type! "two needle -F")
+> (wait-matches s)
 > (texts s)
 ()
+> (press! "C-a" "C-k")
+> (type! "hay -B1")
+> (wait-matches s)
+> (texts s)
+("text.txt-1-needle one" "text.txt:2:hay")
 > (press! "C-g")
 ! &quit
-> (set-option! grep:max-file-size 1000000)
+; rg's complaint about the search is shown.
+> (define t (start! (lambda () (press! "M-s" "r"))))
+> (define s (session))
+> (type! "needle(")
+> (wait-matches s)
+! (grep) grep:grep: rg: regex parse error:
+> (texts s)
+()
+> (echo-area:current-message)
+"grep:grep: rg: regex parse error:"
+> (press! "C-g")
+! &quit
+; Lines show as rg prints them, before it ends.
+> (set-option! grep:command-line (list (string-append (getenv "HOME") "/bin/slow-rg")))
+> (define t (start! (lambda () (press! "M-s" "r"))))
+> (define s (session))
+> (type! "first")
+> (sleep-for 0.5)
+> (texts s)
+("a.txt:1:first")
+> (completion:session-busy? s)
+#t
+> (define slow (find (lambda (p) (string=? (car (processes:command-line p)) (car (grep:command-line)))) (processes:all)))
+> (processes:status slow)
+#f
+> (processes:owner slow)
+(grep)
+; A new search stops the running rg at once, and its lines stay until the
+; new search shows its own.
+> (type! "s")
+> (sleep-for 0.1)
+> (processes:status slow)
+-1
+> (texts s)
+("a.txt:1:first")
+> (sleep-for 0.5)
+> (texts s)
+("a.txt:1:first")
+> (define slower (find (lambda (p) (and (not (eq? p slow)) (string=? (car (processes:command-line p)) (car (grep:command-line))))) (processes:all)))
+> (processes:status slower)
+#f
+; Quitting the prompt stops it too.
+> (press! "C-g")
+! &quit
+> (sleep-for 0.1)
+> (processes:status slower)
+-1
+; Without rg, each search says so.
+> (set-option! grep:command-line (list "no-such-rg"))
+> (define t (start! (lambda () (press! "M-s" "r"))))
+> (define s (session))
+> (type! "needle")
+> (wait-matches s)
+! (grep) spawn-process: cannot run no-such-rg: No such file or directory with irritants ("no-such-rg" ("-e" "needle" "."))
+> (texts s)
+()
+> (echo-area:current-message)
+"spawn-process: cannot run no-such-rg: No such file or directory with irritants (\"no-such-rg\" (\"-e\" \"needle\" \".\"))"
+; A backslash before a word's - keeps it a word.
+> (press! "C-a" "C-k")
+> (type! "\\-1 -F")
+> (wait-matches s)
+! (grep) spawn-process: cannot run no-such-rg: No such file or directory with irritants ("no-such-rg" ("-e" "-1" "-F" "."))
+> (press! "C-g")
+! &quit
+> (set-option! grep:command-line (option-default grep:command-line))
 ; With the default styles, the filter after # matches inside a line found,
 ; and M-s l matches inside a line.
 > (set-option! completion:styles (list completion:prefix completion:partial))
 > (views:set-buffer! (view) (files:visit (string-append (getenv "HOME") "/src/text.txt")))
-> (define t (start! (lambda () (press! "M-s" "g"))))
+> (define t (start! (lambda () (press! "M-s" "r"))))
 > (define s (session))
 > (type! "needle#two")
-> (sleep-for 0.5)
+> (wait-matches s)
 > (texts s)
 ("text.txt:3:needle two")
 > (press! "C-g")

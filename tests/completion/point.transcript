@@ -135,7 +135,7 @@
 > (list-rows)
 2
 > (type! "z")
-> (list (vector-length (completion:session-matches (session))) (list-rows))
+> (list (completion:matches-count (completion:session-matches (session))) (list-rows))
 (0 2)
 > (press! "DEL")
 > (press! "C-n" "C-n" "C-n")

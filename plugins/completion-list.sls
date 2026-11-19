@@ -27,7 +27,7 @@
 
 (define-record-type %shown
   (sealed #t)
-  (fields session buffer view (mutable matches) (mutable widths) prompt (mutable height)))
+  (fields session buffer view (mutable matches) (mutable count) (mutable widths) prompt (mutable height)))
 
 (define %lists '())
 
@@ -55,8 +55,9 @@
     found))
 
 (define (%index-of m matches)
-  (let loop ([i 0])
-    (and (fx< i (vector-length matches)) (if (eqv? (vector-ref matches i) m) i (loop (fx+ i 1))))))
+  (let ([n (completion:matches-count matches)])
+    (let loop ([i 0])
+      (and (fx< i n) (if (eqv? (completion:matches-ref matches i) m) i (loop (fx+ i 1)))))))
 
 (define (%counts view)
   (let ([l (%list-of-view view)])
@@ -64,7 +65,7 @@
         (let* ([s (%shown-session l)] [matches (completion:session-matches s)] [m (completion:selected s)]
                [k (and m (%index-of m matches))])
           (haml (:div.completion-list-count ([data-face (symbol->string faces:shadow)])
-                  (if k (fx+ k 1) 0) "/" (vector-length matches)
+                  (if k (fx+ k 1) 0) "/" (completion:matches-count matches)
                   (when (completion:session-busy? s) " …"))))
         '())))
 
@@ -88,12 +89,12 @@
           (%column-text c))))
 
 (define (%title-first? s matches k title)
-  (and title (or (fx= k 0) (not (equal? title (completion:title s (vector-ref matches (fx- k 1))))))))
+  (and title (or (fx= k 0) (not (equal? title (completion:title s (completion:matches-ref matches (fx- k 1))))))))
 
 ;; A row is a match's place in the matches, so drawing it can tell the
 ;; first match of a titled source without walking every match.
 (define (%draw-row l matches k)
-  (let* ([s (%shown-session l)] [m (vector-ref matches k)] [text (completion:text s m)] [title (completion:title s m)]
+  (let* ([s (%shown-session l)] [m (completion:matches-ref matches k)] [text (completion:text s m)] [title (completion:title s m)]
          [columns (completion:annotation s m)] [widths (%shown-widths l)])
     ;; The title sits outside the row, which clips everything after its
     ;; first line.
@@ -115,9 +116,9 @@
 
 (define (%shown-matches-of l)
   (let* ([s (%shown-session l)] [matches (completion:session-matches s)]
-         [n (fxmin (vector-length matches) (rows))])
+         [n (fxmin (completion:matches-count matches) (rows))])
     (let loop ([i 0] [acc '()])
-      (if (fx= i n) (reverse acc) (loop (fx+ i 1) (cons (vector-ref matches i) acc))))))
+      (if (fx= i n) (reverse acc) (loop (fx+ i 1) (cons (completion:matches-ref matches i) acc))))))
 
 (define (%widths l shown)
   (let ([s (%shown-session l)])
@@ -131,21 +132,29 @@
       '()
       shown)))
 
-(define (%indices n)
-  (let ([v (make-vector n)])
-    (do ([i 0 (fx+ i 1)]) ((fx= i n) v) (vector-set! v i i))))
+(define (%indices from to)
+  (let ([v (make-vector (fx- to from))])
+    (do ([i from (fx+ i 1)]) ((fx= i to) v) (vector-set! v (fx- i from) i))))
 
+;; A stream's matches grow at their end, thousands of times, so only the
+;; rows they add are given to the list, once it shows as many as it can:
+;; the columns' widths are those of the rows shown.
 (define (%show! l)
   (let* ([s (%shown-session l)] [b (%shown-buffer l)] [v (%shown-view l)]
-         [matches (completion:session-matches s)] [m (completion:selected s)])
-    (unless (eq? matches (%shown-matches l))
-      (let ([shown (%shown-matches-of l)])
-        (%shown-matches-set! l matches)
-        (%shown-widths-set! l (%widths l shown))
-        (ui:set-rows! b (%list-node b) (%indices (vector-length matches))
-                      (lambda (k) (%draw-row l matches k))
-                      (lambda (k) (%choose l (vector-ref matches k)))
-                      (rows))))
+         [matches (completion:session-matches s)] [n (completion:matches-count matches)] [m (completion:selected s)])
+    (cond
+      [(or (not (eq? matches (%shown-matches l))) (and (fx< (%shown-count l) (rows)) (fx> n (%shown-count l))))
+       (let ([shown (%shown-matches-of l)])
+         (%shown-matches-set! l matches)
+         (%shown-count-set! l n)
+         (%shown-widths-set! l (%widths l shown))
+         (ui:set-rows! b (%list-node b) (%indices 0 n)
+                       (lambda (k) (%draw-row l matches k))
+                       (lambda (k) (%choose l (completion:matches-ref matches k)))
+                       (rows)))]
+      [(fx> n (%shown-count l))
+       (ui:add-rows! b (%list-node b) (%indices (%shown-count l) n))
+       (%shown-count-set! l n)])
     (let ([k (and m (%index-of m matches))])
       (if k
           (ui:select-row! (%list-node b) v k)
@@ -157,7 +166,7 @@
   (when (minibuffer:buffer? (views:buffer (completion:session-view s)))
     (let* ([b (buffers:make (%next-name) (%root '() (%count-line '()) (%none '()) (ui:list '())))]
            [v (views:make b)]
-           [l (make-%shown s b v #f '() (minibuffer:current-prompt) 0)])
+           [l (make-%shown s b v #f 0 '() (minibuffer:current-prompt) 0)])
       (buffers:with-buffer b (set-option-local! views:cursor-visible #f))
       (set! %lists (cons l %lists))
       (let ([p (%shown-prompt l)])
@@ -184,7 +193,7 @@
     (for-each
       (lambda (l)
         (%shown-height-set! l (fxmax (%shown-height l)
-                                     (fxmin (vector-length (completion:session-matches (%shown-session l))) (rows)))))
+                                     (fxmin (completion:matches-count (completion:session-matches (%shown-session l))) (rows)))))
       %lists))
   (ended))
 

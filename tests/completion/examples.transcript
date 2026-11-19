@@ -76,7 +76,7 @@ words:word-category
 > (completion:input-changed! tag-session)
 > (texts tag-session)
 ("list" "listen")
-> (completion:select! tag-session (vector-ref (completion:session-matches tag-session) 1))
+> (completion:select! tag-session (completion:matches-ref (completion:session-matches tag-session) 1))
 > (views:call-with-view tags-view completion:exit)
 > saved-tag
 "listen"
@@ -134,7 +134,7 @@ words:word-category
 (("*scratch*" (shadow . "0") (shadow . "")) ("*Messages*" (shadow . "5") (shadow . "")) ("*tags*" (shadow . "6") (shadow . "")) ("notes" (shadow . "55") (shadow . "")) ("code.py" (shadow . "19") (shadow . "")) ("sub") ("a.txt"))
 > (type! "a.t")
 > (wait-matches s)
-> (map (lambda (m) (completion:title s m)) (vector->list (completion:session-matches s)))
+> (map (lambda (m) (completion:title s m)) (match-list s))
 ("Notes")
 > (press! "RET")
 > (result t)

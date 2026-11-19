@@ -21,7 +21,7 @@
 
 (define-record-type %shown
   (sealed #t)
-  (fields session buffer view (mutable popup-id) (mutable matches) (mutable widths)))
+  (fields session buffer view (mutable popup-id) (mutable matches) (mutable count) (mutable widths)))
 
 (define %popups '())
 
@@ -61,7 +61,7 @@
 (define (%column-text c) (if (pair? c) (cdr c) c))
 
 (define (%draw-row l matches k)
-  (let* ([s (%shown-session l)] [m (vector-ref matches k)] [widths (%shown-widths l)])
+  (let* ([s (%shown-session l)] [m (completion:matches-ref matches k)] [widths (%shown-widths l)])
     (haml
       (:div.completion-popup-row
         (:span.completion-popup-text (%mark (completion:text s m) (completion:spans s m)))
@@ -82,9 +82,9 @@
     (views:call-with-view (completion:session-view s) completion:exit)))
 
 (define (%first-matches s)
-  (let* ([matches (completion:session-matches s)] [n (fxmin (vector-length matches) (rows))])
+  (let* ([matches (completion:session-matches s)] [n (fxmin (completion:matches-count matches) (rows))])
     (let loop ([i 0] [acc '()])
-      (if (fx= i n) (reverse acc) (loop (fx+ i 1) (cons (vector-ref matches i) acc))))))
+      (if (fx= i n) (reverse acc) (loop (fx+ i 1) (cons (completion:matches-ref matches i) acc))))))
 
 (define (%widths s shown)
   (fold-left
@@ -104,13 +104,14 @@
                                                        (completion:annotation s m))))
                                  0 shown))))
 
-(define (%indices n)
-  (let ([v (make-vector n)])
-    (do ([i 0 (fx+ i 1)]) ((fx= i n) v) (vector-set! v i i))))
+(define (%indices from to)
+  (let ([v (make-vector (fx- to from))])
+    (do ([i from (fx+ i 1)]) ((fx= i to) v) (vector-set! v (fx- i from) i))))
 
 (define (%index-of m matches)
-  (let loop ([i 0])
-    (and (fx< i (vector-length matches)) (if (eqv? (vector-ref matches i) m) i (loop (fx+ i 1))))))
+  (let ([n (completion:matches-count matches)])
+    (let loop ([i 0])
+      (and (fx< i n) (if (eqv? (completion:matches-ref matches i) m) i (loop (fx+ i 1)))))))
 
 ;; The popup's view is dropped once layout-float removes it, as when the
 ;; completed text's view goes, so it is kept by number.
@@ -120,25 +121,33 @@
     (when (and v (layout:popup-node v))
       (layout-float:close! v))))
 
+;; A stream's matches grow at their end, thousands of times, so only the
+;; rows they add are given to the list, once it shows as many as it can:
+;; the popup's size is that of the rows shown.
 (define (%show! l)
   (let* ([s (%shown-session l)] [b (%shown-buffer l)] [v (%shown-view l)]
-         [matches (completion:session-matches s)] [m (completion:selected s)])
-    (unless (eq? matches (%shown-matches l))
-      (let ([shown (%first-matches s)])
-        (%shown-matches-set! l matches)
-        (%shown-widths-set! l (%widths s shown))
-        (ui:set-rows! b (%list-node b) (%indices (vector-length matches))
-                      (lambda (k) (%draw-row l matches k))
-                      (lambda (k) (%choose l (vector-ref matches k)))
-                      (rows))
-        (if (fx= (vector-length matches) 0)
-            (%close-popup! l)
-            (as-module (this-module)
-              (%shown-popup-id-set! l
-                (views:id
-                  (layout-float:show-at! (completion:session-view s) (completion:session-start s) b
-                                         (list 'columns (%popup-width s shown))
-                                         (list 'lines (fxmax 1 (length shown))))))))))
+         [matches (completion:session-matches s)] [n (completion:matches-count matches)] [m (completion:selected s)])
+    (cond
+      [(or (not (eq? matches (%shown-matches l))) (and (fx< (%shown-count l) (rows)) (fx> n (%shown-count l))))
+       (let ([shown (%first-matches s)])
+         (%shown-matches-set! l matches)
+         (%shown-count-set! l n)
+         (%shown-widths-set! l (%widths s shown))
+         (ui:set-rows! b (%list-node b) (%indices 0 n)
+                       (lambda (k) (%draw-row l matches k))
+                       (lambda (k) (%choose l (completion:matches-ref matches k)))
+                       (rows))
+         (if (fx= n 0)
+             (%close-popup! l)
+             (as-module (this-module)
+               (%shown-popup-id-set! l
+                 (views:id
+                   (layout-float:show-at! (completion:session-view s) (completion:session-start s) b
+                                          (list 'columns (%popup-width s shown))
+                                          (list 'lines (fxmax 1 (length shown)))))))))]
+      [(fx> n (%shown-count l))
+       (ui:add-rows! b (%list-node b) (%indices (%shown-count l) n))
+       (%shown-count-set! l n)])
     (let ([k (and m (%index-of m matches))])
       (if k
           (ui:select-row! (%list-node b) v k)
@@ -151,7 +160,7 @@
   (let* ([view (completion:session-view s)] [node (layout:view-node view)])
     (when (and node (not (layout:locked? node)))
       (let* ([b (buffers:make (%next-name) (%root '() (%none '()) (ui:list '())))]
-             [l (make-%shown s b (views:make b) #f #f '())])
+             [l (make-%shown s b (views:make b) #f #f 0 '())])
         (buffers:with-buffer b (set-option-local! views:cursor-visible #f))
         (set! %popups (cons l %popups))))))
 

@@ -11,7 +11,8 @@
 (define-table disabled-keys "Keys that do nothing on a disabled button or link.")
 
 (module %internals
-  (draw-labelled button-at disabled? list-node? row-atom? list-state set-list-state! rows-vector rows-draw rows-choose rows-shown
+  (draw-labelled button-at disabled? list-node? row-atom? list-state set-list-state! add-list-rows! rows-vector rows-count
+   rows-draw rows-choose rows-shown
    rows-failed? rows-failed?-set! selected-index index-position window-start window-for write-window! list-at
    current-drawing drawing-rows drawing-selected with-drawing place posn-or-point forget-buffer!)
 
@@ -46,10 +47,13 @@
   ;; is stale, rather than choosing whatever row took its index. A list
   ;; whose draw or choose procedure raised stays failed until its rows are
   ;; set again, so a procedure whose module is gone is not called, and its
-  ;; error not reported, on every draw.
+  ;; error not reported, on every draw. Rows added go into a vector of the
+  ;; list's own, owned?, never into the one its maker set, which the maker
+  ;; may still hold.
   (define-record-type rows
     (sealed #t)
-    (fields (mutable vector) (mutable draw) (mutable choose) (mutable shown) (mutable generation) (mutable failed?)))
+    (fields (mutable vector) (mutable count) (mutable owned?) (mutable draw) (mutable choose) (mutable shown)
+            (mutable generation) (mutable failed?)))
 
   ;; Only an anchor right after a node's opening reports the node's deletion.
   (define lists (make-eq-hashtable))
@@ -83,16 +87,30 @@
             (unless (eq? vector (rows-vector state))
               (rows-generation-set! state (fx+ (rows-generation state) 1)))
             (rows-vector-set! state vector)
+            (rows-count-set! state (vector-length vector))
+            (rows-owned?-set! state #f)
             (rows-draw-set! state draw)
             (rows-choose-set! state choose)
             (rows-shown-set! state shown)
             (rows-failed?-set! state #f)
             state)
           (let* ([key (first-key (buffers:document b) node)]
-                 [state (make-rows vector draw choose shown (if key (fx+ (car key) 1) 0) #f)])
+                 [state (make-rows vector (vector-length vector) #f draw choose shown (if key (fx+ (car key) 1) 0) #f)])
             (eq-hashtable-set! lists b
               (cons (cons (buffers:anchor b (fx+ (document:node-start node) 1)) state) (entries-of b)))
             state))))
+
+  (define (add-list-rows! state rows)
+    (let* ([n (rows-count state)] [k (vector-length rows)] [m (fx+ n k)] [v (rows-vector state)]
+           [v (if (and (rows-owned? state) (fx<= m (vector-length v)))
+                  v
+                  (let ([w (make-vector (fxmax m (fx* 2 n)))])
+                    (vector-copy! v 0 w 0 n)
+                    w))])
+      (vector-copy! rows 0 v n k)
+      (rows-vector-set! state v)
+      (rows-count-set! state m)
+      (rows-owned?-set! state #t)))
 
   (define (forget-buffer! b) (eq-hashtable-delete! lists b))
 
@@ -273,7 +291,7 @@
 (define (%draw-list-row node view)
   (let* ([d (current-drawing)] [state (and d (drawing-rows d))] [key (document:node-attribute node 'key)]
          [i (and (pair? key) (cdr key))])
-    (if (and state (not (rows-failed? state)) (fixnum? i) (fx< i (vector-length (rows-vector state))))
+    (if (and state (not (rows-failed? state)) (fixnum? i) (fx< i (rows-count state)))
         (guard (c [(%failure? c) (rows-failed?-set! state #t) (report c) '()])
           (haml (:li.ui-list-row ([aria-current (and (eqv? i (drawing-selected d)) "true")])
                   ((rows-draw state) (vector-ref (rows-vector state) i)))))
@@ -326,12 +344,24 @@
        (assertion-violation 'ui:set-rows! "not a procedure" choose))
      (unless (and (fixnum? shown) (fx> shown 0))
        (assertion-violation 'ui:set-rows! "not a positive count" shown))
-     (let* ([node (%check-list 'ui:set-rows! buffer node)] [doc (buffers:document buffer)] [count (vector-length rows)]
-            [v (views:current)]
-            [i (and v (eq? (views:buffer v) buffer) (selected-index doc node (views:point v)))]
-            [state (set-list-state! buffer node rows draw-row choose shown)])
-       (let ([first (window-for (and i (fxmin i (fx- count 1))) (window-start doc node) count shown)])
-         (write-window! buffer node state first (fxmin shown (fx- count first)))))]))
+     (let ([node (%check-list 'ui:set-rows! buffer node)])
+       (%write-rows! buffer node (set-list-state! buffer node rows draw-row choose shown)))]))
+
+(define (%write-rows! buffer node state)
+  (let* ([doc (buffers:document buffer)] [count (rows-count state)] [shown (rows-shown state)] [v (views:current)]
+         [i (and v (eq? (views:buffer v) buffer) (selected-index doc node (views:point v)))])
+    (let ([first (window-for (and i (fxmin i (fx- count 1))) (window-start doc node) count shown)])
+      (write-window! buffer node state first (fxmin shown (fx- count first))))))
+
+(define (add-rows! buffer node rows)
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'ui:add-rows! "not a buffer" buffer))
+  (unless (vector? rows)
+    (assertion-violation 'ui:add-rows! "not a vector" rows))
+  (let* ([node (%check-list 'ui:add-rows! buffer node)]
+         [state (or (list-state buffer node) (assertion-violation 'ui:add-rows! "the list has no rows set" node))])
+    (add-list-rows! state rows)
+    (%write-rows! buffer node state)))
 
 (define (selected-row node view)
   (let ([b (%check-view 'ui:selected-row view)])
@@ -342,7 +372,7 @@
     (unless (and (fixnum? index) (fx>= index 0))
       (assertion-violation 'ui:select-row! "not a row index" index))
     (let* ([node (%check-list 'ui:select-row! b node)] [state (list-state b node)]
-           [count (if state (vector-length (rows-vector state)) 0)])
+           [count (if state (rows-count state) 0)])
       (unless (fx= count 0)
         (let* ([i (fxmin index (fx- count 1))] [shown (rows-shown state)]
                [first (window-for i (window-start (buffers:document b) node) count shown)]
@@ -387,7 +417,7 @@
     (when (and v p) (views:set-point! v p))
     (let-values ([(v node) (%list-here 'ui:choose-row)])
       (let ([state (list-state (views:buffer v) node)] [i (selected-row node v)])
-        (when (and state (not (rows-failed? state)) i (fx< i (vector-length (rows-vector state))))
+        (when (and state (not (rows-failed? state)) i (fx< i (rows-count state)))
           (with-exception-handler
             (lambda (c)
               (when (%failure? c) (rows-failed?-set! state #t))

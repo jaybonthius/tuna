@@ -158,9 +158,11 @@
 
 (define (wait-matches s) (wait-until (lambda () (not (completion:session-busy? s)))))
 
-(define (rows s) (map (lambda (m) (cons (completion:text s m) (completion:annotation s m))) (vector->list (completion:session-matches s))))
+(define (match-list s) (let ([ms (completion:session-matches s)]) (do ([k (- (completion:matches-count ms) 1) (- k 1)] [acc '() (cons (completion:matches-ref ms k) acc)]) ((< k 0) acc))))
 
-(define (texts s) (map (lambda (m) (completion:text s m)) (vector->list (completion:session-matches s))))
+(define (rows s) (map (lambda (m) (cons (completion:text s m) (completion:annotation s m))) (match-list s)))
+
+(define (texts s) (map (lambda (m) (completion:text s m)) (match-list s)))
 
 (define (selected-text s) (let ([m (completion:selected s)]) (and m (completion:text s m))))
 

@@ -73,6 +73,16 @@
 > (ui:set-rows! b (lst) rows (lambda (s) (ui:label (symbol->string s))) choose)
 > (- (buffers:version b) v1)
 0
+; Rows added keep the generation and the caller's vector; the list shows
+; them while it has room, and a row drawn before is chosen still.
+> (ui:add-rows! b (lst) (vector 'v))
+> (list (selected) (ui:selected-row (lst) other) (keys-shown) rows)
+(0 2 ((2 . 0) (2 . 1) (2 . 2) (2 . 3) (2 . 4)) #(x y z w))
+> (click-token! (view) 5)
+> (ui:select-row! (lst) (view) 9)
+> (list (car chosen) (selected))
+(v 4)
+> (set! chosen (cdr chosen))
 ; No rows: motion and choosing do nothing.
 > (ui:set-rows! b (lst) (vector) number-row choose)
 > (press! "C-n" "RET")
@@ -109,6 +119,10 @@
 (ui:set-rows! "not a vector")
 > (raised (lambda () (ui:set-rows! t (mixed-list) (vector) ui:label choose 0)))
 (ui:set-rows! "not a positive count")
+> (raised (lambda () (ui:add-rows! t (mixed-list) '(1))))
+(ui:add-rows! "not a vector")
+> (raised (lambda () (ui:add-rows! t (lst) (vector))))
+(ui:add-rows! "not a list of the buffer")
 > (raised (lambda () (ui:select-row! (mixed-list) (view) -1)))
 (ui:select-row! "not a row index")
 > (raised (lambda () (ui:selected-row (mixed-list) 'view)))

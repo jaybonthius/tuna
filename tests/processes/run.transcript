@@ -25,6 +25,25 @@
 0
 #vu8(47 10 104 105 10)
 #vu8()
+; A directory that starts with ~ or ~user is expanded, as Chez expands
+; the file names it opens.
+> (let-values ([(status out err) (processes:run "pwd" '() #f (processes:options [directory "~"]))])
+    (string=? (utf8->string out) (string-append (getenv "HOME") "\n")))
+#t
+> (system (string-append "mkdir -p " (getenv "HOME") "/sub"))
+0
+> (let-values ([(status out err) (processes:run "pwd" '() #f (processes:options [directory "~/sub"]))])
+    (string=? (utf8->string out) (string-append (getenv "HOME") "/sub\n")))
+#t
+> (define (output-line program arguments directory)
+    (let-values ([(status out err) (processes:run program arguments #f (processes:options [directory directory]))])
+      (let ([text (utf8->string out)]) (substring text 0 (- (string-length text) 1)))))
+> (define user (output-line "id" '("-un") #f))
+> (string=? (output-line "pwd" '() (string-append "~" user))
+            (output-line "sh" (list "-c" (string-append "getent passwd " user " | cut -d: -f6")) #f))
+#t
+> (guard (c [#t (condition-message c)]) (processes:run "pwd" '() #f (processes:options [directory "~no-such-user/sub"])))
+"cannot run pwd: No such file or directory"
 > (processes:run "true" '() #f (processes:options [terminal '(24 . 80)]))
 ! processes:run: a program run to its end has no terminal with irritant #<processes:options>
 ; A program that cannot start raises in the task.
