@@ -198,6 +198,53 @@
   .view .node[data-region] > * {
     background-color: var(--tuna-region, Highlight);
   }
+
+  /* A node's own element takes no box, so its state is drawn on what its
+     kind drew. Inside a grid an event names the grid's node, so no kind's
+     or layer's keymap there is reached. An inert element keeps the one
+     around it from lighting, since a click there runs nothing. Every
+     selector is inside :where(), so a plugin's class beats it; a browser
+     gives a button the arrow, so a button takes the cursor around it. */
+  :where(:is([data-keymap~="clickable"],
+             [data-key],
+             [data-click="clickable"]:not(.node, [data-grid] *),
+             .node[data-click="clickable"]:not([data-grid] *) > *,
+             [data-keymap~="inert"],
+             [data-click="inert"]:not(.node, [data-grid] *),
+             .node[data-click="inert"]:not([data-grid] *) > *) button) {
+    cursor: inherit;
+  }
+
+  :where([data-keymap~="clickable"],
+         [data-key],
+         [data-click="clickable"]:not(.node, [data-grid] *),
+         .node[data-click="clickable"]:not([data-grid] *) > *) {
+    cursor: pointer;
+  }
+
+  :where([data-keymap~="inert"],
+         [data-click="inert"]:not(.node, [data-grid] *),
+         .node[data-click="inert"]:not([data-grid] *) > *) {
+    cursor: default;
+  }
+
+  :where(:is([data-keymap~="clickable"],
+             [data-key],
+             [data-click="clickable"]:not(.node, [data-grid] *),
+             .node[data-click="clickable"]:not([data-grid] *) > *):hover:not(:has(:is([data-keymap~="inert"],
+                                 [data-click="inert"]:not(.node, [data-grid] *),
+                                 .node[data-click="inert"]:not([data-grid] *) > *):hover))) {
+    background-image: linear-gradient(var(--tuna-hover), var(--tuna-hover));
+  }
+
+  :where(:is([data-keymap~="clickable"],
+             [data-key],
+             [data-click="clickable"]:not(.node, [data-grid] *),
+             .node[data-click="clickable"]:not([data-grid] *) > *):active:not(:has(:is([data-keymap~="inert"],
+                                  [data-click="inert"]:not(.node, [data-grid] *),
+                                  .node[data-click="inert"]:not([data-grid] *) > *):active))) {
+    background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
+  }
 }
 
 @layer preferences {
@@ -231,6 +278,17 @@
     .view .line.region-line,
     .view .line.region-line * {
       color: HighlightText;
+    }
+
+    /* Forced colours drop the overlay. */
+    :where(:is([data-keymap~="clickable"],
+               [data-key],
+               [data-click="clickable"]:not(.node, [data-grid] *),
+               .node[data-click="clickable"]:not([data-grid] *) > *):hover:not(:has(:is([data-keymap~="inert"],
+                                   [data-click="inert"]:not(.node, [data-grid] *),
+                                   .node[data-click="inert"]:not([data-grid] *) > *):hover))) {
+      outline: var(--tuna-focus-width, 2px) solid Highlight;
+      outline-offset: calc(-1 * var(--tuna-focus-width, 2px));
     }
   }
 }

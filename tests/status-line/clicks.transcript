@@ -43,6 +43,14 @@
 > (click-status! (cadr windows) 1 name-keys)
 > clicked
 (#t #t)
+; A segment whose keymap binds the left button is marked clickable; one
+; that binds only the right button, and the line, whose keymap binds no
+; left click, carry no state.
+> (define-table menu-keys "Right clicks on a segment.")
+> (keys:bind! menu-keys "<mouse-3>" note-click)
+> (map (lambda (k) (let ([m (views:keymap-mark k)]) (substring m (string-length (number->string (mark-number k))) (string-length m))))
+       (list name-keys menu-keys status-line:keymap))
+(" clickable" "" "")
 ; A key the segment's keymap does not bind falls through to
 ; status-line:keymap, as Emacs's local-map on a mode-line string falls
 ; through to the mode line's mouse bindings: the middle button keeps only
@@ -64,7 +72,7 @@
      `(("type" . "mouse") ("action" . "click") ("button" . 3) ("clicks" . 1) ("modifiers" . #())
        ("view" . ,(views:id layout:screen-view)) ("version" . ,drawn)
        ("showing" . ,(views:shown-count layout:screen-view)) ("token" . ,at)
-       ("keymaps" . ,(vector (views:keymap-mark status-line:keymap))))))
+       ("keymaps" . ,(vector (mark-number status-line:keymap))))))
 ! Stale click: what was clicked is gone
 > (length (layout:views))
 1

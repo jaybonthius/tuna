@@ -38,11 +38,6 @@
   [data-cells="1"] { inline-size: 1ch; }
   [data-cells="2"] { inline-size: 2ch; }
 
-  [data-terminal-link]:hover {
-    text-decoration-line: underline;
-    cursor: pointer;
-  }
-
   .terminal-screen[data-cursor="block"] .cursor.primary,
   .terminal-screen[data-cursor="block-hollow"] .cursor.primary {
     inline-size: 1ch;
@@ -68,8 +63,20 @@
     visibility: hidden;
   }
 
-  /* A program that takes the mouse receives its clicks, not point. */
+  /* A program that takes the mouse receives its clicks, so the screen is
+     not a control, though its keymap binds every click. */
   .terminal-screen[data-keymap] {
     cursor: default;
+    background-image: none;
+  }
+}
+
+@layer preferences {
+  /* Views' hover outline under forced colours is in this layer, so the
+     opt-out must be too. */
+  @media (forced-colors: active) {
+    .terminal-screen[data-keymap] {
+      outline: none;
+    }
   }
 }

@@ -8,6 +8,8 @@
 
 (define-table list-keys "Keys that move through a list and choose its row.")
 
+(define-table row-keys "Keys on a list's row: a click chooses it.")
+
 (define-table disabled-keys "Keys that do nothing on a disabled button or link.")
 
 (module %internals
@@ -278,7 +280,7 @@
 
 (buffers:define-kind list (content nodes) (consent %keep-rows) (keymap list-keys) (draw %draw-list))
 
-(buffers:define-kind %list-row (content atom) (draw %draw-list-row))
+(buffers:define-kind %list-row (content atom) (keymap row-keys) (draw %draw-list-row))
 
 (define %list-kind (buffers:kind-name (buffers:constructor-kind list)))
 
@@ -606,13 +608,15 @@
 (keys:bind! list-keys "C-p" previous-row)
 (keys:bind! list-keys "<up>" previous-row)
 (keys:bind! list-keys "RET" choose-row)
-(keys:bind! list-keys "<mouse-1>" choose-row)
-(keys:bind! list-keys "<mouse-2>" choose-row)
+(keys:bind! list-keys "<mouse-1>" keys:ignore)
+(keys:bind! list-keys "<mouse-2>" keys:ignore)
 ;; A press would move point where it lands, and a press on a heading
 ;; lands on the list's first row, so the release alone selects.
 (keys:bind! list-keys "<down-mouse-1>" keys:ignore)
 (keys:bind! list-keys "<drag-mouse-1>" keys:ignore)
 (keys:bind! list-keys "<drag-mouse-2>" keys:ignore)
+(keys:bind! row-keys "<mouse-1>" choose-row)
+(keys:bind! row-keys "<mouse-2>" choose-row)
 (keys:bind! disabled-keys "<mouse-1>" keys:ignore)
 (keys:bind! disabled-keys "<mouse-2>" keys:ignore)
 (keys:bind! disabled-keys "RET" keys:ignore)

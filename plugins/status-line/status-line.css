@@ -65,15 +65,6 @@
     border-radius: var(--tuna-control-radius);
     font: inherit;
     color: inherit;
-    background: none;
-    cursor: pointer;
-  }
-
-  button.status-line-segment:hover {
-    background-image: linear-gradient(var(--tuna-hover), var(--tuna-hover));
-  }
-
-  button.status-line-segment:active {
-    background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
+    background-color: transparent;
   }
 }

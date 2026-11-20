@@ -861,9 +861,12 @@
   (check-keymap 'keys:bindings keymap)
   (keymap-bindings keymap))
 
-(define (active-keymaps client)
-  (check-main-thread 'keys:active-keymaps)
-  (keymaps-of client #f))
+(define active-keymaps
+  (case-lambda
+    [(client) (active-keymaps client #f)]
+    [(client posn)
+     (check-main-thread 'keys:active-keymaps)
+     (keymaps-of client posn)]))
 
 (define (lookup-in keymaps keys)
   (check-main-thread 'keys:lookup-in)

@@ -6,7 +6,6 @@
      text lines up with the text of the islands beside it, which sits
      inside their border. */
   .echo-area-message {
-    cursor: default;
     display: flex;
     flex-direction: column;
     /* Safe, so a message taller than the area scrolls from its first line. */

@@ -151,7 +151,7 @@
 > (define d (buffers:make "doc" (md:doc '() (md:para '() "See " (clicky-link '() "here") " and " (clicky-image '()) ".\n"))))
 > (define w (views:make d))
 > (show w)
-<div class="view nowrap" id="view-2" data-view="2" data-version="0" data-showing="0" data-placement="*" data-place-kind="follow" data-place-item="2" data-place-at="2" data-base-item="2" data-base-offset="0.0" data-base-height="0.0" data-base-left="0.0" data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><article><div class="node" id="v2-2" data-at="1" data-to="21"><div class="line" id="v2-1" data-line="1" data-at="2"><span class="cursor primary"></span>See <span class="node" data-at="6" data-to="12"><span data-at="7">here</span></span> and <span class="node" data-at="17" data-to="18"></span>.</div></div></article></div></div>
+<div class="view nowrap" id="view-2" data-view="2" data-version="0" data-showing="0" data-placement="*" data-place-kind="follow" data-place-item="2" data-place-at="2" data-base-item="2" data-base-offset="0.0" data-base-height="0.0" data-base-left="0.0" data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><article><div class="node" id="v2-2" data-at="1" data-to="21"><div class="line" id="v2-1" data-line="1" data-at="2"><span class="cursor primary"></span>See <span class="node" data-at="6" data-to="12" data-click="clickable"><span data-at="7">here</span></span> and <span class="node" data-at="17" data-to="18" data-click="clickable"></span>.</div></div></article></div></div>
 > (mouse! w '("action" . "click") '("token" . 6))
 > (mouse! w '("action" . "click") '("at" . 7) '("count" . 2))
 > (mouse! w '("action" . "click") '("token" . 17))
@@ -200,15 +200,18 @@
 ; An element may carry a keymap that views:keymap-mark names; a click in
 ; it looks the mouse key up there before every keymap at its position.
 ; The page sends the keymaps of the marked elements from the one clicked
-; out, innermost first.
+; out, innermost first, each by the number before the mark's state.
 > (define-table close-keys)
 > (commands:define-command (on-close [event (keys:command-event)])
     "Records a click on a close button."
     (set! seen (cons (list 'close (views:posn-point (keys:event-start event))) seen)))
 > (keys:bind! close-keys "<mouse-1>" on-close)
-> (define close-mark (views:keymap-mark close-keys))
-> (list (fixnum? close-mark) (eqv? close-mark (views:keymap-mark close-keys)) (eqv? close-mark (views:keymap-mark link-keys)))
+> (define (mark-number keymap) (read (open-input-string (views:keymap-mark keymap))))
+> (define close-mark (mark-number close-keys))
+> (list (fixnum? close-mark) (eqv? close-mark (mark-number close-keys)) (eqv? close-mark (mark-number link-keys)))
 (#t #t #f)
+> (string=? (views:keymap-mark close-keys) (format "~a clickable" close-mark))
+#t
 > (mouse! w '("action" . "down") '("token" . 6) `("keymaps" . ,(vector close-mark)))
 > (mouse! w '("action" . "click") '("token" . 6) `("keymaps" . ,(vector close-mark)))
 > (mouse! w '("action" . "click") '("token" . 6))
@@ -226,10 +229,10 @@
     (set! seen (cons (list 'tab (views:posn-point (keys:event-start event))) seen)))
 > (keys:bind! tab-keys "<mouse-1>" on-tab)
 > (keys:bind! tab-keys "<mouse-2>" on-tab)
-> (define both (vector close-mark (views:keymap-mark tab-keys)))
+> (define both (vector close-mark (mark-number tab-keys)))
 > (mouse! w '("action" . "click") '("token" . 6) `("keymaps" . ,both))
 > (mouse! w '("action" . "click") '("button" . 2) '("token" . 6) `("keymaps" . ,both))
-> (mouse! w '("action" . "click") '("token" . 6) `("keymaps" . ,(vector (views:keymap-mark tab-keys) close-mark)))
+> (mouse! w '("action" . "click") '("token" . 6) `("keymaps" . ,(vector (mark-number tab-keys) close-mark)))
 > (map car (take!))
 (close tab tab)
 > (map (lambda (k) (commands:command-name (keys:lookup c1 (list k (views:%make-posn w 7 #f (list close-keys tab-keys) #f #f)))))

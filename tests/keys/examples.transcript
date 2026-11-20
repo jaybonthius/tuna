@@ -59,6 +59,15 @@
 > (list layout:switches (map name-of (keys:active-keymaps frame)))
 (3 (keymap keys:global))
 > (end-repeat)
+; Given a mouse key's position, the active keymaps are those a click
+; there searches.
+> (define-table clicked-keys "Keys for clicks.")
+> (define (at-click client posn) (if posn (list clicked-keys) '()))
+> (add-hook! keys:find-keymaps at-click)
+> (list (and (memq clicked-keys (keys:active-keymaps frame)) #t)
+        (and (memq clicked-keys (keys:active-keymaps frame 'posn)) #t))
+(#f #t)
+> (remove-hook! keys:find-keymaps at-click)
 ; Browser keys.
 > (keys:item-key '(("type" . "key") ("key" . "x") ("code" . "KeyX") ("modifiers" . #("control"))))
 "C-x"

@@ -1,0 +1,89 @@
+; An element that carries a keymap binding the left button is looked up
+; as a left click on it would be: a node's element and a span's element
+; get data-click, and a marked keymap's mark ends in its state.
+> (import (md))
+> (define (clicks view)
+    (let ([html (html->string (views:draw view #f))])
+      (let loop ([from 0] [acc '()])
+        (let ([i (search html "data-click=\"" from)])
+          (if i
+              (let* ([start (+ i 12)] [end (search html "\"" start)])
+                (loop end (cons (string->symbol (substring html start end)) acc)))
+              (reverse acc))))))
+> (commands:define-command (act) "Does something." (void))
+> (define-table keys-a)
+> (buffers:define-kind button-a (inline) (keymap keys-a))
+> (define b (buffers:make "doc" (md:doc '() (md:para '() "x " (button-a '() "a") " y\n"))))
+> (define v (views:make b))
+; A keymap that binds no left click marks nothing.
+> (clicks v)
+()
+> (keys:bind! keys-a "<mouse-2>" act)
+> (keys:bind! keys-a "<mouse-3>" act)
+> (keys:bind! keys-a "C-<mouse-1>" act)
+> (clicks v)
+()
+; A click runs a command: clickable; a binding made between two draws
+; shows at the second.
+> (keys:bind! keys-a "<mouse-1>" act)
+> (clicks v)
+(clickable)
+; A click runs nothing: inert, by keys:ignore or keys:undefined.
+> (keys:bind! keys-a "<mouse-1>" keys:ignore)
+> (clicks v)
+(inert)
+> (keys:bind! keys-a "<mouse-1>" keys:undefined)
+> (clicks v)
+(inert)
+; A press alone that runs a command makes it clickable, as a tab is.
+> (keys:bind! keys-a "<down-mouse-1>" act)
+> (clicks v)
+(clickable)
+; A keymap the click finds first, as a disabled button's, decides it.
+> (keys:bind! keys-a "<mouse-1>" act)
+> (keys:bind! keys-a "<down-mouse-1>" keys:ignore)
+> (define-table blocking)
+> (keys:bind! blocking "<mouse-1>" keys:ignore)
+> (keys:bind! blocking "<down-mouse-1>" keys:ignore)
+> (define (block-a client posn)
+    (let ([n (and posn (views:posn-node posn))])
+      (if (and n (eq? (document:node-kind n) (buffers:kind-name (buffers:constructor-kind button-a)))) (list blocking) '())))
+> (add-hook! keys:find-keymaps block-a -10)
+> (clicks v)
+(inert)
+> (remove-hook! keys:find-keymaps block-a)
+> (clicks v)
+(clickable)
+; A layer's keymap marks the elements of its spans.
+> (define-table link-keys)
+> (keys:bind! link-keys "<mouse-1>" act)
+> (buffers:define-layer links (keymap link-keys))
+> (define t (buffers:make "text" "one two three\n"))
+> (buffers:add-span! (buffers:layer t links) 5 8 '((face . link)))
+> (define tv (views:make t))
+> (clicks tv)
+(clickable)
+> (and (search (html->string (views:draw tv #f)) "<span data-click=\"clickable\" data-face=\"link\">two</span>" 0) #t)
+#t
+; A marked keymap is looked up alone, with no place: its mark ends in its
+; state. A key it leaves unbound may run something found by place, so it
+; is inert only when it binds both keys to nothing.
+> (define-table tab-keys)
+> (keys:bind! tab-keys "<down-mouse-1>" act)
+> (keys:bind! tab-keys "<mouse-1>" keys:ignore)
+> (define-table blocked-keys)
+> (keys:bind! blocked-keys "<mouse-1>" keys:ignore)
+> (keys:bind! blocked-keys "<down-mouse-1>" keys:ignore)
+> (define-table bar-keys)
+> (keys:bind! bar-keys "<down-mouse-1>" keys:ignore)
+> (keys:bind! bar-keys "<mouse-3>" act)
+> (define (state-of keymap)
+    (let* ([m (views:keymap-mark keymap)] [n (string-length (number->string (read (open-input-string m))))])
+      (substring m n (string-length m))))
+> (map state-of (list tab-keys blocked-keys bar-keys))
+(" clickable" " inert" "")
+; A key the mark leaves unbound stays out of it even when the global
+; keymap binds it to keys:ignore.
+> (keys:bind! keys:global "<mouse-1>" keys:ignore)
+> (state-of bar-keys)
+""

@@ -163,8 +163,8 @@ echo-area:show-messages
 > (echo-area:message! "Hidden")
 > (list (echo-area:current-message) (echo-area-element) (messages))
 ("Hidden" #f "Late\nHidden\n")
-> (let* ([s (html->string (views:draw (echo-view) client))] [n (string-length s)]) (substring s (- n 36) n))
-"<div class=\"view-lines\"></div></div>"
+> (let* ([s (html->string (views:draw (echo-view) client))] [n (string-length s)]) (substring s (- n 59) n))
+"<div class=\"view-lines\" data-click=\"clickable\"></div></div>"
 > (press! "C-a")
 > (echo-area:current-message)
 #f

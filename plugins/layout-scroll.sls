@@ -186,7 +186,8 @@
                              (if (memv id drawn)
                                  (draw-child c)
                                  (haml (:button.strip-placeholder ([type "button"] [tabindex "-1"]
-                                                                   [data-at (document:node-start c)] [data-to (document:node-end c)])
+                                                                   [data-at (document:node-start c)] [data-to (document:node-end c)]
+                                                                   [data-keymap (views:keymap-mark layout:keymap)])
                                          (layout:part-title c))))
                              (:span.strip-end)))))
                  children))
@@ -199,7 +200,8 @@
       (let ([title (layout:part-title column)])
         (haml (:button.strip-edge ([class side] [type "button"] [tabindex "-1"]
                                    [aria-label (if (fx> count 1) (format "~a, and ~a more" title (fx- count 1)) title)]
-                                   [data-at (document:node-start column)] [data-to (document:node-end column)])
+                                   [data-at (document:node-start column)] [data-to (document:node-end column)]
+                                   [data-keymap (views:keymap-mark layout:keymap)])
                 (make-list (fxmin count 3) (haml (:span.strip-edge-card))))))
       (haml (:div.strip-edge ([class side])))))
 

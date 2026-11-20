@@ -40,7 +40,7 @@
    scroll-to-place! estimate-range! draw-view current-context context-view context-client in-line? make-context children-html drawing?
    atom-view-of keymaps-at note-edit note-kill after-batch scroll-report mouse-item posn-keymaps forget-client!
    posn-record? make-posn-record posn-record-view posn-record-point posn-record-node posn-record-keymaps
-   posn-record-x posn-record-y posn-record-column posn-record-row keymap-id marked-keymaps
+   posn-record-x posn-record-y posn-record-column posn-record-row keymap-id marked-keymaps click-state
    view-client when-measured! scroll-by! recenter! region-ranges-of
    face-attributes title-attributes
    anchor-record? anchor-record-id anchor-record-view anchor-record-spot anchor-record-gone?
@@ -1196,8 +1196,8 @@
 
   ;; Attribute names come from users' tables, so the element is written
   ;; here rather than by haml, which takes names only as written in code.
-  (define (put-element p value classes malformed!)
-    (let loop ([value (if (list? value) value '())] [classes (reverse classes)] [others '()])
+  (define (put-element p value classes malformed! click)
+    (let loop ([value (if (list? value) value '())] [classes (reverse classes)] [others (if click (list (cons "data-click" click)) '())])
       (cond
         [(null? value)
          (put-string p "<span")
@@ -1239,18 +1239,18 @@
 
   ;; A list of faces is drawn as nested elements, the first innermost, so
   ;; its rules win, as Emacs gives a list's earlier faces priority.
-  (define (span-open value classes malformed!)
-    (define (element-start value)
-      (call-with-string-output-port (lambda (p) (put-element p value classes malformed!))))
+  (define (span-open value classes malformed! click)
+    (define (element-start value click)
+      (call-with-string-output-port (lambda (p) (put-element p value classes malformed! click))))
     (let* ([faces (value-ref value 'face)]
-           [bare (element-start '())]
+           [bare (element-start '() #f)]
            [elements
             (filter (lambda (open) (not (string=? open bare)))
               (if (and (pair? faces) (list? faces))
                   (let ([faces (reverse faces)])
-                    (cons (element-start (map (lambda (e) (if (and (pair? e) (eq? (car e) 'face)) (cons 'face (car faces)) e)) value))
-                          (map (lambda (face) (element-start (list (cons 'face face)))) (cdr faces))))
-                  (list (element-start value))))])
+                    (cons (element-start (map (lambda (e) (if (and (pair? e) (eq? (car e) 'face)) (cons 'face (car faces)) e)) value) click)
+                          (map (lambda (face) (element-start (list (cons 'face face)) #f)) (cdr faces))))
+                  (list (element-start value click))))])
       (values (and (pair? elements) (apply string-append elements)) (length elements))))
 
   (define (span-closing n)
@@ -1278,14 +1278,18 @@
                   (report (condition (make-who-condition 'views:span-properties)
                                      (make-message-condition "not a list of attribute names and values")
                                      (make-irritants-condition (list key as))))))
-              (define (style value classes)
-                (let ([key (cons classes value)])
+              (define (style value classes click)
+                (let ([key (cons (cons click classes) value)])
                   (or (hashtable-ref styles key #f)
-                      (let ([style (let-values ([(open n) (span-open value classes malformed!)])
+                      (let ([style (let-values ([(open n) (span-open value classes malformed! click)])
                                      (make-span-style (and open (raw-html open)) (span-closing n)
                                                       (value-ref value 'before) (value-ref value 'after) (value-ref value 'replace)))])
                         (hashtable-set! styles key style)
                         style))))
+              (define (span-click keymap s)
+                (and keymap
+                     (let ([state (click-state keymap (make-posn-record (view-record-id v) (car s) #f '() #f #f #f #f))])
+                       (and state (symbol->string state)))))
               (let loop ([layers layers] [rank 0] [acc '()])
                 (if (null? layers)
                     acc
@@ -1296,7 +1300,8 @@
                                                   (if (and (> (buffers:layer-priority (car layers)) 0)
                                                            (region-reaches? regions (car s) (cadr s)))
                                                       above-region
-                                                      '()))])
+                                                      '())
+                                                  (span-click (buffers:layer-keymap (car layers)) s))])
                                 (cons (make-span-entry (car s) (cadr s) rank (span-style-open style) (span-style-close style)
                                                        (span-style-before style)
                                                        (span-style-after style) (span-style-replace style))
@@ -1473,7 +1478,9 @@
             (when above?
               (:div.view-spacer ([data-spacer "above"] [aria-hidden "true"]
                                  [style "--views-spacer-block-size:" (px-text (context-above ctx)) "px"])))
-            (:div.view-lines root-html)
+            ;; The root has no element of its own, so the lines' element
+            ;; carries its state.
+            (:div.view-lines ([data-click (let ([root (context-root ctx)]) (and root (node-click ctx root)))]) root-html)
             (when below?
               (:div.view-spacer ([data-spacer "below"] [aria-hidden "true"])))
             (when (or above? below?)
@@ -1519,14 +1526,27 @@
           [at-cursor (case cursor [(primary) "at-cursor primary"] [(other) "at-cursor"] [else #f])])
       (cond
         [(not (context-marks? ctx)) html]
-        [inline? (haml (:span.node ([data-at start] [data-to (node-end ctx node)] [data-region (atom-in-region? ctx node)]) html))]
+        [inline? (haml (:span.node ([data-at start] [data-to (node-end ctx node)] [data-region (atom-in-region? ctx node)]
+                                    [data-click (node-click ctx node)])
+                         html))]
         [(whole-node? node)
          (haml (:div.node.whole ([id (item-id ctx start)] [class at-cursor] [data-at start] [data-to (node-end ctx node)]
-                                 [data-region (atom-in-region? ctx node)])
+                                 [data-region (atom-in-region? ctx node)] [data-click (node-click ctx node)])
                  html))]
         [else (haml (:div.node ([id (item-id ctx start)] [class at-cursor] [data-at start] [data-to (node-end ctx node)]
-                                [data-region (atom-in-region? ctx node)])
+                                [data-region (atom-in-region? ctx node)] [data-click (node-click ctx node)])
                       html))])))
+
+  ;; The place a click on the node's own element names, as item-place
+  ;; maps it, so the look and the click agree.
+  (define (node-click ctx node)
+    (let* ([kind (buffers:kind (document:node-kind node))] [keymap (and kind (buffers:kind-keymap kind))])
+      (and keymap
+           (let* ([start (document:node-start node)]
+                  [state (click-state keymap
+                           (make-posn-record (view-record-id (context-view ctx)) (if (document:atom? node) start (fx+ start 1))
+                                             node '() #f #f #f #f))])
+             (and state (symbol->string state))))))
 
   (define (no-element? html)
     (cond
@@ -2418,6 +2438,37 @@
           (dropped-keymap-ids keymap id)
           id)))
 
+  ;; An element's look comes from the lookup a left click on it runs, so
+  ;; a keymap that answers first, as a disabled button's, decides it.
+  ;; Only a keymap that binds the left button itself is asked: the global
+  ;; keymap answers a click anywhere in text.
+  (define left-click-keys '("<mouse-1>" "<down-mouse-1>"))
+
+  (define (runs-something? found)
+    (and found (not (eq? found keys:ignore)) (not (eq? found keys:undefined))))
+
+  ;; A posn with no place leaves out the keymaps a click finds by place,
+  ;; so only the keymap's own bindings, which a click searches first,
+  ;; can make it inert.
+  (define (click-state keymap posn)
+    (and (exists (lambda (key) (table-ref keymap key #f)) left-click-keys)
+         (let* ([keymaps (keys:active-keymaps #f posn)]
+                [found (map (lambda (key) (keys:lookup-in keymaps key)) left-click-keys)]
+                [placed? (posn-record-view posn)])
+           (cond
+             [(exists (lambda (key f)
+                        (let ([own (keys:lookup-in (list keymap) key)])
+                          (and (commands:command? own) (runs-something? own) (commands:command? f) (runs-something? f))))
+                      left-click-keys found)
+              'clickable]
+             [(for-all (lambda (key f)
+                         (if placed?
+                             (not (runs-something? f))
+                             (let ([own (keys:lookup-in (list keymap) key)]) (and own (not (runs-something? own))))))
+                       left-click-keys found)
+              'inert]
+             [else #f]))))
+
   (define (marked-keymap id)
     (let ([entry (and (fixnum? id) (hashtable-ref id-keymaps id #f))])
       (and entry (table? (car entry)) (car entry))))
@@ -2951,7 +3002,11 @@
   (unless (table? keymap)
     (assertion-violation 'views:keymap-mark "not a keymap" keymap))
   (check-main-thread 'views:keymap-mark)
-  (keymap-id keymap))
+  (let ([id (number->string (keymap-id keymap))])
+    (case (click-state keymap (make-posn-record #f #f #f (list keymap) #f #f #f #f))
+      [(clickable) (string-append id " clickable")]
+      [(inert) (string-append id " inert")]
+      [else id])))
 
 (define (shown-count view)
   (check-view 'views:shown-count view)

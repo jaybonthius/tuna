@@ -69,6 +69,9 @@
               (loop e (cons (segments-in (substring s i e)) acc)))
             (reverse acc))))))
 
+;; The page sends a marked keymap's number, before its state.
+(define (mark-number keymap) (read (open-input-string (views:keymap-mark keymap))))
+
 (define (click-status! window button . keymaps)
   (let ([s layout:screen-view] [at (document:node-start (layout:view-node window))])
     (for-each
@@ -78,7 +81,7 @@
            `(("type" . "mouse") ("action" . ,action) ("button" . ,button) ("clicks" . 1) ("modifiers" . #())
              ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))
              ("showing" . ,(views:shown-count s)) ("token" . ,at)
-             ("keymaps" . ,(list->vector (map views:keymap-mark (append keymaps (list status-line:keymap)))))))))
+             ("keymaps" . ,(list->vector (map mark-number (append keymaps (list status-line:keymap)))))))))
       '("down" "click"))))
 
 (define (raised thunk)

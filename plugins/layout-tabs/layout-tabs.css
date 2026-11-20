@@ -42,8 +42,7 @@
     border: 0;
     font: inherit;
     color: inherit;
-    background: none;
-    cursor: pointer;
+    background-color: transparent;
   }
 
   .layout-tabs-label {
@@ -71,22 +70,8 @@
     color: var(--layout-tabs-close-text, var(--tuna-text-muted));
   }
 
-  /* Overlays, so the selected tab keeps its background under them; the
-     close button's own overlay over the tab's shows which of the two a
-     click reaches. */
-  .tab:hover,
-  .layout-tabs-close:hover {
-    background-image: linear-gradient(var(--layout-tabs-hover-background, var(--tuna-hover)),
-                                      var(--layout-tabs-hover-background, var(--tuna-hover)));
-  }
-
   .layout-tabs-close:hover {
     color: var(--layout-tabs-tab-text, var(--tuna-text));
-  }
-
-  .tab:active,
-  .layout-tabs-close:active {
-    background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
   }
 
   .layout-tabs-label[aria-selected="true"] {

@@ -32,7 +32,7 @@
 > (terminal:send! t (string-append "clear; cd " (getenv "HOME") "; printf '\\e]8;;https://example.org\\e\\\\link\\e]8;;\\e\\\\ https://tuna.example/x. notes.txt:2:3 missing.txt:1\\n'\r"))
 > (wait-for t "missing.txt:1\n")
 > (drawn-line t "link")
-"<span data-terminal-link=\"\">link</span> <span data-terminal-link=\"\">https://tuna.example/x</span>. <span data-terminal-link=\"\">notes.txt:2:3</span> missing.txt:1"
+"<span data-click=\"clickable\" data-terminal-link=\"\">link</span> <span data-click=\"clickable\" data-terminal-link=\"\">https://tuna.example/x</span>. <span data-click=\"clickable\" data-terminal-link=\"\">notes.txt:2:3</span> missing.txt:1"
 > (web:take-page-calls!)
 ((1 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #t))))
 > (press! "C-c" "C-p")
@@ -82,7 +82,7 @@
 > (cell-click! "C-<down-mouse-1>" 2 0)
 > (cell-click! "C-<mouse-1>" 2 0)
 > (web:take-page-calls!)
-"<div class=\"terminal-screen\" data-cursor=\"bar\" data-keymap=\"1\" data-wheel=\"shift\" data-grid=\"shift\">"
+"<div class=\"terminal-screen\" data-cursor=\"bar\" data-keymap=\"1 clickable\" data-wheel=\"shift\" data-grid=\"shift\">"
 ((1 "browse-url" "https://example.org/m"))
 > (terminal:send! t "\r")
 > (wait-for t "\n$ ")

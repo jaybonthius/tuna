@@ -93,7 +93,6 @@
     border-radius: var(--ui-button-radius, var(--tuna-control-radius));
     background-color: var(--ui-button-background, var(--tuna-control));
     color: var(--ui-button-text, var(--tuna-text));
-    cursor: pointer;
   }
 
   .ui-link {
@@ -102,42 +101,30 @@
     margin: 0;
     padding: 0;
     border: 0;
-    background: none;
+    background-color: transparent;
     color: var(--ui-link-text, var(--tuna-link));
     text-decoration: underline;
-    cursor: pointer;
   }
 
-  /* The classes' pointer beats the plain disabled rule, which sits
-     inside :where(), so a disabled control sets the arrow again. */
   .ui-button[aria-disabled="true"] {
     border-color: var(--ui-button-disabled-border, var(--tuna-border));
     background-color: var(--ui-button-disabled-background, var(--tuna-surface-subtle));
     color: var(--ui-button-disabled-text, var(--tuna-text-faint));
-    cursor: default;
   }
 
   .ui-link[aria-disabled="true"] {
     color: var(--ui-link-disabled-text, var(--tuna-text-faint));
     text-decoration: none;
-    cursor: default;
   }
 
-  /* Overlays, so a button keeps its own background under them. The
-     showcase holds a sample in a state with data-ui-state, since hover
-     and pressed last only while the pointer is there. */
-  .ui-button:not([aria-disabled="true"]):is(:hover, [data-ui-state="hover"]) {
-    background-image: linear-gradient(var(--ui-button-hover-background, var(--tuna-hover)),
-                                      var(--ui-button-hover-background, var(--tuna-hover)));
+  /* The showcase holds a sample in a state, since hover and pressed last
+     only while the pointer is there. */
+  :is(.ui-button, .ui-link)[data-ui-state="hover"] {
+    background-image: linear-gradient(var(--tuna-hover), var(--tuna-hover));
   }
 
-  .ui-link:not([aria-disabled="true"]):is(:hover, [data-ui-state="hover"]) {
-    color: var(--ui-link-hover-text, var(--tuna-accent));
-  }
-
-  .ui-button:not([aria-disabled="true"]):is(:active, [data-ui-state="pressed"]) {
-    background-image: linear-gradient(var(--ui-button-pressed-background, var(--tuna-pressed)),
-                                      var(--ui-button-pressed-background, var(--tuna-pressed)));
+  .ui-button[data-ui-state="pressed"] {
+    background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
   }
 
   .ui-row {
@@ -155,7 +142,6 @@
 
   .ui-list-row {
     padding-inline: var(--ui-list-row-padding, var(--tuna-space-2));
-    cursor: pointer;
   }
 
   /* A heading takes one line of the list's own height, as a row does, so
@@ -191,7 +177,7 @@
   .ui-list-row[aria-current="true"] {
     --tuna-text-faint: var(--tuna-text);
     --tuna-text-muted: var(--tuna-text);
-    background: var(--ui-list-selected-background, var(--tuna-selected, Highlight));
+    background-color: var(--ui-list-selected-background, var(--tuna-selected, Highlight));
     color: var(--ui-list-selected-text, var(--tuna-on-selected, HighlightText));
     font-weight: var(--tuna-font-weight-semibold);
   }

@@ -25,7 +25,7 @@
     margin: 0;
     border: 0;
     padding: 0;
-    background: var(--layout-scroll-edge-background, var(--tuna-chrome));
+    background-color: var(--layout-scroll-edge-background, var(--tuna-chrome));
   }
 
   .layout-strip-box.row > .strip-edge {
@@ -94,18 +94,6 @@
     border-block-end: 0;
     border-start-start-radius: var(--tuna-radius-2);
     border-start-end-radius: var(--tuna-radius-2);
-  }
-
-  button.strip-edge {
-    cursor: pointer;
-  }
-
-  button.strip-edge:hover {
-    background-image: linear-gradient(var(--tuna-hover), var(--tuna-hover));
-  }
-
-  button.strip-edge:active {
-    background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
   }
 
   .layout-strip {
@@ -199,14 +187,5 @@
     font-size: var(--tuna-font-size-ui);
     color: var(--layout-scroll-placeholder-text, var(--tuna-text-muted));
     background-color: var(--layout-scroll-placeholder-background, var(--tuna-surface-subtle));
-    cursor: pointer;
-  }
-
-  .strip-placeholder:hover {
-    background-image: linear-gradient(var(--tuna-hover), var(--tuna-hover));
-  }
-
-  .strip-placeholder:active {
-    background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
   }
 }

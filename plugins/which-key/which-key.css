@@ -56,21 +56,7 @@
     line-height: inherit;
     text-align: start;
     color: inherit;
-    background: none;
-  }
-
-  button.which-key-entry {
-    cursor: pointer;
-  }
-
-  /* Overlays, so the popup's background stays under them. */
-  button.which-key-entry:hover {
-    background-image: linear-gradient(var(--which-key-hover-background, var(--tuna-hover)),
-                                      var(--which-key-hover-background, var(--tuna-hover)));
-  }
-
-  button.which-key-entry:active {
-    background-image: linear-gradient(var(--tuna-pressed), var(--tuna-pressed));
+    background-color: transparent;
   }
 
   .which-key-entry > kbd {

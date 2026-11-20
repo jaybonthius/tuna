@@ -749,7 +749,7 @@ function referenceOf(target, view, grid) {
 function keymapsOf(target, view) {
   const keymaps = [];
   for (let e = target; e !== null; e = e.parentElement) {
-    if (e.hasAttribute("data-keymap")) keymaps.push(Number(e.getAttribute("data-keymap")));
+    if (e.hasAttribute("data-keymap")) keymaps.push(parseInt(e.getAttribute("data-keymap"), 10));
     if (e === view) break;
   }
   return keymaps;

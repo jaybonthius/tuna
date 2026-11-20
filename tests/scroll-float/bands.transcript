@@ -50,7 +50,23 @@
 > (let ([html (screen-of desktop)])
     (let ([i (search html "<button class=\"strip-edge start\"" 0)])
       (substring html i (search html ">" i))))
-"<button class=\"strip-edge start\" type=\"button\" tabindex=\"-1\" aria-label=\"b, and 1 more\" data-at=\"3\" data-to=\"4\""
+"<button class=\"strip-edge start\" type=\"button\" tabindex=\"-1\" aria-label=\"b, and 1 more\" data-at=\"3\" data-to=\"4\" data-keymap=\"1 clickable\""
+; The band carries the layout's keymap, the one its click is looked up in,
+; so it shows as clickable; a click on it, which the page sends with that
+; keymap's number, selects b.
+> (define (mark-number keymap) (read (open-input-string (views:keymap-mark keymap))))
+> (for-each
+    (lambda (action)
+      (parameterize ([web:current-client desktop])
+        ((table-ref web:input-handlers "mouse") desktop
+         `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
+           ("view" . ,(views:id layout:screen-view)) ("version" . ,(buffers:version layout:buffer))
+           ("showing" . ,(views:shown-count layout:screen-view)) ("token" . 3)
+           ("keymaps" . ,(vector (mark-number layout:keymap)))))))
+    '("down" "click"))
+> (= (selected) (id "b"))
+#t
+> (layout:select! (list-ref vs 2))
 ; The box around the scroller and its bands carries the strip's
 ; direction and the classes layout gives the part.
 > (let* ([html (screen-of desktop)] [i (search html "<div class=\"layout-strip-box" 0)]) (substring html i (search html ">" i)))

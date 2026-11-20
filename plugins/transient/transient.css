@@ -3,7 +3,6 @@
 @layer defaults {
   /* The view keeps white space for text; a menu is laid out as boxes. */
   .transient-menu {
-    cursor: default;
     white-space: normal;
     display: flex;
     flex-wrap: wrap;

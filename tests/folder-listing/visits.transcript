@@ -56,7 +56,10 @@
 > (press! "q")
 > (shown)
 (("f.txt" #t) ("~/v/" #f))
-; A click on a name opens it as o does.
+; A click on a name opens it as o does, so a name is marked clickable.
+> (let ([m (views:keymap-mark folder-listing:name-keymap)])
+    (substring m (string-length (number->string (mark-number folder-listing:name-keymap))) (string-length m)))
+" clickable"
 > (press! "C-x" "o")
 > (click-name! "sub")
 > (settle)

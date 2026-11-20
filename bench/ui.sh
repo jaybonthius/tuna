@@ -21,6 +21,7 @@ output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins"
 echo "$output" | awk '
   BEGIN {
     unit["ui-draw-list"] = "ns"
+    unit["ui-draw-list-1000"] = "ns"
     unit["ui-next-row"] = "ns"
     unit["ui-select-row"] = "ns"
     unit["ui-set-rows"] = "ns"

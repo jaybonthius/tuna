@@ -215,10 +215,6 @@
     margin-block-start: var(--tuna-space-4);
   }
 
-  .pi-chat-waiting {
-    cursor: pointer;
-  }
-
   .pi-chat-prompt {
     margin-block-start: var(--tuna-space-5);
     padding-block: var(--tuna-space-3);

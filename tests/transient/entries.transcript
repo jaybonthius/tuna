@@ -15,6 +15,15 @@
 > (show!)
 > (menu)
 (("Actions" ("a" "Apply") ("b" "Build")) (("x" "Extra")) ("Arguments" ("- v" "Verbose" "--verbose")))
+; Each entry is clickable; the menu, whose keymap binds the left button
+; to keys:ignore, is inert, marked on the element of the view's lines.
+> (let ([s (html (popup))])
+    (let loop ([from 0] [acc '()])
+      (let ([i (search s "data-click=\"" from)])
+        (if i
+            (let ([start (+ i 12)]) (loop start (cons (substring s start (search s "\"" start)) acc)))
+            (reverse acc)))))
+("inert" "clickable" "clickable" "clickable" "clickable")
 ; Each entry's key is bound in the menu to transient:press.
 > (map (lambda (b) (cons (car b) (commands:command-name (cdr b)))) (keys:bindings m))
 (("a" . transient:press) ("x" . transient:press) ("- v" . transient:press) ("b" . transient:press))

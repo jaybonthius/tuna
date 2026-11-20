@@ -97,10 +97,13 @@
                ("showing" . ,(views:shown-count v)) ("report" . 1)
                ,@place)))))
 
+;; The page sends a marked keymap's number, before its state.
+(define (mark-number keymap) (read (open-input-string (views:keymap-mark keymap))))
+
 (define (click-name! name)
   (let* ([v (view)] [e (find (lambda (e) (equal? (entry-name e) name)) (entries (views:buffer v)))]
          [place `(("at" . ,(+ 1 (document:node-start e))) ("count" . 0)
-                  ("keymaps" . ,(vector (views:keymap-mark folder-listing:name-keymap))))])
+                  ("keymaps" . ,(vector (mark-number folder-listing:name-keymap))))])
     (mouse-in! v "down" place)
     (mouse-in! v "click" place)))
 
