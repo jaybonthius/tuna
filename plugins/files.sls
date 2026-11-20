@@ -10,6 +10,9 @@
 (define-hook after-visit
   "Called with a buffer after it has visited a file, before files:visit returns.")
 
+(define-hook after-temporary-visit
+  "Called with a buffer after it has visited a file temporarily, before files:visit-temporarily returns, in place of files:after-visit: the work a temporary visit allows.")
+
 (define-hook before-save
   "Called with a buffer before it is written; an entry may edit it.")
 
@@ -189,7 +192,7 @@
   (check-main-thread check-buffer check-path check-task file-entry entry-of entry-path entry-length entry-hash
    entry-live? visited-buffers buffer-at open-buffer! remember-read! take-read!
    move-entry! move-entries-under! check-not-visited-under with-entry-lock run-job run-operation record-read! save! forget-killed!
-   take-back! open-pending! save-visits! stop-waiting!)
+   take-back! open-pending! save-visits! stop-waiting! mark-temporary! end-temporary! temporary-buffer?)
 
   (define main-thread (get-thread-id))
 
@@ -250,8 +253,25 @@
   (define (visit-path v) (vector-ref v 0))
   (define (visit-name v) (vector-ref v 1))
 
+  ;; A temporary visit is no visit a restart should open again.
+  (define temporary (make-weak-eq-hashtable))
+
+  (define (mark-temporary! b)
+    (eq-hashtable-set! temporary b #t)
+    (save-visits!))
+
+  (define (end-temporary! b)
+    (and (eq-hashtable-ref temporary b #f)
+         (begin
+           (eq-hashtable-delete! temporary b)
+           (save-visits!)
+           #t)))
+
+  (define (temporary-buffer? b) (eq-hashtable-ref temporary b #f))
+
   (define (save-visits!)
-    (set-saved! %visits (append (map entry->visit (reverse visited)) pending)))
+    (set-saved! %visits (append (map entry->visit (reverse (remp (lambda (e) (temporary-buffer? (entry-buffer e))) visited)))
+                                pending)))
 
   (define (add-entry! e)
     (eq-hashtable-set! by-buffer (entry-buffer e) e)
@@ -659,28 +679,56 @@
       (assertion-violation 'files:visit "a folder visitor returned no buffer" b))
     b))
 
+(define (%completed b)
+  (when (end-temporary! b)
+    (buffers:with-buffer b (after-visit b)))
+  b)
+
 (define (visit path)
   (check-path 'files:visit path)
   (let ([path (true-path path)])
+    (cond
+      [(buffer-at path) => %completed]
+      [else
+       (guard (c [(%folder? c) (%visit-folder path c)])
+         (let-values ([(doc length hash) (read-document path)])
+           (let ([read (take-read!)])
+             (cond
+               [(buffer-at path) => %completed]
+               [else
+                (let ([b (open-buffer! path doc length hash read)])
+                  (when (and read (contents-missing? read))
+                    (ask:message "(New file)"))
+                  (buffers:with-buffer b (after-visit b))
+                  b)]))))])))
+
+(define (visit-temporarily path)
+  (check-path 'files:visit-temporarily path)
+  (let ([path (true-path path)])
     (or (buffer-at path)
-        (guard (c [(%folder? c) (%visit-folder path c)])
-          (let-values ([(doc length hash) (read-document path)])
-            (let ([read (take-read!)])
-              (or (buffer-at path)
-                  (let ([b (open-buffer! path doc length hash read)])
-                    (when (and read (contents-missing? read))
-                      (ask:message "(New file)"))
-                    (buffers:with-buffer b (after-visit b))
-                    b))))))))
+        (let-values ([(doc length hash) (read-document path)])
+          (let ([read (take-read!)])
+            (or (buffer-at path)
+                (let ([b (open-buffer! path doc length hash read)])
+                  (mark-temporary! b)
+                  (buffers:with-buffer b (after-temporary-visit b))
+                  b)))))))
+
+(define (temporary? buffer)
+  (check-buffer 'files:temporary? buffer)
+  (and (temporary-buffer? buffer) #t))
 
 (define (path buffer)
   (check-buffer 'files:path buffer)
   (let ([e (entry-of buffer)])
     (and e (entry-path e))))
 
+;; A temporary buffer is no visit to anyone outside, so a report to its
+;; file stays the file's until a visit completes it.
 (define (buffer-visiting path)
   (check-path 'files:buffer-visiting path)
-  (buffer-at (true-path path)))
+  (let ([b (buffer-at (true-path path))])
+    (and b (not (temporary-buffer? b)) b)))
 
 (define (buffers)
   (check-main-thread 'files:buffers)

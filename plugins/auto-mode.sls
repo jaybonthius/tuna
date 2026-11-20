@@ -129,10 +129,18 @@
            (default-mode)))]))
 
 (commands:define-command (normal-mode [buffer (buffers:current)])
-  "Sets BUFFER's major mode to the one auto-mode:choose gives."
+  "Sets BUFFER's major mode to the one auto-mode:choose gives, or runs its delayed mode hooks when it has that mode already."
   (check-buffer 'auto-mode:normal-mode buffer)
-  (modes:set-major-mode (choose buffer) buffer))
+  (let ([mode (choose buffer)])
+    (if (and (eq? mode (modes:major-mode buffer)) (modes:hooks-delayed? buffer))
+        (modes:run-delayed-hooks buffer)
+        (modes:set-major-mode mode buffer))))
+
+(define (normal-mode-delaying-hooks buffer)
+  (check-buffer 'auto-mode:normal-mode-delaying-hooks buffer)
+  (modes:set-major-mode-delaying-hooks (choose buffer) buffer))
 
 (add-hook! choosers by-interpreter -10)
 (add-hook! choosers by-file-name)
 (add-hook! files:after-visit normal-mode -50)
+(add-hook! files:after-temporary-visit normal-mode-delaying-hooks -50)

@@ -83,7 +83,7 @@
       (faces faces)
       (prefix prefix)
       (lookup lookup)
-      (preview preview))))
+      (preview preview (lambda (chosen) (preview #f))))))
 
 (define (%read-line)
   (let ([from-top? (if (commands:prefix-argument) (not (start-from-top?)) (start-from-top?))])
@@ -109,11 +109,14 @@
     (if (and p (not (pair? p))) (commands:prefix-number) (%read-line-number))))
 
 (commands:define-command (goto-line [line (%goto-line-argument)])
-  "Moves point to the start of line LINE of the current view's buffer, counting from 1; a line past the last goes to the end."
+  "Moves point to the start of line LINE of the current view's buffer, counting from 1; a line past the last goes to the end. Records the place point left in jump-history when point moves, then calls jump-history:after-jump."
   (unless (and (integer? line) (exact? line))
     (assertion-violation 'line-picker:goto-line "not an exact integer" line))
-  (let ([view (views:current)])
-    (views:set-point! view (editing:line-position (views:buffer view) line))))
+  (let* ([view (views:current)] [left (views:point view)])
+    (views:set-point! view (editing:line-position (views:buffer view) line))
+    (unless (fx= (views:point view) left)
+      (jump-history:push! (views:buffer view) left view))
+    (jump-history:after-jump view)))
 
 (table-set! completion:category-default-styles line-category (list completion:substring))
 (keys:bind! keys:global "M-s l" line)

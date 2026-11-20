@@ -150,10 +150,15 @@
 > (kill-ring:text (kill-ring:current))
 "See lib/a.txt:3 and lib/a.txt:99."
 > (point-at! chat "lib/a.txt:3")
+> (define link (views:point (view)))
 > (define t (start! (lambda () (press! "RET"))))
 > (result t)
 > (let ([v (view)]) (list (buffers:name (views:buffer v)) (document:line (buffers:document (views:buffer v)) (views:point v))))
 ("a.txt" 3)
+; The link's jump records the place it left in the chat, so M-, returns.
+> (press! "M-,")
+> (list (eq? (views:buffer (view)) (pi-chat:buffer chat)) (= (views:point (view)) link))
+(#t #t)
 > (in-client (lambda () (pi-chat:show! chat)))
 ; A line past the file's last goes to its end.
 > (point-at! chat "lib/a.txt:99")

@@ -235,8 +235,39 @@
     (assertion-violation 'modes:set-major-mode "not a major mode" mode))
   (buffers:reset-scope! buffer)
   (eq-hashtable-set! buffer-modes buffer mode)
+  (eq-hashtable-delete! %delayed buffer)
   (run-mode-hooks buffer)
   (buffers:with-buffer buffer (major-mode-changed buffer)))
+
+(define-hook delayed-mode-changed
+  "Called with a buffer, current, after modes:set-major-mode-delaying-hooks has set its mode: the work a mode with delayed hooks allows, such as a highlighter's.")
+
+;; A mode set with its hooks delayed, as for a file a preview opens, still
+;; draws, but runs no mode hook, which may start work for the buffer as a
+;; language server does, until the hooks run.
+(define %delayed (make-weak-eq-hashtable))
+
+(define (set-major-mode-delaying-hooks mode buffer)
+  (check-main-thread 'modes:set-major-mode-delaying-hooks)
+  (check-live-buffer 'modes:set-major-mode-delaying-hooks buffer)
+  (unless (hook? (table-ref hooks mode #f))
+    (assertion-violation 'modes:set-major-mode-delaying-hooks "not a major mode" mode))
+  (buffers:reset-scope! buffer)
+  (eq-hashtable-set! buffer-modes buffer mode)
+  (eq-hashtable-set! %delayed buffer #t)
+  (buffers:with-buffer buffer (delayed-mode-changed buffer)))
+
+(define (hooks-delayed? buffer)
+  (check-live-buffer 'modes:hooks-delayed? buffer)
+  (eq-hashtable-ref %delayed buffer #f))
+
+(define (run-delayed-hooks buffer)
+  (check-main-thread 'modes:run-delayed-hooks)
+  (check-live-buffer 'modes:run-delayed-hooks buffer)
+  (when (eq-hashtable-ref %delayed buffer #f)
+    (eq-hashtable-delete! %delayed buffer)
+    (run-mode-hooks buffer)
+    (buffers:with-buffer buffer (major-mode-changed buffer))))
 
 (define (run-mode-hooks buffer)
   (check-main-thread 'modes:run-mode-hooks)
@@ -304,7 +335,7 @@
   (for-each
     (lambda (b)
       (let ([mode (eq-hashtable-ref buffer-modes b #f)])
-        (when (and mode (hook? (table-ref hooks mode #f)) (buffers:live? b))
+        (when (and mode (hook? (table-ref hooks mode #f)) (buffers:live? b) (not (eq-hashtable-ref %delayed b #f)))
           (run-mode-hooks b))))
     (buffers:all)))
 

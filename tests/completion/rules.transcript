@@ -358,11 +358,14 @@ fruit
 > (remove-hook! completion:started on-started)
 > (remove-hook! completion:updated on-updated)
 > (remove-hook! completion:ended on-ended)
-; Preview: called on each selection change, with #f when nothing is
-; selected and when the session ends, however it ends.
+; Preview: show is called on each selection change, with #f when nothing
+; is selected; end once the session has ended, with the chosen value, or
+; #f when it was quit.
 > (define seen '())
-> (define (preview v) (set! seen (cons v seen)))
-> (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector (cons "a" 1) (cons "b" 2))) (preview preview))) h))))
+> (define (show v) (set! seen (cons v seen)))
+> (define (end v) (set! seen (cons (list 'end v) seen)))
+> (define (previewed) (completion:source (candidates (vector (cons "a" 1) (cons "b" 2))) (preview show end)))
+> (define t (start! (lambda () (completion:read "? " (list (previewed)) h))))
 > (press! "C-n")
 > (type! "zz")
 > (press! "C-g")
@@ -370,7 +373,44 @@ fruit
 > (result t)
 (raised #<condition &quit>)
 > (reverse seen)
-(1 2 #f #f)
+(1 2 #f (end #f))
+> (set! seen '())
+> (define t (start! (lambda () (completion:read "? " (list (previewed)) h))))
+> (press! "C-n" "RET")
+> (list (result t) (reverse seen))
+(2 (1 2 (end 2)))
+; The read chose b before, so its history puts b first now. Another
+; source's end gets #f; input that names no candidate gives #f.
+> (set! seen '())
+> (define other-seen '())
+> (define (other-end v) (set! other-seen (cons v other-seen)))
+> (define t (start! (lambda () (completion:read "? " (list (previewed) (completion:source (candidates (vector (cons "c" 3))) (preview show other-end))) h))))
+> (press! "C-n" "C-n" "RET")
+> (list (result t) (reverse seen) other-seen)
+(3 (2 1 #f 3 (end #f)) (3))
+> (set! seen '())
+> (define t (start! (lambda () (completion:read-or-input "? " (list (previewed)) h))))
+> (type! "q")
+> (press! "RET")
+> (list (result t) (reverse seen))
+("q" (2 #f (end #f)))
+; preview-delay: show is called once the selection has rested that long,
+; so the first selection, left at once, is never shown.
+> (set! seen '())
+> (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector (cons "a" 1) (cons "b" 2))) (preview show end) (preview-delay 0.2))) h))))
+> (press! "C-n")
+> (sleep-for 0.05)
+> (reverse seen)
+()
+> (sleep-for 0.3)
+> (reverse seen)
+(1)
+> (press! "C-g")
+! &quit
+> (reverse seen)
+(1 (end #f))
+> (completion:source (candidates (vector "a")) (preview show))
+! completion:source: invalid clause (preview show) in (completion:source (candidates (vector "a")) (preview show))
 ; A job's candidates: clear drops them, their matches name nothing
 ; again, and a job's stale results are dropped.
 > (jobs:define-worker (two-rounds input emit receive)

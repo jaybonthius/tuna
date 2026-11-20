@@ -1,0 +1,2 @@
+x = total
+y = average + total

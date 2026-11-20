@@ -47,12 +47,18 @@
     (%history-back-set! h (%with-place (%history-back h) buffer position))
     (%history-forward-set! h '())))
 
-(define (push! buffer position)
-  (unless (buffers:buffer? buffer)
-    (assertion-violation 'jump-history:push! "not a buffer" buffer))
-  (unless (and (integer? position) (exact? position) (>= position 0))
-    (assertion-violation 'jump-history:push! "not a position" position))
-  (%push! (layout:selected-view) buffer position))
+(define push!
+  (case-lambda
+    [(buffer position) (push! buffer position (layout:selected-view))]
+    [(buffer position view)
+     (unless (buffers:buffer? buffer)
+       (assertion-violation 'jump-history:push! "not a buffer" buffer))
+     (unless (and (integer? position) (exact? position) (>= position 0))
+       (assertion-violation 'jump-history:push! "not a position" position))
+     (unless (views:view? view)
+       (assertion-violation 'jump-history:push! "not a view" view))
+     (unless (%internal? buffer)
+       (%push! view buffer position))]))
 
 (define %returning? (make-thread-parameter #f))
 

@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (commands) (editing) (files) (keys) (layout) (processes) (projects) (views))
+(import (completion) (commands) (editing) (files) (jump-history) (keys) (layout) (processes) (projects) (views))
 
 (define-option command-line
   (list "rg" "--null" "--line-buffered" "--color=never" "--max-columns=1000" "--path-separator" "/"
@@ -7,11 +7,8 @@
   (lambda (v) (and (pair? v) (list? v) (for-all string? v)))
   "The program grep:grep runs, then the arguments it starts with.")
 
-(define-option min-input 3 (lambda (v) (and (fixnum? v) (fx>= v 0)))
-  "How many characters the search must hold before grep:grep runs a search.")
-
-(define-option delay 0.2 (lambda (v) (and (real? v) (>= v 0)))
-  "Seconds without typing before grep:grep runs a search.")
+(define-option preview-delay 0 (lambda (v) (and (real? v) (>= v 0)))
+  "Seconds the selected line must stay selected before grep:grep shows its place.")
 
 (define (%split input)
   (let loop ([i 0])
@@ -192,10 +189,10 @@
           [else
            (stop!)
            (set! search (%search-of prefix))
-           (let ([command (command-line)] [minimum (min-input)])
+           (let ([command (command-line)] [minimum (completion:async-min-input)])
              (set! timer
                (as-module (this-module)
-                 (run-with-timer (delay)
+                 (run-with-timer (completion:async-delay)
                    (lambda ()
                      (set! timer #f)
                      (run! command minimum))))))])))))
@@ -225,18 +222,24 @@
 
 (define (%read-location)
   (let ([folder (%search-folder)])
-    (completion:read "Grep: "
-      (list (completion:source
-              (stream (%search-source folder))
-              (split %split)
-              (in-order)
-              (group (%file-title folder) (%line-row folder))
-              (category completion:location-category))))))
+    (let-values ([(show end) (completion:location-preview (views:current) jump-history:after-jump)])
+      (completion:read "Grep: "
+        (list (completion:source
+                (stream (%search-source folder))
+                (split %split)
+                (in-order)
+                (group (%file-title folder) (%line-row folder))
+                (category completion:location-category)
+                (preview show end)
+                (preview-delay (preview-delay))))))))
 
 (commands:define-command (grep [location (%read-location)])
-  "Visits LOCATION, a line found by rg in the files of the current buffer's project, else under its directory, at its match."
-  (let ([b (files:visit (car location))])
+  "Visits LOCATION, a line found by rg in the files of the current buffer's project, else under its directory, at its match. Records the place point left in jump-history, then calls jump-history:after-jump."
+  (let* ([view (layout:selected-view)] [left (views:buffer view)] [at (views:point view)] [b (files:visit (car location))])
     (layout:switch-to-buffer b)
-    (views:set-point! (layout:selected-view) (editing:line-position b (cadr location) (cddr location)))))
+    (let ([view (layout:selected-view)])
+      (views:set-point! view (editing:line-position b (cadr location) (cddr location)))
+      (jump-history:push! left at)
+      (jump-history:after-jump view))))
 
 (keys:bind! keys:global "M-s r" grep)

@@ -126,6 +126,21 @@
 ()
 > (raised (lambda () (jump-history:push! "first" 1)))
 (jump-history:push! "not a buffer")
+; push! given a view records in that view's history, as a command run in
+; another view, such as M-<home>, records there.
+> (define other (find (lambda (v) (not (eq? v (view)))) (layout:views)))
+> (jump-history:push! first 3 other)
+> (places)
+()
+> (layout:select! other)
+> (places)
+(("first" . 3) ("first" . 5))
+> (raised (lambda () (jump-history:push! first 3 'v)))
+(jump-history:push! "not a view")
+; A place in an internal buffer is never pushed.
+> (jump-history:push! (buffers:make " *hidden*" "x") 1)
+> (places)
+(("first" . 3) ("first" . 5))
 ; push! only records: a jump that lands on screen, as a search's end,
 ; is not recentred. Nor does a buffer switch, which records too, run
 ; jump-history:after-jump. A picker that jumps runs it, and its own

@@ -1,7 +1,7 @@
 #!tuna
 ;; This plugin's substring is a style, so Chez's goes by another name.
 (import (minibuffer) (buffers) (document) (views) (layout) (keys) (commands) (jobs) (web) (ask) (editing) (kill-ring) (faces)
-        (modes) (syntax) (browse-url)
+        (modes) (syntax) (browse-url) (files)
         (completion matcher)
         (rename (only (chezscheme) substring) (substring string-part)))
 
@@ -128,10 +128,11 @@
 
 (define-record-type (%source %make-source source?)
   (sealed #t)
-  (fields candidates stream category title split in-order? rank preview exit styles group row narrow faces prefix lookup))
+  (fields candidates stream category title split in-order? rank preview preview-end preview-delay exit styles group row
+          narrow faces prefix lookup))
 
-(define (%check-source candidates stream category title split in-order? rank preview exit styles group row narrow
-                       faces prefix lookup)
+(define (%check-source candidates stream category title split in-order? rank preview preview-end preview-delay exit styles
+                       group row narrow faces prefix lookup)
   (define who 'completion:source)
   (unless (or (not category) (symbol? category))
     (assertion-violation who "not a category" category))
@@ -144,6 +145,10 @@
     (assertion-violation who "not a vector of fixnums, one for each candidate" rank))
   (unless (or (not preview) (procedure? preview))
     (assertion-violation who "not a procedure" preview))
+  (unless (or (not preview-end) (procedure? preview-end))
+    (assertion-violation who "not a procedure" preview-end))
+  (unless (or (not preview-delay) (and (real? preview-delay) (>= preview-delay 0)))
+    (assertion-violation who "not a number of seconds" preview-delay))
   (unless (or (not exit) (procedure? exit))
     (assertion-violation who "not a procedure" exit))
   (unless (or (not styles) (and (list? styles) (for-all procedure? styles)))
@@ -156,8 +161,8 @@
     (assertion-violation who "neither a character other than a space nor #f" narrow))
   (for-each (lambda (p) (unless (or (not p) (procedure? p)) (assertion-violation who "not a procedure" p)))
             (list faces prefix lookup))
-  (%make-source candidates stream category title split in-order? rank preview exit styles group row narrow
-                faces prefix lookup))
+  (%make-source candidates stream category title split in-order? rank preview preview-end preview-delay exit styles
+                group row narrow faces prefix lookup))
 
 (define (%candidates-clause candidates)
   (unless (or (procedure? candidates) (%candidates? candidates))
@@ -193,6 +198,7 @@
                                 #,(if stream #`(%stream-clause #,(cdr stream)) #'#f)
                                 #,(given-or-false 'category) #,(given-or-false 'title) #,(given-or-false 'split)
                                 #,(given-or-false 'in-order) #,(given-or-false 'rank) #,(given-or-false 'preview)
+                                #,(given-or-false 'preview-end) #,(given-or-false 'preview-delay)
                                 #,(given-or-false 'exit) #,(given-or-false 'styles) #,(given-or-false 'group) #,(given-or-false 'row)
                                 #,(given-or-false 'narrow) #,(given-or-false 'faces) #,(given-or-false 'prefix)
                                 #,(given-or-false 'lookup)))
@@ -206,8 +212,10 @@
                (loop (cdr clauses)
                      (append
                        (case name
-                         [(candidates stream category title split rank preview exit styles narrow faces prefix lookup)
+                         [(candidates stream category title split rank preview-delay exit styles narrow faces prefix lookup)
                           (syntax-case c () [(_ e) (list (cons name #'e))] [_ (invalid c)])]
+                         [(preview)
+                          (syntax-case c () [(_ show end) (list (cons 'preview #'show) (cons 'preview-end #'end))] [_ (invalid c)])]
                          [(group)
                           (syntax-case c ()
                             [(_ t) (list (cons 'group #'t))]
@@ -343,6 +351,12 @@
 (define-option point-preselect 'none (lambda (v) (memq v '(first none)))
   "What a session at point selects when its matches change: none or first.")
 
+(define-option async-min-input 3 (lambda (v) (and (fixnum? v) (fx>= v 0)))
+  "How many characters a search that asks as you type, such as grep:grep, waits for before it asks.")
+
+(define-option async-delay 0.2 (lambda (v) (and (real? v) (>= v 0)))
+  "Seconds without typing before a search that asks as you type asks again.")
+
 (define %inline-candidates 1000)
 (define %inline-bytes 50000)
 
@@ -354,7 +368,8 @@
    start-session! end-session! input-of rematch! select-match! match-text match-value match-title match-category
    match-row-text match-spans match-annotation match-whole-text match-exit match-faces match-prefix match-answer busy? query-start find-named! sole-match?
    common-input-start narrow-chars session-record-narrowed narrowed-title source-title-of narrow! combine!
-   match-list? make-match-list match-list-count match-list-ref match-list-index no-matches candidate-valued)
+   match-list? make-match-list match-list-count match-list-ref match-list-index no-matches candidate-valued
+   choose! choose-match!)
 
   (define main-thread (get-thread-id))
 
@@ -367,7 +382,7 @@
     (fields view (mutable states) width bounds accept preselect history default prompt
             (mutable input) (mutable matches) (mutable selected) (mutable locked?) (mutable ended?)
             (mutable inline?) (mutable annotators) (mutable next-id) history-ranks (mutable dirty?)
-            (mutable finding) (mutable narrowed) (mutable previewed)))
+            (mutable finding) (mutable narrowed) (mutable previewed) (mutable chosen) (mutable preview-timer)))
 
   ;; A source's candidates are numbered on through those it dropped, and
   ;; a match interleaves the numbers of a session's sources, so a match
@@ -895,9 +910,32 @@
             (session-record-states s))
           (combine! s)))))
 
-  (define (preview! st v)
-    (let ([preview (%source-preview (state-source st))])
-      (when preview (preview v))))
+  (define (stop-preview-timer! s)
+    (let ([t (session-record-preview-timer s)])
+      (when t
+        (session-record-preview-timer-set! s #f)
+        (cancel-timer! t))))
+
+  (define (preview! s st v)
+    (let* ([source (state-source st)] [show (%source-preview source)] [delay (%source-preview-delay source)])
+      (when show
+        (stop-preview-timer! s)
+        (if (and v delay (> delay 0))
+            (session-record-preview-timer-set! s
+              (as-module (this-module)
+                (run-with-timer delay
+                  (lambda ()
+                    (session-record-preview-timer-set! s #f)
+                    (unless (session-record-ended? s) (show v))))))
+            (show v)))))
+
+  ;; A preview's end learns which candidate was chosen, so a picker keeps
+  ;; what its previews opened for that one and undoes the rest.
+  (define (choose! s st answer)
+    (session-record-chosen-set! s (cons st answer)))
+
+  (define (choose-match! s m)
+    (choose! s (owner-of s m) (match-answer s m)))
 
   (define (owner-of s m)
     (and m (list-ref (session-record-states s) (fxremainder m (session-record-width s)))))
@@ -917,11 +955,11 @@
       (unless (eqv? old m)
         (session-record-selected-set! s m)
         (let ([was (owner-of s old)] [now (owner-of s m)])
-          (when (and was (not (eq? was now))) (preview! was #f))
+          (when (and was (not (eq? was now))) (preview! s was #f))
           (when now
             (let ([answer (match-answer s m)])
               (session-record-previewed-set! s answer)
-              (preview! now answer)))))))
+              (preview! s now answer)))))))
 
   (define (prefers-input? s)
     (exists (lambda (st) (and (state-prefers-input? st) (string=? (state-query st) "")))
@@ -989,7 +1027,7 @@
               (let ([answer (match-answer s now)])
                 (unless (equal? answer (session-record-previewed s))
                   (session-record-previewed-set! s answer)
-                  (preview! (owner-of s now) answer))))))))
+                  (preview! s (owner-of s now) answer))))))))
     (updated s))
 
   (define (set-state-matches! s st matches)
@@ -1003,7 +1041,7 @@
 
   (define (open-session! view sources bounds accept preselect h default prompt)
     (let ([s (make-session view '() (length sources) bounds accept preselect h default prompt
-                           #f #f #f #f #f #t '() 0 (history-ranks h default) #t #f #f #f)])
+                           #f #f #f #f #f #t '() 0 (history-ranks h default) #t #f #f #f #f #f)])
       (session-record-states-set! s
         (let loop ([sources sources] [index 0])
           (if (null? sources)
@@ -1054,8 +1092,16 @@
               (state-receiver-set! st #f)
               (guard (e [(not (quit-condition? e)) (report e)]) (receiver (eof-object))))))
         (session-record-states s))
-      (for-each (lambda (st) (preview! st #f)) (session-record-states s))
-      (ended s)))
+      (stop-preview-timer! s)
+      (ended s)
+      (let ([chosen (session-record-chosen s)])
+        (for-each
+          (lambda (st)
+            (let ([end (%source-preview-end (state-source st))])
+              (when end
+                (guard (e [(not (quit-condition? e)) (report e)])
+                  (end (and chosen (eq? (car chosen) st) (cdr chosen)))))))
+          (session-record-states s)))))
 
   ;; A session holds its texts as UTF-8: a broad search holds millions of
   ;; them, and a string takes four bytes a character.
@@ -1160,7 +1206,7 @@
                    (and (fx< i (vector-length v))
                         (let ([c (vector-ref v i)])
                           (if (equal? (candidate-value c) value)
-                              (cons (string-append (base st) (candidate-text c)) value)
+                              (list (string-append (base st) (candidate-text c)) value st)
                               (loop (fx+ i 1))))))))))
       (session-record-states s)))
 
@@ -1420,6 +1466,55 @@
     (when (and p (buffers:live? (car p)))
       (buffers:set-spans! (cdr p) 0 (document:length (buffers:document (car p))) '()))))
 
+;; A visit pauses its task, and show runs inside the session's selection
+;; update, so it must not pause.
+(define (location-preview view shown)
+  (unless (views:view? view)
+    (assertion-violation 'completion:location-preview "not a view" view))
+  (unless (procedure? shown)
+    (assertion-violation 'completion:location-preview "not a procedure" shown))
+  (let ([newest 0] [ended? #f] [chosen-path #f] [opened '()] [buffer (views:buffer view)] [point (views:point view)])
+    ;; Previewing the view's own buffer is no buffer preview, so its point
+    ;; is put back by hand.
+    (define (restore!)
+      (end-preview-place)
+      (views:end-preview! view)
+      (when (and (eq? (views:buffer view) buffer) (buffers:live? buffer))
+        (views:set-point! view (fxmin point (document:length (buffers:document buffer))))))
+    ;; A buffer the user visited meanwhile is temporary no longer, and
+    ;; stays.
+    (define (kill-opened! keep)
+      (for-each (lambda (b)
+                  (when (and (buffers:live? b) (files:temporary? b) (not (equal? (files:path b) keep)))
+                    (buffers:kill! b)))
+                opened)
+      (set! opened '()))
+    (define (show location)
+      (set! newest (fx+ newest 1))
+      (if (not location)
+          (restore!)
+          (let ([n newest])
+            (spawn-task
+              (lambda ()
+                (when (fx= n newest)
+                  (let* ([path (car location)] [existing (files:buffer-visiting path)]
+                         [b (or existing (guard (c [(not (quit-condition? c)) (report c) #f]) (files:visit-temporarily path)))])
+                    (when (and b (not existing))
+                      (if (and ended? (not (equal? path chosen-path)))
+                          (when (and (buffers:live? b) (files:temporary? b)) (buffers:kill! b))
+                          (unless (memq b opened) (set! opened (cons b opened)))))
+                    (when (and b (fx= n newest) (not ended?) (buffers:live? b))
+                      (views:preview-buffer! view b)
+                      (preview-place view b (editing:line-position b (cadr location) (cddr location)) '())
+                      (shown view)))))))))
+    (define (end location)
+      (set! ended? #t)
+      (set! newest (fx+ newest 1))
+      (set! chosen-path (and location (car location)))
+      (restore!)
+      (kill-opened! chosen-path))
+    (values show end)))
+
 (define (selected s)
   (check-session 'completion:selected s)
   (session-record-selected s))
@@ -1446,7 +1541,7 @@
     (find-named! s input
       (lambda (named)
         (cond
-          [named (minibuffer:exit! prompt (match-answer s named))]
+          [named (choose-match! s named) (minibuffer:exit! prompt (match-answer s named))]
           [(%read-state-any? r) (minibuffer:exit! prompt input)]
           [else (minibuffer:message! prompt "No match")])))))
 
@@ -1470,7 +1565,8 @@
     (cond
       [found
        (minibuffer:set-input! p (car found))
-       (minibuffer:exit! p (cdr found))]
+       (choose! (%read-state-session r) (caddr found) (cadr found))
+       (minibuffer:exit! p (cadr found))]
       [else
        (minibuffer:set-input! p (target-text target))
        (answer-input! p)])))
@@ -1479,10 +1575,12 @@
   (let* ([r (%read-of s)] [prompt (%read-state-prompt r)] [input (minibuffer:input prompt)]
          [default (and (string=? input "") (%read-default r))])
     (cond
-      [m (minibuffer:exit! prompt (match-answer s m))]
+      [m (choose-match! s m) (minibuffer:exit! prompt (match-answer s m))]
       [default
        (find-named! s default
-         (lambda (named) (minibuffer:exit! prompt (if named (match-answer s named) default))))]
+         (lambda (named)
+           (when named (choose-match! s named))
+           (minibuffer:exit! prompt (if named (match-answer s named) default))))]
       [else (%answer-input! r input)])))
 
 (define (%read-default r) (session-record-default (%read-state-session r)))
@@ -1766,6 +1864,7 @@
          [exit! (if (and m (%point-of s)) (%exit-of s m) %no-exit)])
     (when m (%replace-unmatched! s (query-start s m) (match-text s m)))
     (%forget-tabbed! s)
+    (when m (choose-match! s m))
     ((session-record-accept s) s m)
     (exit! 'finished)))
 

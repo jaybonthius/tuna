@@ -1,6 +1,6 @@
 #!tuna
 (import (document) (buffers) (views) (commands) (keys) (modes) (kill-ring) (undo) (layout) (web) (syntax)
-        (syntax characters) (ask))
+        (syntax characters) (ask) (jump-history))
 
 (define-option delete-selection #f boolean?
   "When true, typing, newline, paste and yank replace an active, non-empty region, and delete-char, delete-forward-char and delete-backward-char delete it.")
@@ -873,16 +873,18 @@
 ;; No mark is set where point was, as Emacs pushes one: a mark here is
 ;; an active region, which typing would replace under delete-selection.
 (define (%to-edge who end?)
-  (let ([view (command-view who)])
+  (let* ([view (command-view who)] [left (views:point view)])
     (for-each (lambda (c) (views:remove-cursor! view c)) (cdr (views:cursors view)))
-    (move-cursors! who view 0 (lambda (c doc lo hi) (values (if end? hi lo) #f)))))
+    (move-cursors! who view 0 (lambda (c doc lo hi) (values (if end? hi lo) #f)))
+    (unless (fx= (views:point view) left)
+      (jump-history:push! (views:buffer view) left view))))
 
 (commands:define-command (beginning-of-buffer)
-  "Moves the primary cursor to the start of the buffer and removes the other cursors."
+  "Moves the primary cursor to the start of the buffer and removes the other cursors, recording the place point left in jump-history."
   (%to-edge 'editing:beginning-of-buffer #f))
 
 (commands:define-command (end-of-buffer)
-  "Moves the primary cursor to the end of the buffer and removes the other cursors."
+  "Moves the primary cursor to the end of the buffer and removes the other cursors, recording the place point left in jump-history."
   (%to-edge 'editing:end-of-buffer #t))
 
 (commands:define-command (beginning-of-buffer-other-view)

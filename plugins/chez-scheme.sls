@@ -459,6 +459,7 @@
 (for-each (lambda (name) (table-set! auto-mode:interpreters name mode))
           '("tuna" "scheme" "petite" "scheme-script" "r6rs" "chezscheme"))
 (add-hook! modes:major-mode-changed %highlight-in-mode)
+(add-hook! modes:delayed-mode-changed %highlight-in-mode)
 (add-hook! buffers:killed stop-highlighting!)
 (add-hook! buffers:after-edit %send-edit)
 (add-hook! syntax:bracket-users-changed tell-bracket-users!)

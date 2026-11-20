@@ -106,3 +106,48 @@ modes:fundamental
 > (auto-mode:normal-mode three)
 > (modes:major-mode three)
 python:mode
+; A temporary visit, such as a preview's, sets the mode
+; with its hooks delayed and runs files:after-temporary-visit in place of
+; files:after-visit; a later visit completes it: the after-visit entries
+; and the delayed mode hooks run once, in the same buffer.
+> (define visited '())
+> (define (note-visit b) (set! visited (cons (buffers:name b) visited)))
+> (add-hook! files:after-visit note-visit)
+> (define hooked '())
+> (define (note-hook) (set! hooked (cons (buffers:name (buffers:current)) hooked)))
+> (add-hook! python:mode-hook note-hook)
+> (define previewed '())
+> (define (note-preview b) (set! previewed (cons (list (buffers:name b) (modes:major-mode b)) previewed)))
+> (add-hook! modes:delayed-mode-changed note-preview)
+> (disk:write-text! "~/four.py" "4\n")
+> (define four (files:visit-temporarily "~/four.py"))
+> (list (modes:major-mode four) (modes:hooks-delayed? four) (files:temporary? four) visited hooked previewed)
+(python:mode #t #t () () (("four.py" python:mode)))
+> (eq? (files:visit-temporarily "~/four.py") four)
+#t
+> (eq? (files:visit "~/four.py") four)
+#t
+> (list (modes:major-mode four) (modes:hooks-delayed? four) (files:temporary? four) visited hooked)
+(python:mode #f #f ("four.py") ("four.py"))
+> (files:visit "~/four.py")
+#<buffer four.py>
+> (list visited hooked)
+(("four.py") ("four.py"))
+; A delayed mode's hooks wait while modules load, and run-delayed-hooks
+; runs them once.
+> (set! hooked '())
+> (disk:write-text! "~/five.py" "5\n")
+> (define five (files:visit-temporarily "~/five.py"))
+> (import (indent))
+> (list (and (member "four.py" hooked) #t) (and (member "five.py" hooked) #t) (modes:hooks-delayed? five))
+(#t #f #t)
+> (set! hooked '())
+> (modes:run-delayed-hooks five)
+> (list hooked (modes:hooks-delayed? five))
+(("five.py") #f)
+> (modes:run-delayed-hooks five)
+> hooked
+("five.py")
+> (remove-hook! files:after-visit note-visit)
+> (remove-hook! python:mode-hook note-hook)
+> (remove-hook! modes:delayed-mode-changed note-preview)

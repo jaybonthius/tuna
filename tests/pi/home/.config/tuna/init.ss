@@ -22,6 +22,7 @@
 (use-plugin status-line)
 (use-plugin files)
 (use-plugin kill-ring)
+(use-plugin jump-history)
 (use-plugin pi-chat)
 (use-plugin completion)
 (use-plugin pi-picker)

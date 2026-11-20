@@ -42,7 +42,7 @@
                    (candidates (list->vector choices))
                    (in-order)
                    (category choice-category)
-                   (preview preview)))
+                   (preview preview (and preview (lambda (chosen) (preview #f))))))
            #f
            default)))]))
 
