@@ -65,6 +65,7 @@ bench: exe
 	sh bench/completion.sh build/bin/tuna || status=1; \
 	sh bench/runs.sh build/bin/tuna || status=1; \
 	sh bench/jsonrpc.sh build/bin/tuna || status=1; \
+	sh bench/diagnostics.sh build/bin/tuna || status=1; \
 	sh bench/terminal.sh build/bin/tuna || status=1; \
 	exit $$status
 

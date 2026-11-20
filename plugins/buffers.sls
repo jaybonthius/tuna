@@ -14,6 +14,7 @@
    make-buffer! find-buffer live-buffers buffer-live? rename-buffer! forget-buffer! with-current move-buffer!
    current-buffer frozen-document internal? with-silent check-piece
    replace-content! fitted-deletion refuses-typing-probe? splice-content! reconcile-node! edits-after map-position-through
+   map-position-by map-after-through
    define-kind! note-constructor! find-kind find-constructor-kind stop-at next-stop-after previous-stop-before range-text range-atom-texts
    define-layer-type! layer-of layers-for layer-type-keymap-of layer-priority-of
    set-layer-spans! add-layer-span! remove-layer-spans! layer-spans layer-spans-at travelling-spans-of
@@ -1074,14 +1075,26 @@
           (let ([end (fx+ s (edit-record-removed-length e))])
             (if (fx< p end) s (fx+ p (fx- (fx+ s (edit-record-inserted-length e)) end)))))))
 
+  ;; Must agree with anchor-current-position's rule for an anchor made
+  ;; with anchor-after.
+  (define (map-after-through e p)
+    (let ([s (edit-record-start e)])
+      (if (or (fx< p s) (not (edit-record-moves? e)))
+          p
+          (let ([end (fx+ s (edit-record-removed-length e))] [i (edit-record-inserted-length e)])
+            (if (fx< p end) (fx+ s i) (fx+ p (fx- (fx+ s i) end)))))))
+
   (define (map-position-through who b p version)
+    (map-position-by who b p version map-through))
+
+  (define (map-position-by who b p version map-one)
     (let ([edits (edits-after b version)])
       (and edits
            (let ([length-then (fold-left (lambda (n e) (fx- n (fx- (edit-record-inserted-length e) (edit-record-removed-length e))))
                                          (document:length (buffer-doc b)) edits)])
              (unless (fx<= p length-then)
                (assertion-violation who "not a position in the buffer at the version" p version))
-             (fold-left (lambda (p e) (map-through e p)) p edits)))))
+             (fold-left (lambda (p e) (map-one e p)) p edits)))))
 
   ;; The edit is made whole or not at all: a quit landing in it would
   ;; leave the document, the version and the layers out of step.
@@ -1872,6 +1885,32 @@
   (unless (and (fixnum? position) (fx>= position 0))
     (assertion-violation 'buffers:map-position "not a position" position))
   (map-position-through 'buffers:map-position buffer position version))
+
+(define (map-position-after buffer position version)
+  (check-buffer 'buffers:map-position-after buffer)
+  (check-main-thread 'buffers:map-position-after)
+  (check-version 'buffers:map-position-after buffer version)
+  (unless (and (fixnum? position) (fx>= position 0))
+    (assertion-violation 'buffers:map-position-after "not a position" position))
+  (map-position-by 'buffers:map-position-after buffer position version map-after-through))
+
+(define (document-at buffer version)
+  (check-buffer 'buffers:document-at buffer)
+  (check-main-thread 'buffers:document-at)
+  (check-version 'buffers:document-at buffer version)
+  (let ([edits (edits-after buffer version)])
+    (cond
+      [(not edits) #f]
+      [(null? edits) (frozen-document buffer)]
+      [else
+       (document:freeze
+         (fold-left
+           (lambda (doc e)
+             (let ([start (edit-record-start e)])
+               (document:replace doc start (fx+ start (edit-record-inserted-length e))
+                                 (piece-record-document (edit-record-removed e)))))
+           (frozen-document buffer) (reverse edits))
+         jobs:freeze)])))
 
 (define (edit-version edit)
   (check-edit 'buffers:edit-version edit)

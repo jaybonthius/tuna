@@ -77,6 +77,12 @@
 13
 > (buffers:map-position t 7 0)
 ! buffers:map-position: not a position in the buffer at the version with irritants (7 0)
+; map-position-after moves a position after text inserted there, as an
+; anchor made with anchor-after moves.
+> (map (lambda (p) (buffers:map-position-after t p 0)) '(1 2 3 4))
+(7 10 10 11)
+> (buffers:map-position-after t 7 0)
+! buffers:map-position-after: not a position in the buffer at the version with irritants (7 0)
 > (map (lambda (e) (list (buffers:edit? e) (buffers:edit-version e))) (buffers:edits-since t 0))
 ((#t 1) (#t 2) (#t 3))
 ; splice! replaces tokens exactly, asking no kind.

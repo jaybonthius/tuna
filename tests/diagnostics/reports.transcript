@@ -1,0 +1,214 @@
+; A diagnostic: a range, a severity, a message and its details.
+> (define d (diagnostics:make-diagnostic 1 6 (diagnostics:severity warning) "\"alpha\" is not accessed"
+              (diagnostics:details [origin "basedpyright"] [code "reportUnusedImport"] [tags (diagnostics:tags unnecessary)])))
+> (list (diagnostics:diagnostic-start d) (diagnostics:diagnostic-end d) (diagnostics:diagnostic-severity d)
+        (diagnostics:diagnostic-origin d) (diagnostics:diagnostic-code d)
+        (enum-set->list (diagnostics:diagnostic-tags d)) (diagnostics:diagnostic-keymap d) (diagnostics:diagnostic-data d)
+        (diagnostics:diagnostic-buffer d) (diagnostics:diagnostic-path d))
+(1 6 warning "basedpyright" "reportUnusedImport" (unnecessary) #f #f #f #f)
+> (diagnostics:text d)
+"basedpyright [reportUnusedImport]: \"alpha\" is not accessed"
+> (diagnostics:text (diagnostics:make-diagnostic 1 2 (diagnostics:severity info) "plain"))
+"plain"
+> (raised (lambda () (diagnostics:make-diagnostic 1 2 'fatal "x")))
+(diagnostics:make-diagnostic "not a severity")
+> (raised (lambda () (diagnostics:make-diagnostic 1 2 (diagnostics:severity info) 'x)))
+(diagnostics:make-diagnostic "not a string")
+> (raised (lambda () (diagnostics:make-diagnostic 5 2 (diagnostics:severity info) "x")))
+(diagnostics:make-diagnostic "not an end position after the start")
+> (raised (lambda () (diagnostics:make-diagnostic 5 #f (diagnostics:severity info) "x")))
+(diagnostics:make-diagnostic "not an end position after the start")
+> (diagnostics:severity fatal)
+! diagnostics:severity: not a severity (diagnostics:severity fatal)
+> (diagnostics:tags obsolete)
+! diagnostics:tags: not a tag (diagnostics:tags obsolete)
+> (diagnostics:details [origin "a"] [origin "b"])
+! diagnostics:details: clause given twice (origin "b") in (diagnostics:details (origin "a") (origin "b"))
+> (diagnostics:details [colour "red"])
+! diagnostics:details: invalid clause (colour "red") in (diagnostics:details (colour "red"))
+; A report draws each diagnostic, where the mode is on, as a span of its
+; severity's layer type, in its severity's face with its text as title.
+> (mode! notes #t)
+> (define linter (diagnostics:make-source))
+> (define server (diagnostics:make-source))
+> (diagnostics:report! linter notes (list (warn notes "beta" "vague") (err notes "delta" "wrong")))
+#t
+> (marks notes)
+(("delta" (diagnostic.error) "wrong") ("beta" (diagnostic.warning) "vague"))
+> (diagnostics:report! linter notes (list d))
+#t
+> (marks notes)
+(("alpha" (diagnostic.warning diagnostic.unnecessary) "basedpyright [reportUnusedImport]: \"alpha\" is not accessed"))
+> (list (eq? (diagnostics:diagnostic-buffer d) notes) (eq? (diagnostics:diagnostic-source d) linter))
+(#t #t)
+; A second report of the same source replaces its first; another
+; source's stay.
+> (diagnostics:report! server notes (list (err notes "gamma" "undefined")))
+#t
+> (diagnostics:report! linter notes (list (warn notes "zeta" "long")))
+#t
+> (all-seen notes)
+(("gamma" error "undefined") ("zeta" warning "long"))
+; diagnostics:in: every one, those at a position, those overlapping a
+; range; ordered by start, then most severe first.
+> (diagnostics:report! linter notes (list (warn notes "gamma" "shadowed") (warn notes "zeta" "long")))
+#t
+> (all-seen notes)
+(("gamma" error "undefined") ("gamma" warning "shadowed") ("zeta" warning "long"))
+> (map seen (diagnostics:in notes (word notes "gamma")))
+(("gamma" error "undefined") ("gamma" warning "shadowed"))
+> (map seen (diagnostics:in notes (+ (word notes "gamma") 5)))
+()
+> (map seen (diagnostics:in notes 1 (+ (word notes "gamma") 1)))
+(("gamma" error "undefined") ("gamma" warning "shadowed"))
+> (map seen (diagnostics:in notes 1 (word notes "gamma")))
+()
+> (map seen (diagnostics:in notes (word notes "gamma") (+ (word notes "zeta") 1)))
+(("gamma" error "undefined") ("gamma" warning "shadowed") ("zeta" warning "long"))
+; Overlapping, the error is drawn inside the warning: its layer type's
+; priority is higher.
+> (map buffers:layer-priority (list (buffers:layer notes diagnostics:error-marks) (buffers:layer notes diagnostics:warning-marks) (buffers:layer notes diagnostics:info-marks) (buffers:layer notes diagnostics:hint-marks)))
+(53 52 51 50)
+> (let ([html (html->string (views:draw (view) #f))])
+    (< (index-of html "data-face=\"diagnostic.warning\"") (index-of html "data-face=\"diagnostic.error\"")))
+#t
+; A report at an old version is placed by the edits since; one the log no
+; longer holds changes nothing. Lines and columns count on that
+; version's content.
+> (diagnostics:clear! server)
+> (define then (buffers:version notes))
+> (buffers:replace! notes 1 1 "new line\n")
+#<edit 1>
+> (diagnostics:report! linter notes
+    (list (diagnostics:make-diagnostic 1 6 (diagnostics:severity info) "first word")
+          (diagnostics:make-diagnostic '(2 . 0) '(2 . 5) (diagnostics:severity hint) "second line"))
+    then)
+#t
+> (all-seen notes)
+(("alpha" info "first word") ("delta" hint "second line"))
+> (do ([i 0 (+ i 1)]) ((= i 1100)) (buffers:with-silent-edits notes (buffers:replace! notes 1 1 "x") (buffers:replace! notes 1 2 "")))
+> (set-idle! #t)
+> (sleep-for 1.5)
+> (diagnostics:report! linter notes (list (diagnostics:make-diagnostic 1 2 (diagnostics:severity info) "late")) then)
+#f
+> (all-seen notes)
+(("alpha" info "first word") ("delta" hint "second line"))
+; A range the edits since have emptied is dropped, not widened to what
+; stands there now: the text it marked is gone.
+> (define racey (buffers:make "racey" "alpha beta gamma\n"))
+> (define v0 (buffers:version racey))
+> (buffers:replace! racey 7 12 "")
+#<edit 1>
+> (diagnostics:report! linter racey (list (diagnostics:make-diagnostic 7 11 (diagnostics:severity warning) "beta is bad")) v0)
+#t
+> (list (text racey) (all-seen racey))
+("alpha gamma\n" ())
+> (define v1 (buffers:version racey))
+> (buffers:replace! racey 7 12 "delta")
+#<edit 2>
+> (diagnostics:report! linter racey (list (diagnostics:make-diagnostic 7 12 (diagnostics:severity warning) "gamma is bad")) v1)
+#t
+> (list (text racey) (all-seen racey))
+("alpha delta\n" ())
+> (diagnostics:report! linter racey (list (diagnostics:make-diagnostic 7 7 (diagnostics:severity warning) "sent empty")) v1)
+#t
+> (all-seen racey)
+(("delta" warning "sent empty"))
+> (raised (lambda () (diagnostics:report! linter notes '() (+ (buffers:version notes) 1))))
+(diagnostics:report! "not a version of the buffer")
+> (raised (lambda () (diagnostics:report! 'linter notes '())))
+(diagnostics:report! "not a source")
+> (raised (lambda () (diagnostics:report! linter "notes" '())))
+(diagnostics:report! "neither a buffer nor an absolute path")
+; An empty range, or a line and column with no end, is widened to the
+; symbol at its start, else from its start to its line's end, else to its
+; line; on an empty line it is dropped.
+> (buffers:replace! notes 1 10 "")
+#<edit 2202>
+> (text notes)
+"alpha beta gamma\ndelta epsilon\n\nzeta eta\n"
+> (define spaced (buffers:make "spaced" "f(x)  + 1\nab  \n\n"))
+> (diagnostics:report! linter spaced
+    (list (diagnostics:make-diagnostic 3 3 (diagnostics:severity info) "in x")
+          (diagnostics:make-diagnostic '(1 . 5) #f (diagnostics:severity info) "after the call")
+          (diagnostics:make-diagnostic '(2 . 4) '(2 . 4) (diagnostics:severity info) "at the line's end")
+          (diagnostics:make-diagnostic '(3 . 0) #f (diagnostics:severity info) "empty line")))
+#t
+> (all-seen spaced)
+(("x" info "in x") (" + 1" info "after the call") ("ab  " info "at the line's end"))
+; Text typed at either edge of a mark stays outside it and its range; a
+; marked word deleted and typed again leaves no mark: the diagnostic goes
+; until the next report.
+> (diagnostics:report! linter notes (list (warn notes "beta" "vague")))
+#t
+> (define seen-changes '())
+> (define (note-change where) (set! seen-changes (cons where seen-changes)))
+> (add-hook! diagnostics:changed note-change)
+> (buffers:insert! notes (word notes "beta") "<")
+8
+> (buffers:insert! notes (+ (word notes "beta") 4) ">")
+13
+> (list (text notes) (all-seen notes) (marks notes))
+("alpha <beta> gamma\ndelta epsilon\n\nzeta eta\n" (("beta" warning "vague")) (("beta" (diagnostic.warning) "vague")))
+> (buffers:replace! notes (word notes "beta") (+ (word notes "beta") 4) "")
+#<edit 2205>
+> (buffers:insert! notes (word notes "<>") "beta")
+11
+> (list (all-seen notes) (marks notes) (length seen-changes))
+(() () 1)
+> (diagnostics:report! linter notes (list (warn notes "beta" "vague")))
+#t
+> (marks notes)
+(("beta" (diagnostic.warning) "vague"))
+; With the mode off the marks are hidden, the diagnostics kept and
+; listed; on again draws them.
+> (mode! notes #f)
+> (list (marks notes) (all-seen notes))
+(() (("beta" warning "vague")))
+> (mode! notes #t)
+> (marks notes)
+(("beta" (diagnostic.warning) "vague"))
+; A report to a path no buffer visits keeps lines and columns, and is
+; listed under its folder; visiting the file makes them spans.
+> (define path (string-append folder "/a.txt"))
+> (with-output-to-file path (lambda () (display "one\ntwo bad\n")) 'replace)
+> (diagnostics:report! linter path (list (diagnostics:make-diagnostic '(2 . 4) '(2 . 7) (diagnostics:severity error) "bad")))
+#t
+> (map (lambda (d) (list (substring (diagnostics:diagnostic-path d) (string-length folder) (string-length path)) (seen d)))
+       (diagnostics:under folder))
+(("/a.txt" (((2 . 4) (2 . 7)) error "bad")))
+> (raised (lambda () (diagnostics:report! linter path (list (diagnostics:make-diagnostic 1 2 (diagnostics:severity error) "x")))))
+(diagnostics:report! "positions in a report to a path")
+> (define a (files:visit path))
+> (mode! a #t)
+> (list (all-seen a) (marks a) (map seen (diagnostics:under folder)))
+((("bad" error "bad")) (("bad" (diagnostic.error) "bad")) (("bad" error "bad")))
+; Clearing one place, then everywhere.
+> (diagnostics:clear! linter a)
+> (list (all-seen a) (all-seen notes))
+(() (("beta" warning "vague")))
+> (diagnostics:clear! linter)
+> (all-seen notes)
+()
+; The at-point source gives each diagnostic's text at point, all of it in
+; error, warning or success by its severity, and nothing where the mode
+; is off.
+> (diagnostics:report! linter notes (list (warn notes "beta" "vague") (err notes "beta" "wrong")))
+#t
+> (views:set-point! (view) (word notes "beta"))
+> (map (lambda (doc) (list (docs-at-point:doc-text doc) (docs-at-point:doc-spans doc))) (diagnostics:at-point (view)))
+(("wrong" ((0 5 error))) ("vague" ((0 5 warning))))
+> (mode! notes #f)
+> (diagnostics:at-point (view))
+#f
+> (mode! notes #t)
+; A source belongs to the module that made it: unloading the module
+; clears its diagnostics.
+> (import (reporter))
+> (reporter:report-bad! notes)
+#t
+> (all-seen notes)
+(("beta" error "wrong") ("beta" warning "vague") ("delta" error "bad"))
+> (unload-module! '(reporter))
+> (all-seen notes)
+(("beta" error "wrong") ("beta" warning "vague"))

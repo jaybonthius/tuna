@@ -194,6 +194,17 @@ gone
 > (views:set-point! kv 5)
 > (views:keymaps kv)
 (field-keys box-keys)
+; A span's own keymap comes before its layer type's; a span of the same
+; layer without one leaves the key to the layer's.
+> (define-table own-keys)
+> (buffers:add-span! (buffers:layer k keyed:links) 2 3 (list (cons 'keymap own-keys)))
+> (views:set-point! kv 2)
+> (let ([ks (views:keymaps kv)]) (list (eq? (car ks) own-keys) (cdr ks)))
+(#t (link-keys field-keys box-keys))
+> (views:set-point! kv 3)
+> (views:keymaps kv)
+(link-keys field-keys box-keys)
+> (views:set-point! kv 5)
 ; set-buffer! shows another buffer at its last point, here that of the
 ; view showing it, keeping the view's options.
 > (views:set-option! w views:wrap-lines #t)

@@ -162,6 +162,25 @@
 > (views:set-point! w 17)
 > (eq? (car (views:keymaps w)) image-keys)
 #t
+; A click on a span looks the key up in the span's own keymap before its
+; layer type's; on a span without one, in the layer type's.
+> (define-table own-keys)
+> (define-table marked-keys)
+> (commands:define-command (on-own [event (keys:command-event)])
+    "Records a click on a span with its own keymap."
+    (set! seen (cons (list 'own (views:posn-point (keys:event-start event))) seen)))
+> (commands:define-command (on-marked [event (keys:command-event)])
+    "Records a click on a span of the marked layer."
+    (set! seen (cons (list 'marked (views:posn-point (keys:event-start event))) seen)))
+> (keys:bind! own-keys "<mouse-1>" on-own)
+> (keys:bind! marked-keys "<mouse-1>" on-marked)
+> (buffers:define-layer marked (keymap marked-keys))
+> (buffers:add-span! (buffers:layer d marked) 2 4 (list (cons 'keymap own-keys)))
+> (buffers:add-span! (buffers:layer d marked) 4 6 '((face . highlight)))
+> (mouse! w '("action" . "click") '("at" . 2) '("count" . 1))
+> (mouse! w '("action" . "click") '("at" . 2) '("count" . 3))
+> (take!)
+((own 3) (marked 5))
 ; Positions of mouse keys: a posn is a record, read through views'
 ; accessors. Without a place sent with it, it has no place or cell.
 > (keys:bind! link-keys "<mouse-1>" record)

@@ -2407,18 +2407,22 @@
                   (send-placement! copy (client-view-own copy))))))
           from))))
 
+  (define (span-keymap value)
+    (let ([entry (and (list? value) (assq 'keymap value))])
+      (and entry (table? (cdr entry)) (cdr entry))))
+
   (define (keymaps-at v b p)
     (let ([doc (buffers:document b)])
       (append
         (fold-left
           (lambda (acc l)
-            (let ([keymap (buffers:layer-keymap l)])
-              (if (and keymap
-                       (or (pair? (buffers:spans-at l p))
-                           (exists (lambda (s) (and (fx<= (car s) p) (fx< p (cadr s))))
-                                   (buffers:spans l p (fxmin (fx+ p 1) (document:length doc))))))
-                  (cons keymap acc)
-                  acc)))
+            (let* ([spans (append (buffers:spans-at l p)
+                                  (filter (lambda (s) (and (fx<= (car s) p) (fx< p (cadr s))))
+                                          (buffers:spans l p (fxmin (fx+ p 1) (document:length doc)))))]
+                   [own (fold-left (lambda (ks s) (let ([k (span-keymap (caddr s))]) (if (and k (not (memq k ks))) (append ks (list k)) ks)))
+                                   '() spans)]
+                   [keymap (buffers:layer-keymap l)])
+              (append own (if (and keymap (pair? spans)) (list keymap) '()) acc)))
           '() (buffers:layers b v))
         (let* ([t (document:token doc p)] [kind (and (document:node? t) (document:atom? t) (buffers:kind (document:node-kind t)))]
                [keymap (and kind (buffers:kind-keymap kind))])

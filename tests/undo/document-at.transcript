@@ -1,0 +1,42 @@
+; buffers:document-at gives a buffer's content at a version its edit log
+; holds: the current document at the current version.
+> (define b (buffers:make "versions" "one\ntwo\n"))
+> (define (at v) (document:text (buffers:document-at b v)))
+> (eq? (buffers:document-at b 0) (buffers:document b))
+#t
+> (do ([i 0 (+ i 1)]) ((= i 10)) (buffers:replace! b 1 1 (number->string i)))
+> (list (buffers:version b) (at 10) (at 9) (at 0))
+(10 "9876543210one\ntwo\n" "876543210one\ntwo\n" "one\ntwo\n")
+; Across a deletion, a silent edit and an edit that moves nothing.
+> (buffers:replace! b 1 11 "")
+#<edit 11>
+> (buffers:with-silent-edits b (buffers:replace! b 5 8 "TWO"))
+#<edit 12>
+> (buffers:replace! b 1 4 "one")
+#<edit 13>
+> (list (at 13) (at 12) (at 11) (at 10))
+("one\nTWO\n" "one\nTWO\n" "one\ntwo\n" "9876543210one\ntwo\n")
+> (raised (lambda () (buffers:document-at b 14)))
+(buffers:document-at "not a version of the buffer")
+> (raised (lambda () (buffers:document-at 'b 0)))
+(buffers:document-at "not a buffer")
+; The content at a version is the text undo restores.
+> (define u (buffers:make "undone" "abc\n"))
+> (define (run command . args) (buffers:with-buffer u (apply commands:run command args)))
+> (run checks:insert 1 "x")
+#<edit 1>
+> (run checks:insert 3 "yz")
+#<edit 2>
+> (define then (document:text (buffers:document-at u 1)))
+> (run undo:undo 1)
+> (list then (text u) (string=? then (text u)))
+("xabc\n" "xabc\n" #t)
+; Once the log no longer holds the edits since a version, its content is
+; #f.
+> (define t (buffers:make "trimmed" "abc\n"))
+> (do ([i 0 (+ i 1)]) ((= i 1500)) (buffers:replace! t 1 1 "x"))
+> (set-idle! #t)
+> (sleep-for 1.5)
+> (set-idle! #f)
+> (list (buffers:document-at t 0) (buffers:document-at t 499) (string-length (document:text (buffers:document-at t 500))))
+(#f #f 504)
