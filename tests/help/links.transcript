@@ -18,10 +18,10 @@
 It is on [C-c h].
 It is for <harpo:mode>.
 Honks once.
-; *Help* refuses the user's edits.
+; Printing keys are undefined in *Help*, as in every read buffer.
 > (views:set-point! (help-view) 3)
 > (press! "x")
-! buffers:replace!: a read-only span refuses the edit with irritant help:%read-only
+! x is undefined
 > (title)
 "harpo:honk"
 ; q quits the view: here *Help* had a part of its own, which goes.
@@ -50,7 +50,7 @@ Honks once.
 [RET]             <help:%follow-link>
 [<down-mouse-1>]  <keys:ignore>
 [<mouse-1>]       <help:%follow-link>
-[x]               <editing:self-insert>
+[x]               <keys:undefined>
 [q]               <layout:quit-view>
 [C-h l]           <help:view-lossage>
 [C-h l]           <help:view-lossage>
@@ -69,7 +69,7 @@ Honks once.
 [C-h f]           <help:describe-name>
 [a]               <editing:self-insert>
 [C-g]             <minibuffer:abort>
-[g]               <help:refresh>
+[g]               <buffers:revert-buffer>
 ; Going back to a command or a name that is gone says so, and the
 ; history goes on past it.
 > (press! "l" "l")

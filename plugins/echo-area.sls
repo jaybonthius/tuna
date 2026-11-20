@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (faces) (web) (haml) (ask))
+(import (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (modes) (faces) (web) (haml) (ask))
 
 (define face
   (make-thread-parameter #f
@@ -33,6 +33,16 @@
 (buffers:define-kind area (consent %refuse-edits) (keymap keymap) (draw %draw-area))
 
 (buffers:define-kind %log (consent %refuse-edits))
+
+(define-table messages-keymap "Keys in *Messages*.")
+
+(define-hook messages-mode-hook "Called in each buffer that turns on echo-area:messages-mode.")
+
+(modes:define-major-mode messages-mode
+  (parent modes:special)
+  (lighter "Messages")
+  (keymap messages-keymap)
+  (hook messages-mode-hook))
 
 (module %internals
   (check-main-thread echo-buffer messages-buffer shown? show! log! queue-report! flushing? flush-reports! report-text
@@ -174,7 +184,9 @@
   (define (messages-buffer)
     (unless (and log-buffer (buffers:live? log-buffer))
       (set! log-buffer (or (buffers:find "*Messages*") (buffers:make "*Messages*" (%log '()))))
-      (buffers:set-silent! log-buffer #t))
+      (buffers:set-silent! log-buffer #t)
+      (unless (eq? (modes:major-mode log-buffer) messages-mode)
+        (modes:set-major-mode messages-mode log-buffer)))
     log-buffer)
 
   (define (newlines text)
@@ -392,6 +404,10 @@
 ;; message, as repeat's does, finds them shown.
 (define (%show-command-reports command) (flush-reports!))
 
+(define (%follow-messages) (set-option-local! views:point-after-insertion? #t))
+
+(add-hook! messages-mode-hook %follow-messages)
+(keys:bind! messages-keymap "g" keys:undefined)
 (messages-buffer)
 (layout:display-buffer echo-buffer (layout-split:display-at-side (layout:direction down) 90 'content '((locked . #t))))
 (keys:bind! keymap "<mouse-1>" show-messages)

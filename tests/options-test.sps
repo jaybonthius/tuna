@@ -137,7 +137,22 @@
       (check-equal? '() (option-settings level))
       (check-equal? 0 (parameterize ([current-scope s]) (level)))
       (check-equal? '() (module-changes '(repl)))
-      (check-equal? '() (module-changes '(init))))))
+      (check-equal? '() (module-changes '(init)))))
+
+  (test "option-local? is whether the current scope holds a value of its own"
+    (let ([s (make-scope)])
+      (check-equal? #f (option-local? level))
+      (parameterize ([current-scope s])
+        (check-equal? #f (option-local? level))
+        (set-option-local! level (option-setting level))
+        (check-equal? #t (option-local? level))
+        (with-options ([level 7]) (check-equal? #t (option-local? level)))
+        (check-equal? #t (in-thread (lambda () (parameterize ([current-scope s]) (option-local? level)))))
+        (remove-option-local! level)
+        (check-equal? #f (option-local? level))
+        (with-options ([level 7]) (check-equal? #f (option-local? level))))
+      (check-equal? "not an option" (raised-message (lambda () (option-local? 'level))))
+      (check-equal? '() (module-changes '(repl))))))
 
 (post! (lambda ()
          (tests)

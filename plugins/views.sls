@@ -13,6 +13,8 @@
   "Whether a scroll made with the pointer that leaves point outside the view moves point into it.")
 (define-option column-number #f boolean?
   "Whether views:describe-line shows the column after the line.")
+(define-option point-after-insertion? #f boolean?
+  "Whether a view's point where text is inserted stays after the text, and the view follows it; read when the view shows the buffer, and set locally by a buffer's mode.")
 
 (define-table span-properties
   "Maps a key of a span's value to a procedure that returns attributes for the span's element.")
@@ -191,6 +193,9 @@
       [after? (buffers:anchor-after b p)]
       [else (buffers:anchor b p)]))
 
+  (define (point-spot b p)
+    (make-spot b p (and b (buffers:with-buffer b (point-after-insertion?)))))
+
   (define (move-spot s b p after?)
     (if (fixnum? s)
         (make-spot b p after?)
@@ -226,7 +231,8 @@
 
   (define (set-cursor-spots! c point mark)
     (let ([b (view-record-buffer (cursor-record-view c))])
-      (cursor-record-point-set! c (move-spot (cursor-record-point c) b point #f))
+      (cursor-record-point-set! c
+        (if (fixnum? (cursor-record-point c)) (point-spot b point) (move-spot (cursor-record-point c) b point #f)))
       (cursor-record-mark-set! c
         (and mark (let ([m (cursor-record-mark c)])
                     (if m (move-spot m b mark #f) (make-spot b mark #f)))))
@@ -464,7 +470,7 @@
 
   (define (reset-view! v b)
     (let* ([n (if b (buffer-length b) 0)]
-           [cursors (list (make-cursor-record v (make-spot b (if b (stop-within b 0 n 0) 0) #f) #f #f))])
+           [cursors (list (make-cursor-record v (point-spot b (if b (stop-within b 0 n 0) 0)) #f #f))])
       (with-interrupts-disabled
         (view-record-cursors-set! v cursors)
         (view-record-moved?-set! v #f)
@@ -531,7 +537,7 @@
            [lo (if narrowing (spot-position (car narrowing)) 0)]
            [hi (if narrowing (spot-position (cdr narrowing)) n)]
            [cs (view-record-cursors v)]
-           [points (map (lambda (c) (make-spot b (stop-within b lo hi (spot-position (cursor-record-point c))) #f)) cs)]
+           [points (map (lambda (c) (point-spot b (stop-within b lo hi (spot-position (cursor-record-point c))))) cs)]
            [marks (map (lambda (c) (let ([m (cursor-record-mark c)]) (and m (spot m #f)))) cs)]
            [pl (let ([pl (view-record-place v)]) (place-at pl (and (place-spot pl) (spot (place-spot pl) #f))))]
            [folds (map (lambda (f) (cons (spot (car f) #t) (spot (cdr f) #f))) (view-record-folds v))])
@@ -1939,7 +1945,7 @@
   (define (add-cursor-at! v p)
     (let ([b (view-record-buffer v)])
       (let-values ([(lo hi) (bounds-of v)])
-        (let ([c (make-cursor-record v (make-spot b (stop-within b lo hi p) #f) #f #f)])
+        (let ([c (make-cursor-record v (point-spot b (stop-within b lo hi p)) #f #f)])
           (view-record-cursors-set! v (append (view-record-cursors v) (list c)))
           (mark-dirty!)
           c))))
@@ -2101,7 +2107,7 @@
     (let ([b (bound-buffer from)])
       (when (and b (eq? b (bound-buffer to)))
         (view-record-cursors-set! to
-          (map (lambda (c) (make-cursor-record to (make-spot b (point-of c) #f)
+          (map (lambda (c) (make-cursor-record to (point-spot b (point-of c))
                                                (let ([m (mark-of c)]) (and m (make-spot b m #f)))
                                                (cursor-record-goal c)))
                (view-record-cursors from)))
@@ -2236,6 +2242,14 @@
             (unless (null? (cdr (view-record-cursors v)))
               (merge-cursors! v)))
           vs)
+        (let ([inserted (buffers:piece-length (buffers:edit-inserted edit))])
+          (when (and (fx> inserted 0) (point-after-insertion?))
+            (let ([end (fx+ (buffers:edit-start edit) inserted)])
+              (for-each
+                (lambda (v)
+                  (when (fx= (point-of (car (view-record-cursors v))) end)
+                    (primary-moved! v)))
+                vs))))
         (when (exists (lambda (v) (fx> (hashtable-size (view-record-devices v)) 0)) vs)
           (update-edited-maps! vs buffer edit)))))
 

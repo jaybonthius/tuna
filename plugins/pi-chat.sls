@@ -823,7 +823,7 @@
       (if (buffers:modified? b)
           (%chat-notice! chat 'warning
             (string-append (buffers:name b) " has unsaved changes, so Pi's edit of its file is not shown in it"))
-          (spawn-task (lambda () (files:revert-buffer b)))))))
+          (spawn-task (lambda () (files:revert-from-file b)))))))
 
 (define (%absolute dir path)
   (if (and (fx> (string-length path) 0) (char=? (string-ref path 0) #\/))

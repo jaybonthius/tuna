@@ -404,7 +404,8 @@
                          (make-message-condition
                            (string-append "Pi's version could not be read: "
                                           (if (message-condition? c) (condition-message c) "it did not run")))))])
-      (let-values ([(status out err) (processes:run (car cmd) (append (cdr cmd) '("--version")))])
+      (let-values ([(status out err) (processes:run (car cmd) (append (cdr cmd) '("--version")) #f
+                                                  (processes:options [separate-stderr #t]))])
         (let ([version (%version-numbers (utf8->string out))])
           (cond
             [(and (pair? version) (%older? version %minimum-version))

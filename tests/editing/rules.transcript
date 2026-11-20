@@ -292,6 +292,16 @@
 > (press! "C-a")
 > (state)
 ("ab cd" ((1 #f)))
+; editing:for-each-cursor gives other plugins the same walk: each cursor
+; with its point and mark, anchored before the first edit.
+> (start! "ab cd" 2 5)
+("ab cd" ((2 #f) (5 #f)))
+> (editing:for-each-cursor (view)
+    (lambda (c p m)
+      (buffers:insert! (views:buffer (view)) p "xy")
+      (editing:place-cursor! (view) c p #f)))
+> (state)
+("axyb cxyd" ((2 #f) (7 #f)))
 ; kill-line: the rest of the line, or its break when only spaces and
 ; tabs are left; with a number, whole lines.
 > (start! "one\n  \nthree" 1)

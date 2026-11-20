@@ -10,7 +10,7 @@
 (define-enumeration signal (hup int quit kill term cont stop tstp usr1 usr2) %signals)
 
 (module %internals
-  (check-main-thread check-process check-procedure input-bytes make-checked-options no-options
+  (check-main-thread check-process check-procedure input-bytes environment-changes? make-checked-options no-options
    ignore-exit hold-quits start-own start-user run-program attach-from offset? first-line)
 
   (define (check-main-thread who)
@@ -56,13 +56,16 @@
          (not (memv #\= (string->list (car change))))
          (or (not (cdr change)) (c-string? (cdr change)))))
 
+  (define (environment-changes? v)
+    (and (list? v) (for-all environment-change? v)))
+
   (define (dimension? v) (and (fixnum? v) (fx<= 0 v 65535)))
 
   (define (make-checked-options directory environment terminal separate-stderr full-log)
     (define who 'processes:options)
     (unless (or (not directory) (c-string? directory))
       (assertion-violation who "not a directory string or #f" directory))
-    (unless (or (not environment) (and (list? environment) (for-all environment-change? environment)))
+    (unless (or (not environment) (environment-changes? environment))
       (assertion-violation who "not an association list of variable names and values" environment))
     (unless (or (not terminal) (and (pair? terminal) (dimension? (car terminal)) (dimension? (cdr terminal))))
       (assertion-violation who "not a pair of rows and columns from 0 to 65535, or #f" terminal))
@@ -187,6 +190,8 @@
 
 (define (options? v) (running:options? v))
 
+(define (environment? v) (environment-changes? v))
+
 (define (options-directory options)
   (unless (running:options? options)
     (assertion-violation 'processes:options-directory "not processes:options" options))
@@ -196,6 +201,21 @@
   (unless (running:options? options)
     (assertion-violation 'processes:options-environment "not processes:options" options))
   (running:options-environment options))
+
+(define (options-terminal options)
+  (unless (running:options? options)
+    (assertion-violation 'processes:options-terminal "not processes:options" options))
+  (running:options-terminal options))
+
+(define (options-separate-stderr options)
+  (unless (running:options? options)
+    (assertion-violation 'processes:options-separate-stderr "not processes:options" options))
+  (running:options-separate-stderr options))
+
+(define (options-full-log options)
+  (unless (running:options? options)
+    (assertion-violation 'processes:options-full-log "not processes:options" options))
+  (running:options-full-log options))
 
 (define start
   (case-lambda
@@ -284,6 +304,59 @@
                           (on-line line (+ start j 1)))])
                      (loop (fx+ j 1))]
                     [else (scan (fx+ j 1))]))))])))]))
+
+(define (text-receiver from on-text)
+  (unless (offset? from)
+    (assertion-violation 'processes:text-receiver "not an output offset" from))
+  (check-procedure 'processes:text-receiver on-text)
+  (let ([held #vu8()] [first? #t])
+    (define (continuation? b) (fx= (fxand b #xC0) #x80))
+    (define (sequence-length lead)
+      (cond [(fx>= lead #xF0) 4] [(fx>= lead #xE0) 3] [(fx>= lead #xC0) 2] [else 1]))
+    (define (cut-at bytes)
+      (let ([n (bytevector-length bytes)])
+        (let loop ([i (fx- n 1)])
+          (cond
+            [(or (fx< i 0) (fx< i (fx- n 3))) n]
+            [(continuation? (bytevector-u8-ref bytes i)) (loop (fx- i 1))]
+            [(fx< (fx- n i) (sequence-length (bytevector-u8-ref bytes i))) i]
+            [else n]))))
+    (define (skip-cut-start bytes)
+      (let ([n (bytevector-length bytes)])
+        (let loop ([i 0])
+          (if (and (fx< i n) (continuation? (bytevector-u8-ref bytes i)))
+              (loop (fx+ i 1))
+              i))))
+    (define (slice bytes start end)
+      (let ([part (make-bytevector (fx- end start))])
+        (bytevector-copy! bytes start part 0 (fx- end start))
+        part))
+    (lambda (bytes end)
+      (cond
+        [(eof-object? bytes)
+         (when (fx> (bytevector-length held) 0)
+           (let ([rest held])
+             (set! held #vu8())
+             (on-text (utf8->string rest) end)))
+         (on-text bytes end)]
+        [else
+         (let* ([skip (cond
+                        [(and first? (> (- end (bytevector-length bytes)) from)) (skip-cut-start bytes)]
+                        [else 0])]
+                [joined (if (and (fx= skip 0) (fx= (bytevector-length held) 0))
+                            bytes
+                            (let* ([n (fx- (bytevector-length bytes) skip)]
+                                   [h (bytevector-length held)]
+                                   [all (make-bytevector (fx+ h n))])
+                              (bytevector-copy! held 0 all 0 h)
+                              (bytevector-copy! bytes skip all h n)
+                              all))]
+                [cut (cut-at joined)])
+           (set! first? #f)
+           (set! held (slice joined cut (bytevector-length joined)))
+           (when (fx> cut 0)
+             (on-text (utf8->string (if (fx= cut (bytevector-length joined)) joined (slice joined 0 cut)))
+                      (- end (bytevector-length held)))))]))))
 
 (define (send! process input)
   (check-main-thread 'processes:send!)

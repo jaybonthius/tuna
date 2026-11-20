@@ -1,0 +1,8 @@
+; The configuration's setting of buffers:revert-function wins over the
+; global value files sets when it loads, and stays across files' reload.
+> (eq? (buffers:revert-function) files:not-modified)
+#t
+> (unload-module! '(files))
+> (load-module! '(files))
+> (eq? (buffers:revert-function) files:not-modified)
+#t

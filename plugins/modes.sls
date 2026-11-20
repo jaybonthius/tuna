@@ -211,6 +211,17 @@
   (keymap fundamental-keymap)
   (hook fundamental-hook))
 
+(define-table special-keymap
+  "Keys in buffers that are read, not edited, whose major modes derive from modes:special.")
+
+(define-hook special-hook
+  "Called in each buffer whose major mode becomes modes:special or a mode derived from it.")
+
+(define-major-mode special
+  (lighter "Special")
+  (keymap special-keymap)
+  (hook special-hook))
+
 (define (major-mode buffer)
   (check-main-thread 'modes:major-mode)
   (unless (buffers:buffer? buffer)
@@ -289,6 +300,13 @@
     (buffers:all)))
 
 (restore-modes!)
+(keys:bind! special-keymap "g" buffers:revert-buffer)
+(keys:bind! special-keymap "SPC" views:scroll-up)
+(keys:bind! special-keymap "S-SPC" views:scroll-down)
+(keys:bind! special-keymap "DEL" views:scroll-down)
+(keys:bind! special-keymap "-" keys:negative-argument)
+(for-each (lambda (d) (keys:bind! special-keymap d keys:digit-argument))
+          '("0" "1" "2" "3" "4" "5" "6" "7" "8" "9"))
 (add-hook! keys:find-keymaps active-keymaps 50)
 (advice-add! module-loaded %run-hooks-after-load)
 (on-unload save-modes!)

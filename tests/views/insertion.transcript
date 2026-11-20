@@ -1,0 +1,32 @@
+; With views:point-after-insertion? set locally in a buffer, a view's
+; point where text is inserted stays after the text, and the view
+; follows it, as after a command that moved point; a point elsewhere
+; stays where it was.
+> (define out (buffers:make "out" (lines 3)))
+> (buffers:with-buffer out (set-option-local! views:point-after-insertion? #t))
+> (define v (views:make out))
+> (define w (views:make out))
+> (define end (- (document:length (buffers:document out)) 1))
+> (views:set-point! v end)
+> (list (placement v desktop) (placement v desktop) (views:point w))
+((new follow 4) (same follow 4) 1)
+> (buffers:insert! out end "line 4\n")
+29
+> (list (= (views:point v) (+ end 7)) (views:point w) (placement v desktop))
+(#t 1 (new follow 5))
+; A rewritten last line, replaced from its start, keeps the point after it.
+> (buffers:replace! out end (+ end 7) "line 4, again\n")
+#<edit 2>
+> (= (views:point v) (- (document:length (buffers:document out)) 1))
+#t
+; Without the option the point stays before inserted text, and the view
+; does not move.
+> (define plain (buffers:make "plain" (lines 3)))
+> (define u (views:make plain))
+> (views:set-point! u end)
+> (list (placement u desktop) (placement u desktop))
+((new follow 4) (same follow 4))
+> (buffers:insert! plain end "line 4\n")
+29
+> (list (= (views:point u) end) (placement u desktop))
+(#t (same follow 4))

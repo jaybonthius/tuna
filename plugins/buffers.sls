@@ -1,16 +1,19 @@
 #!tuna
-(import (document) (jobs) (buffers spans) (buffers records))
+(import (document) (jobs) (commands) (buffers spans) (buffers records))
 
 (define-hook kill-queries)
 (define-hook killed)
 (define-hook after-edit)
+
+(define-option revert-function #f (lambda (v) (or (not v) (commands:command? v)))
+  "The command buffers:revert-buffer runs to make the current buffer again from its source, or #f when nothing does; a buffer's mode or maker sets it locally.")
 
 (module %internals
   (check-main-thread check-buffer check-change check-position check-range check-layer check-anchor
    check-edit check-spans check-version check-kind check-layer-change check-layer-read
    make-buffer! find-buffer live-buffers buffer-live? rename-buffer! forget-buffer! with-current
    current-buffer frozen-document internal? with-silent check-piece
-   replace-content! splice-content! reconcile-node! edits-after map-position-through
+   replace-content! refuses-typing-probe? splice-content! reconcile-node! edits-after map-position-through
    define-kind! note-constructor! find-kind find-constructor-kind stop-at next-stop-after previous-stop-before range-text range-atom-texts
    define-layer-type! layer-of layers-for layer-type-keymap-of
    set-layer-spans! add-layer-span! remove-layer-spans! layer-spans layer-spans-at travelling-spans-of
@@ -817,6 +820,16 @@
       (buffer-layers b)))
 
   (define (replace-content! who b start end content carried)
+    (edit-content! who b start end content carried #t))
+
+  ;; A refusal is raised from inside the fitting, which it also steers,
+  ;; so the question runs the edit's whole path and stops before commit!.
+  (define (refuses-typing-probe? who b start end)
+    (guard (r [(refused-condition? r) #t])
+      (edit-content! who b start end typing-probe #f #f)
+      #f))
+
+  (define (edit-content! who b start end content carried commit?)
     (check-change who b)
     (check-range who b start end)
     (let* ([d0 (buffer-doc b)]
@@ -839,12 +852,13 @@
         (define (finish doc steps place inserted)
           (let-values ([(lo hi-old hi-new) (compose (if (null? steps) (list (plain-step start start start)) steps))])
             (check-result who doc lo hi-old (document:length d0))
-            (commit! b doc lo hi-old hi-new
-              (if (fx= lo hi-old) empty-document (document:slice d0 lo hi-old))
-              (if (and (null? deleted) (eq? inserted c) (fx= lo start)) c (document:slice doc lo hi-new))
-              (if (exists step-moves? steps)
-                  (moved-travelling-spans b steps place start end (document:length c) carried lo hi-old)
-                  (absolute-carried carried place)))))
+            (when commit?
+              (commit! b doc lo hi-old hi-new
+                (if (fx= lo hi-old) empty-document (document:slice d0 lo hi-old))
+                (if (and (null? deleted) (eq? inserted c) (fx= lo start)) c (document:slice doc lo hi-new))
+                (if (exists step-moves? steps)
+                    (moved-travelling-spans b steps place start end (document:length c) carried lo hi-old)
+                    (absolute-carried carried place))))))
         (let try ([alternatives (insertion-alternatives c)] [refusal #f] [misfit? #f])
           (cond
             [(pair? alternatives)
@@ -1278,6 +1292,15 @@
 
 (define (all) (live-buffers))
 
+(define (free-name name)
+  (unless (string? name)
+    (assertion-violation 'buffers:free-name "not a string" name))
+  (if (find-buffer name)
+      (let loop ([n 2])
+        (let ([candidate (format "~a<~a>" name n)])
+          (if (find-buffer candidate) (loop (fx+ n 1)) candidate)))
+      name))
+
 (define (name buffer)
   (check-buffer 'buffers:name buffer)
   (buffer-name buffer))
@@ -1305,6 +1328,13 @@
 (define (live? buffer)
   (check-buffer 'buffers:live? buffer)
   (buffer-live? buffer))
+
+(commands:define-command (revert-buffer)
+  "Makes the current buffer again from its source, by running the command its buffers:revert-function holds."
+  (let ([command (revert-function)])
+    (unless command
+      (error 'buffers:revert-buffer "nothing reverts this buffer"))
+    (commands:run command)))
 
 ;; Code inside with-buffer of this buffer has the old scope bound, so
 ;; the innermost binding moves to the new one.
@@ -1403,6 +1433,9 @@
   (reconcile-node! 'buffers:reconcile! buffer node children))
 
 (define (refused? v) (refused-condition? v))
+
+(define (refuses-text? buffer start end)
+  (refuses-typing-probe? 'buffers:refuses-text? buffer start end))
 
 (define (edits-since buffer version)
   (check-buffer 'buffers:edits-since buffer)

@@ -49,10 +49,13 @@
 (5 300)
 > (element (view) "<li class=\"ui-list-row\" aria-current=\"true\"" "li")
 "<li class=\"ui-list-row\" aria-current=\"true\"><div class=\"ui-row\"><span class=\"ui-label\">init.ss</span><span class=\"ui-label ui-showcase-muted\">configuration</span></div></li>"
-; The buffer is read-only: typing, and any edit through buffers:replace!,
-; is refused.
+; The buffer is read-only: in ui:showcase-mode, derived from
+; modes:special, printing keys and g are undefined, and any edit through
+; buffers:replace! is refused.
 > (press! "x")
-! buffers:replace!: a read-only span refuses the edit with irritant ui:%read-only
+! x is undefined
+> (press! "g")
+! g is undefined
 > (raised (lambda () (buffers:replace! b 1 1 "x")))
 (buffers:replace! "a read-only span refuses the edit")
 ; A click on the live button, or RET with point in it, counts in its
@@ -119,3 +122,17 @@
 #t
 > (in-client (lambda () (commands:run ui:showcase)))
 ! buffers:make: a live buffer has the name with irritant "*Showcase*"
+; q, from modes:special, quits the showcase's view; RET on a list's row
+; still chooses it, through the list's own keys.
+> (buffers:kill! f)
+#t
+> (in-client (lambda () (commands:run ui:showcase)))
+> (define b (views:buffer (view)))
+> (list (buffers:name b) (modes:major-mode b) (modes:derived? ui:showcase-mode modes:special))
+("*Showcase*" ui:showcase-mode #t)
+> (press! "C-n" "RET")
+> (list (ui:selected-row (short) (view)) (document:node-attribute (live 'ui:%chosen) 'name))
+(1 "notes.org")
+> (press! "q")
+> (eq? (views:buffer (view)) b)
+#f

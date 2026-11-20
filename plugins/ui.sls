@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (keys) (commands) (web) (haml))
+(import (buffers) (document) (views) (keys) (commands) (modes) (web) (haml))
 
 ;; This module defines list as a kind constructor, so its own code builds
 ;; lists with cons and quasiquote.
@@ -547,6 +547,16 @@
     (%showcase-text '() "Three hundred rows, all shown, so the window scrolls through them.\n")
     (list '((rows . long)))))
 
+(define-table showcase-keymap "Keys in *Showcase*.")
+
+(define-hook showcase-mode-hook "Called in each buffer that turns on ui:showcase-mode.")
+
+(modes:define-major-mode showcase-mode
+  (parent modes:special)
+  (lighter "Showcase")
+  (keymap showcase-keymap)
+  (hook showcase-mode-hook))
+
 (define (%showcase-buffer)
   (let ([b (buffers:find "*Showcase*")])
     (and b (eq? (document:node-kind (document:token (buffers:document b) 0)) %showcase-kind) b)))
@@ -557,6 +567,7 @@
   (let ([b (buffers:make "*Showcase*" (%showcase-datum))])
     (buffers:set-silent! b #t)
     (buffers:add-span! (buffers:layer b %read-only) 0 (document:length (buffers:document b)) '())
+    (modes:set-major-mode showcase-mode b)
     (%fill-showcase! b)
     b))
 
@@ -574,6 +585,7 @@
         (select-row! (%showcase-list b 'short) v 0)
         (views:scroll-to! v 0 (views:align top))))))
 
+(keys:bind! showcase-keymap "g" keys:undefined)
 (keys:bind! list-keys "C-n" next-row)
 (keys:bind! list-keys "<down>" next-row)
 (keys:bind! list-keys "C-p" previous-row)

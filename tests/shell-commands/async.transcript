@@ -1,0 +1,35 @@
+; M-& runs a line as the user's run in *Async Shell Command*, shown, and
+; saves no buffer. With a run going there, it asks before a new buffer,
+; *Async Shell Command*<2>.
+> (define asked '())
+> (set-option! ask:yes-or-no-reader (lambda (q) (set! asked (cons q asked)) #t))
+> (run! shell-commands:async-shell-command "echo first; until [ -e go ]; do sleep 0.05; done")
+> (define first (buffers:find "*Async Shell Command*"))
+> (list (runs:status first) (shown) saved)
+(#f ("*Async Shell Command*") 0)
+> (run! shell-commands:async-shell-command "echo second")
+> (define second (buffers:find "*Async Shell Command*<2>"))
+> (ended? second)
+0
+> (list asked (output second) (runs:status first))
+(("A command is running in the default buffer. Use a new buffer? ") "second" #f)
+; An override of shell-commands:async-shell-command-buffer chooses
+; otherwise: this one renames the busy run's buffer and reuses the
+; default name.
+> (set! shell-commands:async-shell-command-buffer
+    (lambda ()
+      (let ([busy (buffers:find "*Async Shell Command*")])
+        (when (and busy (runs:run-buffer? busy) (not (runs:status busy)))
+          (buffers:rename! busy (buffers:free-name "*Async Shell Command*")))
+        "*Async Shell Command*")))
+> (run! shell-commands:async-shell-command "echo third")
+> (define third (buffers:find "*Async Shell Command*"))
+> (ended? third)
+0
+> (list (output third) (buffers:name first) (runs:status first) (length asked))
+("third" "*Async Shell Command*<3>" #f 1)
+> (with-output-to-file (at "go") void)
+> (ended? first)
+0
+> (output first)
+"first"

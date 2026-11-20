@@ -62,7 +62,7 @@
 
 (define-saved %folders '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(modes:define-major-mode mode (lighter "Folder") (keymap keymap) (hook mode-hook))
+(modes:define-major-mode mode (parent modes:special) (lighter "Folder") (keymap keymap) (hook mode-hook))
 
 ;; Kinds are compared by name, which a document keeps after the module
 ;; that defined them unloads.
@@ -480,17 +480,13 @@
     (when (eq? (views:buffer view) b)
       (%place-point! view))))
 
-(define (%start-folder)
-  (let ([b (buffers:current)])
-    (or (and b (folder b)) (files:directory))))
-
 (define (%path-of-point who)
   (let* ([view (views:current)] [entry (and view (views:buffer view) (entry-at view))])
     (unless entry
       (error who "no file on this line"))
     (entry-path entry)))
 
-(commands:define-command (open [folder-path (ask:file-name "Folder: " (%start-folder))])
+(commands:define-command (open [folder-path (ask:file-name "Folder: " (files:directory))])
   "Shows the listing of FOLDER-PATH in the selected view."
   (%show-listing! (visit folder-path)))
 
@@ -824,7 +820,7 @@
 ;; By the views after the selected one, as Emacs's dired-dwim-target-next
 ;; takes the next windows, rather than by which view was selected last.
 (define (%target-folder)
-  (let ([own (%start-folder)])
+  (let ([own (files:directory)])
     (or (and (other-listing-target?)
              (let* ([all (layout:views)] [from (memq (layout:selected-view) all)]
                     [next (if from (append (cdr from) (list-head all (fx- (length all) (length from)))) all)])
@@ -903,7 +899,7 @@
     (%recursion-allowed? (recursive-copies) "Recursive copies of ~a? " paths)
     files:copy-file #\C))
 
-(commands:define-command (make-folder [path (ask:file-name "Create folder: " (%start-folder))])
+(commands:define-command (make-folder [path (ask:file-name "Create folder: " (files:directory))])
   "Makes the folder PATH and any missing folder above it, then puts point on the first folder made."
   (unless (string? path)
     (assertion-violation 'folder-listing:make-folder "not a string" path))
@@ -1118,10 +1114,12 @@
     (%folders))
   (%remember-folders!))
 
-(define (%holds-nothing-to-save) (set-option-local! files:offer-save? #f))
+(define (%set-local-options)
+  (set-option-local! files:offer-save? #f buffers:revert-function refresh))
 
-(add-hook! mode-hook %holds-nothing-to-save)
+(add-hook! mode-hook %set-local-options)
 (add-hook! files:folder-visitors visit)
+(add-hook! files:directory-finders folder)
 (add-hook! files:after-rename %follow-rename)
 (add-hook! buffers:killed %forget-killed)
 (table-set! modes:minor-modes hide-details? 0)
@@ -1161,12 +1159,8 @@
 (keys:bind! keymap "C" copy)
 (keys:bind! keymap "+" make-folder)
 (keys:bind! keymap "w" copy-names-as-kill)
-(keys:bind! keymap "g" refresh)
 (keys:bind! keymap "s" sort-by)
 (keys:bind! keymap "(" toggle-details)
-(keys:bind! keymap "q" layout:quit-view)
-(keys:bind! keymap "-" keys:negative-argument)
-(for-each (lambda (d) (keys:bind! keymap (number->string d) keys:digit-argument)) '(0 1 2 3 4 5 6 7 8 9))
 (keys:bind! name-keymap "<mouse-1>" mouse-find-file)
 (keys:bind! name-keymap "<mouse-2>" mouse-find-file)
 (keys:bind! name-keymap "<down-mouse-1>" keys:ignore)

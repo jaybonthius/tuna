@@ -166,6 +166,20 @@
 ! processes:options: not a boolean with irritant yes
 > (processes:options [full-log 'keep])
 ! processes:options: not a processes:full-log action or #f with irritant keep
+; Each clause has an accessor, and processes:environment? is the rule
+; for an environment, so other plugins check one before they hand it on.
+> (define given (processes:options [directory "/"] [environment '(("A" . "b"))] [separate-stderr #t]
+                                   [full-log (processes:full-log pause)]))
+> (map (lambda (accessor) (accessor given))
+       (list processes:options-directory processes:options-environment processes:options-terminal
+             processes:options-separate-stderr processes:options-full-log))
+("/" (("A" . "b")) #f #t pause)
+> (processes:options-terminal (processes:options [terminal (cons 24 80)]))
+(24 . 80)
+> (processes:options-full-log 'options)
+! processes:options-full-log: not processes:options with irritant options
+> (map processes:environment? (list '(("A" . "b") ("C" . #f)) '() '(("A=B" . "c")) '(("" . "c")) '(("A" . "b\x0;")) 'x))
+(#t #t #f #f #f #f)
 > (processes:log-size)
 1048576
 ; Each name the plugin offers is a changeable definition, so a plugin

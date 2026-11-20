@@ -1,0 +1,177 @@
+; compile reads a line starting from the current buffer's compile
+; command, saves buffers, and runs the line in *compilation*, in
+; compilation-mode, which runs:started entries see.
+> (define (input) (minibuffer:input (minibuffer:current-prompt)))
+> (define (write-file! path text) (with-output-to-file (at path) (lambda () (display text))))
+> (folder! "proj")
+> (folder! "other")
+> (write-file! "proj/foo.py" "print('foo')\n")
+> (write-file! "other/bar.py" "print('bar')\n")
+> (define foo (files:visit (at "proj/foo.py")))
+> (define bar (files:visit (at "other/bar.py")))
+> (buffers:with-buffer foo (set-option-local! shell-commands:compile-command "echo foo"))
+> (buffers:with-buffer bar (set-option-local! shell-commands:compile-command "echo bar"))
+> (define entered '())
+> (add-hook! runs:started (lambda (b) (set! entered (cons (modes:major-mode b) entered))))
+> (layout:switch-to-buffer foo)
+> (define task (spawn-task (lambda () (in-client (lambda () (commands:run shell-commands:compile))))))
+> (settle)
+> (input)
+"echo foo"
+> (press! "RET")
+> (define build (buffers:find "*compilation*"))
+> (ended? build)
+0
+> (list (modes:major-mode build) entered (output build) (header-folder build) saved)
+(shell-commands:compilation-mode (shell-commands:compilation-mode) "foo" "~/proj/" 1)
+; g there runs the build again through shell-commands:recompile, which
+; saves buffers, also after a reload of runs; C-u g edits the line, a
+; list command offered quoted.
+> (layout:switch-to-buffer build)
+> (press! "g")
+> (ended? build)
+0
+> (reload! "runs")
+> (press! "g")
+> (ended? build)
+0
+> (list saved (modes:major-mode build) (output build))
+(3 shell-commands:compilation-mode "foo")
+> (define listed (runs:start-for-user "*listed*" '("echo" "it's") (processes:options [directory "~/"]) shell-commands:compilation-mode))
+> (ended? listed)
+0
+> (layout:switch-to-buffer listed)
+> (start! "C-u" "g")
+> (input)
+"echo 'it'\\''s'"
+> (press! "C-a" "C-k")
+> (type! "echo edited")
+> (press! "RET")
+> (ended? listed)
+0
+> (output listed)
+"edited"
+; recompile outside compile's buffers runs the current buffer's compile
+; command in *compilation*, in the folder of the run there; C-u starts
+; the read from that line.
+> (layout:switch-to-buffer bar)
+> (run! shell-commands:recompile #f)
+> (ended? build)
+0
+> (list (output build) (header-folder build) (modes:major-mode build))
+("bar" "~/proj/" shell-commands:compilation-mode)
+> (layout:switch-to-buffer bar)
+> (define task (spawn-task (lambda () (in-client (lambda () (commands:run shell-commands:recompile '(4)))))))
+> (settle)
+> (input)
+"echo bar"
+> (press! "C-g")
+> (settle)
+! &quit
+; With no run in the build's buffer, the folder is the current buffer's.
+> (buffers:kill! build)
+#t
+> (layout:switch-to-buffer bar)
+> (run! shell-commands:recompile #f)
+> (define build (buffers:find "*compilation*"))
+> (ended? build)
+0
+> (list (output build) (header-folder build))
+("bar" "~/other/")
+; In M-&'s buffer recompile runs the compile command in compile's buffer
+; and leaves M-&'s run, its mode and its g as they were.
+> (set-option! shell-commands:compile-command "echo built")
+> (run! shell-commands:async-shell-command "echo async")
+> (define async (buffers:find "*Async Shell Command*"))
+> (ended? async)
+0
+> (layout:switch-to-buffer async)
+> (run! shell-commands:recompile #f)
+> (ended? build)
+0
+> (list (output build) (output async) (modes:major-mode async) (eq? (buffers:with-buffer async (buffers:revert-function)) runs:run-again))
+("built" "async" runs:mode #t)
+; A renamed build buffer reruns its own run in its own folder.
+> (buffers:rename! build "*old build*")
+> (layout:switch-to-buffer build)
+> (press! "g")
+> (ended? build)
+0
+> (list (buffers:name build) (output build) (header-folder build) (buffers:find "*compilation*"))
+("*old build*" "built" "~/other/" #f)
+; A reload of buffers brings an ended build buffer back in runs:mode;
+; the first g starts the build in compile's mode without saving, and the
+; next g saves through shell-commands:save-buffers.
+> (reload! "buffers")
+> (define build (buffers:find "*old build*"))
+> (layout:switch-to-buffer build)
+> (define before saved)
+> (modes:major-mode build)
+runs:mode
+> (press! "g")
+> (ended? build)
+0
+> (list (modes:major-mode build) (- saved before))
+(shell-commands:compilation-mode 0)
+> (press! "g")
+> (ended? build)
+0
+> (- saved before)
+1
+; In a mode derived from compile's, g reruns the buffer's run in that
+; mode.
+> (define-table mine-keymap)
+> (define-hook mine-hook)
+> (modes:define-major-mode mine (parent shell-commands:compilation-mode) (keymap mine-keymap) (hook mine-hook))
+> (define mine-buffer (runs:start-for-user "*mine*" "echo mine" (processes:options [directory "~/"]) mine))
+> (ended? mine-buffer)
+0
+> (layout:switch-to-buffer mine-buffer)
+> (press! "g")
+> (ended? mine-buffer)
+0
+> (list (modes:major-mode mine-buffer) (output mine-buffer))
+(mine "mine")
+; compile in an ended run's buffer runs in that run's folder.
+> (define elsewhere (runs:start-for-user "*elsewhere*" "true" (processes:options [directory "~/other"])))
+> (ended? elsewhere)
+0
+> (layout:switch-to-buffer elsewhere)
+> (run! shell-commands:compile "pwd")
+> (define build (buffers:find "*compilation*"))
+> (ended? build)
+0
+> (output build)
+"$HOME/other"
+; A command binds files:directory-override and the build buffer's name
+; for the commands it runs, as this C-x p c does.
+> (commands:define-command (project-compile)
+    "Runs compile in a project's root, in a buffer of the project's own."
+    (let ([root (at "proj/")])
+      (with-options ([files:directory-override (cons (buffers:current) root)]
+                     [shell-commands:compile-buffer-name (lambda () (string-append "*compilation " root "*"))])
+        (commands:run shell-commands:compile))))
+> (wait-until (lambda () (files:buffer-visiting (at "other/bar.py"))))
+> (define bar (files:buffer-visiting (at "other/bar.py")))
+> (layout:switch-to-buffer bar)
+> (define task (spawn-task (lambda () (in-client (lambda () (commands:run project-compile))))))
+> (settle)
+> (press! "C-a" "C-k")
+> (type! "pwd")
+> (press! "RET")
+> (define project-build (buffers:find (string-append "*compilation " (at "proj/") "*")))
+> (ended? project-build)
+0
+> (output project-build)
+"$HOME/proj"
+> (with-options ([files:directory-override (cons bar (at "proj/"))]
+                 [shell-commands:compile-buffer-name (lambda () (string-append "*compilation " (at "proj/") "*"))])
+    (run! shell-commands:recompile #f))
+> (ended? project-build)
+0
+> (header-folder project-build)
+"~/proj/"
+> (with-options ([files:directory-override (cons bar (at "proj"))])
+    (run! shell-commands:shell-command "pwd" #f))
+> (message)
+"$HOME/proj"

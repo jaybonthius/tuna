@@ -1,0 +1,78 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  [data-face="ansi-colors.black"] { color: var(--ansi-colors-black-color, var(--tuna-gray-12)); }
+  [data-face="ansi-colors.red"] { color: var(--ansi-colors-red-color, var(--tuna-red-11)); }
+  [data-face="ansi-colors.green"] { color: var(--ansi-colors-green-color, var(--tuna-green-11)); }
+  [data-face="ansi-colors.yellow"] { color: var(--ansi-colors-yellow-color, var(--tuna-yellow-11)); }
+  [data-face="ansi-colors.blue"] { color: var(--ansi-colors-blue-color, var(--tuna-blue-11)); }
+  [data-face="ansi-colors.magenta"] { color: var(--ansi-colors-magenta-color, var(--tuna-purple-11)); }
+  [data-face="ansi-colors.cyan"] { color: var(--ansi-colors-cyan-color, var(--tuna-cyan-11)); }
+  [data-face="ansi-colors.white"] { color: var(--ansi-colors-white-color, var(--tuna-gray-11)); }
+  [data-face="ansi-colors.bright-black"] { color: var(--ansi-colors-bright-black-color, var(--tuna-gray-10)); }
+  [data-face="ansi-colors.bright-red"] { color: var(--ansi-colors-bright-red-color, var(--tuna-red-9)); }
+  [data-face="ansi-colors.bright-green"] { color: var(--ansi-colors-bright-green-color, var(--tuna-green-9)); }
+  [data-face="ansi-colors.bright-yellow"] { color: var(--ansi-colors-bright-yellow-color, var(--tuna-yellow-9)); }
+  [data-face="ansi-colors.bright-blue"] { color: var(--ansi-colors-bright-blue-color, var(--tuna-blue-9)); }
+  [data-face="ansi-colors.bright-magenta"] { color: var(--ansi-colors-bright-magenta-color, var(--tuna-purple-9)); }
+  [data-face="ansi-colors.bright-cyan"] { color: var(--ansi-colors-bright-cyan-color, var(--tuna-cyan-9)); }
+  [data-face="ansi-colors.bright-white"] { color: var(--ansi-colors-bright-white-color, var(--tuna-gray-12)); }
+
+  [data-ansi-colors~="bg-0"] { background-color: var(--ansi-colors-black-color, var(--tuna-gray-12)); }
+  [data-ansi-colors~="bg-1"] { background-color: var(--ansi-colors-red-color, var(--tuna-red-11)); }
+  [data-ansi-colors~="bg-2"] { background-color: var(--ansi-colors-green-color, var(--tuna-green-11)); }
+  [data-ansi-colors~="bg-3"] { background-color: var(--ansi-colors-yellow-color, var(--tuna-yellow-11)); }
+  [data-ansi-colors~="bg-4"] { background-color: var(--ansi-colors-blue-color, var(--tuna-blue-11)); }
+  [data-ansi-colors~="bg-5"] { background-color: var(--ansi-colors-magenta-color, var(--tuna-purple-11)); }
+  [data-ansi-colors~="bg-6"] { background-color: var(--ansi-colors-cyan-color, var(--tuna-cyan-11)); }
+  [data-ansi-colors~="bg-7"] { background-color: var(--ansi-colors-white-color, var(--tuna-gray-11)); }
+  [data-ansi-colors~="bg-8"] { background-color: var(--ansi-colors-bright-black-color, var(--tuna-gray-10)); }
+  [data-ansi-colors~="bg-9"] { background-color: var(--ansi-colors-bright-red-color, var(--tuna-red-9)); }
+  [data-ansi-colors~="bg-10"] { background-color: var(--ansi-colors-bright-green-color, var(--tuna-green-9)); }
+  [data-ansi-colors~="bg-11"] { background-color: var(--ansi-colors-bright-yellow-color, var(--tuna-yellow-9)); }
+  [data-ansi-colors~="bg-12"] { background-color: var(--ansi-colors-bright-blue-color, var(--tuna-blue-9)); }
+  [data-ansi-colors~="bg-13"] { background-color: var(--ansi-colors-bright-magenta-color, var(--tuna-purple-9)); }
+  [data-ansi-colors~="bg-14"] { background-color: var(--ansi-colors-bright-cyan-color, var(--tuna-cyan-9)); }
+  [data-ansi-colors~="bg-15"] { background-color: var(--ansi-colors-bright-white-color, var(--tuna-gray-12)); }
+
+  [data-ansi-colors~="underline-color-0"] { text-decoration-color: var(--ansi-colors-black-color, var(--tuna-gray-12)); }
+  [data-ansi-colors~="underline-color-1"] { text-decoration-color: var(--ansi-colors-red-color, var(--tuna-red-11)); }
+  [data-ansi-colors~="underline-color-2"] { text-decoration-color: var(--ansi-colors-green-color, var(--tuna-green-11)); }
+  [data-ansi-colors~="underline-color-3"] { text-decoration-color: var(--ansi-colors-yellow-color, var(--tuna-yellow-11)); }
+  [data-ansi-colors~="underline-color-4"] { text-decoration-color: var(--ansi-colors-blue-color, var(--tuna-blue-11)); }
+  [data-ansi-colors~="underline-color-5"] { text-decoration-color: var(--ansi-colors-magenta-color, var(--tuna-purple-11)); }
+  [data-ansi-colors~="underline-color-6"] { text-decoration-color: var(--ansi-colors-cyan-color, var(--tuna-cyan-11)); }
+  [data-ansi-colors~="underline-color-7"] { text-decoration-color: var(--ansi-colors-white-color, var(--tuna-gray-11)); }
+  [data-ansi-colors~="underline-color-8"] { text-decoration-color: var(--ansi-colors-bright-black-color, var(--tuna-gray-10)); }
+  [data-ansi-colors~="underline-color-9"] { text-decoration-color: var(--ansi-colors-bright-red-color, var(--tuna-red-9)); }
+  [data-ansi-colors~="underline-color-10"] { text-decoration-color: var(--ansi-colors-bright-green-color, var(--tuna-green-9)); }
+  [data-ansi-colors~="underline-color-11"] { text-decoration-color: var(--ansi-colors-bright-yellow-color, var(--tuna-yellow-9)); }
+  [data-ansi-colors~="underline-color-12"] { text-decoration-color: var(--ansi-colors-bright-blue-color, var(--tuna-blue-9)); }
+  [data-ansi-colors~="underline-color-13"] { text-decoration-color: var(--ansi-colors-bright-magenta-color, var(--tuna-purple-9)); }
+  [data-ansi-colors~="underline-color-14"] { text-decoration-color: var(--ansi-colors-bright-cyan-color, var(--tuna-cyan-9)); }
+  [data-ansi-colors~="underline-color-15"] { text-decoration-color: var(--ansi-colors-bright-white-color, var(--tuna-gray-12)); }
+
+  [data-ansi-colors~="fg"] { color: var(--ansi-colors-fg); }
+  [data-ansi-colors~="bg"] { background-color: var(--ansi-colors-bg); }
+  [data-ansi-colors~="fg-background"] { color: var(--ansi-colors-background, var(--tuna-surface)); }
+  [data-ansi-colors~="bg-foreground"] { background-color: var(--ansi-colors-text, var(--tuna-text)); }
+  [data-ansi-colors~="bold"] { font-weight: var(--tuna-font-weight-bold); }
+  [data-ansi-colors~="italic"] { font-style: italic; }
+  [data-ansi-colors~="faint"] { opacity: 0.6; }
+  [data-ansi-colors~="invisible"] { visibility: hidden; }
+
+  /* One element can carry an underline, a line through and an overline
+     at once, and text-decoration-line takes them in one declaration, so
+     each word gives its line through a property the rule below joins. */
+  [data-ansi-colors] {
+    text-decoration-line: var(--ansi-colors-under, ) var(--ansi-colors-through, ) var(--ansi-colors-over, );
+  }
+  [data-ansi-colors~="strike"] { --ansi-colors-through: line-through; }
+  [data-ansi-colors~="overline"] { --ansi-colors-over: overline; }
+  [data-ansi-colors~="underline-single"] { --ansi-colors-under: underline; }
+  [data-ansi-colors~="underline-double"] { --ansi-colors-under: underline; text-decoration-style: double; }
+  [data-ansi-colors~="underline-curly"] { --ansi-colors-under: underline; text-decoration-style: wavy; }
+  [data-ansi-colors~="underline-dotted"] { --ansi-colors-under: underline; text-decoration-style: dotted; }
+  [data-ansi-colors~="underline-dashed"] { --ansi-colors-under: underline; text-decoration-style: dashed; }
+  [data-ansi-colors~="underline-color"] { text-decoration-color: var(--ansi-colors-underline); }
+}

@@ -62,6 +62,8 @@ bench: exe
 	sh bench/modes.sh build/bin/tuna || status=1; \
 	sh bench/echo-status.sh build/bin/tuna || status=1; \
 	sh bench/completion.sh build/bin/tuna || status=1; \
+	sh bench/runs.sh build/bin/tuna || status=1; \
+	sh bench/terminal.sh build/bin/tuna || status=1; \
 	exit $$status
 
 repl: build

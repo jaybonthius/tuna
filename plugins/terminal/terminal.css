@@ -5,58 +5,9 @@
     color: var(--terminal-text, var(--tuna-text));
     background-color: var(--terminal-background, var(--tuna-surface));
     caret-color: var(--terminal-cursor-color, var(--tuna-cursor));
+    --ansi-colors-text: var(--terminal-text, var(--tuna-text));
+    --ansi-colors-background: var(--terminal-background, var(--tuna-surface));
   }
-
-  [data-face="terminal.color-0"] { color: var(--terminal-color-0, var(--tuna-gray-12)); }
-  [data-face="terminal.color-1"] { color: var(--terminal-color-1, var(--tuna-red-11)); }
-  [data-face="terminal.color-2"] { color: var(--terminal-color-2, var(--tuna-green-11)); }
-  [data-face="terminal.color-3"] { color: var(--terminal-color-3, var(--tuna-yellow-11)); }
-  [data-face="terminal.color-4"] { color: var(--terminal-color-4, var(--tuna-blue-11)); }
-  [data-face="terminal.color-5"] { color: var(--terminal-color-5, var(--tuna-purple-11)); }
-  [data-face="terminal.color-6"] { color: var(--terminal-color-6, var(--tuna-cyan-11)); }
-  [data-face="terminal.color-7"] { color: var(--terminal-color-7, var(--tuna-gray-11)); }
-  [data-face="terminal.color-8"] { color: var(--terminal-color-8, var(--tuna-gray-10)); }
-  [data-face="terminal.color-9"] { color: var(--terminal-color-9, var(--tuna-red-9)); }
-  [data-face="terminal.color-10"] { color: var(--terminal-color-10, var(--tuna-green-9)); }
-  [data-face="terminal.color-11"] { color: var(--terminal-color-11, var(--tuna-yellow-9)); }
-  [data-face="terminal.color-12"] { color: var(--terminal-color-12, var(--tuna-blue-9)); }
-  [data-face="terminal.color-13"] { color: var(--terminal-color-13, var(--tuna-purple-9)); }
-  [data-face="terminal.color-14"] { color: var(--terminal-color-14, var(--tuna-cyan-9)); }
-  [data-face="terminal.color-15"] { color: var(--terminal-color-15, var(--tuna-gray-12)); }
-
-  [data-terminal~="bg-0"] { background-color: var(--terminal-color-0, var(--tuna-gray-12)); }
-  [data-terminal~="bg-1"] { background-color: var(--terminal-color-1, var(--tuna-red-11)); }
-  [data-terminal~="bg-2"] { background-color: var(--terminal-color-2, var(--tuna-green-11)); }
-  [data-terminal~="bg-3"] { background-color: var(--terminal-color-3, var(--tuna-yellow-11)); }
-  [data-terminal~="bg-4"] { background-color: var(--terminal-color-4, var(--tuna-blue-11)); }
-  [data-terminal~="bg-5"] { background-color: var(--terminal-color-5, var(--tuna-purple-11)); }
-  [data-terminal~="bg-6"] { background-color: var(--terminal-color-6, var(--tuna-cyan-11)); }
-  [data-terminal~="bg-7"] { background-color: var(--terminal-color-7, var(--tuna-gray-11)); }
-  [data-terminal~="bg-8"] { background-color: var(--terminal-color-8, var(--tuna-gray-10)); }
-  [data-terminal~="bg-9"] { background-color: var(--terminal-color-9, var(--tuna-red-9)); }
-  [data-terminal~="bg-10"] { background-color: var(--terminal-color-10, var(--tuna-green-9)); }
-  [data-terminal~="bg-11"] { background-color: var(--terminal-color-11, var(--tuna-yellow-9)); }
-  [data-terminal~="bg-12"] { background-color: var(--terminal-color-12, var(--tuna-blue-9)); }
-  [data-terminal~="bg-13"] { background-color: var(--terminal-color-13, var(--tuna-purple-9)); }
-  [data-terminal~="bg-14"] { background-color: var(--terminal-color-14, var(--tuna-cyan-9)); }
-  [data-terminal~="bg-15"] { background-color: var(--terminal-color-15, var(--tuna-gray-12)); }
-
-  [data-terminal~="fg"] { color: var(--terminal-fg); }
-  [data-terminal~="bg"] { background-color: var(--terminal-bg); }
-  [data-terminal~="fg-background"] { color: var(--terminal-background, var(--tuna-surface)); }
-  [data-terminal~="bg-foreground"] { background-color: var(--terminal-text, var(--tuna-text)); }
-  [data-terminal~="bold"] { font-weight: var(--tuna-font-weight-bold); }
-  [data-terminal~="italic"] { font-style: italic; }
-  [data-terminal~="faint"] { opacity: 0.6; }
-  [data-terminal~="invisible"] { visibility: hidden; }
-  [data-terminal~="strike"] { text-decoration-line: line-through; }
-  [data-terminal~="overline"] { text-decoration-line: overline; }
-  [data-terminal~="underline-single"] { text-decoration-line: underline; }
-  [data-terminal~="underline-double"] { text-decoration-line: underline; text-decoration-style: double; }
-  [data-terminal~="underline-curly"] { text-decoration-line: underline; text-decoration-style: wavy; }
-  [data-terminal~="underline-dotted"] { text-decoration-line: underline; text-decoration-style: dotted; }
-  [data-terminal~="underline-dashed"] { text-decoration-line: underline; text-decoration-style: dashed; }
-  [data-terminal~="underline-color"] { text-decoration-color: var(--terminal-underline); }
 
   /* A run's background covers the font's own extent, not the line's, so
      a row taller than a cell shows the terminal's background between

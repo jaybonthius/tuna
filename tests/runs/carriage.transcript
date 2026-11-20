@@ -1,0 +1,28 @@
+; Output is decoded as UTF-8 across pieces and written with comint's
+; carriage motion: a carriage return before a line feed goes, text after
+; one replaces its line, and a backspace deletes the character before it.
+> (define (run! name line) (let ([b (runs:start-for-user name line home)]) (ended? b) (output b)))
+> (run! "*a*" "printf 'a\\rb\\r\\nc\\n'")
+"b\nc"
+> (run! "*b*" "printf 'abc\\r'; sleep 0.2; printf 'X\\n'")
+"X"
+> (run! "*c*" "printf '50%%\\r'; sleep 0.1; printf '60%%\\r'; sleep 0.1; printf 'done\\n'")
+"done"
+> (run! "*d*" "printf 'ab\\bc\\n\\bd\\n'")
+"ac\nd"
+> (run! "*e*" "printf '\\342'; sleep 0.2; printf '\\202\\254 \\377!\\n'")
+"€ �!"
+; SGR sequences become spans of the plugin's layer, and with runs:colors?
+; false the text stays plain; other control sequences go either way.
+> (define colored (runs:start-for-user "*colors*" "printf '\\033[1;31mred\\033[0m \\033[2Kplain\\n'" home))
+> (ended? colored)
+0
+> (list (output colored) (map caddr (filter (lambda (s) (caddr s)) (spans colored))))
+("red plain" (((face . ansi-colors.red) (ansi-colors ("bold"))) ((face . success))))
+> (set-option! runs:colors? #f)
+> (define bare (runs:start-for-user "*bare*" "printf '\\033[1;31mred\\033[0m\\n'" home))
+> (ended? bare)
+0
+> (list (output bare) (map caddr (spans bare)))
+("red" (((face . success))))
+> (remove-option! runs:colors?)

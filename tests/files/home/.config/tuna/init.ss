@@ -2,7 +2,10 @@
 (use-plugin files
   (config
     (set-option! files:require-final-newline #t)))
-(import (disk-checks))
+(import (disk-checks) (buffers))
+
+(when (equal? (getenv "TRANSCRIPT") "revert-setting")
+  (set-option! buffers:revert-function files:not-modified))
 
 (define (text b) (document:text (buffers:document b)))
 

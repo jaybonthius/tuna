@@ -75,6 +75,6 @@
                    (bytevector-u8-set! bytes middle (if (= (bytevector-u8-ref bytes middle) 120) 121 120))
                    (write-bytes! file bytes)
                    (let ([start (thread-ns)])
-                     (files:revert-buffer b)
+                     (files:revert-from-file b)
                      (/ (- (thread-ns) start) 1e3)))
                  (iota 9))))))))

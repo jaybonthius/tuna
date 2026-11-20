@@ -1,5 +1,5 @@
 #!tuna
-(import (document) (buffers) (views) (commands) (keys) (kill-ring) (undo) (layout) (web))
+(import (document) (buffers) (views) (commands) (keys) (modes) (kill-ring) (undo) (layout) (web))
 
 (define-option delete-selection #f boolean?
   "When true, typing, newline, paste and yank replace an active, non-empty region, and delete-char and delete-backward-char delete it.")
@@ -8,9 +8,9 @@
   "The characters besides letters and digits that are part of words.")
 
 (module %internals
-  (check-main-thread check-count check-nonnegative-count command-view check-view key-char content-bounds for-each-cursor
+  (check-main-thread check-count check-nonnegative-count command-view check-view key-char content-bounds each-cursor
    place-kept! move-kept! merge-met! edge-error stops-from chars end-of-line first-stop column clear-marks!
-   set-marks! forget-temporary! exchange-marks! check-regions word-characters-in words-from
+   set-marks! forget-temporary! exchange-marks! word-characters-in words-from
    line-motion-continues? note-line-motion! recase! capitalizer replace-region-or! insert-at-cursors! kill-ranges! after-kill?
    remember-kill! yank-kills! yanked-in? replace-yank! pure-text note-change! clear-changed-marks!
    nonempty-region? shift-selected keep-changed-marks! place! place-temporary! select-between! drag-keymap start-drag! drag-in
@@ -70,7 +70,7 @@
   ;; The lower of point and mark moves after text inserted there and the
   ;; higher stays before it, so text another cursor inserts at an edge
   ;; stays outside the region.
-  (define (for-each-cursor view proc)
+  (define (each-cursor view proc)
     (let ([b (views:buffer view)])
       (define (anchor p other)
         (if (and other (fx> p other)) (buffers:anchor b p) (buffers:anchor-after b p)))
@@ -183,13 +183,6 @@
     (fx- (document:offset doc p chars)
          (document:offset doc (document:line-start doc (document:line doc p)) chars)))
 
-  (define (check-regions who view)
-    (for-each
-      (lambda (c)
-        (unless (views:cursor-mark c)
-          (error who "the mark is not set, so there is no region")))
-      (views:cursors view)))
-
   ;; Read in the buffer's scope, so a mode's local value applies.
   (define (word-characters-in buffer)
     (if (eq? buffer (buffers:current))
@@ -293,7 +286,7 @@
 
   (define (insert-at-cursors! view content delete-selection? after-insert)
     (let ([b (views:buffer view)])
-      (for-each-cursor view
+      (each-cursor view
         (lambda (c p m)
           (let* ([r (selected-region p m delete-selection?)]
                  [edit (if r
@@ -307,7 +300,7 @@
 
   (define (replace-region-or! view delete-selection? otherwise)
     (let ([b (views:buffer view)])
-      (for-each-cursor view
+      (each-cursor view
         (lambda (c p m)
           (let ([r (selected-region p m delete-selection?)])
             (if r
@@ -406,7 +399,7 @@
     (let ([b (views:buffer view)] [kill (kill-for entry (length (views:cursors view)))] [yanked '()])
       (set! last-yank '())
       (set! yank-view view)
-      (for-each-cursor view
+      (each-cursor view
         (lambda (c p m)
           (let* ([r (selected-region p m delete-selection?)]
                  [start (if r (begin (buffers:replace! b (car r) (cdr r) "") (car r)) p)]
@@ -536,6 +529,34 @@
           bs)))))
 
 (import %internals)
+
+(define (check-regions who view)
+  (unless (symbol? who)
+    (assertion-violation 'editing:check-regions "not a symbol" who))
+  (unless (views:view? view)
+    (assertion-violation 'editing:check-regions "not a view" view))
+  (for-each
+    (lambda (c)
+      (unless (views:cursor-mark c)
+        (error who "the mark is not set, so there is no region")))
+    (views:cursors view)))
+
+(define (for-each-cursor view proc)
+  (unless (views:view? view)
+    (assertion-violation 'editing:for-each-cursor "not a view" view))
+  (unless (procedure? proc)
+    (assertion-violation 'editing:for-each-cursor "not a procedure" proc))
+  (check-main-thread 'editing:for-each-cursor)
+  (each-cursor view proc))
+
+(define (place-cursor! view cursor point mark)
+  (unless (views:view? view)
+    (assertion-violation 'editing:place-cursor! "not a view" view))
+  (unless (views:cursor? cursor)
+    (assertion-violation 'editing:place-cursor! "not a cursor" cursor))
+  (when (memq cursor (views:cursors view))
+    (forget-temporary! cursor)
+    (views:set-cursor! cursor point mark)))
 
 (define (forward-word-position buffer position n)
   (unless (buffers:buffer? buffer)
@@ -859,7 +880,7 @@
 (commands:define-command (transpose-chars)
   "Swaps the characters before and after each cursor and moves past both; at a line's end, swaps the two before it."
   (let* ([view (command-view 'editing:transpose-chars)] [b (views:buffer view)])
-    (for-each-cursor view
+    (each-cursor view
       (lambda (c p m)
         (let ([doc (buffers:document b)])
           (let-values ([(lo hi) (content-bounds view doc)])
@@ -876,7 +897,7 @@
 (commands:define-command (transpose-words)
   "Swaps the word before or around each cursor with the word after it, leaving the cursor after both."
   (let* ([view (command-view 'editing:transpose-words)] [b (views:buffer view)] [extra (word-characters)])
-    (for-each-cursor view
+    (each-cursor view
       (lambda (c p m)
         (let ([doc (buffers:document b)])
           (let-values ([(lo hi) (content-bounds view doc)])
@@ -904,7 +925,7 @@
 (commands:define-command (transpose-lines)
   "Swaps each cursor's line with the line before it and moves to the next line."
   (let* ([view (command-view 'editing:transpose-lines)] [b (views:buffer view)])
-    (for-each-cursor view
+    (each-cursor view
       (lambda (c p m)
         (let ([doc (buffers:document b)])
           (let-values ([(lo hi) (content-bounds view doc)])
@@ -925,7 +946,7 @@
 
 (define (%case-words who n convert)
   (let* ([view (command-view who)] [b (views:buffer view)] [extra (word-characters)])
-    (for-each-cursor view
+    (each-cursor view
       (lambda (c p m)
         (let ([doc (buffers:document b)])
           (let-values ([(lo hi) (content-bounds view doc)])
@@ -936,7 +957,7 @@
 (define (%case-region who convert)
   (let* ([view (command-view who)] [b (views:buffer view)])
     (check-regions who view)
-    (for-each-cursor view
+    (each-cursor view
       (lambda (c p m)
         (let* ([s (fxmin p m)] [e (fxmax p m)] [delta (recase! b s e convert)])
           (if (fx= p e)
@@ -1029,7 +1050,7 @@
 (commands:define-command (delete-indentation)
   "Joins each cursor's line to the line before it, replacing the line break and the spaces and tabs around it with one space, or none after an opening bracket, before a closing one, or beside an empty line."
   (let* ([view (command-view 'editing:delete-indentation)] [b (views:buffer view)])
-    (for-each-cursor view
+    (each-cursor view
       (lambda (c p m)
         (let ([doc (buffers:document b)])
           (let-values ([(lo hi) (content-bounds view doc)])
@@ -1046,7 +1067,7 @@
   (check-count 'editing:duplicate-dwim n)
   (let* ([view (command-view 'editing:duplicate-dwim)] [b (views:buffer view)] [selected (shift-selected view)])
     (when (> n 0)
-      (for-each-cursor view
+      (each-cursor view
         (lambda (c p m)
           (if (nonempty-region? p m)
               (let ([piece (buffers:piece b (fxmin p m) (fxmax p m))])
@@ -1183,7 +1204,7 @@
 
 (define (%open-line who below?)
   (let* ([view (command-view who)] [b (views:buffer view)])
-    (for-each-cursor view
+    (each-cursor view
       (lambda (c p m)
         (let ([doc (buffers:document b)])
           (let-values ([(lo hi) (content-bounds view doc)])
@@ -1236,7 +1257,7 @@
   (let* ([view (command-view 'editing:delete-trailing-whitespace)] [b (views:buffer view)])
     (if (exists (lambda (c) (nonempty-region? (views:cursor-point c) (views:cursor-mark c)))
                 (views:cursors view))
-        (for-each-cursor view
+        (each-cursor view
           (lambda (c p m)
             (when (nonempty-region? p m)
               (let ([doc (buffers:document b)])
@@ -1267,7 +1288,7 @@
   "Sorts the lines each cursor's region touches by their text."
   (let* ([view (command-view 'editing:sort-lines)] [b (views:buffer view)])
     (check-regions 'editing:sort-lines view)
-    (for-each-cursor view
+    (each-cursor view
       (lambda (c p m)
         (let ([doc (buffers:document b)])
           (let-values ([(lo hi) (content-bounds view doc)])
@@ -1424,6 +1445,9 @@
 (advice-add! keys:keyboard-quit %quit-clears-marks)
 
 (keys:bind! keys:global "<printing-char>" self-insert)
+(keys:bind! modes:special-keymap "<" beginning-of-buffer)
+(keys:bind! modes:special-keymap ">" end-of-buffer)
+(keys:remap! modes:special-keymap self-insert keys:undefined)
 (keys:bind! keys:global "SPC" self-insert)
 (keys:bind! keys:global "RET" newline)
 (keys:bind! keys:global "C-o" open-line)

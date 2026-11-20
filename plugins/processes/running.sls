@@ -1,6 +1,7 @@
 (library (processes running)
   (export
-    make-options options? options-directory options-environment options-terminal
+    make-options options? options-directory options-environment options-terminal options-separate-stderr
+    options-full-log
     process? process-id process-pid process-command-line process-kind process-owner
     process-status process-terminal process-buffer process-buffer-set! process-input-ended?
     output-end error-output foreground-group on-main-thread?
@@ -318,7 +319,9 @@
            [environment (resolve-environment (options-environment options))])
       (remember-owner! owner p)
       (set! registry (cons p registry))
-      (fork-thread (lambda () (run-to-end! p program arguments directory environment input resume)))
+      (fork-thread
+        (lambda ()
+          (run-to-end! p program arguments directory environment (options-separate-stderr options) input resume)))
       p))
 
   (define (status-of exit)
@@ -443,7 +446,7 @@
             (claim-delivery! p))
       (post-delivery! p)))
 
-  (define (run-to-end! p program arguments directory environment input resume)
+  (define (run-to-end! p program arguments directory environment separate-stderr input resume)
     (let ([result
            (guard (c [#t (with-mutex (process-mutex p)
                            (process-status-set! p c)
@@ -451,7 +454,7 @@
                          (lambda () (raise c))])
              (let ([native (native-spawn-process program arguments
                              (native-process-options [directory (expand-home directory)] [environment environment]
-                               [stderr 'pipe] [process-group 'new]))])
+                               [stderr (if separate-stderr 'pipe 'stdout)] [process-group 'new]))])
                (when (with-mutex (process-mutex p)
                        (process-native-set! p native)
                        (process-pid-set! p (native-process-id native))
@@ -460,7 +463,7 @@
                (let* ([r (native-process-communicate native input)]
                       [status (status-of (native-process-result-status r))]
                       [out (native-process-result-stdout r)]
-                      [err (native-process-result-stderr r)])
+                      [err (or (native-process-result-stderr r) (bytevector))])
                  (with-mutex (process-mutex p)
                    (process-status-set! p status)
                    (process-eof?-set! p #t))

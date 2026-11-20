@@ -189,6 +189,15 @@
     (buffers:replace! w 3 3 "4"))
 (asked words 3 "4")
 (buffers:replace! "the node refuses the edit" (words))
+; buffers:refuses-text? asks the same consents about text in place of a
+; range, without editing.
+> (list (buffers:refuses-text? w 3 3) (buffers:version w))
+(asked words 3 "x")
+(#f 1)
+> (buffers:define-kind sealed (consent (lambda (node edit) #f)))
+> (define sealed-text (fresh '(md:doc () (sealed () "ab\n"))))
+> (list (buffers:refuses-text? sealed-text 3 3) (buffers:refuses-text? sealed-text 2 4) (buffers:version sealed-text))
+(#t #t 0)
 ; Layers: made on first use, one per type and key, ordered by priority;
 ; spans move with edits by their stickiness, and evaporate.
 > (define t (fresh "0123456789\n"))
@@ -376,6 +385,8 @@
 > (list (try (lambda () (buffers:replace! t 5 5 "x"))) (try (lambda () (buffers:replace! t 4 4 "x")))
         (try (lambda () (buffers:replace! t 3 5 ""))))
 (("a read-only span refuses the edit" (locked)) ("a read-only span refuses the edit" (locked)) ("a read-only span refuses the edit" (locked)))
+> (list (buffers:refuses-text? t 5 5) (buffers:refuses-text? t 3 5) (buffers:refuses-text? t 7 7))
+(#t #t #f)
 > (list (buffers:replace! t 6 6 "x") (buffers:replace! t 2 4 "") (buffers:splice! t 3 3 (document:from-datum "s")))
 (#<edit 12> #<edit 13> #<edit 14>)
 > (all-spans g)

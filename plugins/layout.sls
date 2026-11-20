@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (keys) (commands) (web) (haml))
+(import (buffers) (document) (views) (keys) (commands) (modes) (web) (haml))
 
 (define-enumeration direction (left right up down) directions)
 
@@ -2026,6 +2026,7 @@
       (let ([title (%page-title)])
         (for-each (lambda (client) (%draw client title)) clients)))))
 
+(keys:bind! modes:special-keymap "q" quit-view)
 (keys:bind! keys:global "C-x o" other-view)
 (keys:bind! keys:global "C-x 0" delete-view)
 (keys:bind! keys:global "C-x 1" zoom)

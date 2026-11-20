@@ -1,0 +1,104 @@
+; Each end has its footer, in faces:success, faces:warning or
+; faces:error, and reaches runs:ended and the echo area.
+> (define (end-of line) (let ([b (runs:start-for-user "*end*" line home)]) (ended? b) (list (runs:status b) (message))))
+> (end-of "exit 2")
+(2 "*end* exited with code 2")
+> (end-of "kill -9 $$")
+(-9 "*end* ended by signal 9")
+> (show (buffers:find "*end*"))
+Run started at TIME in ~/
+
+kill -9 $$
+
+Run ended by signal 9 at TIME
+> (map caddr (spans (buffers:find "*end*")))
+(((face . error)))
+> (define missing (runs:start-for-user "*end*" '("no-such-program-at-all" "it's") home))
+> (ended? missing)
+! (processes) spawn-process: cannot run no-such-program-at-all: No such file or directory with irritants ("no-such-program-at-all" ("it's"))
+#<compound condition>
+> (condition? (runs:status missing))
+#t
+> (show missing)
+Run started at TIME in ~/
+
+no-such-program-at-all 'it'\''s'
+
+Run could not start: cannot run no-such-program-at-all: No such file or directory
+> (taken-ends)
+(("*end*" 2 2) ("*end*" -9 -9) ("*end*" #<compound condition> #<compound condition>))
+; runs:stop, C-c C-k, ends a run at once: stopped, with its footer and
+; entries, before anything else happens to the buffer.
+> (define long (runs:start-for-user "*long*" "echo going; sleep 30" home))
+> (wait-until (lambda () (string=? (output long) "going")))
+> (runs:status long)
+#f
+> (files:directory long)
+"$HOME/"
+> (runs:stop long)
+> (list (runs:status long) (taken-ends) (message))
+(stopped (("*long*" stopped stopped)) "*long* stopped")
+> (show long)
+Run started at TIME in ~/
+
+echo going; sleep 30
+going
+
+Run stopped at TIME
+> (runs:stop long)
+! runs:stop: the run has ended with irritant "*long*"
+> (files:directory long)
+"$HOME/"
+; A new run in a busy buffer asks, then stops the old run, whose end
+; sees the buffer still holding it. Only the first end is kept, since the
+; new run can end before the next form is read.
+> (define long (runs:start-for-user "*long*" "echo first; sleep 30" home))
+> (wait-until (lambda () (string=? (output long) "first")))
+> (define seen #f)
+> (define (look b end) (unless seen (set! seen (list end (runs:status b) (output b)))))
+> (add-hook! runs:ended look)
+> (set-option! ask:yes-or-no-reader (lambda (q) (set! asked q) #t))
+> (define asked #f)
+> (define again (runs:start-for-user "*long*" "echo second" home))
+> (list (eq? again long) asked seen)
+(#t "A run is going in *long*; stop it? " (stopped stopped "first"))
+> (ended? again)
+0
+> (output again)
+"second"
+> (remove-hook! runs:ended look)
+> (taken-ends)
+(("*long*" stopped stopped) ("*long*" 0 0))
+; Killing a going run's buffer stops it without asking; its entries get
+; the end, and nothing is written into the dying buffer.
+> (define doomed (runs:start-for-user "*doomed*" "sleep 30" home))
+> (set-option! ask:yes-or-no-reader (lambda (q) (set! asked q) #f))
+> (set! asked #f)
+> (in-client (lambda () (commands:run buffer-picker:kill-buffer doomed)))
+> (list (buffers:live? doomed) asked (taken-ends) (message))
+(#f #f (("*doomed*" stopped stopped)) "*long* finished")
+; The buffer refuses edits and is silent: output and an output-written
+; entry's splice leave it unmodified, with no undo history.
+> (define (mark-lines b start end) (buffers:splice! b end end (document:from-datum "!")))
+> (add-hook! runs:output-written mark-lines)
+> (define quiet (runs:start-for-user "*quiet*" "echo x" home))
+> (ended? quiet)
+0
+> (remove-hook! runs:output-written mark-lines)
+> (list (output quiet) (buffers:silent? quiet) (buffers:modified? quiet))
+("x\n!" #t #f)
+> (buffers:insert! quiet 1 "typed")
+! buffers:insert!: the node refuses the edit with irritant runs:%output
+> (layout:switch-to-buffer quiet)
+> (press! "a")
+! a is undefined
+; A buffer that shows no run is never taken, and arguments are checked.
+> (define plain (buffers:make "*plain*" "keep\n"))
+> (runs:start-for-user "*plain*" "true")
+! runs:start-for-user: a live buffer that shows no run has the name with irritant "*plain*"
+> (runs:start "*x*" "")
+! runs:start: not a non-empty command line or list of strings with irritant ""
+> (runs:start "*x*" "true" home modes:fundamental)
+! runs:start: not a mode derived from runs:mode with irritant modes:fundamental
+> (runs:status (buffers:find "*plain*"))
+! runs:status: the buffer shows no run with irritant #<buffer *plain*>

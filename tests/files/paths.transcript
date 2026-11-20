@@ -51,3 +51,15 @@
 0
 > (list (true-path "~/alias/new.txt") (true-path "~"))
 ("$HOME/real/new.txt" "$HOME")
+; files:expanded-path is its inverse, as Emacs's expand-file-name: ~
+; from HOME, a relative path against a folder, by default Tuna's working
+; folder, and . and .. removed without reading the disk; a final / kept.
+> (map (lambda (p) (files:expanded-path p "/a/b"))
+       (list "c" "c/" "./c/../d" ".." "../../../x" "/a/b/../c" "/a/./b//c/" "" "." "~" "~/src/../x/"))
+("/a/b/c" "/a/b/c/" "/a/b/d" "/a" "/x" "/a/c" "/a/b/c/" "/a/b/" "/a/b" "$HOME" "$HOME/x/")
+> (equal? (files:expanded-path "x") (string-append (current-directory) "/x"))
+#t
+> (files:expanded-path "~root/x")
+! files:expanded-path: a path starting with ~user with irritant "~root/x"
+> (files:expanded-path "x" "relative")
+! files:expanded-path: not a folder starting with / with irritant "relative"

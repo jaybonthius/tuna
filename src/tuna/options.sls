@@ -9,6 +9,7 @@
     option-default
     option-setting
     option-settings
+    option-local?
     option?
     option-changed
     option-documentation)
@@ -249,6 +250,14 @@
   (define (option-settings o)
     (map (lambda (l) (list (owner-name (layer-owner l)) (layer-value l)))
          (layers-in-effect (option-state-settings (option-state-of 'option-settings o)))))
+
+  ;; A scope keeps an option's layers after its last local value is taken
+  ;; back, so the test is the value they hold, not whether they exist.
+  (define (option-local? o)
+    (let ([st (option-state-of 'option-local? o)] [s (current-scope)])
+      (and s
+           (let ([ls (scope-local s (option-state-key st))])
+             (and ls (not (eq? (layers-value ls) no-setting)))))))
 
   (define (option-documentation o)
     (option-state-doc (option-state-of 'documentation o)))

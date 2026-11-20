@@ -61,6 +61,7 @@ Harpo's keys.
 # Modes
 ## Horn
 ## help:mode
+## modes:special
 > (press! "l")
 > (help-with "C-c h]" "help:back")
 [C-c h]        <harpo:honk>
@@ -79,11 +80,13 @@ Harpo's keys.
 # Modes
 ## Horn
 ## help:mode
+## modes:special
 > (press! "g")
 > (outline)
 # Modes
 ## Horn
 ## help:mode
+## modes:special
 ; A view that is gone gives way to the selected view.
 > (press! "l" "l")
 > (title)
@@ -99,3 +102,4 @@ Harpo's keys.
 # Modes
 ## Horn
 ## help:mode
+## modes:special

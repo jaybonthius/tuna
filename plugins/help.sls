@@ -18,7 +18,7 @@
 
 (define-hook mode-hook "Called with *Help* current when a description makes it, or finds it for the first time after help loads.")
 
-(modes:define-major-mode mode (lighter "Help") (keymap mode-keymap) (hook mode-hook))
+(modes:define-major-mode mode (parent modes:special) (lighter "Help") (keymap mode-keymap) (hook mode-hook))
 
 (define (%draw-page node view) (haml (:div.help (views:draw-children view node))))
 
@@ -549,6 +549,8 @@
         (describe-key (substring keys 0 (fx- (string-length keys) (fx+ (string-length last) 1))) view)
         (undefined))))
 
+(define (%set-revert) (set-option-local! buffers:revert-function refresh))
+
 (keys:bind! keys:global "C-h" keymap)
 (keys:bind! keymap "a" apropos-command)
 (keys:bind! keymap "b" describe-bindings)
@@ -562,13 +564,11 @@
 (keys:bind! keymap "w" where-is)
 (keys:bind! keymap "x" describe-command)
 (keys:bind! completion:command-action-keymap "h" describe-command)
-(keys:bind! mode-keymap "q" layout:quit-view)
 (keys:bind! mode-keymap "l" back)
 (keys:bind! mode-keymap "r" forward)
-(keys:bind! mode-keymap "g" refresh)
-(keys:bind! mode-keymap "SPC" views:scroll-up)
-(keys:bind! mode-keymap "S-SPC" views:scroll-down)
-(keys:bind! mode-keymap "DEL" views:scroll-down)
+(keys:bind! modes:special-keymap "?" describe-mode)
+(keys:bind! modes:special-keymap "h" describe-mode)
+(add-hook! mode-hook %set-revert)
 (table-set! web:stylesheets 'help "help/help.css")
 (table-set! completion:category-default-styles name-category (list completion:prefix completion:substring))
 (advice-add! keys:undefined %describe-prefix)

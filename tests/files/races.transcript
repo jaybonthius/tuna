@@ -81,7 +81,7 @@ stopped
 > (disk-checks:write-text! "~/one.txt" "from disk\n")
 > (begin
     (spawn-task (lambda () (buffers:replace! two 1 1 "typed ")))
-    (files:revert-buffer two))
+    (files:revert-from-file two))
 > (list (text two) (buffers:modified? two))
 ("from disk\n" #f)
 ; Unloading files ends the tasks waiting for its jobs, with an error.

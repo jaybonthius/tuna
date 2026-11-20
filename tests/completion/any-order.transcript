@@ -37,10 +37,10 @@
 ("file-picker:find-file")
 ! &quit
 > (offered '("M-x") "file ^files")
-("files:write-file" "files:save-buffer" "files:not-modified" "files:revert-buffer" "files:save-some-buffers" "files:save-buffers-kill-tuna")
+("files:write-file" "files:save-buffer" "files:not-modified" "files:save-some-buffers" "files:save-buffers-kill-tuna")
 ! &quit
 > (offered '("M-x") "^files file")
-("files:write-file" "files:save-buffer" "files:not-modified" "files:revert-buffer" "files:save-some-buffers" "files:save-buffers-kill-tuna")
+("files:write-file" "files:save-buffer" "files:not-modified" "files:save-some-buffers" "files:save-buffers-kill-tuna")
 ! &quit
 > (offered '("M-x") "~ffl files")
 ("files:write-file" "files:save-buffers-kill-tuna")

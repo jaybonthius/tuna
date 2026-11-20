@@ -188,18 +188,18 @@
 > (disk-checks:write-text! "~/rev.txt" "one\nTWO!\nthree\n")
 > (buffers:replace! rev 1 1 "")
 #<edit 1>
-> (files:revert-buffer rev)
+> (files:revert-from-file rev)
 > (list (text rev) (buffers:version rev) (buffers:modified? rev))
 ("one\nTWO!\nthree\n" 2 #f)
 > (map buffers:edit-start (buffers:edits-since rev 1))
 (5)
 > (list (buffers:anchor-position before) (buffers:anchor-position after))
 (2 13)
-> (files:revert-buffer rev)
+> (files:revert-from-file rev)
 > (buffers:version rev)
 2
 > (disk-checks:write-bytes! "~/rev.txt" #vu8(111 110 101 13 10 233 13 10))
-> (files:revert-buffer rev)
+> (files:revert-from-file rev)
 > (list (string=? (text rev) "one\n\xFFFC;\n") (bytes-of rev))
 (#t #vu8(111 110 101 13 10 233 13 10))
 > (buffers:replace! rev 1 1 "#")
@@ -208,15 +208,15 @@
 > (bytes-of rev)
 #vu8(35 111 110 101 13 10 233 13 10)
 > (disk-checks:write-bytes! "~/rev.txt" #vu8(35 111 110 101 13 10 234 13 10))
-> (files:revert-buffer rev)
+> (files:revert-from-file rev)
 > (document:datums (buffers:document rev))
 ((buffers:text () "#one\n" #(document:raw-byte ((byte . 234))) "\n"))
 > (map buffers:edit-start (buffers:edits-since rev 4))
 (6)
 > (delete-file (string-append (getenv "HOME") "/rev.txt"))
 #t
-> (files:revert-buffer rev)
-! files:revert-buffer: no such file with irritant "~/rev.txt"
+> (files:revert-from-file rev)
+! files:revert-from-file: no such file with irritant "~/rev.txt"
 ; Hooks get the buffer, with it current, so local entries run too. An
 ; entry that raises is reported and the save goes on.
 > (define calls '())
@@ -237,7 +237,7 @@
 ! hooked: refused
 > (files:save-buffer hooked)
 > (remove-hook! files:before-save refuse)
-> (files:revert-buffer hooked)
+> (files:revert-from-file hooked)
 > (reverse calls)
 ((after-visit "hooks.txt" #t) (local-before-save "hooks.txt" #t) (after-save "hooks.txt" #t) (after-revert "hooks.txt" #t))
 ; The final line break is an edit, and only for text that lacks one.
@@ -267,13 +267,13 @@
              (list (lambda () (files:read-document "~/final.txt"))
                    (lambda () (files:save-buffer hooked))
                    (lambda () (files:write-file "~/elsewhere.txt" hooked))
-                   (lambda () (files:revert-buffer hooked))))))
+                   (lambda () (files:revert-from-file hooked))))))
     (batch-ended))
 > (advice-add! batch-ended call-outside-task)
 > (sleep-for 0.05)
 > (advice-remove! batch-ended call-outside-task)
 > outside
-((files:read-document "not in a task") (files:save-buffer "not in a task") (files:write-file "not in a task") (files:revert-buffer "not in a task"))
+((files:read-document "not in a task") (files:save-buffer "not in a task") (files:write-file "not in a task") (files:revert-from-file "not in a task"))
 > (list (buffers:name hooked) (files:buffer-visiting "~/elsewhere.txt"))
 ("hooks.txt" #f)
 ; A worker's failure from a defect is a violation, not a disk error.

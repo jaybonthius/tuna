@@ -1,6 +1,6 @@
 #!tuna
 (import (buffers) (document) (views) (keys) (commands) (modes) (editing) (kill-ring) (clipboard)
-        (files) (layout) (web) (haml) (ask) (processes) (browse-url)
+        (files) (layout) (web) (haml) (ask) (processes) (browse-url) (ansi-colors)
         (prefix (ghostty) ghostty:) (prefix (terminal screens) screens:))
 
 (define-option shell #f (lambda (v) (or (not v) (and (pair? v) (list? v) (for-all string? v))))
@@ -147,63 +147,6 @@
 
 (define (%screen-start t) (fx+ (document:node-start (%screen-node (%terminal-buffer t))) 1))
 
-(define %palette-faces
-  (list->vector (map (lambda (i) (string->symbol (format "terminal.color-~a" i))) (iota 16))))
-
-(define (%hex rgb)
-  (format "#~2,'0x~2,'0x~2,'0x" (ghostty:rgb-red rgb) (ghostty:rgb-green rgb) (ghostty:rgb-blue rgb)))
-
-(define (%resolve-color c palette)
-  (cond
-    [(not c) #f]
-    [(ghostty:rgb? c) (%hex c)]
-    [(fx< c 16) c]
-    [else (%hex (vector-ref palette c))]))
-
-(define (%style-value style palette)
-  (let* ([inverse? (ghostty:style-inverse? style)]
-         [fg (%resolve-color (ghostty:style-foreground style) palette)]
-         [bg (%resolve-color (ghostty:style-background style) palette)]
-         [fg* (if inverse? (or bg 'background) fg)]
-         [bg* (if inverse? (or fg 'foreground) bg)]
-         [words '()] [properties '()] [face #f])
-    (define (word! w) (set! words (cons w words)))
-    (define (property! name value) (set! properties (cons (cons name value) properties)))
-    (cond
-      [(not fg*)]
-      [(eq? fg* 'background) (word! "fg-background")]
-      [(fixnum? fg*) (set! face (vector-ref %palette-faces fg*))]
-      [else (word! "fg") (property! "--terminal-fg" fg*)])
-    (cond
-      [(not bg*)]
-      [(eq? bg* 'foreground) (word! "bg-foreground")]
-      [(fixnum? bg*) (word! (format "bg-~a" bg*))]
-      [else (word! "bg") (property! "--terminal-bg" bg*)])
-    (when (ghostty:style-bold? style) (word! "bold"))
-    (when (ghostty:style-italic? style) (word! "italic"))
-    (when (ghostty:style-faint? style) (word! "faint"))
-    (when (ghostty:style-invisible? style) (word! "invisible"))
-    (when (ghostty:style-strikethrough? style) (word! "strike"))
-    (when (ghostty:style-overline? style) (word! "overline"))
-    (let ([u (ghostty:style-underline style)])
-      (unless (eq? u 'none) (word! (format "underline-~a" u))))
-    (let ([uc (%resolve-color (ghostty:style-underline-color style) palette)])
-      (cond
-        [(not uc)]
-        [(fixnum? uc) (word! (format "underline-color-~a" uc))]
-        [else (word! "underline-color") (property! "--terminal-underline" uc)]))
-    (and (or face (pair? words))
-         (append (if face (list (cons 'face face)) '())
-                 (if (pair? words) (list (cons 'terminal (cons (reverse words) (reverse properties)))) '())))))
-
-(define (%style-attributes v)
-  (let ([words (car v)] [properties (cdr v)])
-    (append
-      (list (cons "data-terminal" (apply string-append (cons (car words) (map (lambda (w) (string-append " " w)) (cdr words))))))
-      (if (null? properties)
-          '()
-          (list (cons "style" (apply string-append (map (lambda (p) (string-append (car p) ":" (cdr p) ";")) properties))))))))
-
 (define (%cells-attributes n) (list (cons "data-cells" (number->string n))))
 
 (define (%link-attributes target) (list (cons "data-terminal-link" "")))
@@ -279,7 +222,7 @@
                     (loop (cdr clusters) (fx+ p k) (fx+ col w))))))
           (set! text-parts (cons text text-parts))
           (set! at (fx+ at n))
-          (let ([v (%style-value (ghostty:render-run-style run) palette)])
+          (let ([v (ansi-colors:span-value (ghostty:render-run-style run) palette)])
             (when v (set! styles (cons (list start at v) styles))))
           (let ([link (ghostty:render-run-hyperlink run)])
             (when link (set! links (cons (list start at (list (cons 'terminal-link link))) links))))
@@ -897,13 +840,6 @@
           (%report-scheme! t)))
       (%all))))
 
-(define (%unique-name base)
-  (if (not (buffers:find base))
-      base
-      (let loop ([n 2])
-        (let ([name (format "~a<~a>" base n)])
-          (if (buffers:find name) (loop (fx+ n 1)) name)))))
-
 (define (%program-name command)
   (let* ([program (car command)]
          [slash (let loop ([i (fx- (string-length program) 1)])
@@ -1004,7 +940,7 @@
 (define (%begin! command directory environment-changes name client)
   (let* ([size (%start-size client)]
          [process (%spawn command directory environment-changes size)]
-         [b (%make-buffer (%unique-name name))]
+         [b (%make-buffer (buffers:free-name name))]
          [t (%make-terminal b process (ghostty:make-terminal (car size) (cdr size)) command directory 'semi-char client)])
     (%register! t)
     (%refresh! t (%following-views t))
@@ -1020,6 +956,10 @@
        (assertion-violation 'terminal:start "not a list of strings or #f" command))
      (unless (or (not options) (processes:options? options))
        (assertion-violation 'terminal:start "not processes:options" options))
+     (when (and options
+                (or (processes:options-terminal options) (processes:options-separate-stderr options)
+                    (processes:options-full-log options)))
+       (assertion-violation 'terminal:start "options other than a directory and an environment" options))
      (let ([directory (or (and options (processes:options-directory options)) (files:directory))]
            [changes (or (and options (processes:options-environment options)) '())])
        (%begin! command directory changes
@@ -1554,7 +1494,7 @@
   (let ([b (buffers:find name)])
     (if (and b (eq? (modes:major-mode b) mode) (%screen-node b))
         (values b #t)
-        (values (%make-buffer (if b (%unique-name name) name)) #f))))
+        (values (%make-buffer (buffers:free-name name)) #f))))
 
 (define (%reattach! entry process)
   (let ([restored (%restored-emulator (%entry-id entry))])
@@ -1741,7 +1681,6 @@
 (table-set! modes:lighters copy-mode? "Copy")
 (table-set! modes:lighters char-mode? "Char")
 
-(table-set! views:span-properties 'terminal %style-attributes)
 (table-set! views:span-properties 'terminal-cells %cells-attributes)
 (table-set! views:span-properties 'terminal-link %link-attributes)
 (table-set! web:stylesheets 'terminal "terminal/terminal.css")

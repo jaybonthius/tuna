@@ -8,9 +8,10 @@ const probe = document.createElement("div");
 probe.className = "terminal";
 probe.setAttribute("aria-hidden", "true");
 probe.style.cssText = "position: fixed; inset-block-start: -100vh; visibility: hidden; pointer-events: none;";
-const faces = Array.from({ length: 16 }, (_, i) => {
+const names = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
+const faces = [...names, ...names.map((name) => `bright-${name}`)].map((name) => {
   const span = document.createElement("span");
-  span.dataset.face = `terminal.color-${i}`;
+  span.dataset.face = `ansi-colors.${name}`;
   span.textContent = " ";
   probe.append(span);
   return span;

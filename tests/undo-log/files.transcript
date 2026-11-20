@@ -115,7 +115,7 @@
 > (in-a undo:redo 1)
 ; An unmodified one that its log holds unsaved edits for gets them back.
 > (unload-module! '(undo))
-> (files:revert-buffer a)
+> (files:revert-from-file a)
 > (list (text a) (buffers:modified? a))
 ("again\n" #f)
 ; Unloading undo unloads this plugin and the test module, which import
@@ -126,7 +126,7 @@
 ("x again\n" #t (1 0 (0 #f) (1 0) (2 1)))
 ; Reverting is one group.
 > (checks:write-text! "~/a.txt" "reverted\n")
-> (files:revert-buffer a)
+> (files:revert-from-file a)
 > (list (text a) (buffers:modified? a) (tree a))
 ("reverted\n" #f (3 3 (0 #f) (1 0) (2 1) (3 1)))
 > (in-a undo:undo 1)

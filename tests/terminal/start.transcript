@@ -37,6 +37,14 @@ terminal:mode
 ("/tmp" "hi")
 > (list (terminal:directory a) (terminal:title a))
 ("/tmp" "")
+; The terminal sets the other clauses itself, so options that give them
+; raise before any program starts.
+> (terminal:start '("true") (processes:options [separate-stderr #t]))
+! terminal:start: options other than a directory and an environment with irritant #<processes:options>
+> (terminal:start '("true") (processes:options [terminal (cons 24 80)]))
+! terminal:start: options other than a directory and an environment with irritant #<processes:options>
+> (terminal:start '("true") (processes:options [full-log (processes:full-log drop)]))
+! terminal:start: options other than a directory and an environment with irritant #<processes:options>
 ; New programs get the plugin's terminal type and its compiled entry.
 > (define c (terminal:start '("sh" "-c" "echo $TERM $COLORTERM $TERM_PROGRAM; infocmp -x | grep -c Ms=; sleep 30")))
 > (wait-for c "\n1")

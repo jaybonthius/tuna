@@ -1,0 +1,28 @@
+; *Messages* is in echo-area:messages-mode, derived from modes:special:
+; q quits its view and SPC scrolls, while g and printing keys are
+; undefined, since nothing reverts the log and it refuses edits.
+> (define log (buffers:find "*Messages*"))
+> (list (modes:major-mode log) (modes:derived? echo-area:messages-mode modes:special) (modes:lighter echo-area:messages-mode))
+(echo-area:messages-mode #t "Messages")
+> (define (bound key) (in-client (lambda () (commands:command-name (keys:lookup client key)))))
+> (layout:switch-to-buffer log)
+> (map bound '("q" "SPC" "g" "x"))
+(layout:quit-view views:scroll-up keys:undefined keys:undefined)
+> (press! "g")
+! g is undefined
+; A view whose point is at the end of the log follows each new message;
+; one elsewhere stays.
+> (ask:message "first")
+> (define v (view))
+> (define end (- (document:length (buffers:document log)) 1))
+> (views:set-point! v end)
+> (ask:message "second")
+> (= (views:point v) (- (document:length (buffers:document log)) 1))
+#t
+> (views:set-point! v 1)
+> (ask:message "third")
+> (views:point v)
+1
+> (press! "q")
+> (eq? (views:buffer (view)) log)
+#f

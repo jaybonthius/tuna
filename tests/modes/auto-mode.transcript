@@ -91,7 +91,7 @@ python:mode
 (python:mode 40 "_")
 > (buffers:with-buffer two (set-option-local! fill:column 41))
 > (disk:write-text! "~/two.py" "22\n")
-> (files:revert-buffer two)
+> (files:revert-from-file two)
 > (list (modes:major-mode two) (local fill:column two) (text two))
 (python:mode 41 "22\n")
 ; Buffers open before auto-mode loads keep their mode; normal-mode

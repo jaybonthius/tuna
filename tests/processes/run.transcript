@@ -1,13 +1,17 @@
 ; processes:run pauses the task until the program ends, and returns its
-; exit status, all its output and all its standard error.
+; exit status, all its output and all its standard error. Standard error
+; joins the output, in order, unless separate-stderr keeps it apart.
 > (processes:run "printf" '("main\n"))
 0
 #vu8(109 97 105 110 10)
 #vu8()
-> (processes:run "sh" '("-c" "echo out; echo err >&2; exit 4"))
+> (processes:run "sh" '("-c" "echo out; echo err >&2; exit 4") #f (processes:options [separate-stderr #t]))
 4
 #vu8(111 117 116 10)
 #vu8(101 114 114 10)
+> (let-values ([(status out err) (processes:run "sh" '("-c" "echo out; echo err >&2; echo again; exit 4"))])
+    (list status (utf8->string out) err))
+(4 "out\nerr\nagain\n" #vu8())
 > (call-with-values (lambda () (processes:run "cat" '() "input as text")) list)
 (0 #vu8(105 110 112 117 116 32 97 115 32 116 101 120 116) #vu8())
 > (call-with-values (lambda () (processes:run "cat" '() (bytevector 1 2 3))) list)

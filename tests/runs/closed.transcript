@@ -1,0 +1,56 @@
+; A reload of buffers closes every buffer; runs makes each run's buffer
+; again, silent and in runs:mode. A going run's output comes back from
+; the process's log and goes on.
+> (define going (runs:start-for-user "*going*" "echo a; until [ -e go ]; do sleep 0.05; done; echo b" home))
+> (wait-until (lambda () (string=? (output going) "a")))
+> (reload! "buffers")
+> (define again (buffers:find "*going*"))
+> (list (buffers:live? going) (runs:status again) (buffers:silent? again) (modes:major-mode again))
+(#f #f #t runs:mode)
+> (with-output-to-file (string-append (getenv "HOME") "/go") void)
+> (ended? again)
+0
+> (output again)
+"a\nb"
+; An ended run's buffer comes back with its header, a line saying the
+; output was lost, and its footer, and g still runs it again.
+> (reload! "buffers")
+> (define after (buffers:find "*going*"))
+> (show after)
+Run started at TIME in ~/
+
+echo a; until [ -e go ]; do sleep 0.05; done; echo b
+Output lost when buffers reloaded
+
+Run finished at TIME, after S s
+> (list (runs:status after) (runs:command after))
+(0 "echo a; until [ -e go ]; do sleep 0.05; done; echo b")
+; A run in a mode derived from runs:mode comes back in runs:mode, since
+; its mode's plugin may not be loaded yet; g starts the next run in the
+; run's own mode.
+> (define-table build-keymap)
+> (define-hook build-hook)
+> (modes:define-major-mode build (parent runs:mode) (keymap build-keymap) (hook build-hook))
+> (define built (runs:start-for-user "*build*" "echo built" home build))
+> (ended? built)
+0
+> (modes:major-mode built)
+build
+> (reload! "buffers")
+> (define built (buffers:find "*build*"))
+> (modes:major-mode built)
+runs:mode
+> (runs:run-again built)
+#<buffer *build*>
+> (ended? built)
+0
+> (list (modes:major-mode built) (output built))
+(build "built")
+; A buffer made again while a plain buffer holds its name takes the
+; first free NAME<N>.
+> (unload-module! '(runs))
+> (reload! "buffers")
+> (define plain (buffers:make "*build*" "plain\n"))
+> (load-module! '(runs))
+> (list (runs:run-buffer? plain) (runs:command (buffers:find "*build*<2>")))
+(#f "echo built")

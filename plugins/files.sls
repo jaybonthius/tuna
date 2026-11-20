@@ -28,6 +28,18 @@
 (define-hook after-rename
   "Called with the old and new paths after files:rename-file has renamed a file or folder and moved the buffers visiting it.")
 
+(define-hook directory-finders
+  "Called with a buffer by files:directory; the first entry, by depth, that returns a folder, a string starting with /, gives the buffer's folder. files' own entry, files:file-directory, is at depth -10.")
+
+(define (%absolute-folder? v)
+  (and (string? v) (fx> (string-length v) 0) (char=? (string-ref v 0) #\/)))
+
+(define-option directory-override #f
+  (lambda (v)
+    (or (not v)
+        (and (pair? v) (buffers:buffer? (car v)) (%absolute-folder? (cdr v)))))
+  "#f, or a pair of a buffer and a folder starting with /, which files:directory of that buffer returns; a command binds it with with-options for the commands it runs.")
+
 (define (%within? path folder)
   (let ([n (string-length folder)])
     (and (fx>= (string-length path) n) (string=? (substring path 0 n) folder)
@@ -72,6 +84,47 @@
     (if home
         (string-append "~" (substring path (string-length home) (string-length path)))
         path)))
+
+;; The disk is not read, as Emacs's expand-file-name does not read it, so
+;; a .. after a symbolic link leaves the link's text, not its target. A
+;; ~user path raises: the user database may wait on a network, and only
+;; processes looks a user up, off the main thread.
+(define expanded-path
+  (case-lambda
+    [(path) (expanded-path path (current-directory))]
+    [(path folder)
+     (unless (string? path)
+       (assertion-violation 'files:expanded-path "not a string" path))
+     (unless (%absolute-folder? folder)
+       (assertion-violation 'files:expanded-path "not a folder starting with /" folder))
+     (let* ([n (string-length path)]
+            [whole (cond
+                     [(and (fx> n 0) (char=? (string-ref path 0) #\/)) path]
+                     [(and (fx> n 0) (char=? (string-ref path 0) #\~))
+                      (unless (or (fx= n 1) (char=? (string-ref path 1) #\/))
+                        (assertion-violation 'files:expanded-path "a path starting with ~user" path))
+                      (let ([home (getenv "HOME")])
+                        (if (fx= n 1) (or home "/") (string-append (or home "") (substring path 1 n))))]
+                     [else (string-append folder "/" path)])]
+            [parts (fold-left
+                     (lambda (kept part)
+                       (cond
+                         [(or (string=? part "") (string=? part ".")) kept]
+                         [(string=? part "..") (if (null? kept) kept (cdr kept))]
+                         [else (cons part kept)]))
+                     '() (%split-path whole))]
+            [joined (fold-left (lambda (rest part) (string-append "/" part rest)) "" parts)])
+       (cond
+         [(string=? joined "") "/"]
+         [(char=? (string-ref whole (fx- (string-length whole) 1)) #\/) (string-append joined "/")]
+         [else joined]))]))
+
+(define (%split-path path)
+  (let loop ([i (fx- (string-length path) 1)] [end (string-length path)] [parts '()])
+    (cond
+      [(fx< i 0) (cons (substring path 0 end) parts)]
+      [(char=? (string-ref path i) #\/) (loop (fx- i 1) i (cons (substring path (fx+ i 1) end) parts))]
+      [else (loop (fx- i 1) end parts)])))
 
 (define-option offer-save? #t boolean?
   "When false in a buffer that visits no file, the buffer holds nothing to save: killing it asks nothing, and files:save-buffer leaves it alone.")
@@ -638,13 +691,32 @@
 
 (define (%home-folder) (%with-final-slash (or (getenv "HOME") "/")))
 
+(define (file-directory buffer)
+  (check-buffer 'files:file-directory buffer)
+  (let ([e (entry-of buffer)])
+    (and e (%with-final-slash (path-parent (entry-path e))))))
+
+;; Commands hand the folder to projects:find, which walks it upward as
+;; text and takes only an absolute one, so a finder's answer follows the
+;; override's rule, and a wrong one is refused here, at its source.
+(define (%found-directory buffer)
+  (exists
+    (lambda (entry)
+      (let ([folder (entry buffer)])
+        (unless (or (not folder) (%absolute-folder? folder))
+          (assertion-violation 'files:directory "a directory finder returned no absolute folder" folder))
+        (and folder (%with-final-slash folder))))
+    (hook-entries directory-finders)))
+
 (define directory
   (case-lambda
     [() (let ([b (buffers:current)]) (if b (directory b) (%home-folder)))]
     [(buffer)
      (check-buffer 'files:directory buffer)
-     (let ([e (entry-of buffer)])
-       (if e (%with-final-slash (path-parent (entry-path e))) (%home-folder)))]))
+     (let ([override (directory-override)])
+       (if (and override (eq? (car override) buffer))
+           (%with-final-slash (cdr override))
+           (or (%found-directory buffer) (%home-folder))))]))
 
 (define (%cancel who path)
   (raise (condition (%make-canceled) (make-who-condition who)
@@ -744,16 +816,16 @@
         (save-buffer b)))
     (visited-buffers)))
 
-(commands:define-command (revert-buffer [buffer (buffers:current)])
+(commands:define-command (revert-from-file [buffer (buffers:current)])
   "Reads BUFFER's file again and replaces the part of the text that differs, as one edit."
-  (let ([e (file-entry 'files:revert-buffer buffer)])
-    (check-task 'files:revert-buffer)
-    (with-entry-lock 'files:revert-buffer e
+  (let ([e (file-entry 'files:revert-from-file buffer)])
+    (check-task 'files:revert-from-file)
+    (with-entry-lock 'files:revert-from-file e
       (lambda ()
         (let retry ([tries 0])
           (let* ([version (buffers:version buffer)]
                  [old (buffers:document buffer)]
-                 [read (run-job 'files:revert-buffer %reverter (cons (entry-path e) old) (lambda (read) (void)) e)])
+                 [read (run-job 'files:revert-from-file %reverter (cons (entry-path e) old) (lambda (read) (void)) e)])
             (cond
               [(not (entry-live? e)) (void)]
               [(and (not (= version (buffers:version buffer))) (fx< tries 2)) (retry (fx+ tries 1))]
@@ -855,6 +927,9 @@
 
 (add-hook! buffers:killed forget-killed!)
 (add-hook! buffers:kill-queries %confirm-kill)
+(set-option! buffers:revert-function revert-from-file)
+(add-hook! directory-finders file-directory -10)
+(table-set! commands:command-modes revert-from-file '())
 (keys:bind! keys:global "C-x C-w" write-file)
 (keys:bind! keys:global "C-x C-s" save-buffer)
 (keys:bind! keys:global "C-x s" save-some-buffers)
