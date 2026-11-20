@@ -103,5 +103,5 @@
 > (keys:run-as-input client editing:paste "b c")
 > (here)
 > (press! "RET")
-(3 "I-search: \t" "\t")
-(6 "I-search: \tb c" "\tb c")
+(3 "I-search: ^I" "\t")
+(6 "I-search: ^Ib c" "\tb c")

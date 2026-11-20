@@ -37,13 +37,26 @@
     (views:set-point! (view) 1)
     b))
 
-;; The prompt as the echo area shows it, a face's part in brackets.
 (define (prompt)
   (let ([p (keys:prompt client)])
     (cond
       [(not p) #f]
-      [(string? p) p]
-      [else (apply string-append (map (lambda (part) (if (string? part) part (string-append "{" (car part) "}"))) p))])))
+      [(string? p) (controls-shown p)]
+      [else
+       (apply string-append
+         (map (lambda (part)
+                (cond
+                  [(string? part) (controls-shown part)]
+                  [(car part) (string-append "{" (controls-shown (cdr part)) "}")]
+                  [else (controls-shown (cdr part))]))
+              p))])))
+
+(define (controls-shown text)
+  (apply string-append
+    (map (lambda (c)
+           (let ([n (char->integer c)])
+             (if (or (< n 32) (= n 127)) (string #\^ (integer->char (fxlogxor n 64))) (string c))))
+         (string->list text))))
 
 (define (point) (views:point (view)))
 

@@ -138,12 +138,12 @@
       (list %help)
       (let ([r (%session-replacement s)] [m (%session-match s)])
         (list (string-append "Query replacing " (if (%session-regexp? s) "regexp " "")
-                             (%shown (search:query-text (%session-query s)))
+                             (search:query-text (%session-query s))
                              " with "
                              (cond
                                [(procedure? r) "a procedure"]
-                               [(and m (not (%session-shown s))) (%shown (%replacement-text s m))]
-                               [else (%shown r)])
+                               [(and m (not (%session-shown s))) (%replacement-text s m)]
+                               [else r])
                              ": (? for help) ")))))
 
 (define (%range s)

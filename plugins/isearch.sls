@@ -111,16 +111,6 @@
       [(%state-success? (car states)) (car states)]
       [else (loop (cdr states))])))
 
-(define (%control-shown text)
-  (call-with-string-output-port
-    (lambda (out)
-      (string-for-each
-        (lambda (c)
-          (if (and (char<? c #\space) (not (char=? c #\tab)))
-              (begin (put-char out #\^) (put-char out (integer->char (+ (char->integer c) 64))))
-              (put-char out c)))
-        text))))
-
 (define (%count-text s state)
   (let ([scan (%search-scan s)] [m (%state-match state)])
     (if (and scan m)
@@ -143,9 +133,10 @@
          [matched (min (%state-matched-length state) (string-length text))]
          [error (%state-error state)])
     (append
-      (list (string-append (if (lazy-count) (%count-text s state) "") head (%control-shown (substring text 0 matched))))
+      (list (string-append (if (lazy-count) (%count-text s state) "") head))
+      (if (> matched 0) (list (cons #f (substring text 0 matched))) '())
       (if (< matched (string-length text))
-          (list (cons (%control-shown (substring text matched (string-length text))) fail))
+          (list (cons fail (substring text matched (string-length text))))
           '())
       (cond
         [(%search-note s) => (lambda (note) (list (string-append " [" note "]")))]

@@ -9,7 +9,7 @@
 > (isearch:prompt (isearch:current client))
 > (press! "RET")
 > (reverse events)
-("I-search: be")
+("I-search: " (#f . "be"))
 ((started forward) (ended #f #f))
 ; A search that ends away from where it started records the start in the
 ; jump history; one that ends where it started records nothing.
@@ -32,7 +32,7 @@
 > (parameterize ([web:current-client other]) (views:call-with-view v2 (lambda () (keys:press! other "RET"))))
 > (isearch:current other)
 (#<view 5> 8 13)
-("I-search: g")
+("I-search: " (#f . "g"))
 #f
 ; isearch:start! starts a search for code, with a query and a client.
 > (views:set-point! (view) 1)
@@ -40,7 +40,7 @@
 > (list (isearch:search-origin s) (point) (keys:prompt client))
 > (isearch:end! s)
 > (list (isearch:current client) (keys:prompt client))
-(1 17 ("I-search: gamma"))
+(1 17 ("I-search: " (#f . "gamma")))
 (#f #f)
 ; isearch:wrap immediately wraps at once, and never stops at the last match.
 > (define sy (show "sy" "(foo-bar x) foo-bar foo-barz foo-bar\n"))

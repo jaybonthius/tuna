@@ -23,8 +23,9 @@
     overflow-wrap: anywhere;
   }
 
-  /* A read's prompt is the program's, as the minibuffer's question is,
-     so it looks like one; the keys after it are typed. */
+  /* A prompt's words are the program's, as the minibuffer's question is,
+     so they look like one; the text it shows and the keys after it are
+     drawn as typed text is. */
   .echo-area-prompt {
     font-family: var(--tuna-font-ui);
     font-weight: var(--tuna-font-weight-bold);

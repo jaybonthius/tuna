@@ -413,16 +413,53 @@
         (let ([prompt (echo-text-prompt text)] [keys (keys-text client)])
           (list (haml (:div.echo-area-message ([role "status"] [data-keymap (views:keymap-mark keymap)])
                         (:div.echo-area-echo
-                          (when prompt (:span.echo-area-prompt (%prompt-html prompt)))
+                          (when prompt (%prompt-html prompt))
                           (when keys keys))))))
         (draw-view-atom node view client))))
 
+(define (%control-char? c)
+  (let ([n (char->integer c)])
+    (or (fx< n 32) (fx= n 127))))
+
+;; Drawn as is, a control character in typed text would show as nothing
+;; or break the line. The prompt part takes the same rule, since it can
+;; hold typed text, as a replace's query; so a prompt cannot break its own
+;; line.
+(define (%control-split text)
+  (let ([n (string-length text)])
+    (let loop ([i 0] [from 0] [acc '()])
+      (cond
+        [(fx= i n) (reverse (if (fx< from n) (cons (substring text from n) acc) acc))]
+        [(%control-char? (string-ref text i))
+         (loop (fx+ i 1) (fx+ i 1)
+               (cons (string-ref text i) (if (fx< from i) (cons (substring text from i) acc) acc)))]
+        [else (loop (fx+ i 1) from acc)]))))
+
+(define (%glyph-html c)
+  (haml (:span ([data-face (symbol->string faces:escape-glyph)])
+          (string #\^ (integer->char (fxlogxor (char->integer c) 64))))))
+
+(define (%adjacent-strings-joined parts)
+  (fold-right
+    (lambda (part acc)
+      (if (and (string? part) (pair? acc) (string? (car acc)))
+          (cons (string-append part (car acc)) (cdr acc))
+          (cons part acc)))
+    '()
+    parts))
+
+;; A glyph ends the prompt's span rather than sitting in it, so it shows in
+;; escape-glyph alone, not over the prompt's weight and font.
 (define (%prompt-html prompt)
-  (if (string? prompt)
-      prompt
-      (map (lambda (part)
-             (if (string? part) part (haml (:span ([data-face (symbol->string (cdr part))]) (car part)))))
-           prompt)))
+  (map (lambda (part)
+         (if (string? part)
+             (map (lambda (piece) (if (char? piece) (%glyph-html piece) (haml (:span.echo-area-prompt piece))))
+                  (%control-split part))
+             (let ([shown (map (lambda (piece) (if (char? piece) (%glyph-html piece) piece)) (%control-split (cdr part)))])
+               (if (car part)
+                   (haml (:span ([data-face (symbol->string (car part))]) shown))
+                   shown))))
+       (%adjacent-strings-joined (if (string? prompt) (list prompt) prompt))))
 
 (define (%follow-key press client key) (follow-key! press client key))
 
@@ -439,7 +476,7 @@
 ;; prompt must show while it waits for a key.
 (define (%show-prompt read . prompt)
   (let ([client (web:current-client)])
-    (when (and client (pair? prompt) (string? (car prompt)))
+    (when (and client (pair? prompt) (car prompt))
       (uncover-echo! client)))
   (apply read prompt))
 

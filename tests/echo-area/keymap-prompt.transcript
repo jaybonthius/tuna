@@ -14,8 +14,11 @@
 > (press! "p")
 > (echo)
 "Pick: "
-; A procedure gives the prompt each time the echo is drawn; a pair holds
-; a string and the face it is drawn in.
+; A string prompt is the prompt part, drawn in the prompt look.
+> (echo-element)
+"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"1 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Pick: </span></div></div>"
+; A procedure gives the prompt each time the echo is drawn; a pair of a
+; face, or #f, and a string is shown text, drawn outside the prompt look.
 > (define typed "fo")
 > (end-pick)
 > ended
@@ -24,12 +27,12 @@
 #f
 > (define end-search
     (keys:push-keymap! client pick-keymap (lambda (found command) (eq? found pick-keymap))
-                       void (lambda () (list "Failing I-search: " (cons typed 'isearch.fail)))))
+                       void (lambda () (list "Failing I-search: " (cons #f typed) (cons 'isearch.fail "x")))))
 > (echo-element)
-"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"1 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Failing I-search: <span data-face=\"isearch.fail\">fo</span></span></div></div>"
+"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"1 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Failing I-search: </span>fo<span data-face=\"isearch.fail\">x</span></div></div>"
 > (set! typed "foo")
 > (echo)
-"Failing I-search: foo"
+"Failing I-search: foox"
 ; A message covers the prompt, and a key that leaves the keymap ends it,
 ; leaving no copy of the prompt.
 > (echo-area:message! "Wrapped")
@@ -43,11 +46,39 @@
 > (messages)
 > (end-search)
 "Wrapped\n"
-; A prompt that raises is reported, which the echo area then shows.
-> (procedure? (keys:push-keymap! client pick-keymap (lambda (found command) #t) void (lambda () (car '()))))
+; Adjacent strings are one prompt part. A control character shows as ^X
+; in escape-glyph, outside the prompt look, in either part.
+> (define shown '("[3/17] " "Query replacing a with b: "))
+> (define end-shown
+    (keys:push-keymap! client pick-keymap (lambda (found command) #t) void (lambda () shown)))
+> (echo-element)
+"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"1 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">[3/17] Query replacing a with b: </span></div></div>"
+> (set! shown '("Query replacing a\nb with c: "))
+> (echo-element)
+"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"1 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Query replacing a</span><span data-face=\"escape-glyph\">^J</span><span class=\"echo-area-prompt\">b with c: </span></div></div>"
+> (set! shown '("Find: " (#f . "a\tb") (isearch.fail . "c\x7f;")))
+> (echo-element)
+"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"1 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Find: </span>a<span data-face=\"escape-glyph\">^I</span>b<span data-face=\"isearch.fail\">c<span data-face=\"escape-glyph\">^?</span></span></div></div>"
+> (end-shown)
+; A fixed list is a prompt too, with no procedure around it.
+> (define end-fixed
+    (keys:push-keymap! client pick-keymap (lambda (found command) #t) void (list (cons #f "Repeat with p"))))
 > (echo)
-> (keys:push-keymap! client pick-keymap (lambda (found command) #t) void '("not" "allowed"))
-#t
+"Repeat with p"
+> (end-fixed)
+; A prompt procedure that raises, or returns what is not a prompt, is
+; reported, and no prompt shows.
+> (define bad (lambda () (car '())))
+> (define end-bad (keys:push-keymap! client pick-keymap (lambda (found command) #t) void (lambda () (bad))))
+> (echo)
 ! car: () is not a pair
 "() is not a pair"
-! keys:push-keymap!: not a string, a procedure or #f with irritant ("not" "allowed")
+> (map (lambda (value) (set! bad (lambda () value)) (echo-area:message! "") (echo)) (list '((3 . "fo")) '(("fo" . #f)) '()))
+! keys:push-keymap!: a prompt procedure returned what is not a prompt or #f with irritant ((3 . "fo"))
+! keys:push-keymap!: a prompt procedure returned what is not a prompt or #f with irritant (("fo" . #f))
+! keys:push-keymap!: a prompt procedure returned what is not a prompt or #f with irritant ()
+(#f #f #f)
+> (end-bad)
+> (map (lambda (bad) (guard (c [#t (condition-message c)]) (keys:push-keymap! client pick-keymap (lambda (found command) #t) void bad)))
+       (list '() '("not" ("allowed" . #f)) 'x))
+("not a prompt, a procedure or #f" "not a prompt, a procedure or #f" "not a prompt, a procedure or #f")

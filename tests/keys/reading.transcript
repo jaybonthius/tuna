@@ -166,8 +166,22 @@
 > (settle)
 > (take-got!)
 (("y" #f "C-c k"))
+; A read's prompt may hold shown text, as a temporary keymap's may.
+> (commands:define-command (read-with-parts)
+    "Records the next key, read with a prompt that shows text."
+    (set! got (cons (keys:read-key (list "Key for " (cons #f "x") ": ")) got)))
+> (keys:bind! keys:global "C-c p" read-with-parts)
+> (start-in one "C-c" "p")
+> (keys:reading-prompt one)
+("Key for " (#f . "x") ": ")
+> (press-all! one "y")
+> (settle)
+> (take-got!)
+("y")
 > (map (lambda (read) (raised (lambda () (read 'x)))) (list keys:read-key keys:read-key-sequence))
-((keys:read-key "neither a string nor #f") (keys:read-key-sequence "neither a string nor #f"))
+((keys:read-key "not a prompt or #f") (keys:read-key-sequence "not a prompt or #f"))
+> (map (lambda (bad) (raised (lambda () (keys:read-key bad)))) (list (lambda () "Key: ") '() '(("x" . #f))))
+((keys:read-key "not a prompt or #f") (keys:read-key "not a prompt or #f") (keys:read-key "not a prompt or #f"))
 > (on-thread (lambda () (keys:reading-prompt one)))
 (keys:reading-prompt "not on the main thread")
 ; A client has one read at a time.

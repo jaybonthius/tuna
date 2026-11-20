@@ -155,3 +155,14 @@
 > (views:call-with-view (view) (lambda () (replace:replace-string "one" "two")))
 > (list (text) (last-message))
 ("two two\n" "Replaced 2 occurrences")
+; The prompt holds the query and the replacement as typed; the echo area
+; draws their control characters as ^X.
+> (define tabbed (show "tabbed" "a\tb\n"))
+> (spawn-task (lambda () (replace:query-replace! (view) client (search:make-query "a\tb") "c\td" 1 5 'forward)))
+> (sleep-for 0.05)
+> (keys:prompt client)
+> (prompt)
+> (press! "q")
+#<task>
+("Query replacing a\tb with c\td: (? for help) ")
+"Query replacing a^Ib with c^Id: (? for help) "

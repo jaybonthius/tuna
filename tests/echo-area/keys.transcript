@@ -165,6 +165,16 @@
 > (echo)
 "Press a key: z"
 > (press! "a")
+; A read whose prompt is a list shows it over a message too.
+> (commands:define-command (say-then-read-parts)
+    "Says hello, then reads a key with a prompt that shows text."
+    (echo-area:message! "Hello")
+    (keys:read-key (list "Key for " (cons #f "notes") ": ")))
+> (keys:bind! keys:global "C-c l" say-then-read-parts)
+> (start! "C-c" "l")
+> (echo)
+"Key for notes: "
+> (press! "a")
 ; A click that starts a read with a prompt shows it over a message too.
 > (define notes (buffers:make "notes" "one\ntwo\n"))
 > (views:set-buffer! (view) notes)

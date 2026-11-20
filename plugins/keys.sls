@@ -22,7 +22,7 @@
    sessions session-of session-pending session-pending-set! session-prefix session-prefix-set!
    session-temporaries session-running session-running-set! session-reading
    read-next end-read! waiting-read-sequence? reading-keys reading-prompt-of quit-reads! quit-client-reads!
-   temporary-prompt-of prompt-text?
+   temporary-prompt-of prompt?
    keymaps-of resolve-key resolve-sequence prefix-binding? lone-escape? remapped
    keymap-bindings bindings-found found-binding-keymap found-binding-sequence found-binding-command
    last-key key-count key-digit browser-key mouse-item-key screen-key valid-event? key-or-event? check-event event-key-clicks
@@ -713,8 +713,8 @@
   ;; would run at every pause.
   (define (read-next who sequence? prompt)
     (check-main-thread who)
-    (unless (or (not prompt) (string? prompt))
-      (assertion-violation who "neither a string nor #f" prompt))
+    (unless (or (not prompt) (prompt? prompt))
+      (assertion-violation who "not a prompt or #f" prompt))
     (let ([s (current-session)])
       (unless s
         (assertion-violation who "no command a key ran is running"))
@@ -769,16 +769,19 @@
               (if (procedure? prompt)
                   (guard (c [(not (quit-condition? c)) (report c) #f])
                     (let ([text (prompt)])
-                      (unless (prompt-text? text)
-                        (assertion-violation 'keys:push-keymap! "a prompt returned what is not a string, a list of strings and pairs of a string and a face, or #f" text))
+                      (unless (or (not text) (prompt? text))
+                        (assertion-violation 'keys:push-keymap! "a prompt procedure returned what is not a prompt or #f" text))
                       text))
                   prompt))]
         [else (loop (cdr ts))])))
 
-  (define (prompt-text? v)
-    (or (not v) (string? v)
-        (and (list? v)
-             (for-all (lambda (part) (or (string? part) (and (pair? part) (string? (car part)) (symbol? (cdr part))))) v))))
+  (define (prompt? v)
+    (or (string? v)
+        (and (pair? v) (list? v)
+             (for-all (lambda (part)
+                        (or (string? part)
+                            (and (pair? part) (or (not (car part)) (symbol? (car part))) (string? (cdr part)))))
+                      v))))
 
   (define (set-prefix! s prefix)
     (session-prefix-set! s prefix)
@@ -1147,8 +1150,8 @@
        (assertion-violation 'keys:push-keymap! "not a procedure" keep))
      (unless (procedure? on-exit)
        (assertion-violation 'keys:push-keymap! "not a procedure" on-exit))
-     (unless (or (procedure? prompt) (and (not (pair? prompt)) (prompt-text? prompt)))
-       (assertion-violation 'keys:push-keymap! "not a string, a procedure or #f" prompt))
+     (unless (or (not prompt) (procedure? prompt) (prompt? prompt))
+       (assertion-violation 'keys:push-keymap! "not a prompt, a procedure or #f" prompt))
      (let ([t (push-temporary! (session-of frame) keymap keep on-exit (current-owner) prompt)])
        (lambda ()
          (check-main-thread 'keys:push-keymap!)
