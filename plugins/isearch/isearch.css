@@ -1,0 +1,7 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  [data-face="isearch.fail"] {
+    background: var(--isearch-fail-background, var(--tuna-error-surface));
+  }
+}

@@ -2001,17 +2001,22 @@
             [else '()]))
         '())))
 
+;; An entry is recalled by its place, as M-p recalls it, so a read-entry
+;; prompt knows it was chosen rather than typed.
 (commands:define-command (search-history)
-  "Replaces the input of the innermost prompt with an entry of its history, read with completion."
+  "Replaces the input of the innermost prompt with an entry of its own entries or its history, read with completion."
   (let* ([p (or (minibuffer:current-prompt) (assertion-violation 'completion:search-history "no prompt waits"))]
-         [h (minibuffer:prompt-history p)] [entries (if h (h) '())])
+         [h (minibuffer:prompt-history p)]
+         [entries (append (minibuffer:prompt-entries p) (if h (h) '()))])
     (when (null? entries)
       (error 'completion:search-history "History is empty"))
-    (let ([entry (minibuffer:call-with-setup
-                   (lambda (q) (minibuffer:set-input! q (minibuffer:input p)))
-                   (lambda ()
-                     (read "History: " (list (source (candidates (list->vector entries)) (in-order))) #f)))])
-      (minibuffer:set-input! p entry))))
+    (let ([k (minibuffer:call-with-setup
+               (lambda (q) (minibuffer:set-input! q (minibuffer:input p)))
+               (lambda ()
+                 (read "History: "
+                       (list (source (candidates (list->vector (map (lambda (e k) (cons e (fx+ k 1))) entries (iota (length entries))))) (in-order)))
+                       #f)))])
+      (minibuffer:recall! p k))))
 
 (define %quit (record-constructor (record-constructor-descriptor &quit)))
 

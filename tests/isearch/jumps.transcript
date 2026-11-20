@@ -1,0 +1,22 @@
+; A search that ends away from where it started records the start once
+; in the jump history, and M-, returns there.
+> (define b (show "j" "foo bar foo bar foo\n"))
+> (views:set-point! (view) 5)
+> (press! "C-s" "f" "o" "o" "C-s" "C-s" "RET")
+> (list (point) (jump-history:places))
+> (press! "M-,")
+> (point)
+(20 ((#<buffer j> . 5)))
+5
+; C-g and ESC record nothing.
+> (define before (length (jump-history:places)))
+> (press! "C-s" "f" "o" "o" "C-s" "C-g")
+> (press! "C-s" "b" "a" "r" "ESC")
+> (list (point) (= before (length (jump-history:places))))
+! &quit
+! &quit
+(5 #t)
+; A key that ends the search records as RET does.
+> (press! "C-s" "b" "a" "r" "C-f")
+> (list (point) (map cdr (jump-history:places)))
+(9 (5))

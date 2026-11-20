@@ -1,0 +1,53 @@
+; A temporary keymap's prompt shows as the client's keys in progress
+; while the keymap is up, on that client only, and is never logged.
+> (define-table pick-keymap)
+> (commands:define-command (pick) "Stays." (void))
+> (keys:bind! pick-keymap "p" pick)
+> (define ended '())
+> (define end-pick
+    (keys:push-keymap! client pick-keymap (lambda (found command) (eq? found pick-keymap))
+                       (lambda () (set! ended (cons 'pick ended))) "Pick: "))
+> (echo)
+"Pick: "
+> (echo-for other-client)
+#f
+> (press! "p")
+> (echo)
+"Pick: "
+; A procedure gives the prompt each time the echo is drawn; a pair holds
+; a string and the face it is drawn in.
+> (define typed "fo")
+> (end-pick)
+> ended
+(pick)
+> (echo)
+#f
+> (define end-search
+    (keys:push-keymap! client pick-keymap (lambda (found command) (eq? found pick-keymap))
+                       void (lambda () (list "Failing I-search: " (cons typed 'isearch.fail)))))
+> (echo-element)
+"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"1 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Failing I-search: <span data-face=\"isearch.fail\">fo</span></span></div></div>"
+> (set! typed "foo")
+> (echo)
+"Failing I-search: foo"
+; A message covers the prompt, and a key that leaves the keymap ends it,
+; leaving no copy of the prompt.
+> (echo-area:message! "Wrapped")
+> (echo)
+"Wrapped"
+> (press! "x")
+> (echo)
+#f
+> (keys:prompt client)
+#f
+> (messages)
+> (end-search)
+"Wrapped\n"
+; A prompt that raises is reported, which the echo area then shows.
+> (procedure? (keys:push-keymap! client pick-keymap (lambda (found command) #t) void (lambda () (car '()))))
+> (echo)
+> (keys:push-keymap! client pick-keymap (lambda (found command) #t) void '("not" "allowed"))
+#t
+! car: () is not a pair
+"() is not a pair"
+! keys:push-keymap!: not a string, a procedure or #f with irritant ("not" "allowed")

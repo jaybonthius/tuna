@@ -1,0 +1,57 @@
+; In occur:edit-mode an edit to a listed line is made at the same place in
+; the source, and undo in *Occur* undoes it there too.
+> (define b (show "src" "one foo\ntwo\nfoo three foo\n"))
+> (define (src) (buffers:text-between (buffers:document b) 0 (document:length (buffers:document b))))
+> (press! "C-x" "3")
+> (start! "M-s" "o")
+> (type! "foo")
+> (press! "RET")
+> (wait-listed)
+> (define (occur-view) (find (lambda (v) (eq? (views:buffer v) (occur-buffer))) (views:showing (occur-buffer))))
+> (layout:select! (occur-view))
+> (define (line-start i)
+    (let* ([doc (buffers:document (occur-buffer))] [acc '()])
+      (document:for-each-child (document:enclosing doc 1) 0 (document:length doc)
+        (lambda (n at) (when (and (document:node? n) (document:node-attribute n 'entry)) (set! acc (cons n acc)))))
+      (+ (document:node-start (list-ref (reverse acc) i)) 1)))
+> (press! "e")
+> (modes:major-mode (occur-buffer))
+> (press! "C-e" "!")
+> (list (listed) (src))
+> (views:set-point! (view) (+ (line-start 1) 4))
+> (press! "X")
+> (list (listed) (src))
+> (press! "C-/")
+> (list (listed) (src))
+occur:edit-mode
+("3 matches in 2 lines for \"foo\" in buffer: src\none foo!\nfoo three foo\n" "one foo!\ntwo\nfoo three foo\n")
+("3 matches in 2 lines for \"foo\" in buffer: src\none foo!\nfoo Xthree foo\n" "one foo!\ntwo\nfoo Xthree foo\n")
+("3 matches in 2 lines for \"foo\" in buffer: src\none foo\nfoo three foo\n" "one foo\ntwo\nfoo three foo\n")
+; A line break, an edit joining lines and an edit to the heading are
+; refused, and nothing reaches the source.
+> (press! "RET")
+> (views:set-point! (view) (line-start 1))
+> (press! "DEL")
+> (views:set-point! (view) 3)
+> (press! "Z")
+> (list (listed) (src))
+! buffers:replace!: the node refuses the edit with irritant occur:%line
+! buffers:replace!: a read-only span refuses the edit with irritant occur:%read-only
+! buffers:replace!: a read-only span refuses the edit with irritant occur:%read-only
+("3 matches in 2 lines for \"foo\" in buffer: src\none foo\nfoo three foo\n" "one foo\ntwo\nfoo three foo\n")
+; The source edited meanwhile: the line's anchor follows, so the edit
+; lands at the same place in its line.
+> (buffers:replace! b 1 1 ">> ")
+> (views:set-point! (view) (line-start 0))
+> (press! "Y")
+> (src)
+#<edit 5>
+">> Yone foo\ntwo\nfoo three foo\n"
+; C-c C-c goes back to occur:mode, where edits are refused.
+> (press! "C-c" "C-c")
+> (modes:major-mode (occur-buffer))
+> (press! "W")
+> (src)
+occur:mode
+! W is undefined
+">> Yone foo\ntwo\nfoo three foo\n"

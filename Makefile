@@ -67,6 +67,10 @@ bench: exe
 	sh bench/jsonrpc.sh build/bin/tuna || status=1; \
 	sh bench/diagnostics.sh build/bin/tuna || status=1; \
 	sh bench/terminal.sh build/bin/tuna || status=1; \
+	sh bench/search.sh build/bin/tuna || status=1; \
+	sh bench/isearch.sh build/bin/tuna || status=1; \
+	sh bench/replace.sh build/bin/tuna || status=1; \
+	sh bench/occur.sh build/bin/tuna || status=1; \
 	exit $$status
 
 repl: build

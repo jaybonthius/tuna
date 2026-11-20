@@ -183,32 +183,34 @@
 
 (define-syntax define-command
   (lambda (x)
-    (define (parameter-name p)
+    (define (parameter-names p)
       (syntax-case p ()
-        [id (identifier? #'id) #'id]
-        [(id expr) (identifier? #'id) #'id]
+        [id (identifier? #'id) (list #'id)]
+        [(id expr) (identifier? #'id) (list #'id)]
+        [((id ...) expr) (for-all identifier? #'(id ...)) #'(id ...)]
         [_ (syntax-violation 'commands:define-command
-             "not an identifier or a pair of one and an expression" x p)]))
+             "not an identifier, [id expr] or [(id ...) expr]" x p)]))
     (define (interactive-expression p)
       (syntax-case p ()
-        [(id expr) #'expr]
+        [(names expr) #'expr]
         [_ #f]))
     (syntax-case x ()
       [(_ (id parameter ...) doc body1 body2 ...)
        (and (identifier? #'id) (string? (syntax->datum #'doc)))
-       (with-syntax ([(formal ...) (map parameter-name #'(parameter ...))])
-         (let ([exprs (map interactive-expression #'(parameter ...))])
-           (with-syntax ([reader
-                          (if (for-all values exprs)
-                              (with-syntax ([(expr ...) exprs]
-                                            [(t ...) (generate-temporaries exprs)])
-                                #'(lambda () (let* ([t expr] ...) (list t ...))))
-                              #'#f)])
-             ;; Registering in a definition lets definitions follow the
-             ;; form in a module's body.
-             #'(begin
-                 (define-public (id formal ...) doc body1 body2 ...)
-                 (define-values () (begin (register! id 'id reader) (values)))))))]
+       (let ([names (map parameter-names #'(parameter ...))])
+         (with-syntax ([(formal ...) (apply append names)])
+           (let ([exprs (map interactive-expression #'(parameter ...))])
+             (with-syntax ([reader
+                            (if (for-all values exprs)
+                                (with-syntax ([(expr ...) exprs]
+                                              [((t ...) ...) (map generate-temporaries names)])
+                                  #'(lambda () (let*-values ([(t ...) expr] ...) (list t ... ...))))
+                                #'#f)])
+               ;; Registering in a definition lets definitions follow the
+               ;; form in a module's body.
+               #'(begin
+                   (define-public (id formal ...) doc body1 body2 ...)
+                   (define-values () (begin (register! id 'id reader) (values))))))))]
       [_ (syntax-violation 'commands:define-command
            "expected (commands:define-command (id parameter ...) doc-string body ...+)" x)])))
 

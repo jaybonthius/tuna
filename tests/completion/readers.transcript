@@ -33,8 +33,22 @@
 > (result nested)
 > (press! "C-g")
 ! &quit
+; A read-entry prompt's own entries come first, and one chosen is given
+; as chosen, as M-p gives it.
+> (define t (start! (lambda () (call-with-values (lambda () (minibuffer:read-entry "Word: " h '("one" "two"))) list))))
+> (define nested (start! (lambda () (press! "M-r"))))
+> (texts (session))
+> (type! "tw")
+> (press! "RET")
+> (result nested)
+> (input)
+> (press! "RET")
+> (result t)
 > (define t (start! (lambda () (minibuffer:read "Word: " #f))))
 > (press! "M-r")
+("one" "two" "beta" "gamma" "alpha")
+"two"
+("two" 1)
 ! completion:search-history: History is empty
 > (echo-area:current-message)
 "History is empty"

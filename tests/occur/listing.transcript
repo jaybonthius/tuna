@@ -1,0 +1,110 @@
+; *Occur* lists each matching line once, numbered, with its matches in
+; occur.match, after a heading with the counts.
+> (define b (show "src" "one foo\ntwo\nfoo three foo\nfour\nfive foo\n"))
+> (define src-view (view))
+; The one view shows *Occur* once it is listed, so each listing here
+; shows its source in it again.
+> (define (occur! . args)
+    (let ([source (views:buffer src-view)])
+      (views:call-with-view src-view (lambda () (apply occur:occur args)))
+      (wait-listed)
+      (views:set-buffer! src-view source)))
+> (occur! (search:make-query "foo") 0 #f)
+> (listed)
+> (define ov (views:make (occur-buffer)))
+> (faced (html->string (views:draw ov client)))
+> (modes:major-mode (occur-buffer))
+"4 matches in 3 lines for \"foo\" in buffer: src\none foo\nfoo three foo\nfive foo\n"
+(("shadow" "      1:") ("occur.match" "foo") ("shadow" "      3:") ("occur.match" "foo") ("occur.match" "foo") ("shadow" "      5:") ("occur.match" "foo"))
+occur:mode
+; Context lines are listed around each match, dimmed, with a separator
+; between groups that do not touch.
+> (define c (show "ctx" "a\nb\nX\nc\nd\ne\nf\nX\ng\n"))
+> (set! src-view (view))
+> (occur! (search:make-query "X") 1 #f)
+> (listed)
+> (map car (faced (html->string (views:draw ov client))))
+"2 matches for \"X\" in buffer: ctx\nb\nX\nc\nf\nX\ng\n"
+("shadow" "shadow" "shadow" "occur.match" "shadow" "shadow" "shadow" "shadow" "shadow" "shadow" "occur.match" "shadow" "shadow")
+; A template lists what search:expand makes of it for each match, with
+; the count so far as \#.
+> (define d (show "defs" "(define (alpha x) 1)\n(define (beta y) 2) (define (gamma) 3)\n"))
+> (set! src-view (view))
+> (occur! (search:make-query "\\(define \\((\\S+)" search:regexp) 0 "\\# \\1")
+> (listed)
+"3 matches in 2 lines for \"\\(define \\((\\S+)\" in buffer: defs\n0 alpha\n1 beta\n2 gamma)\n"
+; With a region, matches lie from the start of its first line to its end,
+; and one crossing the end is cut there.
+> (define r (show "reg" "foo1 foo2\nfoo3 foo4\nfoo5\n"))
+> (set! src-view (view))
+> (views:set-mark! (view) 7)
+> (views:set-point! (view) 14)
+> (occur! (search:make-query "foo[0-9]" search:regexp) 0 #f)
+> (listed)
+> (views:set-mark! src-view #f)
+"2 matches in 1 line for \"foo[0-9]\" in buffer: reg within region: 7-14\nfoo1 foo2\n"
+; With occur:jump-to-current-line on, the line point was on is listed, in
+; match.other when it does not match, and point starts there.
+> (set-option! occur:jump-to-current-line #t)
+> (views:set-point! src-view 12)
+> (occur! (search:make-query "foo[15]" search:regexp) 0 #f)
+> (listed)
+> (document:line (buffers:document (occur-buffer)) (views:point ov))
+> (filter (lambda (f) (string=? (car f) "match.other")) (faced (html->string (views:draw ov client))))
+> (set-option! occur:jump-to-current-line #f)
+"2 matches for \"foo[15]\" in buffer: reg\nfoo1 foo2\nfoo3 foo4\nfoo5\n"
+3
+(("match.other" ""))
+; M-s o reads a regexp with search:prompt-regexp-history, the last
+; search's by default; a numeric prefix is the context and C-u alone
+; reads a template.
+> (layout:switch-to-buffer b)
+> (start! "M-s" "o")
+> (type! "t[wh]")
+> (press! "RET")
+> (wait-listed)
+> (listed)
+> (search:prompt-regexp-history)
+> (layout:switch-to-buffer b)
+> (start! "M-1" "M-s" "o")
+> (press! "RET")
+> (wait-listed)
+> (listed)
+> (layout:switch-to-buffer d)
+> (start! "C-u" "M-s" "o")
+> (type! "define \\((\\w+)")
+> (press! "RET")
+> (sleep-for 0.05)
+> (type! "\\1")
+> (press! "RET")
+> (wait-listed)
+> (listed)
+"2 matches for \"t[wh]\" in buffer: src\ntwo\nfoo three foo\n"
+("t[wh]")
+"2 matches for \"t[wh]\" in buffer: src\none foo\ntwo\nfoo three foo\nfour\n"
+"3 matches in 2 lines for \"define \\((\\w+)\" in buffer: defs\nalpha\nbeta\ngamma\n"
+; M-s o during a search lists its query's lines, style and case
+; included.
+> (layout:switch-to-buffer b)
+> (views:set-point! (view) 1)
+> (press! "C-s" "F" "o" "o")
+> (press! "M-s" "o")
+> (wait-listed)
+> (list (isearch:current client) (listed))
+> (layout:switch-to-buffer b)
+> (views:set-point! (view) 1)
+> (press! "M-s" "w" "f" "o")
+> (press! "M-s" "o")
+> (wait-listed)
+> (listed)
+(#f "0 matches for \"Foo\" in buffer: src\n")
+"0 matches for \"fo\" in buffer: src\n"
+; A listed line keeps the faces of its source's spans.
+> (define fc (show "faces" "one foo\ntwo foo\n"))
+> (set! src-view (view))
+> (buffers:define-layer hl (priority -10))
+> (buffers:set-spans! (buffers:layer fc hl) 0 (document:length (buffers:document fc)) (list (list 1 4 (list (cons 'face 'keyword))) (list 9 12 (list (cons 'face 'comment)))))
+> (occur! (search:make-query "foo") 0 #f)
+> (faced (html->string (views:draw ov client)))
+#t
+(("shadow" "      1:") ("keyword" "one") ("occur.match" "foo") ("shadow" "      2:") ("comment" "two") ("occur.match" "foo"))

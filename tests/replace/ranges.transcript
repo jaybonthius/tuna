@@ -1,0 +1,88 @@
+; An active region is the range, and its end follows the replacements.
+> (define b (show "r" "a a a a a\n"))
+> (views:set-mark! (view) 3)
+> (views:set-point! (view) 8)
+> (replace! "M-%" "a" "xyz")
+> (list (asked) (views:mark (view)))
+> (press! "!")
+> (text)
+((4 "Query replacing a with xyz: (? for help) " "a") #f)
+"a xyz xyz xyz a\n"
+; A match crossing the range's end is cut there, and the pattern sees the
+; view's bounds, as in Emacs: a+ over the first two characters of aaaa
+; gives baa; \bfoo\b and C-u M-% foo over a region ending after foo in
+; foobar replace nothing.
+> (define c (show "c" "aaaa\n"))
+> (views:set-mark! (view) 1)
+> (views:set-point! (view) 3)
+> (replace! "C-M-%" "a+" "b")
+> (press! "!")
+> (text)
+> (define d (show "d" "foobar\n"))
+> (views:set-mark! (view) 1)
+> (views:set-point! (view) 4)
+> (replace! "C-M-%" "\\bfoo\\b" "baz")
+> (list (session) (text) (last-message))
+> (views:set-mark! (view) 1)
+> (views:set-point! (view) 4)
+> (start! "C-u" "M-%")
+> (type! "foo")
+> (press! "RET")
+> (sleep-for 0.05)
+> (type! "baz")
+> (press! "RET")
+> (sleep-for 0.05)
+> (list (session) (text) (last-message))
+"baa\n"
+(#f "foobar\n" "Replaced 0 occurrences")
+(#f "foobar\n" "Replaced 0 occurrences")
+; C-u M-% user and C-M-% \buser\b agree on user_id in fundamental, where
+; _ is not a word character.
+> (define u (show "u" "user_id user\n"))
+> (start! "C-u" "M-%")
+> (type! "user")
+> (press! "RET")
+> (sleep-for 0.05)
+> (type! "uid")
+> (press! "RET")
+> (sleep-for 0.05)
+> (press! "!")
+> (text)
+> (define u2 (show "u2" "user_id user\n"))
+> (replace! "C-M-%" "\\buser\\b" "uid")
+> (press! "!")
+> (text)
+"uid_id uid\n"
+"uid_id uid\n"
+; ^ does not match at a region's start in mid-line.
+> (define m (show "m" "xab ab\n"))
+> (views:set-mark! (view) 2)
+> (views:set-point! (view) 7)
+> (replace! "C-M-%" "^ab" "Z")
+> (list (session) (text) (last-message))
+(#f "xab ab\n" "Replaced 0 occurrences")
+; With several cursors that have regions, only matches inside a region
+; are asked about; each region's end follows the replacements before it.
+> (define s (show "s" "a a a a a a\n"))
+> (views:set-mark! (view) 1)
+> (views:set-point! (view) 4)
+> (define c2 (views:add-cursor! (view) 8))
+> (views:set-cursor! c2 12 8)
+> (replace! "M-%" "a" "bb")
+> (asked)
+> (press! "!")
+> (text)
+(2 "Query replacing a with bb: (? for help) " "a")
+"bb bb a a bb bb\n"
+; The scan, the highlights and the count hold the matches the session asks
+; about, and only those.
+> (define t (show "t" "a a a a a\n"))
+> (views:set-mark! (view) 3)
+> (views:set-point! (view) 8)
+> (replace! "M-%" "a" "b")
+> (sleep-for 0.2)
+> (let ([sc (replace:session-scan (session))]) (list (search:scan-count sc) (search:scan-done? sc)))
+> (faced (html->string (views:draw (view) client)))
+> (press! "q")
+(3 #t)
+(("replace.match" "a") ("match.other" "a") ("match.other" "a"))

@@ -99,7 +99,7 @@
     (ns-per-op 200 (lambda (i) (handle desk (vector-ref items (mod i 2)))))))
 
 (define (draw-cost v)
-  (ns-per-op 200 (lambda (i) (html->string (views:draw v desk)))))
+  (ns-per-op (if (fx> (document:length (buffers:document (views:buffer v))) 900000) 20 200) (lambda (i) (html->string (views:draw v desk)))))
 
 (define (two-clients-cost v)
   (let ([desktop (web:make-client 3)] [phone (web:make-client 4)]
@@ -177,7 +177,41 @@
     (views:fold! v (+ p 40) (+ p 400))
     (ns-per-op 2000 (lambda (i) (views:next-stop v (+ p (mod i 200)))))))
 
+(define (one-line-view)
+  (set! made (+ made 1))
+  (let* ([b (buffers:make (format "bench-~a" made) (string-append (make-string 1000000 #\a) "\n"))]
+         [v (views:make b)])
+    (views:set-option! v views:wrap-lines #f)
+    (views:set-point! v 500001)
+    (report! v desk 1)
+    (collect (collect-maximum-generation))
+    v))
+
+(define matches (list->vector (map (lambda (k) (+ 1 (* 8 k))) (iota 125000))))
+
+(define (first-at-or-after p)
+  (let search ([a 0] [z (vector-length matches)])
+    (if (fx< a z)
+        (let ([m (fxquotient (fx+ a z) 2)])
+          (if (fx< (vector-ref matches m) p) (search (fx+ m 1) z) (search a m)))
+        a)))
+
+(define (match-source v)
+  (lambda (view client start end)
+    (if (eq? view v)
+        (let loop ([i (first-at-or-after (fxmax 1 (fx- start 4)))] [acc '()])
+          (if (or (fx= i (vector-length matches)) (fx>= (vector-ref matches i) end))
+              (reverse acc)
+              (loop (fx+ i 1) (cons (list (vector-ref matches i) (fx+ (vector-ref matches i) 4) '((face . match.other))) acc))))
+        '())))
+
 (define (run)
+  (let ([line (one-line-view)])
+    (show "draw-one-line" (draw-cost line))
+    (let ([source (match-source line)])
+      (table-set! views:span-sources source 1000)
+      (show "draw-one-line-source" (draw-cost line))
+      (table-remove! views:span-sources source)))
   (let ([typical (scrolled-view (file-buffer 22000 #f))]
         [heavy (scrolled-view (file-buffer 10000 #t))]
         [nodes (scrolled-view (node-buffer 22000))]

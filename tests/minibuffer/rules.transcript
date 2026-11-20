@@ -294,3 +294,28 @@
 (raised #<condition &quit>)
 > (raised (lambda () (minibuffer:prompt-selected-view 'no)))
 (minibuffer:prompt-selected-view "not a prompt")
+; read-entry's own entries come before the history under M-p and are never
+; saved; one recalled and left as it was is given as chosen, by position.
+> (define t (start! (lambda () (call-with-values (lambda () (minibuffer:read-entry "Pick: " minibuffer:history '("one" "two"))) list))))
+> (press! "M-p" "M-p")
+> (input)
+> (press! "M-p")
+> (input)
+> (press! "M-n" "RET")
+> (list (result t) (minibuffer:history))
+"two"
+"hi"
+(("two" 1) ("hi" "abc" "in" "d" "b"))
+; Typed, the same text is no entry, and goes into the history.
+> (define t (start! (lambda () (call-with-values (lambda () (minibuffer:read-entry "Pick: " minibuffer:history '("one" "two"))) list))))
+> (type! "two")
+> (press! "RET")
+> (list (result t) (car (minibuffer:history)))
+(("two" #f) "two")
+; Recalled and edited, it is typed text.
+> (define t (start! (lambda () (call-with-values (lambda () (minibuffer:read-entry "Pick: " minibuffer:history '("one" "two"))) list))))
+> (press! "M-p")
+> (type! "x")
+> (press! "RET")
+> (result t)
+("onex" #f)

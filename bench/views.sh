@@ -40,6 +40,8 @@ echo "$output" | awk '
     unit["map-edit-60000"] = "ns"
     unit["map-lookup-60000"] = "ns"
     unit["map-bytes-60000"] = "bytes"
+    unit["draw-one-line"] = "ns"
+    unit["draw-one-line-source"] = "ns"
     missing = 0
   }
   $1 in unit {

@@ -223,6 +223,11 @@
     --faces-markup-raw-color: var(--modus-fg-prose-code);
     --minibuffer-prompt-color: var(--modus-fg-prompt);
     --echo-area-prompt-color: var(--modus-fg-prompt);
+    --search-group-1-background: var(--modus-bg-blue-intense);
+    --isearch-fail-background: var(--modus-bg-red-intense);
+    --replace-match-background: var(--modus-bg-red-intense);
+    --occur-match-background: var(--modus-bg-magenta-subtle);
+    --search-group-2-background: var(--modus-bg-green-intense);
     --completion-match-0-color: var(--modus-fg-completion-match-0);
     --completion-match-1-color: var(--modus-fg-completion-match-1);
     --completion-match-2-color: var(--modus-fg-completion-match-2);

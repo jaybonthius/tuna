@@ -43,3 +43,8 @@
   (commit "0a3d7b524573774e12ab47df46fc7733538724da")
   (library-directories ("src" . "build/obj/src"))
   (build "sh" "-c" "make ghostty build/config.ss && mkdir -p src/ghostty/build && cp build/config.ss src/ghostty/build/config.ss"))
+(library chez-pcre2
+  (git "https://github.com/jaybonthius/chez-pcre2.git")
+  (commit "cbd2a870fa2d527d91171f08c8eb49c9d4e08904")
+  (library-directories ("src" . "build/obj/src"))
+  (build))

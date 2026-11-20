@@ -96,7 +96,7 @@
 
 (module %internals
   (check-main-thread check-prompt check-live buffer prompts make-prompt prompt-record? prompt-depth prompt-task
-   history-of default-of shown-in prompt-keymaps prompt-keymaps-set! prompt-message prompt-message-set!
+   history-of entries-of prompt-chosen prompt-chosen-set! default-of shown-in prompt-keymaps prompt-keymaps-set! prompt-message prompt-message-set!
    prompt-recalled prompt-recalled-set! prompt-typed prompt-typed-set! prompt-ended? prompt-node prompt-parts
    input-range input-text prompt-holding prompt-at start-prompt! end-prompt! answer! prompt-of
    setups prompt-keymaps-at quit-condition without-quits bar-view narrow-views! at-bottom bottom-prompt
@@ -116,7 +116,8 @@
             (mutable recalled prompt-recalled prompt-recalled-set!) (mutable typed prompt-typed prompt-typed-set!)
             (mutable ended? prompt-ended? prompt-ended?-set!) (mutable resume prompt-resume prompt-resume-set!)
             (mutable answer prompt-answer prompt-answer-set!) (mutable before-id prompt-before-id prompt-before-id-set!)
-            (mutable point prompt-point prompt-point-set!) (mutable final prompt-final prompt-final-set!)))
+            (mutable point prompt-point prompt-point-set!) (mutable final prompt-final prompt-final-set!)
+            (immutable entries entries-of) (mutable chosen prompt-chosen prompt-chosen-set!)))
 
   (define (check-prompt who p)
     (unless (prompt-record? p)
@@ -344,6 +345,17 @@
   (check-prompt 'minibuffer:prompt-history p)
   (history-of p))
 
+(define (prompt-entries p)
+  (check-prompt 'minibuffer:prompt-entries p)
+  (entries-of p))
+
+(define (recall! p k)
+  (check-live 'minibuffer:recall! p)
+  (let ([n (+ (length (entries-of p)) (let ([h (history-of p)]) (if h (length (h)) 0)))])
+    (unless (and (fixnum? k) (fx<= 1 k n))
+      (assertion-violation 'minibuffer:recall! "not an index of the prompt's entries and history" k)))
+  (%recall! p (- k (prompt-recalled p)) 'minibuffer:recall!))
+
 (define (prompt-default p)
   (check-prompt 'minibuffer:prompt-default p)
   (default-of p))
@@ -390,9 +402,16 @@
   (when (echo-area:current-message) (echo-area:message! ""))
   (prompt-message-set! p text))
 
+;; An entry of the read's own, recalled and left as it was, is the one
+;; chosen; it is not saved, as it was never typed.
+(define (%note-chosen! p)
+  (let ([k (prompt-recalled p)] [entries (entries-of p)])
+    (when (and (fx<= 1 k (length entries)) (string=? (input-text p) (list-ref entries (fx- k 1))))
+      (prompt-chosen-set! p (fx- k 1)))))
+
 (define (%add-to-history! p)
   (let ([h (history-of p)] [text (input-text p)])
-    (when (and h (not (string=? text "")))
+    (when (and h (not (prompt-chosen p)) (not (string=? text "")))
       (let loop ([entries (cons text (remove text (h)))] [n (history-length)] [acc '()])
         (if (or (null? entries) (fx= n 0))
             (set-saved! h (reverse acc))
@@ -400,6 +419,7 @@
 
 (define (exit! p value)
   (check-live 'minibuffer:exit! p)
+  (%note-chosen! p)
   (%add-to-history! p)
   (end-prompt! p)
   (answer! p (lambda () value)))
@@ -421,22 +441,25 @@
           (setup p))))
     (setups)))
 
-(define (%read question h default)
-  (check-main-thread 'minibuffer:read)
-  (unless (current-task)
-    (assertion-violation 'minibuffer:read "not in a task"))
-  (let ([p (make-prompt (fx+ 1 (fold-left (lambda (m p) (fxmax m (prompt-depth p))) 0 prompts))
-                        (current-task) h default #f #f '() #f 0 #f #f #f #f #f #f #f)])
-    (guard (c [#t (end-prompt! p) (raise c)])
-      (start-prompt! p question)
-      (%run-setups! p)
-      (prompt-started p)
-      (let ([v (suspend
-                 (lambda (resume)
-                   (let ([answer (prompt-answer p)])
-                     (if answer (resume answer) (prompt-resume-set! p resume)))))])
-        (end-prompt! p)
-        v))))
+(define %read
+  (case-lambda
+    [(question h default) (%read question h default '() (lambda (answer chosen) answer))]
+    [(question h default entries give)
+     (check-main-thread 'minibuffer:read)
+     (unless (current-task)
+       (assertion-violation 'minibuffer:read "not in a task"))
+     (let ([p (make-prompt (fx+ 1 (fold-left (lambda (m p) (fxmax m (prompt-depth p))) 0 prompts))
+                           (current-task) h default #f #f '() #f 0 #f #f #f #f #f #f #f entries #f)])
+       (guard (c [#t (end-prompt! p) (raise c)])
+         (start-prompt! p question)
+         (%run-setups! p)
+         (prompt-started p)
+         (let ([v (suspend
+                    (lambda (resume)
+                      (let ([answer (prompt-answer p)])
+                        (if answer (resume answer) (prompt-resume-set! p resume)))))])
+           (end-prompt! p)
+           (give v (prompt-chosen p)))))]))
 
 (define read
   (case-lambda
@@ -450,6 +473,15 @@
      (unless (or (not default) (string? default))
        (assertion-violation 'minibuffer:read "neither a string nor #f" default))
      (%read question h default)]))
+
+(define (read-entry question h entries)
+  (unless (string? question)
+    (assertion-violation 'minibuffer:read-entry "not a string" question))
+  (unless (or (not h) (saved? h))
+    (assertion-violation 'minibuffer:read-entry "neither saved data nor #f" h))
+  (unless (and (list? entries) (for-all string? entries))
+    (assertion-violation 'minibuffer:read-entry "not a list of strings" entries))
+  (%read question h #f entries values))
 
 (define (%ask-line question default) (read question history default))
 
@@ -553,7 +585,7 @@
     (signal-task (prompt-task p) (quit-condition))))
 
 (define (%recall! p n who)
-  (let* ([h (history-of p)] [entries (if h (h) '())] [k (+ (prompt-recalled p) n)] [default (default-of p)])
+  (let* ([h (history-of p)] [entries (append (entries-of p) (if h (h) '()))] [k (+ (prompt-recalled p) n)] [default (default-of p)])
     (cond
       [(> k (length entries)) (error who "beginning of history")]
       [(< k (if default -1 0)) (error who (if default "end of defaults" "end of history"))]

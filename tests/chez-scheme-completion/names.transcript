@@ -64,7 +64,7 @@ variable
 > (press! "C-g")
 > (complete! "SPC" "d" "o" "c" "u" "m" "e" "n" "t" ":" "t" "e" "x")
 > (rows (session))
-(("document:text" "document:text" completion:identifier-category ("procedure")))
+(("document:text" "document:text" completion:identifier-category ("procedure")) ("document:text-position" "document:text-position" completion:identifier-category ("procedure")))
 > (press! "C-g")
 ; RET inserts the spelling.
 > (complete! "SPC" "i" "n" "s" "e" "r" "t")

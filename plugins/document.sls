@@ -1,7 +1,7 @@
 (library (document)
   (export document? document:from-datum document:from-utf8 document:datums
           document:length document:token document:text document:for-each-utf8-chunk
-          document:unit document:offset document:position document:line document:line-start
+          document:unit document:offset document:position document:text-position document:line document:line-start
           document:enclosing document:node? document:atom? document:node-kind
           document:node-attribute document:node-start document:node-end document:in-line?
           document:for-each-child
@@ -966,6 +966,30 @@
     (if (eq? unit 'in-line-atoms)
         (in-line-atoms-before (document-tree doc) p)
         (measure-before (document-tree doc) p unit)))
+
+  ;; An atom stands for one character, U+FFFC, three bytes, in a document's
+  ;; own measures; its text in the range's text may stand for more.
+  (define (document:text-position doc start atom-texts offset unit)
+    (define who 'document:text-position)
+    (check-document who doc)
+    (check-position who doc start)
+    (unless (memq unit '(characters bytes))
+      (assertion-violation who "not a unit of text, characters or bytes" unit))
+    (unless (and (fixnum? offset) (fx>= offset 0))
+      (assertion-violation who "not an offset" offset))
+    (check-atom-texts who doc start (tree-tokens (document-tree doc)) atom-texts)
+    (let ([base (measure-before (document-tree doc) start unit)]
+          [standing (if (eq? unit 'bytes) 3 1)])
+      (define (size text) (if (eq? unit 'bytes) (bytevector-length (string->utf8 text)) (string-length text)))
+      (let loop ([atoms atom-texts] [extra 0])
+        (if (null? atoms)
+            (document:position doc (fx- (fx+ base offset) extra) unit)
+            (let* ([at (caar atoms)] [size (size (cdar atoms))]
+                   [from (fx+ (fx- (measure-before (document-tree doc) at unit) base) extra)])
+              (cond
+                [(fx<= offset from) (document:position doc (fx- (fx+ base offset) extra) unit)]
+                [(fx< offset (fx+ from size)) at]
+                [else (loop (cdr atoms) (fx+ extra (fx- size standing)))]))))))
 
   (define (shape-before t p)
     (let down ([t t] [p p] [done 0] [pending 0] [before no-class])

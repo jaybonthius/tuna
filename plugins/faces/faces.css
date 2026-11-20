@@ -176,6 +176,17 @@
     background: var(--tuna-match-other);
   }
 
+  /* A node standing alone that a span covers carries the span's face on
+     its own element, which draws nothing, so the face goes on what its
+     kind drew. */
+  .view .node[data-face="match"] > * {
+    background: var(--tuna-match);
+  }
+
+  .view .node[data-face="match.other"] > * {
+    background: var(--tuna-match-other);
+  }
+
   [data-face="error"], :where([data-face^="error."]) {
     color: var(--tuna-error);
   }

@@ -19,6 +19,9 @@
 (define-table span-properties
   "Maps a key of a span's value to a procedure that returns attributes for the span's element.")
 
+(define-table span-sources
+  "Maps a procedure of a view, a client and the start and end of the run drawn, which returns spans as buffers:spans does, to the priority of a layer they draw as.")
+
 (define-table position-describers
   "Maps a kind's constructor to a procedure of a node of the kind and a view that describes where the view's point is in the node.")
 
@@ -1370,7 +1373,7 @@
 
   (define-record-type span-entry
     (sealed #t)
-    (fields start end rank open close before after replace))
+    (fields start end rank open close before after replace face))
 
   (define-record-type span-style
     (sealed #t)
@@ -1494,6 +1497,13 @@
         span-close
         (raw-html (apply string-append (make-list n "</span>")))))
 
+  (define (span-face value)
+    (let ([face (value-ref value 'face)])
+      (cond
+        [(symbol? face) (symbol->string face)]
+        [(string? face) face]
+        [else #f])))
+
   (define (value-ref value key)
     (and (list? value)
          (let ([e (find-first (lambda (e) (and (pair? e) (eq? (car e) key))) value)]) (and e (cdr e)))))
@@ -1523,32 +1533,56 @@
                 (hashtable-set! styles key style)
                 style))))))
 
-  (define (styled-entry style start end rank)
+  (define (styled-entry style start end rank value)
     (make-span-entry start end rank (span-style-open style) (span-style-close style)
-                     (span-style-before style) (span-style-after style) (span-style-replace style)))
+                     (span-style-before style) (span-style-after style) (span-style-replace style)
+                     (span-face value)))
 
-  (define (window-spans b v doc regions ws we)
-    (let* ([layers (buffers:layers b v)]
+  (define-record-type span-group
+    (sealed #t)
+    (fields priority keymap spans))
+
+  ;; Of a source and a layer of one priority, the source is drawn inside,
+  ;; so it comes after the layers in the stable sort.
+  (define (span-groups b v client ws we)
+    (define (source-spans source)
+      (lambda ()
+        (guard (c [(not (quit-condition? c)) (report c) '()])
+          (let ([spans (source v client ws we)])
+            (unless (and (list? spans)
+                         (for-all (lambda (s) (and (list? s) (fx= (length s) 3) (fixnum? (car s)) (fixnum? (cadr s)))) spans))
+              (assertion-violation 'views:span-sources "a source returned what is not a list of spans" spans))
+            spans))))
+    (list-sort (lambda (x y) (< (span-group-priority x) (span-group-priority y)))
+               (append (map (lambda (l) (make-span-group (buffers:layer-priority l) (buffers:layer-keymap l) (lambda () (buffers:spans l ws we))))
+                            (buffers:layers b v))
+                       (if client
+                           (map (lambda (e) (make-span-group (cdr e) #f (source-spans (car e)))) (table-entries span-sources))
+                           '()))))
+
+  (define (window-spans b v client doc regions ws we)
+    (let* ([groups (span-groups b v client ws we)]
            [entries
             (let ([style (span-styler)])
               (define (span-click keymap s)
                 (and keymap
                      (let ([state (click-state keymap (make-posn-record (view-record-id v) (car s) #f '() #f #f #f #f))])
                        (and state (symbol->string state)))))
-              (let loop ([layers layers] [rank 0] [acc '()])
-                (if (null? layers)
+              (let loop ([groups groups] [rank 0] [acc '()])
+                (if (null? groups)
                     acc
-                    (loop (cdr layers) (fx+ rank 1)
-                          (fold-left
-                            (lambda (acc s)
-                              (let ([style (style (caddr s)
-                                                  (if (and (> (buffers:layer-priority (car layers)) 0)
-                                                           (region-reaches? regions (car s) (cadr s)))
-                                                      above-region
-                                                      '())
-                                                  (span-click (buffers:layer-keymap (car layers)) s))])
-                                (cons (styled-entry style (car s) (cadr s) rank) acc)))
-                            acc (buffers:spans (car layers) ws we))))))]
+                    (let ([g (car groups)])
+                      (loop (cdr groups) (fx+ rank 1)
+                            (fold-left
+                              (lambda (acc s)
+                                (let ([style (style (caddr s)
+                                                    (if (and (> (span-group-priority g) 0)
+                                                             (region-reaches? regions (car s) (cadr s)))
+                                                        above-region
+                                                        '())
+                                                    (span-click (span-group-keymap g) s))])
+                                  (cons (styled-entry style (car s) (cadr s) rank (caddr s)) acc)))
+                              acc ((span-group-spans g))))))))]
            [pieces
             (let loop ([i 0] [acc '()])
               (if (fx= i (vector-length regions))
@@ -1621,7 +1655,7 @@
                   (let ([eol? (or (fx< line last) (fx< last end-line))])
                     (cons (make-span-entry (if (fx= line first) s (document:line-start doc line))
                                            (if eol? (fx- (document:line-start doc (fx+ line 1)) 1) e)
-                                           region-rank (if eol? region-eol-open region-open) span-close #f #f #f)
+                                           region-rank (if eol? region-eol-open region-open) span-close #f #f #f #f)
                           acc)))))))
 
   (define (region-piece? s) (fx= (span-entry-rank s) region-rank))
@@ -1652,7 +1686,7 @@
     (let-values ([(lo hi) (bounds-of v)])
       (let ([cs (view-client v client)])
         (let-values ([(ws we above sizer) (client-run! v doc cs)])
-          (let* ([regions (list->vector (region-ranges-of v doc (view-record-cursors v)))] [spans (window-spans b v doc regions ws we)]
+          (let* ([regions (list->vector (region-ranges-of v doc (view-record-cursors v)))] [spans (window-spans b v client doc regions ws we)]
                  [end (fxmin hi (fx- (document:length doc) 1))])
             (define (shown marks) (filter (lambda (m) (or (fx< (fx- ws 1) (car m) we) (fx= (car m) we end))) marks))
             (new-context v client doc lo hi ws we (document:token doc 0) (shown (cursor-points v)) (shown (anchor-points v))
@@ -1773,10 +1807,12 @@
                          html))]
         [(whole-node? node)
          (haml (:div.node.whole ([id (item-id ctx start)] [class at-cursor] [data-at start] [data-to (node-end ctx node)]
-                                 [data-region (atom-in-region? ctx node)] [data-click (node-click ctx node)])
+                                 [data-region (atom-in-region? ctx node)] [data-click (node-click ctx node)]
+                                 [data-face (covering-face ctx start (node-end ctx node))])
                  html))]
         [else (haml (:div.node ([id (item-id ctx start)] [class at-cursor] [data-at start] [data-to (node-end ctx node)]
-                                [data-region (atom-in-region? ctx node)] [data-click (node-click ctx node)])
+                                [data-region (atom-in-region? ctx node)] [data-click (node-click ctx node)]
+                                [data-face (covering-face ctx start (node-end ctx node))])
                       html))])))
 
   ;; The place a click on the node's own element names, as item-place
@@ -1789,6 +1825,19 @@
                            (make-posn-record (view-record-id (context-view ctx)) (if (document:atom? node) start (fx+ start 1))
                                              node '() #f #f #f #f))])
              (and state (symbol->string state))))))
+
+  ;; A node standing alone has no characters for a span to colour, so the
+  ;; innermost span covering it marks its element, which its kind's
+  ;; elements are styled under.
+  (define (covering-face ctx start end)
+    (let loop ([spans (spans-near ctx start end)] [face #f] [rank -1])
+      (if (null? spans)
+          face
+          (let ([s (car spans)])
+            (if (and (span-entry-face s) (fx<= (span-entry-start s) start) (fx<= end (span-entry-end s))
+                     (fx> (span-entry-rank s) rank))
+                (loop (cdr spans) (span-entry-face s) (span-entry-rank s))
+                (loop (cdr spans) face rank))))))
 
   (define (no-element? html)
     (cond
@@ -2105,12 +2154,31 @@
                 [pieces '()])
             (define shown (by-rank (filter span-entry-open solid)))
             (define (add! stack from to html) (set! pieces (cons (make-content-piece stack from to html) pieces)))
+            ;; A line can hold thousands of spans, as a search's matches in
+            ;; a long line do, so the spans that can hold a place are kept
+            ;; as the places go forward, rather than all searched each time.
+            (define pending (list-sort (lambda (a b) (fx< (span-entry-start a) (span-entry-start b))) shown))
+            (define active '())
+            (define last-place -1)
+            (define (candidates p)
+              (if (fx< p last-place)
+                  shown
+                  (begin
+                    (set! last-place p)
+                    (let take ()
+                      (when (and (pair? pending) (fx<= (span-entry-start (car pending)) p))
+                        (set! active (cons (car pending) active))
+                        (set! pending (cdr pending))
+                        (take)))
+                    (set! active (filter (lambda (s) (fx>= (span-entry-end s) p)) active))
+                    (by-rank active))))
             (define (covering p q)
-              (filter (lambda (s) (and (fx<= (span-entry-start s) p) (fx>= (span-entry-end s) q))) shown))
+              (filter (lambda (s) (and (fx<= (span-entry-start s) p) (fx>= (span-entry-end s) q))) (candidates p)))
             (define (inside p)
-              (filter (lambda (s) (fx< (span-entry-start s) p (span-entry-end s))) shown))
+              (filter (lambda (s) (fx< (span-entry-start s) p (span-entry-end s))) (candidates p)))
+            (define replacing (filter span-entry-replace solid))
             (define (replaced? p q)
-              (exists (lambda (s) (and (span-entry-replace s) (fx<= (span-entry-start s) p) (fx>= (span-entry-end s) q))) solid))
+              (exists (lambda (s) (and (fx<= (span-entry-start s) p) (fx>= (span-entry-end s) q))) replacing))
             (define (emit-insertions! upto)
               (when (and (pair? insertions) (fx<= (insertion-at (car insertions)) upto))
                 (let ([i (car insertions)])
@@ -2161,7 +2229,7 @@
                           acc
                           (let ([s (car spans)])
                             (loop (cdr spans) (fx+ rank 1)
-                                  (cons (styled-entry (style (caddr s) '() #f) (car s) (cadr s) rank) acc)))))]
+                                  (cons (styled-entry (style (caddr s) '() #f) (car s) (cadr s) rank (caddr s)) acc)))))]
            [sorted (list->vector (list-sort (lambda (a b) (fx< (span-entry-start a) (span-entry-start b))) entries))]
            [ctx (new-context v client #f 0 n 0 n #f '() '() '#() sorted (longest-span sorted) '() '() #f #f
                              (make-eqv-hashtable) #f #f #f)])
@@ -3267,6 +3335,15 @@
       (view-record-folds-set! view kept)
       (for-each (lambda (f) (estimate-range! view b (spot-position (car f)) (spot-position (cdr f)))) opened)))
   (mark-dirty!))
+
+(define (folds-at view position)
+  (check-view 'views:folds-at view)
+  (shown-buffer 'views:folds-at view)
+  (check-position 'views:folds-at view position)
+  (fold-right (lambda (f acc)
+                (let ([start (spot-position (car f))] [end (spot-position (cdr f))])
+                  (if (fx<= start position end) (cons (cons start end) acc) acc)))
+              '() (live-folds view)))
 
 (define (folded? view position)
   (check-view 'views:folded? view)

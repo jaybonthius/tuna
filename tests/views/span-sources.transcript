@@ -1,0 +1,121 @@
+; A span source answers for one view and one client: it is asked for the
+; run views draws for that client and draws nothing for the others.
+> (define (faced html)
+    (let loop ([from 0] [acc '()])
+      (let ([i (search html "data-face=\"" from)])
+        (if i
+            (let* ([name-end (search html "\"" (+ i 11))] [open (+ (search html ">" i) 1)]
+                   [close (search html "<" open)])
+              (loop close (cons (list (substring html (+ i 11) name-end) (substring html open close)) acc)))
+            (reverse acc)))))
+> (define b (buffers:make "sourced" "alpha beta gamma\nbeta again\n"))
+> (define v (views:make b))
+> (define asked '())
+> (define (source view client start end)
+    (set! asked (cons (list (web:client-number client) start end) asked))
+    (if (and (eq? view v) (eq? client desktop))
+        (list (list 7 11 '((face . match))) (list 18 22 '((face . match.other))))
+        '()))
+> (table-set! views:span-sources source 1000)
+> (faced (html-of v desktop))
+(("match" "beta") ("match.other" "beta"))
+> (faced (html-of v phone))
+()
+> (reverse asked)
+((1 1 29) (2 1 29))
+; A view drawn for no client asks no source.
+> (set! asked '())
+> (faced (html-of v #f))
+()
+> asked
+()
+; Of a source and a layer of one priority, the source's span is inside.
+> (buffers:define-layer marks (priority 1000))
+> (buffers:add-span! (buffers:layer b marks) 1 12 '((face . keyword)))
+> (define (around html) (let ([i (search html "data-face=\"keyword\"" 0)]) (substring html (- i 6) (+ (search html "gamma" i) 5))))
+> (around (html-of v desktop))
+"<span data-face=\"keyword\">alpha <span data-face=\"match\">beta</span> </span>gamma"
+; A source of a lower priority is drawn outside the layer.
+> (table-set! views:span-sources source 10)
+> (around (html-of v desktop))
+"<span data-face=\"keyword\">alpha </span><span data-face=\"match\"><span data-face=\"keyword\">beta</span></span><span data-face=\"keyword\"> </span>gamma"
+> (buffers:remove-span! (buffers:layer b marks) '((face . keyword)))
+; A source above priority 0 that the region reaches keeps its background.
+> (table-set! views:span-sources source 1000)
+> (begin (views:set-mark! v 1) (views:set-point! v 13))
+> (faced (html-of v desktop))
+(("match" "beta") ("match.other" "beta"))
+> (and (search (html-of v desktop) "class=\"above-region\" data-face=\"match\"" 0) #t)
+#t
+> (begin (views:set-mark! v 13) (views:set-point! v 13))
+; A source that raises is reported, and the view still draws.
+> (define reported '())
+> (define (note-report report c) (set! reported (cons (condition-message c) reported)))
+> (advice-add! report note-report)
+> (define (broken view client start end) (error 'broken "no spans here"))
+> (table-set! views:span-sources broken 5)
+> (faced (html-of v desktop))
+(("match" "beta") ("match.other" "beta"))
+> reported
+("no spans here")
+> (define (malformed view client start end) '((1 2)))
+> (table-set! views:span-sources malformed 5)
+> (faced (html-of v desktop))
+(("match" "beta") ("match.other" "beta"))
+> (car reported)
+"a source returned what is not a list of spans"
+> (advice-remove! report note-report)
+; A source removed draws nothing more.
+> (table-remove! views:span-sources broken)
+> (table-remove! views:span-sources malformed)
+> (table-remove! views:span-sources source)
+> (faced (html-of v desktop))
+()
+; A hand scroll, which runs no command, shows the spans of the run then
+; drawn: the next draw asks the source for it.
+> (define long (buffers:make "long" (lines 300)))
+> (define lv (views:make long))
+> (define runs '())
+> (define (each-line view client start end)
+    (set! runs (cons (list (line-of view start) (line-of view end)) runs))
+    (if (eq? view lv) (list (list start (+ start 4) '((face . match)))) '()))
+> (table-set! views:span-sources each-line 1000)
+> (report! desktop lv 1 0 #t)
+> (string? (html-of lv desktop))
+> (car runs)
+#t
+(1 82)
+> (report! desktop lv 151 0 #t)
+> (string? (html-of lv desktop))
+> (car runs)
+#t
+(111 211)
+> (table-remove! views:span-sources each-line)
+; A span covering a node standing alone puts its face on the node's
+; element, as it would colour characters.
+> (import (md))
+> (define pic (buffers:make "pic" (md:doc '() (md:heading '() "a\n") (md:image '((src . "a.png"))) (md:heading '() "b\n"))))
+> (define pv (views:make pic))
+> (define img
+    (let ([doc (buffers:document pic)])
+      (let loop ([p 0]) (let ([t (document:token doc p)]) (if (and (document:node? t) (document:atom? t)) p (loop (+ p 1)))))))
+> (define (image-node html)
+    (let loop ([from 0] [last #f])
+      (let ([i (search html "<div class=\"node" from)])
+        (if (and i (< i (search html "<img" 0))) (loop (+ i 1) i) (substring html last (+ (search html ">" last) 1))))))
+> (define (cover-image view client start end) (if (eq? view pv) (list (list img (+ img 1) '((face . match)))) '()))
+> (table-set! views:span-sources cover-image 1000)
+> (image-node (html-of pv desktop))
+> (table-remove! views:span-sources cover-image)
+> (image-node (html-of pv desktop))
+"<div class=\"node whole\" id=\"v3-3\" data-at=\"5\" data-to=\"6\" data-face=\"match\">"
+"<div class=\"node whole\" id=\"v3-3\" data-at=\"5\" data-to=\"6\">"
+; views:folds-at gives the bounds of each fold holding a position.
+> (views:fold! lv 10 40)
+> (views:fold! lv 20 30)
+> (views:folds-at lv 25)
+> (views:folds-at lv 35)
+> (views:folds-at lv 50)
+((10 . 40) (20 . 30))
+((10 . 40))
+()

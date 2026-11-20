@@ -1,0 +1,23 @@
+; document:text-position maps an offset in a range's text, with the
+; atoms' texts laid in, back to a position. Here two atoms sit in a
+; line: "ab", an atom whose text is "XYZ", "é", an atom with no text,
+; then "c".
+> (define doc (document:from-datum '(p () "ab" #(pic ()) "é" #(gap ()) "c\n")))
+> (define texts '((3 . "XYZ") (5 . "")))
+> (document:text doc 0 (document:length doc) texts)
+"abXYZéc\n"
+> (define (positions unit offsets) (map (lambda (o) (document:text-position doc 0 texts o unit)) offsets))
+; In characters: before the atom, inside its text (the atom's position),
+; after it, and at the atom with no text, before it.
+> (positions (document:unit characters) '(0 1 2 3 4 5 6 7))
+(0 2 3 3 3 4 5 7)
+; In bytes, é is two bytes.
+> (positions (document:unit bytes) '(2 3 4 5 7 8 9))
+(3 3 3 4 5 7 8)
+; From a range's start, offsets count from there.
+> (document:text-position doc 4 '((5 . "")) 1 (document:unit characters))
+5
+> (document:text-position doc 0 texts 0 (document:unit utf-16))
+! document:text-position: not a unit of text, characters or bytes with irritant utf-16
+> (document:text-position doc 0 '((2 . "x")) 0 (document:unit characters))
+! document:text-position: not the position of an atom in the range, after the one before with irritant 2

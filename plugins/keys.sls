@@ -22,6 +22,7 @@
    sessions session-of session-pending session-pending-set! session-prefix session-prefix-set!
    session-temporaries session-running session-running-set! session-reading
    read-next end-read! waiting-read-sequence? reading-keys reading-prompt-of quit-reads! quit-client-reads!
+   temporary-prompt-of prompt-text?
    keymaps-of resolve-key resolve-sequence prefix-binding? lone-escape? remapped
    keymap-bindings bindings-found found-binding-keymap found-binding-sequence found-binding-command
    last-key key-count key-digit browser-key mouse-item-key screen-key valid-event? key-or-event? check-event event-key-clicks
@@ -307,7 +308,7 @@
 
   (define-record-type temporary
     (sealed #t)
-    (fields session keymap keep on-exit owner))
+    (fields session keymap keep on-exit owner prompt))
 
   (define (keymaps-of frame posn)
     (let ([s (eq-hashtable-ref sessions frame #f)])
@@ -661,11 +662,11 @@
       (hashtable-set! t (this-module) #t)
       t))
 
-  (define (push-temporary! s keymap keep on-exit owner)
+  (define (push-temporary! s keymap keep on-exit owner prompt)
     (unless (hashtable-contains? watched owner)
       (on-unload (lambda () (hashtable-delete! watched owner) (end-owned! owner)))
       (hashtable-set! watched owner #t))
-    (let ([t (make-temporary s keymap keep on-exit owner)])
+    (let ([t (make-temporary s keymap keep on-exit owner prompt)])
       (session-temporaries-set! s (cons t (session-temporaries s)))
       t))
 
@@ -750,10 +751,34 @@
           (signal-task (waiting-read-task r) (make-quit))))
       reads))
 
+  ;; A removed client types no more keys, so nothing else would end its
+  ;; temporary keymaps or resume what its keys paused.
   (define (quit-client-reads! client)
     (let ([s (eq-hashtable-ref sessions client #f)])
       (when s
-        (quit-reads! (lambda (r) (eq? (waiting-read-session r) s))))))
+        (quit-reads! (lambda (r) (eq? (waiting-read-session r) s)))
+        (end-temporaries! s)
+        (quit-paused! s))))
+
+  (define (temporary-prompt-of s)
+    (let loop ([ts (if s (session-temporaries s) '())])
+      (cond
+        [(null? ts) #f]
+        [(temporary-prompt (car ts))
+         => (lambda (prompt)
+              (if (procedure? prompt)
+                  (guard (c [(not (quit-condition? c)) (report c) #f])
+                    (let ([text (prompt)])
+                      (unless (prompt-text? text)
+                        (assertion-violation 'keys:push-keymap! "a prompt returned what is not a string, a list of strings and pairs of a string and a face, or #f" text))
+                      text))
+                  prompt))]
+        [else (loop (cdr ts))])))
+
+  (define (prompt-text? v)
+    (or (not v) (string? v)
+        (and (list? v)
+             (for-all (lambda (part) (or (string? part) (and (pair? part) (string? (car part)) (symbol? (cdr part))))) v))))
 
   (define (set-prefix! s prefix)
     (session-prefix-set! s prefix)
@@ -774,7 +799,7 @@
       (unless (and (pair? ts) (eq? (temporary-keymap (car ts)) universal-argument-keymap))
         (push-temporary! s universal-argument-keymap
           (lambda (found command) (eq? found universal-argument-keymap))
-          void (this-module)))))
+          void (this-module) #f))))
 
   ;; The page script names each key as it is typed, so that a quit key
   ;; quits before the keys queued ahead of it run. A client whose stream
@@ -1084,6 +1109,11 @@
   (check-main-thread 'keys:reading-prompt)
   (reading-prompt-of (eq-hashtable-ref sessions client #f)))
 
+(define (prompt client)
+  (check-main-thread 'keys:prompt)
+  (let ([s (eq-hashtable-ref sessions client #f)])
+    (or (reading-prompt-of s) (temporary-prompt-of s))))
+
 (define (prefix-description client)
   (check-main-thread 'keys:prefix-description)
   (let* ([s (eq-hashtable-ref sessions client #f)] [prefix (and s (session-prefix s))]
@@ -1108,15 +1138,18 @@
 
 (define push-keymap!
   (case-lambda
-    [(frame keymap keep) (push-keymap! frame keymap keep void)]
-    [(frame keymap keep on-exit)
+    [(frame keymap keep) (push-keymap! frame keymap keep void #f)]
+    [(frame keymap keep on-exit) (push-keymap! frame keymap keep on-exit #f)]
+    [(frame keymap keep on-exit prompt)
      (check-main-thread 'keys:push-keymap!)
      (check-keymap 'keys:push-keymap! keymap)
      (unless (procedure? keep)
        (assertion-violation 'keys:push-keymap! "not a procedure" keep))
      (unless (procedure? on-exit)
        (assertion-violation 'keys:push-keymap! "not a procedure" on-exit))
-     (let ([t (push-temporary! (session-of frame) keymap keep on-exit (current-owner))])
+     (unless (or (procedure? prompt) (and (not (pair? prompt)) (prompt-text? prompt)))
+       (assertion-violation 'keys:push-keymap! "not a string, a procedure or #f" prompt))
+     (let ([t (push-temporary! (session-of frame) keymap keep on-exit (current-owner) prompt)])
        (lambda ()
          (check-main-thread 'keys:push-keymap!)
          (end-temporary! t)))]))

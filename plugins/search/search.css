@@ -1,0 +1,11 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  [data-face="search.group-1"] {
+    background: var(--search-group-1-background, var(--tuna-blue-5));
+  }
+
+  [data-face="search.group-2"] {
+    background: var(--search-group-2-background, var(--tuna-green-5));
+  }
+}

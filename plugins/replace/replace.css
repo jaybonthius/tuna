@@ -1,0 +1,7 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  [data-face="replace.match"] {
+    background: var(--replace-match-background, var(--tuna-error-surface));
+  }
+}

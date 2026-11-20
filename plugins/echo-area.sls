@@ -102,7 +102,7 @@
 
   (define-record-type echo-text
     (sealed #t)
-    (fields prompt keys waiting?))
+    (fields prompt keys waiting? read?))
 
   (define-record-type echo
     (sealed #t)
@@ -136,10 +136,13 @@
   (define (in-progress? client)
     (and (or (keys:reading client) (keys:pending client) (keys:prefix-description client)) #t))
 
+  ;; A temporary keymap's prompt shows only while the keymap is up, so a
+  ;; key that ends the keymap leaves no copy of it, as a read's prompt
+  ;; leaves its keys.
   (define (live-text e)
-    (let* ([client (echo-client e)] [prompt (keys:reading-prompt client)]
-           [keys (and (or prompt (echo-echoing? e)) (> (echo-keystrokes) 0) (keys-in-progress client prompt))])
-      (and (or prompt keys) (make-echo-text prompt keys #t))))
+    (let* ([client (echo-client e)] [read-prompt (keys:reading-prompt client)] [prompt (keys:prompt client)]
+           [keys (and (or prompt (echo-echoing? e)) (> (echo-keystrokes) 0) (keys-in-progress client read-prompt))])
+      (and (or prompt keys) (make-echo-text prompt keys #t (and read-prompt #t)))))
 
   (define (shown-echo client)
     (let ([e (and client (eq-hashtable-ref echoes client #f))])
@@ -162,10 +165,14 @@
             (when (in-progress? (echo-client e))
               (echo-echoing?-set! e #t)))))))
 
+  ;; Under a temporary keymap's prompt, a key that finishes no sequence of
+  ;; its own is the keymap's to show, through the prompt.
   (define (finished-text before key)
-    (let ([prompt (echo-text-prompt before)] [keys (echo-text-keys before)] [name (if (pair? key) (car key) key)])
-      (let ([keys (and (> (echo-keystrokes) 0) (if keys (string-append keys " " name) name))])
-        (and (or prompt keys) (make-echo-text prompt keys #f)))))
+    (let ([prompt (and (echo-text-read? before) (echo-text-prompt before))] [keys (echo-text-keys before)]
+          [name (if (pair? key) (car key) key)])
+      (and (or prompt keys (not (echo-text-prompt before)))
+           (let ([keys (and (> (echo-keystrokes) 0) (if keys (string-append keys " " name) name))])
+             (and (or prompt keys) (make-echo-text prompt keys #f (and prompt #t)))))))
 
   ;; The keys a key finishes are taken before it runs, since a finished
   ;; sequence leaves no pending keys to show them by, and its command may
@@ -406,11 +413,25 @@
         (let ([prompt (echo-text-prompt text)] [keys (keys-text client)])
           (list (haml (:div.echo-area-message ([role "status"] [data-keymap (views:keymap-mark keymap)])
                         (:div.echo-area-echo
-                          (when prompt (:span.echo-area-prompt prompt))
+                          (when prompt (:span.echo-area-prompt (%prompt-html prompt)))
                           (when keys keys))))))
         (draw-view-atom node view client))))
 
+(define (%prompt-html prompt)
+  (if (string? prompt)
+      prompt
+      (map (lambda (part)
+             (if (string? part) part (haml (:span ([data-face (symbol->string (cdr part))]) (car part)))))
+           prompt)))
+
 (define (%follow-key press client key) (follow-key! press client key))
+
+;; A message covers every client's echo while it shows, but a temporary
+;; keymap's prompt must show while the keymap waits for a key.
+(define (%show-keymap-prompt push client keymap keep . rest)
+  (when (and (fx= (length rest) 2) (cadr rest))
+    (uncover-echo! client))
+  (apply push client keymap keep rest))
 
 (define (%forget-echo client) (forget-echo! client))
 
@@ -460,6 +481,7 @@
 (advice-add! keys:press! %clear-on-key)
 (advice-add! keys:press! %follow-key)
 (advice-add! keys:read-key %show-prompt)
+(advice-add! keys:push-keymap! %show-keymap-prompt)
 (advice-add! keys:read-key-sequence %show-prompt)
 (advice-add! layout:draw-view-atom %draw-client-echo)
 (advice-add! batch-ended %show-reports)

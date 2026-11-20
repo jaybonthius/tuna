@@ -1,0 +1,16 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  [data-face="occur.match"] {
+    background: var(--occur-match-background, var(--tuna-match));
+  }
+
+  .occur-line {
+    display: flex;
+  }
+
+  .occur-number {
+    white-space: pre;
+    flex: none;
+  }
+}

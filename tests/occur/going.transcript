@@ -1,0 +1,67 @@
+; In *Occur*, RET shows the line's source in the selected view at its
+; match and records the place left, so M-, returns; o does so in another
+; view; C-o, n and p show the match and keep point in *Occur*, recording
+; nothing.
+> (define b (show "src" "one foo\ntwo\nfoo three foo\nfour\nfive foo\n"))
+> (press! "C-x" "3")
+> (start! "M-s" "o")
+> (type! "foo")
+> (press! "RET")
+> (wait-listed)
+> (define (occur-view) (find (lambda (v) (eq? (views:buffer v) (occur-buffer))) (views:showing (occur-buffer))))
+> (define (other-view) (find (lambda (v) (not (eq? v (occur-view)))) (layout:views)))
+> (layout:select! (occur-view))
+> (list (point) (eq? (views:buffer (view)) (occur-buffer)))
+> (define before (length (jump-history:places)))
+> (press! "M-n")
+> (point)
+> (press! "C-o")
+> (list (eq? (view) (occur-view)) (views:point (other-view)) (= before (length (jump-history:places))))
+> (press! "n")
+> (list (point) (views:point (other-view)) (= before (length (jump-history:places))))
+> (press! "p")
+> (list (point) (views:point (other-view)) (= before (length (jump-history:places))))
+> (press! "M-p" "M-p")
+> (press! "M-n" "M-n" "M-n")
+> (press! "M-p")
+> (point)
+> (press! "RET")
+> (list (views:buffer (view)) (point) (car (jump-history:places)))
+> (press! "M-,")
+> (list (views:buffer (view)) (point))
+> (press! "o")
+> (list (views:buffer (view)) (point) (eq? (view) (other-view)))
+> (press! "M-,")
+> (list (views:buffer (view)) (point))
+(50 #t)
+60
+(#t 13 #t)
+(76 37 #t)
+(60 13 #t)
+! occur:previous: No earlier matches
+! occur:next: No more matches
+60
+(#<buffer src> 13 (#<buffer *Occur*> . 60))
+(#<buffer *Occur*> 60)
+(#<buffer src> 13 #t)
+(#<buffer src> 13)
+; The anchors follow edits to the source made since the listing.
+> (buffers:replace! b 1 1 "zero\n")
+> (layout:select! (occur-view))
+> (press! "C-o")
+> (let ([p (views:point (other-view))]) (list p (buffers:text-between (buffers:document b) p (+ p 3))))
+#<edit 1>
+(18 "foo")
+; g lists again from the source as it is now; r renames *Occur* after its
+; source, so the next M-s o makes a new one.
+> (press! "g")
+> (wait-listed)
+> (listed)
+> (map (lambda (n) (document:node-attribute n 'number)) (filter (lambda (n) (document:node-attribute n 'entry)) (let ([doc (buffers:document (occur-buffer))] [acc '()]) (document:for-each-child (document:enclosing doc 1) 0 (document:length doc) (lambda (n at) (when (document:node? n) (set! acc (cons n acc))))) (reverse acc))))
+> (press! "r")
+> (buffers:name (views:buffer (view)))
+> (buffers:find "*Occur*")
+"4 matches in 3 lines for \"foo\" in buffer: src\none foo\nfoo three foo\nfive foo\n"
+(2 4 6)
+"*Occur: src*"
+#f
