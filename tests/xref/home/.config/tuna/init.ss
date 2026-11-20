@@ -12,7 +12,9 @@
 (use-plugin line-picker)
 (use-plugin grep)
 (use-plugin folder-listing)
-(use-plugin projects)
+(use-plugin projects
+  (config
+    (set-option! projects:extra-root-markers '(".project"))))
 (use-plugin jump-history)
 (use-plugin diagnostics)
 (use-plugin diagnostic-picker)
