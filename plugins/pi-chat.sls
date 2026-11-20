@@ -213,7 +213,7 @@
       dir))
 
 (define (%buffer-name chat)
-  (let ([base (string-append "*pi: " (%folder-name (pi:chat-directory chat)) "*")])
+  (let ([base (string-append "*pi: " (%folder-name (%chat-directory chat)) "*")])
     (let loop ([n 1])
       (let ([name (if (fx= n 1) base (string-append base "<" (number->string n) ">"))])
         (if (buffers:find name) (loop (fx+ n 1)) name)))))
@@ -812,7 +812,7 @@
 
 (define (%revert-visiting! chat call)
   (let* ([path (%argument (pi:tool-call-arguments call) "path")]
-         [b (and path (files:buffer-visiting (%absolute (pi:chat-directory chat) path)))])
+         [b (and path (files:buffer-visiting (%absolute (%chat-directory chat) path)))])
     (when b
       (if (buffers:modified? b)
           (%chat-notice! chat 'warning
@@ -834,18 +834,26 @@
     [(projects:find folder) => projects:root]
     [else (%with-slash folder)]))
 
+;; projects:find walks a folder upward as text, and buffer names and
+;; references are taken from it as text, so a chat started in a folder
+;; written with .. would otherwise fall in another project.
+(define (%chat-directory chat)
+  (files:expanded-path (pi:chat-directory chat)))
+
+(define (%chat-buffer-directory b)
+  (let ([chat (chat-of b)])
+    (and chat (%chat-directory chat))))
+
 (define (folder-for b)
   (unless (buffers:buffer? b)
     (assertion-violation 'pi-chat:folder-for "not a buffer" b))
-  (let ([chat (chat-of b)])
-    (if chat (pi:chat-directory chat) (%project-folder (files:directory b)))))
+  (or (%chat-buffer-directory b) (%project-folder (files:directory b))))
 
 (define (%project-of b)
-  (let ([chat (chat-of b)])
-    (%project-folder (if chat (pi:chat-directory chat) (files:directory b)))))
+  (%project-folder (files:directory b)))
 
 (define (%in-project? project)
-  (lambda (c) (string=? (%project-folder (pi:chat-directory c)) project)))
+  (lambda (c) (string=? (%project-folder (%chat-directory c)) project)))
 
 (define (chats-for b)
   (unless (buffers:buffer? b)
@@ -909,7 +917,7 @@
                                       (fx- end 1)
                                       end))])
     (if (and path (not (buffers:modified? b)))
-        (string-append (%relative (pi:chat-directory chat) path) ":" (number->string first)
+        (string-append (%relative (%chat-directory chat) path) ":" (number->string first)
                        (if (fx= first last) "" (string-append "-" (number->string last))))
         (string-append "```" (buffers:name b) " lines " (number->string first) "-" (number->string last) "\n"
                        (%line (buffers:text-between doc start end)) "```"))))
@@ -1138,7 +1146,7 @@
       [else s])))
 
 (define (%visit! chat path line)
-  (let ([b (files:visit (%absolute (pi:chat-directory chat) path))])
+  (let ([b (files:visit (%absolute (%chat-directory chat) path))])
     (layout:switch-to-buffer b)
     (views:set-point! (layout:selected-view) (editing:line-position b line))))
 
@@ -1476,6 +1484,7 @@
 (add-hook! pi:editor-text-requested %editor-text)
 (add-hook! buffers:after-edit %chat-edited)
 (add-hook! buffers:killed %chat-buffer-killed)
+(add-hook! files:directory-finders %chat-buffer-directory)
 (add-hook! files:unsaved-kept %draft-kept?)
 (add-hook! option-changed %option-changed)
 

@@ -23,6 +23,7 @@
   "Whether a program's copy (OSC 52) pushes its text onto the kill ring and the clipboard.")
 
 (define-hook title-changed "Called with a terminal whose program set its title.")
+(define-hook directory-changed "Called with a terminal whose program reported a folder that exists here, which terminal:directory now gives.")
 (define-hook bell "Called with a terminal whose program rang the bell.")
 (define-hook notification "Called with a terminal, a title and a body when its program asks for a desktop notification.")
 (define-hook progress "Called with a terminal, a state and a percentage or #f when its program reports progress.")
@@ -699,7 +700,8 @@
           (and slash
                (let ([host (substring rest 0 slash)])
                  (and (or (string=? host "") (string=? host "localhost") (string=? host (%host-name)))
-                      (%percent-decoded (substring rest slash (string-length rest))))))))))
+                      (let ([path (substring rest slash (string-length rest))])
+                        (if (string=? prefix "file://") (%percent-decoded path) path)))))))))
 
 (define (%host-name)
   (let ([name (guard (c [(i/o-error? c) #f]) (call-with-input-file "/proc/sys/kernel/hostname" get-line))])
@@ -737,7 +739,11 @@
     (ghostty:terminal-set-pwd-changed-handler! emu
       (lambda (url)
         (let ([path (%local-path url)])
-          (when path (%terminal-directory-set! t path)))))
+          (when path
+            (let ([folder (files:expanded-path path)])
+              (when (file-directory? folder)
+                (%terminal-directory-set! t folder)
+                (%event! t (lambda () (directory-changed b)))))))))
     (ghostty:terminal-set-color-scheme-handler! emu (lambda () (%color-scheme t)))
     (ghostty:terminal-set-clipboard-write-handler! emu
       (lambda (request)
@@ -960,7 +966,7 @@
                 (or (processes:options-terminal options) (processes:options-separate-stderr options)
                     (processes:options-full-log options)))
        (assertion-violation 'terminal:start "options other than a directory and an environment" options))
-     (let ([directory (or (and options (processes:options-directory options)) (files:directory))]
+     (let ([directory (files:expanded-path (or (and options (processes:options-directory options)) (files:directory)))]
            [changes (or (and options (processes:options-environment options)) '())])
        (%begin! command directory changes
          (if command (string-append "*" (%program-name command) "*") "*terminal*")
@@ -992,6 +998,10 @@
 (define (title terminal) (%terminal-title (%check-terminal 'terminal:title terminal)))
 
 (define (directory terminal) (%terminal-directory (%check-terminal 'terminal:directory terminal)))
+
+(define (%terminal-buffer-directory b)
+  (let ([t (%of b)])
+    (and t (%terminal-directory t))))
 
 (define (screen-text terminal)
   (let* ([t (%check-terminal 'terminal:screen-text terminal)] [rows (vector->list (%terminal-rows t))])
@@ -1687,6 +1697,7 @@
 (table-set! web:scripts 'terminal "terminal/terminal.js")
 (table-set! web:input-handlers "terminal-colors" %colors-item)
 (add-hook! buffers:kill-queries kill-query)
+(add-hook! files:directory-finders %terminal-buffer-directory)
 (add-hook! commands:after-command %region-to-copy-mode)
 (advice-add! batch-ended
   (lambda (ended)

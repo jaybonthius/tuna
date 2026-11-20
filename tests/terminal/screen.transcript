@@ -102,7 +102,7 @@
 > (wait-for t "$ ")
 ; While the program holds synchronized output (mode 2026), the rows are
 ; written when it lets go.
-> (terminal:send! t "clear; printf '\\e[?2026hheld'; read x; printf '\\e[?2026l'; echo\r")
+> (terminal:send! t "clear; printf '\\e[?2026h%s%s' hel d; read x; printf '\\e[?2026l'; echo\r")
 > (wait-until (lambda () (eval-in-module '(%terminal-held? (car (%all))) '(terminal))))
 > (screen-has? t "held")
 #f
