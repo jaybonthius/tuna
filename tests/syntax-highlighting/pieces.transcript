@@ -1,0 +1,54 @@
+; A highlighter may answer for a range alone, and in pieces: the job
+; sets each piece as it comes, so keys run between pieces, and takes
+; newer edits between them. Here each answer is one line, and waits for
+; a gate the test opens.
+> (define p (pieces-buffer "p" "#a b\n#c d\n#e f\n"))
+> (open-gate! p 1)
+> (faces p)
+(("#a" comment))
+; This line runs while the job waits to answer for the second line, and
+; its edit reaches the job after that answer.
+> (buffers:insert! p 2 "x")
+3
+> (open-gate! p 2)
+> (faces p)
+(("#xa" comment) ("#c" comment))
+; The next answer is told the edit and starts again from the first
+; line; the spans outside its range stay.
+> (open-gate! p 3)
+> (faces p)
+(("#xa" comment) ("#c" comment))
+> (open-gate! p 4)
+> (open-gate! p 5)
+> (faces p)
+(("#xa" comment) ("#c" comment) ("#e" comment))
+> (marks:inputs)
+(("p" #f) ("p" (1 0 ())) ("p" (2 1 ())) ("p" (3 0 ((1 0 1)))) ("p" (4 1 ())) ("p" (5 2 ())))
+; When the buffer's log no longer holds the version an answer was
+; computed for, the job sends every span it holds again, moved to its
+; newest version: here the answer for the second line, computed before
+; a thousand and one lines were added above it.
+> (define q (pieces-buffer "q" "#a\n#b\n#c\n"))
+> (open-gate! q 1)
+> (faces q)
+(("#a" comment))
+> (do ([i 0 (+ i 1)]) ((= i 1001)) (buffers:insert! q 1 "\n"))
+; Logs are trimmed to their last thousand edits after a second idle.
+> (begin (set-idle! #t) (sleep-for 1.5) (set-idle! #f))
+> (buffers:edits-since q 0)
+#f
+> (open-gate! q 2)
+> (open-gate! q 3)
+> (faces q)
+(("#a" comment) ("#b" comment))
+; A ranged answer is cut to its range: of spans reaching outside it, only
+; their part inside is set.
+> (define r (marked "r" "#abcd #ef\n" marks:ranged))
+> (buffers:with-buffer r (set-option-local! marks:range '(0 3)))
+> (syntax-highlighting:update! r)
+> (faces r)
+(("#ab" comment))
+> (buffers:with-buffer r (set-option-local! marks:range '(4 8)))
+> (syntax-highlighting:update! r)
+> (faces r)
+(("#ab" comment) ("d" comment) ("#e" comment))

@@ -1,0 +1,63 @@
+; A preview's file is coloured: its mode is set with its hooks delayed,
+; and its job starts then. Visiting the file in full runs the hooks,
+; which sets no new mode, so the job goes on.
+> (disk:write-text! "~/notes.mk" "#note (x)\n")
+> (define p (files:visit-temporarily "~/notes.mk"))
+> (list (modes:major-mode p) (modes:hooks-delayed? p))
+(marks:mode #t)
+> (faces p)
+(("#note" comment))
+> (job-events)
+((start #<job %marks>))
+> (eq? (files:visit "~/notes.mk") p)
+#t
+> (modes:hooks-delayed? p)
+#f
+> (begin (faces p) (job-events))
+()
+; Only the visit completing is taken for the preview's: setting another
+; mode right after a preview, even one with the same highlighter,
+; restarts the job, whose input runs again in the new scope.
+> (begin (marks:inputs) (disk:write-text! "~/other.mk" "#other\n"))
+> (define q (files:visit-temporarily "~/other.mk"))
+> (faces q)
+(("#other" comment))
+> (list (job-events) (map car (marks:inputs)))
+(((start #<job %marks>)) ("other.mk" "other.mk"))
+> (modes:set-major-mode marks:derived q)
+> (list (faces q) (job-events) (map car (marks:inputs)))
+((("#other" comment)) ((stop #<job %marks>) (start #<job %marks>)) ("other.mk" "other.mk"))
+> (buffers:kill! q)
+#t
+> (job-events)
+((stop #<job %marks>))
+; Unloading a language plugin takes its highlighters away: at the end
+; of the batch its jobs stop and their spans go. Loading it again
+; highlights the buffers in its modes again.
+> (define m (marked "m" "#m (y)" marks:mode))
+> (faces m)
+(("#m" comment))
+> (job-events)
+((start #<job %marks>))
+> (unload-module! '(marks))
+> (map all-spans (list p m))
+((() ()) (() ()))
+> (job-events)
+((stop #<job %marks>) (stop #<job %marks>))
+> (import (marks))
+> (list (faces p) (faces m) (parens m))
+((("#note" comment)) (("#m" comment)) ("(" ")"))
+> (job-events)
+((start #<job %marks>) (start #<job %marks>))
+; Unloading syntax-highlighting stops every job and takes its spans
+; away, and the language plugins that import it go with it.
+> (unload-module! '(syntax-highlighting))
+> (map all-spans (list p m))
+((() ()) (() ()))
+> (job-events)
+((stop #<job %marks>) (stop #<job %marks>))
+> (map (lambda (name) (and (member name (loaded-modules)) #t)) '((syntax-highlighting) (marks)))
+(#f #f)
+> (import (marks))
+> (list (faces p) (faces m))
+((("#note" comment)) (("#m" comment)))

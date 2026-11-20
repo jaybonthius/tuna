@@ -26,7 +26,7 @@
 ;; changed for a while.
 (define (settle b)
   (let loop ([n 0] [same 0] [last #f])
-    (let ([now (list (buffers:spans (buffers:layer b chez-scheme:highlights) 0 (document:length (buffers:document b)))
+    (let ([now (list (buffers:spans (buffers:layer b syntax-highlighting:faces) 0 (document:length (buffers:document b)))
                      (buffers:spans (buffers:layer b syntax:brackets) 0 (document:length (buffers:document b))))])
       (unless (or (= same 15) (= n 500))
         (sleep-for 0.02)
@@ -35,7 +35,7 @@
 (define (faces b)
   (settle b)
   (map (lambda (s) (list (document:text (buffers:document b) (car s) (cadr s)) (cdr (assq 'face (caddr s)))))
-       (buffers:spans (buffers:layer b chez-scheme:highlights) 0 (document:length (buffers:document b)))))
+       (buffers:spans (buffers:layer b syntax-highlighting:faces) 0 (document:length (buffers:document b)))))
 
 (define (face-of b word)
   (let ([found (assoc word (faces b))])

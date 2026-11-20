@@ -67,20 +67,20 @@
 ; Bracket spans go with the job too.
 > (define k (scheme-buffer "k.ss" "(a [b])"))
 > (table-set! syntax:bracket-users 'test (lambda (buffer) (eq? buffer k)))
-> (syntax:bracket-users-changed)
+> (syntax-highlighting:update!)
 > (length (brackets k))
 4
 > (modes:set-major-mode modes:fundamental k)
 > (brackets k)
 ()
 > (table-remove! syntax:bracket-users 'test)
-> (syntax:bracket-users-changed)
+> (syntax-highlighting:update!)
 ; After an edit the job lexes the newest text, and the faces follow;
 ; text typed right after a lexeme takes its face until then.
 > (define w (scheme-buffer "w.ss" "(car x)\n"))
 > (faces w)
 (("car" function.builtin))
-> (begin (buffers:replace! w 5 5 "-or-cdr") (buffers:spans (buffers:layer w chez-scheme:highlights) 0 15))
+> (begin (buffers:replace! w 5 5 "-or-cdr") (buffers:spans (buffers:layer w syntax-highlighting:faces) 0 15))
 ((2 12 ((face . function.builtin))))
 > (faces w)
 ()
@@ -145,7 +145,7 @@ function.builtin
 ; module. Changeable definitions and hooks are procedures, tables and
 ; other values are not drawn, macros are syntax, and a helper, a % name,
 ; is a procedure as any other.
-> (word-faces "(car define-option modes:ancestry modes:major-mode-changed syntax:lexers faces:comment buffers:with-buffer chez-scheme:%send-edit syntax:class)" "car" "define-option" "modes:ancestry" "modes:major-mode-changed" "syntax:lexers" "faces:comment" "buffers:with-buffer" "chez-scheme:%send-edit" "syntax:class")
+> (word-faces "(car define-option modes:ancestry modes:major-mode-changed syntax:lexers faces:comment buffers:with-buffer chez-scheme:%highlight-input syntax:class)" "car" "define-option" "modes:ancestry" "modes:major-mode-changed" "syntax:lexers" "faces:comment" "buffers:with-buffer" "chez-scheme:%highlight-input" "syntax:class")
 (function.builtin keyword function.builtin function.builtin #f #f keyword function.builtin keyword)
 ; The file's own module adds its exports without the prefix, found by
 ; its path, or the library a library form defines.

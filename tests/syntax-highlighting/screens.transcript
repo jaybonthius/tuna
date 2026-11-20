@@ -1,0 +1,48 @@
+; Faces turned off, and spans of a job that stops, go before the batch's
+; screens are drawn, whether syntax-highlighting's end of batch wraps
+; layout's or layout's wraps it. The log holds each set-spans! with its
+; number of spans, and each screen sent with its number of faces.
+> (import (haml))
+> (define log '())
+> (advice-add! buffers:set-spans! (lambda (set layer start end spans . version) (set! log (cons (list 'spans (length spans)) log)) (apply set layer start end spans version)))
+> (define (count-faces s)
+    (let loop ([i 0] [n 0])
+      (cond
+        [(> (+ i 19) (string-length s)) n]
+        [(string=? (substring s i (+ i 19)) "data-face=\"comment\"") (loop (+ i 1) (+ n 1))]
+        [else (loop (+ i 1) n)])))
+> (define (logged thunk)
+    (set! log '())
+    (thunk)
+    (sleep-for 0.3)
+    (reverse log))
+; Layout loaded after syntax-highlighting: its end of batch is outermost.
+> (import (layout))
+> (define c (web:add-client! 1))
+> (advice-add! web:send-screen! (lambda (send client screen title) (set! log (cons (list 'screen (count-faces (html->string screen))) log)) (send client screen title)))
+> (define b (buffers:make "f.mk" "#a (b)\n"))
+> (layout:switch-to-buffer b)
+> (modes:set-major-mode marks:mode b)
+> (faces b)
+(("#a" comment))
+> (count-faces (web:client-screen c))
+1
+> (logged (lambda () (buffers:with-buffer b (set-option-local! syntax-highlighting:mode #f))))
+((spans 0) (screen 0))
+> (logged (lambda () (buffers:with-buffer b (set-option-local! syntax-highlighting:mode #t))))
+((screen 0) (spans 1) (screen 1))
+> (logged (lambda () (modes:set-major-mode modes:fundamental b)))
+((spans 0) (spans 0) (screen 0) (screen 0))
+; syntax-highlighting loaded again after layout: its end of batch is
+; outermost.
+> (unload-module! '(syntax-highlighting))
+> (import (marks))
+> (modes:set-major-mode marks:mode b)
+> (faces b)
+(("#a" comment))
+> (count-faces (web:client-screen c))
+1
+> (logged (lambda () (buffers:with-buffer b (set-option-local! syntax-highlighting:mode #f))))
+((spans 0) (screen 0))
+> (logged (lambda () (modes:set-major-mode modes:fundamental b)))
+((spans 0) (spans 0) (screen 0) (screen 0))

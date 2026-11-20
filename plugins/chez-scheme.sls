@@ -1,6 +1,6 @@
 #!tuna
 (import (prog) (modes) (auto-mode) (buffers) (document) (files) (jobs) (faces) (syntax)
-        (chez-scheme highlight))
+        (syntax-highlighting) (chez-scheme highlight))
 
 (define-table keymap
   "Keys in Scheme buffers.")
@@ -15,8 +15,6 @@
   (hook mode-hook)
   (language "scheme"))
 
-(buffers:define-layer highlights (priority -10) (sticky after) (evaporate))
-
 (define-enumeration binding-kind (procedure syntax variable) binding-kinds)
 
 (define-record-type name
@@ -24,8 +22,8 @@
   (fields spelling export library kind))
 
 (jobs:define-worker (%highlighter input emit receive)
-  (import (chez-scheme highlight))
-  (serve input emit receive))
+  (import (syntax-highlighting job) (chez-scheme highlight))
+  (serve input emit receive (make-highlight)))
 
 (define %face-roles
   (list (cons 'comment faces:comment) (cons 'documentation faces:comment.documentation)
@@ -37,9 +35,8 @@
         (cons 'builtin faces:function.builtin) (cons 'keyword faces:keyword)))
 
 (module %internals
-  (open-ended-marks mismatched-marks no-marks lexeme-class start-highlighting! stop-highlighting!
-   send-edit! tell-bracket-users! note-changed! rebuild-stale-names! highlighted-buffers
-   check-main-thread repl-libraries repl-names-and-table buffer-names-and-table)
+  (open-ended-marks mismatched-marks no-marks lexeme-class note-changed! drop-stale-names!
+   check-main-thread repl-libraries repl-names-and-table buffer-names-and-table name-pairs)
 
   (define main-thread (get-thread-id))
 
@@ -59,81 +56,6 @@
       [(string) (syntax:class string)]
       [(line-comment block-comment datum-comment directive) (syntax:class comment)]
       [else (syntax:class atom)]))
-
-  (define-record-type highlighting
-    (sealed #t)
-    (fields buffer job (mutable brackets?) (mutable scope) (mutable names) (mutable table)))
-
-  (define jobs (make-eq-hashtable))
-
-  (define (highlighted-buffers) (vector->list (hashtable-keys jobs)))
-
-  (define (clear-spans! buffer type)
-    (when (buffers:live? buffer)
-      (let ([layer (buffers:layer buffer type)])
-        (buffers:set-spans! layer 0 (document:length (buffers:document buffer)) '()))))
-
-  (define (set-update! buffer type version update)
-    (when update
-      (buffers:set-spans! (buffers:layer buffer type) (car update) (cadr update) (caddr update) version)))
-
-  (define (current? h)
-    (eq? (hashtable-ref jobs (highlighting-buffer h) #f) h))
-
-  (define (receive! h result)
-    (when (and (current? h) (buffers:live? (highlighting-buffer h)))
-      (let ([buffer (highlighting-buffer h)])
-        (case (car result)
-          [(spans)
-           (set-update! buffer highlights (cadr result) (caddr result))
-           (when (highlighting-brackets? h)
-             (set-update! buffer syntax:brackets (cadr result) (cadddr result)))]
-          [(scope)
-           (highlighting-scope-set! h (cdr result))
-           (send-names! h)]))))
-
-  (define (forget! h)
-    (let ([buffer (highlighting-buffer h)])
-      (hashtable-delete! jobs buffer)
-      (clear-spans! buffer highlights)
-      (clear-spans! buffer syntax:brackets)))
-
-  (define (start-highlighting! buffer)
-    (unless (hashtable-ref jobs buffer #f)
-      (let* ([brackets? (syntax:brackets-used? buffer)] [h #f]
-             [job (jobs:start %highlighter
-                    (list (buffers:version buffer) (buffers:document buffer) brackets? %face-roles)
-                    (lambda (result) (receive! h result))
-                    ;; A job that raised has ended; forgetting it lets the
-                    ;; next mode set start another.
-                    (lambda (ended) (when (current? h) (forget! h))))])
-        (set! h (make-highlighting buffer job brackets? #f #f #f))
-        (hashtable-set! jobs buffer h))))
-
-  (define (stop-highlighting! buffer)
-    (let ([h (hashtable-ref jobs buffer #f)])
-      (when h
-        (forget! h)
-        (jobs:stop! (highlighting-job h)))))
-
-  (define (send-edit! buffer edit)
-    (let ([h (hashtable-ref jobs buffer #f)])
-      (when h
-        (jobs:send! (highlighting-job h)
-                    (cons* 'edit (buffers:version buffer) (buffers:edit-start edit)
-                           (buffers:piece-length (buffers:edit-removed edit))
-                           (buffers:piece-length (buffers:edit-inserted edit))
-                           (buffers:document buffer))))))
-
-  (define (tell-bracket-users!)
-    (vector-for-each
-      (lambda (h)
-        (let* ([buffer (highlighting-buffer h)] [used? (syntax:brackets-used? buffer)])
-          (unless (eq? used? (highlighting-brackets? h))
-            (highlighting-brackets?-set! h used?)
-            (jobs:send! (highlighting-job h) (cons 'brackets used?))
-            (unless used? (clear-spans! buffer syntax:brackets)))))
-      (hashtable-values jobs)))
 
   ;; One environment per library load, since Chez never frees an
   ;; environment.
@@ -290,15 +212,16 @@
         [(char=? (string-ref s i) #\/) (loop (fx+ i 1) (fx+ i 1) (cons (substring s start i) acc))]
         [else (loop (fx+ i 1) start acc)])))
 
-  (define (own-names h)
-    (let* ([scope (highlighting-scope h)]
-           [own (or (and (pair? (cadr scope)) (cadr scope))
-                    (file-module (files:path (highlighting-buffer h))))])
-      (if own
-          (let ([prefix (and (module-name? own) (module-prefix own))])
-            (map (lambda (entry) (respelled entry (string->symbol (without-prefix (name-export entry) prefix))))
-                 (library-names own)))
-          '())))
+  (define (own-module scope buffer)
+    (or (and (pair? (cadr scope)) (cadr scope))
+        (file-module (files:path buffer))))
+
+  (define (own-names own)
+    (if own
+        (let ([prefix (and (module-name? own) (module-prefix own))])
+          (map (lambda (entry) (respelled entry (string->symbol (without-prefix (name-export entry) prefix))))
+               (library-names own)))
+        '()))
 
   (define (repl-libraries)
     (filter (lambda (name) (member name (library-list)))
@@ -329,35 +252,45 @@
           (set! repl found)
           found)))
 
-  (define (scope-sources h)
-    (let ([scope (highlighting-scope h)])
-      (cons (own-names h)
-            (map (lambda (spec)
-                   (if (eq? spec 'repl)
-                       (vector->list (car (repl-names-and-table)))
-                       (spec-names spec (caddr scope))))
-                 (car scope)))))
+  (define (scope-sources scope own)
+    (cons (own-names own)
+          (map (lambda (spec)
+                 (if (eq? spec 'repl)
+                     (vector->list (car (repl-names-and-table)))
+                     (spec-names spec (caddr scope))))
+               (car scope))))
 
-  (define (send-names! h)
-    (when (highlighting-scope h)
-      (let ([found (names-and-table (scope-sources h))])
-        (highlighting-names-set! h (car found))
-        (highlighting-table-set! h (cdr found))
-        (jobs:send! (highlighting-job h)
-                    (cons 'names
-                          (jobs:freeze
-                            (list->vector
-                              (fold-right
-                                (lambda (entry acc)
-                                  (if (eq? (name-kind entry) 'variable)
-                                      acc
-                                      (cons (cons (name-spelling entry) (name-kind entry)) acc)))
-                                '() (vector->list (car found))))))))))
+  (define-record-type scope-names
+    (sealed #t)
+    (fields scope own names table pairs))
+
+  (define buffer-names (make-weak-eq-hashtable))
+
+  (define (names-of buffer scope)
+    (let ([own (own-module scope buffer)] [found (eq-hashtable-ref buffer-names buffer #f)])
+      (if (and found (equal? (scope-names-scope found) scope) (equal? (scope-names-own found) own))
+          found
+          (let* ([sorted (names-and-table (scope-sources scope own))]
+                 [made (make-scope-names scope own (car sorted) (cdr sorted)
+                         (jobs:freeze
+                           (list->vector
+                             (fold-right
+                               (lambda (entry acc)
+                                 (if (eq? (name-kind entry) 'variable)
+                                     acc
+                                     (cons (cons (name-spelling entry) (name-kind entry)) acc)))
+                               '() (vector->list (car sorted))))))])
+            (eq-hashtable-set! buffer-names buffer made)
+            made))))
+
+  (define (name-pairs buffer scope)
+    (scope-names-pairs (names-of buffer scope)))
 
   (define (buffer-names-and-table buffer)
-    (let ([h (hashtable-ref jobs buffer #f)])
-      (if (and h (highlighting-names h))
-          (cons (highlighting-names h) (highlighting-table h))
+    (let ([found (and (modes:derived? (modes:major-mode buffer) mode)
+                      (eq-hashtable-ref buffer-names buffer #f))])
+      (if found
+          (cons (scope-names-names found) (scope-names-table found))
           (repl-names-and-table))))
 
   (define (note-changed! name)
@@ -376,13 +309,12 @@
         (for-each (lambda (name) (unless (member name now) (note-changed! name))) seen-modules)
         (set! seen-modules now))))
 
-  (define (uses? h name)
-    (let ([scope (highlighting-scope h)])
-      (and scope
-           (or (memq 'repl (car scope))
+  (define (uses? found name)
+    (let ([scope (scope-names-scope found)])
+      (and (or (memq 'repl (car scope))
                (equal? (cadr scope) name)
                (exists (lambda (spec) (equal? (spec-library-of spec) name)) (car scope))
-               (equal? (file-module (files:path (highlighting-buffer h))) name))
+               (equal? (scope-names-own found) name))
            #t)))
 
   (define (spec-library-of spec)
@@ -392,16 +324,17 @@
         (spec-library-of (cadr spec))
         (and (pair? spec) (list? spec) (spec-library spec))))
 
-  (define (rebuild-stale-names!)
+  (define (drop-stale-names!)
     (note-unloaded!)
-    (unless (null? stale)
-      (let ([loaded stale])
-        (set! stale '())
-        (vector-for-each
-          (lambda (h)
-            (when (exists (lambda (name) (uses? h name)) loaded)
-              (send-names! h)))
-          (hashtable-values jobs))))))
+    (and (pair? stale)
+         (let ([changed stale])
+           (set! stale '())
+           (vector-for-each
+             (lambda (buffer)
+               (when (exists (lambda (name) (uses? (eq-hashtable-ref buffer-names buffer #f) name)) changed)
+                 (eq-hashtable-delete! buffer-names buffer)))
+             (hashtable-keys buffer-names))
+           #t))))
 
 (import %internals)
 
@@ -438,20 +371,18 @@
                         acc))))
     (list->vector (reverse acc))))
 
-(define (%highlight-in-mode buffer)
-  (if (modes:derived? (modes:major-mode buffer) mode)
-      (start-highlighting! buffer)
-      (stop-highlighting! buffer)))
-
-(define (%send-edit buffer edit) (send-edit! buffer edit))
+(define (%highlight-input buffer scope)
+  (list %face-roles (syntax:brackets-used? buffer) (and scope (name-pairs buffer scope))))
 
 (define (%note-module-loaded loaded name)
   (loaded name)
   (note-changed! name))
 
-(define (%rebuild-names ended)
+(define (%update-names ended)
   (ended)
-  (as-module (this-module) (rebuild-stale-names!)))
+  (as-module (this-module)
+    (when (drop-stale-names!)
+      (syntax-highlighting:update!))))
 
 (table-set! syntax:lexers mode lexer)
 (table-set! syntax:symbol-characters mode "!$%&*/:<=>?^_~+-.@")
@@ -459,15 +390,8 @@
           '("sls" "ss" "sps" "scm" "sch" "sld"))
 (for-each (lambda (name) (table-set! auto-mode:interpreters name mode))
           '("tuna" "scheme" "petite" "scheme-script" "r6rs" "chezscheme"))
-(add-hook! modes:major-mode-changed %highlight-in-mode)
-(add-hook! modes:delayed-mode-changed %highlight-in-mode)
-(add-hook! buffers:killed stop-highlighting!)
-(add-hook! buffers:after-edit %send-edit)
-(add-hook! syntax:bracket-users-changed tell-bracket-users!)
+(table-set! syntax-highlighting:highlighters mode
+  (syntax-highlighting:make-highlighter %highlighter (list syntax-highlighting:faces syntax:brackets)
+    %highlight-input))
 (advice-add! module-loaded %note-module-loaded)
-(advice-add! batch-ended %rebuild-names)
-(on-unload (lambda () (for-each stop-highlighting! (highlighted-buffers))))
-(for-each (lambda (buffer)
-            (when (modes:derived? (modes:major-mode buffer) mode)
-              (start-highlighting! buffer)))
-          (buffers:all))
+(advice-add! batch-ended %update-names)

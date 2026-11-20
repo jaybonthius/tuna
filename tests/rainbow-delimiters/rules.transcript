@@ -1,17 +1,22 @@
-; Loading and unloading the plugin tell the language plugins to look at
+; Loading and unloading the plugin have the highlighting jobs read
 ; syntax:bracket-users again; so does each change to the mode.
-> (define told 0)
-> (add-hook! syntax:bracket-users-changed (lambda () (set! told (+ told 1))))
-> (unload-module! '(rainbow-delimiters))
-> told
-1
-> (import (rainbow-delimiters))
-> told
+> (define b0 (scheme-buffer "zero.ss" "(a)\n"))
+> (length (brackets b0))
 2
-> (set-option! rainbow-delimiters:mode #t)
-> (set-option! rainbow-delimiters:mode #f)
-> told
-4
+> (unload-module! '(rainbow-delimiters))
+> (brackets b0)
+()
+> (import (rainbow-delimiters))
+> (length (brackets b0))
+2
+> (buffers:with-buffer b0 (set-option-local! rainbow-delimiters:mode #f))
+> (brackets b0)
+()
+> (buffers:with-buffer b0 (set-option-local! rainbow-delimiters:mode #t))
+> (length (brackets b0))
+2
+> (buffers:kill! b0)
+#t
 ; The mode is off by default, so nothing is coloured until a
 ; configuration turns it on: this one does in chez-scheme:mode's hook.
 > (rainbow-delimiters:mode)
@@ -34,7 +39,7 @@
 > (modes:lighter rainbow-delimiters:mode)
 #f
 > (define v (views:make b))
-> (equal? (modes:active-minor-modes v) (list rainbow-delimiters:mode))
+> (and (memq rainbow-delimiters:mode (modes:active-minor-modes v)) #t)
 #t
 ; The job sends a span per bracket, and each is drawn with the face of
 ; its depth.
@@ -96,8 +101,10 @@
 "rainbow-delimiters/rainbow-delimiters.css"
 ; A known defect: a command runs with its view's own values, and they
 ; apply to every buffer, not only the view's. Here v's own #f hides b's
-; #t, and a Scheme buffer opened by a command in v gets no bracket spans
-; and clears b's, until the bracket users change outside such a command.
+; #t, so a mode set by a command in v, whose hook turns the mode on,
+; clears b's bracket spans, until the highlighting jobs read their inputs
+; again outside such a command. The new Scheme buffer's own job starts
+; at the end of the batch, outside the command, so it has its spans.
 > (define c (buffers:make "c.ss" "(x (y))\n"))
 > (views:set-option! v rainbow-delimiters:mode #f)
 > (views:call-with-view v (lambda () (syntax:brackets-used? b)))
@@ -105,12 +112,12 @@
 > (views:call-with-view v (lambda () (modes:set-major-mode chez-scheme:mode c)))
 > (buffers:with-buffer c (rainbow-delimiters:mode))
 #t
-> (brackets c)
-()
+> (map caddr (brackets c))
+(((bracket . 1)) ((bracket . 2)) ((bracket . 2)) ((bracket . 1)))
 > (brackets b)
 ()
 > (views:set-option! v rainbow-delimiters:mode #t)
-> (syntax:bracket-users-changed)
+> (syntax-highlighting:update!)
 > (map caddr (brackets c))
 (((bracket . 1)) ((bracket . 2)) ((bracket . 2)) ((bracket . 1)))
 > (length (brackets b))

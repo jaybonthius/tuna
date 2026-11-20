@@ -45,11 +45,11 @@
 1
 13
 > (table-set! syntax:bracket-users 'test (lambda (buffer) #t))
-> (syntax:bracket-users-changed)
+> (syntax-highlighting:update!)
 > (brackets b)
 ((1 2 ((bracket . 1))) (7 8 ((bracket . 2))) (11 12 ((bracket . 2))) (12 13 ((bracket . 1))))
 > (table-remove! syntax:bracket-users 'test)
-> (syntax:bracket-users-changed)
+> (syntax-highlighting:update!)
 ; chez-scheme
 > (disk:write-text! "~/.config/tuna/lib/greet.sls" "#!tuna\n(define (text name) (string-append \"Hello, \" name \"!\"))\n")
 > (modes:major-mode (files:visit "~/.config/tuna/lib/greet.sls"))

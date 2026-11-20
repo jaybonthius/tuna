@@ -1,5 +1,5 @@
 (library (chez-scheme highlight)
-  (export lex-document serve)
+  (export lex-document make-highlight)
   (import (chezscheme) (document) (chez-scheme lexer))
 
   ;; A file buffer's text sits in one root node, one position after its
@@ -185,10 +185,11 @@
             (loop (fx- i 1)
                   (if (memq (lexeme-kind t) '(open close))
                       (cons (list (lexeme-start t) (lexeme-end t)
-                                  (cond
-                                    [(lexeme-mismatched? t) 'mismatched]
-                                    [(fx= (lexeme-depth t) 0) 'unmatched]
-                                    [else (lexeme-depth t)]))
+                                  (list (cons 'bracket
+                                              (cond
+                                                [(lexeme-mismatched? t) 'mismatched]
+                                                [(fx= (lexeme-depth t) 0) 'unmatched]
+                                                [else (lexeme-depth t)]))))
                             acc)
                       acc))))))
 
@@ -262,104 +263,22 @@
                                name #t configuration?))]))
                   (loop (fx+ i 1) specs own found? configuration?)))))))
 
-  ;; The edited text is in the range even where no span changed, since
-  ;; text typed after a lexeme took its face by stickiness.
-  (define (changed-range edited old-n n old new)
-    (let* ([delta (fx- n old-n)]
-           [old-count (vector-length old)] [count (vector-length new)]
-           [first (let loop ([i 0])
-                    (if (and (fx< i old-count) (fx< i count) (equal? (vector-ref old i) (vector-ref new i)))
-                        (loop (fx+ i 1))
-                        i))]
-           [last (let loop ([i 0])
-                   (if (and (fx< (fx+ first i) old-count) (fx< (fx+ first i) count)
-                            (let ([o (vector-ref old (fx- old-count i 1))] [s (vector-ref new (fx- count i 1))])
-                              (and (fx= (fx+ (car o) delta) (car s)) (fx= (fx+ (cadr o) delta) (cadr s))
-                                   (equal? (caddr o) (caddr s)))))
-                       (loop (fx+ i 1))
-                       i))]
-           [start (fxmin (if edited (car edited) n)
-                         (if (fx< first count) (car (vector-ref new first)) n)
-                         (if (fx< first old-count) (car (vector-ref old first)) n))]
-           [end (fxmax (if edited (cdr edited) 0)
-                       (if (fx< first (fx- count last)) (cadr (vector-ref new (fx- count last 1))) 0)
-                       (if (fx< first (fx- old-count last)) (fx+ (cadr (vector-ref old (fx- old-count last 1))) delta) 0))])
-      (and (fx< start end) (cons (fxmax 0 start) (fxmin n end)))))
-
-  (define (moved position start removed inserted)
-    (cond
-      [(fx<= position start) position]
-      [(fx>= position (fx+ start removed)) (fx+ position (fx- inserted removed))]
-      [else start]))
-
-  ;; The range widens to hold whole spans, since set-spans! keeps the part
-  ;; of a span outside its range.
-  (define (update new range n size start-of end-of value)
-    (let* ([spans (filter (lambda (s) (and (fx< (car s) (cdr range)) (fx> (cadr s) (car range)))) (vector->list new))]
-           [start (if (null? spans) (car range) (fxmin (car range) (caar spans)))]
-           [end (if (null? spans) (cdr range) (fxmax (cdr range) (cadr (list-ref spans (fx- (length spans) 1)))))])
-      (list (if (fx= start 0) 0 (start-of start))
-            (if (fx= end n) size (end-of end))
-            (map (lambda (s) (list (start-of (car s)) (end-of (cadr s)) (value (caddr s)))) spans))))
-
   (define (names-table pairs)
     (let ([names (make-hashtable string-hash string=?)])
       (vector-for-each (lambda (pair) (hashtable-set! names (symbol->string (car pair)) (cdr pair))) pairs)
       names))
 
-  (define (serve input emit receive)
-    (let ([version (car input)] [doc (cadr input)] [brackets? (caddr input)] [faces (cadddr input)]
-          [names #f] [old-n 0] [old-faces #f] [old-brackets #f] [old-scope #f] [edited #f])
-      (define (take! message)
-        (case (car message)
-          [(edit)
-           (let ([start (list-ref message 2)] [removed (list-ref message 3)] [inserted (list-ref message 4)])
-             (set! edited
-               (if edited
-                   (cons (fxmin start (moved (car edited) start removed inserted))
-                         (fxmax (fx+ start inserted) (moved (cdr edited) start removed inserted)))
-                   (cons start (fx+ start inserted))))
-             (set! version (cadr message))
-             (set! doc (list-tail message 5)))]
-          [(names) (set! names (names-table (cdr message)))]
-          [(brackets)
-           (set! brackets? (cdr message))
-           (set! old-brackets #f)]))
-      (define (highlight!)
-        (let* ([text (document:text doc)] [lexemes (lex text)] [n (string-length text)]
-               [size (document:length doc)]
-               [new-faces (list->vector (face-spans lexemes text faces names))]
-               [new-brackets (and brackets? (list->vector (bracket-spans lexemes)))]
-               [whole (cons 0 n)])
-          (let-values ([(start-of end-of) (position-mapping doc text)])
-            (let* ([unit (document:unit characters)]
-                   [edited (and edited
-                                (cons (document:offset doc (car edited) unit) (document:offset doc (cdr edited) unit)))]
-                   [face-range (if old-faces (changed-range edited old-n n old-faces new-faces) whole)]
-                   [bracket-range (and new-brackets
-                                       (if old-brackets (changed-range edited old-n n old-brackets new-brackets) whole))])
-              (when (or face-range bracket-range)
-                (emit (list 'spans version
-                            (and face-range
-                                 (update new-faces face-range n size start-of end-of
-                                   (lambda (face) (list (cons 'face face)))))
-                            (and bracket-range
-                                 (update new-brackets bracket-range n size start-of end-of
-                                   (lambda (bracket) (list (cons 'bracket bracket)))))))))
-            (let ([scope (scope-of lexemes text)])
-              (unless (equal? scope old-scope)
-                (set! old-scope scope)
-                (emit (cons 'scope scope))))
-            (set! edited #f)
-            (set! old-n n)
-            (set! old-faces new-faces)
-            (set! old-brackets new-brackets))))
-      (let loop ()
-        (highlight!)
-        (take! (receive))
-        (let drain ()
-          (let ([message (receive 0)])
-            (unless (eof-object? message)
-              (take! message)
-              (drain))))
-        (loop)))))
+  (define (make-highlight)
+    (let ([roles #f] [faces #f] [pairs #f] [names #f])
+      (lambda (doc input edits)
+        (let ([given-roles (car input)] [brackets? (cadr input)] [given-pairs (caddr input)])
+          (unless (eq? given-roles roles)
+            (set! roles given-roles)
+            (set! faces (map (lambda (role) (cons (car role) (list (cons 'face (cdr role))))) given-roles)))
+          (unless (eq? given-pairs pairs)
+            (set! pairs given-pairs)
+            (set! names (and given-pairs (names-table given-pairs))))
+          (let* ([text (document:text doc)] [lexemes (lex text)])
+            (values (list (list->vector (face-spans lexemes text faces names))
+                          (if brackets? (list->vector (bracket-spans lexemes)) '#()))
+                    (scope-of lexemes text))))))))

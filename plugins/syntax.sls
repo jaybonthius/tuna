@@ -19,9 +19,6 @@
 (define-table bracket-users
   "Maps a key to a procedure of a buffer that returns true while its plugin draws that buffer's bracket spans.")
 
-(define-hook bracket-users-changed
-  "Called with no arguments by a plugin whose entry in syntax:bracket-users may answer differently.")
-
 (module %internals
   (check-main-thread make-lexeme-record lexeme-record? lexeme-record-class lexeme-record-start
    lexeme-record-end lexeme-record-depth lexeme-record-open-ended? lexeme-record-mismatched?
