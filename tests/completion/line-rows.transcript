@@ -1,0 +1,214 @@
+; M-s l lists the lines from point's line to the last, then from the
+; first, leaving out lines of white space only, so the read opens on
+; point's line.
+> (define body (apply string-append (map (lambda (i) (if (memv i '(3 7)) "   \n" (format "line ~a gamma\n" i))) (iota 12))))
+> (define b (buffers:make "lines" body))
+> (views:set-buffer! (view) b)
+> (define src (view))
+> (define (line-start n) (document:line-start (buffers:document b) n))
+> (views:set-point! (view) (+ (line-start 9) 2))
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (define s (session))
+> (wait-matches s)
+> (texts s)
+("line 8 gamma" "line 9 gamma" "line 10 gamma" "line 11 gamma" "line 0 gamma" "line 1 gamma" "line 2 gamma" "line 4 gamma" "line 5 gamma" "line 6 gamma")
+> (selected-text s)
+"line 8 gamma"
+; Each row's prefix is its line number, padded to the digits of the
+; last line, in the face for a line before point's line.
+> (map (lambda (m) (completion:row-prefix s m)) (list-head (match-list s) 6))
+((shadow . " 9") (shadow . "10") (shadow . "11") (shadow . "12") (warning . " 1") (warning . " 2"))
+> (press! "C-g")
+! &quit
+; C-u lists them from the first, as does line-picker:start-from-top?,
+; which C-u then turns round.
+> (define t (start! (lambda () (press! "C-u" "M-s" "l"))))
+> (wait-matches (session))
+> (car (texts (session)))
+"line 0 gamma"
+> (press! "C-g")
+! &quit
+> (set-option! line-picker:start-from-top? #t)
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (wait-matches (session))
+> (car (texts (session)))
+"line 0 gamma"
+> (press! "C-g")
+! &quit
+> (define t (start! (lambda () (press! "C-u" "M-s" "l"))))
+> (wait-matches (session))
+> (car (texts (session)))
+"line 8 gamma"
+> (press! "C-g")
+! &quit
+> (remove-option! line-picker:start-from-top?)
+; A row's spans are the line's span values in the buffer's layers, read
+; when the row is drawn, as offsets into its text, and drawn by views'
+; rule beside the match's own.
+> (buffers:define-layer colours)
+> (buffers:add-span! (buffers:layer b colours) (line-start 6) (+ (line-start 6) 4) '((face . keyword)))
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (define s (session))
+> (wait-matches s)
+> (type! "5 gam")
+> (wait-matches s)
+> (texts s)
+("line 5 gamma")
+> (completion:row-faces s (car (match-list s)))
+((0 4 ((face . keyword))))
+> (define (holds? text piece)
+    (let loop ([i 0])
+      (and (<= (+ i (string-length piece)) (string-length text))
+           (or (string=? (substring text i (+ i (string-length piece))) piece) (loop (+ i 1))))))
+> (holds? (lines-html (list-view)) "<span class=\"completion-prefix\" data-face=\"warning\"> 6</span><span class=\"completion-text\"><span data-face=\"keyword\">line</span> <span class=\"completion-match\" data-face=\"completion.match-0\">5</span> <span class=\"completion-match\" data-face=\"completion.match-1\">gam</span>ma</span>")
+#t
+; An edit elsewhere leaves the line's look; an edit in the line, which
+; changes its text, leaves its row plain.
+> (define edit-1 (buffers:replace! b 1 1 "new\n"))
+> (completion:row-faces s (car (match-list s)))
+((0 4 ((face . keyword))))
+> (define edit-2 (buffers:replace! b (+ (line-start 7) 1) (+ (line-start 7) 1) "x"))
+> (completion:row-faces s (car (match-list s)))
+()
+> (press! "C-g")
+! &quit
+> (define edit-3 (buffers:replace! b 1 (line-start 2) ""))
+> (define edit-4 (buffers:replace! b (+ (line-start 6) 1) (+ (line-start 6) 2) ""))
+> (string=? (document:text (buffers:document b)) body)
+#t
+; The read answers the place of the leftmost match on the line chosen,
+; whichever word it matches, with the ranges of every match; the preview
+; shows that place and highlights its line and matches in the view.
+> (views:set-point! (view) (line-start 9))
+> (define after-jumps '())
+> (add-hook! jump-history:after-jump (lambda (v) (set! after-jumps (cons (views:point v) after-jumps))))
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (define s (session))
+> (wait-matches s)
+> (type! "gam 2")
+> (wait-matches s)
+> (texts s)
+("line 2 gamma")
+> (- (views:point src) (line-start 3))
+5
+> (holds? (html->string (views:draw src client)) "data-face=\"highlight\"")
+#t
+> (holds? (html->string (views:draw src client)) "data-face=\"match\">2")
+#t
+> (press! "RET")
+> (result t)
+> (list (= (views:point (view)) (+ (line-start 3) 5)) (holds? (html->string (views:draw src client)) "data-face=\"highlight\""))
+(#t #f)
+; The jump records the place point left, so M-, returns there, and then
+; calls jump-history:after-jump, as the preview did.
+> (map (lambda (p) (- p (line-start 3))) (list-head after-jumps 2))
+(5 5)
+> (= (cdar (jump-history:places)) (line-start 9))
+#t
+> (press! "M-,")
+> (= (views:point (view)) (line-start 9))
+#t
+; The preview follows the input while the selection stays on a line:
+; after "a", the line's leftmost match is gamma's a; after "a l", the
+; l at the line's start.
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (wait-matches (session))
+> (type! "a")
+> (wait-matches (session))
+> (list (selected-text (session)) (- (views:point src) (line-start 9)))
+("line 8 gamma" 8)
+> (type! " l")
+> (wait-matches (session))
+> (list (selected-text (session)) (- (views:point src) (line-start 9)))
+("line 8 gamma" 0)
+> (press! "C-g")
+! &quit
+; Quitting ends the preview: point comes back and the highlight goes.
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (wait-matches (session))
+> (type! "line 4")
+> (wait-matches (session))
+> (= (views:point src) (line-start 5))
+#t
+> (press! "C-g")
+! &quit
+> (list (= (views:point (view)) (line-start 9)) (holds? (html->string (views:draw src client)) "data-face=\"highlight\""))
+(#t #f)
+; With nothing typed, the read answers the line's start.
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (wait-matches (session))
+> (press! "C-n" "RET")
+> (result t)
+> (= (views:point (view)) (line-start 10))
+#t
+; A faces or prefix procedure that raises is reported once, and its rows
+; draw without it.
+> (define calls 0)
+> (define t (start! (lambda ()
+    (completion:read "? " (list (completion:source (candidates (vector "a" "b")) (faces (lambda (text value) (set! calls (+ calls 1)) (error 'shade "no shade"))))) #f))))
+> (string? (lines-html (list-view)))
+! shade: no shade
+#t
+> (list calls (map (lambda (m) (completion:row-faces (session) m)) (match-list (session))))
+(1 (() ()))
+> (press! "C-g")
+! &quit
+; A source's lookup gives what the read answers; its exit procedure,
+; which acts on the candidate as completed, still gets the candidate's
+; own value.
+> (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector (cons "a" 1))) (lookup (lambda (value spans) (list value spans))))) #f))))
+> (type! "a")
+> (press! "RET")
+> (result t)
+(1 ((0 1 completion.match-0)))
+; completion:preview-place checks what it is given.
+> (raised (lambda () (completion:preview-place src b -1 '())))
+(completion:preview-place "not a position in the buffer")
+> (raised (lambda () (completion:preview-place src b 1 '((1 1000)))))
+(completion:preview-place "not a list of ranges in the buffer")
+> (raised (lambda () (completion:preview-place 'v b 1 '())))
+(completion:preview-place "not a view")
+; A stream's batches leave the selected line's answer as it was, so the
+; preview runs once while M-s l fills from a long buffer, and a hand
+; scroll of the source view stays.
+> (define big (buffers:make "big" (apply string-append (map (lambda (i) (format "row ~a\n" i)) (iota 60000)))))
+> (views:set-buffer! src big)
+> (views:set-point! src (document:line-start (buffers:document big) 30000))
+> (define (line-of p) (document:line (buffers:document big) p))
+> (define (placement v)
+    (let* ([html (html->string (views:draw v client))] [key "data-placement=\""]
+           [at (let find ([i 0]) (if (string=? (substring html i (+ i (string-length key))) key) i (find (+ i 1))))]
+           [from (+ at (string-length key))])
+      (let loop ([i from]) (if (char-numeric? (string-ref html i)) (loop (+ i 1)) (string->number (substring html from i))))))
+; The first report on a placement confirms it; the next, at rest, is
+; the hand's.
+> (define reports 0)
+> (define (hand-scroll! v line)
+    (let ([mark (lambda (k) (list (cons "line" (+ line k))))])
+      (set! reports (+ reports 1))
+      ((table-ref web:input-handlers "scroll") client
+       `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,(placement v)) ("report" . ,reports)
+         ("version" . ,(buffers:version big)) ("top" . ,(mark 0)) ("offset" . 0) ("itemHeight" . 20) ("left" . 0)
+         ("start" . ,(mark 2)) ("end" . ,(mark 7)) ("spacer" . null) ("spacerDistance" . 0) ("below" . 0)
+         ("items" . ,(list->vector (map (lambda (k) (vector (mark k) 20)) (iota 10))))
+         ("lineHeight" . 20) ("charWidth" . 10) ("width" . 800) ("height" . 200)
+         ("settled" . #t) ("hand" . #t) ("runAtEnd" . #f)))))
+> (set! after-jumps '())
+; The hand scrolls just after the first preview, so before the job's
+; later batches.
+> (define scrolled-at #f)
+> (define (scroll-once! v)
+    (unless scrolled-at
+      (set! scrolled-at (completion:matches-count (completion:session-matches (session))))
+      (hand-scroll! v 100)
+      (hand-scroll! v 100)))
+> (add-hook! jump-history:after-jump scroll-once!)
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (define s (session))
+> (wait-until (lambda () (and (not (completion:session-busy? s)) (= (completion:matches-count (completion:session-matches s)) 60000))))
+> (list (< scrolled-at 60000) (completion:matches-count (completion:session-matches s)) (selected-text s))
+(#t 60000 "row 29999")
+> (list (length after-jumps) (line-of (views:top src #f)))
+(1 100)
+> (press! "C-g")
+! &quit

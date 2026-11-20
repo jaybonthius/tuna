@@ -126,3 +126,26 @@
 ()
 > (raised (lambda () (jump-history:push! "first" 1)))
 (jump-history:push! "not a buffer")
+; push! only records: a jump that lands on screen, as a search's end,
+; is not recentred. Nor does a buffer switch, which records too, run
+; jump-history:after-jump. A picker that jumps runs it, and its own
+; entry, jump-history:recenter, puts point's place at the view's centre.
+> (set-option! jump-history:history-key (lambda (view) #f))
+> (define jumped '())
+> (add-hook! jump-history:after-jump (lambda (v) (set! jumped (cons (views:point v) jumped))))
+> (commands:run jump first 9)
+> jumped
+()
+> (commands:run show (buffers:make "fourth" "x\n"))
+> (buffers:name (views:buffer (view)))
+"fourth"
+> jumped
+()
+> (define placements '())
+> (advice-add! views:scroll-to! (lambda (orig v p align) (set! placements (cons (list p align) placements)) (orig v p align)))
+> (commands:run jump first 5)
+> placements
+()
+> (jump-history:after-jump (view))
+> (list jumped placements)
+((5) ((5 center)))

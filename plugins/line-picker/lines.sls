@@ -1,5 +1,5 @@
 (library (line-picker lines)
-  (export last-line line-candidates)
+  (export last-line line-candidates non-blank atoms-from)
   (import (chezscheme) (document))
 
   ;; The empty run after a final newline is no line to go to, though
@@ -26,6 +26,17 @@
                       (if (null? here)
                           (cons (cons text start) acc)
                           (split-line doc text start (document:offset doc start chars) here (fx< k final) acc)))))))))
+
+  (define (blank? text)
+    (let loop ([i 0])
+      (or (fx= i (string-length text)) (and (char-whitespace? (string-ref text i)) (loop (fx+ i 1))))))
+
+  (define (non-blank lines)
+    (list->vector (filter (lambda (c) (not (blank? (car c)))) (vector->list lines))))
+
+  (define (atoms-from atoms p)
+    (let loop ([atoms atoms])
+      (if (and (pair? atoms) (fx< (caar atoms) p)) (loop (cdr atoms)) atoms)))
 
   (define (partition-before atoms stop)
     (let loop ([atoms atoms] [here '()])

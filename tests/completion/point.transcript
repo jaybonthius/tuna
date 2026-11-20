@@ -44,7 +44,7 @@
 > (selected-text (session))
 "alm"
 ; The popup's own view, which layout-float makes, shows the selection.
-> (holds? (lines-html (list-view)) "aria-current=\"true\"><div class=\"completion-row\"><span class=\"completion-text\"><mark data-face=\"completion.match-0\">al</mark>m<")
+> (holds? (lines-html (list-view)) "aria-current=\"true\"><div class=\"completion-row\"><span class=\"completion-text\"><span class=\"completion-match\" data-face=\"completion.match-0\">al</span>m<")
 #t
 > (press! "M-p")
 > (selected-text (session))

@@ -15,17 +15,22 @@
         [(> (+ i (string-length pattern)) (string-length s)) #f]
         [(string=? (substring s i (+ i (string-length pattern))) pattern) i]
         [else (loop (+ i 1))])))
+; A row's text holds spans of its own, so it ends where the row's columns
+; or the row itself begin.
+> (define (text-end s from)
+    (let ([column (search s "</span><span class=\"completion-column" from)] [row (search s "</span></div>" from)])
+      (if (and column (or (not row) (< column row))) column row)))
 > (define (drawn-selected v)
     (let* ([s (lines-html v)] [at (search s "aria-current=\"true\"" 0)])
       (and at
-           (let* ([text (search s "-text\">" at)] [start (+ text 7)] [end (search s "</span>" start)])
+           (let* ([text (search s "-text\">" at)] [start (+ text 7)] [end (text-end s start)])
              (strip-tags (substring s start end))))))
 > (define (drawn-rows v)
     (let ([s (lines-html v)])
       (let loop ([at 0] [acc '()])
         (let ([text (search s "-text\">" at)])
           (if text
-              (let* ([start (+ text 7)] [end (search s "</span>" start)])
+              (let* ([start (+ text 7)] [end (text-end s start)])
                 (loop end (cons (strip-tags (substring s start end)) acc)))
               (reverse acc))))))
 > (define (state lv) (list (selected-text (session)) (drawn-selected lv) (car (drawn-rows lv)) (length (drawn-rows lv))))

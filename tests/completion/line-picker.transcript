@@ -128,6 +128,22 @@ waiting
 > (result t)
 > (views:point (view))
 12
+; On a line holding an atom's text, the read lands at the leftmost
+; match before the atom, or at the line's start.
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (type! "tro")
+> (wait-matches (session))
+> (press! "RET")
+> (result t)
+> (views:point (view))
+4
+> (define t (start! (lambda () (press! "M-s" "l"))))
+> (type! "TAG")
+> (wait-matches (session))
+> (press! "RET")
+> (result t)
+> (views:point (view))
+2
 ; A large buffer's lines are split in a job, with the atoms' texts the
 ; main thread gathered.
 > (define many (buffers:make "many" (apply cards:rows '() (cards:para '() (apply string-append (map (lambda (i) (format "line ~a\n" i)) (iota 1100))))

@@ -68,9 +68,9 @@
 ; The list draws each match in its face.
 > (define (marks html)
     (let loop ([i 0] [acc '()])
-      (let ([open (let find ([k i]) (cond [(> (+ k 5) (string-length html)) #f] [(string=? (substring html k (+ k 5)) "<mark") k] [else (find (+ k 1))]))])
+      (let ([open (let find ([k i]) (cond [(> (+ k 30) (string-length html)) #f] [(string=? (substring html k (+ k 30)) "<span class=\"completion-match\"") k] [else (find (+ k 1))]))])
         (if open
-            (let ([close (let find ([k open]) (if (string=? (substring html k (+ k 7)) "</mark>") (+ k 7) (find (+ k 1))))])
+            (let ([close (let find ([k open]) (if (string=? (substring html k (+ k 7)) "</span>") (+ k 7) (find (+ k 1))))])
               (loop close (cons (substring html open close) acc)))
             (reverse acc)))))
 > (define t (start! (lambda () (press! "M-x"))))
@@ -78,8 +78,8 @@
 > (wait-matches (session))
 > (texts (session))
 ("file-picker:find-file" "file-picker:find-file-other-view")
-("<mark data-face=\"completion.match-0\">file</mark>" "<mark data-face=\"completion.match-1\">find</mark>" "<mark data-face=\"completion.match-0\">file</mark>" "<mark data-face=\"completion.match-1\">find</mark>")
 > (marks (lines-html (minibuffer:prompt-view (prompt))))
+("<span class=\"completion-match\" data-face=\"completion.match-0\">file</span>" "<span class=\"completion-match\" data-face=\"completion.match-1\">find</span>" "<span class=\"completion-match\" data-face=\"completion.match-0\">file</span>" "<span class=\"completion-match\" data-face=\"completion.match-1\">find</span>")
 > (press! "C-g")
 ! &quit
 ; Other styles keep one look: their matches have no face. Files try

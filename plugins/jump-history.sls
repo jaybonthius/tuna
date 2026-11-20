@@ -3,6 +3,11 @@
 
 (define-hook after-return "Called with the view after jump-history:go-back and jump-history:go-forward.")
 
+(define-hook after-jump
+  "Called with the view by a command that jumps to a place the user chose from a list or a lookup, as M-s l does, after it records the place left with jump-history:push!, and by a picker's preview after it shows a place.")
+
+(define (recenter view) (views:scroll-to! view (views:point view) (views:align center)))
+
 (define-option history-key (lambda (view) #f) procedure?
   "A procedure of the selected view that returns the key of the history to use, compared with eq?: #f for the one shared history, or jump-history:view-key for one per view.")
 
@@ -96,6 +101,7 @@
       (%history-forward-set! h (kept (%history-forward h))))
     (cons %shared (vector->list (hashtable-values %keyed)))))
 
+(add-hook! after-jump recenter)
 (add-hook! layout:after-switch-to-buffer record-switch)
 (add-hook! buffers:killed %forget-buffer!)
 (keys:bind! keys:global "M-," go-back)

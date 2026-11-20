@@ -15,13 +15,16 @@
     white-space: pre;
   }
 
-  .completion-text mark {
-    background: none;
+  /* A prefix, such as a line number, is padded by its source, so its
+     column lines up as the text's does. */
+  .completion-prefix {
+    flex: none;
+    white-space: pre;
   }
 
   /* This selector outweighs a face's rule, so it keeps off a match drawn
      in a face. */
-  .completion-text mark:not([data-face]) {
+  .completion-text .completion-match:not([data-face]) {
     color: var(--completion-match-text, var(--tuna-link));
     font-weight: var(--tuna-font-weight-bold);
   }
@@ -29,7 +32,7 @@
   /* The link colour and the faces of any-order's components can fall
      under 4.5:1 on the selection, as Modus's do in dark, so on the
      selected row a match takes the row's own colour and an underline. */
-  .ui-list-row[aria-current="true"] .completion-text mark {
+  .ui-list-row[aria-current="true"] .completion-text .completion-match {
     color: inherit;
     text-decoration: underline;
     text-decoration-thickness: 1px;

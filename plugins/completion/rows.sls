@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (ui) (buffers) (document) (views) (commands) (modes) (web) (haml))
+(import (completion) (minibuffer) (ui) (buffers) (document) (views) (commands) (modes) (web) (haml))
 
 ;; Point rests before an atom that draws nothing while nothing is
 ;; selected, since a list's selected row is the row at point: the start
@@ -95,18 +95,17 @@
                        (set! found (document:node-start c)))))
     found))
 
-(define (%mark text spans)
-  (let loop ([at 0] [spans spans] [acc '()])
-    (cond
-      [(null? spans) (reverse (if (fx< at (string-length text)) (cons (substring text at (string-length text)) acc) acc))]
-      [else
-       (let* ([span (car spans)] [s (fxmax at (car span))] [e (fxmin (string-length text) (cadr span))]
-              [face (caddr span)])
-         (if (fx< s e)
-             (loop e (cdr spans)
-                   (cons (haml (:mark ([data-face (and face (symbol->string face))]) (substring text s e)))
-                         (if (fx< at s) (cons (substring text at s) acc) acc)))
-             (loop at (cdr spans) acc)))])))
+(define (%match-attributes face)
+  (cons (cons "class" "completion-match") (if face (list (cons "data-face" (symbol->string face))) '())))
+
+;; A row's spans are drawn as in the buffer it was read from, whose local
+;; options, such as a rainbow mode, decide how some values look.
+(define (%origin s)
+  (let ([p (completion:session-prompt s)])
+    (or (and p (minibuffer:prompt-selected-view p)) (completion:session-view s))))
+
+(define (%draw-prefix c)
+  (haml (:span.completion-prefix ([data-face (and (pair? c) (symbol->string (car c)))]) (%column-text c))))
 
 (define (%column-text c) (if (pair? c) (cdr c) c))
 
@@ -136,11 +135,15 @@
 
 (define (%draw-row r matches k)
   (let* ([s (%rows-session r)] [m (completion:matches-ref matches k)] [text (completion:row-text s m)]
-         [columns (completion:annotation s m)])
-    (%grow-widths! r text columns)
+         [columns (completion:annotation s m)] [prefix (completion:row-prefix s m)]
+         [spans (append (completion:row-faces s m)
+                        (map (lambda (sp) (list (car sp) (cadr sp) (list (cons 'completion-match (caddr sp)))))
+                             (completion:spans s m)))])
+    (%grow-widths! r (if prefix (string-append (%column-text prefix) " " text) text) columns)
     (haml
       (:div.completion-row
-        (:span.completion-text (%mark text (completion:spans s m)))
+        (when prefix (%draw-prefix prefix))
+        (:span.completion-text (views:draw-text (%origin s) text spans))
         (let loop ([cs columns] [k 1] [acc '()])
           (if (null? cs)
               (reverse acc)
@@ -217,4 +220,5 @@
 
 ;; The path is relative to this module's own folder, completion/.
 (table-set! web:stylesheets 'completion-rows "rows.css")
+(table-set! views:span-properties 'completion-match %match-attributes)
 (add-hook! mode-hook %rows-settings)

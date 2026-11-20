@@ -1,6 +1,6 @@
 #!tuna
 ;; This plugin's substring is a style, so Chez's goes by another name.
-(import (minibuffer) (buffers) (document) (views) (layout) (keys) (commands) (jobs) (web) (ask) (editing) (kill-ring)
+(import (minibuffer) (buffers) (document) (views) (layout) (keys) (commands) (jobs) (web) (ask) (editing) (kill-ring) (faces)
         (modes) (syntax) (browse-url)
         (completion matcher)
         (rename (only (chezscheme) substring) (substring string-part)))
@@ -128,9 +128,10 @@
 
 (define-record-type (%source %make-source source?)
   (sealed #t)
-  (fields candidates stream category title split in-order? rank preview exit styles group row narrow))
+  (fields candidates stream category title split in-order? rank preview exit styles group row narrow faces prefix lookup))
 
-(define (%check-source candidates stream category title split in-order? rank preview exit styles group row narrow)
+(define (%check-source candidates stream category title split in-order? rank preview exit styles group row narrow
+                       faces prefix lookup)
   (define who 'completion:source)
   (unless (or (not category) (symbol? category))
     (assertion-violation who "not a category" category))
@@ -153,7 +154,10 @@
     (assertion-violation who "neither a procedure nor #f" row))
   (unless (or (not narrow) (and (char? narrow) (not (char=? narrow #\space))))
     (assertion-violation who "neither a character other than a space nor #f" narrow))
-  (%make-source candidates stream category title split in-order? rank preview exit styles group row narrow))
+  (for-each (lambda (p) (unless (or (not p) (procedure? p)) (assertion-violation who "not a procedure" p)))
+            (list faces prefix lookup))
+  (%make-source candidates stream category title split in-order? rank preview exit styles group row narrow
+                faces prefix lookup))
 
 (define (%candidates-clause candidates)
   (unless (or (procedure? candidates) (%candidates? candidates))
@@ -190,7 +194,8 @@
                                 #,(given-or-false 'category) #,(given-or-false 'title) #,(given-or-false 'split)
                                 #,(given-or-false 'in-order) #,(given-or-false 'rank) #,(given-or-false 'preview)
                                 #,(given-or-false 'exit) #,(given-or-false 'styles) #,(given-or-false 'group) #,(given-or-false 'row)
-                                #,(given-or-false 'narrow)))
+                                #,(given-or-false 'narrow) #,(given-or-false 'faces) #,(given-or-false 'prefix)
+                                #,(given-or-false 'lookup)))
              (let* ([c (car clauses)]
                     [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ (invalid c)])])
                (when (assq name given)
@@ -201,7 +206,7 @@
                (loop (cdr clauses)
                      (append
                        (case name
-                         [(candidates stream category title split rank preview exit styles narrow)
+                         [(candidates stream category title split rank preview exit styles narrow faces prefix lookup)
                           (syntax-case c () [(_ e) (list (cons name #'e))] [_ (invalid c)])]
                          [(group)
                           (syntax-case c ()
@@ -347,7 +352,7 @@
    session-record-bounds session-record-prompt candidate-match?
    session-record-states session-categories-of session-record-accept session-record-default sessions open-session!
    start-session! end-session! input-of rematch! select-match! match-text match-value match-title match-category
-   match-row-text match-spans match-annotation match-whole-text match-exit busy? query-start find-named! sole-match?
+   match-row-text match-spans match-annotation match-whole-text match-exit match-faces match-prefix match-answer busy? query-start find-named! sole-match?
    common-input-start narrow-chars session-record-narrowed narrowed-title source-title-of narrow! combine!
    match-list? make-match-list match-list-count match-list-ref match-list-index no-matches candidate-valued)
 
@@ -362,7 +367,7 @@
     (fields view (mutable states) width bounds accept preselect history default prompt
             (mutable input) (mutable matches) (mutable selected) (mutable locked?) (mutable ended?)
             (mutable inline?) (mutable annotators) (mutable next-id) history-ranks (mutable dirty?)
-            (mutable finding) (mutable narrowed)))
+            (mutable finding) (mutable narrowed) (mutable previewed)))
 
   ;; A source's candidates are numbered on through those it dropped, and
   ;; a match interleaves the numbers of a session's sources, so a match
@@ -913,7 +918,10 @@
         (session-record-selected-set! s m)
         (let ([was (owner-of s old)] [now (owner-of s m)])
           (when (and was (not (eq? was now))) (preview! was #f))
-          (when now (preview! now (match-value s m)))))))
+          (when now
+            (let ([answer (match-answer s m)])
+              (session-record-previewed-set! s answer)
+              (preview! now answer)))))))
 
   (define (prefers-input? s)
     (exists (lambda (st) (and (state-prefers-input? st) (string=? (state-query st) "")))
@@ -971,7 +979,17 @@
             (session-record-locked?-set! s #f)
             (set-selected! s (and (eq? (session-record-preselect s) 'first) (fx> (match-list-count matches) 0)
                                   (not (prefers-input? s))
-                                  (match-list-ref matches 0)))))))
+                                  (match-list-ref matches 0))))
+          ;; A lookup reads the match's spans, which new input moves, so the
+          ;; place previewed follows the input while the selection stays.
+          ;; A stream's batches leave the answer as it was, and previewing it
+          ;; again would pull back a view the user scrolled.
+          (let ([now (session-record-selected s)])
+            (when (and now (eqv? now sel) (%source-lookup (state-source (owner-of s now))))
+              (let ([answer (match-answer s now)])
+                (unless (equal? answer (session-record-previewed s))
+                  (session-record-previewed-set! s answer)
+                  (preview! (owner-of s now) answer))))))))
     (updated s))
 
   (define (set-state-matches! s st matches)
@@ -985,7 +1003,7 @@
 
   (define (open-session! view sources bounds accept preselect h default prompt)
     (let ([s (make-session view '() (length sources) bounds accept preselect h default prompt
-                           #f #f #f #f #f #t '() 0 (history-ranks h default) #t #f #f)])
+                           #f #f #f #f #f #t '() 0 (history-ranks h default) #t #f #f #f)])
       (session-record-states-set! s
         (let loop ([sources sources] [index 0])
           (if (null? sources)
@@ -1048,6 +1066,41 @@
     (let* ([st (owner-of s m)] [ds (state-details st)])
       (and ds (vector-ref ds (local-of s st m)))))
   (define (match-exit s m) (%source-exit (state-source (owner-of s m))))
+
+  ;; A faces or prefix procedure is called for every row drawn, so one that
+  ;; raises is reported once and its rows draw without it.
+  (define failed-procedures (make-weak-eq-hashtable))
+
+  (define (row-look s m clause who check)
+    (let ([p (clause (state-source (owner-of s m)))])
+      (if (or (not p) (eq-hashtable-contains? failed-procedures p))
+          #f
+          (guard (c [(not (quit-condition? c)) (eq-hashtable-set! failed-procedures p #t) (report c) #f])
+            (let ([v (p (match-text s m) (match-value s m))])
+              (unless (check v)
+                (assertion-violation who "a source's procedure returned what its clause does not take" v))
+              v)))))
+
+  (define (spans-in? text)
+    (let ([n (string-length text)])
+      (lambda (v)
+        (and (list? v)
+             (for-all (lambda (x) (and (list? x) (fx= (length x) 3) (fixnum? (car x)) (fixnum? (cadr x))
+                                       (fx<= 0 (car x) (cadr x) n)))
+                      v)))))
+
+  (define (match-faces s m)
+    (or (row-look s m %source-faces 'completion:source (spans-in? (match-row-text s m))) '()))
+
+  (define (match-prefix s m)
+    (row-look s m %source-prefix 'completion:source
+      (lambda (v) (or (string? v) (and (pair? v) (symbol? (car v)) (string? (cdr v)))))))
+
+  ;; A source's exit procedure gets the candidate's own value, not this
+  ;; one, since it acts on the candidate as it stands in the text completed.
+  (define (match-answer s m)
+    (let ([lookup (%source-lookup (state-source (owner-of s m)))] [v (match-value s m)])
+      (if lookup (lookup v (match-spans s m)) v)))
   (define (match-title s m)
     (let* ([st (owner-of s m)] [g (state-grouping st)])
       (if g
@@ -1329,6 +1382,44 @@
 
 (define (annotation s m) (%check-match 'completion:annotation s m) (match-annotation s m))
 
+(define (row-faces s m) (%check-match 'completion:row-faces s m) (match-faces s m))
+
+(define (row-prefix s m) (%check-match 'completion:row-prefix s m) (match-prefix s m))
+
+;; Keyed by the previewing view, so the highlight shows in that view
+;; alone and a buffer's other readers, such as M-s l's rows, see none of it.
+(buffers:define-layer %preview-highlight (priority 10))
+
+(define %previewed #f)
+
+(define (preview-place view buffer position spans)
+  (define who 'completion:preview-place)
+  (unless (views:view? view) (assertion-violation who "not a view" view))
+  (unless (buffers:buffer? buffer) (assertion-violation who "not a buffer" buffer))
+  (let ([n (document:length (buffers:document buffer))])
+    (unless (and (fixnum? position) (fx<= 0 position n))
+      (assertion-violation who "not a position in the buffer" position))
+    (unless (and (list? spans)
+                 (for-all (lambda (r) (and (list? r) (fx= (length r) 2) (fixnum? (car r)) (fixnum? (cadr r))
+                                           (fx<= 0 (car r) (cadr r) n)))
+                          spans))
+      (assertion-violation who "not a list of ranges in the buffer" spans)))
+  (end-preview-place)
+  (unless (eq? (views:buffer view) buffer) (views:set-buffer! view buffer))
+  (views:set-point! view position)
+  (let* ([doc (buffers:document buffer)] [line (document:line doc position)] [start (document:line-start doc line)]
+         [end (if (fx< line (document:line doc (document:length doc))) (document:line-start doc (fx+ line 1)) (document:length doc))]
+         [layer (buffers:layer buffer %preview-highlight view)])
+    (buffers:add-span! layer start end (list (cons 'face faces:highlight)))
+    (for-each (lambda (r) (buffers:add-span! layer (car r) (cadr r) (list (cons 'face faces:match)))) spans)
+    (set! %previewed (cons buffer layer))))
+
+(define (end-preview-place)
+  (let ([p %previewed])
+    (set! %previewed #f)
+    (when (and p (buffers:live? (car p)))
+      (buffers:set-spans! (cdr p) 0 (document:length (buffers:document (car p))) '()))))
+
 (define (selected s)
   (check-session 'completion:selected s)
   (session-record-selected s))
@@ -1355,7 +1446,7 @@
     (find-named! s input
       (lambda (named)
         (cond
-          [named (minibuffer:exit! prompt (match-value s named))]
+          [named (minibuffer:exit! prompt (match-answer s named))]
           [(%read-state-any? r) (minibuffer:exit! prompt input)]
           [else (minibuffer:message! prompt "No match")])))))
 
@@ -1388,10 +1479,10 @@
   (let* ([r (%read-of s)] [prompt (%read-state-prompt r)] [input (minibuffer:input prompt)]
          [default (and (string=? input "") (%read-default r))])
     (cond
-      [m (minibuffer:exit! prompt (match-value s m))]
+      [m (minibuffer:exit! prompt (match-answer s m))]
       [default
        (find-named! s default
-         (lambda (named) (minibuffer:exit! prompt (if named (match-value s named) default))))]
+         (lambda (named) (minibuffer:exit! prompt (if named (match-answer s named) default))))]
       [else (%answer-input! r input)])))
 
 (define (%read-default r) (session-record-default (%read-state-session r)))
@@ -1954,7 +2045,8 @@
 
 (define (%unload)
   (for-each (lambda (r) (signal-task (%read-state-task r) (%quit))) %reads)
-  (for-each end-session! sessions))
+  (for-each end-session! sessions)
+  (end-preview-place))
 
 (table-set! any-order-dispatch #\! %dispatch-not)
 (table-set! any-order-dispatch #\= %dispatch-literal)

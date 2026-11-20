@@ -49,7 +49,7 @@
    posn-record? make-posn-record posn-record-view posn-record-point posn-record-node posn-record-keymaps
    posn-record-x posn-record-y posn-record-column posn-record-row keymap-id marked-keymaps click-state
    view-client when-measured! scroll-by! recenter! region-ranges-of
-   face-attributes title-attributes
+   face-attributes title-attributes text-spans-html
    anchor-record? anchor-record-id anchor-record-view anchor-record-spot anchor-record-gone?
    new-anchor! forget-anchor! anchor-of-id anchor-drawn-for?
    scroller-record? scroller-record-id scroller-record-dropped? make-new-scroller! set-scroller-place!
@@ -1504,24 +1504,33 @@
   ;; below an overlay with one, such as a search match.
   (define region-rank -1)
 
+  ;; One styler serves a whole draw, so each value's attributes are made
+  ;; once and a malformed entry of views:span-properties is reported once.
+  (define (span-styler)
+    (let ([styles (make-hashtable equal-hash equal?)] [reported '()])
+      (define (malformed! key as)
+        (unless (memq key reported)
+          (set! reported (cons key reported))
+          (report (condition (make-who-condition 'views:span-properties)
+                             (make-message-condition "not a list of attribute names and values")
+                             (make-irritants-condition (list key as))))))
+      (lambda (value classes click)
+        (let ([key (cons (cons click classes) value)])
+          (or (hashtable-ref styles key #f)
+              (let ([style (let-values ([(open n) (span-open value classes malformed! click)])
+                             (make-span-style (and open (raw-html open)) (span-closing n)
+                                              (value-ref value 'before) (value-ref value 'after) (value-ref value 'replace)))])
+                (hashtable-set! styles key style)
+                style))))))
+
+  (define (styled-entry style start end rank)
+    (make-span-entry start end rank (span-style-open style) (span-style-close style)
+                     (span-style-before style) (span-style-after style) (span-style-replace style)))
+
   (define (window-spans b v doc regions ws we)
     (let* ([layers (buffers:layers b v)]
            [entries
-            (let ([styles (make-hashtable equal-hash equal?)] [reported '()])
-              (define (malformed! key as)
-                (unless (memq key reported)
-                  (set! reported (cons key reported))
-                  (report (condition (make-who-condition 'views:span-properties)
-                                     (make-message-condition "not a list of attribute names and values")
-                                     (make-irritants-condition (list key as))))))
-              (define (style value classes click)
-                (let ([key (cons (cons click classes) value)])
-                  (or (hashtable-ref styles key #f)
-                      (let ([style (let-values ([(open n) (span-open value classes malformed! click)])
-                                     (make-span-style (and open (raw-html open)) (span-closing n)
-                                                      (value-ref value 'before) (value-ref value 'after) (value-ref value 'replace)))])
-                        (hashtable-set! styles key style)
-                        style))))
+            (let ([style (span-styler)])
               (define (span-click keymap s)
                 (and keymap
                      (let ([state (click-state keymap (make-posn-record (view-record-id v) (car s) #f '() #f #f #f #f))])
@@ -1538,10 +1547,7 @@
                                                       above-region
                                                       '())
                                                   (span-click (buffers:layer-keymap (car layers)) s))])
-                                (cons (make-span-entry (car s) (cadr s) rank (span-style-open style) (span-style-close style)
-                                                       (span-style-before style)
-                                                       (span-style-after style) (span-style-replace style))
-                                      acc)))
+                                (cons (styled-entry style (car s) (cadr s) rank) acc)))
                             acc (buffers:spans (car layers) ws we))))))]
            [pieces
             (let loop ([i 0] [acc '()])
@@ -2145,6 +2151,22 @@
                 items))
             (emit-insertions! re)
             (nest (reverse pieces) 0))])))
+
+  ;; Text that is no buffer's is drawn as a line of its own, with no
+  ;; cursors, anchors or marks, so its spans follow the rule a buffer's do.
+  (define (text-spans-html v client text spans)
+    (let* ([n (string-length text)] [style (span-styler)]
+           [entries (let loop ([spans spans] [rank 0] [acc '()])
+                      (if (null? spans)
+                          acc
+                          (let ([s (car spans)])
+                            (loop (cdr spans) (fx+ rank 1)
+                                  (cons (styled-entry (style (caddr s) '() #f) (car s) (cadr s) rank) acc)))))]
+           [sorted (list->vector (list-sort (lambda (a b) (fx< (span-entry-start a) (span-entry-start b))) entries))]
+           [ctx (new-context v client #f 0 n 0 n #f '() '() '#() sorted (longest-span sorted) '() '() #f #f
+                             (make-eqv-hashtable) #f #f #f)])
+      (parameterize ([current-context ctx] [enclosing-regions '()])
+        (line-content ctx (list (make-text-piece 0 text)) 0 n))))
 
   ;; Highlighting's spans seldom overlap: a line whose spans are apart,
   ;; with no cursor or datum in it, draws each span as one element.
@@ -3303,6 +3325,18 @@
   (check-main-thread 'views:atom-view)
   (check-node 'views:atom-view node)
   (atom-view-of node #f))
+
+(define (draw-text view text spans)
+  (check-view 'views:draw-text view)
+  (unless (string? text)
+    (assertion-violation 'views:draw-text "not a string" text))
+  (unless (and (list? spans)
+               (for-all (lambda (s) (and (list? s) (fx= (length s) 3) (fixnum? (car s)) (fixnum? (cadr s))
+                                         (fx<= 0 (car s) (cadr s) (string-length text))))
+                        spans))
+    (assertion-violation 'views:draw-text "not a list of spans in the text" spans))
+  (let ([client (%drawn-for)])
+    (with-view-bound view (bound-buffer view) (lambda () (text-spans-html view client text spans)))))
 
 (define (draw view client)
   (check-view 'views:draw view)
