@@ -1,0 +1,86 @@
+; C-h f and C-h x take the name at point as their default: the export of
+; the symbol at point, as the buffer spells it.
+> (define library (getenv "TUNA_LIBRARY"))
+> (define (default-of . keys)
+    (apply start! keys)
+    (let ([d (minibuffer:prompt-default (minibuffer:current-prompt))])
+      (press! "C-g")
+      (sleep-for 0.05)
+      d))
+> (define bs (show-file! (string-append library "/buffers.sls")))
+> (settle-names bs)
+> (define (at! b string offset)
+    (let* ([t (text b)] [n (string-length string)])
+      (let loop ([i 0])
+        (if (string=? (substring t i (+ i n)) string)
+            (views:set-point! (view) (document:position (buffers:document b) (+ i offset) (document:unit characters)))
+            (loop (+ i 1))))))
+> (at! bs "(define (insert! " 11)
+> (default-of "C-h" "f")
+! &quit
+"buffers:insert!"
+; A helper in its own module's file.
+> (define zp (show-file! "~/.config/tuna/lib/zeppo.sls"))
+> (settle-names zp)
+> (at! zp "(define (%tune" 11)
+> (default-of "C-h" "f")
+! &quit
+"zeppo:%tune"
+; In a plain buffer the name is read as Scheme; on an argument it is the
+; list's first symbol, for C-h x the command it names. A space after the
+; opening bracket is no call.
+> (define plain (buffers:make "plain" "(editing:forward-word b) ( editing:forward-word c) buffers:insert!"))
+> (views:set-buffer! (view) plain)
+> (views:set-point! (view) 23)
+> (list (default-of "C-h" "f") (default-of "C-h" "x"))
+! &quit
+! &quit
+("editing:forward-word" "editing:forward-word")
+> (views:set-point! (view) 49)
+> (list (default-of "C-h" "f") (default-of "C-h" "x"))
+! &quit
+! &quit
+(#f #f)
+> (views:set-point! (view) 55)
+> (default-of "C-h" "f")
+! &quit
+"buffers:insert!"
+; In prose, a lone " above the call hides nothing, as in Emacs.
+> (define prose (buffers:make "prose" "He said \"hi.\nAnd then\nsee (editing:forward-word b) here\n"))
+> (views:set-buffer! (view) prose)
+> (at! prose "word b" 5)
+> (list (default-of "C-h" "f") (default-of "C-h" "x"))
+! &quit
+! &quit
+("editing:forward-word" "editing:forward-word")
+> (define (help-holds? piece)
+    (let ([t (text (buffers:find "*Help*"))] [n (string-length piece)])
+      (let loop ([i 0]) (and (<= (+ i n) (string-length t)) (or (string=? (substring t i (+ i n)) piece) (loop (+ i 1)))))))
+; Chez's own names are described, and a name two libraries export is
+; offered once, as the one the REPL resolves.
+> (in-client (lambda () (help:describe-name 'car (view))))
+> (help-title)
+"car"
+> (help-holds? "A procedure in (chezscheme).")
+#t
+> (in-client (lambda () (help:describe-name 'dynamic-wind (view))))
+> (help-title)
+"dynamic-wind"
+> (help-holds? "(tuna core replaced)")
+#t
+; C-h f offers each name with its kind, as Marginalia annotates a
+; symbol's class; a table is a variable.
+> (start! "C-h" "f")
+> (type! "help:key")
+> (wait-until (lambda () (let ([s (session)]) (and s (not (completion:session-busy? s))))))
+> (row-of (session) "help:keymap")
+("help:keymap" help:keymap completion:name-category ("variable"))
+> (press! "C-g")
+! &quit
+; A #!tuna/base file sees post!, a name help describes.
+> (views:set-buffer! (view) zp)
+> (views:set-point! (view) (- (document:length (buffers:document zp)) 1))
+> (complete! "RET" "p" "o" "s" "t")
+> (row-of (session) "post!")
+("post!" post! completion:name-category ("procedure"))
+> (press! "C-g")

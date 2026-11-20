@@ -47,7 +47,7 @@
 (use-plugin completion-annotations
   (config
     (define (annotate-word session)
-      (lambda (word) (list (number->string (string-length word)))))
+      (lambda (word details) (list (number->string (string-length word)))))
     (table-set! completion:annotators words:word-category annotate-word)))
 
 (define client (web:add-client! 1))

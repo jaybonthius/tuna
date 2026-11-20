@@ -22,5 +22,5 @@ How large a buffer's history may grow: the characters its edits removed and inse
 #t
 > (help:buffer? notes)
 #f
-> (eq? help:name-category 'help:name-category)
+> (eq? completion:name-category 'completion:name-category)
 #t

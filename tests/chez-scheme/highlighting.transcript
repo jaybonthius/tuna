@@ -103,7 +103,8 @@
 ; Names: the scope comes from the text. #!tuna gives (chezscheme) and
 ; (tuna), #!tuna/base (chezscheme) and (tuna base); import forms give
 ; their specs, with only, except, prefix, rename, library and for;
-; use-plugin lines give the plugin's main module.
+; use-plugin lines give the plugin's main module, and a configuration,
+; which loads into the REPL's environment, also has the REPL's scope.
 > (define (word-faces content . words)
     (let ([b (scheme-buffer "names.ss" content)])
       (settle b)
@@ -121,7 +122,7 @@
 > (word-faces "(import (library (chezscheme)))\n(car buffers:make)" "car" "buffers:make")
 (function.builtin #f)
 > (word-faces "(use-plugin modes)\n(modes:ancestry buffers:make)" "modes:ancestry" "buffers:make")
-(function.builtin #f)
+(function.builtin function.builtin)
 ; A text with use-plugin lines is a configuration, which loads into the
 ; REPL's environment, so it also has (chezscheme) and (tuna).
 > (word-faces "(import (tuna) (tuna plugins))\n(use-plugin modes)\n(define (f x) (car (list x)))\n(define-option o 1 number?)" "define" "car" "define-option")
@@ -140,12 +141,12 @@ function.builtin
 #t
 > (word-faces "(library (a #!eof) (export) (import (chezscheme)))\n(car 1)" "car")
 (function.builtin)
-; With none of these, the REPL's scope: (chezscheme), (tuna) and every
-; loaded module. Changeable definitions and hooks are procedures,
-; tables and other values are not, macros are syntax, and % names have
-; no entry.
-> (word-faces "(car define-option modes:ancestry modes:major-mode-changed syntax:lexers faces:comment buffers:with-buffer chez-scheme:%highlighter syntax:class)" "car" "define-option" "modes:ancestry" "modes:major-mode-changed" "syntax:lexers" "faces:comment" "buffers:with-buffer" "chez-scheme:%highlighter" "syntax:class")
-(function.builtin keyword function.builtin function.builtin #f #f keyword #f keyword)
+; With none of these, the REPL's scope: its libraries and every loaded
+; module. Changeable definitions and hooks are procedures, tables and
+; other values are not drawn, macros are syntax, and a helper, a % name,
+; is a procedure as any other.
+> (word-faces "(car define-option modes:ancestry modes:major-mode-changed syntax:lexers faces:comment buffers:with-buffer chez-scheme:%send-edit syntax:class)" "car" "define-option" "modes:ancestry" "modes:major-mode-changed" "syntax:lexers" "faces:comment" "buffers:with-buffer" "chez-scheme:%send-edit" "syntax:class")
+(function.builtin keyword function.builtin function.builtin #f #f keyword function.builtin keyword)
 ; The file's own module adds its exports without the prefix, found by
 ; its path, or the library a library form defines.
 > (disk:write-text! "~/.config/tuna/lib/shapes.sls" "#!tuna\n(define (area r) (* r r))\n(define-syntax twice (syntax-rules () [(_ e) (begin e e)]))\n(define (both r) (twice (area r)))\n")
@@ -157,6 +158,26 @@ function.builtin
 (("twice" keyword) ("area" function.builtin))
 > (word-faces "(library (shapes) (export area) (import (chezscheme)))\n(shapes:area twice)" "shapes:area" "twice")
 (#f keyword)
+; A helper is drawn in its own module's file, and in another module's
+; file an import's helper is no name.
+> (disk:write-text! "~/.config/tuna/lib/tunes.sls" "#!tuna\n(define (hum) (%note 1))\n(define (%note n) n)\n")
+> (import (tunes))
+> (define tunes (files:visit "~/.config/tuna/lib/tunes.sls"))
+> (face-of tunes "%note")
+function.builtin
+> (word-faces "#!tuna\n(import (tunes))\n(tunes:%note tunes:hum)" "tunes:%note" "tunes:hum")
+(#f function.builtin)
+; When a module unloads, the batch's end takes its names from the buffers
+; that import it, and their colours go; loading it again brings them back.
+> (define hums (scheme-buffer "hums.ss" "(import (tunes))\n(tunes:hum)"))
+> (face-of hums "tunes:hum")
+function.builtin
+> (unload-module! '(tunes))
+> (face-of hums "tunes:hum")
+#f
+> (load-module! '(tunes))
+> (face-of hums "tunes:hum")
+function.builtin
 ; A module's names are classified again when it loads again, and the
 ; buffers whose scope holds it are highlighted again.
 > (disk:write-text! "~/.config/tuna/lib/shapes.sls" "#!tuna\n(define (area r) (* r r))\n(define-syntax twice (syntax-rules () [(_ e) (begin e e)]))\n(define (both r) (twice (area r)))\n(define (perimeter r) (* 2 r))\n")

@@ -130,17 +130,44 @@
                   (string=? "" (document:text line 0 (lexeme-record-start first))))))))
 
   ;; Another mode's lexer reads only from the last line at or above the
-  ;; position's that starts with an opening bracket, so prose above, such
-  ;; as a lone " in Markdown, does not turn the code below into a string.
+  ;; position's that starts with an opening bracket, or with none from the
+  ;; position's own line, so prose above, such as a lone " in Markdown,
+  ;; does not turn the code below into a string.
+  ;;
+  ;; A line whose start no lexeme of one run from further up spans begins
+  ;; as the lexer reads it alone, so one run over a block of lines answers
+  ;; for each of them, where a run per line would cost a lexer call for
+  ;; every line above point; only a line inside a lexeme that spans lines,
+  ;; such as a string, is lexed alone. Blocks double as they go up, so the
+  ;; walk lexes about twice the text between the line it finds and the
+  ;; position. It returns the line it finds, or #f.
   (define (local-start who mode lexer doc position)
-    (let ([last-line (document:line doc (document:length doc))])
-      (let loop ([line (document:line doc position)])
-        (if (fx= line 1)
-            0
-            (let ([start (document:line-start doc line)])
-              (if (starts-with-open? who mode lexer doc start (line-end doc line last-line))
-                  start
-                  (loop (fx- line 1))))))))
+    (let* ([last-line (document:line doc (document:length doc))]
+           [here (document:line doc position)])
+      (define (opening-at? v line)
+        (let* ([start (document:line-start doc line)]
+               [i (last-before v start)]
+               [j (fx+ i 1)])
+          (cond
+            [(and (fx>= i 0) (fx> (lexeme-record-end (vector-ref v i)) start))
+             (starts-with-open? who mode lexer doc start (line-end doc line last-line))]
+            [(fx< j (vector-length v))
+             (let ([l (vector-ref v j)])
+               (and (open? l)
+                    (fx< (lexeme-record-start l) (line-end doc line last-line))
+                    (string=? "" (document:text doc start (lexeme-record-start l)))))]
+            [else #f])))
+      (let block ([bottom here] [count 16])
+        (if (fx< bottom 1)
+            #f
+            (let* ([top (fxmax 1 (fx- bottom (fx- count 1)))]
+                   [from (document:line-start doc top)]
+                   [v (shifted (run-lexer who mode lexer (document:slice doc from (line-end doc bottom last-line))) from)])
+              (let walk ([line bottom])
+                (cond
+                  [(fx< line top) (block (fx- top 1) (fx* count 2))]
+                  [(opening-at? v line) line]
+                  [else (walk (fx- line 1))])))))))
 
   ;; Lexemes are kept per document, which never changes, so no edit needs
   ;; to flush them. Each entry holds its document, which would keep the key
@@ -155,6 +182,23 @@
           (let ([lexed (lex-from who mode lexer doc start)])
             (eq-hashtable-set! cache doc (cons (cons (cons lexer start) lexed) entries))
             lexed))))
+
+  ;; Every line from the one a walk found to the one it started from finds
+  ;; the same line, and with none found every line above finds none, so
+  ;; one walk answers for each of them.
+  (define starts (make-ephemeron-eq-hashtable))
+
+  (define (local-start-of who mode lexer doc position)
+    (let* ([line (document:line doc position)]
+           [walks (eq-hashtable-ref starts doc '())]
+           [walk (find (lambda (w) (and (eq? (vector-ref w 0) lexer) (fx<= (vector-ref w 1) line (vector-ref w 2))))
+                       walks)]
+           [found (if walk
+                      (vector-ref walk 3)
+                      (let ([found (local-start who mode lexer doc position)])
+                        (eq-hashtable-set! starts doc (cons (vector lexer (or found 1) line found) walks))
+                        found))])
+      (document:line-start doc (or found line))))
 
   (define (buffer-mode who buffer)
     (check-main-thread who)
@@ -176,7 +220,7 @@
       (cached who mode lexer doc
         (if (eq? lexer (lexer-of (modes:major-mode buffer)))
             0
-            (local-start who mode lexer doc position)))))
+            (local-start-of who mode lexer doc position)))))
 
   (define (last-before v position)
     (let loop ([low 0] [high (vector-length v)])

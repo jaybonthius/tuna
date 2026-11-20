@@ -1,6 +1,6 @@
 #!tuna
 (import (keys) (commands) (lossage) (buffers) (document) (views) (layout) (modes) (completion)
-        (echo-area) (ui) (web) (haml))
+        (echo-area) (ui) (web) (haml) (syntax) (chez-scheme))
 
 (define-option select-view? #f boolean?
   "Whether a describing command selects the view showing *Help*.")
@@ -8,9 +8,6 @@
 (define-saved name-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
 (define-saved command-history '() (lambda (v) (and (list? v) (for-all string? v))))
-
-(completion:define-category name-category
-  "Exported names of loaded modules and of Tuna's own libraries, valued by the name.")
 
 (define-table keymap "The help commands, bound to C-h.")
 
@@ -174,22 +171,13 @@
 (define (%documentation-datum v)
   (%text '() (string-append (or (documentation v) "No documentation.") "\n")))
 
-(define (%libraries) (append (loaded-modules) '((tuna) (tuna plugins) (tuna eval))))
-
 (define (%library-of name)
-  (find (lambda (library) (memq name (library-exports library))) (%libraries)))
-
-(define (%private-name? name)
-  (let* ([s (symbol->string name)] [n (string-length s)])
-    (let loop ([i (fx- n 1)])
+  (let ([names (chez-scheme:repl-names)])
+    (let loop ([i 0])
       (cond
-        [(fx< i 0) (and (fx> n 0) (char=? (string-ref s 0) #\%))]
-        [(char=? (string-ref s i) #\:) (and (fx< (fx+ i 1) n) (char=? (string-ref s (fx+ i 1)) #\%))]
-        [else (loop (fx- i 1))]))))
-
-(define (%offered-names)
-  (fold-right (lambda (library acc) (append (remp %private-name? (library-exports library)) acc))
-              '() (%libraries)))
+        [(fx= i (vector-length names)) #f]
+        [(eq? (chez-scheme:name-export (vector-ref names i)) name) (chez-scheme:name-library (vector-ref names i))]
+        [else (loop (fx+ i 1))]))))
 
 (define (%environment library) (environment '(tuna) library))
 
@@ -284,7 +272,7 @@
   (lambda (view)
     (let ([library (%library-of name)])
       (if library
-          (let ([env (%environment library)] [changeable? (%changeable? name library)])
+          (let ([env (environment library)] [changeable? (%changeable? name library)])
             (cons (%title-datum (symbol->string name))
                   (if (or changeable? (top-level-bound? name env))
                       (%value-datums name (eval name env) library changeable? view)
@@ -352,24 +340,36 @@
   (unless (or (string? keys) (keys:event? keys))
     (assertion-violation who "neither a key sequence nor an event" keys)))
 
-(define (%delimiter? c)
-  (or (char-whitespace? c) (memv c '(#\( #\) #\[ #\] #\" #\; #\' #\` #\,))))
+(define (%described-export buffer spelling)
+  (let ([name (chez-scheme:find-name buffer spelling)])
+    (and name (member (chez-scheme:name-library name) (chez-scheme:tuna-libraries))
+         (chez-scheme:name-export name))))
 
-(define (%name-char? token) (and (char? token) (not (%delimiter? token)) (not (char=? token #\xFFFC))))
+(define (%export-at buffer position)
+  (let-values ([(start end) (syntax:symbol-bounds buffer position chez-scheme:mode)])
+    (if start
+        (values start (%described-export buffer (string->symbol (document:text (buffers:document buffer) start end))))
+        (values #f #f))))
 
+;; A list whose opening a space follows names no call, as Emacs's
+;; function-called-at-point ignores one.
 (define (%name-at-point)
-  (let* ([view (views:current)] [b (and view (views:buffer view))])
-    (and b
-         (let* ([doc (buffers:document b)] [p (views:point view)] [n (document:length doc)])
-           (let ([start (let loop ([i p]) (if (and (fx> i 0) (%name-char? (document:token doc (fx- i 1)))) (loop (fx- i 1)) i))]
-                 [end (let loop ([i p]) (if (and (fx< i n) (%name-char? (document:token doc i))) (loop (fx+ i 1)) i))])
-             (and (fx< start end) (string->symbol (document:text doc start end))))))))
+  (let* ([view (views:current)] [buffer (and view (views:buffer view))])
+    (and buffer
+         (let ([point (views:point view)])
+           (or (let-values ([(start export) (%export-at buffer point)]) export)
+               (let ([openings (syntax:openings buffer point chez-scheme:mode)])
+                 (and (pair? openings)
+                      (let ([after (syntax:lexeme-end (list-ref openings (fx- (length openings) 1)))])
+                        (let-values ([(start export) (%export-at buffer after)])
+                          (and start (fx= start after) export))))))))))
 
 (define %read-command
   (case-lambda
     [(question) (%read-command question #f)]
     [(question styles)
-     (let* ([at (%name-at-point)] [default (and at (commands:command-named at) (symbol->string at))])
+     (let* ([at (%name-at-point)]
+            [default (and at (memq at (commands:public-command-names)) (symbol->string at))])
        (completion:read question
          (list (completion:source
                  (candidates (list->vector
@@ -380,12 +380,15 @@
          command-history default))]))
 
 (define (%read-name)
-  (let* ([names (%offered-names)] [at (%name-at-point)] [default (and at (memq at names) (symbol->string at))])
+  (let ([at (%name-at-point)])
     (completion:read "Describe name: "
       (list (completion:source
-              (candidates (list->vector (map (lambda (name) (cons (symbol->string name) name)) names)))
-              (category name-category)))
-      name-history default)))
+              (candidates (vector-map (lambda (name)
+                                        (let ([export (chez-scheme:name-export name)])
+                                          (vector (symbol->string export) export (chez-scheme:name-kind name))))
+                                      (chez-scheme:repl-names)))
+              (category completion:name-category)))
+      name-history (and at (symbol->string at)))))
 
 (commands:define-command (describe-key [keys (%read-keys)] [view (views:current)])
   "Shows in *Help* what KEYS, a key sequence or a mouse event, runs in VIEW, with that command's description; for a prefix, the bindings after it."
@@ -570,5 +573,4 @@
 (keys:bind! modes:special-keymap "h" describe-mode)
 (add-hook! mode-hook %set-revert)
 (table-set! web:stylesheets 'help "help/help.css")
-(table-set! completion:category-default-styles name-category (list completion:prefix completion:substring))
 (advice-add! keys:undefined %describe-prefix)

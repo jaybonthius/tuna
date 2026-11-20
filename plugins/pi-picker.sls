@@ -345,22 +345,22 @@
     [else (string-append (number->string n) " tokens")]))
 
 (define (annotate-chat session)
-  (lambda (chat)
+  (lambda (chat details)
     (list (cons faces:shadow (files:abbreviated-path (pi:chat-directory chat)))
           (cons faces:shadow (symbol->string (pi:chat-activity chat))))))
 
 (define (annotate-session session)
-  (lambda (s)
+  (lambda (s details)
     (list (cons faces:shadow (%age (pi:session-modified s)))
           (cons faces:shadow (%count (pi:session-message-count s) "message" "messages")))))
 
 (define (annotate-model session)
-  (lambda (m)
+  (lambda (m details)
     (list (cons faces:shadow (pi:model-name m))
           (cons faces:shadow (let ([w (pi:model-context-window m)]) (if w (%tokens w) ""))))))
 
 (define (annotate-command session)
-  (lambda (c)
+  (lambda (c details)
     (if (pi:slash-command? c)
         (list (cons faces:shadow (%first-line (pi:slash-command-description c))))
         '())))

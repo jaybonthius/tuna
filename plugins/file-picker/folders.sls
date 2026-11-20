@@ -1,6 +1,6 @@
 (library (file-picker folders)
   (export discarded-length restarted-name expand-path directory? folder-entries prefix-base-length partial-expansions)
-  (import (chezscheme) (completion matcher))
+  (import (chezscheme) (completion matcher) (files attributes))
 
   (define (discarded-length name)
     (let ([n (string-length name)])
@@ -29,13 +29,27 @@
 
   (define (names dir) (guard (c [#t '()]) (list-sort string<? (directory-list (if (string=? dir "") "." dir)))))
 
+  ;; A file removed since its folder was listed, or one the user may not
+  ;; read, has no attributes and so no details.
+  (define (attributes path owners)
+    (guard (c [(i/o-error? c) #f]) (read-file-attributes path owners)))
+
+  ;; Reading attributes looks up each file's owner and group unless one
+  ;; cache serves the listing, and in a folder of one owner that lookup
+  ;; costs more than the rest of the listing. A link's type is its own,
+  ;; so only a link is asked again whether it leads to a folder.
   (define (folder-entries dir shown)
-    (map (lambda (name)
-           (let ([path (string-append dir name)])
-             (if (directory? path)
-                 (cons (string-append shown name "/") (string-append path "/"))
-                 (cons (string-append shown name) path))))
-         (names dir)))
+    (let ([owners (make-owner-names)])
+      (map (lambda (name)
+             (let* ([path (string-append dir name)]
+                    [a (attributes path owners)]
+                    [details (and a (cons (file-attributes-size a) (file-attributes-modified a)))])
+               (if (if (and a (not (eq? (file-attributes-type a) (file-type link))))
+                       (eq? (file-attributes-type a) (file-type folder))
+                       (directory? path))
+                   (vector (string-append shown name "/") (string-append path "/") details)
+                   (vector (string-append shown name) path details))))
+           (names dir))))
 
   (define (prefix-base-length home start prefix)
     (let loop ([i (fx- (string-length prefix) 1)])

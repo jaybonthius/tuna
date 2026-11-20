@@ -209,8 +209,10 @@
   (define (clause-specs clause)
     (if (list? clause) (filter spec-datum? (cdr clause)) '()))
 
-  ;; A configuration loads into the REPL's environment, which always holds
-  ;; (chezscheme) and (tuna), and only a configuration has use-plugin lines.
+  ;; A scope lists its sources in the order that resolves a name. A
+  ;; module's body imports (tuna core replaced) inside its first line's
+  ;; libraries and outside its own imports, and a configuration loads
+  ;; into the REPL's environment, the only file with use-plugin lines.
   (define (scope-of lexemes text)
     (define (form-datum t end)
       (guard (c [(or (lexical-violation? c) (i/o-error? c)) #f])
@@ -228,15 +230,17 @@
                             (eq? (lexeme-kind (vector-ref lexemes 0)) 'directive)
                             (substring text 0 (lexeme-end (vector-ref lexemes 0))))]
            [line-specs (cond
-                         [(equal? first-line "#!tuna") '((chezscheme) (tuna))]
-                         [(equal? first-line "#!tuna/base") '((chezscheme) (tuna base))]
-                         [else '()])])
-      (let loop ([i 0] [specs '()] [own #f] [found? (pair? line-specs)] [configuration? #f])
+                         [(equal? first-line "#!tuna") '((tuna core replaced) (chezscheme) (tuna))]
+                         [(equal? first-line "#!tuna/base") '((tuna core replaced) (chezscheme) (tuna base))]
+                         [else '()])]
+           [module-file? (pair? line-specs)])
+      (let loop ([i 0] [specs '()] [own #f] [found? module-file?] [configuration? #f])
         (if (fx= i n)
-            (list (if found?
-                      (append line-specs (if configuration? '((chezscheme) (tuna)) '()) (reverse specs))
-                      'repl)
-                  own)
+            (list (cond
+                    [(not found?) '(repl)]
+                    [configuration? (append (reverse specs) '(repl))]
+                    [else (append (reverse specs) line-specs)])
+                  own module-file?)
             (let ([t (vector-ref lexemes i)])
               (if (and (eq? (lexeme-kind t) 'open) (fx= (lexeme-depth t) 1)
                        (fx< (fx+ i 1) n) (eq? (lexeme-kind (vector-ref lexemes (fx+ i 1))) 'symbol))

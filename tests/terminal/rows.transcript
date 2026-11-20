@@ -37,11 +37,12 @@
 ; The scrollback is empty, so the screen's text starts at 4, and row 2
 ; at 6.
 > (define two (buffers:anchor t 6))
-> (define version (buffers:version t))
 > (terminal:send! t "\r")
 > (wait-for t "27\n")
-> (edits t version)
-((2 2 "") (9 1 "\n") (65 0 "25\n26\n27\n\n") (64 0 "24"))
+; The four rows may come in one read or several, each a round of edits,
+; so the test reads the screen and the scrollback, not the edits.
+> (list-tail (screen-lines t) 19)
+("24" "25" "26" "27")
 > (list (buffers:anchor-position two) (buffers:anchor-deleted? two))
 (4 #f)
 > (list-head (lines (text t)) 6)
@@ -65,18 +66,17 @@
 (#t ("1" "2"))
 ; A row the program wrapped goes on with the next one in the
 ; scrollback, whether the next one leaves the screen with it or later.
+; A line may come in more than one read, so the test reads the rows.
 > (buffers:kill! t)
 #t
 > (define t (start-for-client '("sh" "-c" "stty -echo; head -c 100 /dev/zero | tr '\\0' a; echo; seq 1 21; read x; echo x; read x; echo y; read x")))
 > (wait-for t "21\n")
 > (define (scrollback-count) (eval-in-module '(%terminal-scrollback-count (car (%all))) '(terminal)))
-> (define version (buffers:version t))
 > (terminal:send! t "\r")
 > (wait-for t "x\n")
-> (list (edits t version) (map string-length (list-head (lines (text t)) 2)) (scrollback-count))
-(((2 2 "") (82 1 "\n") (161 0 "\n") (160 0 "x")) (80 20) 1)
-> (define version (buffers:version t))
+> (list (map string-length (list-head (lines (text t)) 2)) (scrollback-count) (list-tail (screen-lines t) 21))
+((80 20) 1 ("21" "x"))
 > (terminal:send! t "\r")
 > (wait-for t "y\n")
-> (list (edits t version) (map string-length (list-head (lines (text t)) 2)) (scrollback-count))
-(((83 2 "") (103 1 "\n") (82 1 "") (162 0 "\n") (161 0 "y")) (100 1) 1)
+> (list (map string-length (list-head (lines (text t)) 2)) (scrollback-count) (list-tail (screen-lines t) 21))
+((100 1) 1 ("x" "y"))

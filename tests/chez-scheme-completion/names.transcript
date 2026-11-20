@@ -1,0 +1,155 @@
+; Each name a buffer sees is its spelling, the export it refers to, that
+; export's library and its kind.
+> (define library (getenv "TUNA_LIBRARY"))
+> (define (described b spellings)
+    (map (lambda (s)
+           (let ([n (chez-scheme:find-name b s)])
+             (and n (list (chez-scheme:name-export n) (chez-scheme:name-library n) (chez-scheme:name-kind n)))))
+         spellings))
+> (define bs (show-file! (string-append library "/buffers.sls")))
+> (settle-names bs)
+> (described bs '(insert! document:text buffers:insert!))
+((buffers:insert! (buffers) procedure) (document:text (document) procedure) #f)
+; A module's file is offered its own helpers, not its imports'.
+> (define zp (show-file! "~/.config/tuna/lib/zeppo.sls"))
+> (settle-names zp)
+> (described zp '(%tune sing volume post! buffers:insert! buffers:%replace))
+((zeppo:%tune (zeppo) procedure) (zeppo:sing (zeppo) procedure) (zeppo:volume (zeppo) variable) (post! (tuna base) procedure) (buffers:insert! (buffers) procedure) #f)
+; Its body imports (tuna core replaced) ahead of its first line's
+; libraries, so its sleep and dynamic-wind are that library's.
+> (described zp '(sleep dynamic-wind car))
+((sleep (tuna core replaced) syntax) (dynamic-wind (tuna core replaced) procedure) (car (chezscheme) procedure))
+; A buffer with no scope of its own sees the REPL's names: every export of
+; the REPL's libraries, helpers included, the first library's for a name
+; two export, and no module's %scope.
+> (define plain (buffers:make "plain" ""))
+> (eq? (chez-scheme:names plain) (chez-scheme:repl-names))
+#t
+> (described plain '(sleep dynamic-wind car zeppo:%tune help:keymap help:%read-name zeppo:%scope))
+((sleep (tuna core replaced) syntax) (dynamic-wind (tuna core replaced) procedure) (car (chezscheme) procedure) (zeppo:%tune (zeppo) procedure) (help:keymap (help) variable) (help:%read-name (help) procedure) #f)
+> (let ([libraries (chez-scheme:tuna-libraries)])
+    (list (list-head libraries 6) (and (member '(zeppo) libraries) #t)))
+(((tuna core replaced) (chezscheme) (tuna) (tuna base) (tuna plugins) (tuna eval)) #t)
+> (let ([spellings (map chez-scheme:name-spelling (vector->list (chez-scheme:repl-names)))])
+    (length (filter (lambda (s) (eq? s 'dynamic-wind)) spellings)))
+1
+; A configuration gets its own imports' names, then the REPL's, since it
+; loads into the REPL's environment.
+> (define config (show-file! "~/.config/tuna/init.ss"))
+> (settle-names config)
+> (described config '(help:%read-name zeppo:sing document:text spawn-task))
+((help:%read-name (help) procedure) (zeppo:sing (zeppo) procedure) (document:text (document) procedure) (spawn-task (tuna) procedure))
+; Kinds come from an enumeration.
+> (chez-scheme:binding-kind variable)
+variable
+; An unloaded module's names go.
+> (unload-module! '(zeppo))
+> (described plain '(zeppo:sing))
+(#f)
+> (load-module! '(zeppo))
+> (described plain '(zeppo:sing))
+((zeppo:sing (zeppo) procedure))
+> (raised (lambda () (chez-scheme:names 'plain)))
+(chez-scheme:names "not a buffer")
+> (raised (lambda () (chez-scheme:find-name plain "car")))
+(chez-scheme:find-name "not a symbol")
+; C-M-i completes a name in a module's own file as the file spells it,
+; valued by its export, with its kind beside it; a name from a library
+; help does not describe is an identifier.
+> (views:set-buffer! (view) bs)
+> (views:set-point! (view) (- (document:length (buffers:document bs)) 1))
+> (complete! "RET" "i" "n" "s")
+> (row-of (session) "insert!")
+("insert!" buffers:insert! completion:name-category ("procedure"))
+> (press! "C-g")
+> (complete! "SPC" "d" "o" "c" "u" "m" "e" "n" "t" ":" "t" "e" "x")
+> (rows (session))
+(("document:text" "document:text" completion:identifier-category ("procedure")))
+> (press! "C-g")
+; RET inserts the spelling.
+> (complete! "SPC" "i" "n" "s" "e" "r" "t")
+> (press! "M-n" "RET")
+> (let ([t (text bs)]) (substring t (- (string-length t) 7) (string-length t)))
+"insert!"
+; A buffer that imports a module completes its names as it spells them.
+> (define user (buffers:make "user.ss" "(import (buffers) (zeppo))\n"))
+> (modes:set-major-mode chez-scheme:mode user)
+> (views:set-buffer! (view) user)
+> (settle-names user)
+> (views:set-point! (view) (- (document:length (buffers:document user)) 1))
+> (complete! "(" "b" "u" "f" "f" "e" "r" "s" ":" "i" "n" "s")
+> (row-of (session) "buffers:insert!")
+("buffers:insert!" buffers:insert! completion:name-category ("procedure"))
+> (press! "C-g")
+; At a call's head only procedures and syntax are offered, as Emacs's
+; capf offers only functions and macros there; elsewhere variables too,
+; and after a square bracket, which opens a clause or a binding.
+> (complete! "SPC" "(" "z" "e" "p" "p" "o" ":")
+> (map car (rows (session)))
+("zeppo:sing" "zeppo:%tune")
+> (press! "C-g")
+> (complete! "SPC" "z" "e" "p" "p" "o" ":")
+> (map car (rows (session)))
+("zeppo:sing" "zeppo:%tune" "zeppo:volume")
+> (press! "C-g")
+> (complete! "SPC" "[" "z" "e" "p" "p" "o" ":")
+> (map car (rows (session)))
+("zeppo:sing" "zeppo:%tune" "zeppo:volume")
+> (press! "C-g")
+; Once an import unloads, the buffer's names lose its names.
+> (unload-module! '(zeppo))
+> (chez-scheme:find-name user 'zeppo:sing)
+#f
+> (complete! "SPC" "z" "e" "p" "p" "o" ":")
+> (map car (rows (session)))
+()
+> (press! "C-g")
+> (load-module! '(zeppo))
+> (chez-scheme:name-export (chez-scheme:find-name user 'zeppo:sing))
+zeppo:sing
+; In a helper's own module, the helper completes, valued by its export.
+> (views:set-buffer! (view) zp)
+> (views:set-point! (view) (- (document:length (buffers:document zp)) 1))
+> (complete! "RET" "%" "t" "u")
+> (rows (session))
+(("%tune" zeppo:%tune completion:name-category ("procedure")))
+> (press! "C-g")
+; A quoted name completes; after ,@ the @ is not part of the name.
+> (complete! "RET" "'" "v" "o" "l")
+> (map car (rows (session)))
+("volume")
+> (press! "C-g")
+> (complete! "RET" "`" "(" "," "@" "v" "o" "l")
+> (map car (rows (session)))
+("volume")
+> (press! "C-g")
+; In a configuration, a loaded plugin's helper completes, though no
+; use-plugin line names it.
+> (views:set-buffer! (view) config)
+> (views:set-point! (view) (- (document:length (buffers:document config)) 1))
+> (complete! "RET" "(" "s" "e" "t" "!" "SPC" "h" "e" "l" "p" ":" "%" "r" "e" "a" "d" "-" "n")
+> (map car (rows (session)))
+("help:%read-name")
+> (press! "C-g")
+> (complete! "SPC" "z" "e" "p" "p" "o" ":" "s")
+> (map car (rows (session)))
+("zeppo:sing")
+> (press! "C-g")
+; A prompt has no Scheme scope of its own, so an entry that completes
+; there, as M-: does, offers the REPL's names.
+> (define (prompt-names)
+    (and (minibuffer:current-prompt) (chez-scheme-completion:name-region)))
+> (add-hook! completion:find-region prompt-names)
+> (begin (spawn-task (lambda () (in-client (lambda () (minibuffer:read "Eval: " #f))))) (sleep-for 0.05))
+> (complete! "(" "b" "u" "f" "f" "e" "r" "s" ":" "i" "n" "s" "e" "r")
+> (map car (rows (session)))
+("buffers:insert!")
+> (complete! "SPC" "(" "h" "e" "l" "p" ":" "%" "r" "e" "a" "d" "-" "n")
+> (rows (session))
+(("help:%read-name" help:%read-name completion:name-category ("procedure")))
+> (press! "SPC")
+> (list (session) (prompt-input))
+(#f "(buffers:inser (help:%read-n ")
+> (press! "C-g")
+! &quit
+> (remove-hook! completion:find-region prompt-names)

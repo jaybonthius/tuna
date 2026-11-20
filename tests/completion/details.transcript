@@ -1,0 +1,60 @@
+; A candidate may carry details, a third element, which its category's
+; annotator receives with its value; a candidate without them gives #f.
+> (completion:define-category probe-category "Candidates whose details the test shows.")
+> (table-set! completion:annotators probe-category
+    (lambda (session) (lambda (value details) (list (format "~s ~s" value details)))))
+> (define (read-probe candidates)
+    (start! (lambda () (completion:read "Probe: " (list (completion:source (candidates candidates) (category probe-category) (in-order)))))))
+> (define t (read-probe (vector (vector "alpha" 'a '(1 . 2)) "beta" (cons "gamma" 'g))))
+> (wait-matches (session))
+> (rows (session))
+(("alpha" "a (1 . 2)") ("beta" "\"beta\" #f") ("gamma" "g #f"))
+> (press! "C-g")
+! &quit
+; Details from a job arrive with their candidates; a later emission
+; without details adds none.
+> (jobs:define-worker (details-stream n emit)
+    (emit (vector (vector "one" 1 'first)))
+    (emit (vector "two")))
+> (define t (start! (lambda () (completion:read "Probe: " (list (completion:source (job details-stream 0) (category probe-category)))))))
+> (wait-matches (session))
+> (rows (session))
+(("one" "1 first") ("two" "\"two\" #f"))
+> (press! "C-g")
+! &quit
+; A file read shows each entry's size and age, as Marginalia does, read
+; in file-picker's job.
+> (define t (start! (lambda () (press! "C-x" "C-f"))))
+> (press! "C-a" "C-k")
+> (type! "~/notes/")
+> (wait-matches (session))
+> (let ([a (assoc "a.txt" (rows (session)))])
+    (list (cdr (cadr a)) (let ([age (cdr (caddr a))]) (substring age (- (string-length age) 4) (string-length age)))))
+("38" " ago")
+> (press! "C-g")
+! &quit
+; A link to a folder is listed as a folder, a link to a file as a file.
+> (system (string-append "ln -s " (getenv "HOME") "/notes/sub " (getenv "HOME") "/notes/sublink"))
+0
+> (system (string-append "ln -s " (getenv "HOME") "/notes/a.txt " (getenv "HOME") "/notes/alink"))
+0
+> (define t (start! (lambda () (press! "C-x" "C-f"))))
+> (press! "C-a" "C-k")
+> (type! "~/notes/")
+> (wait-matches (session))
+> (filter (lambda (text) (member text '("sub/" "sublink/" "alink" "a.txt"))) (texts (session)))
+("sub/" "a.txt" "alink" "sublink/")
+> (press! "C-g")
+! &quit
+; The size as ls -lh writes it, and the time as an age for two weeks,
+; then a date.
+> (define file-annotator (completion-annotations:file #f))
+> (define now (time-second (current-time 'time-utc)))
+> (map (lambda (details) (map cdr (file-annotator "f" details)))
+       (list (cons 512 (- now 7800)) (cons 1536 (- now 90)) (cons 10500 (- now (* 3 86400))) (cons 3000000 (- now 5))))
+(("512" "2h 10m ago") ("1.5k" "1m 30s ago") ("10k" "3d ago") ("2.9M" "5s ago"))
+> (let ([old (time-second (date->time-utc (make-date 0 0 0 12 15 1 2020 (date-zone-offset (current-date)))))])
+    (map cdr (file-annotator "f" (cons 0 old))))
+("0" "2020 Jan 15")
+> (file-annotator "f" #f)
+()

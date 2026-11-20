@@ -169,6 +169,28 @@ modes:fundamental
 > (define q (scheme-buffer "q.ss" "He said \"hi.\n(define (f) 1)\n(f)\n"))
 > (syntax:sexp-before q (after q "1)\n(f)"))
 9
+; The line found may be far above, with prefix syntax before its
+; bracket; a line that a string opened above runs into still counts when
+; it starts with an opening bracket of its own.
+> (define words (apply string-append (map (lambda (k) (format "w~a\n" k)) (iota 40))))
+> (define r (buffers:make "long notes" (string-append "He said \"hi.\n#(outer\n" words "say \"hi\n(g x\nlast\n")))
+> (map (lambda (o) (document:text (buffers:document r) (syntax:lexeme-start o) (syntax:lexeme-end o)))
+       (syntax:openings r (after r "w30") chez-scheme:mode))
+("#(")
+> (map (lambda (o) (document:text (buffers:document r) (syntax:lexeme-start o) (syntax:lexeme-end o)))
+       (syntax:openings r (after r "las") chez-scheme:mode))
+("(")
+> (= (syntax:lexeme-start (car (syntax:openings r (after r "las") chez-scheme:mode))) (- (after r "(g") 2))
+#t
+; With no line at or above that starts with a bracket, the lexer reads
+; from the position's own line, so a lone " above hides nothing.
+> (define u (buffers:make "prose" (string-append "He said \"hi\n" words "see (editing:forward-word b) here\n")))
+> (map (lambda (o) (document:text (buffers:document u) (syntax:lexeme-start o) (syntax:lexeme-end o)))
+       (syntax:openings u (after u "forward-word b") chez-scheme:mode))
+("(")
+> (call-with-values (lambda () (syntax:top-level-form u (after u "forward-word b") chez-scheme:mode))
+    (lambda (s e) (document:text (buffers:document u) s e)))
+"(editing:forward-word b)"
 ; Top-level forms: a sexp no list holds, or a list whose opening bracket
 ; is in column 0, which ends a list left open above; the form holding a
 ; position, else the first after it, else the last before it.

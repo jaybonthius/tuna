@@ -19,7 +19,7 @@
 (define-table category-default-styles
   "Maps a category to the styles used in place of completion:styles while that option holds its default.")
 
-(define-table annotators "Maps a category to a procedure of a session that returns its annotator.")
+(define-table annotators "Maps a category to a procedure of a session that returns its annotator, a procedure of a candidate's value and details.")
 
 (define-table action-keymaps "Maps a category to the list of keymaps of the actions on its candidates, searched in order.")
 
@@ -72,6 +72,10 @@
 
 (define-category location-category "Lines of files, valued by a location: a path, a line number and a column, as (path line . column).")
 
+(define-category name-category "Scheme names exported by Tuna's libraries and Chez's, valued by the exported name.")
+
+(define-category identifier-category "Names in a program that no plugin describes, valued by their text.")
+
 ;; Several plugins bind actions on the shared categories, so their
 ;; keymaps are defined beside them.
 (define-table buffer-action-keymap "The actions on buffers.")
@@ -121,7 +125,10 @@
     (assertion-violation 'completion:source "not a procedure" stream))
   stream)
 
-(define (%candidate? c) (or (string? c) (and (pair? c) (string? (car c)))))
+(define (%candidate? c)
+  (or (string? c)
+      (and (pair? c) (string? (car c)))
+      (and (vector? c) (fx= (vector-length c) 3) (string? (vector-ref c 0)))))
 
 (define (%candidates? v)
   (and (vector? v)
@@ -330,7 +337,7 @@
             (mutable annotations) (mutable prefix) (mutable receiver) (mutable match-job) (mutable job-dropped)
             (mutable sorted?) (mutable pending) (mutable done?) (mutable matches) (mutable pending-kept) (mutable matched-to)
             (mutable pending-end) (mutable matches-id) (mutable pattern) (mutable style) (mutable query)
-            (mutable base) (mutable more?) (mutable prefers-input?) (mutable grouping)))
+            (mutable base) (mutable more?) (mutable prefers-input?) (mutable grouping) (mutable details)))
 
   ;; Each candidate holds its title's number, so a match job orders
   ;; matches by group without the titles; the numbers sit in a bytevector,
@@ -420,8 +427,10 @@
           (do ([i 0 (fx+ i 1)]) ((fx= i (vector-length v)) w)
             (vector-set! w i (vector-ref v i))))))
 
-  (define (candidate-text c) (if (string? c) c (car c)))
-  (define (candidate-value c) (if (string? c) c (cdr c)))
+  (define (candidate-text c)
+    (cond [(string? c) c] [(pair? c) (car c)] [else (vector-ref c 0)]))
+  (define (candidate-value c)
+    (cond [(string? c) c] [(pair? c) (cdr c)] [else (vector-ref c 1)]))
 
   (define (styles-for source)
     (let* ([c (%source-category source)]
@@ -477,8 +486,21 @@
             (state-vals-set! st (append-at (state-vals st) base vals #f))
             (state-ranks-set! st (append-at (state-ranks st) base ranks 0))
             (when g (grouping-groups-set! g (append-groups-at (grouping-groups g) base groups)))))
+      (add-details! st base cands)
       (let ([job (state-match-job st)])
         (when job (jobs:send! job (list 'add (jobs:freeze texts) ranks groups))))))
+
+  ;; Most sources carry no details, so a state keeps a vector of them only
+  ;; once one of its candidates has some.
+  (define (add-details! st base cands)
+    (let ([k (vector-length cands)])
+      (when (or (state-details st)
+                (let loop ([i 0]) (and (fx< i k) (or (vector? (vector-ref cands i)) (loop (fx+ i 1))))))
+        (let ([ds (make-vector k #f)])
+          (do ([i 0 (fx+ i 1)]) ((fx= i k))
+            (let ([c (vector-ref cands i)])
+              (when (vector? c) (vector-set! ds i (vector-ref c 2)))))
+          (state-details-set! st (append-at (or (state-details st) (make-vector base #f)) base ds #f))))))
 
   ;; A streamed source may emit thousands of times, a few candidates
   ;; each, so its texts and ranks grow by doubling, not by a copy per
@@ -577,6 +599,7 @@
     (state-count-set! st 0)
     (state-texts-set! st (vector))
     (state-vals-set! st (vector))
+    (state-details-set! st #f)
     (state-ranks-set! st (vector))
     (when (state-grouping st) (state-grouping-set! st (empty-grouping)))
     (state-annotations-set! st (make-eqv-hashtable))
@@ -899,7 +922,7 @@
               '()
               (cons (make-state (car sources) (styles-for (car sources)) index 0 0 (vector) (vector) (vector)
                                 (make-eqv-hashtable) #f #f #f 0 #f #f #t (make-match-list (vector) 0) 0 #f #f #f
-                                '() 0 "" #f #f #f (and (%source-group (car sources)) (empty-grouping)))
+                                '() 0 "" #f #f #f (and (%source-group (car sources)) (empty-grouping)) #f)
                     (loop (cdr sources) (fx+ index 1))))))
       (for-each
         (lambda (st)
@@ -950,6 +973,9 @@
   (define (match-bytes s m) (let ([st (owner-of s m)]) (vector-ref (state-texts st) (local-of s st m))))
   (define (match-text s m) (utf8->string (match-bytes s m)))
   (define (match-value s m) (let ([st (owner-of s m)]) (vector-ref (state-vals st) (local-of s st m))))
+  (define (match-details s m)
+    (let* ([st (owner-of s m)] [ds (state-details st)])
+      (and ds (vector-ref ds (local-of s st m)))))
   (define (match-exit s m) (%source-exit (state-source (owner-of s m))))
   (define (match-title s m)
     (let* ([st (owner-of s m)] [g (state-grouping st)])
@@ -982,7 +1008,7 @@
                  [a (and c (assq c (session-record-annotators s)))]
                  [columns (if (and a (cdr a))
                               (guard (e [(not (quit-condition? e)) (report e) '()])
-                                ((cdr a) (match-value s m)))
+                                ((cdr a) (match-value s m) (match-details s m)))
                               '())])
             (hashtable-set! cache m columns)
             columns))))
@@ -1750,6 +1776,8 @@
 (table-set! any-order-dispatch #\$ %dispatch-ends)
 (table-set! category-default-styles buffer-category (list prefix substring))
 (table-set! category-default-styles location-category (list substring))
+(table-set! category-default-styles name-category (list prefix substring))
+(table-set! category-default-styles identifier-category (list prefix substring))
 ;; Every command's name starts with its plugin's name, so matching only at
 ;; the start would not find a command by the word it is known by.
 (table-set! category-default-styles command-category (list prefix substring))

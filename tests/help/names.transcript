@@ -132,6 +132,7 @@ Override by (repl)
 "harpo:squeeze"
 > (start! "C-h" "v")
 > (type! "harpo:pitch")
+> (settle)
 > (press! "RET")
 > (settle)
 > (title)
@@ -144,6 +145,7 @@ Override by (repl)
 "harpo:honk"
 > (start! "C-h" "a")
 > (type! "harpo:quiet")
+> (settle)
 > (press! "RET")
 > (settle)
 > (title)
@@ -152,12 +154,14 @@ Override by (repl)
 ; and C-h a matches words of a command's name in any order.
 > (start! "C-h" "f")
 > (type! "squeeze")
+> (settle)
 > (press! "RET")
 > (settle)
 > (title)
 "harpo:squeeze"
 > (start! "C-h" "x")
 > (type! "honk")
+> (settle)
 > (press! "RET")
 > (settle)
 > (title)
@@ -166,6 +170,7 @@ Override by (repl)
 > (type! "quiet")
 > (press! "SPC")
 > (type! "harpo")
+> (settle)
 > (press! "RET")
 > (settle)
 > (title)
@@ -173,10 +178,19 @@ Override by (repl)
 ; Names and commands each keep a history of their own.
 > (list (help:name-history) (help:command-history))
 (("harpo:squeeze" "harpo:pitch") ("harpo:quiet" "harpo:honk"))
-; Names and commands whose part after the colon starts with % are not
-; offered.
+; C-h f offers a module's helpers, whose part after the colon starts
+; with %, as Emacs's offers its internal functions; C-h x offers only the
+; commands M-x offers. No module's %scope export is offered.
 > (start! "C-h" "o")
-> (type! "harpo:%sc")
+> (type! "help:%read-na")
+> (settle)
+> (press! "RET")
+> (settle)
+> (title)
+"help:%read-name"
+> (start! "C-h" "o")
+> (type! "help:%scop")
+> (settle)
 > (press! "RET")
 > (settle)
 > (press! "C-g")
@@ -184,10 +198,11 @@ Override by (repl)
 ! &quit
 > (start! "C-h" "x")
 > (type! "help:%fol")
+> (settle)
 > (press! "RET")
 > (settle)
 > (press! "C-g")
 > (settle)
 ! &quit
 > (title)
-"harpo:quiet"
+"help:%read-name"

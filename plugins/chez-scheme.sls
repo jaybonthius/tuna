@@ -16,6 +16,12 @@
 
 (buffers:define-layer highlights (priority -10) (sticky after) (evaporate))
 
+(define-enumeration binding-kind (procedure syntax variable) binding-kinds)
+
+(define-record-type name
+  (sealed #t)
+  (fields spelling export library kind))
+
 (jobs:define-worker (%highlighter input emit receive)
   (import (chez-scheme highlight))
   (serve input emit receive))
@@ -31,7 +37,14 @@
 
 (module %internals
   (open-ended-marks mismatched-marks no-marks lexeme-class start-highlighting! stop-highlighting!
-   send-edit! tell-bracket-users! note-loaded! rebuild-stale-names! highlighted-buffers)
+   send-edit! tell-bracket-users! note-changed! rebuild-stale-names! highlighted-buffers
+   check-main-thread repl-libraries repl-names-and-table buffer-names-and-table)
+
+  (define main-thread (get-thread-id))
+
+  (define (check-main-thread who)
+    (unless (fx= (get-thread-id) main-thread)
+      (assertion-violation who "not on the main thread")))
 
   (define no-marks (syntax:lexeme-marks))
   (define open-ended-marks (syntax:lexeme-marks open-ended))
@@ -48,7 +61,7 @@
 
   (define-record-type highlighting
     (sealed #t)
-    (fields buffer job (mutable brackets?) (mutable scope)))
+    (fields buffer job (mutable brackets?) (mutable scope) (mutable names) (mutable table)))
 
   (define jobs (make-eq-hashtable))
 
@@ -93,7 +106,7 @@
                     ;; A job that raised has ended; forgetting it lets the
                     ;; next mode set start another.
                     (lambda (ended) (when (current? h) (forget! h))))])
-        (set! h (make-highlighting buffer job brackets? #f))
+        (set! h (make-highlighting buffer job brackets? #f #f #f))
         (hashtable-set! jobs buffer h))))
 
   (define (stop-highlighting! buffer)
@@ -147,34 +160,35 @@
           s)))
 
   ;; Chez calls every changeable definition a keyword, so the module's own
-  ;; record of its definitions tells them from syntax.
+  ;; record of its definitions tells them from syntax. The kernel adds
+  ;; %scope to every module's exports, and no module defines it.
   (define (classify name)
     (let* ([module? (module-name? name)]
            [prefix (and module? (module-prefix name))]
+           [scope-export (and module? (string->symbol (string-append prefix "%scope")))]
            [definitions (if module?
                             (fold-left (lambda (acc change) (if (eq? (car change) 'define) (cons (cadr change) acc) acc))
                                        '() (module-changes name))
                             '())]
-           [env (environment name)])
+           [env (environment name)]
+           [kind-of (lambda (v) (if (procedure? v) 'procedure 'variable))])
       (fold-left
         (lambda (acc export)
-          (let ([plain (without-prefix export prefix)])
-            (cond
-              [(and (fx> (string-length plain) 0) (char=? (string-ref plain 0) #\%)) acc]
-              [(top-level-bound? export env)
-               (if (procedure? (top-level-value export env)) (cons (cons export 'procedure) acc) acc)]
-              [(memq export definitions)
-               (if (procedure? (eval-in-module (string->symbol plain) name)) (cons (cons export 'procedure) acc) acc)]
-              [else (cons (cons export 'syntax) acc)])))
+          (cond
+            [(eq? export scope-export) acc]
+            [(top-level-bound? export env) (cons (cons export (kind-of (top-level-value export env))) acc)]
+            [(memq export definitions)
+             (cons (cons export (kind-of (eval-in-module (string->symbol (without-prefix export prefix)) name))) acc)]
+            [else (cons (cons export 'syntax) acc)]))
         '() (library-exports name))))
 
   (define (library-classes name)
-    (or (hashtable-ref classes name #f)
-        (let ([found (if (if (module-name? name) (member name (loaded-modules)) (member name (library-list)))
-                         (guard (c [(not (quit-condition? c)) (report c) '()]) (classify name))
-                         '())])
-          (hashtable-set! classes name found)
-          found)))
+    (if (if (module-name? name) (member name (loaded-modules)) (member name (library-list)))
+        (or (hashtable-ref classes name #f)
+            (let ([found (guard (c [(not (quit-condition? c)) (report c) '()]) (classify name))])
+              (hashtable-set! classes name found)
+              found))
+        '()))
 
   ;; Chez's library list keeps a module after it unloads; a module is
   ;; known by the %scope macro every module exports.
@@ -193,43 +207,60 @@
   (define (rename-pairs pairs)
     (filter (lambda (p) (and (list? p) (fx= (length p) 2) (symbol? (car p)) (symbol? (cadr p)))) pairs))
 
-  (define (spec-names spec)
+  (define (private-export? export library)
+    (let ([plain (without-prefix export (and (module-name? library) (module-prefix library)))])
+      (and (fx> (string-length plain) 0) (char=? (string-ref plain 0) #\%))))
+
+  (define (library-names library)
+    (map (lambda (entry) (make-name (car entry) (car entry) library (cdr entry))) (library-classes library)))
+
+  (define (respelled entry spelling)
+    (make-name spelling (name-export entry) (name-library entry) (name-kind entry)))
+
+  ;; A module's file is not offered its imports' % names, since one
+  ;; plugin's code keeps off another's helpers.
+  (define (spec-names spec module-file?)
+    (define (base library)
+      (if module-file?
+          (filter (lambda (entry) (not (private-export? (name-export entry) library))) (library-names library))
+          (library-names library)))
     (cond
       [(not (and (pair? spec) (list? spec))) '()]
       [(and (memq (car spec) '(only except prefix add-prefix drop-prefix rename alias for library))
             (pair? (cdr spec)))
-       (let ([inner (lambda () (spec-names (cadr spec)))] [args (cddr spec)])
+       (let ([inner (lambda () (spec-names (cadr spec) module-file?))] [args (cddr spec)])
          (case (car spec)
-           [(only) (filter (lambda (entry) (memq (car entry) args)) (inner))]
-           [(except) (filter (lambda (entry) (not (memq (car entry) args))) (inner))]
+           [(only) (filter (lambda (entry) (memq (name-spelling entry) args)) (inner))]
+           [(except) (filter (lambda (entry) (not (memq (name-spelling entry) args))) (inner))]
            [(prefix add-prefix)
             (if (and (pair? args) (symbol? (car args)))
                 (map (lambda (entry)
-                       (cons (string->symbol (string-append (symbol->string (car args)) (symbol->string (car entry))))
-                             (cdr entry)))
+                       (respelled entry (string->symbol (string-append (symbol->string (car args))
+                                                                       (symbol->string (name-spelling entry))))))
                      (inner))
                 (inner))]
            [(drop-prefix)
             (if (and (pair? args) (symbol? (car args)))
                 (let ([prefix (symbol->string (car args))])
-                  (map (lambda (entry) (cons (string->symbol (without-prefix (car entry) prefix)) (cdr entry))) (inner)))
+                  (map (lambda (entry) (respelled entry (string->symbol (without-prefix (name-spelling entry) prefix))))
+                       (inner)))
                 (inner))]
            [(rename)
             (let ([pairs (rename-pairs args)])
               (map (lambda (entry)
-                     (let ([p (assq (car entry) pairs)])
-                       (if p (cons (cadr p) (cdr entry)) entry)))
+                     (let ([p (assq (name-spelling entry) pairs)])
+                       (if p (respelled entry (cadr p)) entry)))
                    (inner)))]
            [(alias)
             (let ([names (inner)])
               (append names
                       (fold-left (lambda (acc p)
-                                   (let ([entry (assq (car p) names)])
-                                     (if entry (cons (cons (cadr p) (cdr entry)) acc) acc)))
+                                   (let ([entry (find (lambda (e) (eq? (name-spelling e) (car p))) names)])
+                                     (if entry (cons (respelled entry (cadr p)) acc) acc)))
                                  '() (rename-pairs args))))]
            [(for) (inner)]
-           [(library) (let ([name (spec-library (cadr spec))]) (if (pair? name) (library-classes name) '()))]))]
-      [else (let ([name (spec-library spec)]) (if (pair? name) (library-classes name) '()))]))
+           [(library) (let ([name (spec-library (cadr spec))]) (if (pair? name) (base name) '()))]))]
+      [else (let ([name (spec-library spec)]) (if (pair? name) (base name) '()))]))
 
   (define (file-module path)
     (and path
@@ -264,37 +295,94 @@
                     (file-module (files:path (highlighting-buffer h))))])
       (if own
           (let ([prefix (and (module-name? own) (module-prefix own))])
-            (map (lambda (entry) (cons (string->symbol (without-prefix (car entry) prefix)) (cdr entry)))
-                 (library-classes own)))
+            (map (lambda (entry) (respelled entry (string->symbol (without-prefix (name-export entry) prefix))))
+                 (library-names own)))
           '())))
 
-  (define (scope-names h)
-    (let ([specs (car (highlighting-scope h))])
-      (if (eq? specs 'repl)
-          (apply append (library-classes '(chezscheme)) (library-classes '(tuna))
-                 (map library-classes (loaded-modules)))
-          (apply append (map spec-names specs)))))
+  (define (repl-libraries)
+    (filter (lambda (name) (member name (library-list)))
+            (append '((tuna core replaced) (chezscheme) (tuna) (tuna base) (tuna plugins) (tuna eval))
+                    (loaded-modules))))
+
+  ;; The first name for a spelling is the one Chez resolves, so the
+  ;; sources come in that order and later ones are dropped.
+  (define (names-and-table sources)
+    (let ([table (make-eq-hashtable)])
+      (for-each
+        (lambda (names)
+          (for-each
+            (lambda (entry)
+              (unless (eq-hashtable-contains? table (name-spelling entry))
+                (eq-hashtable-set! table (name-spelling entry) entry)))
+            names))
+        sources)
+      (let ([names (vector-sort (lambda (a b) (string<? (symbol->string (name-spelling a)) (symbol->string (name-spelling b))))
+                                (hashtable-values table))])
+        (cons names table))))
+
+  (define repl #f)
+
+  (define (repl-names-and-table)
+    (or repl
+        (let ([found (names-and-table (map library-names (repl-libraries)))])
+          (set! repl found)
+          found)))
+
+  (define (scope-sources h)
+    (let ([scope (highlighting-scope h)])
+      (cons (own-names h)
+            (map (lambda (spec)
+                   (if (eq? spec 'repl)
+                       (vector->list (car (repl-names-and-table)))
+                       (spec-names spec (caddr scope))))
+                 (car scope)))))
 
   (define (send-names! h)
     (when (highlighting-scope h)
-      (let ([table (make-eq-hashtable)])
-        (for-each (lambda (entry) (hashtable-set! table (car entry) (cdr entry)))
-                  (append (scope-names h) (own-names h)))
-        (let-values ([(names kinds) (hashtable-entries table)])
-          (jobs:send! (highlighting-job h)
-                      (cons 'names (jobs:freeze (vector-map cons names kinds))))))))
+      (let ([found (names-and-table (scope-sources h))])
+        (highlighting-names-set! h (car found))
+        (highlighting-table-set! h (cdr found))
+        (jobs:send! (highlighting-job h)
+                    (cons 'names
+                          (jobs:freeze
+                            (list->vector
+                              (fold-right
+                                (lambda (entry acc)
+                                  (if (eq? (name-kind entry) 'variable)
+                                      acc
+                                      (cons (cons (name-spelling entry) (name-kind entry)) acc)))
+                                '() (vector->list (car found))))))))))
 
-  (define (note-loaded! name)
+  (define (buffer-names-and-table buffer)
+    (let ([h (hashtable-ref jobs buffer #f)])
+      (if (and h (highlighting-names h))
+          (cons (highlighting-names h) (highlighting-table h))
+          (repl-names-and-table))))
+
+  (define (note-changed! name)
     (hashtable-delete! classes name)
+    (set! repl #f)
     (set! stale (cons name stale)))
+
+  ;; The kernel tells of a load, not of an unload, and every unload but
+  ;; those at exit happens in a batch, so the batch's end finds the
+  ;; modules gone since the last.
+  (define seen-modules '())
+
+  (define (note-unloaded!)
+    (let ([now (loaded-modules)])
+      (unless (equal? now seen-modules)
+        (for-each (lambda (name) (unless (member name now) (note-changed! name))) seen-modules)
+        (set! seen-modules now))))
 
   (define (uses? h name)
     (let ([scope (highlighting-scope h)])
       (and scope
-           (or (eq? (car scope) 'repl)
+           (or (memq 'repl (car scope))
                (equal? (cadr scope) name)
                (exists (lambda (spec) (equal? (spec-library-of spec) name)) (car scope))
-               (equal? (file-module (files:path (highlighting-buffer h))) name)))))
+               (equal? (file-module (files:path (highlighting-buffer h))) name))
+           #t)))
 
   (define (spec-library-of spec)
     (if (and (pair? spec) (list? spec)
@@ -304,6 +392,7 @@
         (and (pair? spec) (list? spec) (spec-library spec))))
 
   (define (rebuild-stale-names!)
+    (note-unloaded!)
     (unless (null? stale)
       (let ([loaded stale])
         (set! stale '())
@@ -314,6 +403,28 @@
           (hashtable-values jobs))))))
 
 (import %internals)
+
+(define (tuna-libraries)
+  (check-main-thread 'chez-scheme:tuna-libraries)
+  (repl-libraries))
+
+(define (repl-names)
+  (check-main-thread 'chez-scheme:repl-names)
+  (car (repl-names-and-table)))
+
+(define (names buffer)
+  (check-main-thread 'chez-scheme:names)
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'chez-scheme:names "not a buffer" buffer))
+  (car (buffer-names-and-table buffer)))
+
+(define (find-name buffer spelling)
+  (check-main-thread 'chez-scheme:find-name)
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'chez-scheme:find-name "not a buffer" buffer))
+  (unless (symbol? spelling)
+    (assertion-violation 'chez-scheme:find-name "not a symbol" spelling))
+  (eq-hashtable-ref (cdr (buffer-names-and-table buffer)) spelling #f))
 
 (define (lexer document)
   (unless (document? document)
@@ -335,7 +446,7 @@
 
 (define (%note-module-loaded loaded name)
   (loaded name)
-  (note-loaded! name))
+  (note-changed! name))
 
 (define (%rebuild-names ended)
   (ended)
