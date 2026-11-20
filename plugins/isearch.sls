@@ -694,27 +694,32 @@
   "Ends isearch:edit-string's read and searches backward."
   ((%edit-exit (search:direction backward))))
 
-;; The search's keymap is off while the minibuffer reads, since it binds
-;; the printing characters, which must edit the prompt.
+;; The search's keymap is off while THUNK reads, since it binds the
+;; printing characters, which must edit the prompt.
+(define (call-suspended s thunk)
+  (%check 'isearch:call-suspended s)
+  (unless (procedure? thunk) (assertion-violation 'isearch:call-suspended "not a procedure" thunk))
+  (%search-reading?-set! s #t)
+  ((%search-end-keymap s))
+  (let ([v (guard (c [(or (serious-condition? c) (quit-condition? c)) (%search-reading?-set! s #f) (%push-keymap! s) (raise c)])
+             (thunk))])
+    (%search-reading?-set! s #f)
+    (%push-keymap! s)
+    v))
+
 (commands:define-command (edit-string)
   "Reads the text in the minibuffer, starting with the current text, then searches with what was read."
   (let* ([s (%current 'isearch:edit-string)] [state (%top s)])
-    (%search-reading?-set! s #t)
-    ((%search-end-keymap s))
-    (let ([answer (guard (c [(quit-condition? c)
-                             (%search-reading?-set! s #f)
-                             (%push-keymap! s)
-                             (abort)
-                             (raise c)])
-                    (minibuffer:call-with-setup
-                      (lambda (p)
-                        (minibuffer:set-input! p (%state-text state))
-                        (minibuffer:add-keymap! p edit-keymap))
+    (let ([answer (guard (c [(quit-condition? c) (abort) (raise c)])
+                    (call-suspended s
                       (lambda ()
-                        (minibuffer:read (string-append (car (prompt s)) "")
-                                         (if (eq? (%state-style state) search:regexp) search:regexp-history search:history)))))])
-      (%search-reading?-set! s #f)
-      (%push-keymap! s)
+                        (minibuffer:call-with-setup
+                          (lambda (p)
+                            (minibuffer:set-input! p (%state-text state))
+                            (minibuffer:add-keymap! p edit-keymap))
+                          (lambda ()
+                            (minibuffer:read (string-append (car (prompt s)) "")
+                                             (if (eq? (%state-style state) search:regexp) search:regexp-history search:history)))))))])
       (let* ([text (if (pair? answer) (cdr answer) answer)]
              [direction (if (pair? answer) (car answer) (%state-direction state))]
              [m (%state-match state)])

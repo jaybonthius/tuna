@@ -26,8 +26,8 @@
     (unless (fx= (get-thread-id) main-thread)
       (assertion-violation who "not on the main thread")))
 
-  (define (make-edit version start removed inserted removed-spans inserted-spans silent?)
-    (make-edit-record version start (make-piece-record removed removed-spans) (make-piece-record inserted inserted-spans)
+  (define (make-edit b version start removed inserted removed-spans inserted-spans silent?)
+    (make-edit-record b version start (make-piece-record removed removed-spans) (make-piece-record inserted inserted-spans)
       (document:length removed) (document:length inserted) (not (eq? removed inserted)) silent?))
 
   (define-table kinds)
@@ -898,8 +898,11 @@
               (loop (cdr nodes) asked edit)
               (let* ([k (kind-of n)] [consent (and k (kind-entry-consent k))]
                      [edit (or edit (and consent (make-proposed)))])
-                (when (and consent (not (consent n edit)))
-                  (refuse who "the node refuses the edit" (document:node-kind n)))
+                (when consent
+                  (let ([answer (consent n edit)])
+                    (cond
+                      [(not answer) (refuse who "the node refuses the edit" (document:node-kind n))]
+                      [(string? answer) (refuse who answer)])))
                 (loop (cdr nodes) (cons n asked) edit)))))))
 
   (define (refuse-undefined! who nodes)
@@ -1121,7 +1124,7 @@
                               (let ([entry (assq (buffer-layer-type l) carried)])
                                 (if entry (cdr entry) '())))))
                      (buffer-layers b))
-                   (let ([e (make-edit (fx+ (buffer-version b) 1) start removed inserted removed-spans
+                   (let ([e (make-edit b (fx+ (buffer-version b) 1) start removed inserted removed-spans
                                        (if travels? (travelling-spans-of b start new-end) '()) silent?)])
                      (buffer-doc-set! b doc)
                      (buffer-frozen?-set! b #f)
@@ -1242,12 +1245,12 @@
           (let ([version (fx+ (buffer-version b) 1)] [silent? (silent-now? b)])
             (cond
               [(or replacing? (null? ranges))
-               (make-edit version start (if replacing? (document:slice d0 start end) empty-document) inserted '() '() silent?)]
+               (make-edit b version start (if replacing? (document:slice d0 start end) empty-document) inserted '() '() silent?)]
               [(null? (cdr ranges))
-               (make-edit version (caar ranges) (document:slice d0 (caar ranges) (cdar ranges)) empty-document '() '() silent?)]
+               (make-edit b version (caar ranges) (document:slice d0 (caar ranges) (cdar ranges)) empty-document '() '() silent?)]
               [else
                (let-values ([(lo hi-old hi-new) (compose deleted)])
-                 (make-edit version lo (document:slice d0 lo hi-old) (document:slice d1 lo hi-new) '() '() silent?))])))
+                 (make-edit b version lo (document:slice d0 lo hi-old) (document:slice d1 lo hi-new) '() '() silent?))])))
         ;; Only content inserted directly is the edit's inserted tokens:
         ;; fitting adds openings and closings around it.
         (define (finish doc steps place inserted)
@@ -1471,8 +1474,9 @@
             (and k
                  (let ([consent (kind-entry-consent k)])
                    (or (not consent)
-                       (consent n (make-edit (fx+ (buffer-version b) 1) q empty-document typing-probe '() '()
-                                             (silent-now? b))))))))))
+                       (let ([answer (consent n (make-edit b (fx+ (buffer-version b) 1) q empty-document typing-probe '() '()
+                                                           (silent-now? b)))])
+                         (and answer (not (string? answer)))))))))))
 
   (define (sticky-edge? doc q)
     (let* ([n (document:enclosing doc q)] [k (and n (kind-of n))])
@@ -1598,7 +1602,7 @@
             (let ([edit (with-interrupts-disabled
                           (change! (buffer-layer-store l))
                           (coalesce! (buffer-layer-store l) lo hi)
-                          (let ([e (make-edit (fx+ (buffer-version b) 1) lo same same before
+                          (let ([e (make-edit b (fx+ (buffer-version b) 1) lo same same before
                                               (travelling-spans-of b lo hi) silent?)])
                             (log-append! b e)
                             (advance-version! b silent?)
@@ -1911,6 +1915,10 @@
                                  (piece-record-document (edit-record-removed e)))))
            (frozen-document buffer) (reverse edits))
          jobs:freeze)])))
+
+(define (edit-buffer edit)
+  (check-edit 'buffers:edit-buffer edit)
+  (edit-record-buffer edit))
 
 (define (edit-version edit)
   (check-edit 'buffers:edit-version edit)

@@ -724,6 +724,12 @@
   (let-values ([(pattern exact?) (%pattern buffer query)])
     (%caseless? query exact?)))
 
+(define (query-group-count query buffer)
+  (unless (query? query) (assertion-violation 'search:query-group-count "not a query" query))
+  (unless (buffers:buffer? buffer) (assertion-violation 'search:query-group-count "not a buffer" buffer))
+  (let-values ([(pattern caseless? code) (%compile 'search:query-group-count buffer query)])
+    (pcre2-code-group-count code)))
+
 (define (%from-scan s p end)
   (let ([inside? (lambda (store)
                    (let ([i (%store-search store p)])

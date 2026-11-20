@@ -1,57 +1,111 @@
-; In occur:edit-mode an edit to a listed line is made at the same place in
-; the source, and undo in *Occur* undoes it there too.
-> (define b (show "src" "one foo\ntwo\nfoo three foo\n"))
-> (define (src) (buffers:text-between (buffers:document b) 0 (document:length (buffers:document b))))
-> (press! "C-x" "3")
-> (start! "M-s" "o")
-> (type! "foo")
-> (press! "RET")
-> (wait-listed)
-> (define (occur-view) (find (lambda (v) (eq? (views:buffer v) (occur-buffer))) (views:showing (occur-buffer))))
-> (layout:select! (occur-view))
-> (define (line-start i)
-    (let* ([doc (buffers:document (occur-buffer))] [acc '()])
-      (document:for-each-child (document:enclosing doc 1) 0 (document:length doc)
-        (lambda (n at) (when (and (document:node? n) (document:node-attribute n 'entry)) (set! acc (cons n acc)))))
-      (+ (document:node-start (list-ref (reverse acc) i)) 1)))
+; e switches to occur:edit-mode and says how to leave; it runs
+; occur:mode-hook's entries before occur:edit-mode-hook's.
+> (define b (src "one foo\ntwo\nfoo three foo\nfour\n"))
+> (define (source) (buffers:text-between (buffers:document b) 0 (document:length (buffers:document b))))
+> (define ran '())
+> (define (in-mode) (set! ran (cons (list 'occur (modes:major-mode (buffers:current))) ran)))
+> (define (in-edit) (set! ran (cons (list 'edit (modes:major-mode (buffers:current))) ran)))
+> (add-hook! occur:mode-hook in-mode)
+> (add-hook! occur:edit-mode-hook in-edit)
+> (occur! (search:make-query "foo" search:regexp) 1 #f)
+> (in-occur!)
+> (only!)
 > (press! "e")
-> (modes:major-mode (occur-buffer))
-> (press! "C-e" "!")
-> (list (listed) (src))
-> (views:set-point! (view) (+ (line-start 1) 4))
+> (list (modes:major-mode (views:buffer (view))) (last-message) (reverse ran))
+> (remove-hook! occur:mode-hook in-mode)
+> (remove-hook! occur:edit-mode-hook in-edit)
+(occur:edit-mode "Editing: Type C-c C-c to return to Occur mode." ((occur occur:mode) (occur occur:edit-mode) (edit occur:edit-mode)))
+; An edit to a listed line is made at its place in the source, which
+; is shown in another view, not selected, its point at the edit.
+> (define placements '())
+> (advice-add! views:scroll-to! (lambda (orig v p align) (set! placements (cons (list (buffers:name (views:buffer v)) p align) placements)) (orig v p align)))
+> (views:set-point! (view) (+ (find-text (occur-buffer) "foo three") 4))
 > (press! "X")
-> (list (listed) (src))
+> (list (listed) (source) (wins))
+("3 matches in 2 lines for \"foo\" in buffer: src\none foo\ntwo\nfoo Xthree foo\nfour\n" "one foo\ntwo\nfoo Xthree foo\nfour\n" (("*Occur*" 71 #t) ("src" 18 #f)))
+; The edit's place is scrolled to the source view's centre.
+> placements
+(("src" 18 center))
+; Undo in *Occur* is an edit too.
 > (press! "C-/")
-> (list (listed) (src))
-occur:edit-mode
-("3 matches in 2 lines for \"foo\" in buffer: src\none foo!\nfoo three foo\n" "one foo!\ntwo\nfoo three foo\n")
-("3 matches in 2 lines for \"foo\" in buffer: src\none foo!\nfoo Xthree foo\n" "one foo!\ntwo\nfoo Xthree foo\n")
-("3 matches in 2 lines for \"foo\" in buffer: src\none foo\nfoo three foo\n" "one foo\ntwo\nfoo three foo\n")
-; A line break, an edit joining lines and an edit to the heading are
-; refused, and nothing reaches the source.
-> (press! "RET")
-> (views:set-point! (view) (line-start 1))
-> (press! "DEL")
+> (source)
+"one foo\ntwo\nfoo three foo\nfour\n"
+; The heading, a number and a context line refuse edits.
 > (views:set-point! (view) 3)
 > (press! "Z")
-> (list (listed) (src))
-! buffers:replace!: the node refuses the edit with irritant occur:%line
+> (views:set-point! (view) (find-text (occur-buffer) "two"))
+> (press! "Z")
+> (source)
 ! buffers:replace!: a read-only span refuses the edit with irritant occur:%read-only
 ! buffers:replace!: a read-only span refuses the edit with irritant occur:%read-only
-("3 matches in 2 lines for \"foo\" in buffer: src\none foo\nfoo three foo\n" "one foo\ntwo\nfoo three foo\n")
-; The source edited meanwhile: the line's anchor follows, so the edit
-; lands at the same place in its line.
-> (buffers:replace! b 1 1 ">> ")
-> (views:set-point! (view) (line-start 0))
+"one foo\ntwo\nfoo three foo\nfour\n"
+; A line break is refused with a sentence; RET types it.
+> (views:set-point! (view) (find-text (occur-buffer) "one foo"))
+> (press! "RET")
+! buffers:replace!: An occur line takes no line break
+; A source line changed since the listing refuses the edit, so no
+; change in the source is lost and no edit lands in the wrong place.
+> (buffers:replace! b 4 4 "!")
+> (views:set-point! (view) (+ (find-text (occur-buffer) "one foo") 7))
 > (press! "Y")
-> (src)
+> (list (source) (last-message))
+#<edit 3>
+! buffers:replace!: The source line changed; g lists it again
+("one! foo\ntwo\nfoo three foo\nfour\n" "Undo")
+; A change at the line's start stays before the line's anchor, so the
+; line from it still reads as listed, and the edit lands in place.
+> (buffers:replace! b 4 5 "")
+> (buffers:replace! b 1 1 ">> ")
+> (press! "Y")
+> (source)
+> (buffers:replace! b 1 4 "")
+> (press! "Y")
+> (source)
+#<edit 4>
 #<edit 5>
-">> Yone foo\ntwo\nfoo three foo\n"
-; C-c C-c goes back to occur:mode, where edits are refused.
-> (press! "C-c" "C-c")
-> (modes:major-mode (occur-buffer))
+">> one fooY\ntwo\nfoo three foo\nfour\n"
+#<edit 7>
+"one fooYY\ntwo\nfoo three foo\nfour\n"
+; A source that refuses the edit leaves *Occur*'s edit and says so.
+> (buffers:define-layer locked (read-only))
+> (buffers:add-span! (buffers:layer b locked) 1 (- (document:length (buffers:document b)) 1) 'locked)
+> (views:set-point! (view) (+ (find-text (occur-buffer) "one fooY") 8))
 > (press! "W")
-> (src)
-occur:mode
+> (list (listed) (source) (last-message))
+> (buffers:remove-span! (buffers:layer b locked) 'locked)
+("3 matches in 2 lines for \"foo\" in buffer: src\none fooYWY\ntwo\nfoo three foo\nfour\n" "one fooYY\ntwo\nfoo three foo\nfour\n" "Buffer ‘src’ is read only.")
+; C-o shows the match in another view, and a click follows a line.
+> (views:set-point! (view) (find-text (occur-buffer) "foo three"))
+> (press! "C-o")
+> (wins)
+> (click! (view) 1 (+ 2 (find-text (occur-buffer) "foo three")))
+> (wins)
+> (in-occur!)
+(("*Occur*" 69 #t) ("src" 15 #f))
+(("*Occur*" 71 #f) ("src" 15 #t))
+; C-c C-c goes back to occur:mode and says so; edits are refused
+> (press! "C-c" "C-c")
+> (list (modes:major-mode (views:buffer (view))) (last-message))
+> (press! "W")
+(occur:mode "Switching to Occur mode.")
 ! W is undefined
-">> Yone foo\ntwo\nfoo three foo\n"
+; An edit made while another buffer is current is checked against the
+; listing it is made in.
+> (press! "e")
+> (buffers:replace! b 4 4 "!")
+> (define other (buffers:make "other" "x\n"))
+> (define at (+ (find-text (occur-buffer) "one foo") 7))
+> (buffers:with-buffer other (buffers:replace! (occur-buffer) at at "Y"))
+> (source)
+#<edit 9>
+! buffers:replace!: The source line changed; g lists it again
+"one! fooYY\ntwo\nfoo three foo\nfour\n"
+; A collected string is not a line of its source, so it takes no edit.
+> (occur! (search:make-query "f(o)o" search:regexp) 0 "\\1")
+> (in-occur!)
+> (press! "e")
+> (views:set-point! (view) (find-text (occur-buffer) "o\n"))
+> (press! "W")
+> (source)
+! buffers:replace!: A collected string is not a line of its source
+"one! fooYY\ntwo\nfoo three foo\nfour\n"

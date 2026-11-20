@@ -1,67 +1,127 @@
-; In *Occur*, RET shows the line's source in the selected view at its
-; match and records the place left, so M-, returns; o does so in another
-; view; C-o, n and p show the match and keep point in *Occur*, recording
-; nothing.
-> (define b (show "src" "one foo\ntwo\nfoo three foo\nfour\nfive foo\n"))
-> (press! "C-x" "3")
-> (start! "M-s" "o")
-> (type! "foo")
+; RET on a listed line shows the source as pop-to-buffer does: in
+; the view already showing it, selected, at the line's first match.
+; *Occur* stays in its view.
+> (define b (src "one foo\ntwo\nfoo three foo\nfour\n"))
+> (views:set-point! (view) 20)
+> (define jumped '())
+> (define (note-jump v) (set! jumped (cons (list (buffers:name (views:buffer v)) (views:point v)) jumped)))
+> (add-hook! jump-history:after-jump note-jump)
+> (occur! (search:make-query "foo" search:regexp) 0 #f)
+> (in-occur!)
+> (views:set-point! (view) (find-text (occur-buffer) "foo three"))
 > (press! "RET")
-> (wait-listed)
-> (define (occur-view) (find (lambda (v) (eq? (views:buffer v) (occur-buffer))) (views:showing (occur-buffer))))
-> (define (other-view) (find (lambda (v) (not (eq? v (occur-view)))) (layout:views)))
-> (layout:select! (occur-view))
-> (list (point) (eq? (views:buffer (view)) (occur-buffer)))
-> (define before (length (jump-history:places)))
-> (press! "M-n")
-> (point)
-> (press! "C-o")
-> (list (eq? (view) (occur-view)) (views:point (other-view)) (= before (length (jump-history:places))))
-> (press! "n")
-> (list (point) (views:point (other-view)) (= before (length (jump-history:places))))
-> (press! "p")
-> (list (point) (views:point (other-view)) (= before (length (jump-history:places))))
-> (press! "M-p" "M-p")
-> (press! "M-n" "M-n" "M-n")
-> (press! "M-p")
-> (point)
-> (press! "RET")
-> (list (views:buffer (view)) (point) (car (jump-history:places)))
+; The place the target view left is recorded, then
+; jump-history:after-jump is called with the view.
+> (list (wins) (jump-history:places) jumped)
+((("src" 13 #t) ("*Occur*" 60 #f)) ((#<buffer src> . 20)) (("src" 13)))
+; The line's matches are highlighted in the source until the next
+; command.
+> (filter (lambda (f) (string=? (car f) "occur.visited")) (drawn client))
+> (press! "C-f")
+> (filter (lambda (f) (string=? (car f) "occur.visited")) (drawn client))
+(("occur.visited" "foo") ("occur.visited" "foo"))
+()
+; The visited line is marked in *Occur*.
+> (count-of (occur-html) "=&gt;")
 > (press! "M-,")
-> (list (views:buffer (view)) (point))
+> (wins)
+1
+(("src" 20 #t) ("*Occur*" 60 #f))
+; With *Occur* the only view, a view is split for the source.
+> (in-occur!)
+> (only!)
+> (views:set-point! (view) (find-text (occur-buffer) "one foo"))
+> (press! "RET")
+> (wins)
+(("*Occur*" 50 #f) ("src" 5 #t))
+; The view split for the source records the source where it was shown,
+; so M-, undoes the jump.
+> (car (jump-history:places))
+(#<buffer src> . 1)
+; o shows the source in a view other than *Occur*'s and selects it,
+; with no highlight; the jump is recorded.
+> (in-occur!)
+> (views:set-point! (view) (find-text (occur-buffer) "foo three"))
 > (press! "o")
-> (list (views:buffer (view)) (point) (eq? (view) (other-view)))
-> (press! "M-,")
-> (list (views:buffer (view)) (point))
-(50 #t)
-60
-(#t 13 #t)
-(76 37 #t)
-(60 13 #t)
-! occur:previous: No earlier matches
-! occur:next: No more matches
-60
-(#<buffer src> 13 (#<buffer *Occur*> . 60))
-(#<buffer *Occur*> 60)
-(#<buffer src> 13 #t)
-(#<buffer src> 13)
-; The anchors follow edits to the source made since the listing.
-> (buffers:replace! b 1 1 "zero\n")
-> (layout:select! (occur-view))
+> (list (wins) (car (jump-history:places)) (filter (lambda (f) (string=? (car f) "occur.visited")) (drawn client)))
+> (marked)
+((("*Occur*" 60 #f) ("src" 13 #t)) (#<buffer src> . 5) ())
+3
+; C-o shows the match highlighted and keeps *Occur* selected; it
+; records no jump.
+> (in-occur!)
+> (views:set-point! (view) (find-text (occur-buffer) "one foo"))
+> (define places (length (jump-history:places)))
 > (press! "C-o")
-> (let ([p (views:point (other-view))]) (list p (buffers:text-between (buffers:document b) p (+ p 3))))
-#<edit 1>
-(18 "foo")
-; g lists again from the source as it is now; r renames *Occur* after its
-; source, so the next M-s o makes a new one.
-> (press! "g")
-> (wait-listed)
-> (listed)
-> (map (lambda (n) (document:node-attribute n 'number)) (filter (lambda (n) (document:node-attribute n 'entry)) (let ([doc (buffers:document (occur-buffer))] [acc '()]) (document:for-each-child (document:enclosing doc 1) 0 (document:length doc) (lambda (n at) (when (document:node? n) (set! acc (cons n acc))))) (reverse acc))))
-> (press! "r")
-> (buffers:name (views:buffer (view)))
-> (buffers:find "*Occur*")
-"4 matches in 3 lines for \"foo\" in buffer: src\none foo\nfoo three foo\nfive foo\n"
-(2 4 6)
-"*Occur: src*"
+> (define src-view (find (lambda (v) (eq? (views:buffer v) b)) (layout:views)))
+> (list (wins) (= places (length (jump-history:places))) (filter (lambda (f) (string=? (car f) "occur.visited")) (faced (html->string (views:draw src-view client)))))
+> (marked)
+((("*Occur*" 50 #t) ("src" 5 #f)) #t (("occur.visited" "foo")))
+1
+; The highlight ends after half a second.
+> (sleep-for 0.7)
+> (filter (lambda (f) (string=? (car f) "occur.visited")) (faced (html->string (views:draw src-view client))))
+()
+; A second highlight lasts its own half second, whatever the first's
+; timer.
+> (views:set-point! (view) (find-text (occur-buffer) "one foo"))
+> (press! "C-o")
+> (sleep-for 0.3)
+> (views:set-point! (view) (find-text (occur-buffer) "foo three"))
+> (press! "C-o")
+> (sleep-for 0.3)
+> (filter (lambda (f) (string=? (car f) "occur.visited")) (faced (html->string (views:draw src-view client))))
+> (sleep-for 0.4)
+> (filter (lambda (f) (string=? (car f) "occur.visited")) (faced (html->string (views:draw src-view client))))
+(("occur.visited" "foo") ("occur.visited" "foo"))
+()
+; The source's active region stays active and grows to the match.
+> (layout:select! src-view)
+> (views:set-point! (view) 1)
+> (views:set-mark! (view) 1)
+> (views:set-point! (view) 4)
+> (in-occur!)
+> (views:set-point! (view) (find-text (occur-buffer) "foo three"))
+> (press! "RET")
+> (list (views:point (view)) (views:mark (view)))
+> (views:set-mark! (view) #f)
+(13 1)
+; RET on the heading or a context line: no occurrence. The new listing
+; has cleared the mark.
+> (occur! (search:make-query "foo" search:regexp) 1 #f)
+> (marked)
+> (in-occur!)
+> (views:set-point! (view) (find-text (occur-buffer) "two"))
+> (press! "RET")
+> (views:set-point! (view) 2)
+> (press! "RET")
+> (wins)
 #f
+! occur:goto-occurrence: No occurrence on this line
+! occur:goto-occurrence: No occurrence on this line
+(("*Occur*" 2 #t) ("src" 13 #f))
+; A killed source.
+> (views:set-point! (view) (find-text (occur-buffer) "one foo"))
+> (buffers:kill! b)
+> (press! "RET")
+> (remove-hook! jump-history:after-jump note-jump)
+#t
+! occur:goto-occurrence: Buffer for this occurrence was killed
+; A separator and an unmatched current line hold no occurrence either.
+> (define s (src "foo\na\nb\nc\nfoo\n"))
+> (occur! (search:make-query "foo" search:regexp) 1 #f)
+> (in-occur!)
+> (views:set-point! (view) (separator-start))
+> (press! "RET")
+> (only!)
+> (define t (src "one foo\ntwo\n"))
+> (views:set-point! (view) 10)
+> (set-option! occur:jump-to-current-line #t)
+> (occur! (search:make-query "foo" search:regexp) 0 #f)
+> (set-option! occur:jump-to-current-line #f)
+> (in-occur!)
+> (where)
+> (press! "RET")
+! occur:goto-occurrence: No occurrence on this line
+(2 "two")
+! occur:goto-occurrence: No occurrence on this line

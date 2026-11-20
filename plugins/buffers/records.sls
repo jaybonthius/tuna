@@ -4,7 +4,7 @@
           buffer-save-stamp-set! buffer-log buffer-log-set!
           buffer-logged buffer-logged-set! buffer-scope buffer-scope-set! buffer-layers buffer-layers-set!
           buffer-anchors buffer-bare buffer-bare-set! buffer-silent? buffer-silent?-set!
-          make-edit-record edit-record? edit-record-version edit-record-start edit-record-removed
+          make-edit-record edit-record? edit-record-buffer edit-record-version edit-record-start edit-record-removed
           edit-record-inserted edit-record-removed-length edit-record-inserted-length edit-record-moves?
           edit-record-silent?
           make-piece-record piece-record? piece-record-document piece-record-spans
@@ -40,7 +40,7 @@
   ;; so an edit keeps its lengths and whether it moves positions at all.
   (define-record-type edit-record
     (sealed #t)
-    (fields version start removed inserted removed-length inserted-length moves? silent?))
+    (fields buffer version start removed inserted removed-length inserted-length moves? silent?))
 
   (define-record-type piece-record
     (sealed #t)

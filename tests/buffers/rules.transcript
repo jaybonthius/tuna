@@ -204,6 +204,26 @@
 > (define sealed-text (fresh '(md:doc () (sealed () "ab\n"))))
 > (list (buffers:refuses-text? sealed-text 3 3) (buffers:refuses-text? sealed-text 2 4) (buffers:version sealed-text))
 (#t #t 0)
+; A consent that returns a string refuses with it as the message, and no
+; irritant.
+> (buffers:define-kind said (consent (lambda (node edit) "Said no")))
+> (define said-text (fresh '(md:doc () (said () "ab\n"))))
+> (guard (c [(buffers:refused? c) (list (condition-message c) (condition-irritants c))])
+    (buffers:replace! said-text 3 3 "x"))
+> (list (buffers:refuses-text? said-text 3 3) (buffers:version said-text))
+("Said no" ())
+(#t 0)
+; A consent is told the buffer the edit is made in, whichever buffer is
+; current, and so is buffers:refuses-text?'s probe.
+> (define consulted '())
+> (buffers:define-kind told (consent (lambda (node edit) (set! consulted (cons (buffers:name (buffers:edit-buffer edit)) consulted)) #t)))
+> (define told-text (fresh '(md:doc () (told () "ab\n"))))
+> (buffers:with-buffer said-text (buffers:replace! told-text 3 3 "x"))
+> (buffers:refuses-text? told-text 3 3)
+> (list (buffers:name told-text) consulted)
+#<edit 1>
+#f
+("b9" ("b9" "b9"))
 ; Layers: made on first use, one per type and key, ordered by priority;
 ; spans move with edits by their stickiness, and evaporate.
 > (define t (fresh "0123456789\n"))

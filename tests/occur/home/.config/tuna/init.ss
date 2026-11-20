@@ -128,3 +128,96 @@
 
 (define (wait-listed)
   (sleep-for 0.3))
+
+(define (wins)
+  (map (lambda (v) (list (buffers:name (views:buffer v)) (views:point v) (eq? v (view))))
+       (filter (lambda (v) (not (buffers:internal-name? (buffers:name (views:buffer v))))) (layout:views))))
+
+(define (occur-view) (find (lambda (v) (eq? (views:buffer v) (occur-buffer))) (layout:views)))
+
+(define (in-occur!) (layout:select! (occur-view)))
+
+(define (find-text b text)
+  (let* ([doc (buffers:document b)] [n (document:length doc)] [k (string-length text)])
+    (let loop ([p 0])
+      (cond
+        [(> (+ p k) n) #f]
+        [(and (char? (document:token doc p)) (string=? (buffers:text-between doc p (+ p k)) text)) p]
+        [else (loop (+ p 1))]))))
+
+(define (where)
+  (let* ([v (occur-view)] [doc (buffers:document (occur-buffer))] [p (views:point v)] [node (document:enclosing doc p)])
+    (list (or (document:node-attribute node 'number) 'heading)
+          (buffers:text-between doc (+ (document:node-start node) 1) p))))
+
+(define (mouse! view button action at)
+  (parameterize ([web:current-client client])
+    ((table-ref web:input-handlers "mouse") client
+     `(("action" . ,action) ("at" . ,at) ("count" . 0) ("type" . "mouse") ("button" . ,button) ("clicks" . 1)
+       ("modifiers" . #()) ("view" . ,(views:id view)) ("version" . ,(buffers:version (views:buffer view)))
+       ("showing" . ,(views:shown-count view))))))
+
+(define (click! view button at)
+  (when (= button 1) (mouse! view 1 "down" at))
+  (mouse! view button "click" at))
+
+(define (occur! . args)
+  (views:call-with-view (view) (lambda () (apply occur:occur args)))
+  (wait-listed))
+
+(define (src text)
+  (let ([old (buffers:find "src")]) (when old (buffers:kill! old)))
+  (let ([b (buffers:make "src" text)])
+    (layout:switch-to-buffer b)
+    (views:set-point! (view) 1)
+    b))
+
+(define (only!)
+  (let ([keep (view)])
+    (let loop ()
+      (let ([other (find (lambda (v) (and (not (eq? v keep)) (not (buffers:internal-name? (buffers:name (views:buffer v))))))
+                         (layout:views))])
+        (when other
+          (layout:select! other)
+          (press! "C-x" "0")
+          (loop))))
+    (layout:select! keep)))
+
+(define (question)
+  (let* ([p (minibuffer:current-prompt)] [doc (buffers:document (views:buffer (minibuffer:prompt-view p)))])
+    (buffers:text-between doc 0 (minibuffer:input-start p))))
+
+(define (count-of s sub)
+  (let ([k (string-length sub)])
+    (let loop ([i 0] [n 0])
+      (cond
+        [(> (+ i k) (string-length s)) n]
+        [(string=? (substring s i (+ i k)) sub) (loop (+ i 1) (+ n 1))]
+        [else (loop (+ i 1) n)]))))
+
+(define (occur-html) (html->string (views:draw (occur-view) client)))
+
+(define (bound key)
+  (parameterize ([web:current-client client])
+    (views:call-with-view (view) (lambda () (commands:command-name (keys:lookup client key))))))
+
+(define (marked)
+  (let* ([html (occur-html)] [n (string-length html)]
+         [i (let find ([i 0]) (cond [(> (+ i 5) n) #f] [(string=? (substring html i (+ i 5)) "=&gt;") i] [else (find (+ i 1))]))])
+    (and i
+         (let digits ([j (+ i 5)] [acc '()])
+           (let ([c (string-ref html j)])
+             (cond
+               [(char=? c #\space) (digits (+ j 1) acc)]
+               [(char-numeric? c) (digits (+ j 1) (cons c acc))]
+               [else (string->number (list->string (reverse acc)))]))))))
+
+(define (separator-start)
+  (let ([doc (buffers:document (occur-buffer))] [found #f])
+    (document:for-each-child (document:enclosing doc 1) 0 (document:length doc)
+      (lambda (n at)
+        (when (and (not found) (document:node? n)
+                   (let ([k (symbol->string (document:node-kind n))])
+                     (and (>= (string-length k) 9) (string=? (substring k (- (string-length k) 9) (string-length k)) "separator"))))
+          (set! found (document:node-start n)))))
+    found))

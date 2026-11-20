@@ -1,0 +1,40 @@
+; r renames *Occur* after its source; a name in use is an error;
+; C-u r makes a unique name.
+> (define b (src "one foo\ntwo\nfoo three foo\n"))
+> (occur! (search:make-query "foo" search:regexp) 0 #f)
+> (in-occur!)
+> (press! "r")
+> (buffers:name (views:buffer (view)))
+> (layout:select! (find (lambda (v) (eq? (views:buffer v) b)) (layout:views)))
+> (occur! (search:make-query "foo" search:regexp) 0 #f)
+> (in-occur!)
+> (press! "r")
+> (buffers:name (views:buffer (view)))
+> (press! "C-u" "r")
+> (buffers:name (views:buffer (view)))
+"*Occur: src*"
+! occur:rename-buffer: Buffer name ‘*Occur: src*’ is in use
+"*Occur*"
+"*Occur: src*<2>"
+; A printing key no map binds is undefined, and changes nothing.
+> (press! "a")
+! a is undefined
+; SPC and DEL scroll, as in any special buffer.
+> (bound "SPC")
+> (bound "DEL")
+views:scroll-up
+views:scroll-down
+; q puts back what the view showed before *Occur*, keeping *Occur*.
+> (press! "q")
+> (list (wins) (buffers:live? (buffers:find "*Occur: src*<2>")))
+((("src" 1 #f) ("*Occur: src*" 2 #t)) #t)
+; q deletes a view split for *Occur*, keeping *Occur*.
+> (define b2 (src "one foo\n"))
+> (only!)
+> (occur! (search:make-query "foo" search:regexp) 0 #f)
+> (wins)
+> (in-occur!)
+> (press! "q")
+> (list (wins) (buffers:live? (occur-buffer)))
+(("src" 1 #t) ("*Occur*" 2 #f))
+((("src" 1 #t)) #t)
