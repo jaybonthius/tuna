@@ -105,6 +105,9 @@
                 (and (> n m) (string=? (substring name (- n m) n) extension))))
             '(".ss" ".sls" ".sps" ".scm")))
 
+  ;; A .scm file under a queries folder is a tree-sitter query, not Scheme,
+  ;; as Neovim tells them apart. A submodule is another project's, and
+  ;; nvim-treesitter's tests hold query files elsewhere.
   (define (scheme-files folder)
     (let loop ([names (sort string<? (directory-list folder))] [found '()])
       (if (null? names)
@@ -113,6 +116,8 @@
             (loop (cdr names)
                   (cond
                     [(file-directory? path)
-                     (if (string=? (car names) ".git") found (append (reverse (scheme-files path)) found))]
+                     (if (or (member (car names) '(".git" "queries")) (file-exists? (string-append path "/.git")))
+                         found
+                         (append (reverse (scheme-files path)) found))]
                     [(scheme-file? (car names)) (cons path found)]
                     [else found])))))))

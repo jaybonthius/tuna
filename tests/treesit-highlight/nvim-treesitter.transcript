@@ -1,0 +1,38 @@
+; Every highlights query of nvim-treesitter, at the commit Tuna pins,
+; reads in the dialect: compiled for Python's grammar, each fails, if at
+; all, only on what tree-sitter itself checks, its node types and fields.
+> (define root (string-append library "/treesit/nvim-treesitter/runtime/queries"))
+> (define all (filter file-exists? (map (lambda (l) (format "~a/~a/highlights.scm" root l)) (sort string<? (directory-list root)))))
+> (> (length all) 300)
+#t
+> (define messages
+    (apply append
+      (map (lambda (f) (let ([s (open "x\n" (list f) '())]) (step! s) (map (lambda (r) (list-ref r 4)) (session-problems s))))
+           all)))
+> (let loop ([ms messages] [seen '()]) (cond [(null? ms) seen] [(member (car ms) seen) (loop (cdr ms) seen)] [else (loop (cdr ms) (cons (car ms) seen))]))
+("invalid node type")
+; Its parsers.lua pins each grammar its queries were written for; the
+; grammar Tuna pins for Python is the same repository at the same
+; revision. nvim-treesitter names Python's by a tag, which an offline test
+; cannot resolve, so the tag is held beside the commit it named when the
+; pin was chosen.
+> (define pins '(("python" "https://github.com/tree-sitter/tree-sitter-python" "293fdc02038ee2bf0e2e206711b69c90ac0d413f" "v0.25.0")))
+> (define parsers (read-file (string-append library "/treesit/nvim-treesitter/lua/nvim-treesitter/parsers.lua")))
+> (define (entry language key)
+    (let* ([at (offset-of parsers (string-append "\n  " language " = {"))]
+           [end (offset-of parsers "\n  },\n" at)]
+           [k (offset-of parsers (string-append key " = '") at)])
+      (and k (< k end)
+           (let ([from (+ k (string-length key) 4)])
+             (substring parsers from (offset-of parsers "'" from))))))
+> (map (lambda (pin)
+         (let ([revision (entry (car pin) "revision")])
+           (list (car pin)
+                 (equal? (entry (car pin) "url") (cadr pin))
+                 (if (= (string-length revision) 40) (equal? revision (caddr pin)) (equal? revision (cadddr pin))))))
+       pins)
+(("python" #t #t))
+> (equal? (caddr (car pins)) python-commit)
+#t
+> (file-exists? grammar)
+#t

@@ -1,0 +1,9 @@
+; As for 60 KB, in 230 KB of Python.
+> (define text (grown-text 230000))
+> (define s (open text shipped default-excluded))
+> (length (settle! s))
+15
+> (edit-cases s (spaced-lines text 12) "(")
+("(" 7 12 ())
+> (edit-cases s (spaced-lines text 12) "\"\"\"")
+("\"\"\"" 0 12 ())

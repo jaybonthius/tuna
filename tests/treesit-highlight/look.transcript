@@ -1,0 +1,29 @@
+; The default look is Emacs 30.2's at its default level, 3; with nothing
+; excluded, Emacs's level 4. Emacs's categories for Tuna's own sample and
+; three probes of Python are recorded as data. The differences are of
+; four kinds, each Tuna's on purpose:
+; - S->E: {{ and }} in an f-string are escapes of a brace, as
+;   nvim-treesitter captures them.
+; - .->K: syntax newer than Emacs 30.2's mode: Python 3.12's type X = ...
+;   and Python 3.11's except* are keywords.
+; - .->K: type(mock)._check = checker, which tree-sitter-python parses as
+;   a type alias, so type shows as a keyword.
+; - U->P, with nothing excluded: a name assigned in a class body through
+;   a subscript or attribute, which nvim-treesitter's rule for class
+;   members reaches and Emacs's property rule does not.
+> (compared "sample" 3)
+((".->K" 8 ((95 "type") (96 "type"))) ("S->E" 4 ((23 "{{") (23 "}}"))))
+> (compared "sample" 4)
+((".->K" 8 ((95 "type") (96 "type"))) ("S->E" 4 ((23 "{{") (23 "}}"))) ("U->P" 9 ((74 "_registry"))))
+> (compared "definitions" 3)
+(("S->E" 4 ((37 "{{") (37 "}}"))))
+> (compared "definitions" 4)
+(("S->E" 4 ((37 "{{") (37 "}}"))))
+> (compared "type-variables" 3)
+()
+> (compared "type-variables" 4)
+()
+> (compared "newer-syntax" 3)
+((".->K" 10 ((59 "except") (73 "type"))))
+> (compared "newer-syntax" 4)
+((".->K" 10 ((59 "except") (73 "type"))))

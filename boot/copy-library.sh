@@ -20,8 +20,8 @@ for entry in "$from"/*; do
     mkdir "$to/$name"
     for part in "$entry"/*; do
       [ -e "$part" ] || [ -L "$part" ] || continue
-      if [ "$(basename "$part")" = build ] && [ -d "$part" ]; then
-        ln -s "$part" "$to/$name/build"
+      if [ -e "$part/.git" ] || { [ "$(basename "$part")" = build ] && [ -d "$part" ]; }; then
+        ln -s "$part" "$to/$name/$(basename "$part")"
       else
         cp -RL "$part" "$to/$name/"
       fi

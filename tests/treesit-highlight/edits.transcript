@@ -1,0 +1,76 @@
+; After an edit the job colours again the edited text, the ranges whose
+; syntax changed, and the whole of every match touching them.
+; A letter typed at the end of a name: the answers hold the whole name.
+> (define s (open "def foo():\n    return bar\n" shipped '()))
+> (settle! s)
+((0 26))
+> (replace! s 7 7 "x")
+> (settle! s)
+((6 9) (4 6))
+> (runs s 0 10)
+(("def" keyword.function) ("foox" function) ("()" punctuation.bracket))
+; A match whose captures are apart: editing TypeVar colours T again, though
+; T's text and syntax did not change; so does editing it back.
+> (define typevar "((assignment left: (identifier) @type right: (call function: (identifier) @_f)) (#eq? @_f \"TypeVar\"))")
+> (define s (open "T = TypeVar(\"T\")\n" (list (query typevar)) '()))
+> (settle! s)
+((0 17))
+> (runs s)
+(("T" type))
+> (replace! s 10 11 "z")
+> (settle! s)
+((9 12) (0 9))
+> (runs s)
+()
+> (replace! s 10 11 "r")
+> (settle! s)
+((9 12) (0 9))
+> (runs s)
+(("T" type))
+; """ typed on its own line above a def: the text after keeps its
+; colours, since the tree holds an error with the string's start and the
+; def unchanged. Typed again further down, the text between is a string.
+> (define text "import os\n\n\ndef f(a):\n    return a + 1\n\n\nx = 2\n")
+> (define s (open text shipped default-excluded))
+> (settle! s)
+((0 47))
+> (define before (runs s 12 47))
+> before
+(("def" keyword.function) ("f" function) ("a" variable.parameter) ("return" keyword.return) ("1" number) ("x" variable.definition) ("2" number))
+> (replace! s 10 10 "\"\"\"\n")
+> (settle! s)
+((9 15))
+> (equal? (runs s 16 51) before)
+#t
+> (first-difference s (highlighted (text-of s) shipped default-excluded))
+#f
+> (let ([x (offset-of (text-of s) "x = 2")]) (replace! s x x "\"\"\"\n"))
+> (settle! s)
+((10 50))
+> (runs s)
+(("import" keyword.import) ("\"\"\"\n\n\ndef f(a):\n    return a + 1\n\n\n\"\"\"" string) ("x" variable.definition) ("2" number))
+> (first-difference s (highlighted (text-of s) shipped default-excluded))
+#f
+; Any edits, in any order, leave the faces a highlight from nothing gives.
+> (define sample (read-file (string-append home "/python/sample.py")))
+> (define s (open sample shipped default-excluded))
+> (define pieces '("(" ")" "\"\"\"" "'" "#" "\n" "x" " " ":" "[" "f\"{" "}" "\"\"\"\n" "    "))
+> (random-seed 20261120)
+> (define (random-edit! s)
+    (let* ([n (string-length (text-of s))] [start (random (+ n 1))])
+      (if (and (> n 0) (= 0 (random 3)))
+          (replace! s start (min n (+ start 1 (random 8))) "")
+          (replace! s start start (list-ref pieces (random (length pieces)))))))
+> (settle! s)
+((0 3122))
+> (let loop ([k 0] [failures '()])
+    (if (= k 300)
+        (reverse failures)
+        (begin
+          (random-edit! s)
+          (when (= 0 (random 2)) (random-edit! s))
+          (settle! s)
+          (loop (+ k 1)
+                (let ([d (first-difference s (highlighted (text-of s) shipped default-excluded))])
+                  (if d (cons (cons k d) failures) failures))))))
+()

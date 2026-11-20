@@ -30,3 +30,9 @@
 [submodule "libraries/chez-json-rpc"]
 	path = libraries/chez-json-rpc
 	url = https://github.com/jaybonthius/chez-json-rpc.git
+[submodule "libraries/chez-treesitter"]
+	path = libraries/chez-treesitter
+	url = https://github.com/jaybonthius/chez-treesitter.git
+[submodule "plugins/treesit/nvim-treesitter"]
+	path = plugins/treesit/nvim-treesitter
+	url = https://github.com/nvim-treesitter/nvim-treesitter.git

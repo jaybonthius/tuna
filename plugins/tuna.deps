@@ -48,3 +48,8 @@
   (commit "cbd2a870fa2d527d91171f08c8eb49c9d4e08904")
   (library-directories ("src" . "build/obj/src"))
   (build))
+(library chez-treesitter
+  (git "https://github.com/jaybonthius/chez-treesitter.git")
+  (commit "41d55d1a4ebd1a9629c36da49ca93a353240f6a9")
+  (library-directories ("src" . "build/obj/src"))
+  (build "make" "build/obj/src/tree-sitter/libchez-tree-sitter.so"))
