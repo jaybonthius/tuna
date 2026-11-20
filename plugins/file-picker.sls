@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (minibuffer) (files) (jobs) (ask) (layout) (commands) (keys))
+(import (completion) (minibuffer) (files) (jobs) (ask) (layout) (commands) (keys) (buffers) (document) (views))
 
 (define-saved file-name-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
@@ -19,60 +19,36 @@
       [else (loop (fx- i 1))])))
 
 (jobs:define-worker (%list-directory places emit receive)
-  (import (completion matcher))
+  (import (file-picker folders))
   (let ([home (car places)] [start (cdr places)])
-    (define (expand prefix)
-      (cond
-        [(and (fx> (string-length prefix) 0) (char=? (string-ref prefix 0) #\~))
-         (string-append home (substring prefix 1 (string-length prefix)))]
-        [(and (fx> (string-length prefix) 0) (char=? (string-ref prefix 0) #\/)) prefix]
-        [else (string-append start prefix)]))
-    (define (directory? path) (guard (c [#t #f]) (file-directory? path)))
-    (define (names dir) (guard (c [#t '()]) (list-sort string<? (directory-list (if (string=? dir "") "." dir)))))
-    (define (entries dir shown)
-      (map (lambda (name)
-             (let ([path (string-append dir name)])
-               (if (directory? path)
-                   (cons (string-append shown name "/") (string-append path "/"))
-                   (cons (string-append shown name) path))))
-           (names dir)))
-    (define (base-length prefix)
-      (let loop ([i (fx- (string-length prefix) 1)])
-        (cond
-          [(fx< i 0) 0]
-          [(and (char=? (string-ref prefix i) #\/) (directory? (expand (substring prefix 0 (fx+ i 1))))) (fx+ i 1)]
-          [else (loop (fx- i 1))])))
-    (define (components text)
-      (let loop ([cs (string->list text)] [part '()] [acc '()])
-        (cond
-          [(null? cs) (reverse (if (null? part) acc (cons (list->string (reverse part)) acc)))]
-          [(char=? (car cs) #\/) (loop (cdr cs) '() (if (null? part) acc (cons (list->string (reverse part)) acc)))]
-          [else (loop (cdr cs) (cons (car cs) part) acc)])))
-    (define (expansions n prefix)
-      (fold-left
-        (lambda (found component)
-          (let ([matches? (pattern-matcher (partial-pattern component))])
-            (apply append
-              (map (lambda (dir)
-                     (let ([path (car dir)] [shown (cdr dir)])
-                       (map (lambda (name) (cons (string-append path name "/") (string-append shown name "/")))
-                            (filter (lambda (name) (and (matches? name) (directory? (string-append path name))))
-                                    (names path)))))
-                   found))))
-        (list (cons (expand (substring prefix 0 n)) ""))
-        (components (substring prefix n (string-length prefix)))))
     (let loop ([prefix (receive)])
       (emit 'clear)
-      (cond
-        [(string=? prefix "") (emit (list->vector (entries (expand prefix) "")))]
-        [(directory? (expand prefix))
-         (emit (list 'base (string-length prefix)))
-         (emit 'prefer-input)
-         (emit (list->vector (entries (expand prefix) "")))]
-        [else
-         (let ([n (base-length prefix)])
-           (emit (list 'base n))
-           (emit (list->vector (apply append (map (lambda (dir) (entries (car dir) (cdr dir))) (expansions n prefix))))))])
+      (let ([folder (expand-path home start prefix)])
+        (cond
+          [(string=? prefix "") (emit (list->vector (folder-entries folder "")))]
+          [(directory? folder)
+           (emit (list 'base (string-length prefix)))
+           (emit 'prefer-input)
+           (emit (list->vector (folder-entries folder "")))]
+          [else
+           (let ([n (prefix-base-length home start prefix)])
+             (emit (list 'base n))
+             (emit (list->vector (apply append (map (lambda (dir) (folder-entries (car dir) (cdr dir)))
+                                                    (partial-expansions home start n prefix))))))]))
+      (emit 'done)
+      (loop (receive)))))
+
+;; A name at point lists only a folder that exists, as Cape's
+;; cape-file-directory-must-exist, so the region gives way to the next
+;; entry wherever a slash is no file name.
+(jobs:define-worker (%list-existing-folder places emit receive)
+  (import (file-picker folders))
+  (let ([home (car places)] [start (cdr places)])
+    (let loop ([prefix (receive)])
+      (emit 'clear)
+      (let ([folder (expand-path home start prefix)])
+        (when (directory? folder)
+          (emit (list->vector (folder-entries folder "")))))
       (emit 'done)
       (loop (receive)))))
 
@@ -97,6 +73,29 @@
                        (split %after-last-slash)
                        (category completion:file-category)))
                h)))))]))
+
+(define (%file-name-char? t)
+  (and (char? t)
+       (or (char-alphabetic? t) (char-numeric? t)
+           (memv t '(#\- #\@ #\~ #\/ #\_ #\. #\$ #\{ #\} #\# #\% #\, #\:)))))
+
+;; Only the slash decides, since the entry runs on the main thread after
+;; every command while its session lives; the worker tests the folder.
+(define (file-name-region)
+  (let ([view (views:current)])
+    (and view
+         (let* ([b (views:buffer view)] [doc (buffers:document b)] [point (views:point view)]
+                [start (let loop ([p point])
+                         (if (and (fx> p 0) (%file-name-char? (document:token doc (fx- p 1)))) (loop (fx- p 1)) p))]
+                [end (let loop ([p point])
+                       (if (and (fx< p (document:length doc)) (%file-name-char? (document:token doc p))) (loop (fx+ p 1)) p))])
+           (and (let loop ([p start])
+                  (and (fx< p point) (or (eqv? (document:token doc p) #\/) (loop (fx+ p 1)))))
+                (completion:fallback-region start end
+                  (list (completion:source
+                          (job %list-existing-folder (cons (%home) (files:directory b)))
+                          (split %after-last-slash)
+                          (category completion:file-category)))))))))
 
 (commands:define-command (find-file [path (ask:file-name "Find file: ")])
   "Visits PATH and shows its buffer in the selected view."

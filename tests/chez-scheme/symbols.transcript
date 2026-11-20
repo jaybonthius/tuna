@@ -1,0 +1,74 @@
+; A mode's word and symbol characters are those of the first mode in its
+; ancestry with an entry, else modes:fundamental's, which are Emacs's
+; standard syntax table's.
+> (list (syntax:mode-word-characters modes:fundamental) (syntax:mode-symbol-characters modes:fundamental))
+("$%" "_-+*/&|<>=")
+> (syntax:mode-symbol-characters prog:mode)
+"_-+*/&|<>="
+> (define-table derived-keymap)
+> (define-hook derived-hook)
+> (modes:define-major-mode derived (parent chez-scheme:mode) (keymap derived-keymap) (hook derived-hook))
+> (list (syntax:mode-word-characters derived) (syntax:mode-symbol-characters derived))
+("$%" "!$%&*/:<=>?^_~+-.@")
+> (table-set! syntax:symbol-characters derived "-")
+> (syntax:mode-symbol-characters derived)
+"-"
+> (table-remove! syntax:symbol-characters derived)
+; The symbol around a position, read with the buffer's mode or the one
+; given.
+> (define s (scheme-buffer "s.ss" "(buffers:insert! b \"x\") ; list->vector\n"))
+> (define (bounds b position . mode)
+    (call-with-values (lambda () (apply syntax:symbol-bounds b position mode)) list))
+> (define (symbol-at b position . mode)
+    (let ([r (apply bounds b position mode)])
+      (and (car r) (document:text (buffers:document b) (car r) (cadr r)))))
+> (map (lambda (p) (symbol-at s p)) (list (after s "(buf") (after s "(") (after s "insert!") (after s "x") (after s "list->")))
+("buffers:insert!" "buffers:insert!" "buffers:insert!" "x" "list->vector")
+> (bounds s (after s "b "))
+(#f #f)
+; A plain buffer reads its own mode's characters unless asked with
+; Scheme's.
+> (define plain (buffers:make "plain" "(buffers:insert! b)"))
+> (list (symbol-at plain (after plain "(buf")) (symbol-at plain (after plain "ins")))
+("buffers" "insert")
+> (symbol-at plain (after plain "ins") chez-scheme:mode)
+"buffers:insert!"
+; A user changes the default for every mode without an entry of its own.
+> (table-set! syntax:symbol-characters modes:fundamental "_-+*/&|<>=:!")
+> (symbol-at plain (after plain "ins"))
+"buffers:insert!"
+> (table-set! syntax:symbol-characters modes:fundamental "_-+*/&|<>=")
+; A buffer's own characters are its major mode's unless advice on
+; syntax:buffer-word-characters or syntax:buffer-symbol-characters
+; answers for it, as a minor mode would; asking with a mode reads that
+; mode's characters whatever the buffer's are.
+> (list (syntax:buffer-word-characters plain) (syntax:buffer-symbol-characters s))
+("$%" "!$%&*/:<=>?^_~+-.@")
+> (define (colons-in-plain symbol-characters buffer)
+    (if (eq? buffer plain) (string-append (symbol-characters buffer) ":!") (symbol-characters buffer)))
+> (advice-add! syntax:buffer-symbol-characters colons-in-plain)
+> (list (symbol-at plain (after plain "ins")) (symbol-at plain (after plain "ins") modes:fundamental))
+("buffers:insert!" "insert")
+> (advice-remove! syntax:buffer-symbol-characters colons-in-plain)
+> (raised (lambda () (syntax:buffer-word-characters 'plain)))
+(syntax:buffer-word-characters "not a buffer")
+> (define (not-a-string symbol-characters buffer) 'colon)
+> (advice-add! syntax:buffer-symbol-characters not-a-string)
+> (raised (lambda () (syntax:symbol-bounds plain 3)))
+(syntax:symbol-bounds "the characters are not strings")
+> (advice-remove! syntax:buffer-symbol-characters not-a-string)
+; A node's edge ends the run.
+> (define nested (buffers:make "nested" '(buffers:text () "ab" (buffers:text () "cd"))))
+> (list (bounds nested 2) (bounds nested 5) (bounds nested 3))
+((1 3) (4 6) (1 3))
+; The checks.
+> (raised (lambda () (syntax:symbol-bounds 'b 1)))
+(syntax:symbol-bounds "not a buffer")
+> (raised (lambda () (syntax:symbol-bounds s 1000)))
+(syntax:symbol-bounds "not a position in the buffer")
+> (raised (lambda () (syntax:symbol-bounds s 1 "scheme")))
+(syntax:symbol-bounds "not a mode")
+> (table-set! syntax:word-characters derived 'dollar)
+> (raised (lambda () (syntax:mode-word-characters derived)))
+(syntax:mode-word-characters "the mode's entry is not a string")
+> (table-remove! syntax:word-characters derived)

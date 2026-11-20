@@ -22,9 +22,12 @@
        '("#!tuna\n" "#!tuna --script\n" "#!/usr/bin/env scheme-script\n" "#!/usr/bin/scheme --script\n"
          "#!/usr/bin/petite --script\n" "#!r6rs\n" "#!chezscheme\n"))
 (chez-scheme:mode chez-scheme:mode chez-scheme:mode chez-scheme:mode chez-scheme:mode chez-scheme:mode chez-scheme:mode)
-; Words are as in other modes.
-> (equal? (local editing:word-characters first) (editing:word-characters))
+; Words are as in other modes; symbols also hold R6RS's identifier
+; characters.
+> (equal? (syntax:mode-word-characters chez-scheme:mode) (syntax:mode-word-characters modes:fundamental))
 #t
+> (syntax:mode-symbol-characters chez-scheme:mode)
+"!$%&*/:<=>?^_~+-.@"
 ; The lexer: each kind's class; a node's opening or closing is no
 ; character, and an atom lexes as part of a symbol.
 > (define (classes text)

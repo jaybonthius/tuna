@@ -13,9 +13,29 @@
 ! editing:backward-word: beginning of buffer
 > (points-after "C-<right>" "M-<right>")
 (4 8)
-> (buffers:with-buffer (views:buffer (view)) (set-option-local! editing:word-characters "-"))
+; A word's characters are those of the buffer's major mode.
+> (table-set! syntax:word-characters modes:fundamental "-")
 > (points-after "M-b" "M-f")
 (1 8)
+> (table-set! syntax:word-characters modes:fundamental "$%")
+; A minor mode changes one buffer's word characters by advising
+; syntax:buffer-word-characters and testing itself in the buffer handed
+; to it, as Emacs's superword-mode makes a symbol one word.
+> (define-option superword #f boolean? "Whether symbols are words.")
+> (define (superword-characters word-characters buffer)
+    (if (buffers:with-buffer buffer (superword))
+        (string-append (word-characters buffer) (syntax:buffer-symbol-characters buffer))
+        (word-characters buffer)))
+> (advice-add! syntax:buffer-word-characters superword-characters)
+> (start! "foo_bar baz" 1)
+("foo_bar baz" ((1 #f)))
+> (points-after "M-f")
+(4)
+> (buffers:with-buffer (views:buffer (view)) (set-option-local! superword #t))
+> (views:set-point! (view) 1)
+> (points-after "M-f" "M-f")
+(8 12)
+> (advice-remove! syntax:buffer-word-characters superword-characters)
 ; Word kills: two in a row make one entry, a backward kill before it.
 > (start! "one two three four" 19)
 ("one two three four" ((19 #f)))

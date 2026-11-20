@@ -1,8 +1,14 @@
 #!tuna
-(import (buffers) (document) (modes))
+(import (buffers) (document) (modes) (syntax characters))
 
 (define-table lexers
   "Maps a major mode to its lexer, a procedure of a document that returns the document's lexemes.")
+
+(define-table word-characters
+  "Maps a major mode to the characters besides letters and digits that are part of its words, as a string.")
+
+(define-table symbol-characters
+  "Maps a major mode to the characters besides letters, digits and its word characters that are part of its symbols, as a string.")
 
 (define-enumeration class (open close prefix atom string comment) %classes)
 
@@ -422,7 +428,66 @@
     [(buffer position mode)
      (lexed-top-level-form (lexed-of 'syntax:top-level-form buffer position mode) position)]))
 
+(define (%characters-of who table mode)
+  (unless (symbol? mode)
+    (assertion-violation who "not a mode" mode))
+  (let ([characters (let loop ([modes (modes:ancestry mode)])
+                      (cond
+                        [(null? modes) (table-ref table modes:fundamental "")]
+                        [(table-ref table (car modes) #f)]
+                        [else (loop (cdr modes))]))])
+    (unless (string? characters)
+      (assertion-violation who "the mode's entry is not a string" mode characters))
+    characters))
+
+(define (mode-word-characters mode)
+  (%characters-of 'syntax:mode-word-characters word-characters mode))
+
+(define (mode-symbol-characters mode)
+  (%characters-of 'syntax:mode-symbol-characters symbol-characters mode))
+
+(define (buffer-word-characters buffer)
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'syntax:buffer-word-characters "not a buffer" buffer))
+  (mode-word-characters (modes:major-mode buffer)))
+
+(define (buffer-symbol-characters buffer)
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'syntax:buffer-symbol-characters "not a buffer" buffer))
+  (mode-symbol-characters (modes:major-mode buffer)))
+
+(define (%symbol-bounds buffer position words symbols)
+  (let* ([doc (buffers:document buffer)] [n (document:length doc)])
+    (unless (and (string? words) (string? symbols))
+      (assertion-violation 'syntax:symbol-bounds "the characters are not strings" words symbols))
+    (unless (and (fixnum? position) (fx<= 0 position n))
+      (assertion-violation 'syntax:symbol-bounds "not a position in the buffer" position))
+    (let* ([in? (lambda (t) (and (char? t) (symbol-char? t words symbols)))]
+           [start (let loop ([p position]) (if (and (fx> p 0) (in? (document:token doc (fx- p 1)))) (loop (fx- p 1)) p))]
+           [end (let loop ([p position]) (if (and (fx< p n) (in? (document:token doc p))) (loop (fx+ p 1)) p))])
+      (if (fx= start end) (values #f #f) (values start end)))))
+
+(define (%check-symbol-question buffer)
+  (check-main-thread 'syntax:symbol-bounds)
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'syntax:symbol-bounds "not a buffer" buffer)))
+
+(define symbol-bounds
+  (case-lambda
+    [(buffer position)
+     (%check-symbol-question buffer)
+     (%symbol-bounds buffer position (buffer-word-characters buffer) (buffer-symbol-characters buffer))]
+    [(buffer position mode)
+     (%check-symbol-question buffer)
+     (unless (symbol? mode)
+       (assertion-violation 'syntax:symbol-bounds "not a mode" mode))
+     (%symbol-bounds buffer position (mode-word-characters mode) (mode-symbol-characters mode))]))
+
 (define (brackets-used? buffer)
   (unless (buffers:buffer? buffer)
     (assertion-violation 'syntax:brackets-used? "not a buffer" buffer))
   (and (exists (lambda (entry) ((cdr entry) buffer)) (table-entries bracket-users)) #t))
+
+;; Emacs's standard syntax table, which every other table inherits.
+(table-set! word-characters modes:fundamental "$%")
+(table-set! symbol-characters modes:fundamental "_-+*/&|<>=")

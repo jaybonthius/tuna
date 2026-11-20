@@ -342,6 +342,7 @@
   (as-module (this-module) (rebuild-stale-names!)))
 
 (table-set! syntax:lexers mode lexer)
+(table-set! syntax:symbol-characters mode "!$%&*/:<=>?^_~+-.@")
 (for-each (lambda (name) (table-set! auto-mode:file-names name mode))
           '("sls" "ss" "sps" "scm" "sch" "sld"))
 (for-each (lambda (name) (table-set! auto-mode:interpreters name mode))

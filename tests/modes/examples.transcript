@@ -17,7 +17,9 @@ python:mode
 ; Fill mode is on in Python buffers by the configuration's hook entry.
 > (local fill:mode build)
 #t
-> (local editing:word-characters build)
+> (local fill:column build)
+79
+> (syntax:mode-word-characters python:mode)
 "_"
 > (modes:ancestry python:mode)
 (python:mode prog:mode)
@@ -55,8 +57,8 @@ text:mode
 > (keys:bind! python:keymap "C-c C-u" editing:upcase-region)
 > (add-hook! prog:mode-hook (lambda () (set-option-local! fill:mode #t)))
 > (modes:set-major-mode python:mode build)
-> (list (local fill:mode build) (local editing:word-characters build))
-(#t "$%")
+> (list (local fill:mode build) (local fill:column build))
+(#t 70)
 > (commands:command-name (in-frame (lambda () (keys:lookup client "C-c C-u"))))
 editing:upcase-region
 ; Auto-mode as its documented examples use it.

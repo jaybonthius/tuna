@@ -1,5 +1,6 @@
 (import (tuna) (tuna plugins) (document) (web) (disk))
 (use-plugin layout)
+(use-plugin editing)
 (use-plugin modes)
 (use-plugin auto-mode)
 (use-plugin text

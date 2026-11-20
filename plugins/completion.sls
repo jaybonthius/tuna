@@ -1,6 +1,6 @@
 #!tuna
 ;; This plugin's substring is a style, so Chez's goes by another name.
-(import (minibuffer) (buffers) (document) (views) (layout) (keys) (commands) (jobs) (web) (editing) (kill-ring)
+(import (minibuffer) (buffers) (document) (views) (layout) (keys) (commands) (jobs) (web) (ask) (editing) (kill-ring)
         (completion matcher)
         (rename (only (chezscheme) substring) (substring string-part)))
 
@@ -1309,65 +1309,120 @@
       (set! %reads (remq r %reads))
       (end-session! (%read-state-session r)))))
 
-(define-record-type (%region region %region?)
+(define-record-type (%region %make-region %region?)
   (sealed #t)
-  (fields (immutable start region-start) (immutable end region-end) (immutable sources region-sources))
-  (protocol
-    (lambda (new)
-      (lambda (start end sources)
-        (unless (and (fixnum? start) (fixnum? end) (fx<= 0 start end))
-          (assertion-violation 'completion:region "not a start and an end" start end))
-        (%check-sources 'completion:region sources)
-        (new start end sources)))))
+  (fields (immutable start region-start) (immutable end region-end) (immutable sources region-sources)
+          (immutable exclusive? %region-exclusive?)))
+
+(define (%checked-region who start end sources exclusive?)
+  (unless (and (fixnum? start) (fixnum? end) (fx<= 0 start end))
+    (assertion-violation who "not a start and an end" start end))
+  (%check-sources who sources)
+  (%make-region start end sources exclusive?))
+
+(define (region start end sources) (%checked-region 'completion:region start end sources #t))
+
+(define (fallback-region start end sources) (%checked-region 'completion:fallback-region start end sources #f))
 
 (define-record-type %point-state
   (sealed #t)
-  (fields session entry client start end (mutable end-keymap) (mutable end-selected-keymap)))
+  (fields session entry client start end give-way (mutable found-nothing) (mutable end-keymap)
+          (mutable end-selected-keymap)))
 
 (define %points '())
 
 (define (%point-of s) (find (lambda (p) (eq? (%point-state-session p) s)) %points))
 
-(define (%find-region)
-  (let loop ([entries (hook-entries find-region)])
+(define (%find-region entries)
+  (let loop ([entries entries])
     (if (null? entries)
-        (values #f #f)
+        (values #f #f '())
         (let ([r ((car entries))])
           (cond
             [(not r) (loop (cdr entries))]
-            [(%region? r) (values r (car entries))]
+            [(%region? r) (values r (car entries) (cdr entries))]
             [else (assertion-violation 'completion:find-region "an entry returned what is not a region or #f" r)])))))
 
-(define (start-at-point minimum)
-  (check-main-thread 'completion:start-at-point)
-  (unless (and (fixnum? minimum) (fx>= minimum 0))
-    (assertion-violation 'completion:start-at-point "not a count" minimum))
-  (let ([view (views:current)] [client (web:current-client)])
-    (and view client
-         (let-values ([(r entry) (%find-region)])
-           (and r
-                (let ([point (views:point view)])
-                  (and (fx<= (region-start r) point (region-end r))
-                       (fx>= (fx- point (region-start r)) minimum)))
-                (begin
-                  (for-each (lambda (p) (when (eq? (session-record-view (%point-state-session p)) view)
-                                          (end-session! (%point-state-session p))))
-                            %points)
-                  (as-module (this-module)
-                    (let* ([b (views:buffer view)] [start (buffers:anchor b (region-start r))]
-                           [end (buffers:anchor-after b (region-end r))]
-                           [s (start-session! view (region-sources r)
-                                (lambda () (values (buffers:anchor-position start) (buffers:anchor-position end)))
-                                (lambda (s m) (end-session! s))
-                                (point-preselect))]
-                           [p (make-%point-state s entry client start end #f #f)])
-                      (set! %points (cons p %points))
-                      (%point-state-end-keymap-set! p
-                        (keys:push-keymap! client region-keymap (lambda (found command) #t)
-                                           (lambda () (end-session! s))))
-                      (%sync-keymaps! s)
-                      (when (session-record-ended? s) (%point-ended s))
-                      #t))))))))
+(define (%settled? s) (and (session-record-matches s) (not (busy? s))))
+
+(define (%found-nothing? s) (and (%settled? s) (fx= (match-list-count (session-record-matches s)) 0)))
+
+;; Only the first answer of the sources is reported, as Emacs says "No
+;; match" once for the command, not for each key typed after it.
+(define (%report-first-answer! p)
+  (let ([found-nothing (%point-state-found-nothing p)] [s (%point-state-session p)])
+    (when (and found-nothing (%settled? s))
+      (%point-state-found-nothing-set! p #f)
+      (when (%found-nothing? s) (found-nothing)))))
+
+(define (%start-from-entries view client entries minimum found-nothing)
+  (let-values ([(r entry rest) (%find-region entries)])
+    (and r
+         (let ([point (views:point view)])
+           (and (fx<= (region-start r) point (region-end r))
+                (fx>= (fx- point (region-start r)) minimum)))
+         (begin
+           (for-each (lambda (p) (when (eq? (session-record-view (%point-state-session p)) view)
+                                   (end-session! (%point-state-session p))))
+                     %points)
+           (as-module (this-module)
+             (let* ([b (views:buffer view)] [start (buffers:anchor b (region-start r))]
+                    [end (buffers:anchor-after b (region-end r))]
+                    [s (start-session! view (region-sources r)
+                         (lambda () (values (buffers:anchor-position start) (buffers:anchor-position end)))
+                         (lambda (s m) (end-session! s))
+                         (point-preselect))]
+                    [give-way (and (not (%region-exclusive? r))
+                                   (lambda (found-nothing)
+                                     (unless (%start-from-entries view client rest minimum found-nothing)
+                                       (found-nothing))))])
+               (if (and give-way (%found-nothing? s))
+                   (begin (end-session! s) (give-way found-nothing))
+                   (let ([p (make-%point-state s entry client start end give-way found-nothing #f #f)])
+                     (set! %points (cons p %points))
+                     (%point-state-end-keymap-set! p
+                       (keys:push-keymap! client region-keymap (lambda (found command) #t)
+                                          (lambda () (end-session! s))))
+                     (%sync-keymaps! s)
+                     (%report-first-answer! p)
+                     (when (session-record-ended? s) (%point-ended s))))
+               #t))))))
+
+(define start-at-point
+  (case-lambda
+    [(minimum) (start-at-point minimum void)]
+    [(minimum found-nothing)
+     (check-main-thread 'completion:start-at-point)
+     (unless (and (fixnum? minimum) (fx>= minimum 0))
+       (assertion-violation 'completion:start-at-point "not a count" minimum))
+     (unless (procedure? found-nothing)
+       (assertion-violation 'completion:start-at-point "not a procedure" found-nothing))
+     (let ([view (views:current)] [client (web:current-client)])
+       (and view client (%start-from-entries view client (hook-entries find-region) minimum found-nothing)))]))
+
+(define start-from-entry
+  (case-lambda
+    [(entry) (start-from-entry entry void)]
+    [(entry found-nothing)
+     (check-main-thread 'completion:start-from-entry)
+     (unless (procedure? entry)
+       (assertion-violation 'completion:start-from-entry "not a procedure" entry))
+     (unless (procedure? found-nothing)
+       (assertion-violation 'completion:start-from-entry "not a procedure" found-nothing))
+     (let ([view (views:current)] [client (web:current-client)])
+       (and view client (%start-from-entries view client (list entry) 0 found-nothing)))]))
+
+(define (%after-update s)
+  (let ([p (%point-of s)])
+    (when (and p (not (session-record-ended? s)))
+      (if (and (%point-state-give-way p) (%found-nothing? s))
+          (let ([view (session-record-view s)] [client (%point-state-client p)]
+                [found-nothing (or (%point-state-found-nothing p) void)])
+            (end-session! s)
+            (when (and (views:find (views:id view)) (views:buffer view))
+              (parameterize ([web:current-client client])
+                (views:call-with-view view (lambda () ((%point-state-give-way p) found-nothing))))))
+          (%report-first-answer! p)))))
 
 (define (%sync-keymaps! s)
   (let ([p (%point-of s)])
@@ -1414,9 +1469,11 @@
                 (end-session! s))))))
     %points))
 
+(define (%no-match) (ask:message "No match"))
+
 (commands:define-command (complete-at-point)
-  "Completes the text at point from the sources of completion:find-region."
-  (start-at-point 0))
+  "Completes the text at point from the sources of completion:find-region, saying No match when they find nothing."
+  (start-at-point 0 %no-match))
 
 (define (%current who)
   (or (current-session) (assertion-violation who "no completion session in the selected view")))
@@ -1631,6 +1688,7 @@
 (add-hook! minibuffer:prompt-started %prompt-input-changed)
 (add-hook! minibuffer:prompt-ended %prompt-ended)
 (add-hook! updated %sync-keymaps!)
+(add-hook! updated %after-update)
 ;; Ahead of the prompt's own keymaps, which hold completion:keymap.
 (add-hook! keys:find-keymaps %narrowing-keymaps 30)
 (add-hook! ended %point-ended)

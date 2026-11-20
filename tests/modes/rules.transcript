@@ -57,12 +57,12 @@ modes:fundamental
 ; A mode's local values rank by the order of changes, not by which hook
 ; runs first: the REPL's value, set in the parent's hook, beats the python
 ; plugin's own, though the python hook runs after it.
-> (local editing:word-characters b)
-"_"
-> (add-hook! prog:mode-hook (lambda () (set-option-local! editing:word-characters "repl")))
+> (local fill:column b)
+79
+> (add-hook! prog:mode-hook (lambda () (set-option-local! fill:column 100)))
 > (modes:set-major-mode python:mode b)
-> (local editing:word-characters b)
-"repl"
+> (local fill:column b)
+100
 > (set! calls '())
 ; The checks at the public entries.
 > (raised (lambda () (modes:set-major-mode 'nothere:mode b)))
@@ -89,8 +89,8 @@ modes:fundamental
 > (table-set! modes:hooks 'odd:mode 5)
 > (raised (lambda () (modes:set-major-mode 'odd:mode b)))
 (modes:set-major-mode "not a major mode")
-> (list (modes:major-mode b) (local editing:word-characters b))
-(python:mode "repl")
+> (list (modes:major-mode b) (local fill:column b))
+(python:mode 100)
 > (table-remove! modes:hooks 'odd:mode)
 > (raised (lambda () (buffers:reset-scope! gone)))
 (buffers:reset-scope! "not a live buffer")

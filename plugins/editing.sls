@@ -1,11 +1,9 @@
 #!tuna
-(import (document) (buffers) (views) (commands) (keys) (modes) (kill-ring) (undo) (layout) (web))
+(import (document) (buffers) (views) (commands) (keys) (modes) (kill-ring) (undo) (layout) (web) (syntax)
+        (syntax characters))
 
 (define-option delete-selection #f boolean?
   "When true, typing, newline, paste and yank replace an active, non-empty region, and delete-char and delete-backward-char delete it.")
-
-(define-option word-characters "$%" string?
-  "The characters besides letters and digits that are part of words.")
 
 (module %internals
   (check-main-thread check-count check-nonnegative-count command-view check-view key-char content-bounds each-cursor
@@ -183,39 +181,26 @@
     (fx- (document:offset doc p chars)
          (document:offset doc (document:line-start doc (document:line doc p)) chars)))
 
-  ;; Read in the buffer's scope, so a mode's local value applies.
-  (define (word-characters-in buffer)
-    (if (eq? buffer (buffers:current))
-        (word-characters)
-        (buffers:call-with-buffer buffer word-characters)))
+  (define (word-characters-in buffer) (syntax:buffer-word-characters buffer))
 
-  (define (holds-char? s ch)
-    (let ([n (string-length s)])
-      (let loop ([i 0])
-        (and (fx< i n) (or (char=? (string-ref s i) ch) (loop (fx+ i 1)))))))
-
-  (define (word-char? t extra)
-    (and (char? t)
-         (or (char-alphabetic? t)
-             (char-numeric? t)
-             (holds-char? extra t))))
+  (define (word-token? t extra) (and (char? t) (word-char? t extra)))
 
   (define (word-end doc p hi extra)
     (let skip ([p p])
       (cond
         [(fx>= p hi) #f]
-        [(word-char? (document:token doc p) extra)
+        [(word-token? (document:token doc p) extra)
          (let in ([p (fx+ p 1)])
-           (if (and (fx< p hi) (word-char? (document:token doc p) extra)) (in (fx+ p 1)) p))]
+           (if (and (fx< p hi) (word-token? (document:token doc p) extra)) (in (fx+ p 1)) p))]
         [else (skip (fx+ p 1))])))
 
   (define (word-start doc p lo extra)
     (let skip ([p p])
       (cond
         [(fx<= p lo) #f]
-        [(word-char? (document:token doc (fx- p 1)) extra)
+        [(word-token? (document:token doc (fx- p 1)) extra)
          (let in ([p (fx- p 1)])
-           (if (and (fx> p lo) (word-char? (document:token doc (fx- p 1)) extra)) (in (fx- p 1)) p))]
+           (if (and (fx> p lo) (word-token? (document:token doc (fx- p 1)) extra)) (in (fx- p 1)) p))]
         [else (skip (fx- p 1))])))
 
   (define (words-from doc p n lo hi extra)
@@ -754,7 +739,7 @@
   (%to-edge 'editing:end-of-buffer #t))
 
 (define (%move-words who n)
-  (let ([view (command-view who)] [extra (word-characters)])
+  (let* ([view (command-view who)] [extra (word-characters-in (views:buffer view))])
     (move-cursors! who view n
       (lambda (c doc lo hi) (values (words-from doc (views:cursor-point c) n lo hi extra) #f)))))
 
@@ -787,7 +772,7 @@
   (check-count 'editing:mark-word n)
   (let* ([view (command-view 'editing:mark-word)]
          [doc (buffers:document (views:buffer view))]
-         [extra (word-characters)])
+         [extra (word-characters-in (views:buffer view))])
     (let-values ([(lo hi) (content-bounds view doc)])
       (set-marks! view
         (lambda (c) (words-from doc (or (views:cursor-mark c) (views:cursor-point c)) n lo hi extra))))))
@@ -846,7 +831,7 @@
 (define (%kill-words who n)
   (let* ([view (command-view who)]
          [doc (buffers:document (views:buffer view))]
-         [extra (word-characters)])
+         [extra (word-characters-in (views:buffer view))])
     (let-values ([(lo hi) (content-bounds view doc)])
       (kill-ranges! view
         (lambda (c) (let ([p (views:cursor-point c)]) (values p (words-from doc p n lo hi extra))))
@@ -896,7 +881,7 @@
 
 (commands:define-command (transpose-words)
   "Swaps the word before or around each cursor with the word after it, leaving the cursor after both."
-  (let* ([view (command-view 'editing:transpose-words)] [b (views:buffer view)] [extra (word-characters)])
+  (let* ([view (command-view 'editing:transpose-words)] [b (views:buffer view)] [extra (word-characters-in b)])
     (each-cursor view
       (lambda (c p m)
         (let ([doc (buffers:document b)])
@@ -945,7 +930,7 @@
                       (if (fx< lower (document:line doc hi)) (document:line-start doc (fx+ lower 1)) hi))))))))))))
 
 (define (%case-words who n convert)
-  (let* ([view (command-view who)] [b (views:buffer view)] [extra (word-characters)])
+  (let* ([view (command-view who)] [b (views:buffer view)] [extra (word-characters-in b)])
     (each-cursor view
       (lambda (c p m)
         (let ([doc (buffers:document b)])
@@ -977,7 +962,8 @@
 (commands:define-command (capitalize-word [n (commands:prefix-number)])
   "Capitalizes each word from each cursor to the end of the Nth word and moves past it."
   (check-count 'editing:capitalize-word n)
-  (%case-words 'editing:capitalize-word n (capitalizer (word-characters))))
+  (%case-words 'editing:capitalize-word n
+    (capitalizer (word-characters-in (views:buffer (command-view 'editing:capitalize-word))))))
 
 (commands:define-command (upcase-region)
   "Converts each cursor's region to upper case."
@@ -989,7 +975,8 @@
 
 (commands:define-command (capitalize-region)
   "Capitalizes each word in each cursor's region."
-  (%case-region 'editing:capitalize-region (capitalizer (word-characters))))
+  (%case-region 'editing:capitalize-region
+    (capitalizer (word-characters-in (views:buffer (command-view 'editing:capitalize-region))))))
 
 (define (%indentation-end doc start end)
   (let loop ([p start])
