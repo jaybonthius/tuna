@@ -1497,3 +1497,4 @@
     (ended)))
 
 (for-each (lambda (chat) (%buffer-of chat) (%mark-dirty! chat)) (pi:chats))
+(table-set! commands:region-commands add-region #t)

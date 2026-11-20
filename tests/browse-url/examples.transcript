@@ -1,6 +1,6 @@
 ; An address opens in a new tab of the browser whose key or click asked,
 ; or of the client named.
-> (parameterize ([web:current-client phone]) (browse-url:open "https://tuna.example/guide"))
+> (parameterize ([web:current-client phone]) (browse-url:open "https://tuna.example/guide" (web:current-client)))
 > (browse-url:open "mailto:jay@example.org" laptop)
 > (browse-url:open "HTTP://TUNA.EXAMPLE" laptop)
 > (web:take-page-calls!)
@@ -14,7 +14,7 @@
 ! browse-url:open: not an http, https or mailto address with irritant tuna
 > (browse-url:open "https://tuna.example" "laptop")
 ! browse-url:open: not a client with irritant "laptop"
-> (browse-url:open "https://tuna.example")
+> (browse-url:open "https://tuna.example" #f)
 ! browse-url:open: no browser to open it in with irritant "https://tuna.example"
 > (web:take-page-calls!)
 ()
@@ -23,3 +23,11 @@
 ! The browser blocked the new tab for https://tuna.example/guide
 > (handle! phone "browse-url")
 ! browse-url: not a browse-url item with irritant (("type" . "browse-url"))
+; The address at a position: punctuation after it and a bracket opened
+; before it are not part of it.
+> (define b (buffers:make "notes" "See https://tuna.example/a_(b), (or mailto:jay@example.org). http: alone"))
+> (define (url-at offset)
+    (let-values ([(start end) (browse-url:url-at b (document:position (buffers:document b) offset (document:unit characters)))])
+      (and start (document:text (buffers:document b) start end))))
+> (map url-at '(0 4 10 29 30 36 58 60 71))
+(#f "https://tuna.example/a_(b)" "https://tuna.example/a_(b)" "https://tuna.example/a_(b)" "https://tuna.example/a_(b)" "mailto:jay@example.org" "mailto:jay@example.org" #f #f)

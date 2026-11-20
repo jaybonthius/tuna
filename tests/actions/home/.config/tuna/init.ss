@@ -15,6 +15,12 @@
 (use-plugin command-picker)
 (use-plugin help)
 (use-plugin actions)
+(use-plugin layout-float)
+(use-plugin completion-popup)
+(use-plugin chez-scheme)
+(use-plugin chez-scheme-completion)
+(use-plugin folder-listing)
+(use-plugin shell-commands)
 
 (define client (web:add-client! 1))
 
@@ -80,5 +86,30 @@
 (define (selected-text s) (let ([m (completion:selected s)]) (and m (completion:text s m))))
 
 (define (names) (map buffers:name (remp (lambda (b) (buffers:internal-name? (buffers:name b))) (buffers:all))))
+
+(define (text b) (document:text (buffers:document b) 0 (document:length (buffers:document b))))
+
+(define (show! b) (views:set-buffer! (view) b) b)
+
+(define (position-of b string offset)
+  (let* ([t (text b)] [n (string-length string)])
+    (let loop ([i 0])
+      (if (string=? (substring t i (+ i n)) string)
+          (document:position (buffers:document b) (+ i offset) (document:unit characters))
+          (loop (+ i 1))))))
+
+(define (at! b string offset) (views:set-point! (view) (position-of b string offset)))
+
+(define (prompt-text) (text (views:buffer (minibuffer:prompt-view (prompt)))))
+
+;; Highlighting finds a buffer's scope in a job, so a test waits until
+;; the buffer's names have come.
+(define (settle-names b)
+  (wait-until (lambda () (not (eq? (chez-scheme:names b) (chez-scheme:repl-names)))))
+  (sleep-for 0.05))
+
+(define (help-title)
+  (let* ([b (buffers:find "*Help*")] [t (and b (text b))])
+    (and t (let loop ([i 0]) (if (or (= i (string-length t)) (char=? (string-ref t i) #\newline)) (substring t 0 i) (loop (+ i 1)))))))
 
 (import (console))

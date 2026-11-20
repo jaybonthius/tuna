@@ -9,6 +9,9 @@
 (define-table command-modes
   "Maps a command to the list of modes it is for; an empty list marks a command for no mode.")
 
+(define-table region-commands
+  "Maps a command that acts on each cursor's region, when it has one, to #t, so that an action runs it on its target as the region.")
+
 (module %internals
   (check-main-thread registry register! command-entry entry-procedure entry-reader
    command-name-of call-outermost call-inner running-command running-previous running-outermost

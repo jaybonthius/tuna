@@ -1350,7 +1350,7 @@
     (let ([target (%link-at t position)])
       (cond
         [(not target) (assertion-violation 'terminal:open-link "no link here" position)]
-        [(string? target) (browse-url:open target)]
+        [(string? target) (browse-url:open target (web:current-client))]
         [else
          (let* ([b (files:visit (vector-ref target 0))] [v (layout:display-buffer b)] [doc (buffers:document b)]
                 [line (vector-ref target 1)] [column (vector-ref target 2)])

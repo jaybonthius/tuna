@@ -1829,3 +1829,6 @@
 (keys:bind! keys:global "<mouse-2>" mouse-yank-primary)
 (keys:bind! keys:global "<mouse-3>" mouse-save-then-kill)
 (keys:bind! drag-keymap "<mouse-movement>" mouse-drag-movement)
+(for-each (lambda (command) (table-set! commands:region-commands command #t))
+          (list kill-region kill-ring-save upcase-region downcase-region capitalize-region sort-lines duplicate-dwim
+                move-line-down move-line-up delete-trailing-whitespace delete-backward-char delete-forward-char))

@@ -193,7 +193,7 @@
   "Opens the address of the link pushed in a new tab of the browser whose click or key ran the command."
   (unless (and (document:node? link) (eq? (document:node-kind link) `markdown:link))
     (assertion-violation `markdown:follow-link "not a Markdown link" link))
-  (browse-url:open (document:node-attribute link `href)))
+  (browse-url:open (document:node-attribute link `href) (web:current-client)))
 
 (buffers:define-kind paragraph (draw %draw))
 (buffers:define-kind heading (draw %draw))

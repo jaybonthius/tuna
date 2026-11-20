@@ -1,6 +1,6 @@
 #!tuna
 (import (runs) (processes) (minibuffer) (ask) (files) (layout) (views) (editing) (kill-ring) (buffers) (document)
-        (modes) (commands) (keys))
+        (modes) (commands) (keys) (completion))
 
 (define-option compile-command "make -k " string?
   "The command line shell-commands:compile starts from, and the one shell-commands:recompile runs outside compile's buffers.")
@@ -266,6 +266,8 @@
 (keys:bind! keys:global "M-!" shell-command)
 (keys:bind! keys:global "M-|" shell-command-on-region)
 (keys:bind! keys:global "M-&" async-shell-command)
+(keys:bind! completion:region-action-keymap "|" shell-command-on-region)
+(table-set! commands:region-commands shell-command-on-region #t)
 ;; Loading a module takes back its local values in every scope, and the
 ;; output buffer has no mode whose hook would set them again.
 (for-each (lambda (b) (when (%output-root-line b) (%set-revert! b))) (buffers:all))

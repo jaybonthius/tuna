@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (web))
+(import (tuna) (tuna plugins) (web) (buffers) (document))
+(use-plugin buffers)
 (use-plugin browse-url)
 
 (define laptop (web:add-client! 1))

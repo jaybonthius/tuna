@@ -1,6 +1,7 @@
 #!tuna
 ;; This plugin's substring is a style, so Chez's goes by another name.
 (import (minibuffer) (buffers) (document) (views) (layout) (keys) (commands) (jobs) (web) (ask) (editing) (kill-ring)
+        (modes) (syntax) (browse-url)
         (completion matcher)
         (rename (only (chezscheme) substring) (substring string-part)))
 
@@ -12,6 +13,9 @@
 
 (define-hook find-region
   "Its entries take no arguments and return a region for point in the current view, or #f.")
+
+(define-hook target-finders
+  "Its entries take a view and return a completion:target for what is at its point, or #f.")
 
 (define-table category-styles
   "Maps a category to the styles tried before its default styles: its completion:category-default-styles entry while completion:styles holds its default, else completion:styles.")
@@ -76,6 +80,14 @@
 
 (define-category identifier-category "Names in a program that no plugin describes, valued by their text.")
 
+(define-category url-category "Web addresses, valued by their text.")
+
+(define-category region-category "The active region, valued by its text.")
+
+(define-category expression-category "A string or list in a program, valued by its text.")
+
+(define-category top-level-form-category "A top-level form in a program, valued by its text.")
+
 ;; Several plugins bind actions on the shared categories, so their
 ;; keymaps are defined beside them.
 (define-table buffer-action-keymap "The actions on buffers.")
@@ -85,6 +97,34 @@
 (define-table file-action-keymap "The actions on file names.")
 
 (define-table location-action-keymap "The actions on locations.")
+
+(define-table name-action-keymap "The actions on Scheme names.")
+
+(define-table identifier-action-keymap "The actions on identifiers.")
+
+(define-table url-action-keymap "The actions on web addresses.")
+
+(define-table region-action-keymap "The actions on the active region.")
+
+(define-table expression-action-keymap "The actions on expressions.")
+
+(define-table top-level-form-action-keymap "The actions on top-level forms.")
+
+;; A target lives here, not with the actions on it, so that a plugin
+;; finding what is at point makes one without importing them.
+(define-record-type target
+  (sealed #t)
+  (fields category value text start end)
+  (protocol
+    (lambda (new)
+      (lambda (category value text start end)
+        (unless (or (not category) (symbol? category))
+          (assertion-violation 'completion:make-target "neither a category nor #f" category))
+        (unless (string? text)
+          (assertion-violation 'completion:make-target "not a string" text))
+        (unless (or (and (not start) (not end)) (and (fixnum? start) (fixnum? end) (fx<= 0 start end)))
+          (assertion-violation 'completion:make-target "neither a start and an end nor #f and #f" start end))
+        (new category value text start end)))))
 
 (define-record-type (%source %make-source source?)
   (sealed #t)
@@ -309,7 +349,7 @@
    start-session! end-session! input-of rematch! select-match! match-text match-value match-title match-category
    match-row-text match-spans match-annotation match-whole-text match-exit busy? query-start find-named! sole-match?
    common-input-start narrow-chars session-record-narrowed narrowed-title source-title-of narrow! combine!
-   match-list? make-match-list match-list-count match-list-ref match-list-index no-matches)
+   match-list? make-match-list match-list-count match-list-ref match-list-index no-matches candidate-valued)
 
   (define main-thread (get-thread-id))
 
@@ -1057,6 +1097,20 @@
     (let-values ([(start end) ((session-record-bounds s))])
       (fx+ start (lead-length (owner-of s m)))))
 
+  (define (candidate-valued s category value)
+    (exists
+      (lambda (st)
+        (let ([source (state-source st)])
+          (and category (eq? (%source-category source) category) (vector? (%source-candidates source))
+               (let ([v (%source-candidates source)])
+                 (let loop ([i 0])
+                   (and (fx< i (vector-length v))
+                        (let ([c (vector-ref v i)])
+                          (if (equal? (candidate-value c) value)
+                              (cons (string-append (base st) (candidate-text c)) value)
+                              (loop (fx+ i 1))))))))))
+      (session-record-states s)))
+
   (define (named-match s text)
     (let ([n (string-length text)])
       (exists
@@ -1311,6 +1365,24 @@
   (check-main-thread 'completion:answer-input!)
   (let ([r (%read-of-prompt p)] [input (minibuffer:input p)])
     (if r (%answer-input! r input) (minibuffer:exit! p input))))
+
+;; A target's text depends on where it was found: insert! in buffers.sls
+;; is buffers:insert!, so a text match would not find its candidate.
+(define (answer-target! p target)
+  (unless (minibuffer:prompt? p)
+    (assertion-violation 'completion:answer-target! "not a prompt" p))
+  (unless (target? target)
+    (assertion-violation 'completion:answer-target! "not a target" target))
+  (check-main-thread 'completion:answer-target!)
+  (let* ([r (%read-of-prompt p)]
+         [found (and r (candidate-valued (%read-state-session r) (target-category target) (target-value target)))])
+    (cond
+      [found
+       (minibuffer:set-input! p (car found))
+       (minibuffer:exit! p (cdr found))]
+      [else
+       (minibuffer:set-input! p (target-text target))
+       (answer-input! p)])))
 
 (define (%answer! s m)
   (let* ([r (%read-of s)] [prompt (%read-state-prompt r)] [input (minibuffer:input prompt)]
@@ -1796,6 +1868,90 @@
               (source (candidates (list->vector offered)))))
     minibuffer:history default))
 
+(define (%text-target category buffer start end)
+  (let ([text (document:text (buffers:document buffer) start end)])
+    (make-target category text text start end)))
+
+(define (%region-target view)
+  (let ([point (views:point view)] [mark (views:mark view)])
+    (and mark (not (fx= mark point))
+         (%text-target region-category (views:buffer view) (fxmin point mark) (fxmax point mark)))))
+
+(define (%url-target view)
+  (let ([buffer (views:buffer view)])
+    (let-values ([(start end) (browse-url:url-at buffer (views:point view))])
+      (and start (%text-target url-category buffer start end)))))
+
+(define (%identifier-target view)
+  (let ([buffer (views:buffer view)])
+    (let-values ([(start end) (syntax:symbol-bounds buffer (views:point view))])
+      (and start (%text-target identifier-category buffer start end)))))
+
+;; syntax raises for a mode with no lexer, where nothing is a form.
+(define (%lexed-buffer view)
+  (let ([buffer (views:buffer view)])
+    (and (syntax:lexer (modes:major-mode buffer)) buffer)))
+
+;; syntax:top-level-form also answers with the next form when point is
+;; between forms.
+(define (%form-around buffer point)
+  (let-values ([(start end) (syntax:top-level-form buffer point)])
+    (and start (fx<= start point end) (cons start end))))
+
+(define (%lexeme-covering buffer position)
+  (and (fx<= 0 position) (fx< position (document:length (buffers:document buffer)))
+       (let ([found (syntax:lexemes buffer position (fx+ position 1))])
+         (and (pair? found) (car found)))))
+
+;; As Emacs's scan-sexps fails on a list left open, a list with no closing
+;; bracket is no expression.
+(define (%closed-list buffer start end)
+  (let ([open (find (lambda (l) (eq? (syntax:lexeme-class l) (syntax:class open)))
+                    (syntax:lexemes buffer start end))]
+        [close (%lexeme-covering buffer (fx- end 1))])
+    (and (or (not open)
+             (and close (eq? (syntax:lexeme-class close) (syntax:class close))
+                  (fx= (syntax:lexeme-depth close) (syntax:lexeme-depth open))))
+         (cons start end))))
+
+(define (%expression-bounds buffer point)
+  (define (of-class l class) (and l (eq? (syntax:lexeme-class l) class) l))
+  (let ([at (%lexeme-covering buffer point)] [before (%lexeme-covering buffer (fx- point 1))])
+    (cond
+      [(or (of-class at (syntax:class string))
+           (let ([l (of-class before (syntax:class string))]) (and l (fx= (syntax:lexeme-end l) point) l)))
+       => (lambda (l) (and (not (syntax:lexeme-open-ended? l)) (cons (syntax:lexeme-start l) (syntax:lexeme-end l))))]
+      [(and at (fx= (syntax:lexeme-start at) point)
+            (memq (syntax:lexeme-class at) (list (syntax:class open) (syntax:class prefix))))
+       (let ([end (syntax:sexp-after buffer point)])
+         (and end (%closed-list buffer point end)))]
+      [(let ([l (of-class before (syntax:class close))]) (and l (fx= (syntax:lexeme-end l) point)))
+       (let ([start (syntax:sexp-before buffer point)])
+         (and start (%closed-list buffer start point)))]
+      [else
+       (let ([openings (syntax:openings buffer point)])
+         (and (pair? openings)
+              (let* ([start (syntax:lexeme-start (list-ref openings (fx- (length openings) 1)))]
+                     [end (syntax:sexp-after buffer start)])
+                (and end (%closed-list buffer start end)))))])))
+
+;; What starts where the top-level form does is that form, which its own
+;; finder gives.
+(define (%expression-target view)
+  (let ([buffer (%lexed-buffer view)])
+    (and buffer
+         (let* ([point (views:point view)] [found (%expression-bounds buffer point)])
+           (and found
+                (let ([form (%form-around buffer point)])
+                  (not (and form (fx= (car form) (car found)))))
+                (%text-target expression-category buffer (car found) (cdr found)))))))
+
+(define (%top-level-form-target view)
+  (let ([buffer (%lexed-buffer view)])
+    (and buffer
+         (let ([form (%form-around buffer (views:point view))])
+           (and form (%text-target top-level-form-category buffer (car form) (cdr form)))))))
+
 (define (%unload)
   (for-each (lambda (r) (signal-task (%read-state-task r) (%quit))) %reads)
   (for-each end-session! sessions))
@@ -1816,6 +1972,12 @@
 (table-set! action-keymaps command-category (list command-action-keymap))
 (table-set! action-keymaps file-category (list file-action-keymap))
 (table-set! action-keymaps location-category (list location-action-keymap))
+(table-set! action-keymaps name-category (list name-action-keymap identifier-action-keymap))
+(table-set! action-keymaps identifier-category (list identifier-action-keymap))
+(table-set! action-keymaps url-category (list url-action-keymap))
+(table-set! action-keymaps region-category (list region-action-keymap))
+(table-set! action-keymaps expression-category (list expression-action-keymap))
+(table-set! action-keymaps top-level-form-category (list top-level-form-action-keymap expression-action-keymap))
 (table-set! web:stylesheets 'completion "completion/completion.css")
 (set-option! ask:choice-reader %read-choice)
 (set-option! ask:line-with-candidates-reader %read-line-with-candidates)
@@ -1839,6 +2001,7 @@
 (table-set! commands:command-modes narrow (list minibuffer:mode))
 (table-set! commands:command-modes narrow-by-input (list minibuffer:mode))
 (table-set! commands:command-modes widen (list minibuffer:mode))
+(table-set! commands:region-commands kill-ring-save #t)
 (add-hook! minibuffer:input-changed %prompt-input-changed)
 (add-hook! minibuffer:prompt-started %prompt-input-changed)
 (add-hook! minibuffer:prompt-ended %prompt-ended)
@@ -1848,4 +2011,9 @@
 (add-hook! keys:find-keymaps %narrowing-keymaps 30)
 (add-hook! ended %point-ended)
 (add-hook! commands:after-command %continue-at-point)
+(add-hook! target-finders %region-target -40)
+(add-hook! target-finders %url-target -30)
+(add-hook! target-finders %identifier-target 20)
+(add-hook! target-finders %expression-target 30)
+(add-hook! target-finders %top-level-form-target 60)
 (on-unload %unload)

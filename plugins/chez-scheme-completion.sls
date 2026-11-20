@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (chez-scheme) (syntax) (buffers) (document) (views))
+(import (completion) (chez-scheme) (syntax) (buffers) (document) (views) (modes) (prog))
 
 ;; The entry runs after every command while its session lives, so the
 ;; candidates of a names vector are made once and kept while it lives.
@@ -64,4 +64,19 @@
 
 (define (%add-name-region) (add-local-hook! completion:find-region name-region))
 
+;; Any buffer may mention a Tuna name, as *Help* or a chat does, but in
+;; another language's program a symbol is that language's, as Embark
+;; promotes no identifier to a symbol in a program that is not Lisp.
+(define (name-target view)
+  (let* ([buffer (views:buffer view)] [mode (modes:major-mode buffer)])
+    (and (not (and (modes:derived? mode prog:mode) (not (modes:derived? mode chez-scheme:mode))))
+         (let-values ([(start end) (syntax:symbol-bounds buffer (views:point view) chez-scheme:mode)])
+           (and start
+                (let* ([doc (buffers:document buffer)] [start (%name-start doc start end)]
+                       [text (document:text doc start end)]
+                       [name (and (fx< start end) (chez-scheme:find-name buffer (string->symbol text)))])
+                  (and name (member (chez-scheme:name-library name) (chez-scheme:tuna-libraries))
+                       (completion:make-target completion:name-category (chez-scheme:name-export name) text start end))))))))
+
 (add-hook! chez-scheme:mode-hook %add-name-region)
+(add-hook! completion:target-finders name-target 10)

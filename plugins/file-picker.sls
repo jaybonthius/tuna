@@ -116,23 +116,43 @@
        (or (char-alphabetic? t) (char-numeric? t)
            (memv t '(#\- #\@ #\~ #\/ #\_ #\. #\$ #\{ #\} #\# #\% #\, #\:)))))
 
+(define (%file-name-bounds doc point)
+  (values (let loop ([p point])
+            (if (and (fx> p 0) (%file-name-char? (document:token doc (fx- p 1)))) (loop (fx- p 1)) p))
+          (let loop ([p point])
+            (if (and (fx< p (document:length doc)) (%file-name-char? (document:token doc p))) (loop (fx+ p 1)) p))))
+
+(define (%slash-between? doc start end)
+  (let loop ([p start])
+    (and (fx< p end) (or (eqv? (document:token doc p) #\/) (loop (fx+ p 1))))))
+
 ;; Only the slash decides, since the entry runs on the main thread after
 ;; every command while its session lives; the worker tests the folder.
 (define (file-name-region)
   (let ([view (views:current)])
     (and view
-         (let* ([b (views:buffer view)] [doc (buffers:document b)] [point (views:point view)]
-                [start (let loop ([p point])
-                         (if (and (fx> p 0) (%file-name-char? (document:token doc (fx- p 1)))) (loop (fx- p 1)) p))]
-                [end (let loop ([p point])
-                       (if (and (fx< p (document:length doc)) (%file-name-char? (document:token doc p))) (loop (fx+ p 1)) p))])
-           (and (let loop ([p start])
-                  (and (fx< p point) (or (eqv? (document:token doc p) #\/) (loop (fx+ p 1)))))
-                (completion:fallback-region start end
-                  (list (completion:source
-                          (job %list-existing-folder (cons (%home) (files:directory b)))
-                          (split %after-last-slash)
-                          (category completion:file-category)))))))))
+         (let* ([b (views:buffer view)] [doc (buffers:document b)] [point (views:point view)])
+           (let-values ([(start end) (%file-name-bounds doc point)])
+             (and (%slash-between? doc start point)
+                  (completion:fallback-region start end
+                    (list (completion:source
+                            (job %list-existing-folder (cons (%home) (files:directory b)))
+                            (split %after-last-slash)
+                            (category completion:file-category))))))))))
+
+;; As for the region, the disk is not read: finders run on the main
+;; thread at every C-. A ~user path is left out, since only the user
+;; database knows its folder.
+(define (file-name-target view)
+  (unless (views:view? view)
+    (assertion-violation 'file-picker:file-name-target "not a view" view))
+  (let* ([b (views:buffer view)] [doc (buffers:document b)])
+    (let-values ([(start end) (%file-name-bounds doc (views:point view))])
+      (let ([text (document:text doc start end)])
+        (and (%slash-between? doc start end)
+             (not (and (fx> (string-length text) 1) (char=? (string-ref text 0) #\~) (not (char=? (string-ref text 1) #\/))))
+             (let ([path (files:expanded-path text (files:directory b))])
+               (completion:make-target completion:file-category path (files:abbreviated-path path) start end)))))))
 
 (commands:define-command (find-file [path (ask:file-name "Find file: ")])
   "Visits PATH and shows its buffer in the selected view."
@@ -150,3 +170,4 @@
 (keys:bind! keys:global "C-x C-f" find-file)
 (keys:bind! keys:global "C-x 4 f" find-file-other-view)
 (keys:bind! completion:file-action-keymap "f" find-file)
+(add-hook! completion:target-finders file-name-target -10)

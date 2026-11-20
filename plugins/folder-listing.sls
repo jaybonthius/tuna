@@ -1,6 +1,6 @@
 #!tuna
 (import (buffers) (document) (views) (keys) (commands) (modes) (editing) (kill-ring) (layout) (ui)
-        (files) (jobs) (ask) (web) (haml) (files attributes) (folder-listing reading))
+        (files) (jobs) (ask) (web) (haml) (completion) (files attributes) (folder-listing reading))
 
 (define-enumeration sorting (name time size extension) %sortings)
 
@@ -1114,8 +1114,16 @@
     (%folders))
   (%remember-folders!))
 
+(define (%entry-target view)
+  (let ([entry (entry-at view)])
+    (and entry
+         (let ([path (entry-path entry)])
+           (completion:make-target completion:file-category path (files:abbreviated-path path)
+                                   (document:node-start entry) (document:node-end entry))))))
+
 (define (%set-local-options)
-  (set-option-local! files:offer-save? #f buffers:revert-function refresh))
+  (set-option-local! files:offer-save? #f buffers:revert-function refresh)
+  (add-local-hook! completion:target-finders %entry-target -20))
 
 (add-hook! mode-hook %set-local-options)
 (add-hook! files:folder-visitors visit)
@@ -1166,3 +1174,5 @@
 (keys:bind! name-keymap "<down-mouse-1>" keys:ignore)
 (keys:bind! name-keymap "<drag-mouse-1>" keys:ignore)
 (spawn-task %reopen!)
+(for-each (lambda (command) (table-set! commands:region-commands command #t))
+          (list mark unmark flag-deletion toggle-marks))

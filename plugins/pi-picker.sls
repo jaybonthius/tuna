@@ -380,3 +380,4 @@
 (table-set! commands:command-modes select-model (list pi-chat:mode))
 (table-set! commands:command-modes select-thinking-level (list pi-chat:mode))
 (table-set! commands:command-modes run-command (list pi-chat:mode))
+(table-set! commands:region-commands add-region-to #t)

@@ -567,6 +567,7 @@
 (keys:bind! keymap "w" where-is)
 (keys:bind! keymap "x" describe-command)
 (keys:bind! completion:command-action-keymap "h" describe-command)
+(keys:bind! completion:name-action-keymap "h" describe-name)
 (keys:bind! mode-keymap "l" back)
 (keys:bind! mode-keymap "r" forward)
 (keys:bind! modes:special-keymap "?" describe-mode)
