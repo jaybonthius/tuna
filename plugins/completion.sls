@@ -1633,17 +1633,30 @@
 (define-record-type (%region %make-region %region?)
   (sealed #t)
   (fields (immutable start region-start) (immutable end region-end) (immutable sources region-sources)
-          (immutable exclusive? %region-exclusive?)))
+          (immutable exclusive? %region-exclusive?) (immutable triggers region-trigger-characters)))
 
-(define (%checked-region who start end sources exclusive?)
+(define (%checked-region who start end sources exclusive? triggers)
   (unless (and (fixnum? start) (fixnum? end) (fx<= 0 start end))
     (assertion-violation who "not a start and an end" start end))
   (%check-sources who sources)
-  (%make-region start end sources exclusive?))
+  (unless (and (list? triggers) (for-all char? triggers))
+    (assertion-violation who "not a list of characters" triggers))
+  (%make-region start end sources exclusive? triggers))
 
-(define (region start end sources) (%checked-region 'completion:region start end sources #t))
+(define region
+  (case-lambda
+    [(start end sources) (region start end sources '())]
+    [(start end sources triggers) (%checked-region 'completion:region start end sources #t triggers)]))
 
-(define (fallback-region start end sources) (%checked-region 'completion:fallback-region start end sources #f))
+(define fallback-region
+  (case-lambda
+    [(start end sources) (fallback-region start end sources '())]
+    [(start end sources triggers) (%checked-region 'completion:fallback-region start end sources #f triggers)]))
+
+(define (%triggered? r doc point)
+  (and (fx> point 0)
+       (let ([c (document:token doc (fx- point 1))])
+         (and (char? c) (memv c (region-trigger-characters r)) #t))))
 
 (define-record-type %point-state
   (sealed #t)
@@ -1685,7 +1698,8 @@
     (and r
          (let ([point (views:point view)])
            (and (fx<= (region-start r) point (region-end r))
-                (fx>= (fx- point (region-start r)) minimum)))
+                (or (fx>= (fx- point (region-start r)) minimum)
+                    (%triggered? r (buffers:document (views:buffer view)) point))))
          (begin
            (for-each (lambda (p) (when (eq? (session-record-view (%point-state-session p)) view)
                                    (end-session! (%point-state-session p))))

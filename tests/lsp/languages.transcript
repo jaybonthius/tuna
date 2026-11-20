@@ -1,0 +1,23 @@
+; python:mode declares "python" and chooses Python's files and programs;
+; chez-scheme:mode declares "scheme".
+> (import (python) (chez-scheme))
+> (list (modes:language python:mode) (modes:language chez-scheme:mode) (modes:language prog:mode))
+("python" "scheme" #f)
+> (map (lambda (name) (auto-mode:by-file-name (buffers:make (string-append "n-" name) "") name)) '("/x/a.py" "/x/a.pyi" "/x/a.pyw" "/x/SConstruct" "/x/SConscript"))
+(python:mode python:mode python:mode python:mode python:mode)
+> (auto-mode:by-interpreter (buffers:make "script" "#!/usr/bin/env python3\n") "script")
+python:mode
+> (modes:derived? python:mode prog:mode)
+#t
+> (modes:lighter python:mode)
+"Python"
+; A mode with no language gets no server, which lsp:ensure reports once.
+> (write-file! (string-append project "/plain.txt") "x\n")
+> (define plain (visit! (string-append project "/plain.txt")))
+> (buffers:with-buffer plain (lsp:ensure))
+> (buffers:with-buffer plain (lsp:ensure))
+> (take-said!)
+("lsp: modes:fundamental has no language")
+; "_" is a word character in Python, so M-f goes over total_ordering.
+> (syntax:mode-word-characters python:mode)
+"_"

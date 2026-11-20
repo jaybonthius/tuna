@@ -1,0 +1,72 @@
+> (lsp:define-server alpha (fake-command "alpha"))
+> (configure! "alpha" '(capabilities ("textDocumentSync" ("openClose" . #t) ("change" . 2) ("willSave" . #t) ("willSaveWaitUntil" . #t) ("save" ("includeText" . #f))))
+                       '(responses ("textDocument/willSaveWaitUntil" . #((("range" ("start" ("line" . 0) ("character" . 0)) ("end" ("line" . 0) ("character" . 0))) ("newText" . "# "))))))
+> (table-set! lsp:language-servers "fakelang" (list alpha))
+> (add-hook! fake-mode-hook lsp:ensure)
+> (write-file! (string-append project "/a.fk") "one\n")
+> (define a (visit! (string-append project "/a.fk")))
+> (wait-for "alpha" "textDocument/didOpen")
+; Saving sends willSave, applies willSaveWaitUntil's edits, then didSave.
+> (buffers:replace! a 1 1 "x")
+#<edit 1>
+> (in-client (lambda () (files:save-buffer a)))
+> (wait-for "alpha" "textDocument/didSave")
+> (list (text a) (filter (lambda (m) (member m '("textDocument/willSave" "textDocument/willSaveWaitUntil" "textDocument/didSave"))) (methods "alpha")))
+("# xone\n" ("textDocument/willSave" "textDocument/willSaveWaitUntil" "textDocument/didSave"))
+> (call-with-input-file (string-append project "/a.fk") get-string-all)
+"# xone\n"
+; Renaming the file closes it on the server and opens it again under the
+; new name; changing its mode or killing it closes it.
+> (files:rename-file (string-append project "/a.fk") (string-append project "/c.fk"))
+> (wait-for "alpha" "textDocument/didOpen" 2)
+> (list (ref (last-of "alpha" "textDocument/didClose") "params" "textDocument" "uri") (ref (last-of "alpha" "textDocument/didOpen") "params" "textDocument" "uri"))
+("file://$HOME/project/a.fk" "file://$HOME/project/c.fk")
+> (modes:set-major-mode modes:fundamental a)
+> (wait-for "alpha" "textDocument/didClose" 2)
+> (lsp:managed? a)
+#f
+> (modes:set-major-mode fake-mode a)
+> (wait-for "alpha" "textDocument/didOpen" 3)
+> (lsp:managed? a)
+#t
+> (buffers:kill! a)
+#t
+> (wait-for "alpha" "textDocument/didClose" 3)
+> (length (lsp:connections))
+1
+; With autoshutdown? the connection goes when its last buffer is killed.
+> (set-option! lsp:autoshutdown? #t)
+> (define a (visit! (string-append project "/c.fk")))
+> (wait-for "alpha" "textDocument/didOpen" 4)
+> (buffers:kill! a)
+#t
+> (wait-until (lambda () (null? (lsp:connections))))
+> (list (lsp:connections) (list-tail (methods "alpha") (- (length (methods "alpha")) 3)))
+(() ("textDocument/didClose" "shutdown" "exit"))
+> (set-option! lsp:autoshutdown? #f)
+; A server that ends without being asked starts again, with its buffers,
+; when it had run lsp:autoreconnect seconds.
+> (define a (visit! (string-append project "/c.fk")))
+> (wait-until (lambda () (= 2 (length (of-method "alpha" "initialize")))))
+> (wait-for "alpha" "textDocument/didOpen" 5)
+> (set-option! lsp:autoreconnect 0)
+> (define first (car (lsp:connections)))
+> (lsp:notify first "fake/crash" '())
+> (wait-until (lambda () (= 3 (length (of-method "alpha" "initialize")))))
+> (wait-for "alpha" "textDocument/didOpen" 6)
+> (list (length (lsp:connections)) (eq? first (car (lsp:connections))) (lsp:managed? a))
+(1 #f #t)
+> (set-option! lsp:autoreconnect #f)
+> (lsp:notify (car (lsp:connections)) "fake/crash" '())
+> (wait-until (lambda () (null? (lsp:connections))))
+> (sleep-for 0.2)
+> (list (lsp:connections) (lsp:managed? a) (take-said!))
+(() #f ("Wrote ~/project/a.fk" "lsp: fake ended"))
+; lsp:ensure in a mode hook runs again after a module loads, which starts
+; nothing twice.
+> (buffers:with-buffer a (lsp:ensure))
+> (wait-until (lambda () (= 4 (length (of-method "alpha" "initialize")))))
+> (import (chez-lsp))
+> (sleep-for 0.2)
+> (list (length (lsp:connections)) (length (of-method "alpha" "initialize")))
+(1 4)

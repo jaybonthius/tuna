@@ -301,11 +301,18 @@
                 answer))
             (hook-entries finders))))
 
+(define (find-marked folder names)
+  (unless (absolute? folder)
+    (assertion-violation 'projects:find-marked "not an absolute path" folder))
+  (unless (and (list? names) (for-all (lambda (n) (and (string? n) (fx> (string-length n) 0) (not (memv #\/ (string->list n))))) names))
+    (assertion-violation 'projects:find-marked "not a list of file names" names))
+  (search (with-slash folder) names))
+
 (define (try-vc folder)
   (unless (absolute? folder)
     (assertion-violation 'projects:try-vc "not an absolute path" folder))
   (let* ([merge? (merge-submodules?)]
-         [top (search (with-slash folder) (append version-control-markers (extra-root-markers)))]
+         [top (find-marked folder (append version-control-markers (extra-root-markers)))]
          [vc (and top (backend top))])
     (cond
       [(not top) #f]

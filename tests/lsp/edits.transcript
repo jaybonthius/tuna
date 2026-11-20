@@ -1,0 +1,121 @@
+> (lsp:define-server types (fake-command "types"))
+> (define a-path (string-append project "/a.fk"))
+> (define b-path (string-append project "/b.fk"))
+> (write-file! a-path "total = 1\nprint(total)\n")
+> (write-file! b-path "from a import total\n")
+> (define (edit-at path line from to text) `(,(lsp:path->uri path) . #((("range" ("start" ("line" . ,line) ("character" . ,from)) ("end" ("line" . ,line) ("character" . ,to))) ("newText" . ,text)))))
+> (configure! "types" `(capabilities ("textDocumentSync" . 2) ("renameProvider" ("prepareProvider" . #t)) ("documentFormattingProvider" . #t)
+                                     ("codeActionProvider" . #t) ("documentOnTypeFormattingProvider" ("firstTriggerCharacter" . ":")))
+                       `(responses ("textDocument/prepareRename" ("start" ("line" . 0) ("character" . 0)) ("end" ("line" . 0) ("character" . 5)))
+                                   ("textDocument/rename" ("changes" ,(edit-at a-path 0 0 5 "sum") ,(edit-at b-path 0 14 19 "sum")))
+                                   ("textDocument/formatting" . (delay 0.4 #((("range" ("start" ("line" . 0) ("character" . 0)) ("end" ("line" . 0) ("character" . 0))) ("newText" . "# formatted\n")))))
+                                   ("textDocument/codeAction" . #((("title" . "Use sum") ("kind" . "quickfix") ("isPreferred" . #t)
+                                                                   ("edit" ("changes" ,(edit-at a-path 1 6 11 "sum")))))))
+                       '(name . "types"))
+> (table-set! lsp:language-servers "fakelang" (list types))
+> (add-hook! fake-mode-hook lsp:ensure)
+> (define a (visit! a-path))
+> (wait-for "types" "textDocument/didOpen")
+; Rename asks with the server's text as the default, and changes an open
+; and an unopened file; changing an unopened file asks first, as
+; lsp:confirm-edits says by default.
+> (in-client (lambda () (views:set-point! (view) 2)))
+> (define t (start! (lambda () (press! "C-c" "r"))))
+> (minibuffer:input (minibuffer:current-prompt))
+""
+> (type! "sum")
+> (press! "RET")
+> (wait-until (lambda () (and (minibuffer:current-prompt) (not (equal? (minibuffer:input (minibuffer:current-prompt)) "sum")))))
+> (type! "no")
+> (press! "RET")
+! lsp: Changes not applied
+> (result t)
+> (text a)
+"total = 1\nprint(total)\n"
+> (with-options ([lsp:confirm-edits (lsp:confirmation never)])
+    (in-client (lambda () (commands:run lsp:rename "sum"))))
+> (list (text a) (text (files:buffer-visiting b-path)))
+("sum = 1\nprint(total)\n" "from a import sum\n")
+; A format answered after the user typed is refused, and nothing changes.
+> (define t (start! (lambda () (lsp:format-buffer a))))
+> (sleep-for 0.1)
+> (buffers:replace! a 1 1 "x")
+#<edit 2>
+> (result t)
+! lsp: a.fk changed while types answered
+(raised "a.fk changed while types answered")
+> (text a)
+"xsum = 1\nprint(total)\n"
+; As a files:before-save entry, it formats each save, which waits for it.
+> (buffers:with-buffer a (add-local-hook! files:before-save lsp:format-buffer))
+> (in-client (lambda () (files:save-buffer a)))
+> (call-with-input-file a-path get-string-all)
+"# formatted\nxsum = 1\nprint(total)\n"
+> (buffers:with-buffer a (remove-local-hook! files:before-save lsp:format-buffer))
+; A character a server names for on-type formatting asks it for edits,
+; applied at once.
+> (configure! "types" `(capabilities ("textDocumentSync" . 2) ("documentOnTypeFormattingProvider" ("firstTriggerCharacter" . ":")) ("codeActionProvider" . #t))
+                       `(responses ("textDocument/onTypeFormatting" . #((("range" ("start" ("line" . 0) ("character" . 0)) ("end" ("line" . 0) ("character" . 0))) ("newText" . "  "))))
+                                   ("textDocument/codeAction" . #((("title" . "Use sum") ("kind" . "quickfix") ("isPreferred" . #t)
+                                                                   ("edit" ("changes" ,(edit-at a-path 2 6 11 "sum"))))))
+                                   ("window/showMessageRequest" . null))
+                       '(name . "types"))
+> (lsp:reconnect (car (lsp:connections)))
+> (wait-for "types" "textDocument/didOpen" 4)
+> (in-client (lambda () (views:set-point! (view) 1)))
+> (press! ":")
+> (wait-for "types" "textDocument/onTypeFormatting")
+> (ref (last-of "types" "textDocument/onTypeFormatting") "params")
+(("textDocument" ("uri" . "file://$HOME/project/a.fk")) ("position" ("line" . 0) ("character" . 1)) ("ch" . ":") ("options" ("tabSize" . 8) ("insertSpaces" . #t)))
+> (wait-until (lambda () (equal? (substring (text a) 0 3) "  :")))
+> (substring (text a) 0 4)
+"  :#"
+; <mouse-2> on a server's diagnostic runs its code actions there; on a
+; checker's, nothing lsp binds runs.
+> (define c (car (lsp:connections)))
+> (lsp:notify c "fake/send"
+    `(("message" ("jsonrpc" . "2.0") ("method" . "textDocument/publishDiagnostics")
+       ("params" ("uri" . ,(lsp:path->uri a-path)) ("diagnostics" . #((("range" ("start" ("line" . 2) ("character" . 6)) ("end" ("line" . 2) ("character" . 11))) ("severity" . 2) ("message" . "use sum"))))))))
+> (wait-until (lambda () (pair? (diagnostics:in a))))
+> (define at (diagnostics:diagnostic-start (car (diagnostics:in a))))
+> (mouse! (view) '("action" . "click") '("button" . 2) `("at" . ,(+ at 1)) '("count" . 0))
+> (wait-until (lambda () (equal? (document:text (buffers:document a) at (+ at 3)) "sum")))
+> (list (document:text (buffers:document a) at (+ at 3)) (length (of-method "types" "textDocument/codeAction")))
+("sum" 1)
+> (define checker-source (diagnostics:make-source))
+> (diagnostics:report! checker-source a (list (diagnostics:make-diagnostic 2 4 (diagnostics:severity info) "a checker's")))
+#t
+> (mouse! (view) '("action" . "click") '("button" . 2) '("at" . 2) '("count" . 0))
+> (sleep-for 0.2)
+> (length (of-method "types" "textDocument/codeAction"))
+1
+; The hint names the one action at a diagnostic and the key that runs it,
+; which then runs it without asking.
+> (lsp:notify c "fake/send"
+    `(("message" ("jsonrpc" . "2.0") ("method" . "textDocument/publishDiagnostics")
+       ("params" ("uri" . ,(lsp:path->uri a-path)) ("diagnostics" . #((("range" ("start" ("line" . 0) ("character" . 2)) ("end" ("line" . 0) ("character" . 3))) ("severity" . 2) ("message" . "colon"))))))))
+> (wait-until (lambda () (exists (lambda (d) (equal? (diagnostics:diagnostic-message d) "colon")) (diagnostics:in a))))
+> (in-client (lambda () (views:set-point! (view) 3)))
+> (in-client (lambda () (docs-at-point:ask-sources (view))))
+> (wait-until (lambda () (equal? (echo-area:current-message) "Use sum (C-c a)\na checker's\ntypes: colon")))
+> (echo-area:current-message)
+"Use sum (C-c a)\na checker's\ntypes: colon"
+> (define asked (length (of-method "types" "textDocument/codeAction")))
+> (press! "C-c" "a")
+> (wait-until (lambda () (equal? (document:text (buffers:document a) at (+ at 3)) "sum")))
+> (- (length (of-method "types" "textDocument/codeAction")) asked)
+0
+; The hint asks as a background request, triggerKind 2; a command asks
+; with 1, as invoked.
+> (map (lambda (m) (ref m "params" "context" "triggerKind")) (of-method "types" "textDocument/codeAction"))
+(1 2)
+; A server's showMessageRequest asks with ask:choice and answers the
+; action chosen.
+> (lsp:notify c "fake/send"
+    '(("message" ("jsonrpc" . "2.0") ("id" . "m1") ("method" . "window/showMessageRequest")
+       ("params" ("type" . 3) ("message" . "Install stubs?") ("actions" . #((("title" . "Yes")) (("title" . "No"))))))))
+> (wait-until (lambda () (minibuffer:current-prompt)))
+> (press! "C-n" "RET")
+> (wait-until (lambda () (exists (lambda (m) (equal? (ref m "id") "m1")) (received "types"))))
+> (ref (find (lambda (m) (equal? (ref m "id") "m1")) (received "types")) "result")
+(("title" . "No"))

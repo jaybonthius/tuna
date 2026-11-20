@@ -12,7 +12,8 @@
   (parent prog:mode)
   (lighter "Scheme")
   (keymap keymap)
-  (hook mode-hook))
+  (hook mode-hook)
+  (language "scheme"))
 
 (buffers:define-layer highlights (priority -10) (sticky after) (evaporate))
 

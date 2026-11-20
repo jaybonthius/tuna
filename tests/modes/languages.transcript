@@ -1,0 +1,17 @@
+; A major mode's language comes from its language clause, read along its
+; ancestry, so a derived mode has its parent's; a mode with none has #f.
+> (define-table lang-keys)
+> (define-hook lang-hook)
+> (modes:define-major-mode parent-mode (keymap lang-keys) (hook lang-hook) (language "parentlang"))
+> (modes:define-major-mode child-mode (parent parent-mode) (keymap lang-keys) (hook lang-hook))
+> (modes:define-major-mode plain-mode (keymap lang-keys) (hook lang-hook))
+> (map modes:language (list parent-mode child-mode plain-mode))
+("parentlang" "parentlang" #f)
+; A configuration's entry wins over the defining module's.
+> (table-set! modes:languages parent-mode "ours")
+> (map modes:language (list parent-mode child-mode))
+("ours" "ours")
+> (modes:define-major-mode bad-mode (keymap lang-keys) (hook lang-hook) (language 'python))
+! modes:define-major-mode: not a string with irritant python
+> (modes:language "python")
+! modes:language: not a mode with irritant "python"

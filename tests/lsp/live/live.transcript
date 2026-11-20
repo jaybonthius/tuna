@@ -1,0 +1,67 @@
+; basedpyright and ruff on a three-file project.
+> (import (python))
+> (table-set! lsp:language-servers "python" (list lsp:basedpyright lsp:ruff))
+> (add-hook! python:mode-hook lsp:ensure)
+> (define shop (string-append home "/shop"))
+> (system (format "mkdir -p '~a/.git'" shop))
+0
+> (write-file! (string-append shop "/prices.py") "def total(items):\n    return sum(items)\n")
+> (write-file! (string-append shop "/cart.py") "import os\nfrom prices import total\n\n\ndef checkout(items):\n    return total(items)\n")
+> (write-file! (string-append shop "/main.py") "def run():\n    return tota\n")
+> (define cart (visit! (string-append shop "/cart.py")))
+> (define (messages b) (map (lambda (d) (list (diagnostics:diagnostic-origin d) (diagnostics:diagnostic-code d) (diagnostics:diagnostic-message d))) (diagnostics:in b)))
+> (define (unused? origin) (lambda (m) (and (equal? (car m) origin) (let ([s (caddr m)]) (and (>= (string-length s) 3) (exists (lambda (i) (string=? (substring s i (+ i 4)) "\"os\"")) (iota (- (string-length s) 3))))))))
+> (define (ruff-unused? m) (and (equal? (car m) "Ruff") (equal? (cadr m) "F401")))
+> (wait-until (lambda () (and (exists (unused? "basedpyright") (messages cart)) (exists ruff-unused? (messages cart)))))
+> (list (and (exists (unused? "basedpyright") (messages cart)) #t) (caddr (find ruff-unused? (messages cart))))
+(#t "`os` imported but unused")
+; M-. on a name imported from another file goes to its definition there.
+> (in-client (lambda () (views:set-point! (view) (+ 1 (string-length "import os\nfrom prices import total\n\n\ndef checkout(items):\n    return ")))))
+> (press! "M-.")
+> (wait-until (lambda () (equal? (buffers:name (views:buffer (view))) "prices.py")))
+> (list (buffers:name (views:buffer (view))) (document:line (buffers:document (views:buffer (view))) (views:point (view))))
+("prices.py" 1)
+> (press! "M-,")
+; Completion of a name another module defines adds its import.
+> (define main (visit! (string-append shop "/main.py")))
+> (in-client (lambda () (views:set-point! (view) (- (document:length (buffers:document main)) 2))))
+> (press! "C-M-i")
+> (wait-until (lambda () (and (session) (not (completion:session-busy? (session))) (member "total" (texts (session))))))
+> (define (selected) (let ([m (completion:selected (session))]) (and m (completion:text (session) m))))
+> (let loop ([n 0]) (unless (or (= n 200) (equal? (selected) "total")) (press! "M-n") (loop (+ n 1))))
+> (press! "RET")
+> (wait-until (lambda () (string=? (substring (text main) 0 4) "from")))
+> (text main)
+"from prices import total\n\n\ndef run():\n    return total\n"
+; Rename across files, an open and an unopened one.
+> (in-client (lambda () (layout:switch-to-buffer cart)))
+> (in-client (lambda () (views:set-point! (view) (+ 1 (string-length "import os\nfrom prices import ")))))
+> (with-options ([lsp:confirm-edits (lsp:confirmation never)]) (in-client (lambda () (commands:run lsp:rename "grand_total"))))
+> (list (text cart) (text (files:buffer-visiting (string-append shop "/prices.py"))))
+("import os\nfrom prices import grand_total\n\n\ndef checkout(items):\n    return grand_total(items)\n" "def grand_total(items):\n    return sum(items)\n")
+; Ruff formats on save.
+> (buffers:with-buffer cart (add-local-hook! files:before-save lsp:format-buffer))
+> (buffers:replace! cart 1 1 "x=1\n")
+#<edit 3>
+> (in-client (lambda () (files:save-buffer cart)))
+> (substring (call-with-input-file (string-append shop "/cart.py") get-string-all) 0 6)
+"x = 1\n"
+; Ruff with diagnostics, hover and formatting ignored: its initialize
+; still offers formatting, it still announces hover and formatting, and
+; none of the three is used: no Ruff diagnostic, pulled or pushed.
+> (buffers:with-buffer cart (remove-local-hook! files:before-save lsp:format-buffer))
+> (table-set! lsp:servers lsp:ruff (lsp:server '("ruff" "server") (ignored-capabilities (lsp:capabilities diagnostics hover formatting))))
+> (define (ruff-of b) (find (lambda (c) (eq? (lsp:connection-server c) lsp:ruff)) (lsp:buffer-connections b)))
+> (lsp:reconnect (ruff-of cart))
+> (wait-until (lambda () (let ([c (ruff-of cart)]) (and c (lsp:connection-capability c "textDocumentSync")))))
+> (let ([c (ruff-of cart)])
+    (list (and (assoc "formatting" (cdr (assoc "textDocument" (lsp:client-capabilities c)))) #t)
+          (and (lsp:connection-capability c "hoverProvider") #t) (and (lsp:connection-capability c "documentFormattingProvider") #t)))
+(#t #t #t)
+> (begin (buffers:replace! cart 1 1 "import sys\n") (void))
+> (sleep-for 3)
+> (list (exists ruff-unused? (messages cart)) (and (exists (unused? "basedpyright") (messages cart)) #t))
+(#f #t)
+> (lsp:shutdown-all)
+> (lsp:connections)
+()

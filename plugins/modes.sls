@@ -13,6 +13,9 @@
 (define-table lighters
   "Maps a mode to its lighter, the short name a status line shows for it.")
 
+(define-table languages
+  "Maps a major mode to its language, the identifier the Language Server Protocol gives it, such as \"python\".")
+
 (define-table minor-modes
   "Maps each minor mode, a procedure of no arguments that returns true where the mode is on, to its depth, a real number.")
 
@@ -67,7 +70,7 @@
                 (put-char p #\:)
                 (display id p)))))))
 
-  (define (define-major-mode! id parent lighter keymap hook)
+  (define (define-major-mode! id parent lighter keymap hook language)
     (define who 'modes:define-major-mode)
     (unless (or (not parent) (symbol? parent))
       (assertion-violation who "not a mode" parent))
@@ -77,11 +80,14 @@
       (assertion-violation who "not a keymap" keymap))
     (unless (hook? hook)
       (assertion-violation who "not a hook" hook))
+    (unless (or (not language) (string? language))
+      (assertion-violation who "not a string" language))
     (let ([mode (exported-symbol id)])
       (table-set! hooks mode hook)
       (table-set! keymaps mode keymap)
       (if parent (table-set! parents mode parent) (table-remove! parents mode))
       (if lighter (table-set! lighters mode lighter) (table-remove! lighters mode))
+      (if language (table-set! languages mode language) (table-remove! languages mode))
       mode))
 
   ;; A table entry can make parents a cycle.
@@ -186,12 +192,12 @@
     (syntax-case x ()
       [(_ id clause ...)
        (identifier? #'id)
-       (let loop ([clauses #'(clause ...)] [seen '()] [parent #'#f] [lighter #'#f] [keymap #f] [hook #f])
+       (let loop ([clauses #'(clause ...)] [seen '()] [parent #'#f] [lighter #'#f] [keymap #f] [hook #f] [language #'#f])
          (if (null? clauses)
              (begin
                (unless keymap (syntax-violation 'modes:define-major-mode "a keymap clause is required" x))
                (unless hook (syntax-violation 'modes:define-major-mode "a hook clause is required" x))
-               #`(define-public id (define-major-mode! 'id #,parent #,lighter #,keymap #,hook)))
+               #`(define-public id (define-major-mode! 'id #,parent #,lighter #,keymap #,hook #,language)))
              (let* ([c (car clauses)] [rest (cdr clauses)]
                     [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ (invalid c)])]
                     [e (syntax-case c () [(_ e) #'e] [_ (invalid c)])])
@@ -199,10 +205,11 @@
                  (syntax-violation 'modes:define-major-mode "clause given twice" x c))
                (let ([seen (cons name seen)])
                  (case name
-                   [(parent) (loop rest seen e lighter keymap hook)]
-                   [(lighter) (loop rest seen parent e keymap hook)]
-                   [(keymap) (loop rest seen parent lighter e hook)]
-                   [(hook) (loop rest seen parent lighter keymap e)]
+                   [(parent) (loop rest seen e lighter keymap hook language)]
+                   [(lighter) (loop rest seen parent e keymap hook language)]
+                   [(keymap) (loop rest seen parent lighter e hook language)]
+                   [(hook) (loop rest seen parent lighter keymap e language)]
+                   [(language) (loop rest seen parent lighter keymap hook e)]
                    [else (invalid c)])))))]
       [_ (syntax-violation 'modes:define-major-mode "expected (modes:define-major-mode id clause ...)" x)])))
 
@@ -322,6 +329,11 @@
     (if view
         (view-keymaps view)
         '())))
+
+(define (language mode)
+  (unless (symbol? mode)
+    (assertion-violation 'modes:language "not a mode" mode))
+  (exists (lambda (m) (table-ref languages m #f)) (ancestry-of mode)))
 
 (define (lighter mode)
   (or (table-ref lighters mode #f)

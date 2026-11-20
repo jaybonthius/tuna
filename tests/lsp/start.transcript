@@ -1,0 +1,59 @@
+; C-u lsp:start asks each server's command line, offering the one it has,
+; and starts the buffer's servers with the answer.
+> (lsp:define-server alpha (fake-command "alpha"))
+> (configure! "alpha" '(capabilities ("textDocumentSync" . 2) ("definitionProvider" . #t)) '(name . "alpha"))
+> (table-set! lsp:language-servers "fakelang" (list alpha))
+> (define a-path (string-append project "/one/go.mod"))
+> (write-file! (string-append project "/one/go.mod") "")
+> (write-file! (string-append project "/one/a.fk") "use x\n")
+> (write-file! (string-append project "/two/x.fk") "def x\n")
+> (define a (visit! (string-append project "/one/a.fk")))
+> (lsp:managed? a)
+#f
+> (define t (start! (lambda () (press! "C-u" "C-c" "s"))))
+> (equal? (minibuffer:input (minibuffer:current-prompt)) "")
+#t
+> (press! "M-n" "RET")
+> (result t)
+> (wait-for "alpha" "textDocument/didOpen")
+> (list (lsp:managed? a) (equal? (lsp:connection-command (car (lsp:connections))) (fake-command "alpha")))
+(#t #t)
+; Asked again while it runs, it first asks whether to shut them down.
+> (define t (start! (lambda () (press! "C-c" "s"))))
+> (minibuffer:prompt? (minibuffer:current-prompt))
+#t
+> (type! "no")
+> (press! "RET")
+> (result t)
+> (length (lsp:connections))
+1
+; With lsp:extend-to-xref?, a file outside the connection's root that M-.
+; reaches is managed by the same connection; without it, the file gets a
+; connection of its own root.
+> (lsp:define-server alpha (fake-command "alpha") (root '("go.mod")))
+> (lsp:shutdown-all)
+> (buffers:with-buffer a (lsp:ensure))
+> (wait-for "alpha" "textDocument/didOpen" 2)
+> (configure! "alpha" `(capabilities ("textDocumentSync" . 2) ("definitionProvider" . #t))
+                       `(responses ("textDocument/definition" . #((("uri" . ,(lsp:path->uri (string-append project "/two/x.fk")))
+                                                                   ("range" ("start" ("line" . 0) ("character" . 4)) ("end" ("line" . 0) ("character" . 5)))))))
+                       '(name . "alpha"))
+> (add-hook! fake-mode-hook lsp:ensure)
+> (set-option! lsp:extend-to-xref? #t)
+> (in-client (lambda () (views:set-point! (view) 5)))
+> (press! "M-.")
+> (wait-until (lambda () (equal? (buffers:name (views:buffer (view))) "x.fk")))
+> (wait-for "alpha" "textDocument/didOpen" 3)
+> (define (short root) (substring root (string-length home) (string-length root)))
+> (define (roots) (map (lambda (c) (short (lsp:connection-root c))) (lsp:connections)))
+> (list (roots) (map (lambda (c) (short (lsp:connection-root c))) (lsp:buffer-connections (views:buffer (view)))))
+(("/project/one/") ("/project/one/"))
+> (press! "M-,")
+> (buffers:kill! (files:buffer-visiting (string-append project "/two/x.fk")))
+#t
+> (set-option! lsp:extend-to-xref? #f)
+> (press! "M-.")
+> (wait-until (lambda () (= 2 (length (lsp:connections)))))
+> (list (roots) (map (lambda (c) (short (lsp:connection-root c))) (lsp:buffer-connections (views:buffer (view)))))
+(("/project/one/" "/project/") ("/project/"))
+> (lsp:shutdown-all)

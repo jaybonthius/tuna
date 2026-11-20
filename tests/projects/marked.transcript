@@ -1,0 +1,21 @@
+; projects:find-marked gives the nearest folder up holding one of some
+; file names, as projects:try-vc walks: from a nested folder, stopping at
+; the home folder.
+> (define home (getenv "HOME"))
+> (system (format "mkdir -p '~a/mod/a/b' && touch '~a/mod/go.mod'" home home))
+0
+> (define (short p) (and p (substring p (string-length home) (string-length p))))
+> (short (projects:find-marked (string-append home "/mod/a/b") '("go.mod" "Cargo.toml")))
+"/mod/"
+> (short (projects:find-marked (string-append home "/mod/a/b") '("no-such-marker")))
+#f
+> (system (format "touch '~a/../above.marker' '~a/home.marker'" home home))
+0
+> (short (projects:find-marked (string-append home "/mod/a/b") '("above.marker")))
+#f
+> (short (projects:find-marked (string-append home "/mod/a/b") '("home.marker")))
+"/"
+> (projects:find-marked "mod" '("go.mod"))
+! projects:find-marked: not an absolute path with irritant "mod"
+> (projects:find-marked home '("a/b"))
+! projects:find-marked: not a list of file names with irritant ("a/b")

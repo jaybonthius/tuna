@@ -66,6 +66,7 @@ bench: exe
 	sh bench/runs.sh build/bin/tuna || status=1; \
 	sh bench/jsonrpc.sh build/bin/tuna || status=1; \
 	sh bench/diagnostics.sh build/bin/tuna || status=1; \
+	sh bench/lsp.sh build/bin/tuna || status=1; \
 	sh bench/terminal.sh build/bin/tuna || status=1; \
 	sh bench/search.sh build/bin/tuna || status=1; \
 	sh bench/isearch.sh build/bin/tuna || status=1; \
