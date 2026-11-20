@@ -28,6 +28,10 @@ echo "$output" | awk '
     unit["kill-region-line"] = "ns"
     unit["upcase-word"] = "ns"
     unit["transpose-words"] = "ns"
+    split("forward-char-blocks forward-char-text forward-word-blocks forward-word-text region-motion-blocks region-motion-text", blocks, " ")
+    for (i in blocks) unit[blocks[i]] = "ns"
+    unit["move-lines-blocks"] = "ms"
+    unit["move-lines-text"] = "ms"
     missing = 0
   }
   $1 in unit {

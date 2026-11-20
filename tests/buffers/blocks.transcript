@@ -1,0 +1,208 @@
+; A block's final line break goes only with its block or in a join, and
+; no edit takes text into or out of an isolating node. The kinds here
+; stand for a table, its rows, cells of text, cells of blocks and a rule.
+> (buffers:define-kind grid (content nodes))
+> (buffers:define-kind row (content nodes))
+> (buffers:define-kind cell (isolating))
+> (buffers:define-kind box (content nodes) (isolating))
+> (buffers:define-kind rule (content atom))
+> (map (lambda (k) (buffers:kind-isolating? (buffers:kind k))) '(cell box row md:para))
+(#t #t #f #f)
+> (buffers:kind-isolating? 'cell)
+! buffers:kind-isolating?: not a kind with irritant cell
+> (define (fit b s e) (buffers:fitted-ranges b s e))
+> (define (delete b s e) (buffers:replace! b s e "") (children b))
+; A deletion at a block's end joins the next block's text, keeping the
+; first block's kind; one from a line's start to the next takes the
+; block whole; the last block keeps its line break.
+> (define (notes) (fresh '(md:doc () (md:heading () "Head\n") (md:para () "First para.\n") (md:para () "Second para.\n") (md:para () "Last.\n"))))
+> (map (lambda (r) (fit (notes) (car r) (cdr r))) '((20 . 21) (3 . 7) (2 . 7) (43 . 44) (38 . 44) (3 . 21)))
+(((20 . 23)) ((3 . 9)) ((1 . 8)) () ((38 . 43)) ((3 . 23)))
+> (delete (notes) 20 21)
+((md:heading () "Head\n") (md:para () "First para.Second para.\n") (md:para () "Last.\n"))
+> (delete (notes) 3 7)
+((md:heading () "HFirst para.\n") (md:para () "Second para.\n") (md:para () "Last.\n"))
+> (delete (notes) 2 7)
+((md:para () "First para.\n") (md:para () "Second para.\n") (md:para () "Last.\n"))
+> (delete (notes) 38 44)
+((md:heading () "Head\n") (md:para () "First para.\n") (md:para () "Second para.\n") (md:para () "\n"))
+> (delete (notes) 3 21)
+((md:heading () "HSecond para.\n") (md:para () "Last.\n"))
+; From right after a block's line break, a deletion starts at the next
+; block's first position, and removes it whole when it covers it.
+> (define abc (fresh '(md:doc () (md:para () "x\n") (md:para () "abc\n") (md:para () "def\n"))))
+> (fit abc 4 14)
+((5 . 14))
+> (delete abc 4 14)
+((md:para () "x\n") (md:para () "f\n"))
+> (define gap (fresh '(md:doc () (md:para () "a\n") (md:para () "\n") (md:para () "b\n"))))
+> (list (fit gap 6 9) (fit gap 3 6))
+(((5 . 8)) ((3 . 6)))
+> (delete gap 6 9)
+((md:para () "a\n") (md:para () "b\n"))
+; Before an atom standing as a block, the atom goes and the line break
+; stays.
+> (define (ruled) (fresh '(md:doc () (md:para () "abxy\n") #(rule ()) #(rule ()) (md:para () "cd\n"))))
+> (list (fit (ruled) 6 8) (fit (ruled) 4 9) (fit (ruled) 9 11))
+(((8 . 9)) ((4 . 6) (8 . 9)) ((9 . 11)))
+> (delete (ruled) 6 8)
+((md:para () "abxy\n") #(rule ()) (md:para () "cd\n"))
+> (delete (ruled) 4 9)
+((md:para () "ab\n") #(rule ()) (md:para () "cd\n"))
+> (delete (ruled) 9 11)
+((md:para () "abxy\n") #(rule ()) (md:para () "cd\n"))
+; Nested blocks: the nodes whose content starts with the block and that
+; the deletion covers go with it.
+> (define listed (fresh '(md:doc () (lists:bulleted () (md:item () "a\n") (md:item () "b\n")) (md:para () "z\n"))))
+> (fit listed 3 5)
+((2 . 6))
+> (delete listed 3 5)
+((lists:bulleted () (md:item () "b\n")) (md:para () "z\n"))
+; An inline node's line break is text.
+> (define inline (fresh '(md:doc () (md:para () "a" (md:link () "b\n") "c\n"))))
+> (fit inline 5 6)
+((5 . 6))
+; A file buffer has no blocks: its whole content goes.
+> (define file (fresh "ab\ncd\n"))
+> (fit file 1 7)
+((1 . 7))
+> (delete file 1 7)
+()
+; Isolating nodes, on *sheet*: "Hi" at 2-4, cell a at 8-11, cell b at
+; 12-15, "Yo" at 18-22.
+> (define (sheet) (fresh '(md:doc () (md:para () "Hi\n") (grid () (row () (cell () "a\n") (cell () "b\n"))) (md:para () "Yo\n"))))
+> (map (lambda (r) (fit (sheet) (car r) (cdr r)))
+       '((10 . 13) (13 . 15) (9 . 11) (2 . 13) (3 . 14) (9 . 20) (13 . 20) (10 . 20) (2 . 21) (2 . 14) (4 . 9) (14 . 19) (9 . 14)))
+(() ((13 . 14)) ((9 . 10)) ((1 . 6) (9 . 10)) ((3 . 4) (9 . 10) (13 . 14)) ((6 . 20)) ((13 . 14) (19 . 20)) ((13 . 14) (19 . 20)) ((1 . 21)) ((1 . 6) (9 . 10) (13 . 14)) () () ((9 . 10) (13 . 14)))
+> (map (lambda (r) (delete (sheet) (car r) (cdr r))) '((13 . 15) (2 . 13) (3 . 14) (9 . 20) (13 . 20) (2 . 21)))
+(((md:para () "Hi\n") (grid () (row () (cell () "a\n") (cell () "\n"))) (md:para () "Yo\n")) ((grid () (row () (cell () "\n") (cell () "b\n"))) (md:para () "Yo\n")) ((md:para () "H\n") (grid () (row () (cell () "\n") (cell () "\n"))) (md:para () "Yo\n")) ((md:para () "Hi\n") (md:para () "o\n")) ((md:para () "Hi\n") (grid () (row () (cell () "a\n") (cell () "\n"))) (md:para () "o\n")) ((md:para () "\n")))
+; A deletion that fits to nothing makes an edit that changes nothing.
+> (let ([b (sheet)]) (buffers:replace! b 10 13 "") (children b))
+((md:para () "Hi\n") (grid () (row () (cell () "a\n") (cell () "b\n"))) (md:para () "Yo\n"))
+; Fitting a fitted range changes nothing.
+> (let ([b (sheet)]) (map (lambda (r) (equal? (fit b (car r) (cdr r)) (list r))) '((1 . 6) (9 . 10) (6 . 20) (13 . 14) (19 . 20) (1 . 21))))
+(#t #t #t #t #t #t)
+; A split deletion is one edit, so one step takes it back; anchors on
+; what it puts back go to its edges.
+> (define split (sheet))
+> (define on-a (buffers:anchor split 10))
+> (define v (buffers:version split))
+> (buffers:replace! split 3 14 "")
+#<edit 1>
+> (list (length (buffers:edits-since split v)) (buffers:anchor-position on-a))
+(1 3)
+> (let ([e (car (buffers:edits-since split v))])
+    (buffers:splice! split (buffers:edit-start e) (+ (buffers:edit-start e) (buffers:piece-length (buffers:edit-inserted e)))
+      (buffers:edit-removed e))
+    (children split))
+((md:para () "Hi\n") (grid () (row () (cell () "a\n") (cell () "b\n"))) (md:para () "Yo\n"))
+; A table of two rows: a range from "Hi" into the second row's first
+; cell removes the first row whole and shortens that cell.
+> (define rows (fresh '(md:doc () (md:para () "Hi\n") (grid () (row () (cell () "a\n") (cell () "b\n")) (row () (cell () "c\n") (cell () "d\n"))) (md:para () "Yo\n"))))
+> (fit rows 2 20)
+((1 . 6) (7 . 17) (19 . 20))
+> (delete rows 2 20)
+((grid () (row () (cell () "\n") (cell () "d\n"))) (md:para () "Yo\n"))
+; A row of one cell is a line: taking the cell's text and line break
+; removes the row, or the table of one row, unless it is the last block.
+> (define (column) (fresh '(md:doc () (md:para () "Hi\n") (grid () (row () (cell () "a\n")) (row () (cell () "b\n"))) (md:para () "Yo\n"))))
+> (list (fit (column) 9 11) (fit (column) 15 17))
+(((7 . 13)) ((13 . 19)))
+> (delete (column) 9 11)
+((md:para () "Hi\n") (grid () (row () (cell () "b\n"))) (md:para () "Yo\n"))
+> (define one (fresh '(md:doc () (md:para () "Hi\n") (grid () (row () (cell () "a\n"))) (md:para () "Yo\n"))))
+> (delete one 9 11)
+((md:para () "Hi\n") (md:para () "Yo\n"))
+> (define last (fresh '(md:doc () (md:para () "Hi\n") (grid () (row () (cell () "a\n"))))))
+> (delete last 9 11)
+((md:para () "Hi\n") (grid () (row () (cell () "\n"))))
+; Whole nodes go as asked: a cell, the last block, a table.
+> (delete (sheet) 8 12)
+((md:para () "Hi\n") (grid () (row () (cell () "b\n"))) (md:para () "Yo\n"))
+> (delete (sheet) 18 23)
+((md:para () "Hi\n") (grid () (row () (cell () "a\n") (cell () "b\n"))))
+> (delete (sheet) 6 18)
+((md:para () "Hi\n") (md:para () "Yo\n"))
+; Isolating nodes that hold blocks: one the deletion covers keeps its
+; last block, emptied; the one holding the end loses its content up to
+; it.
+> (define boxes (fresh '(md:doc () (md:para () "Hi\n") (grid () (row () (box () (md:para () "x\n") (md:para () "y\n")) (box () (md:para () "z\n")))) (md:para () "Yo\n"))))
+> (fit boxes 2 21)
+((1 . 6) (9 . 15) (20 . 21))
+> (delete boxes 2 21)
+((grid () (row () (box () (md:para () "\n")) (box () (md:para () "\n")))) (md:para () "Yo\n"))
+; The last block of an isolating node goes with the nodes around it
+; only when a node around the isolating node goes too.
+> (define (grid-first) (fresh '(md:doc () (grid () (row () (box () (md:para () "x\n")) (box () (md:para () "y\n")))) (md:para () "after\n"))))
+> (list (fit (grid-first) 5 23) (fit (grid-first) 5 11))
+(((1 . 23)) ((5 . 6)))
+> (delete (grid-first) 5 23)
+((md:para () "\n"))
+> (delete (grid-first) 5 11)
+((grid () (row () (box () (md:para () "\n")) (box () (md:para () "y\n")))) (md:para () "after\n"))
+> (define alone (fresh '(md:doc () (grid () (row () (box () (md:para () "x\n"))) (row () (box () (md:para () "y\n")))) (md:para () "after\n"))))
+> (fit alone 5 7)
+((2 . 10))
+> (delete alone 5 7)
+((grid () (row () (box () (md:para () "y\n")))) (md:para () "after\n"))
+; Insertions: blocks put inside a paragraph split it, the first half
+; ending with a line break; at a block's first position they go before
+; it; inside a cell, or joining a cell's text, they go in as text.
+> (define (plan) (fresh '(md:doc () (md:heading () "Plan\n") (md:para () "Buy milk.\n"))))
+> (let ([b (plan)]) (buffers:insert! b 12 '(md:heading () "H\n")) (children b))
+((md:heading () "Plan\n") (md:para () "Buy\n") (md:heading () "H\n") (md:para () " milk.\n"))
+> (let ([b (plan)]) (buffers:insert! b 9 '(md:heading () "H\n")) (children b))
+((md:heading () "Plan\n") (md:heading () "H\n") (md:para () "Buy milk.\n"))
+> (let ([b (sheet)]) (buffers:insert! b 9 (buffers:piece (plan) 1 8)) (children b))
+((md:para () "Hi\n") (grid () (row () (cell () "Plan\na\n") (cell () "b\n"))) (md:para () "Yo\n"))
+> (let ([b (sheet)] [cells (buffers:piece (sheet) 9 14)])
+    (list (document:open-start (buffers:piece-document cells)) (begin (buffers:insert! b 3 cells) (children b))))
+(1 ((md:para () "Ha\nbi\n") (grid () (row () (cell () "a\n") (cell () "b\n"))) (md:para () "Yo\n")))
+; Text inserted right after a block's final line break would leave the
+; block without it, so it is refused; a block inserted there goes in after
+; the block.
+> (refusal (lambda () (buffers:insert! (plan) 7 "x")))
+(refused "the edit would leave a block without its final line break")
+> (let ([b (plan)]) (buffers:insert! b 7 '(md:heading () "H\n")) (children b))
+((md:heading () "Plan\n") (md:heading () "H\n") (md:para () "Buy milk.\n"))
+; Replacing with content is not fitted, and is refused when a block
+; would lose its final line break or the range crosses an isolating
+; node's edge; a replacement that gives the line break back is made.
+> (refusal (lambda () (buffers:replace! (plan) 2 7 "PLAN")))
+(refused "the edit would leave a block without its final line break")
+> (refusal (lambda () (buffers:replace! (sheet) 9 13 "x")))
+(refused "the edit would cross an isolating node's edge")
+> (let ([b (plan)]) (buffers:replace! b 2 7 "PLAN\n") (children b))
+((md:heading () "PLAN\n") (md:para () "Buy milk.\n"))
+; Typing over a selected heading, deleted first, goes where the deletion
+; leaves the cursor.
+> (let ([b (plan)]) (buffers:replace! b 2 9 "") (buffers:insert! b (buffers:stop b 1) "x") (children b))
+((md:para () "xBuy milk.\n"))
+; A consent sees the fitted edit, and a read-only span the fitted range:
+; deleting a line break alone joins the next block, which a span over it
+; refuses.
+> (define seen #f)
+> (buffers:define-kind page (content nodes) (consent (lambda (n e) (set! seen (list (buffers:edit-start e) (buffers:piece-length (buffers:edit-removed e)))) #t)))
+> (let ([b (fresh '(page () (md:heading () "Plan\n") (md:para () "Buy milk.\n")))]) (buffers:replace! b 2 7 "") seen)
+(1 7)
+> (define locked-next (fresh '(md:doc () (md:para () "ab\n") (md:para () "cd\n"))))
+> (buffers:define-layer fence (read-only))
+> (buffers:add-span! (buffers:layer locked-next fence) 6 10 'fence)
+> (list (fit locked-next 4 5) (refusal (lambda () (buffers:replace! locked-next 4 5 ""))))
+(((4 . 7)) (refused "a read-only span refuses the edit"))
+; A kind redefined with (isolating) or without it fits the next deletion
+; by its new definition, in a document fitted before.
+> (buffers:define-kind box2 (content nodes))
+> (define (boxed) (fresh '(md:doc () (md:para () "Hi\n") (box2 () (md:para () "x\n")) (box2 () (md:para () "y\n")) (md:para () "Yo\n"))))
+> (define bx (boxed))
+> (list (fit bx 2 20) (fit bx 2 20))
+(((1 . 20)) ((1 . 20)))
+> (buffers:define-kind box2 (content nodes) (isolating))
+> (list (fit bx 2 20) (fit (boxed) 2 20))
+(((1 . 6) (8 . 9) (14 . 15) (19 . 20)) ((1 . 6) (8 . 9) (14 . 15) (19 . 20)))
+; Errors.
+> (map (lambda (args) (guard (c [#t (list (condition-who c) (condition-message c))]) (apply buffers:fitted-ranges args)))
+       (list (list "b" 1 2) (list (plan) 3 1) (list (plan) 0 99)))
+((buffers:fitted-ranges "not a buffer") (buffers:fitted-ranges "the start is after the end") (buffers:fitted-ranges "not a position in the buffer"))
+> (buffers:define-kind solid (content atom) (isolating))
+! buffers:define-kind: an atom has no inside to isolate (isolating) in (buffers:define-kind solid (content atom) (isolating))

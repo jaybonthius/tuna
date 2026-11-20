@@ -221,10 +221,77 @@
     (show "replace-rows" 0 (replace-ms (lambda () (set! generation (+ generation 1)) generation)))
     (show "replace-same-rows" 0 (replace-ms (lambda () generation)))))
 
+(buffers:define-kind page (content nodes))
+(buffers:define-kind paragraph)
+(buffers:define-kind heading)
+(buffers:define-kind grid (content nodes))
+(buffers:define-kind row (content nodes))
+(buffers:define-kind cell (isolating))
+
+(define paragraph-text "Buy milk and café, then λx words.\n")
+
+(define (paragraphs count) (map (lambda (i) (paragraph '() paragraph-text)) (iota count)))
+
+(define (paragraph-start k) (+ 1 (* k (+ (string-length paragraph-text) 2))))
+
+(define (line-start k) (+ 1 (* k (string-length paragraph-text))))
+
+(define (blocks-buffer)
+  (set! made (+ made 1))
+  (let ([b (buffers:make (format "bench-~a" made)
+             (apply page '()
+               (append (paragraphs 1000) (list (grid '() (row '() (cell '() "a\n") (cell '() "b\n")))) (paragraphs 1000))))])
+    (collect (collect-maximum-generation))
+    b))
+
+(define (lines-buffer)
+  (text-buffer (string->utf8 (apply string-append (make-list 2000 paragraph-text)))))
+
+(define (op-cost op)
+  (median
+    (map (lambda (k)
+           (collect-rendezvous)
+           (let ([start (now-ns)])
+             (do ([i 0 (fx+ i 1)]) ((fx= i batch)) (op))
+             (/ (- (now-ns) start) (exact->inexact batch))))
+         (iota 9))))
+
+;; splice! is not fitted, so it takes an edit back exactly.
+(define (undone! b version)
+  (for-each
+    (lambda (e)
+      (let ([start (buffers:edit-start e)])
+        (buffers:splice! b start (+ start (buffers:piece-length (buffers:edit-inserted e))) (buffers:edit-removed e))))
+    (reverse (buffers:edits-since b version))))
+
+(define (with-undo b edit!)
+  (lambda ()
+    (let ([v (buffers:version b)])
+      (edit!)
+      (undone! b v))))
+
+(define (show-blocks name value) (printf "~a ~,2f\n" name value))
+
+(define (bench-blocks)
+  (let* ([b (blocks-buffer)] [t (lines-buffer)]
+         [text (+ (paragraph-start 500) 1)] [next-text (+ (paragraph-start 501) 1)]
+         [line (line-start 500)] [cell-text (+ (paragraph-start 1000) 3)])
+    (define (retype buffer at) (lambda () (buffers:replace! buffer at (+ at 1) "") (buffers:replace! buffer at at "B")))
+    (show-blocks "delete-reinsert-start-blocks" (op-cost (retype b text)))
+    (show-blocks "delete-reinsert-start-text" (op-cost (retype t line)))
+    (show-blocks "insert-delete-start-blocks" (op-cost (lambda () (buffers:replace! b text text "x") (buffers:replace! b text (+ text 1) ""))))
+    (show-blocks "delete-reinsert-inside-blocks" (op-cost (retype b (+ text 3))))
+    (show-blocks "delete-reinsert-inside-text" (op-cost (retype t (+ line 4))))
+    (show-blocks "delete-across-blocks" (op-cost (with-undo b (lambda () (buffers:replace! b (+ text 18) (+ next-text 10) "")))))
+    (show-blocks "delete-whole-block" (op-cost (with-undo b (lambda () (buffers:replace! b text (- next-text 2) "")))))
+    (show-blocks "delete-into-table" (op-cost (with-undo b (lambda () (buffers:replace! b (+ (paragraph-start 999) 10) (+ cell-text 1) "")))))
+    (show-blocks "yank-heading-mid-paragraph" (op-cost (with-undo b (lambda () (buffers:insert! b (+ text 8) (heading '() "Plan\n"))))))))
+
 (define (run)
   (random-seed 7)
   (for-each bench '(1 10 100))
   (for-each bench-structured '(1 10))
   (bench-reconcile)
   (bench-trim-anchors)
-  (bench-replace-rows))
+  (bench-replace-rows)
+  (bench-blocks))

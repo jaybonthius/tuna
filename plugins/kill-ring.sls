@@ -270,6 +270,14 @@
   (check-entry 'kill-ring:prepend! entry)
   (add-to-newest! (map to-kill entry) (lambda (newest kill) (join-kills kill newest))))
 
+(define (join . items)
+  (check-main-thread 'kill-ring:join)
+  (for-each (lambda (item) (check-item 'kill-ring:join item)) items)
+  (if (null? items)
+      ""
+      (let ([kills (map to-kill items)])
+        (fold-left join-kills (car kills) (cdr kills)))))
+
 (define (current) (current-entry))
 
 (define (rotate! n)

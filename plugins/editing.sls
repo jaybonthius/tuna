@@ -6,9 +6,10 @@
   "When true, typing, newline, paste and yank replace an active, non-empty region, and delete-char and delete-backward-char delete it.")
 
 (module %internals
-  (check-main-thread check-count check-nonnegative-count command-view check-view key-char content-bounds each-cursor
+  (check-main-thread check-count check-nonnegative-count command-view check-view key-char content-bounds stop-bounds each-cursor
    place-kept! move-kept! merge-met! edge-error stops-from chars end-of-line first-stop column clear-marks!
-   set-marks! forget-temporary! exchange-marks! word-characters-in words-from
+   set-marks! forget-temporary! exchange-marks! word-characters-in words-from word-motion
+   within-isolating delete-fitted! ranges-kill
    line-motion-continues? note-line-motion! recase! capitalizer replace-region-or! insert-at-cursors! kill-ranges! after-kill?
    remember-kill! yank-kills! yanked-in? replace-yank! pure-text note-change! clear-changed-marks!
    nonempty-region? shift-selected keep-changed-marks! place! place-temporary! select-between! drag-keymap start-drag! drag-in
@@ -55,11 +56,17 @@
            (and (char<=? #\@ c #\_) (integer->char (fx- (char->integer c) 64))))]
         [else #f])))
 
-  ;; A buffer's root is one node, so its content runs from after the
-  ;; root's opening to before its closing.
   (define (content-bounds view doc)
     (let-values ([(lo hi) (views:bounds view)])
-      (values (fxmax lo 1) (fxmin hi (fx- (document:length doc) 1)))))
+      (stop-bounds (views:buffer view) doc lo hi)))
+
+  (define (stop-bounds b doc lo hi)
+    (let* ([lo (fxmax lo 1)] [hi (fxmin hi (fx- (document:length doc) 1))]
+           [first (let ([q (buffers:stop b lo)]) (if (and q (fx>= q lo)) q (buffers:next-stop b lo)))]
+           [last (let ([q (buffers:stop b hi)]) (if (and q (fx<= q hi)) q (buffers:previous-stop b hi)))])
+      (if (and first last (fx<= lo first last hi))
+          (values first last)
+          (values lo hi))))
 
   ;; Views merge cursors that meet after each edit, so one cursor's edit
   ;; can remove another before its turn, or the cursor itself. Every
@@ -185,30 +192,74 @@
 
   (define (word-token? t extra) (and (char? t) (word-char? t extra)))
 
+  (define (isolating-node? n)
+    (let ([k (buffers:kind (document:node-kind n))]) (and k (buffers:kind-isolating? k))))
+
+  (define (edge-at? doc q)
+    (let ([t (document:token doc q)])
+      (cond
+        [(eq? t 'close) (isolating-node? (document:enclosing doc q))]
+        [(and (document:node? t) (not (document:atom? t))) (isolating-node? t)]
+        [else #f])))
+
   (define (word-end doc p hi extra)
     (let skip ([p p])
-      (cond
-        [(fx>= p hi) #f]
-        [(word-token? (document:token doc p) extra)
-         (let in ([p (fx+ p 1)])
-           (if (and (fx< p hi) (word-token? (document:token doc p) extra)) (in (fx+ p 1)) p))]
-        [else (skip (fx+ p 1))])))
+      (if (fx>= p hi)
+          (values #f #f)
+          (let ([t (document:token doc p)])
+            (cond
+              [(word-token? t extra)
+               (let in ([p (fx+ p 1)])
+                 (if (and (fx< p hi) (word-token? (document:token doc p) extra)) (in (fx+ p 1)) (values p #f)))]
+              [(and (not (char? t)) (edge-at? doc p)) (values #f p)]
+              [else (skip (fx+ p 1))])))))
 
   (define (word-start doc p lo extra)
     (let skip ([p p])
-      (cond
-        [(fx<= p lo) #f]
-        [(word-token? (document:token doc (fx- p 1)) extra)
-         (let in ([p (fx- p 1)])
-           (if (and (fx> p lo) (word-token? (document:token doc (fx- p 1)) extra)) (in (fx- p 1)) p))]
-        [else (skip (fx- p 1))])))
+      (if (fx<= p lo)
+          (values #f #f)
+          (let ([t (document:token doc (fx- p 1))])
+            (cond
+              [(word-token? t extra)
+               (let in ([p (fx- p 1)])
+                 (if (and (fx> p lo) (word-token? (document:token doc (fx- p 1)) extra)) (in (fx- p 1)) (values p #f)))]
+              [(and (not (char? t)) (edge-at? doc (fx- p 1))) (values #f (fx- p 1))]
+              [else (skip (fx- p 1))])))))
 
-  (define (words-from doc p n lo hi extra)
+  (define (word-motion b doc p n lo hi extra)
     (let loop ([p (fxmax lo (fxmin hi p))] [n n])
       (cond
-        [(= n 0) p]
-        [(> n 0) (let ([e (word-end doc p hi extra)]) (if e (loop e (- n 1)) hi))]
-        [else (let ([s (word-start doc p lo extra)]) (if s (loop s (+ n 1)) lo))])))
+        [(= n 0) (values p #f)]
+        [(> n 0)
+         (let-values ([(e edge) (word-end doc p hi extra)])
+           (cond
+             [e (loop e (- n 1))]
+             [edge (values (fxmax p (stop-at-or-before b edge)) #t)]
+             [else (values hi #f)]))]
+        [else
+         (let-values ([(s edge) (word-start doc p lo extra)])
+           (cond
+             [s (loop s (+ n 1))]
+             [edge (values (fxmin p (or (buffers:next-stop b edge) p)) #t)]
+             [else (values lo #f)]))])))
+
+  (define (stop-at-or-before b q)
+    (let ([s (buffers:stop b q)])
+      (if (and s (fx<= s q)) s (or (buffers:previous-stop b q) q))))
+
+  (define (words-from b doc p n lo hi extra)
+    (let-values ([(q edge?) (word-motion b doc p n lo hi extra)]) q))
+
+  (define (isolating-around doc p)
+    (let loop ([n (document:enclosing doc p)])
+      (and n (if (isolating-node? n) n (loop (document:enclosing doc (document:node-start n)))))))
+
+  (define (within-isolating doc p a z)
+    (let ([n (isolating-around doc p)])
+      (if n
+          (let ([lo (fx+ (document:node-start n) 1)] [hi (fx- (document:node-end n) 1)])
+            (values (fxmax lo (fxmin hi a)) (fxmax lo (fxmin hi z))))
+          (values a z))))
 
   (define replacement-char (integer->char #xFFFC))
 
@@ -269,14 +320,28 @@
   (define (selected-region p m delete-selection?)
     (and delete-selection? (nonempty-region? p m) (cons (fxmin p m) (fxmax p m))))
 
+  ;; A deletion that fits to nothing is no edit, so its buffer is not
+  ;; marked modified. A fitted start can lie past text the fitting keeps,
+  ;; as a --- or the next cell, which the cursor must not jump.
+  (define (delete-fitted! b start end)
+    (let ([ranges (buffers:fitted-ranges b start end)])
+      (and (pair? ranges)
+           (let ([from (fxmin start (caar ranges))])
+             (buffers:replace! b start end "")
+             (or (buffers:stop b from) from)))))
+
+  ;; A kill is what a deletion of its range would remove, so a copy and a
+  ;; kill of one region put the same text on the ring.
+  (define (ranges-kill b ranges)
+    (apply kill-ring:join (map (lambda (r) (buffers:piece b (car r) (cdr r))) ranges)))
+
   (define (insert-at-cursors! view content delete-selection? after-insert)
     (let ([b (views:buffer view)])
       (each-cursor view
         (lambda (c p m)
           (let* ([r (selected-region p m delete-selection?)]
-                 [edit (if r
-                           (buffers:replace! b (car r) (cdr r) content)
-                           (buffers:replace! b p p content))]
+                 [at (if r (or (delete-fitted! b (car r) (cdr r)) p) p)]
+                 [edit (buffers:replace! b at at content)]
                  [start (buffers:edit-start edit)])
             (forget-temporary! c)
             (place-kept! view c
@@ -289,10 +354,9 @@
         (lambda (c p m)
           (let ([r (selected-region p m delete-selection?)])
             (if r
-                (begin
-                  (buffers:replace! b (car r) (cdr r) "")
+                (let ([at (or (delete-fitted! b (car r) (cdr r)) p)])
                   (forget-temporary! c)
-                  (place-kept! view c (car r) #f))
+                  (place-kept! view c at #f))
                 (otherwise c p)))))))
 
   (define (add-kill! entry backward? after-kill?)
@@ -355,19 +419,21 @@
     (let* ([b (views:buffer view)]
            [cursors (views:cursors view)]
            [ends (map (lambda (c) (call-with-values (lambda () (ends-of c)) cons)) cursors)]
-           [ranges (clip-ranges (map (lambda (e) (cons (fxmin (car e) (cdr e)) (fxmax (car e) (cdr e)))) ends))])
-      (add-kill!
-        (map (lambda (r) (buffers:piece b (car r) (cdr r))) ranges)
-        (fx< (cdar ends) (caar ends))
-        (after-kill?))
+           [ranges (clip-ranges (map (lambda (e) (cons (fxmin (car e) (cdr e)) (fxmax (car e) (cdr e)))) ends))]
+           [fitted (map (lambda (r) (buffers:fitted-ranges b (car r) (cdr r))) ranges)]
+           [kills? (exists pair? fitted)])
+      ;; An empty entry would replace the kill the next yank and the
+      ;; clipboard hold.
+      (when kills?
+        (add-kill! (map (lambda (f) (ranges-kill b f)) fitted) (fx< (cdar ends) (caar ends)) (after-kill?)))
       (when delete?
-        (when (commands:this-command) (set! killing? #t))
+        (when (and kills? (commands:this-command)) (set! killing? #t))
         (for-each
           (lambda (r)
             (let-values ([(start end) (range-bounds r)])
-              (buffers:replace! b start end "")
-              (forget-temporary! (cursor-range-cursor r))
-              (place-kept! view (cursor-range-cursor r) start #f)))
+              (let ([at (delete-fitted! b start end)] [c (cursor-range-cursor r)])
+                (forget-temporary! c)
+                (place-kept! view c (or at (views:cursor-point c)) #f))))
           (map (lambda (c r) (anchor-range b c (car r) (cdr r))) cursors ranges)))))
 
   (define last-yank '())
@@ -387,7 +453,7 @@
       (each-cursor view
         (lambda (c p m)
           (let* ([r (selected-region p m delete-selection?)]
-                 [start (if r (begin (buffers:replace! b (car r) (cdr r) "") (car r)) p)]
+                 [start (if r (or (delete-fitted! b (car r) (cdr r)) p) p)]
                  [end (kill-ring:insert! b start (kill (length yanked)))])
             (set! yanked (cons (anchor-range b c start end) yanked))
             (forget-temporary! c)
@@ -553,16 +619,17 @@
   (let ([doc (buffers:document buffer)])
     (unless (<= position (document:length doc))
       (assertion-violation 'editing:forward-word-position "not a position in the buffer" position))
-    (words-from doc position n 1 (fx- (document:length doc) 1)
-                (word-characters-in buffer))))
+    (let-values ([(lo hi) (stop-bounds buffer doc 1 (document:length doc))])
+      (words-from buffer doc position n lo hi (word-characters-in buffer)))))
 
 (define (line-position buffer line)
   (unless (buffers:buffer? buffer)
     (assertion-violation 'editing:line-position "not a buffer" buffer))
   (check-count 'editing:line-position line)
   (check-main-thread 'editing:line-position)
-  (let* ([doc (buffers:document buffer)] [end (fx- (document:length doc) 1)])
-    (first-stop buffer (if (> line (document:line doc end)) end (document:line-start doc (max line 1))))))
+  (let ([doc (buffers:document buffer)])
+    (let-values ([(lo hi) (stop-bounds buffer doc 1 (document:length doc))])
+      (if (> line (document:line doc hi)) hi (first-stop buffer (document:line-start doc (max line 1)))))))
 
 (define (insert! view text)
   (unless (views:view? view)
@@ -614,9 +681,9 @@
         (let ([q (stops-from view p n)])
           (cond
             [(not (fx= q p))
-             (buffers:replace! b (fxmin p q) (fxmax p q) "")
-             (forget-temporary! c)
-             (place-kept! view c (fxmin p q) #f)]
+             (let ([at (delete-fitted! b (fxmin p q) (fxmax p q))])
+               (forget-temporary! c)
+               (place-kept! view c (or at p) #f))]
             [(and (eq? c primary) (not (= n 0))) (set! stuck? #t)]))))
     (when stuck? (edge-error who n))))
 
@@ -738,10 +805,14 @@
   "Moves the primary cursor to the end of the buffer and removes the other cursors."
   (%to-edge 'editing:end-of-buffer #t))
 
+;; At an isolating node's edge the buffer has not ended, so the primary
+;; cursor stopping there is no end of buffer.
 (define (%move-words who n)
-  (let* ([view (command-view who)] [extra (word-characters-in (views:buffer view))])
-    (move-cursors! who view n
-      (lambda (c doc lo hi) (values (words-from doc (views:cursor-point c) n lo hi extra) #f)))))
+  (let* ([view (command-view who)] [b (views:buffer view)] [doc (buffers:document b)] [extra (word-characters-in b)])
+    (let*-values ([(lo hi) (content-bounds view doc)]
+                  [(q edge?) (word-motion b doc (views:point view) n lo hi extra)])
+      (move-cursors! who view (if edge? 0 n)
+        (lambda (c doc lo hi) (values (words-from b doc (views:cursor-point c) n lo hi extra) #f))))))
 
 (commands:define-command (forward-word [n (commands:prefix-number)])
   "Moves each cursor to the end of the Nth word after it."
@@ -775,7 +846,7 @@
          [extra (word-characters-in (views:buffer view))])
     (let-values ([(lo hi) (content-bounds view doc)])
       (set-marks! view
-        (lambda (c) (words-from doc (or (views:cursor-mark c) (views:cursor-point c)) n lo hi extra))))))
+        (lambda (c) (words-from (views:buffer view) doc (or (views:cursor-mark c) (views:cursor-point c)) n lo hi extra))))))
 
 (commands:define-command (mark-whole-buffer)
   "Puts the primary cursor's point at the start and its mark at the end of the buffer, and removes the other cursors."
@@ -818,23 +889,25 @@
       (kill-ranges! view
         (lambda (c)
           (let* ([p (views:cursor-point c)] [line (document:line doc p)] [last (document:line doc hi)])
-            (cond
-              [(not n)
-               (let ([e (end-of-line doc line hi)])
-                 (values p (if (and (%blank? (document:text doc p e)) (fx< e hi)) (fx+ e 1) e)))]
-              [(> n 0)
-               (values p (if (> (+ line n) last) hi (document:line-start doc (+ line n))))]
-              [else
-               (values p (if (< (+ line n) 1) lo (fxmax lo (document:line-start doc (+ line n)))))])))
+            (within-isolating doc p p
+              (cond
+                [(not n)
+                 (let ([e (end-of-line doc line hi)])
+                   (if (and (%blank? (document:text doc p e)) (fx< e hi)) (fx+ e 1) e))]
+                [(> n 0)
+                 (if (> (+ line n) last) hi (document:line-start doc (+ line n)))]
+                [else
+                 (if (< (+ line n) 1) lo (fxmax lo (document:line-start doc (+ line n))))]))))
         #t))))
 
 (define (%kill-words who n)
   (let* ([view (command-view who)]
-         [doc (buffers:document (views:buffer view))]
-         [extra (word-characters-in (views:buffer view))])
+         [b (views:buffer view)]
+         [doc (buffers:document b)]
+         [extra (word-characters-in b)])
     (let-values ([(lo hi) (content-bounds view doc)])
       (kill-ranges! view
-        (lambda (c) (let ([p (views:cursor-point c)]) (values p (words-from doc p n lo hi extra))))
+        (lambda (c) (let ([p (views:cursor-point c)]) (values p (words-from b doc p n lo hi extra))))
         #t))))
 
 (commands:define-command (kill-word [n (commands:prefix-number)])
@@ -886,10 +959,10 @@
       (lambda (c p m)
         (let ([doc (buffers:document b)])
           (let-values ([(lo hi) (content-bounds view doc)])
-            (let* ([start1 (words-from doc p -1 lo hi extra)]
-                   [end1 (words-from doc start1 1 lo hi extra)]
-                   [end2 (words-from doc end1 1 lo hi extra)]
-                   [start2 (words-from doc end2 -1 lo hi extra)]
+            (let* ([start1 (words-from b doc p -1 lo hi extra)]
+                   [end1 (words-from b doc start1 1 lo hi extra)]
+                   [end2 (words-from b doc end1 1 lo hi extra)]
+                   [start2 (words-from b doc end2 -1 lo hi extra)]
                    [first (cons (fxmin start1 end1) (fxmax start1 end1))]
                    [second (cons (fxmin start2 end2) (fxmax start2 end2))]
                    [a (if (fx> (car first) (car second)) second first)]
@@ -920,14 +993,16 @@
                    [lower (fx+ upper 1)])
               (when (fx> lower (document:line doc hi))
                 (error 'editing:transpose-lines "no two lines to transpose"))
-              (let-values ([(s1 e1) (%line-text-range b doc upper hi)]
-                           [(s2 e2) (%line-text-range b doc lower hi)])
-                (buffers:replace! b s2 e2 (document:slice doc s1 e1))
-                (buffers:replace! b s1 e1 (document:slice doc s2 e2))
+              (if (%in-one-text-node? b doc upper lower hi)
+                  (let-values ([(s1 e1) (%line-text-range b doc upper hi)]
+                               [(s2 e2) (%line-text-range b doc lower hi)])
+                    (buffers:replace! b s2 e2 (document:slice doc s1 e1))
+                    (buffers:replace! b s1 e1 (document:slice doc s2 e2)))
+                  (%move-texts! b view (list (cons upper lower) (cons lower upper)) (lambda (position-of) (void))))
                 (let ([doc (buffers:document b)])
                   (let-values ([(lo hi) (content-bounds view doc)])
                     (move-kept! view c
-                      (if (fx< lower (document:line doc hi)) (document:line-start doc (fx+ lower 1)) hi))))))))))))
+                      (if (fx< lower (document:line doc hi)) (document:line-start doc (fx+ lower 1)) hi)))))))))))
 
 (define (%case-words who n convert)
   (let* ([view (command-view who)] [b (views:buffer view)] [extra (word-characters-in b)])
@@ -935,7 +1010,7 @@
       (lambda (c p m)
         (let ([doc (buffers:document b)])
           (let-values ([(lo hi) (content-bounds view doc)])
-            (let* ([q (words-from doc p n lo hi extra)]
+            (let* ([q (words-from b doc p n lo hi extra)]
                    [delta (recase! b (fxmin p q) (fxmax p q) convert)])
               (move-kept! view c (fx+ (fxmax p q) delta)))))))))
 
@@ -1015,10 +1090,10 @@
             (let-values ([(s e) (%line-text-range b doc line hi)])
               (cond
                 [(> n 0)
-                 (values (fxmax lo s)
-                         (if (> (+ line n) last) hi (fxmin hi (document:line-start doc (+ line n)))))]
-                [(= n 0) (values (fxmax lo s) e)]
-                [else (values e (if (< (+ line n) first) lo (end-of-line doc (+ line n) hi)))]))))
+                 (within-isolating doc p (fxmax lo s)
+                   (if (> (+ line n) last) hi (fxmin hi (document:line-start doc (+ line n)))))]
+                [(= n 0) (within-isolating doc p (fxmax lo s) e)]
+                [else (within-isolating doc p e (if (< (+ line n) first) lo (end-of-line doc (+ line n) hi)))]))))
         (let-values ([(s e) (%line-text-range b doc (document:line doc (views:point view)) hi)])
           (cond
             [(and (> n 0) (fx>= s hi)) (error 'editing:kill-whole-line "end of buffer")]
@@ -1044,10 +1119,13 @@
             (let ([line (document:line doc p)])
               (when (fx> line (document:line doc lo))
                 (let-values ([(s e) (%line-text-range b doc line hi)])
-                  (let ([start (%blanks-start doc (fx- (document:line-start doc line) 1) lo)]
-                        [end (%indentation-end doc s e)])
-                    (buffers:replace! b start end (if (%space-between? doc start end lo hi) " " ""))
-                    (move-kept! view c start)))))))))))
+                  (let* ([start (%blanks-start doc (fx- (document:line-start doc line) 1) lo)]
+                         [end (%indentation-end doc s e)]
+                         [space? (%space-between? doc start end lo hi)]
+                         [at (delete-fitted! b start end)])
+                    (when at
+                      (when space? (buffers:replace! b at at " "))
+                      (move-kept! view c at))))))))))))
 
 (commands:define-command (duplicate-dwim [n (commands:prefix-number)])
   "Inserts N copies of each cursor's region after it, or, at a cursor with no region, N copies of its line after the line, leaving the cursor and its region where they were."
@@ -1057,10 +1135,12 @@
       (each-cursor view
         (lambda (c p m)
           (if (nonempty-region? p m)
-              (let ([piece (buffers:piece b (fxmin p m) (fxmax p m))])
-                (let loop ([at (fxmax p m)] [k n])
-                  (unless (= k 0)
-                    (loop (buffers:insert! b at piece) (- k 1)))))
+              (let ([ranges (buffers:fitted-ranges b (fxmin p m) (fxmax p m))])
+                (unless (null? ranges)
+                  (let ([pieces (map (lambda (r) (buffers:piece b (car r) (cdr r))) ranges)])
+                    (let loop ([at (cdr (car (last-pair ranges)))] [k n])
+                      (unless (= k 0)
+                        (loop (fold-left (lambda (at piece) (buffers:insert! b at piece)) at pieces) (- k 1)))))))
               (let ([doc (buffers:document b)])
                 (let-values ([(lo hi) (content-bounds view doc)])
                   (let-values ([(s e) (%line-text-range b doc (document:line doc p) hi)])
@@ -1074,6 +1154,52 @@
 
 (define (%line-text-start b doc line hi)
   (let-values ([(s e) (%line-text-range b doc line hi)]) s))
+
+(define (%lines-from first count)
+  (map (lambda (k) (fx+ first k)) (iota count)))
+
+;; Lines with nothing but characters between them lie in one text node,
+;; as a file's or a code block's.
+(define (%in-one-text-node? b doc first last hi)
+  (let ([s (%line-text-start b doc first hi)] [e (end-of-line doc last hi)])
+    (or (fx>= s e)
+        (fx= (fx- e s) (fx- (document:offset doc e chars) (document:offset doc s chars))))))
+
+;; Lines in different nodes move as texts, so each block keeps its kind
+;; and edges. Each line takes its new text before its old text goes, so
+;; an edit the buffer refuses leaves a copy of a line rather than losing
+;; one; the cursors are placed on the new texts first, since one left in
+;; an old text would go to the deletion's start and merge with others.
+(define (%move-texts! b view moves place!)
+  (let* ([doc (buffers:document b)] [hi (let-values ([(lo hi) (content-bounds view doc)]) hi)]
+         [range-of (lambda (line) (call-with-values (lambda () (%line-text-range b doc line hi)) cons))]
+         [olds (map (lambda (m) (range-of (car m))) moves)]
+         [pieces (map (lambda (m) (let ([r (range-of (cdr m))]) (buffers:piece b (car r) (cdr r)))) moves)]
+         [lengths (let loop ([olds (reverse olds)] [pieces (reverse pieces)] [acc '()])
+                    (if (null? olds)
+                        acc
+                        (loop (cdr olds) (cdr pieces)
+                              (cons (fx- (buffers:insert! b (caar olds) (car pieces)) (caar olds)) acc))))]
+         [starts (let loop ([olds olds] [lengths lengths] [shift 0] [acc '()])
+                   (if (null? olds)
+                       (reverse acc)
+                       (loop (cdr olds) (cdr lengths) (fx+ shift (car lengths)) (cons (fx+ (caar olds) shift) acc))))]
+         [placed (map (lambda (m start length) (list (car m) start length)) moves starts lengths)])
+    (place!
+      (lambda (line column)
+        (let ([new (assv line placed)])
+          (if new
+              (fx+ (cadr new) (fxmin column (caddr new)))
+              (let ([doc (buffers:document b)])
+                (let-values ([(lo hi) (content-bounds view doc)])
+                  (fxmax lo (fxmin hi (fx+ (%line-text-start b doc line hi) column)))))))))
+    (for-each
+      (lambda (new old)
+        (let ([at (fx+ (cadr new) (caddr new))])
+          (unless (fx= (car old) (cdr old))
+            (buffers:replace! b at (fx+ at (fx- (cdr old) (car old))) ""))))
+      (reverse placed) (reverse olds))
+    (void)))
 
 ;; The neighbouring lines move around the block rather than the block
 ;; around them, so no cursor in the block is deleted with its text, and
@@ -1146,34 +1272,58 @@
                           cursors)])
         (define (move-of line)
           (find (lambda (move) (fx<= (%line-move-first move) line (fx+ (%line-move-last move) 1))) moves))
-        (unless (= n 0)
+        (define (to-line line)
+          (let ([move (move-of line)])
+            (cond
+              [(not move) line]
+              [down? (fx+ line (%line-move-steps move))]
+              [else (fx- line (%line-move-steps move))])))
+        (define (place-all! position-at)
           (for-each
-            (lambda (move)
-              (let ([steps (%line-move-steps move)])
-                (unless (fx= steps 0)
-                  (let ([doc (buffers:document b)])
-                    (let-values ([(lo hi) (content-bounds view doc)])
-                      ((if down? %move-block-down! %move-block-up!)
-                       b doc (%line-move-first move) (%line-move-last move) steps hi))))))
-            (if down? (reverse moves) moves))
-          (let ([doc (buffers:document b)])
-            (let-values ([(lo hi) (content-bounds view doc)])
-              (define (moved place)
-                (let* ([line (car place)]
-                       [move (move-of line)]
-                       [to (cond
-                             [(not move) line]
-                             [down? (fx+ line (%line-move-steps move))]
-                             [else (fx- line (%line-move-steps move))])])
-                  (if (fx> to (document:line doc hi))
-                      hi
-                      (fxmax lo (fxmin hi (fx+ (%line-text-start b doc to hi) (cdr place)))))))
-              (for-each
-                (lambda (place)
-                  (let ([m (%cursor-place-mark place)])
-                    (place-kept! view (%cursor-place-cursor place)
-                                 (moved (%cursor-place-point place)) (and m (moved m)))))
-                places)))
+            (lambda (place)
+              (let ([m (%cursor-place-mark place)])
+                (place-kept! view (%cursor-place-cursor place)
+                             (position-at (%cursor-place-point place)) (and m (position-at m)))))
+            places))
+        (define (spans-one-node? move)
+          (let ([a (%line-move-first move)] [z (%line-move-last move)] [steps (%line-move-steps move)])
+            (or (fx= steps 0)
+                (if down?
+                    (%in-one-text-node? b doc a (fx+ z steps) hi)
+                    (%in-one-text-node? b doc (fx- a steps) z hi)))))
+        (define (sources move)
+          (let* ([a (%line-move-first move)] [z (%line-move-last move)] [steps (%line-move-steps move)]
+                 [block (%lines-from a (fx+ (fx- z a) 1))]
+                 [passed (if down? (%lines-from (fx+ z 1) steps) (%lines-from (fx- a steps) steps))])
+            (map cons
+                 (%lines-from (if down? a (fx- a steps)) (fx+ (length block) steps))
+                 (if down? (append passed block) (append block passed)))))
+        (unless (= n 0)
+          (if (for-all spans-one-node? moves)
+              (begin
+                (for-each
+                  (lambda (move)
+                    (let ([steps (%line-move-steps move)])
+                      (unless (fx= steps 0)
+                        (let ([doc (buffers:document b)])
+                          (let-values ([(lo hi) (content-bounds view doc)])
+                            ((if down? %move-block-down! %move-block-up!)
+                             b doc (%line-move-first move) (%line-move-last move) steps hi))))))
+                  (if down? (reverse moves) moves))
+                (let ([doc (buffers:document b)])
+                  (let-values ([(lo hi) (content-bounds view doc)])
+                    (place-all!
+                      (lambda (place)
+                        (let ([to (to-line (car place))])
+                          (if (fx> to (document:line doc hi))
+                              hi
+                              (fxmax lo (fxmin hi (fx+ (%line-text-start b doc to hi) (cdr place)))))))))))
+              (%move-texts! b view (apply append (map sources moves))
+                (lambda (position-of)
+                  (place-all!
+                    (lambda (place)
+                      (let ([to (to-line (car place))])
+                        (if (fx> to (document:line doc hi)) hi (position-of to (cdr place)))))))))
           (keep-changed-marks! view selected)
           (let ([primary (move-of (car (%cursor-place-point (car places))))])
             (when (and primary (fx= (%line-move-steps primary) 0))
@@ -1287,9 +1437,18 @@
                                      (loop (fx- line 1) (cons (cons s e) acc)))))]
                      [keyed (map (lambda (r) (cons (document:text doc (car r) (cdr r)) r)) ranges)]
                      [sorted (map cdr (list-sort (lambda (x y) (string<? (car x) (car y))) keyed))])
-                (unless (for-all eq? ranges sorted)
-                  (%reorder-lines! b ranges sorted))
-                (place-kept! view c p m)))))))))
+                (cond
+                  [(for-all eq? ranges sorted) (place-kept! view c p m)]
+                  [(%in-one-text-node? b doc first last hi)
+                   (%reorder-lines! b ranges sorted)
+                   (place-kept! view c p m)]
+                  [else
+                   (let ([point (%line-place b doc p hi)] [mark (and m (%line-place b doc m hi))])
+                     (%move-texts! b view
+                       (map (lambda (line r) (cons line (document:line doc (car r)))) (%lines-from first (length ranges)) sorted)
+                       (lambda (position-of)
+                         (place-kept! view c (position-of (car point) (cdr point))
+                                      (and mark (position-of (car mark) (cdr mark)))))))])))))))))
 
 (define (%mouse-view who event)
   (unless (keys:event? event)
@@ -1378,7 +1537,9 @@
     (when (and view (views:buffer view))
       (let* ([c (car (views:cursors view))] [p (views:cursor-point c)] [m (views:cursor-mark c)])
         (when (nonempty-region? p m)
-          (set! %primary (buffers:piece (views:buffer view) (fxmin p m) (fxmax p m))))))))
+          (let ([ranges (buffers:fitted-ranges (views:buffer view) (fxmin p m) (fxmax p m))])
+            (when (pair? ranges)
+              (set! %primary (ranges-kill (views:buffer view) ranges)))))))))
 
 (define %saved-at #f)
 

@@ -38,6 +38,8 @@ echo "$output" | awk '
     }
     unit["reconcile-0mb"] = "ms"
     unit["trim-anchors-1mb"] = "ms"
+    split("delete-reinsert-start-blocks delete-reinsert-start-text insert-delete-start-blocks delete-reinsert-inside-blocks delete-reinsert-inside-text delete-across-blocks delete-whole-block delete-into-table yank-heading-mid-paragraph", blocks, " ")
+    for (i in blocks) unit[blocks[i]] = "ns"
     unit["replace-rows-0mb"] = "ms"
     unit["replace-same-rows-0mb"] = "ms"
     missing = 0

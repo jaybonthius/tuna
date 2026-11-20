@@ -13,7 +13,7 @@
    check-edit check-spans check-version check-kind check-layer-change check-layer-read
    make-buffer! find-buffer live-buffers buffer-live? rename-buffer! forget-buffer! with-current
    current-buffer frozen-document internal? with-silent check-piece
-   replace-content! refuses-typing-probe? splice-content! reconcile-node! edits-after map-position-through
+   replace-content! fitted-deletion refuses-typing-probe? splice-content! reconcile-node! edits-after map-position-through
    define-kind! note-constructor! find-kind find-constructor-kind stop-at next-stop-after previous-stop-before range-text range-atom-texts
    define-layer-type! layer-of layers-for layer-type-keymap-of
    set-layer-spans! add-layer-span! remove-layer-spans! layer-spans layer-spans-at travelling-spans-of
@@ -227,14 +227,16 @@
     (unless (or (not v) (procedure? v))
       (assertion-violation who "not a procedure or #f" v)))
 
-  (define (define-kind! id content inline? sticky stops draw keymap consent whole? text)
+  (define (define-kind! id content inline? sticky stops draw keymap consent whole? isolating? text)
     (check-optional-procedure 'buffers:define-kind draw)
     (check-optional-procedure 'buffers:define-kind consent)
     (check-optional-procedure 'buffers:define-kind text)
     (let ([name (exported-symbol id)])
+      ;; The isolating children kept for a document are a fact about kinds.
+      (set! walked (cons #f #f))
       (table-set! kinds name
         (make-kind-entry name content inline? sticky stops draw keymap consent (or whole? (eq? content 'atom))
-          text (current-owner)))
+          isolating? text (current-owner)))
       (if (eq? content 'atom)
           (lambda (attributes) (vector name attributes))
           (lambda (attributes . datums) (cons* name attributes datums)))))
@@ -412,6 +414,288 @@
     (let ([n (document:token doc p)])
       (and (document:node? n) (not (document:atom? n)) (fx= (document:node-end n) (fx+ p 2)))))
 
+  (define (isolating? n)
+    (and (not (document:atom? n))
+         (let ([k (kind-of n)]) (and k (kind-entry-isolating? k) #t))))
+
+  (define (block? n)
+    (and (not (document:atom? n)) (fx> (document:node-start n) 0)
+         (let ([k (kind-of n)]) (not (and k (kind-entry-inline? k))))
+         (eq? (node-content n) 'text)))
+
+  (define (parent-of doc n) (document:enclosing doc (document:node-start n)))
+
+  (define (closings-to? doc p q)
+    (let loop ([p p])
+      (or (fx>= p q) (and (eq? (document:token doc p) 'close) (loop (fx+ p 1))))))
+
+  (define (covers? doc n e) (closings-to? doc e (fx- (document:node-end n) 1)))
+
+  (define (final-line-break? doc c)
+    (and (fx> c 0) (fx< (fx+ c 1) (document:length doc))
+         (eqv? (document:token doc c) #\newline)
+         (eq? (document:token doc (fx+ c 1)) 'close)
+         (block? (document:enclosing doc c))))
+
+  (define (edge? doc q)
+    (let ([t (document:token doc q)])
+      (cond
+        [(eq? t 'close) (isolating? (document:enclosing doc q))]
+        [(document:node? t) (isolating? t)]
+        [else #f])))
+
+  ;; In a node of nodes, a range from a child's opening to a later child's
+  ;; closing holds whole children only, so none between need be read.
+  (define (whole-nodes? doc s e)
+    (let ([t (document:token doc s)])
+      (and (document:node? t)
+           (let ([z (document:node-end t)])
+             (or (fx= z e)
+                 (and (fx< z e)
+                      (let ([last (node-ending-at doc e)] [parent (document:enclosing doc s)])
+                        (and last parent (fx> (document:node-start last) s)
+                             (same-node? parent (document:enclosing doc (document:node-start last)))
+                             (or (eq? (node-content parent) 'nodes)
+                                 (let loop ([q z])
+                                   (or (fx= q e)
+                                       (let ([t (document:token doc q)])
+                                         (and (document:node? t) (loop (document:node-end t)))))))))))))))
+
+  (define (node-ending-at doc e)
+    (let ([t (document:token doc (fx- e 1))])
+      (cond
+        [(eq? t 'close) (document:enclosing doc (fx- e 1))]
+        [(and (document:node? t) (document:atom? t)) t]
+        [else #f])))
+
+  ;; An atom counts as a character, so a range of characters and atoms
+  ;; holds as many characters as tokens.
+  (define (plain-between? doc a b)
+    (fx= (fx- b a) (fx- (document:offset doc b chars-unit) (document:offset doc a chars-unit))))
+
+  (define chars-unit (document:unit characters))
+
+  (define (fit-region doc region s e)
+    (let* ([lo (fx+ (document:node-start region) 1)]
+           [hi (fx- (document:node-end region) 1)]
+           [e (last-block-fit doc s e hi)]
+           [s (and (fx< s e) (line-start-fit doc lo hi s e))])
+      (if s
+          (let-values ([(s e) (whole-block-fit doc region s e)])
+            (let ([kept (kept-isolating doc region s e)])
+              (if (null? kept)
+                  (line-break-fit doc hi s e)
+                  (split-fit doc region s e kept))))
+          '())))
+
+  (define (fit-part doc region s e)
+    (cond
+      [(fx>= s e) '()]
+      [(whole-nodes? doc s e) (list (cons s e))]
+      [else (fit-region doc region s e)]))
+
+  ;; A deletion running to the end of the buffer, or of an isolating node
+  ;; that stays, leaves its last block the line break, so it keeps a stop.
+  (define (last-block-fit doc s e hi)
+    (if (closings-to? doc e hi)
+        (let back ([t (fx- e 1)])
+          (cond
+            [(fx< t s) e]
+            [(eq? (document:token doc t) 'close) (back (fx- t 1))]
+            [(final-line-break? doc t) t]
+            [else e]))
+        e))
+
+  (define (line-start-fit doc lo hi s e)
+    (let back ([a s])
+      (if (and (fx> a lo) (boundary? (document:token doc (fx- a 1))))
+          (back (fx- a 1))
+          (if (or (fx= a lo) (final-line-break? doc (fx- a 1)))
+              (let forward ([z s])
+                (cond
+                  [(and (fx< z hi) (boundary? (document:token doc z))) (forward (fx+ z 1))]
+                  [(fx< z e) z]
+                  [else #f]))
+              s))))
+
+  (define (whole-block-fit doc region s e)
+    (let ([b (let ([t (document:token doc (fx- s 1))]) (and (document:node? t) t))]
+          [inside? (lambda (n) (fx> (document:node-start n) (document:node-start region)))])
+      (if (and b (block? b) (inside? b) (fx>= e (fx- (document:node-end b) 1)))
+          (let ([chain (let loop ([x b] [chain (list b)])
+                         (let ([p (parent-of doc x)])
+                           (if (and (inside? p) (fx= (fx+ (document:node-start p) 1) (document:node-start x))
+                                    (covers? doc p e))
+                               (loop p (cons p chain))
+                               chain)))])
+            (if (keeps-last-block? doc region b chain)
+                (values s e)
+                (let ([z (document:node-end (car chain))])
+                  (values (document:node-start (car chain)) (if (fx< e z) z (block-start-fit doc e z))))))
+          (values s e))))
+
+  ;; Removing it would leave the buffer, or an isolating node that stays,
+  ;; with no stop.
+  (define (keeps-last-block? doc region b chain)
+    (or (covers? doc region (document:node-end b))
+        (let loop ([x b])
+          (and (fx> (document:node-start x) (document:node-start region))
+               (covers? doc x (document:node-end b))
+               (or (and (isolating? x) (not (node-member x (cdr chain))))
+                   (loop (parent-of doc x)))))))
+
+  ;; Moving the end before the block's openings keeps its kind.
+  (define (block-start-fit doc e floor)
+    (let ([t (document:token doc (fx- e 1))])
+      (if (and (document:node? t) (block? t))
+          (let back ([q e])
+            (let ([t (and (fx> q floor) (document:token doc (fx- q 1)))])
+              (if (and t (document:node? t) (not (document:atom? t)) (not (isolating? t)))
+                  (back (fx- q 1))
+                  q)))
+          e)))
+
+  (define (last-char-before doc s e)
+    (let loop ([q (fx- e 1)])
+      (and (fx>= q s) (if (char? (document:token doc q)) q (loop (fx- q 1))))))
+
+  (define (line-break-fit doc hi s e)
+    (let ([c (last-char-before doc s e)])
+      (if (and c (final-line-break? doc c)
+               (let ([b (document:enclosing doc c)])
+                 (not (and (fx<= s (document:node-start b)) (fx>= e (document:node-end b))))))
+          (let scan ([q (fx+ c 1)])
+            (define (stays) (if (fx< s c) (list (cons s c)) '()))
+            (if (fx>= q hi)
+                (stays)
+                (let ([t (document:token doc q)])
+                  (cond
+                    [(char? t) (list (cons s q))]
+                    [(edge? doc q) (stays)]
+                    [(boundary? t) (scan (fx+ q 1))]
+                    [else (append (stays) (list (cons q (fxmax e (fx+ q 1)))))]))))
+          (list (cons s e)))))
+
+  (define (kept-isolating doc region s e)
+    (let ([below (lambda (p)
+                   (reverse (filter (lambda (n) (fx> (document:node-start n) (document:node-start region)))
+                                    (ancestors doc p))))])
+      (let common ([as (below s)] [ae (below e)] [holder region])
+        (if (and (pair? as) (pair? ae) (same-node? (car as) (car ae)))
+            (if (isolating? (car as)) (list (car as)) (common (cdr as) (cdr ae) (car as)))
+            (append (start-side doc as s)
+                    (isolating-children doc holder (if (pair? as) (document:node-end (car as)) s)
+                                        (if (pair? ae) (document:node-start (car ae)) e))
+                    (end-side doc ae e))))))
+
+  (define (start-side doc chain s)
+    (if (null? chain)
+        '()
+        (let ([n (car chain)])
+          (if (isolating? n)
+              (list n)
+              (append (start-side doc (cdr chain) s)
+                      (isolating-children doc n (if (pair? (cdr chain)) (document:node-end (cadr chain)) s)
+                                          (fx- (document:node-end n) 1)))))))
+
+  (define (end-side doc chain e)
+    (if (null? chain)
+        '()
+        (let ([n (car chain)])
+          (if (isolating? n)
+              (list n)
+              (append (isolating-children doc n (fx+ (document:node-start n) 1)
+                                          (if (pair? (cdr chain)) (document:node-start (cadr chain)) e))
+                      (end-side doc (cdr chain) e))))))
+
+  ;; The primary selection fits the region again after every command,
+  ;; over a document that stays the same until an edit, and a node can
+  ;; hold thousands of children. So the isolating children of a node of
+  ;; nodes are all read, and kept with the document, once a second fitting
+  ;; of that document asks for them; the first reads only its range.
+  (define walked (cons #f #f))
+
+  (define (isolating-children doc n a b)
+    (cond
+      [(or (fx>= a b) (plain-between? doc a b)) '()]
+      [(eq? (node-content n) 'nodes)
+       (unless (eq? (car walked) doc)
+         (set! walked (cons doc (make-eqv-hashtable))))
+       (let* ([table (cdr walked)] [key (document:node-start n)] [known (hashtable-ref table key #f)])
+         (cond
+           [(vector? known) (filter (lambda (c) (fx<= a (document:node-start c) (fx- b 1))) (vector->list known))]
+           [known
+            (let ([all (list->vector (isolating-siblings doc (fx+ key 1) (fx- (document:node-end n) 1)))])
+              (hashtable-set! table key all)
+              (isolating-children doc n a b))]
+           [else
+            (hashtable-set! table key #t)
+            (isolating-siblings doc a b)]))]
+      [else
+       (let ([found '()])
+         (document:for-each-child n a b
+           (lambda (child at)
+             (when (and (document:node? child) (isolating? child))
+               (set! found (cons child found)))))
+         (reverse found))]))
+
+  ;; A node of nodes holds nothing but children, one after the other.
+  (define (isolating-siblings doc a b)
+    (let loop ([q a] [found '()])
+      (if (fx< q b)
+          (let ([child (document:token doc q)])
+            (loop (document:node-end child) (if (isolating? child) (cons child found) found)))
+          (reverse found))))
+
+  (define (split-fit doc region s e kept)
+    (let loop ([kept kept] [from s] [prev #f] [acc '()])
+      (if (null? kept)
+          (append acc (gap-fit doc region from e prev #f))
+          (let* ([k (car kept)] [k-start (document:node-start k)] [k-end (document:node-end k)]
+                 [inside (fit-region doc k (fxmax from (fx+ k-start 1)) (fxmin e (fx- k-end 1)))])
+            (loop (cdr kept) k-end k (append acc (gap-fit doc region from k-start prev k) inside))))))
+
+  (define (gap-fit doc region from to prev next)
+    (let ([holds (list-sort fx<
+                   (append (if prev (holder-edges doc region prev (lambda (a) (let ([q (fx- (document:node-end a) 1)]) (and (fx< q to) q)))) '())
+                           (if next (holder-edges doc region next (lambda (a) (let ([q (document:node-start a)]) (and (fx>= q from) q)))) '())))])
+      (let loop ([from from] [holds holds] [acc '()])
+        (if (null? holds)
+            (append acc (fit-part doc region from to))
+            (loop (fx+ (car holds) 1) (cdr holds) (append acc (fit-part doc region from (car holds))))))))
+
+  (define (holder-edges doc region k edge-of)
+    (let loop ([a (parent-of doc k)] [acc '()])
+      (let ([q (and (fx> (document:node-start a) (document:node-start region)) (edge-of a))])
+        (if q (loop (parent-of doc a) (cons q acc)) acc))))
+
+  (define (merge-ranges ranges)
+    (fold-right
+      (lambda (r acc)
+        (cond
+          [(fx>= (car r) (cdr r)) acc]
+          [(and (pair? acc) (fx= (cdr r) (caar acc))) (cons (cons (car r) (cdar acc)) (cdr acc))]
+          [else (cons r acc)]))
+      '() ranges))
+
+  (define (fitted-deletion b doc start end)
+    (cond
+      [(fx>= start end) '()]
+      [(or (bare-root b doc) (fx< start 1) (fx> end (fx- (document:length doc) 1))
+           (whole-nodes? doc start end))
+       (list (cons start end))]
+      [(and (plain-between? doc start end)
+            (not (fast-fit? doc start end)))
+       (list (cons start end))]
+      [else (merge-ranges (fit-region doc (document:token doc 0) start end))]))
+
+  ;; Characters inside one text node need fitting only at a block's first
+  ;; position, before its final line break, or at its end.
+  (define (fast-fit? doc s e)
+    (or (boundary? (document:token doc (fx- s 1)))
+        (eqv? (document:token doc (fx- e 1)) #\newline)
+        (boundary? (document:token doc e))))
+
   ;; A string's document is its UTF-8 text, and reading the bytes skips
   ;; the checks a datum needs, which cost more than a typed character's
   ;; whole edit.
@@ -461,7 +745,15 @@
              [os (document:open-start c)] [oe (document:open-end c)]
              [closed (document:datums c)])
         (unless parent (misfit))
-        (let*-values ([(cut) (boundaries 1 closed (list (opening doc t)))]
+        (when (or (isolating? t) (open-isolating? closed os car) (open-isolating? closed oe last-of))
+          (misfit))
+        (let*-values ([(break?) (and (fx= os 0) (block? t) (fx> s (fx+ t-start 1))
+                                     (not (eqv? (document:token doc (fx- s 1)) #\newline)))]
+                      [(doc st0) (if break?
+                                     (replace-step doc s s (string->document "\n"))
+                                     (values doc #f))]
+                      [(s) (if break? (fx+ s 1) s)]
+                      [(cut) (boundaries 1 closed (list (opening doc t)))]
                       [(d1 st1) (replace-step doc s s cut)]
                       [(q) (fx- (step-new-end st1) 1)]
                       [(joined-end) (and (fx> oe 0) (join-at d1 (fx- q oe) (fx+ q 1)))]
@@ -481,14 +773,28 @@
                                       (let-values ([(d st) (replace-step d4 t-start (fx+ t-start 2) empty-document)])
                                         (values d (append steps (list st))))
                                       (values d4 steps))])
-          (let-values ([(lo hi-old hi-new) (compose steps)])
+          (let*-values ([(all-steps) (if st0 (cons st0 steps) steps)]
+                        [(lo hi-old hi-new) (compose all-steps)])
             (let ([p (document:token d5 (document:node-start parent))]
                   [content (node-content parent)])
               (unless (and (top-level-fits? p lo hi-new content) (datums-fit-closed? closed))
                 (misfit))
-              (values d5 steps
+              (values d5 all-steps
                       (lambda (x end?) (through (cdr steps) (fx+ s 1 os x) end?))
                       c (list t parent))))))))
+
+  ;; The datums of a slice open at an edge close the nodes it cut, so the
+  ;; nodes open there are its first or last datums, k deep.
+  (define (open-isolating? datums k pick)
+    (let loop ([ds datums] [k k])
+      (and (fx> k 0) (pair? ds)
+           (let ([d (pick ds)])
+             (and (pair? d)
+                  (let ([kind (table-ref kinds (car d) #f)])
+                    (or (and kind (kind-entry-isolating? kind) #t)
+                        (loop (cddr d) (fx- k 1)))))))))
+
+  (define (last-of ds) (car (last-pair ds)))
 
   (define (top-level-fits? parent lo hi content)
     (call/1cc
@@ -837,26 +1143,53 @@
                 [(document? content) content]
                 [(string? content) (string->document content)]
                 [else (document:from-datum content)])]
-           [anc-s (ancestors-in b d0 start)]
-           [anc-e (if (fx= start end) anc-s (ancestors-in b d0 end))])
+           [replacing? (and (fx< start end) (fx> (document:length c) 0))]
+           ;; Only an insertion right after a block's final line break can
+           ;; leave that block without one.
+           [breaking? (or replacing?
+                          (and (fx= start end) (fx> (document:length c) 0) (final-line-break? d0 (fx- start 1))))]
+           [ranges (cond
+                     [(fx= (document:length c) 0) (fitted-deletion b d0 start end)]
+                     [(fx< start end) (list (cons start end))]
+                     [else '()])]
+           [range-ancestors (map (lambda (r) (cons (ancestors-in b d0 (car r)) (ancestors-in b d0 (cdr r)))) ranges)]
+           [anc-s (if (pair? ranges) (caar range-ancestors) (ancestors-in b d0 start))])
       (refuse-undefined! who anc-s)
-      (refuse-undefined! who anc-e)
-      (refuse-read-only! who b start end (fx> (document:length c) 0))
-      (let*-values ([(d1 deleted) (if (fx< start end)
-                                       (let-values ([(d st) (deletion d0 start end anc-s anc-e)]) (values d (list st)))
-                                       (values d0 '()))]
-                    [(asks) (if (fx< start end) (deletion-asks anc-s anc-e) '())]
-                    [(removed) (if (fx< start end) (document:slice d0 start end) empty-document)])
+      (for-each (lambda (a) (refuse-undefined! who (cdr a))) range-ancestors)
+      (if (fx> (document:length c) 0)
+          (refuse-read-only! who b start end #t)
+          (for-each (lambda (r) (refuse-read-only! who b (car r) (cdr r) #f)) ranges))
+      (when (and replacing? (crosses-edge? anc-s (cdar range-ancestors)))
+        (refuse who "the edit would cross an isolating node's edge" start end))
+      (let*-values ([(d1 deleted) (let loop ([rs (reverse ranges)] [doc d0] [steps '()])
+                                    (if (null? rs)
+                                        (values doc steps)
+                                        (let-values ([(d st) (deletion doc (caar rs) (cdar rs)
+                                                                       (ancestors-in b doc (caar rs)) (ancestors-in b doc (cdar rs)))])
+                                          (loop (cdr rs) d (append steps (list st))))))]
+                    [(asks) (apply append (map (lambda (a) (deletion-asks (car a) (cdr a))) range-ancestors))])
+        (define (proposed inserted)
+          (let ([version (fx+ (buffer-version b) 1)] [silent? (silent-now? b)])
+            (cond
+              [(or replacing? (null? ranges))
+               (make-edit version start (if replacing? (document:slice d0 start end) empty-document) inserted '() '() silent?)]
+              [(null? (cdr ranges))
+               (make-edit version (caar ranges) (document:slice d0 (caar ranges) (cdar ranges)) empty-document '() '() silent?)]
+              [else
+               (let-values ([(lo hi-old hi-new) (compose deleted)])
+                 (make-edit version lo (document:slice d0 lo hi-old) (document:slice d1 lo hi-new) '() '() silent?))])))
         ;; Only content inserted directly is the edit's inserted tokens:
         ;; fitting adds openings and closings around it.
         (define (finish doc steps place inserted)
           (let-values ([(lo hi-old hi-new) (compose (if (null? steps) (list (plain-step start start start)) steps))])
             (check-result who doc lo hi-old (document:length d0))
+            (when (and breaking? (not (keeps-line-breaks? d0 doc lo hi-new (if replacing? (cdar range-ancestors) anc-s))))
+              (refuse who "the edit would leave a block without its final line break" start end))
             (when commit?
               (commit! b doc lo hi-old hi-new
                 (if (fx= lo hi-old) empty-document (document:slice d0 lo hi-old))
                 (if (and (null? deleted) (eq? inserted c) (fx= lo start)) c (document:slice doc lo hi-new))
-                (if (exists step-moves? steps)
+                (if (or (exists step-moves? steps) (and (pair? deleted) (pair? (cdr deleted))))
                     (moved-travelling-spans b steps place start end (document:length c) carried lo hi-old)
                     (absolute-carried carried place))))))
         (let try ([alternatives (insertion-alternatives c)] [refusal #f] [misfit? #f])
@@ -865,8 +1198,7 @@
              (let ([outcome
                     (guard (r [(or (refused-condition? r) (misfit-condition? r)) r])
                       (let-values ([(doc steps place inserted parents) ((car alternatives) d1 start c anc-s)])
-                        (ask! who (append asks parents)
-                              (lambda () (make-edit (fx+ (buffer-version b) 1) start removed inserted '() '() (silent-now? b))))
+                        (ask! who (append asks parents) (lambda () (proposed inserted)))
                         (list doc (append deleted steps) place (and (eq? (car alternatives) insert-directly) inserted))))])
                (cond
                  [(refused-condition? outcome) (try (cdr alternatives) outcome misfit?)]
@@ -875,8 +1207,26 @@
             [refusal (raise refusal)]
             [misfit? (does-not-fit who)]
             [else
-             (ask! who asks (lambda () (make-edit (fx+ (buffer-version b) 1) start removed empty-document '() '() (silent-now? b))))
+             (ask! who asks (lambda () (proposed empty-document)))
              (finish d1 deleted (lambda (x end?) start) empty-document)])))))
+
+  (define (crosses-edge? anc-s anc-e)
+    (let ([is (filter isolating? anc-s)] [ie (filter isolating? anc-e)])
+      (not (and (fx= (length is) (length ie)) (for-all same-node? is ie)))))
+
+  ;; Only the blocks the replaced span starts or ends inside hold old text
+  ;; beside the content, which the caller answers for.
+  (define (keeps-line-breaks? d0 doc lo hi anc-e)
+    (let ([before (find-block (ancestors doc lo))] [after (find-block (ancestors doc hi))])
+      (and (or (not before) (fx>= (document:node-start before) lo) (ends-with-break? doc before)
+               (not (ends-with-break? d0 (document:token d0 (document:node-start before)))))
+           (or (not after) (fx<= (document:node-end after) hi) (ends-with-break? doc after)
+               (let ([old (find-block anc-e)]) (or (not old) (not (ends-with-break? d0 old))))))))
+
+  (define (ends-with-break? doc n) (final-line-break? doc (fx- (document:node-end n) 2)))
+
+  (define (find-block anc)
+    (let ([m (memp block? anc)]) (and m (car m))))
 
   (define (splice-content! who b start end c carried)
     (check-change who b)
@@ -1277,7 +1627,7 @@
     (document:text doc start end (range-atom-texts doc start end)))
 
   (table-set! kinds 'document:raw-byte
-    (make-kind-entry 'document:raw-byte 'atom #f 'both 'all #f #f #f #t (lambda (atom) "\xFFFD;") '(buffers)))
+    (make-kind-entry 'document:raw-byte 'atom #f 'both 'all #f #f #f #t #f (lambda (atom) "\xFFFD;") '(buffers)))
 
   (run-with-idle-timer 1 trim-logs!))
 
@@ -1413,6 +1763,12 @@
 (define (replace! buffer start end content)
   (%replace 'buffers:replace! buffer start end content))
 
+(define (fitted-ranges buffer start end)
+  (check-buffer 'buffers:fitted-ranges buffer)
+  (check-main-thread 'buffers:fitted-ranges)
+  (check-range 'buffers:fitted-ranges buffer start end)
+  (fitted-deletion buffer (buffer-doc buffer) start end))
+
 ;; Fitting can add openings and closings around the content, so the
 ;; position after it is found from the edit, not the content's length.
 (define (insert! buffer position content)
@@ -1486,15 +1842,17 @@
       [(_ id clause ...)
        (identifier? #'id)
        (let loop ([clauses #'(clause ...)] [seen '()] [content #''text] [inline #'#f] [sticky #''both]
-                  [stops #''all] [draw #'#f] [keymap #'#f] [consent #'#f] [whole #'#f] [text #f])
+                  [stops #''all] [draw #'#f] [keymap #'#f] [consent #'#f] [whole #'#f] [isolating #f] [text #f])
          (if (null? clauses)
              (begin
                (when (and text (not (equal? (syntax->datum content) ''atom)))
                  (syntax-violation 'buffers:define-kind "a text clause needs (content atom)" x text))
+               (when (and isolating (equal? (syntax->datum content) ''atom))
+                 (syntax-violation 'buffers:define-kind "an atom has no inside to isolate" x isolating))
                #`(begin
                    (define-public id
                      (define-kind! 'id #,content #,inline #,sticky #,stops #,draw #,keymap #,consent #,whole
-                       #,(if text (syntax-case text () [(_ e) #'e]) #'#f)))
+                       #,(and isolating #t) #,(if text (syntax-case text () [(_ e) #'e]) #'#f)))
                    (define-values () (begin (note-constructor! id 'id) (values)))))
              (let* ([c (car clauses)] [rest (cdr clauses)]
                     [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ (invalid c)])])
@@ -1508,21 +1866,25 @@
                  (syntax-violation 'buffers:define-kind "clause given twice" x c))
                (let ([seen (cons name seen)])
                  (case name
-                   [(content) (loop rest seen (choice '(text nodes atom)) inline sticky stops draw keymap consent whole text)]
+                   [(content) (loop rest seen (choice '(text nodes atom)) inline sticky stops draw keymap consent whole isolating text)]
                    [(inline)
                     (syntax-case c ()
-                      [(_) (loop rest seen content #'#t sticky stops draw keymap consent whole text)]
+                      [(_) (loop rest seen content #'#t sticky stops draw keymap consent whole isolating text)]
                       [_ (invalid c)])]
-                   [(sticky) (loop rest seen content inline (choice '(before after both neither)) stops draw keymap consent whole text)]
-                   [(stops) (loop rest seen content inline sticky (choice '(all children none)) draw keymap consent whole text)]
-                   [(draw) (loop rest seen content inline sticky stops (expression) keymap consent whole text)]
-                   [(keymap) (loop rest seen content inline sticky stops draw (expression) consent whole text)]
-                   [(consent) (loop rest seen content inline sticky stops draw keymap (expression) whole text)]
+                   [(sticky) (loop rest seen content inline (choice '(before after both neither)) stops draw keymap consent whole isolating text)]
+                   [(stops) (loop rest seen content inline sticky (choice '(all children none)) draw keymap consent whole isolating text)]
+                   [(draw) (loop rest seen content inline sticky stops (expression) keymap consent whole isolating text)]
+                   [(keymap) (loop rest seen content inline sticky stops draw (expression) consent whole isolating text)]
+                   [(consent) (loop rest seen content inline sticky stops draw keymap (expression) whole isolating text)]
                    [(whole)
                     (syntax-case c ()
-                      [(_) (loop rest seen content inline sticky stops draw keymap consent #'#t text)]
+                      [(_) (loop rest seen content inline sticky stops draw keymap consent #'#t isolating text)]
                       [_ (invalid c)])]
-                   [(text) (expression) (loop rest seen content inline sticky stops draw keymap consent whole c)]
+                   [(isolating)
+                    (syntax-case c ()
+                      [(_) (loop rest seen content inline sticky stops draw keymap consent whole c text)]
+                      [_ (invalid c)])]
+                   [(text) (expression) (loop rest seen content inline sticky stops draw keymap consent whole isolating c)]
                    [else (invalid c)])))))]
       [_ (syntax-violation 'buffers:define-kind "expected (buffers:define-kind id clause ...)" x)])))
 
@@ -1542,6 +1904,10 @@
 (define (kind-whole? kind)
   (check-kind 'buffers:kind-whole? kind)
   (kind-entry-whole? kind))
+
+(define (kind-isolating? kind)
+  (check-kind 'buffers:kind-isolating? kind)
+  (kind-entry-isolating? kind))
 
 (define (kind? v) (kind-entry? v))
 

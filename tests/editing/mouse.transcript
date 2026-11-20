@@ -251,7 +251,7 @@
 > (apply mouse! "click" 9 (double))
 > (state)
 ("onthree four" ((13 9)))
-> (buffers:piece-text (editing:primary-selection))
+> (kill-ring:text (list (editing:primary-selection)))
 "four"
 > (mouse! "down" 1 '("button" . 2))
 > (mouse! "click" 1 '("button" . 2))
@@ -264,8 +264,6 @@
 ((7 #f))
 > (let ([c (car (views:cursors (view)))]) (views:set-cursor! c 7 6))
 > (press! "C-x" "C-x")
-> (document:datums (buffers:piece-document (editing:primary-selection)))
-(#(md:image ((src . "a.png"))))
 > (mouse! "down" 3 '("button" . 2))
 > (mouse! "click" 3 '("button" . 2))
 > calls

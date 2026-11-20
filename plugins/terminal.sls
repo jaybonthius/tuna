@@ -1232,7 +1232,7 @@
   "Selects the view clicked and sends the primary selection to the program as a paste; does nothing without one."
   (let ([t (%current 'terminal:mouse-yank-primary)] [primary (editing:primary-selection)])
     (layout:select! (views:current))
-    (when primary (%paste-text! t (buffers:piece-text primary)))))
+    (when primary (%paste-text! t (kill-ring:text (list primary))))))
 
 (define (%posn-cell t posn)
   (let-values ([(column row) (views:posn-cell posn)])

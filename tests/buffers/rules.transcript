@@ -314,15 +314,16 @@
        (list buffers:piece-document buffers:piece-length buffers:piece-text))
 ((buffers:piece-document "not a piece") (buffers:piece-length "not a piece") (buffers:piece-text "not a piece"))
 ; Inserting returns the position after what went in, which fitting can
-; put further than the content's length.
+; put further than the content's length: the half before a paragraph
+; put inside another ends with a line break.
 > (define q (fresh '(md:doc () (md:para () "One.\n") (md:para () "Two.\n"))))
 > (define two (buffers:piece q 8 15))
 > (list (document:datums (buffers:piece-document two)) (buffers:piece-length two))
 (((md:para () "Two.\n")) 7)
 > (buffers:insert! q 3 two)
-12
+13
 > (root q)
-(md:doc () (md:para () "O") (md:para () "Two.\n") (md:para () "ne.\n") (md:para () "Two.\n"))
+(md:doc () (md:para () "O\n") (md:para () "Two.\n") (md:para () "ne.\n") (md:para () "Two.\n"))
 > (guard (c [#t (list (condition-who c) (condition-message c))]) (buffers:insert! q 99 "x"))
 (buffers:insert! "not a position in the buffer")
 ; Joining two paragraphs deletes the boundary between them and moves
@@ -350,7 +351,7 @@
 ("Beta")
 > (define o (fresh '(md:doc () (md:para () "Alpha.\n") (lists:bulleted () (md:item () "Beta gamma.\n")))))
 > (buffers:add-span! (buffers:layer o responses) 12 16 'bold)
-> (define x-piece (let ([x (fresh "X\n")]) (buffers:add-span! (buffers:layer x responses) 1 2 'x) (buffers:piece x 1 2)))
+> (define x-piece (let ([x (fresh "X\n")]) (buffers:add-span! (buffers:layer x responses) 1 2 'x) (buffers:piece x 1 3)))
 > (buffers:replace! o 8 12 x-piece)
 #<edit 2>
 > (map (lambda (s) (list (document:text (buffers:document o) (car s) (cadr s)) (caddr s))) (buffers:spans (buffers:layer o responses) 0 20))

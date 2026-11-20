@@ -138,15 +138,16 @@
 (md:doc () (md:para () "Alpha pha " (md:link () "beta") " gamma.\n") (md:para () "Tw" (md:link () "beta") " gamma.\n") (md:para () "Two three.\n"))
 > (document:text (buffers:document m) 8 30)
 "pha beta gamma.\nTw"
-; A whole paragraph put inside another splits it; the position after is
-; at the start of the text it split off.
+; A whole paragraph put inside another splits it, the first half keeping
+; a line break; the position after is at the start of the text it split
+; off.
 > (define para (let ([l (document:length (buffers:document m))]) (buffers:piece m (- l 14) (- l 1))))
 > (buffers:piece-text para)
 "Two three.\n"
 > (define n (buffers:make "n" (md:doc '() (md:para '() "abcd\n"))))
 > (define after (kill-ring:insert! n 4 para))
 > (list (root n) (document:text (buffers:document n) 0 after))
-((md:doc () (md:para () "ab") (md:para () "Two three.\n") (md:para () "cd\n")) "abTwo three.\n")
+((md:doc () (md:para () "ab\n") (md:para () "Two three.\n") (md:para () "cd\n")) "ab\nTwo three.\n")
 ; A response's travelling span survives a kill and a yank elsewhere;
 ; another layer's spans stay behind. A string yanked into the span's end
 ; joins it, as typed text would.
@@ -201,6 +202,23 @@
 18
 > (list (root f) (spans-of f responses))
 ((form () (field () "xabcAnswer here.y")) (("Answer here.y" gpt)))
+; kill-ring:join makes one kill of strings, pieces and kills: pushed, it
+; is one entry and one call of after-push; yanked, its parts go in turn,
+; and a part refused takes the others back out.
+> (set! pushed '())
+> (define cells (kill-ring:join (buffers:piece w 2 5) "|" (buffers:piece w 13 18)))
+> (kill-ring:push! (list cells))
+> (list (kill-ring:text (kill-ring:current)) (length (car (kill-ring:entries))) (take-pushed!))
+("One|Three" 1 ("One|Three"))
+> (define z (buffers:make "z" (md:doc '() (md:para '() "ab\n"))))
+> (kill-ring:insert! z 3 cells)
+12
+> (root z)
+(md:doc () (md:para () "aOne|Threeb\n"))
+> (list (raised (lambda () (kill-ring:insert! f 3 (kill-ring:join "a" (buffers:piece w 6 17))))) (root f))
+((buffers:insert! "the node refuses the edit") (form () (field () "xabcAnswer here.y")))
+> (list (kill-ring:join) (kill-ring:text (list (kill-ring:join "a" (kill-ring:join "b" "c")))) (raised (lambda () (kill-ring:join 'x))))
+("" "abc" (kill-ring:join "not a string, a piece or a kill"))
 ; Yankers: a piece whose top node, or atom, has a kind in the table goes
 ; to its procedure; otherwise, or once the entry goes, to replace!.
 > (define calls '())

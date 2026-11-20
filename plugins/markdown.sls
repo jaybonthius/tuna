@@ -203,7 +203,7 @@
 (buffers:define-kind item (content nodes) (draw %draw))
 (buffers:define-kind table (content nodes) (whole) (keymap table-keymap) (draw %draw))
 (buffers:define-kind table-row (content nodes) (draw %draw))
-(buffers:define-kind table-cell (draw %draw))
+(buffers:define-kind table-cell (isolating) (draw %draw))
 (buffers:define-kind rule (content atom) (draw %draw))
 (buffers:define-kind strong (inline) (draw %draw))
 (buffers:define-kind emphasis (inline) (draw %draw))

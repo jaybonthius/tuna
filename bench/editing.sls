@@ -1,5 +1,5 @@
 #!tuna
-(import (document) (buffers) (views) (commands) (keys) (undo) (editing))
+(import (document) (buffers) (views) (commands) (keys) (undo) (editing) (layout) (web))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -39,7 +39,7 @@
 (define (show name value)
   (printf "~a ~,2f\n" name value))
 
-(define client 'bench)
+(define client (web:add-client! 1))
 
 (define line (string-append (make-string 60 #\x) "\n"))
 
@@ -114,4 +114,70 @@
   (let ([v (without-history (view-of "alpha beta\n" 6))])
     (views:with-view v
       (show "transpose-words"
-        (ns-per-op (lambda () (views:set-point! v 6) (editing:transpose-words)))))))
+        (ns-per-op (lambda () (views:set-point! v 6) (editing:transpose-words))))))
+  (bench-blocks))
+
+;; Two thousand paragraphs against two thousand lines of one text: the
+;; content's ends are stops, and word motion reads the nodes it passes.
+(buffers:define-kind page (content nodes))
+(buffers:define-kind paragraph)
+
+;; The running program always has isolating kinds, as table cells, so a
+;; region's fitting looks for isolating nodes as it does there.
+(buffers:define-kind cell (isolating))
+
+(define paragraph-text "Buy milk and café, then λx words.\n")
+
+(define (paragraphs-content count) (apply page '() (map (lambda (i) (paragraph '() paragraph-text)) (iota count))))
+
+(define (lines-content count) (apply string-append (make-list count paragraph-text)))
+
+(define (paragraph-text-start k) (+ 2 (* k (+ (string-length paragraph-text) 2))))
+
+(define (line-start k) (+ 1 (* k (string-length paragraph-text))))
+
+;; A few runs each, for a command that moves a thousand lines.
+(define (ms-per-run thunk)
+  (median
+    (map (lambda (k)
+           (collect-rendezvous)
+           (let ([start (now-ns)])
+             (thunk)
+             (/ (- (now-ns) start) 1e6)))
+         (iota 5))))
+
+(define (bench-blocks)
+  (let ([blocks (without-history (view-of (paragraphs-content 2000) (paragraph-text-start 1000)))]
+        [lines (without-history (view-of (lines-content 2000) (line-start 1000)))])
+    (for-each
+      (lambda (v suffix)
+        (views:with-view v
+          (show (string-append "forward-char-" suffix)
+            (/ (ns-per-op (lambda () (editing:forward-char 1) (editing:backward-char 1))) 2))
+          (show (string-append "forward-word-" suffix)
+            (/ (ns-per-op (lambda () (editing:forward-word 1) (editing:backward-word 1))) 2))))
+      (list blocks lines) '("blocks" "text")))
+  ;; An active region over the whole buffer: after each command the
+  ;; selected view's region becomes the primary selection.
+  (for-each
+    (lambda (content suffix)
+      (let ([v (layout:selected-view)] [b (buffers:make (format "bench-~a" (begin (set! made (fx+ made 1)) made)) content)])
+        (views:set-buffer! v b)
+        (buffers:with-buffer b (set-option-local! undo:limit 0))
+        (views:set-point! v (paragraph-text-start 1000))
+        (views:set-mark! v 1)
+        (views:with-view v
+          (show (string-append "region-motion-" suffix)
+            (/ (ns-per-op (lambda () (keys:press! client "C-f") (keys:press! client "C-b"))) 2)))))
+    (list (paragraphs-content 2000) (lines-content 2000)) '("blocks" "text"))
+  (for-each
+    (lambda (content start end suffix)
+      (let ([v (without-history (view-of content start))])
+        (views:set-mark! v end)
+        (views:with-view v
+          (show (string-append "move-lines-" suffix)
+            (/ (ms-per-run (lambda () (editing:move-line-down 1) (editing:move-line-up 1))) 2)))))
+    (list (paragraphs-content 1001) (lines-content 1001))
+    (list (paragraph-text-start 0) (line-start 0))
+    (list (paragraph-text-start 1000) (line-start 1000))
+    '("blocks" "text")))

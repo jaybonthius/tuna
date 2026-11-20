@@ -120,21 +120,15 @@
 (define (%draw-prompt node view)
   (haml (:div.pi-chat-prompt (views:draw-children view node))))
 
-;; The field's text is read up to its last line break, so an edit may not
-;; remove it.
+;; A deletion puts back the line breaks it keeps, so only an edit that
+;; adds one adds a line.
 (define (%field-edit? node edit)
-  (let ([start (buffers:edit-start edit)] [last-newline (fx- (document:node-end node) 2)])
-    (and (fx> start (document:node-start node))
-         (fx<= (fx+ start (buffers:piece-length (buffers:edit-removed edit))) last-newline)
-         (or (%attribute node 'lines)
-             (not (memv #\newline (string->list (document:text (buffers:piece-document (buffers:edit-inserted edit))))))))))
+  (or (%attribute node 'lines)
+      (<= (%line-breaks (buffers:edit-inserted edit)) (%line-breaks (buffers:edit-removed edit)))))
 
-;; The prompt's text is read up to its last line break, so an edit may not
-;; remove it.
-(define (%prompt-edit? node edit)
-  (let ([start (buffers:edit-start edit)] [last-newline (fx- (document:node-end node) 2)])
-    (and (fx> start (document:node-start node))
-         (fx<= (fx+ start (buffers:piece-length (buffers:edit-removed edit))) last-newline))))
+(define (%line-breaks piece)
+  (let ([doc (buffers:piece-document piece)])
+    (- (document:line doc (document:length doc)) 1)))
 
 (buffers:define-kind %chat (content nodes) (consent %refuse-edits) (draw %draw-chat))
 (buffers:define-kind transcript (content nodes) (consent %refuse-edits) (keymap transcript-keymap) (draw %draw-transcript))
@@ -156,14 +150,14 @@
 (buffers:define-kind %dialogs (content nodes) (consent %refuse-edits) (draw %draw-dialogs))
 (buffers:define-kind dialog (content nodes) (consent %refuse-edits) (keymap dialog-keymap) (draw %draw-dialog))
 (buffers:define-kind %dialog-text (consent %refuse-edits) (draw %draw-dialog-text))
-(buffers:define-kind %field (consent %field-edit?) (draw %draw-field))
+(buffers:define-kind %field (isolating) (consent %field-edit?) (draw %draw-field))
 (buffers:define-kind %actions (stops children) (consent %refuse-edits) (draw %draw-actions))
 (buffers:define-kind queue (content nodes) (consent %refuse-edits) (draw %draw-queue))
 (buffers:define-kind %queued (consent %refuse-edits) (draw %draw-queued))
 (buffers:define-kind %tag (inline) (consent %refuse-edits) (draw %draw-tag))
 (buffers:define-kind %widgets (content nodes) (consent %refuse-edits) (draw %draw-widgets))
 (buffers:define-kind widget (consent %refuse-edits) (draw %draw-widget))
-(buffers:define-kind prompt (consent %prompt-edit?) (keymap prompt-keymap) (draw %draw-prompt))
+(buffers:define-kind prompt (isolating) (keymap prompt-keymap) (draw %draw-prompt))
 
 ;; The transcript holds Markdown's kinds, which take edits as text does.
 (buffers:define-layer %read-only (read-only))

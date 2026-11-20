@@ -31,10 +31,11 @@
 > (in-client (lambda () (commands:run pi-chat:previous-message)))
 ! pi-chat:previous-message: no earlier message
 ; M-> goes to the end of the prompt's text, where typing goes, and C-k
-; there may not remove the line break the prompt is read up to.
+; there is at the end of the buffer: the prompt keeps the line break it
+; is read up to.
 > (press! "M->")
 > (type! "!")
 > (press! "C-k")
-! buffers:replace!: the node refuses the edit with irritant pi-chat:prompt
+! editing:kill-line: end of buffer
 > (shown chat)
 "Hello\nFirst\nAnswer one\nSecond\nAnswer two\nab\ncd!\n"

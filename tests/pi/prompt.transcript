@@ -204,3 +204,89 @@
 > (sleep-for 0.1)
 > (list (shown other) (cdr (assoc chat-id (pi-chat:drafts))) (assoc "s-new" (pi-chat:drafts)))
 ("unsent\nkept\ntyped\n" "unsent\nkept\ntyped" #f)
+; The prompt is isolating: it keeps the line break the text sent is read
+; up to, and behaves the same with widgets around it or none, but for
+; the buffer's edges. Each case sets the prompt, puts point in it, and
+; gives the text sent and point's place in it.
+> (define edges (pi:start (getenv "HOME")))
+> (define ef (fake-of edges))
+> (wait-until (lambda () (eq? (pi:chat-activity edges) 'idle)))
+> (in-client (lambda () (pi-chat:show! edges)))
+> (define (node-of chat kind)
+    (let* ([doc (buffers:document (pi-chat:buffer chat))] [n (document:length doc)])
+      (let loop ([p 0])
+        (and (< p n)
+             (let ([t (document:token doc p)])
+               (if (and (document:node? t) (eq? (document:node-kind t) kind)) t (loop (+ p 1))))))))
+> (define (sent) (document:text (buffers:document (pi-chat:buffer edges)) (pi-chat:prompt-start edges) (pi-chat:prompt-end edges)))
+> (define (on-prompt offset . keys)
+    (in-client (lambda () (pi-chat:set-prompt! edges "hi there") (views:set-point! (view) (+ (pi-chat:prompt-start edges) offset))))
+    (apply press! keys)
+    (list (sent) (- (views:point (view)) (pi-chat:prompt-start edges))))
+> (define (each-case) (map (lambda (case) (apply on-prompt case)) '((8 "C-d") (0 "DEL") (6 "C-u" "5" "C-d") (8 "C-k") (3 "C-u" "2" "C-k") (3 "C-S-DEL") (8 "M-d") (0 "M-DEL") (8 "M-u") (8 "C-t") (3 "M-t") (0 "M-^"))))
+> (each-case)
+! editing:kill-line: end of buffer
+! editing:delete-char: end of buffer
+! editing:delete-backward-char: beginning of buffer
+(("hi there" 8) ("hi there" 0) ("hi the" 6) ("hi there" 8) ("hi " 3) ("" 0) ("hi there" 8) ("hi there" 0) ("hi there" 8) ("hi theer" 8) ("there hi" 8) ("hi there" 0))
+> (define (ui-request id method . fields) (append `(("type" . "extension_ui_request") ("id" . ,id) ("method" . ,method)) fields))
+> (say! ef (ui-request "pw1" "setWidget" '("widgetKey" . "w1") '("widgetLines" . #("w1")))
+         (ui-request "pw2" "setWidget" '("widgetKey" . "w2") '("widgetLines" . #("w2")) '("widgetPlacement" . "belowEditor")))
+> (wait-until (lambda () (= 2 (length (pi:chat-widgets edges)))))
+> (sleep-for 0.1)
+> (shown edges)
+"w1\nhi there\nw2\n"
+> (each-case)
+! buffers:replace!: the node refuses the edit with irritant pi-chat:widget
+(("hi there" 8) ("hi there" 0) ("hi there" 6) ("hi there" 8) ("hi " 3) ("" 0) ("hi there" 8) ("hi there" 0) ("hi there" 8) ("hi theer" 8) ("there hi" 8) ("hi there" 0))
+> (kill-ring:push! (list (buffers:piece (buffers:make "*plan*" '(markdown:quote () (markdown:heading ((level . 1)) "Plan\n"))) 1 8)))
+; A heading yanked into the prompt goes in as its text; a line moved
+; into the widget above leaves a copy of its text, which the widget
+; refuses; a region reaching out of the prompt is refused.
+> (on-prompt 0 "C-y")
+("Plan\nhi there" 5)
+> (on-prompt 0 "C-x" "C-t")
+! buffers:insert!: the node refuses the edit with irritant pi-chat:widget
+("w1hi there" 0)
+> (in-client (lambda () (pi-chat:set-prompt! edges "hi there") (views:set-point! (view) (+ (pi-chat:prompt-start edges) 3)) (views:set-mark! (view) (+ (document:node-start (node-of edges 'pi-chat:widget)) 1))))
+> (press! "C-w")
+! buffers:replace!: the node refuses the edit with irritant pi-chat:%chat
+> (sent)
+"hi there"
+; Code that inserts after the prompt's final line break is refused, so
+; the text sent stays what is before it.
+> (guard (c [(buffers:refused? c) (condition-message c)])
+    (buffers:insert! (pi-chat:buffer edges) (+ (pi-chat:prompt-end edges) 1) "x"))
+"the edit would leave a block without its final line break"
+> (sent)
+"hi there"
+; A question's field is isolating too.
+> (say! ef (ui-request "q1" "input" '("title" . "Name?")))
+> (wait-until (lambda () (node-of edges 'pi-chat:%field)))
+> (define (field-text) (let ([n (node-of edges 'pi-chat:%field)]) (document:text (buffers:document (pi-chat:buffer edges)) (+ (document:node-start n) 1) (- (document:node-end n) 2))))
+> (define (on-field offset . keys)
+    (in-client
+      (lambda ()
+        (let ([n (node-of edges 'pi-chat:%field)])
+          (buffers:replace! (pi-chat:buffer edges) (+ (document:node-start n) 1) (- (document:node-end n) 2) "ab cd"))
+        (views:set-point! (view) (+ (document:node-start (node-of edges 'pi-chat:%field)) 1 offset))))
+    (apply press! keys)
+    (list (field-text) (- (views:point (view)) (document:node-start (node-of edges 'pi-chat:%field)) 1)))
+> (map (lambda (case) (apply on-field case))
+       '((5 "C-d") (0 "DEL") (5 "C-k") (0 "C-u" "2" "C-k") (1 "C-S-DEL") (5 "M-d") (0 "M-DEL") (2 "M-t") (5 "C-t") (0 "M-u")))
+(("ab cd" 5) ("ab cd" 0) ("ab cd" 5) ("" 0) ("" 0) ("ab cd" 5) ("ab cd" 0) ("cd ab" 5) ("ab dc" 5) ("AB cd" 2))
+> (kill-ring:push! (list "xy"))
+> (on-field 0 "C-y")
+("xyab cd" 2)
+> (kill-ring:push! (list "x\ny"))
+> (on-field 0 "C-y")
+! buffers:insert!: the node refuses the edit with irritant pi-chat:%field
+("ab cd" 0)
+> (on-field 0 "C-x" "C-t")
+! buffers:insert!: the node refuses the edit with irritant pi-chat:%header
+("Name?ab cd" 0)
+> (in-client (lambda () (views:set-mark! (view) (+ (document:node-start (node-of edges 'pi-chat:%header)) 1))))
+> (press! "C-w")
+! buffers:replace!: the node refuses the edit with irritant pi-chat:dialog
+> (field-text)
+"Name?ab cd"
