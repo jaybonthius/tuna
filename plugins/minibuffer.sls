@@ -52,17 +52,30 @@
 (define (%draw-question node view)
   (haml (:span.minibuffer-question (views:draw-children view node))))
 
-(define (%draw-message text face)
-  (haml (:span.minibuffer-message ([role "status"] [data-face (and face (symbol->string face))]) " [" text "]")))
+(define (%with-faces text ranges)
+  (let loop ([at 0] [ranges (list-sort (lambda (a b) (fx< (car a) (car b))) ranges)] [acc '()])
+    (cond
+      [(null? ranges) (reverse (cons (substring text at (string-length text)) acc))]
+      [(fx< (caar ranges) at) (loop at (cdr ranges) acc)]
+      [else
+       (let ([r (car ranges)])
+         (loop (cadr r) (cdr ranges)
+               (cons* (haml (:span ([data-face (symbol->string (caddr r))]) (substring text (car r) (cadr r))))
+                      (substring text at (car r))
+                      acc)))])))
+
+(define (%draw-message text face ranges)
+  (haml (:span.minibuffer-message ([role "status"] [data-face (and face (symbol->string face))])
+          " [" (%with-faces text ranges) "]")))
 
 ;; The prompt's own message is about its input, so it wins over the echo
 ;; area's.
 (define (%message-html p)
   (cond
     [(not p) '()]
-    [(prompt-message p) => (lambda (text) (%draw-message text #f))]
+    [(prompt-message p) => (lambda (text) (%draw-message text #f '()))]
     [(and (eq? p (bottom-prompt)) (echo-area:hidden?) (echo-area:current-message))
-     => (lambda (text) (%draw-message text (echo-area:current-face)))]
+     => (lambda (text) (%draw-message text (echo-area:current-face) (echo-area:current-spans)))]
     [else '()]))
 
 (define (%draw-input node view)

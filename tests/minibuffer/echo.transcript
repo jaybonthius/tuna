@@ -18,6 +18,11 @@
 > (type! "a")
 > (list (echo-area:current-message) (bracket) (input))
 (#f #f "a")
+; Ranges of the message in faces show in the bracket too.
+> (parameterize ([echo-area:spans (list (list 0 5 faces:highlight))]) (echo-area:message! "total(items)"))
+> (between (html->string (views:draw (minibuffer:prompt-view (prompt)) client)) "<span class=\"minibuffer-message\"" "]</span>")
+"<span class=\"minibuffer-message\" role=\"status\"> [<span data-face=\"highlight\">total</span>(items)]</span>"
+> (press! "C-e")
 ; A command's error shows there too, in the error face.
 > (press! "M-p")
 ! minibuffer:previous-history: beginning of history

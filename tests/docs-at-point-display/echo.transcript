@@ -1,0 +1,54 @@
+; As point rests, the echo area shows the doc as its thing, a colon and
+; its echo, with the doc's ranges in faces moved past the thing; it is
+; not logged.
+> (press! "C-f")
+> (wait-until (lambda () (echo-area:current-message)))
+> (list (echo-area:current-message) (echo-area:current-spans))
+("alpha: (alpha x)" ((14 15 highlight)))
+> (messages)
+""
+; After a command the docs show again at once, until the new ones come.
+> (press! "M-f" "C-f")
+> (echo-area:current-message)
+"alpha: (alpha x)"
+> (wait-until (lambda () (equal? (echo-area:current-message) "beta: (beta x)")))
+> (echo-area:current-message)
+"beta: (beta x)"
+; Docs never cover a message.
+> (echo-area:message! "Saved")
+> (docs-at-point:ask-sources (view))
+> (sleep-for 0.2)
+> (echo-area:current-message)
+"Saved"
+; A doc whose echo is not its text shows no ranges, and one with no echo
+; is left out.
+> (define (two view)
+    (list (docs-at-point:make-doc "first line" (docs-at-point:doc-options [thing "one"] [echo "short"] [spans '((0 5 highlight))]))
+          (docs-at-point:make-doc "unseen" (docs-at-point:doc-options [echo #f]))
+          (docs-at-point:make-doc "second")))
+> (remove-hook! docs-at-point:sources signature)
+> (add-hook! docs-at-point:sources two)
+> (press! "C-a")
+> (wait-until (lambda () (equal? (echo-area:current-message) "one: short\nsecond")))
+> (list (echo-area:current-message) (echo-area:current-spans))
+("one: short\nsecond" ())
+; echo-lines 1 cuts the rest with an ellipsis.
+> (set-option! docs-at-point-display:echo-lines 1)
+> (press! "C-e")
+> (wait-until (lambda () (equal? (echo-area:current-message) "one: short…")))
+> (echo-area:current-message)
+"one: short…"
+; When the sources answer with no docs, the echo area's docs go.
+> (remove-hook! docs-at-point:sources two)
+> (define (none view) #f)
+> (add-hook! docs-at-point:sources none)
+> (press! "C-a")
+> (sleep-for 0.3)
+> (echo-area:current-message)
+#f
+; Unloading the display plugin takes its displays back.
+> (length (hook-entries docs-at-point:displays))
+2
+> (unload-module! '(docs-at-point-display))
+> (length (hook-entries docs-at-point:displays))
+0

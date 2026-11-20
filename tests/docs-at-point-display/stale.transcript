@@ -1,0 +1,59 @@
+; Docs show again after a command only at their place: the view they are
+; about, still showing their buffer, with the mode on there.
+> (remove-hook! docs-at-point:sources signature)
+> (buffers:with-buffer notes (add-local-hook! docs-at-point:sources signature))
+> (press! "C-f")
+> (wait-until (lambda () (echo-area:current-message)))
+> (echo-area:current-message)
+"alpha: (alpha x)"
+; The same view switched to a buffer no source applies to.
+> (define plain (buffers:make "plain" "no sources here\n"))
+> (commands:define-command (to-plain) "Shows plain." (layout:switch-to-buffer plain))
+> (keys:bind! keys:global "C-c p" to-plain)
+> (press! "C-c" "p")
+> (sleep-for 0.3)
+> (press! "C-f")
+> (sleep-for 0.3)
+> (list (buffers:name (views:buffer (view))) (echo-area:current-message))
+("plain" #f)
+; The mode turned off in the docs' own buffer.
+> (layout:switch-to-buffer notes)
+> (press! "M-f")
+> (wait-until (lambda () (echo-area:current-message)))
+> (echo-area:current-message)
+"alpha: (alpha x)"
+> (buffers:with-buffer notes (set-option-local! docs-at-point:mode #f))
+> (press! "C-a")
+> (sleep-for 0.3)
+> (press! "C-e")
+> (sleep-for 0.3)
+> (echo-area:current-message)
+#f
+> (buffers:with-buffer notes (remove-option-local! docs-at-point:mode))
+; Once the buffer's sources are gone, the next changed place clears its
+; docs, and they do not show again.
+> (press! "C-a")
+> (wait-until (lambda () (echo-area:current-message)))
+> (echo-area:current-message)
+"alpha: (alpha x)"
+> (buffers:with-buffer notes (remove-local-hook! docs-at-point:sources signature))
+> (press! "C-f")
+> (sleep-for 0.3)
+> (press! "C-f")
+> (sleep-for 0.3)
+> (echo-area:current-message)
+#f
+; A late answer about a view the user has left shows nowhere in the echo
+; area.
+> (define done 0)
+> (define (slow view) (sleep-for 0.5) (set! done (+ done 1)) (docs-at-point:make-doc "slow"))
+> (add-hook! docs-at-point:sources slow)
+> (views:set-buffer! other-view plain)
+> (buffers:with-buffer plain (set-option-local! docs-at-point:mode #f))
+> (press! "C-a")
+> (sleep-for 0.15)
+> (layout:select! other-view)
+> (press! "C-f")
+> (sleep-for 0.8)
+> (list done (echo-area:current-message))
+(1 #f)

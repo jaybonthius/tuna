@@ -8,6 +8,20 @@
         (assertion-violation 'echo-area:face "not a face or #f" v))
       v)))
 
+(define (%spans? v)
+  (and (list? v)
+       (for-all (lambda (s)
+                  (and (list? s) (fx= (length s) 3) (fixnum? (car s)) (fixnum? (cadr s))
+                       (fx<= 0 (car s) (cadr s)) (symbol? (caddr s))))
+                v)))
+
+(define spans
+  (make-thread-parameter '()
+    (lambda (v)
+      (unless (%spans? v)
+        (assertion-violation 'echo-area:spans "not a list of a start, an end and a face" v))
+      v)))
+
 ;; Reports show through echo-area:message!, so its advice sees them, and
 ;; only the log takes the procedure's name before their text.
 (define %log-prefix (make-thread-parameter ""))
@@ -38,6 +52,8 @@
 
 (buffers:define-kind %log (consent %refuse-edits))
 
+(buffers:define-layer %message-faces)
+
 (define-table messages-keymap "Keys in *Messages*.")
 
 (define-hook messages-mode-hook "Called in each buffer that turns on echo-area:messages-mode.")
@@ -49,7 +65,7 @@
   (hook messages-mode-hook))
 
 (module %internals
-  (check-main-thread echo-buffer messages-buffer shown? show! log! queue-report! flushing? flush-reports! report-text
+  (check-main-thread echo-buffer messages-buffer shown? shown-spans show! log! queue-report! flushing? flush-reports! report-text
    make-queued-report
    echo-text-prompt echo-text-keys echo-text-waiting? shown-echo uncover-echo! follow-key! follow-echoes! forget-echo!)
 
@@ -66,12 +82,21 @@
 
   (define shown? (fx> (document:length (buffers:document echo-buffer)) 2))
 
+  (define shown-spans '())
+
   ;; Set first, so a quit landing in the edit leaves a key to clear an
   ;; echo area that may show nothing, never a message no key clears.
-  (define (show! text face)
+  (define (show! text face ranges)
     (set! shown? (or shown? (not (string=? text ""))))
+    (set! shown-spans '())
     (buffers:splice! echo-buffer 0 (document:length (buffers:document echo-buffer))
       (document:from-datum (area (if face (list (cons 'face face)) '()) text)))
+    (let* ([n (string-length text)]
+           [ranges (filter (lambda (r) (fx< (car r) (cadr r)))
+                           (map (lambda (r) (list (fxmin (car r) n) (fxmin (cadr r) n) (caddr r))) ranges))])
+      (buffers:set-spans! (buffers:layer echo-buffer %message-faces) 0 (document:length (buffers:document echo-buffer))
+        (map (lambda (r) (list (fx+ (car r) 1) (fx+ (cadr r) 1) (list (cons 'face (caddr r))))) ranges))
+      (set! shown-spans ranges))
     (set! shown? (not (string=? text "")))
     (when shown? (cover-echoes!)))
 
@@ -275,7 +300,7 @@
                   (let ([entry (car left)])
                     (set! left (cdr left))
                     (with-options ([log-max (option-setting log-max)])
-                      (parameterize ([face (queued-report-face entry)] [%log-prefix (queued-report-who entry)])
+                      (parameterize ([face (queued-report-face entry)] [spans '()] [%log-prefix (queued-report-who entry)])
                         (message! "~a" (queued-report-text entry))))
                     (loop)))))
             (lambda ()
@@ -323,7 +348,7 @@
     (assertion-violation 'echo-area:message! "not a string" format-string))
   (unless flushing? (flush-reports!))
   (let ([text (apply format format-string vs)])
-    (show! text (face))
+    (show! text (face) (spans))
     (unless (string=? text "") (log! (string-append (%log-prefix) text)))
     (void)))
 
@@ -332,6 +357,10 @@
   (and shown?
        (let ([doc (buffers:document echo-buffer)])
          (document:text doc 1 (fx- (document:length doc) 1)))))
+
+(define (current-spans)
+  (check-main-thread 'echo-area:current-spans)
+  (if shown? shown-spans '()))
 
 (define (current-face)
   (check-main-thread 'echo-area:current-face)
@@ -359,7 +388,7 @@
 ;; shows.
 (define (%clear-on-key press client key)
   (when (and shown? (string? key))
-    (show! "" #f))
+    (show! "" #f '()))
   (press client key))
 
 (define (keys-text client)

@@ -1,0 +1,66 @@
+; g raises before any docs are shown.
+> (raised docs-at-point-display:refresh)
+(docs-at-point-display:refresh "No docs to refresh")
+; C-h . asks now and writes *Docs*, each doc under its thing as a
+; heading, its Markdown drawn, and shows it in another view.
+> (define (described view)
+    (docs-at-point:make-doc (string-append "Takes **" (word-at view) "**.") (docs-at-point:doc-options [markdown] [thing (word-at view)])))
+> (add-hook! docs-at-point:sources described 1)
+> (set-option! docs-at-point:strategy docs-at-point:all)
+> (press! "C-h" ".")
+> (wait-until (lambda () (buffers:find "*Docs*")))
+> (sleep-for 0.1)
+> (define docs (buffers:find "*Docs*"))
+> (document:datums (buffers:document docs))
+((docs-at-point-display:%page () (markdown:heading ((level . 2)) "alpha\n") (markdown:code-block ((language . "")) "(alpha x)\n") (markdown:heading ((level . 2)) "alpha\n") (markdown:paragraph ((key . 0)) "Takes " (markdown:strong () "alpha") ".\n")))
+> (list (eq? (views:buffer other-view) docs) (eq? (layout:selected-view) notes-view))
+(#t #t)
+> (modes:major-mode docs)
+docs-at-point-display:docs-mode
+; With the mode off nothing follows point, and g in *Docs* asks again for
+; the view the docs are about, at its point now.
+> (set-option! docs-at-point:mode #f)
+> (press! "M-f" "M-f")
+> (sleep-for 0.3)
+> (document:text (buffers:document docs))
+"alpha\n(alpha x)\nalpha\nTakes alpha.\n"
+> (layout:select! other-view)
+> (press! "g")
+> (sleep-for 0.2)
+> (document:text (buffers:document docs))
+"beta\n(beta x)\nbeta\nTakes beta.\n"
+; q quits the view of *Docs*.
+> (press! "q")
+> (eq? (views:buffer other-view) docs)
+#f
+; Once the view the docs are about is gone, g raises.
+> (layout:select! notes-view)
+> (define third (layout-split:split-view! notes-view (layout-split:direction column)))
+> (layout:select! third)
+> (press! "C-h" ".")
+> (sleep-for 0.2)
+> (layout:delete-part! (layout:view-node third))
+> (layout:select! notes-view)
+> (raised docs-at-point-display:refresh)
+(docs-at-point-display:refresh "The view the docs are about is gone")
+; A doc's thing shows in its face, and a plain doc shows in the code font
+; with its ranges in their faces, in the echo area and in *Docs*.
+> (layout:select! notes-view)
+> (set-option! docs-at-point:mode #t)
+> (remove-hook! docs-at-point:sources signature)
+> (remove-hook! docs-at-point:sources described)
+> (define (faced view)
+    (docs-at-point:make-doc "(total items)"
+      (docs-at-point:doc-options [thing "total"] [face faces:function] [spans (list (list 7 12 faces:highlight))])))
+> (add-hook! docs-at-point:sources faced)
+> (press! "C-h" ".")
+> (sleep-for 0.3)
+> (list (echo-area:current-message) (echo-area:current-spans))
+("total: (total items)" ((0 5 function) (14 19 highlight)))
+> (define (holds? text piece)
+    (let loop ([i 0])
+      (and (<= (+ i (string-length piece)) (string-length text))
+           (or (string=? (substring text i (+ i (string-length piece))) piece) (loop (+ i 1))))))
+> (define html (html->string (views:draw (car (views:showing (buffers:find "*Docs*"))) client)))
+> (list (holds? html "<span data-face=\"function\">total</span>") (holds? html "<span data-face=\"highlight\">items</span>") (holds? html "markdown-code-block"))
+(#t #t #t)

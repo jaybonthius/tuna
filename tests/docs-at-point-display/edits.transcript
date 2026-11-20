@@ -1,0 +1,32 @@
+; With after-edits-only?, an edit is the last command's: from the start, a
+; typed character asks.
+> (set-option! docs-at-point:after-edits-only? #t)
+> (set! asked '())
+> (press! "x")
+> (sleep-for 0.3)
+> (length asked)
+1
+; A motion asks nothing.
+> (set! asked '())
+> (press! "C-f")
+> (sleep-for 0.3)
+> (length asked)
+0
+; In a buffer no ask has been made in, typing asks too.
+> (define third (buffers:make "third" "gamma delta\n"))
+> (commands:define-command (to-third) "Shows third." (layout:switch-to-buffer third))
+> (keys:bind! keys:global "C-c t" to-third)
+> (press! "C-c" "t")
+> (sleep-for 0.3)
+> (set! asked '())
+> (press! "z")
+> (sleep-for 0.3)
+> (list (buffers:name (views:buffer (view))) (length asked))
+("third" 1)
+; A switch to another buffer is no edit.
+> (layout:switch-to-buffer notes)
+> (set! asked '())
+> (press! "C-c" "t")
+> (sleep-for 0.3)
+> (length asked)
+0
