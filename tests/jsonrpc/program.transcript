@@ -1,0 +1,65 @@
+; The program's requests are answered by the request clause, in a task
+; of its own that may pause.
+> (define asked '())
+> (define (answer c method params)
+    (set! asked (cons method asked))
+    (sleep-for 0.05)
+    (cond
+      [(string=? method "workspace/configuration") '#((("tabSize" . 4)))]
+      [(string=? method "refuse") (raise (make-json-rpc-error -32001 "no, thanks"))]
+      [else (car '())]))
+> (define notified '())
+> (define (note c method params) (set! notified (cons method notified)))
+> (define c (start-fake! "fake" (jsonrpc:handlers [request answer] [notification note])))
+> (jsonrpc:request c "ask" '(("method" . "workspace/configuration")))
+(("result" . #((("tabSize" . 4)))))
+> (jsonrpc:request c "ask" '(("method" . "refuse")))
+(("error" . -32001) ("message" . "no, thanks"))
+; Any other raise is reported and answered as an internal error.
+> (jsonrpc:request c "ask" '(("method" . "crash")))
+! car: () is not a pair
+(("error" . -32603) ("message" . "() is not a pair"))
+> asked
+("crash" "refuse" "workspace/configuration")
+; Notifications reach the notification clause in the order sent.
+> (jsonrpc:request c "notify" '(("methods" . #("one" "two" "three"))))
+"sent"
+> notified
+("three" "two" "one")
+; Without a request clause, a request is answered "method not found".
+> (define plain (start-fake! "plain" (jsonrpc:handlers)))
+> (jsonrpc:request plain "ask" '(("method" . "anything")))
+(("error" . -32601) ("message" . "method not found: anything"))
+; When the program ends, the exit clause gets its status, and a request
+; still waiting, in a task or async, gets jsonrpc:&ended with it.
+> (define exited '())
+> (define ending (start-fake! "ending" (jsonrpc:handlers [exit (lambda (c status) (set! exited (cons status exited)))])))
+> (define errors '())
+> (jsonrpc:request-async ending "wait" '() (lambda (v) (set! errors (cons v errors))) (lambda (e) (set! errors (cons (list 'ended (jsonrpc:ended-status e)) errors))))
+#<jsonrpc-pending ending wait>
+> (define waiting (spawn-task (lambda () (raised (lambda () (jsonrpc:request ending "wait" '()))))))
+> (sleep-for 0.1)
+> (jsonrpc:request-async ending "exit" '(("status" . 3)) (lambda (v) (void)) (lambda (e) (void)))
+#<jsonrpc-pending ending exit>
+> (wait-until (lambda () (task-done? waiting)))
+> (join-task waiting)
+(ended 3)
+> errors
+((ended 3))
+> exited
+(3)
+> (jsonrpc:running? ending)
+#f
+; A request to an ended connection raises at once, and a notification
+; does nothing.
+> (raised (lambda () (jsonrpc:request ending "echo" '())))
+(ended 3)
+> (jsonrpc:notify ending "anything" '())
+; jsonrpc:stop! ends the program; its waiting requests get jsonrpc:&ended.
+> (define stopped (spawn-task (lambda () (raised (lambda () (jsonrpc:request plain "wait" '()))))))
+> (sleep-for 0.1)
+> (jsonrpc:stop! plain)
+> (wait-until (lambda () (task-done? stopped)))
+> (car (join-task stopped))
+ended
+> (jsonrpc:stop! c)

@@ -24,3 +24,6 @@
 	path = libraries/chez-libghostty
 	url = https://github.com/jaybonthius/chez-libghostty.git
 	ignore = untracked
+[submodule "libraries/chez-json-rpc"]
+	path = libraries/chez-json-rpc
+	url = https://github.com/jaybonthius/chez-json-rpc.git

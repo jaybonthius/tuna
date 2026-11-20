@@ -103,22 +103,28 @@
                 (k (void))))
             (lambda () (apply procedure arguments)))))))
 
-  (define (start-own program arguments on-output on-exit options)
+  (define (start-own program arguments on-output on-exit options on-error-output)
     (check-main-thread 'processes:start)
     (check-command 'processes:start program arguments)
     (check-procedure 'processes:start on-output)
     (check-procedure 'processes:start on-exit)
     (check-options 'processes:start options)
+    (when on-error-output
+      (check-procedure 'processes:start on-error-output)
+      (when (running:options-terminal options)
+        (assertion-violation 'processes:start "a terminal joins standard error to the output" options)))
     (hold-quits
       (lambda ()
-        (running:start! 'own program arguments options (current-owner)
-          (reporting on-output) (reporting on-exit)))))
+        (running:start! 'own program arguments
+          (if on-error-output (running:options-with-separate-stderr options) options)
+          (current-owner)
+          (reporting on-output) (reporting on-exit) (and on-error-output (reporting on-error-output))))))
 
   (define (start-user program arguments options)
     (check-main-thread 'processes:start-for-user)
     (check-command 'processes:start-for-user program arguments)
     (check-options 'processes:start-for-user options)
-    (hold-quits (lambda () (running:start! 'user program arguments options #f #f #f))))
+    (hold-quits (lambda () (running:start! 'user program arguments options #f #f #f #f))))
 
   ;; A quit or raise that ends the task, such as the quit an unload sends,
   ;; reaches the task where it paused, and stops the program on its way.
@@ -219,11 +225,13 @@
 
 (define start
   (case-lambda
-    [(program arguments on-output) (start-own program arguments on-output ignore-exit no-options)]
+    [(program arguments on-output) (start-own program arguments on-output ignore-exit no-options #f)]
     [(program arguments on-output on-exit)
-     (start-own program arguments on-output on-exit no-options)]
+     (start-own program arguments on-output on-exit no-options #f)]
     [(program arguments on-output on-exit options)
-     (start-own program arguments on-output on-exit options)]))
+     (start-own program arguments on-output on-exit options #f)]
+    [(program arguments on-output on-exit options on-error-output)
+     (start-own program arguments on-output on-exit options on-error-output)]))
 
 (define start-for-user
   (case-lambda
@@ -252,7 +260,7 @@
      (check-procedure 'processes:line-receiver on-line)
      (unless (and (fixnum? separator) (fx<= 0 separator 255))
        (assertion-violation 'processes:line-receiver "not a byte" separator))
-     (let ([held '()] [skipping? #f] [first? #t] [trim? (fx= separator 10)])
+     (let ([held '()] [skipping? #f] [last-end from] [trim? (fx= separator 10)])
        (define (line-text parts)
          (let* ([bytes (cond
                          [(null? (cdr parts)) (car parts)]
@@ -286,9 +294,10 @@
             (on-line bytes end)]
            [else
             (let ([start (- end (bytevector-length bytes))] [n (bytevector-length bytes)])
-              (when first?
-                (set! first? #f)
-                (set! skipping? (> start from)))
+              (when (> start last-end)
+                (set! held '())
+                (set! skipping? #t))
+              (set! last-end end)
               (let loop ([i 0])
                 (let scan ([j i])
                   (cond
@@ -309,7 +318,7 @@
   (unless (offset? from)
     (assertion-violation 'processes:text-receiver "not an output offset" from))
   (check-procedure 'processes:text-receiver on-text)
-  (let ([held #vu8()] [first? #t])
+  (let ([held #vu8()] [last-end from])
     (define (continuation? b) (fx= (fxand b #xC0) #x80))
     (define (sequence-length lead)
       (cond [(fx>= lead #xF0) 4] [(fx>= lead #xE0) 3] [(fx>= lead #xC0) 2] [else 1]))
@@ -340,9 +349,8 @@
              (on-text (utf8->string rest) end)))
          (on-text bytes end)]
         [else
-         (let* ([skip (cond
-                        [(and first? (> (- end (bytevector-length bytes)) from)) (skip-cut-start bytes)]
-                        [else 0])]
+         (let* ([gap? (> (- end (bytevector-length bytes)) last-end)]
+                [skip (cond [gap? (set! held #vu8()) (skip-cut-start bytes)] [else 0])]
                 [joined (if (and (fx= skip 0) (fx= (bytevector-length held) 0))
                             bytes
                             (let* ([n (fx- (bytevector-length bytes) skip)]
@@ -352,7 +360,7 @@
                               (bytevector-copy! bytes skip all h n)
                               all))]
                 [cut (cut-at joined)])
-           (set! first? #f)
+           (set! last-end end)
            (set! held (slice joined cut (bytevector-length joined)))
            (when (fx> cut 0)
              (on-text (utf8->string (if (fx= cut (bytevector-length joined)) joined (slice joined 0 cut)))

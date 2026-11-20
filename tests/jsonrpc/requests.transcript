@@ -1,0 +1,81 @@
+; A request pauses its task until the program answers, and returns the
+; result.
+> (define c (start-fake! "fake" (jsonrpc:handlers [cancel note-cancel!])))
+> (jsonrpc:request c "echo" '(("a" . 1)))
+(("a" . 1))
+> (jsonrpc:request c "echo" '#(1 "two" #t null))
+#(1 "two" #t null)
+> (list (jsonrpc:connection? c) (jsonrpc:running? c) (jsonrpc:connection-name c)
+        (processes:process? (jsonrpc:connection-process c)))
+(#t #t "fake" #t)
+; An error the program answers is its own &json-rpc-error, with its code,
+; message and data; -32099, in the range JSON-RPC leaves to servers, is
+; the program's error like any other.
+> (raised (lambda () (jsonrpc:request c "fail" '(("code" . -32602) ("message" . "bad params")))))
+(json-rpc-error -32602 "bad params")
+> (raised (lambda () (jsonrpc:request c "fail" '(("code" . -32099) ("message" . "server busy")))))
+(json-rpc-error -32099 "server busy")
+> (guard (e [(json-rpc-error? e) (json-rpc-error-data e)])
+    (jsonrpc:request c "fail" '(("code" . 1) ("message" . "m") ("data" . #(1 2)))))
+#(1 2)
+; A request the program never answers raises jsonrpc:&timeout after its
+; time, naming the method.
+> (raised (lambda () (jsonrpc:request c "wait" '() 0.1)))
+(timeout "wait")
+; A quit of a waiting task calls the cancel clause with the request's id,
+; and the answer, when it comes, is dropped.
+> (define waiting (spawn-task (lambda () (jsonrpc:request c "wait" '()))))
+> (sleep-for 0.1)
+> cancels
+()
+> (signal-task waiting (make-quit))
+! &quit
+> (sleep-for 0.05)
+> cancels
+(7)
+> (task-done? waiting)
+#t
+; jsonrpc:request-async calls one of its procedures in a task; cancelled
+; first, it calls neither.
+> (define answers '())
+> (define (note! x) (set! answers (cons x answers)))
+> (jsonrpc:pending? (jsonrpc:request-async c "echo" '#(7) note! note!))
+#t
+> (define p (jsonrpc:request-async c "wait" '() note! note!))
+> (jsonrpc:cancel! p)
+> (jsonrpc:cancel! p)
+> (jsonrpc:request c "echo" '#(8))
+#(8)
+> answers
+(#(7))
+> cancels
+(9 7)
+; A connection without a cancel clause sends nothing on a quit.
+> (define quiet (start-fake! "quiet" (jsonrpc:handlers)))
+> (define quiet-record last-record)
+> (define waiting-quietly (spawn-task (lambda () (jsonrpc:request quiet "wait" '()))))
+> (sleep-for 0.1)
+> (signal-task waiting-quietly (make-quit))
+! &quit
+> (jsonrpc:request quiet "echo" '#(1))
+#(1)
+> (map (lambda (line) (substring line 0 (min 40 (string-length line)))) (record-of quiet-record))
+("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"wait\"," "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"echo\",")
+; Two connections each read their own frames.
+> (define both (list (spawn-task (lambda () (jsonrpc:request c "echo" '#("c"))))
+                     (spawn-task (lambda () (jsonrpc:request quiet "echo" '#("quiet"))))))
+> (wait-until (lambda () (for-all task-done? both)))
+> (map join-task both)
+(#("c") #("quiet"))
+; Bad arguments raise.
+> (raised (lambda () (guard (e [(assertion-violation? e) (condition-message e)]) (jsonrpc:request c 'echo '()))))
+"not a string"
+> (guard (e [(assertion-violation? e) (condition-message e)]) (jsonrpc:request c "echo" "params"))
+"not a JSON object, array or null"
+> (guard (e [(assertion-violation? e) (condition-message e)]) (jsonrpc:start "x" '() (jsonrpc:handlers)))
+"not a list of a program and its arguments"
+> (guard (e [(assertion-violation? e) (condition-message e)])
+    (jsonrpc:start "x" '("true") (jsonrpc:handlers) (processes:options [separate-stderr #t])))
+"a connection keeps standard error apart itself"
+> (jsonrpc:stop! c)
+> (jsonrpc:stop! quiet)

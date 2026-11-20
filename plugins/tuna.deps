@@ -15,6 +15,11 @@
   (commit "9fa69ebbf4aea9f7dd078e846f52d8cfa9172c3b")
   (library-directories ("src" . "build/obj/src"))
   (build))
+(library chez-json-rpc
+  (git "https://github.com/jaybonthius/chez-json-rpc.git")
+  (commit "1de54bf0797373f801e4e4d96151651191d4d53d")
+  (library-directories ("src" . "build/obj/src"))
+  (build))
 (library chez-datastar
   (git "https://github.com/jaybonthius/chez-datastar.git")
   (commit "bf69167c6afbe43f1dd5bb6fa3779081dbca9369")

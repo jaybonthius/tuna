@@ -1,0 +1,21 @@
+; Unloading jsonrpc stops the programs of its connections, whichever
+; module started them, and their waiting requests get jsonrpc:&ended.
+> (define c (start-fake! "fake" (jsonrpc:handlers)))
+> (jsonrpc:request c "echo" '#(1))
+#(1)
+> (define process (jsonrpc:connection-process c))
+> (define waiting (spawn-task (lambda () (raised (lambda () (jsonrpc:request c "wait" '()))))))
+> (sleep-for 0.1)
+> (processes:status process)
+#f
+> (unload-module! '(jsonrpc))
+> (wait-until (lambda () (processes:status process)))
+> (integer? (processes:status process))
+#t
+> (join-task waiting)
+(ended #f)
+> (load-module! '(jsonrpc))
+> (define again (start-fake! "again" (jsonrpc:handlers)))
+> (jsonrpc:request again "echo" '#(2))
+#(2)
+> (jsonrpc:stop! again)

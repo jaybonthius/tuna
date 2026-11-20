@@ -1,7 +1,7 @@
 (library (processes running)
   (export
     make-options options? options-directory options-environment options-terminal options-separate-stderr
-    options-full-log
+    options-full-log options-with-separate-stderr
     process? process-id process-pid process-command-line process-kind process-owner
     process-status process-terminal process-buffer process-buffer-set! process-input-ended?
     output-end error-output foreground-group on-main-thread?
@@ -42,6 +42,9 @@
   (define-record-type options
     (sealed #t)
     (fields directory environment terminal separate-stderr full-log))
+
+  (define (options-with-separate-stderr o)
+    (make-options (options-directory o) (options-environment o) (options-terminal o) #t (options-full-log o)))
 
   ;; A chunk handed to a module is never changed; the log replaces it
   ;; instead.
@@ -150,7 +153,8 @@
             (mutable inputs) (mutable closing?) (mutable writer?) (mutable input-closed?)
             (mutable stopped?) (mutable posted)
             (mutable attachments) (mutable buffer) (mutable input-ended?) (mutable exit-delivered?)
-            (mutable start-reported?))
+            (mutable start-reported?)
+            (mutable on-errors) (mutable errors-next) (mutable errors-eof?) (mutable errors-eof-sent?))
     (protocol
       (lambda (new)
         (lambda (id number command-line kind owner terminal separate-stderr full-log)
@@ -163,7 +167,8 @@
                '() #f #f #f
                #f #f
                '() #f #f #f
-               #f)))))
+               #f
+               #f 0 #f #f)))))
 
   (define busy (list 'busy))
 
@@ -297,7 +302,7 @@
           (if home (string-append home (substring directory end n)) directory))
         directory))
 
-  (define (start! kind program arguments options owner on-output on-exit)
+  (define (start! kind program arguments options owner on-output on-exit on-errors)
     (let* ([id (next-id!)]
            [p (make-process id count (cons program arguments) kind owner
                 (options-terminal options) (options-separate-stderr options)
@@ -307,6 +312,7 @@
       (when owner
         (remember-owner! owner p)
         (process-attachments-set! p (list (make-attachment owner on-output on-exit)))
+        (process-on-errors-set! p on-errors)
         (process-followers-set! p 1))
       (set! registry (cons p registry))
       (fork-thread (lambda () (run-child! p program arguments directory environment)))
@@ -511,17 +517,39 @@
       (post-delivery! p)))
 
   (define (add-errors! p bytes)
-    (with-mutex (process-mutex p)
-      (let ([errors (process-errors p)])
-        (byte-log-append! errors bytes)
-        (byte-log-drop-before! errors (- (byte-log-end errors) limit)))))
+    (when (with-mutex (process-mutex p)
+            (let ([errors (process-errors p)])
+              (byte-log-append! errors bytes)
+              (byte-log-drop-before! errors (- (byte-log-end errors) limit))
+              (and (process-on-errors p) (not (process-stopped? p)) (claim-delivery! p))))
+      (post-delivery! p)))
 
   (define (reader-ended! p output?)
     (when (with-mutex (process-mutex p)
             (process-readers-set! p (fx- (process-readers p) 1))
-            (when output? (process-eof?-set! p #t))
+            (if output? (process-eof?-set! p #t) (process-errors-eof?-set! p #t))
             (claim-delivery! p))
       (post-delivery! p)))
+
+  ;; Standard error is not held back for a slow reader, as output is,
+  ;; since a program that blocks writing it would stop; past the log's
+  ;; size, the oldest is lost.
+  (define (deliver-errors! p)
+    (let ([on-errors (process-on-errors p)])
+      (when (and on-errors (not (process-stopped? p)))
+        (let-values ([(bytes end eof?)
+                      (apply values
+                        (with-process-mutex p
+                          (let* ([errors (process-errors p)]
+                                 [end (byte-log-end errors)]
+                                 [from (max (process-errors-next p) (byte-log-start errors))])
+                            (process-errors-next-set! p end)
+                            (list (and (< from end) (byte-log-bytes! errors from end)) end
+                                  (process-errors-eof? p)))))])
+          (when bytes (as-module (process-owner p) (on-errors bytes end)))
+          (when (and eof? (not (process-errors-eof-sent? p)))
+            (process-errors-eof-sent?-set! p #t)
+            (as-module (process-owner p) (on-errors (eof-object) end)))))))
 
   (define (input-port p)
     (let ([pty (process-pty p)])
@@ -701,6 +729,7 @@
                            (and (ended? p) (process-status p)))))])
       (let-values ([(failure end eof? status) (apply values state)])
         (when failure (report failure))
+        (deliver-errors! p)
         (when (and status (not (integer? status)) (not (eq? (process-kind p) 'run))
                    (not (process-stopped? p)) (not (process-start-reported? p)))
           (process-start-reported?-set! p #t)
