@@ -83,6 +83,7 @@
 
   .layout-view:not(.selected) {
     --tuna-cursor: var(--layout-cursor-unselected-color, var(--tuna-border-strong));
+    --tuna-region: var(--layout-region-unselected-color, var(--tuna-bar));
   }
 
   /* A list's selected row keeps the selection colour only where keys go.

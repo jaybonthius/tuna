@@ -1,9 +1,5 @@
-; Each line's piece of the region is its own span, the outermost of its
-; line, whose classes say how its corners meet the lines above and below,
-; as VS Code's rounded selection does: st and sb are the start's top and
-; bottom corners, et and eb the end's; flat where the neighbour lines up,
-; in where it reaches past, no class for a corner rounded outward. A line
-; the region goes on past is eol.
+; Each line's piece of the region is its own span. A line the region goes
+; on past is eol, so its newline shows.
 > (define (regions html)
     (let loop ([from 0] [acc '()])
       (let ([i (search html "<span class=\"region" from)])
@@ -11,33 +7,24 @@
             (let* ([open (+ (search html "\">" i) 2)] [close (search html "</span>" open)])
               (loop close (cons (list (substring html (+ i 19) (- open 2)) (substring html open close)) acc)))
             (reverse acc)))))
+> (define (at doc line col)
+    (let ([chars (document:unit characters)])
+      (document:position doc (+ (document:offset doc (document:line-start doc line) chars) col) chars)))
 > (define (region-of b from-line from-col to-line to-col)
-    (let* ([v (views:make b)] [doc (buffers:document b)]
-           [at (lambda (line col)
-                 (let ([chars (document:unit characters)])
-                   (document:position doc (+ (document:offset doc (document:line-start doc line) chars) col) chars)))])
-      (views:set-point! v (at to-line to-col))
-      (views:set-mark! v (at from-line from-col))
+    (let* ([v (views:make b)] [doc (buffers:document b)])
+      (views:set-point! v (at doc to-line to-col))
+      (views:set-mark! v (at doc from-line from-col))
       (for-each (lambda (r) (write r) (newline)) (regions (html-of v #f)))))
 ; Lines of 10, 4, 0, 8, 12 and 4 characters, the region from the first's
-; sixth column to the last's third. A start or end corner is flat where
-; the neighbour starts or ends at the same column, in where the
-; neighbour reaches past it, and rounded outward where it does not; the
-; first line, which starts right of where the second ends, does not meet
-; it. An empty line inside the region shows its newline.
+; sixth column to the last's third. An empty line inside the region shows
+; its newline.
 > (region-of (buffers:make "a" "0123456789\n0123\n\n01234567\n0123456789ab\n0123\n") 1 5 6 2)
 (" eol" "56789")
-(" sb-flat eol" "0123")
-(" st-flat sb-flat et-in eb-in eol" "")
-(" st-flat sb-flat eb-in eol" "01234567")
-(" st-flat sb-flat eol" "0123456789ab")
-(" st-flat et-in" "01")
-; Lines of one length: their ends line up, and the first line's start
-; falls inside the line below.
-> (region-of (buffers:make "b" "abcd\nabcd\nabcd\n") 1 2 3 4)
-(" sb-in eb-flat eol" "cd")
-(" sb-flat et-flat eol" "abcd")
-(" st-flat et-in" "abcd")
+(" eol" "0123")
+(" eol" "")
+(" eol" "01234567")
+(" eol" "0123456789ab")
+("" "01")
 ; A region that ends where a line starts holds nothing of that line; one
 ; that starts at a line's end shows only that line's newline there.
 > (region-of (buffers:make "c" "ab\ncd\n") 1 0 2 0)
@@ -45,17 +32,15 @@
 > (region-of (buffers:make "d" "ab\ncd\n") 1 2 2 1)
 (" eol" "")
 ("" "c")
-; Within one line the region has no neighbour, so every corner is round.
 > (region-of (buffers:make "e" "abcdef\n") 1 1 1 4)
 ("" "bcd")
 ; A link's own element cuts a line's piece of the region where the
-; region starts or ends inside it. Only the fragment holding the
-; region's first character has its start's corners, and only the one
-; holding its last has its end's; the cut sides meet square. A region
-; that covers the link is opened once, around it.
+; region starts or ends inside it; only the fragment that ends with the
+; line shows the newline. A region that covers the link is opened once,
+; around it.
 > (import (md))
-> (define (second-line-of v)
-    (let* ([html (html-of v #f)] [i (search html "data-line=\"2\"" 0)])
+> (define (line-of v n)
+    (let* ([html (html-of v #f)] [i (search html (string-append "data-line=\"" (number->string n) "\"") 0)])
       (substring html (+ (search html ">" i) 1) (search html "</div>" i))))
 > (define m
     (buffers:make "m"
@@ -67,13 +52,116 @@
     (let ([v (views:make m)])
       (views:set-mark! v from)
       (views:set-point! v to)
-      (display (second-line-of v))
+      (display (line-of v 2))
       (newline)))
 > (region-in-link 3 40)
-<span class="region sb-flat et-in eol">Al <span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26">beta</span></a></span> gamma.</span>
+<span class="region eol">Al <span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26">beta</span></a></span> gamma.</span>
 > (region-in-link 3 27)
-<span class="region cut-end">Al </span><span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26"><span class="region cut-start et-in">b</span><span class="cursor primary"></span>eta</span></a></span> gamma.
+<span class="region">Al </span><span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26"><span class="region">b</span><span class="cursor primary"></span>eta</span></a></span> gamma.
 > (region-in-link 27 40)
-Al <span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26">b<span class="region cut-end">eta</span></span></a></span><span class="region cut-start eol"> gamma.</span>
+Al <span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26">b<span class="region">eta</span></span></a></span><span class="region eol"> gamma.</span>
 > (region-in-link 26 28)
 Al <span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26"><span class="region">be</span><span class="cursor primary"></span>ta</span></a></span> gamma.
+; A line the region holds from its start through its newline is marked
+; region-line, so the stylesheet fills it to its edges; the first line,
+; held from its middle, and the last, held only in part, are not.
+> (define (held-lines v)
+    (let ([html (html-of v #f)])
+      (let loop ([from 0] [acc '()])
+        (let ([i (search html "region-line\"" from)])
+          (if i
+              (let ([n (search html "data-line=\"" i)])
+                (loop (+ i 1) (cons (string->number (substring html (+ n 11) (search html "\"" (+ n 11)))) acc)))
+              (reverse acc))))))
+> (define lines (buffers:make "lines" "one\ntwo\nthree\nfour\nfive\n"))
+> (define lv (views:make lines))
+> (let ([doc (buffers:document lines)]) (views:set-mark! lv (at doc 1 1)) (views:set-point! lv (at doc 4 2)))
+> (held-lines lv)
+(2 3)
+; Regions of two cursors that meet are one: the line between them is
+; held, though neither holds it alone.
+> (let ([doc (buffers:document lines)])
+    (views:set-cursor! (car (views:cursors lv)) (at doc 2 2) (at doc 1 0))
+    (views:set-cursor! (views:add-cursor! lv (at doc 3 0)) (at doc 3 0) (at doc 2 2)))
+> (held-lines lv)
+(1 2)
+; An atom has no characters, so one the region holds whole is marked.
+> (define pic (buffers:make "pic" (md:doc '() (md:para '() "a " (md:image '((src . "a.png"))) " b\n"))))
+> (define pv (views:make pic))
+> (begin (views:set-mark! pv 2) (views:set-point! pv 7))
+> (line-of pv 1)
+"<span class=\"region\">a <span class=\"node\" data-at=\"4\" data-to=\"5\" data-region><img src=\"a.png\"></span> b</span><span class=\"cursor primary\"></span>"
+; The region's span holds the spans of every layer. One of a layer above
+; priority 0 that the region reaches is marked as above it, so it keeps
+; its background, as a search match shows over Emacs's region.
+> (buffers:define-layer matches (priority 1000))
+> (buffers:define-layer faces (priority -10))
+> (define found (buffers:make "found" "find the needle here\n"))
+> (buffers:add-span! (buffers:layer found matches) 10 16 '((face . match)))
+> (buffers:add-span! (buffers:layer found faces) 1 5 '((face . keyword)))
+> (define fv (views:make found))
+> (begin (views:set-mark! fv 3) (views:set-point! fv 20))
+> (line-of fv 1)
+"<span data-face=\"keyword\">fi</span><span class=\"region\"><span data-face=\"keyword\">nd</span> the <span class=\"above-region\" data-face=\"match\">needle</span> her</span><span class=\"cursor primary\"></span>e"
+; Only a span the region reaches is marked.
+> (begin (views:set-mark! fv 1) (views:set-point! fv 6))
+> (line-of fv 1)
+"<span class=\"region\"><span data-face=\"keyword\">find</span> </span><span class=\"cursor primary\"></span>the <span data-face=\"match\">needle</span> here"
+; views:region-ranges gives the ranges a cursor's region draws. Advised
+; to give each line its piece between point's and mark's columns, the
+; region is a rectangle, and holds no line through its newline.
+> (define (rectangle region-ranges view cursor)
+    (let ([p (views:cursor-point cursor)] [m (views:cursor-mark cursor)]
+          [doc (buffers:document (views:buffer view))] [chars (document:unit characters)])
+      (define (offset q) (document:offset doc q chars))
+      (define (line-offset line) (offset (document:line-start doc line)))
+      (define (column q) (- (offset q) (line-offset (document:line doc q))))
+      (if m
+          (let* ([from (min (column p) (column m))] [to (max (column p) (column m))]
+                 [end (- (document:length doc) 1)] [last (document:line doc end)])
+            (define (line-end line) (if (< line last) (- (line-offset (+ line 1)) 1) (offset end)))
+            (let loop ([line (document:line doc (max p m))] [acc '()])
+              (if (< line (document:line doc (min p m)))
+                  acc
+                  (let ([start (line-offset line)])
+                    (loop (- line 1)
+                          (cons (cons (document:position doc (min (+ start from) (line-end line)) chars)
+                                      (document:position doc (min (+ start to) (line-end line)) chars))
+                                acc))))))
+          (region-ranges view cursor))))
+> (advice-add! views:region-ranges rectangle)
+> (define box (buffers:make "box" "0123456789\n01\n0123456789\n"))
+> (define bv (views:make box))
+> (let ([doc (buffers:document box)]) (views:set-mark! bv (at doc 1 2)) (views:set-point! bv (at doc 3 6)))
+> (regions (html-of bv #f))
+(("" "2345") ("" "2345"))
+> (held-lines bv)
+()
+; The last line needs no line break after it.
+> (define open-box (buffers:make "open-box" "abcdef\nghijkl"))
+> (define ov (views:make open-box))
+> (begin (views:set-mark! ov 3) (views:set-point! ov 14))
+> (regions (html-of ov #f))
+(("" "cdef") ("" "ijkl"))
+> (advice-remove! views:region-ranges rectangle)
+> (regions (html-of bv #f))
+((" eol" "23456789") (" eol" "01") ("" "012345"))
+; Ranges outside the buffer are reported, and the cursor draws no region.
+> (define (outside region-ranges view cursor) (list (cons 0 1000)))
+> (advice-add! views:region-ranges outside)
+> (regions (html-of bv #f))
+! views:region-ranges: not a list of ranges in the buffer with irritant ((0 . 1000))
+()
+> (advice-remove! views:region-ranges outside)
+; A line held whole in a view that does not wrap is filled past the
+; view's edge however long it is: a line of 20,000 characters, about
+; 200,000 px, is marked, and the stylesheet's fill reaches without end.
+> (define wide (buffers:make "wide" (string-append (make-string 20000 #\x) "\nnext\n")))
+> (define wv (views:make wide))
+> (begin (views:set-mark! wv 1) (views:set-point! wv 20003))
+> (held-lines wv)
+(1)
+> (let* ([css (call-with-input-file (string-append (getenv "TUNA_LIBRARY") "/views/views.css") get-string-all)]
+         [rule (search css ".view.nowrap .line.region-line {" 0)])
+    (substring css (search css "border-image" rule) (+ (search css ";" rule) 1)))
+"border-image: linear-gradient(var(--tuna-region, Highlight)) 0 fill / 0 / 0 calc(infinity * 1px) 0 0;"

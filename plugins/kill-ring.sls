@@ -16,7 +16,7 @@
 
 (module %internals
   (check-main-thread check-entry check-kills check-item kill-record? to-kill entry-text
-   current-entry ring-entries push-entry! add-to-newest! rotate-ring! join-kills insert-item!)
+   current-entry ring-entries push-entry! add-to-newest! rotate-ring! join-kills insert-item! restore! inserted-since kill-of)
 
   (define main-thread (get-thread-id))
 
@@ -28,9 +28,9 @@
   ;; kill after. Joining two kills keeps both pieces as parts, since
   ;; document:replace cannot join slices whose open edges differ.
   (define-record-type (kill-record make-kill-record kill-record?)
-    (nongenerative kill-ring:kill/parts)
+    (nongenerative kill-ring:kill/parts/yank)
     (sealed #t)
-    (fields parts))
+    (fields parts yank))
 
   ;; A part keeps the text of each atom in its piece, since a kind's text
   ;; is read only on the main thread and the part's text is read on any.
@@ -61,7 +61,8 @@
     (if (buffers:piece? item)
         (let ([doc (buffers:piece-document item)])
           (make-kill-record
-            (list (make-piece-part item (buffers:atom-texts doc 0 (document:length doc))))))
+            (list (make-piece-part item (buffers:atom-texts doc 0 (document:length doc))))
+            #f))
         item))
 
   (define (parts kill)
@@ -107,7 +108,14 @@
               (if (and (string? last) (string? (car y)))
                   (append (list-head x (fx- (length x) 1))
                           (cons (string-append last (car y)) (cdr y)))
-                  (append x y)))))))
+                  (append x y)))
+            #f))))
+
+  (define (kill-of items yank)
+    (let ([kill (fold-left join-kills (to-kill (car items)) (map to-kill (cdr items)))])
+      (make-kill-record (parts kill) yank)))
+
+  (define (yanks-itself? kill) (and (kill-record? kill) (kill-record-yank kill) #t))
 
   ;; Large kills are left out, so writing the ring after a kill stays
   ;; cheap whatever was killed before. set-saved! copies every mutable
@@ -176,9 +184,14 @@
                             (make-ring slots n 0)))
             (after-push entry)))))
 
+  ;; A kill that yanks itself is shaped whole by its procedure, which
+  ;; would shape a kill joined to it too, so it is never joined, as
+  ;; Emacs's rectangle kill sets kill-region-dont-append.
   (define (add-to-newest! entry join)
     (let* ([s state] [slots (ring-slots s)])
-      (if (and (pair? slots) (fx= (length (slot-entry (car slots))) (length entry)))
+      (if (and (pair? slots) (fx= (length (slot-entry (car slots))) (length entry))
+               (not (exists yanks-itself? (slot-entry (car slots))))
+               (not (exists yanks-itself? entry)))
           (let ([joined (map join (slot-entry (car slots)) entry)])
             (set! changed? #t)
             (set! state (make-ring (cons (make-slot joined (stored-form joined)) (cdr slots))
@@ -221,20 +234,20 @@
     (cond
       [(string? item) (buffers:insert! buffer position item)]
       [(buffers:piece? item) (insert-piece! buffer position item)]
+      [(kill-record-yank item) => (lambda (yank) (yank buffer position))]
       [(null? (cdr (kill-record-parts item)))
        (let ([part (car (kill-record-parts item))])
          (if (string? part)
              (buffers:insert! buffer position part)
              (insert-piece! buffer position (piece-part-piece part))))]
       [else
-       (let ([version (buffers:version buffer)])
-         (guard (c [#t (restore! buffer version) (raise c)])
-           (fold-left (lambda (at part) (insert-part! buffer at part))
-             position (kill-record-parts item))))]))
+       (fold-left (lambda (at part) (insert-part! buffer at part))
+         position (kill-record-parts item))]))
 
-  ;; Each part is its own edit, so a part refused after others went in
-  ;; would leave half a yank. Every edit since, after-edit hooks' too, is
-  ;; taken back with splice!, which asks no kind that could refuse.
+  ;; A kill of several parts, or one with its own yank procedure, makes
+  ;; several edits, so one refused after others went in would leave half
+  ;; a yank. Every edit since, after-edit hooks' too, is taken back with
+  ;; splice!, which asks no kind that could refuse.
   (define (restore! buffer version)
     (for-each
       (lambda (e)
@@ -242,6 +255,49 @@
           (buffers:splice! buffer start (+ start (buffers:piece-length (buffers:edit-inserted e)))
             (buffers:edit-removed e))))
       (reverse (buffers:edits-since buffer version))))
+
+  ;; The edit log holds every insertion, whatever made it, so a yank
+  ;; procedure need not account for its own, padding and added lines
+  ;; included. An insertion that fitting widened removes the tokens
+  ;; around the place and puts them back; the new ones are those after
+  ;; that many, as buffers:insert! counts the position after. Ranges are
+  ;; kept last first, and an edit moves only those that end past its
+  ;; start, so a yank made from the top down, as a rectangle's is, moves
+  ;; none and is read in one pass.
+  (define (inserted-since buffer version)
+    (define (moved p start removed inserted)
+      (cond
+        [(<= p start) p]
+        [(< p (+ start removed)) start]
+        [else (+ p (- inserted removed))]))
+    ;; Joining those that meet keeps the ranges apart, so their ends are
+    ;; in order too and a range that ends before an edit is the last moved.
+    (define (joined ascending)
+      (reverse
+        (fold-left
+          (lambda (acc r)
+            (if (and (pair? acc) (<= (car r) (cdar acc)))
+                (cons (cons (caar acc) (fxmax (cdr r) (cdar acc))) (cdr acc))
+                (cons r acc)))
+          '() ascending)))
+    (let loop ([edits (buffers:edits-since buffer version)] [ranges '()])
+      (if (null? edits)
+          (filter (lambda (r) (< (car r) (cdr r))) (reverse ranges))
+          (let* ([e (car edits)] [start (buffers:edit-start e)]
+                 [removed (buffers:piece-length (buffers:edit-removed e))]
+                 [inserted (buffers:piece-length (buffers:edit-inserted e))])
+            (if (buffers:edit-moves? e)
+                (let shift ([rs ranges] [moved-rs '()])
+                  (if (and (pair? rs) (> (cdar rs) start))
+                      (shift (cdr rs)
+                             (cons (cons (moved (caar rs) start removed inserted) (moved (cdar rs) start removed inserted))
+                                   moved-rs))
+                      (let* ([new (if (< removed inserted) (list (cons (+ start removed) (+ start inserted))) '())]
+                             [around (list-sort (lambda (x y) (< (car x) (car y))) (append new moved-rs))]
+                             [around (if (pair? rs) (cons (car rs) around) around)]
+                             [rest (if (pair? rs) (cdr rs) rs)])
+                        (loop (cdr edits) (fold-left (lambda (acc r) (cons r acc)) rest (joined around))))))
+                (loop (cdr edits) ranges))))))
 
   (advice-add! batch-ended
     (lambda (ended)
@@ -292,6 +348,12 @@
   (check-kills 'kill-ring:text entry)
   (entry-text entry))
 
+(define (make-kill items yank)
+  (check-entry 'kill-ring:make-kill items)
+  (unless (procedure? yank)
+    (assertion-violation 'kill-ring:make-kill "not a procedure" yank))
+  (kill-of items yank))
+
 (define (insert! buffer position item)
   (unless (buffers:buffer? buffer)
     (assertion-violation 'kill-ring:insert! "not a buffer" buffer))
@@ -301,4 +363,7 @@
   (check-main-thread 'kill-ring:insert!)
   (unless (<= position (document:length (buffers:document buffer)))
     (assertion-violation 'kill-ring:insert! "not a position in the buffer" position))
-  (insert-item! buffer position item))
+  (let ([version (buffers:version buffer)])
+    (guard (c [#t (restore! buffer version) (raise c)])
+      (insert-item! buffer position item))
+    (inserted-since buffer version)))

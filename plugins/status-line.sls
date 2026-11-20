@@ -213,13 +213,7 @@
   (let ([b (views:buffer view)])
     (and b
          (let* ([doc (buffers:document b)] [chars (document:unit characters)] [cursors (views:cursors view)]
-                [regions (%merged-regions
-                           (list-sort (lambda (x y) (< (car x) (car y)))
-                             (fold-right
-                               (lambda (c acc)
-                                 (let ([p (views:cursor-point c)] [m (views:cursor-mark c)])
-                                   (if (and m (not (= p m))) (cons (cons (min p m) (max p m)) acc) acc)))
-                               '() cursors)))])
+                [regions (views:region-bounds view)])
            (define (offset p) (document:offset doc p chars))
            ;; Counted as Emacs's count-lines: a region ending at a line's
            ;; start does not take in that line.
@@ -237,7 +231,7 @@
                      (let ([t (cdar ts)])
                        (loop (cdr ts) (+ char-count (- (string-length t) 1))
                              (+ line-count (%newlines t))))))))
-           ;; Cursors' regions can share a line; each line counts once.
+           ;; The ranges can share a line; each line counts once.
            (let loop ([rs regions] [line-reach 0] [char-count 0] [line-count 0])
              (if (null? rs)
                  (and (pair? regions)
@@ -251,15 +245,6 @@
                        (loop (cdr rs) (max line-reach to)
                              (+ char-count (- (offset e) (offset s)) atom-chars)
                              (+ line-count (max 0 (+ (- to (max from (+ line-reach 1))) 1)) atom-lines)))))))))))
-
-(define (%merged-regions sorted)
-  (if (null? sorted)
-      '()
-      (let loop ([rs (cdr sorted)] [current (car sorted)] [acc '()])
-        (cond
-          [(null? rs) (reverse (cons current acc))]
-          [(<= (caar rs) (cdr current)) (loop (cdr rs) (cons (car current) (max (cdr current) (cdar rs))) acc)]
-          [else (loop (cdr rs) (car rs) (cons current acc))]))))
 
 (define (%newlines s)
   (let loop ([i 0] [n 0])

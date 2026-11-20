@@ -41,7 +41,7 @@
    atom-view-of keymaps-at note-edit note-kill after-batch scroll-report mouse-item posn-keymaps forget-client!
    posn-record? make-posn-record posn-record-view posn-record-point posn-record-node posn-record-keymaps
    posn-record-x posn-record-y posn-record-column posn-record-row keymap-id marked-keymaps
-   view-client when-measured! scroll-by! recenter!
+   view-client when-measured! scroll-by! recenter! region-ranges-of
    face-attributes title-attributes
    anchor-record? anchor-record-id anchor-record-view anchor-record-spot anchor-record-gone?
    new-anchor! forget-anchor! anchor-of-id anchor-drawn-for?
@@ -1129,7 +1129,7 @@
 
   (define-record-type (context new-context context?)
     (sealed #t)
-    (fields view client doc lo hi ws we root cursors anchors spans longest folds (mutable shown) item-ids marks? ends
+    (fields view client doc lo hi ws we root cursors anchors regions spans longest folds (mutable shown) item-ids marks? ends
             marker above sizer))
 
   (define-record-type span-entry
@@ -1196,8 +1196,8 @@
 
   ;; Attribute names come from users' tables, so the element is written
   ;; here rather than by haml, which takes names only as written in code.
-  (define (put-element p value malformed!)
-    (let loop ([value (if (list? value) value '())] [classes '()] [others '()])
+  (define (put-element p value classes malformed!)
+    (let loop ([value (if (list? value) value '())] [classes (reverse classes)] [others '()])
       (cond
         [(null? value)
          (put-string p "<span")
@@ -1239,12 +1239,13 @@
 
   ;; A list of faces is drawn as nested elements, the first innermost, so
   ;; its rules win, as Emacs gives a list's earlier faces priority.
-  (define (span-open value malformed!)
+  (define (span-open value classes malformed!)
     (define (element-start value)
-      (call-with-string-output-port (lambda (p) (put-element p value malformed!))))
+      (call-with-string-output-port (lambda (p) (put-element p value classes malformed!))))
     (let* ([faces (value-ref value 'face)]
+           [bare (element-start '())]
            [elements
-            (filter (lambda (open) (not (string=? open "<span>")))
+            (filter (lambda (open) (not (string=? open bare)))
               (if (and (pair? faces) (list? faces))
                   (let ([faces (reverse faces)])
                     (cons (element-start (map (lambda (e) (if (and (pair? e) (eq? (car e) 'face)) (cons 'face (car faces)) e)) value))
@@ -1261,140 +1262,128 @@
     (and (list? value)
          (let ([e (find-first (lambda (e) (and (pair? e) (eq? (car e) key))) value)]) (and e (cdr e)))))
 
-  (define (window-spans b v doc ws we)
-    (let ([entries
-           (let ([styles (make-hashtable equal-hash equal?)] [reported '()])
-             (define (malformed! key as)
-               (unless (memq key reported)
-                 (set! reported (cons key reported))
-                 (report (condition (make-who-condition 'views:span-properties)
-                                    (make-message-condition "not a list of attribute names and values")
-                                    (make-irritants-condition (list key as))))))
-             (define (style value)
-               (or (hashtable-ref styles value #f)
-                   (let ([style (let-values ([(open n) (span-open value malformed!)])
-                                  (make-span-style (and open (raw-html open)) (span-closing n)
-                                                   (value-ref value 'before) (value-ref value 'after) (value-ref value 'replace)))])
-                     (hashtable-set! styles value style)
-                     style)))
-             (let loop ([layers (buffers:layers b v)] [rank 0] [acc '()])
-               (if (null? layers)
-                   acc
-                   (loop (cdr layers) (fx+ rank 1)
-                         (fold-left
-                           (lambda (acc s)
-                             (let ([style (style (caddr s))])
-                               (cons (make-span-entry (car s) (cadr s) rank (span-style-open style) (span-style-close style)
-                                                      (span-style-before style)
-                                                      (span-style-after style) (span-style-replace style))
-                                     acc)))
-                           acc (buffers:spans (car layers) ws we))))))]
-          [regions
-           (fold-left
-             (lambda (acc c)
-               (let ([p (point-of c)] [m (mark-of c)])
-                 (if (and m (not (fx= p m)))
-                     (append (region-pieces doc (fxmin p m) (fxmax p m) ws we) acc)
-                     acc)))
-             '() (view-record-cursors v))])
-      (list->vector (list-sort (lambda (a b) (fx< (span-entry-start a) (span-entry-start b)))
-                               (append regions entries)))))
-
-  ;; Corners are chosen as VS Code joins its rounded selection, and a
-  ;; line's piece is its outermost span, as Emacs draws the region over
-  ;; faces. Columns stand for widths, since buffers are monospace, and are
-  ;; doubled so that a line the region goes on past can end half a column
-  ;; further, for its newline, in fixnums.
+  ;; A span of a layer above priority 0 that the region reaches is
+  ;; marked as above it and keeps its own background, as Emacs's region
+  ;; overlay, with no primary priority, sits above text properties and
+  ;; below an overlay with one, such as a search match.
   (define region-rank -1)
 
-  (define-record-type region-shape
-    (sealed #t)
-    (fields doc start-offset end-offset start end))
+  (define (window-spans b v doc regions ws we)
+    (let* ([layers (buffers:layers b v)]
+           [entries
+            (let ([styles (make-hashtable equal-hash equal?)] [reported '()])
+              (define (malformed! key as)
+                (unless (memq key reported)
+                  (set! reported (cons key reported))
+                  (report (condition (make-who-condition 'views:span-properties)
+                                     (make-message-condition "not a list of attribute names and values")
+                                     (make-irritants-condition (list key as))))))
+              (define (style value classes)
+                (let ([key (cons classes value)])
+                  (or (hashtable-ref styles key #f)
+                      (let ([style (let-values ([(open n) (span-open value classes malformed!)])
+                                     (make-span-style (and open (raw-html open)) (span-closing n)
+                                                      (value-ref value 'before) (value-ref value 'after) (value-ref value 'replace)))])
+                        (hashtable-set! styles key style)
+                        style))))
+              (let loop ([layers layers] [rank 0] [acc '()])
+                (if (null? layers)
+                    acc
+                    (loop (cdr layers) (fx+ rank 1)
+                          (fold-left
+                            (lambda (acc s)
+                              (let ([style (style (caddr s)
+                                                  (if (and (> (buffers:layer-priority (car layers)) 0)
+                                                           (region-reaches? regions (car s) (cadr s)))
+                                                      above-region
+                                                      '()))])
+                                (cons (make-span-entry (car s) (cadr s) rank (span-style-open style) (span-style-close style)
+                                                       (span-style-before style)
+                                                       (span-style-after style) (span-style-replace style))
+                                      acc)))
+                            acc (buffers:spans (car layers) ws we))))))]
+           [pieces
+            (let loop ([i 0] [acc '()])
+              (if (fx= i (vector-length regions))
+                  acc
+                  (let ([r (vector-ref regions i)])
+                    (loop (fx+ i 1)
+                          (if (or (fx< (cdr r) ws) (fx> (car r) we))
+                              acc
+                              (append (region-pieces doc (car r) (cdr r) ws we) acc))))))])
+      (list->vector (list-sort (lambda (a b) (fx< (span-entry-start a) (span-entry-start b)))
+                               (append pieces entries)))))
+
+  ;; Ranges of several cursors that overlap or meet are joined, so a line
+  ;; two of them hold between them is held, and they draw one span.
+  (define (region-ranges-of v doc cursors)
+    (let ([n (document:length doc)])
+      (define (range? r)
+        (and (pair? r) (fixnum? (car r)) (fixnum? (cdr r)) (fx<= 0 (car r) (cdr r) n)))
+      (let ([ranges (fold-left
+                      (lambda (acc c)
+                        (let ([rs (guard (e [(not (quit-condition? e)) (report e) '()])
+                                    (region-ranges v c))])
+                          (if (and (list? rs) (for-all range? rs))
+                              (append (filter (lambda (r) (fx< (car r) (cdr r))) rs) acc)
+                              (begin
+                                (report (condition (make-who-condition 'views:region-ranges)
+                                                   (make-message-condition "not a list of ranges in the buffer")
+                                                   (make-irritants-condition (list rs))))
+                                acc))))
+                      '() cursors)])
+        (let join ([rs (list-sort (lambda (a b) (fx< (car a) (car b))) ranges)])
+          (cond
+            [(or (null? rs) (null? (cdr rs))) rs]
+            [(fx>= (cdar rs) (caadr rs))
+             (join (cons (cons (caar rs) (fxmax (cdar rs) (cdadr rs))) (cddr rs)))]
+            [else (cons (car rs) (join (cdr rs)))])))))
+
+  (define (range-after regions position)
+    (let search ([a 0] [z (vector-length regions)])
+      (if (fx< a z)
+          (let ([m (fxquotient (fx+ a z) 2)])
+            (if (fx<= (cdr (vector-ref regions m)) position)
+                (search (fx+ m 1) z)
+                (search a m)))
+          a)))
+
+  (define (region-holds? regions start end)
+    (let ([i (range-after regions start)])
+      (and (fx< i (vector-length regions))
+           (let ([r (vector-ref regions i)]) (and (fx<= (car r) start) (fx<= end (cdr r)))))))
+
+  ;; An empty span reaches the region when the region holds its place.
+  (define (region-reaches? regions start end)
+    (let ([i (range-after regions start)])
+      (and (fx< i (vector-length regions))
+           (fx< (car (vector-ref regions i)) (fxmax end (fx+ start 1))))))
+
+  (define region-open (raw-html "<span class=\"region\">"))
+  (define region-eol-open (raw-html "<span class=\"region eol\">"))
+  (define above-region '("above-region"))
 
   (define (region-pieces doc s e ws we)
     (let* ([first (document:line doc s)] [end-line (document:line doc e)]
            [last (if (and (fx> end-line first) (fx= e (document:line-start doc end-line))) (fx- end-line 1) end-line)]
            [from (fxmax first (document:line doc ws))] [to (fxmin last (document:line doc we))])
-      (if (fx> from to)
-          '()
-          (let* ([lo (fxmax first (fx- from 1))] [hi (fxmin last (fx+ to 1))] [n (fx+ (fx- hi lo) 1)]
-                 [starts (make-vector n)] [ends (make-vector n)]
-                 [line-offsets (make-fxvector n)] [start-offsets (make-fxvector n)] [end-offsets (make-fxvector n)])
-            (define (offset p) (document:offset doc p (document:unit characters)))
-            (define (eol? line) (or (fx< line last) (fx< last end-line)))
-            (define (start-column i) (fx* 2 (fx- (fxvector-ref start-offsets i) (fxvector-ref line-offsets i))))
-            (define (end-column i)
-              (fx+ (fx* 2 (fx- (fxvector-ref end-offsets i) (fxvector-ref line-offsets i))) (if (eol? (fx+ lo i)) 1 0)))
-            (define (shape line)
-              (let* ([i (fx- line lo)] [sc (start-column i)] [ec (end-column i)]
-                     [above? (fx> line first)] [below? (fx< line last)])
-                (make-region-shape doc (fxvector-ref start-offsets i) (fxvector-ref end-offsets i)
-                  (string-append
-                    (if above?
-                        (let ([as (start-column (fx- i 1))])
-                          (cond [(fx= sc as) " st-flat"] [(fx> sc as) " st-in"] [else ""]))
-                        "")
-                    (if below?
-                        (let ([bs (start-column (fx+ i 1))] [be (end-column (fx+ i 1))])
-                          (cond [(fx= sc bs) " sb-flat"] [(fx< bs sc be) " sb-in"] [else ""]))
-                        ""))
-                  (string-append
-                    (if above?
-                        (let ([as (start-column (fx- i 1))] [ae (end-column (fx- i 1))])
-                          (cond [(fx= ec ae) " et-flat"] [(fx< as ec ae) " et-in"] [else ""]))
-                        "")
-                    (if below?
-                        (let ([be (end-column (fx+ i 1))])
-                          (cond [(fx= ec be) " eb-flat"] [(fx< ec be) " eb-in"] [else ""]))
-                        "")
-                    (if (eol? line) " eol" "")))))
-            (let ([ls (document:line-start doc lo)])
-              (let loop ([i 0] [ls ls] [ls-offset (offset ls)])
-                (when (fx< i n)
-                  (let ([line (fx+ lo i)])
-                    (fxvector-set! line-offsets i ls-offset)
-                    (if (fx= line first)
-                        (begin (vector-set! starts i s) (fxvector-set! start-offsets i (offset s)))
-                        (begin (vector-set! starts i ls) (fxvector-set! start-offsets i ls-offset)))
-                    (if (eol? line)
-                        (let* ([next (document:line-start doc (fx+ line 1))] [next-offset (offset next)])
-                          (vector-set! ends i (fx- next 1))
-                          (fxvector-set! end-offsets i (fx- next-offset 1))
-                          (loop (fx+ i 1) next next-offset))
-                        (begin
-                          (vector-set! ends i e)
-                          (fxvector-set! end-offsets i (offset e))))))))
-            (let loop ([line to] [acc '()])
-              (if (fx< line from)
-                  acc
-                  (loop (fx- line 1)
-                        (let ([i (fx- line lo)])
-                          (cons (make-span-entry (vector-ref starts i) (vector-ref ends i) region-rank (shape line) span-close #f #f #f)
-                                acc)))))))))
+      (let loop ([line to] [acc '()])
+        (if (fx< line from)
+            acc
+            (loop (fx- line 1)
+                  (let ([eol? (or (fx< line last) (fx< last end-line))])
+                    (cons (make-span-entry (if (fx= line first) s (document:line-start doc line))
+                                           (if eol? (fx- (document:line-start doc (fx+ line 1)) 1) e)
+                                           region-rank (if eol? region-eol-open region-open) span-close #f #f #f)
+                          acc)))))))
 
   (define (region-piece? s) (fx= (span-entry-rank s) region-rank))
 
-  ;; A node's own element cuts a line's piece of the region where the
-  ;; region starts or ends inside the node; only the fragment holding the
-  ;; region's first character draws its start's corners, and only the one
-  ;; holding its last draws its end's, so the fragments meet square. A
-  ;; fragment may begin past the piece's start and still hold its first
-  ;; character, as when the piece starts at a node's opening.
+  ;; Where a node's element cuts a line's piece of the region into
+  ;; fragments, only the last shows the newline, or each would.
   (define (fragment-open s from to)
     (let ([open (span-entry-open s)])
-      (if (region-shape? open)
-          (let ([doc (region-shape-doc open)])
-            (define (at-offset? p offset) (fx= (document:offset doc p (document:unit characters)) offset))
-            (raw-html
-              (string-append "<span class=\"region"
-                (if (or (fx<= from (span-entry-start s)) (at-offset? from (region-shape-start-offset open)))
-                    (region-shape-start open)
-                    " cut-start")
-                (if (or (fx>= to (span-entry-end s)) (at-offset? to (region-shape-end-offset open)))
-                    (region-shape-end open)
-                    " cut-end")
-                "\">")))
-          open)))
+      (if (and (eq? open region-eol-open) (fx< to (span-entry-end s))) region-open open)))
 
   ;; A region that covers a whole node is opened around the node's
   ;; element, so drawing the node's content must not open it again.
@@ -1416,10 +1405,11 @@
     (let-values ([(lo hi) (bounds-of v)])
       (let ([cs (view-client v client)])
         (let-values ([(ws we above sizer) (client-run! v doc cs)])
-          (let ([spans (window-spans b v doc ws we)] [end (fxmin hi (fx- (document:length doc) 1))])
+          (let* ([regions (list->vector (region-ranges-of v doc (view-record-cursors v)))] [spans (window-spans b v doc regions ws we)]
+                 [end (fxmin hi (fx- (document:length doc) 1))])
             (define (shown marks) (filter (lambda (m) (or (fx< (fx- ws 1) (car m) we) (fx= (car m) we end))) marks))
             (new-context v client doc lo hi ws we (document:token doc 0) (shown (cursor-points v)) (shown (anchor-points v))
-                         spans (longest-span spans) (fold-ranges v) '() (item-ids v b) #t (make-eqv-hashtable)
+                         regions spans (longest-span spans) (fold-ranges v) '() (item-ids v b) #t (make-eqv-hashtable)
                          (place-marker cs) above sizer))))))
 
   ;; A client's own position stands in for a placement its browser has
@@ -1529,16 +1519,25 @@
           [at-cursor (case cursor [(primary) "at-cursor primary"] [(other) "at-cursor"] [else #f])])
       (cond
         [(not (context-marks? ctx)) html]
-        [inline? (haml (:span.node ([data-at start] [data-to (node-end ctx node)]) html))]
+        [inline? (haml (:span.node ([data-at start] [data-to (node-end ctx node)] [data-region (atom-in-region? ctx node)]) html))]
         [(whole-node? node)
-         (haml (:div.node.whole ([id (item-id ctx start)] [class at-cursor] [data-at start] [data-to (node-end ctx node)]) html))]
-        [else (haml (:div.node ([id (item-id ctx start)] [class at-cursor] [data-at start] [data-to (node-end ctx node)]) html))])))
+         (haml (:div.node.whole ([id (item-id ctx start)] [class at-cursor] [data-at start] [data-to (node-end ctx node)]
+                                 [data-region (atom-in-region? ctx node)])
+                 html))]
+        [else (haml (:div.node ([id (item-id ctx start)] [class at-cursor] [data-at start] [data-to (node-end ctx node)]
+                                [data-region (atom-in-region? ctx node)])
+                      html))])))
 
   (define (no-element? html)
     (cond
       [(html? html) #f]
       [(pair? html) (for-all no-element? html)]
       [else #t]))
+
+  ;; An atom has no characters to colour, so one the region holds whole
+  ;; says so itself.
+  (define (atom-in-region? ctx node)
+    (and (document:atom? node) (region-holds? (context-regions ctx) (document:node-start node) (node-end ctx node))))
 
   (define (node-html ctx node inline?)
     (let* ([kind (buffers:kind (document:node-kind node))] [draw (and kind (buffers:kind-draw kind))])
@@ -1648,8 +1647,8 @@
   (define (block-html ctx node items s e ce wrap)
     (let ([doc (context-doc ctx)] [root? (and (context-root ctx) (fx= (document:node-start node) 0))])
       (define (wrapped child html) (if wrap (wrap child html) html))
-      (define (as-line run rs re line at-start? acc)
-        (cons (wrapped rs (line-html ctx line (if (pair? run) (item-start (car run)) rs) at-start?
+      (define (as-line run rs re class line at-start? acc)
+        (cons (wrapped rs (line-html ctx line (if (pair? run) (item-start (car run)) rs) class at-start?
                                      (line-content ctx run rs re) (exists text-piece? run)))
               acc))
       (let loop ([items items] [run '()] [rs s] [known #f] [acc '()])
@@ -1659,9 +1658,9 @@
              (reverse
                (cond
                  [(or (exists text-piece? run) (and (pair? run) (for-all fold-mark? run)))
-                  (as-line run rs e (or known (document:line doc rs)) known acc)]
+                  (as-line run rs e #f (or known (document:line doc rs)) known acc)]
                  [(pair? run) (append (reverse (block-items ctx run rs e wrapped)) acc)]
-                 [(or (and root? (fx= e ce)) (pair? (cursors-in ctx rs e)) (pair? (anchors-in ctx rs e))) (as-line run rs e (or known (document:line doc rs)) known acc)]
+                 [(or (and root? (fx= e ce)) (pair? (cursors-in ctx rs e)) (pair? (anchors-in ctx rs e))) (as-line run rs e #f (or known (document:line doc rs)) known acc)]
                  [else acc])))]
           [(text-piece? (car items))
            (let ([at (text-piece-at (car items))] [str (text-piece-string (car items))])
@@ -1671,7 +1670,7 @@
                      (let ([run (reverse (if (fx= nl from) run (cons (make-text-piece (fx+ at from) (substring str from nl)) run)))]
                            [line (or known (document:line doc rs))])
                        (split (fx+ nl 1) '() (fx+ at nl 1) (and (for-all text-piece? run) (fx+ line 1))
-                              (as-line run rs (fx+ at nl) line known acc)))
+                              (as-line run rs (fx+ at nl) (held-line-class ctx rs (fx+ at nl 1)) line known acc)))
                      (loop (cdr items)
                            (cond
                              [(fx= from 0) (cons (car items) run)]
@@ -1686,8 +1685,16 @@
       [(fold-mark? item) (fold-mark-at item)]
       [else (document:node-start item)]))
 
-  (define (line-html ctx line rs at-start? content text?)
+  ;; A line the region holds through its newline, or a folded block it
+  ;; holds whole, is marked, so the stylesheet fills the line to its
+  ;; edges, as Emacs extends the region face: a line's edges are the
+  ;; browser's to know.
+  (define (held-line-class ctx start end)
+    (and (region-holds? (context-regions ctx) start end) "region-line"))
+
+  (define (line-html ctx line rs class at-start? content text?)
     (haml (:div.line ([id (and (context-marks? ctx) (item-id ctx rs))]
+                      [class class]
                       [data-line line]
                       [data-at (and (not at-start?) (context-marks? ctx)
                                     (not (fx= rs (document:line-start (context-doc ctx) line)))
@@ -1733,7 +1740,8 @@
                 (let-values ([(acc cursors anchors) (before (fold-mark-at item) (fold-mark-at item) acc cursors anchors)])
                   (loop (cdr items) cursors anchors
                         (cons (wrapped (fold-mark-at item)
-                                       (line-html ctx (document:line (context-doc ctx) (fold-mark-at item)) (fold-mark-at item) #f
+                                       (line-html ctx (document:line (context-doc ctx) (fold-mark-at item)) (fold-mark-at item)
+                                                  (held-line-class ctx (fold-mark-at item) (fold-mark-to item)) #f
                                                   (fold-html ctx item) #t))
                               acc)))
                 (let*-values ([(start) (document:node-start item)]
@@ -1773,7 +1781,7 @@
         datum
         (guard (c [(not (quit-condition? c)) (report c) '()])
           (let* ([doc (document:from-datum datum)] [n (document:length doc)]
-                 [sub (new-context (context-view ctx) (context-client ctx) doc 0 n 0 n #f '() '() '#() 0 '() '() #f #f (make-eqv-hashtable) #f #f #f)])
+                 [sub (new-context (context-view ctx) (context-client ctx) doc 0 n 0 n #f '() '() '#() '#() 0 '() '() #f #f (make-eqv-hashtable) #f #f #f)])
             (parameterize ([current-context sub])
               (let loop ([p 0] [acc '()])
                 (if (fx>= p n)
@@ -2675,6 +2683,33 @@
   (check-cursor 'views:cursor-mark cursor)
   (bound-buffer (cursor-record-view cursor))
   (mark-of cursor))
+
+(define (region-ranges view cursor)
+  (check-view 'views:region-ranges view)
+  (check-cursor 'views:region-ranges cursor)
+  (bound-buffer view)
+  (let ([p (point-of cursor)] [m (mark-of cursor)])
+    (if (and m (not (fx= p m)))
+        (list (cons (fxmin p m) (fxmax p m)))
+        '())))
+
+(define region-bounds
+  (case-lambda
+    [(view)
+     (check-view 'views:region-bounds view)
+     (%region-bounds view (view-record-cursors view))]
+    [(view cursor)
+     (check-view 'views:region-bounds view)
+     (check-cursor 'views:region-bounds cursor)
+     (unless (eq? (cursor-record-view cursor) view)
+       (assertion-violation 'views:region-bounds "not a cursor of the view" cursor))
+     (%region-bounds view (list cursor))]))
+
+(define (%region-bounds view cs)
+  (let ([b (bound-buffer view)])
+    (if b
+        (with-view-bound view b (lambda () (region-ranges-of view (buffers:document b) cs)))
+        '())))
 
 (define (set-cursor! cursor point mark)
   (check-cursor 'views:set-cursor! cursor)

@@ -10,8 +10,8 @@
    place-kept! move-kept! merge-met! edge-error stops-from chars end-of-line first-stop column clear-marks!
    set-marks! forget-temporary! exchange-marks! word-characters-in words-from word-motion
    within-isolating delete-fitted! ranges-kill
-   line-motion-continues? note-line-motion! recase! capitalizer replace-region-or! insert-at-cursors! kill-ranges! after-kill?
-   remember-kill! yank-kills! yanked-in? replace-yank! pure-text note-change! clear-changed-marks!
+   line-motion-continues? note-line-motion! recase! capitalizer replace-region-or! insert-at-cursors! kill-ranges! kill-ends! after-kill?
+   remember-kill! yank-kills! yanked-in? replace-yank! selected-ranges range-bounds pure-text note-change! clear-changed-marks!
    nonempty-region? shift-selected keep-changed-marks! place! place-temporary! select-between! drag-keymap start-drag! drag-in
    drag-anchor-position drag-mode mouse-range
    drag-moved? drag-moved?-set!)
@@ -317,8 +317,25 @@
 
   (define (nonempty-region? p m) (and m (not (fx= m p))))
 
-  (define (selected-region p m delete-selection?)
-    (and delete-selection? (nonempty-region? p m) (cons (fxmin p m) (fxmax p m))))
+  ;; Each cursor's region is read and anchored before the first edit, as
+  ;; each-cursor anchors point and mark.
+  (define (selected-ranges view delete-selection?)
+    (let ([b (views:buffer view)] [selected (make-eq-hashtable)])
+      (when delete-selection?
+        (for-each
+          (lambda (c)
+            (let ([rs (views:region-bounds view c)])
+              (unless (null? rs)
+                (eq-hashtable-set! selected c (map (lambda (r) (anchor-range b c (car r) (cdr r))) rs)))))
+          (views:cursors view)))
+      selected))
+
+  ;; From the last, so each range is deleted where it was read; the
+  ;; position is where the first's deletion leaves the cursor, or
+  ;; otherwise when that deletion fits to nothing.
+  (define (delete-ranges! b ranges otherwise)
+    (for-each (lambda (r) (let-values ([(s e) (range-bounds r)]) (delete-fitted! b s e))) (reverse (cdr ranges)))
+    (let-values ([(s e) (range-bounds (car ranges))]) (or (delete-fitted! b s e) otherwise)))
 
   ;; A deletion that fits to nothing is no edit, so its buffer is not
   ;; marked modified. A fitted start can lie past text the fitting keeps,
@@ -336,11 +353,11 @@
     (apply kill-ring:join (map (lambda (r) (buffers:piece b (car r) (cdr r))) ranges)))
 
   (define (insert-at-cursors! view content delete-selection? after-insert)
-    (let ([b (views:buffer view)])
+    (let ([b (views:buffer view)] [selected (selected-ranges view delete-selection?)])
       (each-cursor view
         (lambda (c p m)
-          (let* ([r (selected-region p m delete-selection?)]
-                 [at (if r (or (delete-fitted! b (car r) (cdr r)) p) p)]
+          (let* ([rs (eq-hashtable-ref selected c #f)]
+                 [at (if rs (delete-ranges! b rs p) p)]
                  [edit (buffers:replace! b at at content)]
                  [start (buffers:edit-start edit)])
             (forget-temporary! c)
@@ -349,12 +366,12 @@
               #f))))))
 
   (define (replace-region-or! view delete-selection? otherwise)
-    (let ([b (views:buffer view)])
+    (let ([b (views:buffer view)] [selected (selected-ranges view delete-selection?)])
       (each-cursor view
         (lambda (c p m)
-          (let ([r (selected-region p m delete-selection?)])
-            (if r
-                (let ([at (or (delete-fitted! b (car r) (cdr r)) p)])
+          (let ([rs (eq-hashtable-ref selected c #f)])
+            (if rs
+                (let ([at (delete-ranges! b rs p)])
                   (forget-temporary! c)
                   (place-kept! view c at #f))
                 (otherwise c p)))))))
@@ -414,27 +431,40 @@
       (and last (eq? last kill-command))))
 
   ;; Every range is read and put on the ring before any is deleted, so a
-  ;; deletion the buffer refuses keeps the text on the ring.
-  (define (kill-ranges! view ends-of delete?)
+  ;; deletion the buffer refuses keeps the text on the ring. Ranges of
+  ;; different cursors can overlap, so all are clipped together; clipping
+  ;; changes the pairs in place, so each cursor's list sees it.
+  (define (kill-ranges! view cursor-ranges kill-of backward? delete?)
     (let* ([b (views:buffer view)]
            [cursors (views:cursors view)]
-           [ends (map (lambda (c) (call-with-values (lambda () (ends-of c)) cons)) cursors)]
-           [ranges (clip-ranges (map (lambda (e) (cons (fxmin (car e) (cdr e)) (fxmax (car e) (cdr e)))) ends))]
-           [fitted (map (lambda (r) (buffers:fitted-ranges b (car r) (cdr r))) ranges)]
+           [per-cursor (map (lambda (rs) (map (lambda (r) (cons (car r) (cdr r))) rs)) cursor-ranges)]
+           [fitted (begin
+                     (clip-ranges (apply append per-cursor))
+                     (map (lambda (rs) (apply append (map (lambda (r) (buffers:fitted-ranges b (car r) (cdr r))) rs)))
+                          per-cursor))]
            [kills? (exists pair? fitted)])
       ;; An empty entry would replace the kill the next yank and the
       ;; clipboard hold.
       (when kills?
-        (add-kill! (map (lambda (f) (ranges-kill b f)) fitted) (fx< (cdar ends) (caar ends)) (after-kill?)))
+        (add-kill! (map kill-of cursors per-cursor) backward? (after-kill?)))
       (when delete?
         (when (and kills? (commands:this-command)) (set! killing? #t))
         (for-each
-          (lambda (r)
-            (let-values ([(start end) (range-bounds r)])
-              (let ([at (delete-fitted! b start end)] [c (cursor-range-cursor r)])
-                (forget-temporary! c)
-                (place-kept! view c (or at (views:cursor-point c)) #f))))
-          (map (lambda (c r) (anchor-range b c (car r) (cdr r))) cursors ranges)))))
+          (lambda (c rs)
+            (let ([at (fold-left (lambda (at r) (let-values ([(start end) (range-bounds r)]) (delete-fitted! b start end)))
+                                 #f (reverse rs))])
+              (forget-temporary! c)
+              (place-kept! view c (or at (views:cursor-point c)) #f)))
+          cursors
+          (map (lambda (c rs) (map (lambda (r) (anchor-range b c (car r) (cdr r))) rs)) cursors per-cursor)))))
+
+  (define (kill-ends! view ends-of delete?)
+    (let ([b (views:buffer view)] [ends (map (lambda (c) (call-with-values (lambda () (ends-of c)) cons)) (views:cursors view))])
+      (kill-ranges! view
+        (map (lambda (e) (list (cons (fxmin (car e) (cdr e)) (fxmax (car e) (cdr e))))) ends)
+        (lambda (c rs) (ranges-kill b (buffers:fitted-ranges b (caar rs) (cdar rs))))
+        (fx< (cdar ends) (caar ends))
+        delete?)))
 
   (define last-yank '())
   (define yank-view #f)
@@ -444,20 +474,34 @@
         (lambda (i) (list-ref entry i))
         (let ([text (kill-ring:text entry)]) (lambda (i) text))))
 
+  ;; A yank is the ranges kill-ring:insert! reports, which a kill's own
+  ;; yank procedure need not make one stretch, so yank-pop deletes them
+  ;; and not what lies between, as Emacs's yank-undo-function does.
+  (define (yank-at! b c position kill)
+    (let ([ranges (kill-ring:insert! b position kill)])
+      (if (null? ranges)
+          (list (anchor-range b c position position))
+          (map (lambda (r) (anchor-range b c (car r) (cdr r))) ranges))))
+
+  (define (yank-start rs) (let-values ([(s e) (range-bounds (car rs))]) s))
+
+  (define (yank-end rs) (let-values ([(s e) (range-bounds (car (last-pair rs)))]) e))
+
   ;; The record is set only once every kill is in, so a quit part-way
   ;; makes the next yank-pop raise rather than act on half a record.
   (define (yank-kills! view entry delete-selection?)
-    (let ([b (views:buffer view)] [kill (kill-for entry (length (views:cursors view)))] [yanked '()])
+    (let ([b (views:buffer view)] [kill (kill-for entry (length (views:cursors view)))] [yanked '()]
+          [selected (selected-ranges view delete-selection?)])
       (set! last-yank '())
       (set! yank-view view)
       (each-cursor view
         (lambda (c p m)
-          (let* ([r (selected-region p m delete-selection?)]
-                 [start (if r (or (delete-fitted! b (car r) (cdr r)) p) p)]
-                 [end (kill-ring:insert! b start (kill (length yanked)))])
-            (set! yanked (cons (anchor-range b c start end) yanked))
+          (let* ([rs (eq-hashtable-ref selected c #f)]
+                 [start (if rs (delete-ranges! b rs p) p)]
+                 [yank (yank-at! b c start (kill (length yanked)))])
+            (set! yanked (cons yank yanked))
             (forget-temporary! c)
-            (place-kept! view c end start))))
+            (place-kept! view c (yank-end yank) (yank-start yank)))))
       (set! last-yank (reverse yanked))))
 
   (define (yanked-in? view) (and (eq? yank-view view) (pair? last-yank)))
@@ -465,18 +509,16 @@
   (define (replace-yank! view entry)
     (let ([b (views:buffer view)] [ys last-yank] [kill (kill-for entry (length last-yank))])
       (set! last-yank '())
-      (let loop ([rs ys] [i 0])
-        (unless (null? rs)
-          (let ([r (car rs)])
-            (let-values ([(start old-end) (range-bounds r)])
-              (buffers:replace! b start old-end "")
-              (let ([end (kill-ring:insert! b start (kill i))])
-                ;; The start moved after the text inserted at it.
-                (buffers:set-anchor! (cursor-range-start r) start)
-                (buffers:set-anchor! (cursor-range-end r) end)
-                (place-kept! view (cursor-range-cursor r) end start)))
-            (loop (cdr rs) (fx+ i 1)))))
-      (set! last-yank ys)))
+      (let loop ([ys ys] [i 0] [acc '()])
+        (if (null? ys)
+            (set! last-yank (reverse acc))
+            (let* ([rs (car ys)] [c (cursor-range-cursor (car rs))] [start (yank-start rs)])
+              (for-each
+                (lambda (r) (let-values ([(s e) (range-bounds r)]) (buffers:replace! b s e "")))
+                (reverse rs))
+              (let ([yank (yank-at! b c start (kill i))])
+                (place-kept! view c (yank-end yank) (yank-start yank))
+                (loop (cdr ys) (fx+ i 1) (cons yank acc))))))))
 
   (define (same-run? first t extra)
     (and (char? t)
@@ -858,17 +900,41 @@
         (forget-temporary! c)
         (views:set-cursor! c lo hi)))))
 
+(define (extract-region view cursor ranges)
+  (check-main-thread 'editing:extract-region)
+  (check-view 'editing:extract-region view)
+  (unless (memq cursor (views:cursors view))
+    (assertion-violation 'editing:extract-region "not a cursor of the view" cursor))
+  (let* ([b (views:buffer view)] [n (document:length (buffers:document b))])
+    (unless (and (pair? ranges) (list? ranges)
+                 (for-all (lambda (r) (and (pair? r) (fixnum? (car r)) (fixnum? (cdr r)) (fx<= 0 (car r) (cdr r) n)))
+                          ranges))
+      (assertion-violation 'editing:extract-region "not a non-empty list of ranges in the buffer" ranges))
+    (apply kill-ring:join
+      (cdr (fold-right (lambda (r acc) (cons* "\n" (ranges-kill b (buffers:fitted-ranges b (car r) (cdr r))) acc))
+                       '() ranges)))))
+
+(define (%kill-regions! view delete?)
+  (kill-ranges! view
+    (map (lambda (c)
+           (let ([rs (views:region-bounds view c)])
+             (if (null? rs) (let ([p (views:cursor-point c)]) (list (cons p p))) rs)))
+         (views:cursors view))
+    (lambda (c rs) (extract-region view c rs))
+    (let ([c (car (views:cursors view))]) (fx< (views:cursor-point c) (views:cursor-mark c)))
+    delete?))
+
 (commands:define-command (kill-region)
   "Deletes each cursor's region and puts the regions on the kill ring as one entry."
   (let ([view (command-view 'editing:kill-region)])
     (check-regions 'editing:kill-region view)
-    (kill-ranges! view (lambda (c) (values (views:cursor-mark c) (views:cursor-point c))) #t)))
+    (%kill-regions! view #t)))
 
 (commands:define-command (kill-ring-save)
   "Puts each cursor's region on the kill ring as kill-region does, without deleting, and clears the marks."
   (let ([view (command-view 'editing:kill-ring-save)])
     (check-regions 'editing:kill-ring-save view)
-    (kill-ranges! view (lambda (c) (values (views:cursor-mark c) (views:cursor-point c))) #f)
+    (%kill-regions! view #f)
     (clear-marks! view)))
 
 (define (%blank-token? t)
@@ -886,7 +952,7 @@
     (let-values ([(lo hi) (content-bounds view doc)])
       (when (and (or (not n) (> n 0)) (fx>= (views:point view) hi))
         (error 'editing:kill-line "end of buffer"))
-      (kill-ranges! view
+      (kill-ends! view
         (lambda (c)
           (let* ([p (views:cursor-point c)] [line (document:line doc p)] [last (document:line doc hi)])
             (within-isolating doc p p
@@ -906,7 +972,7 @@
          [doc (buffers:document b)]
          [extra (word-characters-in b)])
     (let-values ([(lo hi) (content-bounds view doc)])
-      (kill-ranges! view
+      (kill-ends! view
         (lambda (c) (let ([p (views:cursor-point c)]) (values p (words-from b doc p n lo hi extra))))
         #t))))
 
@@ -919,6 +985,19 @@
   "Kills from each cursor back to the start of the Nth word before it."
   (check-count 'editing:backward-kill-word n)
   (%kill-words 'editing:backward-kill-word (- n)))
+
+(define (insert-region! view cursor position lines)
+  (check-main-thread 'editing:insert-region!)
+  (check-view 'editing:insert-region! view)
+  (unless (memq cursor (views:cursors view))
+    (assertion-violation 'editing:insert-region! "not a cursor of the view" cursor))
+  (unless (and (integer? position) (exact? position)
+               (<= 0 position (document:length (buffers:document (views:buffer view)))))
+    (assertion-violation 'editing:insert-region! "not a position in the buffer" position))
+  (unless (and (pair? lines) (list? lines) (for-all string? lines))
+    (assertion-violation 'editing:insert-region! "not a non-empty list of strings" lines))
+  (buffers:insert! (views:buffer view) position
+    (fold-left (lambda (text line) (string-append text "\n" line)) (car lines) (cdr lines))))
 
 (commands:define-command (yank)
   "Inserts the kill ring's current entry at each cursor, with the mark before it and point after it."
@@ -1017,12 +1096,17 @@
 (define (%case-region who convert)
   (let* ([view (command-view who)] [b (views:buffer view)])
     (check-regions who view)
-    (each-cursor view
-      (lambda (c p m)
-        (let* ([s (fxmin p m)] [e (fxmax p m)] [delta (recase! b s e convert)])
-          (if (fx= p e)
-              (place-kept! view c (fx+ e delta) s)
-              (place-kept! view c s (fx+ e delta))))))))
+    (let ([selected (selected-ranges view #t)])
+      (each-cursor view
+        (lambda (c p m)
+          ;; From the last range, so each is converted where it was read;
+          ;; a place moves by what converting the ranges before it added.
+          (let loop ([rs (reverse (eq-hashtable-ref selected c '()))] [growth '()])
+            (if (null? rs)
+                (let ([moved (lambda (q) (fold-left (lambda (q g) (if (fx<= (car g) q) (fx+ q (cdr g)) q)) q growth))])
+                  (place-kept! view c (moved p) (moved m)))
+                (let-values ([(s e) (range-bounds (car rs))])
+                  (loop (cdr rs) (cons (cons e (recase! b s e convert)) growth))))))))))
 
 (commands:define-command (upcase-word [n (commands:prefix-number)])
   "Converts the text from each cursor to the end of the Nth word to upper case and moves past it."
@@ -1098,7 +1182,7 @@
           (cond
             [(and (> n 0) (fx>= s hi)) (error 'editing:kill-whole-line "end of buffer")]
             [(and (< n 0) (fx<= e lo)) (error 'editing:kill-whole-line "beginning of buffer")]))
-        (kill-ranges! view (lambda (c) (ends-at (views:cursor-point c))) #t)))))
+        (kill-ends! view (lambda (c) (ends-at (views:cursor-point c))) #t)))))
 
 (define (%space-between? doc start end lo hi)
   (let ([before (and (fx> start lo) (document:token doc (fx- start 1)))]
@@ -1535,11 +1619,9 @@
 (define (%select-active-region! command)
   (let ([view (layout:selected-view)])
     (when (and view (views:buffer view))
-      (let* ([c (car (views:cursors view))] [p (views:cursor-point c)] [m (views:cursor-mark c)])
-        (when (nonempty-region? p m)
-          (let ([ranges (buffers:fitted-ranges (views:buffer view) (fxmin p m) (fxmax p m))])
-            (when (pair? ranges)
-              (set! %primary (ranges-kill (views:buffer view) ranges)))))))))
+      (let* ([c (car (views:cursors view))] [rs (views:region-bounds view c)])
+        (when (exists (lambda (r) (pair? (buffers:fitted-ranges (views:buffer view) (car r) (cdr r)))) rs)
+          (set! %primary (extract-region view c rs)))))))
 
 (define %saved-at #f)
 
@@ -1579,7 +1661,8 @@
           (%in-view view
             (lambda (c)
               (clear-marks! view)
-              (views:set-cursor! c (kill-ring:insert! (views:buffer view) p primary) #f))))))))
+              (let ([ranges (kill-ring:insert! (views:buffer view) p primary)])
+                (views:set-cursor! c (if (null? ranges) p (cdar (last-pair ranges))) #f)))))))))
 
 (define (%quit-clears-marks quit)
   (let ([v (views:current)])

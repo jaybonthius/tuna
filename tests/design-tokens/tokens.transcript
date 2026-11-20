@@ -72,9 +72,11 @@
 ; edge still show in system colours, since nothing else in their rules
 ; reads a token without a fallback. Only other cursors need the tokens.
 > (map (lambda (r) (apply bare-tokens r))
-       '(("views/views.css" ".cursor") ("views/views.css" ".cursor.primary") ("views/views.css" ".region")
+       '(("views/views.css" ".cursor") ("views/views.css" ".cursor.primary")
+         ("views/views.css" ".region :not(.cursor, .view-anchor, .view-place, .above-region, .above-region *)")
+         ("views/views.css" ".view .line.region-line") ("views/views.css" ".view.nowrap .line.region-line")
          ("layout/layout.css" ".layout-view:not(.locked) > .view") ("layout/layout.css" ".layout-view.selected:not(.locked)")))
-(("--tuna-text-muted") () () () ())
+(("--tuna-text-muted") () () () () () ())
 ; So do the focus outline and a list's selected row, which ui draws; the
 ; row loses only its weight.
 > (map (lambda (r) (apply bare-tokens r))

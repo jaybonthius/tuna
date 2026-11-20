@@ -1,5 +1,5 @@
 #!tuna
-(import (runs) (processes) (minibuffer) (ask) (files) (layout) (views) (editing) (buffers) (document)
+(import (runs) (processes) (minibuffer) (ask) (files) (layout) (views) (editing) (kill-ring) (buffers) (document)
         (modes) (commands) (keys))
 
 (define-option compile-command "make -k " string?
@@ -158,9 +158,16 @@
         (error who "the buffer refuses the output" (buffers:name b))))
     ranges))
 
-(define (%cursor-region c)
-  (let ([p (views:cursor-point c)] [m (views:cursor-mark c)])
-    (cons (fxmin p m) (fxmax p m))))
+(define (%cursor-ranges view c)
+  (let ([ranges (views:region-bounds view c)])
+    (if (null? ranges) (let ([p (views:cursor-point c)]) (list (cons p p))) ranges)))
+
+(define (%lines text)
+  (let loop ([i 0] [from 0] [acc '()])
+    (cond
+      [(fx= i (string-length text)) (reverse (cons (substring text from i) acc))]
+      [(char=? (string-ref text i) #\newline) (loop (fx+ i 1) (fx+ i 1) (cons (substring text from i) acc))]
+      [else (loop (fx+ i 1) from acc)])))
 
 (commands:define-command (shell-command [line (%read-line "Shell command: " #f shell-command-history)]
                                         [insert? (commands:prefix-argument)])
@@ -192,31 +199,44 @@
     (unless view
       (error 'shell-commands:shell-command-on-region "no view"))
     (editing:check-regions 'shell-commands:shell-command-on-region view)
-    (when replace?
-      (%check-takes-text 'shell-commands:shell-command-on-region (views:buffer view)
-        (map %cursor-region (views:cursors view))))
     (let* ([b (views:buffer view)] [directory (files:directory)]
-           [regions (map (lambda (c)
-                           (let ([r (%cursor-region c)])
-                             (list c (buffers:anchor b (car r)) (buffers:anchor b (cdr r)))))
-                         (views:cursors view))]
-           [results (map (lambda (region)
-                           (let ([doc (buffers:document b)]
-                                 [s (buffers:anchor-position (cadr region))]
-                                 [e (buffers:anchor-position (caddr region))])
-                             (let-values ([(status text) (%run-line line (buffers:text-between doc s e))])
-                               (cons status text))))
-                         regions)])
-      (if replace?
-          (for-each
-            (lambda (region result)
-              (let ([s (buffers:anchor-position (cadr region))] [e (buffers:anchor-position (caddr region))])
-                (buffers:replace! b s e (cdr result))
-                (editing:place-cursor! view (car region) (fx+ s (string-length (cdr result))) #f)))
-            regions results)
-          (let ([text (apply string-append (map cdr results))]
-                [failure (find (lambda (result) (not (eqv? (car result) 0))) results)])
-            (%show-output! line directory text (if failure (car failure) 0)))))))
+           [regions (map (lambda (c) (cons c (%cursor-ranges view c))) (views:cursors view))])
+      (when replace?
+        (%check-takes-text 'shell-commands:shell-command-on-region b (apply append (map cdr regions))))
+      ;; A region of several ranges goes in with a final line break and
+      ;; comes out with one taken off, so a rectangle's last line is a
+      ;; line to the command and adds no empty line back, as Emacs does.
+      (let* ([anchored (map (lambda (region)
+                              (cons (car region)
+                                    (map (lambda (r) (cons (buffers:anchor b (car r)) (buffers:anchor b (cdr r))))
+                                         (cdr region))))
+                            regions)]
+             [results
+              (map (lambda (region)
+                     (let* ([ranges (map (lambda (r) (cons (buffers:anchor-position (car r)) (buffers:anchor-position (cdr r))))
+                                         (cdr region))]
+                            [several? (pair? (cdr ranges))]
+                            [input (kill-ring:text (list (editing:extract-region view (car region) ranges)))])
+                       (let-values ([(status text) (%run-line line (if several? (string-append input "\n") input))])
+                         (list status text several?))))
+                   anchored)])
+        (if replace?
+            (for-each
+              (lambda (region result)
+                (let* ([bounds (map (lambda (r) (cons (buffers:anchor-position (car r)) (buffers:anchor-position (cdr r))))
+                                    (cdr region))]
+                       [start (caar bounds)]
+                       [text (cadr result)]
+                       [text (if (and (caddr result) (fx> (string-length text) 0)
+                                      (char=? (string-ref text (fx- (string-length text) 1)) #\newline))
+                                 (substring text 0 (fx- (string-length text) 1))
+                                 text)])
+                  (for-each (lambda (r) (buffers:replace! b (car r) (cdr r) "")) (reverse bounds))
+                  (editing:place-cursor! view (car region) (editing:insert-region! view (car region) start (%lines text)) #f)))
+              anchored results)
+            (let ([text (apply string-append (map cadr results))]
+                  [failure (find (lambda (result) (not (eqv? (car result) 0))) results)])
+              (%show-output! line directory text (if failure (car failure) 0))))))))
 
 (define (async-shell-command-buffer)
   (let ([busy (buffers:find %async-buffer-name)])

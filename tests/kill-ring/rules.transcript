@@ -109,11 +109,11 @@
 > (map (lambda (entry) (raised (lambda () (kill-ring:text entry)))) (list (list p) '() "x"))
 ((kill-ring:text "not a non-empty list of strings and kills") (kill-ring:text "not a non-empty list of strings and kills") (kill-ring:text "not a non-empty list of strings and kills"))
 > (kill-ring:insert! b 12 p)
-17
+((12 . 17))
 > (contents b)
 "Hello worldHello\n"
 > (kill-ring:insert! b 1 "Oh, ")
-5
+((1 . 5))
 > (contents b)
 "Oh, Hello worldHello\n"
 ; A kill across paragraphs yanks back as it was killed, and the
@@ -129,11 +129,11 @@
 > (root m)
 (md:doc () (md:para () "Alo three.\n"))
 > (kill-ring:insert! m 4 across)
-26
+((4 . 26))
 > (equal? (root m) before)
 #t
 > (kill-ring:insert! m 8 across)
-30
+((8 . 30))
 > (root m)
 (md:doc () (md:para () "Alpha pha " (md:link () "beta") " gamma.\n") (md:para () "Tw" (md:link () "beta") " gamma.\n") (md:para () "Two three.\n"))
 > (document:text (buffers:document m) 8 30)
@@ -145,7 +145,7 @@
 > (buffers:piece-text para)
 "Two three.\n"
 > (define n (buffers:make "n" (md:doc '() (md:para '() "abcd\n"))))
-> (define after (kill-ring:insert! n 4 para))
+> (define after (cdar (kill-ring:insert! n 4 para)))
 > (list (root n) (document:text (buffers:document n) 0 after))
 ((md:doc () (md:para () "ab\n") (md:para () "Two three.\n") (md:para () "cd\n")) "ab\nTwo three.\n")
 ; A response's travelling span survives a kill and a yank elsewhere;
@@ -162,11 +162,11 @@
 > (list (contents t) (spans-of t responses) (spans-of t marks))
 ("Ask.  End.\n" () (("" mark)))
 > (kill-ring:insert! t 11 answer)
-23
+((11 . 23))
 > (list (contents t) (spans-of t responses) (spans-of t marks))
 ("Ask.  End.Answer here.\n" (("Answer here." gpt)) (("" mark)))
 > (kill-ring:insert! t 23 "!")
-24
+((23 . 24))
 > (spans-of t responses)
 (("Answer here.!" gpt))
 ; A kill appended to a kill keeps both parts: the text is theirs joined,
@@ -182,7 +182,7 @@
 > (define joined (car (kill-ring:current)))
 > (define u (buffers:make "u" (md:doc '() (md:para '() "xy\n"))))
 > (kill-ring:insert! u 3 joined)
-28
+((3 . 28))
 > (list (root u) (spans-of u responses))
 ((md:doc () (md:para () "x<two.\n") (md:para () "Thre+Answer here.y\n")) (("Answer here." gpt)))
 > (kill-ring:append! (list "!"))
@@ -199,7 +199,7 @@
 > (list (raised (lambda () (kill-ring:insert! f 3 three-parts))) (root f) (spans-of f responses) (buffers:version f))
 ((buffers:insert! "the node refuses the edit") (form () (field () "xy")) (("y" gpt)) 5)
 > (kill-ring:insert! f 3 (car (begin (kill-ring:push! (list "abc")) (kill-ring:append! (list (buffers:piece t 11 23))) (kill-ring:current))))
-18
+((3 . 18))
 > (list (root f) (spans-of f responses))
 ((form () (field () "xabcAnswer here.y")) (("Answer here.y" gpt)))
 ; kill-ring:join makes one kill of strings, pieces and kills: pushed, it
@@ -212,7 +212,7 @@
 ("One|Three" 1 ("One|Three"))
 > (define z (buffers:make "z" (md:doc '() (md:para '() "ab\n"))))
 > (kill-ring:insert! z 3 cells)
-12
+((3 . 12))
 > (root z)
 (md:doc () (md:para () "aOne|Threeb\n"))
 > (list (raised (lambda () (kill-ring:insert! f 3 (kill-ring:join "a" (buffers:piece w 6 17))))) (root f))
@@ -231,12 +231,12 @@
 > (define (yank-range! start end) (kill-ring:insert! u 2 (buffers:piece v start end)))
 > (let* ([a (yank-range! 6 7)] [b (yank-range! 1 10)] [c (yank-range! 1 5)] [d (yank-range! 10 18)])
     (list a b c d (reverse calls) (root u)))
-(42 42 42 42 (("u" 2 "") ("u" 2 "Pic .\n") ("u" 2 "Pic") ("u" 2 "Last.\n")) (md:doc () (md:para () "x<two.\n") (md:para () "Thre+Answer here.y\n")))
+(() () () () (("u" 2 "") ("u" 2 "Pic .\n") ("u" 2 "Pic") ("u" 2 "Last.\n")) (md:doc () (md:para () "x<two.\n") (md:para () "Thre+Answer here.y\n")))
 > (let* ([a (yank-range! 2 13)] [b (root u)] [c (yank-range! 11 17)]) (list a b c (root u)))
-(13 (md:doc () (md:para () "Pic " #(md:image ((src . "a.png"))) ".\n") (md:para () "Lax<two.\n") (md:para () "Thre+Answer here.y\n")) 8 (md:doc () (md:para () "Last.\nPic " #(md:image ((src . "a.png"))) ".\n") (md:para () "Lax<two.\n") (md:para () "Thre+Answer here.y\n")))
+(((2 . 13)) (md:doc () (md:para () "Pic " #(md:image ((src . "a.png"))) ".\n") (md:para () "Lax<two.\n") (md:para () "Thre+Answer here.y\n")) ((2 . 8)) (md:doc () (md:para () "Last.\nPic " #(md:image ((src . "a.png"))) ".\n") (md:para () "Lax<two.\n") (md:para () "Thre+Answer here.y\n")))
 > (table-remove! kill-ring:yankers 'md:para)
 > (yank-range! 10 18)
-10
+((2 . 10))
 > (raised (lambda () (kill-ring:insert! u 999 (buffers:piece v 1 10))))
 (kill-ring:insert! "not a position in the buffer")
 > (list (root u) (length calls))
@@ -247,3 +247,48 @@
 ("How many entries the ring keeps; pushing one more drops the oldest." "When true, pushing an entry whose text equals the newest entry's only moves the yank pointer to the newest." "Called with the newest entry after each push!, append! and prepend!." "Maps a node kind's name to a procedure of a buffer, a position and a buffers:piece that yanks a piece whose top node has that kind, returning the position after what it inserted.")
 > (option-settings kill-ring:skip-duplicates)
 (((repl) #f) ((init) #t))
+; insert! returns what the buffer's edits inserted, read from its edit
+; log. make-kill joins items into one kill that insert! yanks by calling
+; its procedure with the buffer and the position, so a procedure that
+; inserts in several places reports nothing itself; the ring never joins
+; such a kill to another, nor another to it.
+> (define w (buffers:make "plain-text" "one two\n"))
+> (define joined (kill-ring:join (buffers:piece w 1 4) "\n" "two"))
+> (list (kill-ring:text (list joined)) (kill-ring:insert! w 1 joined) (document:text (buffers:document w)))
+("one\ntwo" ((1 . 8)) "one\ntwoone two\n")
+> (define handled
+    (kill-ring:make-kill (list "ab" "cd")
+      (lambda (buffer position)
+        (let ([middle (buffers:insert! buffer position "[ab|")])
+          (buffers:insert! buffer (+ middle 3) "cd]")))))
+> (list (kill-ring:insert! w 1 handled) (document:text (buffers:document w)))
+(((1 . 5) (8 . 11)) "[ab|onecd]\ntwoone two\n")
+; The edit log is read in one pass, insertions in any order: ones made
+; before, inside or next to earlier ones move or join them.
+> (define d (buffers:make "digits" "0123456789\n"))
+> (define scattered
+    (kill-ring:make-kill (list "x")
+      (lambda (buffer position)
+        (buffers:insert! buffer 8 "B") (buffers:insert! buffer 3 "A")
+        (buffers:insert! buffer 4 "xy") (buffers:insert! buffer 5 "z"))))
+> (list (kill-ring:insert! d 1 scattered) (document:text (buffers:document d)))
+(((3 . 7) (12 . 13)) "01Axzy23456B789\n")
+; A procedure's insertions go in whole or not at all, as a kill of
+; several parts does: one refused after others went in takes them back.
+> (buffers:define-layer guarded (read-only))
+> (define g (buffers:make "guarded" "aaa\nbbb\nccc\n"))
+> (buffers:add-span! (buffers:layer g guarded) 5 8 'locked)
+> (define two-places
+    (kill-ring:make-kill (list "x")
+      (lambda (buffer position) (buffers:insert! buffer position "x") (buffers:insert! buffer 7 "x"))))
+> (list (raised (lambda () (kill-ring:insert! g 2 two-places))) (document:text (buffers:document g)))
+((buffers:insert! "a read-only span refuses the edit") "aaa\nbbb\nccc\n")
+> (kill-ring:push! (list "plain"))
+> (kill-ring:append! (list handled))
+> (kill-ring:append! (list "more"))
+> (map kill-ring:text (list-head (kill-ring:entries) 3))
+("more" "abcd" "plain")
+> (raised (lambda () (kill-ring:make-kill '() values)))
+(kill-ring:make-kill "not a non-empty list of strings, pieces and kills")
+> (raised (lambda () (kill-ring:make-kill (list "a") "yank")))
+(kill-ring:make-kill "not a procedure")

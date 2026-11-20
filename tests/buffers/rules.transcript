@@ -243,6 +243,10 @@
 > (define k2 (buffers:layer t low 'view2))
 > (list (buffers:layers t) (buffers:layers t 'view1))
 ((#<layer evap> #<layer hl>) (#<layer evap> #<layer low> #<layer hl>))
+> (map buffers:layer-priority (buffers:layers t 'view1))
+(0 0 10)
+> (buffers:layer-priority 'hl)
+! buffers:layer-priority: not a layer with irritant hl
 > (buffers:define-layer keyed (keymap 'keys))
 > (list (buffers:layer-keymap h) (buffers:layer-keymap (buffers:layer t keyed)))
 (#f keys)

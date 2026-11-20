@@ -31,7 +31,7 @@
 > (take-pushed!)
 ("after")
 > (list (kill-ring:insert! b 12 (cadr one)) (spans-of b responses))
-(17 (("Hello" gpt) ("Hello" gpt)))
+(((12 . 17)) (("Hello" gpt) ("Hello" gpt)))
 > (map car (definition-changes batch-ended))
 ((kill-ring) (tuna))
 ; Unloading saves a change made in the same batch, and takes back the

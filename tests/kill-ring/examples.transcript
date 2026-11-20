@@ -34,6 +34,6 @@
 > (define grid (buffers:make "grid" (md:doc '() (rectangle:block '() "ab\ncd\n") (md:para '() "end\n"))))
 > (kill-ring:push! (list (buffers:piece grid 1 9)))
 > (kill-ring:insert! grid 10 (car (kill-ring:current)))
-16
+((10 . 16))
 > (list rectangle:yanks (root grid))
 ((10) (md:doc () (rectangle:block () "ab\ncd\n") (md:para () "ab\ncd\nend\n")))

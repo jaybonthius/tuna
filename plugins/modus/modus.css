@@ -220,6 +220,7 @@
     --completion-match-2-color: var(--modus-fg-completion-match-2);
     --completion-match-3-color: var(--modus-fg-completion-match-3);
     --layout-part-mode-color: var(--modus-magenta-cooler);
+    --views-region-color: var(--modus-fg-region);
     --rainbow-delimiters-depth-1-color: var(--modus-fg-main);
     --rainbow-delimiters-depth-2-color: var(--modus-magenta-intense);
     --rainbow-delimiters-depth-3-color: var(--modus-cyan-intense);

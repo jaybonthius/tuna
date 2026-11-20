@@ -73,3 +73,27 @@
 ! &quit
 > (list (text three) (filter (lambda (p) (exists (lambda (a) (search a "sleep 30" 0)) (processes:command-line p))) (processes:all)))
 ("aa bb cc\n" ())
+; With the region a rectangle, M-| takes each cursor's input from
+; editing:extract-region, the rectangle's lines with a final line break,
+; and with a prefix argument deletes the rectangle and puts the output's
+; lines back through editing:insert-region!, so what is replaced is the
+; region drawn, as Emacs does for a region of several ranges.
+> (import (rectangle))
+> (rectangle:on!)
+> (define column (buffers:make "column" "xa1\nxb2\nxc3\n"))
+> (regions! column '(2 11))
+((2 11))
+> (views:region-bounds (view))
+((2 . 3) (6 . 7) (10 . 11))
+> (run! shell-commands:shell-command-on-region "sort -r" #f)
+> (text (buffers:find "*Shell Command Output*"))
+"c\nb\na\n"
+> (regions! column '(2 11))
+((2 11))
+> (run! shell-commands:shell-command-on-region "sort -r" '(4))
+> (list (text column) (map (lambda (c) (list (views:cursor-mark c) (views:cursor-point c))) (views:cursors (view))))
+("xc1\nxb2\nxa3\n" ((#f 11)))
+> (press! "C-/")
+> (text column)
+"xa1\nxb2\nxc3\n"
+> (rectangle:off!)

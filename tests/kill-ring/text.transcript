@@ -17,6 +17,6 @@
 #t
 ; Yanked back, the atoms come back as they were.
 > (kill-ring:insert! b 2 p)
-10
+((2 . 10))
 > (root b)
 (md:doc () (md:para () "a " #(md:badge ((label . "NEW"))) " b " #(md:image ()) "ca " #(md:badge ((label . "NEW"))) " b " #(md:image ()) "c\n"))

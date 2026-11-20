@@ -15,7 +15,7 @@
    current-buffer frozen-document internal? with-silent check-piece
    replace-content! fitted-deletion refuses-typing-probe? splice-content! reconcile-node! edits-after map-position-through
    define-kind! note-constructor! find-kind find-constructor-kind stop-at next-stop-after previous-stop-before range-text range-atom-texts
-   define-layer-type! layer-of layers-for layer-type-keymap-of
+   define-layer-type! layer-of layers-for layer-type-keymap-of layer-priority-of
    set-layer-spans! add-layer-span! remove-layer-spans! layer-spans layer-spans-at travelling-spans-of
    make-anchor! anchor-current-position move-anchor! anchor-deleted-now?)
 
@@ -870,6 +870,8 @@
       (when (and t (not (eq? t (buffer-layer-seen l))))
         (buffer-layer-seen-set! l t))
       (buffer-layer-seen l)))
+
+  (define (layer-priority-of l) (layer-type-priority (layer-clauses l)))
 
   (define (layer-type-keymap-of l)
     (let ([t (table-ref layer-types (buffer-layer-type l) #f)])
@@ -2061,6 +2063,10 @@
 (define (layer-keymap layer)
   (check-layer 'buffers:layer-keymap layer)
   (layer-type-keymap-of layer))
+
+(define (layer-priority layer)
+  (check-layer 'buffers:layer-priority layer)
+  (layer-priority-of layer))
 
 (define (layer? v) (buffer-layer? v))
 

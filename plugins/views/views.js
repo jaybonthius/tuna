@@ -547,15 +547,6 @@ document.addEventListener("scroll", (event) => {
   scrollerResting.set(scroller, setTimeout(() => checkScroller(scroller, true), restMs));
 }, { capture: true, passive: true });
 
-// The server draws each line's piece of the region as one box behind
-// its text, which cannot follow a piece that wraps onto several visual
-// lines, so such a piece falls back to an inline background.
-function markWrappedRegions() {
-  for (const region of document.querySelectorAll(".view .region")) {
-    region.classList.toggle("wrapped", region.getClientRects().length > 1);
-  }
-}
-
 // Datastar moves a kept element with insertBefore where the browser has
 // no moveBefore, which resets its scroll offsets; the element's own are
 // restored before the frame paints.
@@ -586,7 +577,6 @@ new MutationObserver((records) => {
     scheduled = false;
     screenArrived();
     scrollersArrived();
-    markWrappedRegions();
   });
 }).observe(document.documentElement, {
   subtree: true,
@@ -613,7 +603,6 @@ document.addEventListener("scroll", (event) => {
 
 screenArrived();
 scrollersArrived();
-markWrappedRegions();
 
 const dragThreshold = 3;
 let press = null;

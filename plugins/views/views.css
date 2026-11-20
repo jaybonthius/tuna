@@ -89,13 +89,9 @@
                                           transparent 0.75lh 1lh);
   }
 
-  /* Margins would fall outside what the page measures of a line. A line
-     is a stacking context, so a region's shape, drawn behind the text,
-     paints over every background a kind draws around the line rather
-     than under it. */
+  /* Margins would fall outside what the page measures of a line. */
   .view .line {
     margin-block: 0;
-    isolation: isolate;
   }
 
   /* A node's element and a datum's only name the positions they stand for,
@@ -159,77 +155,48 @@
     overflow-anchor: none;
   }
 
-  /* An inline box's background covers only the font's content area,
-     shorter than the line, so a region drawn that way would leave a gap
-     between its lines. Its shape is a box of the line's height behind
-     the text, whose corners the server chose. */
-  .region {
-    --views-region-radius: var(--tuna-control-radius, 4px);
-    --views-region-fill: var(--tuna-region, Highlight);
-    position: relative;
+  /* Each run inside paints its own band, in its own font, over an inline
+     atom's own background. Views' marks take no room; the anchor's pixel
+     would show. */
+  .region,
+  .region :not(.cursor, .view-anchor, .view-place, .above-region, .above-region *) {
+    background-color: var(--tuna-region, Highlight);
   }
 
-  .region::before,
-  .region::after {
-    content: "";
-    position: absolute;
-    z-index: -1;
-    inset-block-start: calc(50% - 0.5lh);
-    block-size: 1lh;
-    pointer-events: none;
+  /* With no specificity, so a span above the region keeps a background
+     its face gives it, as a search match shows over Emacs's region. */
+  :where(.region .above-region:not(.above-region .above-region)) {
+    background-color: var(--tuna-region, Highlight);
   }
 
-  .region::before {
-    inset-inline: 0;
-    background: var(--views-region-fill);
-    border-radius: var(--views-region-radius);
+  /* A line the region holds through its newline is filled to its edges,
+     so lines join whatever their fonts, as Emacs extends the region
+     face to the window's edge. */
+  .view .line.region-line {
+    background-color: var(--tuna-region, Highlight);
   }
 
-  .region.st-flat::before, .region.st-in::before { border-start-start-radius: 0; }
-  .region.sb-flat::before, .region.sb-in::before { border-end-start-radius: 0; }
-  .region.et-flat::before, .region.et-in::before { border-start-end-radius: 0; }
-  .region.eb-flat::before, .region.eb-in::before { border-end-end-radius: 0; }
-  .region.cut-start::before { border-start-start-radius: 0; border-end-start-radius: 0; }
-  .region.cut-end::before { border-start-end-radius: 0; border-end-end-radius: 0; }
-
-  .region::after {
-    inset-inline: calc(-1 * var(--views-region-radius));
-    background:
-      var(--views-region-st, none) left top / var(--views-region-radius) var(--views-region-radius) no-repeat,
-      var(--views-region-sb, none) left bottom / var(--views-region-radius) var(--views-region-radius) no-repeat,
-      var(--views-region-et, none) right top / var(--views-region-radius) var(--views-region-radius) no-repeat,
-      var(--views-region-eb, none) right bottom / var(--views-region-radius) var(--views-region-radius) no-repeat;
+  /* In a view that does not wrap, text runs past its line's box, so the
+     fill goes on past the view's edge as paint: an outset border image
+     is ink overflow, which widens no box and adds no scrolling, so
+     nothing a kind aligns to the line's end moves and no line resizes
+     as the longest grows. */
+  .view.nowrap .line.region-line {
+    border-image: linear-gradient(var(--tuna-region, Highlight)) 0 fill / 0 / 0 calc(infinity * 1px) 0 0;
   }
 
-  .region.st-in { --views-region-st: radial-gradient(circle at 0 100%, transparent calc(var(--views-region-radius) - 0.5px), var(--views-region-fill) var(--views-region-radius)); }
-  .region.sb-in { --views-region-sb: radial-gradient(circle at 0 0, transparent calc(var(--views-region-radius) - 0.5px), var(--views-region-fill) var(--views-region-radius)); }
-  .region.et-in { --views-region-et: radial-gradient(circle at 100% 100%, transparent calc(var(--views-region-radius) - 0.5px), var(--views-region-fill) var(--views-region-radius)); }
-  .region.eb-in { --views-region-eb: radial-gradient(circle at 100% 0, transparent calc(var(--views-region-radius) - 0.5px), var(--views-region-fill) var(--views-region-radius)); }
-
-  /* A face inside the region keeps its colour and loses its background,
-     as Emacs draws the region over faces. */
-  .region :not(.cursor) {
-    background-color: transparent;
-  }
-
-  /* The box of an inline split across visual lines spans its first and
-     last fragments, so a region piece that wraps, which views.js marks,
-     falls back to the span's own background. */
-  .region.wrapped {
-    background: var(--views-region-fill);
-    -webkit-box-decoration-break: clone;
-    box-decoration-break: clone;
-  }
-
-  .region.wrapped::before,
-  .region.wrapped::after {
-    display: none;
-  }
-
-  /* A line the region goes on past shows its newline as a little more
-     fill, as VS Code does, so an empty line inside a region is not lost. */
+  /* A line the region goes on past shows its newline, so an empty line
+     is not lost. The box takes no room, as a cursor does, so selecting
+     moves no text. */
   .region.eol {
     padding-inline-end: var(--views-region-newline-size, 0.6ch);
+    margin-inline-end: calc(-1 * var(--views-region-newline-size, 0.6ch));
+  }
+
+  /* An atom has no characters, so one the region holds whole is filled;
+     a picture shows the fill around it. */
+  .view .node[data-region] > * {
+    background-color: var(--tuna-region, Highlight);
   }
 }
 
@@ -251,20 +218,34 @@
       outline-offset: calc(-1 * var(--tuna-border-width-2, 2px));
     }
 
-    .region {
-      --views-region-fill: Highlight;
-    }
-
-    .region::before,
-    .region::after,
     .region,
-    .region * {
+    .region :not(.cursor, .view-anchor, .view-place),
+    .view .line.region-line,
+    .view .node[data-region] > * {
       forced-color-adjust: none;
+      background-color: Highlight;
     }
 
     .region,
-    .region * {
+    .region *,
+    .view .line.region-line,
+    .view .line.region-line * {
       color: HighlightText;
+    }
+  }
+}
+
+/* In the themes layer, so that where no theme sets the region's text
+   colour, revert-layer leaves each element the colour its own rules
+   give, as Emacs's region face sets none; where a theme sets one, it
+   colours all the region's text but what is drawn above the region, as
+   Modus's region face does. Forced colours set it in the defaults
+   layer, which this would override. */
+@layer themes {
+  @media not (forced-colors: active) {
+    .region,
+    .region :not(.cursor, .above-region, .above-region *) {
+      color: var(--views-region-color, revert-layer);
     }
   }
 }
