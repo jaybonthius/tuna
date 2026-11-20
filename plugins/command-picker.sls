@@ -3,11 +3,7 @@
 
 (define-saved command-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(define (command-for-view? command view)
-  (let ([modes (table-ref commands:command-modes command #f)])
-    (or (not modes) (exists (lambda (mode) (modes:on? mode view)) modes))))
-
-(define-option command-predicate command-for-view? procedure?
+(define-option command-predicate modes:command-for-view? procedure?
   "A procedure of a command and a view that says whether M-x offers the command while that view is selected.")
 
 (define (%offered? command view)
@@ -47,7 +43,7 @@
 
 (define (%mode-commands view)
   (let ([marked (filter (lambda (entry)
-                          (and (pair? (cdr entry)) (exists (lambda (mode) (modes:on? mode view)) (cdr entry))))
+                          (and (pair? (cdr entry)) (modes:command-for-view? (car entry) view)))
                         (table-entries commands:command-modes))])
     (let loop ([cs (append (map car marked) (%bound-commands (modes:active-keymaps #f #f)))] [acc '()])
       (cond

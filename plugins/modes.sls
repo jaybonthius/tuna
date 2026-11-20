@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (views) (keys))
+(import (buffers) (views) (keys) (commands))
 
 (define-table hooks
   "Maps each major mode to its hook. A major mode is defined while it has an entry here.")
@@ -276,6 +276,15 @@
   (let ([b (views:buffer view)])
     (or (and b (symbol? mode) (derived? (major-mode b) mode))
         (and (memq mode (minor-modes-on view)) #t))))
+
+(define (command-for-view? command view)
+  (unless (commands:command? command)
+    (assertion-violation 'modes:command-for-view? "not a command" command))
+  (unless (views:view? view)
+    (assertion-violation 'modes:command-for-view? "not a view" view))
+  (check-main-thread 'modes:command-for-view?)
+  (let ([marks (table-ref commands:command-modes command #f)])
+    (or (not marks) (exists (lambda (mode) (on? mode view)) marks))))
 
 (define (active-keymaps client posn)
   (let ([view (if posn (views:posn-view posn) (views:current))])

@@ -28,7 +28,8 @@
    event-basic-type-of event-modifiers-of dropped-mouse-key? drag-as-click pending-typed pending-seq pending-posn make-pending
    current-press make-press current-keys current-shifted current-session current-event make-quit
    push-temporary! end-temporary! end-temporaries! end-owned! test-temporaries! quit-paused!
-   set-prefix! prefix-keys push-universal-arguments! give-page-settings!)
+   set-prefix! prefix-keys push-universal-arguments! give-page-settings!
+   call-ending-idleness)
 
   (define main-thread (get-thread-id))
 
@@ -806,7 +807,17 @@
                        (let ([v (page-settings c)])
                          (web:call-page! c "keys-settings" (settings-value v))
                          (cons c v)))))
-               clients))))))
+               clients)))))
+
+  ;; Input that is no item ends idleness as an item does, so idle timers
+  ;; run again in the next pause. Idle on entry tells it from input inside
+  ;; an item, whose idleness the web plugin keeps. A wind's after thunk
+  ;; runs at each pause too, so Tuna is idle while the input's command
+  ;; waits.
+  (define (call-ending-idleness thunk)
+    (if (idle-seconds)
+        (dynamic-wind (lambda () (set-idle! #f)) thunk (lambda () (set-idle! #t)))
+        (thunk))))
 
 (import %internals)
 
@@ -908,77 +919,86 @@
 
 (define (press! client key)
   (check-main-thread 'keys:press!)
+  (unless (web:client? client)
+    (assertion-violation 'keys:press! "not a client" client))
   (unless (key-or-event? key)
     (assertion-violation 'keys:press! "neither one valid key nor an event" key))
-  (let* ([event-given? (pair? key)]
-         [name (if event-given? (car key) key)]
-         [s (session-of client)]
-         [r (session-reading s)])
-    (cond
-      ;; A read wants the click or drag that ends a press, as a ui button
-      ;; binds the press only to keep it from the keymaps below.
-      [(and r (dropped-mouse-key? name)) (void)]
-      [(and r (not (waiting-read-sequence? r))) (end-read! s r key)]
-      [else
-       (let* ([pending (session-pending s)]
-              [base (and pending (pending-seq pending))]
-              [typed (if pending (string-append (pending-typed pending) " " name) name)]
-              [posn (if pending (pending-posn pending) (and event-given? (cadr key)))]
-              [keymaps (keymaps-of client posn)])
-         (let-values ([(v found seq shifted? as-click?) (resolve-key keymaps base name)])
-           (cond
-             [(or (prefix-binding? v) (lone-escape? v base name))
-              (session-pending-set! s (make-pending typed seq posn))]
-             ;; As in Emacs, a press or a move that nothing binds is no key:
-             ;; the click or drag that follows it decides.
-             [(and (not v) (dropped-mouse-key? name)) (void)]
-             [r
-              (session-pending-set! s #f)
-              (end-read! s r (if (and event-given? (not pending)) key typed))]
-             [else
-              (let ([prefix (session-prefix s)] [command (and v (remapped keymaps v))]
-                    [event (if (and as-click? event-given?) (list (drag-as-click name) (cadr key)) key)])
-                (session-pending-set! s #f)
-                (session-prefix-set! s #f)
-                (test-temporaries! s found command)
-                (cond
-                  [(and command (not (commands:command? command)))
-                   (raise-continuable
-                     (condition (make-warning)
-                       (make-message-condition
-                         (format "~a runs ~a, which is not loaded" typed (bound-name command)))))]
-                  [else
-                   (let ([entry (list (current-task))])
-                     (when (car entry)
-                       (session-running-set! s (cons entry (session-running s))))
-                     (parameterize ([current-press (make-press typed shifted? s event)])
-                       (if (eq? (commands:prefix-argument) prefix)
-                           (commands:run (or command undefined))
-                           (parameterize ([commands:prefix-argument prefix])
-                             (commands:run (or command undefined)))))
-                     (session-running-set! s
-                       (remp (lambda (e) (or (eq? e entry) (task-done? (car e)))) (session-running s))))]))])))])))
+  (parameterize ([web:current-client client])
+    (call-ending-idleness
+      (lambda ()
+        (let* ([event-given? (pair? key)]
+               [name (if event-given? (car key) key)]
+               [s (session-of client)]
+               [r (session-reading s)])
+          (cond
+            ;; A read wants the click or drag that ends a press, as a ui button
+            ;; binds the press only to keep it from the keymaps below.
+            [(and r (dropped-mouse-key? name)) (void)]
+            [(and r (not (waiting-read-sequence? r))) (end-read! s r key)]
+            [else
+             (let* ([pending (session-pending s)]
+                    [base (and pending (pending-seq pending))]
+                    [typed (if pending (string-append (pending-typed pending) " " name) name)]
+                    [posn (if pending (pending-posn pending) (and event-given? (cadr key)))]
+                    [keymaps (keymaps-of client posn)])
+               (let-values ([(v found seq shifted? as-click?) (resolve-key keymaps base name)])
+                 (cond
+                   [(or (prefix-binding? v) (lone-escape? v base name))
+                    (session-pending-set! s (make-pending typed seq posn))]
+                   ;; As in Emacs, a press or a move that nothing binds is no key:
+                   ;; the click or drag that follows it decides.
+                   [(and (not v) (dropped-mouse-key? name)) (void)]
+                   [r
+                    (session-pending-set! s #f)
+                    (end-read! s r (if (and event-given? (not pending)) key typed))]
+                   [else
+                    (let ([prefix (session-prefix s)] [command (and v (remapped keymaps v))]
+                          [event (if (and as-click? event-given?) (list (drag-as-click name) (cadr key)) key)])
+                      (session-pending-set! s #f)
+                      (session-prefix-set! s #f)
+                      (test-temporaries! s found command)
+                      (cond
+                        [(and command (not (commands:command? command)))
+                         (raise-continuable
+                           (condition (make-warning)
+                             (make-message-condition
+                               (format "~a runs ~a, which is not loaded" typed (bound-name command)))))]
+                        [else
+                         (let ([entry (list (current-task))])
+                           (when (car entry)
+                             (session-running-set! s (cons entry (session-running s))))
+                           (parameterize ([current-press (make-press typed shifted? s event)])
+                             (if (eq? (commands:prefix-argument) prefix)
+                                 (commands:run (or command undefined))
+                                 (parameterize ([commands:prefix-argument prefix])
+                                   (commands:run (or command undefined)))))
+                           (session-running-set! s
+                             (remp (lambda (e) (or (eq? e entry) (task-done? (car e)))) (session-running s))))]))])))]))))))
 
 ;; Input that is no key, such as a paste, comes on its own clock, not
 ;; after the client's last key, so it leaves the client's pending keys,
 ;; prefix argument and temporary keymaps to the keys that follow.
 (define (run-as-input client command . args)
   (check-main-thread 'keys:run-as-input)
+  (unless (web:client? client)
+    (assertion-violation 'keys:run-as-input "not a client" client))
   (unless (commands:command? command)
     (assertion-violation 'keys:run-as-input "not a command" command))
-  (let ([command (remapped (keymaps-of client #f) command)]
-        [s (session-of client)]
-        [entry (list (current-task))])
-    (when (car entry)
-      (session-running-set! s (cons entry (session-running s))))
-    (call-with-values
-      (lambda ()
-        (parameterize ([current-press #f] [commands:prefix-argument #f] [web:current-client client])
-          (apply commands:run command args)))
-      (lambda results
-        (session-running-set! s
-          (remp (lambda (e) (or (eq? e entry) (task-done? (car e)))) (session-running s)))
-        (apply values results)))))
+  (call-ending-idleness
+    (lambda ()
+      (let ([command (remapped (keymaps-of client #f) command)]
+            [s (session-of client)]
+            [entry (list (current-task))])
+        (when (car entry)
+          (session-running-set! s (cons entry (session-running s))))
+        (call-with-values
+          (lambda ()
+            (parameterize ([current-press #f] [commands:prefix-argument #f] [web:current-client client])
+              (apply commands:run command args)))
+          (lambda results
+            (session-running-set! s
+              (remp (lambda (e) (or (eq? e entry) (task-done? (car e)))) (session-running s)))
+            (apply values results)))))))
 
 (define (pending client)
   (check-main-thread 'keys:pending)

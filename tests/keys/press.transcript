@@ -259,3 +259,15 @@
 > (list (map task-done? waits) quitted)
 ((#t #t) (waiting waiting))
 > (commands:run keys:keyboard-quit)
+; A key pressed outside any input item, as from a task of its own, runs
+; its command with web:current-client bound to the client that pressed it.
+> (define seen-client 'none)
+> (commands:define-command (note-client) "Notes the current client." (set! seen-client (web:current-client)))
+> (keys:bind! keys:global "C-c 1" note-client)
+> (define pressing (spawn-task (lambda () (press-all! two "C-c" "1"))))
+> (wait-until (lambda () (task-done? pressing)))
+> (list (eq? seen-client two) (web:current-client))
+(#t #f)
+; The client must be a client.
+> (raised (lambda () (keys:press! 'one "C-g")))
+(keys:press! "not a client")

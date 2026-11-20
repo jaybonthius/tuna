@@ -1,11 +1,9 @@
 #!tuna
 ;; Stands in for the layout plugin, which this configuration lacks: a
-;; frame is a record keys does not look inside.
-(import (commands) (keys))
+;; frame is a client of the stand-in web plugin, since keys takes a client.
+(import (commands) (keys) (web))
 
-(define-record-type frame (fields name))
-
-(define frames (list (make-frame "first") (make-frame "second")))
+(define frames (list (web:make-client 1) (web:make-client 2)))
 
 (define (current-frame) (car frames))
 

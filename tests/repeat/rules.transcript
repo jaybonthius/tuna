@@ -29,11 +29,12 @@
 ! } is undefined
 > (list (weights) (keymap-names c1))
 ((9/5 1/5) (layout:keymap keys:global))
-; Keys no client typed repeat nothing.
+; A key pressed outside an input item is still its client's, so it
+; repeats as a typed one does.
 > (press! c1 "C-x" "+")
 > (views:call-with-view (layout:selected-view) (lambda () (keys:press! c1 "C-x") (keys:press! c1 "}")))
 > (list (weights) (keymap-names c1))
-((6/5 4/5) (layout:keymap keys:global))
+((6/5 4/5) (layout-split:resize-keymap layout:keymap keys:global))
 ; Each client repeats on its own.
 > (press! c1 "C-x" "}")
 > (list (keymap-names c1) (keymap-names c2))

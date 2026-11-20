@@ -71,5 +71,7 @@
 (#t (quit))
 > (keys:run-as-input one 'insert-text "f")
 ! keys:run-as-input: not a command with irritant insert-text
+> (raised (lambda () (keys:run-as-input 'one insert-text "f")))
+(keys:run-as-input "not a client")
 > (on-thread (lambda () (keys:run-as-input one insert-text "g")))
 (keys:run-as-input "not on the main thread")

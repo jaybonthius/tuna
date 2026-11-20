@@ -468,16 +468,36 @@
               [n (string->number answer 10)])
          (if (and n (real? n)) n (loop "Please enter a number"))))]))
 
-(define-table %y-or-n-keymap)
+(define-table y-or-n-keymap "Added to the prompt of each y-or-n question.")
 
-(commands:define-command (%answer-y-or-n [char (keys:typed-char)])
-  "Answers the innermost y-or-n prompt with the key typed."
-  (let ([p (current-prompt)])
-    (when p
-      (case char
-        [(#\y) (exit! p #t)]
-        [(#\n) (exit! p #f)]
-        [else (message! p "Please answer y or n")]))))
+(define (%y-or-n-question? p)
+  (and (memq y-or-n-keymap (prompt-keymaps p)) #t))
+
+(define (%prompt-holding-point)
+  (let ([v (views:current)])
+    (and v (eq? (views:buffer v) buffer) (prompt-holding (views:point v)))))
+
+(define (y-or-n-mode)
+  (let ([p (%prompt-holding-point)])
+    (and p (%y-or-n-question? p))))
+
+(define (%question-to-answer who)
+  (let ([p (%prompt-holding-point)])
+    (if (and p (%y-or-n-question? p))
+        p
+        (or (find %y-or-n-question? prompts) (assertion-violation who "no y-or-n question waits")))))
+
+(commands:define-command (answer-yes)
+  "Answers yes to the y-or-n question holding point, or else to the innermost one."
+  (exit! (%question-to-answer 'minibuffer:answer-yes) #t))
+
+(commands:define-command (answer-no)
+  "Answers no to the y-or-n question holding point, or else to the innermost one."
+  (exit! (%question-to-answer 'minibuffer:answer-no) #f))
+
+(commands:define-command (%reject-y-or-n-answer)
+  "Tells the user that the y-or-n question takes only y or n."
+  (message! (%question-to-answer 'minibuffer:%reject-y-or-n-answer) "Please answer y or n"))
 
 (define (ask-y-or-n question)
   (unless (string? question)
@@ -485,7 +505,7 @@
   (let loop ([complaint #f])
     (let ([answer (call-with-setup
                     (lambda (p)
-                      (add-keymap! p %y-or-n-keymap)
+                      (add-keymap! p y-or-n-keymap)
                       (when complaint (message! p complaint)))
                     (lambda () (%read (string-append question "(y or n) ") #f #f)))])
       (if (boolean? answer) answer (loop "Please answer y or n")))))
@@ -578,13 +598,23 @@
 (keys:bind! keymap "<down-mouse-1>" keys:ignore)
 (keys:bind! keymap "<mouse-1>" mouse-set-point)
 (keys:remap! keymap keys:keyboard-quit abort)
-(keys:bind! %y-or-n-keymap "<printing-char>" %answer-y-or-n)
-(keys:remap! %y-or-n-keymap exit %answer-y-or-n)
+(keys:bind! y-or-n-keymap "y" answer-yes)
+(keys:bind! y-or-n-keymap "Y" answer-yes)
+(keys:bind! y-or-n-keymap "SPC" answer-yes)
+(keys:bind! y-or-n-keymap "n" answer-no)
+(keys:bind! y-or-n-keymap "N" answer-no)
+(keys:bind! y-or-n-keymap "DEL" answer-no)
+(keys:bind! y-or-n-keymap "<delete>" answer-no)
+(keys:bind! y-or-n-keymap "<printing-char>" %reject-y-or-n-answer)
+(keys:remap! y-or-n-keymap exit %reject-y-or-n-answer)
 ;; select-prompt is of use only outside the prompt, so M-x offers it
 ;; everywhere.
 (for-each
   (lambda (command) (table-set! commands:command-modes command (list mode)))
   (list exit abort previous-history next-history mouse-set-point))
+(table-set! modes:minor-modes y-or-n-mode 0)
+(table-set! commands:command-modes answer-yes (list y-or-n-mode))
+(table-set! commands:command-modes answer-no (list y-or-n-mode))
 (add-hook! keys:find-keymaps %prompt-keymaps 40)
 (set-option! ask:line-reader read)
 (set-option! ask:number-reader read-number)

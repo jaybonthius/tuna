@@ -54,7 +54,7 @@ editing:forward-char
 > (offered '("M-x") "keys:ignore")
 ("keys:ignore")
 ! &quit
-> (set-option! command-picker:command-predicate command-picker:command-for-view?)
+> (set-option! command-picker:command-predicate modes:command-for-view?)
 > (raised (lambda () (modes:on? 3 (view))))
 (modes:on? "not a mode")
 ; M-x offers a prompt's own commands only in a prompt, and exit, complete
@@ -80,6 +80,17 @@ editing:forward-char
 ! &quit
 > (press! "C-g")
 ! &quit
+; M-x offers the answers of a y-or-n question only while point is in one.
+> (offered '("M-x") "minibuffer:answer-")
+()
+! &quit
+> (define t (start! (lambda () (minibuffer:ask-y-or-n "Save it? "))))
+> (offered '("M-x") "minibuffer:answer-")
+("minibuffer:answer-no" "minibuffer:answer-yes")
+! &quit
+> (press! "y")
+> (result t)
+#t
 ; Exit, complete and the moves act on a session that completion:start
 ; runs over a field in any view, so M-x reaches it.
 > (define tags (buffers:make "*tags*" "lis"))
