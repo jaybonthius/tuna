@@ -37,7 +37,7 @@
 ; not measured are estimated at the mean of the 20 that were.
 > (import (ui))
 > (define rows (buffers:make "*rows*" (ui:list '())))
-> (ui:set-rows! rows (document:token (buffers:document rows) 0) (list->vector (iota 300)) (lambda (n) (ui:label (number->string n))) (lambda (r) r) 300)
+> (ui:set-rows! rows (document:token (buffers:document rows) 0) 300 (lambda (n) (ui:label (number->string n))) (lambda (r) r))
 > (define r (views:make rows))
 > (define (row-mark k) (list (cons "at" (+ k 1))))
 > (let ([html (html-of r desktop)])

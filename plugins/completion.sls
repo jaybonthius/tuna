@@ -337,7 +337,8 @@
             (mutable annotations) (mutable prefix) (mutable receiver) (mutable match-job) (mutable job-dropped)
             (mutable sorted?) (mutable pending) (mutable done?) (mutable matches) (mutable pending-kept) (mutable matched-to)
             (mutable pending-end) (mutable matches-id) (mutable pattern) (mutable style) (mutable query)
-            (mutable base) (mutable more?) (mutable prefers-input?) (mutable grouping) (mutable details)))
+            (mutable base) (mutable more?) (mutable prefers-input?) (mutable grouping) (mutable details)
+            (mutable rank-high)))
 
   ;; Each candidate holds its title's number, so a match job orders
   ;; matches by group without the titles; the numbers sit in a bytevector,
@@ -471,10 +472,12 @@
            [base (state-count st)] [rank-of (ranker s st given)] [g (state-grouping st)]
            [title-of (and g (%source-group (state-source st)))] [groups (and g (make-bytevector (fx* 4 k)))])
       (do ([i 0 (fx+ i 1)]) ((fx= i k))
-        (let* ([c (vector-ref cands i)] [text (candidate-text c)] [value (candidate-value c)])
+        (let* ([c (vector-ref cands i)] [text (candidate-text c)] [value (candidate-value c)] [rank (rank-of i text)]
+               [high (state-rank-high st)])
           (vector-set! texts i (string->utf8 text))
           (vector-set! vals i value)
-          (vector-set! ranks i (rank-of i text))
+          (vector-set! ranks i rank)
+          (state-rank-high-set! st (and high (fx< high rank) rank))
           (when g (bytevector-u32-native-set! groups (fx* 4 i) (group-number! g (title-of text value))))))
       (state-count-set! st (fx+ base k))
       (if (fx= base 0)
@@ -567,8 +570,16 @@
           (trim-candidates! st)
           (unless (fx= (state-count st) 0)
             (jobs:send! job (list 'add (jobs:freeze (state-texts st)) (state-ranks st) (state-groups st))))
-          (when (state-done? st) (send-sort! st))
+          (when (state-done? st) (sort-unless-held! st))
           job)))
+
+  ;; Candidates whose ranks rise in the order they came, as an in-order
+  ;; source's do, are already in the sorted order, so sorting them would
+  ;; only match every one of them again into new matches: a list showing
+  ;; them would start afresh at the stream's end, and a view scrolled by
+  ;; hand would go back to the selection.
+  (define (sort-unless-held! st)
+    (unless (state-rank-high st) (send-sort! st)))
 
   (define (send-sort! st)
     (jobs:send! (state-match-job st) '(sort))
@@ -597,6 +608,7 @@
         (state-more?-set! st #f)))
     (state-dropped-set! st (fx+ (state-dropped st) (state-count st)))
     (state-count-set! st 0)
+    (state-rank-high-set! st (least-fixnum))
     (state-texts-set! st (vector))
     (state-vals-set! st (vector))
     (state-details-set! st #f)
@@ -642,7 +654,7 @@
     (let ([style (list-ref (state-styles st) k)])
       (check-pattern style (style (state-query st)))))
 
-  (define (match-inline! s st)
+  (define (inline-matches s st)
     (trim-candidates! st)
     (let ([match (%matcher-match (matcher))] [n (length (state-styles st))])
       (let loop ([k 0])
@@ -652,7 +664,23 @@
               (loop (fx+ k 1))
               (begin
                 (state-pattern-set! st pattern)
-                (set-state-matches! s st (numbers->match-list s st (state-dropped st) locals))))))))
+                (numbers->match-list s st (state-dropped st) locals)))))))
+
+  (define (match-inline! s st)
+    (set-state-matches! s st (inline-matches s st)))
+
+  ;; Matches equal to the last stay the same list, so the rows showing
+  ;; them are not written afresh and a view scrolled by hand stays where
+  ;; it is.
+  (define (match-inline-keeping! s st)
+    (let ([ms (inline-matches s st)])
+      (set-state-matches! s st (if (same-matches? ms (state-matches st)) (state-matches st) ms))))
+
+  (define (same-matches? a b)
+    (let ([n (match-list-count a)])
+      (and (fx= n (match-list-count b))
+           (let loop ([i 0])
+             (or (fx= i n) (and (fx= (match-list-ref a i) (match-list-ref b i)) (loop (fx+ i 1))))))))
 
   (define (send-match! s st k)
     (let* ([id (session-record-next-id s)] [pattern (pattern-of st k)] [job (match-job-of s st)]
@@ -745,7 +773,7 @@
        (update-query! s st)]
       [(eq? v 'done)
        (state-done?-set! st #t)
-       (when (state-match-job st) (send-sort! st))]
+       (when (state-match-job st) (sort-unless-held! st))]
       [(eq? v 'clear)
        (state-done?-set! st #f)
        (state-prefers-input?-set! st #f)
@@ -768,9 +796,11 @@
           (let ([was (session-record-inline? s)])
             (take-emission! s st v)
             (when (or was (memq v '(done clear))) (decide-inline! s))
-            (if (eq? was (session-record-inline? s))
-                (match-state! s st)
-                (for-each (lambda (st) (match-state! s st)) (session-record-states s)))
+            (cond
+              [(eq? was (session-record-inline? s)) (match-state! s st)]
+              [(session-record-inline? s)
+               (for-each (lambda (st) (match-inline-keeping! s st)) (session-record-states s))]
+              [else (for-each (lambda (st) (match-state! s st)) (session-record-states s))])
             (when (session-record-dirty? s) (combine! s))
             ;; Moving to the main thread stopped the match jobs, which
             ;; answer no finding still queued for them.
@@ -922,7 +952,8 @@
               '()
               (cons (make-state (car sources) (styles-for (car sources)) index 0 0 (vector) (vector) (vector)
                                 (make-eqv-hashtable) #f #f #f 0 #f #f #t (make-match-list (vector) 0) 0 #f #f #f
-                                '() 0 "" #f #f #f (and (%source-group (car sources)) (empty-grouping)) #f)
+                                '() 0 "" #f #f #f (and (%source-group (car sources)) (empty-grouping)) #f
+                                (least-fixnum))
                     (loop (cdr sources) (fx+ index 1))))))
       (for-each
         (lambda (st)

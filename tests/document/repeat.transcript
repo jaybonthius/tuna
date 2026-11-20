@@ -14,6 +14,10 @@
 > (define rows (document:repeat (document:from-datum '#(row ((generation . 1)))) 3880000))
 > (< (compute-size rows) 1000000)
 #t
+; Freezing keeps the copies shared, as a buffer freezes each version it
+; hands out.
+> (< (compute-size (document:freeze rows vector->immutable-vector)) 1000000)
+#t
 > (list (document:length rows) (document:node-kind (document:token rows 3879999)))
 (3880000 row)
 > (document:offset rows 3880000 (document:unit atoms))

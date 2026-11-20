@@ -2,8 +2,8 @@
 ; come by group, groups in the order of their first match, each group's
 ; matches in the source's order, so each title shows once.
 > (define (titles s) (map (lambda (m) (completion:title s m)) (match-list s)))
-> (define (drawn after)
-    (let ([html (lines-html (list-view))] [open (string-append "<" after ">")])
+> (define (drawn-in v after)
+    (let ([html (lines-html v)] [open (string-append "<" after ">")])
       (let loop ([i 0] [acc '()])
         (cond
           [(> (+ i (string-length open)) (string-length html)) (reverse acc)]
@@ -12,6 +12,7 @@
                   [to (let find ([j from]) (if (char=? (string-ref html j) #\<) j (find (+ j 1))))])
              (loop to (cons (substring html from to) acc)))]
           [else (loop (+ i 1) acc)]))))
+> (define (drawn after) (drawn-in (list-view) after))
 > (define (fruit-title text value) (if (memv (string-ref text 0) '(#\a #\b)) "Early" "Late"))
 > (define fruit
     (completion:source
@@ -49,9 +50,8 @@
 ("apple" "a")
 > (press! "C-g")
 ! &quit
-; The list draws a heading above its first shown row too, so rows shown
-; from inside a group still name it; headings take lines of the list's
-; completion-list:lines, 15 here.
+; Every match is a row, with a heading above each group's first row; C-v
+; pages the selection by completion-list:lines, 15 here.
 > (define long-group
     (completion:source
       (candidates (list->vector (append (map (lambda (i) (format "a.txt:~a:x" (+ i 1))) (iota 30)) (list "b.txt:1:x"))))
@@ -60,19 +60,13 @@
 > (define t (start! (lambda () (completion:read "? " (list long-group) #f))))
 > (define s (session))
 > (list (drawn "li class=\"ui-list-heading\"><span") (length (drawn "span class=\"completion-text\"")))
-(("a.txt") 14)
+(("a.txt" "b.txt") 31)
 > (press! "C-v")
 > (selected-text s)
 "a.txt:16:x"
-> (drawn "li class=\"ui-list-heading\"><span")
-("a.txt")
-> (drawn "span class=\"completion-text\"")
-("3:x" "4:x" "5:x" "6:x" "7:x" "8:x" "9:x" "10:x" "11:x" "12:x" "13:x" "14:x" "15:x" "16:x")
 > (press! "M->")
-> (drawn "li class=\"ui-list-heading\"><span")
-("a.txt" "b.txt")
-> (length (drawn "span class=\"completion-text\""))
-13
+> (selected-text s)
+"b.txt:1:x"
 > (press! "C-g")
 ! &quit
 ; The order of groups follows the first match: with an in-order source,
@@ -249,7 +243,7 @@
 ("init.ss" "notes.txt")
 > (completion:narrowed s)
 "Files"
-> (drawn "span class=\"completion-list-narrowed\"")
+> (drawn-in (prompt-view) "span class=\"completion-list-narrowed\"")
 ("Files")
 > (type! "no")
 > (texts s)

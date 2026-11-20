@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (completion rows) (buffers) (views) (keys) (commands) (editing) (layout) (layout-float) (web))
+(import (completion) (completion rows) (buffers) (views) (keys) (commands) (editing) (modes) (layout) (layout-float) (web) (haml))
 
 (define-option lines 10 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many lines a popup shows at most, its rows and their group titles.")
@@ -20,11 +20,25 @@
   (lambda (v) (and (list? v) (for-all commands:command? v)))
   "The commands after which completion at point starts by itself, once completion-popup:auto-delay has passed.")
 
-(buffers:define-kind %root (content nodes))
+(define-table mode-keymap "Keys in a popup's rows' buffer: none, as in completion/rows:mode-keymap.")
+
+(define-hook mode-hook
+  "Called with a popup's rows' buffer current when its mode is set, after completion/rows:mode-hook; it changes the popup and not a read's list.")
+
+(modes:define-major-mode mode (parent completion/rows:mode) (keymap mode-keymap) (hook mode-hook))
+
+;; The popup is as wide as its rows, which only the page measures, so its
+;; bounds go to the page too.
+(define (%draw-root node view)
+  (haml (:div.completion-popup ([style (string-append "--completion-popup-min-width:" (number->string (min-width))
+                                                      "ch;--completion-popup-max-width:" (number->string (max-width)) "ch")])
+          (views:draw-children view node))))
+
+(buffers:define-kind %root (content nodes) (draw %draw-root))
 
 (define-record-type %shown
   (sealed #t)
-  (fields rows (mutable popup-id)))
+  (fields rows (mutable popup-id) (mutable lines)))
 
 (define %popups '())
 
@@ -50,19 +64,23 @@
           (%shown-popup-id-set! l
             (views:id
               (layout-float:show-at! view (completion:session-start s) (completion/rows:buffer r)
-                                     (list 'columns (fxmax (min-width) (fxmin (max-width) (completion/rows:width r))))
-                                     (list 'lines (fxmax 1 (completion/rows:lines r))))))
+                                     'content (list 'lines (fxmax 1 (%shown-lines l))))))
           (completion/rows:follow-selection! r)))))
 
 (define (%started s)
   (unless (completion:session-prompt s)
-    (set! %popups (cons (make-%shown (completion/rows:make s lines (lambda (nodes) (apply %root '() nodes))) #f)
+    (set! %popups (cons (make-%shown (completion/rows:make s lines (lambda (nodes) (apply %root '() nodes)) mode) #f 0)
                         %popups))))
 
+;; A stream that adds rows while fewer than fit are shown makes the popup
+;; taller, so it is placed again when its lines change too.
 (define (%updated s)
   (let ([l (%popup-of s)])
-    (when (and l (completion/rows:update! (%shown-rows l)))
-      (%place! l))))
+    (when l
+      (let* ([r (%shown-rows l)] [afresh? (completion/rows:update! r)] [n (completion/rows:lines r)])
+        (when (or afresh? (not (fx= n (%shown-lines l))))
+          (%shown-lines-set! l n)
+          (%place! l))))))
 
 (define (%ended s)
   (let ([l (%popup-of s)])
@@ -102,6 +120,7 @@
 (keys:remap! completion:region-keymap views:scroll-down completion/rows:scroll-down)
 (keys:bind! completion:region-keymap "M-n" completion:next)
 (keys:bind! completion:region-keymap "M-p" completion:previous)
+(table-set! web:stylesheets 'completion-popup "completion-popup/completion-popup.css")
 (add-hook! completion:started %started)
 (add-hook! completion:updated %updated)
 (add-hook! completion:ended %ended)

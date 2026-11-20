@@ -18,7 +18,7 @@
 > (completion:selected s)
 #f
 > (popups)
-((" *Completions-1*" (columns 15) (lines 2)))
+((" *Completions-1*" content (lines 2)))
 ; With nothing selected, no row is drawn as selected.
 > (define (holds? text piece)
     (let loop ([i 0])
@@ -65,7 +65,7 @@
 > (texts (session))
 ("apple")
 > (popups)
-((" *Completions-3*" (columns 15) (lines 1)))
+((" *Completions-3*" content (lines 1)))
 > (press! "C-a")
 > (session)
 #f
@@ -169,13 +169,13 @@
 > (type! "alp")
 > (press! "C-M-i")
 > (popups)
-((" *Completions-10*" (columns 20) (lines 2)))
+((" *Completions-10*" content (lines 2)))
 > (press! "C-g")
 > (set-option! completion-popup:min-width 1)
 > (set-option! completion-popup:max-width 3)
 > (press! "C-M-i")
 > (popups)
-((" *Completions-11*" (columns 3) (lines 2)))
+((" *Completions-11*" content (lines 2)))
 > (remove-option! completion-popup:min-width)
 > (remove-option! completion-popup:max-width)
 > (press! "C-g")
@@ -217,20 +217,24 @@
 > (buffers:with-buffer (views:buffer lv) (views:cursor-visible))
 #f
 > (lines-html lv)
-"<div class=\"view-lines\"><div class=\"completion-list\" style=\"--completion-list-lines:5\"><div class=\"node whole\" id=\"v17-1\" data-at=\"1\" data-to=\"2\"><div class=\"completion-list-count\" data-face=\"shadow\">1/4</div></div><div class=\"node whole\" id=\"v17-2\" data-at=\"2\" data-to=\"3\"></div><div class=\"node\" id=\"v17-7\" data-at=\"3\" data-to=\"9\"><ul class=\"ui-list\"><li class=\"ui-list-heading\"><span>Words</span></li><div class=\"node whole\" id=\"v17-3\" data-at=\"4\" data-to=\"5\"><li class=\"ui-list-row\" aria-current=\"true\"><div class=\"completion-row\"><span class=\"completion-text\">alpha</span></div></li></div><div class=\"node whole\" id=\"v17-4\" data-at=\"5\" data-to=\"6\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">apple</span></div></li></div><div class=\"node whole\" id=\"v17-5\" data-at=\"6\" data-to=\"7\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">almond</span></div></li></div><div class=\"node whole\" id=\"v17-6\" data-at=\"7\" data-to=\"8\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">banana</span></div></li></div></ul></div></div></div></div>"
+"<div class=\"view-lines\"><div class=\"node whole\" id=\"v17-1\" data-at=\"1\" data-to=\"2\"></div><div class=\"node\" id=\"v17-7\" data-at=\"2\" data-to=\"10\"><div class=\"completion-rows\" style=\"--completion-rows-width:6ch\"><div class=\"node\" id=\"v17-6\" data-at=\"3\" data-to=\"9\"><ul class=\"ui-list\"><li class=\"ui-list-heading\"><span>Words</span></li><div class=\"node whole\" id=\"v17-2\" data-at=\"4\" data-to=\"5\"><li class=\"ui-list-row\" aria-current=\"true\"><div class=\"completion-row\"><span class=\"completion-text\">alpha</span></div></li></div><div class=\"node whole\" id=\"v17-3\" data-at=\"5\" data-to=\"6\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">apple</span></div></li></div><div class=\"node whole\" id=\"v17-4\" data-at=\"6\" data-to=\"7\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">almond</span></div></li></div><div class=\"node whole\" id=\"v17-5\" data-at=\"7\" data-to=\"8\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">banana</span></div></li></div></ul></div></div></div></div></div>"
 > (click-token! lv (row-position lv 2))
 > (result t)
 "almond"
-; The lines option limits a read's lines.
+; The lines option limits a read's lines: every match is a row, and the
+; list's view, in the prompt's frame under the count, is that many lines
+; tall.
 > (set-option! completion-list:lines 2)
 > (define t (start! (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "a1" "a2" "a3" "a4")))) h))))
 > (define lv (list-view))
 > (let ([s (html->string (views:draw lv client))]) (let loop ([i 0] [n 0]) (cond [(> (+ i 11) (string-length s)) n] [(string=? (substring s i (+ i 11)) "ui-list-row") (loop (+ i 11) (+ n 1))] [else (loop (+ i 1) n)])))
-2
+4
 ; The list is as tall as the most rows it has shown in the read, so it
 ; keeps its height as the matches narrow.
 > (define (list-rows)
-    (let* ([s (lines-html lv)] [start (+ 24 (string-length "<div class=\"completion-list\" style=\"--completion-list-lines:"))])
+    (let* ([s (lines-html (prompt-view))] [key "--completion-list-lines:"]
+           [at (let find ([i 0]) (if (string=? (substring s i (+ i (string-length key))) key) i (find (+ i 1))))]
+           [start (+ at (string-length key))])
       (let loop ([i start]) (if (char-numeric? (string-ref s i)) (loop (+ i 1)) (string->number (substring s start i))))))
 > (list-rows)
 2

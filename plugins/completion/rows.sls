@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (ui) (buffers) (document) (views) (commands) (web) (haml))
+(import (completion) (ui) (buffers) (document) (views) (commands) (modes) (web) (haml))
 
 ;; Point rests before an atom that draws nothing while nothing is
 ;; selected, since a list's selected row is the row at point: the start
@@ -13,9 +13,26 @@
 
 (define %list-kind (buffers:kind-name (buffers:constructor-kind ui:list)))
 
+(define-table mode-keymap
+  "Keys in the rows' buffers. Their views are never selected, so keys reach them only as mouse keys, which ui:list-keys binds.")
+
+(define-hook mode-hook
+  "Called with a rows' buffer current when its mode is set, before the hook of the display's own mode.")
+
+(modes:define-major-mode mode (lighter "Completions") (keymap mode-keymap) (hook mode-hook))
+
+;; Only the session moves a rows' view's point, so a hand scroll must leave
+;; it, or the row drawn as selected would not be the one RET chooses.
+(define (%rows-settings)
+  (set-option-local! views:scroll-margin 2)
+  (set-option-local! views:cursor-visible #f)
+  (set-option-local! views:hand-scroll-moves-point #f))
+
+;; The widths are of the rows drawn in the session, and only grow, so a
+;; screen's columns line up and nothing jitters as the rows scroll.
 (define-record-type %rows
   (sealed #t)
-  (fields session buffer most (mutable matches) (mutable count) (mutable widths)))
+  (fields session buffer most (mutable matches) (mutable count) (mutable widths) (mutable text-width)))
 
 (define %made 0)
 
@@ -29,18 +46,33 @@
   (unless (%rows? r)
     (assertion-violation who "not rows" r)))
 
-(define (make session most root)
-  (unless (completion:session? session)
-    (assertion-violation 'completion/rows:make "not a session" session))
-  (unless (procedure? most)
-    (assertion-violation 'completion/rows:make "not a procedure" most))
-  (unless (procedure? root)
-    (assertion-violation 'completion/rows:make "not a procedure" root))
-  (let ([b (buffers:make (%next-name) (root (list (%none '()) (ui:list '()))))])
-    (buffers:with-buffer b (set-option-local! views:cursor-visible #f))
-    (let ([r (make-%rows session b most #f 0 '())])
-      (set! %all (cons r %all))
-      r)))
+(define (%rows-of b) (find (lambda (r) (eq? (%rows-buffer r) b)) %all))
+
+;; The widths are written after the rows are drawn, since drawing them is
+;; what measures them.
+(define (%draw-rows node view)
+  (let* ([r (%rows-of (views:buffer view))] [children (views:draw-children view node)])
+    (haml (:div.completion-rows ([style (and r (%widths-style r))]) children))))
+
+(buffers:define-kind %frame (content nodes) (draw %draw-rows))
+
+(define make
+  (case-lambda
+    [(session most root) (make session most root mode)]
+    [(session most root display-mode)
+     (unless (completion:session? session)
+       (assertion-violation 'completion/rows:make "not a session" session))
+     (unless (procedure? most)
+       (assertion-violation 'completion/rows:make "not a procedure" most))
+     (unless (procedure? root)
+       (assertion-violation 'completion/rows:make "not a procedure" root))
+     (unless (and (symbol? display-mode) (modes:derived? display-mode mode))
+       (assertion-violation 'completion/rows:make "not a mode derived from completion/rows:mode" display-mode))
+     (let ([b (buffers:make (%next-name) (root (list (%none '()) (%frame '() (ui:list '())))))])
+       (modes:set-major-mode display-mode b)
+       (let ([r (make-%rows session b most #f 0 '() 0)])
+         (set! %all (cons r %all))
+         r))]))
 
 (define (rows? v) (%rows? v))
 
@@ -49,10 +81,12 @@
 (define (buffer r) (%check 'completion/rows:buffer r) (%rows-buffer r))
 
 (define (%list-node b)
-  (let ([doc (buffers:document b)] [found #f])
-    (document:for-each-child (document:token doc 0) 1 (fx- (document:length doc) 1)
-      (lambda (c at) (when (and (document:node? c) (eq? (document:node-kind c) %list-kind)) (set! found c))))
-    found))
+  (let ([doc (buffers:document b)])
+    (let loop ([p 0])
+      (let ([t (document:token doc p)])
+        (if (and (document:node? t) (eq? (document:node-kind t) %list-kind))
+            t
+            (loop (fx+ p 1)))))))
 
 (define (%empty-position b)
   (let ([doc (buffers:document b)] [found #f])
@@ -76,49 +110,46 @@
 
 (define (%column-text c) (if (pair? c) (cdr c) c))
 
-(define (%draw-column c width)
+(define (%draw-column c k)
   (haml (:span.completion-column ([data-face (and (pair? c) (symbol->string (car c)))]
-                                  [style (and width (string-append "--completion-column-size:" (number->string width) "ch"))])
+                                  [style (string-append "--completion-column-size:var(--completion-column-"
+                                                        (number->string k) "-size)")])
           (%column-text c))))
+
+(define (%grow-widths! r text columns)
+  (%rows-text-width-set! r (fxmax (%rows-text-width r) (string-length text)))
+  (%rows-widths-set! r
+    (let loop ([cs columns] [ws (%rows-widths r)] [acc '()])
+      (cond
+        [(null? cs) (append (reverse acc) ws)]
+        [else (loop (cdr cs) (if (pair? ws) (cdr ws) '())
+                    (cons (fxmax (string-length (%column-text (car cs))) (if (pair? ws) (car ws) 0)) acc))]))))
+
+(define (%widths-style r)
+  (let loop ([ws (%rows-widths r)] [k 1] [total (%rows-text-width r)] [acc '()])
+    (if (null? ws)
+        (apply string-append
+          (reverse (cons (string-append "--completion-rows-width:" (number->string total) "ch") acc)))
+        (loop (cdr ws) (fx+ k 1) (fx+ total 1 (car ws))
+              (cons (string-append "--completion-column-" (number->string k) "-size:" (number->string (car ws)) "ch;")
+                    acc)))))
 
 (define (%draw-row r matches k)
   (let* ([s (%rows-session r)] [m (completion:matches-ref matches k)] [text (completion:row-text s m)]
-         [columns (completion:annotation s m)] [widths (%rows-widths r)])
+         [columns (completion:annotation s m)])
+    (%grow-widths! r text columns)
     (haml
       (:div.completion-row
         (:span.completion-text (%mark text (completion:spans s m)))
-        (let loop ([cs columns] [ws widths] [acc '()])
+        (let loop ([cs columns] [k 1] [acc '()])
           (if (null? cs)
               (reverse acc)
-              (loop (cdr cs) (if (pair? ws) (cdr ws) '())
-                    (cons (%draw-column (car cs) (and (pair? ws) (car ws))) acc))))))))
+              (loop (cdr cs) (fx+ k 1) (cons (%draw-column (car cs) k) acc))))))))
 
 (define (%choose r m)
   (let ([s (%rows-session r)])
     (completion:select! s m)
     (views:call-with-view (completion:session-view s) completion:exit)))
-
-(define (%shown r)
-  (let* ([matches (completion:session-matches (%rows-session r))]
-         [n (fxmin (completion:matches-count matches) ((%rows-most r)))])
-    (let loop ([i 0] [acc '()])
-      (if (fx= i n) (reverse acc) (loop (fx+ i 1) (cons (completion:matches-ref matches i) acc))))))
-
-(define (%widths r shown)
-  (let ([s (%rows-session r)])
-    (fold-left
-      (lambda (widths m)
-        (let loop ([cs (completion:annotation s m)] [ws widths] [acc '()])
-          (cond
-            [(null? cs) (append (reverse acc) ws)]
-            [else (loop (cdr cs) (if (pair? ws) (cdr ws) '())
-                        (cons (fxmax (string-length (%column-text (car cs))) (if (pair? ws) (car ws) 0)) acc))])))
-      '()
-      shown)))
-
-(define (%indices from to)
-  (let ([v (make-vector (fx- to from))])
-    (do ([i from (fx+ i 1)]) ((fx= i to) v) (vector-set! v (fx- i from) i))))
 
 ;; A list's selected row is the row at a view's point, and each view has
 ;; its own, so every view a display places of the rows follows.
@@ -133,41 +164,33 @@
             (views:set-point! v (%empty-position b))))
       (views:showing b))))
 
-;; A stream's matches grow at their end, thousands of times, so only the
-;; rows they add are given to the list once it shows as many as it can:
-;; the columns' widths are those of the rows shown.
+;; A stream's round, which runs no command, leaves a view scrolled by hand
+;; where it is; new matches, and every command that updates the session,
+;; show the selection.
 (define (update! r)
   (%check 'completion/rows:update! r)
-  (let* ([s (%rows-session r)] [b (%rows-buffer r)] [most ((%rows-most r))]
+  (let* ([s (%rows-session r)] [b (%rows-buffer r)]
          [matches (completion:session-matches s)] [n (completion:matches-count matches)]
-         [afresh? (or (not (eq? matches (%rows-matches r))) (and (fx< (%rows-count r) most) (fx> n (%rows-count r))))])
+         [afresh? (not (eq? matches (%rows-matches r)))])
     (cond
       [afresh?
        (%rows-matches-set! r matches)
        (%rows-count-set! r n)
-       (%rows-widths-set! r (%widths r (%shown r)))
-       (ui:set-rows! b (%list-node b) (%indices 0 n)
+       (ui:set-rows! b (%list-node b) n
                      (lambda (k) (%draw-row r matches k))
                      (lambda (k) (%choose r (completion:matches-ref matches k)))
-                     most
                      (lambda (k) (completion:title s (completion:matches-ref matches k))))]
       [(fx> n (%rows-count r))
-       (ui:add-rows! b (%list-node b) (%indices (%rows-count r) n))
+       (ui:add-rows! b (%list-node b) (fx- n (%rows-count r)))
        (%rows-count-set! r n)])
-    (follow-selection! r)
+    (when (or afresh? (commands:this-command))
+      (follow-selection! r))
     afresh?))
-
-(define (width r)
-  (%check 'completion/rows:width r)
-  (let ([s (%rows-session r)])
-    (fold-left (lambda (w column) (fx+ w 1 column))
-               (fold-left (lambda (w m) (fxmax w (string-length (completion:row-text s m)))) 0 (%shown r))
-               (%rows-widths r))))
 
 (define (lines r)
   (%check 'completion/rows:lines r)
   (let ([b (%rows-buffer r)])
-    (ui:list-lines b (%list-node b))))
+    (ui:list-lines b (%list-node b) ((%rows-most r)))))
 
 (define (drop! r)
   (%check 'completion/rows:drop! r)
@@ -194,3 +217,4 @@
 
 ;; The path is relative to this module's own folder, completion/.
 (table-set! web:stylesheets 'completion-rows "rows.css")
+(add-hook! mode-hook %rows-settings)

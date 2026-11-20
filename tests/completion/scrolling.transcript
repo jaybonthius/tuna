@@ -1,0 +1,187 @@
+; Every match is a row of the rows' buffer, so a read's list scrolls
+; through all of them. Only the session moves the point of a rows' view:
+; new matches and every command that updates the session send the view
+; a placement that follows the selection, and a stream's round, which
+; runs no command, sends none, so a list scrolled by hand stays.
+> (define-saved h '() list?)
+> (define (placement v)
+    (let* ([s (html->string (views:draw v client))] [key "data-placement=\""]
+           [at (let find ([i 0]) (if (string=? (substring s i (+ i (string-length key))) key) i (find (+ i 1))))]
+           [from (+ at (string-length key))])
+      (let loop ([i from]) (if (char-numeric? (string-ref s i)) (loop (+ i 1)) (string->number (substring s from i))))))
+> (define (rows-count lv)
+    (let ([doc (buffers:document (views:buffer lv))])
+      (let loop ([p 0] [n 0])
+        (let ([t (document:token doc p)])
+          (cond
+            [(eof-object? t) n]
+            [(and (document:node? t) (eq? (document:node-kind t) 'ui:%list-row)) (loop (+ p 1) (+ n 1))]
+            [else (loop (+ p 1) n)])))))
+> (define (ui-list lv)
+    (let ([doc (buffers:document (views:buffer lv))])
+      (let loop ([p 0]) (let ([t (document:token doc p)]) (if (and (document:node? t) (eq? (document:node-kind t) 'ui:list)) t (loop (+ p 1)))))))
+; A stream the test feeds itself, so its rounds and its end come when
+; the test says.
+> (define feed #f)
+> (define (fed-stream emit) (set! feed emit) (lambda (prefix) (void)))
+> (define (lines from to) (list->vector (map (lambda (i) (format "item-~a" (+ from i))) (iota (- to from)))))
+> (define (stream-read preselect)
+    (lambda ()
+      (with-options ([completion:read-preselect preselect])
+        (completion:read "Item: " (list (completion:source (stream fed-stream) (in-order))) h))))
+> (define (generation lv)
+    (let* ([doc (buffers:document (views:buffer lv))] [l (ui-list lv)] [first (document:token doc (+ (document:node-start l) 1))])
+      (document:node-attribute first 'generation)))
+; A scroll by hand: the client's browser reports, at rest, the row now
+; at its top.
+> (define reports 0)
+> (define (scroll-by-hand! lv row)
+    (let* ([html (html->string (views:draw lv client))]
+           [number (lambda (key)
+                     (let* ([at (let find ([i 0]) (if (string=? (substring html i (+ i (string-length key))) key) i (find (+ i 1))))]
+                            [from (+ at (string-length key))])
+                       (let loop ([i from]) (if (char-numeric? (string-ref html i)) (loop (+ i 1)) (string->number (substring html from i))))))]
+           [at (lambda (k) (list (cons "at" (+ (document:node-start (ui-list lv)) 1 k))))])
+      (set! reports (+ reports 1))
+      ((table-ref web:input-handlers "scroll") client
+       `(("type" . "scroll") ("view" . ,(views:id lv)) ("placement" . ,(number "data-placement=\""))
+         ("report" . ,reports) ("version" . ,(buffers:version (views:buffer lv)))
+         ("top" . ,(at row)) ("offset" . 0) ("itemHeight" . 20) ("left" . 0)
+         ("start" . ,(at row)) ("end" . ,(at (+ row 9))) ("spacer" . null) ("spacerDistance" . 0) ("below" . 0)
+         ("items" . ,(list->vector (map (lambda (k) (vector (at (+ row k)) 20)) (iota 40))))
+         ("lineHeight" . 20) ("charWidth" . 10) ("width" . 400) ("height" . 200)
+         ("settled" . #t) ("hand" . #t) ("runAtEnd" . #f)))))
+> (define (row-at-top lv) (- (views:top lv client) (document:node-start (ui-list lv)) 1))
+> (define t (start! (stream-read 'first)))
+> (define s (session))
+> (define lv (list-view))
+> (for-each (lambda (k) (feed (lines (* k 1000) (* (+ k 1) 1000))) (wait-matches s)) (iota 5))
+> (define (wait-rows n) (wait-until (lambda () (= (rows-count lv) n))))
+> (wait-rows 5000)
+> (scroll-by-hand! lv 2000)
+> (define before (list (placement lv) (views:point lv) (row-at-top lv) (generation lv) (completion:session-matches s)))
+> (list (rows-count lv) (row-at-top lv) (selected-text s))
+(5000 2000 "item-0")
+; The stream's end is one more round: the matches stay the same list, in
+; the order they came, so the rows are not written afresh, the view stays
+; where the hand left it, and a click on a row drawn before the end
+; chooses that row.
+> (define drawn (buffers:version (views:buffer lv)))
+> (feed (lines 5000 5100))
+> (feed 'done)
+> (wait-matches s)
+> (wait-rows 5100)
+> (list (equal? before (list (placement lv) (views:point lv) (row-at-top lv) (generation lv) (completion:session-matches s)))
+        (completion:session-busy? s) (rows-count lv))
+(#t #f 5100)
+> (define (click-drawn! at)
+    (mouse-in! lv "down" `(("token" . ,at) ("version" . ,drawn)))
+    (mouse-in! lv "click" `(("token" . ,at) ("version" . ,drawn))))
+> (click-drawn! (row-position lv 2005))
+> (result t)
+"item-2005"
+; With nothing selected, a round and the end leave the view where it is
+; too, rather than pulling it to the top of the list.
+> (define t (start! (stream-read 'none)))
+> (define s (session))
+> (define lv (list-view))
+> (feed (lines 0 3000))
+> (wait-matches s)
+> (wait-rows 3000)
+> (scroll-by-hand! lv 1500)
+> (define before (list (placement lv) (views:point lv) (row-at-top lv) (generation lv)))
+> (feed (lines 3000 3500))
+> (feed 'done)
+> (wait-matches s)
+> (list (completion:selected s) (rows-count lv) (equal? before (list (placement lv) (views:point lv) (row-at-top lv) (generation lv))))
+(#f 3500 #t)
+; A command shows the selection again: C-n, M-< and M->.
+> (define p0 (placement lv))
+> (press! "C-n")
+> (list (selected-text s) (> (placement lv) p0) (ui:selected-row (ui-list lv) lv))
+("item-0" #t 0)
+> (define p1 (placement lv))
+> (press! "M->")
+> (list (selected-text s) (> (placement lv) p1) (ui:selected-row (ui-list lv) lv))
+("item-3499" #t 3499)
+> (define p2 (placement lv))
+> (press! "M-<")
+> (list (selected-text s) (> (placement lv) p2) (ui:selected-row (ui-list lv) lv))
+("item-0" #t 0)
+> (press! "C-g")
+! &quit
+; A stream that ends with few lines moves to the main thread to match
+; them, and keeps its matches and the view's place there too.
+> (define t (start! (stream-read 'first)))
+> (define s (session))
+> (define lv (list-view))
+> (feed (lines 0 600))
+> (feed (lines 600 900))
+> (wait-matches s)
+> (wait-rows 900)
+> (scroll-by-hand! lv 400)
+> (define before (list (placement lv) (views:point lv) (row-at-top lv) (generation lv) (completion:session-matches s)))
+> (feed 'done)
+> (wait-matches s)
+> (equal? before (list (placement lv) (views:point lv) (row-at-top lv) (generation lv) (completion:session-matches s)))
+#t
+> (press! "C-g")
+! &quit
+; The rows' buffers are in the display's own mode, derived from
+; completion/rows:mode, whose entry keeps two rows of room around the
+; selection, hides the cursor, and leaves point through a hand scroll. A
+; user's entry in one display's hook changes that display alone.
+> (add-hook! completion-popup:mode-hook (lambda () (set-option-local! views:scroll-margin 3)))
+> (define t (start! (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "alpha" "apple")))) h))))
+> (define lb (views:buffer (list-view)))
+> (list (modes:major-mode lb) (modes:derived? (modes:major-mode lb) completion/rows:mode))
+(completion-list:mode #t)
+> (buffers:with-buffer lb (list (views:scroll-margin) (views:cursor-visible) (views:hand-scroll-moves-point)))
+(2 #f #f)
+> (press! "C-g")
+! &quit
+> (define notes (buffers:make "notes" "alpha almond apple\n"))
+> (views:set-buffer! (view) notes)
+> (press! "M->")
+> (type! "al")
+> (press! "C-M-i")
+> (define pb (views:buffer (list-view)))
+> (list (modes:major-mode pb) (buffers:with-buffer pb (list (views:scroll-margin) (views:cursor-visible) (views:hand-scroll-moves-point))))
+(completion-popup:mode (3 #f #f))
+> (press! "C-g")
+; The count is drawn in the prompt, above the list's view, so it stays
+; while the rows scroll; the rows' buffer holds only the rows.
+> (define t (start! (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "alpha" "apple" "banana")))) h))))
+> (define (holds? text piece)
+    (let loop ([i 0])
+      (and (<= (+ i (string-length piece)) (string-length text))
+           (or (string=? (substring text i (+ i (string-length piece))) piece) (loop (+ i 1))))))
+> (list (holds? (lines-html (prompt-view)) "<div class=\"completion-list-count\" data-face=\"shadow\">1/3</div>")
+        (holds? (lines-html (list-view)) "completion-list-count"))
+(#t #f)
+> (press! "C-g")
+! &quit
+; Column widths are those of the rows drawn in the session: written on
+; the rows' own element after the rows, so every row of a screen lines
+; up, and only growing.
+> (define (style-of lv)
+    (let* ([s (lines-html lv)] [key "<div class=\"completion-rows\" style=\""]
+           [at (let find ([i 0]) (if (string=? (substring s i (+ i (string-length key))) key) i (find (+ i 1))))]
+           [from (+ at (string-length key))])
+      (let loop ([i from]) (if (char=? (string-ref s i) #\") (substring s from i) (loop (+ i 1))))))
+> (define t (start! (lambda ()
+    (minibuffer:call-with-setup (lambda (p) (minibuffer:set-input! p "q"))
+      (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "q" "abcdefghij")) (category words:word-category))) h))))))
+> (wait-matches (session))
+> (style-of (list-view))
+"--completion-column-1-size:1ch;--completion-rows-width:3ch"
+> (press! "DEL")
+> (wait-matches (session))
+> (style-of (list-view))
+"--completion-column-1-size:2ch;--completion-rows-width:13ch"
+> (type! "q")
+> (wait-matches (session))
+> (style-of (list-view))
+"--completion-column-1-size:2ch;--completion-rows-width:13ch"
+> (press! "C-g")
+! &quit

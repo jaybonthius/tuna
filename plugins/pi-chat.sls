@@ -612,9 +612,10 @@
 (define (%show-options! chat b d)
   (let ([list-node (%child-of (%dialog-node-of b d) '(ui:list))])
     (when list-node
-      (ui:set-rows! b list-node (list->vector (pi:dialog-options d)) ui:label
-        (lambda (option) (pi:answer! chat d option))
-        (max 1 (length (pi:dialog-options d)))))))
+      (let ([options (list->vector (pi:dialog-options d))])
+        (ui:set-rows! b list-node (vector-length options)
+          (lambda (i) (ui:label (vector-ref options i)))
+          (lambda (i) (pi:answer! chat d (vector-ref options i))))))))
 
 ;; A question's node is written once and removed once, never rewritten,
 ;; so what is typed in its field stays, through a reload of pi too.

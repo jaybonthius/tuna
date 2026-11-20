@@ -141,6 +141,8 @@
 
 (define (prompt) (minibuffer:current-prompt))
 
+(define (prompt-view) (car (views:showing minibuf)))
+
 (define (input) (minibuffer:input (prompt)))
 
 ;; A popup's anchor number differs from run to run.

@@ -160,12 +160,18 @@
 
   /* A heading takes one line of the list's own height, as a row does, so
      a list shown in a number of lines holds them; its text is smaller
-     inside that line. */
+     inside that line. It sticks to the top of the view, so it needs a
+     background to cover the rows passing under it; the next heading
+     covers it in turn. */
   .ui-list-heading {
     display: flex;
     align-items: center;
     block-size: 1lh;
     padding-inline: var(--ui-list-row-padding, var(--tuna-space-2));
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 1;
+    background: var(--ui-list-heading-background, var(--tuna-surface, Canvas));
   }
 
   .ui-list-heading > span {

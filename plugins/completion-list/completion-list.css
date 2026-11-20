@@ -1,8 +1,15 @@
 @layer defaults, themes, preferences;
 
 @layer defaults {
-  .completion-list .ui-list {
-    min-block-size: calc(var(--completion-list-lines, 0) * 1lh);
+  /* The view, not the list inside it, has the height, so the rows scroll
+     inside it; 1lh is the view's own line, a row's height. A heading that
+     sticks covers the rows on the prompt's own surface. */
+  .completion-list {
+    --ui-list-heading-background: var(--minibuffer-prompt-background, var(--tuna-surface));
+  }
+
+  .completion-list .view {
+    block-size: calc(var(--completion-list-lines, 0) * 1lh);
   }
 
   .completion-list-count {

@@ -1,0 +1,17 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  /* A heading that sticks covers the rows on the popup's own raised
+     surface. */
+  .completion-popup {
+    --ui-list-heading-background: var(--layout-float-background, var(--tuna-surface-raised));
+  }
+
+  /* The rows' width counts characters only, and each row's padding sits
+     inside the rows' element, so without it the widest row is cut. */
+  .completion-popup .completion-rows {
+    inline-size: clamp(var(--completion-popup-min-width),
+                       calc(var(--completion-rows-width, 0ch) + 2 * var(--ui-list-row-padding, var(--tuna-space-2))),
+                       var(--completion-popup-max-width));
+  }
+}

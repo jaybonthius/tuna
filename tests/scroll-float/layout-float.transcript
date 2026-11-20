@@ -127,7 +127,7 @@ class="float-child" style="--layout-float-inline-size:calc(30ch + var(--layout-f
 > (raised (lambda () (layout-float:show-at! vd 100000 b 1/2 1/2)))
 (layout-float:show-at! "not a position in the view's buffer")
 > (raised (lambda () (layout-float:show-at! vd 0 b 2 1/2)))
-(layout-float:show-at! "not a fraction, (columns n) or (lines n)")
+(layout-float:show-at! "not a fraction, (columns n), (lines n) or content")
 ; close! removes a popup and its anchor, and the float container holding
 ; popups goes with the last.
 > (define n (anchor-number))
@@ -229,19 +229,19 @@ class="float-child" style="--layout-float-inline-size:calc(30ch + var(--layout-f
 > (unload-module! '(asker))
 > (popups)
 (layout:popups-root ())
-; A palette, or any float, may be as tall as what it draws, but not as
-; wide. Such a float is placed by a fraction of the box less that fraction
-; of its own height, which only the browser knows, so it carries a class
-; saying so.
+; A palette, or any float, may be as tall as what it draws. Such a float
+; is placed by a fraction of the box less that fraction of its own
+; height, which only the browser knows, so it carries a class saying so.
+; A float as wide as what it draws carries a class too, which takes the
+; size containment off its child.
 > (define tall (buffers:make "*tall*" "Menu\n"))
 > (define tp (layout-float:display-palette tall 'content))
 > (popups)
 (layout:popups-root () (layout-float:container () #(views:view ((view . 33) (buffer . "*tall*") (place box 1/2 1/5) (width . 3/5) (height . content) (locked . #t)))))
-> (set-parts! (layout-float:container '() (atom ve) (atom vh '(place box 0 1) '(height . content))))
+> (set-parts! (layout-float:container '() (atom ve) (atom vh '(place box 0 1) '(height . content)) (atom (views:make tall) '(place box 1 0) '(width . content))))
 > (for-each (lambda (f) (display f) (newline)) (floats-of (screen-of desktop)))
-class="float-child float-content-block-size" style="--layout-float-inline-size:50.0%;--layout-float-block-size:auto;--layout-float-x:0.0;--layout-float-y:1.0;--layout-float-z:1
+class="float-child float-content-block-size" style="--layout-float-inline-size:50.0%;--layout-float-block-size:auto;--layout-float-x:0.0;--layout-float-y:1.0;--layout-float-z:2
+class="float-child float-content-inline-size" style="--layout-float-inline-size:fit-content;--layout-float-block-size:50.0%;--layout-float-x:1.0;--layout-float-y:0.0;--layout-float-z:1
 class="float-child float-content-block-size" style="--layout-float-inline-size:60.0%;--layout-float-block-size:auto;--layout-float-x:0.5;--layout-float-y:0.2;--layout-float-z:1
 > (raised (lambda () (layout-float:display-palette tall '(lines 0))))
 (layout-float:display-palette "not a fraction, (columns n), (lines n) or content")
-> (raised (lambda () (layout-float:show-at! vd 0 b 'content 1/2)))
-(layout-float:show-at! "not a fraction, (columns n) or (lines n)")

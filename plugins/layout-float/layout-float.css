@@ -58,6 +58,18 @@
     max-block-size: 100%;
   }
 
+  /* A layout view is a container of its inline size, which gives it no
+     width from what it draws, so a child as wide as its content is not
+     one. */
+  .float-child.float-content-inline-size {
+    max-inline-size: 100%;
+  }
+
+  .float-child.float-content-inline-size > * {
+    flex: none;
+    container-type: normal;
+  }
+
   /* No transform, filter or containment may sit on a popup's ancestors,
      or it would be placed in them instead of the screen. */
   .float-child.anchored {

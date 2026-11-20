@@ -22,7 +22,7 @@ echo "$output" | awk '
   BEGIN {
     unit["ui-draw-list"] = "ns"
     unit["ui-next-row"] = "ns"
-    unit["ui-select-row-slide"] = "ns"
+    unit["ui-select-row"] = "ns"
     unit["ui-set-rows"] = "ns"
     unit["ui-click-row"] = "ns"
     unit["ui-click-button"] = "ns"

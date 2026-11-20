@@ -6,24 +6,21 @@
 > (define chosen '())
 > (define (choose r) (set! chosen (cons r chosen)))
 > (show! b)
-> (ui:set-rows! b (lst) (vector "a" "b" "c") ui:label choose)
+> (define (labels v) (lambda (i) (ui:label (vector-ref v i))))
+> (ui:set-rows! b (lst) 3 (labels (vector "a" "b" "c")) choose)
 ; The screen shows a, b and c; new rows arrive before the click on b.
 > (define drawn (buffers:version b))
-> (ui:set-rows! b (lst) (vector "x" "y" "z") ui:label choose)
+> (ui:set-rows! b (lst) 3 (labels (vector "x" "y" "z")) choose)
 > (mouse-in! (view) "click" '(("token" . 2)) `("version" . ,drawn))
 ! Stale click: what was clicked is gone
 > chosen
 ()
-; The rows slide under the screen: a row still shown is clicked where it
-; is now, and one that left is stale.
-> (ui:set-rows! b (lst) (list->vector (iota 20)) (lambda (n) (ui:label (number->string n))) choose 3)
+; Rows added after a screen leave its rows where they are, so a click on
+; one of them chooses it.
+> (ui:set-rows! b (lst) 3 (lambda (i) (ui:label (number->string i))) choose)
 > (define drawn (buffers:version b))
-> (ui:select-row! (lst) (view) 3)
+> (ui:add-rows! b (lst) 17)
 > (mouse-in! (view) "click" '(("token" . 3)) `("version" . ,drawn))
-> chosen
-(2)
-> (mouse-in! (view) "click" '(("token" . 1)) `("version" . ,drawn))
-! Stale click: what was clicked is gone
 > chosen
 (2)
 ; A click on a Done button whose todo another client removed first.

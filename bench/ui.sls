@@ -38,7 +38,7 @@
 
 (define pushed 0)
 
-(define (ignore row) (void))
+(define (ignore i) (void))
 
 (commands:define-command (push) "Counts a push." (set! pushed (fx+ pushed 1)))
 
@@ -47,6 +47,8 @@
 (define (candidate i) (vector (format "candidate-~a.ss" i) (format "~a lines" (* 7 i))))
 
 (define (draw-candidate c) (ui:row (ui:label (vector-ref c 0)) (ui:label (vector-ref c 1) "detail")))
+
+(define (drawer rows) (lambda (i) (draw-candidate (vector-ref rows i))))
 
 (define (candidates) (let ([v (make-vector 100000)]) (do ([i 0 (fx+ i 1)]) ((fx= i 100000) v) (vector-set! v i (candidate i)))))
 
@@ -57,11 +59,11 @@
     ;; from data the list's maker holds.
     (buffers:with-buffer b (set-option-local! undo:limit 0))
     (views:set-buffer! v b)
-    (ui:set-rows! b (node) rows draw-candidate ignore 15)
+    (ui:set-rows! b (node) (vector-length rows) (drawer rows) ignore)
     (show "ui-draw-list" (ns-per-op (lambda () (html->bytevector (views:draw v client)))))
     (show "ui-next-row" (/ (ns-per-op (lambda () (in-client (lambda () (keys:press! client "C-n") (keys:press! client "C-p"))))) 2))
-    (show "ui-select-row-slide" (/ (ns-per-op (lambda () (ui:select-row! (node) v 15) (ui:select-row! (node) v 0))) 2))
-    (show "ui-set-rows" (/ (ns-per-op (lambda () (ui:set-rows! b (node) other draw-candidate ignore 15) (ui:set-rows! b (node) rows draw-candidate ignore 15))) 2))
+    (show "ui-select-row" (/ (ns-per-op (lambda () (ui:select-row! (node) v 15) (ui:select-row! (node) v 0))) 2))
+    (show "ui-set-rows" (/ (ns-per-op (lambda () (ui:set-rows! b (node) (vector-length other) (drawer other) ignore) (ui:set-rows! b (node) (vector-length rows) (drawer rows) ignore))) 2))
     (ui:select-row! (node) v 0)
     (let ([c (click v 3)])
       (show "ui-click-row" (ns-per-op c)))

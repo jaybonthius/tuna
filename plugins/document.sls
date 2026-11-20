@@ -1336,24 +1336,32 @@
     (check-procedure 'document:freeze freeze)
     (if (immutable-vector? doc)
         doc
-        (freeze (make-document (freeze-tree (document-tree doc) freeze)
+        (freeze (make-document (freeze-tree (document-tree doc) freeze (make-eq-hashtable))
                   (document-open-start doc) (document-open-end doc)
                   (map (lambda (o) (if (immutable-vector? o) o (freeze o))) (document-openings doc))))))
 
-  ;; Children first, so that freeze finds each of them frozen already.
-  (define (freeze-tree t freeze)
+  ;; Children first, so that freeze finds each of them frozen already. A
+  ;; repeated document reaches one node or atom through many parents, so
+  ;; each is frozen once and its copies stay shared.
+  (define (freeze-tree t freeze frozen)
+    (define (once v make)
+      (or (eq-hashtable-ref frozen v #f)
+          (let ([r (make)]) (eq-hashtable-set! frozen v r) r)))
     (if (immutable-vector? t)
         t
-        (let ([n (tree-count t)] [at-leaf? (leaf? t)])
-          (define (thawed? c) (and (vector? c) (not (immutable-vector? c))))
-          (if (let loop ([i 0]) (and (fx< i n) (or (thawed? (tree-child t i)) (loop (fx+ i 1)))))
-              (let ([v (vector-copy t)])
-                (do ([i 0 (fx+ i 1)]) ((fx= i n))
-                  (let ([c (tree-child t i)])
-                    (when (thawed? c)
-                      (vector-set! v (fx+ i 2) (if at-leaf? (freeze c) (freeze-tree c freeze))))))
-                (freeze v))
-              (freeze t)))))
+        (once t
+          (lambda ()
+            (let ([n (tree-count t)] [at-leaf? (leaf? t)])
+              (define (thawed? c) (and (vector? c) (not (immutable-vector? c))))
+              (if (let loop ([i 0]) (and (fx< i n) (or (thawed? (tree-child t i)) (loop (fx+ i 1)))))
+                  (let ([v (vector-copy t)])
+                    (do ([i 0 (fx+ i 1)]) ((fx= i n))
+                      (let ([c (tree-child t i)])
+                        (when (thawed? c)
+                          (vector-set! v (fx+ i 2)
+                            (if at-leaf? (once c (lambda () (freeze c))) (freeze-tree c freeze frozen))))))
+                    (freeze v))
+                  (freeze t)))))))
 
   (record-writer (record-type-descriptor node)
     (lambda (n p wr)

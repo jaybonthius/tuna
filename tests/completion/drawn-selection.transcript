@@ -29,8 +29,8 @@
                 (loop end (cons (strip-tags (substring s start end)) acc)))
               (reverse acc))))))
 > (define (state lv) (list (selected-text (session)) (drawn-selected lv) (car (drawn-rows lv)) (length (drawn-rows lv))))
-; A popup at point preselects nothing; each move down and up shows in
-; the popup's own view, past the ten rows it shows at once.
+; A popup at point preselects nothing; every match is a row of its
+; view, and each move down and up shows there as the selected row.
 > (define notes (buffers:make "notes" "aba abb abc abd abe abf abg abh abi abj abk abl abm abn abo abp\n"))
 > (views:set-buffer! (view) notes)
 > (press! "M->")
@@ -40,16 +40,16 @@
 > (texts (session))
 ("ab" "aba" "abb" "abc" "abd" "abe" "abf" "abg" "abh" "abi" "abj" "abk" "abl" "abm" "abn" "abo" "abp")
 > (state lv)
-(#f #f "ab" 10)
+(#f #f "ab" 17)
 > (define (moves! key n) (let loop ([k 0] [acc '()]) (if (= k n) (reverse acc) (begin (press! key) (loop (+ k 1) (cons (state lv) acc))))))
 > (moves! "<down>" 12)
-(("ab" "ab" "ab" 10) ("aba" "aba" "ab" 10) ("abb" "abb" "ab" 10) ("abc" "abc" "ab" 10) ("abd" "abd" "ab" 10) ("abe" "abe" "ab" 10) ("abf" "abf" "ab" 10) ("abg" "abg" "ab" 10) ("abh" "abh" "ab" 10) ("abi" "abi" "ab" 10) ("abj" "abj" "aba" 10) ("abk" "abk" "abb" 10))
+(("ab" "ab" "ab" 17) ("aba" "aba" "ab" 17) ("abb" "abb" "ab" 17) ("abc" "abc" "ab" 17) ("abd" "abd" "ab" 17) ("abe" "abe" "ab" 17) ("abf" "abf" "ab" 17) ("abg" "abg" "ab" 17) ("abh" "abh" "ab" 17) ("abi" "abi" "ab" 17) ("abj" "abj" "ab" 17) ("abk" "abk" "ab" 17))
 > (moves! "<up>" 12)
-(("abj" "abj" "abb" 10) ("abi" "abi" "abb" 10) ("abh" "abh" "abb" 10) ("abg" "abg" "abb" 10) ("abf" "abf" "abb" 10) ("abe" "abe" "abb" 10) ("abd" "abd" "abb" 10) ("abc" "abc" "abb" 10) ("abb" "abb" "abb" 10) ("aba" "aba" "aba" 10) ("ab" "ab" "ab" 10) ("ab" "ab" "ab" 10))
+(("abj" "abj" "ab" 17) ("abi" "abi" "ab" 17) ("abh" "abh" "ab" 17) ("abg" "abg" "ab" 17) ("abf" "abf" "ab" 17) ("abe" "abe" "ab" 17) ("abd" "abd" "ab" 17) ("abc" "abc" "ab" 17) ("abb" "abb" "ab" 17) ("aba" "aba" "ab" 17) ("ab" "ab" "ab" 17) ("ab" "ab" "ab" 17))
 > (moves! "C-n" 2)
-(("aba" "aba" "ab" 10) ("abb" "abb" "ab" 10))
+(("aba" "aba" "ab" 17) ("abb" "abb" "ab" 17))
 > (moves! "C-p" 1)
-(("aba" "aba" "ab" 10))
+(("aba" "aba" "ab" 17))
 > (press! "C-g")
 > (session)
 #f

@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (completion rows) (minibuffer) (buffers) (views) (keys) (editing) (faces) (web) (haml))
+(import (completion) (completion rows) (minibuffer) (buffers) (document) (views) (keys) (editing) (modes) (faces) (web) (haml))
 
 (define-option lines 10 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many lines a read's list shows at most, its rows and their group titles.")
@@ -7,17 +7,12 @@
 (define-option fixed-height? #f boolean?
   "When true, a read's list is completion-list:lines tall from its first draw; otherwise it grows as rows arrive and keeps its height until the read ends.")
 
-(define (%draw-count node view) (%counts view))
+(define-table mode-keymap "Keys in a read's rows' buffer: none, as in completion/rows:mode-keymap.")
 
-(define (%draw-root node view)
-  (let ([l (%list-of-view view)])
-    (haml (:div.completion-list ([style (string-append "--completion-list-lines:"
-                                          (number->string (if (or (fixed-height?) (not l)) (lines) (%shown-height l))))])
-            (views:draw-children view node)))))
+(define-hook mode-hook
+  "Called with a read's rows' buffer current when its mode is set, after completion/rows:mode-hook; it changes a read's list and not the popup.")
 
-(buffers:define-kind %root (content nodes) (draw %draw-root))
-
-(buffers:define-kind %count-line (content atom) (draw %draw-count))
+(modes:define-major-mode mode (parent completion/rows:mode) (keymap mode-keymap) (hook mode-hook))
 
 (define-record-type %shown
   (sealed #t)
@@ -27,29 +22,43 @@
 
 (define (%list-of s) (find (lambda (l) (eq? (completion/rows:session (%shown-rows l)) s)) %lists))
 
-(define (%list-of-view view) (find (lambda (l) (eq? (%shown-view l) view)) %lists))
+(define (%list-of-id id) (find (lambda (l) (eqv? (views:id (%shown-view l)) id)) %lists))
 
-(define (%counts view)
-  (let ([l (%list-of-view view)])
-    (if l
-        (let* ([s (completion/rows:session (%shown-rows l))] [matches (completion:session-matches s)]
-               [m (completion:selected s)]
-               [k (and m (completion:matches-index matches m))])
-          (haml (:div.completion-list-count ([data-face (symbol->string faces:shadow)])
-                  (if k (fx+ k 1) 0) "/" (completion:matches-count matches)
-                  (when (completion:session-busy? s) " …")
-                  (let ([narrowed (completion:narrowed s)])
-                    (when narrowed (haml (:span.completion-list-narrowed narrowed)))))))
-        '())))
+(define (%counts l)
+  (let* ([s (completion/rows:session (%shown-rows l))] [matches (completion:session-matches s)]
+         [m (completion:selected s)]
+         [k (and m (completion:matches-index matches m))])
+    (haml (:div.completion-list-count ([data-face (symbol->string faces:shadow)])
+            (if k (fx+ k 1) 0) "/" (completion:matches-count matches)
+            (when (completion:session-busy? s) " …")
+            (let ([narrowed (completion:narrowed s)])
+              (when narrowed (haml (:span.completion-list-narrowed narrowed))))))))
+
+;; The count is drawn in the prompt, outside the rows' view, so it stays
+;; while the rows scroll; the frame sets the view's height around it.
+(define (%draw-frame node view)
+  (let ([l (%list-of-id (document:node-attribute node 'view))])
+    (haml (:div.completion-list ([style (and l (string-append "--completion-list-lines:"
+                                                (number->string (if (fixed-height?) (lines) (%shown-height l)))))])
+            (when l (%counts l))
+            (views:draw-children view node)))))
+
+(define (%refuse-edits node edit) #f)
+
+(buffers:define-kind %frame (inline) (stops none) (consent %refuse-edits) (draw %draw-frame))
+
+(buffers:define-kind %root (content nodes))
 
 (define (%started s)
   (let ([p (completion:session-prompt s)])
     (when p
-      (let* ([r (completion/rows:make s lines (lambda (nodes) (apply %root '() (%count-line '()) nodes)))]
+      (let* ([r (completion/rows:make s lines (lambda (nodes) (apply %root '() nodes)) mode)]
              [v (views:make (completion/rows:buffer r))])
         (set! %lists (cons (make-%shown r v p 0) %lists))
-        (minibuffer:set-content! p (list (views:view (list (cons 'view (views:id v))
-                                                           (cons 'buffer (buffers:name (completion/rows:buffer r)))))))))))
+        (minibuffer:set-content! p
+          (list (%frame (list (cons 'view (views:id v)))
+                  (views:view (list (cons 'view (views:id v))
+                                    (cons 'buffer (buffers:name (completion/rows:buffer r))))))))))))
 
 ;; The list never shrinks during a read, so the input above it does not
 ;; jump back and forth as the matches change.
