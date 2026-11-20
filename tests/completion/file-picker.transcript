@@ -95,3 +95,77 @@
 > (press! "RET")
 > (let ([p (result t)]) (substring p (string-length (getenv "HOME")) (string-length p)))
 "/src/"
+; A ~/ or // typed after a folder starts the name again, as Emacs's
+; substitute-in-file-name: the listing and the answer come from the
+; restarted name, and the part before it is drawn in its own face,
+; file-picker:discarded, inside the shadow face, as Emacs's
+; file-name-shadow-mode dims it.
+> (define (shadowed)
+    (let* ([p (prompt)] [b (views:buffer (minibuffer:prompt-view p))] [s (minibuffer:input-start p)])
+      (map (lambda (span) (list (- (car span) s) (- (cadr span) s) (caddr span)))
+           (apply append (map (lambda (l) (buffers:spans l s (minibuffer:input-end p))) (buffers:layers b))))))
+> (define (drawn-shadow)
+    (let ([html (lines-html (minibuffer:prompt-view (prompt)))] [face "<span data-face=\"shadow\"><span data-face=\"file-picker.discarded\">"])
+      (let loop ([i 0])
+        (cond
+          [(> (+ i (string-length face)) (string-length html)) #f]
+          [(string=? (substring html i (+ i (string-length face))) face)
+           (substring html (+ i (string-length face)) (+ i (string-length face) 8))]
+          [else (loop (+ i 1))]))))
+> (define t (start! (lambda () (file-picker:read-file-name "File: " "~/notes/"))))
+> (shadowed)
+()
+> (type! "~/src/")
+> (sleep-for 0.3)
+> (list (input) (shadowed) (texts (session)))
+("~/notes/~/src/" ((0 8 ((face file-picker.discarded shadow)))) (".hidden" "blob.bin" "link.txt" "text.txt"))
+> (drawn-shadow)
+"~/notes/"
+> (type! "te")
+> (sleep-for 0.3)
+> (press! "RET")
+> (let ([p (result t)]) (substring p (string-length (getenv "HOME")) (string-length p)))
+"/src/text.txt"
+; The history keeps the name as the read answered it.
+> (car (file-picker:file-name-history))
+"~/src/text.txt"
+> (define t (start! (lambda () (file-picker:read-file-name "File: " "~/notes/"))))
+> (type! "/")
+> (sleep-for 0.3)
+> (list (input) (shadowed) (and (member "tmp/" (texts (session))) #t))
+("~/notes//" ((0 8 ((face file-picker.discarded shadow)))) #t)
+> (press! "DEL")
+> (shadowed)
+()
+> (press! "C-g")
+! &quit
+; The rule and the prompts it applies to are offered, so a plugin can act
+; on the discarded part, as Vertico's vertico-directory-tidy deletes it.
+> (map file-picker:substitute-file-name '("~/a/~/b" "/a//b//c" "/a/~x/c" "~/notes/"))
+("~/b" "/c" "/a/~x/c" "~/notes/")
+; It runs after the command, as Vertico's runs after it, since the
+; command that typed still places its cursor.
+> (define (tidy command)
+    (let ([p (minibuffer:current-prompt)])
+      (when (and p (file-picker:file-name-prompt? p))
+        (let* ([input (minibuffer:input p)]
+               [n (- (string-length input) (string-length (file-picker:substitute-file-name input)))])
+          (when (> n 0)
+            (minibuffer:set-input! p (substring input n (string-length input))))))))
+> (add-hook! commands:after-command tidy)
+> (define t (start! (lambda () (file-picker:read-file-name "File: " "~/notes/"))))
+> (type! "~/")
+> (list (input) (shadowed))
+("~/" ())
+> (press! "C-g")
+! &quit
+> (remove-hook! commands:after-command tidy)
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (list (file-picker:file-name-prompt? (prompt)) (begin (type! "a//b") (shadowed)))
+(#f ())
+> (press! "C-g")
+! &quit
+> (file-picker:file-name-prompt? 'p)
+! file-picker:file-name-prompt?: not a prompt with irritant p
+> (file-picker:substitute-file-name 'p)
+! file-picker:substitute-file-name: not a string with irritant p

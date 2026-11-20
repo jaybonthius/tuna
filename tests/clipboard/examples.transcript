@@ -5,6 +5,7 @@
 > (copies)
 ((1 "copy" "one"))
 > (press! phone "C-SPC" "M-f" "M-w")
+! ask:message: Mark set
 > (copies)
 ((2 "copy" " two"))
 ; Work that no client started copies nothing.

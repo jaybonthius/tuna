@@ -295,3 +295,13 @@
 "alm"
 > (press! "C-g")
 > (remove-option! completion-popup:lines)
+; By default <delete>, which runs editing:delete-forward-char, starts
+; completion at point by itself, as C-d does.
+> (buffers:with-buffer notes (set-option-local! completion-popup:auto-delay 0.05))
+> (type! "ph")
+> (press! "C-b" "<delete>")
+> (sleep-for 0.2)
+> (texts (session))
+("alp" "alpha")
+> (press! "C-g")
+> (buffers:with-buffer notes (remove-option-local! completion-popup:auto-delay))

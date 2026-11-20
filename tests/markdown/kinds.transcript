@@ -62,6 +62,7 @@
 > (show! l)
 > (views:set-point! (view) 2)
 > (press! "C-SPC" "C-e" "M-w")
+! ask:message: Mark set
 > (kill-ring:text (kill-ring:current))
 "Some bold link and code."
 ; RET and a click on a link open its address in the browser that asked;

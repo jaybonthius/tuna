@@ -1,5 +1,6 @@
 #!tuna
-(import (completion) (minibuffer) (files) (jobs) (ask) (layout) (commands) (keys) (buffers) (document) (views))
+(import (completion) (minibuffer) (files) (jobs) (ask) (layout) (commands) (keys) (buffers) (document) (views) (faces)
+        (only (file-picker folders) discarded-length restarted-name))
 
 (define-saved file-name-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
@@ -52,6 +53,39 @@
       (emit 'done)
       (loop (receive)))))
 
+(define discarded 'file-picker.discarded)
+
+(define (substitute-file-name name)
+  (unless (string? name)
+    (assertion-violation 'file-picker:substitute-file-name "not a string" name))
+  (restarted-name name))
+
+(define %file-name-prompts (make-weak-eq-hashtable))
+
+(define (file-name-prompt? p)
+  (unless (minibuffer:prompt? p)
+    (assertion-violation 'file-picker:file-name-prompt? "not a prompt" p))
+  (eq-hashtable-contains? %file-name-prompts p))
+
+(buffers:define-layer %discarded (evaporate))
+
+;; The face list draws the part as shadow inside its own face's element,
+;; so a rule for file-picker.discarded alone restyles or hides it.
+(define (%mark-discarded p)
+  (when (file-name-prompt? p)
+    (let ([start (minibuffer:input-start p)] [n (discarded-length (minibuffer:input p))])
+      (buffers:set-spans! (buffers:layer (views:buffer (minibuffer:prompt-view p)) %discarded)
+        start (minibuffer:input-end p)
+        (if (fx> n 0) (list (list start (fx+ start n) (list (cons 'face (list discarded faces:shadow))))) '())))))
+
+;; The prompt adds its input as typed, so a recalled entry would bring
+;; back the part a ~/ or // discarded.
+(define (%substitute-newest! h)
+  (let ([entries (h)])
+    (when (and (pair? entries) (fx> (discarded-length (car entries)) 0))
+      (let ([name (substitute-file-name (car entries))])
+        (set-saved! h (cons name (remove name (cdr entries))))))))
+
 (define read-file-name
   (case-lambda
     [(question) (read-file-name question (files:directory) file-name-history)]
@@ -63,16 +97,19 @@
             [dir (if (and (fx> (string-length dir) 0) (char=? (string-ref dir (fx- (string-length dir) 1)) #\/))
                      dir
                      (string-append dir "/"))])
-       (%expand
-         (minibuffer:call-with-setup
-           (lambda (p) (minibuffer:set-input! p (files:abbreviated-path dir)))
-           (lambda ()
-             (completion:read-or-input question
-               (list (completion:source
-                       (job %list-directory (cons (%home) dir))
-                       (split %after-last-slash)
-                       (category completion:file-category)))
-               h)))))]))
+       (let ([name (minibuffer:call-with-setup
+                     (lambda (p)
+                       (eq-hashtable-set! %file-name-prompts p #t)
+                       (minibuffer:set-input! p (files:abbreviated-path dir)))
+                     (lambda ()
+                       (completion:read-or-input question
+                         (list (completion:source
+                                 (job %list-directory (cons (%home) dir))
+                                 (split %after-last-slash)
+                                 (category completion:file-category)))
+                         h)))])
+         (when h (%substitute-newest! h))
+         (%expand (substitute-file-name name))))]))
 
 (define (%file-name-char? t)
   (and (char? t)
@@ -102,6 +139,7 @@
   (layout:switch-to-buffer (files:visit path)))
 
 (set-option! ask:file-name-reader read-file-name)
+(add-hook! minibuffer:input-changed %mark-discarded)
 ;; A candidate under a folder part that does not exist carries that
 ;; part, such as c/t/m's code/tuna/main.sls, which only partial matches.
 (table-set! completion:category-styles completion:file-category (list completion:partial))

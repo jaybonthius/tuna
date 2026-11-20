@@ -30,6 +30,7 @@
 ; selected view's buffer.
 > (press! desktop '("x" "control") '("w") '("w"))
 > (press! desktop '("/" "control"))
+! ask:message: Undo
 > (list (layout:part-mode?) (shape (main)) (text notes))
 (#f (3 ((4 6) 5)) "one\n")
 ; C-g and ESC leave the mode.

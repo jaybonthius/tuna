@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (commands) (keys))
+(import (buffers) (document) (views) (commands) (keys) (ask))
 
 (define-option limit 4000000 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
   "How large a buffer's history may grow: the characters its edits removed and inserted, plus 32 per edit. 0 keeps no history.")
@@ -1120,6 +1120,12 @@
               (apply values results)))))
       (lambda () (leave-hold! hold)))))
 
+;; A message during a prompt shows after its input, so in a prompt's
+;; buffer, which is internal, it would only crowd what is being typed.
+(define (%say! b text)
+  (unless (buffers:internal-name? (buffers:name b))
+    (ask:message text)))
+
 (commands:define-command (undo [n (commands:prefix-number)])
   "Undoes the current buffer's last N edit groups and puts the view's cursors back where they were before them."
   (check-count 'undo:undo n)
@@ -1131,7 +1137,8 @@
           (begin
             (move! h b (reverse moves) 'undo:undo)
             (unless (null? moves) (restore-cursors! b (state-cursors (cdar moves))))
-            (when (fx> k 0) (no-further 'undo:undo "undo")))))))
+            (when (fx> k 0) (no-further 'undo:undo "undo"))
+            (%say! b "Undo"))))))
 
 (commands:define-command (redo [n (commands:prefix-number)])
   "Redoes N edit groups, following the branch undo last left, and puts the cursors at the end of the last one."
@@ -1145,7 +1152,8 @@
             (begin
               (move! h b (reverse moves) 'undo:redo)
               (unless (null? moves) (place-cursors! b (group-end (cdar moves))))
-              (when (fx> k 0) (no-further 'undo:redo "redo"))))))))
+              (when (fx> k 0) (no-further 'undo:redo "redo"))
+              (%say! b "Redo")))))))
 
 (define (forget! buffer)
   (check-buffer 'undo:forget! buffer)

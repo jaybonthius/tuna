@@ -416,6 +416,7 @@
             (when (= version (buffers:version b))
               (buffers:set-modified! b #f))
             (save-visits!)))
+        (ask:message (string-append "Wrote " (abbreviated-path (entry-path e))))
         (buffers:with-buffer b (after-save b)))))
 
   ;; Recorded before the edit, so a quit between them leaves the buffer
@@ -667,6 +668,8 @@
             (let ([read (take-read!)])
               (or (buffer-at path)
                   (let ([b (open-buffer! path doc length hash read)])
+                    (when (and read (contents-missing? read))
+                      (ask:message "(New file)"))
                     (buffers:with-buffer b (after-visit b))
                     b))))))))
 
@@ -773,8 +776,9 @@
   (check-task 'files:save-buffer)
   (let ([e (entry-of buffer)])
     (cond
-      [(not (buffers:modified? buffer)) (void)]
-      [(and (not e) (not (buffers:with-buffer buffer (offer-save?)))) (void)]
+      [(or (not (buffers:modified? buffer)) (and (not e) (not (buffers:with-buffer buffer (offer-save?)))))
+       (when (eq? (commands:this-command) save-buffer)
+         (ask:message "(No changes need to be saved)"))]
       [e
        ;; Asked before the entry lock is taken, so other saves of the
        ;; buffer do not wait on the user.
@@ -840,7 +844,9 @@
                      (buffers:replace! buffer 1 (fx- (document:length (buffers:document buffer)) 1)
                        (document:slice new 1 (fx- (document:length new) 1))))
                  (buffers:set-modified! buffer #f)
-                 (buffers:with-buffer buffer (after-revert buffer)))])))))))
+                 (buffers:with-buffer buffer (after-revert buffer))
+                 (when (eq? (commands:this-command) revert-from-file)
+                   (ask:message "Reverted buffer")))])))))))
 
 (commands:define-command (not-modified [buffer (buffers:current)])
   "Marks BUFFER unmodified, as a save does, without writing."
@@ -935,6 +941,7 @@
 (keys:bind! keys:global "C-x s" save-some-buffers)
 (keys:bind! keys:global "M-~" not-modified)
 (keys:bind! keys:global "C-x C-c" save-buffers-kill-tuna)
+(keys:bind! keys:global "C-x x g" buffers:revert-buffer)
 (on-unload save-visits!)
 (on-unload stop-waiting!)
 (take-back!)

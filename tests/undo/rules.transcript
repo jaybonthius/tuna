@@ -276,3 +276,24 @@ escaped
 "a\n"
 > (raised (lambda () (set-option! undo:limit -1)))
 (set-option! "-1 is not a valid value for undo:limit")
+; Undo says Undo and redo says Redo, as Emacs's undo and undo-redo; a
+; refused redo says nothing. In a prompt's buffer, an internal one, both
+; say nothing, as the mark commands do there.
+> (begin (take-said!) (void))
+> (define said-buffer (buffers:make "said" "abc\n"))
+> (buffers:with-buffer said-buffer (commands:run checks:insert 1 "1"))
+#<edit 1>
+> (buffers:with-buffer said-buffer (commands:run undo:undo 1))
+> (buffers:with-buffer said-buffer (commands:run undo:redo 1))
+> (buffers:with-buffer said-buffer (commands:run undo:redo 1))
+! undo:redo: no further redo information
+> (take-said!)
+("Undo" "Redo")
+> (define prompt-like (buffers:make " *prompt*" "abc\n"))
+> (buffers:set-silent! prompt-like #f)
+> (buffers:with-buffer prompt-like (commands:run checks:insert 1 "1"))
+#<edit 1>
+> (buffers:with-buffer prompt-like (commands:run undo:undo 1))
+> (buffers:with-buffer prompt-like (commands:run undo:redo 1))
+> (take-said!)
+()

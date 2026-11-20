@@ -292,3 +292,45 @@
 ! files:path: not a buffer with irritant "notes"
 > (buffers:modified? #f)
 ! buffers:modified?: not a buffer with irritant #f
+; As Emacs's, a write says Wrote and the file's path, a visit of a
+; missing file says (New file), and a save of an unmodified buffer says
+; (No changes need to be saved) when it runs as a command.
+> (begin (take-said!) (void))
+> (define said-file (files:visit "~/said.txt"))
+> (take-said!)
+("(New file)")
+> (files:visit "~/said.txt")
+#<buffer said.txt>
+> (disk-checks:write-text! "~/empty-said.txt" "")
+> (files:visit "~/empty-said.txt")
+#<buffer empty-said.txt>
+> (take-said!)
+()
+> (buffers:replace! said-file 1 1 "x")
+#<edit 1>
+> (files:save-buffer said-file)
+> (take-said!)
+("Wrote ~/said.txt")
+> (files:save-buffer said-file)
+> (take-said!)
+()
+> (buffers:with-buffer said-file (commands:run files:save-buffer))
+> (take-said!)
+("(No changes need to be saved)")
+> (files:write-file "~/said-2.txt" said-file)
+> (take-said!)
+("Wrote ~/said-2.txt")
+; C-x x g runs buffers:revert-buffer, as Emacs's revert-buffer-quick
+; reaches every revert-buffer-function. files:revert-from-file says
+; Reverted buffer when it runs as a command, as under C-x x g, and
+; nothing when code calls it.
+> (commands:command-name (table-ref keys:global "C-x x g"))
+buffers:revert-buffer
+> (disk-checks:write-text! "~/said-2.txt" "changed\n")
+> (files:revert-from-file said-file)
+> (take-said!)
+()
+> (disk-checks:write-text! "~/said-2.txt" "changed again\n")
+> (buffers:with-buffer said-file (commands:run buffers:revert-buffer))
+> (list (text said-file) (take-said!))
+("changed again\n" ("Reverted buffer"))

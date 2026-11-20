@@ -848,3 +848,87 @@
 ("xyaxyb" ((3 #f) (6 #f)))
 > (map (lambda (args) (raised (lambda () (apply editing:insert! args)))) (list (list 'v "x") (list (view) 'x)))
 ((editing:insert! "not a view") (editing:insert! "not a string"))
+; DEL and <delete> delete an active region, as Emacs's
+; delete-active-region, but not with a count; C-d deletes a character.
+> (commands:command-name (table-ref keys:global "<delete>"))
+editing:delete-forward-char
+> (start! "one two three" 5)
+("one two three" ((5 #f)))
+> (press! "C-SPC" "M-f" "DEL")
+> (state)
+("one  three" ((5 #f)))
+> (press! "C-SPC" "C-e" "<delete>")
+> (state)
+("one " ((5 #f)))
+> (start! "one two" 3)
+("one two" ((3 #f)))
+> (press! "C-SPC" "C-f" "C-f" "C-d")
+> (state)
+("one wo" ((5 #f)))
+> (start! "abcdef" 1)
+("abcdef" ((1 #f)))
+> (press! "C-SPC" "C-f" "C-f" "C-f" "C-u" "2" "DEL")
+> (state)
+("adef" ((2 #f)))
+; With editing:delete-active-region off, DEL deletes one character.
+> (set-option! editing:delete-active-region #f)
+> (start! "abc" 1)
+("abc" ((1 #f)))
+> (press! "C-SPC" "C-f" "C-f" "DEL")
+> (state)
+("ac" ((2 #f)))
+> (remove-option! editing:delete-active-region)
+; M-DEL after spaces and line breaks kills them and the word before, as
+; Emacs's backward-kill-word. With
+; editing:backward-kill-word-stops-at-whitespace?, when the primary
+; cursor follows them, it deletes only them before each cursor, killing
+; nothing; a count kills words.
+> (start! "one two  \n" 11)
+("one two  \n" ((11 #f)))
+> (press! "M-DEL")
+> (list (state) (kills 1))
+(("one " ((5 #f))) ("two  \n"))
+> (set-option! editing:backward-kill-word-stops-at-whitespace? #t)
+> (start! "one two  \nthree \n" 11 18)
+("one two  \nthree \n" ((11 #f) (18 #f)))
+> (press! "M-DEL")
+> (list (state) (kills 1))
+(("one twothree" ((8 #f) (13 #f))) ("two  \n"))
+> (press! "M-DEL")
+> (list (state) (kills 1))
+(("one " ((5 #f))) ("two\nthree"))
+> (start! "zero one  two" 11)
+("zero one  two" ((11 #f)))
+> (press! "C-u" "2" "M-DEL")
+> (list (state) (kills 1))
+(("two" ((1 #f))) ("zero one  "))
+> (remove-option! editing:backward-kill-word-stops-at-whitespace?)
+; Setting the mark says Mark set and clearing it Mark deactivated, as
+; Emacs's push-mark and set-mark-command do. M-@ extending a region says
+; nothing, nor does a prompt's buffer, nor C-y, whose mark lasts only
+; the command.
+> (begin (take-said!) (void))
+> (start! "one two three" 1)
+("one two three" ((1 #f)))
+> (press! "C-SPC" "C-SPC" "M-@" "M-@" "C-x" "h" "C-g" "C-y")
+> (take-said!)
+("Mark set" "Mark deactivated" "Mark set" "Mark set")
+> (define prompt-like (buffers:make " *prompt*" "abc"))
+> (views:set-buffer! (view) prompt-like)
+> (press! "C-SPC" "C-SPC" "C-x" "h")
+> (take-said!)
+()
+; With editing:backward-kill-word-stops-at-whitespace?, M-DEL's run of
+; whitespace passes a block's end and its line break, as in plain text,
+; and the deletion joins the blocks as DEL does.
+> (set-option! editing:backward-kill-word-stops-at-whitespace? #t)
+> (define (spaced) (md:doc '() (md:para '() "one \n") (md:para '() "  two\n")))
+> (cadr (start! (spaced) 11))
+((11 #f))
+> (press! "M-DEL")
+> (list (blocks) (cursors))
+(((md:para () "onetwo\n")) ((5 #f)))
+> (press! "M-DEL")
+> (list (blocks) (cursors) (kills 1))
+(((md:para () "two\n")) ((2 #f)) ("one"))
+> (remove-option! editing:backward-kill-word-stops-at-whitespace?)

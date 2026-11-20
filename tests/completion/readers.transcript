@@ -37,6 +37,6 @@
 > (press! "M-r")
 ! completion:search-history: History is empty
 > (echo-area:current-message)
-"completion:search-history: History is empty"
+"History is empty"
 > (press! "C-g")
 ! &quit

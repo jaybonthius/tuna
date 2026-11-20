@@ -137,6 +137,7 @@
     --modus-keyword: light-dark(#0031a9, #79a8ff);
     --modus-number: light-dark(#000000, #ffffff);
     --modus-preprocessor: light-dark(#894000, #ff7f86);
+    --modus-rx-backslash: light-dark(#8f0075, #f78fe7);
     --modus-property: light-dark(#00603f, #4ae2f0);
     --modus-string: light-dark(#00598b, #2fafff);
     --modus-type: light-dark(#306010, #11c777);
@@ -204,12 +205,19 @@
     --tuna-changed: var(--modus-fg-changed);
     --tuna-changed-surface: var(--modus-bg-changed);
     --faces-comment-color: var(--modus-comment);
+    --faces-comment-documentation-color: var(--modus-docstring);
     --faces-string-color: var(--modus-string);
+    /* Emacs's font-lock-escape-face inherits the regexp backslash face,
+       which Modus colours. */
+    --faces-string-escape-color: var(--modus-rx-backslash);
     --faces-number-color: var(--modus-number);
     --faces-keyword-color: var(--modus-keyword);
+    --faces-keyword-directive-color: var(--modus-preprocessor);
     --faces-function-color: var(--modus-fnname);
     --faces-builtin-color: var(--modus-builtin);
     --faces-type-color: var(--modus-type);
+    /* scheme-mode colours a library's name as a type. */
+    --faces-module-color: var(--modus-type);
     --faces-constant-color: var(--modus-constant);
     --faces-markup-heading-color: var(--modus-fg-heading-1);
     --faces-markup-raw-color: var(--modus-fg-prose-code);

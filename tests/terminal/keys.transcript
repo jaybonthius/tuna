@@ -45,6 +45,7 @@
 ; A command that leaves a region puts the terminal in copy mode, where
 ; keys are Tuna's; q leaves it, clearing the region.
 > (press! "C-SPC")
+! ask:message: Mark set
 > (list (in-client terminal:copy-mode?) (and (views:mark (view)) #t))
 (#t #t)
 > (eq? (in-client (lambda () (keys:lookup client "C-a"))) editing:move-beginning-of-line)

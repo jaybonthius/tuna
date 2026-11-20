@@ -8,6 +8,10 @@
         (assertion-violation 'echo-area:face "not a face or #f" v))
       v)))
 
+;; Reports show through echo-area:message!, so its advice sees them, and
+;; only the log takes the procedure's name before their text.
+(define %log-prefix (make-thread-parameter ""))
+
 (define-option log-max 1000 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
   "How many lines *Messages* keeps; the oldest go first.")
 
@@ -46,6 +50,7 @@
 
 (module %internals
   (check-main-thread echo-buffer messages-buffer shown? show! log! queue-report! flushing? flush-reports! report-text
+   make-queued-report
    echo-text-prompt echo-text-keys echo-text-waiting? shown-echo uncover-echo! follow-key! follow-echoes! forget-echo!)
 
   (define main-thread (get-thread-id))
@@ -228,6 +233,10 @@
   ;; only by compare-and-swap.
   (define reports (box '()))
 
+  (define-record-type queued-report
+    (sealed #t)
+    (fields who text face))
+
   (define (queue-report! entry)
     (let loop ()
       (let ([old (unbox reports)])
@@ -266,8 +275,8 @@
                   (let ([entry (car left)])
                     (set! left (cdr left))
                     (with-options ([log-max (option-setting log-max)])
-                      (parameterize ([face (cdr entry)])
-                        (message! "~a" (car entry))))
+                      (parameterize ([face (queued-report-face entry)] [%log-prefix (queued-report-who entry)])
+                        (message! "~a" (queued-report-text entry))))
                     (loop)))))
             (lambda ()
               (with-interrupts-disabled
@@ -299,13 +308,12 @@
   ;; form, which belongs to standard error rather than the user's screen.
   ;; A condition's irritants or a record's writer can raise.
   (define (report-text c)
-    (guard (e [(not (quit-condition? e)) "condition that cannot be printed"])
+    (guard (e [(not (quit-condition? e)) (values "" "condition that cannot be printed")])
       (cond
-        [(not (condition? c)) (format "non-condition value ~s" c)]
+        [(not (condition? c)) (values "" (format "non-condition value ~s" c))]
         [else
-         (string-append
-           (if (who-condition? c) (format "~a: " (condition-who c)) "")
-           (if (message-condition? c) (message-text c) (types-text c)))]))))
+         (values (if (who-condition? c) (format "~a: " (condition-who c)) "")
+                 (if (message-condition? c) (message-text c) (types-text c)))]))))
 
 (import %internals)
 
@@ -316,7 +324,7 @@
   (unless flushing? (flush-reports!))
   (let ([text (apply format format-string vs)])
     (show! text (face))
-    (unless (string=? text "") (log! text))
+    (unless (string=? text "") (log! (string-append (%log-prefix) text)))
     (void)))
 
 (define (current-message)
@@ -340,7 +348,8 @@
 (define (%queue-report report c)
   (report c)
   (unless (quit-condition? c)
-    (queue-report! (cons (report-text c) (if (and (warning? c) (not (serious-condition? c))) faces:warning faces:error)))))
+    (let-values ([(who text) (report-text c)])
+      (queue-report! (make-queued-report who text (if (and (warning? c) (not (serious-condition? c))) faces:warning faces:error))))))
 
 (define (%say-quit keyboard-quit)
   (keyboard-quit)

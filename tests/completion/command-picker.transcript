@@ -132,6 +132,6 @@ editing:forward-char
 > (define t (start! (lambda () (press! "M-x"))))
 > (type! "forward-char")
 > (texts (session))
-("editing:forward-char")
+("editing:forward-char" "editing:delete-forward-char")
 > (press! "C-g")
 ! &quit

@@ -1,20 +1,26 @@
 #!tuna
 (import (document) (buffers) (views) (commands) (keys) (modes) (kill-ring) (undo) (layout) (web) (syntax)
-        (syntax characters))
+        (syntax characters) (ask))
 
 (define-option delete-selection #f boolean?
-  "When true, typing, newline, paste and yank replace an active, non-empty region, and delete-char and delete-backward-char delete it.")
+  "When true, typing, newline, paste and yank replace an active, non-empty region, and delete-char, delete-forward-char and delete-backward-char delete it.")
+
+(define-option delete-active-region #t boolean?
+  "When true, delete-forward-char and delete-backward-char with a count of 1 delete an active, non-empty region, as delete-selection does.")
+
+(define-option backward-kill-word-stops-at-whitespace? #f boolean?
+  "When true, backward-kill-word with a count of 1 after spaces, tabs or line breaks deletes only them, without putting them on the kill ring.")
 
 (module %internals
   (check-main-thread check-count check-nonnegative-count command-view check-view key-char content-bounds stop-bounds each-cursor
    place-kept! move-kept! merge-met! edge-error stops-from chars end-of-line first-stop column clear-marks!
    set-marks! forget-temporary! exchange-marks! word-characters-in words-from word-motion
-   within-isolating delete-fitted! ranges-kill
+   within-isolating delete-fitted! ranges-kill edge-at?
    line-motion-continues? note-line-motion! recase! capitalizer replace-region-or! insert-at-cursors! kill-ranges! kill-ends! after-kill?
    remember-kill! yank-kills! yanked-in? replace-yank! selected-ranges range-bounds pure-text note-change! clear-changed-marks!
    nonempty-region? shift-selected keep-changed-marks! place! place-temporary! select-between! drag-keymap start-drag! drag-in
    drag-anchor-position drag-mode mouse-range
-   drag-moved? drag-moved?-set!)
+   drag-moved? drag-moved?-set! say-mark!)
 
   (define main-thread (get-thread-id))
 
@@ -32,6 +38,14 @@
 
   (define (command-view who)
     (check-view who (views:current)))
+
+  ;; A message during a prompt shows after its input, so in a prompt's
+  ;; buffer, which is internal, it would only crowd what is being typed.
+  ;; A prompt waits without stopping work in other buffers, which still
+  ;; speak.
+  (define (say-mark! view text)
+    (unless (buffers:internal-name? (buffers:name (views:buffer view)))
+      (ask:message text)))
 
   (define (check-view who v)
     (unless v
@@ -716,9 +730,9 @@
   (insert-at-cursors! (command-view 'editing:open-line) (make-string n #\newline) #f
     (lambda (start end) start)))
 
-(define (%delete-chars who view n)
+(define (%delete-chars who view n region?)
   (let ([b (views:buffer view)] [primary (car (views:cursors view))] [stuck? #f])
-    (replace-region-or! view (delete-selection)
+    (replace-region-or! view region?
       (lambda (c p)
         (let ([q (stops-from view p n)])
           (cond
@@ -729,19 +743,29 @@
             [(and (eq? c primary) (not (= n 0))) (set! stuck? #t)]))))
     (when stuck? (edge-error who n))))
 
+(define (%deletes-region? n)
+  (or (delete-selection) (and (delete-active-region) (= n 1))))
+
 (commands:define-command (delete-backward-char [n (commands:prefix-number)])
-  "Deletes N characters before each cursor."
+  "Deletes N characters before each cursor, or with N of 1 each cursor's region while editing:delete-active-region is true."
   (check-count 'editing:delete-backward-char n)
   (let ([view (command-view 'editing:delete-backward-char)])
     (undo:amalgamate!)
-    (%delete-chars 'editing:delete-backward-char view (- n))))
+    (%delete-chars 'editing:delete-backward-char view (- n) (%deletes-region? n))))
+
+(commands:define-command (delete-forward-char [n (commands:prefix-number)])
+  "Deletes N characters after each cursor, or with N of 1 each cursor's region while editing:delete-active-region is true."
+  (check-count 'editing:delete-forward-char n)
+  (let ([view (command-view 'editing:delete-forward-char)])
+    (undo:amalgamate!)
+    (%delete-chars 'editing:delete-forward-char view n (%deletes-region? n))))
 
 (commands:define-command (delete-char [n (commands:prefix-number)])
   "Deletes N characters after each cursor."
   (check-count 'editing:delete-char n)
   (let ([view (command-view 'editing:delete-char)])
     (undo:amalgamate!)
-    (%delete-chars 'editing:delete-char view n)))
+    (%delete-chars 'editing:delete-char view n (delete-selection))))
 
 (commands:define-command (paste text)
   "Puts TEXT on the kill ring and yanks it."
@@ -870,8 +894,12 @@
   "Sets each cursor's mark at its point; run again at once, clears the marks."
   (let ([view (command-view 'editing:set-mark-command)])
     (if (and (eq? (commands:last-command) set-mark-command) (views:mark view))
-        (clear-marks! view)
-        (set-marks! view views:cursor-point))))
+        (begin
+          (clear-marks! view)
+          (say-mark! view "Mark deactivated"))
+        (begin
+          (set-marks! view views:cursor-point)
+          (say-mark! view "Mark set")))))
 
 (commands:define-command (exchange-point-and-mark)
   "Swaps each cursor's point and mark."
@@ -885,10 +913,12 @@
   (check-count 'editing:mark-word n)
   (let* ([view (command-view 'editing:mark-word)]
          [doc (buffers:document (views:buffer view))]
-         [extra (word-characters-in (views:buffer view))])
+         [extra (word-characters-in (views:buffer view))]
+         [extending? (views:mark view)])
     (let-values ([(lo hi) (content-bounds view doc)])
       (set-marks! view
-        (lambda (c) (words-from (views:buffer view) doc (or (views:cursor-mark c) (views:cursor-point c)) n lo hi extra))))))
+        (lambda (c) (words-from (views:buffer view) doc (or (views:cursor-mark c) (views:cursor-point c)) n lo hi extra))))
+    (unless extending? (say-mark! view "Mark set"))))
 
 (commands:define-command (mark-whole-buffer)
   "Puts the primary cursor's point at the start and its mark at the end of the buffer, and removes the other cursors."
@@ -898,7 +928,8 @@
     (let-values ([(lo hi) (content-bounds view doc)])
       (let ([c (car (views:cursors view))])
         (forget-temporary! c)
-        (views:set-cursor! c lo hi)))))
+        (views:set-cursor! c lo hi)))
+    (say-mark! view "Mark set")))
 
 (define (extract-region view cursor ranges)
   (check-main-thread 'editing:extract-region)
@@ -981,10 +1012,43 @@
   (check-count 'editing:kill-word n)
   (%kill-words 'editing:kill-word n))
 
+(define (%whitespace? t)
+  (and (char? t) (memv t '(#\space #\tab #\newline #\return)) #t))
+
+;; Openings and closings are passed over, as word motion passes them, so
+;; the run reaches the line break that ends the block before; an
+;; isolating edge or an atom ends it.
+(define (%whitespace-start doc p lo)
+  (let loop ([q p] [start p])
+    (if (fx<= q lo)
+        start
+        (let ([t (document:token doc (fx- q 1))])
+          (cond
+            [(%whitespace? t) (loop (fx- q 1) (fx- q 1))]
+            [(and (not (char? t)) (not (and (document:node? t) (document:atom? t))) (not (edge-at? doc (fx- q 1)))) (loop (fx- q 1) start)]
+            [else start])))))
+
+(define (%delete-whitespace-before view)
+  (let* ([b (views:buffer view)] [doc (buffers:document b)])
+    (let-values ([(lo hi) (content-bounds view doc)])
+      (each-cursor view
+        (lambda (c p m)
+          (let ([start (%whitespace-start (buffers:document b) p lo)])
+            (unless (fx= start p)
+              (let ([at (delete-fitted! b start p)])
+                (when at
+                  (forget-temporary! c)
+                  (place-kept! view c at #f))))))))))
+
 (commands:define-command (backward-kill-word [n (commands:prefix-number)])
-  "Kills from each cursor back to the start of the Nth word before it."
+  "Kills from each cursor back to the start of the Nth word before it. With editing:backward-kill-word-stops-at-whitespace? true and N of 1, after spaces, tabs or line breaks at the primary cursor, deletes only those before each cursor instead."
   (check-count 'editing:backward-kill-word n)
-  (%kill-words 'editing:backward-kill-word (- n)))
+  (let* ([view (command-view 'editing:backward-kill-word)] [doc (buffers:document (views:buffer view))])
+    (if (and (= n 1) (backward-kill-word-stops-at-whitespace?)
+             (let-values ([(lo hi) (content-bounds view doc)])
+               (not (fx= (%whitespace-start doc (views:point view) lo) (views:point view)))))
+        (%delete-whitespace-before view)
+        (%kill-words 'editing:backward-kill-word (- n)))))
 
 (define (insert-region! view cursor position lines)
   (check-main-thread 'editing:insert-region!)
@@ -1685,7 +1749,7 @@
 (keys:bind! keys:global "C-q" quoted-insert)
 (keys:bind! keys:global "DEL" delete-backward-char)
 (keys:bind! keys:global "C-d" delete-char)
-(keys:bind! keys:global "<delete>" delete-char)
+(keys:bind! keys:global "<delete>" delete-forward-char)
 (keys:bind! keys:global "C-f" forward-char)
 (keys:bind! keys:global "<right>" forward-char)
 (keys:bind! keys:global "C-b" backward-char)

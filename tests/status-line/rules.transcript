@@ -39,6 +39,7 @@
 > (status (view))
 (("status-line:modified" . "*") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:12") ("status-line:percent-position" . "79%") ("status-line:region-size" . "") ("status-line:major-mode" . "Python") ("status-line:minor-modes" . "Fill"))
 > (files:save-buffer notes)
+! (files) ask:message: Wrote ~/notes.txt
 > (status (view))
 (("status-line:modified" . "") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:12") ("status-line:percent-position" . "79%") ("status-line:region-size" . "") ("status-line:major-mode" . "Python") ("status-line:minor-modes" . "Fill"))
 ; A status line is drawn after the view inside each view atom's element

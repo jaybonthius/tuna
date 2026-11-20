@@ -58,6 +58,7 @@ chez-scheme:mode
 > (vector-ref (chez-scheme:lexer (buffers:document c)) 2)
 #<lexeme prefix 6 7 1>
 > (modes:major-mode (files:visit "~/notes.ms"))
+! ask:message: (New file)
 chez-scheme:mode
 > (map (lambda (binding) (list (car binding) (commands:command-name (cdr binding)))) (keys:bindings chez-scheme:keymap))
 (("C-c C-u" editing:upcase-region))

@@ -69,6 +69,7 @@ pressed
 ; clause on a context key is a minor mode reading the plugin's own state.
 > (disk:write-text! "~/tool" "#!/usr/bin/env python3\n")
 > (map modes:major-mode (list (files:visit "~/b.py") (files:visit "~/tool")))
+! ask:message: (New file)
 (python:mode python:mode)
 > (define (has-mark?)
     (let ([v (views:current)])
@@ -85,4 +86,5 @@ pressed
 > (press! "C-c" "x")
 ! C-c x is undefined
 > (press! "C-SPC" "C-c" "x")
+! ask:message: Mark set
 selected

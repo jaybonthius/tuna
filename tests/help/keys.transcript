@@ -60,6 +60,7 @@ Honks once.
 [C-x C-s]  <files:save-buffer>
 [C-x s]    <files:save-some-buffers>
 [C-x C-c]  <files:save-buffers-kill-tuna>
+[C-x x g]  <buffers:revert-buffer>
 [C-x C-f]  <file-picker:find-file>
 ; A click is looked up at its position, here in notes, whose mode binds
 ; it.

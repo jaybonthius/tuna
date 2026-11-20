@@ -1,8 +1,24 @@
 (library (file-picker folders)
-  (export expand-path directory? folder-entries prefix-base-length partial-expansions)
+  (export discarded-length restarted-name expand-path directory? folder-entries prefix-base-length partial-expansions)
   (import (chezscheme) (completion matcher))
 
-  (define (expand-path home start prefix)
+  (define (discarded-length name)
+    (let ([n (string-length name)])
+      (let loop ([i (fx- n 1)])
+        (cond
+          [(fx< i 1) 0]
+          [(and (char=? (string-ref name (fx- i 1)) #\/)
+                (let ([c (string-ref name i)])
+                  (or (char=? c #\/)
+                      (and (char=? c #\~) (or (fx= (fx+ i 1) n) (char=? (string-ref name (fx+ i 1)) #\/))))))
+           i]
+          [else (loop (fx- i 1))]))))
+
+  (define (restarted-name name)
+    (substring name (discarded-length name) (string-length name)))
+
+  (define (expand-path home start typed)
+    (define prefix (restarted-name typed))
     (cond
       [(and (fx> (string-length prefix) 0) (char=? (string-ref prefix 0) #\~))
        (string-append home (substring prefix 1 (string-length prefix)))]

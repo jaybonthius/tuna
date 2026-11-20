@@ -1,6 +1,8 @@
 ; A condition that reaches report shows in the echo area at the end of
-; the batch, with the text of report's line after the module, in the
-; error face, or the warning face for a warning.
+; the batch, in the error face, or the warning face for a warning. The
+; echo area shows its message alone, as Emacs's
+; command-error-default-function does; *Messages* logs the text of
+; report's line after the module, with the procedure's name.
 > (car '())
 > (list (echo-area:current-message) (echo-area-element))
 > (define (report-line c)
@@ -86,7 +88,7 @@
 > (advice-remove! echo-area:message! refuse-second)
 > (let ([log (messages)]) (substring log (- (string-length log) 41) (string-length log)))
 ! car: () is not a pair
-("car: () is not a pair" "<div class=\"echo-area-message\" role=\"status\" data-face=\"error\"><div class=\"line\" id=\"v3-2\" data-line=\"1\" data-at=\"1\">car: () is not a pair</div></div>")
+("() is not a pair" "<div class=\"echo-area-message\" role=\"status\" data-face=\"error\"><div class=\"line\" id=\"v3-2\" data-line=\"1\" data-at=\"1\">() is not a pair</div></div>")
 (#t "spell:check: no dictionary")
 (#t "spell:check: no word with irritant 42")
 (#t "two irritants with irritants (1 \"b\")")
@@ -95,9 +97,9 @@
 (#t "g: &error with irritants (1 2)")
 (#t "non-condition value 42")
 ! spell:check: aspell is slow
-"<div class=\"echo-area-message\" role=\"status\" data-face=\"warning\"><div class=\"line\" id=\"v3-4\" data-line=\"1\" data-at=\"1\">spell:check: aspell is slow</div></div>"
+"<div class=\"echo-area-message\" role=\"status\" data-face=\"warning\"><div class=\"line\" id=\"v3-4\" data-line=\"1\" data-at=\"1\">aspell is slow</div></div>"
 ! notes:consent: not today
-("text\n" "notes:consent: not today")
+("text\n" "not today")
 "Before"
 ! notes:draw: cannot draw
 ! notes:draw: cannot draw
@@ -105,7 +107,7 @@
 ! notes:draw: cannot draw
 ! notes:draw: cannot draw
 ! notes:draw: cannot draw
-"notes:draw: cannot draw"
+"cannot draw"
 #t
 "car: () is not a pair\nspell:check: no dictionary\nspell:check: no word with irritant 42\ntwo irritants with irritants (1 \"b\")\nf: bad 3 and \"x\"\nspell:check: slow\ng: &error with irritants (1 2)\nnon-condition value 42\nspell:check: aspell is slow\nnotes:consent: not today\nBefore\nnotes:draw: cannot draw [6 times]\n"
 ! first
@@ -140,7 +142,7 @@
     (echo-area:current-message))
 > (let ([log (messages)]) (substring log (- (string-length log) 21) (string-length log)))
 ! notes:fail: no
-"notes:fail: no"
+"no"
 ! quiet
 "unlogged"
 "notes:fail: no\nquiet\n"

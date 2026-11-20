@@ -1,4 +1,12 @@
 (import (tuna) (tuna plugins) (document))
+;; ask's own writer raises each message as a warning, whose handler runs
+;; outside the guards of the code that said it; the tests keep the
+;; messages to read them.
+(define said '())
+(use-plugin ask
+  (config
+    (set-option! ask:message-writer (lambda (text) (set! said (cons text said))))))
+(define (take-said!) (let ([s (reverse said)]) (set! said '()) s))
 (use-plugin undo
   (config
     (keys:bind! keys:global "C-z" undo:undo)

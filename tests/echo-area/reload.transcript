@@ -27,10 +27,10 @@
 > (car '())
 ! car: () is not a pair
 > (echo-area:current-message)
-"car: () is not a pair"
+"() is not a pair"
 > (press! "C-f")
 ! editing:forward-char: end of buffer
 > (echo-area:current-message)
-"editing:forward-char: end of buffer"
+"end of buffer"
 > (commands:command-name (keys:lookup client "C-h e"))
 echo-area:show-messages

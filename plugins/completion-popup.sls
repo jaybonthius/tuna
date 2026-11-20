@@ -16,7 +16,7 @@
 (define-option auto-prefix 3 (lambda (v) (and (fixnum? v) (fx>= v 0)))
   "How many characters the completed text must hold before point for completion to start by itself.")
 
-(define-option auto-commands (list editing:self-insert editing:delete-backward-char editing:delete-char)
+(define-option auto-commands (list editing:self-insert editing:delete-backward-char editing:delete-char editing:delete-forward-char)
   (lambda (v) (and (list? v) (for-all commands:command? v)))
   "The commands after which completion at point starts by itself, once completion-popup:auto-delay has passed.")
 

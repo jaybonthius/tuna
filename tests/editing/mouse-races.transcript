@@ -43,11 +43,12 @@
 ; of every kind, in typing between them, and in the bookkeeping after
 ; each batch. Afterwards one cursor rests on a stop, at most one drag
 ; keymap is left, a click still moves point, and every report is a quit
-; or a stale click. Typing does not replace a region here, so the text
-; only grows and every place stays in it.
+; or a stale click. Typing and DEL do not replace a region here, so the
+; text only grows and every place stays in it.
 > (buffers:with-buffer (views:buffer (view))
     (set-option-local! undo:limit (greatest-fixnum))
-    (set-option-local! editing:delete-selection #f))
+    (set-option-local! editing:delete-selection #f)
+    (set-option-local! editing:delete-active-region #f))
 > (define quits 0)
 > (define others '())
 > (define (count-quits report c)

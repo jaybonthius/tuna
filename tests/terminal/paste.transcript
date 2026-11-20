@@ -45,5 +45,6 @@
 > (define notes (buffers:make "notes" "primary text"))
 > (in-client (lambda () (layout:switch-to-buffer notes)))
 > (press! "C-SPC" "C-f" "C-f" "C-f")
+! ask:message: Mark set
 > (bytes-read (list (lambda () (in-client (lambda () (keys:press! client (list "<mouse-2>" (views:%make-posn (view) 1))))))) 3)
 "70 72 69"

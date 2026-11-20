@@ -42,6 +42,6 @@ error
 Saved notes
 > (car '())
 ! car: () is not a pair
-error: car: () is not a pair
+error: () is not a pair
 > (echo-area:current-message)
-"car: () is not a pair"
+"() is not a pair"

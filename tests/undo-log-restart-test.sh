@@ -19,6 +19,11 @@ sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/library"
 cp tests/undo-log/home/.config/tuna/lib/web.sls "$home/.config/tuna/lib/"
 cat > "$home/.config/tuna/init.ss" <<'END'
 (import (tuna) (tuna plugins) (document))
+;; ask's own writer prints each message, which the checks would read as
+;; a result.
+(use-plugin ask
+  (config
+    (set-option! ask:message-writer (lambda (text) (void)))))
 (use-plugin undo-log
   (config
     (set-option! undo-log:keep-log? (lambda (path) #t))))

@@ -62,7 +62,7 @@
 > (texts s)
 ()
 > (echo-area:current-message)
-"grep:grep: rg: regex parse error:"
+"rg: regex parse error:"
 > (press! "C-g")
 ! &quit
 ; Lines show as rg prints them, before it ends.
@@ -174,7 +174,7 @@
 > (texts s)
 ()
 > (echo-area:current-message)
-"spawn-process: cannot run no-such-rg: No such file or directory with irritants (\"no-such-rg\" (\"-e\" \"needle\" \".\"))"
+"cannot run no-such-rg: No such file or directory with irritants (\"no-such-rg\" (\"-e\" \"needle\" \".\"))"
 ; A backslash before a word's - keeps it a word.
 > (press! "C-a" "C-k")
 > (type! "\\-1 -F")

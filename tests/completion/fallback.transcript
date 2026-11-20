@@ -138,12 +138,19 @@
 > (texts (session))
 ("zero" "zeta")
 > (press! "C-g" "RET")
+; A ~/ after a folder starts the name again here too.
+> (type! "/nowhere/~/notes/")
+> (press! "C-M-i")
+> (wait-until (lambda () (let ([s (session)]) (and s (not (completion:session-busy? s))))))
+> (texts (session))
+("sub/" "a.txt")
+> (press! "C-g" "RET")
 > (type! "ze")
 > (press! "C-M-i")
 > (texts (session))
 ("zero" "zeta")
 > (press! "C-g")
 > (text b)
-"al\nze\nq\na\nal\nalq \n~/notes/sub/\n~/nothere/ze\nze"
+"al\nze\nq\na\nal\nalq \n~/notes/sub/\n~/nothere/ze\n/nowhere/~/notes/\nze"
 > (remove-hook! completion:find-region zeds)
 > (remove-hook! completion:find-region file-picker:file-name-region)

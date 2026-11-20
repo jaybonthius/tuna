@@ -1,4 +1,9 @@
 (import (tuna) (tuna plugins) (document))
+;; ask's own writer raises each message as a warning, whose handler runs
+;; outside the guards of the code that said it.
+(use-plugin ask
+  (config
+    (set-option! ask:message-writer (lambda (text) (void)))))
 (use-plugin undo-log)
 (import (checks))
 
