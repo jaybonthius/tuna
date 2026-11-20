@@ -30,7 +30,7 @@
 
 (jobs:define-worker (notes-files directory emit)
   (emit (list->vector
-          (map (lambda (name) (cons name (cons (string-append directory "/" name) 1)))
+          (map (lambda (name) (cons name (cons* (string-append directory "/" name) 1 0)))
                (directory-list directory)))))
 
 (jobs:define-worker (one-at-a-time n emit)

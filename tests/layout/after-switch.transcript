@@ -1,0 +1,34 @@
+; after-switch-to-buffer is called once for each switch to another
+; buffer, with the selected view, the buffer it left and its point there.
+> (define calls '())
+> (define (note view left point) (set! calls (cons (list (views:id view) (buffers:name left) point) calls)))
+> (add-hook! layout:after-switch-to-buffer note)
+> (define notes (buffers:make "notes" "one\ntwo\n"))
+> (define mail (buffers:make "mail" "Dear Harpo,\n"))
+> (layout:switch-to-buffer notes)
+> (views:set-point! (layout:selected-view) 5)
+> (layout:switch-to-buffer mail)
+> (reverse calls)
+((1 "*Pager*" 1) (1 "notes" 5))
+> (set! calls '())
+; Switching to the buffer already shown calls nothing.
+> (layout:switch-to-buffer mail)
+> calls
+()
+; A view whose buffer changes with views:set-buffer!, as a preview
+; changes it, calls nothing.
+> (views:set-buffer! (layout:selected-view) notes)
+> calls
+()
+; In a locked view the buffer is shown and selected elsewhere, and the
+; hook reports that view and what it showed, not the locked view's buffer.
+> (set-option! layout:display-action layout:use-other-view)
+> (define echo ((layout-split:display-at-side (layout:direction down) 90 'content '((locked . #t))) (buffers:make "*Echo*" "")))
+> (layout:select! echo)
+> (layout:switch-to-buffer (buffers:make "draft" ""))
+> (cons (selected) (buffers:name (views:buffer (layout:selected-view))))
+(1 . "draft")
+> (buffers:name (views:buffer echo))
+"*Echo*"
+> calls
+((1 "notes" 1))

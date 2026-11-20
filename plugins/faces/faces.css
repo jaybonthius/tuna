@@ -152,6 +152,14 @@
     text-decoration-skip-ink: none;
   }
 
+  [data-face="diagnostic.unnecessary"], :where([data-face^="diagnostic.unnecessary."]) {
+    color: var(--tuna-text-faint);
+  }
+
+  [data-face="diagnostic.deprecated"], :where([data-face^="diagnostic.deprecated."]) {
+    text-decoration-line: line-through;
+  }
+
   [data-face="highlight"], :where([data-face^="highlight."]) {
     background: var(--tuna-hover);
   }

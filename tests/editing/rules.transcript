@@ -651,6 +651,10 @@
 17
 > (map (lambda (line) (editing:line-position n line)) '(-1 1 2 3 4 9))
 (2 2 12 20 30 30)
+; A column counts characters from the line's start, past the openings
+; before them, an image's included, and stops at the line's end.
+> (map (lambda (at) (editing:line-position n (car at) (cdr at))) '((1 . 4) (2 . 2) (2 . 40) (3 . 6) (9 . 3)))
+(6 14 17 26 30)
 > (raised (lambda () (editing:line-position n 1.5)))
 (editing:line-position "not an exact integer")
 > (raised (lambda () (editing:line-position "n" 1)))

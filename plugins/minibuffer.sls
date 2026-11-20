@@ -438,6 +438,8 @@
        (assertion-violation 'minibuffer:read "neither a string nor #f" default))
      (%read question h default)]))
 
+(define (%ask-line question default) (read question history default))
+
 (define (ask-yes-or-no question)
   (unless (string? question)
     (assertion-violation 'minibuffer:ask-yes-or-no "not a string" question))
@@ -616,7 +618,7 @@
 (table-set! commands:command-modes answer-yes (list y-or-n-mode))
 (table-set! commands:command-modes answer-no (list y-or-n-mode))
 (add-hook! keys:find-keymaps %prompt-keymaps 40)
-(set-option! ask:line-reader read)
+(set-option! ask:line-reader %ask-line)
 (set-option! ask:number-reader read-number)
 (set-option! ask:yes-or-no-reader ask-yes-or-no)
 (set-option! ask:y-or-n-reader ask-y-or-n)

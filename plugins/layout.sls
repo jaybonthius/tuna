@@ -1685,13 +1685,24 @@
                v))
          b before))]))
 
+(define-hook after-switch-to-buffer
+  "Called with the selected view, the buffer it showed and its point there, after layout:switch-to-buffer shows another buffer in it.")
+
 (define (switch-to-buffer b)
   (unless (buffers:buffer? b)
     (assertion-violation 'layout:switch-to-buffer "not a buffer" b))
   (let* ([v (selected-view)] [ix (index-of-id (views:id v))])
     (if (locked-in? ix (index-atom ix (views:id v)))
-        (select! (display-buffer b))
-        (unless (eq? (views:buffer v) b) (views:set-buffer! v b)))))
+        (let* ([before (%views-and-buffers)] [shown (display-buffer b)]
+               [was (find (lambda (s) (eq? (%shown-view s) shown)) before)])
+          (select! shown)
+          (when (and was (%shown-buffer was) (not (eq? (%shown-buffer was) b)))
+            (after-switch-to-buffer shown (%shown-buffer was) (%shown-point was))))
+        (let ([left (views:buffer v)])
+          (unless (eq? left b)
+            (let ([point (views:point v)])
+              (views:set-buffer! v b)
+              (when left (after-switch-to-buffer v left point))))))))
 
 (define (%other-view-in? ix n)
   (let loop ([n n])

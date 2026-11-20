@@ -2,6 +2,10 @@
 ; names it by identifier and the compiler checks it.
 > (list faces:keyword faces:keyword.return faces:diagnostic.error faces:function.builtin)
 (keyword keyword.return diagnostic.error function.builtin)
+; A diagnostic's tags have faces of their own: unnecessary code faded,
+; deprecated code struck through.
+> (list faces:diagnostic.unnecessary faces:diagnostic.deprecated)
+(diagnostic.unnecessary diagnostic.deprecated)
 ; A highlighter's spans name faces; views draws each as data-face.
 > (buffers:define-layer highlights)
 > (define buffer (buffers:make "greet.scm" "(define name \"Tuna\")\n"))

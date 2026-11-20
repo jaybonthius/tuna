@@ -224,12 +224,12 @@
 #<buffer top.sls>
 ; A location past the file's last line goes to its end.
 > (define deep (string-append (getenv "HOME") "/code/tuna/lib/sub/deep.sls"))
-> (in-client (lambda () (grep:grep (cons deep 99))))
+> (in-client (lambda () (grep:grep (cons* deep 99 0))))
 > (views:buffer (view))
 #<buffer deep.sls>
 > (= (views:point (view)) (- (document:length (buffers:document (views:buffer (view)))) 1))
 #t
-> (in-client (lambda () (grep:grep (cons deep 0))))
+> (in-client (lambda () (grep:grep (cons* deep 0 0))))
 > (views:point (view))
 1
 ; While a prompt waits, its locked view is selected, so the file shows in
@@ -238,8 +238,44 @@
 > (define t (start! (lambda () (press! "M-g" "g"))))
 > (buffers:name (views:buffer (view)))
 " *Minibuf*"
-> (in-client (lambda () (grep:grep (cons text-path 3))))
+> (in-client (lambda () (grep:grep (cons* text-path 3 0))))
 > (buffers:name (views:buffer (view)))
 "text.txt"
 > (document:line (buffers:document (views:buffer (view))) (views:point (view)))
 3
+> (press! "C-g")
+! &quit
+; A location carries rg's column, counted in characters from the line's
+; start, and grep goes to it; a context line's column is 0.
+> (system "mkdir -p ~/columns && printf 'h\\303\\251llo needle\\n  needle\\nafter\\n' > ~/columns/c.txt")
+0
+> (views:set-buffer! (view) (files:visit (string-append (getenv "HOME") "/columns/c.txt")))
+> (define t (start! (lambda () (press! "M-s" "r"))))
+> (define s (session))
+> (type! "needle -A1")
+> (wait-matches s)
+> (map (lambda (m) (cons (completion:text s m) (cdr (completion:value s m)))) (match-list s))
+(("c.txt:1:héllo needle" 1 . 6) ("c.txt:2:  needle" 2 . 2) ("c.txt-3-after" 3 . 0))
+> (press! "RET")
+> (result t)
+> (views:point (view))
+7
+> (in-client (lambda () (grep:grep (cons* (string-append (getenv "HOME") "/columns/c.txt") 2 2))))
+> (views:point (view))
+16
+; A column past the line's end goes to the line's end.
+> (in-client (lambda () (grep:grep (cons* (string-append (getenv "HOME") "/columns/c.txt") 3 40))))
+> (views:point (view))
+28
+; Several words join into one zero-width look-ahead at the line's start,
+; so rg's column is the line's start, and so is the location's.
+> (define t (start! (lambda () (press! "M-s" "r"))))
+> (define s (session))
+> (type! "needle h")
+> (wait-matches s)
+> (map (lambda (m) (cons (completion:text s m) (cdr (completion:value s m)))) (match-list s))
+(("c.txt:1:héllo needle" 1 . 0))
+> (press! "RET")
+> (result t)
+> (views:point (view))
+1

@@ -15,8 +15,8 @@
 > (ask:line "Name: ")
 ! ask:line-reader: no reader is loaded
 > (use-plugin minibuffer)
-> (eq? (ask:line-reader) minibuffer:read)
-#t
+> (eq? (ask:line-reader) (option-default ask:line-reader))
+#f
 > (eq? (ask:number-reader) minibuffer:read-number)
 #t
 > (datums layout:buffer)

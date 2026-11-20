@@ -1,0 +1,79 @@
+; completion fills ask's choice reader: the choices' labels are the
+; candidates, in their order, and the answer is the chosen one's value.
+> (define t (start! (lambda () (ask:choice "Action: " (list (cons "Rename" 'rename) (cons "Extract method" 'extract) (cons "Inline" 'inline))))))
+> (texts (session))
+("Rename" "Extract method" "Inline")
+> (type! "ext")
+> (texts (session))
+("Extract method")
+> (press! "RET")
+> (result t)
+extract
+; Only a choice answers; C-g quits.
+> (define t (start! (lambda () (ask:choice "Action: " (list (cons "Rename" 'rename))))))
+> (type! "zz")
+> (press! "RET")
+> (input)
+"zz"
+> (press! "C-g")
+! &quit
+> (result t)
+(raised #<condition &quit>)
+; A line with candidates offers them, and answers with input that names
+; none.
+> (define t (start! (lambda () (ask:line-with-candidates "Identifier: " (list "car" "cdr" "cons")))))
+> (texts (session))
+("car" "cdr" "cons")
+> (type! "co")
+> (texts (session))
+("cons")
+> (press! "RET")
+> (result t)
+"cons"
+> (define t (start! (lambda () (ask:line-with-candidates "Identifier: " (list "car" "cdr")))))
+> (type! "caddr")
+> (press! "RET")
+> (result t)
+"caddr"
+; Its default answers an empty input.
+> (define t (start! (lambda () (ask:line-with-candidates "Identifier: " (list "car" "cdr") "cdr"))))
+> (press! "RET")
+> (result t)
+"cdr"
+; A procedure gives the candidates for each input, and is asked again as
+; the input changes; it may pause, and a newer input quits the task still
+; asking.
+> (define asked '())
+> (define quits 0)
+> (define (identifiers input)
+    (set! asked (cons input asked))
+    (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (raise c)])
+      (sleep-for (if (string=? input "x") 1 0.01)))
+    (list (string-append input "-one") (string-append input "-two")))
+> (define t (start! (lambda () (ask:line-with-candidates "Identifier: " identifiers))))
+> (wait-matches (session))
+> (texts (session))
+("-one" "-two")
+> (type! "x")
+> (type! "y")
+> (wait-matches (session))
+> (texts (session))
+("xy-one" "xy-two")
+> (reverse asked)
+("" "x" "xy")
+> quits
+1
+> (press! "C-n" "RET")
+> (result t)
+"xy-two"
+; The procedure decides which candidates match and their order: they
+; show as given, not filtered or sorted again.
+> (define (fuzzy input) (list (string-append "my-" input) (string-append "zz-" input) input))
+> (define t (start! (lambda () (ask:line-with-candidates "Identifier: " fuzzy))))
+> (type! "x")
+> (wait-matches (session))
+> (texts (session))
+("my-x" "zz-x" "x")
+> (press! "RET")
+> (result t)
+"my-x"

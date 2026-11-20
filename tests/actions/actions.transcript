@@ -179,7 +179,7 @@ completion:buffer-category
 quit
 > (kill-ring:current)
 ("one")
-> (define t (start! (lambda () (completion:read "Loc: " (list (completion:source (candidates (vector (cons "a.txt:1" (cons "a.txt" 1)))) (category completion:location-category)))))))
+> (define t (start! (lambda () (completion:read "Loc: " (list (completion:source (candidates (vector (cons "a.txt:1" (cons* "a.txt" 1 0)))) (category completion:location-category)))))))
 > (define a (act! "C-."))
 > (keys:reading-prompt client)
 "Act on a.txt:1: "

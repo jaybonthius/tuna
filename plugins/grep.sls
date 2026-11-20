@@ -3,7 +3,7 @@
 
 (define-option command-line
   (list "rg" "--null" "--line-buffered" "--color=never" "--max-columns=1000" "--path-separator" "/"
-        "--smart-case" "--no-heading" "--with-filename" "--line-number" "--search-zip")
+        "--smart-case" "--no-heading" "--with-filename" "--line-number" "--column" "--search-zip")
   (lambda (v) (and (pair? v) (list? v) (for-all string? v)))
   "The program grep:grep runs, then the arguments it starts with.")
 
@@ -72,7 +72,7 @@
 ;; rg names each file by the path it was given, so a name under "." starts
 ;; with "./". It prints a file's lines together, so they share one path
 ;; string: a search can find millions of lines.
-(define (%line-parser directory)
+(define (%line-parser directory column?)
   (let ([file ""] [path #f])
     (define (path-of! line end start)
       (unless (%same-file? line end file)
@@ -81,29 +81,62 @@
                        file
                        (string-append directory (substring file start end)))))
       path)
+    (define (number-end line j n)
+      (let loop ([j j] [number 0])
+        (if (fx= j n)
+            (values #f #f)
+            (let ([c (string-ref line j)])
+              (if (char<=? #\0 c #\9)
+                  (loop (fx+ j 1) (+ (* number 10) (fx- (char->integer c) (char->integer #\0))))
+                  (values j number))))))
     (lambda (line)
       (let ([n (string-length line)])
         (let find-path-end ([i 0])
           (cond
             [(fx= i n) #f]
             [(char=? (string-ref line i) #\nul)
-             (let find-number-end ([j (fx+ i 1)] [number 0])
-               (and (fx> i 0) (fx< j n)
+             (let-values ([(j number) (number-end line (fx+ i 1) n)])
+               (and j (fx> i 0) (fx> j (fx+ i 1))
                     (let ([c (string-ref line j)])
-                      (cond
-                        [(char<=? #\0 c #\9)
-                         (find-number-end (fx+ j 1)
-                           (+ (* number 10) (fx- (char->integer c) (char->integer #\0))))]
-                        [(and (fx> j (fx+ i 1)) (memv c '(#\: #\-)))
-                         (let* ([start (if (and (fx>= i 2) (char=? (string-ref line 0) #\.)
-                                                (char=? (string-ref line 1) #\/))
-                                           2
-                                           0)]
-                                [text (substring line start n)])
-                           (string-set! text (fx- i start) c)
-                           (cons text (cons (path-of! line i start) number)))]
-                        [else #f]))))]
+                      (and (memv c '(#\: #\-))
+                           (let*-values ([(start) (if (and (fx>= i 2) (char=? (string-ref line 0) #\.)
+                                                           (char=? (string-ref line 1) #\/))
+                                                      2
+                                                      0)]
+                                         [(column-end column) (if (and column? (char=? c #\:))
+                                                                  (number-end line (fx+ j 1) n)
+                                                                  (values #f #f))]
+                                         [(k byte-column) (if (and column-end (fx> column-end (fx+ j 1))
+                                                                   (char=? (string-ref line column-end) #\:))
+                                                              (values column-end column)
+                                                              (values j #f))])
+                             (let ([text (if (fx= k j)
+                                             (substring line start n)
+                                             (let* ([head (fx- j start)] [t (make-string (fx+ head (fx- n k)))])
+                                               (string-copy! line start t 0 head)
+                                               (string-copy! line k t head (fx- n k))
+                                               t))])
+                               (string-set! text (fx- i start) c)
+                               (string-set! text (fx- j start) c)
+                               (cons text
+                                     (cons* (path-of! line i start) number
+                                            (if byte-column (%character-column line (fx+ k 1) byte-column) 0)))))))))]
             [else (find-path-end (fx+ i 1))]))))))
+
+;; rg counts a column in bytes from 1. A line rg leaves out as too long
+;; still has its column, so bytes past the text it printed count one
+;; character each.
+(define (%character-column line start byte-column)
+  (let ([n (string-length line)])
+    (let loop ([i start] [bytes (fx- byte-column 1)] [column 0])
+      (cond
+        [(fx<= bytes 0) column]
+        [(fx= i n) (fx+ column bytes)]
+        [else
+         (let ([code (char->integer (string-ref line i))])
+           (loop (fx+ i 1)
+                 (fx- bytes (cond [(fx< code #x80) 1] [(fx< code #x800) 2] [(fx< code #x10000) 3] [else 4]))
+                 (fx+ column 1)))]))))
 
 (define (%search-source directory)
   (lambda (emit)
@@ -119,7 +152,7 @@
         (let ([arguments (and (fx>= (string-length search) minimum) (%arguments (cdr command) search))])
           (cond
             [arguments
-             (let* ([found '()] [cleared? #f] [process #f] [parse (%line-parser directory)]
+             (let* ([found '()] [cleared? #f] [process #f] [parse (%line-parser directory (and (member "--column" (cdr command)) #t))]
                     [receive-line! (processes:line-receiver 0
                                      (lambda (line end)
                                        (unless (eof-object? line)
@@ -201,9 +234,9 @@
               (category completion:location-category))))))
 
 (commands:define-command (grep [location (%read-location)])
-  "Visits LOCATION, a line found by rg in the files of the current buffer's project, else under its directory."
+  "Visits LOCATION, a line found by rg in the files of the current buffer's project, else under its directory, at its match."
   (let ([b (files:visit (car location))])
     (layout:switch-to-buffer b)
-    (views:set-point! (layout:selected-view) (editing:line-position b (cdr location)))))
+    (views:set-point! (layout:selected-view) (editing:line-position b (cadr location) (cddr location)))))
 
 (keys:bind! keys:global "M-s r" grep)

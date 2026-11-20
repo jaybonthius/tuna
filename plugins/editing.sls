@@ -678,14 +678,28 @@
     (let-values ([(lo hi) (stop-bounds buffer doc 1 (document:length doc))])
       (words-from buffer doc position n lo hi (word-characters-in buffer)))))
 
-(define (line-position buffer line)
-  (unless (buffers:buffer? buffer)
-    (assertion-violation 'editing:line-position "not a buffer" buffer))
-  (check-count 'editing:line-position line)
-  (check-main-thread 'editing:line-position)
-  (let ([doc (buffers:document buffer)])
-    (let-values ([(lo hi) (stop-bounds buffer doc 1 (document:length doc))])
-      (if (> line (document:line doc hi)) hi (first-stop buffer (document:line-start doc (max line 1)))))))
+(define line-position
+  (case-lambda
+    [(buffer line) (line-position buffer line 0)]
+    [(buffer line column)
+     (unless (buffers:buffer? buffer)
+       (assertion-violation 'editing:line-position "not a buffer" buffer))
+     (check-count 'editing:line-position line)
+     (check-nonnegative-count 'editing:line-position column)
+     (check-main-thread 'editing:line-position)
+     (let ([doc (buffers:document buffer)])
+       (let-values ([(lo hi) (stop-bounds buffer doc 1 (document:length doc))])
+         (cond
+           [(> line (document:line doc hi)) hi]
+           [else
+            (let* ([line (max line 1)] [start (document:line-start doc line)])
+              (if (eqv? column 0)
+                  (first-stop buffer start)
+                  (let ([line-end (end-of-line doc line hi)])
+                    (fxmin line-end
+                           (document:position doc
+                             (min (+ (document:offset doc start chars) column) (document:offset doc line-end chars))
+                             chars)))))])))]))
 
 (define (insert! view text)
   (unless (views:view? view)

@@ -70,7 +70,7 @@
 
 (define-category file-category "File names, valued by the whole path.")
 
-(define-category location-category "Lines of files, valued by a location: a pair of a path and a line number.")
+(define-category location-category "Lines of files, valued by a location: a path, a line number and a column, as (path line . column).")
 
 ;; Several plugins bind actions on the shared categories, so their
 ;; keymaps are defined beside them.
@@ -84,9 +84,9 @@
 
 (define-record-type (%source %make-source source?)
   (sealed #t)
-  (fields candidates stream category title split in-order? rank preview styles group row narrow))
+  (fields candidates stream category title split in-order? rank preview exit styles group row narrow))
 
-(define (%check-source candidates stream category title split in-order? rank preview styles group row narrow)
+(define (%check-source candidates stream category title split in-order? rank preview exit styles group row narrow)
   (define who 'completion:source)
   (unless (or (not category) (symbol? category))
     (assertion-violation who "not a category" category))
@@ -99,6 +99,8 @@
     (assertion-violation who "not a vector of fixnums, one for each candidate" rank))
   (unless (or (not preview) (procedure? preview))
     (assertion-violation who "not a procedure" preview))
+  (unless (or (not exit) (procedure? exit))
+    (assertion-violation who "not a procedure" exit))
   (unless (or (not styles) (and (list? styles) (for-all procedure? styles)))
     (assertion-violation who "not a list of styles" styles))
   (unless (or (not group) (procedure? group))
@@ -107,7 +109,7 @@
     (assertion-violation who "neither a procedure nor #f" row))
   (unless (or (not narrow) (and (char? narrow) (not (char=? narrow #\space))))
     (assertion-violation who "neither a character other than a space nor #f" narrow))
-  (%make-source candidates stream category title split in-order? rank preview styles group row narrow))
+  (%make-source candidates stream category title split in-order? rank preview exit styles group row narrow))
 
 (define (%candidates-clause candidates)
   (unless (or (procedure? candidates) (%candidates? candidates))
@@ -140,7 +142,7 @@
                                 #,(if stream #`(%stream-clause #,(cdr stream)) #'#f)
                                 #,(given-or-false 'category) #,(given-or-false 'title) #,(given-or-false 'split)
                                 #,(given-or-false 'in-order) #,(given-or-false 'rank) #,(given-or-false 'preview)
-                                #,(given-or-false 'styles) #,(given-or-false 'group) #,(given-or-false 'row)
+                                #,(given-or-false 'exit) #,(given-or-false 'styles) #,(given-or-false 'group) #,(given-or-false 'row)
                                 #,(given-or-false 'narrow)))
              (let* ([c (car clauses)]
                     [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ (invalid c)])])
@@ -152,7 +154,7 @@
                (loop (cdr clauses)
                      (append
                        (case name
-                         [(candidates stream category title split rank preview styles narrow)
+                         [(candidates stream category title split rank preview exit styles narrow)
                           (syntax-case c () [(_ e) (list (cons name #'e))] [_ (invalid c)])]
                          [(group)
                           (syntax-case c ()
@@ -298,7 +300,7 @@
    session-record-bounds session-record-prompt candidate-match?
    session-record-states session-categories-of session-record-accept session-record-default sessions open-session!
    start-session! end-session! input-of rematch! select-match! match-text match-value match-title match-category
-   match-row-text match-spans match-annotation match-whole-text busy? query-start find-named! sole-match?
+   match-row-text match-spans match-annotation match-whole-text match-exit busy? query-start find-named! sole-match?
    common-input-start narrow-chars session-record-narrowed narrowed-title source-title-of narrow! combine!
    match-list? make-match-list match-list-count match-list-ref match-list-index no-matches)
 
@@ -948,6 +950,7 @@
   (define (match-bytes s m) (let ([st (owner-of s m)]) (vector-ref (state-texts st) (local-of s st m))))
   (define (match-text s m) (utf8->string (match-bytes s m)))
   (define (match-value s m) (let ([st (owner-of s m)]) (vector-ref (state-vals st) (local-of s st m))))
+  (define (match-exit s m) (%source-exit (state-source (owner-of s m))))
   (define (match-title s m)
     (let* ([st (owner-of s m)] [g (state-grouping st)])
       (if g
@@ -1327,7 +1330,11 @@
 (define-record-type %point-state
   (sealed #t)
   (fields session entry client start end give-way (mutable found-nothing) (mutable end-keymap)
-          (mutable end-selected-keymap)))
+          (mutable end-selected-keymap) (mutable tabbed)))
+
+(define-record-type %tabbed
+  (sealed #t)
+  (fields buffer text exit))
 
 (define %points '())
 
@@ -1378,7 +1385,7 @@
                                        (found-nothing))))])
                (if (and give-way (%found-nothing? s))
                    (begin (end-session! s) (give-way found-nothing))
-                   (let ([p (make-%point-state s entry client start end give-way found-nothing #f #f)])
+                   (let ([p (make-%point-state s entry client start end give-way found-nothing #f #f #f)])
                      (set! %points (cons p %points))
                      (%point-state-end-keymap-set! p
                        (keys:push-keymap! client region-keymap (lambda (found command) #t)
@@ -1437,6 +1444,23 @@
            (%point-state-end-selected-keymap-set! p #f)
            (pushed)])))))
 
+;; A key that ends the session, as SPC, has already typed past the
+;; region's end, so only the region's start is compared.
+(define (%region-starts-with-tabbed? p)
+  (let ([t (%point-state-tabbed p)])
+    (and t (buffers:live? (%tabbed-buffer t))
+         (let* ([doc (buffers:document (%tabbed-buffer t))] [start (buffers:anchor-position (%point-state-start p))]
+                [end (fx+ start (string-length (%tabbed-text t)))])
+           (and (fx<= end (document:length doc))
+                (string=? (document:text doc start end) (%tabbed-text t)))))))
+
+(define (%region-is-tabbed? p)
+  (let ([t (%point-state-tabbed p)])
+    (and t
+         (string=? (document:text (buffers:document (%tabbed-buffer t)) (buffers:anchor-position (%point-state-start p))
+                                  (buffers:anchor-position (%point-state-end p)))
+                   (%tabbed-text t)))))
+
 (define (%point-ended s)
   (let ([p (%point-of s)])
     (when p
@@ -1445,7 +1469,9 @@
         (%point-state-end-selected-keymap-set! p #f)
         (%point-state-end-keymap-set! p #f)
         (when a (a))
-        (when b (b))))))
+        (when b (b)))
+      (when (%region-starts-with-tabbed? p)
+        ((%tabbed-exit (%point-state-tabbed p)) 'exact)))))
 
 ;; Emacs's rule for completion in a region: the session goes on while the
 ;; entry that gave the region gives one with the same start, holding
@@ -1465,11 +1491,31 @@
                 (begin
                   (buffers:set-anchor! (%point-state-end p) (region-end r))
                   (rematch! s #f)
-                  (when (sole-match? s) (end-session! s)))
+                  (cond
+                    [(sole-match? s) (%end-sole! s)]
+                    [(not (%region-is-tabbed? p)) (%point-state-tabbed-set! p #f)]))
                 (end-session! s))))))
     %points))
 
 (define (%no-match) (ask:message "No match"))
+
+;; Taken before the session moves on: a match names nothing once its
+;; source drops it.
+(define (%exit-of s m)
+  (let ([exit (match-exit s m)] [v (match-value s m)])
+    (if exit (lambda (status) (exit v status)) %no-exit)))
+
+(define (%no-exit status) (void))
+
+(define (%end-sole! s)
+  (let ([exit! (%exit-of s (match-list-ref (session-record-matches s) 0))])
+    (%forget-tabbed! s)
+    (end-session! s)
+    (exit! 'finished)))
+
+(define (%forget-tabbed! s)
+  (let ([p (%point-of s)])
+    (when p (%point-state-tabbed-set! p #f))))
 
 (commands:define-command (complete-at-point)
   "Completes the text at point from the sources of completion:find-region, saying No match when they find nothing."
@@ -1496,9 +1542,12 @@
 
 (commands:define-command (exit)
   "Makes the query the selected match's text and accepts the match; with none selected, accepts none."
-  (let* ([s (%current 'completion:exit)] [m (session-record-selected s)])
+  (let* ([s (%current 'completion:exit)] [m (session-record-selected s)]
+         [exit! (if (and m (%point-of s)) (%exit-of s m) %no-exit)])
     (when m (%replace-unmatched! s (query-start s m) (match-text s m)))
-    ((session-record-accept s) s m)))
+    (%forget-tabbed! s)
+    ((session-record-accept s) s m)
+    (exit! 'finished)))
 
 (commands:define-command (exit-input)
   "Answers the innermost prompt with its input as typed, as completion:answer-input! does."
@@ -1506,15 +1555,17 @@
 
 (commands:define-command (complete)
   "Replaces the query with the selected match's text; with none selected, replaces the input with the longest common start of the inputs the matches make when it is longer."
-  (let* ([s (%current 'completion:complete)] [m (session-record-selected s)])
+  (let* ([s (%current 'completion:complete)] [m (session-record-selected s)] [p (%point-of s)]
+         [tabbed (and m p (make-%tabbed (views:buffer (session-record-view s)) (match-text s m) (%exit-of s m)))])
     (if m
         (%replace! s (query-start s m) (match-text s m))
         (let-values ([(start end) ((session-record-bounds s))])
           (let ([common (common-input-start s (input-of s))])
             (when common (%replace! s start common)))))
     (rematch! s #f)
-    (let ([p (%point-of s)])
-      (when (and p (sole-match? s)) (end-session! s)))))
+    (cond
+      [(and p (sole-match? s)) (%end-sole! s)]
+      [tabbed (%point-state-tabbed-set! p tabbed)])))
 
 (define (%move who to)
   (let* ([s (%current who)] [matches (session-matches s)] [n (match-list-count matches)] [m (session-record-selected s)]
@@ -1645,6 +1696,49 @@
 
 (define %quit (record-constructor (record-constructor-descriptor &quit)))
 
+(define (%read-choice question choices)
+  (read question (list (source (candidates (list->vector choices)) (in-order)))))
+
+;; A stream's receiver must return at once, and the procedure may pause,
+;; as one asking a server does.
+(define (%asked-candidates ask)
+  (lambda (emit)
+    (let ([asking #f])
+      (define (stop!)
+        (when asking
+          (unless (task-done? asking) (signal-task asking (%quit)))
+          (set! asking #f)))
+      (lambda (input)
+        (stop!)
+        (unless (eof-object? input)
+          (let ([task #f])
+            (set! task
+              (spawn-task
+                (lambda ()
+                  (let ([found (guard (c [(quit-condition? c) #f] [else (report c) '()])
+                                 (let ([found (ask input)])
+                                   (unless (and (list? found) (for-all string? found))
+                                     (assertion-violation 'ask:line-with-candidates "not a list of strings" found))
+                                   found))])
+                    (when (and found (eq? asking task))
+                      (set! asking #f)
+                      (emit 'clear)
+                      (emit '(base 0))
+                      (emit (list->vector found))
+                      (emit 'done))))))
+            (set! asking task)))))))
+
+;; The procedure has already chosen and ordered its candidates by its
+;; own rule, as a server's symbol search does.
+(define (%match-all query) '())
+
+(define (%read-line-with-candidates question offered default)
+  (read-or-input question
+    (list (if (procedure? offered)
+              (source (stream (%asked-candidates offered)) (split string-length) (in-order) (styles (list %match-all)))
+              (source (candidates (list->vector offered)))))
+    minibuffer:history default))
+
 (define (%unload)
   (for-each (lambda (r) (signal-task (%read-state-task r) (%quit))) %reads)
   (for-each end-session! sessions))
@@ -1664,6 +1758,8 @@
 (table-set! action-keymaps file-category (list file-action-keymap))
 (table-set! action-keymaps location-category (list location-action-keymap))
 (table-set! web:stylesheets 'completion "completion/completion.css")
+(set-option! ask:choice-reader %read-choice)
+(set-option! ask:line-with-candidates-reader %read-line-with-candidates)
 (keys:bind! minibuffer:keymap "M-r" search-history)
 (keys:bind! minibuffer:keymap "M-s" search-history)
 (keys:bind! keymap "RET" exit)

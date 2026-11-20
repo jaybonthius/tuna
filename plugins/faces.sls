@@ -54,6 +54,8 @@
 (define diagnostic.warning 'diagnostic.warning)
 (define diagnostic.info 'diagnostic.info)
 (define diagnostic.hint 'diagnostic.hint)
+(define diagnostic.unnecessary 'diagnostic.unnecessary)
+(define diagnostic.deprecated 'diagnostic.deprecated)
 (define highlight 'highlight)
 (define shadow 'shadow)
 (define match 'match)

@@ -1,0 +1,128 @@
+; The switch the configuration made at start ran in no command, so it
+; recorded nothing.
+> (here)
+("first" . 1)
+> (places)
+()
+; Nor does a switch a timer makes.
+> (define timer (run-with-timer 0 (lambda () (layout:switch-to-buffer second))))
+> (sleep-for 0.05)
+> (here)
+("second" . 1)
+> (places)
+()
+> (layout:switch-to-buffer first)
+> (places)
+()
+; A switch to another buffer inside a command records the place the view
+; left; a switch to the buffer shown records nothing.
+> (views:set-point! (view) 5)
+> (commands:run show second)
+> (places)
+(("first" . 5))
+> (commands:run show second)
+> (places)
+(("first" . 5))
+; A place in an internal buffer is never recorded.
+> (commands:run show (buffers:make " *internal*" "x"))
+> (commands:run show third)
+> (places)
+(("second" . 1) ("first" . 5))
+; M-, goes back to the newest place, and its own switch records nothing
+; on the back list; C-M-, comes forward again.
+> (press! "M-,")
+> (here)
+("second" . 1)
+> (places)
+(("first" . 5))
+> (press! "M-,")
+> (here)
+("first" . 5)
+> (places)
+()
+> (press! "M-,")
+! jump-history:go-back: At start of jump history
+> (press! "C-M-,")
+> (here)
+("second" . 1)
+> (press! "C-M-,")
+> (here)
+("third" . 1)
+> (press! "C-M-,")
+! jump-history:go-forward: At end of jump history
+> (places)
+(("second" . 1) ("first" . 5))
+; Going forward keeps the forward list, so C-M-, twice after M-, twice
+; goes forward twice; a new place empties it.
+> (press! "M-," "M-,")
+> (here)
+("first" . 5)
+> (press! "C-M-," "C-M-,")
+> (here)
+("third" . 1)
+> (press! "M-,")
+> (commands:run jump third 2)
+> (here)
+("third" . 2)
+> (press! "C-M-,")
+! jump-history:go-forward: At end of jump history
+; A place equal to the newest is not recorded twice.
+> (places)
+(("second" . 1) ("first" . 5))
+> (jump-history:push! second 1)
+> (places)
+(("second" . 1) ("first" . 5))
+> (jump-history:push! second 3)
+> (places)
+(("second" . 3) ("second" . 1) ("first" . 5))
+; A place follows edits.
+> (buffers:replace! second 1 1 "new\n")
+#<edit 1>
+> (places)
+(("second" . 7) ("second" . 1) ("first" . 5))
+; A killed buffer's places go from both lists.
+> (press! "M-,")
+> (here)
+("second" . 7)
+> (buffers:kill! third)
+#t
+> (press! "C-M-,")
+! jump-history:go-forward: At end of jump history
+> (buffers:kill! second)
+#t
+> (places)
+(("first" . 5))
+; after-return is called with the view after going back or forward.
+> (define returned '())
+> (add-hook! jump-history:after-return (lambda (v) (set! returned (cons (views:id v) returned))))
+> (press! "M-,")
+> (equal? returned (list (views:id (view))))
+#t
+; M-, and C-M-, from a waiting prompt record no place in the prompt's
+; buffer, so C-M-, never shows it in an ordinary view.
+> (commands:run jump first 9)
+> (define t (start! (lambda () (minibuffer:read "Name: "))))
+> (buffers:name (views:buffer (view)))
+" *Minibuf*"
+> (press! "M-,")
+> (here)
+("first" . 5)
+> (press! "C-M-,")
+! jump-history:go-forward: At end of jump history
+> (layout:select! (minibuffer:prompt-view (minibuffer:current-prompt)))
+> (press! "C-g")
+! &quit
+; jump-history:history-key chooses the history: with view-key each view
+; keeps its own, recorded in the selected view.
+> (set-option! jump-history:history-key jump-history:view-key)
+> (places)
+()
+> (commands:run jump first 9)
+> (places)
+(("first" . 5))
+> (commands:run layout-split:split-right)
+> (layout:select! (find (lambda (v) (not (eq? v (view)))) (layout:views)))
+> (places)
+()
+> (raised (lambda () (jump-history:push! "first" 1)))
+(jump-history:push! "not a buffer")
