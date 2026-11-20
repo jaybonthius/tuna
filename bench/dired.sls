@@ -1,5 +1,5 @@
 #!tuna
-(import (document) (buffers) (views) (layout) (undo) (folder-listing) (web) (haml))
+(import (document) (buffers) (views) (layout) (undo) (dired) (web) (haml))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -30,14 +30,14 @@
       (if (fx>= p (document:length doc))
           n
           (let ([t (document:token doc p)])
-            (loop (fx+ p 1) (if (and (document:node? t) (eq? (document:node-kind t) 'folder-listing:%entry)) (fx+ n 1) n)))))))
+            (loop (fx+ p 1) (if (and (document:node? t) (eq? (document:node-kind t) 'dired:%entry)) (fx+ n 1) n)))))))
 
 (define (run folder)
-  (let ([b (folder-listing:visit folder)] [v (layout:selected-view)])
+  (let ([b (dired:visit folder)] [v (layout:selected-view)])
     (let wait ([n 0])
       (unless (or (fx>= (entries b) 62) (fx= n 1000))
         (sleep-for 0.01)
         (wait (fx+ n 1))))
     (unless (fx>= (entries b) 62) (printf "the folder was not read\n"))
     (views:set-buffer! v b)
-    (show "folder-listing-draw-60" (ns-per-op (lambda () (html->bytevector (views:draw v client)))))))
+    (show "dired-draw-60" (ns-per-op (lambda () (html->bytevector (views:draw v client)))))))

@@ -1,4 +1,4 @@
-(library (folder-listing reading)
+(library (dired reading)
   (export resolve-folder resolved-path resolved-modified
           read-folder folder-read-attributes folder-read-space folder-read-entries
           listed-name listed-attributes listed-broken?

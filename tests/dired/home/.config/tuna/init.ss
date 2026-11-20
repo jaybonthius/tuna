@@ -10,7 +10,7 @@
 (use-plugin undo)
 (use-plugin undo-log)
 (use-plugin kill-ring)
-(use-plugin folder-listing)
+(use-plugin dired)
 
 (define client (web:add-client! 1))
 
@@ -61,14 +61,14 @@
       (let ([t (document:token doc p)])
         (cond
           [(eof-object? t) (reverse acc)]
-          [(and (document:node? t) (eq? (document:node-kind t) 'folder-listing:%entry)) (loop (+ p 1) (cons t acc))]
+          [(and (document:node? t) (eq? (document:node-kind t) 'dired:%entry)) (loop (+ p 1) (cons t acc))]
           [else (loop (+ p 1) acc)])))))
 
-(define (entry-name e) (path-last (folder-listing:entry-path e)))
+(define (entry-name e) (path-last (dired:entry-path e)))
 
 (define (listing-lines b)
   (map (lambda (e)
-         (let ([m (folder-listing:entry-mark e)])
+         (let ([m (dired:entry-mark e)])
            (string-append (if m (string m) " ") " " (entry-name e))))
        (entries b)))
 
@@ -79,8 +79,8 @@
 (define (show b) (for-each (lambda (l) (display l) (newline)) (listing-lines b)))
 
 (define (point-name)
-  (let ([e (folder-listing:entry-at (view))])
-    (and e (path-last (folder-listing:entry-path e)))))
+  (let ([e (dired:entry-at (view))])
+    (and e (path-last (dired:entry-path e)))))
 
 (define (message) (echo-area:current-message))
 
@@ -103,7 +103,7 @@
 (define (click-name! name)
   (let* ([v (view)] [e (find (lambda (e) (equal? (entry-name e) name)) (entries (views:buffer v)))]
          [place `(("at" . ,(+ 1 (document:node-start e))) ("count" . 0)
-                  ("keymaps" . ,(vector (mark-number folder-listing:name-keymap))))])
+                  ("keymaps" . ,(vector (mark-number dired:name-keymap))))])
     (mouse-in! v "down" place)
     (mouse-in! v "click" place)))
 

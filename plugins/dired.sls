@@ -1,6 +1,6 @@
 #!tuna
 (import (buffers) (document) (views) (keys) (commands) (modes) (editing) (kill-ring) (layout) (ui)
-        (files) (jobs) (ask) (web) (haml) (completion) (files attributes) (folder-listing reading))
+        (files) (jobs) (ask) (web) (haml) (completion) (files attributes) (dired reading))
 
 (define-enumeration sorting (name time size extension) %sortings)
 
@@ -19,10 +19,10 @@
        (let loop ([v v]) (or (null? v) (and (not (memq (car v) (cdr v))) (loop (cdr v)))))))
 
 (define-option sort (sorting name) (%one-of (%sortings))
-  "How entries are ordered: name, time, size or extension, given with folder-listing:sorting.")
+  "How entries are ordered: name, time, size or extension, given with dired:sorting.")
 
 (define-option reverse-sort? #f boolean?
-  "When true, entries are in the reverse of folder-listing:sort's order.")
+  "When true, entries are in the reverse of dired:sort's order.")
 
 (define-option folders-first? #f boolean?
   "When true, folders come before other entries.")
@@ -32,7 +32,7 @@
 
 (define-option columns (list (column mode) (column links) (column owner) (column group) (column size) (column time))
   %columns?
-  "The columns drawn before each name, in order, each given with folder-listing:column.")
+  "The columns drawn before each name, in order, each given with dired:column.")
 
 (define-option free-space? #t boolean?
   "When true, the header gives the space available on the folder's file system.")
@@ -66,9 +66,9 @@
 
 ;; Kinds are compared by name, which a document keeps after the module
 ;; that defined them unloads.
-(define %listing-kind 'folder-listing:%listing)
-(define %folder-kind 'folder-listing:%folder)
-(define %entry-kind 'folder-listing:%entry)
+(define %listing-kind 'dired:%listing)
+(define %folder-kind 'dired:%folder)
+(define %entry-kind 'dired:%entry)
 
 (define (%with-slash folder)
   (let ([n (string-length folder)])
@@ -94,15 +94,15 @@
       [else (loop (fx- i 1))])))
 
 (jobs:define-worker (%resolver path emit)
-  (import (folder-listing reading))
+  (import (dired reading))
   (emit (resolve-folder path)))
 
 (jobs:define-worker (%reader folder emit)
-  (import (folder-listing reading))
+  (import (dired reading))
   (emit (read-folder folder)))
 
 (jobs:define-worker (%non-empty-folders paths emit)
-  (import (folder-listing reading))
+  (import (dired reading))
   (emit (non-empty-folders paths)))
 
 (module %internals
@@ -150,7 +150,7 @@
                   ((cdr w)
                    (lambda ()
                      (raise (condition (make-error) (make-who-condition (car w))
-                                       (make-message-condition "the folder-listing plugin was unloaded"))))))
+                                       (make-message-condition "the dired plugin was unloaded"))))))
                 stopped))))
 
 (import %internals)
@@ -179,7 +179,7 @@
               folder))))
 
 (define (folder buffer)
-  (%check-buffer 'folder-listing:folder buffer)
+  (%check-buffer 'dired:folder buffer)
   (and (buffers:live? buffer)
        (let ([node (%folder-node (buffers:document buffer))])
          (and node (document:node-attribute node 'path)))))
@@ -219,19 +219,19 @@
       [else (loop (document:enclosing doc (document:node-start node)))])))
 
 (define (entry-at view)
-  (%check-view 'folder-listing:entry-at view)
+  (%check-view 'dired:entry-at view)
   (%entry-containing (buffers:document (views:buffer view)) (views:point view)))
 
 (define (entry-path entry)
-  (%check-entry 'folder-listing:entry-path entry)
+  (%check-entry 'dired:entry-path entry)
   (document:node-attribute entry 'path))
 
 (define (entry-mark entry)
-  (%check-entry 'folder-listing:entry-mark entry)
+  (%check-entry 'dired:entry-mark entry)
   (document:node-attribute entry 'mark))
 
 (define (entry-attributes entry)
-  (%check-entry 'folder-listing:entry-attributes entry)
+  (%check-entry 'dired:entry-attributes entry)
   (document:node-attribute entry 'attributes))
 
 (define (%name-start entry) (fx+ (document:node-start entry) 1))
@@ -406,12 +406,12 @@
 
 (define (visit folder-path)
   (unless (string? folder-path)
-    (assertion-violation 'folder-listing:visit "not a string" folder-path))
-  (%check-task 'folder-listing:visit)
-  (let* ([found (job-result 'folder-listing:visit %resolver folder-path)]
+    (assertion-violation 'dired:visit "not a string" folder-path))
+  (%check-task 'dired:visit)
+  (let* ([found (job-result 'dired:visit %resolver folder-path)]
          [resolved (%with-slash (resolved-path found))] [modified (resolved-modified found)])
     (unless modified
-      (raise (condition (make-i/o-filename-error resolved) (make-who-condition 'folder-listing:visit)
+      (raise (condition (make-i/o-filename-error resolved) (make-who-condition 'dired:visit)
                         (make-message-condition "not a folder") (make-irritants-condition (list (files:abbreviated-path resolved))))))
     (let ([b (%listing-of resolved)])
       (if b
@@ -421,7 +421,7 @@
                   (refresh b)
                   (ask:message "Folder changed on disk; type g to refresh")))
             b)
-          (let ([read (job-result 'folder-listing:visit %reader resolved)])
+          (let ([read (job-result 'dired:visit %reader resolved)])
             (or (%listing-of resolved) (%make-listing! resolved read)))))))
 
 (define (%refresh! who buffer carried)
@@ -438,7 +438,7 @@
 
 (commands:define-command (refresh [buffer (buffers:current)])
   "Reads the folder of the listing BUFFER again, keeping marks and points."
-  (%refresh! 'folder-listing:refresh buffer (%no-carried-marks)))
+  (%refresh! 'dired:refresh buffer (%no-carried-marks)))
 
 (define (%refresh-folders! folders carried)
   (for-each
@@ -446,7 +446,7 @@
       (let ([b (%listing-of f)])
         (when b
           (guard (c [(and (i/o-error? c) (not (quit-condition? c))) (void)])
-            (%refresh! 'folder-listing:refresh b carried)))))
+            (%refresh! 'dired:refresh b carried)))))
     (let loop ([fs folders] [acc '()])
       (cond
         [(null? fs) (reverse acc)]
@@ -454,8 +454,8 @@
         [else (loop (cdr fs) (cons (car fs) acc))]))))
 
 (define (place-point! view)
-  (%check-view 'folder-listing:place-point! view)
-  (%check-listing 'folder-listing:place-point! (views:buffer view))
+  (%check-view 'dired:place-point! view)
+  (%check-listing 'dired:place-point! (views:buffer view))
   (let* ([b (views:buffer view)]
          [entry (or (find (lambda (e) (not (%trivial? e))) (%entries b)) (%first-entry (buffers:document b)))])
     (when entry
@@ -498,7 +498,7 @@
 
 (commands:define-command (jump [buffer (buffers:current)])
   "Shows the listing of the folder holding BUFFER's file, with point on it; for a listing, its parent's listing, with point on its folder."
-  (%check-buffer 'folder-listing:jump buffer)
+  (%check-buffer 'dired:jump buffer)
   (let ([listed (folder buffer)] [file (files:path buffer)])
     (cond
       [listed (%show-at! (visit (%parent-folder listed)) (substring listed 0 (fx- (string-length listed) 1)))]
@@ -507,14 +507,14 @@
 
 (commands:define-command (up [buffer (buffers:current)])
   "Shows the listing of the parent of the folder the listing BUFFER lists, with point on that folder."
-  (%check-listing 'folder-listing:up buffer)
+  (%check-listing 'dired:up buffer)
   (let ([listed (folder buffer)])
     (%show-at! (visit (%parent-folder listed)) (substring listed 0 (fx- (string-length listed) 1)))))
 
-(commands:define-command (find-file [path (%path-of-point 'folder-listing:find-file)])
+(commands:define-command (find-file [path (%path-of-point 'dired:find-file)])
   "Visits PATH and shows its buffer in the selected view; a folder shows its listing."
   (unless (string? path)
-    (assertion-violation 'folder-listing:find-file "not a string" path))
+    (assertion-violation 'dired:find-file "not a string" path))
   (let ([b (files:visit path)])
     (if (folder b) (%show-listing! b) (layout:switch-to-buffer b))))
 
@@ -523,26 +523,26 @@
     (when (folder b) (%place-point! view))
     (when select? (layout:select! view))))
 
-(commands:define-command (find-file-other-view [path (%path-of-point 'folder-listing:find-file-other-view)])
+(commands:define-command (find-file-other-view [path (%path-of-point 'dired:find-file-other-view)])
   "Visits PATH, shows its buffer in another view and selects that view."
   (unless (string? path)
-    (assertion-violation 'folder-listing:find-file-other-view "not a string" path))
+    (assertion-violation 'dired:find-file-other-view "not a string" path))
   (%display-path! path #t))
 
-(commands:define-command (display-file [path (%path-of-point 'folder-listing:display-file)])
+(commands:define-command (display-file [path (%path-of-point 'dired:display-file)])
   "Visits PATH and shows its buffer in another view, leaving the listing's view selected."
   (unless (string? path)
-    (assertion-violation 'folder-listing:display-file "not a string" path))
+    (assertion-violation 'dired:display-file "not a string" path))
   (%display-path! path #f))
 
 (commands:define-command (mouse-find-file [event (keys:command-event)])
   "Visits the entry clicked, shows it in another view and selects that view."
   (unless (keys:event? event)
-    (assertion-violation 'folder-listing:mouse-find-file "not a mouse event" event))
+    (assertion-violation 'dired:mouse-find-file "not a mouse event" event))
   (let* ([posn (keys:event-start event)] [view (views:posn-view posn)] [p (views:posn-point posn)]
          [entry (and view p (views:buffer view) (%entry-containing (buffers:document (views:buffer view)) p))])
     (unless entry
-      (error 'folder-listing:mouse-find-file "no file at the click"))
+      (error 'dired:mouse-find-file "no file at the click"))
     (%display-path! (entry-path entry) #t)))
 
 (commands:define-command (%follow-folder-link [link (ui:pushed-button)])
@@ -573,13 +573,13 @@
 
 (commands:define-command (next-line [n (commands:prefix-number)])
   "Moves each cursor N entries down, to the start of the entry's name."
-  (%check-count 'folder-listing:next-line n)
-  (%move-entries 'folder-listing:next-line n))
+  (%check-count 'dired:next-line n)
+  (%move-entries 'dired:next-line n))
 
 (commands:define-command (previous-line [n (commands:prefix-number)])
   "Moves each cursor N entries up, to the start of the entry's name."
-  (%check-count 'folder-listing:previous-line n)
-  (%move-entries 'folder-listing:previous-line (- n)))
+  (%check-count 'dired:previous-line n)
+  (%move-entries 'dired:previous-line (- n)))
 
 ;; Only an entry's opening holds its mark, so a mark change rewrites the
 ;; opening alone and the name's text, points and anchors stay.
@@ -606,10 +606,10 @@
     0 entries))
 
 (define (mark-where! buffer predicate mark)
-  (%check-listing 'folder-listing:mark-where! buffer)
+  (%check-listing 'dired:mark-where! buffer)
   (unless (procedure? predicate)
-    (assertion-violation 'folder-listing:mark-where! "not a procedure" predicate))
-  (%check-mark 'folder-listing:mark-where! mark)
+    (assertion-violation 'dired:mark-where! "not a procedure" predicate))
+  (%check-mark 'dired:mark-where! mark)
   (%change-marks! buffer (filter predicate (%entries buffer)) (lambda (e) mark)))
 
 (define (%region-entries view)
@@ -636,29 +636,29 @@
 
 (commands:define-command (mark [n (commands:prefix-number)])
   "Marks the entry at point with * and moves to the next, N times, or every entry in the region."
-  (%mark-entries! 'folder-listing:mark n #\*))
+  (%mark-entries! 'dired:mark n #\*))
 
 (commands:define-command (unmark [n (commands:prefix-number)])
   "Removes the mark of the entry at point and moves to the next, N times, or of every entry in the region."
-  (%mark-entries! 'folder-listing:unmark n #f))
+  (%mark-entries! 'dired:unmark n #f))
 
 (commands:define-command (unmark-backward [n (commands:prefix-number)])
   "Moves to the entry above and removes its mark, N times."
-  (%mark-entries! 'folder-listing:unmark-backward (- n) #f))
+  (%mark-entries! 'dired:unmark-backward (- n) #f))
 
 (commands:define-command (flag-deletion [n (commands:prefix-number)])
   "Flags the entry at point with D and moves to the next, N times, or every entry in the region."
-  (%mark-entries! 'folder-listing:flag-deletion n #\D))
+  (%mark-entries! 'dired:flag-deletion n #\D))
 
 (commands:define-command (unmark-all [buffer (buffers:current)])
   "Removes every mark in the listing BUFFER."
-  (%check-listing 'folder-listing:unmark-all buffer)
+  (%check-listing 'dired:unmark-all buffer)
   (%change-marks! buffer (%entries buffer) (lambda (e) #f))
   (void))
 
 (commands:define-command (toggle-marks [buffer (buffers:current)])
   "Marks with * the unmarked entries of BUFFER and unmarks those marked *, or only the entries in the region."
-  (%check-listing 'folder-listing:toggle-marks buffer)
+  (%check-listing 'dired:toggle-marks buffer)
   (let* ([view (views:current)]
          [entries (or (and view (eq? (views:buffer view) buffer) (%region-entries view)) (%entries buffer))])
     (%change-marks! buffer entries
@@ -679,17 +679,17 @@
 
 (commands:define-command (mark-folders [buffer (buffers:current)])
   "Marks every folder of BUFFER with *; with a prefix argument, unmarks them."
-  (%mark-kind! 'folder-listing:mark-folders buffer
+  (%mark-kind! 'dired:mark-folders buffer
     (lambda (a) (eq? (file-attributes-type a) (file-type folder)))))
 
 (commands:define-command (mark-links [buffer (buffers:current)])
   "Marks every symbolic link of BUFFER with *; with a prefix argument, unmarks them."
-  (%mark-kind! 'folder-listing:mark-links buffer
+  (%mark-kind! 'dired:mark-links buffer
     (lambda (a) (eq? (file-attributes-type a) (file-type link)))))
 
 (commands:define-command (mark-executables [buffer (buffers:current)])
   "Marks every file of BUFFER that some user may execute, folders left out, with *; with a prefix argument, unmarks them."
-  (%mark-kind! 'folder-listing:mark-executables buffer
+  (%mark-kind! 'dired:mark-executables buffer
     (lambda (a) (and (not (eq? (file-attributes-type a) (file-type folder)))
                      (not (fx= 0 (fxand (file-attributes-mode a) #o111)))))))
 
@@ -697,7 +697,7 @@
   (case-lambda
     [(view) (operation-paths view (commands:prefix-argument))]
     [(view prefix)
-     (%check-view 'folder-listing:operation-paths view)
+     (%check-view 'dired:operation-paths view)
      (let* ([b (views:buffer view)] [doc (buffers:document b)]
             [at (%entry-containing doc (views:point view))]
             [paths
@@ -713,7 +713,7 @@
                         [at (list at)]
                         [else '()]))])))])
        (when (null? paths)
-         (error 'folder-listing:operation-paths "no file on this line"))
+         (error 'dired:operation-paths "no file on this line"))
        paths)]))
 
 (define %current-paths
@@ -779,11 +779,11 @@
           answer))))
 
 (define (%recursion-allowed? option question paths)
-  (let ([folders (job-result 'folder-listing:recursion %non-empty-folders paths)])
+  (let ([folders (job-result 'dired:recursion %non-empty-folders paths)])
     (lambda (path)
       (or (not (member path folders))
           (case option
-            [(never) (error 'folder-listing "a folder that holds files" (files:abbreviated-path path))]
+            [(never) (error 'dired "a folder that holds files" (files:abbreviated-path path))]
             [(always) #t]
             [else (ask:yes-or-no? (format question (%name path)))])))))
 
@@ -803,14 +803,14 @@
           (%refresh-folders! (map %parent-folder paths) (%no-carried-marks)))
         (ask:message "(No deletions performed)"))))
 
-(commands:define-command (delete [paths (%current-paths 'folder-listing:delete)])
+(commands:define-command (delete [paths (%current-paths 'dired:delete)])
   "Asks, then deletes PATHS, or moves them to the trash when files:delete-by-moving-to-trash? is true."
-  (%check-paths 'folder-listing:delete paths)
+  (%check-paths 'dired:delete paths)
   (%delete-paths! paths))
 
 (commands:define-command (delete-flagged [buffer (buffers:current)])
   "Deletes the entries of the listing BUFFER flagged D."
-  (%check-listing 'folder-listing:delete-flagged buffer)
+  (%check-listing 'dired:delete-flagged buffer)
   (let ([paths (map (lambda (e) (document:node-attribute e 'path))
                     (filter (lambda (e) (eqv? (document:node-attribute e 'mark) #\D)) (%entries buffer)))])
     (if (null? paths)
@@ -858,7 +858,7 @@
     #t))
 
 (define (%resolved-folder path)
-  (%with-slash (resolved-path (job-result 'folder-listing:resolve %resolver (%parent-folder path)))))
+  (%with-slash (resolved-path (job-result 'dired:resolve %resolver (%parent-folder path)))))
 
 (define (%mark-of path)
   (let* ([b (%listing-of (%parent-folder path))]
@@ -889,20 +889,20 @@
                  (equal? (folder (views:buffer view)) (%parent-folder (car landed))))
         (%point-on! view (car landed))))))
 
-(commands:define-command (rename [paths (%current-paths 'folder-listing:rename)] [target (%read-target 'folder-listing:rename "Rename")])
+(commands:define-command (rename [paths (%current-paths 'dired:rename)] [target (%read-target 'dired:rename "Rename")])
   "Renames the one path of PATHS to TARGET, or moves each into the folder TARGET; buffers visiting them follow."
-  (%operate! 'folder-listing:rename "Moved" paths target (lambda (path) #t) files:rename-file #f))
+  (%operate! 'dired:rename "Moved" paths target (lambda (path) #t) files:rename-file #f))
 
-(commands:define-command (copy [paths (%current-paths 'folder-listing:copy)] [target (%read-target 'folder-listing:copy "Copy")])
+(commands:define-command (copy [paths (%current-paths 'dired:copy)] [target (%read-target 'dired:copy "Copy")])
   "Copies the one path of PATHS to TARGET, or each into the folder TARGET; copies listed are marked C."
-  (%operate! 'folder-listing:copy "Copied" paths target
+  (%operate! 'dired:copy "Copied" paths target
     (%recursion-allowed? (recursive-copies) "Recursive copies of ~a? " paths)
     files:copy-file #\C))
 
 (commands:define-command (make-folder [path (ask:file-name "Create folder: " (files:directory))])
   "Makes the folder PATH and any missing folder above it, then puts point on the first folder made."
   (unless (string? path)
-    (assertion-violation 'folder-listing:make-folder "not a string" path))
+    (assertion-violation 'dired:make-folder "not a string" path))
   (let* ([path (%expand path)]
          [path (if (char=? (string-ref path (fx- (string-length path) 1)) #\/) (substring path 0 (fx- (string-length path) 1)) path)]
          [first (let loop ([p path])
@@ -919,11 +919,11 @@
 ;; a listing never holds, so C-u picks the paths as no prefix does.
 (define (%names-to-copy)
   (let ([prefix (commands:prefix-argument)])
-    (%current-paths 'folder-listing:copy-names-as-kill (if (pair? prefix) #f prefix))))
+    (%current-paths 'dired:copy-names-as-kill (if (pair? prefix) #f prefix))))
 
 (commands:define-command (copy-names-as-kill [paths (%names-to-copy)])
   "Pushes the names of PATHS, joined by spaces, onto the kill ring; with the prefix argument 0, their whole paths."
-  (%check-paths 'folder-listing:copy-names-as-kill paths)
+  (%check-paths 'dired:copy-names-as-kill paths)
   (let ([text (fold-left (lambda (s p) (if (string=? s "") p (string-append s " " p))) ""
                          (if (eqv? (commands:prefix-argument) 0) paths (map %name paths)))])
     (kill-ring:push! (list text))
@@ -935,21 +935,21 @@
       (if (eq? (buffers:with-buffer (buffers:current) (sort)) (sorting name)) (sorting time) (sorting name))))
 
 (commands:define-command (sort-by [buffer (buffers:current)] [order (%read-sorting)])
-  "Sets folder-listing:sort to ORDER in the listing BUFFER and orders its entries again."
-  (%check-listing 'folder-listing:sort-by buffer)
+  "Sets dired:sort to ORDER in the listing BUFFER and orders its entries again."
+  (%check-listing 'dired:sort-by buffer)
   (unless ((%one-of (%sortings)) order)
-    (assertion-violation 'folder-listing:sort-by "not a folder-listing:sorting name" order))
+    (assertion-violation 'dired:sort-by "not a dired:sorting name" order))
   (buffers:with-buffer buffer (set-option-local! sort order))
   (refresh buffer))
 
 (commands:define-command (toggle-details [buffer (buffers:current)])
   "Shows or hides every column but marks and names in the listing BUFFER."
-  (%check-listing 'folder-listing:toggle-details buffer)
+  (%check-listing 'dired:toggle-details buffer)
   (buffers:with-buffer buffer (set-option-local! hide-details? (not (hide-details?)))))
 
 (define (size-text size)
   (unless (and (integer? size) (exact? size) (>= size 0))
-    (assertion-violation 'folder-listing:size-text "not a size" size))
+    (assertion-violation 'dired:size-text "not a size" size))
   (number->string size))
 
 (define %month-names '#("Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"))
@@ -962,7 +962,7 @@
 
 (define (time-text seconds)
   (unless (and (integer? seconds) (exact? seconds))
-    (assertion-violation 'folder-listing:time-text "not a time in seconds" seconds))
+    (assertion-violation 'dired:time-text "not a time in seconds" seconds))
   (let* ([d (time-utc->date (make-time 'time-utc 0 seconds))]
          [now (time-second (current-time 'time-utc))]
          [day (date-day d)])
@@ -1004,12 +1004,12 @@
 (define (%shown-columns) (if (hide-details?) '() (columns)))
 
 (define (%draw-listing node view)
-  (haml (:div.folder-listing (views:draw-children view node))))
+  (haml (:div.dired (views:draw-children view node))))
 
 (define (%draw-folder node view)
   (let ([widths (document:node-attribute node 'widths)])
-    (haml (:div.folder-listing-folder
-            ([style "--folder-listing-columns:1ch "
+    (haml (:div.dired-folder
+            ([style "--dired-columns:1ch "
                     (apply string-append (map (lambda (c) (format "~ach " (%column-width c widths))) (%shown-columns)))
                     "auto 1fr"])
             (views:draw-children view node)))))
@@ -1020,35 +1020,35 @@
 
 (define (%draw-header node view)
   (let ([used (document:node-attribute node 'used)] [available (document:node-attribute node 'available)])
-    (haml (:div.folder-listing-header ([data-face "folder-listing.header"])
+    (haml (:div.dired-header ([data-face "dired.header"])
             (views:draw-children view node)
-            (:div.folder-listing-summary
+            (:div.dired-summary
               (unless (hide-details?)
                 (:span "total used in directory " (size-text used)))
               (when (and (not (hide-details?)) (free-space?) available)
                 (:span " available " (size-text available)))
-              (:span.folder-listing-sort (%sort-text)))))))
+              (:span.dired-sort (%sort-text)))))))
 
 (define (%name-face entry a)
   (case (document:node-attribute entry 'mark)
-    [(#\D) "folder-listing.flagged"]
+    [(#\D) "dired.flagged"]
     [(#f) (cond
-            [(document:node-attribute entry 'broken) "folder-listing.broken-link"]
-            [(eq? (file-attributes-type a) (file-type link)) "folder-listing.link"]
-            [(eq? (file-attributes-type a) (file-type folder)) "folder-listing.folder"]
+            [(document:node-attribute entry 'broken) "dired.broken-link"]
+            [(eq? (file-attributes-type a) (file-type link)) "dired.link"]
+            [(eq? (file-attributes-type a) (file-type folder)) "dired.folder"]
             [else #f])]
-    [else "folder-listing.marked"]))
+    [else "dired.marked"]))
 
 (define (%draw-entry node view)
   (let ([a (document:node-attribute node 'attributes)] [mark (document:node-attribute node 'mark)])
-    (haml (:div.folder-listing-entry ([data-mark (and mark (string mark))])
-            (:div.folder-listing-mark ([data-face "folder-listing.mark"]) (if mark (string mark) " "))
-            (map (lambda (c) (haml (:div ([class "folder-listing-" (symbol->string c)]) (%column-text c a))))
+    (haml (:div.dired-entry ([data-mark (and mark (string mark))])
+            (:div.dired-mark ([data-face "dired.mark"]) (if mark (string mark) " "))
+            (map (lambda (c) (haml (:div ([class "dired-" (symbol->string c)]) (%column-text c a))))
                  (%shown-columns))
-            (:div.folder-listing-name ([data-keymap (views:keymap-mark name-keymap)] [data-face (%name-face node a)])
+            (:div.dired-name ([data-keymap (views:keymap-mark name-keymap)] [data-face (%name-face node a)])
               (views:draw-children view node))
             (when (and (not (hide-details?)) (file-attributes-target a))
-              (:div.folder-listing-target "-> " (file-attributes-target a)))))))
+              (:div.dired-target "-> " (file-attributes-target a)))))))
 
 (buffers:define-kind %listing (content nodes) (draw %draw-listing))
 (buffers:define-kind %folder (content nodes) (draw %draw-folder))
@@ -1131,7 +1131,7 @@
 (add-hook! files:after-rename %follow-rename)
 (add-hook! buffers:killed %forget-killed)
 (table-set! modes:minor-modes hide-details? 0)
-(table-set! web:stylesheets 'folder-listing "folder-listing/folder-listing.css")
+(table-set! web:stylesheets 'dired "dired/dired.css")
 (on-unload stop-waiting!)
 (keys:bind! keys:global "C-x d" open)
 (keys:bind! keys:global "C-x C-j" jump)

@@ -3,7 +3,7 @@
 ; the line again there, through shell-commands:shell-command-again.
 > (folder! "listed")
 > (with-output-to-file (at "listed/a.txt") (lambda () (display "a\n")))
-> (define listing (folder-listing:visit (at "listed")))
+> (define listing (dired:visit (at "listed")))
 > (layout:switch-to-buffer listing)
 > (run! shell-commands:shell-command "pwd" #f)
 > (message)

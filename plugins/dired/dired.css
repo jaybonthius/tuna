@@ -1,0 +1,77 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  /* Each entry is its own grid, since views draw only the entries near
+     the visible ones; the folder gives every entry the same columns,
+     sized from all entries when the folder was read. */
+  .dired-entry {
+    display: grid;
+    grid-template-columns: var(--dired-columns);
+    column-gap: 1ch;
+    align-items: baseline;
+    white-space: pre;
+  }
+
+  .dired-links,
+  .dired-size {
+    text-align: end;
+  }
+
+  .dired-mode,
+  .dired-links,
+  .dired-owner,
+  .dired-group,
+  .dired-size,
+  .dired-time,
+  .dired-target {
+    color: var(--dired-details-text, var(--tuna-text-muted));
+  }
+
+  .dired-name {
+    min-inline-size: 0;
+  }
+
+  .dired-summary {
+    display: flex;
+    column-gap: 1ch;
+    color: var(--dired-details-text, var(--tuna-text-muted));
+  }
+
+  .dired-sort {
+    margin-inline-start: auto;
+  }
+
+  [data-face="dired.header"] .line {
+    color: var(--dired-header-text, var(--tuna-text));
+    font-weight: var(--tuna-font-weight-semibold, bold);
+  }
+
+  [data-face="dired.folder"] {
+    color: var(--dired-folder-text, var(--tuna-blue-11));
+    font-weight: var(--tuna-font-weight-semibold, bold);
+  }
+
+  [data-face="dired.link"] {
+    color: var(--dired-link-text, var(--tuna-cyan-11));
+  }
+
+  [data-face="dired.broken-link"] {
+    color: var(--dired-broken-link-text, var(--tuna-error));
+    text-decoration: line-through;
+  }
+
+  [data-face="dired.mark"] {
+    color: var(--dired-mark-text, var(--tuna-warning));
+    font-weight: var(--tuna-font-weight-bold, bold);
+  }
+
+  [data-face="dired.marked"] {
+    color: var(--dired-marked-text, var(--tuna-warning));
+    font-weight: var(--tuna-font-weight-bold, bold);
+  }
+
+  [data-face="dired.flagged"] {
+    color: var(--dired-flagged-text, var(--tuna-error));
+    font-weight: var(--tuna-font-weight-bold, bold);
+  }
+}

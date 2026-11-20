@@ -8,7 +8,7 @@
 (use-plugin files)
 (use-plugin undo)
 (use-plugin buffer-picker)
-(use-plugin folder-listing)
+(use-plugin dired)
 (use-plugin shell-commands
   (config
     (set-option! runs:shell '("/bin/sh" "-c"))))

@@ -1,11 +1,11 @@
 #!/bin/sh
 set -eu
-tuna=${1:?usage: folder-listing-restart-test.sh TUNA}
+tuna=${1:?usage: dired-restart-test.sh TUNA}
 case $tuna in
   /*) ;;
   *) tuna=$PWD/$tuna ;;
 esac
-dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-folder-listing-restart-test.XXXXXX")
+dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-dired-restart-test.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 failures=0
 fail() {
@@ -16,20 +16,20 @@ fail() {
 home=$dir/home
 mkdir -p "$home/.config/tuna/lib" "$dir/library" "$dir/work"
 sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/library"
-cp -R tests/folder-listing/home/.config/tuna/lib/. "$home/.config/tuna/lib/"
+cp -R tests/dired/home/.config/tuna/lib/. "$home/.config/tuna/lib/"
 cat > "$home/.config/tuna/init.ss" <<'END'
 (import (tuna) (tuna plugins) (document))
 (use-plugin files)
 (use-plugin command-line)
 (use-plugin echo-area)
-(use-plugin folder-listing)
+(use-plugin dired)
 (define (wait-until done?)
   (let loop ([n 0])
     (unless (or (done?) (= n 1000))
       (sleep-for 0.01)
       (loop (+ n 1)))))
 (define (listings)
-  (list-sort string<? (map buffers:name (filter folder-listing:folder (buffers:all)))))
+  (list-sort string<? (map buffers:name (filter dired:folder (buffers:all)))))
 (define (shown)
   (let* ([view (layout:selected-view)] [b (and view (views:buffer view))])
     (and b (buffers:name b))))
@@ -51,7 +51,7 @@ expect() {
 # A folder on the command line opens its listing, as C-x C-f on it does.
 output=$(run '(wait-until (lambda () (equal? (shown) "~/src/tuna/")))
 (shown)
-(folder-listing:visit "~/notes")
+(dired:visit "~/notes")
 (listings)' "$home/src/tuna")
 expect "first start" "$output" '"~/src/tuna/"
 #<buffer ~/notes/>

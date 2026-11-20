@@ -59,7 +59,7 @@ bench: exe
 	sh bench/editing.sh build/bin/tuna || status=1; \
 	sh bench/mouse.sh build/bin/tuna || status=1; \
 	sh bench/ui.sh build/bin/tuna || status=1; \
-	sh bench/folder-listing.sh build/bin/tuna || status=1; \
+	sh bench/dired.sh build/bin/tuna || status=1; \
 	sh bench/modes.sh build/bin/tuna || status=1; \
 	sh bench/echo-status.sh build/bin/tuna || status=1; \
 	sh bench/completion.sh build/bin/tuna || status=1; \

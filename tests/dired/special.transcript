@@ -1,12 +1,12 @@
 ; A listing's mode derives from modes:special, and its hook sets
-; buffers:revert-function to folder-listing:refresh, so g, from the
+; buffers:revert-function to dired:refresh, so g, from the
 ; parent's keymap, and buffers:revert-buffer read the folder again,
 ; keeping marks.
 > (for-each (lambda (n) (touch! (string-append "sp/" n ".txt") n "\n")) '("a" "b" "c" "d" "e"))
-> (define b (folder-listing:visit (at "sp")))
+> (define b (dired:visit (at "sp")))
 > (layout:switch-to-buffer b)
 > (list (modes:derived? (modes:major-mode b) modes:special)
-        (eq? (buffers:with-buffer b (buffers:revert-function)) folder-listing:refresh))
+        (eq? (buffers:with-buffer b (buffers:revert-function)) dired:refresh))
 (#t #t)
 > (define (bound key) (in-client (lambda () (commands:command-name (keys:lookup client key)))))
 > (goto "a.txt")
@@ -28,7 +28,7 @@
 "d.txt"
 ; SPC, S-SPC, DEL, n and p keep the listing's own commands.
 > (map bound '("SPC" "S-SPC" "DEL" "n" "p" "g" "q" "<"))
-(folder-listing:next-line folder-listing:previous-line folder-listing:unmark-backward folder-listing:next-line folder-listing:previous-line buffers:revert-buffer layout:quit-view editing:beginning-of-buffer)
+(dired:next-line dired:previous-line dired:unmark-backward dired:next-line dired:previous-line buffers:revert-buffer layout:quit-view editing:beginning-of-buffer)
 ; A printing key the listing leaves unbound is undefined, and q quits
 ; the listing's view.
 > (press! "z")

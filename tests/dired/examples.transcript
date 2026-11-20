@@ -2,29 +2,29 @@
 > (touch! "src/tuna/main.ss" "(main)\n")
 > (touch! "src/tuna/main.o" "")
 > (touch! "src/tuna/notes.txt~" "old\n")
-> (folder-listing:visit "~/src/tuna")
+> (dired:visit "~/src/tuna")
 #<buffer ~/src/tuna/>
-> (define b (folder-listing:visit (at "src/tuna")))
+> (define b (dired:visit (at "src/tuna")))
 > (layout:switch-to-buffer b)
 > (goto "main.ss")
 > (views:with-view (view)
-    (file-attributes-size (folder-listing:entry-attributes (folder-listing:entry-at (views:current)))))
+    (file-attributes-size (dired:entry-attributes (dired:entry-at (views:current)))))
 7
-> (folder-listing:mark-where! b
-    (lambda (entry) (string=? (path-extension (folder-listing:entry-path entry)) "o"))
+> (dired:mark-where! b
+    (lambda (entry) (string=? (path-extension (dired:entry-path entry)) "o"))
     #\D)
 1
-> (views:with-view (view) (folder-listing:sort-by (buffers:current) (folder-listing:sorting size)))
+> (views:with-view (view) (dired:sort-by (buffers:current) (dired:sorting size)))
 > (listing-lines b)
 ("  ." "  .." "  main.ss" "  notes.txt~" "D main.o")
 ; A command that flags every file whose name ends in ~.
 > (define (backup? entry)
-    (let ([path (folder-listing:entry-path entry)])
+    (let ([path (dired:entry-path entry)])
       (char=? (string-ref path (- (string-length path) 1)) #\~)))
 > (commands:define-command (flag-backups [buffer (buffers:current)])
     "Flags every backup file in the listing for deletion."
-    (folder-listing:mark-where! buffer backup? #\D))
-> (keys:bind! folder-listing:keymap "~" flag-backups)
+    (dired:mark-where! buffer backup? #\D))
+> (keys:bind! dired:keymap "~" flag-backups)
 > (press! "~")
 > (listing-lines b)
 ("  ." "  .." "  main.ss" "D notes.txt~" "D main.o")

@@ -1,11 +1,11 @@
 ; D deletes the entry at point after asking with
-; folder-listing:deletion-confirmer, then reads the listing again.
+; dired:deletion-confirmer, then reads the listing again.
 > (touch! "ops/a.txt" "a\n")
 > (touch! "ops/b.txt" "b\n")
 > (touch! "ops/c.txt" "c\n")
 > (touch! "ops/full/inside.txt" "i\n")
 > (folder! "ops/empty")
-> (define b (folder-listing:visit (at "ops")))
+> (define b (dired:visit (at "ops")))
 > (layout:switch-to-buffer b)
 > (set-option! ask:yes-or-no-reader (answer #t))
 > (goto "a.txt")
@@ -15,9 +15,9 @@
 (("Delete a.txt? ") "Deleted 1 file" #f ("  ." "  .." "  b.txt" "  c.txt" "  empty" "  full"))
 ; Several marked entries are named in  *Deletions* while it asks, which
 ; goes when answered; a folder that holds files is asked about, as
-; folder-listing:recursive-deletes is top.
+; dired:recursive-deletes is top.
 > (define shown-while-asking #f)
-> (set-option! folder-listing:deletion-confirmer
+> (set-option! dired:deletion-confirmer
     (lambda (q)
       (set! shown-while-asking
         (let ([d (buffers:find " *Deletions*")])
@@ -29,22 +29,22 @@
 > (settle)
 > (list (questions) shown-while-asking (buffers:find " *Deletions*") (message) (listing-lines b))
 (("Delete * [4 files]? " "Recursively delete full? ") #t #f "Deleted 4 files" ("  ." "  .."))
-> (remove-option! folder-listing:deletion-confirmer)
-; With folder-listing:recursive-deletes never, a folder that holds files
+> (remove-option! dired:deletion-confirmer)
+; With dired:recursive-deletes never, a folder that holds files
 ; is refused; the other paths are still deleted, and the message names
 ; what failed and why.
 > (touch! "ops/keep/inside.txt" "i\n")
 > (touch! "ops/gone.txt" "g\n")
 > (press! "g")
 > (settle)
-> (set-option! folder-listing:recursive-deletes (folder-listing:recursion never))
-> (folder-listing:mark-where! b (lambda (e) #t) #\*)
+> (set-option! dired:recursive-deletes (dired:recursion never))
+> (dired:mark-where! b (lambda (e) #t) #\*)
 2
 > (press! "D")
 > (settle)
 > (list (questions) (message) (listing-lines b))
 (("Delete * [2 files]? ") "1 of 2 files failed: keep: a folder that holds files (\"~/ops/keep\")" ("  ." "  .." "* keep"))
-> (remove-option! folder-listing:recursive-deletes)
+> (remove-option! dired:recursive-deletes)
 ; With files:delete-by-moving-to-trash?, the questions say trash and the
 ; files go to the freedesktop.org trash, with their .trashinfo.
 > (set-option! files:delete-by-moving-to-trash? #t)
@@ -62,12 +62,12 @@
 > (press! "g")
 > (settle)
 > (goto "no.txt")
-> (set-option! folder-listing:deletion-confirmer (answer #f))
+> (set-option! dired:deletion-confirmer (answer #f))
 > (press! "D")
 > (settle)
 > (list (questions) (message) (exists? "ops/no.txt"))
 (("Delete no.txt? ") "(No deletions performed)" #t)
-> (remove-option! folder-listing:deletion-confirmer)
+> (remove-option! dired:deletion-confirmer)
 > (delete-file (at "ops/no.txt"))
 #t
 > (touch! "ops/x.txt" "x\n")
@@ -107,7 +107,7 @@
 > (touch! "ops/w.txt" "w\n")
 > (folder! "ops/into")
 > (touch! "ops/into/w.txt" "old\n")
-> (define into (folder-listing:visit (at "ops/into")))
+> (define into (dired:visit (at "ops/into")))
 > (press! "g")
 > (settle)
 > (goto "w.txt")
@@ -130,7 +130,7 @@
            (file-attributes-modified (read-file-attributes (at "ops/v.txt")))))
 (("Copy w.txt to: ") "Copied 1 file" ("  ." "  .." "  into" "C v.txt" "  w.txt") #t)
 ; A folder is copied with everything in it after asking, as
-; folder-listing:recursive-copies is top.
+; dired:recursive-copies is top.
 > (goto "into")
 > (set-option! ask:file-name-reader (answer "~/ops/into2"))
 > (set-option! ask:yes-or-no-reader (answer #t))
@@ -153,11 +153,11 @@
 > (press! "0" "w")
 > (kill-ring:text (kill-ring:current))
 "$HOME/ops/w.txt"
-; With folder-listing:other-listing-target?, R and C start in the
+; With dired:other-listing-target?, R and C start in the
 ; folder of another view's listing.
 > (define started #f)
 > (set-option! ask:file-name-reader (lambda (q folder) (set! started folder) "~/ops/w2.txt"))
-> (set-option! folder-listing:other-listing-target? #t)
+> (set-option! dired:other-listing-target? #t)
 > (layout-split:split-right)
 > (layout:switch-to-buffer into)
 > (layout:other-view 1)
@@ -170,11 +170,11 @@
 ; not the one selected last.
 > (touch! "ops/third/t.txt" "t\n")
 > (layout-split:split-right)
-> (layout:switch-to-buffer (folder-listing:visit (at "ops/third")))
+> (layout:switch-to-buffer (dired:visit (at "ops/third")))
 > (define listed (map views:buffer (layout:views)))
-> (map folder-listing:folder (filter folder-listing:folder listed))
+> (map dired:folder (filter dired:folder listed))
 ("$HOME/ops/into/" "$HOME/ops/third/" "$HOME/ops/")
-> (for-each (lambda (name) (layout:select! (find (lambda (v) (equal? (folder-listing:folder (views:buffer v)) name)) (layout:views))))
+> (for-each (lambda (name) (layout:select! (find (lambda (v) (equal? (dired:folder (views:buffer v)) name)) (layout:views))))
             (map at '("ops/" "ops/into/" "ops/third/")))
 > (goto "t.txt")
 > (press! "C")
@@ -202,13 +202,13 @@
 > (press! "g")
 > (settle)
 > (goto "full")
-> (set-option! folder-listing:deletion-confirmer (answer #t))
+> (set-option! dired:deletion-confirmer (answer #t))
 > (set-option! ask:yes-or-no-reader (answer #f))
 > (press! "D")
 > (settle)
 > (list (questions) (message) (exists? "ops/third/full/inside.txt"))
 (("Delete full? " "Recursively delete full? ") "Deleted 0 files; declined full" #t)
-> (remove-option! folder-listing:deletion-confirmer)
+> (remove-option! dired:deletion-confirmer)
 > (set-option! ask:file-name-reader (answer "~/ops/copy"))
 > (press! "C")
 > (settle)
@@ -233,16 +233,16 @@
 > (touch! "ops/pick/a.txt" "a\n")
 > (touch! "ops/pick/b.txt" "b\n")
 > (touch! "ops/pick/c.txt" "c\n")
-> (layout:switch-to-buffer (folder-listing:visit (at "ops/pick")))
+> (layout:switch-to-buffer (dired:visit (at "ops/pick")))
 > (goto "b.txt")
 > (press! "m")
 > (goto "a.txt")
-> (set-option! folder-listing:deletion-confirmer (answer #t))
+> (set-option! dired:deletion-confirmer (answer #t))
 > (press! "C-u" "D")
 > (settle)
 > (list (questions) (message) (listing-lines (views:buffer (view))))
 (("Delete a.txt? ") "Deleted 1 file" ("  ." "  .." "* b.txt" "  c.txt"))
-> (remove-option! folder-listing:deletion-confirmer)
+> (remove-option! dired:deletion-confirmer)
 > (goto "c.txt")
 > (set-option! ask:file-name-reader (answer "~/ops/pick/d.txt"))
 > (press! "C-u" "R")
@@ -259,11 +259,11 @@
 > (press! "C-u" "w")
 > (message)
 "b.txt"
-> (parameterize ([commands:prefix-argument '-]) (map path-last (folder-listing:operation-paths (view))))
+> (parameterize ([commands:prefix-argument '-]) (map path-last (dired:operation-paths (view))))
 ("d.txt")
-; folder-listing:operation-paths takes a prefix argument of its own, so a
+; dired:operation-paths takes a prefix argument of its own, so a
 ; command whose C-u means something else asks for the marked entries.
-> (parameterize ([commands:prefix-argument '(4)]) (map path-last (folder-listing:operation-paths (view) #f)))
+> (parameterize ([commands:prefix-argument '(4)]) (map path-last (dired:operation-paths (view) #f)))
 ("b.txt")
-> (map path-last (folder-listing:operation-paths (view) '(4)))
+> (map path-last (dired:operation-paths (view) '(4)))
 ("d.txt")

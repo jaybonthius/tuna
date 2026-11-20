@@ -284,7 +284,7 @@ quit
 > (map (lambda (c) (table-ref commands:region-commands c #f))
        (list editing:duplicate-dwim editing:move-line-down editing:move-line-up editing:delete-trailing-whitespace
              editing:delete-backward-char editing:delete-forward-char completion:kill-ring-save
-             folder-listing:mark folder-listing:unmark folder-listing:flag-deletion folder-listing:toggle-marks))
+             dired:mark dired:unmark dired:flag-deletion dired:toggle-marks))
 (#t #t #t #t #t #t #t #t #t #t #t)
 > (keys:bind! completion:expression-action-keymap "d" editing:duplicate-dwim)
 > (define dup (show! (buffers:make "dup.ss" "(define (f b)\n  (g (bar b)))\n")))
@@ -308,7 +308,7 @@ quit
 ; A listing's line is its file.
 > (system "mkdir -p \"$HOME/listed\" && echo listed > \"$HOME/listed/a.txt\"")
 0
-> (define listing (show! (folder-listing:visit (string-append (getenv "HOME") "/listed"))))
+> (define listing (show! (dired:visit (string-append (getenv "HOME") "/listed"))))
 > (wait-until (lambda () (let ([t (text listing)]) (and (> (string-length t) 5) (string=? "a.txt" (substring t (- (string-length t) 6) (- (string-length t) 1)))))))
 > (at! listing "a.txt" 0)
 > (define a (act! "C-."))
@@ -319,7 +319,7 @@ quit
 > (text (views:buffer (view)))
 "listed\n"
 ; actions imports no plugin whose targets it offers: turning
-; folder-listing off leaves it on.
-> (unload-module! '(folder-listing))
+; dired off leaves it on.
+> (unload-module! '(dired))
 > (list (and (member '(actions) (loaded-modules)) #t) (length (hook-entries files:folder-visitors)))
 (#t 0)

@@ -1,27 +1,27 @@
 ; A listing is named after its folder's path, with ~ for the home folder
 ; and a final /, lists . and .. first, then the names by name with case
-; folded, and is in folder-listing:mode, lighter Folder.
+; folded, and is in dired:mode, lighter Folder.
 > (touch! "src/b.txt" "bee\n")
 > (touch! "src/A.txt" "a\n")
 > (touch! "src/.hidden" "")
 > (folder! "src/sub")
 > (touch! "src/sub/inner.txt" "in\n")
-> (define b (folder-listing:visit (at "src")))
-> (list (buffers:name b) (folder-listing:folder b) (modes:major-mode b) (modes:lighter folder-listing:mode))
-("~/src/" "$HOME/src/" folder-listing:mode "Folder")
+> (define b (dired:visit (at "src")))
+> (list (buffers:name b) (dired:folder b) (modes:major-mode b) (modes:lighter dired:mode))
+("~/src/" "$HOME/src/" dired:mode "Folder")
 > (listing-lines b)
 ("  ." "  .." "  .hidden" "  A.txt" "  b.txt" "  sub")
 ; Visiting again returns the same listing, through files:visit too, so
 ; C-x C-f on a folder opens its listing; two names for one folder find
 ; one listing.
-> (eq? b (folder-listing:visit (string-append (at "src") "/sub/..")))
+> (eq? b (dired:visit (string-append (at "src") "/sub/..")))
 #t
 > (eq? b (files:visit (at "src")))
 #t
 ; Point starts on the first entry after . and ..; n and p move by
 ; entries, and so does every key bound to next-line.
 > (layout:switch-to-buffer b)
-> (folder-listing:open (at "src"))
+> (dired:open (at "src"))
 > (point-name)
 ".hidden"
 > (press! "n" "n")
@@ -31,7 +31,7 @@
 > (point-name)
 ".hidden"
 > (press! "p" "p" "p")
-! folder-listing:previous-line: beginning of buffer
+! dired:previous-line: beginning of buffer
 > (point-name)
 "."
 ; Marks are edits: m marks and moves on, undo takes a mark back, and the
@@ -53,7 +53,7 @@
 > (listing-lines b)
 ("  ." "  .." "  .hidden" "D A.txt" "* b.txt" "* sub")
 > (press! "DEL")
-> (list (point-name) (map folder-listing:entry-mark (entries b)))
+> (list (point-name) (map dired:entry-mark (entries b)))
 ("b.txt" (#f #f #f #\D #f #\*))
 > (press! "t")
 > (listing-lines b)

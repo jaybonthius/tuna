@@ -1,10 +1,10 @@
-; folder-listing answers files:directory-finders with the listed folder,
+; dired answers files:directory-finders with the listed folder,
 ; so files:directory of a listing, where C-x d and C-x C-f start, is
 ; that folder; for a file buffer its entry answers #f.
 > (touch! "deep/inner/x.txt" "x\n")
-> (define listing (folder-listing:visit (at "deep/inner")))
+> (define listing (dired:visit (at "deep/inner")))
 > (define file (files:visit (at "deep/inner/x.txt")))
-> (list (files:directory listing) (folder-listing:folder file) (files:directory file))
+> (list (files:directory listing) (dired:folder file) (files:directory file))
 ("$HOME/deep/inner/" #f "$HOME/deep/inner/")
 > (layout:switch-to-buffer listing)
 > (define started '())

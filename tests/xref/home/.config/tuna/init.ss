@@ -11,7 +11,7 @@
 (use-plugin buffer-picker)
 (use-plugin line-picker)
 (use-plugin grep)
-(use-plugin folder-listing)
+(use-plugin dired)
 (use-plugin projects
   (config
     (set-option! projects:extra-root-markers '(".project"))))

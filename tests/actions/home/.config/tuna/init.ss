@@ -19,7 +19,7 @@
 (use-plugin completion-popup)
 (use-plugin chez-scheme)
 (use-plugin chez-scheme-completion)
-(use-plugin folder-listing)
+(use-plugin dired)
 (use-plugin shell-commands)
 
 (define client (web:add-client! 1))
